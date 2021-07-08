@@ -3,7 +3,7 @@
 ![image](https://user-images.githubusercontent.com/4110292/124995036-bbd1f900-e014-11eb-804e-e1f0be9557d6.png)
 
 
-[Warp](https://www.warp.dev) is a blazingly fast, Rust-based terminal that makes you and your team more productive at running, debugging, and deploying code and infrastructure. We are currently in a closed beta, you can join the waitlist at [warp.dev](https://www.warp.dev).
+This is an issues-only repo for [Warp](https://www.warp.dev), a blazingly fast, Rust-based terminal that makes you and your team more productive at running, debugging, and deploying code and infrastructure. We are currently in a closed beta, you can join the waitlist at [warp.dev](https://www.warp.dev).
 
 
 ## Issues/Feature Requests
