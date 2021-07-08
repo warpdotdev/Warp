@@ -1,16 +1,16 @@
 ![image](https://user-images.githubusercontent.com/4110292/124975454-0bf09180-dffc-11eb-88ad-10c5b63714b2.png)
 # Warp
-![image](https://user-images.githubusercontent.com/4110292/124979477-18c3b400-e001-11eb-919b-8544a5a73828.png)
+![image](https://user-images.githubusercontent.com/4110292/124995036-bbd1f900-e014-11eb-804e-e1f0be9557d6.png)
 
 
-[Warp](https://www.warp.dev) is a blazingly fast, Rust-based terminal that makes you and your team more productive at running, debugging, and deploying code and infrastructure. We currently in a closed beta, you can join the waitlist at [warp.dev](https://www.warp.dev).
+[Warp](https://www.warp.dev) is a blazingly fast, Rust-based terminal that makes you and your team more productive at running, debugging, and deploying code and infrastructure. We are currently in a closed beta, you can join the waitlist at [warp.dev](https://www.warp.dev).
 
 
 ## Issues/Feature Requests
-All issues or feature requests should be filed within this repo. Please use our issue templates to make the issues easier to track for our team!
+All issues or feature requests should be filed within this repo [here](https://github.com/warpdotdev/warp/issues/new/choose). We kindly ask that you please use our issue templates to make the issues easier to track for our team.
 
 ## Contributing
-Warp is currently closed-source and is not accepting contributions from external developers at this time. We plan on opening source our client side app in the future, but we do not have a concrete estimate of when that may be. 
+Warp is currently closed-source and is not accepting contributions from external developers at this time, though we plan on open sourcing our app in the future.
 
 Interested in joining the team? Please send us an email at hello@warp.dev.
 
