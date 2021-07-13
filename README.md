@@ -15,7 +15,7 @@ Warp is currently closed-source and is not accepting contributions from external
 Interested in joining the team? Please send us an email at hello@warp.dev.
 
 ## Support and Questions
-1. See our [docs](https://www.docs.warp.dev) for a walkthrough of the features within our app.
+1. See our [docs](https://docs.warp.dev) for a walkthrough of the features within our app.
 2. Join our [discord](https://discord.gg/DAQhtx3RuT) to chat with other users and get immediate help with members of the Warp team.
 
 For anything else, please don't hesitate to reach out via email at hello@warp.dev
