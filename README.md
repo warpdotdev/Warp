@@ -27,6 +27,21 @@ At a high level, we ask everyone be respectful and empathetic. We follow the [Gi
 * Communicate with empathy
 * Be clear and stay on topic
 
+## Open Source Dependencies
+We'd like to call out a few of the open source dependencies that have helped Warp to get off the ground:
+
+* [Tokio](https://github.com/tokio-rs/tokio)
+* [NuShell](https://github.com/nushell/nushell)
+* [Fig Completion Specs](https://github.com/withfig/autocomplete)
+* [Warp Server Framework](https://github.com/seanmonstar/warp)
+* [Alacritty](https://github.com/alacritty/alacritty)
+* [Hyper HTTP library](https://github.com/hyperium/hyper)
+* [FontKit](https://github.com/servo/font-kit)
+* [Core-foundation](https://github.com/servo/core-foundation-rs)
+* [Smol](https://github.com/smol-rs/smol)
+
+Warp is currently closed-source but plans to open source the client app as it becomes more mature and stable.
+
 
 
 
