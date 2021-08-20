@@ -1,6 +1,6 @@
 name: Feature Request
 description: "Suggest an idea for this project."
-labels: [bug]
+labels: [feature-request]
 body:
   - type: textarea
     id: "related-to-problem"
