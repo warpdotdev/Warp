@@ -1,0 +1,67 @@
+name: Bug Report
+description: "Create a report to help us improve."
+labels: [bug]
+body:
+  - type: textarea
+    id: "describe-the-bug"
+    attributes:
+      label: "Describe the bug"
+      description: "A clear and concise description of what the bug is."
+      placeholder: Tell us what you see.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: "to-reproduce"
+    attributes:
+      label: "To Reproduce"
+      value: |
+        Steps to reproduce:
+        1. Go to '...'
+        2. Click on '...'
+        3. Scroll down to '...'
+        4. See error '...'
+    validations:
+      required: true
+  - type: textarea
+    id: "expected-behaviour"
+    attributes:
+      label: "Expected behaviour"
+      description: "A clear and concise description of what you expected to happen."
+      placeholder: Tell us what you expect to see.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: "screenshots"
+    attributes:
+      label: "Screenshots"
+      description: "If applicable, add screenshots to help explain your problem."
+    validations:
+      required: false
+  - type: dropdown
+    id: "os"
+    attributes:
+      label: "Operating System"
+      multiple: false
+      options:
+        - MacOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: "os-version"
+    attributes:
+      label: "OS Version"
+      description: "For example, `11.4`."
+    validations:
+      required: true
+  - type: textarea
+    id: "additional-context"
+    attributes:
+      label: "Additional context"
+      description: "Add any other context about the problem here."
+      render: shell
+    validations:
+      required: false
