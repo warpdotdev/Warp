@@ -1,5 +1,5 @@
 name: Feature Request
-description: "Suggest an idea for this project."
+description: "Have a great new idea? We'd love to know, please look through our existing issues, and upvote it if its already been filed."
 labels: [feature-request]
 body:
   - type: textarea
