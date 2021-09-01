@@ -22,7 +22,7 @@ body:
         3. Scroll down to '...'
         4. See error '...'
     validations:
-      required: true
+      required: false
   - type: textarea
     id: "expected-behaviour"
     attributes:
@@ -31,7 +31,7 @@ body:
       placeholder: Tell us what you expect to see.
       render: shell
     validations:
-      required: true
+      required: false
   - type: textarea
     id: "screenshots"
     attributes:
@@ -49,14 +49,14 @@ body:
         # - Windows
         # - Linux
     validations:
-      required: true
+      required: false
   - type: input
     id: "os-version"
     attributes:
       label: "OS Version"
       description: "For example, `11.4`."
     validations:
-      required: true
+      required: false
   - type: textarea
     id: "additional-context"
     attributes:
