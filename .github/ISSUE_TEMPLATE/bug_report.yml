@@ -1,4 +1,5 @@
 name: Bug Report
+title: "Blocks: CP: (Command Palette) Completions: Docs: Idea: Keybindings: Perf: SSH: Theming: UIUX: Other:"
 description: "Found a bug? Help us by reporting it, we'd love if you'd first take a look through our open issues, to make sure the issue isn't already filed."
 labels: [bug]
 body:
