@@ -1,6 +1,7 @@
 name: Feature Request
 description: "Have a great new idea? We'd love to know, please look through our existing issues, and upvote it if its already been filed."
 labels: [feature-request]
+title: "Blocks: Command Palette: Completions: Docs: Idea: Keybindings: Perf: SSH: Theming: UIUX: Other:"
 body:
   - type: textarea
     id: "describe-solution"
@@ -23,6 +24,6 @@ body:
     id: "additional-context"
     attributes:
       label: "Additional context"
-      description: "Add any other context or screenshots about the feature request here."
+      description: "Add any other context or screenshots about the feature request here. If you want to upload a picture you can drag one in from Finder."
     validations:
       required: false
