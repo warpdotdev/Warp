@@ -1,7 +1,7 @@
 name: Feature Request
 description: "Have a great new idea? We'd love to know, please look through our existing issues, and upvote it if its already been filed."
 labels: [feature-request]
-title: "Blocks: Cloud: Completions: Core:(stability / speed) CP:(command palette) Docs: Idea: Input Editor: Integration: KB:(keybindings) Plugin: SSH: Theming: UIUX: Other:"
+title: "Blocks: Cloud: Completions: Core:(stability / speed) CP:(command palette) Docs: Input Editor: Integration: KB:(keybindings) Plugin: SSH: Theming: UIUX: Other:"
 body:
   - type: textarea
     id: "describe-solution"
