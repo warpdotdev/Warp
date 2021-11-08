@@ -1,5 +1,5 @@
 name: Bug Report
-title: "Blocks: Cloud: Completions: Core:(stability / speed) CP:(command palette) Docs: Idea: Input Editor: Integration: KB:(keybindings) Plugin: SSH: Theming: UIUX: Other:"
+title: "Blocks: Cloud: Completions: Core:(stability / speed) CP:(command palette) Docs: Input Editor: Integration: KB:(keybindings) Plugin: SSH: Theming: UIUX: Other:"
 description: "Found a bug? Help us by reporting it, we'd love if you'd first take a look through our open issues, to make sure the issue isn't already filed."
 labels: [bug]
 body:
