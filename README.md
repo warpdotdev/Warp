@@ -5,6 +5,8 @@
 
 This is an issues-only repo for [Warp](https://www.warp.dev), a blazingly fast, Rust-based terminal that makes you and your team more productive at running, debugging, and deploying code and infrastructure. We are currently in a closed beta, you can join the waitlist at [warp.dev](https://www.warp.dev).
 
+## Platform support
+Warp is currently Mac-only, although we have plans to support linux, windows and the web.
 
 ## Issues/Feature Requests
 All issues or feature requests should be filed within this repo [here](https://github.com/warpdotdev/warp/issues/new/choose). We kindly ask that you please use our issue templates to make the issues easier to track for our team.
