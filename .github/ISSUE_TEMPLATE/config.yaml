@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: ❓ Documentation
+    url: https://docs.warp.dev/help/known-issues
+    about: See our documentation, full Telemetry table, and known issues.
+  - name: ❓ Warp Discord Server
+    url: https://discord.gg/warpdotdev
+    about: Discuss what you want to see in a modern terminal, report bugs, and brainstorm features for the Warp app.
