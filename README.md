@@ -2,11 +2,16 @@
 # Warp
 ![image](https://user-images.githubusercontent.com/4110292/124995036-bbd1f900-e014-11eb-804e-e1f0be9557d6.png)
 
+This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast modern Rust based GPU-accelerated terminal](https://blog.warp.dev/how-warp-works/) built to make [you and your team more productive.](https://blog.warp.dev/how-we-design-warp-our-product-philosophy/)
 
-This is an issues-only repo for [Warp](https://www.warp.dev), a blazingly fast, Rust-based terminal that makes you and your team more productive at running, debugging, and deploying code and infrastructure. We are currently in a closed beta, you can join the waitlist at [warp.dev](https://www.warp.dev).
+## Installation
+We are currently in a closed beta, you can join the waitlist at [warp.dev](https://www.warp.dev). Or join our [Discord](https://discord.gg/warpdotdev), we drop invites frequently!
 
 ## Platform support
-Warp is currently Mac-only, although we have plans to support linux, windows and the web.
+Warp is currently Mac-only, although we have plans to support [linux](https://github.com/warpdotdev/Warp/issues/120), [windows](https://github.com/warpdotdev/Warp/issues/204) and the web.
+
+## Changelog and Releases
+We try to release an update every Warp Wednesday. See our [changelog (release notes).](https://docs.warp.dev/help/changelog)
 
 ## Issues/Feature Requests
 All issues or feature requests should be filed within this repo [here](https://github.com/warpdotdev/warp/issues/new/choose). We kindly ask that you please use our issue templates to make the issues easier to track for our team.
@@ -14,11 +19,11 @@ All issues or feature requests should be filed within this repo [here](https://g
 ## Contributing
 Warp is currently closed-source and is not accepting contributions from external developers at this time, though we plan on open sourcing our app in the future.
 
-Interested in joining the team? Please send us an email at hello@warp.dev.
+Interested in joining the team? See our [open roles](https://www.warp.dev/hiring) and feel free to send us an email: hello at warpdotdev
 
 ## Support and Questions
-1. See our [docs](https://docs.warp.dev) for a walkthrough of the features within our app.
-2. Join our [discord](https://warp.dev/discord) to chat with other users and get immediate help with members of the Warp team.
+1. See our [docs](https://docs.warp.dev/help/known-issues) for a walkthrough of the features within our app.
+2. Join our [Discord](https://discord.gg/warpdotdev) to chat with other users and get immediate help with members of the Warp team.
 
 For anything else, please don't hesitate to reach out via email at hello@warp.dev
 
@@ -30,6 +35,8 @@ At a high level, we ask everyone be respectful and empathetic. We follow the [Gi
 * Be clear and stay on topic
 
 ## Open Source Dependencies
+We depend on these [open source projects:](https://docs.warp.dev/help/licenses) [https://docs.warp.dev/help/licenses](https://docs.warp.dev/help/licenses)
+
 We'd like to call out a few of the open source dependencies that have helped Warp to get off the ground:
 
 * [Tokio](https://github.com/tokio-rs/tokio)
@@ -42,8 +49,4 @@ We'd like to call out a few of the open source dependencies that have helped War
 * [Core-foundation](https://github.com/servo/core-foundation-rs)
 * [Smol](https://github.com/smol-rs/smol)
 
-Warp is currently closed-source but plans to open source the client app as it becomes more mature and stable.
-
-
-
-
+Warp is currently closed-source but [plans to open source](https://github.com/warpdotdev/Warp/discussions/400) the client app as it becomes more mature and stable. We also plan on [open sourcing the GUI framework.](https://github.com/warpdotdev/Warp/discussions/430)
