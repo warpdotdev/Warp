@@ -25,7 +25,7 @@ Interested in joining the team? See our [open roles](https://www.warp.dev/hiring
 1. See our [docs](https://docs.warp.dev/help/known-issues) for a walkthrough of the features within our app.
 2. Join our [Discord](https://discord.gg/warpdotdev) to chat with other users and get immediate help with members of the Warp team.
 
-For anything else, please don't hesitate to reach out via email at hello@warp.dev
+For anything else, please don't hesitate to reach out via email at hello at warpdotdev
 
 ## Community Guidelines
 At a high level, we ask everyone be respectful and empathetic. We follow the [Github Community Guidelines](https://docs.github.com/en/github/site-policy/github-community-guidelines):
