@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Blog
+    url: https://blog.warp.dev/
+    about: See our blog.
   - name: Changelog
     url: https://docs.warp.dev/help/changelog
     about: See our changelog.
@@ -12,3 +15,6 @@ contact_links:
   - name: Licenses
     url: https://docs.warp.dev/help/licenses
     about: See the projects that we depend on and their open source licenses.
+  - name: Warp website
+    url: https://www.warp.dev/
+    about: Our website.
