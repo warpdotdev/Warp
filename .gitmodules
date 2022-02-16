@@ -1,0 +1,3 @@
+[submodule "themes"]
+	path = themes
+	url = https://github.com/warpdotdev/themes
