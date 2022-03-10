@@ -6,7 +6,7 @@ body:
     attributes:
       label: "Describe the solution you'd like?"
       description: "A clear and concise description of what you want to happen."
-      render: shell
+      render: text
     validations:
       required: true
   - type: textarea
@@ -15,7 +15,7 @@ body:
       label: "Is your feature request related to a problem? Please describe."
       description: "A clear and concise description of what the problem is."
       placeholder: "I'm always frustrated when [...]"
-      render: shell
+      render: text
     validations:
       required: false
   - type: textarea
