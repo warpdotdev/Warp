@@ -10,7 +10,7 @@ This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast 
 We are currently in a closed beta, you can join the [waitlist](https://www.warp.dev) or our [Discord](https://discord.gg/warpdotdev), we drop invites frequently!
 
 ## Platform support
-Warp is currently Mac-only, although we have plans to support [linux](https://github.com/warpdotdev/Warp/issues/120), [windows](https://github.com/warpdotdev/Warp/issues/204) and the web.
+Warp is currently Mac-only, although we have plans to support [Linux](https://github.com/warpdotdev/Warp/issues/120), [Windows,](https://github.com/warpdotdev/Warp/issues/204) and the web (WASM).
 
 ## Changelog and Releases
 We try to release an update every Warp Wednesday. See our [changelog (release notes).](https://docs.warp.dev/help/changelog)
