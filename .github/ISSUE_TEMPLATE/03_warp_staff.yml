@@ -1,0 +1,11 @@
+name: Warp Team Only
+description: For use by the Warp Team
+title: "[Warp Staff Only]"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For Warp Staff Only - markdown
+  - type: textarea
+    attributes:
+      value: For Warp Staff only - text area
