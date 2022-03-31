@@ -1,12 +1,28 @@
-name: Warp Team Only
-description: For use by the Warp Team
-title: "[Warp Staff Only]"
+name: Warp Team Tempalte
+description: Primarily used for creating new issues based on a comment in another issue.
+title: "[Warp Staff Template]"
 body:
   - type: markdown
     attributes:
       value: |
-        For Warp Staff Only - markdown
+        GitHub username
   - type: textarea
     attributes:
-      value: For Warp Staff only - text area
-      label: text area for Warp Staff
+      value: Username
+      label: username
+  - type: markdown
+    attributes:
+      value: |
+        URL / Link
+  - type: textarea
+    attributes:
+      value: URL / Link
+      label: URL / Link
+  - type: markdown
+    attributes:
+      value: |
+        The issue
+  - type: textarea
+    attributes:
+      value: New issue!
+      label: New issue
