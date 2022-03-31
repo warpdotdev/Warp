@@ -32,10 +32,13 @@ body:
     validations:
       required: false
   - type: textarea
-    id: "additional-context"
+    id: "xtrace-output"
     attributes:
-      label: "Additional context"
-      description: "Add any other context about the problem here."
+      label: "Include shell xtrace output"
+      description: "1. Ensure you're on the 3.31 version of Warp or later
+      2. Run WARP_DEBUG_MODE=1 ssh <hostname>
+      3. Save the full output starting from the ssh command block. If you’re not comfortable posting the outputs to a public issue, you can email feedback@warp.dev.
+      "
       render: text
     validations:
       required: false
