@@ -20,9 +20,10 @@ body:
     attributes:
       label: "I have tried commenting out my system & user rcfiles and warp still will not bootstrap"
       description: "If the issue is with your system and user rcfiles, please isolate the issue more (e.g. to a particular plugin, or a line of shell code) and open a general issue."
-      render: text
+      options:
+      - label: Yes
     validations:
-      required: false
+      required: true
   - type: textarea
     id: "screenshots"
     attributes:
