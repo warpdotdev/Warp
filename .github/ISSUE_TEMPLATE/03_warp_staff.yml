@@ -9,3 +9,4 @@ body:
   - type: textarea
     attributes:
       value: For Warp Staff only - text area
+      label: text area for Warp Staff
