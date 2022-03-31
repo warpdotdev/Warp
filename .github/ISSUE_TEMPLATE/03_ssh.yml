@@ -1,4 +1,4 @@
-name: SSH Doesn't Bootstrap
+name: SSH Issues? Use this template
 description: "Issue template specialized for the circumstances where the shell doesn't bootstrap over SSH"
 body:
   - type: input
