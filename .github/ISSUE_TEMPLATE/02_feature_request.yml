@@ -1,7 +1,7 @@
 name: Feature Request
 description: "Have a great new idea? We'd love to know, please look through our existing issues, and upvote it if its already been filed."
 body:
-  - type: textarea
+  - type: input  
     id: "discord"
     attributes:
       label: "Discord username (optional)"

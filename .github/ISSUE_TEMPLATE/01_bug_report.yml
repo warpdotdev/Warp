@@ -1,11 +1,11 @@
 name: Bug Report
 description: "Found a bug? Help us by reporting it, we'd love if you'd first take a look through our open issues, to make sure the issue isn't already filed."
 body:
-  - type: textarea
+  - type: input
     id: "discord"
     attributes:
-      label: "If you're in our Discord server, please list your Discord username"
-      description: "Formatted like so: elvis#4747"
+      label: "Discord username (optional)"
+      description: "If you're in our Discord server please include your formatted like so: elvis#4747. This is so we can give you the Bug Catcher Discord role."
       placeholder: username#4747.
       render: text
     validations:
