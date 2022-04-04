@@ -6,16 +6,15 @@ body:
     id: "github_username"
     attributes:
       label: "GitHub username"
-      description: "GitHub username"
+      description: github_username
       placeholder: username
     validations:
       required: false
   - type: input
     attributes:
       placeholder: URL
-      label: URL / Link
+      label: url
   - type: textarea
     attributes:
-      placeholder: placeholder
-      value: Description of new issue
-      label: New issue
+      placeholder: Description of new issue
+      label: issue_description
