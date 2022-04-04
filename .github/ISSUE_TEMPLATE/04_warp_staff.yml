@@ -2,27 +2,20 @@ name: Warp Team Template
 description: Primarily used for creating new issues based on a comment in another issue.
 title: "[Warp Staff Template]"
 body:
-  - type: markdown
+  - type: input  
+    id: "github_username"
     attributes:
-      value: |
-        GitHub username
-  - type: textarea
+      label: "GitHub username"
+      description: "GitHub username"
+      placeholder: username
+    validations:
+      required: false
+  - type: input
     attributes:
-      value: Username
-      label: username
-  - type: markdown
-    attributes:
-      value: |
-        URL / Link
-  - type: textarea
-    attributes:
-      value: URL / Link
+      placeholder: URL
       label: URL / Link
-  - type: markdown
-    attributes:
-      value: |
-        The issue
   - type: textarea
     attributes:
-      value: New issue!
+      placeholder: placeholder
+      value: Description of new issue
       label: New issue
