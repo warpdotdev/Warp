@@ -6,8 +6,7 @@ body:
     attributes:
       label: "Discord username (optional)"
       description: "If you're in our Discord server please include your formatted like so: elvis#4747. This is so we can give you the Bug Catcher Discord role."
-      placeholder: username#4747.
-      render: text
+      placeholder: username#4747
     validations:
       required: false
   - type: textarea
