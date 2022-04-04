@@ -2,6 +2,15 @@ name: Feature Request
 description: "Have a great new idea? We'd love to know, please look through our existing issues, and upvote it if its already been filed."
 body:
   - type: textarea
+    id: "discord"
+    attributes:
+      label: "Discord username (optional)"
+      description: "If you're in our Discord server please include your formatted like so: elvis#4747. This is so we can give you the Bug Catcher Discord role."
+      placeholder: username#4747.
+      render: text
+    validations:
+      required: false
+  - type: textarea
     id: "describe-solution"
     attributes:
       label: "Describe the solution you'd like?"
