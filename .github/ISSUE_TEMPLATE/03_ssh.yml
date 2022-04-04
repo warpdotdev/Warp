@@ -15,7 +15,6 @@ body:
     attributes:
       label: "Shell and Version"
       description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
-      render: text
     validations:
       required: true
   - type: input
@@ -23,7 +22,6 @@ body:
     attributes:
       label: "Operating System and Version"
       description: "e.g. Debian 11.2"
-      render: text
     validations:
       required: true
   - type: checkboxes
@@ -50,6 +48,5 @@ body:
       2. Run WARP_DEBUG_MODE=1 ssh YOUR-HOSTNAME-HERE
       3. Save the full output starting from the ssh command block. If you’re not comfortable posting the outputs to a public issue, you can email feedback@warp.dev.
       "
-      render: text
     validations:
       required: false
