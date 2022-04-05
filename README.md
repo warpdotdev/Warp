@@ -1,8 +1,8 @@
-![image](https://user-images.githubusercontent.com/4110292/124975454-0bf09180-dffc-11eb-88ad-10c5b63714b2.png)
+![Github website preview](https://user-images.githubusercontent.com/29553206/161684134-c397e216-9c46-4e58-910d-e8230f6c92bb.png)
 
 # Warp
 
-![image](https://user-images.githubusercontent.com/4110292/124995036-bbd1f900-e014-11eb-804e-e1f0be9557d6.png)
+[![Warp](https://user-images.githubusercontent.com/29553206/161684478-8b0f2e6f-3735-4440-88f2-107819393f12.gif)](https://www.youtube.com/watch?v=T7R8lvvBgOI)
 
 This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast modern Rust based GPU-accelerated terminal](https://www.warp.dev/blog/how-warp-works) built to make [you and your team more productive.](https://www.warp.dev/blog/how-we-design-warp-our-product-philosophy)
 
