@@ -10,7 +10,7 @@
   <a href="https://warp.dev/blog">Blog</a>
 </p>
 
-![Warp demo](https://www.youtube.com/watch?v=T7R8lvvBgOI)
+<img width="1025" alt="Screen Shot 2022-04-05 at 01 59 53" src="https://user-images.githubusercontent.com/29553206/161688541-2889478f-d02e-497c-8340-41569e579a42.png">
 
 <h1></h1>
 
