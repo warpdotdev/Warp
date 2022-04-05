@@ -10,12 +10,6 @@
   <a href="https://warp.dev/blog">Blog</a>
 </p>
 
-<p align="center">
-    <a href="https://www.youtube.com/watch?v=T7R8lvvBgOI">
-        <img width="1000" alt="warp demo" src="https://user-images.githubusercontent.com/29553206/161684478-8b0f2e6f-3735-4440-88f2-107819393f12.gif">
-    </a>
-</p>
-
 <h1></h1>
 
 This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast modern Rust based GPU-accelerated terminal](https://www.warp.dev/blog/how-warp-works) built to make [you and your team more productive.](https://www.warp.dev/blog/how-we-design-warp-our-product-philosophy)
