@@ -1,4 +1,14 @@
-<img width="1000" alt="horz - dark" src="https://user-images.githubusercontent.com/29553206/161685377-cb458631-eb2e-454f-aab7-3f5bfec745ee.png">
+<p align="center">
+    <img width="1000" alt="horz - dark" src="https://user-images.githubusercontent.com/29553206/161685377-cb458631-eb2e-454f-aab7-3f5bfec745ee.png">
+</p>
+
+<p align="center">
+  <a href="https://warp.dev">Website</a>
+  ·
+  <a href="#🚀-installation">Installation</a>
+  ·
+  <a href="https://warp.dev/blog">Blog</a>
+</p>
 
 [![Warp](https://user-images.githubusercontent.com/29553206/161684478-8b0f2e6f-3735-4440-88f2-107819393f12.gif)](https://www.youtube.com/watch?v=T7R8lvvBgOI)
 
