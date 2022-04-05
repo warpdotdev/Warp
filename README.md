@@ -10,6 +10,8 @@
   <a href="https://warp.dev/blog">Blog</a>
 </p>
 
+![Warp demo](https://www.youtube.com/watch?v=T7R8lvvBgOI)
+
 <h1></h1>
 
 This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast modern Rust based GPU-accelerated terminal](https://www.warp.dev/blog/how-warp-works) built to make [you and your team more productive.](https://www.warp.dev/blog/how-we-design-warp-our-product-philosophy)
