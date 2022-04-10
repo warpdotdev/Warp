@@ -4,3 +4,6 @@
 [submodule "keysets"]
 	path = keysets
 	url = git@github.com:warpdotdev/keysets.git
+[submodule "workflows"]
+	path = workflows
+	url = git@github.com:warpdotdev/workflows.git
