@@ -14,17 +14,25 @@
 
 <h1></h1>
 
+## About
+
 This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast modern Rust based GPU-accelerated terminal](https://www.warp.dev/blog/how-warp-works) built to make [you and your team more productive.](https://www.warp.dev/blog/how-we-design-warp-our-product-philosophy)
 
-## Installation & Platform support
+## Supported Platforms
 
-Warp is now available to all mac users without any waitlist (2022.04.05).
+As of April 5th, 2022, Warp is available to all macOS users, without joining a waitlist. 
 
 We are calling this new phase of the product our “public beta” – it’s a “beta” because we know there are still some issues to smooth out, but we are confident that even today the experience is meaningfully better than in other terminals.
 
-Download Warp from our website: [https://warp.dev](https://www.warp.dev)
+We have plans to support [Linux](https://github.com/warpdotdev/Warp/issues/120), [Windows,](https://github.com/warpdotdev/Warp/issues/204) and the Web (WASM)!
 
-We do have plans to support [Linux](https://github.com/warpdotdev/Warp/issues/120), [Windows,](https://github.com/warpdotdev/Warp/issues/204) and the Web (WASM)!
+## Installation
+
+You can download Warp from our website (<https://warp.dev>) or via Homebrew:
+
+```shell
+brew install --cask warp
+```
 
 ## Changelog and Releases
 
