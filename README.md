@@ -43,7 +43,7 @@ You can see how we’re thinking about open source here: [https://github.com/war
 
 As a side note, we are open sourcing our extension points as we go. The community has already been [contributing new themes](https://github.com/warpdotdev/themes). And we’ve just opened our [Workflows repository](https://github.com/warpdotdev/workflows) for the community to contribute common useful commands.
 
-Interested in joining the team? See our [open roles](https://www.warp.dev/hiring) and feel free to send us an email: hello at warpdotdev
+Interested in joining the team? See our [open roles](https://www.warp.dev/careers#open-roles) and feel free to send us an email: hello at warpdotdev
 
 ## Support and Questions
 
