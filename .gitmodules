@@ -4,3 +4,6 @@
 [submodule "keysets"]
 	path = keysets
 	url = git@github.com:warpdotdev/keysets.git
+[submodule ".github"]
+	path = .github
+	url = git@github.com:warpdotdev/.github.git
