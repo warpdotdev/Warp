@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://warp.dev">Website</a>
   ·
-  <a href="#installation--platform-support">Installation</a>
+  <a href="#installation">Installation</a>
   ·
   <a href="https://warp.dev/blog">Blog</a>
 </p>
