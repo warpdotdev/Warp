@@ -1,0 +1,52 @@
+name: SSH Issues? Use this template
+description: "Issue template specialized for the circumstances where the shell doesn't bootstrap over SSH"
+body:
+  - type: textarea
+    id: "discord"
+    attributes:
+      label: "Discord username (optional)"
+      description: "If you're in our Discord server please include your formatted like so: elvis#4747. This is so we can give you the Bug Catcher Discord role."
+      placeholder: username#4747.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: "shell"
+    attributes:
+      label: "Shell and Version"
+      description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
+    validations:
+      required: true
+  - type: input
+    id: "os"
+    attributes:
+      label: "Operating System and Version"
+      description: "e.g. Debian 11.2"
+    validations:
+      required: true
+  - type: checkboxes
+    id: "rcfiles"
+    attributes:
+      label: "I have tried commenting out my system & user rcfiles and warp still will not bootstrap"
+      description: "If the issue is with your system and user rcfiles, please isolate the issue more (e.g. to a particular plugin, or a line of shell code) and open a general issue."
+      options:
+      - label: "Yes"
+    validations:
+      required: true
+  - type: textarea
+    id: "screenshots"
+    attributes:
+      label: "Screenshots"
+      description: "Please either include a screenshot or describe what you see."
+    validations:
+      required: false
+  - type: textarea
+    id: "xtrace-output"
+    attributes:
+      label: "Include shell xtrace output"
+      description: "1. Ensure you're on the 3.31 version of Warp or later.
+      2. Run WARP_DEBUG_MODE=1 ssh YOUR-HOSTNAME-HERE
+      3. Save the full output starting from the ssh command block. If you’re not comfortable posting the outputs to a public issue, you can email feedback@warp.dev.
+      "
+    validations:
+      required: false
