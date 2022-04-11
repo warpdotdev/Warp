@@ -4,10 +4,10 @@ body:
   - type: input
     id: "discord"
     attributes:
-      label: "Shell and Version"
-      description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
+      label: "Discord username (optional)"
+      description: "If you're in our Discord server please include your formatted like so: elvis#4747. This is so we can give you the Bug Catcher Discord role."
     validations:
-      required: true
+      required: false
   - type: input
     id: "shell"
     attributes:
