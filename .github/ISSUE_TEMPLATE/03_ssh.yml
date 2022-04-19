@@ -10,14 +10,14 @@ body:
     validations:
       required: false
   - type: input
-    id: "shell"
+    id: "local-shell"
     attributes:
       label: "Local Shell and Version"
       description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
     validations:
       required: true
   - type: input
-    id: "shell"
+    id: "remote-shell"
     attributes:
       label: "Remote Shell and Version"
       description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
