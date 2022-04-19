@@ -12,7 +12,14 @@ body:
   - type: input
     id: "shell"
     attributes:
-      label: "Shell and Version"
+      label: "Local Shell and Version"
+      description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
+    validations:
+      required: true
+  - type: input
+    id: "shell"
+    attributes:
+      label: "Remote Shell and Version"
       description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
     validations:
       required: true
@@ -30,8 +37,7 @@ body:
       description: "If the issue is with your system and user rcfiles, please isolate the issue more (e.g. to a particular plugin, or a line of shell code) and open a general issue."
       options:
       - label: "Yes"
-    validations:
-      required: true
+        required: true
   - type: textarea
     id: "screenshots"
     attributes:
@@ -48,4 +54,4 @@ body:
       3. Save the full output starting from the ssh command block. If you’re not comfortable posting the outputs to a public issue, you can email feedback@warp.dev.
       "
     validations:
-      required: false
+      required: true
