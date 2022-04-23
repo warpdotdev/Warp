@@ -1,5 +1,7 @@
 <p align="center">
+    <a href="https://warp.dev">
     <img width="600" alt="horz - dark" src="https://user-images.githubusercontent.com/29553206/161685377-cb458631-eb2e-454f-aab7-3f5bfec745ee.png">
+    </a>
 </p>
 
 <p align="center">
