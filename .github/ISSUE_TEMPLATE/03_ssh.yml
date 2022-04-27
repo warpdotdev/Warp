@@ -55,3 +55,14 @@ body:
       "
     validations:
       required: true
+  - type: dropdown
+    id: "triage"
+    attributes:
+      label: "Warp Internal (ignore): linear-label:SSH"
+      multiple: false
+      options:
+        - Ignore
+        # - Windows
+        # - Linux
+    validations:
+      required: false

@@ -33,3 +33,14 @@ body:
       description: "Add any other context or screenshots about the feature request here. If you want to upload a picture you can drag one in from Finder."
     validations:
       required: false
+  - type: dropdown
+    id: "triage"
+    attributes:
+      label: "Warp Internal (ignore): linear-label:Feature"
+      multiple: false
+      options:
+        - Ignore
+        # - Windows
+        # - Linux
+    validations:
+      required: false

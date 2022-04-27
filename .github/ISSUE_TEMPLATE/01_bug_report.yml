@@ -72,3 +72,15 @@ body:
       render: text
     validations:
       required: false
+  - type: dropdown
+    id: "triage"
+    attributes:
+      label: "Warp Internal (ignore): linear-label:Bug"
+      multiple: false
+      options:
+        - Ignore
+        # - Windows
+        # - Linux
+    validations:
+      required: false
+
