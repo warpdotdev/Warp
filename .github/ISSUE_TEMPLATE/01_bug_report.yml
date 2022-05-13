@@ -69,7 +69,7 @@ body:
     id: "shell-version"
     attributes:
       label: "shell version"
-      description: "For example, `bash 4.0`"
+      description: "For example, `bash 4.0` e.g. Run `bash --version` or `zsh --version`"
     validations:
       required: true
   - type: textarea
