@@ -22,6 +22,7 @@ body:
     id: "to-reproduce"
     attributes:
       label: "To Reproduce"
+      description: "Bug reports with clear reproduction will get prioritized higher."
       value: |
         Steps to reproduce:
         1. Go to '...'
@@ -29,7 +30,7 @@ body:
         3. Scroll down to '...'
         4. See error '...'
     validations:
-      required: false
+      required: true
   - type: textarea
     id: "expected-behaviour"
     attributes:
@@ -63,7 +64,14 @@ body:
       label: "OS Version"
       description: "For example, `11.4`."
     validations:
-      required: false
+      required: true
+  - type: input
+    id: "shell-version"
+    attributes:
+      label: "shell version"
+      description: "For example, `bash 4.0`"
+    validations:
+      required: true
   - type: textarea
     id: "additional-context"
     attributes:
@@ -79,8 +87,6 @@ body:
       multiple: false
       options:
         - Ignore
-        # - Windows
-        # - Linux
     validations:
       required: false
 
