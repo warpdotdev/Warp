@@ -30,6 +30,13 @@ body:
       description: "e.g. Debian 11.2"
     validations:
       required: true
+  - type: input
+    id: "warp-version"
+    attributes:
+      label: "Warp Version"
+      description: "Click the 3-dots menu docked to the right of the tabs in Warp and click the copy button, e.g. `v0.2022.05.30.09.10.stable_01`"
+    validations:
+      required: true
   - type: checkboxes
     id: "rcfiles"
     attributes:
