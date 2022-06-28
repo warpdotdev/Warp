@@ -34,6 +34,19 @@ body:
     validations:
       required: false
   - type: dropdown
+    id: "importance"
+    attributes:
+      label: "How important is this feature to you?"
+      multiple: false
+      options:
+        - "1 (Not too important)"
+        - "2"
+        - "3"
+        - "4"
+        - "5 (Can't work without it!)"
+    validations:
+      required: true
+  - type: dropdown
     id: "triage"
     attributes:
       label: "Warp Internal (ignore) - linear-label:efcea52d-0ab4-4a92-a41b-93c3e244f0a0"
