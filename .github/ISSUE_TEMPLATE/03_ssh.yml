@@ -65,7 +65,7 @@ body:
   - type: dropdown
     id: "triage"
     attributes:
-      label: "Warp Internal (ignore) - linear-label:018de222-5d69-45e6-ba7c-c94b9ae09495"
+      label: "Warp Internal (ignore) - linear-label:e7dfaa84-5fdb-4a00-b754-d8912da923fa"
       multiple: false
       options:
         - Ignore
