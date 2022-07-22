@@ -22,8 +22,7 @@ body:
     attributes:
       label: "To Reproduce"
       description: "Bug reports with clear reproduction will get prioritized higher and addressed more quickly."
-      value: |
-        Steps to reproduce:
+      placeholder: Steps to reproduce:
         1. Go to '...'
         2. Click on '...'
         3. Scroll down to '...'
