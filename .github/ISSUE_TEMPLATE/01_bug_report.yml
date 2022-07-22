@@ -22,11 +22,7 @@ body:
     attributes:
       label: "To Reproduce"
       description: "Bug reports with clear reproduction will get prioritized higher and addressed more quickly."
-      placeholder: Steps to reproduce:
-        1. Go to '...'
-        2. Click on '...'
-        3. Scroll down to '...'
-        4. See error '...'
+      placeholder: "Steps to reproduce: 1. Go to '...' 2. Click on '...' 3. Scroll down to '...' 4. See error '...'"
     validations:
       required: true
   - type: textarea
