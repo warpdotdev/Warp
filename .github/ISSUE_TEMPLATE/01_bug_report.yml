@@ -37,7 +37,7 @@ body:
     id: "screenshots"
     attributes:
       label: "Screenshots"
-      description: "If applicable, add screenshots to help explain your problem. While optional, screenshots can help expedite the time in which your bug is addressed."
+      description: "If applicable, add screenshots to help explain your problem. While optional, screenshots help expedite the time in which your bug is addressed."
     validations:
       required: false
   - type: dropdown
@@ -69,7 +69,7 @@ body:
     id: "warp-version"
     attributes:
       label: "Warp Version"
-      description: "Click the 3-dots menu docked to the right of the tabs in Warp and click the copy button, e.g. `v0.2022.05.30.09.10.stable_01`"
+      description: "Open the Settings Dialog ('CMD-,') using the Command Palette or by clicking the three dots > Settings > Account. Once you're on the Account page click the copy icon that's to the right of the version number. `v0.2047.04.07.47.47.stable_47`"
     validations:
       required: true
   - type: textarea
