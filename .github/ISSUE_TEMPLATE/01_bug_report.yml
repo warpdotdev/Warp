@@ -69,7 +69,7 @@ body:
     id: "warp-version"
     attributes:
       label: "Warp Version"
-      description: "Open the Settings Dialog ('CMD-,') using the Command Palette or by clicking the three dots > Settings > Account. Once you're on the Account page click the copy icon that's to the right of the version number. `v0.2047.04.07.47.47.stable_47`"
+      description: "Open the Settings Dialog (CMD-,) using the Command Palette or by clicking the three dots > Settings > Account. Once you're on the Account page click the copy icon that's to the right of the version number. `v0.2047.04.07.47.47.stable_47`"
     validations:
       required: true
   - type: textarea
