@@ -32,7 +32,7 @@ We have plans to support [Linux](https://github.com/warpdotdev/Warp/issues/120),
 
 ## Installation
 
-You can download Warp from our website (<https://warp.dev>) or via Homebrew:
+You can download Warp from our website (<https://app.warp.dev/get_warp>) or via Homebrew:
 
 ```shell
 brew install --cask warp
