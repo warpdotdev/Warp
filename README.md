@@ -1,5 +1,5 @@
 <p align="center">
-    <a href="https://warp.dev">
+    <a href="https://app.warp.dev/get_warp">
     <img width="600" alt="horz - dark" src="https://user-images.githubusercontent.com/29553206/161685377-cb458631-eb2e-454f-aab7-3f5bfec745ee.png">
     </a>
 </p>
@@ -12,7 +12,7 @@
   <a href="https://warp.dev/blog">Blog</a>
 </p>
 
-<a href="https://www.youtube.com/watch?v=T7R8lvvBgOI">
+<a href="https://app.warp.dev/get_warp">
     <img width="1025" alt="Screen Shot 2022-04-05 at 01 59 53" src="https://user-images.githubusercontent.com/29553206/161688541-2889478f-d02e-497c-8340-41569e579a42.png">
 </a>
 
@@ -32,7 +32,7 @@ We have plans to support [Linux](https://github.com/warpdotdev/Warp/issues/120),
 
 ## Installation
 
-You can download Warp from our website (<https://warp.dev>) or via Homebrew:
+You can [download Warp](https://app.warp.dev/get_warp) from our website (<https://warp.dev>) or via Homebrew:
 
 ```shell
 brew install --cask warp
