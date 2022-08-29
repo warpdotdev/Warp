@@ -1,5 +1,5 @@
 <p align="center">
-    <a href="https://warp.dev">
+    <a href="https://app.warp.dev/get_warp">
     <img width="600" alt="horz - dark" src="https://user-images.githubusercontent.com/29553206/161685377-cb458631-eb2e-454f-aab7-3f5bfec745ee.png">
     </a>
 </p>
@@ -24,7 +24,7 @@ This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast 
 
 ## Supported Platforms
 
-As of April 5th, 2022, Warp is available to all macOS users, without joining a waitlist. 
+As of April 5th, 2022, Warp is available to all macOS users, without joining a waitlist.
 
 We are calling this new phase of the product our “public beta” – it’s a “beta” because we know there are still some issues to smooth out, but we are confident that even today the experience is meaningfully better than in other terminals.
 
@@ -32,7 +32,7 @@ We have plans to support [Linux](https://github.com/warpdotdev/Warp/issues/120),
 
 ## Installation
 
-You can download Warp from our website (<https://app.warp.dev/get_warp>) or via Homebrew:
+You can [download Warp](https://app.warp.dev/get_warp) from our website (<https://warp.dev>) or via Homebrew:
 
 ```shell
 brew install --cask warp
