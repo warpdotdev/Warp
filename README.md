@@ -59,7 +59,7 @@ Interested in joining the team? See our [open roles](https://www.warp.dev/career
 
 ## Support and Questions
 
-1. See our [docs](https://docs.warp.dev/help/known-issues) for a walkthrough of the features within our app.
+1. See our [docs](https://docs.warp.dev/) for a walkthrough of the features within our app.
 2. Join our [Discord](https://discord.gg/warpdotdev) to chat with other users and get immediate help with members of the Warp team.
 
 For anything else, please don't hesitate to reach out via email at hello at warpdotdev
