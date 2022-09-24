@@ -55,7 +55,7 @@ You can see how we’re thinking about open source here: [https://github.com/war
 
 As a side note, we are open sourcing our extension points as we go. The community has already been [contributing new themes](https://github.com/warpdotdev/themes). And we’ve just opened our [Workflows repository](https://github.com/warpdotdev/workflows) for the community to contribute common useful commands.
 
-Interested in joining the team? See our [open roles](https://www.warp.dev/careers) and feel free to send us an email: hello at warpdotdev
+Interested in joining the team? See our [open roles](https://www.warp.dev/careers) and feel free to email us: hello at warpdotdev
 
 ## Support and Questions
 
@@ -66,7 +66,7 @@ For anything else, please don't hesitate to reach out via email at hello at warp
 
 ## Community Guidelines
 
-At a high level, we ask everyone be respectful and empathetic. We follow the [Github Community Guidelines](https://docs.github.com/en/github/site-policy/github-community-guidelines):
+At a high level, we ask everyone be respectful and empathetic. We follow the [GitHub Community Guidelines](https://docs.github.com/en/github/site-policy/github-community-guidelines):
 
 * Be welcoming and open-minded
 * Respect each other
