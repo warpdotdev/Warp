@@ -24,7 +24,7 @@ This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast 
 
 ## Supported Platforms
 
-As of April 5th, 2022, Warp is available to all macOS users, without joining a waitlist.
+As of April 5th, 2022, Warp is available to all macOS users, without joining a wait-list.
 
 We are calling this new phase of the product our “public beta” – it’s a “beta” because we know there are still some issues to smooth out, but we are confident that even today the experience is meaningfully better than in other terminals.
 
@@ -59,7 +59,7 @@ Interested in joining the team? See our [open roles](https://www.warp.dev/career
 
 ## Support and Questions
 
-1. See our [docs](https://docs.warp.dev/) for a walkthrough of the features within our app.
+1. See our [docs](https://docs.warp.dev/) for a walk-through of the features within our app.
 2. Join our [Discord](https://discord.gg/warpdotdev) to chat with other users and get immediate help with members of the Warp team.
 
 For anything else, please don't hesitate to reach out via email at hello at warpdotdev
