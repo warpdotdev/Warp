@@ -1,20 +1,23 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Warp Issue Search
+    url: https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+a+sort%3Acreated-asc
+    about: Search Warp's open issues and feature requests.
+  - name: Documentation
+    url: https://docs.warp.dev/help/known-issues
+    about: See our documentation, full telemetry table, known issues, and troubleshooting.
+  - name: Discord
+    url: https://discord.gg/warpdotdev
+    about: Discuss what you want to see in a modern terminal, report bugs, and brainstorm features for Warp.
+  - name: Warp Website
+    url: https://www.warp.dev/
+    about: Our website.
   - name: Blog
     url: https://blog.warp.dev/
     about: See our blog.
   - name: Changelog
     url: https://docs.warp.dev/help/changelog
     about: See our changelog.
-  - name: Discord
-    url: https://discord.gg/warpdotdev
-    about: Discuss what you want to see in a modern terminal, report bugs, and brainstorm features for the Warp app.
-  - name: Documentation
-    url: https://docs.warp.dev/help/known-issues
-    about: See our documentation, full Telemetry table, and known issues.
   - name: Licenses
     url: https://docs.warp.dev/help/licenses
     about: See the projects that we depend on and their open source licenses.
-  - name: Warp website
-    url: https://www.warp.dev/
-    about: Our website.
