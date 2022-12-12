@@ -1,6 +1,6 @@
 name: SSH Issues? Use this template
 description: "Issue template specialized for the circumstances where the shell doesn't bootstrap over SSH"
-labels: ["Bug","SSH"]
+labels: "Bug","SSH"
 body:
   - type: input
     id: "discord"
