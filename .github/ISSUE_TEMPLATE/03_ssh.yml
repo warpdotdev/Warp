@@ -70,7 +70,14 @@ body:
       multiple: false
       options:
         - Ignore
-        # - Windows
-        # - Linux
+    validations:
+      required: false
+  - type: dropdown
+    id: "triage"
+    attributes:
+      label: "Warp Internal (ignore): linear-label:b8107fdf-ba31-488d-b103-d271c89cac3e"
+      multiple: false
+      options:
+        - Ignore
     validations:
       required: false
