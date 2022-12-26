@@ -87,7 +87,7 @@ body:
       description: "All feedback will be reviewed, even if you select 'No'."
       multiple: false
       options:
-        - "Yes"
+        - "Yes, this issue prevents me from using Warp daily."
         - "No"
     validations:
       required: true
