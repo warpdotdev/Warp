@@ -64,6 +64,17 @@ body:
     validations:
       required: true
   - type: dropdown
+    id: "blocker"
+    attributes:
+      label: "Does this block you from using Warp daily?"
+      description: "All feedback will be reviewed, even if you select 'No'."
+      multiple: false
+      options:
+        - "Yes, this issue prevents me from using Warp daily."
+        - "No"
+    validations:
+      required: true
+  - type: dropdown
     id: "linear-label-ssh"
     attributes:
       label: "Warp Internal (ignore) - linear-label:e7dfaa84-5fdb-4a00-b754-d8912da923fa"
