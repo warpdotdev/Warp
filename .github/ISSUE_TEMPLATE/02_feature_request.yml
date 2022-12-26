@@ -48,7 +48,7 @@ body:
     validations:
       required: true
   - type: dropdown
-    id: "triage"
+    id: "linear-label-feature"
     attributes:
       label: "Warp Internal (ignore) - linear-label:770f6576-d6c0-4e4f-a259-fc64b5156087"
       multiple: false
