@@ -83,7 +83,7 @@ body:
       options:
         - "No, this same issue happens in Warp and other terminals."
         - "Yes, this I confirmed this only happens in Warp, not other terminals."
-        - "N/A, the issue in questions only applies to Warp specific feature. (i.e. Warp AI, Workflows)"
+        - "N/A, the issue only applies to a Warp specific feature. (i.e. Warp AI, Workflows)"
     validations:
       required: true
   - type: dropdown
