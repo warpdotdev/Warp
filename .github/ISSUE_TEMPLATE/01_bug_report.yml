@@ -92,6 +92,18 @@ body:
     validations:
       required: true
   - type: dropdown
+    id: "terminals"
+    attributes:
+      label: 'Is this a Warp specific issue? ( i.e. doesn't happen in Terminal, iTerm, Kitty, etc. )"
+      description: "Verifying this issue doesn't happen in other terminals helps us to prioritize the fix"
+      multiple: false
+      options:
+        - "N/A, the issue in questions only applies to Warp specific feature ( i.e. Warp AI, Workflows )"
+        - "Yes, this I confirmed this only happens in Warp, not other terminals."
+        - "No, this same issue happens in Warp and other terminals."
+    validations:
+      required: true
+  - type: dropdown
     id: "linear-label-bug"
     attributes:
       label: "Warp Internal (ignore): linear-label:b8107fdf-ba31-488d-b103-d271c89cac3e"     
