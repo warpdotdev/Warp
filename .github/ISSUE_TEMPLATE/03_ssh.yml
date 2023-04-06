@@ -77,7 +77,7 @@ body:
   - type: dropdown
     id: "terminals"
     attributes:
-      label: 'Is this a Warp specific issue? ( i.e. doesn't happen in Terminal, iTerm, Kitty, etc. )"
+      label: 'Is this a Warp specific issue? i.e. doesn't happen in Terminal, iTerm, Kitty, etc."
       description: "Verifying this issue doesn't happen in other terminals helps us to prioritize the fix"
       multiple: false
       options:
