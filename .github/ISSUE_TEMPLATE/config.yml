@@ -4,7 +4,7 @@ contact_links:
     url: https://github.com/warpdotdev/warp/issues?q=is%3Aissue+sort%3Acreated-asc+
     about: Search Warp's open issues and feature requests.
   - name: Documentation
-    url: https://docs.warp.dev/help/known-issues
+    url: https://docs.warp.dev/help/sending-us-feedback?q=
     about: See our documentation, full telemetry table, known issues, and troubleshooting.
   - name: Discord
     url: https://discord.gg/warpdotdev
