@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Warp Issue Search
-    url: https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+a+sort%3Acreated-asc
+    url: https://github.com/warpdotdev/warp/issues?q=is%3Aissue+sort%3Acreated-asc+
     about: Search Warp's open issues and feature requests.
   - name: Documentation
     url: https://docs.warp.dev/help/known-issues
