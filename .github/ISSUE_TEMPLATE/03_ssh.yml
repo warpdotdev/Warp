@@ -22,7 +22,7 @@ body:
     validations:
       required: true
   - type: input
-    id: "os"
+    id: "os-version"
     attributes:
       label: "Operating System and Version"
       description: "For example: Debian 11.2"
