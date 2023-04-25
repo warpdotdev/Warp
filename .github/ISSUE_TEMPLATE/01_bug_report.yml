@@ -1,6 +1,6 @@
 name: Bug Report
 description: "Found a bug? We'd appreciate if you'd first search through our open issues and docs, to make sure the issue isn't already known."
-labels: "Bug"
+labels: ["Bug"]
 body:
   - type: input
     id: "discord"
@@ -48,19 +48,19 @@ body:
       multiple: false
       options:
         - MacOS
+        - Linux
         # - Windows
-        # - Linux
     validations:
-      required: false
+      required: true
   - type: input
     id: "os-version"
     attributes:
-      label: "OS Version"
-      description: "For example, `11.4`."
+      label: "Operating System and Version"
+      description: "For example: Debian 11.2"
     validations:
-      required: false
+      required: true
   - type: input
-    id: "shell-version"
+    id: "local-shell-version"
     attributes:
       label: "Shell Version"
       description: "For example, `bash 4.0` e.g. Run `bash --version` or `zsh --version`"
@@ -106,7 +106,7 @@ body:
   - type: dropdown
     id: "linear-label-bug"
     attributes:
-      label: "Warp Internal (ignore): linear-label:b8107fdf-ba31-488d-b103-d271c89cac3e"     
+      label: "Warp Internal (ignore): linear-label:b8107fdf-ba31-488d-b103-d271c89cac3e"
       multiple: false
       options:
         - Ignore

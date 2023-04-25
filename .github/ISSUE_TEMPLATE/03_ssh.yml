@@ -1,6 +1,6 @@
 name: SSH Issues? Use this template
 description: "Issue template specialized for the circumstances where the shell doesn't bootstrap over SSH"
-labels: "Bug,SSH"
+labels: ["Bug","SSH"]
 body:
   - type: input
     id: "discord"
@@ -10,25 +10,36 @@ body:
       placeholder: "username#4747"
     validations:
       required: false
-  - type: input
-    id: "local-shell"
+  - type: dropdown
+    id: "os"
     attributes:
-      label: "Local Shell and Version"
-      description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
-    validations:
-      required: true
-  - type: input
-    id: "remote-shell"
-    attributes:
-      label: "Remote Shell and Version"
-      description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
+      label: "Operating System"
+      multiple: false
+      options:
+        - MacOS
+        - Linux
+        # - Windows
     validations:
       required: true
   - type: input
     id: "os"
     attributes:
       label: "Operating System and Version"
-      description: "e.g. Debian 11.2"
+      description: "For example: Debian 11.2"
+    validations:
+      required: true
+  - type: input
+    id: "local-shell-version"
+    attributes:
+      label: "Local Shell Version"
+      description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
+    validations:
+      required: true
+  - type: input
+    id: "remote-shell-version"
+    attributes:
+      label: "Remote Shell Version"
+      description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
     validations:
       required: true
   - type: input
