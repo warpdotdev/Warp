@@ -1,0 +1,21 @@
+name: Internal use only
+description: "An backup issue form for internal use only (by Warp team)"
+body:
+  - type: input
+    id: "id-input"
+    attributes:
+      label: "label-input"
+      description: "description-input"
+      placeholder: "placeholder-input"
+    validations:
+      required: false
+  - type: textarea
+    id: "id-textarea"
+    attributes:
+      label: "label-textarea"
+      description: "description-textarea"
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: "value-markdown"
