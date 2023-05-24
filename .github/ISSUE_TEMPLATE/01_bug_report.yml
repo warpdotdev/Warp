@@ -69,7 +69,25 @@ body:
   - type: input
     id: "warp-version"
     attributes:
-      label: "Warp Version"
+      label: "Current Warp version"
+      description: "Open the Settings Dialog (CMD-,) using the Command Palette or by clicking the three dots > Settings > Account. Once you're on the Account page click the copy icon that's to the right of the version number. `v0.2047.04.07.47.47.stable_47`"
+    validations:
+      required: false
+  - type: dropdown
+    id: "regression"
+    attributes:
+      label: "Regression"
+      description: "Is this a regression (used to work in a previous Warp version)?"
+      multiple: false
+      options:
+        - "No, this bug or issue has always existed in my team using Warp"
+        - "Yes, this bug started recently or with an X Warp version"
+    validations:
+      required: true
+  - type: input
+    id: "warp-version-regression"
+    attributes:
+      label: "Most recent working Warp version"
       description: "Open the Settings Dialog (CMD-,) using the Command Palette or by clicking the three dots > Settings > Account. Once you're on the Account page click the copy icon that's to the right of the version number. `v0.2047.04.07.47.47.stable_47`"
     validations:
       required: false
