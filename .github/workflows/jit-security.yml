@@ -57,23 +57,6 @@ jobs:
         context: ${{toJSON(fromJSON(github.event.inputs.client_payload).context)}}
         runner_setup: ${{toJSON(fromJSON(github.event.inputs.client_payload).context.job.runner.setup)}}
 
-  iac-misconfig-detection-serverless:
-    if: fromJSON(github.event.inputs.client_payload).payload.workflow_job_name == 'iac-misconfig-detection-serverless'
-    runs-on: ubuntu-20.04
-    steps:
-    - name: kics
-      uses: jitsecurity-controls/jit-github-action@v2.2
-      with:
-        docker_user: jit-bot
-        docker_password: ${{fromJSON(github.event.inputs.client_payload).payload.container_registry_token}}
-        
-        security_control: ghcr.io/jitsecurity-controls/control-kics-alpine:latest
-        security_control_args: scan -t ServerlessFW -p \${WORK_DIR:-.} -o \$REPORT_FILE -f json --config \/serverless-config.yaml --disable-secrets
-        security_control_output_file: /code/jit-report/results.json
-        dispatch_type: workflow
-        context: ${{toJSON(fromJSON(github.event.inputs.client_payload).context)}}
-        runner_setup: ${{toJSON(fromJSON(github.event.inputs.client_payload).context.job.runner.setup)}}
-
   iac-misconfig-detection-terraform:
     if: fromJSON(github.event.inputs.client_payload).payload.workflow_job_name == 'iac-misconfig-detection-terraform'
     runs-on: ubuntu-20.04
