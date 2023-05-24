@@ -80,7 +80,7 @@ body:
       description: "Is this a regression (used to work in a previous Warp version)?"
       multiple: false
       options:
-        - "No, this bug or issue has always existed in my team using Warp"
+        - "No, this bug or issue has existed throughout my experience using Warp"
         - "Yes, this bug started recently or with an X Warp version"
     validations:
       required: true
