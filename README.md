@@ -42,7 +42,7 @@ brew install --cask warp
 
 ## Changelog and Releases
 
-We try to release an update every Warp Wednesday. See our [changelog (release notes).](https://docs.warp.dev/help/changelog)
+We try to release an update weekly, typically on Thursdays. Read our [changelog (release notes).](https://docs.warp.dev/help/changelog)
 
 ## Issues, Bugs, and Feature Requests
 
