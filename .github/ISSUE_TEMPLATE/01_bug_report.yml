@@ -21,7 +21,7 @@ body:
   - type: textarea
     id: "to-reproduce"
     attributes:
-      label: "To Reproduce"
+      label: "To reproduce"
       description: "Bug reports with clear reproduction will get prioritized higher and addressed more quickly."
       placeholder: "Steps to reproduce: 1. Go to '...' 2. Click on '...' 3. Scroll down to '...' 4. See error '...'"
     validations:
@@ -44,7 +44,7 @@ body:
   - type: dropdown
     id: "os"
     attributes:
-      label: "Operating System"
+      label: "Operating system"
       multiple: false
       options:
         - MacOS
@@ -55,7 +55,7 @@ body:
   - type: input
     id: "os-version"
     attributes:
-      label: "Operating System and Version"
+      label: "Operating system and version"
       description: "For example: Debian 11.2"
     validations:
       required: true
