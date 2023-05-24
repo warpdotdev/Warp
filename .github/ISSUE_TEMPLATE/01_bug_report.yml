@@ -85,10 +85,10 @@ body:
     validations:
       required: true
   - type: input
-    id: "warp-version-regression"
+    id: "warp-version-regression-date"
     attributes:
-      label: "Most recent working Warp version"
-      description: "Open the Settings Dialog (CMD-,) using the Command Palette or by clicking the three dots > Settings > Account. Once you're on the Account page click the copy icon that's to the right of the version number. `v0.2047.04.07.47.47.stable_47`"
+      label: "Recent working Warp date"
+      description: "Most recent date that Warp worked as expected"
     validations:
       required: false
   - type: textarea
