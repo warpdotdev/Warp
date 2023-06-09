@@ -4,7 +4,7 @@ contact_links:
     url: https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+a+sort%3Areactions-%2B1-desc
     about: Search Warp's open issues and feature requests.
   - name: Confidential Issues and Bugs
-    url: https://zachlloyd.typeform.com/to/jaqfsdnz
+    url: https://warpdotdev.typeform.com/to/jaqfsdnz
     about: Submit any confidential bugs or issues to the Warp support team
   - name: Documentation
     url: https://docs.warp.dev/help/known-issues?q=
