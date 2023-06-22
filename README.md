@@ -7,7 +7,9 @@
 <p align="center">
   <a href="https://warp.dev">Website</a>
   ·
- <a href="https://warp.dev/warp-ai">Warp AI</a>
+  <a href="https://warp.dev/warp-drive">Warp Drive</a>
+  ·
+  <a href="https://warp.dev/warp-ai">Warp AI</a>
   ·
   <a href="#installation">Installation</a>
   ·
