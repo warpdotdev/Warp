@@ -22,8 +22,6 @@
 
 <h1></h1>
 
-![warp_logo-2023_06_22](https://github.com/warpdotdev/Warp/assets/29553206/598e0905-f430-4091-b906-b1b849e3fc70)
-
 ## About
 
 This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast modern Rust based GPU-accelerated terminal](https://www.warp.dev/blog/how-warp-works) built to make [you and your team more productive.](https://www.warp.dev/blog/how-we-design-warp-our-product-philosophy)
