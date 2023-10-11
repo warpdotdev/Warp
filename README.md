@@ -1,6 +1,6 @@
 <p align="center">
     <a href="https://app.warp.dev/get_warp">
-    <img width="600" alt="horz - dark" src="https://github-production-user-asset-6210df.s3.amazonaws.com/29553206/248055401-598e0905-f430-4091-b906-b1b849e3fc70.png">
+    <img width="500" alt="horz - dark" src="https://storage.googleapis.com/warpdotdev-content/warp-github-dark.png">
     </a>
 </p>
 
