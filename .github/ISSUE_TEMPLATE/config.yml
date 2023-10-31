@@ -1,8 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Warp Community Search
-    url: https://widget.orbit.love/widget/55808c32-c958-4da7-83de-3512fea1b278
-    about: Search Warp's community for solutions to common issues.
   - name: Warp Issue Search
     url: https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+a+sort%3Areactions-%2B1-desc
     about: Search Warp's open issues and feature requests.
@@ -12,15 +9,18 @@ contact_links:
   - name: Warp Documentation
     url: https://docs.warp.dev/help/known-issues?q=
     about: Documentation for full telemetry table, known issues, troubleshooting, features, and more!
+  - name: Warp Community Search
+    url: https://widget.orbit.love/widget/55808c32-c958-4da7-83de-3512fea1b278
+    about: Search Warp's community for solutions to common issues.
   - name: Warp Discord
     url: https://discord.gg/warpdotdev
     about: Discuss what you want to see in a modern terminal, report bugs, and brainstorm features for Warp.
   - name: Warp Homepage
     url: https://www.warp.dev/
     about: Warps website.
-  - name: Blog
+  - name: Warp Blog
     url: https://blog.warp.dev/
-    about: See our blog.
+    about: See our blog posts on Product, Engineering and 
   - name: Warp Changelog
     url: https://docs.warp.dev/help/changelog
     about: See our changelog.
