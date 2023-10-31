@@ -48,7 +48,9 @@ We try to release an update weekly, typically on Thursdays. Read our [changelog 
 
 ## Issues, Bugs, and Feature Requests
 
-File issue requests [in this repo!](https://github.com/warpdotdev/warp/issues/new/choose)
+Warp has a [community search](https://widget.orbit.love/widget/55808c32-c958-4da7-83de-3512fea1b278) page where you can find solutions to common issues.
+
+If you can't find a solution above, please file issue requests [in this repo!](https://github.com/warpdotdev/warp/issues/new/choose)
 We kindly ask that you please use our issue templates to make the issues easier to track for our team.
 
 ## Open Source & Contributing
