@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Warp Issue Search
-    url: https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+a+sort%3Areactions-%2B1-desc
-    about: Search Warp's open issues and feature requests.
   - name: Confidential Issues and Bugs
     url: https://warpdotdev.typeform.com/to/jaqfsdnz
     about: Submit any confidential bugs or issues to the Warp support team.
+  - name: Warp Issue Search
+    url: https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+a+sort%3Areactions-%2B1-desc
+    about: Search Warp's open issues and feature requests.
   - name: Warp Documentation
     url: https://docs.warp.dev/help/known-issues?q=
     about: Documentation for known issues, troubleshooting, keyboard shortcuts, features, telemetry table, and more!
