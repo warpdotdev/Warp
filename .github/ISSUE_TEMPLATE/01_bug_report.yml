@@ -116,9 +116,8 @@ body:
       description: "Verifying this issue doesn't happen in other terminals helps us to prioritize the fix"
       multiple: false
       options:
-        - "No, this same issue happens in Warp and other terminals."
         - "Yes, this I confirmed this only happens in Warp, not other terminals."
-        - "N/A, the issue only applies to a Warp specific feature. (i.e. Warp AI, Workflows)"
+        - "No, this same issue happens in Warp and other terminals."
     validations:
       required: true
   - type: dropdown
