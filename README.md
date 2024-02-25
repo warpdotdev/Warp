@@ -28,11 +28,11 @@ This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast 
 
 ## Supported Platforms
 
-As of April 5th, 2022, Warp is available to all macOS users, without joining a wait-list.
+As of April 5th 2022, for macOS users, and as of February 22nd 2024, for Linux users, Warp is available without joining a waitlist.
 
 We are calling this new phase of the product our “public beta” – it’s a “beta” because we know there are still some issues to smooth out, but we are confident that even today the experience is meaningfully better than in other terminals.
 
-We have plans to support [Linux](https://github.com/warpdotdev/Warp/issues/120), [Windows,](https://github.com/warpdotdev/Warp/issues/204) and the Web (WASM)!
+We have plans to support [Windows,](https://github.com/warpdotdev/Warp/issues/204) and the Web (WASM) in the future!
 
 ## Installation
 
@@ -41,6 +41,8 @@ You can [download Warp](https://app.warp.dev/get_warp) from our website (<https:
 ```shell
 brew install --cask warp
 ```
+
+Read [our docs](https://docs.warp.dev/getting-started/getting-started-with-warp) for more information about installing Warp.
 
 ## Changelog and Releases
 
