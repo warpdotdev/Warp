@@ -32,7 +32,7 @@ As of Feb 2024, Warp is available to macOS and Linux users, without joining a wa
 
 We are calling this new phase of the product our “public beta” – it’s a “beta” because we know there are still some issues to smooth out, but we are confident that even today the experience is meaningfully better than in other terminals.
 
-We have plans to support [Windows](https://github.com/warpdotdev/Warp/issues/204) and the Web (WASM)!
+We have plans to support [Windows](https://www.warp.dev/windows-terminal) and the Web (WASM)!
 
 ## Installation
 
