@@ -96,7 +96,7 @@ body:
     attributes:
       label: "Additional context"
       description: "Add any other context about the problem here."
-      placeholder: "If using Warp on Linux, tell us if you're using X11 or Wayland (if the issue is visual also run and tell us result of glxinfo -B)."
+      placeholder: "If using Warp on Linux, tell us if you're using X11 or Wayland (if the issue is visual also run and tell us the result of `eglinfo`)."
     validations:
       required: false
   - type: dropdown
