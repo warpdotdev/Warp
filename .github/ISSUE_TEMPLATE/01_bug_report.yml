@@ -95,8 +95,7 @@ body:
     id: "additional-context"
     attributes:
       label: "Additional context"
-      description: "Add any other context about the problem here."
-      placeholder: "If using Warp on Linux, tell us if you're using X11 or Wayland. If the issue is graphical, run Warp with the following command `RUST_LOG=wgpu_core=info,wgpu_hal=info MESA_DEBUG=1 EGL_LOG_LEVEL=debug warp-terminal` attach logs and tell us the result of `eglinfo`."
+      description: "Add any other context about the problem here. If using Warp on Linux, tell us if you're using X11 or Wayland. If the issue is graphical, run Warp with the following command `RUST_LOG=wgpu_core=info,wgpu_hal=info MESA_DEBUG=1 EGL_LOG_LEVEL=debug warp-terminal` attach logs and tell us the result of `eglinfo`."
     validations:
       required: false
   - type: dropdown
