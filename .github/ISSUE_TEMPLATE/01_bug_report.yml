@@ -4,6 +4,7 @@ labels: ["Bugs"]
 body:
   - type: checkboxes
     attributes:
+      label: "Dupe Check"
       options:
         - label: "I have [searched Warp bugs](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+label%3ABugs) and there are no duplicates"
           required: true
