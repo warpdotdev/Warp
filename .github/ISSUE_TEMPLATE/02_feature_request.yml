@@ -1,15 +1,12 @@
 name: Feature Request
-description: "Have a great new idea? We'd love to know, please search through our existing feature requests, and upvote it if its already been filed."
+description: "Have a great new idea? We'd love to know, please search through our existing feature requests, and upvote it if it's already been filed."
 labels: ["Feature requests"]
 body:
-  - type: input
-    id: "discord"
+  - type: checkboxes
     attributes:
-      label: "Discord username (optional)"
-      description: "If you're in our Discord server please include your formatted like so: elvis#4747. This is so we can give you the Bug Catcher Discord role."
-      placeholder: username#4747
-    validations:
-      required: false
+      options:
+        - label: "I have [searched Warp feature requests](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+label%3A%22Feature+requests%22) and there are no duplicates"
+          required: true
   - type: textarea
     id: "describe-solution"
     attributes:
