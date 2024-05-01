@@ -4,6 +4,7 @@ labels: ["Bugs","SSH"]
 body:
   - type: checkboxes
     attributes:
+      label: "Dupe Check"
       options:
         - label: "I have [searched Warp SSH issues](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+label%3ASSH) and there are no duplicates"
           required: true
