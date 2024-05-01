@@ -2,14 +2,11 @@ name: SSH Issues? Use this template
 description: "Issue template specialized for the circumstances where the shell doesn't bootstrap over SSH"
 labels: ["Bugs","SSH"]
 body:
-  - type: input
-    id: "discord"
+  - type: checkboxes
     attributes:
-      label: "Discord username (optional)"
-      description: "If you're in our Discord server please include your formatted like so: elvis#4747. This is so we can give you the Bug Catcher Discord role."
-      placeholder: "username#4747"
-    validations:
-      required: false
+      options:
+        - label: "I have [searched Warp SSH issues](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+label%3ASSH) and there are no duplicates"
+          required: true
   - type: dropdown
     id: "os"
     attributes:
