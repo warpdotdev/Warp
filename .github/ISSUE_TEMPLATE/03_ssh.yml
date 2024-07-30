@@ -50,11 +50,10 @@ body:
   - type: checkboxes
     id: "rcfiles"
     attributes:
-      label: "I have tried commenting out my system & user rcfiles and warp still will not bootstrap"
+      label: "Have you tried [commenting out my system & user rc files](https://docs.warp.dev/help/known-issues#configuring-and-debugging-your-rc-files)"
       description: "If the issue is with your system and user rcfiles, please isolate the issue more (e.g. to a particular plugin, or a line of shell code) and open a general issue."
       options:
       - label: "Yes"
-        required: true
   - type: textarea
     id: "screenshots"
     attributes:
@@ -83,13 +82,12 @@ body:
   - type: dropdown
     id: "terminals"
     attributes:
-      label: "Is this a Warp specific issue? (i.e. does it happen in Terminal, iTerm, Kitty, etc.)"
+      label: "Is this an issue only in Warp?"
       description: "Verifying this issue doesn't happen in other terminals helps us to prioritize the fix"
       multiple: false
       options:
-        - "No, this same issue happens in Warp and other terminals."
-        - "Yes, this I confirmed this only happens in Warp, not other terminals."
-        - "N/A, the issue only applies to a Warp specific feature. (i.e. Warp AI, Workflows)"
+        - "Yes, I confirmed that this only happens in Warp, not other terminals."
+        - "No, this issue happens in Warp and other terminals."
     validations:
       required: true
   - type: dropdown
