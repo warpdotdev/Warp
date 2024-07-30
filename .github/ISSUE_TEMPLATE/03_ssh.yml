@@ -50,8 +50,8 @@ body:
   - type: checkboxes
     id: "rcfiles"
     attributes:
-      label: "Have you tried [commenting out my system & user rc files](https://docs.warp.dev/help/known-issues#configuring-and-debugging-your-rc-files)"
-      description: "If the issue is with your system and user rcfiles, please isolate the issue more (e.g. to a particular plugin, or a line of shell code) and open a general issue."
+      label: "Have you tried commenting out my system & user rc files?"
+      description: "If the issue is with your system and user rc files, please isolate the issue by [debugging your rc files](https://docs.warp.dev/help/known-issues#configuring-and-debugging-your-rc-files)."
       options:
       - label: "Yes"
   - type: textarea
