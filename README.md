@@ -1,46 +1,42 @@
 <p align="center">
     <a href="https://app.warp.dev/get_warp">
-    <img width="500" alt="horz - dark" src="https://storage.googleapis.com/warpdotdev-content/warp-github-dark.png">
+    <img width="612" alt="horz - dark" src="https://storage.googleapis.com/warpdotdev-content/warp_logo-21_10.png">
     </a>
 </p>
 
 <p align="center">
-  <a href="https://warp.dev">Website</a>
+  <a href="https://www.warp.dev">Website</a>
   ·
-  <a href="https://warp.dev/warp-drive">Warp Drive</a>
+  <a href="https://docs.warp.dev">Docs</a>
   ·
-  <a href="https://warp.dev/warp-ai">Warp AI</a>
+  <a href="https://docs.warp.dev/getting-started/getting-started-with-warp">Install Guide</a>
   ·
-  <a href="#installation">Installation</a>
-  ·
-  <a href="https://warp.dev/blog">Blog</a>
+  <a href="https://www.warp.dev/blog/how-warp-works">How Warp Works</a>
 </p>
 
-<a href="https://www.youtube.com/watch?v=34INSNevPOk">
-    <img width="1025" alt="Warp Terminal product preview" src="https://storage.googleapis.com/warpdotdev-content/warp-product-24_01.png">
+<a href="https://www.warp.dev">
+    <img width="1024" alt="Warp Terminal product preview" src="https://storage.googleapis.com/warpdotdev-content/warp-product-24_10.png">
 </a>
 
 <h1></h1>
 
 ## About
 
-This is an issues-only repo for [Warp](https://www.warp.dev), a [blazingly-fast modern Rust based GPU-accelerated terminal](https://www.warp.dev/blog/how-warp-works) built to make [you and your team more productive.](https://www.warp.dev/blog/how-we-design-warp-our-product-philosophy)
+This is an issues-only repo for [Warp](https://www.warp.dev), a modern terminal with AI and your dev team’s knowledge built-in.
 
-## Supported Platforms
-
-As of Feb 2024, Warp is available to macOS and Linux users, without joining a wait-list.
-
-We are calling this new phase of the product our “public beta” – it’s a “beta” because we know there are still some issues to smooth out, but we are confident that even today the experience is meaningfully better than in other terminals.
-
-We have plans to support [Windows](https://www.warp.dev/windows-terminal) and the Web (WASM)!
+Warp is:
+* Built with Rust
+* GPU-accelerated
+* Compatible with zsh, bash, fish, and PowerShell
+* Ready to use on MacOS and Linux ([Windows waitlist](https://www.warp.dev/windows-terminal))
 
 ## Installation
 
-You can [download Warp](https://app.warp.dev/get_warp) and [read our docs](https://docs.warp.dev/getting-started/getting-started-with-warp) for platform-specific instructions.
+You can [download Warp](https://www.warp.dev/download) and [read our docs](https://docs.warp.dev/getting-started/getting-started-with-warp) for platform-specific instructions.
 
 ## Changelog and Releases
 
-We try to release an update weekly, typically on Thursdays. Read our [changelog (release notes).](https://docs.warp.dev/help/changelog)
+We try to release an update weekly, typically on Thursdays. Read our [changelog (release notes).](https://docs.warp.dev/getting-started/changelog)
 
 ## Issues, Bugs, and Feature Requests
 
@@ -55,20 +51,20 @@ We are planning to first open-source our Rust UI framework, and then parts and p
 
 You can see how we’re thinking about open source here: [https://github.com/warpdotdev/Warp/discussions/400](https://github.com/warpdotdev/Warp/discussions/400)
 
-As a side note, we are open sourcing our extension points as we go. The community has already been [contributing new themes](https://github.com/warpdotdev/themes). And we’ve just opened our [Workflows repository](https://github.com/warpdotdev/workflows) for the community to contribute common useful commands.
+As a side note, we are open-sourcing our extension points as we go. The community has already been [contributing new themes](https://github.com/warpdotdev/themes). And we’ve just opened our [Workflows repository](https://github.com/warpdotdev/workflows) for the community to contribute common useful commands.
 
 Interested in joining the team? See our [open roles](https://www.warp.dev/careers) and feel free to email us: hello at warpdotdev
 
 ## Support and Questions
 
 1. See our [docs](https://docs.warp.dev/) for a walk-through of the features within our app.
-2. Join our [Discord](https://discord.gg/warpdotdev) to chat with other users and get immediate help with members of the Warp team.
+2. Join our [Discord](https://discord.gg/warpdotdev) to chat with other users and get immediate help from members of the Warp team.
 
 For anything else, please don't hesitate to reach out via email at hello at warpdotdev
 
 ## Community Guidelines
 
-At a high level, we ask everyone be respectful and empathetic. We follow the [GitHub Community Guidelines](https://docs.github.com/en/github/site-policy/github-community-guidelines):
+At a high level, we ask everyone to be respectful and empathetic. We follow the [GitHub Community Guidelines](https://docs.github.com/en/github/site-policy/github-community-guidelines):
 
 * Be welcoming and open-minded
 * Respect each other
