@@ -6,7 +6,7 @@ body:
     attributes:
       label: "Dupe Check"
       options:
-        - label: "I have [searched Warp SSH issues](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+label%3ASSH) and there are no duplicates"
+        - label: "I have [searched Warp SSH issues](https://github.com/warpdotdev/Warp/issues?q=is%3Aissue+is%3Aopen+label%3ASSH%2CSSH-tmux) and there are no duplicates"
           required: true
   - type: dropdown
     id: "os"
