@@ -10,7 +10,7 @@ contact_links:
     url: https://docs.warp.dev/help/known-issues?q=
     about: Documentation for known issues, troubleshooting, keyboard shortcuts, features, telemetry table, and more!
   - name: Warp Discord
-    url: https://discord.gg/warpdotdev
+    url: https://discord.gg/jhyvMGCXUc
     about: Discuss what you want to see in a modern terminal, report bugs, and brainstorm features for Warp.
   - name: Warp Homepage
     url: https://www.warp.dev/
