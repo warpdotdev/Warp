@@ -2,92 +2,12 @@ name: SSH Warpify Issues? Use this template
 description: "Issue template specialized for the circumstances where SSH Warpification with tmux fails"
 labels: ["Bugs","SSH-tmux"]
 body:
-  - type: checkboxes
-    attributes:
-      label: "Dupe Check"
-      options:
-        - label: "I have [searched Warp SSH issues](https://github.com/warpdotdev/Warp/issues?q=is%3Aissue+is%3Aopen+label%3ASSH%2CSSH-tmux) and there are no duplicates"
-          required: true
-  - type: dropdown
-    id: "os"
-    attributes:
-      label: "Operating System"
-      multiple: false
-      options:
-        - MacOS
-        - Linux
-        # - Windows
-    validations:
-      required: true
-  - type: input
-    id: "os-version"
-    attributes:
-      label: "Operating System and Version"
-      description: "For example: Debian 11.2"
-    validations:
-      required: true
   - type: textarea
     id: "shell-output"
     attributes:
       label: "Include shell output"
-      description: "Copy and paste the relevant error output from your SSH session. If you’re not comfortable posting the outputs to a public issue, you can email feedback@warp.dev."
-    validations:
-      required: true
-  - type: input
-    id: "local-shell-version"
-    attributes:
-      label: "Local Shell Version"
-      description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
-    validations:
-      required: false
-  - type: input
-    id: "remote-shell-version"
-    attributes:
-      label: "Remote Shell Version"
-      description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
-    validations:
-      required: false
-  - type: input
-    id: "warp-version"
-    attributes:
-      label: "Warp Version"
-      description: "Click the 3-dots menu docked to the right of the tabs in Warp and click the copy button, e.g. `v0.2022.05.30.09.10.stable_01`"
-    validations:
-      required: true
-  - type: checkboxes
-    id: "rcfiles"
-    attributes:
-      label: "Do you already have tmux installed on the remote host?"
-      description: "You can check by running `tmux -V` on the remote host."
-      options:
-      - label: "Yes"
-  - type: textarea
-    id: "screenshots"
-    attributes:
-      label: "Screenshots"
-      description: "Please either include a screenshot or describe what you see."
-    validations:
-      required: false
-  - type: dropdown
-    id: "blocker"
-    attributes:
-      label: "Does this block you from using Warp daily?"
-      description: "All feedback will be reviewed, even if you select 'No'."
-      multiple: false
-      options:
-        - "No"
-        - "Yes, this issue prevents me from using Warp daily."
-    validations:
-      required: true
-  - type: dropdown
-    id: "terminals"
-    attributes:
-      label: "Is this an issue only in Warp?"
-      description: "Verifying this issue doesn't happen in other terminals helps us to prioritize the fix"
-      multiple: false
-      options:
-        - "Yes, I confirmed that this only happens in Warp, not other terminals."
-        - "No, this issue happens in Warp and other terminals."
+      description: "Click on the top right icon of your terminal block, select `Copy`, and paste the contents here. Please redact any personal details."
+      render: shell
     validations:
       required: true
   - type: dropdown
