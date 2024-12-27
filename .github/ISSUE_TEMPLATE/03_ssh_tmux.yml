@@ -14,7 +14,7 @@ body:
     id: "warp-version"
     attributes:
       label: "Warp Version"
-      description: ""
+      description: "Warp Version"
     validations:
       required: false
   - type: dropdown
