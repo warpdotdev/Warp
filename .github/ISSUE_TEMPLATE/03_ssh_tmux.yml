@@ -26,20 +26,27 @@ body:
       description: "For example: Debian 11.2"
     validations:
       required: true
+  - type: textarea
+    id: "shell-output"
+    attributes:
+      label: "Include shell output"
+      description: "Copy and paste the relevant error output from your SSH session. If you’re not comfortable posting the outputs to a public issue, you can email feedback@warp.dev."
+    validations:
+      required: true
   - type: input
     id: "local-shell-version"
     attributes:
       label: "Local Shell Version"
       description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
     validations:
-      required: true
+      required: false
   - type: input
     id: "remote-shell-version"
     attributes:
       label: "Remote Shell Version"
       description: "Output of `echo $BASH_VERSION` or `echo $ZSH_VERSION`"
     validations:
-      required: true
+      required: false
   - type: input
     id: "warp-version"
     attributes:
@@ -61,13 +68,6 @@ body:
       description: "Please either include a screenshot or describe what you see."
     validations:
       required: false
-  - type: textarea
-    id: "xtrace-output"
-    attributes:
-      label: "Include shell xtrace output"
-      description: "1. Ensure you're on the 3.31 version of Warp or later. 2. Run WARP_DEBUG_MODE=1 ssh YOUR-HOSTNAME-HERE 3. Save the full output starting from the ssh command block. If you’re not comfortable posting the outputs to a public issue, you can email feedback@warp.dev. "
-    validations:
-      required: true
   - type: dropdown
     id: "blocker"
     attributes:
