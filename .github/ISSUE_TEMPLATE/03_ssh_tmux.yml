@@ -2,11 +2,6 @@ name: SSH Warpify Issues? Use this template
 description: "Issue template specialized for the circumstances where SSH Warpification with tmux fails"
 labels: ["Bugs","SSH-tmux"]
 body:
-  - type: markdown
-    attributes:
-      value: "<img width="431" alt="image" src="https://github.com/user-attachments/assets/0fd16fe3-e2c1-4ef0-9267-46320c2db903" />
-      
-      To get terminal output, click on the top right icon of your terminal block, select `Copy`"
   - type: textarea
     id: "shell-output"
     attributes:
@@ -15,6 +10,13 @@ body:
       render: shell
     validations:
       required: true
+  - type: input
+    id: "warp-version"
+    attributes:
+      label: "Warp Version"
+      description: ""
+    validations:
+      required: false
   - type: dropdown
     id: "linear-label-ssh-tmux"
     attributes:
