@@ -2,12 +2,38 @@ name: SSH Warpify Issues? Use this template
 description: "Issue template specialized for the circumstances where SSH Warpification with tmux fails"
 labels: ["Bugs","SSH-tmux"]
 body:
+  - type: checkboxes
+    attributes:
+      label: "Pre-submit Checks"
+      options:
+        - label: "I have [searched Warp SSH issues](https://github.com/warpdotdev/Warp/issues?q=is%3Aissue+is%3Aopen+label%3ASSH%2CSSH-tmux) and there are no duplicates"
+          required: true
+        - label: "I have [searched Warp known issues page](https://docs.warp.dev/help/known-issues) and my issue is not there"
+          required: true
   - type: textarea
     id: "shell-output"
     attributes:
       label: "Include shell output"
       description: "Click on the top right icon of your terminal block, select `Copy`, and paste the contents here. Please redact any personal details."
       render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: "os"
+    attributes:
+      label: "Operating system"
+      multiple: false
+      options:
+        - MacOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: "os-version"
+    attributes:
+      label: "Operating system and version"
+      description: "For example: Debian 11.2"
     validations:
       required: true
   - type: input

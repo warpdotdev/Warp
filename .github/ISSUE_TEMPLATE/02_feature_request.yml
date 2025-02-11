@@ -4,9 +4,11 @@ labels: ["Feature requests"]
 body:
   - type: checkboxes
     attributes:
-      label: "Dupe Check"
+      label: "Pre-submit Checks"
       options:
         - label: "I have [searched Warp feature requests](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+label%3A%22Feature+requests%22) and there are no duplicates"
+          required: true
+        - label: "I have [searched Warp docs](https://docs.warp.dev) and my feature is not there"
           required: true
   - type: textarea
     id: "describe-solution"
@@ -31,6 +33,17 @@ body:
     validations:
       required: false
   - type: dropdown
+    id: "os"
+    attributes:
+      label: "Operating system (Optional, if relevant)"
+      multiple: false
+      options:
+        - MacOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+  - type: dropdown
     id: "importance"
     attributes:
       label: "How important is this feature to you?"
@@ -50,7 +63,5 @@ body:
       multiple: false
       options:
         - Ignore
-        # - Windows
-        # - Linux
     validations:
       required: false
