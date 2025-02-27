@@ -1,0 +1,35 @@
+name: Auto-label Issues
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  label_issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check issue form response
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body;
+            
+            // Define labels based on dropdown selection
+            const labelsMap = {
+              "MacOS": "OS-MacOS",
+              "Linux": "OS-Linux",
+              "Windows": "OS-Windows"
+            };
+
+            // Find the selected OS in the issue body
+            const selectedOS = Object.keys(labelsMap).find(os => body.includes(os));
+
+            if (selectedOS) {
+              github.rest.issues.addLabels({
+                issue_number: issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: [labelsMap[selectedOS]]
+              });
+            }
