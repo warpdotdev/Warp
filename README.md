@@ -27,8 +27,8 @@ This is an issues-only repo for [Warp](https://www.warp.dev), a modern terminal 
 Warp is:
 * Built with Rust
 * GPU-accelerated
-* Compatible with zsh, bash, fish, and PowerShell
-* Ready to use on MacOS and Linux ([Windows waitlist](https://www.warp.dev/windows-terminal))
+* Compatible with zsh, bash, fish, PowerShell, and Git Bash
+* Ready to use on MacOS, Linux, and Windows
 
 ## Installation
 
