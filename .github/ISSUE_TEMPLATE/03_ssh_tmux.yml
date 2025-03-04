@@ -33,7 +33,8 @@ body:
       label: "Operating system"
       multiple: false
       options:
-        - MacOS
+        - ""
+        - macOS
         - Linux
         - Windows
     validations:
