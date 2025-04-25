@@ -1,5 +1,5 @@
 <p align="center">
-    <a href="https://www.warp.dev">
+    <a href="https://app.warp.dev/get_warp">
     <img width="612" alt="horz - dark" src="https://storage.googleapis.com/warpdotdev-content/warp_logo-21_10.png">
     </a>
 </p>
