@@ -1,38 +1,37 @@
-<p align="center">
-    <a href="https://app.warp.dev/get_warp">
-    <img width="612" alt="horz - dark" src="https://storage.googleapis.com/warpdotdev-content/warp_logo-21_10.png">
-    </a>
-</p>
+<a href="https://www.warp.dev">
+    <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://storage.googleapis.com/warpdotdev-content/warp-product-24_10.png">
+</a>
 
 <p align="center">
   <a href="https://www.warp.dev">Website</a>
   ·
-  <a href="https://docs.warp.dev">Docs</a>
+  <a href="https://docs.warp.dev">Code</a>
   ·
-  <a href="https://docs.warp.dev/getting-started/getting-started-with-warp">Install Guide</a>
+  <a href="https://docs.warp.dev">Agents</a>
+  ·
+  <a href="https://docs.warp.dev">Terminal</a>
+  ·
+  <a href="https://docs.warp.dev">Drive</a>
+  ·
+  <a href="https://docs.warp.dev">Docs</a>
   ·
   <a href="https://www.warp.dev/blog/how-warp-works">How Warp Works</a>
 </p>
-
-<a href="https://www.warp.dev">
-    <img width="1024" alt="Warp Terminal product preview" src="https://storage.googleapis.com/warpdotdev-content/warp-product-24_10.png">
-</a>
 
 <h1></h1>
 
 ## About
 
-This is an issues-only repo for [Warp](https://www.warp.dev), a modern terminal with AI and your dev team’s knowledge built-in.
+This is an issues-only repo for [Warp](https://www.warp.dev), the Agentic Development Environment and fastest way to build with multiple AI agents — from writing code to shipping it.
 
 Warp is:
-* Built with Rust
-* GPU-accelerated
-* Compatible with zsh, bash, fish, PowerShell, and Git Bash
-* Ready to use on MacOS, Linux, and Windows
+* Designed for agentic workflows: prompt, manage, and collaborate with AI agents across your codebase
+* Built in Rust and GPU acceleration for fast, native performance
+* Available on macOS, Linux, and Windows
 
 ## Installation
 
-You can [download Warp](https://www.warp.dev/download) and [read our docs](https://docs.warp.dev/getting-started/getting-started-with-warp) for platform-specific instructions.
+You can [download Warp](https://www.warp.dev/download) and [read our docs](https://docs.warp.dev/) for platform-specific instructions.
 
 ## Changelog and Releases
 
@@ -51,14 +50,15 @@ We are planning to first open-source our Rust UI framework, and then parts and p
 
 You can see how we’re thinking about open source here: [https://github.com/warpdotdev/Warp/discussions/400](https://github.com/warpdotdev/Warp/discussions/400)
 
-As a side note, we are open-sourcing our extension points as we go. The community has already been [contributing new themes](https://github.com/warpdotdev/themes). And we’ve just opened our [Workflows repository](https://github.com/warpdotdev/workflows) for the community to contribute common useful commands.
+As a side note, we are open-sourcing our extension points as we go. The community has already been [contributing new themes](https://github.com/warpdotdev/themes), and our [Workflows repository](https://github.com/warpdotdev/workflows) is open for sharing and collaborating on useful command patterns.
 
 Interested in joining the team? See our [open roles](https://www.warp.dev/careers) and feel free to email us: hello at warpdotdev
 
 ## Support and Questions
 
-1. See our [docs](https://docs.warp.dev/) for a walk-through of the features within our app.
-2. Join our [Discord](https://discord.com/invite/warpdotdev) to chat with other users and get immediate help from members of the Warp team.
+1. See our [docs](https://docs.warp.dev/) for a comprehensive guide to Warp's features.
+2. Join our [Slack Community](https://go.warp.dev/join-preview) or [Discord](https://discord.com/invite/warpdotdev) to connect with other users and get help from the Warp team.
+3. Try our [Preview build](https://www.warp.dev/download-preview) to test Warp's newest and latest experimental features.
 
 For anything else, please don't hesitate to reach out via email at hello at warpdotdev
 
