@@ -5,13 +5,13 @@
 <p align="center">
   <a href="https://www.warp.dev">Website</a>
   ·
-  <a href="https://docs.warp.dev">Code</a>
+  <a href="https://www.warp.dev/code">Code</a>
   ·
-  <a href="https://docs.warp.dev">Agents</a>
+  <a href="https://www.warp.dev/agents">Agents</a>
   ·
-  <a href="https://docs.warp.dev">Terminal</a>
+  <a href="https://www.warp.dev/terminal">Terminal</a>
   ·
-  <a href="https://docs.warp.dev">Drive</a>
+  <a href="https://www.warp.dev/drive">Drive</a>
   ·
   <a href="https://docs.warp.dev">Docs</a>
   ·
