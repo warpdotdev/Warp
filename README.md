@@ -1,5 +1,5 @@
 <a href="https://www.warp.dev">
-    <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://storage.googleapis.com/warpdotdev-content/warp-product-24_10.png">
+    <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://storage.googleapis.com/warpdotdev-content/Readme.png">
 </a>
 
 <p align="center">
