@@ -1,6 +1,6 @@
 name: Legacy SSH Issues? Use this template
 description: "(Legacy) Issue template specialized for the circumstances where the shell doesn't bootstrap as a subshell over SSH"
-labels: ["Bugs","SSH"]
+labels: ["BUG","SSH"]
 body:
   - type: checkboxes
     attributes:
