@@ -10,8 +10,8 @@ body:
           required: true
         - label: "I have [searched Warp known issues page](https://docs.warp.dev/help/known-issues) and my issue is not there"
           required: true
-        - label: "I have included the logs (optional, but helps expedite the bug fix). [Log gathering intructions](https://docs.warp.dev/support-and-billing/sending-us-feedback#gathering-warp-logs)"
-          required: false          
+        - label: "I have technical issue and have included the logs (optional, but helps expedite the bug fix). [Log intructions](https://docs.warp.dev/support-and-billing/sending-us-feedback#gathering-warp-logs)"
+          required: false    
   - type: textarea
     id: "shell-output"
     attributes:
