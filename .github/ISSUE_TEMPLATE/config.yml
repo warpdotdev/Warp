@@ -1,26 +1,26 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Confidential Issues and Bugs
-    url: https://warpdotdev.typeform.com/to/jaqfsdnz
-    about: Submit any confidential bugs or issues to the Warp support team.
+  - name: Billing Issues
+    url: mailto:billing@warp.dev
+    about: Submit any billing related issues (refunds, cancellation, promos, etc.) Warp support team.
   - name: Warp Issue Search
     url: https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+a+sort%3Areactions-%2B1-desc
     about: Search Warp's open issues and feature requests.
   - name: Warp Documentation
-    url: https://docs.warp.dev/help/known-issues?q=
+    url: https://docs.warp.dev/support-and-billing/known-issues?q=
     about: Documentation for known issues, troubleshooting, keyboard shortcuts, features, telemetry table, and more!
   - name: Warp Discord
     url: https://discord.com/invite/warpdotdev
-    about: Discuss what you want to see in a modern terminal, report bugs, and brainstorm features for Warp.
-  - name: Warp Homepage
-    url: https://www.warp.dev/
-    about: Homepage for all things Warp.
-  - name: Warp Blog
-    url: https://blog.warp.dev/
-    about: See our blog posts about engineering, product, and company updates.
+    about: Discuss what you want to see in a Modern ADE with a community of other Warp users.
+  - name: Warp Preview Community Slack
+    url: https://go.warp.dev/join-preview
+    about: Discuss give feedback on the new features with other Warp Preview users.
   - name: Warp Changelog
     url: https://docs.warp.dev/help/changelog
     about: See our changelog to learn about new features, improvements, and bug fixes.
+  - name: Warp Homepage
+    url: https://www.warp.dev/
+    about: Homepage for all things Warp.
   - name: Warp Licenses
-    url: https://docs.warp.dev/help/licenses
+    url: https://docs.warp.dev/support-and-billing/licenses
     about: See the open source projects Warp depends on and their licenses.
