@@ -1,5 +1,5 @@
 name: Feature Request
-description: "Have a great new idea? Please search through our existing feature requests, and upvote it if it's already exists."
+description: "Have a great new idea? Please let us know with as many details as possible."
 labels: ["FEATURE"]
 body:
   - type: checkboxes
