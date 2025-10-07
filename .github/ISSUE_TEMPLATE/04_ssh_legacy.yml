@@ -6,7 +6,7 @@ body:
     attributes:
       label: "Pre-submit Checks"
       options:
-        - label: "I have [searched Warp SSH issues](https://github.com/warpdotdev/Warp/issues?q=is%3Aissue+is%3Aopen+label%3ASSH%2CSSH-tmux) and there are no duplicates"
+        - label: "I have [searched Warp SSH issues](https://github.com/warpdotdev/Warp/issues?q=is%3Aissue+is%3Aopen+label%3ASSH) and there are no duplicates"
           required: true
         - label: "I have [searched Warp known issues page](https://docs.warp.dev/help/known-issues) and my issue is not there"
           required: true
