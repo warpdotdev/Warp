@@ -470,6 +470,9 @@ pub enum FeatureFlag {
     /// Enables find/search in code review pane
     CodeReviewFind,
 
+    /// Enables asynchronous find in terminal, running search on a background thread.
+    AsyncFind,
+
     /// Enables using Agent Mode in shared sessions.
     AgentSharedSessions,
 
