@@ -11,9 +11,11 @@ pub use block_list::{BlockGridMatch, BlockListFindRun, BlockListMatch};
 pub use rich_content::{FindableRichContentView, RichContentMatchId};
 
 use crate::terminal::block_list_viewport::InputMode;
+use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
 use alt_screen::{run_find_on_alt_screen, AltScreenFindRun};
+use warpui::r#async::Timer;
 use parking_lot::FairMutex;
 use settings::Setting as _;
 use warp_core::features::FeatureFlag;
@@ -55,9 +57,9 @@ impl FindModel for TerminalFindModel {
             self.alt_screen_find_run
                 .as_ref()
                 .and_then(|run| run.focused_match_index())
+        } else if let Some(controller) = &self.async_find_controller {
+            controller.focused_match_index()
         } else {
-            // Async find does not track focused match index yet.
-            // TODO: Add focused match tracking to AsyncFindController.
             self.block_list_find_run
                 .as_ref()
                 .and_then(|run| run.focused_match_index())
@@ -145,6 +147,29 @@ impl TerminalFindModel {
         self.block_list_find_run.as_ref()
     }
 
+    /// Returns the currently focused match as a `BlockListMatch`.
+    ///
+    /// This works for both sync and async find paths.
+    pub(crate) fn focused_block_list_match(&self) -> Option<BlockListMatch> {
+        if self.terminal_model.lock().is_alt_screen_active() {
+            // Alt screen doesn't use BlockListMatch.
+            return None;
+        }
+
+        if let Some(controller) = &self.async_find_controller {
+            // Async path: wrap the BlockGridMatch in a BlockListMatch.
+            controller
+                .focused_terminal_match()
+                .map(BlockListMatch::CommandBlock)
+        } else {
+            // Sync path: get from block_list_find_run.
+            self.block_list_find_run
+                .as_ref()
+                .and_then(|run| run.focused_match())
+                .cloned()
+        }
+    }
+
     /// Returns `FindOptions` applied to the active find run, if any.
     pub fn active_find_options(&self) -> Option<&FindOptions> {
         if self.terminal_model.lock().is_alt_screen_active() {
@@ -173,8 +198,12 @@ impl TerminalFindModel {
 
         // Use async find if the feature flag is enabled.
         if let Some(controller) = &mut self.async_find_controller {
+            eprintln!("[async_find] Starting async find with query: {:?}", options.query);
             controller.start_find(&options, block_sort_direction, ctx);
             ctx.emit(FindEvent::RanFind);
+
+            // Start polling for results.
+            Self::schedule_async_find_poll(ctx);
             return;
         }
 
@@ -247,6 +276,8 @@ impl TerminalFindModel {
             if let Some(alt_screen_find_run) = self.alt_screen_find_run.as_mut() {
                 alt_screen_find_run.focus_next_match(find_direction);
             }
+        } else if let Some(controller) = &mut self.async_find_controller {
+            controller.focus_next_match(find_direction);
         } else if let Some(block_list_find_run) = self.block_list_find_run.as_mut() {
             let block_sort_direction = InputModeSettings::as_ref(ctx)
                 .input_mode
@@ -353,6 +384,22 @@ impl TerminalFindModel {
         self.async_find_controller.as_ref()
     }
 
+    /// Schedules a poll for async find results.
+    fn schedule_async_find_poll(ctx: &mut ModelContext<Self>) {
+        const POLL_INTERVAL_MS: u64 = 50;
+
+        let _ = ctx.spawn(
+            async move { Timer::after(Duration::from_millis(POLL_INTERVAL_MS)).await },
+            |me, _instant, ctx| {
+                // Process messages and check if we should continue polling.
+                let should_continue = me.tick_async_find(ctx);
+                if should_continue {
+                    Self::schedule_async_find_poll(ctx);
+                }
+            },
+        );
+    }
+
     /// Ticks the async find operation, processing any pending messages.
     ///
     /// Returns `true` if the async find is still in progress and more ticks are needed.
@@ -361,8 +408,15 @@ impl TerminalFindModel {
     pub fn tick_async_find(&mut self, ctx: &mut ModelContext<Self>) -> bool {
         if let Some(controller) = &mut self.async_find_controller {
             let was_scanning = controller.is_scanning();
+            let match_count_before = controller.match_count();
             controller.process_messages(ctx);
             let is_still_scanning = controller.is_scanning();
+            let match_count_after = controller.match_count();
+
+            eprintln!(
+                "[async_find] tick: was_scanning={}, is_still_scanning={}, matches: {} -> {}",
+                was_scanning, is_still_scanning, match_count_before, match_count_after
+            );
 
             // Emit event if we have new results or status changed.
             if was_scanning || is_still_scanning {

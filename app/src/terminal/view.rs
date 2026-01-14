@@ -20888,21 +20888,17 @@ impl TerminalView {
         ctx.notify();
     }
 
-    /// Scrolls to the focused match
+    /// Scrolls to the focused match.
     fn scroll_to_match(&mut self, ctx: &mut ViewContext<Self>) {
         // Scrolling to matches is not done for the alt screen.
         if self.model.lock().is_alt_screen_active() {
             return;
         }
 
-        let Some(focused_match) = self
-            .find_model
-            .as_ref(ctx)
-            .block_list_find_run()
-            .and_then(|run| run.focused_match())
-        else {
+        let Some(focused_match) = self.find_model.as_ref(ctx).focused_block_list_match() else {
             return;
         };
+        let focused_match = &focused_match;
 
         let find_match_location = match focused_match {
             BlockListMatch::RichContent { index, .. } => {
