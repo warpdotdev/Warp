@@ -160,7 +160,6 @@ async fn scan_terminal_block_chunked(
             dfas,
             result_tx,
             cancel_rx,
-            block_sort_direction,
         )
         .await;
     }
@@ -174,7 +173,6 @@ async fn scan_grid_chunked(
     dfas: &RegexDFAs,
     result_tx: &async_channel::Sender<FindTaskMessage>,
     cancel_rx: &async_channel::Receiver<()>,
-    block_sort_direction: crate::terminal::model::terminal_model::BlockSortDirection,
 ) {
     let mut start_row = 0;
 
@@ -218,13 +216,12 @@ async fn scan_grid_chunked(
 
         let (mut matches, end_row, total_rows, elapsed) = chunk_result;
 
-        // Reverse matches if needed for display order.
-        if matches!(
-            block_sort_direction,
-            crate::terminal::model::terminal_model::BlockSortDirection::MostRecentFirst
-        ) {
-            matches.reverse();
-        }
+        // The `find_in_range` function returns matches in descending order (it searches from
+        // end to start going left). We always reverse each chunk to ascending order so that
+        // when chunks are concatenated via `.extend()`, the final Vec remains in ascending
+        // order. The renderer expects matches in ascending order for `active_or_next_match`
+        // to work correctly.
+        matches.reverse();
 
         // Stream results if we found any matches in this chunk.
         if !matches.is_empty() {
