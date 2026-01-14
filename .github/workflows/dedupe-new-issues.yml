@@ -1,0 +1,30 @@
+name: Dedupe New Issues
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  trigger-dedupe:
+    name: Trigger Dedupe Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger PowerFixer Dedupe
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          # Safely encode title and body as JSON strings
+          TITLE_JSON=$(jq -n --arg t "$ISSUE_TITLE" '$t')
+          BODY_JSON=$(jq -n --arg b "$ISSUE_BODY" '$b')
+          
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Api-Key: ${{ secrets.POWERFIXER_WEBHOOK_API_KEY }}" \
+            -d "{
+              \"issue_number\": ${{ github.event.issue.number }},
+              \"issue_title\": ${TITLE_JSON},
+              \"issue_body\": ${BODY_JSON},
+              \"repo\": \"warpdotdev/warp\"
+            }" \
+            https://powerfixer.warp.dev/api/v1/webhook/dedupe
