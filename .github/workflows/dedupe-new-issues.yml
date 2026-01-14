@@ -1,0 +1,50 @@
+name: Dedupe New Issues
+
+on:
+  issues:
+    types: [opened]
+  
+  # Manual trigger for local testing
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: 'PowerFixer server URL (e.g., https://your-domain.ngrok-free.dev for local testing)'
+        required: true
+        default: 'https://powerfixer.warp.dev'
+      issue_number:
+        description: 'Issue number to dedupe'
+        required: true
+
+jobs:
+  trigger-dedupe:
+    name: Trigger Dedupe Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set variables
+        id: vars
+        run: |
+          # Use workflow_dispatch inputs if available, otherwise use issue event
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "server_url=${{ github.event.inputs.server_url }}" >> $GITHUB_OUTPUT
+            echo "issue_number=${{ github.event.inputs.issue_number }}" >> $GITHUB_OUTPUT
+          else
+            echo "server_url=https://powerfixer.warp.dev" >> $GITHUB_OUTPUT
+            echo "issue_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger PowerFixer Dedupe
+        env:
+          SERVER_URL: ${{ steps.vars.outputs.server_url }}
+          ISSUE_NUMBER: ${{ steps.vars.outputs.issue_number }}
+        run: |
+          echo "Triggering dedupe for issue #${ISSUE_NUMBER} on ${SERVER_URL}"
+          
+          # Only send issue_number and repo - agent fetches issue content live for security
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Api-Key: ${{ secrets.POWERFIXER_WEBHOOK_API_KEY }}" \
+            -d "{
+              \"issue_number\": ${ISSUE_NUMBER},
+              \"repo\": \"warpdotdev/warp\"
+            }" \
+            "${SERVER_URL}/api/v1/webhook/dedupe"
