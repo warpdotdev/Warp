@@ -73,6 +73,7 @@ async fn run_find_task(
     };
 
     let total_blocks = block_info.len();
+    eprintln!("[async_find] background task: scanning {} blocks", total_blocks);
 
     // Send initial progress.
     let _ = result_tx
@@ -227,6 +228,12 @@ async fn scan_grid_chunked(
 
         // Stream results if we found any matches in this chunk.
         if !matches.is_empty() {
+            eprintln!(
+                "[async_find] background task: found {} matches in block {:?} grid {:?}",
+                matches.len(),
+                block_index,
+                grid_type
+            );
             let _ = result_tx
                 .send(FindTaskMessage::BlockGridMatches {
                     block_index,

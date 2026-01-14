@@ -23,6 +23,9 @@ use crate::terminal::model::index::Point;
 use crate::terminal::model::terminal_model::{BlockIndex, BlockSortDirection};
 use crate::terminal::model::TerminalModel;
 
+use crate::view_components::find::FindDirection;
+
+pub use super::block_list::BlockGridMatch;
 use super::rich_content::{FindableRichContentHandle, RichContentMatchId};
 use super::FindOptions;
 
@@ -209,6 +212,9 @@ pub struct AsyncFindController {
 
     /// The block sort direction for the current/last find run.
     block_sort_direction: BlockSortDirection,
+
+    /// The currently focused match index (0-based), if any.
+    focused_match_index: Option<usize>,
 }
 
 impl AsyncFindController {
@@ -223,6 +229,7 @@ impl AsyncFindController {
             cancel_tx: None,
             rich_content_views: HashMap::new(),
             block_sort_direction: BlockSortDirection::MostRecentLast,
+            focused_match_index: None,
         }
     }
 
@@ -244,6 +251,84 @@ impl AsyncFindController {
     /// Returns true if a find operation is currently in progress.
     pub fn is_scanning(&self) -> bool {
         matches!(self.status, AsyncFindStatus::Scanning { .. })
+    }
+
+    /// Returns the currently focused match index (0-based), if any.
+    pub fn focused_match_index(&self) -> Option<usize> {
+        self.focused_match_index
+    }
+
+    /// Focuses the next or previous match based on the given direction.
+    pub fn focus_next_match(&mut self, direction: FindDirection) {
+        let total = self.match_count();
+        if total == 0 {
+            self.focused_match_index = None;
+            return;
+        }
+
+        let new_index = match (self.focused_match_index, direction) {
+            (None, FindDirection::Down) => 0,
+            (None, FindDirection::Up) => total.saturating_sub(1),
+            (Some(current), FindDirection::Down) => {
+                if current + 1 >= total {
+                    0 // Wrap around.
+                } else {
+                    current + 1
+                }
+            }
+            (Some(current), FindDirection::Up) => {
+                if current == 0 {
+                    total.saturating_sub(1) // Wrap around.
+                } else {
+                    current - 1
+                }
+            }
+        };
+
+        self.focused_match_index = Some(new_index);
+    }
+
+    /// Returns the focused match as a BlockGridMatch if it's a terminal match.
+    pub fn focused_terminal_match(&self) -> Option<BlockGridMatch> {
+        let focused_idx = self.focused_match_index?;
+
+        // Iterate through terminal matches in order to find the one at focused_idx.
+        let mut current_idx = 0;
+
+        // Sort keys for deterministic iteration order.
+        let mut keys: Vec<_> = self.block_results.terminal_matches.keys().collect();
+        keys.sort_by(|a, b| {
+            // Sort by block index, then grid type (PromptAndCommand before Output).
+            match a.0.cmp(&b.0) {
+                std::cmp::Ordering::Equal => {
+                    let grid_order = |g: &GridType| match g {
+                        GridType::PromptAndCommand => 0,
+                        GridType::Output => 1,
+                        _ => 2,
+                    };
+                    grid_order(&a.1).cmp(&grid_order(&b.1))
+                }
+                other => other,
+            }
+        });
+
+        for (block_index, grid_type) in keys {
+            if let Some(matches) = self.block_results.terminal_matches.get(&(*block_index, *grid_type)) {
+                for match_range in matches {
+                    if current_idx == focused_idx {
+                        return Some(BlockGridMatch {
+                            block_index: *block_index,
+                            grid_type: *grid_type,
+                            range: match_range.clone(),
+                            is_filtered: false,
+                        });
+                    }
+                    current_idx += 1;
+                }
+            }
+        }
+
+        None
     }
 
     /// Registers a rich content view for AI block searching.
@@ -298,6 +383,7 @@ impl AsyncFindController {
         self.current_config = Some(config.clone());
         self.block_sort_direction = block_sort_direction;
         self.block_results.clear();
+        self.focused_match_index = None;
         self.status = AsyncFindStatus::Scanning {
             blocks_scanned: 0,
             total_blocks: 0,
@@ -326,11 +412,13 @@ impl AsyncFindController {
     /// The `ctx` parameter is generic so this can be called from any owning entity.
     pub fn process_messages<E: Entity>(&mut self, ctx: &mut ModelContext<E>) {
         let Some(rx) = &self.result_rx else {
+            eprintln!("[async_find] process_messages: no result_rx channel");
             return;
         };
 
         // Collect all messages first to avoid borrow issues.
         let messages: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        eprintln!("[async_find] process_messages: received {} messages", messages.len());
 
         let mut had_matches = false;
         let mut should_clear_channels = false;
@@ -416,6 +504,7 @@ impl AsyncFindController {
         self.cancel_current_find();
         self.current_config = None;
         self.block_results.clear();
+        self.focused_match_index = None;
         self.status = AsyncFindStatus::Idle;
 
         // Clear matches in AI blocks.
