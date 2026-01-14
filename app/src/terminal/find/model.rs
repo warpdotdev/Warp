@@ -10,7 +10,10 @@ pub use async_find::{AsyncFindController, AsyncFindStatus};
 pub use block_list::{BlockGridMatch, BlockListFindRun, BlockListMatch};
 pub use rich_content::{FindableRichContentView, RichContentMatchId};
 
+use crate::terminal::block_list_element::GridType;
 use crate::terminal::block_list_viewport::InputMode;
+use crate::terminal::model::index::Point;
+use std::ops::RangeInclusive;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
@@ -31,6 +34,100 @@ use crate::view_components::find::FindDirection;
 
 use block_list::run_find_on_block_list;
 use rich_content::FindableRichContentHandle;
+
+/// Pre-computed find data for rendering a single block.
+///
+/// This struct provides a unified interface for both sync (`BlockListFindRun`) and async
+/// (`AsyncFindController`) find paths, allowing the rendering code to work with either.
+///
+/// Stores references to the underlying data source and provides methods to create iterators
+/// on demand (since iterators can only be consumed once).
+pub enum BlockFindRenderData<'a> {
+    /// Data from the synchronous find path.
+    Sync {
+        run: &'a BlockListFindRun,
+        block_index: BlockIndex,
+    },
+    /// Data from the asynchronous find path.
+    Async {
+        controller: &'a AsyncFindController,
+        block_index: BlockIndex,
+    },
+}
+
+impl<'a> BlockFindRenderData<'a> {
+    /// Creates render data from the sync `BlockListFindRun`.
+    pub fn from_sync(run: &'a BlockListFindRun, block_index: BlockIndex) -> Self {
+        Self::Sync { run, block_index }
+    }
+
+    /// Creates render data from the async `AsyncFindController`.
+    pub fn from_async(controller: &'a AsyncFindController, block_index: BlockIndex) -> Self {
+        Self::Async {
+            controller,
+            block_index,
+        }
+    }
+
+    /// Returns an iterator over match ranges for the command grid.
+    pub fn command_grid_matches(
+        &self,
+    ) -> Option<Box<dyn Iterator<Item = &'a RangeInclusive<Point>> + 'a>> {
+        match self {
+            Self::Sync { run, block_index } => Some(run.matches_for_block_grid(
+                *block_index,
+                GridType::PromptAndCommand,
+            )),
+            Self::Async {
+                controller,
+                block_index,
+            } => controller
+                .matches_for_block_grid(*block_index, GridType::PromptAndCommand)
+                .map(|v| Box::new(v.iter()) as Box<dyn Iterator<Item = _>>),
+        }
+    }
+
+    /// Returns an iterator over match ranges for the output grid.
+    pub fn output_grid_matches(
+        &self,
+    ) -> Option<Box<dyn Iterator<Item = &'a RangeInclusive<Point>> + 'a>> {
+        match self {
+            Self::Sync { run, block_index } => {
+                Some(run.matches_for_block_grid(*block_index, GridType::Output))
+            }
+            Self::Async {
+                controller,
+                block_index,
+            } => controller
+                .matches_for_block_grid(*block_index, GridType::Output)
+                .map(|v| Box::new(v.iter()) as Box<dyn Iterator<Item = _>>),
+        }
+    }
+
+    /// Returns the focused match range if it's in the specified grid.
+    pub fn focused_range_for_grid(&self, grid_type: GridType) -> Option<RangeInclusive<Point>> {
+        match self {
+            Self::Sync { run, block_index } => run
+                .focused_match()
+                .and_then(|m| match m {
+                    BlockListMatch::CommandBlock(grid_match)
+                        if grid_match.block_index == *block_index
+                            && grid_match.grid_type == grid_type =>
+                    {
+                        Some(grid_match.range.clone())
+                    }
+                    _ => None,
+                }),
+            Self::Async {
+                controller,
+                block_index,
+            } => controller
+                .focused_terminal_match()
+                .filter(|m| m.block_index == *block_index && m.grid_type == grid_type)
+                .map(|m| m.range),
+        }
+    }
+}
 
 /// `TerminalView`-scoped model for the find bar.
 pub struct TerminalFindModel {
@@ -167,6 +264,27 @@ impl TerminalFindModel {
                 .as_ref()
                 .and_then(|run| run.focused_match())
                 .cloned()
+        }
+    }
+
+    /// Returns find render data for a specific block, if find is active.
+    ///
+    /// This works for both sync and async find paths.
+    ///
+    /// Note: This method does NOT check if alt screen is active. It is intended
+    /// for use during blocklist rendering where the caller has already determined
+    /// that we are not in alt screen mode. Callers who need alt screen checking
+    /// should do so before calling this method.
+    pub(crate) fn find_render_data_for_block(
+        &self,
+        block_index: BlockIndex,
+    ) -> Option<BlockFindRenderData<'_>> {
+        if let Some(controller) = &self.async_find_controller {
+            Some(BlockFindRenderData::from_async(controller, block_index))
+        } else {
+            self.block_list_find_run
+                .as_ref()
+                .map(|run| BlockFindRenderData::from_sync(run, block_index))
         }
     }
 

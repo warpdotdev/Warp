@@ -437,6 +437,11 @@ impl AsyncFindController {
                             .or_default()
                             .extend(matches);
                         had_matches = true;
+
+                        // Auto-select the first match when results first arrive.
+                        if self.focused_match_index.is_none() {
+                            self.focused_match_index = Some(0);
+                        }
                     }
                 }
                 FindTaskMessage::ScanAIBlock {
