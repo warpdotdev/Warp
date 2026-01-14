@@ -14,14 +14,6 @@ on:
       issue_number:
         description: 'Issue number to dedupe'
         required: true
-      issue_title:
-        description: 'Issue title'
-        required: true
-        default: 'Test issue title'
-      issue_body:
-        description: 'Issue body'
-        required: false
-        default: 'Test issue body for dedupe analysis'
 
 jobs:
   trigger-dedupe:
@@ -35,35 +27,24 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "server_url=${{ github.event.inputs.server_url }}" >> $GITHUB_OUTPUT
             echo "issue_number=${{ github.event.inputs.issue_number }}" >> $GITHUB_OUTPUT
-            echo "issue_title=${{ github.event.inputs.issue_title }}" >> $GITHUB_OUTPUT
-            echo "issue_body=${{ github.event.inputs.issue_body }}" >> $GITHUB_OUTPUT
           else
             echo "server_url=https://powerfixer.warp.dev" >> $GITHUB_OUTPUT
             echo "issue_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
-            echo "issue_title=${{ github.event.issue.title }}" >> $GITHUB_OUTPUT
-            echo "issue_body=${{ github.event.issue.body }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Trigger PowerFixer Dedupe
         env:
-          ISSUE_TITLE: ${{ steps.vars.outputs.issue_title }}
-          ISSUE_BODY: ${{ steps.vars.outputs.issue_body }}
           SERVER_URL: ${{ steps.vars.outputs.server_url }}
           ISSUE_NUMBER: ${{ steps.vars.outputs.issue_number }}
         run: |
-          # Safely encode title and body as JSON strings
-          TITLE_JSON=$(jq -n --arg t "$ISSUE_TITLE" '$t')
-          BODY_JSON=$(jq -n --arg b "$ISSUE_BODY" '$b')
-          
           echo "Triggering dedupe for issue #${ISSUE_NUMBER} on ${SERVER_URL}"
           
+          # Only send issue_number and repo - agent fetches issue content live for security
           curl -s -X POST \
             -H "Content-Type: application/json" \
             -H "X-Webhook-Api-Key: ${{ secrets.POWERFIXER_WEBHOOK_API_KEY }}" \
             -d "{
               \"issue_number\": ${ISSUE_NUMBER},
-              \"issue_title\": ${TITLE_JSON},
-              \"issue_body\": ${BODY_JSON},
               \"repo\": \"warpdotdev/warp\"
             }" \
             "${SERVER_URL}/api/v1/webhook/dedupe"
