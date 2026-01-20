@@ -12,6 +12,7 @@ pub use rich_content::{FindableRichContentView, RichContentMatchId};
 
 use crate::terminal::block_list_element::GridType;
 use crate::terminal::block_list_viewport::InputMode;
+use crate::terminal::model::grid::grid_handler::GridHandler;
 use crate::terminal::model::index::Point;
 use std::ops::RangeInclusive;
 use std::time::Duration;
@@ -49,9 +50,18 @@ pub enum BlockFindRenderData<'a> {
         block_index: BlockIndex,
     },
     /// Data from the asynchronous find path.
+    ///
+    /// For the async path, we pre-compute and store converted matches since they use
+    /// absolute coordinates internally and need conversion to relative Points.
     Async {
-        controller: &'a AsyncFindController,
-        block_index: BlockIndex,
+        /// Pre-converted command grid matches (filtered for truncation).
+        command_matches: Vec<RangeInclusive<Point>>,
+        /// Pre-converted output grid matches (filtered for truncation).
+        output_matches: Vec<RangeInclusive<Point>>,
+        /// Focused range in command grid, if any.
+        focused_command_range: Option<RangeInclusive<Point>>,
+        /// Focused range in output grid, if any.
+        focused_output_range: Option<RangeInclusive<Point>>,
     },
 }
 
@@ -62,45 +72,92 @@ impl<'a> BlockFindRenderData<'a> {
     }
 
     /// Creates render data from the async `AsyncFindController`.
-    pub fn from_async(controller: &'a AsyncFindController, block_index: BlockIndex) -> Self {
+    ///
+    /// This pre-converts matches from absolute to relative coordinates, filtering out
+    /// any matches that have been truncated from scrollback.
+    pub fn from_async(
+        controller: &'a AsyncFindController,
+        block_index: BlockIndex,
+        command_grid: Option<&GridHandler>,
+        output_grid: Option<&GridHandler>,
+    ) -> Self {
+        // Convert command grid matches.
+        let command_matches = command_grid
+            .and_then(|grid| {
+                controller
+                    .matches_for_block_grid(block_index, GridType::PromptAndCommand)
+                    .map(|matches| {
+                        matches
+                            .iter()
+                            .filter_map(|m| m.to_range(grid))
+                            .collect::<Vec<_>>()
+                    })
+            })
+            .unwrap_or_default();
+
+        // Convert output grid matches.
+        let output_matches = output_grid
+            .and_then(|grid| {
+                controller
+                    .matches_for_block_grid(block_index, GridType::Output)
+                    .map(|matches| {
+                        matches
+                            .iter()
+                            .filter_map(|m| m.to_range(grid))
+                            .collect::<Vec<_>>()
+                    })
+            })
+            .unwrap_or_default();
+
+        // Get focused match ranges.
+        let focused_match = controller.focused_terminal_match();
+        let focused_command_range = focused_match
+            .as_ref()
+            .filter(|m| m.block_index == block_index && m.grid_type == GridType::PromptAndCommand)
+            .and_then(|m| command_grid.and_then(|grid| m.range.to_range(grid)));
+        let focused_output_range = focused_match
+            .as_ref()
+            .filter(|m| m.block_index == block_index && m.grid_type == GridType::Output)
+            .and_then(|m| output_grid.and_then(|grid| m.range.to_range(grid)));
+
         Self::Async {
-            controller,
-            block_index,
+            command_matches,
+            output_matches,
+            focused_command_range,
+            focused_output_range,
         }
     }
 
     /// Returns an iterator over match ranges for the command grid.
-    pub fn command_grid_matches(
-        &self,
-    ) -> Option<Box<dyn Iterator<Item = &'a RangeInclusive<Point>> + 'a>> {
+    pub fn command_grid_matches(&self) -> Option<Box<dyn Iterator<Item = &RangeInclusive<Point>> + '_>> {
         match self {
             Self::Sync { run, block_index } => Some(run.matches_for_block_grid(
                 *block_index,
                 GridType::PromptAndCommand,
             )),
-            Self::Async {
-                controller,
-                block_index,
-            } => controller
-                .matches_for_block_grid(*block_index, GridType::PromptAndCommand)
-                .map(|v| Box::new(v.iter()) as Box<dyn Iterator<Item = _>>),
+            Self::Async { command_matches, .. } => {
+                if command_matches.is_empty() {
+                    None
+                } else {
+                    Some(Box::new(command_matches.iter()))
+                }
+            }
         }
     }
 
     /// Returns an iterator over match ranges for the output grid.
-    pub fn output_grid_matches(
-        &self,
-    ) -> Option<Box<dyn Iterator<Item = &'a RangeInclusive<Point>> + 'a>> {
+    pub fn output_grid_matches(&self) -> Option<Box<dyn Iterator<Item = &RangeInclusive<Point>> + '_>> {
         match self {
             Self::Sync { run, block_index } => {
                 Some(run.matches_for_block_grid(*block_index, GridType::Output))
             }
-            Self::Async {
-                controller,
-                block_index,
-            } => controller
-                .matches_for_block_grid(*block_index, GridType::Output)
-                .map(|v| Box::new(v.iter()) as Box<dyn Iterator<Item = _>>),
+            Self::Async { output_matches, .. } => {
+                if output_matches.is_empty() {
+                    None
+                } else {
+                    Some(Box::new(output_matches.iter()))
+                }
+            }
         }
     }
 
@@ -119,12 +176,14 @@ impl<'a> BlockFindRenderData<'a> {
                     _ => None,
                 }),
             Self::Async {
-                controller,
-                block_index,
-            } => controller
-                .focused_terminal_match()
-                .filter(|m| m.block_index == *block_index && m.grid_type == grid_type)
-                .map(|m| m.range),
+                focused_command_range,
+                focused_output_range,
+                ..
+            } => match grid_type {
+                GridType::PromptAndCommand => focused_command_range.clone(),
+                GridType::Output => focused_output_range.clone(),
+                _ => None,
+            },
         }
     }
 }
@@ -248,16 +307,28 @@ impl TerminalFindModel {
     ///
     /// This works for both sync and async find paths.
     pub(crate) fn focused_block_list_match(&self) -> Option<BlockListMatch> {
-        if self.terminal_model.lock().is_alt_screen_active() {
+        let model = self.terminal_model.lock();
+        if model.is_alt_screen_active() {
             // Alt screen doesn't use BlockListMatch.
             return None;
         }
 
         if let Some(controller) = &self.async_find_controller {
-            // Async path: wrap the BlockGridMatch in a BlockListMatch.
-            controller
-                .focused_terminal_match()
-                .map(BlockListMatch::CommandBlock)
+            // Async path: convert AbsoluteMatch to Point range.
+            let async_match = controller.focused_terminal_match()?;
+            let block = model.block_list().block_at(async_match.block_index)?;
+            let grid = match async_match.grid_type {
+                GridType::PromptAndCommand => block.prompt_and_command_grid().grid_handler(),
+                GridType::Output => block.output_grid().grid_handler(),
+                _ => return None,
+            };
+            let range = async_match.range.to_range(grid)?;
+            Some(BlockListMatch::CommandBlock(BlockGridMatch {
+                block_index: async_match.block_index,
+                grid_type: async_match.grid_type,
+                range,
+                is_filtered: false,
+            }))
         } else {
             // Sync path: get from block_list_find_run.
             self.block_list_find_run
@@ -275,12 +346,22 @@ impl TerminalFindModel {
     /// for use during blocklist rendering where the caller has already determined
     /// that we are not in alt screen mode. Callers who need alt screen checking
     /// should do so before calling this method.
+    ///
+    /// For async find, the grid handlers are needed to convert from absolute to
+    /// relative coordinates and filter truncated matches.
     pub(crate) fn find_render_data_for_block(
         &self,
         block_index: BlockIndex,
+        command_grid: Option<&GridHandler>,
+        output_grid: Option<&GridHandler>,
     ) -> Option<BlockFindRenderData<'_>> {
         if let Some(controller) = &self.async_find_controller {
-            Some(BlockFindRenderData::from_async(controller, block_index))
+            Some(BlockFindRenderData::from_async(
+                controller,
+                block_index,
+                command_grid,
+                output_grid,
+            ))
         } else {
             self.block_list_find_run
                 .as_ref()
@@ -346,37 +427,74 @@ impl TerminalFindModel {
                     Some(old_find_state.rerun(self.terminal_model.lock().alt_screen()));
                 ctx.emit(FindEvent::RanFind);
             }
-        } else {
-            // Find the last block index. This is the only block whose state may change.
-            let last_block_index = self
-                .terminal_model
-                .lock()
-                .block_list()
-                .last_non_hidden_block_by_index()
-                .unwrap_or_default();
+            return;
+        }
 
-            // Call find on the the last block's command and output grids.
-            // If the block is a new finished block, the matches are inserted at a new key, the block's index in the blocklist.
-            // If the block is an active, running block, its matches are overwritten in the terminal's block_matches.
-            if let Some(block) = self
-                .terminal_model
-                .lock()
-                .block_list()
-                .block_at(last_block_index)
-            {
-                let block_sort_direction = InputModeSettings::as_ref(ctx)
-                    .input_mode
-                    .value()
-                    .block_sort_direction();
+        // Handle async find path.
+        if self.async_find_controller.is_some() {
+            // Get the active block index and dirty range info.
+            // We use active_block_index() (not last_non_hidden_block_by_index) because
+            // the active block is where output is being written, even if it's still
+            // "empty" and would be filtered out by the default BlockFilter.
+            let mut model = self.terminal_model.lock();
+            let active_block_index = model.block_list().active_block_index();
 
-                if let Some(old_find_run) = self.block_list_find_run.take() {
-                    self.block_list_find_run = Some(old_find_run.rerun_on_block(
-                        block,
-                        last_block_index,
-                        block_sort_direction,
-                    ));
-                    ctx.emit(FindEvent::RanFind);
-                }
+            // Get the dirty range and num_lines_truncated from the output grid.
+            // We need mutable access to consume the dirty range.
+            let active_block = model.block_list_mut().active_block_mut();
+            let (dirty_range, num_lines_truncated) = active_block
+                .grid_of_type_mut(GridType::Output)
+                .map(|output_grid| {
+                    let dirty_range = output_grid.grid_handler_mut().take_find_dirty_rows_range();
+                    let num_lines_truncated = output_grid.grid_handler().num_lines_truncated();
+                    (dirty_range, num_lines_truncated)
+                })
+                .unwrap_or((None, 0));
+
+            // Drop the model lock before calling invalidate_async_find_block,
+            // which will re-acquire it.
+            drop(model);
+
+            self.invalidate_async_find_block(
+                active_block_index,
+                dirty_range,
+                num_lines_truncated,
+                ctx,
+            );
+            return;
+        }
+
+        // Sync find path.
+        // Find the last block index. This is the only block whose state may change.
+        let last_block_index = self
+            .terminal_model
+            .lock()
+            .block_list()
+            .last_non_hidden_block_by_index()
+            .unwrap_or_default();
+
+        // Call find on the the last block's command and output grids.
+        // If the block is a new finished block, the matches are inserted at a new key, the block's index in the blocklist.
+        // If the block is an active, running block, its matches are overwritten in the terminal's block_matches.
+        if let Some(block) = self
+            .terminal_model
+            .lock()
+            .block_list()
+            .block_at(last_block_index)
+        {
+            let block_sort_direction = InputModeSettings::handle(ctx)
+                .as_ref(ctx)
+                .input_mode
+                .value()
+                .block_sort_direction();
+
+            if let Some(old_find_run) = self.block_list_find_run.take() {
+                self.block_list_find_run = Some(old_find_run.rerun_on_block(
+                    block,
+                    last_block_index,
+                    block_sort_direction,
+                ));
+                ctx.emit(FindEvent::RanFind);
             }
         }
     }
@@ -486,15 +604,83 @@ impl TerminalFindModel {
     /// Invalidates results for a specific block in async find.
     ///
     /// This should be called when a block's content changes.
+    ///
+    /// # Arguments
+    /// * `block_index` - The index of the block that changed.
+    /// * `dirty_row_range` - Optional range of rows (in relative coordinates) that changed.
+    ///   If provided and small enough, only those rows will be rescanned and merged.
+    /// * `num_lines_truncated` - The current number of truncated lines in the grid.
+    /// * `ctx` - The model context.
     pub fn invalidate_async_find_block(
+        &mut self,
+        block_index: BlockIndex,
+        dirty_row_range: Option<RangeInclusive<usize>>,
+        num_lines_truncated: u64,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if let Some(controller) = &mut self.async_find_controller {
+            let had_pending_before = controller.has_pending_results();
+            controller.invalidate_block(block_index, dirty_row_range, num_lines_truncated, ctx);
+            let has_pending_after = controller.has_pending_results();
+            ctx.emit(FindEvent::RanFind);
+
+            // If a background task was spawned (indicated by now having pending results
+            // when we didn't before), restart the polling loop to process the results.
+            if !had_pending_before && has_pending_after {
+                Self::schedule_async_find_poll(ctx);
+            }
+        }
+    }
+
+    /// Notifies async find that a block has completed.
+    ///
+    /// This should be called when a command finishes, so that the completed block
+    /// (which now has its final output) gets scanned for matches if find is active.
+    /// Uses the dirty range accumulated during execution for incremental scanning.
+    pub fn notify_block_completed(
         &mut self,
         block_index: BlockIndex,
         ctx: &mut ModelContext<Self>,
     ) {
-        if let Some(controller) = &mut self.async_find_controller {
-            controller.invalidate_block(block_index, ctx);
-            ctx.emit(FindEvent::RanFind);
+        if self.async_find_controller.is_none() {
+            return;
         }
+
+        // Check if there's an active find before acquiring the lock.
+        let has_active_find = self
+            .async_find_controller
+            .as_ref()
+            .map(|c| c.has_active_find())
+            .unwrap_or(false);
+
+        if !has_active_find {
+            return;
+        }
+
+        eprintln!(
+            "[async_find] notify_block_completed: block_index={:?}",
+            block_index
+        );
+
+        // Get the dirty range from the completed block's output grid.
+        // We need mutable access to consume the dirty range.
+        let (dirty_range, num_lines_truncated) = {
+            let mut model = self.terminal_model.lock();
+            model
+                .block_list_mut()
+                .blocks_mut()
+                .get_mut(block_index.0)
+                .and_then(|block| block.grid_of_type_mut(GridType::Output))
+                .map(|output_grid| {
+                    let dirty_range = output_grid.grid_handler_mut().take_find_dirty_rows_range();
+                    let num_lines_truncated = output_grid.grid_handler().num_lines_truncated();
+                    (dirty_range, num_lines_truncated)
+                })
+                .unwrap_or((None, 0))
+        };
+
+        // Use invalidate_async_find_block which handles the dirty range properly.
+        self.invalidate_async_find_block(block_index, dirty_range, num_lines_truncated, ctx);
     }
 
     /// Returns the async find controller, if enabled.
@@ -526,22 +712,25 @@ impl TerminalFindModel {
     pub fn tick_async_find(&mut self, ctx: &mut ModelContext<Self>) -> bool {
         if let Some(controller) = &mut self.async_find_controller {
             let was_scanning = controller.is_scanning();
+            let had_pending = controller.has_pending_results();
             let match_count_before = controller.match_count();
             controller.process_messages(ctx);
             let is_still_scanning = controller.is_scanning();
+            let still_has_pending = controller.has_pending_results();
             let match_count_after = controller.match_count();
 
             eprintln!(
-                "[async_find] tick: was_scanning={}, is_still_scanning={}, matches: {} -> {}",
-                was_scanning, is_still_scanning, match_count_before, match_count_after
+                "[async_find] tick: was_scanning={}, is_still_scanning={}, pending={}->{}, matches: {} -> {}",
+                was_scanning, is_still_scanning, had_pending, still_has_pending, match_count_before, match_count_after
             );
 
             // Emit event if we have new results or status changed.
-            if was_scanning || is_still_scanning {
+            if was_scanning || is_still_scanning || had_pending {
                 ctx.emit(FindEvent::RanFind);
             }
 
-            is_still_scanning
+            // Continue polling if scanning or if there are pending results to process.
+            is_still_scanning || still_has_pending
         } else {
             false
         }

@@ -21,8 +21,8 @@ use crate::terminal::model::terminal_model::BlockIndex;
 use crate::terminal::model::TerminalModel;
 
 use super::{
-    collect_block_info, AsyncFindConfig, BlockInfo, FindTaskMessage, MAX_LOCK_DURATION_MS,
-    ROWS_PER_CHUNK,
+    collect_block_info, AbsoluteMatch, AsyncFindConfig, BlockInfo, FindTaskMessage,
+    MAX_LOCK_DURATION_MS, ROWS_PER_CHUNK,
 };
 
 /// Spawns a background find task.
@@ -197,9 +197,12 @@ async fn scan_grid_chunked(
                 _ => return,
             };
 
-            let total_rows = grid.grid_handler().total_rows();
+            let grid_handler = grid.grid_handler();
+            let total_rows = grid_handler.total_rows();
+            eprintln!("[async_find] scan_grid_chunked: block {:?} grid {:?}, total_rows={}, start_row={}", block_index, grid_type, total_rows, start_row);
             if start_row >= total_rows {
                 // Finished scanning this grid.
+                eprintln!("[async_find] scan_grid_chunked: block {:?} grid {:?} is empty or fully scanned", block_index, grid_type);
                 return;
             }
 
@@ -207,8 +210,12 @@ async fn scan_grid_chunked(
             let end_row = (start_row + ROWS_PER_CHUNK).min(total_rows);
 
             // Scan this chunk using the existing find implementation.
-            // We scan the range and collect matches.
-            let matches = scan_grid_range(grid.grid_handler(), dfas, start_row, end_row);
+            // We scan the range and collect matches, converting to AbsoluteMatch for storage.
+            let point_matches = scan_grid_range(grid_handler, dfas, start_row, end_row);
+            let matches: Vec<AbsoluteMatch> = point_matches
+                .iter()
+                .map(|range| AbsoluteMatch::from_range(range, grid_handler))
+                .collect();
 
             let elapsed = lock_start.elapsed();
             (matches, end_row, total_rows, elapsed)

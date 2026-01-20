@@ -4026,7 +4026,13 @@ impl Element for BlockListElement {
                         self.find_model
                             .as_ref(app)
                             .is_find_bar_open()
-                            .then(|| self.find_model.as_ref(app).find_render_data_for_block(*block_index))
+                            .then(|| {
+                                self.find_model.as_ref(app).find_render_data_for_block(
+                                    *block_index,
+                                    Some(block.prompt_and_command_grid().grid_handler()),
+                                    Some(block.output_grid().grid_handler()),
+                                )
+                            })
                             .flatten(),
                         self.highlighted_url.as_ref(),
                         self.link_tool_tip.as_ref(),

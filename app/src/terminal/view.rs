@@ -10200,6 +10200,12 @@ impl TerminalView {
                     input.handle_block_completed_event(block_completed_event_clone, ctx);
                 });
 
+                // Notify find model that this block completed so it gets scanned with final output.
+                let completed_block_index = block_completed_event.block_index;
+                self.find_model.update(ctx, |find_model, ctx| {
+                    find_model.notify_block_completed(completed_block_index, ctx);
+                });
+
                 if !matches!(block_completed_event.block_type, BlockType::BootstrapHidden) {
                     if let Some(env_var_block) = self.active_env_var_collection_block(ctx) {
                         let output_truncated =
