@@ -19,13 +19,13 @@ use crate::terminal::block_list_element::GridType;
 use crate::terminal::model::blocks::{
     BlockHeight, BlockHeightItem, BlockHeightSummary, BlockList, TotalIndex,
 };
+use crate::terminal::model::grid::grid_handler::{AbsolutePoint, GridHandler};
 use crate::terminal::model::index::Point;
 use crate::terminal::model::terminal_model::{BlockIndex, BlockSortDirection};
 use crate::terminal::model::TerminalModel;
 
 use crate::view_components::find::FindDirection;
 
-pub use super::block_list::BlockGridMatch;
 use super::rich_content::{FindableRichContentHandle, RichContentMatchId};
 use super::FindOptions;
 
@@ -36,6 +36,10 @@ pub const MAX_LOCK_DURATION_MS: u64 = 100;
 
 /// Number of rows to scan per chunk within a terminal block.
 pub const ROWS_PER_CHUNK: usize = 1000;
+
+/// Maximum number of dirty rows to scan synchronously.
+/// If the dirty range exceeds this, we fall back to a full async rescan.
+const MAX_SYNC_DIRTY_ROWS: usize = 500;
 
 /// Status of an async find operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,7 +83,7 @@ pub enum FindTaskMessage {
     BlockGridMatches {
         block_index: BlockIndex,
         grid_type: GridType,
-        matches: Vec<RangeInclusive<Point>>,
+        matches: Vec<AbsoluteMatch>,
     },
     /// Request to scan an AI block on the main thread.
     ScanAIBlock {
@@ -131,11 +135,88 @@ impl AsyncFindConfig {
     }
 }
 
+/// A match stored with absolute row indices to handle scrollback truncation.
+///
+/// Using absolute indices (offset from original row 0) allows us to:
+/// 1. Avoid updating all match indices when rows are truncated
+/// 2. Efficiently filter out truncated matches at query time
+/// 3. Support incremental dirty-range scanning without full rescans
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AbsoluteMatch {
+    /// Start point with absolute row index.
+    pub start: AbsolutePoint,
+    /// End point with absolute row index.
+    pub end: AbsolutePoint,
+}
+
+impl AbsoluteMatch {
+    /// Creates an AbsoluteMatch from a relative Point range.
+    pub fn from_range(range: &RangeInclusive<Point>, grid: &GridHandler) -> Self {
+        Self {
+            start: AbsolutePoint::from_point(*range.start(), grid),
+            end: AbsolutePoint::from_point(*range.end(), grid),
+        }
+    }
+
+    /// Converts back to a relative Point range.
+    ///
+    /// Returns `None` if either point has been truncated from scrollback.
+    pub fn to_range(&self, grid: &GridHandler) -> Option<RangeInclusive<Point>> {
+        let start = self.start.to_point(grid)?;
+        let end = self.end.to_point(grid)?;
+        Some(start..=end)
+    }
+
+    /// Returns true if this match has been truncated from scrollback.
+    pub fn is_truncated(&self, num_lines_truncated: u64) -> bool {
+        // A match is truncated if its start point is truncated.
+        self.start.is_truncated(num_lines_truncated)
+    }
+
+    /// Returns the absolute start row.
+    pub fn start_row(&self) -> u64 {
+        self.start.row
+    }
+
+    /// Returns the absolute end row.
+    pub fn end_row(&self) -> u64 {
+        self.end.row
+    }
+}
+
+impl PartialOrd for AbsoluteMatch {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for AbsoluteMatch {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Sort by end point (for ascending order iteration during rendering).
+        self.end.cmp(&other.end)
+    }
+}
+
+/// A focused match from the async find controller.
+///
+/// Similar to `BlockGridMatch` but uses `AbsoluteMatch` for the range, allowing
+/// the caller to convert to relative coordinates when needed.
+#[derive(Debug, Clone)]
+pub struct AsyncBlockGridMatch {
+    /// The type of grid in which the match was found.
+    pub grid_type: GridType,
+    /// The match range in absolute coordinates.
+    pub range: AbsoluteMatch,
+    /// The index of the containing block.
+    pub block_index: BlockIndex,
+}
+
 /// Per-block find results, keyed by block index.
 #[derive(Debug, Default)]
 struct BlockFindResults {
     /// Matches for terminal blocks, keyed by (block_index, grid_type).
-    terminal_matches: HashMap<(BlockIndex, GridType), Vec<RangeInclusive<Point>>>,
+    /// Matches are stored in ascending order by end point.
+    terminal_matches: HashMap<(BlockIndex, GridType), Vec<AbsoluteMatch>>,
     /// Matches for AI blocks, keyed by view_id.
     ai_matches: HashMap<EntityId, Vec<RichContentMatchId>>,
 }
@@ -158,6 +239,82 @@ impl BlockFindResults {
     fn remove_block(&mut self, block_index: BlockIndex) {
         self.terminal_matches
             .retain(|(idx, _), _| *idx != block_index);
+    }
+
+    /// Removes results for a specific block and grid type.
+    fn remove_block_grid(&mut self, block_index: BlockIndex, grid_type: GridType) {
+        self.terminal_matches.remove(&(block_index, grid_type));
+    }
+
+    /// Updates matches for a dirty range within a specific block grid.
+    ///
+    /// This removes all existing matches that overlap with the dirty range and
+    /// inserts the new matches in their place, maintaining ascending order.
+    ///
+    /// Adapted from `FilterState::update_dirty_matches` in filtering.rs.
+    fn update_dirty_matches(
+        &mut self,
+        block_index: BlockIndex,
+        grid_type: GridType,
+        dirty_range: RangeInclusive<u64>,
+        new_matches: Vec<AbsoluteMatch>,
+    ) {
+        let matches = self
+            .terminal_matches
+            .entry((block_index, grid_type))
+            .or_default();
+
+        // If there are no current matches, just insert the new ones.
+        if matches.is_empty() {
+            *matches = new_matches;
+            return;
+        }
+
+        // If the dirty range is before all existing matches, insert at the start.
+        if matches
+            .first()
+            .is_some_and(|first_match| *dirty_range.end() < first_match.start_row())
+        {
+            matches.splice(0..0, new_matches);
+            return;
+        }
+
+        // If the dirty range is after all existing matches, append at the end.
+        if matches
+            .last()
+            .is_some_and(|last_match| last_match.end_row() < *dirty_range.start())
+        {
+            matches.extend(new_matches);
+            return;
+        }
+
+        // Find the range of matches that overlap with the dirty range.
+        // A match overlaps if: match.start <= dirty.end AND match.end >= dirty.start
+        let replace_start = matches
+            .iter()
+            .position(|m| m.end_row() >= *dirty_range.start())
+            .unwrap_or(matches.len());
+
+        let replace_end = matches
+            .iter()
+            .rposition(|m| m.start_row() <= *dirty_range.end())
+            .map(|pos| pos + 1)
+            .unwrap_or(replace_start);
+
+        let replace_range = if replace_start <= replace_end {
+            replace_start..replace_end
+        } else {
+            // Dirty range lies between two adjacent matches; insert without replacing.
+            replace_start..replace_start
+        };
+
+        matches.splice(replace_range, new_matches);
+
+        // Assert that matches are still in ascending order.
+        debug_assert!(
+            matches.windows(2).all(|w| w[0].end_row() <= w[1].start_row()),
+            "Matches should be in ascending order after update_dirty_matches"
+        );
     }
 }
 
@@ -253,6 +410,21 @@ impl AsyncFindController {
         matches!(self.status, AsyncFindStatus::Scanning { .. })
     }
 
+    /// Returns true if there is an active find configuration.
+    ///
+    /// This indicates that find is active and new blocks should be scanned.
+    pub fn has_active_find(&self) -> bool {
+        self.current_config.is_some()
+    }
+
+    /// Returns true if there are pending results from a background task.
+    ///
+    /// This can be true even when `is_scanning()` is false, e.g., when a single
+    /// block is being rescanned after the initial scan completed.
+    pub fn has_pending_results(&self) -> bool {
+        self.result_rx.is_some()
+    }
+
     /// Returns the currently focused match index (0-based), if any.
     pub fn focused_match_index(&self) -> Option<usize> {
         self.focused_match_index
@@ -288,8 +460,11 @@ impl AsyncFindController {
         self.focused_match_index = Some(new_index);
     }
 
-    /// Returns the focused match as a BlockGridMatch if it's a terminal match.
-    pub fn focused_terminal_match(&self) -> Option<BlockGridMatch> {
+    /// Returns the focused match as an AsyncBlockGridMatch if it's a terminal match.
+    ///
+    /// The returned match uses absolute coordinates. Callers should use
+    /// `AbsoluteMatch::to_range()` to convert to relative coordinates for rendering.
+    pub fn focused_terminal_match(&self) -> Option<AsyncBlockGridMatch> {
         let focused_idx = self.focused_match_index?;
 
         // Iterate through terminal matches in order to find the one at focused_idx.
@@ -316,11 +491,10 @@ impl AsyncFindController {
             if let Some(matches) = self.block_results.terminal_matches.get(&(*block_index, *grid_type)) {
                 for match_range in matches {
                     if current_idx == focused_idx {
-                        return Some(BlockGridMatch {
+                        return Some(AsyncBlockGridMatch {
                             block_index: *block_index,
                             grid_type: *grid_type,
                             range: match_range.clone(),
-                            is_filtered: false,
                         });
                     }
                     current_idx += 1;
@@ -524,27 +698,133 @@ impl AsyncFindController {
     ///
     /// This should be called when a block's content changes.
     /// The `ctx` parameter is generic so this can be called from any owning entity.
+    ///
+    /// # Arguments
+    /// * `block_index` - The index of the block that changed.
+    /// * `dirty_row_range` - Optional range of rows (in relative coordinates) that changed.
+    ///   If provided and small enough, only those rows will be rescanned and merged.
+    /// * `num_lines_truncated` - The current number of truncated lines in the grid.
+    /// * `ctx` - The model context.
     pub fn invalidate_block<E: Entity>(
         &mut self,
         block_index: BlockIndex,
+        dirty_row_range: Option<RangeInclusive<usize>>,
+        num_lines_truncated: u64,
         ctx: &mut ModelContext<E>,
     ) {
-        self.block_results.remove_block(block_index);
+        // If we have an active config, determine whether to do incremental or full rescan.
+        let Some(config) = self.current_config.clone() else {
+            return;
+        };
 
-        // If we have an active config, rescan just this block.
-        if let Some(config) = &self.current_config {
-            self.rescan_single_block(block_index, config.clone(), ctx);
+                // Check if we should do an incremental update.
+        if let Some(dirty_range) = dirty_row_range {
+            let dirty_row_count = dirty_range.end().saturating_sub(*dirty_range.start()) + 1;
+
+            if dirty_row_count <= MAX_SYNC_DIRTY_ROWS {
+                // Do incremental scanning for the dirty range.
+                eprintln!("[async_find] invalidate_block: sync scan for block {:?}, dirty_range={:?}", block_index, dirty_range);
+                self.scan_dirty_range_sync(
+                    block_index,
+                    dirty_range,
+                    num_lines_truncated,
+                    &config,
+                );
+                return;
+            }
         }
+
+        // Fall back to full block rescan.
+        eprintln!("[async_find] invalidate_block: full rescan for block {:?}", block_index);
+        self.block_results.remove_block(block_index);
+        self.rescan_single_block(block_index, config, ctx);
 
         // Note: The owning entity is responsible for emitting events to notify listeners.
     }
 
-    /// Returns matches for a specific terminal block grid.
+    /// Scans a dirty range synchronously and merges results with existing matches.
+    fn scan_dirty_range_sync(
+        &mut self,
+        block_index: BlockIndex,
+        dirty_range: RangeInclusive<usize>,
+        num_lines_truncated: u64,
+        config: &AsyncFindConfig,
+    ) {
+        use warp_terminal::model::grid::Dimensions;
+        use crate::terminal::model::find::{FindConfig, RegexDFAs};
+
+        // Build RegexDFAs from config.
+        let Ok(dfas) = RegexDFAs::new_with_config(
+            config.query.as_str(),
+            FindConfig {
+                is_regex_enabled: config.is_regex_enabled,
+                is_case_sensitive: config.is_case_sensitive,
+            },
+        ) else {
+            return;
+        };
+
+        // Lock the terminal model to access the block.
+        let model = self.terminal_model.lock();
+        let Some(block) = model.block_list().block_at(block_index) else {
+            return;
+        };
+
+        // Scan both grids for the dirty range.
+        for grid_type in [GridType::PromptAndCommand, GridType::Output] {
+            let grid = match grid_type {
+                GridType::Output => block.output_grid().grid_handler(),
+                GridType::PromptAndCommand => block.prompt_and_command_grid().grid_handler(),
+                _ => continue,
+            };
+
+            let total_rows = Dimensions::total_rows(grid);
+            let columns = Dimensions::columns(grid);
+
+            // Clamp dirty range to grid bounds.
+            let start_row = *dirty_range.start().min(&total_rows.saturating_sub(1));
+            let end_row = *dirty_range.end().min(&total_rows.saturating_sub(1));
+
+            if start_row > end_row {
+                continue;
+            }
+
+            // Create start and end points for the range scan.
+            let start_point = Point::new(start_row, 0);
+            let end_point = Point::new(end_row, columns.saturating_sub(1));
+
+            // Scan the range for matches.
+            let iter = grid.find_in_range(&dfas, start_point, end_point);
+            let mut matches: Vec<AbsoluteMatch> = iter
+                .map(|range| AbsoluteMatch::from_range(&range, grid))
+                .collect();
+
+            // The find iterator returns matches in descending order; reverse to ascending.
+            matches.reverse();
+
+            // Convert dirty range to absolute row indices.
+            let absolute_start = start_row as u64 + num_lines_truncated;
+            let absolute_end = end_row as u64 + num_lines_truncated;
+            let absolute_dirty_range = absolute_start..=absolute_end;
+
+            // Update matches using the merge logic.
+            self.block_results.update_dirty_matches(
+                block_index,
+                grid_type,
+                absolute_dirty_range,
+                matches,
+            );
+        }
+    }
+
+    /// Returns matches for a specific terminal block grid as AbsoluteMatch references.
+    ///
+    /// Callers should convert to relative `Point` ranges using `AbsoluteMatch::to_range()`.
     pub fn matches_for_block_grid(
         &self,
         block_index: BlockIndex,
         grid_type: GridType,
-    ) -> Option<&Vec<RangeInclusive<Point>>> {
+    ) -> Option<&Vec<AbsoluteMatch>> {
         self.block_results
             .terminal_matches
             .get(&(block_index, grid_type))
@@ -755,18 +1035,25 @@ mod tests {
         assert_eq!(config.blocks_to_include, Some(vec![BlockIndex(0), BlockIndex(1)]));
     }
 
+    /// Helper to create an AbsoluteMatch at a given row.
+    fn make_match(row: u64) -> AbsoluteMatch {
+        AbsoluteMatch {
+            start: AbsolutePoint { row, col: 0 },
+            end: AbsolutePoint { row, col: 5 },
+        }
+    }
+
     #[test]
     fn test_block_find_results_total_count() {
         let mut results = BlockFindResults::default();
         assert_eq!(results.total_match_count(), 0);
 
         // Add some terminal matches.
-        let point = Point::new(0, 0);
         results
             .terminal_matches
             .entry((BlockIndex(0), GridType::Output))
             .or_default()
-            .push(point..=point);
+            .push(make_match(0));
         assert_eq!(results.total_match_count(), 1);
 
         // Add more terminal matches.
@@ -774,36 +1061,35 @@ mod tests {
             .terminal_matches
             .entry((BlockIndex(0), GridType::Output))
             .or_default()
-            .push(point..=point);
+            .push(make_match(1));
         results
             .terminal_matches
             .entry((BlockIndex(1), GridType::PromptAndCommand))
             .or_default()
-            .push(point..=point);
+            .push(make_match(0));
         assert_eq!(results.total_match_count(), 3);
     }
 
     #[test]
     fn test_block_find_results_remove_block() {
         let mut results = BlockFindResults::default();
-        let point = Point::new(0, 0);
 
         // Add matches for block 0 and block 1.
         results
             .terminal_matches
             .entry((BlockIndex(0), GridType::Output))
             .or_default()
-            .push(point..=point);
+            .push(make_match(0));
         results
             .terminal_matches
             .entry((BlockIndex(0), GridType::PromptAndCommand))
             .or_default()
-            .push(point..=point);
+            .push(make_match(0));
         results
             .terminal_matches
             .entry((BlockIndex(1), GridType::Output))
             .or_default()
-            .push(point..=point);
+            .push(make_match(0));
         assert_eq!(results.total_match_count(), 3);
 
         // Remove block 0.
@@ -830,5 +1116,123 @@ mod tests {
             ),
             "Scanning (5/10)"
         );
+    }
+
+    #[test]
+    fn test_absolute_match_is_truncated() {
+        let match_at_row_5 = make_match(5);
+        // Not truncated when num_lines_truncated <= start row.
+        assert!(!match_at_row_5.is_truncated(0));
+        assert!(!match_at_row_5.is_truncated(5));
+        // Truncated when num_lines_truncated > start row.
+        assert!(match_at_row_5.is_truncated(6));
+        assert!(match_at_row_5.is_truncated(100));
+    }
+
+    #[test]
+    fn test_update_dirty_matches_empty_existing() {
+        let mut results = BlockFindResults::default();
+        let block_index = BlockIndex(0);
+        let grid_type = GridType::Output;
+
+        // Update with new matches when there are no existing matches.
+        let new_matches = vec![make_match(5), make_match(10), make_match(15)];
+        results.update_dirty_matches(block_index, grid_type, 5..=15, new_matches.clone());
+
+        let stored = results.terminal_matches.get(&(block_index, grid_type)).unwrap();
+        assert_eq!(stored.len(), 3);
+        assert_eq!(stored[0].start_row(), 5);
+        assert_eq!(stored[1].start_row(), 10);
+        assert_eq!(stored[2].start_row(), 15);
+    }
+
+    #[test]
+    fn test_update_dirty_matches_prepend() {
+        let mut results = BlockFindResults::default();
+        let block_index = BlockIndex(0);
+        let grid_type = GridType::Output;
+
+        // Seed with matches at rows 20, 30.
+        results
+            .terminal_matches
+            .insert((block_index, grid_type), vec![make_match(20), make_match(30)]);
+
+        // Update with dirty range before all existing matches.
+        let new_matches = vec![make_match(5), make_match(10)];
+        results.update_dirty_matches(block_index, grid_type, 5..=10, new_matches);
+
+        let stored = results.terminal_matches.get(&(block_index, grid_type)).unwrap();
+        assert_eq!(stored.len(), 4);
+        assert_eq!(stored[0].start_row(), 5);
+        assert_eq!(stored[1].start_row(), 10);
+        assert_eq!(stored[2].start_row(), 20);
+        assert_eq!(stored[3].start_row(), 30);
+    }
+
+    #[test]
+    fn test_update_dirty_matches_append() {
+        let mut results = BlockFindResults::default();
+        let block_index = BlockIndex(0);
+        let grid_type = GridType::Output;
+
+        // Seed with matches at rows 5, 10.
+        results
+            .terminal_matches
+            .insert((block_index, grid_type), vec![make_match(5), make_match(10)]);
+
+        // Update with dirty range after all existing matches.
+        let new_matches = vec![make_match(20), make_match(30)];
+        results.update_dirty_matches(block_index, grid_type, 20..=30, new_matches);
+
+        let stored = results.terminal_matches.get(&(block_index, grid_type)).unwrap();
+        assert_eq!(stored.len(), 4);
+        assert_eq!(stored[0].start_row(), 5);
+        assert_eq!(stored[1].start_row(), 10);
+        assert_eq!(stored[2].start_row(), 20);
+        assert_eq!(stored[3].start_row(), 30);
+    }
+
+    #[test]
+    fn test_update_dirty_matches_replace_middle() {
+        let mut results = BlockFindResults::default();
+        let block_index = BlockIndex(0);
+        let grid_type = GridType::Output;
+
+        // Seed with matches at rows 5, 15, 25.
+        results
+            .terminal_matches
+            .insert((block_index, grid_type), vec![make_match(5), make_match(15), make_match(25)]);
+
+        // Update dirty range 10..=20, which overlaps with the match at row 15.
+        // Replace it with matches at rows 12 and 18.
+        let new_matches = vec![make_match(12), make_match(18)];
+        results.update_dirty_matches(block_index, grid_type, 10..=20, new_matches);
+
+        let stored = results.terminal_matches.get(&(block_index, grid_type)).unwrap();
+        assert_eq!(stored.len(), 4);
+        assert_eq!(stored[0].start_row(), 5);
+        assert_eq!(stored[1].start_row(), 12);
+        assert_eq!(stored[2].start_row(), 18);
+        assert_eq!(stored[3].start_row(), 25);
+    }
+
+    #[test]
+    fn test_update_dirty_matches_clear_range() {
+        let mut results = BlockFindResults::default();
+        let block_index = BlockIndex(0);
+        let grid_type = GridType::Output;
+
+        // Seed with matches at rows 5, 15, 25.
+        results
+            .terminal_matches
+            .insert((block_index, grid_type), vec![make_match(5), make_match(15), make_match(25)]);
+
+        // Update dirty range 10..=20 with no new matches (clears the match at row 15).
+        results.update_dirty_matches(block_index, grid_type, 10..=20, vec![]);
+
+        let stored = results.terminal_matches.get(&(block_index, grid_type)).unwrap();
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[0].start_row(), 5);
+        assert_eq!(stored[1].start_row(), 25);
     }
 }
