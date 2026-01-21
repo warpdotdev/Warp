@@ -3,8 +3,408 @@
 //! Most basic tests are in the parent module's `tests` submodule.
 //! This file contains more comprehensive integration-style tests.
 
-// TODO: Add comprehensive tests for:
-// - Chunked scanning produces same results as full scan
-// - Block invalidation removes only that block's matches
-// - Message processing handles all message types correctly
-// - Cancellation works properly
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use parking_lot::FairMutex;
+use warpui::{App, Entity};
+
+use crate::terminal::block_list_element::GridType;
+use crate::terminal::find::model::block_list::run_find_on_block_list;
+use crate::terminal::find::model::FindOptions;
+use crate::terminal::find::BlockListMatch;
+use crate::terminal::model::terminal_model::BlockSortDirection;
+use crate::terminal::model::TerminalModel;
+
+use super::{
+    AbsoluteMatch, AsyncFindController, AsyncFindStatus, BlockFindResults, FindTaskMessage,
+};
+use crate::terminal::model::grid::grid_handler::AbsolutePoint;
+use crate::terminal::model::terminal_model::BlockIndex;
+
+/// Test-only wrapper entity for AsyncFindController.
+///
+/// This allows us to call AsyncFindController methods that require ModelContext
+/// by using `model_handle.update(&mut app, |model, ctx| ...)`.
+struct TestAsyncFindModel {
+    controller: AsyncFindController,
+}
+
+impl Entity for TestAsyncFindModel {
+    type Event = ();
+}
+
+/// Helper to create an AbsoluteMatch at a given row and column range.
+fn make_match_at(row: u64, start_col: usize, end_col: usize) -> AbsoluteMatch {
+    AbsoluteMatch {
+        start: AbsolutePoint {
+            row,
+            col: start_col,
+        },
+        end: AbsolutePoint { row, col: end_col },
+    }
+}
+
+#[test]
+fn test_async_find_produces_same_results_as_sync_find() {
+    App::test((), |mut app| async move {
+        let mut mock_terminal_model = TerminalModel::mock(None, None);
+        mock_terminal_model.simulate_block("foobar", "foo\r\nbar\r\n");
+        mock_terminal_model.simulate_block("barbaz", "bar baz\r\n");
+
+        let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
+
+        // Run sync find for comparison.
+        let sync_run = app.update(|ctx| {
+            run_find_on_block_list(
+                FindOptions {
+                    query: Some("bar".to_owned().into()),
+                    is_regex_enabled: false,
+                    is_case_sensitive: false,
+                    ..Default::default()
+                },
+                terminal_model.lock().block_list(),
+                &HashMap::new(),
+                BlockSortDirection::MostRecentLast,
+                ctx,
+            )
+        });
+
+        // Run async find using a wrapper model.
+        let terminal_model_clone = terminal_model.clone();
+        let test_model = app.add_model(|_| TestAsyncFindModel {
+            controller: AsyncFindController::new(terminal_model_clone),
+        });
+
+        test_model.update(&mut app, |model, ctx| {
+            model.controller.start_find(
+                &FindOptions {
+                    query: Some("bar".to_owned().into()),
+                    is_regex_enabled: false,
+                    is_case_sensitive: false,
+                    ..Default::default()
+                },
+                BlockSortDirection::MostRecentLast,
+                ctx,
+            );
+        });
+
+        // Wait for async find to complete by polling.
+        for _ in 0..100 {
+            let is_complete = test_model.update(&mut app, |model, ctx| {
+                model.controller.process_messages(ctx);
+                matches!(model.controller.status(), AsyncFindStatus::Complete)
+            });
+            if is_complete {
+                break;
+            }
+            // Small delay to let background task run.
+            warpui::r#async::Timer::after(std::time::Duration::from_millis(10)).await;
+        }
+
+        let (status, async_count) = test_model.update(&mut app, |model, _ctx| {
+            (model.controller.status().clone(), model.controller.match_count())
+        });
+
+        assert_eq!(
+            status,
+            AsyncFindStatus::Complete,
+            "Async find should complete"
+        );
+
+        // Compare match counts.
+        let sync_count = sync_run.matches().count();
+        assert_eq!(
+            async_count, sync_count,
+            "Async find should produce same number of matches as sync find"
+        );
+
+        // Verify the matches are in the expected blocks and grids.
+        let model = terminal_model.lock();
+        for sync_match in sync_run.matches() {
+            if let BlockListMatch::CommandBlock(grid_match) = sync_match {
+                let async_matches = test_model.update(&mut app, |m, _ctx| {
+                    m.controller
+                        .matches_for_block_grid(grid_match.block_index, grid_match.grid_type)
+                        .cloned()
+                });
+                assert!(
+                    async_matches.is_some(),
+                    "Async find should have matches for block {:?} grid {:?}",
+                    grid_match.block_index,
+                    grid_match.grid_type
+                );
+
+                // Convert async match to relative range and compare.
+                let block = model.block_list().block_at(grid_match.block_index).unwrap();
+                let grid = match grid_match.grid_type {
+                    GridType::Output => block.output_grid().grid_handler(),
+                    GridType::PromptAndCommand => block.prompt_and_command_grid().grid_handler(),
+                    _ => continue,
+                };
+
+                let async_ranges: Vec<_> = async_matches
+                    .unwrap()
+                    .iter()
+                    .filter_map(|m| m.to_range(grid))
+                    .collect();
+
+                assert!(
+                    async_ranges.contains(&grid_match.range),
+                    "Async find should contain match {:?} in block {:?} grid {:?}",
+                    grid_match.range,
+                    grid_match.block_index,
+                    grid_match.grid_type
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn test_async_find_cancellation() {
+    App::test((), |mut app| async move {
+        let mut mock_terminal_model = TerminalModel::mock(None, None);
+        // Create some blocks with content.
+        mock_terminal_model.simulate_block("cmd1", "line1\r\nline2\r\n");
+        mock_terminal_model.simulate_block("cmd2", "line3\r\nline4\r\n");
+
+        let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
+        let test_model = app.add_model(|_| TestAsyncFindModel {
+            controller: AsyncFindController::new(terminal_model.clone()),
+        });
+
+        // Start a find operation.
+        test_model.update(&mut app, |model, ctx| {
+            model.controller.start_find(
+                &FindOptions {
+                    query: Some("line".to_owned().into()),
+                    is_regex_enabled: false,
+                    is_case_sensitive: false,
+                    ..Default::default()
+                },
+                BlockSortDirection::MostRecentLast,
+                ctx,
+            );
+        });
+
+        // Verify we're scanning.
+        let has_pending = test_model.update(&mut app, |model, _ctx| {
+            model.controller.has_pending_results()
+        });
+        assert!(has_pending, "Should have pending results after starting find");
+
+        // Cancel the find.
+        test_model.update(&mut app, |model, _ctx| {
+            model.controller.cancel_current_find();
+        });
+
+        // Verify cancellation state.
+        let (has_pending, has_active) = test_model.update(&mut app, |model, _ctx| {
+            (model.controller.has_pending_results(), model.controller.has_active_find())
+        });
+        assert!(!has_pending, "Should not have pending results after cancellation");
+        assert!(has_active, "Config should still be set after cancellation");
+
+        // Clear results should reset everything.
+        test_model.update(&mut app, |model, ctx| {
+            model.controller.clear_results(ctx);
+        });
+
+        let (has_active, status) = test_model.update(&mut app, |model, _ctx| {
+            (model.controller.has_active_find(), model.controller.status().clone())
+        });
+        assert!(!has_active, "Should not have active find after clear_results");
+        assert_eq!(status, AsyncFindStatus::Idle, "Status should be Idle after clear_results");
+    });
+}
+
+#[test]
+fn test_message_processing_updates_state() {
+    App::test((), |mut app| async move {
+        let mock_terminal_model = TerminalModel::mock(None, None);
+        let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
+
+        // Create channel for sending test messages.
+        let (result_tx, result_rx) = async_channel::unbounded();
+
+        let test_model = app.add_model(|_| {
+            let mut controller = AsyncFindController::new(terminal_model.clone());
+            // Manually set up state as if a find is in progress.
+            controller.result_rx = Some(result_rx);
+            controller.status = AsyncFindStatus::Scanning {
+                blocks_scanned: 0,
+                total_blocks: 2,
+            };
+            TestAsyncFindModel { controller }
+        });
+
+        // Send a BlockGridMatches message.
+        result_tx
+            .send_blocking(FindTaskMessage::BlockGridMatches {
+                block_index: BlockIndex(1),
+                grid_type: GridType::Output,
+                matches: vec![make_match_at(0, 0, 2), make_match_at(1, 0, 2)],
+            })
+            .unwrap();
+
+        // Send a Progress message.
+        result_tx
+            .send_blocking(FindTaskMessage::Progress {
+                blocks_scanned: 1,
+                total_blocks: 2,
+            })
+            .unwrap();
+
+        // Process messages.
+        test_model.update(&mut app, |model, ctx| {
+            model.controller.process_messages(ctx);
+        });
+
+        // Verify state updates.
+        let (match_count, status, focused_idx) = test_model.update(&mut app, |model, _ctx| {
+            (
+                model.controller.match_count(),
+                model.controller.status().clone(),
+                model.controller.focused_match_index(),
+            )
+        });
+
+        assert_eq!(match_count, 2, "Should have 2 matches");
+        assert_eq!(
+            status,
+            AsyncFindStatus::Scanning {
+                blocks_scanned: 1,
+                total_blocks: 2
+            },
+            "Status should reflect progress"
+        );
+        assert_eq!(focused_idx, Some(0), "Should auto-focus first match");
+
+        // Send Done message.
+        result_tx.send_blocking(FindTaskMessage::Done).unwrap();
+
+        test_model.update(&mut app, |model, ctx| {
+            model.controller.process_messages(ctx);
+        });
+
+        let (status, has_pending) = test_model.update(&mut app, |model, _ctx| {
+            (model.controller.status().clone(), model.controller.has_pending_results())
+        });
+
+        assert_eq!(
+            status,
+            AsyncFindStatus::Complete,
+            "Status should be Complete after Done message"
+        );
+        assert!(!has_pending, "Should clear result_rx after Done");
+    });
+}
+
+#[test]
+fn test_message_processing_cancelled() {
+    App::test((), |mut app| async move {
+        let mock_terminal_model = TerminalModel::mock(None, None);
+        let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
+
+        // Create channels for test.
+        let (result_tx, result_rx) = async_channel::unbounded();
+        let (cancel_tx, _cancel_rx) = async_channel::bounded(1);
+
+        let test_model = app.add_model(|_| {
+            let mut controller = AsyncFindController::new(terminal_model.clone());
+            // Manually set up state as if a find is in progress.
+            controller.result_rx = Some(result_rx);
+            controller.cancel_tx = Some(cancel_tx);
+            controller.status = AsyncFindStatus::Scanning {
+                blocks_scanned: 0,
+                total_blocks: 2,
+            };
+            TestAsyncFindModel { controller }
+        });
+
+        // Send Cancelled message.
+        result_tx
+            .send_blocking(FindTaskMessage::Cancelled)
+            .unwrap();
+
+        test_model.update(&mut app, |model, ctx| {
+            model.controller.process_messages(ctx);
+        });
+
+        // Verify channels are cleared but status is unchanged (task was cancelled mid-scan).
+        let has_pending = test_model.update(&mut app, |model, _ctx| {
+            model.controller.has_pending_results()
+        });
+        assert!(!has_pending, "Should clear result_rx after Cancelled");
+    });
+}
+
+#[test]
+fn test_block_invalidation_with_dirty_range() {
+    // Test that dirty range invalidation merges correctly with existing matches.
+    let mut results = BlockFindResults::default();
+    let block_index = BlockIndex(0);
+    let grid_type = GridType::Output;
+
+    // Seed with matches at absolute rows 5, 15, 25.
+    results.terminal_matches.insert(
+        (block_index, grid_type),
+        vec![make_match_at(5, 0, 2), make_match_at(15, 0, 2), make_match_at(25, 0, 2)],
+    );
+
+    // Dirty range 10..=20 overlaps with match at row 15.
+    // New matches found in dirty range: rows 12 and 18.
+    let new_matches = vec![make_match_at(12, 0, 2), make_match_at(18, 0, 2)];
+    results.update_dirty_matches(block_index, grid_type, 10..=20, new_matches);
+
+    let stored = results
+        .terminal_matches
+        .get(&(block_index, grid_type))
+        .unwrap();
+
+    // Should have: 5, 12, 18, 25 (match at 15 was replaced).
+    assert_eq!(stored.len(), 4);
+    assert_eq!(stored[0].start_row(), 5);
+    assert_eq!(stored[1].start_row(), 12);
+    assert_eq!(stored[2].start_row(), 18);
+    assert_eq!(stored[3].start_row(), 25);
+}
+
+#[test]
+fn test_focus_next_match_wraps_around() {
+    let mock_terminal_model = TerminalModel::mock(None, None);
+    let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
+    let mut controller = AsyncFindController::new(terminal_model);
+
+    // Manually add some matches.
+    controller
+        .block_results
+        .terminal_matches
+        .insert((BlockIndex(0), GridType::Output), vec![
+            make_match_at(0, 0, 2),
+            make_match_at(1, 0, 2),
+            make_match_at(2, 0, 2),
+        ]);
+
+    assert_eq!(controller.match_count(), 3);
+
+    // Focus first match.
+    controller.focus_next_match(crate::view_components::find::FindDirection::Down);
+    assert_eq!(controller.focused_match_index(), Some(0));
+
+    // Move down.
+    controller.focus_next_match(crate::view_components::find::FindDirection::Down);
+    assert_eq!(controller.focused_match_index(), Some(1));
+
+    controller.focus_next_match(crate::view_components::find::FindDirection::Down);
+    assert_eq!(controller.focused_match_index(), Some(2));
+
+    // Wrap around to first.
+    controller.focus_next_match(crate::view_components::find::FindDirection::Down);
+    assert_eq!(controller.focused_match_index(), Some(0));
+
+    // Move up should wrap to last.
+    controller.focus_next_match(crate::view_components::find::FindDirection::Up);
+    assert_eq!(controller.focused_match_index(), Some(2));
+}
