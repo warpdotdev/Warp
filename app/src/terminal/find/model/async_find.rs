@@ -213,12 +213,12 @@ pub struct AsyncBlockGridMatch {
 
 /// Per-block find results, keyed by block index.
 #[derive(Debug, Default)]
-struct BlockFindResults {
+pub(crate) struct BlockFindResults {
     /// Matches for terminal blocks, keyed by (block_index, grid_type).
     /// Matches are stored in ascending order by end point.
-    terminal_matches: HashMap<(BlockIndex, GridType), Vec<AbsoluteMatch>>,
+    pub(crate) terminal_matches: HashMap<(BlockIndex, GridType), Vec<AbsoluteMatch>>,
     /// Matches for AI blocks, keyed by view_id.
-    ai_matches: HashMap<EntityId, Vec<RichContentMatchId>>,
+    pub(crate) ai_matches: HashMap<EntityId, Vec<RichContentMatchId>>,
 }
 
 impl BlockFindResults {
@@ -239,11 +239,6 @@ impl BlockFindResults {
     fn remove_block(&mut self, block_index: BlockIndex) {
         self.terminal_matches
             .retain(|(idx, _), _| *idx != block_index);
-    }
-
-    /// Removes results for a specific block and grid type.
-    fn remove_block_grid(&mut self, block_index: BlockIndex, grid_type: GridType) {
-        self.terminal_matches.remove(&(block_index, grid_type));
     }
 
     /// Updates matches for a dirty range within a specific block grid.
@@ -353,16 +348,28 @@ pub struct AsyncFindController {
     current_config: Option<AsyncFindConfig>,
 
     /// Per-block results for the current find run.
+    #[cfg(not(test))]
     block_results: BlockFindResults,
+    #[cfg(test)]
+    pub(crate) block_results: BlockFindResults,
 
     /// Current status of the find operation.
+    #[cfg(not(test))]
     status: AsyncFindStatus,
+    #[cfg(test)]
+    pub(crate) status: AsyncFindStatus,
 
     /// Receiver for messages from background task.
+    #[cfg(not(test))]
     result_rx: Option<async_channel::Receiver<FindTaskMessage>>,
+    #[cfg(test)]
+    pub(crate) result_rx: Option<async_channel::Receiver<FindTaskMessage>>,
 
     /// Sender to cancel the current background task.
+    #[cfg(not(test))]
     cancel_tx: Option<async_channel::Sender<()>>,
+    #[cfg(test)]
+    pub(crate) cancel_tx: Option<async_channel::Sender<()>>,
 
     /// Rich content views for AI block searching.
     rich_content_views: HashMap<EntityId, Box<dyn FindableRichContentHandle>>,
