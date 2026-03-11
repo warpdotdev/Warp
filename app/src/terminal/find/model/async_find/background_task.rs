@@ -29,13 +29,15 @@ use super::{
 ///
 /// This is generic over the entity type so that it can be called from
 /// any model that owns an `AsyncFindController`.
+///
+/// Returns a handle that can be used to abort the spawned future.
 pub fn spawn_find_task<E: Entity>(
     config: AsyncFindConfig,
     terminal_model: Arc<FairMutex<TerminalModel>>,
     result_tx: async_channel::Sender<FindTaskMessage>,
     cancel_rx: async_channel::Receiver<()>,
     ctx: &mut ModelContext<E>,
-) {
+) -> warpui::r#async::SpawnedFutureHandle {
     ctx.spawn(
         async move {
             run_find_task(config, terminal_model, result_tx, cancel_rx).await;
@@ -43,7 +45,7 @@ pub fn spawn_find_task<E: Entity>(
         |_me, (), _ctx| {
             // Task completed - nothing to do here as results are sent via channel.
         },
-    );
+    )
 }
 
 /// Runs the main find task loop.
@@ -86,7 +88,7 @@ async fn run_find_task(
     // Process blocks newest-first.
     for (i, info) in block_info.iter().enumerate() {
         // Check for cancellation.
-        if cancel_rx.try_recv().is_ok() {
+        if cancel_rx.is_closed() {
             let _ = result_tx.send(FindTaskMessage::Cancelled).await;
             return;
         }
@@ -149,7 +151,7 @@ async fn scan_terminal_block_chunked(
     };
 
     for grid_type in grid_order.iter() {
-        if cancel_rx.try_recv().is_ok() {
+        if cancel_rx.is_closed() {
             return;
         }
 
@@ -178,7 +180,7 @@ async fn scan_grid_chunked(
 
     loop {
         // Check for cancellation before each chunk.
-        if cancel_rx.try_recv().is_ok() {
+        if cancel_rx.is_closed() {
             return;
         }
 
