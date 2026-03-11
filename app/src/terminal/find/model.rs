@@ -397,7 +397,7 @@ impl TerminalFindModel {
 
         // Use async find if the feature flag is enabled.
         if let Some(controller) = &mut self.async_find_controller {
-            eprintln!("[async_find] Starting async find with query: {:?}", options.query);
+            log::trace!("[async_find] Starting async find with query: {:?}", options.query);
             controller.start_find(&options, block_sort_direction, ctx);
             ctx.emit(FindEvent::RanFind);
 
@@ -657,7 +657,7 @@ impl TerminalFindModel {
             return;
         }
 
-        eprintln!(
+        log::trace!(
             "[async_find] notify_block_completed: block_index={:?}",
             block_index
         );
@@ -719,7 +719,7 @@ impl TerminalFindModel {
             let still_has_pending = controller.has_pending_results();
             let match_count_after = controller.match_count();
 
-            eprintln!(
+            log::trace!(
                 "[async_find] tick: was_scanning={}, is_still_scanning={}, pending={}->{}, matches: {} -> {}",
                 was_scanning, is_still_scanning, had_pending, still_has_pending, match_count_before, match_count_after
             );

@@ -599,13 +599,13 @@ impl AsyncFindController {
     /// The `ctx` parameter is generic so this can be called from any owning entity.
     pub fn process_messages<E: Entity>(&mut self, ctx: &mut ModelContext<E>) {
         let Some(rx) = &self.result_rx else {
-            eprintln!("[async_find] process_messages: no result_rx channel");
+        log::trace!("[async_find] process_messages: no result_rx channel");
             return;
         };
 
         // Collect all messages first to avoid borrow issues.
         let messages: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
-        eprintln!("[async_find] process_messages: received {} messages", messages.len());
+        log::trace!("[async_find] process_messages: received {} messages", messages.len());
 
         let mut had_matches = false;
         let mut should_clear_channels = false;
@@ -647,7 +647,7 @@ impl AsyncFindController {
                             let start = instant::Instant::now();
                             let match_ids = view.run_find(&options, ctx);
                             let elapsed = start.elapsed();
-                            log::info!(
+                            log::trace!(
                                 "[async_find] AI block scan took {}ms for view_id={:?}",
                                 elapsed.as_millis(),
                                 view_id
@@ -748,7 +748,7 @@ impl AsyncFindController {
 
             if dirty_row_count <= MAX_SYNC_DIRTY_ROWS {
                 // Do incremental scanning for the dirty range.
-                eprintln!("[async_find] invalidate_block: sync scan for block {:?}, dirty_range={:?}", block_index, dirty_range);
+                log::trace!("[async_find] invalidate_block: sync scan for block {:?}, dirty_range={:?}", block_index, dirty_range);
                 self.scan_dirty_range_sync(
                     block_index,
                     dirty_range,
@@ -760,7 +760,7 @@ impl AsyncFindController {
         }
 
         // Fall back to full block rescan.
-        eprintln!("[async_find] invalidate_block: full rescan for block {:?}", block_index);
+        log::trace!("[async_find] invalidate_block: full rescan for block {:?}", block_index);
         self.block_results.remove_block(block_index);
         self.rescan_single_block(block_index, config, ctx);
 
