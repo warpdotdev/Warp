@@ -13,6 +13,7 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use parking_lot::FairMutex;
+use warpui::r#async::SpawnedFutureHandle;
 use warpui::{Entity, EntityId, ModelContext};
 
 use crate::terminal::block_list_element::GridType;
@@ -32,7 +33,7 @@ use super::FindOptions;
 use background_task::spawn_find_task;
 
 /// Maximum time (in milliseconds) to hold the terminal model lock during a find chunk.
-pub const MAX_LOCK_DURATION_MS: u64 = 100;
+pub const MAX_LOCK_DURATION_MS: u64 = 5;
 
 /// Number of rows to scan per chunk within a terminal block.
 pub const ROWS_PER_CHUNK: usize = 1000;
@@ -366,10 +367,14 @@ pub struct AsyncFindController {
     pub(crate) result_rx: Option<async_channel::Receiver<FindTaskMessage>>,
 
     /// Sender to cancel the current background task.
+    /// Dropping the sender closes the channel, which signals cancellation.
     #[cfg(not(test))]
     cancel_tx: Option<async_channel::Sender<()>>,
     #[cfg(test)]
     pub(crate) cancel_tx: Option<async_channel::Sender<()>>,
+
+    /// Handle to abort the background task's future.
+    task_handle: Option<SpawnedFutureHandle>,
 
     /// Rich content views for AI block searching.
     rich_content_views: HashMap<EntityId, Box<dyn FindableRichContentHandle>>,
@@ -391,6 +396,7 @@ impl AsyncFindController {
             status: AsyncFindStatus::Idle,
             result_rx: None,
             cancel_tx: None,
+            task_handle: None,
             rich_content_views: HashMap::new(),
             block_sort_direction: BlockSortDirection::MostRecentLast,
             focused_match_index: None,
@@ -578,13 +584,13 @@ impl AsyncFindController {
         self.cancel_tx = Some(cancel_tx);
 
         // Spawn background task.
-        spawn_find_task(
+        self.task_handle = Some(spawn_find_task(
             config,
             self.terminal_model.clone(),
             result_tx,
             cancel_rx,
             ctx,
-        );
+        ));
     }
 
     /// Processes pending messages from the background find task.
@@ -638,7 +644,14 @@ impl AsyncFindController {
                                 is_regex_enabled: config.is_regex_enabled,
                                 blocks_to_include_in_results: None,
                             };
+                            let start = instant::Instant::now();
                             let match_ids = view.run_find(&options, ctx);
+                            let elapsed = start.elapsed();
+                            log::info!(
+                                "[async_find] AI block scan took {}ms for view_id={:?}",
+                                elapsed.as_millis(),
+                                view_id
+                            );
                             if !match_ids.is_empty() {
                                 self.block_results.ai_matches.insert(view_id, match_ids);
                                 had_matches = true;
@@ -677,10 +690,15 @@ impl AsyncFindController {
 
     /// Cancels the current find operation, if any.
     pub fn cancel_current_find(&mut self) {
-        if let Some(cancel_tx) = self.cancel_tx.take() {
-            // Send cancellation signal (ignore errors - task may have already finished).
-            let _ = cancel_tx.try_send(());
+        // Dropping the sender closes the channel, which the background task
+        // detects via `cancel_rx.is_closed()`.
+        self.cancel_tx.take();
+
+        // Abort the background future so it stops being polled.
+        if let Some(handle) = self.task_handle.take() {
+            handle.abort();
         }
+
         self.result_rx = None;
     }
 
@@ -876,13 +894,13 @@ impl AsyncFindController {
         self.cancel_tx = Some(cancel_tx);
 
         // Spawn background task.
-        spawn_find_task(
+        self.task_handle = Some(spawn_find_task(
             config,
             self.terminal_model.clone(),
             result_tx,
             cancel_rx,
             ctx,
-        );
+        ));
     }
 
     /// Rescans a single block.
@@ -911,13 +929,13 @@ impl AsyncFindController {
         self.cancel_tx = Some(cancel_tx);
 
         // Spawn background task.
-        spawn_find_task(
+        self.task_handle = Some(spawn_find_task(
             single_block_config,
             self.terminal_model.clone(),
             result_tx,
             cancel_rx,
             ctx,
-        );
+        ));
     }
 }
 
