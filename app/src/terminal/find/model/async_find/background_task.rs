@@ -75,7 +75,7 @@ async fn run_find_task(
     };
 
     let total_blocks = block_info.len();
-    eprintln!("[async_find] background task: scanning {} blocks", total_blocks);
+    log::trace!("[async_find] background task: scanning {} blocks", total_blocks);
 
     // Send initial progress.
     let _ = result_tx
@@ -201,10 +201,10 @@ async fn scan_grid_chunked(
 
             let grid_handler = grid.grid_handler();
             let total_rows = grid_handler.total_rows();
-            eprintln!("[async_find] scan_grid_chunked: block {:?} grid {:?}, total_rows={}, start_row={}", block_index, grid_type, total_rows, start_row);
+            log::trace!("[async_find] scan_grid_chunked: block {:?} grid {:?}, total_rows={}, start_row={}", block_index, grid_type, total_rows, start_row);
             if start_row >= total_rows {
                 // Finished scanning this grid.
-                eprintln!("[async_find] scan_grid_chunked: block {:?} grid {:?} is empty or fully scanned", block_index, grid_type);
+                log::trace!("[async_find] scan_grid_chunked: block {:?} grid {:?} is empty or fully scanned", block_index, grid_type);
                 return;
             }
 
@@ -234,7 +234,7 @@ async fn scan_grid_chunked(
 
         // Stream results if we found any matches in this chunk.
         if !matches.is_empty() {
-            eprintln!(
+            log::trace!(
                 "[async_find] background task: found {} matches in block {:?} grid {:?}",
                 matches.len(),
                 block_index,
