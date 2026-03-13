@@ -37,12 +37,7 @@ pub enum AsyncFindStatus {
     /// No find operation in progress.
     Idle,
     /// Find operation is running.
-    Scanning {
-        /// Number of blocks that have been fully scanned.
-        blocks_scanned: usize,
-        /// Total number of blocks to scan.
-        total_blocks: usize,
-    },
+    Scanning,
     /// Find operation completed.
     Complete,
 }
@@ -57,10 +52,7 @@ impl std::fmt::Display for AsyncFindStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Idle => write!(f, "Idle"),
-            Self::Scanning {
-                blocks_scanned,
-                total_blocks,
-            } => write!(f, "Scanning ({}/{})", blocks_scanned, total_blocks),
+            Self::Scanning => write!(f, "Scanning"),
             Self::Complete => write!(f, "Complete"),
         }
     }
@@ -90,11 +82,6 @@ pub enum FindTaskMessage {
     ScanAIBlock {
         view_id: EntityId,
         total_index: TotalIndex,
-    },
-    /// Progress update.
-    Progress {
-        blocks_scanned: usize,
-        total_blocks: usize,
     },
     /// The work queue has drained (current batch of work is complete).
     Done,
@@ -194,8 +181,9 @@ impl PartialOrd for AbsoluteMatch {
 
 impl Ord for AbsoluteMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Sort by end point (for ascending order iteration during rendering).
-        self.end.cmp(&other.end)
+        // Sort by end point (for ascending order iteration during rendering),
+        // then by start point for consistency with derived PartialEq.
+        self.end.cmp(&other.end).then(self.start.cmp(&other.start))
     }
 }
 
@@ -317,15 +305,6 @@ impl BlockFindResults {
     }
 }
 
-/// Events emitted by the AsyncFindController.
-#[derive(Debug, Clone)]
-pub enum AsyncFindEvent {
-    /// New matches have arrived.
-    MatchesUpdated,
-    /// Status changed (scanning/complete).
-    StatusChanged,
-}
-
 /// Information about a block to be searched.
 #[derive(Debug, Clone)]
 pub enum BlockInfo {
@@ -431,7 +410,7 @@ impl AsyncFindController {
 
     /// Returns true if a find operation is currently in progress.
     pub fn is_scanning(&self) -> bool {
-        matches!(self.status, AsyncFindStatus::Scanning { .. })
+        matches!(self.status, AsyncFindStatus::Scanning)
     }
 
     /// Returns true if there is an active find configuration.
@@ -505,21 +484,25 @@ impl AsyncFindController {
 
         let mut current_idx = 0;
 
-        // Sort keys for deterministic iteration order.
+        // Sort keys to match visual order, which depends on block sort direction.
         let mut keys: Vec<_> = self.block_results.terminal_matches.keys().collect();
+        let sort_direction = self.block_sort_direction;
         keys.sort_by(|a, b| {
-            // Sort by block index, then grid type (PromptAndCommand before Output).
-            match a.0.cmp(&b.0) {
-                std::cmp::Ordering::Equal => {
-                    let grid_order = |g: &GridType| match g {
-                        GridType::PromptAndCommand => 0,
-                        GridType::Output => 1,
-                        _ => 2,
-                    };
-                    grid_order(&a.1).cmp(&grid_order(&b.1))
-                }
-                other => other,
-            }
+            let block_cmp = match sort_direction {
+                BlockSortDirection::MostRecentFirst => b.0.cmp(&a.0),
+                BlockSortDirection::MostRecentLast => a.0.cmp(&b.0),
+            };
+            block_cmp.then_with(|| {
+                // Within a block, match the grid scan order from the background task.
+                let grid_order = |g: &GridType| match (g, sort_direction) {
+                    (GridType::PromptAndCommand, BlockSortDirection::MostRecentFirst) => 0,
+                    (GridType::Output, BlockSortDirection::MostRecentFirst) => 1,
+                    (GridType::Output, BlockSortDirection::MostRecentLast) => 0,
+                    (GridType::PromptAndCommand, BlockSortDirection::MostRecentLast) => 1,
+                    _ => 2,
+                };
+                grid_order(&a.1).cmp(&grid_order(&b.1))
+            })
         });
 
         for (block_index, grid_type) in keys {
@@ -599,10 +582,7 @@ impl AsyncFindController {
         self.focused_match_index = None;
         self.cached_focused_match = None;
         self.current_find_options = Some(options.clone());
-        self.status = AsyncFindStatus::Scanning {
-            blocks_scanned: 0,
-            total_blocks: 0,
-        };
+        self.status = AsyncFindStatus::Scanning;
 
         // Build the work queue from the current block list.
         let queue = FindWorkQueue::new();
@@ -610,7 +590,6 @@ impl AsyncFindController {
             let model = self.terminal_model.lock();
             collect_block_info(model.block_list(), &config)
         };
-        let total_blocks = block_info.len();
         queue.enqueue_full_scan(&block_info);
         self.work_queue = Some(queue.clone());
 
@@ -624,7 +603,6 @@ impl AsyncFindController {
             self.terminal_model.clone(),
             queue,
             result_tx,
-            total_blocks,
             ctx,
         ));
     }
@@ -711,15 +689,6 @@ impl AsyncFindController {
                         }
                     }
                 }
-                FindTaskMessage::Progress {
-                    blocks_scanned,
-                    total_blocks,
-                } => {
-                    self.status = AsyncFindStatus::Scanning {
-                        blocks_scanned,
-                        total_blocks,
-                    };
-                }
                 FindTaskMessage::Done => {
                     self.status = AsyncFindStatus::Complete;
                 }
@@ -727,7 +696,7 @@ impl AsyncFindController {
         }
 
         if had_matches {
-            self.update_cached_focused_match();
+            self.clamp_focused_match_index();
         }
     }
 
@@ -792,7 +761,7 @@ impl AsyncFindController {
         // so stale matches are not shown while the rescan is pending.
         if dirty_info.is_none() {
             self.block_results.remove_block(block_index);
-            self.update_cached_focused_match();
+            self.clamp_focused_match_index();
         }
 
         log::trace!(
@@ -822,6 +791,21 @@ impl AsyncFindController {
         self.block_results.ai_matches.get(&view_id)
     }
 
+    /// Clamps the focused match index to the current match count.
+    ///
+    /// If the count is 0, sets the index to `None`. This should be called after
+    /// any operation that can reduce the total match count (e.g. dirty range
+    /// updates, block removal).
+    fn clamp_focused_match_index(&mut self) {
+        let total = self.match_count();
+        if total == 0 {
+            self.focused_match_index = None;
+        } else {
+            self.focused_match_index = self.focused_match_index.map(|i| i.min(total - 1));
+        }
+        self.update_cached_focused_match();
+    }
+
     /// Filters existing results for a query refinement.
     fn filter_results_for_refinement<E: Entity>(
         &mut self,
@@ -849,10 +833,7 @@ impl AsyncFindController {
         self.focused_match_index = None;
         self.cached_focused_match = None;
         self.current_find_options = Some(options.clone());
-        self.status = AsyncFindStatus::Scanning {
-            blocks_scanned: 0,
-            total_blocks: 0,
-        };
+        self.status = AsyncFindStatus::Scanning;
 
         // Build the work queue from the current block list.
         let queue = FindWorkQueue::new();
@@ -860,7 +841,6 @@ impl AsyncFindController {
             let model = self.terminal_model.lock();
             collect_block_info(model.block_list(), &config)
         };
-        let total_blocks = block_info.len();
         queue.enqueue_full_scan(&block_info);
         self.work_queue = Some(queue.clone());
 
@@ -874,7 +854,6 @@ impl AsyncFindController {
             self.terminal_model.clone(),
             queue,
             result_tx,
-            total_blocks,
             ctx,
         ));
     }

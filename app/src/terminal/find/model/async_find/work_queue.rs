@@ -138,13 +138,17 @@ impl FindWorkQueue {
     /// If the queue is empty, the returned future blocks until an item is
     /// enqueued or the queue is closed. Returns `Err(QueueClosed)` when the
     /// queue has been closed and no items remain.
-    pub async fn pop(&self) -> Result<FindWorkItem, QueueClosed> {
+    ///
+    /// The returned `bool` indicates whether the queue was empty immediately
+    /// after the pop (checked atomically within the same lock scope).
+    pub async fn pop(&self) -> Result<(FindWorkItem, bool), QueueClosed> {
         loop {
             // Check for an available item or closed state.
             {
                 let mut inner = self.inner.lock().unwrap();
                 if let Some(item) = inner.items.pop_front() {
-                    return Ok(item);
+                    let is_empty = inner.items.is_empty();
+                    return Ok((item, is_empty));
                 }
                 if inner.closed {
                     return Err(QueueClosed);
@@ -159,7 +163,8 @@ impl FindWorkQueue {
             {
                 let mut inner = self.inner.lock().unwrap();
                 if let Some(item) = inner.items.pop_front() {
-                    return Ok(item);
+                    let is_empty = inner.items.is_empty();
+                    return Ok((item, is_empty));
                 }
                 if inner.closed {
                     return Err(QueueClosed);

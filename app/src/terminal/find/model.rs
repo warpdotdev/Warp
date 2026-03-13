@@ -138,13 +138,7 @@ impl<'a> BlockFindRenderData<'a> {
             }
             Self::Async {
                 command_matches, ..
-            } => {
-                if command_matches.is_empty() {
-                    None
-                } else {
-                    Some(Box::new(command_matches.iter()))
-                }
-            }
+            } => Some(Box::new(command_matches.iter())),
         }
     }
 
@@ -156,13 +150,7 @@ impl<'a> BlockFindRenderData<'a> {
             Self::Sync { run, block_index } => {
                 Some(run.matches_for_block_grid(*block_index, GridType::Output))
             }
-            Self::Async { output_matches, .. } => {
-                if output_matches.is_empty() {
-                    None
-                } else {
-                    Some(Box::new(output_matches.iter()))
-                }
-            }
+            Self::Async { output_matches, .. } => Some(Box::new(output_matches.iter())),
         }
     }
 
@@ -208,6 +196,9 @@ pub struct TerminalFindModel {
 
     /// Controller for async find operations (used when AsyncFind feature flag is enabled).
     async_find_controller: Option<AsyncFindController>,
+
+    /// Whether an async find polling chain is currently active.
+    is_async_find_polling: bool,
 }
 
 impl FindModel for TerminalFindModel {
@@ -269,6 +260,7 @@ impl TerminalFindModel {
             block_list_find_run: None,
             is_find_bar_open: false,
             async_find_controller,
+            is_async_find_polling: false,
         }
     }
     pub fn register_findable_rich_content_view<T: FindableRichContentView>(
@@ -359,6 +351,9 @@ impl TerminalFindModel {
         output_grid: Option<&GridHandler>,
     ) -> Option<BlockFindRenderData<'_>> {
         if let Some(controller) = &self.async_find_controller {
+            if !controller.has_active_find() {
+                return None;
+            }
             Some(BlockFindRenderData::from_async(
                 controller,
                 block_index,
@@ -410,7 +405,7 @@ impl TerminalFindModel {
             ctx.emit(FindEvent::RanFind);
 
             // Start polling for results.
-            Self::schedule_async_find_poll(ctx);
+            self.ensure_async_find_polling(ctx);
             return;
         }
 
@@ -663,8 +658,7 @@ impl TerminalFindModel {
             let mut model = self.terminal_model.lock();
             model
                 .block_list_mut()
-                .blocks_mut()
-                .get_mut(block_index.0)
+                .block_at_mut(block_index)
                 .and_then(|block| block.grid_of_type_mut(GridType::Output))
                 .map(|output_grid| {
                     let dirty_range = output_grid.grid_handler_mut().take_find_dirty_rows_range();
@@ -685,7 +679,19 @@ impl TerminalFindModel {
         self.async_find_controller.as_ref()
     }
 
-    /// Schedules a poll for async find results.
+    /// Ensures that an async find polling chain is running.
+    ///
+    /// If polling is already active, this is a no-op.
+    fn ensure_async_find_polling(&mut self, ctx: &mut ModelContext<Self>) {
+        if self.is_async_find_polling {
+            return;
+        }
+        self.is_async_find_polling = true;
+        Self::schedule_async_find_poll(ctx);
+    }
+
+    /// Schedules a single poll for async find results, chaining subsequent
+    /// polls while the find operation is still active.
     fn schedule_async_find_poll(ctx: &mut ModelContext<Self>) {
         const POLL_INTERVAL_MS: u64 = 50;
 
@@ -696,6 +702,8 @@ impl TerminalFindModel {
                 let should_continue = me.tick_async_find(ctx);
                 if should_continue {
                     Self::schedule_async_find_poll(ctx);
+                } else {
+                    me.is_async_find_polling = false;
                 }
             },
         );
