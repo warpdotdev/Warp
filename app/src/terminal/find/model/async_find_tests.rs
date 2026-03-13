@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use parking_lot::FairMutex;
-use warpui::{App, Entity};
+use warpui::App;
 
 use crate::terminal::block_list_element::GridType;
 use crate::terminal::find::model::block_list::run_find_on_block_list;
-use crate::terminal::find::model::FindOptions;
+use crate::terminal::find::model::{FindOptions, TerminalFindModel};
 use crate::terminal::find::BlockListMatch;
 use crate::terminal::model::grid::grid_handler::AbsolutePoint;
 use crate::terminal::model::terminal_model::{BlockIndex, BlockSortDirection};
@@ -18,18 +18,6 @@ use super::{
     is_query_refinement, AbsoluteMatch, AsyncFindConfig, AsyncFindController, AsyncFindStatus,
     BlockFindResults, FindTaskMessage,
 };
-
-/// Test-only wrapper entity for AsyncFindController.
-///
-/// This allows us to call AsyncFindController methods that require ModelContext
-/// by using `model_handle.update(&mut app, |model, ctx| ...)`.
-struct TestAsyncFindModel {
-    controller: AsyncFindController,
-}
-
-impl Entity for TestAsyncFindModel {
-    type Event = ();
-}
 
 /// Helper to create an AbsoluteMatch at a given row with default column span.
 fn make_match(row: u64) -> AbsoluteMatch {
@@ -75,14 +63,18 @@ fn test_async_find_produces_same_results_as_sync_find() {
             )
         });
 
-        // Run async find using a wrapper model.
-        let terminal_model_clone = terminal_model.clone();
-        let test_model = app.add_model(|_| TestAsyncFindModel {
-            controller: AsyncFindController::new(terminal_model_clone),
+        // Run async find using TerminalFindModel.
+        let test_model = app.add_model(|_| {
+            let mut model = TerminalFindModel::new(terminal_model.clone());
+            if model.async_find_controller.is_none() {
+                model.async_find_controller =
+                    Some(AsyncFindController::new(terminal_model.clone()));
+            }
+            model
         });
 
         test_model.update(&mut app, |model, ctx| {
-            model.controller.start_find(
+            model.async_find_controller.as_mut().unwrap().start_find(
                 &FindOptions {
                     query: Some("bar".to_owned().into()),
                     is_regex_enabled: false,
@@ -94,24 +86,26 @@ fn test_async_find_produces_same_results_as_sync_find() {
             );
         });
 
-        // Wait for async find to complete by polling.
+        // Wait for async find to complete. The stream-based delivery processes
+        // results automatically; we just need to yield to the executor.
         for _ in 0..100 {
-            let is_complete = test_model.update(&mut app, |model, ctx| {
-                model.controller.process_messages(ctx);
-                matches!(model.controller.status(), AsyncFindStatus::Complete)
+            let is_complete = test_model.update(&mut app, |model, _ctx| {
+                model
+                    .async_find_controller
+                    .as_ref()
+                    .map(|c| matches!(c.status(), AsyncFindStatus::Complete))
+                    .unwrap_or(false)
             });
             if is_complete {
                 break;
             }
-            // Small delay to let background task run.
+            // Small delay to let background task and stream delivery run.
             warpui::r#async::Timer::after(std::time::Duration::from_millis(10)).await;
         }
 
         let (status, async_count) = test_model.update(&mut app, |model, _ctx| {
-            (
-                model.controller.status().clone(),
-                model.controller.match_count(),
-            )
+            let c = model.async_find_controller.as_ref().unwrap();
+            (c.status().clone(), c.match_count())
         });
 
         assert_eq!(
@@ -132,7 +126,9 @@ fn test_async_find_produces_same_results_as_sync_find() {
         for sync_match in sync_run.matches() {
             if let BlockListMatch::CommandBlock(grid_match) = sync_match {
                 let async_matches = test_model.update(&mut app, |m, _ctx| {
-                    m.controller
+                    m.async_find_controller
+                        .as_ref()
+                        .unwrap()
                         .matches_for_block_grid(grid_match.block_index, grid_match.grid_type)
                         .cloned()
                 });
@@ -178,13 +174,18 @@ fn test_async_find_cancellation() {
         mock_terminal_model.simulate_block("cmd2", "line3\r\nline4\r\n");
 
         let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
-        let test_model = app.add_model(|_| TestAsyncFindModel {
-            controller: AsyncFindController::new(terminal_model.clone()),
+        let test_model = app.add_model(|_| {
+            let mut model = TerminalFindModel::new(terminal_model.clone());
+            if model.async_find_controller.is_none() {
+                model.async_find_controller =
+                    Some(AsyncFindController::new(terminal_model.clone()));
+            }
+            model
         });
 
         // Start a find operation.
         test_model.update(&mut app, |model, ctx| {
-            model.controller.start_find(
+            model.async_find_controller.as_mut().unwrap().start_find(
                 &FindOptions {
                     query: Some("line".to_owned().into()),
                     is_regex_enabled: false,
@@ -197,42 +198,43 @@ fn test_async_find_cancellation() {
         });
 
         // Verify we're scanning.
-        let has_pending = test_model.update(&mut app, |model, _ctx| {
-            model.controller.has_pending_results()
+        let is_scanning = test_model.update(&mut app, |model, _ctx| {
+            model.async_find_controller.as_ref().unwrap().is_scanning()
         });
-        assert!(
-            has_pending,
-            "Should have pending results after starting find"
-        );
+        assert!(is_scanning, "Should be scanning after starting find");
 
         // Cancel the find.
         test_model.update(&mut app, |model, _ctx| {
-            model.controller.cancel_current_find();
+            model
+                .async_find_controller
+                .as_mut()
+                .unwrap()
+                .cancel_current_find();
         });
 
         // Verify cancellation state.
-        let (has_pending, has_active) = test_model.update(&mut app, |model, _ctx| {
-            (
-                model.controller.has_pending_results(),
-                model.controller.has_active_find(),
-            )
+        let (is_scanning, has_active) = test_model.update(&mut app, |model, _ctx| {
+            let c = model.async_find_controller.as_ref().unwrap();
+            (c.is_scanning(), c.has_active_find())
         });
         assert!(
-            !has_pending,
-            "Should not have pending results after cancellation"
+            !is_scanning,
+            "Should not be scanning after cancellation"
         );
         assert!(has_active, "Config should still be set after cancellation");
 
         // Clear results should reset everything.
         test_model.update(&mut app, |model, ctx| {
-            model.controller.clear_results(ctx);
+            model
+                .async_find_controller
+                .as_mut()
+                .unwrap()
+                .clear_results(ctx);
         });
 
         let (has_active, status) = test_model.update(&mut app, |model, _ctx| {
-            (
-                model.controller.has_active_find(),
-                model.controller.status().clone(),
-            )
+            let c = model.async_find_controller.as_ref().unwrap();
+            (c.has_active_find(), c.status().clone())
         });
         assert!(
             !has_active,
@@ -252,37 +254,31 @@ fn test_message_processing_updates_state() {
         let mock_terminal_model = TerminalModel::mock(None, None);
         let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
 
-        // Create channel for sending test messages.
-        let (result_tx, result_rx) = async_channel::unbounded();
-
         let test_model = app.add_model(|_| {
-            let mut controller = AsyncFindController::new(terminal_model.clone());
+            let mut model = TerminalFindModel::new(terminal_model.clone());
+            let mut controller = AsyncFindController::new(terminal_model);
             // Manually set up state as if a find is in progress.
-            controller.set_test_state(result_rx, AsyncFindStatus::Scanning);
-            TestAsyncFindModel { controller }
+            controller.set_test_status(AsyncFindStatus::Scanning);
+            model.async_find_controller = Some(controller);
+            model
         });
 
-        // Send a BlockGridMatches message.
-        result_tx
-            .send_blocking(FindTaskMessage::BlockGridMatches {
-                block_index: BlockIndex(1),
-                grid_type: GridType::Output,
-                matches: vec![make_match_at(0, 0, 2), make_match_at(1, 0, 2)],
-            })
-            .unwrap();
-
-        // Process messages.
+        // Process a BlockGridMatches message directly.
         test_model.update(&mut app, |model, ctx| {
-            model.controller.process_messages(ctx);
+            model.async_find_controller.as_mut().unwrap().process_message(
+                FindTaskMessage::BlockGridMatches {
+                    block_index: BlockIndex(1),
+                    grid_type: GridType::Output,
+                    matches: vec![make_match_at(0, 0, 2), make_match_at(1, 0, 2)],
+                },
+                ctx,
+            );
         });
 
         // Verify state updates.
         let (match_count, status, focused_idx) = test_model.update(&mut app, |model, _ctx| {
-            (
-                model.controller.match_count(),
-                model.controller.status().clone(),
-                model.controller.focused_match_index(),
-            )
+            let c = model.async_find_controller.as_ref().unwrap();
+            (c.match_count(), c.status().clone(), c.focused_match_index())
         });
 
         assert_eq!(match_count, 2, "Should have 2 matches");
@@ -293,14 +289,18 @@ fn test_message_processing_updates_state() {
         );
         assert_eq!(focused_idx, Some(0), "Should auto-focus first match");
 
-        // Send Done message.
-        result_tx.send_blocking(FindTaskMessage::Done).unwrap();
-
+        // Process a Done message.
         test_model.update(&mut app, |model, ctx| {
-            model.controller.process_messages(ctx);
+            model
+                .async_find_controller
+                .as_mut()
+                .unwrap()
+                .process_message(FindTaskMessage::Done, ctx);
         });
 
-        let status = test_model.update(&mut app, |model, _ctx| model.controller.status().clone());
+        let status = test_model.update(&mut app, |model, _ctx| {
+            model.async_find_controller.as_ref().unwrap().status().clone()
+        });
 
         assert_eq!(
             status,

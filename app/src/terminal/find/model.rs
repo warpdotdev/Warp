@@ -15,14 +15,12 @@ use crate::terminal::block_list_viewport::InputMode;
 use crate::terminal::model::grid::grid_handler::GridHandler;
 use crate::terminal::model::index::Point;
 use std::ops::RangeInclusive;
-use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
 use alt_screen::{run_find_on_alt_screen, AltScreenFindRun};
 use parking_lot::FairMutex;
 use settings::Setting as _;
 use warp_core::features::FeatureFlag;
-use warpui::r#async::Timer;
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle};
 
 use crate::{
@@ -195,10 +193,7 @@ pub struct TerminalFindModel {
     is_find_bar_open: bool,
 
     /// Controller for async find operations (used when AsyncFind feature flag is enabled).
-    async_find_controller: Option<AsyncFindController>,
-
-    /// Whether an async find polling chain is currently active.
-    is_async_find_polling: bool,
+    pub(crate) async_find_controller: Option<AsyncFindController>,
 }
 
 impl FindModel for TerminalFindModel {
@@ -260,7 +255,6 @@ impl TerminalFindModel {
             block_list_find_run: None,
             is_find_bar_open: false,
             async_find_controller,
-            is_async_find_polling: false,
         }
     }
     pub fn register_findable_rich_content_view<T: FindableRichContentView>(
@@ -403,9 +397,6 @@ impl TerminalFindModel {
             );
             controller.start_find(&options, block_sort_direction, ctx);
             ctx.emit(FindEvent::RanFind);
-
-            // Start polling for results.
-            self.ensure_async_find_polling(ctx);
             return;
         }
 
@@ -605,9 +596,6 @@ impl TerminalFindModel {
         } else {
             return;
         }
-        // Restart polling to process results from the re-enqueued work.
-        // This is a no-op if polling is already active.
-        self.ensure_async_find_polling(ctx);
         ctx.emit(FindEvent::RanFind);
     }
 
@@ -666,71 +654,6 @@ impl TerminalFindModel {
     /// Returns the async find controller, if enabled.
     pub fn async_find_controller(&self) -> Option<&AsyncFindController> {
         self.async_find_controller.as_ref()
-    }
-
-    /// Ensures that an async find polling chain is running.
-    ///
-    /// If polling is already active, this is a no-op.
-    fn ensure_async_find_polling(&mut self, ctx: &mut ModelContext<Self>) {
-        if self.is_async_find_polling {
-            return;
-        }
-        self.is_async_find_polling = true;
-        Self::schedule_async_find_poll(ctx);
-    }
-
-    /// Schedules a single poll for async find results, chaining subsequent
-    /// polls while the find operation is still active.
-    fn schedule_async_find_poll(ctx: &mut ModelContext<Self>) {
-        const POLL_INTERVAL_MS: u64 = 50;
-
-        let _ = ctx.spawn(
-            async move { Timer::after(Duration::from_millis(POLL_INTERVAL_MS)).await },
-            |me, _instant, ctx| {
-                // Process messages and check if we should continue polling.
-                let should_continue = me.tick_async_find(ctx);
-                if should_continue {
-                    Self::schedule_async_find_poll(ctx);
-                } else {
-                    me.is_async_find_polling = false;
-                }
-            },
-        );
-    }
-
-    /// Ticks the async find operation, processing any pending messages.
-    ///
-    /// Returns `true` if the async find is still in progress and more ticks are needed.
-    /// This method should be called periodically (e.g., from a timer or frame callback)
-    /// while async find is active to process streaming results.
-    ///
-    /// Polling is driven by `AsyncFindStatus::Scanning`: once the background task
-    /// sends `Done` and the status becomes `Complete`, this returns `false` and the
-    /// timer chain stops. If new work is later enqueued via `invalidate_block`, the
-    /// caller restarts polling through `ensure_async_find_polling`.
-    pub fn tick_async_find(&mut self, ctx: &mut ModelContext<Self>) -> bool {
-        if let Some(controller) = &mut self.async_find_controller {
-            let was_scanning = controller.is_scanning();
-            let match_count_before = controller.match_count();
-            controller.process_messages(ctx);
-            let is_still_scanning = controller.is_scanning();
-            let match_count_after = controller.match_count();
-
-            log::trace!(
-                "[async_find] tick: was_scanning={}, is_still_scanning={}, matches: {} -> {}",
-                was_scanning, is_still_scanning, match_count_before, match_count_after
-            );
-
-            // Emit event if we have new results or status changed.
-            if was_scanning || is_still_scanning {
-                ctx.emit(FindEvent::RanFind);
-            }
-
-            // Continue polling while the background task is still working.
-            is_still_scanning
-        } else {
-            false
-        }
     }
 }
 

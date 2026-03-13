@@ -9,12 +9,14 @@ mod work_queue;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use std::time::Duration;
 
 use parking_lot::FairMutex;
 use warpui::r#async::SpawnedFutureHandle;
-use warpui::{Entity, EntityId, ModelContext};
+use warpui::{EntityId, ModelContext};
 
 use crate::terminal::block_list_element::GridType;
+use crate::terminal::find::model::TerminalFindModel;
 use crate::terminal::model::blocks::{
     BlockHeight, BlockHeightItem, BlockHeightSummary, BlockList, TotalIndex,
 };
@@ -22,8 +24,8 @@ use crate::terminal::model::grid::grid_handler::{AbsolutePoint, GridHandler};
 use crate::terminal::model::index::Point;
 use crate::terminal::model::terminal_model::{BlockIndex, BlockSortDirection};
 use crate::terminal::model::TerminalModel;
-
-use crate::view_components::find::FindDirection;
+use crate::throttle::throttle;
+use crate::view_components::find::{FindDirection, FindEvent};
 
 use super::rich_content::{FindableRichContentHandle, RichContentMatchId};
 use super::FindOptions;
@@ -332,8 +334,15 @@ pub struct AsyncFindController {
     /// Current status of the find operation.
     status: AsyncFindStatus,
 
-    /// Receiver for messages from background task.
-    result_rx: Option<async_channel::Receiver<FindTaskMessage>>,
+    /// Sender for the result channel. The receiver is consumed by
+    /// `spawn_stream_local` in `start_find`, so only the sender is stored
+    /// here (to be cloned into each background task via `spawn_find_task`).
+    result_tx: Option<async_channel::Sender<FindTaskMessage>>,
+
+    /// Sender for the throttled UI-update channel. `process_message` sends
+    /// a `()` signal here; a throttled stream on the other end emits
+    /// `FindEvent::RanFind` at most every 50 ms.
+    throttle_tx: Option<async_channel::Sender<()>>,
 
     /// Handle to abort the background task's future.
     task_handle: Option<SpawnedFutureHandle>,
@@ -366,7 +375,8 @@ impl AsyncFindController {
             current_config: None,
             block_results: BlockFindResults::default(),
             status: AsyncFindStatus::Idle,
-            result_rx: None,
+            result_tx: None,
+            throttle_tx: None,
             task_handle: None,
             work_queue: None,
             rich_content_views: HashMap::new(),
@@ -407,14 +417,6 @@ impl AsyncFindController {
     /// This indicates that find is active and new blocks should be scanned.
     pub fn has_active_find(&self) -> bool {
         self.current_config.is_some()
-    }
-
-    /// Returns true if there are pending results from a background task.
-    ///
-    /// This can be true even when `is_scanning()` is false, e.g., when a single
-    /// block is being rescanned after the initial scan completed.
-    pub fn has_pending_results(&self) -> bool {
-        self.result_rx.is_some()
     }
 
     /// Returns the currently focused match index (0-based), if any.
@@ -533,12 +535,13 @@ impl AsyncFindController {
     /// Starts a new find operation with the given options.
     ///
     /// If a find operation is already in progress, it will be cancelled first.
-    /// The `ctx` parameter is generic so this can be called from any owning entity.
-    pub fn start_find<E: Entity>(
+    /// This spawns a background task, a result stream, and a throttled UI-update
+    /// stream on the provided context.
+    pub fn start_find(
         &mut self,
         options: &FindOptions,
         block_sort_direction: BlockSortDirection,
-        ctx: &mut ModelContext<E>,
+        ctx: &mut ModelContext<TerminalFindModel>,
     ) {
         // Cancel any existing find operation.
         self.cancel_current_find();
@@ -593,9 +596,10 @@ impl AsyncFindController {
         queue.enqueue_full_scan(&block_info);
         self.work_queue = Some(queue.clone());
 
-        // Create result channel.
+        // Create result channel and spawn streams.
         let (result_tx, result_rx) = async_channel::unbounded();
-        self.result_rx = Some(result_rx);
+        self.result_tx = Some(result_tx.clone());
+        self.spawn_result_and_throttle_streams(result_rx, ctx);
 
         // Spawn background task.
         self.task_handle = Some(spawn_find_task(
@@ -607,100 +611,93 @@ impl AsyncFindController {
         ));
     }
 
-    /// Processes pending messages from the background find task.
+    /// Processes a single message from the background find task.
     ///
-    /// This should be called periodically (e.g., on a timer or in response to a wakeup).
-    /// The `ctx` parameter is generic so this can be called from any owning entity.
-    pub fn process_messages<E: Entity>(&mut self, ctx: &mut ModelContext<E>) {
-        let Some(rx) = &self.result_rx else {
-            log::trace!("[async_find] process_messages: no result_rx channel");
-            return;
-        };
+    /// Called by the result stream's `on_item` callback for each message
+    /// delivered from the background task.
+    pub fn process_message(
+        &mut self,
+        msg: FindTaskMessage,
+        ctx: &mut ModelContext<TerminalFindModel>,
+    ) {
+        match msg {
+            FindTaskMessage::BlockGridMatches {
+                block_index,
+                grid_type,
+                matches,
+            } => {
+                if !matches.is_empty() {
+                    self.block_results
+                        .terminal_matches
+                        .entry((block_index, grid_type))
+                        .or_default()
+                        .extend(matches);
 
-        // Collect all messages first to avoid borrow issues.
-        let messages: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
-        log::trace!(
-            "[async_find] process_messages: received {} messages",
-            messages.len()
-        );
-
-        let mut had_matches = false;
-
-        for msg in messages {
-            match msg {
-                FindTaskMessage::BlockGridMatches {
-                    block_index,
-                    grid_type,
-                    matches,
-                } => {
-                    if !matches.is_empty() {
-                        self.block_results
-                            .terminal_matches
-                            .entry((block_index, grid_type))
-                            .or_default()
-                            .extend(matches);
-                        had_matches = true;
-
-                        // Auto-select the first match when results first arrive.
-                        if self.focused_match_index.is_none() {
-                            self.focused_match_index = Some(0);
-                        }
+                    // Auto-select the first match when results first arrive.
+                    if self.focused_match_index.is_none() {
+                        self.focused_match_index = Some(0);
                     }
+
+                    self.clamp_focused_match_index();
                 }
-                FindTaskMessage::DirtyRangeMatches {
+            }
+            FindTaskMessage::DirtyRangeMatches {
+                block_index,
+                grid_type,
+                dirty_range,
+                matches,
+            } => {
+                self.block_results.update_dirty_matches(
                     block_index,
                     grid_type,
                     dirty_range,
                     matches,
-                } => {
-                    self.block_results.update_dirty_matches(
-                        block_index,
-                        grid_type,
-                        dirty_range,
-                        matches,
-                    );
-                    had_matches = true;
-                }
-                FindTaskMessage::ScanAIBlock {
-                    view_id,
-                    total_index: _,
-                } => {
-                    // Scan AI block on main thread.
-                    if let Some(view) = self.rich_content_views.get(&view_id) {
-                        if let Some(config) = &self.current_config {
-                            let options = FindOptions {
-                                query: Some(config.query.clone()),
-                                is_case_sensitive: config.is_case_sensitive,
-                                is_regex_enabled: config.is_regex_enabled,
-                                blocks_to_include_in_results: None,
-                            };
-                            let start = instant::Instant::now();
-                            let match_ids = view.run_find(&options, ctx);
-                            let elapsed = start.elapsed();
-                            log::trace!(
-                                "[async_find] AI block scan took {}ms for view_id={:?}",
-                                elapsed.as_millis(),
-                                view_id
-                            );
-                            if !match_ids.is_empty() {
-                                self.block_results.ai_matches.insert(view_id, match_ids);
-                                had_matches = true;
-                            }
+                );
+                self.clamp_focused_match_index();
+            }
+            FindTaskMessage::ScanAIBlock {
+                view_id,
+                total_index: _,
+            } => {
+                // Scan AI block on main thread.
+                if let Some(view) = self.rich_content_views.get(&view_id) {
+                    if let Some(config) = &self.current_config {
+                        let options = FindOptions {
+                            query: Some(config.query.clone()),
+                            is_case_sensitive: config.is_case_sensitive,
+                            is_regex_enabled: config.is_regex_enabled,
+                            blocks_to_include_in_results: None,
+                        };
+                        let start = instant::Instant::now();
+                        let match_ids = view.run_find(&options, ctx);
+                        let elapsed = start.elapsed();
+                        log::trace!(
+                            "[async_find] AI block scan took {}ms for view_id={:?}",
+                            elapsed.as_millis(),
+                            view_id
+                        );
+                        if !match_ids.is_empty() {
+                            self.block_results.ai_matches.insert(view_id, match_ids);
+                            self.clamp_focused_match_index();
                         }
                     }
                 }
-                FindTaskMessage::Done => {
-                    self.status = AsyncFindStatus::Complete;
-                }
+            }
+            FindTaskMessage::Done => {
+                self.status = AsyncFindStatus::Complete;
             }
         }
 
-        if had_matches {
-            self.clamp_focused_match_index();
+        // Signal the throttled UI-update stream.
+        if let Some(tx) = &self.throttle_tx {
+            let _ = tx.try_send(());
         }
     }
 
     /// Cancels the current find operation, if any.
+    ///
+    /// Dropping the senders closes the result and throttle streams naturally.
+    /// The find configuration is preserved so `has_active_find()` remains true.
     pub fn cancel_current_find(&mut self) {
         // Close the work queue, which causes the background task's pop() to
         // return Err(QueueClosed) and exit.
@@ -713,12 +710,14 @@ impl AsyncFindController {
             handle.abort();
         }
 
-        self.result_rx = None;
+        // Drop senders to close the result and throttle streams.
+        self.result_tx = None;
+        self.throttle_tx = None;
+        self.status = AsyncFindStatus::Idle;
     }
 
     /// Clears all find results and resets state.
-    /// The `ctx` parameter is generic so this can be called from any owning entity.
-    pub fn clear_results<E: Entity>(&mut self, ctx: &mut ModelContext<E>) {
+    pub fn clear_results(&mut self, ctx: &mut ModelContext<TerminalFindModel>) {
         self.cancel_current_find();
         self.current_config = None;
         self.block_results.clear();
@@ -811,11 +810,11 @@ impl AsyncFindController {
     }
 
     /// Filters existing results for a query refinement.
-    fn filter_results_for_refinement<E: Entity>(
+    fn filter_results_for_refinement(
         &mut self,
         options: &FindOptions,
         block_sort_direction: BlockSortDirection,
-        ctx: &mut ModelContext<E>,
+        ctx: &mut ModelContext<TerminalFindModel>,
     ) {
         // For now, we do a full rescan when the query is refined.
         // A future optimization could filter existing matches without rescanning,
@@ -857,9 +856,10 @@ impl AsyncFindController {
         queue.enqueue_full_scan(&block_info);
         self.work_queue = Some(queue.clone());
 
-        // Create result channel.
+        // Create result channel and spawn streams.
         let (result_tx, result_rx) = async_channel::unbounded();
-        self.result_rx = Some(result_rx);
+        self.result_tx = Some(result_tx.clone());
+        self.spawn_result_and_throttle_streams(result_rx, ctx);
 
         // Spawn background task.
         self.task_handle = Some(spawn_find_task(
@@ -870,18 +870,49 @@ impl AsyncFindController {
             ctx,
         ));
     }
+
+    /// Spawns the result delivery stream and the throttled UI-update stream.
+    ///
+    /// The result stream invokes `process_message` for every `FindTaskMessage`
+    /// received from the background task. The throttle stream coalesces rapid
+    /// signals and emits `FindEvent::RanFind` at most every 50 ms (with the
+    /// first signal passing through immediately).
+    fn spawn_result_and_throttle_streams(
+        &mut self,
+        result_rx: async_channel::Receiver<FindTaskMessage>,
+        ctx: &mut ModelContext<TerminalFindModel>,
+    ) {
+        const THROTTLE_INTERVAL: Duration = Duration::from_millis(50);
+
+        // Result stream: delivers every message to process_message.
+        ctx.spawn_stream_local(
+            result_rx,
+            |me, msg, ctx| {
+                if let Some(controller) = &mut me.async_find_controller {
+                    controller.process_message(msg, ctx);
+                }
+            },
+            |_me, _ctx| {},
+        );
+
+        // Throttle stream: coalesces rapid signals into periodic UI updates.
+        let (throttle_tx, throttle_rx) = async_channel::unbounded();
+        self.throttle_tx = Some(throttle_tx);
+
+        ctx.spawn_stream_local(
+            throttle(THROTTLE_INTERVAL, throttle_rx),
+            |_me, (), ctx| {
+                ctx.emit(FindEvent::RanFind);
+            },
+            |_me, _ctx| {},
+        );
+    }
 }
 
 #[cfg(test)]
 impl AsyncFindController {
-    /// Sets up internal state for testing by injecting a result receiver and
-    /// status directly.
-    pub(crate) fn set_test_state(
-        &mut self,
-        result_rx: async_channel::Receiver<FindTaskMessage>,
-        status: AsyncFindStatus,
-    ) {
-        self.result_rx = Some(result_rx);
+    /// Sets up internal state for testing by setting the status directly.
+    pub(crate) fn set_test_status(&mut self, status: AsyncFindStatus) {
         self.status = status;
     }
 
