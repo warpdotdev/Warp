@@ -4,11 +4,12 @@
 //! streaming results back to the main thread to avoid blocking the UI.
 
 mod background_task;
+pub mod work_queue;
 
 #[cfg(test)]
 mod async_find_tests;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -31,16 +32,13 @@ use super::rich_content::{FindableRichContentHandle, RichContentMatchId};
 use super::FindOptions;
 
 use background_task::spawn_find_task;
+use work_queue::FindWorkQueue;
 
 /// Maximum time (in milliseconds) to hold the terminal model lock during a find chunk.
 pub const MAX_LOCK_DURATION_MS: u64 = 5;
 
 /// Number of rows to scan per chunk within a terminal block.
 pub const ROWS_PER_CHUNK: usize = 1000;
-
-/// Maximum number of dirty rows to scan synchronously.
-/// If the dirty range exceeds this, we fall back to a full async rescan.
-const MAX_SYNC_DIRTY_ROWS: usize = 500;
 
 /// Status of an async find operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,24 +84,29 @@ pub enum FindTaskMessage {
         grid_type: GridType,
         matches: Vec<AbsoluteMatch>,
     },
+    /// Matches found in a dirty range within a terminal block's grid.
+    ///
+    /// Unlike `BlockGridMatches` (which extends results), these matches are
+    /// merged into existing results using `update_dirty_matches`.
+    DirtyRangeMatches {
+        block_index: BlockIndex,
+        grid_type: GridType,
+        /// The dirty range in absolute row coordinates, used for merging.
+        dirty_range: RangeInclusive<u64>,
+        matches: Vec<AbsoluteMatch>,
+    },
     /// Request to scan an AI block on the main thread.
     ScanAIBlock {
         view_id: EntityId,
         total_index: TotalIndex,
-    },
-    /// A terminal block has been fully scanned.
-    BlockScanned {
-        block_index: BlockIndex,
     },
     /// Progress update.
     Progress {
         blocks_scanned: usize,
         total_blocks: usize,
     },
-    /// Find operation completed.
+    /// The work queue has drained (current batch of work is complete).
     Done,
-    /// Find operation cancelled.
-    Cancelled,
 }
 
 /// Configuration for an async find run.
@@ -125,7 +128,10 @@ impl AsyncFindConfig {
     /// Creates a new config from FindOptions and a block sort direction.
     ///
     /// Returns `None` if there is no query or if the query is empty/whitespace.
-    pub fn from_options(options: &FindOptions, block_sort_direction: BlockSortDirection) -> Option<Self> {
+    pub fn from_options(
+        options: &FindOptions,
+        block_sort_direction: BlockSortDirection,
+    ) -> Option<Self> {
         let query = options.query.clone()?;
         if query.trim().is_empty() {
             return None;
@@ -312,7 +318,9 @@ impl BlockFindResults {
 
         // Assert that matches are still in ascending order.
         debug_assert!(
-            matches.windows(2).all(|w| w[0].end_row() <= w[1].start_row()),
+            matches
+                .windows(2)
+                .all(|w| w[0].end_row() <= w[1].start_row()),
             "Matches should be in ascending order after update_dirty_matches"
         );
     }
@@ -331,9 +339,7 @@ pub enum AsyncFindEvent {
 #[derive(Debug, Clone)]
 pub enum BlockInfo {
     /// A terminal command block.
-    Terminal {
-        block_index: BlockIndex,
-    },
+    Terminal { block_index: BlockIndex },
     /// A rich content block (e.g., AI block).
     RichContent {
         view_id: EntityId,
@@ -370,15 +376,11 @@ pub struct AsyncFindController {
     #[cfg(test)]
     pub(crate) result_rx: Option<async_channel::Receiver<FindTaskMessage>>,
 
-    /// Sender to cancel the current background task.
-    /// Dropping the sender closes the channel, which signals cancellation.
-    #[cfg(not(test))]
-    cancel_tx: Option<async_channel::Sender<()>>,
-    #[cfg(test)]
-    pub(crate) cancel_tx: Option<async_channel::Sender<()>>,
-
     /// Handle to abort the background task's future.
     task_handle: Option<SpawnedFutureHandle>,
+
+    /// Shared work queue for the background task.
+    work_queue: Option<FindWorkQueue>,
 
     /// Rich content views for AI block searching.
     rich_content_views: HashMap<EntityId, Box<dyn FindableRichContentHandle>>,
@@ -388,11 +390,6 @@ pub struct AsyncFindController {
 
     /// The currently focused match index (0-based), if any.
     focused_match_index: Option<usize>,
-
-    /// Set of block indices that have been fully scanned during the current find run.
-    /// Used to determine whether a block can be synchronously rescanned during an
-    /// ongoing full scan without cancelling it.
-    scanned_blocks: HashSet<BlockIndex>,
 
     /// The FindOptions for the current find run, stored for `active_find_options()` access.
     current_find_options: Option<FindOptions>,
@@ -411,12 +408,11 @@ impl AsyncFindController {
             block_results: BlockFindResults::default(),
             status: AsyncFindStatus::Idle,
             result_rx: None,
-            cancel_tx: None,
             task_handle: None,
+            work_queue: None,
             rich_content_views: HashMap::new(),
             block_sort_direction: BlockSortDirection::MostRecentLast,
             focused_match_index: None,
-            scanned_blocks: HashSet::new(),
             current_find_options: None,
             cached_focused_match: None,
         }
@@ -536,7 +532,11 @@ impl AsyncFindController {
         });
 
         for (block_index, grid_type) in keys {
-            if let Some(matches) = self.block_results.terminal_matches.get(&(*block_index, *grid_type)) {
+            if let Some(matches) = self
+                .block_results
+                .terminal_matches
+                .get(&(*block_index, *grid_type))
+            {
                 for match_range in matches {
                     if current_idx == focused_idx {
                         return Some(AsyncBlockGridMatch {
@@ -589,7 +589,7 @@ impl AsyncFindController {
                 && options.is_case_sensitive == current_config.is_case_sensitive
                 && is_query_refinement(&current_config.query, new_query)
             {
-                // New query is a refinement of the old query - filter existing results.
+                // New query is a refinement of the old query — filter existing results.
                 self.filter_results_for_refinement(options, block_sort_direction, ctx);
                 return;
             }
@@ -597,7 +597,7 @@ impl AsyncFindController {
 
         // Create new config.
         let Some(config) = AsyncFindConfig::from_options(options, block_sort_direction) else {
-            // No query - clear results and return.
+            // No query — clear results and return.
             self.clear_results(ctx);
             return;
         };
@@ -607,26 +607,33 @@ impl AsyncFindController {
         self.block_results.clear();
         self.focused_match_index = None;
         self.cached_focused_match = None;
-        self.scanned_blocks.clear();
         self.current_find_options = Some(options.clone());
         self.status = AsyncFindStatus::Scanning {
             blocks_scanned: 0,
             total_blocks: 0,
         };
 
-        // Create channels for communication with background task.
-        let (result_tx, result_rx) = async_channel::unbounded();
-        let (cancel_tx, cancel_rx) = async_channel::bounded(1);
+        // Build the work queue from the current block list.
+        let queue = FindWorkQueue::new();
+        let block_info = {
+            let model = self.terminal_model.lock();
+            collect_block_info(model.block_list(), &config)
+        };
+        let total_blocks = block_info.len();
+        queue.enqueue_full_scan(&block_info);
+        self.work_queue = Some(queue.clone());
 
+        // Create result channel.
+        let (result_tx, result_rx) = async_channel::unbounded();
         self.result_rx = Some(result_rx);
-        self.cancel_tx = Some(cancel_tx);
 
         // Spawn background task.
         self.task_handle = Some(spawn_find_task(
             config,
             self.terminal_model.clone(),
+            queue,
             result_tx,
-            cancel_rx,
+            total_blocks,
             ctx,
         ));
     }
@@ -637,16 +644,18 @@ impl AsyncFindController {
     /// The `ctx` parameter is generic so this can be called from any owning entity.
     pub fn process_messages<E: Entity>(&mut self, ctx: &mut ModelContext<E>) {
         let Some(rx) = &self.result_rx else {
-        log::trace!("[async_find] process_messages: no result_rx channel");
+            log::trace!("[async_find] process_messages: no result_rx channel");
             return;
         };
 
         // Collect all messages first to avoid borrow issues.
         let messages: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
-        log::trace!("[async_find] process_messages: received {} messages", messages.len());
+        log::trace!(
+            "[async_find] process_messages: received {} messages",
+            messages.len()
+        );
 
         let mut had_matches = false;
-        let mut should_clear_channels = false;
 
         for msg in messages {
             match msg {
@@ -668,6 +677,20 @@ impl AsyncFindController {
                             self.focused_match_index = Some(0);
                         }
                     }
+                }
+                FindTaskMessage::DirtyRangeMatches {
+                    block_index,
+                    grid_type,
+                    dirty_range,
+                    matches,
+                } => {
+                    self.block_results.update_dirty_matches(
+                        block_index,
+                        grid_type,
+                        dirty_range,
+                        matches,
+                    );
+                    had_matches = true;
                 }
                 FindTaskMessage::ScanAIBlock {
                     view_id,
@@ -697,9 +720,6 @@ impl AsyncFindController {
                         }
                     }
                 }
-                FindTaskMessage::BlockScanned { block_index } => {
-                    self.scanned_blocks.insert(block_index);
-                }
                 FindTaskMessage::Progress {
                     blocks_scanned,
                     total_blocks,
@@ -711,17 +731,8 @@ impl AsyncFindController {
                 }
                 FindTaskMessage::Done => {
                     self.status = AsyncFindStatus::Complete;
-                    should_clear_channels = true;
-                }
-                FindTaskMessage::Cancelled => {
-                    should_clear_channels = true;
                 }
             }
-        }
-
-        if should_clear_channels {
-            self.result_rx = None;
-            self.cancel_tx = None;
         }
 
         if had_matches {
@@ -731,9 +742,11 @@ impl AsyncFindController {
 
     /// Cancels the current find operation, if any.
     pub fn cancel_current_find(&mut self) {
-        // Dropping the sender closes the channel, which the background task
-        // detects via `cancel_rx.is_closed()`.
-        self.cancel_tx.take();
+        // Close the work queue, which causes the background task's pop() to
+        // return Err(QueueClosed) and exit.
+        if let Some(queue) = self.work_queue.take() {
+            queue.close();
+        }
 
         // Abort the background future so it stops being polled.
         if let Some(handle) = self.task_handle.take() {
@@ -752,7 +765,6 @@ impl AsyncFindController {
         self.focused_match_index = None;
         self.cached_focused_match = None;
         self.status = AsyncFindStatus::Idle;
-        self.scanned_blocks.clear();
         self.current_find_options = None;
 
         // Clear matches in AI blocks.
@@ -765,211 +777,44 @@ impl AsyncFindController {
 
     /// Invalidates results for a specific block and rescans it.
     ///
-    /// This should be called when a block's content changes.
-    /// The `ctx` parameter is generic so this can be called from any owning entity.
+    /// This enqueues work into the shared queue so the background task handles
+    /// it asynchronously. No scanning happens on the main thread.
     ///
     /// # Arguments
     /// * `block_index` - The index of the block that changed.
     /// * `dirty_row_range` - Optional range of rows (in relative coordinates) that changed.
-    ///   If provided and small enough, only those rows will be rescanned and merged.
+    ///   If provided, a dirty-range rescan is enqueued; otherwise a full block rescan.
     /// * `num_lines_truncated` - The current number of truncated lines in the grid.
-    /// * `ctx` - The model context.
-    pub fn invalidate_block<E: Entity>(
+    pub fn invalidate_block(
         &mut self,
         block_index: BlockIndex,
         dirty_row_range: Option<RangeInclusive<usize>>,
         num_lines_truncated: u64,
-        ctx: &mut ModelContext<E>,
     ) {
-        // If we have an active config, determine whether to do incremental or full rescan.
-        let Some(config) = self.current_config.clone() else {
+        if self.current_config.is_none() {
+            return;
+        }
+
+        let Some(queue) = self.work_queue.clone() else {
             return;
         };
 
-        // If a full scan is in progress, skip blocks that haven't been scanned yet;
-        // the ongoing scan will handle them.
-        if self.is_scanning() && !self.scanned_blocks.contains(&block_index) {
-            log::trace!(
-                "[async_find] invalidate_block: block {:?} not yet scanned, skipping",
-                block_index
-            );
-            return;
-        }
+        let dirty_info = dirty_row_range.map(|range| (range, num_lines_truncated));
 
-        // Check if we should do an incremental update.
-        if let Some(dirty_range) = dirty_row_range {
-            let dirty_row_count = dirty_range.end().saturating_sub(*dirty_range.start()) + 1;
-
-            if dirty_row_count <= MAX_SYNC_DIRTY_ROWS {
-                // Do incremental scanning for the dirty range.
-                log::trace!(
-                    "[async_find] invalidate_block: sync scan for block {:?}, dirty_range={:?}",
-                    block_index,
-                    dirty_range
-                );
-                self.scan_dirty_range_sync(
-                    block_index,
-                    dirty_range,
-                    num_lines_truncated,
-                    &config,
-                );
-                self.update_cached_focused_match();
-                return;
-            }
-        }
-
-        if self.is_scanning() {
-            // Full scan is in progress and block was already scanned; do a synchronous
-            // full rescan without cancelling the ongoing scan.
-            log::trace!(
-                "[async_find] invalidate_block: sync full rescan for block {:?} during scan",
-                block_index
-            );
-            self.sync_rescan_full_block(block_index, &config);
-            self.update_cached_focused_match();
-        } else {
-            // No full scan in progress; spawn a background task for just this block.
-            log::trace!(
-                "[async_find] invalidate_block: async rescan for block {:?}",
-                block_index
-            );
+        // For a full block rescan (no dirty range), clear existing results now
+        // so stale matches are not shown while the rescan is pending.
+        if dirty_info.is_none() {
             self.block_results.remove_block(block_index);
             self.update_cached_focused_match();
-            self.rescan_single_block(block_index, config, ctx);
         }
-    }
 
-    /// Scans a dirty range synchronously and merges results with existing matches.
-    fn scan_dirty_range_sync(
-        &mut self,
-        block_index: BlockIndex,
-        dirty_range: RangeInclusive<usize>,
-        num_lines_truncated: u64,
-        config: &AsyncFindConfig,
-    ) {
-        use warp_terminal::model::grid::Dimensions;
-        use crate::terminal::model::find::{FindConfig, RegexDFAs};
+        log::trace!(
+            "[async_find] invalidate_block: enqueuing work for block {:?}, dirty={:?}",
+            block_index,
+            dirty_info.as_ref().map(|(r, _)| r),
+        );
 
-        // Build RegexDFAs from config.
-        let Ok(dfas) = RegexDFAs::new_with_config(
-            config.query.as_str(),
-            FindConfig {
-                is_regex_enabled: config.is_regex_enabled,
-                is_case_sensitive: config.is_case_sensitive,
-            },
-        ) else {
-            return;
-        };
-
-        // Lock the terminal model to access the block.
-        let model = self.terminal_model.lock();
-        let Some(block) = model.block_list().block_at(block_index) else {
-            return;
-        };
-
-        // Scan both grids for the dirty range.
-        for grid_type in [GridType::PromptAndCommand, GridType::Output] {
-            let grid = match grid_type {
-                GridType::Output => block.output_grid().grid_handler(),
-                GridType::PromptAndCommand => block.prompt_and_command_grid().grid_handler(),
-                _ => continue,
-            };
-
-            let total_rows = Dimensions::total_rows(grid);
-            let columns = Dimensions::columns(grid);
-
-            // Clamp dirty range to grid bounds.
-            let start_row = *dirty_range.start().min(&total_rows.saturating_sub(1));
-            let end_row = *dirty_range.end().min(&total_rows.saturating_sub(1));
-
-            if start_row > end_row {
-                continue;
-            }
-
-            // Create start and end points for the range scan.
-            let start_point = Point::new(start_row, 0);
-            let end_point = Point::new(end_row, columns.saturating_sub(1));
-
-            // Scan the range for matches.
-            let iter = grid.find_in_range(&dfas, start_point, end_point);
-            let mut matches: Vec<AbsoluteMatch> = iter
-                .map(|range| AbsoluteMatch::from_range(&range, grid))
-                .collect();
-
-            // The find iterator returns matches in descending order; reverse to ascending.
-            matches.reverse();
-
-            // Convert dirty range to absolute row indices.
-            let absolute_start = start_row as u64 + num_lines_truncated;
-            let absolute_end = end_row as u64 + num_lines_truncated;
-            let absolute_dirty_range = absolute_start..=absolute_end;
-
-            // Update matches using the merge logic.
-            self.block_results.update_dirty_matches(
-                block_index,
-                grid_type,
-                absolute_dirty_range,
-                matches,
-            );
-        }
-    }
-
-    /// Synchronously rescans a full block and replaces its results.
-    ///
-    /// Used when a block needs to be rescanned during an ongoing full scan,
-    /// to avoid cancelling the full scan.
-    fn sync_rescan_full_block(&mut self, block_index: BlockIndex, config: &AsyncFindConfig) {
-        use crate::terminal::model::find::{FindConfig, RegexDFAs};
-        use warp_terminal::model::grid::Dimensions;
-
-        let Ok(dfas) = RegexDFAs::new_with_config(
-            config.query.as_str(),
-            FindConfig {
-                is_regex_enabled: config.is_regex_enabled,
-                is_case_sensitive: config.is_case_sensitive,
-            },
-        ) else {
-            return;
-        };
-
-        // Remove existing results for this block.
-        self.block_results.remove_block(block_index);
-
-        let model = self.terminal_model.lock();
-        let Some(block) = model.block_list().block_at(block_index) else {
-            return;
-        };
-
-        for grid_type in [GridType::PromptAndCommand, GridType::Output] {
-            let grid = match grid_type {
-                GridType::Output => block.output_grid().grid_handler(),
-                GridType::PromptAndCommand => block.prompt_and_command_grid().grid_handler(),
-                _ => continue,
-            };
-
-            let total_rows = Dimensions::total_rows(grid);
-            if total_rows == 0 {
-                continue;
-            }
-
-            let columns = Dimensions::columns(grid);
-            let start_point = Point::new(0, 0);
-            let end_point = Point::new(total_rows - 1, columns.saturating_sub(1));
-
-            let iter = grid.find_in_range(&dfas, start_point, end_point);
-            let mut matches: Vec<AbsoluteMatch> = iter
-                .map(|range| AbsoluteMatch::from_range(&range, grid))
-                .collect();
-
-            // find_in_range returns matches in descending order; reverse to ascending.
-            matches.reverse();
-
-            if !matches.is_empty() {
-                self.block_results
-                    .terminal_matches
-                    .insert((block_index, grid_type), matches);
-            }
-        }
+        queue.invalidate_block(block_index, dirty_info);
     }
 
     /// Returns matches for a specific terminal block grid as AbsoluteMatch references.
@@ -997,10 +842,9 @@ impl AsyncFindController {
         block_sort_direction: BlockSortDirection,
         ctx: &mut ModelContext<E>,
     ) {
-        // For now, we'll do a full rescan when the query is refined.
-        // A future optimization could filter existing matches without rescanning.
-        // This requires extracting text from each match range and re-matching,
-        // which needs terminal model access.
+        // For now, we do a full rescan when the query is refined.
+        // A future optimization could filter existing matches without rescanning,
+        // and update the query for pending queue items.
 
         // Create new config.
         let Some(config) = AsyncFindConfig::from_options(options, block_sort_direction) else {
@@ -1008,66 +852,42 @@ impl AsyncFindController {
             return;
         };
 
+        // Cancel existing operation and clear results, but keep the task alive
+        // by re-using start_find which handles everything.
+        self.cancel_current_find();
+
         self.current_config = Some(config.clone());
         self.block_sort_direction = block_sort_direction;
         self.block_results.clear();
         self.focused_match_index = None;
         self.cached_focused_match = None;
-        self.scanned_blocks.clear();
         self.current_find_options = Some(options.clone());
         self.status = AsyncFindStatus::Scanning {
             blocks_scanned: 0,
             total_blocks: 0,
         };
 
-        // Create channels for communication with background task.
-        let (result_tx, result_rx) = async_channel::unbounded();
-        let (cancel_tx, cancel_rx) = async_channel::bounded(1);
+        // Build the work queue from the current block list.
+        let queue = FindWorkQueue::new();
+        let block_info = {
+            let model = self.terminal_model.lock();
+            collect_block_info(model.block_list(), &config)
+        };
+        let total_blocks = block_info.len();
+        queue.enqueue_full_scan(&block_info);
+        self.work_queue = Some(queue.clone());
 
+        // Create result channel.
+        let (result_tx, result_rx) = async_channel::unbounded();
         self.result_rx = Some(result_rx);
-        self.cancel_tx = Some(cancel_tx);
 
         // Spawn background task.
         self.task_handle = Some(spawn_find_task(
             config,
             self.terminal_model.clone(),
+            queue,
             result_tx,
-            cancel_rx,
-            ctx,
-        ));
-    }
-
-    /// Rescans a single block.
-    fn rescan_single_block<E: Entity>(
-        &mut self,
-        block_index: BlockIndex,
-        config: AsyncFindConfig,
-        ctx: &mut ModelContext<E>,
-    ) {
-        // Create a config that only scans the specified block.
-        let single_block_config = AsyncFindConfig {
-            blocks_to_include: Some(vec![block_index]),
-            ..config
-        };
-
-        // Create channels for communication with background task.
-        let (result_tx, result_rx) = async_channel::unbounded();
-        let (cancel_tx, cancel_rx) = async_channel::bounded(1);
-
-        // Note: We don't update status here since this is a partial rescan.
-        // We also keep any existing result_rx - messages will be processed together.
-        // For simplicity, we cancel any existing task first.
-        self.cancel_current_find();
-
-        self.result_rx = Some(result_rx);
-        self.cancel_tx = Some(cancel_tx);
-
-        // Spawn background task.
-        self.task_handle = Some(spawn_find_task(
-            single_block_config,
-            self.terminal_model.clone(),
-            result_tx,
-            cancel_rx,
+            total_blocks,
             ctx,
         ));
     }
@@ -1079,16 +899,11 @@ impl AsyncFindController {
 /// meaning any match of the new query must also be a match of the old query.
 /// An empty old_query is not considered a valid refinement base.
 fn is_query_refinement(old_query: &str, new_query: &str) -> bool {
-    !old_query.is_empty()
-        && new_query.starts_with(old_query)
-        && new_query.len() > old_query.len()
+    !old_query.is_empty() && new_query.starts_with(old_query) && new_query.len() > old_query.len()
 }
 
 /// Collects information about blocks to search.
-pub fn collect_block_info(
-    block_list: &BlockList,
-    config: &AsyncFindConfig,
-) -> Vec<BlockInfo> {
+pub fn collect_block_info(block_list: &BlockList, config: &AsyncFindConfig) -> Vec<BlockInfo> {
     let mut block_info = Vec::new();
 
     // If specific blocks are requested, only collect those.
@@ -1121,14 +936,17 @@ pub fn collect_block_info(
 
     while let Some(item) = cursor.item() {
         match item {
-            BlockHeightItem::Block(height) if height.into_lines() > warpui::units::Lines::zero() => {
+            BlockHeightItem::Block(height)
+                if height.into_lines() > warpui::units::Lines::zero() =>
+            {
                 let block_index = cursor.start().block_count;
                 block_info.push(BlockInfo::Terminal {
                     block_index: block_index.into(),
                 });
             }
             BlockHeightItem::RichContent(rich_content_item)
-                if rich_content_item.last_laid_out_height.into_lines() > warpui::units::Lines::zero() =>
+                if rich_content_item.last_laid_out_height.into_lines()
+                    > warpui::units::Lines::zero() =>
             {
                 block_info.push(BlockInfo::RichContent {
                     view_id: rich_content_item.view_id,
@@ -1161,22 +979,18 @@ mod tests {
     fn test_async_find_config_from_options() {
         // Empty query should return None.
         let options = FindOptions::default();
-        assert!(AsyncFindConfig::from_options(
-            &options,
-            BlockSortDirection::MostRecentLast
-        )
-        .is_none());
+        assert!(
+            AsyncFindConfig::from_options(&options, BlockSortDirection::MostRecentLast).is_none()
+        );
 
         // Query with only whitespace should return None.
         let options = FindOptions {
             query: Some(Arc::new("   ".to_string())),
             ..Default::default()
         };
-        assert!(AsyncFindConfig::from_options(
-            &options,
-            BlockSortDirection::MostRecentLast
-        )
-        .is_none());
+        assert!(
+            AsyncFindConfig::from_options(&options, BlockSortDirection::MostRecentLast).is_none()
+        );
 
         // Valid query should return Some config.
         let options = FindOptions {
@@ -1191,7 +1005,10 @@ mod tests {
         assert_eq!(config.query.as_str(), "hello");
         assert!(config.is_case_sensitive);
         assert!(!config.is_regex_enabled);
-        assert_eq!(config.blocks_to_include, Some(vec![BlockIndex(0), BlockIndex(1)]));
+        assert_eq!(
+            config.blocks_to_include,
+            Some(vec![BlockIndex(0), BlockIndex(1)])
+        );
     }
 
     /// Helper to create an AbsoluteMatch at a given row.
@@ -1298,7 +1115,10 @@ mod tests {
         let new_matches = vec![make_match(5), make_match(10), make_match(15)];
         results.update_dirty_matches(block_index, grid_type, 5..=15, new_matches.clone());
 
-        let stored = results.terminal_matches.get(&(block_index, grid_type)).unwrap();
+        let stored = results
+            .terminal_matches
+            .get(&(block_index, grid_type))
+            .unwrap();
         assert_eq!(stored.len(), 3);
         assert_eq!(stored[0].start_row(), 5);
         assert_eq!(stored[1].start_row(), 10);
@@ -1312,15 +1132,19 @@ mod tests {
         let grid_type = GridType::Output;
 
         // Seed with matches at rows 20, 30.
-        results
-            .terminal_matches
-            .insert((block_index, grid_type), vec![make_match(20), make_match(30)]);
+        results.terminal_matches.insert(
+            (block_index, grid_type),
+            vec![make_match(20), make_match(30)],
+        );
 
         // Update with dirty range before all existing matches.
         let new_matches = vec![make_match(5), make_match(10)];
         results.update_dirty_matches(block_index, grid_type, 5..=10, new_matches);
 
-        let stored = results.terminal_matches.get(&(block_index, grid_type)).unwrap();
+        let stored = results
+            .terminal_matches
+            .get(&(block_index, grid_type))
+            .unwrap();
         assert_eq!(stored.len(), 4);
         assert_eq!(stored[0].start_row(), 5);
         assert_eq!(stored[1].start_row(), 10);
@@ -1335,15 +1159,19 @@ mod tests {
         let grid_type = GridType::Output;
 
         // Seed with matches at rows 5, 10.
-        results
-            .terminal_matches
-            .insert((block_index, grid_type), vec![make_match(5), make_match(10)]);
+        results.terminal_matches.insert(
+            (block_index, grid_type),
+            vec![make_match(5), make_match(10)],
+        );
 
         // Update with dirty range after all existing matches.
         let new_matches = vec![make_match(20), make_match(30)];
         results.update_dirty_matches(block_index, grid_type, 20..=30, new_matches);
 
-        let stored = results.terminal_matches.get(&(block_index, grid_type)).unwrap();
+        let stored = results
+            .terminal_matches
+            .get(&(block_index, grid_type))
+            .unwrap();
         assert_eq!(stored.len(), 4);
         assert_eq!(stored[0].start_row(), 5);
         assert_eq!(stored[1].start_row(), 10);
@@ -1358,16 +1186,20 @@ mod tests {
         let grid_type = GridType::Output;
 
         // Seed with matches at rows 5, 15, 25.
-        results
-            .terminal_matches
-            .insert((block_index, grid_type), vec![make_match(5), make_match(15), make_match(25)]);
+        results.terminal_matches.insert(
+            (block_index, grid_type),
+            vec![make_match(5), make_match(15), make_match(25)],
+        );
 
         // Update dirty range 10..=20, which overlaps with the match at row 15.
         // Replace it with matches at rows 12 and 18.
         let new_matches = vec![make_match(12), make_match(18)];
         results.update_dirty_matches(block_index, grid_type, 10..=20, new_matches);
 
-        let stored = results.terminal_matches.get(&(block_index, grid_type)).unwrap();
+        let stored = results
+            .terminal_matches
+            .get(&(block_index, grid_type))
+            .unwrap();
         assert_eq!(stored.len(), 4);
         assert_eq!(stored[0].start_row(), 5);
         assert_eq!(stored[1].start_row(), 12);
@@ -1382,14 +1214,18 @@ mod tests {
         let grid_type = GridType::Output;
 
         // Seed with matches at rows 5, 15, 25.
-        results
-            .terminal_matches
-            .insert((block_index, grid_type), vec![make_match(5), make_match(15), make_match(25)]);
+        results.terminal_matches.insert(
+            (block_index, grid_type),
+            vec![make_match(5), make_match(15), make_match(25)],
+        );
 
         // Update dirty range 10..=20 with no new matches (clears the match at row 15).
         results.update_dirty_matches(block_index, grid_type, 10..=20, vec![]);
 
-        let stored = results.terminal_matches.get(&(block_index, grid_type)).unwrap();
+        let stored = results
+            .terminal_matches
+            .get(&(block_index, grid_type))
+            .unwrap();
         assert_eq!(stored.len(), 2);
         assert_eq!(stored[0].start_row(), 5);
         assert_eq!(stored[1].start_row(), 25);

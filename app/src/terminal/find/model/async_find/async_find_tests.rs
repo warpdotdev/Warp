@@ -103,7 +103,10 @@ fn test_async_find_produces_same_results_as_sync_find() {
         }
 
         let (status, async_count) = test_model.update(&mut app, |model, _ctx| {
-            (model.controller.status().clone(), model.controller.match_count())
+            (
+                model.controller.status().clone(),
+                model.controller.match_count(),
+            )
         });
 
         assert_eq!(
@@ -192,7 +195,10 @@ fn test_async_find_cancellation() {
         let has_pending = test_model.update(&mut app, |model, _ctx| {
             model.controller.has_pending_results()
         });
-        assert!(has_pending, "Should have pending results after starting find");
+        assert!(
+            has_pending,
+            "Should have pending results after starting find"
+        );
 
         // Cancel the find.
         test_model.update(&mut app, |model, _ctx| {
@@ -201,9 +207,15 @@ fn test_async_find_cancellation() {
 
         // Verify cancellation state.
         let (has_pending, has_active) = test_model.update(&mut app, |model, _ctx| {
-            (model.controller.has_pending_results(), model.controller.has_active_find())
+            (
+                model.controller.has_pending_results(),
+                model.controller.has_active_find(),
+            )
         });
-        assert!(!has_pending, "Should not have pending results after cancellation");
+        assert!(
+            !has_pending,
+            "Should not have pending results after cancellation"
+        );
         assert!(has_active, "Config should still be set after cancellation");
 
         // Clear results should reset everything.
@@ -212,10 +224,20 @@ fn test_async_find_cancellation() {
         });
 
         let (has_active, status) = test_model.update(&mut app, |model, _ctx| {
-            (model.controller.has_active_find(), model.controller.status().clone())
+            (
+                model.controller.has_active_find(),
+                model.controller.status().clone(),
+            )
         });
-        assert!(!has_active, "Should not have active find after clear_results");
-        assert_eq!(status, AsyncFindStatus::Idle, "Status should be Idle after clear_results");
+        assert!(
+            !has_active,
+            "Should not have active find after clear_results"
+        );
+        assert_eq!(
+            status,
+            AsyncFindStatus::Idle,
+            "Status should be Idle after clear_results"
+        );
     });
 }
 
@@ -288,55 +310,13 @@ fn test_message_processing_updates_state() {
             model.controller.process_messages(ctx);
         });
 
-        let (status, has_pending) = test_model.update(&mut app, |model, _ctx| {
-            (model.controller.status().clone(), model.controller.has_pending_results())
-        });
+        let status = test_model.update(&mut app, |model, _ctx| model.controller.status().clone());
 
         assert_eq!(
             status,
             AsyncFindStatus::Complete,
             "Status should be Complete after Done message"
         );
-        assert!(!has_pending, "Should clear result_rx after Done");
-    });
-}
-
-#[test]
-fn test_message_processing_cancelled() {
-    App::test((), |mut app| async move {
-        let mock_terminal_model = TerminalModel::mock(None, None);
-        let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
-
-        // Create channels for test.
-        let (result_tx, result_rx) = async_channel::unbounded();
-        let (cancel_tx, _cancel_rx) = async_channel::bounded(1);
-
-        let test_model = app.add_model(|_| {
-            let mut controller = AsyncFindController::new(terminal_model.clone());
-            // Manually set up state as if a find is in progress.
-            controller.result_rx = Some(result_rx);
-            controller.cancel_tx = Some(cancel_tx);
-            controller.status = AsyncFindStatus::Scanning {
-                blocks_scanned: 0,
-                total_blocks: 2,
-            };
-            TestAsyncFindModel { controller }
-        });
-
-        // Send Cancelled message.
-        result_tx
-            .send_blocking(FindTaskMessage::Cancelled)
-            .unwrap();
-
-        test_model.update(&mut app, |model, ctx| {
-            model.controller.process_messages(ctx);
-        });
-
-        // Verify channels are cleared but status is unchanged (task was cancelled mid-scan).
-        let has_pending = test_model.update(&mut app, |model, _ctx| {
-            model.controller.has_pending_results()
-        });
-        assert!(!has_pending, "Should clear result_rx after Cancelled");
     });
 }
 
@@ -350,7 +330,11 @@ fn test_block_invalidation_with_dirty_range() {
     // Seed with matches at absolute rows 5, 15, 25.
     results.terminal_matches.insert(
         (block_index, grid_type),
-        vec![make_match_at(5, 0, 2), make_match_at(15, 0, 2), make_match_at(25, 0, 2)],
+        vec![
+            make_match_at(5, 0, 2),
+            make_match_at(15, 0, 2),
+            make_match_at(25, 0, 2),
+        ],
     );
 
     // Dirty range 10..=20 overlaps with match at row 15.
@@ -378,14 +362,14 @@ fn test_focus_next_match_wraps_around() {
     let mut controller = AsyncFindController::new(terminal_model);
 
     // Manually add some matches.
-    controller
-        .block_results
-        .terminal_matches
-        .insert((BlockIndex(0), GridType::Output), vec![
+    controller.block_results.terminal_matches.insert(
+        (BlockIndex(0), GridType::Output),
+        vec![
             make_match_at(0, 0, 2),
             make_match_at(1, 0, 2),
             make_match_at(2, 0, 2),
-        ]);
+        ],
+    );
 
     assert_eq!(controller.match_count(), 3);
 
