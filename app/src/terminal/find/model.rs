@@ -433,25 +433,31 @@ impl TerminalFindModel {
             let mut model = self.terminal_model.lock();
             let active_block_index = model.block_list().active_block_index();
 
-            // Get the dirty range and num_lines_truncated from the output grid.
-            // We need mutable access to consume the dirty range.
+            // Consume dirty ranges from both grids. We need mutable access
+            // because take_find_dirty_rows_range is destructive.
             let active_block = model.block_list_mut().active_block_mut();
-            let (dirty_range, num_lines_truncated) = active_block
+            let output_dirty_info = active_block
                 .grid_of_type_mut(GridType::Output)
-                .map(|output_grid| {
-                    let dirty_range = output_grid.grid_handler_mut().take_find_dirty_rows_range();
-                    let num_lines_truncated = output_grid.grid_handler().num_lines_truncated();
-                    (dirty_range, num_lines_truncated)
-                })
-                .unwrap_or((None, 0));
+                .and_then(|grid| {
+                    let dirty = grid.grid_handler_mut().take_find_dirty_rows_range()?;
+                    let truncated = grid.grid_handler().num_lines_truncated();
+                    Some((dirty, GridType::Output, truncated))
+                });
+            let command_dirty_info = active_block
+                .grid_of_type_mut(GridType::PromptAndCommand)
+                .and_then(|grid| {
+                    let dirty = grid.grid_handler_mut().take_find_dirty_rows_range()?;
+                    let truncated = grid.grid_handler().num_lines_truncated();
+                    Some((dirty, GridType::PromptAndCommand, truncated))
+                });
 
-            // Drop the model lock before calling invalidate_async_find_block,
-            // which will re-acquire it.
+            // Drop the model lock before emitting events.
             drop(model);
 
-            let dirty_info =
-                dirty_range.map(|range| (range, GridType::Output, num_lines_truncated));
-            self.invalidate_async_find_block(active_block_index, dirty_info, ctx);
+            self.invalidate_async_find_block(active_block_index, output_dirty_info, ctx);
+            if let Some(info) = command_dirty_info {
+                self.invalidate_async_find_block(active_block_index, Some(info), ctx);
+            }
             return;
         }
 

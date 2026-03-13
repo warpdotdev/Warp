@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::FairMutex;
+use sum_tree::SeekBias;
 use warpui::r#async::SpawnedFutureHandle;
 use warpui::{EntityId, ModelContext};
 
@@ -211,6 +212,10 @@ pub(crate) struct BlockFindResults {
     pub(crate) terminal_matches: HashMap<(BlockIndex, GridType), Vec<AbsoluteMatch>>,
     /// Matches for AI blocks, keyed by view_id.
     pub(crate) ai_matches: HashMap<EntityId, Vec<RichContentMatchId>>,
+    /// TotalIndex for each terminal block that has been scanned.
+    terminal_total_indices: HashMap<BlockIndex, TotalIndex>,
+    /// TotalIndex for each AI block that has been scanned.
+    ai_total_indices: HashMap<EntityId, TotalIndex>,
 }
 
 impl BlockFindResults {
@@ -225,12 +230,15 @@ impl BlockFindResults {
     fn clear(&mut self) {
         self.terminal_matches.clear();
         self.ai_matches.clear();
+        self.terminal_total_indices.clear();
+        self.ai_total_indices.clear();
     }
 
     /// Removes all results for a specific block index.
     fn remove_block(&mut self, block_index: BlockIndex) {
         self.terminal_matches
             .retain(|(idx, _), _| *idx != block_index);
+        self.terminal_total_indices.remove(&block_index);
     }
 
     /// Updates matches for a dirty range within a specific block grid.
@@ -309,7 +317,10 @@ impl BlockFindResults {
 #[derive(Debug, Clone)]
 pub enum BlockInfo {
     /// A terminal command block.
-    Terminal { block_index: BlockIndex },
+    Terminal {
+        block_index: BlockIndex,
+        total_index: TotalIndex,
+    },
     /// A rich content block (e.g., AI block).
     RichContent {
         view_id: EntityId,
@@ -365,6 +376,12 @@ pub struct AsyncFindController {
     /// Cached result of `focused_terminal_match()`, updated when focus or matches change.
     /// Avoids re-sorting HashMap keys and iterating on every call.
     cached_focused_match: Option<AsyncBlockGridMatch>,
+
+    /// Monotonically increasing generation counter, bumped each time new streams
+    /// are spawned. The result stream callback captures the generation at spawn
+    /// time and skips messages that arrive after a newer generation has started,
+    /// preventing stale `Done` messages from prematurely ending a new scan.
+    generation: u64,
 }
 
 impl AsyncFindController {
@@ -384,6 +401,7 @@ impl AsyncFindController {
             focused_match_index: None,
             current_find_options: None,
             cached_focused_match: None,
+            generation: 0,
         }
     }
 
@@ -468,49 +486,86 @@ impl AsyncFindController {
         self.cached_focused_match = self.compute_focused_terminal_match();
     }
 
-    /// Computes the focused terminal match by iterating through all terminal matches
-    /// in deterministic order to find the one at the focused index.
+    /// Computes the focused terminal match by iterating through all matches
+    /// (terminal and AI) in visual display order, derived from the TotalIndex
+    /// maps stored in the block results.
+    ///
+    /// Returns `Some` if the focused index lands on a terminal match, `None`
+    /// if it lands on an AI match or is out of range.
     fn compute_focused_terminal_match(&self) -> Option<AsyncBlockGridMatch> {
         let focused_idx = self.focused_match_index?;
-
         let mut current_idx = 0;
 
-        // Sort keys to match visual order, which depends on block sort direction.
-        let mut keys: Vec<_> = self.block_results.terminal_matches.keys().collect();
-        let sort_direction = self.block_sort_direction;
-        keys.sort_by(|a, b| {
-            let block_cmp = match sort_direction {
-                BlockSortDirection::MostRecentFirst => b.0.cmp(&a.0),
-                BlockSortDirection::MostRecentLast => a.0.cmp(&b.0),
-            };
-            block_cmp.then_with(|| {
-                // Within a block, match the grid scan order from the background task.
-                let grid_order = |g: &GridType| match (g, sort_direction) {
-                    (GridType::PromptAndCommand, BlockSortDirection::MostRecentFirst) => 0,
-                    (GridType::Output, BlockSortDirection::MostRecentFirst) => 1,
-                    (GridType::Output, BlockSortDirection::MostRecentLast) => 0,
-                    (GridType::PromptAndCommand, BlockSortDirection::MostRecentLast) => 1,
-                    _ => 2,
-                };
-                grid_order(&a.1).cmp(&grid_order(&b.1))
-            })
-        });
+        // Determine grid iteration order within each terminal block.
+        let grid_types: [GridType; 2] = match self.block_sort_direction {
+            BlockSortDirection::MostRecentFirst => {
+                [GridType::PromptAndCommand, GridType::Output]
+            }
+            BlockSortDirection::MostRecentLast => {
+                [GridType::Output, GridType::PromptAndCommand]
+            }
+        };
 
-        for (block_index, grid_type) in keys {
-            if let Some(matches) = self
-                .block_results
-                .terminal_matches
-                .get(&(*block_index, *grid_type))
-            {
-                for match_range in matches {
-                    if current_idx == focused_idx {
-                        return Some(AsyncBlockGridMatch {
-                            block_index: *block_index,
-                            grid_type: *grid_type,
-                            range: match_range.clone(),
-                        });
+        // Build a unified list of all blocks with results, sorted by TotalIndex.
+        let mut ordered_blocks: Vec<(TotalIndex, BlockInfo)> = Vec::new();
+        for (&block_index, &total_index) in &self.block_results.terminal_total_indices {
+            ordered_blocks.push((
+                total_index,
+                BlockInfo::Terminal {
+                    block_index,
+                    total_index,
+                },
+            ));
+        }
+        for (&view_id, &total_index) in &self.block_results.ai_total_indices {
+            ordered_blocks.push((
+                total_index,
+                BlockInfo::RichContent {
+                    view_id,
+                    total_index,
+                },
+            ));
+        }
+
+        // Sort by TotalIndex (ascending = visual order for MostRecentLast).
+        ordered_blocks.sort_by_key(|(ti, _)| *ti);
+
+        // Reverse for MostRecentFirst display.
+        if matches!(
+            self.block_sort_direction,
+            BlockSortDirection::MostRecentFirst
+        ) {
+            ordered_blocks.reverse();
+        }
+
+        for (_, block_info) in &ordered_blocks {
+            match block_info {
+                BlockInfo::Terminal { block_index, .. } => {
+                    for &grid_type in &grid_types {
+                        if let Some(matches) = self
+                            .block_results
+                            .terminal_matches
+                            .get(&(*block_index, grid_type))
+                        {
+                            for match_range in matches {
+                                if current_idx == focused_idx {
+                                    return Some(AsyncBlockGridMatch {
+                                        block_index: *block_index,
+                                        grid_type,
+                                        range: match_range.clone(),
+                                    });
+                                }
+                                current_idx += 1;
+                            }
+                        }
                     }
-                    current_idx += 1;
+                }
+                BlockInfo::RichContent { view_id, .. } => {
+                    // Count AI matches so the index arithmetic stays correct,
+                    // but don't return them as terminal matches.
+                    if let Some(ai_matches) = self.block_results.ai_matches.get(view_id) {
+                        current_idx += ai_matches.len();
+                    }
                 }
             }
         }
@@ -596,6 +651,29 @@ impl AsyncFindController {
         queue.enqueue_full_scan(&block_info);
         self.work_queue = Some(queue.clone());
 
+        // Populate TotalIndex maps from the block info so that
+        // compute_focused_terminal_match can order results correctly.
+        for info in &block_info {
+            match info {
+                BlockInfo::Terminal {
+                    block_index,
+                    total_index,
+                } => {
+                    self.block_results
+                        .terminal_total_indices
+                        .insert(*block_index, *total_index);
+                }
+                BlockInfo::RichContent {
+                    view_id,
+                    total_index,
+                } => {
+                    self.block_results
+                        .ai_total_indices
+                        .insert(*view_id, *total_index);
+                }
+            }
+        }
+
         // Create result channel and spawn streams.
         let (result_tx, result_rx) = async_channel::unbounded();
         self.result_tx = Some(result_tx.clone());
@@ -627,6 +705,22 @@ impl AsyncFindController {
                 matches,
             } => {
                 if !matches.is_empty() {
+                    // Store TotalIndex for this block if not already known
+                    // (e.g. the block was added after the initial scan).
+                    if !self
+                        .block_results
+                        .terminal_total_indices
+                        .contains_key(&block_index)
+                    {
+                        let total_index = {
+                            let model = self.terminal_model.lock();
+                            total_index_for_block(block_index, model.block_list())
+                        };
+                        self.block_results
+                            .terminal_total_indices
+                            .insert(block_index, total_index);
+                    }
+
                     self.block_results
                         .terminal_matches
                         .entry((block_index, grid_type))
@@ -653,11 +747,15 @@ impl AsyncFindController {
                     dirty_range,
                     matches,
                 );
+                // Prune matches that have been truncated from scrollback.
+                // Dirty range messages arrive when the active block receives
+                // new output, which is exactly when truncation can occur.
+                self.prune_truncated_matches(block_index, grid_type);
                 self.clamp_focused_match_index();
             }
             FindTaskMessage::ScanAIBlock {
                 view_id,
-                total_index: _,
+                total_index,
             } => {
                 // Scan AI block on main thread.
                 if let Some(view) = self.rich_content_views.get(&view_id) {
@@ -678,6 +776,9 @@ impl AsyncFindController {
                         );
                         if !match_ids.is_empty() {
                             self.block_results.ai_matches.insert(view_id, match_ids);
+                            self.block_results
+                                .ai_total_indices
+                                .insert(view_id, total_index);
                             self.clamp_focused_match_index();
                         }
                     }
@@ -794,6 +895,38 @@ impl AsyncFindController {
         self.block_results.ai_matches.get(&view_id)
     }
 
+    /// Prunes truncated matches for a specific block and grid type.
+    ///
+    /// This removes matches whose start row has been truncated from scrollback,
+    /// keeping the match count and focused index accurate.
+    fn prune_truncated_matches(&mut self, block_index: BlockIndex, grid_type: GridType) {
+        let num_lines_truncated = {
+            let model = self.terminal_model.lock();
+            let Some(block) = model.block_list().block_at(block_index) else {
+                return;
+            };
+            match grid_type {
+                GridType::Output => block.output_grid().grid_handler().num_lines_truncated(),
+                GridType::PromptAndCommand => {
+                    block.prompt_and_command_grid().grid_handler().num_lines_truncated()
+                }
+                _ => return,
+            }
+        };
+
+        if num_lines_truncated == 0 {
+            return;
+        }
+
+        if let Some(matches) = self
+            .block_results
+            .terminal_matches
+            .get_mut(&(block_index, grid_type))
+        {
+            matches.retain(|m| !m.is_truncated(num_lines_truncated));
+        }
+    }
+
     /// Clamps the focused match index to the current match count.
     ///
     /// If the count is 0, sets the index to `None`. This should be called after
@@ -856,6 +989,28 @@ impl AsyncFindController {
         queue.enqueue_full_scan(&block_info);
         self.work_queue = Some(queue.clone());
 
+        // Populate TotalIndex maps from the block info.
+        for info in &block_info {
+            match info {
+                BlockInfo::Terminal {
+                    block_index,
+                    total_index,
+                } => {
+                    self.block_results
+                        .terminal_total_indices
+                        .insert(*block_index, *total_index);
+                }
+                BlockInfo::RichContent {
+                    view_id,
+                    total_index,
+                } => {
+                    self.block_results
+                        .ai_total_indices
+                        .insert(*view_id, *total_index);
+                }
+            }
+        }
+
         // Create result channel and spawn streams.
         let (result_tx, result_rx) = async_channel::unbounded();
         self.result_tx = Some(result_tx.clone());
@@ -884,12 +1039,19 @@ impl AsyncFindController {
     ) {
         const THROTTLE_INTERVAL: Duration = Duration::from_millis(50);
 
+        // Bump generation so that stale messages from an old find's stream
+        // are discarded by the callback check below.
+        self.generation += 1;
+        let generation = self.generation;
+
         // Result stream: delivers every message to process_message.
         ctx.spawn_stream_local(
             result_rx,
-            |me, msg, ctx| {
+            move |me, msg, ctx| {
                 if let Some(controller) = &mut me.async_find_controller {
-                    controller.process_message(msg, ctx);
+                    if controller.generation == generation {
+                        controller.process_message(msg, ctx);
+                    }
                 }
             },
             |_me, _ctx| {},
@@ -944,17 +1106,21 @@ pub fn collect_block_info(block_list: &BlockList, config: &AsyncFindConfig) -> V
     if let Some(blocks_to_include) = &config.blocks_to_include {
         for &block_index in blocks_to_include {
             if block_list.block_at(block_index).is_some() {
-                block_info.push(BlockInfo::Terminal { block_index });
+                let total_index = total_index_for_block(block_index, block_list);
+                block_info.push(BlockInfo::Terminal {
+                    block_index,
+                    total_index,
+                });
             }
         }
         // Sort by recency (newest first).
         block_info.sort_by(|a, b| {
             let idx_a = match a {
-                BlockInfo::Terminal { block_index } => block_index.0,
+                BlockInfo::Terminal { block_index, .. } => block_index.0,
                 BlockInfo::RichContent { .. } => 0,
             };
             let idx_b = match b {
-                BlockInfo::Terminal { block_index } => block_index.0,
+                BlockInfo::Terminal { block_index, .. } => block_index.0,
                 BlockInfo::RichContent { .. } => 0,
             };
             idx_b.cmp(&idx_a)
@@ -973,9 +1139,10 @@ pub fn collect_block_info(block_list: &BlockList, config: &AsyncFindConfig) -> V
             BlockHeightItem::Block(height)
                 if height.into_lines() > warpui::units::Lines::zero() =>
             {
-                let block_index = cursor.start().block_count;
+                let summary = cursor.start();
                 block_info.push(BlockInfo::Terminal {
-                    block_index: block_index.into(),
+                    block_index: summary.block_count.into(),
+                    total_index: summary.total_count.into(),
                 });
             }
             BlockHeightItem::RichContent(rich_content_item)
@@ -993,6 +1160,22 @@ pub fn collect_block_info(block_list: &BlockList, config: &AsyncFindConfig) -> V
     }
 
     block_info
+}
+
+/// Computes the TotalIndex for a terminal block at the given BlockIndex.
+///
+/// Uses the block list's height tree to find the block's position among
+/// all items (blocks, gaps, rich content, etc.).
+fn total_index_for_block(block_index: BlockIndex, block_list: &BlockList) -> TotalIndex {
+    let mut cursor = block_list
+        .block_heights()
+        .cursor::<BlockIndex, ()>();
+    TotalIndex(
+        cursor
+            .slice(&block_index, SeekBias::Right)
+            .summary()
+            .total_count,
+    )
 }
 
 #[cfg(test)]
