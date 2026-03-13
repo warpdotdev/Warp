@@ -373,6 +373,8 @@ impl TerminalFindModel {
     pub fn active_find_options(&self) -> Option<&FindOptions> {
         if self.terminal_model.lock().is_alt_screen_active() {
             self.alt_screen_find_run.as_ref().map(|run| run.options())
+        } else if let Some(controller) = &self.async_find_controller {
+            controller.find_options()
         } else {
             self.block_list_find_run.as_ref().map(|run| run.options())
         }

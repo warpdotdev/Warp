@@ -393,6 +393,9 @@ pub struct AsyncFindController {
     /// Used to determine whether a block can be synchronously rescanned during an
     /// ongoing full scan without cancelling it.
     scanned_blocks: HashSet<BlockIndex>,
+
+    /// The FindOptions for the current find run, stored for `active_find_options()` access.
+    current_find_options: Option<FindOptions>,
 }
 
 impl AsyncFindController {
@@ -410,6 +413,7 @@ impl AsyncFindController {
             block_sort_direction: BlockSortDirection::MostRecentLast,
             focused_match_index: None,
             scanned_blocks: HashSet::new(),
+            current_find_options: None,
         }
     }
 
@@ -421,6 +425,11 @@ impl AsyncFindController {
     /// Returns the current config, if any.
     pub fn current_config(&self) -> Option<&AsyncFindConfig> {
         self.current_config.as_ref()
+    }
+
+    /// Returns the FindOptions for the current find run, if any.
+    pub fn find_options(&self) -> Option<&FindOptions> {
+        self.current_find_options.as_ref()
     }
 
     /// Returns the total number of matches found so far.
@@ -582,6 +591,7 @@ impl AsyncFindController {
         self.block_results.clear();
         self.focused_match_index = None;
         self.scanned_blocks.clear();
+        self.current_find_options = Some(options.clone());
         self.status = AsyncFindStatus::Scanning {
             blocks_scanned: 0,
             total_blocks: 0,
@@ -725,6 +735,7 @@ impl AsyncFindController {
         self.focused_match_index = None;
         self.status = AsyncFindStatus::Idle;
         self.scanned_blocks.clear();
+        self.current_find_options = None;
 
         // Clear matches in AI blocks.
         for view in self.rich_content_views.values() {
@@ -980,6 +991,7 @@ impl AsyncFindController {
         self.block_sort_direction = block_sort_direction;
         self.block_results.clear();
         self.scanned_blocks.clear();
+        self.current_find_options = Some(options.clone());
         self.status = AsyncFindStatus::Scanning {
             blocks_scanned: 0,
             total_blocks: 0,
