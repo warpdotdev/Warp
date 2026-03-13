@@ -646,8 +646,7 @@ impl TerminalFindModel {
         };
 
         // Use invalidate_async_find_block which handles the dirty range properly.
-        let dirty_info =
-            dirty_range.map(|range| (range, GridType::Output, num_lines_truncated));
+        let dirty_info = dirty_range.map(|range| (range, GridType::Output, num_lines_truncated));
         self.invalidate_async_find_block(block_index, dirty_info, ctx);
     }
 
