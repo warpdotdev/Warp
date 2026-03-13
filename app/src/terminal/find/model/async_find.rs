@@ -297,9 +297,7 @@ impl BlockFindResults {
 
         // Assert that matches are still in ascending order.
         debug_assert!(
-            matches
-                .windows(2)
-                .all(|w| w[0].end_row() <= w[1].start_row()),
+            matches.windows(2).all(|w| w[0] <= w[1]),
             "Matches should be in ascending order after update_dirty_matches"
         );
     }
@@ -329,22 +327,13 @@ pub struct AsyncFindController {
     current_config: Option<AsyncFindConfig>,
 
     /// Per-block results for the current find run.
-    #[cfg(not(test))]
     block_results: BlockFindResults,
-    #[cfg(test)]
-    pub(crate) block_results: BlockFindResults,
 
     /// Current status of the find operation.
-    #[cfg(not(test))]
     status: AsyncFindStatus,
-    #[cfg(test)]
-    pub(crate) status: AsyncFindStatus,
 
     /// Receiver for messages from background task.
-    #[cfg(not(test))]
     result_rx: Option<async_channel::Receiver<FindTaskMessage>>,
-    #[cfg(test)]
-    pub(crate) result_rx: Option<async_channel::Receiver<FindTaskMessage>>,
 
     /// Handle to abort the background task's future.
     task_handle: Option<SpawnedFutureHandle>,
@@ -587,8 +576,19 @@ impl AsyncFindController {
         // Build the work queue from the current block list.
         let queue = FindWorkQueue::new();
         let block_info = {
-            let model = self.terminal_model.lock();
-            collect_block_info(model.block_list(), &config)
+            let mut model = self.terminal_model.lock();
+            let info = collect_block_info(model.block_list(), &config);
+            // Clear stale dirty ranges on the active block, since the full scan
+            // covers all of its current content. Without this, the first
+            // incremental update could redundantly re-scan already-covered rows.
+            if let Some(output_grid) = model
+                .block_list_mut()
+                .active_block_mut()
+                .grid_of_type_mut(GridType::Output)
+            {
+                output_grid.grid_handler_mut().take_find_dirty_rows_range();
+            }
+            info
         };
         queue.enqueue_full_scan(&block_info);
         self.work_queue = Some(queue.clone());
@@ -771,6 +771,10 @@ impl AsyncFindController {
         );
 
         queue.invalidate_block(block_index, dirty_info);
+
+        // Mark status as scanning so the polling loop stays alive while the
+        // background task processes the new work.
+        self.status = AsyncFindStatus::Scanning;
     }
 
     /// Returns matches for a specific terminal block grid as AbsoluteMatch references.
@@ -838,8 +842,17 @@ impl AsyncFindController {
         // Build the work queue from the current block list.
         let queue = FindWorkQueue::new();
         let block_info = {
-            let model = self.terminal_model.lock();
-            collect_block_info(model.block_list(), &config)
+            let mut model = self.terminal_model.lock();
+            let info = collect_block_info(model.block_list(), &config);
+            // Clear stale dirty ranges (same rationale as in start_find).
+            if let Some(output_grid) = model
+                .block_list_mut()
+                .active_block_mut()
+                .grid_of_type_mut(GridType::Output)
+            {
+                output_grid.grid_handler_mut().take_find_dirty_rows_range();
+            }
+            info
         };
         queue.enqueue_full_scan(&block_info);
         self.work_queue = Some(queue.clone());
@@ -859,6 +872,25 @@ impl AsyncFindController {
     }
 }
 
+#[cfg(test)]
+impl AsyncFindController {
+    /// Sets up internal state for testing by injecting a result receiver and
+    /// status directly.
+    pub(crate) fn set_test_state(
+        &mut self,
+        result_rx: async_channel::Receiver<FindTaskMessage>,
+        status: AsyncFindStatus,
+    ) {
+        self.result_rx = Some(result_rx);
+        self.status = status;
+    }
+
+    /// Returns a mutable reference to block results for testing.
+    pub(crate) fn block_results_mut(&mut self) -> &mut BlockFindResults {
+        &mut self.block_results
+    }
+}
+
 /// Returns true if `new_query` is a refinement of `old_query`.
 ///
 /// A query is considered a refinement if it starts with the old query,
@@ -869,6 +901,11 @@ fn is_query_refinement(old_query: &str, new_query: &str) -> bool {
 }
 
 /// Collects information about blocks to search.
+///
+/// The returned list is always in newest-first order, regardless of
+/// `config.block_sort_direction`. This gives the background task a
+/// consistent iteration order; the main thread re-sorts results by
+/// `block_sort_direction` when computing the focused match.
 pub fn collect_block_info(block_list: &BlockList, config: &AsyncFindConfig) -> Vec<BlockInfo> {
     let mut block_info = Vec::new();
 

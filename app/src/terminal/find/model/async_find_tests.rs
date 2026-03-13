@@ -258,8 +258,7 @@ fn test_message_processing_updates_state() {
         let test_model = app.add_model(|_| {
             let mut controller = AsyncFindController::new(terminal_model.clone());
             // Manually set up state as if a find is in progress.
-            controller.result_rx = Some(result_rx);
-            controller.status = AsyncFindStatus::Scanning;
+            controller.set_test_state(result_rx, AsyncFindStatus::Scanning);
             TestAsyncFindModel { controller }
         });
 
@@ -353,7 +352,7 @@ fn test_focus_next_match_wraps_around() {
     let mut controller = AsyncFindController::new(terminal_model);
 
     // Manually add some matches.
-    controller.block_results.terminal_matches.insert(
+    controller.block_results_mut().terminal_matches.insert(
         (BlockIndex(0), GridType::Output),
         vec![
             make_match_at(0, 0, 2),
