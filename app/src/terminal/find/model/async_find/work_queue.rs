@@ -79,7 +79,7 @@ impl FindWorkQueue {
         let mut inner = self.inner.lock().unwrap();
         for block in blocks {
             let item = match block {
-                BlockInfo::Terminal { block_index } => FindWorkItem::ScanFullBlock {
+                BlockInfo::Terminal { block_index, .. } => FindWorkItem::ScanFullBlock {
                     block_index: *block_index,
                 },
                 BlockInfo::RichContent {
