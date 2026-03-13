@@ -40,12 +40,11 @@ pub fn spawn_find_task<E: Entity>(
     terminal_model: Arc<FairMutex<TerminalModel>>,
     queue: FindWorkQueue,
     result_tx: async_channel::Sender<FindTaskMessage>,
-    total_blocks: usize,
     ctx: &mut ModelContext<E>,
 ) -> warpui::r#async::SpawnedFutureHandle {
     ctx.spawn(
         async move {
-            run_find_task_loop(config, terminal_model, queue, result_tx, total_blocks).await;
+            run_find_task_loop(config, terminal_model, queue, result_tx).await;
         },
         |_me, (), _ctx| {
             // Task completed — nothing to do here as results are sent via channel.
@@ -59,7 +58,6 @@ async fn run_find_task_loop(
     terminal_model: Arc<FairMutex<TerminalModel>>,
     queue: FindWorkQueue,
     result_tx: async_channel::Sender<FindTaskMessage>,
-    total_blocks: usize,
 ) {
     // Build RegexDFAs from config.
     let Ok(dfas) = RegexDFAs::new_with_config(
@@ -74,19 +72,9 @@ async fn run_find_task_loop(
         return;
     };
 
-    let mut blocks_scanned: usize = 0;
-
-    // Send initial progress.
-    let _ = result_tx
-        .send(FindTaskMessage::Progress {
-            blocks_scanned: 0,
-            total_blocks,
-        })
-        .await;
-
     loop {
         match queue.pop().await {
-            Ok(item) => {
+            Ok((item, queue_drained)) => {
                 match item {
                     FindWorkItem::ScanFullBlock { block_index } => {
                         scan_terminal_block_chunked(
@@ -97,14 +85,6 @@ async fn run_find_task_loop(
                             config.block_sort_direction,
                         )
                         .await;
-
-                        blocks_scanned += 1;
-                        let _ = result_tx
-                            .send(FindTaskMessage::Progress {
-                                blocks_scanned,
-                                total_blocks,
-                            })
-                            .await;
                     }
                     FindWorkItem::ScanDirtyRange {
                         block_index,
@@ -135,20 +115,13 @@ async fn run_find_task_loop(
                                 total_index,
                             })
                             .await;
-
-                        blocks_scanned += 1;
-                        let _ = result_tx
-                            .send(FindTaskMessage::Progress {
-                                blocks_scanned,
-                                total_blocks,
-                            })
-                            .await;
                     }
                 }
 
-                // If the queue just drained, send Done so the controller can
-                // transition status to Complete.
-                if queue.is_empty() {
+                // The emptiness flag is checked atomically with the pop inside
+                // the queue lock, avoiding the TOCTOU race of a separate
+                // `is_empty()` call.
+                if queue_drained {
                     let _ = result_tx.send(FindTaskMessage::Done).await;
                 }
             }

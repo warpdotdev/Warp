@@ -259,10 +259,7 @@ fn test_message_processing_updates_state() {
             let mut controller = AsyncFindController::new(terminal_model.clone());
             // Manually set up state as if a find is in progress.
             controller.result_rx = Some(result_rx);
-            controller.status = AsyncFindStatus::Scanning {
-                blocks_scanned: 0,
-                total_blocks: 2,
-            };
+            controller.status = AsyncFindStatus::Scanning;
             TestAsyncFindModel { controller }
         });
 
@@ -272,14 +269,6 @@ fn test_message_processing_updates_state() {
                 block_index: BlockIndex(1),
                 grid_type: GridType::Output,
                 matches: vec![make_match_at(0, 0, 2), make_match_at(1, 0, 2)],
-            })
-            .unwrap();
-
-        // Send a Progress message.
-        result_tx
-            .send_blocking(FindTaskMessage::Progress {
-                blocks_scanned: 1,
-                total_blocks: 2,
             })
             .unwrap();
 
@@ -300,11 +289,8 @@ fn test_message_processing_updates_state() {
         assert_eq!(match_count, 2, "Should have 2 matches");
         assert_eq!(
             status,
-            AsyncFindStatus::Scanning {
-                blocks_scanned: 1,
-                total_blocks: 2
-            },
-            "Status should reflect progress"
+            AsyncFindStatus::Scanning,
+            "Status should still be scanning until Done is received"
         );
         assert_eq!(focused_idx, Some(0), "Should auto-focus first match");
 
@@ -507,16 +493,7 @@ fn test_block_find_results_remove_block() {
 fn test_async_find_status_display() {
     assert_eq!(format!("{}", AsyncFindStatus::Idle), "Idle");
     assert_eq!(format!("{}", AsyncFindStatus::Complete), "Complete");
-    assert_eq!(
-        format!(
-            "{}",
-            AsyncFindStatus::Scanning {
-                blocks_scanned: 5,
-                total_blocks: 10
-            }
-        ),
-        "Scanning (5/10)"
-    );
+    assert_eq!(format!("{}", AsyncFindStatus::Scanning), "Scanning");
 }
 
 #[test]
