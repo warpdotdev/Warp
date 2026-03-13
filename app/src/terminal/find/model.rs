@@ -616,10 +616,15 @@ impl TerminalFindModel {
         dirty_info: Option<(RangeInclusive<usize>, GridType, u64)>,
         ctx: &mut ModelContext<Self>,
     ) {
-        if let Some(controller) = &mut self.async_find_controller {
+        if let Some(controller) = self.async_find_controller.as_mut() {
             controller.invalidate_block(block_index, dirty_info);
-            ctx.emit(FindEvent::RanFind);
+        } else {
+            return;
         }
+        // Restart polling to process results from the re-enqueued work.
+        // This is a no-op if polling is already active.
+        self.ensure_async_find_polling(ctx);
+        ctx.emit(FindEvent::RanFind);
     }
 
     /// Notifies async find that a block has completed.
@@ -714,28 +719,31 @@ impl TerminalFindModel {
     /// Returns `true` if the async find is still in progress and more ticks are needed.
     /// This method should be called periodically (e.g., from a timer or frame callback)
     /// while async find is active to process streaming results.
+    ///
+    /// Polling is driven by `AsyncFindStatus::Scanning`: once the background task
+    /// sends `Done` and the status becomes `Complete`, this returns `false` and the
+    /// timer chain stops. If new work is later enqueued via `invalidate_block`, the
+    /// caller restarts polling through `ensure_async_find_polling`.
     pub fn tick_async_find(&mut self, ctx: &mut ModelContext<Self>) -> bool {
         if let Some(controller) = &mut self.async_find_controller {
             let was_scanning = controller.is_scanning();
-            let had_pending = controller.has_pending_results();
             let match_count_before = controller.match_count();
             controller.process_messages(ctx);
             let is_still_scanning = controller.is_scanning();
-            let still_has_pending = controller.has_pending_results();
             let match_count_after = controller.match_count();
 
             log::trace!(
-                "[async_find] tick: was_scanning={}, is_still_scanning={}, pending={}->{}, matches: {} -> {}",
-                was_scanning, is_still_scanning, had_pending, still_has_pending, match_count_before, match_count_after
+                "[async_find] tick: was_scanning={}, is_still_scanning={}, matches: {} -> {}",
+                was_scanning, is_still_scanning, match_count_before, match_count_after
             );
 
             // Emit event if we have new results or status changed.
-            if was_scanning || is_still_scanning || had_pending {
+            if was_scanning || is_still_scanning {
                 ctx.emit(FindEvent::RanFind);
             }
 
-            // Continue polling if scanning or if there are pending results to process.
-            is_still_scanning || still_has_pending
+            // Continue polling while the background task is still working.
+            is_still_scanning
         } else {
             false
         }
