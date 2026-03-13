@@ -396,6 +396,10 @@ pub struct AsyncFindController {
 
     /// The FindOptions for the current find run, stored for `active_find_options()` access.
     current_find_options: Option<FindOptions>,
+
+    /// Cached result of `focused_terminal_match()`, updated when focus or matches change.
+    /// Avoids re-sorting HashMap keys and iterating on every call.
+    cached_focused_match: Option<AsyncBlockGridMatch>,
 }
 
 impl AsyncFindController {
@@ -414,6 +418,7 @@ impl AsyncFindController {
             focused_match_index: None,
             scanned_blocks: HashSet::new(),
             current_find_options: None,
+            cached_focused_match: None,
         }
     }
 
@@ -490,16 +495,27 @@ impl AsyncFindController {
         };
 
         self.focused_match_index = Some(new_index);
+        self.update_cached_focused_match();
     }
 
     /// Returns the focused match as an AsyncBlockGridMatch if it's a terminal match.
     ///
-    /// The returned match uses absolute coordinates. Callers should use
-    /// `AbsoluteMatch::to_range()` to convert to relative coordinates for rendering.
+    /// Returns a cached value that is updated when focus or matches change,
+    /// avoiding the cost of sorting and iterating on every call.
     pub fn focused_terminal_match(&self) -> Option<AsyncBlockGridMatch> {
+        self.cached_focused_match.clone()
+    }
+
+    /// Recomputes the cached focused match from the current matches and focus index.
+    fn update_cached_focused_match(&mut self) {
+        self.cached_focused_match = self.compute_focused_terminal_match();
+    }
+
+    /// Computes the focused terminal match by iterating through all terminal matches
+    /// in deterministic order to find the one at the focused index.
+    fn compute_focused_terminal_match(&self) -> Option<AsyncBlockGridMatch> {
         let focused_idx = self.focused_match_index?;
 
-        // Iterate through terminal matches in order to find the one at focused_idx.
         let mut current_idx = 0;
 
         // Sort keys for deterministic iteration order.
@@ -590,6 +606,7 @@ impl AsyncFindController {
         self.block_sort_direction = block_sort_direction;
         self.block_results.clear();
         self.focused_match_index = None;
+        self.cached_focused_match = None;
         self.scanned_blocks.clear();
         self.current_find_options = Some(options.clone());
         self.status = AsyncFindStatus::Scanning {
@@ -707,9 +724,9 @@ impl AsyncFindController {
             self.cancel_tx = None;
         }
 
-        // Note: The owning entity is responsible for emitting events to notify listeners.
-        // We don't emit events here because we're a plain struct, not an Entity.
-        let _ = (had_matches, ctx);
+        if had_matches {
+            self.update_cached_focused_match();
+        }
     }
 
     /// Cancels the current find operation, if any.
@@ -733,6 +750,7 @@ impl AsyncFindController {
         self.current_config = None;
         self.block_results.clear();
         self.focused_match_index = None;
+        self.cached_focused_match = None;
         self.status = AsyncFindStatus::Idle;
         self.scanned_blocks.clear();
         self.current_find_options = None;
@@ -795,6 +813,7 @@ impl AsyncFindController {
                     num_lines_truncated,
                     &config,
                 );
+                self.update_cached_focused_match();
                 return;
             }
         }
@@ -807,6 +826,7 @@ impl AsyncFindController {
                 block_index
             );
             self.sync_rescan_full_block(block_index, &config);
+            self.update_cached_focused_match();
         } else {
             // No full scan in progress; spawn a background task for just this block.
             log::trace!(
@@ -814,6 +834,7 @@ impl AsyncFindController {
                 block_index
             );
             self.block_results.remove_block(block_index);
+            self.update_cached_focused_match();
             self.rescan_single_block(block_index, config, ctx);
         }
     }
@@ -990,6 +1011,8 @@ impl AsyncFindController {
         self.current_config = Some(config.clone());
         self.block_sort_direction = block_sort_direction;
         self.block_results.clear();
+        self.focused_match_index = None;
+        self.cached_focused_match = None;
         self.scanned_blocks.clear();
         self.current_find_options = Some(options.clone());
         self.status = AsyncFindStatus::Scanning {
