@@ -498,12 +498,8 @@ impl AsyncFindController {
 
         // Determine grid iteration order within each terminal block.
         let grid_types: [GridType; 2] = match self.block_sort_direction {
-            BlockSortDirection::MostRecentFirst => {
-                [GridType::PromptAndCommand, GridType::Output]
-            }
-            BlockSortDirection::MostRecentLast => {
-                [GridType::Output, GridType::PromptAndCommand]
-            }
+            BlockSortDirection::MostRecentFirst => [GridType::PromptAndCommand, GridType::Output],
+            BlockSortDirection::MostRecentLast => [GridType::Output, GridType::PromptAndCommand],
         };
 
         // Build a unified list of all blocks with results, sorted by TotalIndex.
@@ -907,9 +903,10 @@ impl AsyncFindController {
             };
             match grid_type {
                 GridType::Output => block.output_grid().grid_handler().num_lines_truncated(),
-                GridType::PromptAndCommand => {
-                    block.prompt_and_command_grid().grid_handler().num_lines_truncated()
-                }
+                GridType::PromptAndCommand => block
+                    .prompt_and_command_grid()
+                    .grid_handler()
+                    .num_lines_truncated(),
                 _ => return,
             }
         };
@@ -1167,9 +1164,7 @@ pub fn collect_block_info(block_list: &BlockList, config: &AsyncFindConfig) -> V
 /// Uses the block list's height tree to find the block's position among
 /// all items (blocks, gaps, rich content, etc.).
 fn total_index_for_block(block_index: BlockIndex, block_list: &BlockList) -> TotalIndex {
-    let mut cursor = block_list
-        .block_heights()
-        .cursor::<BlockIndex, ()>();
+    let mut cursor = block_list.block_heights().cursor::<BlockIndex, ()>();
     TotalIndex(
         cursor
             .slice(&block_index, SeekBias::Right)

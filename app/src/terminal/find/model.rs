@@ -436,13 +436,14 @@ impl TerminalFindModel {
             // Consume dirty ranges from both grids. We need mutable access
             // because take_find_dirty_rows_range is destructive.
             let active_block = model.block_list_mut().active_block_mut();
-            let output_dirty_info = active_block
-                .grid_of_type_mut(GridType::Output)
-                .and_then(|grid| {
-                    let dirty = grid.grid_handler_mut().take_find_dirty_rows_range()?;
-                    let truncated = grid.grid_handler().num_lines_truncated();
-                    Some((dirty, GridType::Output, truncated))
-                });
+            let output_dirty_info =
+                active_block
+                    .grid_of_type_mut(GridType::Output)
+                    .and_then(|grid| {
+                        let dirty = grid.grid_handler_mut().take_find_dirty_rows_range()?;
+                        let truncated = grid.grid_handler().num_lines_truncated();
+                        Some((dirty, GridType::Output, truncated))
+                    });
             let command_dirty_info = active_block
                 .grid_of_type_mut(GridType::PromptAndCommand)
                 .and_then(|grid| {
