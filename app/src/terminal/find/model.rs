@@ -577,28 +577,12 @@ impl TerminalFindModel {
         }
     }
 
-    /// Returns the current async find status, if async find is enabled.
-    pub fn async_find_status(&self) -> Option<&AsyncFindStatus> {
-        self.async_find_controller.as_ref().map(|c| c.status())
-    }
-
     /// Returns true if an async find operation is currently scanning.
     pub fn is_async_find_scanning(&self) -> bool {
         self.async_find_controller
             .as_ref()
             .map(|c| c.is_scanning())
             .unwrap_or(false)
-    }
-
-    /// Processes pending messages from the async find background task.
-    ///
-    /// This should be called periodically (e.g., on a timer or in response to a wakeup).
-    pub fn process_async_find_messages(&mut self, ctx: &mut ModelContext<Self>) {
-        if let Some(controller) = &mut self.async_find_controller {
-            controller.process_messages(ctx);
-            // Re-emit RanFind so the UI updates with new matches.
-            ctx.emit(FindEvent::RanFind);
-        }
     }
 
     /// Invalidates results for a specific block in async find.
