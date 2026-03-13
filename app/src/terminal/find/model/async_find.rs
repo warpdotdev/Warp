@@ -8,7 +8,7 @@ mod background_task;
 #[cfg(test)]
 mod async_find_tests;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
@@ -90,6 +90,10 @@ pub enum FindTaskMessage {
     ScanAIBlock {
         view_id: EntityId,
         total_index: TotalIndex,
+    },
+    /// A terminal block has been fully scanned.
+    BlockScanned {
+        block_index: BlockIndex,
     },
     /// Progress update.
     Progress {
@@ -384,6 +388,11 @@ pub struct AsyncFindController {
 
     /// The currently focused match index (0-based), if any.
     focused_match_index: Option<usize>,
+
+    /// Set of block indices that have been fully scanned during the current find run.
+    /// Used to determine whether a block can be synchronously rescanned during an
+    /// ongoing full scan without cancelling it.
+    scanned_blocks: HashSet<BlockIndex>,
 }
 
 impl AsyncFindController {
@@ -400,6 +409,7 @@ impl AsyncFindController {
             rich_content_views: HashMap::new(),
             block_sort_direction: BlockSortDirection::MostRecentLast,
             focused_match_index: None,
+            scanned_blocks: HashSet::new(),
         }
     }
 
@@ -571,6 +581,7 @@ impl AsyncFindController {
         self.block_sort_direction = block_sort_direction;
         self.block_results.clear();
         self.focused_match_index = None;
+        self.scanned_blocks.clear();
         self.status = AsyncFindStatus::Scanning {
             blocks_scanned: 0,
             total_blocks: 0,
@@ -659,6 +670,9 @@ impl AsyncFindController {
                         }
                     }
                 }
+                FindTaskMessage::BlockScanned { block_index } => {
+                    self.scanned_blocks.insert(block_index);
+                }
                 FindTaskMessage::Progress {
                     blocks_scanned,
                     total_blocks,
@@ -710,6 +724,7 @@ impl AsyncFindController {
         self.block_results.clear();
         self.focused_match_index = None;
         self.status = AsyncFindStatus::Idle;
+        self.scanned_blocks.clear();
 
         // Clear matches in AI blocks.
         for view in self.rich_content_views.values() {
@@ -742,13 +757,27 @@ impl AsyncFindController {
             return;
         };
 
-                // Check if we should do an incremental update.
+        // If a full scan is in progress, skip blocks that haven't been scanned yet;
+        // the ongoing scan will handle them.
+        if self.is_scanning() && !self.scanned_blocks.contains(&block_index) {
+            log::trace!(
+                "[async_find] invalidate_block: block {:?} not yet scanned, skipping",
+                block_index
+            );
+            return;
+        }
+
+        // Check if we should do an incremental update.
         if let Some(dirty_range) = dirty_row_range {
             let dirty_row_count = dirty_range.end().saturating_sub(*dirty_range.start()) + 1;
 
             if dirty_row_count <= MAX_SYNC_DIRTY_ROWS {
                 // Do incremental scanning for the dirty range.
-                log::trace!("[async_find] invalidate_block: sync scan for block {:?}, dirty_range={:?}", block_index, dirty_range);
+                log::trace!(
+                    "[async_find] invalidate_block: sync scan for block {:?}, dirty_range={:?}",
+                    block_index,
+                    dirty_range
+                );
                 self.scan_dirty_range_sync(
                     block_index,
                     dirty_range,
@@ -759,12 +788,23 @@ impl AsyncFindController {
             }
         }
 
-        // Fall back to full block rescan.
-        log::trace!("[async_find] invalidate_block: full rescan for block {:?}", block_index);
-        self.block_results.remove_block(block_index);
-        self.rescan_single_block(block_index, config, ctx);
-
-        // Note: The owning entity is responsible for emitting events to notify listeners.
+        if self.is_scanning() {
+            // Full scan is in progress and block was already scanned; do a synchronous
+            // full rescan without cancelling the ongoing scan.
+            log::trace!(
+                "[async_find] invalidate_block: sync full rescan for block {:?} during scan",
+                block_index
+            );
+            self.sync_rescan_full_block(block_index, &config);
+        } else {
+            // No full scan in progress; spawn a background task for just this block.
+            log::trace!(
+                "[async_find] invalidate_block: async rescan for block {:?}",
+                block_index
+            );
+            self.block_results.remove_block(block_index);
+            self.rescan_single_block(block_index, config, ctx);
+        }
     }
 
     /// Scans a dirty range synchronously and merges results with existing matches.
@@ -842,6 +882,64 @@ impl AsyncFindController {
         }
     }
 
+    /// Synchronously rescans a full block and replaces its results.
+    ///
+    /// Used when a block needs to be rescanned during an ongoing full scan,
+    /// to avoid cancelling the full scan.
+    fn sync_rescan_full_block(&mut self, block_index: BlockIndex, config: &AsyncFindConfig) {
+        use crate::terminal::model::find::{FindConfig, RegexDFAs};
+        use warp_terminal::model::grid::Dimensions;
+
+        let Ok(dfas) = RegexDFAs::new_with_config(
+            config.query.as_str(),
+            FindConfig {
+                is_regex_enabled: config.is_regex_enabled,
+                is_case_sensitive: config.is_case_sensitive,
+            },
+        ) else {
+            return;
+        };
+
+        // Remove existing results for this block.
+        self.block_results.remove_block(block_index);
+
+        let model = self.terminal_model.lock();
+        let Some(block) = model.block_list().block_at(block_index) else {
+            return;
+        };
+
+        for grid_type in [GridType::PromptAndCommand, GridType::Output] {
+            let grid = match grid_type {
+                GridType::Output => block.output_grid().grid_handler(),
+                GridType::PromptAndCommand => block.prompt_and_command_grid().grid_handler(),
+                _ => continue,
+            };
+
+            let total_rows = Dimensions::total_rows(grid);
+            if total_rows == 0 {
+                continue;
+            }
+
+            let columns = Dimensions::columns(grid);
+            let start_point = Point::new(0, 0);
+            let end_point = Point::new(total_rows - 1, columns.saturating_sub(1));
+
+            let iter = grid.find_in_range(&dfas, start_point, end_point);
+            let mut matches: Vec<AbsoluteMatch> = iter
+                .map(|range| AbsoluteMatch::from_range(&range, grid))
+                .collect();
+
+            // find_in_range returns matches in descending order; reverse to ascending.
+            matches.reverse();
+
+            if !matches.is_empty() {
+                self.block_results
+                    .terminal_matches
+                    .insert((block_index, grid_type), matches);
+            }
+        }
+    }
+
     /// Returns matches for a specific terminal block grid as AbsoluteMatch references.
     ///
     /// Callers should convert to relative `Point` ranges using `AbsoluteMatch::to_range()`.
@@ -881,6 +979,7 @@ impl AsyncFindController {
         self.current_config = Some(config.clone());
         self.block_sort_direction = block_sort_direction;
         self.block_results.clear();
+        self.scanned_blocks.clear();
         self.status = AsyncFindStatus::Scanning {
             blocks_scanned: 0,
             total_blocks: 0,
