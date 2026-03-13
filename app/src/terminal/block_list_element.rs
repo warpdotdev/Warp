@@ -2572,9 +2572,12 @@ impl BlockListElement {
 
         // Update grid_origin and draw command.
         let command_grid_properties = Properties::default();
-        let command_focused_range = find_render_data
-            .as_ref()
-            .and_then(|data: &BlockFindRenderData<'_>| data.focused_range_for_grid(GridType::PromptAndCommand));
+        let command_focused_range =
+            find_render_data
+                .as_ref()
+                .and_then(|data: &BlockFindRenderData<'_>| {
+                    data.focused_range_for_grid(GridType::PromptAndCommand)
+                });
         block.prompt_and_command_grid().draw(
             command_origin,
             element_origin,
@@ -2666,9 +2669,12 @@ impl BlockListElement {
 
             let output_grid_properties =
                 Properties::default().weight(block_grid_params.grid_render_params.font_weight);
-            let output_focused_range = find_render_data
-                .as_ref()
-                .and_then(|data: &BlockFindRenderData<'_>| data.focused_range_for_grid(GridType::Output));
+            let output_focused_range =
+                find_render_data
+                    .as_ref()
+                    .and_then(|data: &BlockFindRenderData<'_>| {
+                        data.focused_range_for_grid(GridType::Output)
+                    });
             block.output_grid().draw(
                 *grid_origin,
                 viewport_origin,

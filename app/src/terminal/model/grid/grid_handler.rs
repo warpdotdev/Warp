@@ -2023,7 +2023,12 @@ impl GridHandler {
     /// Find matches in a specific range of the grid.
     ///
     /// This is used by async find to scan chunks of a grid without scanning the entire grid.
-    pub(in crate::terminal) fn find_in_range<'a>(&'a self, dfas: &'a RegexDFAs, start: Point, end: Point) -> RegexIter<'a> {
+    pub(in crate::terminal) fn find_in_range<'a>(
+        &'a self,
+        dfas: &'a RegexDFAs,
+        start: Point,
+        end: Point,
+    ) -> RegexIter<'a> {
         self.regex_iter(end, start, Direction::Left, dfas)
     }
 

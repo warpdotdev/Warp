@@ -19,10 +19,10 @@ use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
 use alt_screen::{run_find_on_alt_screen, AltScreenFindRun};
-use warpui::r#async::Timer;
 use parking_lot::FairMutex;
 use settings::Setting as _;
 use warp_core::features::FeatureFlag;
+use warpui::r#async::Timer;
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle};
 
 use crate::{
@@ -129,13 +129,16 @@ impl<'a> BlockFindRenderData<'a> {
     }
 
     /// Returns an iterator over match ranges for the command grid.
-    pub fn command_grid_matches(&self) -> Option<Box<dyn Iterator<Item = &RangeInclusive<Point>> + '_>> {
+    pub fn command_grid_matches(
+        &self,
+    ) -> Option<Box<dyn Iterator<Item = &RangeInclusive<Point>> + '_>> {
         match self {
-            Self::Sync { run, block_index } => Some(run.matches_for_block_grid(
-                *block_index,
-                GridType::PromptAndCommand,
-            )),
-            Self::Async { command_matches, .. } => {
+            Self::Sync { run, block_index } => {
+                Some(run.matches_for_block_grid(*block_index, GridType::PromptAndCommand))
+            }
+            Self::Async {
+                command_matches, ..
+            } => {
                 if command_matches.is_empty() {
                     None
                 } else {
@@ -146,7 +149,9 @@ impl<'a> BlockFindRenderData<'a> {
     }
 
     /// Returns an iterator over match ranges for the output grid.
-    pub fn output_grid_matches(&self) -> Option<Box<dyn Iterator<Item = &RangeInclusive<Point>> + '_>> {
+    pub fn output_grid_matches(
+        &self,
+    ) -> Option<Box<dyn Iterator<Item = &RangeInclusive<Point>> + '_>> {
         match self {
             Self::Sync { run, block_index } => {
                 Some(run.matches_for_block_grid(*block_index, GridType::Output))
@@ -164,17 +169,15 @@ impl<'a> BlockFindRenderData<'a> {
     /// Returns the focused match range if it's in the specified grid.
     pub fn focused_range_for_grid(&self, grid_type: GridType) -> Option<RangeInclusive<Point>> {
         match self {
-            Self::Sync { run, block_index } => run
-                .focused_match()
-                .and_then(|m| match m {
-                    BlockListMatch::CommandBlock(grid_match)
-                        if grid_match.block_index == *block_index
-                            && grid_match.grid_type == grid_type =>
-                    {
-                        Some(grid_match.range.clone())
-                    }
-                    _ => None,
-                }),
+            Self::Sync { run, block_index } => run.focused_match().and_then(|m| match m {
+                BlockListMatch::CommandBlock(grid_match)
+                    if grid_match.block_index == *block_index
+                        && grid_match.grid_type == grid_type =>
+                {
+                    Some(grid_match.range.clone())
+                }
+                _ => None,
+            }),
             Self::Async {
                 focused_command_range,
                 focused_output_range,
@@ -399,7 +402,10 @@ impl TerminalFindModel {
 
         // Use async find if the feature flag is enabled.
         if let Some(controller) = &mut self.async_find_controller {
-            log::trace!("[async_find] Starting async find with query: {:?}", options.query);
+            log::trace!(
+                "[async_find] Starting async find with query: {:?}",
+                options.query
+            );
             controller.start_find(&options, block_sort_direction, ctx);
             ctx.emit(FindEvent::RanFind);
 
@@ -621,16 +627,8 @@ impl TerminalFindModel {
         ctx: &mut ModelContext<Self>,
     ) {
         if let Some(controller) = &mut self.async_find_controller {
-            let had_pending_before = controller.has_pending_results();
-            controller.invalidate_block(block_index, dirty_row_range, num_lines_truncated, ctx);
-            let has_pending_after = controller.has_pending_results();
+            controller.invalidate_block(block_index, dirty_row_range, num_lines_truncated);
             ctx.emit(FindEvent::RanFind);
-
-            // If a background task was spawned (indicated by now having pending results
-            // when we didn't before), restart the polling loop to process the results.
-            if !had_pending_before && has_pending_after {
-                Self::schedule_async_find_poll(ctx);
-            }
         }
     }
 
