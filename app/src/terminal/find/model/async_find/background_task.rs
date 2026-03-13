@@ -89,7 +89,6 @@ async fn run_find_task_loop(
                             &terminal_model,
                             &dfas,
                             &result_tx,
-                            &queue,
                             config.block_sort_direction,
                         )
                         .await;
@@ -104,13 +103,16 @@ async fn run_find_task_loop(
                     }
                     FindWorkItem::ScanDirtyRange {
                         block_index,
+                        grid_type,
                         row_range,
                         num_lines_truncated,
                     } => {
-                        scan_dirty_range(
+                        scan_grid_chunked(
                             block_index,
-                            row_range,
-                            num_lines_truncated,
+                            grid_type,
+                            *row_range.start(),
+                            Some(*row_range.end() + 1),
+                            ScanResultMode::DirtyRange { num_lines_truncated },
                             &terminal_model,
                             &dfas,
                             &result_tx,
@@ -153,80 +155,12 @@ async fn run_find_task_loop(
     }
 }
 
-/// Scans a dirty range within a terminal block and sends results for merging.
-async fn scan_dirty_range(
-    block_index: BlockIndex,
-    row_range: RangeInclusive<usize>,
-    num_lines_truncated: u64,
-    terminal_model: &Arc<FairMutex<TerminalModel>>,
-    dfas: &RegexDFAs,
-    result_tx: &async_channel::Sender<FindTaskMessage>,
-) {
-    // Collect all results under the lock, then send after releasing it.
-    let messages = {
-        let model = terminal_model.lock();
-        let Some(block) = model.block_list().block_at(block_index) else {
-            return;
-        };
-
-        let mut messages = Vec::new();
-
-        for grid_type in [GridType::PromptAndCommand, GridType::Output] {
-            let grid = match grid_type {
-                GridType::Output => block.output_grid().grid_handler(),
-                GridType::PromptAndCommand => block.prompt_and_command_grid().grid_handler(),
-                _ => continue,
-            };
-
-            let total_rows = Dimensions::total_rows(grid);
-            let columns = Dimensions::columns(grid);
-
-            // Clamp dirty range to grid bounds.
-            let start_row = *row_range.start().min(&total_rows.saturating_sub(1));
-            let end_row = *row_range.end().min(&total_rows.saturating_sub(1));
-
-            if start_row > end_row {
-                continue;
-            }
-
-            let start_point = Point::new(start_row, 0);
-            let end_point = Point::new(end_row, columns.saturating_sub(1));
-
-            let iter = grid.find_in_range(dfas, start_point, end_point);
-            let mut matches: Vec<AbsoluteMatch> = iter
-                .map(|range| AbsoluteMatch::from_range(&range, grid))
-                .collect();
-
-            // The find iterator returns matches in descending order; reverse to ascending.
-            matches.reverse();
-
-            // Convert dirty range to absolute row indices.
-            let absolute_start = start_row as u64 + num_lines_truncated;
-            let absolute_end = end_row as u64 + num_lines_truncated;
-
-            messages.push(FindTaskMessage::DirtyRangeMatches {
-                block_index,
-                grid_type,
-                dirty_range: absolute_start..=absolute_end,
-                matches,
-            });
-        }
-
-        messages
-    };
-
-    for msg in messages {
-        let _ = result_tx.send(msg).await;
-    }
-}
-
 /// Scans a terminal block in chunks, streaming results back to the main thread.
 async fn scan_terminal_block_chunked(
     block_index: BlockIndex,
     terminal_model: &Arc<FairMutex<TerminalModel>>,
     dfas: &RegexDFAs,
     result_tx: &async_channel::Sender<FindTaskMessage>,
-    queue: &FindWorkQueue,
     block_sort_direction: crate::terminal::model::terminal_model::BlockSortDirection,
 ) {
     // Determine grid order based on sort direction.
@@ -239,29 +173,56 @@ async fn scan_terminal_block_chunked(
         }
     };
 
-    for grid_type in grid_order.iter() {
+    for &grid_type in grid_order {
         scan_grid_chunked(
             block_index,
-            *grid_type,
+            grid_type,
+            0,
+            None,
+            ScanResultMode::FullBlock,
             terminal_model,
             dfas,
             result_tx,
-            queue,
         )
         .await;
     }
 }
 
-/// Scans a single grid in chunks, releasing the lock between chunks.
+/// Controls how each chunk's matches are sent to the main thread.
+enum ScanResultMode {
+    /// Send [`FindTaskMessage::BlockGridMatches`] per chunk. Empty chunks are
+    /// skipped (no message sent).
+    FullBlock,
+    /// Send [`FindTaskMessage::DirtyRangeMatches`] per chunk, converting the
+    /// scanned row range to absolute coordinates using the provided truncation
+    /// offset. Messages are always sent, even for empty chunks, so that old
+    /// matches in the sub-range are cleared.
+    DirtyRange { num_lines_truncated: u64 },
+}
+
+/// Scans a range of rows within a single grid in chunks, releasing the
+/// terminal model lock between chunks to avoid blocking the main thread.
+///
+/// Both full-block scanning and dirty-range scanning delegate to this
+/// function; the [`ScanResultMode`] determines the message type sent per
+/// chunk.
+///
+/// # Arguments
+/// * `start_row` — First row to scan (inclusive).
+/// * `end_row` — Upper bound on rows to scan (exclusive). `None` scans to
+///   the end of the grid.
+/// * `mode` — Determines the message type sent per chunk.
 async fn scan_grid_chunked(
     block_index: BlockIndex,
     grid_type: GridType,
+    start_row: usize,
+    end_row: Option<usize>,
+    mode: ScanResultMode,
     terminal_model: &Arc<FairMutex<TerminalModel>>,
     dfas: &RegexDFAs,
     result_tx: &async_channel::Sender<FindTaskMessage>,
-    queue: &FindWorkQueue,
 ) {
-    let mut start_row = 0;
+    let mut current_row = start_row;
 
     loop {
         let chunk_result = {
@@ -281,76 +242,67 @@ async fn scan_grid_chunked(
 
             let grid_handler = grid.grid_handler();
             let total_rows = grid_handler.total_rows();
-            log::trace!(
-                "[async_find] scan_grid_chunked: block {:?} grid {:?}, total_rows={}, start_row={}",
-                block_index,
-                grid_type,
-                total_rows,
-                start_row
-            );
-            if start_row >= total_rows {
-                // Finished scanning this grid.
-                log::trace!("[async_find] scan_grid_chunked: block {:?} grid {:?} is empty or fully scanned", block_index, grid_type);
+            let effective_end = end_row.unwrap_or(total_rows).min(total_rows);
+
+            if current_row >= effective_end {
                 return;
             }
 
-            // Calculate the end row for this chunk.
-            let end_row = (start_row + ROWS_PER_CHUNK).min(total_rows);
+            let chunk_end = (current_row + ROWS_PER_CHUNK).min(effective_end);
 
-            // Scan this chunk using the existing find implementation.
-            let point_matches = scan_grid_range(grid_handler, dfas, start_row, end_row);
+            let point_matches = scan_grid_range(grid_handler, dfas, current_row, chunk_end);
             let matches: Vec<AbsoluteMatch> = point_matches
                 .iter()
                 .map(|range| AbsoluteMatch::from_range(range, grid_handler))
                 .collect();
 
             let elapsed = lock_start.elapsed();
-            (matches, end_row, total_rows, elapsed)
+            (matches, chunk_end, effective_end, elapsed)
         };
 
-        let (mut matches, end_row, total_rows, elapsed) = chunk_result;
+        let (mut matches, chunk_end, effective_end, elapsed) = chunk_result;
 
-        // The `find_in_range` function returns matches in descending order (it searches from
-        // end to start going left). We always reverse each chunk to ascending order so that
-        // when chunks are concatenated via `.extend()`, the final Vec remains in ascending
-        // order. The renderer expects matches in ascending order for `active_or_next_match`
-        // to work correctly.
+        // find_in_range returns matches in descending order; reverse to ascending.
         matches.reverse();
 
-        // Stream results if we found any matches in this chunk.
-        if !matches.is_empty() {
-            log::trace!(
-                "[async_find] background task: found {} matches in block {:?} grid {:?}",
-                matches.len(),
-                block_index,
-                grid_type
-            );
-            let _ = result_tx
-                .send(FindTaskMessage::BlockGridMatches {
-                    block_index,
-                    grid_type,
-                    matches,
-                })
-                .await;
+        // Send chunk results based on mode.
+        match &mode {
+            ScanResultMode::FullBlock => {
+                if !matches.is_empty() {
+                    let _ = result_tx
+                        .send(FindTaskMessage::BlockGridMatches {
+                            block_index,
+                            grid_type,
+                            matches,
+                        })
+                        .await;
+                }
+            }
+            ScanResultMode::DirtyRange { num_lines_truncated } => {
+                let absolute_start = current_row as u64 + num_lines_truncated;
+                let absolute_end = (chunk_end - 1) as u64 + num_lines_truncated;
+                let _ = result_tx
+                    .send(FindTaskMessage::DirtyRangeMatches {
+                        block_index,
+                        grid_type,
+                        dirty_range: absolute_start..=absolute_end,
+                        matches,
+                    })
+                    .await;
+            }
         }
 
-        if end_row >= total_rows {
-            // Finished scanning this grid.
+        if chunk_end >= effective_end {
             break;
         }
 
-        start_row = end_row;
+        current_row = chunk_end;
 
         // Yield to let other tasks run if we held the lock for a while.
         if elapsed.as_millis() > MAX_LOCK_DURATION_MS as u128 / 2 {
             yield_now().await;
         }
     }
-
-    // Check if the queue was closed (cancellation) between chunks. This is a
-    // lightweight check; the main cancellation path is queue.pop() returning
-    // Err(QueueClosed) in the task loop.
-    let _ = queue.is_empty();
 }
 
 /// Scans a range of rows in a grid for matches.

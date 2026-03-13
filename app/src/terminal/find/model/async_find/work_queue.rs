@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use event_listener::Event;
 use warpui::EntityId;
 
+use crate::terminal::block_list_element::GridType;
 use crate::terminal::model::blocks::TotalIndex;
 use crate::terminal::model::terminal_model::BlockIndex;
 
@@ -22,9 +23,10 @@ use super::BlockInfo;
 pub enum FindWorkItem {
     /// Scan an entire terminal block.
     ScanFullBlock { block_index: BlockIndex },
-    /// Scan a dirty range within a terminal block.
+    /// Scan a dirty range within a specific grid of a terminal block.
     ScanDirtyRange {
         block_index: BlockIndex,
+        grid_type: GridType,
         row_range: RangeInclusive<usize>,
         num_lines_truncated: u64,
     },
@@ -104,7 +106,7 @@ impl FindWorkQueue {
     pub fn invalidate_block(
         &self,
         block_index: BlockIndex,
-        dirty_range: Option<(RangeInclusive<usize>, u64)>,
+        dirty_range: Option<(RangeInclusive<usize>, GridType, u64)>,
     ) {
         let mut inner = self.inner.lock().unwrap();
 
@@ -118,8 +120,9 @@ impl FindWorkQueue {
 
         // Enqueue the appropriate item at the front (high priority).
         let item = match dirty_range {
-            Some((row_range, num_lines_truncated)) => FindWorkItem::ScanDirtyRange {
+            Some((row_range, grid_type, num_lines_truncated)) => FindWorkItem::ScanDirtyRange {
                 block_index,
+                grid_type,
                 row_range,
                 num_lines_truncated,
             },
