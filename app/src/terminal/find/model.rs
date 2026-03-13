@@ -463,12 +463,9 @@ impl TerminalFindModel {
             // which will re-acquire it.
             drop(model);
 
-            self.invalidate_async_find_block(
-                active_block_index,
-                dirty_range,
-                num_lines_truncated,
-                ctx,
-            );
+            let dirty_info =
+                dirty_range.map(|range| (range, GridType::Output, num_lines_truncated));
+            self.invalidate_async_find_block(active_block_index, dirty_info, ctx);
             return;
         }
 
@@ -615,19 +612,17 @@ impl TerminalFindModel {
     ///
     /// # Arguments
     /// * `block_index` - The index of the block that changed.
-    /// * `dirty_row_range` - Optional range of rows (in relative coordinates) that changed.
-    ///   If provided and small enough, only those rows will be rescanned and merged.
-    /// * `num_lines_truncated` - The current number of truncated lines in the grid.
+    /// * `dirty_info` - If provided, a `(row_range, grid_type, num_lines_truncated)`
+    ///   tuple describing the dirty region. If `None`, a full block rescan is enqueued.
     /// * `ctx` - The model context.
     pub fn invalidate_async_find_block(
         &mut self,
         block_index: BlockIndex,
-        dirty_row_range: Option<RangeInclusive<usize>>,
-        num_lines_truncated: u64,
+        dirty_info: Option<(RangeInclusive<usize>, GridType, u64)>,
         ctx: &mut ModelContext<Self>,
     ) {
         if let Some(controller) = &mut self.async_find_controller {
-            controller.invalidate_block(block_index, dirty_row_range, num_lines_truncated);
+            controller.invalidate_block(block_index, dirty_info);
             ctx.emit(FindEvent::RanFind);
         }
     }
@@ -680,7 +675,9 @@ impl TerminalFindModel {
         };
 
         // Use invalidate_async_find_block which handles the dirty range properly.
-        self.invalidate_async_find_block(block_index, dirty_range, num_lines_truncated, ctx);
+        let dirty_info =
+            dirty_range.map(|range| (range, GridType::Output, num_lines_truncated));
+        self.invalidate_async_find_block(block_index, dirty_info, ctx);
     }
 
     /// Returns the async find controller, if enabled.

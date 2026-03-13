@@ -782,14 +782,12 @@ impl AsyncFindController {
     ///
     /// # Arguments
     /// * `block_index` - The index of the block that changed.
-    /// * `dirty_row_range` - Optional range of rows (in relative coordinates) that changed.
-    ///   If provided, a dirty-range rescan is enqueued; otherwise a full block rescan.
-    /// * `num_lines_truncated` - The current number of truncated lines in the grid.
+    /// * `dirty_info` - If provided, a `(row_range, grid_type, num_lines_truncated)`
+    ///   tuple describing the dirty region. If `None`, a full block rescan is enqueued.
     pub fn invalidate_block(
         &mut self,
         block_index: BlockIndex,
-        dirty_row_range: Option<RangeInclusive<usize>>,
-        num_lines_truncated: u64,
+        dirty_info: Option<(RangeInclusive<usize>, GridType, u64)>,
     ) {
         if self.current_config.is_none() {
             return;
@@ -798,8 +796,6 @@ impl AsyncFindController {
         let Some(queue) = self.work_queue.clone() else {
             return;
         };
-
-        let dirty_info = dirty_row_range.map(|range| (range, num_lines_truncated));
 
         // For a full block rescan (no dirty range), clear existing results now
         // so stale matches are not shown while the rescan is pending.
@@ -811,7 +807,7 @@ impl AsyncFindController {
         log::trace!(
             "[async_find] invalidate_block: enqueuing work for block {:?}, dirty={:?}",
             block_index,
-            dirty_info.as_ref().map(|(r, _)| r),
+            dirty_info.as_ref().map(|(r, _, _)| r),
         );
 
         queue.invalidate_block(block_index, dirty_info);
