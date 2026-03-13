@@ -8,6 +8,7 @@
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
+use futures_lite::future::yield_now;
 use instant::Instant;
 use parking_lot::FairMutex;
 use warp_terminal::model::grid::Dimensions;
@@ -317,30 +318,4 @@ fn scan_grid_range(
     let end_point = Point::new(end_row.saturating_sub(1), columns.saturating_sub(1));
 
     grid.find_in_range(dfas, start_point, end_point).collect()
-}
-
-/// Yields control to other tasks.
-async fn yield_now() {
-    struct YieldNow {
-        yielded: bool,
-    }
-
-    impl std::future::Future for YieldNow {
-        type Output = ();
-
-        fn poll(
-            mut self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<Self::Output> {
-            if self.yielded {
-                std::task::Poll::Ready(())
-            } else {
-                self.yielded = true;
-                cx.waker().wake_by_ref();
-                std::task::Poll::Pending
-            }
-        }
-    }
-
-    YieldNow { yielded: false }.await
 }
