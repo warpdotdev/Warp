@@ -24,9 +24,13 @@ use crate::terminal::model::terminal_model::BlockIndex;
 use crate::terminal::model::TerminalModel;
 
 use super::work_queue::{FindWorkItem, FindWorkQueue};
-use super::{
-    AbsoluteMatch, AsyncFindConfig, FindTaskMessage, MAX_LOCK_DURATION_MS, ROWS_PER_CHUNK,
-};
+use super::{AbsoluteMatch, AsyncFindConfig, FindTaskMessage};
+
+/// Maximum time (in milliseconds) to hold the terminal model lock during a find chunk.
+const MAX_LOCK_DURATION_MS: u64 = 5;
+
+/// Number of rows to scan per chunk within a terminal block.
+const ROWS_PER_CHUNK: usize = 1000;
 
 /// Spawns a background find task that pulls work from the given queue.
 ///
