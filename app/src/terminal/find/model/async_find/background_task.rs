@@ -104,6 +104,13 @@ async fn run_find_task(
                     config.block_sort_direction,
                 )
                 .await;
+
+                // Notify the main thread that this block has been fully scanned.
+                let _ = result_tx
+                    .send(FindTaskMessage::BlockScanned {
+                        block_index: *block_index,
+                    })
+                    .await;
             }
             BlockInfo::RichContent {
                 view_id,
