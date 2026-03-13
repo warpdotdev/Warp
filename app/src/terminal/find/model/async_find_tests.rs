@@ -217,10 +217,7 @@ fn test_async_find_cancellation() {
             let c = model.async_find_controller.as_ref().unwrap();
             (c.is_scanning(), c.has_active_find())
         });
-        assert!(
-            !is_scanning,
-            "Should not be scanning after cancellation"
-        );
+        assert!(!is_scanning, "Should not be scanning after cancellation");
         assert!(has_active, "Config should still be set after cancellation");
 
         // Clear results should reset everything.
@@ -265,14 +262,18 @@ fn test_message_processing_updates_state() {
 
         // Process a BlockGridMatches message directly.
         test_model.update(&mut app, |model, ctx| {
-            model.async_find_controller.as_mut().unwrap().process_message(
-                FindTaskMessage::BlockGridMatches {
-                    block_index: BlockIndex(1),
-                    grid_type: GridType::Output,
-                    matches: vec![make_match_at(0, 0, 2), make_match_at(1, 0, 2)],
-                },
-                ctx,
-            );
+            model
+                .async_find_controller
+                .as_mut()
+                .unwrap()
+                .process_message(
+                    FindTaskMessage::BlockGridMatches {
+                        block_index: BlockIndex(1),
+                        grid_type: GridType::Output,
+                        matches: vec![make_match_at(0, 0, 2), make_match_at(1, 0, 2)],
+                    },
+                    ctx,
+                );
         });
 
         // Verify state updates.
@@ -299,7 +300,12 @@ fn test_message_processing_updates_state() {
         });
 
         let status = test_model.update(&mut app, |model, _ctx| {
-            model.async_find_controller.as_ref().unwrap().status().clone()
+            model
+                .async_find_controller
+                .as_ref()
+                .unwrap()
+                .status()
+                .clone()
         });
 
         assert_eq!(
@@ -397,18 +403,14 @@ fn test_is_query_refinement() {
 fn test_async_find_config_from_options() {
     // Empty query should return None.
     let options = FindOptions::default();
-    assert!(
-        AsyncFindConfig::from_options(&options, BlockSortDirection::MostRecentLast).is_none()
-    );
+    assert!(AsyncFindConfig::from_options(&options, BlockSortDirection::MostRecentLast).is_none());
 
     // Query with only whitespace should return None.
     let options = FindOptions {
         query: Some(Arc::new("   ".to_string())),
         ..Default::default()
     };
-    assert!(
-        AsyncFindConfig::from_options(&options, BlockSortDirection::MostRecentLast).is_none()
-    );
+    assert!(AsyncFindConfig::from_options(&options, BlockSortDirection::MostRecentLast).is_none());
 
     // Valid query should return Some config.
     let options = FindOptions {

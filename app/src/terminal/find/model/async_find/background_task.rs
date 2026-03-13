@@ -97,7 +97,9 @@ async fn run_find_task_loop(
                             grid_type,
                             *row_range.start(),
                             Some(*row_range.end() + 1),
-                            ScanResultMode::DirtyRange { num_lines_truncated },
+                            ScanResultMode::DirtyRange {
+                                num_lines_truncated,
+                            },
                             &terminal_model,
                             &dfas,
                             &result_tx,
@@ -256,7 +258,9 @@ async fn scan_grid_chunked(
                         .await;
                 }
             }
-            ScanResultMode::DirtyRange { num_lines_truncated } => {
+            ScanResultMode::DirtyRange {
+                num_lines_truncated,
+            } => {
                 let absolute_start = current_row as u64 + num_lines_truncated;
                 let absolute_end = (chunk_end - 1) as u64 + num_lines_truncated;
                 let _ = result_tx
