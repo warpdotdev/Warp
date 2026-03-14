@@ -425,7 +425,11 @@ impl TerminalFindModel {
         }
 
         // Handle async find path.
-        if self.async_find_controller.is_some() {
+        if let Some(controller) = &self.async_find_controller {
+            if !controller.has_active_find() {
+                return;
+            }
+
             // Get the active block index and dirty range info.
             // We use active_block_index() (not last_non_hidden_block_by_index) because
             // the active block is where output is being written, even if it's still

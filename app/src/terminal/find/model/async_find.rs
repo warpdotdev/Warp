@@ -186,6 +186,11 @@ impl Ord for AbsoluteMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Sort by end point (for ascending order iteration during rendering),
         // then by start point for consistency with derived PartialEq.
+        //
+        // This ordering assumes matches within a single grid do not overlap,
+        // which is guaranteed by `find_in_range` producing non-overlapping
+        // results. `update_dirty_matches` relies on this property to use
+        // positional range-based splicing for merging.
         self.end.cmp(&other.end).then(self.start.cmp(&other.start))
     }
 }
