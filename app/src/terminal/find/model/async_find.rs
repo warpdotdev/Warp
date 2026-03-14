@@ -448,6 +448,12 @@ impl AsyncFindController {
     }
 
     /// Focuses the next or previous match based on the given direction.
+    ///
+    /// Since matches are stored newest-first (index 0 = most recent block),
+    /// the mapping between UI direction and index direction depends on the
+    /// block sort direction:
+    /// - MostRecentLast: Down decrements (toward newest), Up increments (toward oldest).
+    /// - MostRecentFirst: Down increments (toward oldest), Up decrements (toward newest).
     pub fn focus_next_match(&mut self, direction: FindDirection) {
         let total = self.match_count();
         if total == 0 {
@@ -456,20 +462,25 @@ impl AsyncFindController {
         }
 
         let new_index = match (self.focused_match_index, direction) {
-            (None, FindDirection::Down) => 0,
-            (None, FindDirection::Up) => total.saturating_sub(1),
-            (Some(current), FindDirection::Down) => {
-                if current + 1 >= total {
+            (None, _) => 0,
+            (Some(current), direction) => {
+                // Determine whether this direction means "toward lower indices"
+                // (newest/bottom for MostRecentLast, newest/top for MostRecentFirst).
+                let decrement = matches!(
+                    (direction, self.block_sort_direction),
+                    (FindDirection::Down, BlockSortDirection::MostRecentLast)
+                        | (FindDirection::Up, BlockSortDirection::MostRecentFirst)
+                );
+                if decrement {
+                    if current == 0 {
+                        total - 1 // Wrap around.
+                    } else {
+                        current - 1
+                    }
+                } else if current + 1 >= total {
                     0 // Wrap around.
                 } else {
                     current + 1
-                }
-            }
-            (Some(current), FindDirection::Up) => {
-                if current == 0 {
-                    total.saturating_sub(1) // Wrap around.
-                } else {
-                    current - 1
                 }
             }
         };
@@ -528,27 +539,32 @@ impl AsyncFindController {
             ));
         }
 
-        // Sort by TotalIndex (ascending = visual order for MostRecentLast).
-        ordered_blocks.sort_by_key(|(ti, _)| *ti);
-
-        // Reverse for MostRecentFirst display.
-        if matches!(
-            self.block_sort_direction,
-            BlockSortDirection::MostRecentFirst
-        ) {
-            ordered_blocks.reverse();
-        }
+        // Sort by TotalIndex descending so that matches closest to the end
+        // of the blocklist (newest blocks, near the prompt) come first.
+        ordered_blocks.sort_by(|a, b| b.0.cmp(&a.0));
 
         for (_, block_info) in &ordered_blocks {
             match block_info {
                 BlockInfo::Terminal { block_index, .. } => {
+                    let reverse_within_grid = matches!(
+                        self.block_sort_direction,
+                        BlockSortDirection::MostRecentLast
+                    );
                     for &grid_type in &grid_types {
                         if let Some(matches) = self
                             .block_results
                             .terminal_matches
                             .get(&(*block_index, grid_type))
                         {
-                            for match_range in matches {
+                            // For MostRecentLast, sync focus traversal
+                            // iterates from the bottom of each grid first.
+                            let iter: Box<dyn Iterator<Item = &AbsoluteMatch>> =
+                                if reverse_within_grid {
+                                    Box::new(matches.iter().rev())
+                                } else {
+                                    Box::new(matches.iter())
+                                };
+                            for match_range in iter {
                                 if current_idx == focused_idx {
                                     return Some(AsyncBlockGridMatch {
                                         block_index: *block_index,

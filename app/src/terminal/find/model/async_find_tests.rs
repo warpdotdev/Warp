@@ -11,6 +11,7 @@ use crate::terminal::find::model::block_list::run_find_on_block_list;
 use crate::terminal::find::model::{FindOptions, TerminalFindModel};
 use crate::terminal::find::BlockListMatch;
 use crate::terminal::model::grid::grid_handler::AbsolutePoint;
+use crate::terminal::model::index::Point;
 use crate::terminal::model::terminal_model::{BlockIndex, BlockSortDirection};
 use crate::terminal::model::TerminalModel;
 
@@ -353,6 +354,8 @@ fn test_block_invalidation_with_dirty_range() {
 
 #[test]
 fn test_focus_next_match_wraps_around() {
+    use crate::view_components::find::FindDirection;
+
     let mock_terminal_model = TerminalModel::mock(None, None);
     let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
     let mut controller = AsyncFindController::new(terminal_model);
@@ -369,24 +372,37 @@ fn test_focus_next_match_wraps_around() {
 
     assert_eq!(controller.match_count(), 3);
 
-    // Focus first match.
-    controller.focus_next_match(crate::view_components::find::FindDirection::Down);
+    // Default block_sort_direction is MostRecentLast, so:
+    //   Down = decrement (toward newest/index 0)
+    //   Up   = increment (toward oldest/higher indices)
+
+    // Focus first match from None.
+    controller.focus_next_match(FindDirection::Down);
     assert_eq!(controller.focused_match_index(), Some(0));
 
-    // Move down.
-    controller.focus_next_match(crate::view_components::find::FindDirection::Down);
+    // Down decrements: 0 wraps to last index.
+    controller.focus_next_match(FindDirection::Down);
+    assert_eq!(controller.focused_match_index(), Some(2));
+
+    // Down decrements: 2 → 1.
+    controller.focus_next_match(FindDirection::Down);
     assert_eq!(controller.focused_match_index(), Some(1));
 
-    controller.focus_next_match(crate::view_components::find::FindDirection::Down);
-    assert_eq!(controller.focused_match_index(), Some(2));
-
-    // Wrap around to first.
-    controller.focus_next_match(crate::view_components::find::FindDirection::Down);
+    // Down decrements: 1 → 0.
+    controller.focus_next_match(FindDirection::Down);
     assert_eq!(controller.focused_match_index(), Some(0));
 
-    // Move up should wrap to last.
-    controller.focus_next_match(crate::view_components::find::FindDirection::Up);
+    // Up increments: 0 → 1.
+    controller.focus_next_match(FindDirection::Up);
+    assert_eq!(controller.focused_match_index(), Some(1));
+
+    // Up increments: 1 → 2.
+    controller.focus_next_match(FindDirection::Up);
     assert_eq!(controller.focused_match_index(), Some(2));
+
+    // Up wraps: 2 → 0.
+    controller.focus_next_match(FindDirection::Up);
+    assert_eq!(controller.focused_match_index(), Some(0));
 }
 
 #[test]
@@ -632,4 +648,151 @@ fn test_update_dirty_matches_clear_range() {
     assert_eq!(stored.len(), 2);
     assert_eq!(stored[0].start_row(), 5);
     assert_eq!(stored[1].start_row(), 25);
+}
+
+fn assert_async_focused_order_matches_sync(block_sort_direction: BlockSortDirection) {
+    App::test((), |mut app| async move {
+        let mut mock_terminal_model = TerminalModel::mock(None, None);
+        mock_terminal_model.simulate_block(
+            "ordtok command old ordtok",
+            "ordtok old output one\r\nold output ordtok two\r\n",
+        );
+        mock_terminal_model.simulate_block(
+            "ordtok command new ordtok",
+            "ordtok new output one\r\nnew output ordtok two\r\n",
+        );
+
+        let terminal_model = Arc::new(FairMutex::new(mock_terminal_model));
+        let find_options = FindOptions {
+            query: Some("ordtok".to_owned().into()),
+            is_regex_enabled: false,
+            is_case_sensitive: false,
+            ..Default::default()
+        };
+
+        let sync_order = app.update(|ctx| {
+            run_find_on_block_list(
+                find_options.clone(),
+                terminal_model.lock().block_list(),
+                &HashMap::new(),
+                block_sort_direction,
+                ctx,
+            )
+            .matches()
+            .filter_map(|m| match m {
+                BlockListMatch::CommandBlock(grid_match) => Some((
+                    grid_match.block_index,
+                    grid_match.grid_type,
+                    *grid_match.range.start(),
+                    *grid_match.range.end(),
+                )),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+        });
+
+        let test_model = app.add_model(|_| {
+            let mut model = TerminalFindModel::new(terminal_model.clone());
+            if model.async_find_controller.is_none() {
+                model.async_find_controller =
+                    Some(AsyncFindController::new(terminal_model.clone()));
+            }
+            model
+        });
+
+        test_model.update(&mut app, |model, ctx| {
+            model
+                .async_find_controller
+                .as_mut()
+                .expect("Async find controller should exist in test.")
+                .start_find(&find_options, block_sort_direction, ctx);
+        });
+
+        for _ in 0..100 {
+            let is_complete = test_model.update(&mut app, |model, _ctx| {
+                model
+                    .async_find_controller
+                    .as_ref()
+                    .map(|c| matches!(c.status(), AsyncFindStatus::Complete))
+                    .unwrap_or(false)
+            });
+            if is_complete {
+                break;
+            }
+            warpui::r#async::Timer::after(std::time::Duration::from_millis(10)).await;
+        }
+
+        let (status, async_match_count) = test_model.update(&mut app, |model, _ctx| {
+            let controller = model
+                .async_find_controller
+                .as_ref()
+                .expect("Async find controller should exist in test.");
+            (controller.status().clone(), controller.match_count())
+        });
+        assert_eq!(
+            status,
+            AsyncFindStatus::Complete,
+            "Async find should complete.",
+        );
+        assert_eq!(
+            async_match_count,
+            sync_order.len(),
+            "Async and sync paths should find the same number of terminal matches.",
+        );
+
+        let async_order_absolute = test_model.update(&mut app, |model, _ctx| {
+            let controller = model
+                .async_find_controller
+                .as_mut()
+                .expect("Async find controller should exist in test.");
+            let mut ordered = Vec::new();
+            for index in 0..controller.match_count() {
+                controller.focused_match_index = Some(index);
+                controller.update_cached_focused_match();
+                let focused = controller
+                    .focused_terminal_match()
+                    .expect("Every focused index should resolve to a terminal match in this test.");
+                ordered.push((focused.block_index, focused.grid_type, focused.range));
+            }
+            ordered
+        });
+
+        let async_order = {
+            let model = terminal_model.lock();
+            async_order_absolute
+                .into_iter()
+                .map(|(block_index, grid_type, absolute_match)| {
+                    let block = model
+                        .block_list()
+                        .block_at(block_index)
+                        .expect("Block should exist for focused async match.");
+                    let grid = match grid_type {
+                        GridType::Output => block.output_grid().grid_handler(),
+                        GridType::PromptAndCommand => block.prompt_and_command_grid().grid_handler(),
+                        _ => panic!("Unexpected grid type in async focused match."),
+                    };
+                    let range = absolute_match
+                        .to_range(grid)
+                        .expect("Async focused match should map to a non-truncated range.");
+                    (block_index, grid_type, *range.start(), *range.end())
+                })
+                .collect::<Vec<(BlockIndex, GridType, Point, Point)>>()
+        };
+
+        assert_eq!(
+            async_order, sync_order,
+            "Async focused ordering should match sync ordering for {:?}.",
+            block_sort_direction
+        );
+    });
+}
+
+#[test]
+fn test_async_focused_order_matches_sync_most_recent_last() {
+    assert_async_focused_order_matches_sync(BlockSortDirection::MostRecentLast);
+}
+
+#[test]
+fn test_async_focused_order_matches_sync_most_recent_first() {
+    assert_async_focused_order_matches_sync(BlockSortDirection::MostRecentFirst);
 }
