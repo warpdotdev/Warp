@@ -895,6 +895,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::FileGlobV2Warnings,
     FeatureFlag::SummarizationViaMessageReplacement,
     FeatureFlag::LocalComputerUse,
+    FeatureFlag::AsyncFind,
     FeatureFlag::OzPlatformSkills,
     FeatureFlag::AgentViewBlockContext,
     FeatureFlag::OzLaunchModal,
