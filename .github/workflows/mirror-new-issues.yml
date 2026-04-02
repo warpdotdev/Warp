@@ -59,17 +59,41 @@ jobs:
           private-key: ${{ secrets.WARP_ISSUES_APP_PRIVATE_KEY }}
           owner: ${{ secrets.WARP_ISSUES_REPO_ORG }}
           repositories: ${{ secrets.WARP_ISSUES_REPO_NAME }}
+      - name: Load source issue
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        id: source-issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumberInput = context.payload.inputs?.issue_number;
+            const issueNumber = Number(issueNumberInput);
+
+            if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
+              core.setFailed(`Invalid issue_number input: "${issueNumberInput}".`);
+              return;
+            }
+
+            const response = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+            });
+
+            core.setOutput("title", response.data.title);
+            core.setOutput("body", response.data.body ?? "");
+            core.setOutput("html_url", response.data.html_url);
 
       - name: Mirror issue
         uses: actions/github-script@v7
         env:
-          TARGET_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          SOURCE_ISSUE_TITLE: ${{ steps.source-issue.outputs.title }}
+          SOURCE_ISSUE_BODY: ${{ steps.source-issue.outputs.body }}
+          SOURCE_ISSUE_HTML_URL: ${{ steps.source-issue.outputs.html_url }}
         with:
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
-            const { getOctokit } = require("@actions/github");
             const targetOwner = process.env.TARGET_REPO_ORG;
             const targetName = process.env.TARGET_REPO_NAME;
-            const targetToken = process.env.TARGET_APP_TOKEN;
 
             if (!targetOwner || !targetName) {
               core.setFailed(
@@ -78,29 +102,18 @@ jobs:
               return;
             }
 
-            if (!targetToken) {
-              core.setFailed("Failed to mint a GitHub App installation token.");
-              return;
-            }
-
             let issue;
 
             if (context.eventName === "workflow_dispatch") {
-              const issueNumberInput = context.payload.inputs?.issue_number;
-              const issueNumber = Number(issueNumberInput);
-
-              if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-                core.setFailed(`Invalid issue_number input: "${issueNumberInput}".`);
+              if (!process.env.SOURCE_ISSUE_TITLE || !process.env.SOURCE_ISSUE_HTML_URL) {
+                core.setFailed("Failed to load the source issue.");
                 return;
               }
-
-              const response = await github.rest.issues.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-              });
-
-              issue = response.data;
+              issue = {
+                title: process.env.SOURCE_ISSUE_TITLE,
+                body: process.env.SOURCE_ISSUE_BODY,
+                html_url: process.env.SOURCE_ISSUE_HTML_URL,
+              };
             } else {
               issue = context.payload.issue;
             }
@@ -109,8 +122,7 @@ jobs:
               ? `[Original issue](${issue.html_url})\n\n${issue.body}`
               : `[Original issue](${issue.html_url})`;
 
-            const targetGitHub = getOctokit(targetToken);
-            await targetGitHub.rest.issues.create({
+            await github.rest.issues.create({
               owner: targetOwner,
               repo: targetName,
               title: issue.title,
