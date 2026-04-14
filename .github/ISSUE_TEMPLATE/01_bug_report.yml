@@ -1,6 +1,6 @@
 name: Bug Report
-description: "Found a bug? Let us know with this form. For billing issues, please email billing@warp.dev. If you have an SSH related issue, please use an SSH Template below."
-labels: ["BUG"]
+description: "Found a bug? Please search through our open issues and docs, to make sure it isn't already submitted. If you have an SSH related issue, please use the SSH Template below"
+labels: ["bug"]
 body:
   - type: checkboxes
     attributes:
