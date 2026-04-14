@@ -1,0 +1,124 @@
+name: Close Stale Needs-Info Issues
+
+on:
+  schedule:
+    # Run nightly at midnight UTC
+    - cron: "0 0 * * *"
+
+  # Manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  close-stale-needs-info:
+    name: Close Stale Needs-Info Issues
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Close stale needs-info issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const LABEL = "needs-info";
+            const BUSINESS_DAYS = 3;
+
+            function addBusinessDays(date, days) {
+              const result = new Date(date);
+              let added = 0;
+              while (added < days) {
+                result.setUTCDate(result.getUTCDate() + 1);
+                const day = result.getUTCDay();
+                if (day !== 0 && day !== 6) {
+                  added++;
+                }
+              }
+              return result;
+            }
+
+            // Fetch all open issues with the needs-info label
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: LABEL,
+              state: "open",
+              per_page: 100,
+            });
+
+            const now = new Date();
+            let closedCount = 0;
+
+            for (const issue of issues) {
+              // Skip pull requests (the issues API also returns PRs)
+              if (issue.pull_request) {
+                continue;
+              }
+
+              // Find when the needs-info label was most recently applied
+              const events = await github.paginate(github.rest.issues.listEvents, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                per_page: 100,
+              });
+
+              const labelEvents = events.filter(
+                (e) =>
+                  e.event === "labeled" &&
+                  e.label?.name === LABEL
+              );
+
+              if (labelEvents.length === 0) {
+                continue;
+              }
+
+              const lastLabeledAt = new Date(
+                labelEvents[labelEvents.length - 1].created_at
+              );
+              const deadline = addBusinessDays(lastLabeledAt, BUSINESS_DAYS);
+
+              if (now < deadline) {
+                continue;
+              }
+
+              // Check for any comments after the label was applied
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                since: lastLabeledAt.toISOString(),
+                per_page: 100,
+              });
+
+              // Filter to comments strictly after the label event
+              const hasNewComments = comments.some(
+                (c) => new Date(c.created_at) > lastLabeledAt
+              );
+
+              if (hasNewComments) {
+                continue;
+              }
+
+              // Close the issue with a comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body:
+                  "This issue has been automatically closed because it was labeled " +
+                  "`needs-info` and received no response for 3 business days. " +
+                  "If you have the requested information, please reply and we will reopen.",
+              });
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: "closed",
+                state_reason: "not_planned",
+              });
+
+              closedCount++;
+              core.info(`Closed issue #${issue.number}: ${issue.title}`);
+            }
+
+            core.info(`Done. Closed ${closedCount} stale needs-info issue(s).`);
