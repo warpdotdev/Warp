@@ -774,6 +774,11 @@ pub enum BlockItem {
     RunnableCodeBlock {
         paragraph_block: ParagraphBlock,
         code_block_type: CodeBlockType,
+        /// For Mermaid code blocks that are currently rendered in code-block view because the
+        /// Mermaid source is not yet available as a rendered diagram, this carries the asset
+        /// source that the view layer can watch. Once the asset transitions to a successful
+        /// load, the layout will re-run and emit [`BlockItem::MermaidDiagram`] instead.
+        pending_mermaid_asset: Option<AssetSource>,
     },
     MermaidDiagram {
         content_length: CharOffset,

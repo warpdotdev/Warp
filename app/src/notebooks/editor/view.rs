@@ -1318,10 +1318,18 @@ impl RichTextEditorView {
         block: &BlockItem,
         asset_cache: &AssetCache,
     ) -> Option<AssetHandle> {
-        let BlockItem::MermaidDiagram { asset_source, .. } = block else {
-            return None;
+        let asset_source = match block {
+            BlockItem::MermaidDiagram { asset_source, .. } => asset_source.clone(),
+            // Mermaid-labeled code blocks that are currently rendered as code (because the
+            // Mermaid source has not yet been verified as parseable) also need to be watched
+            // so we can re-run layout when the asset load resolves.
+            BlockItem::RunnableCodeBlock {
+                pending_mermaid_asset: Some(asset_source),
+                ..
+            } => asset_source.clone(),
+            _ => return None,
         };
-        match asset_cache.load_asset::<ImageType>(asset_source.clone()) {
+        match asset_cache.load_asset::<ImageType>(asset_source) {
             AssetState::Loading { handle } => Some(handle),
             AssetState::Loaded { .. } | AssetState::Evicted | AssetState::FailedToLoad(_) => None,
         }
