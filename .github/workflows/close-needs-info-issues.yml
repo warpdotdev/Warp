@@ -21,6 +21,10 @@ jobs:
           script: |
             const LABEL = "needs-info";
             const BUSINESS_DAYS = 3;
+            // Grace window after the label event to avoid treating the
+            // maintainer's own follow-up comment (typically posted seconds
+            // after applying the label) as a user response.
+            const LABEL_GRACE_WINDOW_MS = 60 * 1000;
 
             function addBusinessDays(date, days) {
               const result = new Date(date);
@@ -80,18 +84,24 @@ jobs:
                 continue;
               }
 
-              // Check for any comments after the label was applied
+              // Check for any comments after the label was applied, ignoring
+              // comments within a short grace window so the maintainer's
+              // request-for-info comment posted right after labeling isn't
+              // counted as a user response.
+              const commentCutoff = new Date(
+                lastLabeledAt.getTime() + LABEL_GRACE_WINDOW_MS
+              );
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                since: lastLabeledAt.toISOString(),
+                since: commentCutoff.toISOString(),
                 per_page: 100,
               });
 
-              // Filter to comments strictly after the label event
+              // Filter to comments strictly after the grace window
               const hasNewComments = comments.some(
-                (c) => new Date(c.created_at) > lastLabeledAt
+                (c) => new Date(c.created_at) > commentCutoff
               );
 
               if (hasNewComments) {
