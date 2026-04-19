@@ -1,28 +1,35 @@
-# Problem
-The notebook editor classifies a code block as Mermaid as soon as the language tag says `mermaid`, and the layout pipeline unconditionally swaps that block from a text code block into `BlockItem::MermaidDiagram`. The decision to render as a diagram is based entirely on the language tag, not on whether the block's contents are actually parseable Mermaid. Users who pick `Mermaid` on a non-diagram block, or who are mid-way through authoring a diagram, see a broken-looking or empty diagram frame instead of an ordinary code block.
-We need the "render as diagram" decision to also depend on whether the current block source can be successfully parsed/rendered by the Mermaid pipeline, and to update automatically as the contents change.
-## Relevant code
-* `crates/editor/src/content/text.rs (557-602)` — `From<&CodeBlockText> for CodeBlockType` classifies any block with a Mermaid language tag as `CodeBlockType::Mermaid` when `FeatureFlag::MarkdownMermaid` is enabled. Purely language-driven; no content check.
-* `crates/editor/src/content/text.rs (535-543, 604-677)` — `CodeBlockType` enum and `CodeBlockType::all()` / `to_markdown_representation`, which define the dropdown entries and markdown round-tripping. Language-set Mermaid must keep behaving as `Mermaid` in the dropdown even when it is not being rendered as a diagram.
-* `crates/editor/src/content/edit.rs (712-742)` — `LayoutTask::from_styled_block` is the point that actually switches a Mermaid `StyledTextBlock` into the diagram layout path (`Self::MermaidDiagram { .. }`) versus the text layout path (`Self::Text(text_block)`). This is the primary fork we need to gate on parseability.
-* `crates/editor/src/content/edit.rs (1034-1066)` — `layout_mermaid_diagram_block` produces the `BlockItem::MermaidDiagram` that the render layer consumes.
-* `crates/editor/src/content/mermaid_diagram.rs` — constructs the `AssetSource` for the Mermaid render and calls `mermaid_to_svg::render_mermaid_to_svg`. This is the only place we actually invoke the Mermaid renderer, and its result (via `AssetCache`) is the ground-truth signal for whether a given source parses.
-* `crates/editor/src/render/element/mermaid.rs` — the renderable that draws the diagram and currently shows a `"Rendering Mermaid diagram…"` placeholder while the asset is loading. This also stays visible when the asset ultimately fails.
-* `crates/editor/src/render/model/mod.rs (193-204, 1640-1651)` — `RenderLayoutOptions::render_mermaid_diagrams` is the existing boolean gate at the layout-options layer and the setter that re-triggers layout when it changes.
-* `app/src/notebooks/editor/notebook_command.rs (142-272)` — `NotebookCommand` builds the language dropdown from `CodeBlockType::all()` and dispatches `EditorViewAction::CodeBlockTypeSelectedAtOffset { code_block_type, .. }`. The current selection is read back via `block_type_to_code_type`. The dropdown label must continue to show `Mermaid` for a `CodeBlockType::Mermaid` block even when we decline to render as a diagram.
-* `app/src/ai/agent/util.rs` and `app/src/integration_testing/notebook/assertion.rs` — consumers of `is_mermaid_diagram`. These are out of scope but we must not regress them by changing the language-tag classifier's semantics.
-## Current state
-Layout-time flow today, for a code block whose language tag is `mermaid` and with `FeatureFlag::MarkdownMermaid` enabled:
+# Notebook editor: render Mermaid blocks only when contents are valid — Tech Spec
+
+## Context
+
+See `specs/GH549/PRODUCT.md` for the full user-facing behavior.
+
+The notebook editor classifies a code block as Mermaid as soon as the language tag says `mermaid`, and the layout pipeline unconditionally swaps that block from a text code block into `BlockItem::MermaidDiagram`. The "render as diagram" decision is based entirely on the language tag, not on whether the block's contents are parseable Mermaid. We need the decision to also depend on whether the current block source can be successfully parsed/rendered by the Mermaid pipeline, and to update automatically as contents change.
+
+Relevant files:
+- `crates/editor/src/content/text.rs (557-602)` — `From<&CodeBlockText> for CodeBlockType` classifies any block with a Mermaid language tag as `CodeBlockType::Mermaid` when `FeatureFlag::MarkdownMermaid` is enabled. Purely language-driven; no content check.
+- `crates/editor/src/content/text.rs (535-543, 604-677)` — `CodeBlockType` enum and `CodeBlockType::all()` / `to_markdown_representation`, which define the dropdown entries and markdown round-tripping. Language-set Mermaid must keep behaving as `Mermaid` in the dropdown even when not being rendered as a diagram.
+- `crates/editor/src/content/edit.rs (712-742)` — `LayoutTask::from_styled_block` is the point that switches a Mermaid `StyledTextBlock` into the diagram layout path (`Self::MermaidDiagram { .. }`) versus the text layout path (`Self::Text(text_block)`). This is the primary fork to gate on parseability.
+- `crates/editor/src/content/edit.rs (1034-1066)` — `layout_mermaid_diagram_block` produces the `BlockItem::MermaidDiagram` the render layer consumes.
+- `crates/editor/src/content/mermaid_diagram.rs` — constructs the `AssetSource` for the Mermaid render and calls `mermaid_to_svg::render_mermaid_to_svg`. The only place we invoke the Mermaid renderer; its result (via `AssetCache`) is the ground-truth signal for whether a given source parses.
+- `crates/editor/src/render/element/mermaid.rs` — the renderable that draws the diagram and shows a "Rendering Mermaid diagram…" placeholder while the asset is loading. Also stays visible when the asset fails (`AssetState::FailedToLoad`).
+- `crates/editor/src/render/model/mod.rs (193-204, 1640-1651)` — `RenderLayoutOptions::render_mermaid_diagrams` is the existing boolean gate at the layout-options layer and the setter that re-triggers layout when it changes.
+- `app/src/notebooks/editor/notebook_command.rs (142-272)` — builds the language dropdown from `CodeBlockType::all()` and dispatches `EditorViewAction::CodeBlockTypeSelectedAtOffset`. The dropdown label must continue to show `Mermaid` for a `CodeBlockType::Mermaid` block even when we decline to render as a diagram.
+- `app/src/ai/agent/util.rs` and `app/src/integration_testing/notebook/assertion.rs` — consumers of `is_mermaid_diagram`. Out of scope but must not be regressed by changes to the language-tag classifier's semantics.
+
+Current layout-time flow (Mermaid language tag, `FeatureFlag::MarkdownMermaid` enabled):
 1. `text.rs` classifies the block as `CodeBlockType::Mermaid`.
-2. `edit.rs` sees `RenderLayoutOptions::render_mermaid_diagrams == true` plus `CodeBlockType::Mermaid` and emits `LayoutTask::MermaidDiagram`.
+2. `edit.rs` sees `render_mermaid_diagrams == true` plus `CodeBlockType::Mermaid` and emits `LayoutTask::MermaidDiagram`.
 3. `mermaid_diagram_layout` registers an `AssetSource::Async` whose fetch closure calls `mermaid_to_svg::render_mermaid_to_svg`.
 4. `layout_mermaid_diagram_block` produces `BlockItem::MermaidDiagram { content_length, asset_source, config }`.
-5. At paint time, `RenderableMermaidDiagram` shows `"Rendering Mermaid diagram…"` until the asset resolves, then paints the SVG. If the asset fails (`AssetState::FailedToLoad`), it silently keeps showing the placeholder inside the diagram frame.
-Key properties of the current state that inform the fix:
-* The async render already runs every time a Mermaid source is seen, and its success/failure is cached on the shared `AssetCache` keyed by a hash of the source.
-* There is no synchronous "parses or not" helper currently reachable from Warp. `is_mermaid_diagram` only inspects the language tag. `render_mermaid_to_svg` is async, returns `Result`, and is the authoritative answer.
-* The render layer reacts to `AssetState` changes for paint but does not feed that signal back into the decision of whether to lay out as `BlockItem::MermaidDiagram` vs a text code block in the first place.
-* `set_render_mermaid_diagrams` shows that flipping the Mermaid-render decision at the layout-options level is already wired to trigger a re-layout, so changing a per-block decision in a similar way should not require a new invalidation mechanism if we tie it to the same re-layout path.
+5. `RenderableMermaidDiagram` shows "Rendering Mermaid diagram…" until the asset resolves, then paints the SVG. If the asset fails (`AssetState::FailedToLoad`), it silently keeps showing the placeholder inside the diagram frame.
+
+Key properties informing the fix:
+- The async render already runs every time a Mermaid source is seen; its success/failure is cached on `AssetCache` keyed by a hash of the source.
+- There is no synchronous parse-only helper currently reachable from Warp. `is_mermaid_diagram` only inspects the language tag; `render_mermaid_to_svg` is async, returns `Result`, and is the authoritative answer.
+- The render layer reacts to `AssetState` changes for paint but does not feed that signal back into the layout-path decision.
+- `set_render_mermaid_diagrams` shows that flipping the Mermaid-render decision at the layout-options level is already wired to trigger a re-layout; a per-block decision wired similarly should not require a new invalidation mechanism.
+
 ## Proposed changes
 ### 1. Introduce a per-block Mermaid renderability check at layout time
 Keep `CodeBlockType::Mermaid` classification unchanged so:
@@ -117,21 +124,25 @@ Mitigation:
 Mitigation:
 * Leave `CodeBlockType::Mermaid` and `From<&CodeBlockText> for CodeBlockType` unchanged. The predicate lives in the layout layer only.
 ## Testing and validation
-* Layout unit tests in `crates/editor/src/content/edit_tests.rs`:
-  * Mermaid block with non-Mermaid source lays out as `BlockItem::Paragraph` / code-block text, not `BlockItem::MermaidDiagram`, even with `render_mermaid_diagrams` on.
-  * Mermaid block with valid Mermaid source continues to lay out as `BlockItem::MermaidDiagram` with the same size/config expectations as today's `test_layout_mermaid_block_uses_loaded_svg_aspect_ratio`.
-  * Mermaid block whose asset is `Loading` initially lays out as text and, after driving the asset to `Loaded`, lays out as a Mermaid diagram on the next layout pass.
-  * Mermaid block whose asset transitions to `FailedToLoad` stays laid out as text.
-* Notebook tests in `app/src/notebooks/editor/model_tests.rs`:
-  * Setting an empty or non-Mermaid block's language to `Mermaid` produces a code-block render, and the language dropdown reads `Mermaid`.
-  * Typing a valid Mermaid diagram into a newly-Mermaid-labeled block transitions the render tree from a code block to a Mermaid diagram.
-  * Editing a valid diagram into invalid Mermaid transitions the render tree back to a code block.
-  * Markdown export for a Mermaid-labeled block emits ```` ```mermaid ```` in both states.
-* Integration coverage in `app/src/integration_testing/notebook/`:
-  * Open a notebook, add a code block, set language to `Mermaid`, assert the block renders as a code block with the raw text visible.
-  * Paste a known-valid diagram source, assert the block renders as a Mermaid diagram.
-  * Edit to break the diagram, assert it returns to code-block rendering.
-* Manual verification: matches the manual steps in `specs/GH549/product.md`.
+
+Layout unit tests in `crates/editor/src/content/edit_tests.rs`:
+- Behavior invariants 4–5: Mermaid block with non-Mermaid source lays out as code-block text, not `BlockItem::MermaidDiagram`, with `render_mermaid_diagrams` on.
+- Behavior invariant 4: Mermaid block with valid Mermaid source continues to lay out as `BlockItem::MermaidDiagram` with the same size/config expectations as today's `test_layout_mermaid_block_uses_loaded_svg_aspect_ratio`.
+- Behavior invariants 7–8: Mermaid block whose asset is `Loading` initially lays out as text and, after driving the asset to `Loaded`, lays out as a Mermaid diagram on the next layout pass.
+- Behavior invariant 7: Mermaid block whose asset transitions to `FailedToLoad` stays laid out as text.
+
+Notebook tests in `app/src/notebooks/editor/model_tests.rs`:
+- Behavior invariants 5–6: setting an empty or non-Mermaid block's language to `Mermaid` produces a code-block render, and the language dropdown reads `Mermaid` (invariant 13).
+- Behavior invariant 7: typing a valid Mermaid diagram into a newly-Mermaid-labeled block transitions the render tree from code block to diagram.
+- Behavior invariant 7: editing a valid diagram into invalid Mermaid transitions the render tree back to code block.
+- Behavior invariant 14: markdown export for a Mermaid-labeled block emits ```` ```mermaid ```` in both states.
+
+Integration coverage in `app/src/integration_testing/notebook/`:
+- Behavior invariant 5: open a notebook, add a code block, set language to `Mermaid`, assert the block renders as a code block with raw text visible.
+- Behavior invariant 4: paste a known-valid diagram source, assert the block renders as a Mermaid diagram.
+- Behavior invariant 7: edit to break the diagram, assert it returns to code-block rendering.
+
+Manual verification: follows the manual steps implied by Behavior invariants 4–7, 12–15 in `specs/GH549/PRODUCT.md`.
 ## Follow-ups
 * Consider adding a synchronous Mermaid parse helper in `mermaid_to_svg` so the predicate does not need to round-trip through `AssetCache` on first sight of a new source.
 * Consider a lightweight inline error affordance (hover tooltip or gutter marker) that explains why a Mermaid block is not rendering, once the "render only when valid" behavior is in place.
