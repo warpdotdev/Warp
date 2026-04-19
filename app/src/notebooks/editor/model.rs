@@ -1,5 +1,6 @@
 use base64::{prelude::BASE64_STANDARD, Engine as _};
-use std::{any::Any, borrow::Cow, collections::HashMap, ops::Range, time::Duration};
+use std::{any::Any, borrow::Cow, collections::{HashMap, HashSet}, ops::Range, time::Duration};
+use crate::notebooks::file::MarkdownDisplayMode;
 
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -158,15 +159,6 @@ impl NotebooksEditorModel {
             && FeatureFlag::EditableMarkdownMermaid.is_enabled()
     }
 
-    fn render_mermaid_diagrams_in_state(state: &InteractionState) -> bool {
-        FeatureFlag::MarkdownMermaid.is_enabled()
-            && (matches!(state, InteractionState::Selectable)
-                || (Self::editable_markdown_mermaid_enabled()
-                    && matches!(
-                        state,
-                        InteractionState::Editable | InteractionState::EditableWithInvalidSelection
-                    )))
-    }
     pub fn new(
         text_styles: RichTextStyles,
         rte_window_id: WindowId,
@@ -342,11 +334,46 @@ impl NotebooksEditorModel {
                 show_final_trailing_newline_when_non_empty,
             );
         });
-        let render_mermaid_diagrams = Self::render_mermaid_diagrams_in_state(new_state);
-        let relayout_needed = self.render_state.update(ctx, |render_state, _| {
-            render_state.set_render_mermaid_diagrams(render_mermaid_diagrams)
-        });
-        if relayout_needed {
+    }
+
+    /// Set the Mermaid display mode (Raw or Rendered) for the block at the given offset.
+    /// `block_offset` is the buffer's 0-indexed block marker position (i.e. `outline.start`).
+    /// Updates `mermaid_render_offsets` in the render state and triggers relayout if changed.
+    pub fn set_mermaid_render_mode(
+        &mut self,
+        block_offset: CharOffset,
+        mode: MarkdownDisplayMode,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if let Some(command) = self.child_models.model_at::<NotebookCommand>(block_offset) {
+            command.update(ctx, |cmd, _| {
+                cmd.mermaid_display_mode = mode;
+            });
+        }
+
+        // Compute the new set of offsets for Rendered blocks.
+        // The layout system uses 1-indexed positions (block_start = outline.start + 1),
+        // so we add 1 to each buffer outline offset before inserting into the set.
+        let new_offsets: HashSet<CharOffset> = self
+            .child_models
+            .model_handles::<NotebookCommand>()
+            .filter_map(|handle| {
+                if matches!(handle.as_ref(ctx).mermaid_display_mode, MarkdownDisplayMode::Rendered) {
+                    handle
+                        .as_ref(ctx)
+                        .start_offset(ctx)
+                        .map(|o| o + CharOffset::from(1))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let changed = self
+            .render_state
+            .update(ctx, |rs, _| rs.set_mermaid_render_offsets(new_offsets));
+
+        if changed {
             self.rebuild_layout(ctx);
         }
     }

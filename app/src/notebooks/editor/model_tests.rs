@@ -10,6 +10,7 @@ use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions, ServerWorkflow};
 use crate::editor::InteractionState;
 use crate::notebooks::editor::keys::NotebookKeybindings;
+use crate::notebooks::file::MarkdownDisplayMode;
 use crate::notebooks::editor::model::DEBOUNCED_RESIZE_PERIOD;
 use crate::notebooks::editor::notebook_command::NotebookCommand;
 use crate::notebooks::editor::view::{RichTextEditorConfig, RichTextEditorView};
@@ -2292,6 +2293,13 @@ fn test_move_up_from_below_rendered_mermaid_block_lands_on_block_start() {
         });
         layout_model(&mut app, &model_handle).await;
 
+        // Blocks default to Raw; explicitly enable Rendered mode so the navigation
+        // code treats the block as an atomic rendered unit.
+        model_handle.update(&mut app, |model, ctx| {
+            model.set_mermaid_render_mode(CharOffset::from(7), MarkdownDisplayMode::Rendered, ctx);
+        });
+        layout_model(&mut app, &model_handle).await;
+
         let mermaid_command = command_models(&model_handle, &mut app)
             .into_iter()
             .exactly_one()
@@ -2325,6 +2333,13 @@ fn test_shift_select_across_rendered_mermaid_block_is_reversible_from_below() {
         let model_handle = model_from_markdown(markdown, &mut app, true);
         model_handle.update(&mut app, |model, ctx| {
             model.set_interaction_state(InteractionState::Editable, ctx);
+        });
+        layout_model(&mut app, &model_handle).await;
+
+        // Blocks default to Raw; explicitly enable Rendered mode so selection
+        // normalization treats the block as an atomic rendered unit.
+        model_handle.update(&mut app, |model, ctx| {
+            model.set_mermaid_render_mode(CharOffset::from(7), MarkdownDisplayMode::Rendered, ctx);
         });
         layout_model(&mut app, &model_handle).await;
 
@@ -2374,6 +2389,13 @@ fn test_move_down_from_rendered_mermaid_block_start_returns_below_block() {
         let model_handle = model_from_markdown(markdown, &mut app, true);
         model_handle.update(&mut app, |model, ctx| {
             model.set_interaction_state(InteractionState::Editable, ctx);
+        });
+        layout_model(&mut app, &model_handle).await;
+
+        // Blocks default to Raw; explicitly enable Rendered mode so navigation
+        // treats the block as an atomic rendered unit.
+        model_handle.update(&mut app, |model, ctx| {
+            model.set_mermaid_render_mode(CharOffset::from(7), MarkdownDisplayMode::Rendered, ctx);
         });
         layout_model(&mut app, &model_handle).await;
 
@@ -2562,7 +2584,10 @@ fn test_copy_selection_with_markdown_image_omits_image_clipboard_data() {
 }
 
 #[test]
-fn test_mermaid_rendering_respects_feature_flag_when_selectable() {
+fn test_mermaid_feature_flag_disables_rendering_and_toggle() {
+    // With the flag disabled, Mermaid blocks never render as diagrams.
+    // With the flag enabled, blocks default to Raw mode — no auto-rendering.
+    // Diagram rendering only happens when the user explicitly selects Rendered.
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
         let markdown = "```mermaid\ngraph TD\nA --> B\n```";
@@ -2596,8 +2621,9 @@ fn test_mermaid_rendering_respects_feature_flag_when_selectable() {
         });
         layout_model(&mut app, &model_handle).await;
 
-        let enabled_is_mermaid_diagram = model_handle.read(&app, |model, ctx| {
-            matches!(
+        // Even with the flag enabled, blocks default to Raw mode — not auto-rendered.
+        let enabled_defaults_to_raw = model_handle.read(&app, |model, ctx| {
+            !matches!(
                 model
                     .render_state
                     .as_ref(ctx)
@@ -2607,7 +2633,7 @@ fn test_mermaid_rendering_respects_feature_flag_when_selectable() {
                 Some(BlockItem::MermaidDiagram { .. })
             )
         });
-        assert!(enabled_is_mermaid_diagram);
+        assert!(enabled_defaults_to_raw);
     });
 }
 

@@ -35,8 +35,8 @@ use warpui::{
     },
     fonts::Properties,
     presenter::ChildView,
-    Element, Entity, ModelAsRef, ModelContext, ModelHandle, SingletonEntity, ViewHandle,
-    WeakModelHandle, WindowId,
+    Element, Entity, ModelAsRef, ModelContext, ModelHandle, SingletonEntity, TypedActionView,
+    View, ViewContext, ViewHandle, WeakModelHandle, WindowId,
 };
 
 use crate::{
@@ -45,7 +45,9 @@ use crate::{
     debounce::debounce,
     drive::workflows::arguments::ArgumentsState,
     editor::InteractionState,
+    features::FeatureFlag,
     notebooks::{
+        file::MarkdownDisplayMode,
         styles::block_footer_action_button,
         telemetry::{ActionEntrypoint, BlockInfo},
     },
@@ -60,7 +62,7 @@ use crate::{
         bindings::CustomAction,
         color::{ContrastingColor, MinimumAllowedContrast},
     },
-    view_components::{Dropdown, DropdownItem},
+    view_components::{Dropdown, DropdownItem, MarkdownToggleEvent, MarkdownToggleView},
     workflows::{workflow::Workflow, WorkflowType},
     Assets,
 };
@@ -118,6 +120,57 @@ struct CodeHighlightResult {
     colors: Vec<(Range<ByteOffset>, AnsiColorIdentifier)>,
 }
 
+/// A thin view that wraps `MarkdownToggleView` for Mermaid blocks and dispatches
+/// `EditorViewAction::MermaidDisplayModeSelected` when the user changes the mode.
+pub struct MermaidDisplayModeToggle {
+    toggle: ViewHandle<MarkdownToggleView>,
+}
+
+impl MermaidDisplayModeToggle {
+    fn new(
+        start_anchor: Anchor,
+        default_mode: MarkdownDisplayMode,
+        ctx: &mut ViewContext<Self>,
+    ) -> Self {
+        let toggle = ctx.add_typed_action_view(|ctx| MarkdownToggleView::new(default_mode, ctx));
+
+        let anchor_for_sub = start_anchor.clone();
+        ctx.subscribe_to_view(&toggle, move |_, _, event, ctx| {
+            let MarkdownToggleEvent::ModeSelected(mode) = event;
+            ctx.dispatch_typed_action(&EditorViewAction::MermaidDisplayModeSelected {
+                start_anchor: anchor_for_sub.clone(),
+                mode: *mode,
+            });
+        });
+
+        Self {
+            toggle,
+        }
+    }
+}
+
+impl Entity for MermaidDisplayModeToggle {
+    type Event = ();
+}
+
+impl View for MermaidDisplayModeToggle {
+    fn ui_name() -> &'static str {
+        "MermaidDisplayModeToggle"
+    }
+
+    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
+        ChildView::new(&self.toggle).finish()
+    }
+}
+
+impl TypedActionView for MermaidDisplayModeToggle {
+    type Action = ();
+
+    fn handle_action(&mut self, _action: &Self::Action, ctx: &mut ViewContext<Self>) {
+        ctx.notify();
+    }
+}
+
 /// Runnable command behavior for notebooks.
 pub struct NotebookCommand {
     start: Anchor,
@@ -128,6 +181,9 @@ pub struct NotebookCommand {
     mouse_state_handles: MouseStateHandles,
     is_selected: bool,
     block_type_dropdown: ViewHandle<Dropdown<EditorViewAction>>,
+    /// Display mode for this Mermaid block (Raw or Rendered). Defaults to Raw.
+    pub mermaid_display_mode: MarkdownDisplayMode,
+    mermaid_toggle: ViewHandle<MermaidDisplayModeToggle>,
 
     #[cfg_attr(test, allow(dead_code))]
     debounce_highlighting_tx: Sender<()>,
@@ -210,6 +266,15 @@ impl NotebookCommand {
 
         ctx.subscribe_to_model(&content, Self::on_buffer_content_updated);
 
+        let start_anchor_for_toggle = start.clone();
+        let mermaid_toggle = ctx.add_typed_action_view(rte_window_id, move |ctx| {
+            MermaidDisplayModeToggle::new(
+                start_anchor_for_toggle.clone(),
+                MarkdownDisplayMode::Raw,
+                ctx,
+            )
+        });
+
         let (debounce_highlighting_tx, debounce_highlighting_rx) = async_channel::unbounded();
         let _ = ctx.spawn_stream_local(
             debounce(DEBOUNCE_INPUT_DECORATION_PERIOD, debounce_highlighting_rx),
@@ -226,6 +291,8 @@ impl NotebookCommand {
             mouse_state_handles: Default::default(),
             is_selected: false,
             block_type_dropdown,
+            mermaid_display_mode: MarkdownDisplayMode::Raw,
+            mermaid_toggle,
             syntax_highlighting_handle: None,
             cached_highlight_delta: None,
             debounce_highlighting_tx,
@@ -617,6 +684,11 @@ impl RunnableCommandModel for NotebookCommand {
                 .with_vertical_padding(11.)
                 .finish(),
             )
+        }
+        if matches!(block_style, CodeBlockType::Mermaid)
+            && FeatureFlag::MarkdownMermaid.is_enabled()
+        {
+            footer.add_child(ChildView::new(&self.mermaid_toggle).finish());
         }
         footer.add_child(Shrinkable::new(1.0, Empty::new().finish()).finish());
         footer.add_child(

@@ -66,7 +66,8 @@ pub(crate) fn layout_mermaid_block_for_test(
     let task = LayoutTask::from_styled_block(
         StyledBufferBlock::Text(text_block),
         layout,
-        layout_options,
+        &layout_options,
+        CharOffset::from(1),
         app,
         None,
     );
@@ -509,7 +510,7 @@ impl EditDelta {
         self,
         layout: &TextLayout,
         document_path: Option<&Path>,
-        layout_options: RenderLayoutOptions,
+        layout_options: &RenderLayoutOptions,
         hidden_ranges: Option<RangeSet<CharOffset>>,
         app: &AppContext,
     ) -> LaidOutRenderDelta {
@@ -527,10 +528,12 @@ impl EditDelta {
                 if content_length == CharOffset::zero() {
                     None
                 } else {
+                    let block_start = current_offset;
                     let task = LayoutTask::from_styled_block(
                         block,
                         layout,
                         layout_options,
+                        block_start,
                         app,
                         document_path,
                     );
@@ -698,7 +701,8 @@ impl LayoutTask {
     fn from_styled_block(
         content: StyledBufferBlock,
         layout: &TextLayout,
-        layout_options: RenderLayoutOptions,
+        layout_options: &RenderLayoutOptions,
+        block_start: CharOffset,
         app: &AppContext,
         document_path: Option<&Path>,
     ) -> Self {
@@ -750,14 +754,18 @@ impl LayoutTask {
                 }
             },
             StyledBufferBlock::Text(text_block) => {
-                if layout_options.render_mermaid_diagrams
-                    && matches!(
-                        text_block.style,
-                        BufferBlockStyle::CodeBlock {
-                            code_block_type: CodeBlockType::Mermaid,
-                        }
-                    )
-                {
+                let is_mermaid = matches!(
+                    text_block.style,
+                    BufferBlockStyle::CodeBlock {
+                        code_block_type: CodeBlockType::Mermaid,
+                    }
+                );
+                let is_user_rendered =
+                    layout_options.mermaid_render_offsets.contains(&block_start);
+                let should_render = is_mermaid
+                    && (layout_options.render_mermaid_diagrams || is_user_rendered);
+
+                if should_render {
                     let source = text_block
                         .block
                         .iter()
@@ -788,18 +796,52 @@ impl LayoutTask {
                                 config,
                             }
                         }
-                        AssetState::Loading { .. } => Self::MermaidCodeFallback {
-                            text_block,
-                            pending_mermaid_asset: Some(asset_source),
-                        },
+                        AssetState::Loading { .. } => {
+                            if is_user_rendered {
+                                // User explicitly chose Rendered — show diagram frame immediately
+                                // (render element will display loading placeholder).
+                                let spacing = layout
+                                    .rich_text_styles()
+                                    .block_spacings
+                                    .from_block_style(&text_block.style);
+                                let (asset_source, config) =
+                                    mermaid_diagram_layout(&source, layout, spacing, app);
+                                Self::MermaidDiagram {
+                                    text_block,
+                                    asset_source,
+                                    config,
+                                }
+                            } else {
+                                // Auto-render mode: stay in code-block view while loading.
+                                Self::MermaidCodeFallback {
+                                    text_block,
+                                    pending_mermaid_asset: Some(asset_source),
+                                }
+                            }
+                        }
                         AssetState::FailedToLoad(_) | AssetState::Evicted => {
-                            // Rendering failed (or was evicted) for this exact source. Keep
-                            // the block in code-block view so the user can see and edit the
-                            // raw text. No need to keep watching: the asset state will not
-                            // change until the source (and thus the asset key) does.
-                            Self::MermaidCodeFallback {
-                                text_block,
-                                pending_mermaid_asset: None,
+                            if is_user_rendered {
+                                // User explicitly chose Rendered — show diagram frame with error.
+                                let spacing = layout
+                                    .rich_text_styles()
+                                    .block_spacings
+                                    .from_block_style(&text_block.style);
+                                let (asset_source, config) =
+                                    mermaid_diagram_layout(&source, layout, spacing, app);
+                                Self::MermaidDiagram {
+                                    text_block,
+                                    asset_source,
+                                    config,
+                                }
+                            } else {
+                                // Rendering failed. Keep in code-block view so the user can
+                                // see and edit the raw text. No need to keep watching: the
+                                // asset state will not change until the source (and thus the
+                                // asset key) does.
+                                Self::MermaidCodeFallback {
+                                    text_block,
+                                    pending_mermaid_asset: None,
+                                }
                             }
                         }
                     }

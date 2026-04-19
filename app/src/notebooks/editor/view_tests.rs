@@ -18,6 +18,7 @@ use warpui::{SingletonEntity, TypedActionView, WindowId};
 
 use super::{EditorViewAction, RichTextEditorConfig, RichTextEditorView};
 use crate::appearance::Appearance;
+use crate::notebooks::file::MarkdownDisplayMode;
 use crate::editor::InteractionState;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::editor::link_editor::LinkEditorAction;
@@ -298,6 +299,20 @@ fn test_omnibar_is_hidden_for_rendered_mermaid_selection() {
         let markdown = "Before\n```mermaid\ngraph TD\nA --> B\n```\nAfter";
         reset_editor_with_markdown(&mut app, &editor_view, markdown).await;
 
+        // Blocks default to Raw; explicitly enable Rendered mode for the Mermaid block.
+        let render_state =
+            editor_view.read(&app, |editor, ctx| editor.model.as_ref(ctx).render_state().clone());
+        editor_view.update(&mut app, |editor, ctx| {
+            editor.model.update(ctx, |model, ctx| {
+                model.set_mermaid_render_mode(
+                    CharOffset::from(7),
+                    MarkdownDisplayMode::Rendered,
+                    ctx,
+                );
+            });
+        });
+        app.read(|ctx| render_state.as_ref(ctx).layout_complete()).await;
+
         editor_view.update(&mut app, |editor, ctx| {
             let mermaid_block_range =
                 rendered_mermaid_block_range(editor, ctx).expect("Expected rendered Mermaid block");
@@ -320,6 +335,20 @@ fn test_shift_click_on_rendered_mermaid_dispatches_selection_update_to_block_bou
         let (_, editor_view, _) = initialize_editor(&mut app);
         let markdown = "Before\n```mermaid\ngraph TD\nA --> B\n```\nAfter";
         reset_editor_with_markdown(&mut app, &editor_view, markdown).await;
+
+        // Blocks default to Raw; explicitly enable Rendered mode for the Mermaid block.
+        let render_state =
+            editor_view.read(&app, |editor, ctx| editor.model.as_ref(ctx).render_state().clone());
+        editor_view.update(&mut app, |editor, ctx| {
+            editor.model.update(ctx, |model, ctx| {
+                model.set_mermaid_render_mode(
+                    CharOffset::from(7),
+                    MarkdownDisplayMode::Rendered,
+                    ctx,
+                );
+            });
+        });
+        app.read(|ctx| render_state.as_ref(ctx).layout_complete()).await;
 
         editor_view.update(&mut app, |editor, ctx| {
             editor.selection_start(CharOffset::from(2), false, ctx);
@@ -400,6 +429,20 @@ fn test_drag_on_rendered_mermaid_dispatches_selection_update_to_block_boundary()
         let (_, editor_view, _) = initialize_editor(&mut app);
         let markdown = "Before\n```mermaid\ngraph TD\nA --> B\n```\nAfter";
         reset_editor_with_markdown(&mut app, &editor_view, markdown).await;
+
+        // Blocks default to Raw; explicitly enable Rendered mode for the Mermaid block.
+        let render_state =
+            editor_view.read(&app, |editor, ctx| editor.model.as_ref(ctx).render_state().clone());
+        editor_view.update(&mut app, |editor, ctx| {
+            editor.model.update(ctx, |model, ctx| {
+                model.set_mermaid_render_mode(
+                    CharOffset::from(7),
+                    MarkdownDisplayMode::Rendered,
+                    ctx,
+                );
+            });
+        });
+        app.read(|ctx| render_state.as_ref(ctx).layout_complete()).await;
 
         editor_view.update(&mut app, |editor, ctx| {
             editor.selection_start(CharOffset::from(2), false, ctx);

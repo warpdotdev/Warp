@@ -62,6 +62,7 @@ use crate::{
     features::FeatureFlag,
     notebooks::{
         editor::{find_bar::FindBarAction, model::word_unit},
+        file::MarkdownDisplayMode,
         link::{LinkTarget, NotebookLinks, ResolveError},
         telemetry::{ActionEntrypoint, BlockInfo, EmbeddedObjectInfo, SelectionMode},
     },
@@ -883,6 +884,11 @@ pub enum EditorViewAction {
         path: PathBuf,
         line_and_column_num: Option<LineAndColumnArg>,
         force_open_in_warp: bool,
+    },
+    /// Signal from a Mermaid toggle view that the user changed the display mode for a block.
+    MermaidDisplayModeSelected {
+        start_anchor: Anchor,
+        mode: MarkdownDisplayMode,
     },
 }
 
@@ -2980,6 +2986,20 @@ impl TypedActionView for RichTextEditorView {
             } => self.model.update(ctx, |model, ctx| {
                 model.update_code_block_type_at_offset(code_block_type, start_anchor.clone(), ctx)
             }),
+            MermaidDisplayModeSelected { start_anchor, mode } => {
+                let offset = self
+                    .model
+                    .as_ref(ctx)
+                    .buffer_selection_model()
+                    .as_ref(ctx)
+                    .resolve_anchor(start_anchor);
+                if let Some(offset) = offset {
+                    let mode = *mode;
+                    self.model.update(ctx, |model, ctx| {
+                        model.set_mermaid_render_mode(offset, mode, ctx);
+                    });
+                }
+            }
             CopyTextToClipboard {
                 text,
                 block,
@@ -3237,6 +3257,7 @@ impl TypedActionView for RichTextEditorView {
             | EditorViewAction::RunWorkflow(_)
             | EditorViewAction::RemoveEmbeddingAt(_)
             | EditorViewAction::OpenFile { .. }
+            | EditorViewAction::MermaidDisplayModeSelected { .. }
             | EditorViewAction::VimUserTyped(_) => ActionAccessibilityContent::Empty,
         }
     }

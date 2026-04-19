@@ -1,149 +1,186 @@
-# Notebook editor: render Mermaid blocks only when contents are valid — Tech Spec
+# Notebook editor: Raw/Rendered toggle for Mermaid code blocks — Tech Spec
 
 ## Context
 
 See `specs/GH549/PRODUCT.md` for the full user-facing behavior.
 
-The notebook editor classifies a code block as Mermaid as soon as the language tag says `mermaid`, and the layout pipeline unconditionally swaps that block from a text code block into `BlockItem::MermaidDiagram`. The "render as diagram" decision is based entirely on the language tag, not on whether the block's contents are parseable Mermaid. We need the decision to also depend on whether the current block source can be successfully parsed/rendered by the Mermaid pipeline, and to update automatically as contents change.
+Today the notebook editor unconditionally renders Mermaid-labeled code blocks as diagrams when `FeatureFlag::MarkdownMermaid` is enabled and the interaction state is `Selectable` or `Editable` (governed by `NotebooksEditorModel::render_mermaid_diagrams_in_state`). The new behavior requires every Mermaid block to default to Raw (code-block view) and let the user opt in to diagram rendering per block via an explicit toggle, matching the existing Raw/Rendered segmented control used in the markdown file viewer.
 
 Relevant files:
-- `crates/editor/src/content/text.rs (557-602)` — `From<&CodeBlockText> for CodeBlockType` classifies any block with a Mermaid language tag as `CodeBlockType::Mermaid` when `FeatureFlag::MarkdownMermaid` is enabled. Purely language-driven; no content check.
-- `crates/editor/src/content/text.rs (535-543, 604-677)` — `CodeBlockType` enum and `CodeBlockType::all()` / `to_markdown_representation`, which define the dropdown entries and markdown round-tripping. Language-set Mermaid must keep behaving as `Mermaid` in the dropdown even when not being rendered as a diagram.
-- `crates/editor/src/content/edit.rs (712-742)` — `LayoutTask::from_styled_block` is the point that switches a Mermaid `StyledTextBlock` into the diagram layout path (`Self::MermaidDiagram { .. }`) versus the text layout path (`Self::Text(text_block)`). This is the primary fork to gate on parseability.
-- `crates/editor/src/content/edit.rs (1034-1066)` — `layout_mermaid_diagram_block` produces the `BlockItem::MermaidDiagram` the render layer consumes.
-- `crates/editor/src/content/mermaid_diagram.rs` — constructs the `AssetSource` for the Mermaid render and calls `mermaid_to_svg::render_mermaid_to_svg`. The only place we invoke the Mermaid renderer; its result (via `AssetCache`) is the ground-truth signal for whether a given source parses.
-- `crates/editor/src/render/element/mermaid.rs` — the renderable that draws the diagram and shows a "Rendering Mermaid diagram…" placeholder while the asset is loading. Also stays visible when the asset fails (`AssetState::FailedToLoad`).
-- `crates/editor/src/render/model/mod.rs (193-204, 1640-1651)` — `RenderLayoutOptions::render_mermaid_diagrams` is the existing boolean gate at the layout-options layer and the setter that re-triggers layout when it changes.
-- `app/src/notebooks/editor/notebook_command.rs (142-272)` — builds the language dropdown from `CodeBlockType::all()` and dispatches `EditorViewAction::CodeBlockTypeSelectedAtOffset`. The dropdown label must continue to show `Mermaid` for a `CodeBlockType::Mermaid` block even when we decline to render as a diagram.
-- `app/src/ai/agent/util.rs` and `app/src/integration_testing/notebook/assertion.rs` — consumers of `is_mermaid_diagram`. Out of scope but must not be regressed by changes to the language-tag classifier's semantics.
+- `crates/editor/src/content/edit.rs (689-798)` — `LayoutTask::from_styled_block` decides whether a `CodeBlockType::Mermaid` block becomes `LayoutTask::MermaidDiagram` or `LayoutTask::MermaidCodeFallback`, driven by `RenderLayoutOptions::render_mermaid_diagrams` and `AssetCache` state.
+- `crates/editor/src/content/edit.rs (501-603)` — `EditDelta::layout_delta` iterates blocks with a `current_offset` counter that tracks each block's start `CharOffset`.
+- `crates/editor/src/content/mermaid_diagram.rs` — `mermaid_asset_source` and `mermaid_diagram_layout`; constructs the async `AssetSource` that fetches and caches the SVG.
+- `crates/editor/src/render/model/mod.rs (201-204, 1649-1656)` — `RenderLayoutOptions` (currently `Copy`) and `RenderState::set_render_mermaid_diagrams`.
+- `crates/editor/src/render/element/mermaid.rs` — `RenderableMermaidDiagram` shows the loading placeholder or SVG; currently shows no distinct error state.
+- `app/src/notebooks/editor/model.rs (148-161, 337-343)` — `render_mermaid_diagrams_in_state` and the interaction-state handler that sets the global flag.
+- `app/src/notebooks/editor/notebook_command.rs (582-686)` — `render_block_footer` renders the language dropdown, copy button, and run button; Mermaid blocks get no special UI today.
+- `app/src/notebooks/editor/view.rs` — `EditorViewAction` enum and `RichTextEditorView::handle_action`.
+- `app/src/view_components/markdown_toggle_view.rs` — `MarkdownToggleView` wraps `SegmentedControl<MarkdownDisplayMode>` and emits `MarkdownToggleEvent::ModeSelected`; already used by `FileNotebookView`.
+- `app/src/notebooks/file/mod.rs (78-81)` — `MarkdownDisplayMode` enum (`Rendered` / `Raw`).
 
 Current layout-time flow (Mermaid language tag, `FeatureFlag::MarkdownMermaid` enabled):
 1. `text.rs` classifies the block as `CodeBlockType::Mermaid`.
-2. `edit.rs` sees `render_mermaid_diagrams == true` plus `CodeBlockType::Mermaid` and emits `LayoutTask::MermaidDiagram`.
-3. `mermaid_diagram_layout` registers an `AssetSource::Async` whose fetch closure calls `mermaid_to_svg::render_mermaid_to_svg`.
-4. `layout_mermaid_diagram_block` produces `BlockItem::MermaidDiagram { content_length, asset_source, config }`.
-5. `RenderableMermaidDiagram` shows "Rendering Mermaid diagram…" until the asset resolves, then paints the SVG. If the asset fails (`AssetState::FailedToLoad`), it silently keeps showing the placeholder inside the diagram frame.
+2. `edit.rs` sees `render_mermaid_diagrams == true` and routes based on `AssetCache` state: `Loaded` → `MermaidDiagram`, `Loading` → `MermaidCodeFallback` with pending asset, `FailedToLoad` → `MermaidCodeFallback`.
+3. `RenderableMermaidDiagram` shows "Rendering Mermaid diagram…" while loading, then SVG.
 
-Key properties informing the fix:
-- The async render already runs every time a Mermaid source is seen; its success/failure is cached on `AssetCache` keyed by a hash of the source.
-- There is no synchronous parse-only helper currently reachable from Warp. `is_mermaid_diagram` only inspects the language tag; `render_mermaid_to_svg` is async, returns `Result`, and is the authoritative answer.
-- The render layer reacts to `AssetState` changes for paint but does not feed that signal back into the layout-path decision.
-- `set_render_mermaid_diagrams` shows that flipping the Mermaid-render decision at the layout-options level is already wired to trigger a re-layout; a per-block decision wired similarly should not require a new invalidation mechanism.
+Key properties informing the design:
+- `render_mermaid_diagrams` is a global `bool` in `RenderLayoutOptions`; there is no per-block rendering control today.
+- `EditDelta::layout_delta` already tracks `current_offset` per block — this can be threaded into `from_styled_block` as a `block_start: CharOffset` param to enable per-block lookup.
+- `MarkdownDisplayMode` and `MarkdownToggleView` already exist and are reusable.
 
 ## Proposed changes
-### 1. Introduce a per-block Mermaid renderability check at layout time
-Keep `CodeBlockType::Mermaid` classification unchanged so:
-* the language dropdown still shows `Mermaid` as the selected value
-* markdown export still emits ```` ```mermaid ````
-* downstream users of `CodeBlockType::Mermaid` (agent output, integration tests, plans) keep working
-Add a separate per-block decision inside `LayoutTask::from_styled_block` for whether a `CodeBlockType::Mermaid` block should be produced as `LayoutTask::MermaidDiagram` or as `LayoutTask::Text`. The new predicate answers the question "is the current source of this block parseable as a Mermaid diagram right now?" and is used alongside the existing `render_mermaid_diagrams` option:
+
+### 1. Stop auto-rendering Mermaid in notebooks (default Raw)
+
+Change `NotebooksEditorModel::render_mermaid_diagrams_in_state` to always return `false`. Remove (or no-op) the call to `set_render_mermaid_diagrams` in `handle_interaction_state_model_event`. This makes all Mermaid blocks default to code-block (Raw) view (Behavior invariants 3, 5, 8).
+
+Non-notebook surfaces (plans, agent output) use `RenderState` instances that are separate from the notebook editor model. They are unaffected by this change to `NotebooksEditorModel`.
+
+### 2. Add `mermaid_render_offsets` to `RenderLayoutOptions`
+
+`RenderLayoutOptions` in `crates/editor/src/render/model/mod.rs` currently derives `Copy`. Add:
+```rust
+pub mermaid_render_offsets: std::collections::HashSet<string_offset::CharOffset>,
 ```
-if render_mermaid_diagrams && is_mermaid_code_block(text_block) && mermaid_source_is_renderable(&source, app) {
-    // existing MermaidDiagram path
-} else if is_mermaid_code_block(text_block) {
-    // fall through to LayoutTask::Text, producing a normal code-block BlockItem
-} else { ... }
+
+Remove `Copy` from the derive (a `HashSet` is not `Copy`). Change `from_styled_block` to take `layout_options: &RenderLayoutOptions` (reference) instead of by value. Update all call sites accordingly.
+
+Add to `RenderState`:
+```rust
+pub fn set_mermaid_render_offsets(
+    &mut self,
+    offsets: std::collections::HashSet<string_offset::CharOffset>,
+) -> bool { ... }
 ```
-### 2. Ground the predicate in the existing Mermaid pipeline
-The predicate must agree with whatever `mermaid_to_svg` actually accepts. Two options, evaluated for fit:
-* Option A: add or expose a synchronous parse-only function in `mermaid_to_svg` (for example `is_valid_mermaid(&str) -> bool` or a lightweight parse that returns `Result<(), ParseError>` without running the full render) and call it from `edit.rs`. Pros: synchronous, no state machine. Cons: requires an upstream change to the pinned `mermaid_to_svg` git revision and a second parse path that must stay in sync with `render_mermaid_to_svg`.
-* Option B: drive the decision from the existing `AssetCache` entry keyed on the Mermaid source. The asset fetch already calls `render_mermaid_to_svg` and records success/failure. At layout time we inspect `AssetCache::load_asset::<ImageType>(mermaid_asset_source(&source))`:
-  * `AssetState::Loaded { .. }` → render as diagram
-  * `AssetState::FailedToLoad(..)` → render as code block
-  * `AssetState::Loading { .. }` / `AssetState::Evicted` → render based on the previous resolved state for this source; if there is no previous resolved state, default to code-block view (safe fallback that avoids the current broken-diagram flash)
-  Pros: reuses the existing pipeline, keeps the Mermaid parsing rules in one place, works today without upstream changes. Cons: the decision is asynchronous on first sight of a new source, so we need the layout to re-run when the async render resolves.
-Preferred direction: Option B, with an optional move to Option A later if we want an eager synchronous answer.
-Rationale:
-* Option B keeps one Mermaid parser of record and avoids drift.
-* The async resolution already runs exactly once per unique source thanks to `AssetCache` keying on the source hash, so there is no extra cost.
-* The re-layout wiring needed for Option B is the same wiring `set_render_mermaid_diagrams` uses, and the asset cache already notifies when loads complete.
-### 3. Re-layout when Mermaid asset state changes
-The new predicate must cause a re-layout when it flips. Concretely:
-* When we query `AssetCache::load_asset` in `from_styled_block` for a Mermaid source and get `AssetState::Loading`, register a completion callback on the returned handle (same pattern as the paint-time callers today use implicitly) that invalidates the render model's layout for that buffer version.
-* The invalidation target is the existing re-layout path used when `RenderLayoutOptions` changes. We can either:
-  * call the same `set_render_mermaid_diagrams`-style hook the render model already uses to dirty its layout state, or
-  * add a narrower hook that marks a specific range dirty when a Mermaid asset resolves.
-* On asset completion, the next layout pass re-reads `AssetCache` state and either promotes the block into `LayoutTask::MermaidDiagram` (on `Loaded`) or keeps it as `LayoutTask::Text` (on `FailedToLoad`).
-Do not trigger a layout-time `render_mermaid_to_svg` call that is not already cached. Always go through `AssetCache`, so we inherit caching, deduplication, and eviction behavior for free.
-### 4. Preserve code-block UX for Mermaid blocks in code-block view
-A Mermaid block that falls through to `LayoutTask::Text` should look like a regular code block whose language is Mermaid:
-* `BufferBlockStyle::CodeBlock { code_block_type: CodeBlockType::Mermaid }` already exists; the text layout path accepts it and lays it out as a styled code block.
-* Confirm that syntax highlighting, block spacing, and the code-block frame produced by `layout_text_block` read correctly for `CodeBlockType::Mermaid`. If any code path (syntax highlighting, copy-button wiring in `notebook_command.rs`, block-type-at-point) treats `Mermaid` as "no code-block chrome", extend it to share the generic code-block behavior. The existing `NotebookCommand` already renders code-block chrome around Mermaid source so this should mostly be a verification task.
-* The language dropdown continues to show `Mermaid` because `block_type_to_code_type` and `current_dropdown_selection` are based on the buffer's block type, not on whether we actually rendered a diagram.
-### 5. Keep markdown storage and classification unchanged
-* Do not change `From<&CodeBlockText> for CodeBlockType`. The block remains `CodeBlockType::Mermaid` when the language tag is Mermaid regardless of content.
-* Do not change `to_markdown_representation`. The block still serializes as ```` ```mermaid ```` on export.
-* Do not change `CodeBlockType::all()`. `Mermaid` stays as an option in the dropdown.
-### 6. Feature flag gating
-Gate the new behavior under the existing `FeatureFlag::MarkdownMermaid` (same flag that gates Mermaid rendering today). When the flag is off, no Mermaid rendering occurs at all, which already matches the "render as code block" outcome from the user's point of view.
-If we want to land the fix before broader rollout, add a narrower flag such as `MermaidRenderIfValid` and default it on for dogfood. This is optional — the change is strictly more conservative than the current behavior, so a separate flag is not required for safety.
-### 7. Consider non-notebook surfaces
-`LayoutTask::from_styled_block` is shared. Any other surface that enables `render_mermaid_diagrams` (plans, agent output) will automatically get the same "render only if parseable" behavior. That is the desired outcome for those surfaces too (a plan with invalid Mermaid should show code rather than a broken diagram), and matches the intent in `specs/mermaid-markdown-in-plans/PRODUCT.md`. Confirm this during implementation and flag any surface that depends on unconditional Mermaid layout.
-## End-to-end flow
-1. User opens a notebook and picks `Mermaid` in the code-block language dropdown. `NotebookCommand` dispatches `EditorViewAction::CodeBlockTypeSelectedAtOffset { code_block_type: CodeBlockType::Mermaid, .. }`.
-2. The buffer now reports `BufferBlockStyle::CodeBlock { code_block_type: CodeBlockType::Mermaid }` for that block.
-3. Layout runs. In `LayoutTask::from_styled_block`, the predicate queries `AssetCache` for the Mermaid asset source derived from the block contents:
-   * If the asset is not yet cached, the predicate returns "not currently renderable" and the block goes through `LayoutTask::Text`. A completion callback is registered on the `AssetState::Loading` handle.
-   * If the asset previously succeeded, the block goes through `LayoutTask::MermaidDiagram`.
-   * If the asset previously failed, the block stays as `LayoutTask::Text`.
-4. Paint runs. In the code-block case, the user sees the authored text inside a normal code-block frame with the dropdown still showing `Mermaid`. In the diagram case, the existing `RenderableMermaidDiagram` path runs unchanged.
-5. When an asset-completion callback fires, the render model is marked dirty. The next layout pass re-reads `AssetCache` state and either promotes the block to `BlockItem::MermaidDiagram` (on success) or keeps it as text (on failure).
-6. User edits the block. The buffer version changes, layout re-runs, and steps 3–5 repeat against the new source. Since `AssetCache` keys on the source hash, each unique source is parsed exactly once and the result is reused.
-7. Save/export: the block is emitted as ```` ```mermaid ```` regardless of rendered state.
-## Diagrams
+Returns `true` when the set changed (caller uses this to trigger relayout, same pattern as `set_render_mermaid_diagrams`).
+
+### 3. Thread `block_start` into `from_styled_block`
+
+Add `block_start: CharOffset` as a parameter to `LayoutTask::from_styled_block`. In `EditDelta::layout_delta`, pass the already-tracked `current_offset` as `block_start` when calling `from_styled_block`. Update the test helper `layout_mermaid_block_for_test` to pass `CharOffset::zero()` (or a suitable test offset).
+
+Change the Mermaid routing condition from:
+```rust
+if layout_options.render_mermaid_diagrams && is_mermaid(...)
+```
+to:
+```rust
+if (layout_options.render_mermaid_diagrams
+    || layout_options.mermaid_render_offsets.contains(&block_start))
+    && is_mermaid(...)
+```
+
+### 4. Produce `MermaidDiagram` for all states when user opted in
+
+For blocks in `mermaid_render_offsets`, always produce `LayoutTask::MermaidDiagram` regardless of `AssetCache` state (the render element will display the appropriate UI per state):
+- `Loaded` → existing path via `mermaid_diagram_layout` (SVG with correct sizing).
+- `Loading` → call `mermaid_diagram_layout` (uses default height when asset is not yet loaded) to get a config, emit `MermaidDiagram` (render element shows loading placeholder).
+- `FailedToLoad` → call `mermaid_diagram_layout` (uses default height), emit `MermaidDiagram` (render element shows error message).
+
+Empty source always falls through to `MermaidCodeFallback` regardless of mode (Behavior invariant 8 — cannot render empty).
+
+For blocks NOT in `mermaid_render_offsets`, keep the existing logic (`Loading` → `MermaidCodeFallback` with pending asset, `FailedToLoad` → `MermaidCodeFallback`), which is the correct Raw behavior.
+
+### 5. Show error message in `RenderableMermaidDiagram`
+
+In `crates/editor/src/render/element/mermaid.rs`, extend `RenderableMermaidDiagram::layout` to check `AssetCache` for the block's `asset_source`:
+- `AssetState::Loading` → existing "Rendering Mermaid diagram…" `before_load` placeholder.
+- `AssetState::Loaded` → existing `Image` element (SVG render).
+- `AssetState::FailedToLoad` → create a text element with "Error rendering Mermaid diagram. Please check syntax." using `code_text` styles and `placeholder_color`, wrapped in `Align::finish()`, stored in `self.image_element` to reuse the same paint path.
+
+### 6. Add `mermaid_display_mode` to `NotebookCommand`
+
+Add to `NotebookCommand`:
+```rust
+mermaid_display_mode: MarkdownDisplayMode,   // default: Raw
+mermaid_toggle: ViewHandle<MermaidDisplayModeToggle>,
+```
+
+`MermaidDisplayModeToggle` is a thin new view (in `notebook_command.rs`) that wraps `MarkdownToggleView`. In its view-level subscription to `MarkdownToggleEvent::ModeSelected(mode)`, it dispatches `EditorViewAction::MermaidDisplayModeSelected { start_anchor, mode }` (see §7).
+
+In `render_block_footer`, when `block_style == CodeBlockType::Mermaid`, render `ChildView::new(&self.mermaid_toggle).finish()` in the footer left side (same position as the type-label text shown when the dropdown is hidden). This is always visible for Mermaid blocks regardless of editor focus (Behavior invariant 6).
+
+### 7. Add `EditorViewAction::MermaidDisplayModeSelected` and handle it
+
+Add to `EditorViewAction` in `app/src/notebooks/editor/view.rs`:
+```rust
+MermaidDisplayModeSelected {
+    start_anchor: Anchor,
+    mode: MarkdownDisplayMode,
+},
+```
+
+In `RichTextEditorView::handle_action` for this variant:
+1. Resolve `start_anchor` to a `CharOffset` via `self.model.as_ref(ctx).buffer_selection_model().as_ref(ctx).resolve_anchor(&start_anchor)`.
+2. Call `self.model.update(ctx, |model, ctx| model.set_mermaid_render_mode(offset, mode, ctx))`.
+
+`NotebooksEditorModel::set_mermaid_render_mode(offset, mode, ctx)`:
+1. Find the `NotebookCommand` at `offset` via `self.child_models.model_at::<NotebookCommand>(offset)` and update its `mermaid_display_mode`.
+2. Recompute `mermaid_render_offsets` by iterating all `NotebookCommand` model handles and collecting offsets where `mermaid_display_mode == Rendered`.
+3. Let `changed = self.render_state.update(ctx, |rs, _| rs.set_mermaid_render_offsets(new_offsets))`.
+4. If `changed`, call `self.rebuild_layout(ctx)`.
+
+### 8. Keep markdown storage and classification unchanged
+
+- Do not change `From<&CodeBlockText> for CodeBlockType`. Block stays `CodeBlockType::Mermaid`.
+- Do not change `to_markdown_representation`. Block serializes as ```` ```mermaid ````.
+- Do not change `CodeBlockType::all()`. `Mermaid` stays in the dropdown.
+- `mermaid_display_mode` is transient (not saved to the notebook file); reopening always restores Raw (Behavior invariant 18).
+
+## Diagram
+
 ```mermaid
 flowchart TD
-    A[User picks Mermaid or edits block] --> B[Buffer marked CodeBlock Mermaid]
-    B --> C[Layout: LayoutTask::from_styled_block]
-    C --> D{render_mermaid_diagrams AND Mermaid?}
-    D -- no --> E[LayoutTask::Text -> code block]
-    D -- yes --> F[AssetCache.load_asset for source]
-    F -- Loaded --> G[LayoutTask::MermaidDiagram -> BlockItem::MermaidDiagram]
-    F -- FailedToLoad --> E
-    F -- Loading --> H[LayoutTask::Text + register completion]
-    H --> I[On completion: mark layout dirty]
-    I --> C
+    A[User picks Mermaid from dropdown] --> B[Block in Raw mode by default]
+    B --> C[Footer shows Raw/Rendered toggle]
+    C --> D{User selects Rendered?}
+    D -- no --> E[LayoutTask::MermaidCodeFallback -> code-block view]
+    D -- yes --> F[offset added to mermaid_render_offsets, rebuild_layout]
+    F --> G[from_styled_block: offset in mermaid_render_offsets?]
+    G -- yes --> H[AssetCache state?]
+    H -- Loaded --> I[MermaidDiagram -> SVG]
+    H -- Loading --> J[MermaidDiagram -> loading placeholder]
+    H -- FailedToLoad --> K[MermaidDiagram -> error message]
+    G -- no --> E
 ```
+
 ## Risks and mitigations
-### Risk: flicker between code-block and diagram views during async resolution
-If we default to code view while `AssetState::Loading`, a fresh valid Mermaid block will briefly render as code before flipping to a diagram once parsing completes.
-Mitigation:
-* Accept this as a one-time transition per unique source. The cache prevents re-parsing on subsequent edits with the same source.
-* If the flicker is objectionable in practice, fall back to the existing placeholder inside the diagram frame for the `Loading` case but only when there is no prior resolved state for the source. Keep `FailedToLoad` in the code-view branch.
-### Risk: layout does not re-run when the Mermaid asset resolves
-Mitigation:
-* Register completion callbacks on `AssetState::Loading` handles at layout time. On completion, call into the render model's existing re-layout hook (the same hook `set_render_mermaid_diagrams` already uses to dirty layout state).
-* Cover the path with a test that transitions from `Loading` → `Loaded` and asserts the resulting `BlockItem` changes from `Text` to `MermaidDiagram`.
-### Risk: cost of parsing on every keystroke
-Mitigation:
-* `AssetSource::Async` with its `AsyncAssetId` is keyed on a hash of the source. Identical sources are not re-parsed. Only unique sources cost a parse, which matches current behavior.
-### Risk: other surfaces rely on Mermaid being rendered even when invalid
-Mitigation:
-* Audit callers of `RenderLayoutOptions::render_mermaid_diagrams` and the `LayoutTask::MermaidDiagram` path before landing. If any caller truly depends on unconditional Mermaid layout, add a narrow override at the layout-options layer instead of scoping the predicate by surface.
-### Risk: classification-layer changes break existing consumers
-Mitigation:
-* Leave `CodeBlockType::Mermaid` and `From<&CodeBlockText> for CodeBlockType` unchanged. The predicate lives in the layout layer only.
+
+**Risk: `RenderLayoutOptions` is no longer `Copy` — call sites break**
+Mitigation: Change `from_styled_block` to take `&RenderLayoutOptions`. The tasks are built sequentially before the parallel layout step, so a reference lifetime is safe. Update the test helper and any other call sites.
+
+**Risk: `mermaid_render_offsets` becomes stale when blocks are added, removed, or renumbered**
+Mitigation: `NotebooksEditorModel::set_mermaid_render_mode` recomputes the full set from current child models on every toggle. Child models' `mermaid_display_mode` defaults to `Raw` when a new `NotebookCommand` is created, so new blocks are always absent from the set. When a block is deleted, its `NotebookCommand` is dropped from `child_models`, and the next call to `set_mermaid_render_mode` (or a full recompute on `rebuild_layout`) will produce a set without the stale offset.
+
+**Risk: Error state blocks are not re-laid out when source changes**
+Mitigation: The `MermaidCodeFallback` path for Raw mode already watches pending assets. For Rendered-mode blocks with a failed asset, the block is in `MermaidDiagram` state. When the user edits the source, the buffer changes, `rebuild_layout` is called, and `from_styled_block` re-checks `AssetCache` for the new source hash. No special watcher is needed.
+
+**Risk: Cost of calling `mermaid_diagram_layout` for Loading/Failed blocks in Rendered mode**
+Mitigation: `mermaid_diagram_layout` calls `mermaid_diagram_size` which only checks `AssetCache` state — it does not trigger a new render. If the asset is not loaded, it falls back to the default height. There is no extra work.
+
 ## Testing and validation
 
 Layout unit tests in `crates/editor/src/content/edit_tests.rs`:
-- Behavior invariants 4–5: Mermaid block with non-Mermaid source lays out as code-block text, not `BlockItem::MermaidDiagram`, with `render_mermaid_diagrams` on.
-- Behavior invariant 4: Mermaid block with valid Mermaid source continues to lay out as `BlockItem::MermaidDiagram` with the same size/config expectations as today's `test_layout_mermaid_block_uses_loaded_svg_aspect_ratio`.
-- Behavior invariants 7–8: Mermaid block whose asset is `Loading` initially lays out as text and, after driving the asset to `Loaded`, lays out as a Mermaid diagram on the next layout pass.
-- Behavior invariant 7: Mermaid block whose asset transitions to `FailedToLoad` stays laid out as text.
+- Behavior invariants 5, 8: Mermaid block not in `mermaid_render_offsets` lays out as `BlockItem::RunnableCodeBlock`, not `BlockItem::MermaidDiagram`.
+- Behavior invariants 11–13: Mermaid block in `mermaid_render_offsets` with `AssetState::Loaded` lays out as `BlockItem::MermaidDiagram`.
+- Behavior invariant 12: Mermaid block in `mermaid_render_offsets` with `AssetState::Loading` lays out as `BlockItem::MermaidDiagram` (loading placeholder path).
+- Behavior invariant 14: Mermaid block in `mermaid_render_offsets` with `AssetState::FailedToLoad` lays out as `BlockItem::MermaidDiagram` (error path).
+- Behavior invariant 17: markdown export for a Mermaid-labeled block emits ```` ```mermaid ```` regardless of `mermaid_render_offsets`.
 
-Notebook tests in `app/src/notebooks/editor/model_tests.rs`:
-- Behavior invariants 5–6: setting an empty or non-Mermaid block's language to `Mermaid` produces a code-block render, and the language dropdown reads `Mermaid` (invariant 13).
-- Behavior invariant 7: typing a valid Mermaid diagram into a newly-Mermaid-labeled block transitions the render tree from code block to diagram.
-- Behavior invariant 7: editing a valid diagram into invalid Mermaid transitions the render tree back to code block.
-- Behavior invariant 14: markdown export for a Mermaid-labeled block emits ```` ```mermaid ```` in both states.
+Notebook model tests in `app/src/notebooks/editor/model_tests.rs`:
+- Behavior invariants 3, 5: setting a block's language to `Mermaid` produces a `RunnableCodeBlock` render by default (not `MermaidDiagram`).
+- Behavior invariants 11–14: calling `set_mermaid_render_mode(offset, Rendered, ctx)` updates `mermaid_render_offsets` and causes the block to lay out as `MermaidDiagram`.
+- Behavior invariants 5, 16: calling `set_mermaid_render_mode(offset, Raw, ctx)` removes the offset and restores code-block layout.
+- Behavior invariant 18: `mermaid_display_mode` is `Raw` on a freshly created `NotebookCommand`.
 
-Integration coverage in `app/src/integration_testing/notebook/`:
-- Behavior invariant 5: open a notebook, add a code block, set language to `Mermaid`, assert the block renders as a code block with raw text visible.
-- Behavior invariant 4: paste a known-valid diagram source, assert the block renders as a Mermaid diagram.
-- Behavior invariant 7: edit to break the diagram, assert it returns to code-block rendering.
+Manual verification per `specs/GH549/PRODUCT.md`:
+- Add a code block, set language to Mermaid → block shows as code block with Raw/Rendered toggle defaulting to Raw.
+- Select Rendered → diagram frame appears (loading, then SVG, or error if source is invalid).
+- Select Raw → code block view restored.
+- Edit in Raw mode, then select Rendered again → new source is rendered.
+- Save and reopen notebook → toggle resets to Raw.
 
-Manual verification: follows the manual steps implied by Behavior invariants 4–7, 12–15 in `specs/GH549/PRODUCT.md`.
 ## Follow-ups
-* Consider adding a synchronous Mermaid parse helper in `mermaid_to_svg` so the predicate does not need to round-trip through `AssetCache` on first sight of a new source.
-* Consider a lightweight inline error affordance (hover tooltip or gutter marker) that explains why a Mermaid block is not rendering, once the "render only when valid" behavior is in place.
-* Consider unifying this behavior with `specs/mermaid-markdown-in-plans/` so plans share the same "render only when parseable" contract end to end.
+
+- Persist `mermaid_display_mode` per block in the notebook file format so it survives reopen.
+- Consider unifying this toggle with plans/agent-output Mermaid rendering via `specs/mermaid-markdown-in-plans/`.
+- Replace `MermaidDisplayModeToggle` wrapper with a direct `SegmentedControl` dispatch if the WarpUI API is extended to support dispatching typed actions from subscriptions in model contexts.

@@ -1,35 +1,29 @@
-# Notebook editor: render Mermaid blocks only when contents are valid
+# Notebook editor: Raw/Rendered toggle for Mermaid code blocks
 
 ## Summary
-When a notebook code block's language is set to `Mermaid`, Warp should only render it as a Mermaid diagram if the block's current contents are parseable as valid Mermaid. Blocks with unparseable contents must render as ordinary code blocks until their contents become valid, switching automatically as contents change.
+When a notebook code block's language is set to `Mermaid`, Warp should show a Raw/Rendered segmented control (identical to the one used in the Markdown file viewer) in the block footer. The control defaults to Raw, which shows the Mermaid source as an editable code block. Selecting Rendered attempts to render the source as a diagram; if rendering fails, an error frame is shown instead.
 
 Reference: GitHub issue `warpdotdev/warp-external#549`.
 
 ## Problem
-The notebook code block language dropdown exposes `Mermaid` as a selectable language. Today, as soon as the user picks `Mermaid`, Warp switches the block into its Mermaid diagram rendering path regardless of whether the block contents are valid Mermaid. This makes ordinary code, plain notes, or work-in-progress diagrams appear as a broken or empty diagram frame instead of staying readable as normal text.
-
-This hurts three common flows:
-- A user selects `Mermaid` first and types the diagram into an empty block — the block spends the entire typing flow in broken-diagram mode.
-- A user converts an existing non-Mermaid code block to `Mermaid` by mistake — the original content is hidden behind an unrenderable diagram view.
-- A user has a nearly-valid Mermaid diagram with a syntax error — they lose the ability to see and edit the raw source while fixing it.
+The notebook code block language dropdown exposes `Mermaid` as a selectable language. Today, as soon as the user picks `Mermaid`, Warp unconditionally switches the block into its Mermaid diagram rendering path. This makes ordinary code, plain notes, or work-in-progress diagrams appear as a broken or empty diagram frame instead of staying readable and editable as normal text.
 
 ## Goals / Non-goals
 
 **Goals:**
-- A notebook code block only enters Mermaid-diagram rendering when its current contents are parseable as a Mermaid diagram.
-- Non-parseable Mermaid-labeled blocks look and behave like a normal notebook code block (readable source, syntax highlighting, copyable text).
-- Switching between invalid and valid Mermaid contents flips the block between code-block view and diagram view automatically without re-selecting the language.
-- The authored Mermaid source is preserved in the buffer at all times, regardless of which visual mode is active.
+- Mermaid code blocks default to Raw (source text) when the language is set to Mermaid.
+- A Raw/Rendered segmented control lets the user explicitly opt in to diagram rendering per block.
+- Rendered mode shows the rendered SVG diagram, or an error frame when the source is invalid.
+- The authored Mermaid source is always preserved in the buffer, regardless of display mode.
 
 **Non-goals:**
-- Adding inline error diagnostics or red squiggles for invalid Mermaid source. Showing the raw code block when parsing fails is enough for this iteration.
+- Making the Raw/Rendered choice persistent across sessions or round-trips to markdown.
 - Reworking the code-block language dropdown, the list of supported languages, or the styling of non-Mermaid code blocks.
-- Changing the Mermaid render pipeline itself (theme, sizing, caching, or the `mermaid_to_svg` crate's parsing rules).
-- Changing Mermaid behavior in non-notebook surfaces beyond what is needed to keep behavior consistent.
-- Introducing a separate "Mermaid source editing mode" toggle.
+- Changing the Mermaid render pipeline itself (theme, sizing, caching, or `mermaid_to_svg`).
+- Changing Mermaid behavior in non-notebook surfaces (agent output, plans).
 
 ## Figma
-Figma: none provided.
+Figma: none provided. The segmented control appearance matches the existing Raw/Rendered toggle used in the markdown file viewer (screenshot attached to the GitHub issue).
 
 ## Behavior
 
@@ -38,40 +32,39 @@ The following invariants apply to notebook code blocks whose language is set to 
 **Language selection**
 
 1. The `Mermaid` option remains available in the code block language dropdown.
-2. Picking `Mermaid` sets the block's language to Mermaid in the buffer; the block serializes as a ```` ```mermaid ```` fenced code block on markdown export, regardless of whether its contents are currently parseable.
-3. Picking `Mermaid` does not, on its own, force diagram rendering.
+2. Picking `Mermaid` sets the block's language to Mermaid in the buffer; the block serializes as a ```` ```mermaid ```` fenced code block on markdown export, regardless of display mode.
+3. Picking `Mermaid` does not, on its own, trigger diagram rendering — the block opens in Raw mode.
 
-**Rendering decision**
+**The Raw/Rendered toggle**
 
-4. A Mermaid-labeled block renders as a diagram when, and only when, its current contents can be successfully parsed by the same Mermaid pipeline that produces the SVG.
-5. A Mermaid-labeled block whose contents cannot be parsed renders as an ordinary notebook code block: monospaced source text, syntax highlighting as normally applied to code blocks, the standard code-block chrome (border, copy button, language dropdown), and `Mermaid` shown as the selected language.
-6. An empty Mermaid-labeled block is treated as unparseable and renders as a normal empty code block.
-7. The transition between code-block view and diagram view is automatic: as the user types, pastes, or deletes, the block switches views when the parseable/unparseable state flips — without the user re-selecting the language.
+4. A Mermaid-labeled block displays a Raw/Rendered segmented control in the block footer, using the same visual style as the toggle in the markdown file viewer.
+5. The toggle defaults to Raw whenever the language is set to Mermaid (including on first open, on markdown round-trip, and when the language dropdown is changed to Mermaid).
+6. The toggle is visible whenever the block's language is Mermaid, regardless of which mode is active.
+7. The Raw/Rendered choice is per-block and per-session only — it is not persisted to the notebook file or round-tripped through markdown export.
 
-**While parse/render is in progress**
+**Raw mode**
 
-8. While a Mermaid block's parseability is being determined for the first time (async render still in progress), the block must not flicker into a broken diagram state. The block defaults to code-block view (raw source visible) until the async render resolves; this avoids the broken-diagram flash and is safe because the cache prevents re-parsing the same source twice. The choice must not rapidly alternate on every keystroke.
+8. In Raw mode the block renders as an ordinary notebook code block: editable source text, the standard code-block chrome (border, copy button, language dropdown), and `Mermaid` shown as the selected language.
+9. All ordinary code-block editing behaviors apply in Raw mode: click to place a cursor, select, type, paste, copy, cut, and undo/redo.
+10. The buffer content is the source of truth and is preserved regardless of display mode.
 
-**Diagram state (when contents are valid)**
+**Rendered mode — successful render**
 
-9. A successfully parsed Mermaid block renders the diagram inside the existing Mermaid block frame with the existing copy affordance and layout sizing behavior — unchanged from today.
+11. When the user selects Rendered, Warp attempts to render the block's current source as a Mermaid diagram using the existing SVG rendering pipeline.
+12. While the async render is in progress the block shows a "Rendering Mermaid diagram…" placeholder inside the diagram frame.
+13. On a successful render the block shows the rendered diagram inside the diagram frame, with the existing copy affordance and layout sizing behavior.
 
-**Editing and interaction**
+**Rendered mode — failed render**
 
-10. When the block is in code-block view, all ordinary code-block editing behaviors apply: click to place a cursor, select, type, paste, copy, cut, and undo/redo.
-11. When the block is in diagram view, editing behavior matches today's Mermaid diagram experience.
-12. Switching between views as a result of an edit must not lose, reorder, or truncate the authored Mermaid source. The buffer content is the source of truth.
-13. The language dropdown shows `Mermaid` as the current selection in both views at all times.
+14. If the Mermaid source cannot be parsed or rendered, the block shows an error frame in place of the diagram. The error frame displays a message such as "Error rendering Mermaid diagram. Please check syntax."
+15. The error frame uses the same dimensions and border style as the diagram frame — it does not fall back to code-block view.
+16. The Raw/Rendered toggle remains visible and functional in the error state. The user can switch back to Raw to edit and fix the source.
 
 **Round-trip and export**
 
-14. The block is persisted and exported as a ```` ```mermaid ```` fenced code block regardless of the current visual render mode.
-15. Reopening a notebook produces the same view for the same contents: parseable contents render as a diagram; unparseable contents render as a code block.
+17. The block is persisted and exported as a ```` ```mermaid ```` fenced code block regardless of the current display mode.
+18. Reopening a notebook always opens Mermaid blocks in Raw mode (the toggle resets to Raw on every open).
 
 **Feature flag**
 
-16. This fix is gated by the existing Mermaid rendering feature flag. When the flag is off, the current behavior (no Mermaid rendering) is preserved.
-
-**Scope of affected surfaces**
-
-17. The fix is required for notebook editor code blocks. Any shared Mermaid layout path reused by other surfaces (plans, agent output) must either adopt the same "render only when parseable" behavior or be explicitly left unchanged without regressing today's behavior. Expanding the fix to other surfaces is acceptable but not required.
+19. This behavior is gated by the existing `FeatureFlag::MarkdownMermaid` flag. When the flag is off, Mermaid blocks render as ordinary code blocks with no toggle and no diagram rendering.

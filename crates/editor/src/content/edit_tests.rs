@@ -405,6 +405,7 @@ fn mermaid_code_block(contents: &str) -> StyledTextBlock {
 fn mermaid_layout_options() -> RenderLayoutOptions {
     RenderLayoutOptions {
         render_mermaid_diagrams: true,
+        ..Default::default()
     }
 }
 
@@ -598,6 +599,7 @@ fn test_mermaid_block_skipped_when_render_disabled() {
             let block = mermaid_code_block("graph TD\nA --> B\n");
             let options = RenderLayoutOptions {
                 render_mermaid_diagrams: false,
+                ..Default::default()
             };
             let (item, _) = layout_mermaid_block_for_test(block, &text_layout, options, ctx)
                 .expect("layout should succeed");
