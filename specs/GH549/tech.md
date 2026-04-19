@@ -7,6 +7,8 @@ See `specs/GH549/PRODUCT.md` for the full user-facing behavior.
 Today the notebook editor unconditionally renders Mermaid-labeled code blocks as diagrams when `FeatureFlag::MarkdownMermaid` is enabled and the interaction state is `Selectable` or `Editable` (governed by `NotebooksEditorModel::render_mermaid_diagrams_in_state`). The new behavior requires every Mermaid block to default to Raw (code-block view) and let the user opt in to diagram rendering per block via an explicit toggle, matching the existing Raw/Rendered segmented control used in the markdown file viewer.
 
 Relevant files:
+- `crates/editor/src/render/element/mod.rs (880-895)` — `renderable_blocks` match arm for `BlockItem::RunnableCodeBlock` fetches the `runnable_command` via `parent.runnable_command_at(start_offset, ctx)` and passes it to `RenderableRunnableCommand::new` (which calls `render_block_footer`). The `BlockItem::MermaidDiagram` arm does **not** fetch the command, so no footer is rendered — this is the root cause of the toggle disappearing in Rendered mode.
+- `crates/editor/src/render/element/runnable_command.rs` — `RenderableRunnableCommand::new` accepts `Option<&dyn RunnableCommandModel>`, creates the footer element, lays it out, and paints it at `content_rect.lower_right()` in a higher z-index layer. The `COMMAND_SPACING` already reserves `BLOCK_FOOTER_HEIGHT` padding at the bottom, so footer space exists.
 - `crates/editor/src/content/edit.rs (689-798)` — `LayoutTask::from_styled_block` decides whether a `CodeBlockType::Mermaid` block becomes `LayoutTask::MermaidDiagram` or `LayoutTask::MermaidCodeFallback`, driven by `RenderLayoutOptions::render_mermaid_diagrams` and `AssetCache` state.
 - `crates/editor/src/content/edit.rs (501-603)` — `EditDelta::layout_delta` iterates blocks with a `current_offset` counter that tracks each block's start `CharOffset`.
 - `crates/editor/src/content/mermaid_diagram.rs` — `mermaid_asset_source` and `mermaid_diagram_layout`; constructs the async `AssetSource` that fetches and caches the SVG.
@@ -119,7 +121,31 @@ In `RichTextEditorView::handle_action` for this variant:
 3. Let `changed = self.render_state.update(ctx, |rs, _| rs.set_mermaid_render_offsets(new_offsets))`.
 4. If `changed`, call `self.rebuild_layout(ctx)`.
 
-### 8. Keep markdown storage and classification unchanged
+### 8. Keep the Raw/Rendered toggle visible in Rendered mode (fix for toggle disappearing)
+
+When a block switches to `BlockItem::MermaidDiagram`, `renderable_blocks` in `crates/editor/src/render/element/mod.rs` currently creates `RenderableMermaidDiagram::new(item)` with no footer. Fix:
+
+1. In the `MermaidDiagram` arm of `renderable_blocks`, fetch `runnable_command` the same way the `RunnableCodeBlock` arm does:
+   ```rust
+   BlockItem::MermaidDiagram { .. } => {
+       let start_offset = item.block_offset;
+       let runnable_command = parent.runnable_command_at(start_offset, ctx);
+       RenderableMermaidDiagram::new(item, runnable_command, self.display_options.focused, ctx).finish()
+   }
+   ```
+
+2. In `RenderableMermaidDiagram` (`crates/editor/src/render/element/mermaid.rs`):
+   - Add `footer: Box<dyn Element>` field (same as `RenderableRunnableCommand`).
+   - Accept `model: Option<&dyn RunnableCommandModel>`, `editor_is_focused: bool`, `ctx: &AppContext` in `new()`; create the footer via `model.render_block_footer(editor_is_focused, ctx)` or `Empty::new().finish()` when `model` is `None`.
+   - In `layout()`, lay out the footer at `SizeConstraint::strict(vec2f(content_width, BLOCK_FOOTER_HEIGHT))`.
+   - In `paint()`, paint the footer at `content_rect.lower_right() - vec2f(footer_width, 0)` inside a higher z-index layer, matching `RenderableRunnableCommand`.
+   - In `after_layout()` and `dispatch_event()`, delegate to the footer.
+
+`COMMAND_SPACING` (used for Mermaid block layout) already reserves `BLOCK_FOOTER_HEIGHT` as `padding.bottom`, so the footer occupies space that is already accounted for in the block's total height — no layout dimension changes are needed.
+
+This ensures the Raw/Rendered toggle (part of `render_block_footer`) remains visible regardless of whether the block renders as `RunnableCodeBlock` (Raw mode) or `MermaidDiagram` (Rendered mode), satisfying Behavior invariant 6.
+
+### 9. Keep markdown storage and classification unchanged
 
 - Do not change `From<&CodeBlockText> for CodeBlockType`. Block stays `CodeBlockType::Mermaid`.
 - Do not change `to_markdown_representation`. Block serializes as ```` ```mermaid ````.
@@ -174,8 +200,8 @@ Notebook model tests in `app/src/notebooks/editor/model_tests.rs`:
 
 Manual verification per `specs/GH549/PRODUCT.md`:
 - Add a code block, set language to Mermaid → block shows as code block with Raw/Rendered toggle defaulting to Raw.
-- Select Rendered → diagram frame appears (loading, then SVG, or error if source is invalid).
-- Select Raw → code block view restored.
+- Select Rendered → diagram frame appears (loading, then SVG, or error if source is invalid). **Toggle must remain visible inside the diagram frame.**
+- Click Raw from the diagram view → code block view restored with toggle visible.
 - Edit in Raw mode, then select Rendered again → new source is rendered.
 - Save and reopen notebook → toggle resets to Raw.
 

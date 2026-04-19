@@ -1,14 +1,16 @@
 use warpui::{
     AppContext, Element, SizeConstraint, SingletonEntity,
     assets::asset_cache::{AssetCache, AssetState},
-    elements::{Align, CacheOption, CornerRadius, Image, Radius, Text},
+    elements::{Align, CacheOption, CornerRadius, Empty, Image, Radius, Text},
     geometry::vector::vec2f,
     image_cache::ImageType,
 };
 
 use crate::{
+    editor::RunnableCommandModel,
     extract_block,
     render::{
+        BLOCK_FOOTER_HEIGHT,
         element::paint::CursorData,
         model::{BlockItem, RenderState, viewport::ViewportItem},
     },
@@ -19,13 +21,24 @@ use super::{CursorDisplayType, RenderContext, RenderableBlock};
 pub struct RenderableMermaidDiagram {
     viewport_item: ViewportItem,
     image_element: Option<Box<dyn Element>>,
+    footer: Box<dyn Element>,
 }
 
 impl RenderableMermaidDiagram {
-    pub fn new(viewport_item: ViewportItem) -> Self {
+    pub fn new(
+        viewport_item: ViewportItem,
+        model: Option<&dyn RunnableCommandModel>,
+        editor_is_focused: bool,
+        ctx: &AppContext,
+    ) -> Self {
+        let footer = match model {
+            Some(model) => model.render_block_footer(editor_is_focused, ctx),
+            None => Empty::new().finish(),
+        };
         Self {
             viewport_item,
             image_element: None,
+            footer,
         }
     }
 }
@@ -41,6 +54,15 @@ impl RenderableBlock for RenderableMermaidDiagram {
             self.viewport_item,
             content,
             (_block, BlockItem::MermaidDiagram { asset_source, config, .. }) => (asset_source.clone(), *config)
+        );
+
+        self.footer.layout(
+            SizeConstraint::strict(vec2f(
+                self.viewport_item.content_size.x(),
+                BLOCK_FOOTER_HEIGHT,
+            )),
+            ctx,
+            app,
         );
 
         let code_text = model.styles().code_text;
@@ -134,11 +156,31 @@ impl RenderableBlock for RenderableMermaidDiagram {
                 model.styles(),
             );
         }
+
+        ctx.paint.scene.start_layer(warpui::ClipBounds::ActiveLayer);
+        let button_origin = content_rect.lower_right()
+            - vec2f(
+                self.footer.size().expect("Footer should be laid out").x(),
+                0.,
+            );
+        self.footer.paint(button_origin, ctx.paint, app);
+        ctx.paint.scene.stop_layer();
     }
 
     fn after_layout(&mut self, ctx: &mut warpui::AfterLayoutContext, app: &warpui::AppContext) {
         if let Some(ref mut image_element) = self.image_element {
             image_element.after_layout(ctx, app);
         }
+        self.footer.after_layout(ctx, app);
+    }
+
+    fn dispatch_event(
+        &mut self,
+        _model: &RenderState,
+        event: &warpui::event::DispatchedEvent,
+        ctx: &mut warpui::EventContext,
+        app: &AppContext,
+    ) -> bool {
+        self.footer.dispatch_event(event, ctx, app)
     }
 }

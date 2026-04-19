@@ -39,7 +39,7 @@ The following invariants apply to notebook code blocks whose language is set to 
 
 4. A Mermaid-labeled block displays a Raw/Rendered segmented control in the block footer, using the same visual style as the toggle in the markdown file viewer.
 5. The toggle defaults to Raw whenever the language is set to Mermaid (including on first open, on markdown round-trip, and when the language dropdown is changed to Mermaid).
-6. The toggle is visible whenever the block's language is Mermaid, regardless of which mode is active.
+6. The toggle is visible whenever the block's language is Mermaid, regardless of which mode is active — including when the diagram is successfully rendered. The toggle must not disappear when the block switches to Rendered mode.
 7. The Raw/Rendered choice is per-block and per-session only — it is not persisted to the notebook file or round-tripped through markdown export.
 
 **Raw mode**
