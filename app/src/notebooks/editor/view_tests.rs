@@ -18,12 +18,12 @@ use warpui::{SingletonEntity, TypedActionView, WindowId};
 
 use super::{EditorViewAction, RichTextEditorConfig, RichTextEditorView};
 use crate::appearance::Appearance;
-use crate::notebooks::file::MarkdownDisplayMode;
 use crate::editor::InteractionState;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::editor::link_editor::LinkEditorAction;
 use crate::notebooks::editor::model::NotebooksEditorModel;
 use crate::notebooks::editor::rich_text_styles;
+use crate::notebooks::file::MarkdownDisplayMode;
 use crate::notebooks::link::{LinkEvent, NotebookLinks, SessionSource};
 use crate::server::server_api::team::MockTeamClient;
 use crate::server::server_api::workspace::MockWorkspaceClient;
@@ -300,8 +300,9 @@ fn test_omnibar_is_hidden_for_rendered_mermaid_selection() {
         reset_editor_with_markdown(&mut app, &editor_view, markdown).await;
 
         // Blocks default to Raw; explicitly enable Rendered mode for the Mermaid block.
-        let render_state =
-            editor_view.read(&app, |editor, ctx| editor.model.as_ref(ctx).render_state().clone());
+        let render_state = editor_view.read(&app, |editor, ctx| {
+            editor.model.as_ref(ctx).render_state().clone()
+        });
         editor_view.update(&mut app, |editor, ctx| {
             editor.model.update(ctx, |model, ctx| {
                 model.set_mermaid_render_mode(
@@ -311,7 +312,8 @@ fn test_omnibar_is_hidden_for_rendered_mermaid_selection() {
                 );
             });
         });
-        app.read(|ctx| render_state.as_ref(ctx).layout_complete()).await;
+        app.read(|ctx| render_state.as_ref(ctx).layout_complete())
+            .await;
 
         editor_view.update(&mut app, |editor, ctx| {
             let mermaid_block_range =
@@ -337,8 +339,9 @@ fn test_shift_click_on_rendered_mermaid_dispatches_selection_update_to_block_bou
         reset_editor_with_markdown(&mut app, &editor_view, markdown).await;
 
         // Blocks default to Raw; explicitly enable Rendered mode for the Mermaid block.
-        let render_state =
-            editor_view.read(&app, |editor, ctx| editor.model.as_ref(ctx).render_state().clone());
+        let render_state = editor_view.read(&app, |editor, ctx| {
+            editor.model.as_ref(ctx).render_state().clone()
+        });
         editor_view.update(&mut app, |editor, ctx| {
             editor.model.update(ctx, |model, ctx| {
                 model.set_mermaid_render_mode(
@@ -348,7 +351,8 @@ fn test_shift_click_on_rendered_mermaid_dispatches_selection_update_to_block_bou
                 );
             });
         });
-        app.read(|ctx| render_state.as_ref(ctx).layout_complete()).await;
+        app.read(|ctx| render_state.as_ref(ctx).layout_complete())
+            .await;
 
         editor_view.update(&mut app, |editor, ctx| {
             editor.selection_start(CharOffset::from(2), false, ctx);
@@ -431,8 +435,9 @@ fn test_drag_on_rendered_mermaid_dispatches_selection_update_to_block_boundary()
         reset_editor_with_markdown(&mut app, &editor_view, markdown).await;
 
         // Blocks default to Raw; explicitly enable Rendered mode for the Mermaid block.
-        let render_state =
-            editor_view.read(&app, |editor, ctx| editor.model.as_ref(ctx).render_state().clone());
+        let render_state = editor_view.read(&app, |editor, ctx| {
+            editor.model.as_ref(ctx).render_state().clone()
+        });
         editor_view.update(&mut app, |editor, ctx| {
             editor.model.update(ctx, |model, ctx| {
                 model.set_mermaid_render_mode(
@@ -442,7 +447,8 @@ fn test_drag_on_rendered_mermaid_dispatches_selection_update_to_block_boundary()
                 );
             });
         });
-        app.read(|ctx| render_state.as_ref(ctx).layout_complete()).await;
+        app.read(|ctx| render_state.as_ref(ctx).layout_complete())
+            .await;
 
         editor_view.update(&mut app, |editor, ctx| {
             editor.selection_start(CharOffset::from(2), false, ctx);

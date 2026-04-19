@@ -35,8 +35,8 @@ use warpui::{
     },
     fonts::Properties,
     presenter::ChildView,
-    Element, Entity, ModelAsRef, ModelContext, ModelHandle, SingletonEntity, TypedActionView,
-    View, ViewContext, ViewHandle, WeakModelHandle, WindowId,
+    Element, Entity, ModelAsRef, ModelContext, ModelHandle, SingletonEntity, TypedActionView, View,
+    ViewContext, ViewHandle, WeakModelHandle, WindowId,
 };
 
 use crate::{
@@ -143,9 +143,7 @@ impl MermaidDisplayModeToggle {
             });
         });
 
-        Self {
-            toggle,
-        }
+        Self { toggle }
     }
 }
 

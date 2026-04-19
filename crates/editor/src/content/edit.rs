@@ -760,10 +760,9 @@ impl LayoutTask {
                         code_block_type: CodeBlockType::Mermaid,
                     }
                 );
-                let is_user_rendered =
-                    layout_options.mermaid_render_offsets.contains(&block_start);
-                let should_render = is_mermaid
-                    && (layout_options.render_mermaid_diagrams || is_user_rendered);
+                let is_user_rendered = layout_options.mermaid_render_offsets.contains(&block_start);
+                let should_render =
+                    is_mermaid && (layout_options.render_mermaid_diagrams || is_user_rendered);
 
                 if should_render {
                     let source = text_block

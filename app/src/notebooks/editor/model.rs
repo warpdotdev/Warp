@@ -1,6 +1,12 @@
-use base64::{prelude::BASE64_STANDARD, Engine as _};
-use std::{any::Any, borrow::Cow, collections::{HashMap, HashSet}, ops::Range, time::Duration};
 use crate::notebooks::file::MarkdownDisplayMode;
+use base64::{prelude::BASE64_STANDARD, Engine as _};
+use std::{
+    any::Any,
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    ops::Range,
+    time::Duration,
+};
 
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -358,7 +364,10 @@ impl NotebooksEditorModel {
             .child_models
             .model_handles::<NotebookCommand>()
             .filter_map(|handle| {
-                if matches!(handle.as_ref(ctx).mermaid_display_mode, MarkdownDisplayMode::Rendered) {
+                if matches!(
+                    handle.as_ref(ctx).mermaid_display_mode,
+                    MarkdownDisplayMode::Rendered
+                ) {
                     handle
                         .as_ref(ctx)
                         .start_offset(ctx)

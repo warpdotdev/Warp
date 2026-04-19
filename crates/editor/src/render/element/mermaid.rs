@@ -1,5 +1,5 @@
 use warpui::{
-    AppContext, Element, SizeConstraint, SingletonEntity,
+    AppContext, Element, SingletonEntity, SizeConstraint,
     assets::asset_cache::{AssetCache, AssetState},
     elements::{Align, CacheOption, CornerRadius, Empty, Image, Radius, Text},
     geometry::vector::vec2f,
