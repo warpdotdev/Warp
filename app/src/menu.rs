@@ -19,11 +19,12 @@ use warpui::elements::{
 use warpui::WindowId;
 use warpui::{
     accessibility::{AccessibilityContent, ActionAccessibilityContent, WarpA11yRole},
+    assets::asset_cache::AssetSource,
     elements::{
-        Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
-        DispatchEventResult, Element, EventHandler, Flex, Hoverable, Icon, MainAxisAlignment,
-        MainAxisSize, MouseInBehavior, MouseStateHandle, ParentElement, Radius, Rect, SavePosition,
-        Shrinkable, Text,
+        Align, Border, CacheOption, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,
+        DispatchEventResult, Element, EventHandler, Flex, Hoverable, Icon, Image,
+        MainAxisAlignment, MainAxisSize, MouseInBehavior, MouseStateHandle, ParentElement, Radius,
+        Rect, SavePosition, Shrinkable, Text,
     },
     fonts::{FamilyId, Properties},
     keymap::FixedBinding,
@@ -396,6 +397,9 @@ pub struct MenuItemFields<A: Action + Clone> {
     disabled: bool,
     mouse_state: MouseStateHandle,
     icon: Option<icons::Icon>,
+    /// Path to a full-color image asset (e.g. `bundled/svg/file_type/rust.svg`).
+    /// When set, the icon is rendered via [`Image::new`] preserving original colors.
+    image_icon: Option<&'static str>,
     override_icon_color: Option<Fill>,
     override_text_color: Option<ColorU>,
     override_font_family: Option<FamilyId>,
@@ -439,6 +443,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             disabled: false,
             mouse_state: Default::default(),
             icon: None,
+            image_icon: None,
             override_icon_color: None,
             override_font_family: None,
             override_font_size: None,
@@ -466,6 +471,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             disabled: false,
             mouse_state: Default::default(),
             icon: None,
+            image_icon: None,
             override_icon_color: None,
             override_font_family: None,
             override_font_size: None,
@@ -496,6 +502,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             disabled: false,
             mouse_state: Default::default(),
             icon: None,
+            image_icon: None,
             override_icon_color: None,
             override_font_family: None,
             override_font_size: None,
@@ -529,6 +536,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             disabled: false,
             mouse_state: Default::default(),
             icon: None,
+            image_icon: None,
             override_icon_color: None,
             override_font_family: None,
             override_font_size: None,
@@ -560,6 +568,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             disabled: false,
             mouse_state: Default::default(),
             icon: None,
+            image_icon: None,
             override_icon_color: None,
             override_font_family: None,
             override_font_size: None,
@@ -590,6 +599,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             disabled: false,
             mouse_state: Default::default(),
             icon: None,
+            image_icon: None,
             override_icon_color: None,
             override_font_family: None,
             override_font_size: None,
@@ -617,6 +627,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             disabled: false,
             mouse_state: Default::default(),
             icon: None,
+            image_icon: None,
             override_icon_color: None,
             override_font_family: None,
             override_font_size: None,
@@ -660,6 +671,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
             disabled: self.disabled,
             mouse_state: self.mouse_state,
             icon: self.icon,
+            image_icon: self.image_icon,
             override_icon_color: self.override_icon_color,
             override_font_family: self.override_font_family,
             override_font_size: self.override_font_size,
@@ -754,6 +766,14 @@ impl<A: Action + Clone> MenuItemFields<A> {
         self
     }
 
+    /// Set a full-color image asset as the icon for this menu item.
+    /// The image is rendered via [`Image::new`], preserving its original colors
+    /// (e.g. for language logos from `bundled/svg/file_type/`).
+    pub fn with_image_icon(mut self, path: &'static str) -> Self {
+        self.image_icon = Some(path);
+        self
+    }
+
     pub fn with_indent(mut self) -> Self {
         self.indent = true;
         self
@@ -825,6 +845,26 @@ impl<A: Action + Clone> MenuItemFields<A> {
     }
 
     fn render_icon(&self, appearance: &Appearance, color: Fill) -> Option<Box<dyn Element>> {
+        let icon_size = appearance.ui_font_size();
+        if let Some(path) = self.image_icon {
+            return Some(
+                Shrinkable::new(
+                    1.,
+                    Container::new(
+                        ConstrainedBox::new(
+                            Image::new(AssetSource::Bundled { path }, CacheOption::BySize)
+                                .finish(),
+                        )
+                        .with_width(icon_size)
+                        .with_height(icon_size)
+                        .finish(),
+                    )
+                    .with_margin_right(icon_size / 2.)
+                    .finish(),
+                )
+                .finish(),
+            );
+        }
         if let Some(icon) = self.icon {
             let icon_size = self
                 .icon_size_override

@@ -18,6 +18,7 @@ use crate::render::{
 };
 
 const DEFAULT_MERMAID_HEIGHT_LINE_MULTIPLIER: f32 = 10.0;
+const MAX_MERMAID_BLOCK_HEIGHT: f32 = 400.0;
 
 struct MermaidDiagramAsset;
 
@@ -55,6 +56,7 @@ pub fn mermaid_diagram_layout(
         * DEFAULT_MERMAID_HEIGHT_LINE_MULTIPLIER.into_pixels();
     let (width, height) =
         mermaid_diagram_size(&asset_source, max_width, app).unwrap_or((max_width, default_height));
+    let height = height.min(Pixels::new(MAX_MERMAID_BLOCK_HEIGHT));
 
     (
         asset_source,

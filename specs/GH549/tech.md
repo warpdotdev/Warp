@@ -99,7 +99,7 @@ mermaid_toggle: ViewHandle<MermaidDisplayModeToggle>,
 
 `MermaidDisplayModeToggle` is a thin new view (in `notebook_command.rs`) that wraps `MarkdownToggleView`. In its view-level subscription to `MarkdownToggleEvent::ModeSelected(mode)`, it dispatches `EditorViewAction::MermaidDisplayModeSelected { start_anchor, mode }` (see §7).
 
-In `render_block_footer`, when `block_style == CodeBlockType::Mermaid`, render `ChildView::new(&self.mermaid_toggle).finish()` in the footer left side (same position as the type-label text shown when the dropdown is hidden). This is always visible for Mermaid blocks regardless of editor focus (Behavior invariant 6).
+In `render_block_footer`, when `block_style == CodeBlockType::Mermaid`, render two icon buttons directly (no separate view wrapper needed — see §10). This is always visible for Mermaid blocks regardless of editor focus (Behavior invariant 9).
 
 ### 7. Add `EditorViewAction::MermaidDisplayModeSelected` and handle it
 
@@ -145,7 +145,73 @@ When a block switches to `BlockItem::MermaidDiagram`, `renderable_blocks` in `cr
 
 This ensures the Raw/Rendered toggle (part of `render_block_footer`) remains visible regardless of whether the block renders as `RunnableCodeBlock` (Raw mode) or `MermaidDiagram` (Rendered mode), satisfying Behavior invariant 6.
 
-### 9. Keep markdown storage and classification unchanged
+### 9. Language icons in the code block dropdown (Behavior invariants 4–5)
+
+Replace `Dropdown::add_items` (plain text labels) with `Dropdown::set_rich_items` (full `MenuItem` items) in `NotebookCommand::new`. Each item is built with `MenuItemFields::new(code_block_type.to_string()).with_icon(icon_for_type(&code_block_type)).with_on_select_action(...).into_item()`.
+
+Language → icon mapping (using existing bundled SVG assets via the `Icon` enum):
+
+| Language | Icon |
+|----------|------|
+| Shell | `Icon::Terminal` (`terminal.svg`) |
+| Mermaid | `Icon::Code1` (placeholder — no branded Mermaid SVG yet) |
+| PowerShell | `Icon::Powershell` (`powershell.svg`) |
+| Go | new `Icon::GoLang` (`go.svg`) |
+| C++ | new `Icon::CppLang` (`cpp.svg`) |
+| JavaScript | new `Icon::JavaScriptLang` (`javascript.svg`) |
+| Python | new `Icon::PythonLang` (`python.svg`) |
+| Rust | new `Icon::RustLang` (`rust.svg`) |
+| SQL | new `Icon::SqlLang` (`sql.svg`) |
+| JSON | new `Icon::JsonLang` (`json.svg`) |
+| PHP | new `Icon::PhpLang` (`php.svg`) |
+| Kotlin | new `Icon::KotlinLang` (`kotlin.svg`) |
+| C#, Java, Ruby, YAML, Lua, Swift, Elixir, Scala, text | `Icon::Code1` fallback |
+
+Add the new variants (`GoLang`, `CppLang`, etc.) to the `Icon` enum in `crates/warp_core/src/ui/icons.rs` with the corresponding SVG paths.
+
+Also increase the dropdown button width (`set_top_bar_max_width`) and menu width (`set_menu_width`) so language names and icons render without truncation.
+
+### 10. Replace text toggle with icon buttons (Behavior invariants 6–10)
+
+Remove `MermaidDisplayModeToggle` view and the `mermaid_toggle` field from `NotebookCommand`. Instead, render two icon buttons inline inside `render_block_footer` using `block_footer_action_button`-style construction:
+
+```rust
+// In render_block_footer, when block_style == CodeBlockType::Mermaid:
+let is_raw = matches!(self.mermaid_display_mode, MarkdownDisplayMode::Raw);
+let start_anchor_raw = self.start.clone();
+let start_anchor_rendered = self.start.clone();
+
+let raw_button = icon_button(appearance, Icon::Code1, is_raw, self.mouse_state_handles.mermaid_raw_button_state.clone())
+    .with_cursor(Cursor::Arrow).on_click(move |ctx, _, _| {
+        ctx.dispatch_typed_action(&EditorViewAction::MermaidDisplayModeSelected {
+            start_anchor: start_anchor_raw.clone(),
+            mode: MarkdownDisplayMode::Raw,
+        });
+    }).finish();
+
+let rendered_button = icon_button(appearance, Icon::Grid, !is_raw, self.mouse_state_handles.mermaid_rendered_button_state.clone())
+    .with_cursor(Cursor::Arrow).on_click(move |ctx, _, _| {
+        ctx.dispatch_typed_action(&EditorViewAction::MermaidDisplayModeSelected {
+            start_anchor: start_anchor_rendered.clone(),
+            mode: MarkdownDisplayMode::Rendered,
+        });
+    }).finish();
+```
+
+Add `mermaid_raw_button_state: MouseStateHandle` and `mermaid_rendered_button_state: MouseStateHandle` to `MouseStateHandles`.
+
+Using element-level click handlers that call `ctx.dispatch_typed_action` replaces the previous view-subscription mechanism, simplifying the implementation.
+
+### 11. Mermaid block maximum height 400 px (Behavior invariant 16)
+
+In `mermaid_diagram_layout` (`crates/editor/src/content/mermaid_diagram.rs`), clamp the computed height:
+```rust
+const MAX_MERMAID_HEIGHT: f32 = 400.0;
+let height = height.min(Pixels::new(MAX_MERMAID_HEIGHT));
+```
+This applies to all asset states (the default height for unloaded blocks is also capped at 400 px).
+
+### 12. Keep markdown storage and classification unchanged
 
 - Do not change `From<&CodeBlockText> for CodeBlockType`. Block stays `CodeBlockType::Mermaid`.
 - Do not change `to_markdown_representation`. Block serializes as ```` ```mermaid ````.
@@ -209,4 +275,5 @@ Manual verification per `specs/GH549/PRODUCT.md`:
 
 - Persist `mermaid_display_mode` per block in the notebook file format so it survives reopen.
 - Consider unifying this toggle with plans/agent-output Mermaid rendering via `specs/mermaid-markdown-in-plans/`.
-- Replace `MermaidDisplayModeToggle` wrapper with a direct `SegmentedControl` dispatch if the WarpUI API is extended to support dispatching typed actions from subscriptions in model contexts.
+- Add a proper branded Mermaid SVG icon to the asset bundle and map it via `Icon::MermaidLang`.
+- Add branded SVGs for languages currently falling back to `Icon::Code1` (C#, Java, Ruby, YAML, Swift, Elixir, Scala).
