@@ -109,26 +109,34 @@ jobs:
               }
 
               // Close the issue with a comment
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                body:
-                  "This issue has been automatically closed because it was labeled " +
-                  "`needs-info` and received no response for 3 business days. " +
-                  "If you have the requested information, please reply and we will reopen.",
-              });
+              try {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body:
+                    "This issue has been automatically closed because it was labeled " +
+                    "`needs-info` and received no response for 3 business days. " +
+                    "If you have the requested information, please reply and we will reopen.",
+                });
+              } catch (commentErr) {
+                core.warning(`Could not comment on issue #${issue.number}: ${commentErr.message}`);
+              }
 
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                state: "closed",
-                state_reason: "not_planned",
-              });
+              try {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  state: "closed",
+                  state_reason: "not_planned",
+                });
 
-              closedCount++;
-              core.info(`Closed issue #${issue.number}: ${issue.title}`);
+                closedCount++;
+                core.info(`Closed issue #${issue.number}: ${issue.title}`);
+              } catch (updateErr) {
+                core.warning(`Could not close issue #${issue.number}: ${updateErr.message}`);
+              }
             }
 
             core.info(`Done. Closed ${closedCount} stale needs-info issue(s).`);
