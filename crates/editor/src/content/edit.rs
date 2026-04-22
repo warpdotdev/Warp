@@ -778,6 +778,8 @@ impl LayoutTask {
                             pending_mermaid_asset: None,
                         };
                     }
+                    let default_mermaid_height = mermaid_code_block_height(&text_block, layout)
+                        .unwrap_or_else(|| layout.rich_text_styles().base_line_height());
 
                     let asset_source = mermaid_asset_source(&source);
                     let asset_cache = AssetCache::as_ref(app);
@@ -787,8 +789,13 @@ impl LayoutTask {
                                 .rich_text_styles()
                                 .block_spacings
                                 .from_block_style(&text_block.style);
-                            let (asset_source, config) =
-                                mermaid_diagram_layout(&source, layout, spacing, app);
+                            let (asset_source, config) = mermaid_diagram_layout(
+                                &source,
+                                default_mermaid_height,
+                                layout,
+                                spacing,
+                                app,
+                            );
                             Self::MermaidDiagram {
                                 text_block,
                                 asset_source,
@@ -803,8 +810,13 @@ impl LayoutTask {
                                     .rich_text_styles()
                                     .block_spacings
                                     .from_block_style(&text_block.style);
-                                let (asset_source, config) =
-                                    mermaid_diagram_layout(&source, layout, spacing, app);
+                                let (asset_source, config) = mermaid_diagram_layout(
+                                    &source,
+                                    default_mermaid_height,
+                                    layout,
+                                    spacing,
+                                    app,
+                                );
                                 Self::MermaidDiagram {
                                     text_block,
                                     asset_source,
@@ -825,8 +837,13 @@ impl LayoutTask {
                                     .rich_text_styles()
                                     .block_spacings
                                     .from_block_style(&text_block.style);
-                                let (asset_source, config) =
-                                    mermaid_diagram_layout(&source, layout, spacing, app);
+                                let (asset_source, config) = mermaid_diagram_layout(
+                                    &source,
+                                    default_mermaid_height,
+                                    layout,
+                                    spacing,
+                                    app,
+                                );
                                 Self::MermaidDiagram {
                                     text_block,
                                     asset_source,
@@ -960,6 +977,12 @@ fn calculate_hidden_block_line_count(
 ) -> usize {
     let line_count = estimate_paragraph_count(text_block);
     gutter_expansion_button_types(&location, line_count).len()
+}
+
+fn mermaid_code_block_height(text_block: &StyledTextBlock, layout: &TextLayout) -> Option<Pixels> {
+    let (block_item, _) =
+        layout_text_block(text_block.clone(), layout, BlockLocation::Middle, false).ok()?;
+    matches!(&block_item, BlockItem::RunnableCodeBlock { .. }).then(|| block_item.content_height())
 }
 
 /// Lay out a single text block. This returns both the laid-out block item and a boolean for

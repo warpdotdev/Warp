@@ -688,6 +688,101 @@ fn test_plain_text_pasting() {
 }
 
 #[test]
+fn test_delete_inside_raw_mermaid_block_edits_text_without_removing_block() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let _flag = FeatureFlag::MarkdownMermaid.override_enabled(true);
+        let _editable_flag = FeatureFlag::EditableMarkdownMermaid.override_enabled(true);
+        let markdown = "Text
+```mermaid
+graph TD
+A --> B
+```
+More text";
+        let original_char_count = markdown.chars().count();
+
+        let model_handle = model_from_markdown(markdown, &mut app, true);
+        model_handle.update(&mut app, |model, ctx| {
+            model.set_interaction_state(InteractionState::Editable, ctx);
+        });
+        layout_model(&mut app, &model_handle).await;
+        let cursor_offset = CharOffset::from(
+            markdown
+                .find("graph TD")
+                .expect("Mermaid source should exist")
+                + 3,
+        );
+
+        model_handle.update(&mut app, |model, ctx| {
+            model.cursor_at(cursor_offset, ctx);
+            assert!(!model.has_command_selection(ctx));
+            model.backspace(ctx);
+        });
+        layout_model(&mut app, &model_handle).await;
+
+        model_handle.read(&app, |model, ctx| {
+            let updated_markdown = model.markdown(ctx);
+            let updated_mermaid_command = model
+                .child_models
+                .model_handles::<NotebookCommand>()
+                .exactly_one()
+                .ok()
+                .expect("Mermaid command should still exist after backspace");
+            let updated_mermaid_command = updated_mermaid_command.as_ref(ctx);
+            let updated_mermaid_range = updated_mermaid_command
+                .start_offset(ctx)
+                .expect("Mermaid command should still have a start offset")
+                ..updated_mermaid_command
+                    .end_offset(ctx)
+                    .expect("Mermaid command should still have an end offset");
+            let cursor = model.selection.as_ref(ctx).cursors(ctx)[0];
+
+            assert!(updated_markdown.contains("```mermaid"));
+            assert!(updated_markdown.contains("More text"));
+            assert_eq!(updated_markdown.chars().count(), original_char_count - 1);
+            assert!(model.selection_is_single_cursor(ctx));
+            assert!(cursor > updated_mermaid_range.start && cursor < updated_mermaid_range.end);
+            assert!(!model.has_command_selection(ctx));
+        });
+
+        model_handle.update(&mut app, |model, ctx| model.undo(ctx));
+        layout_model(&mut app, &model_handle).await;
+
+        model_handle.update(&mut app, |model, ctx| {
+            model.cursor_at(cursor_offset, ctx);
+            assert!(!model.has_command_selection(ctx));
+            model.delete(TextDirection::Forwards, TextUnit::Character, false, ctx);
+        });
+        layout_model(&mut app, &model_handle).await;
+
+        model_handle.read(&app, |model, ctx| {
+            let updated_markdown = model.markdown(ctx);
+            let updated_mermaid_command = model
+                .child_models
+                .model_handles::<NotebookCommand>()
+                .exactly_one()
+                .ok()
+                .expect("Mermaid command should still exist after delete");
+            let updated_mermaid_command = updated_mermaid_command.as_ref(ctx);
+            let updated_mermaid_range = updated_mermaid_command
+                .start_offset(ctx)
+                .expect("Mermaid command should still have a start offset")
+                ..updated_mermaid_command
+                    .end_offset(ctx)
+                    .expect("Mermaid command should still have an end offset");
+            let cursor = model.selection.as_ref(ctx).cursors(ctx)[0];
+
+            assert!(updated_markdown.contains("```mermaid"));
+            assert!(updated_markdown.contains("More text"));
+            assert_eq!(updated_markdown.chars().count(), original_char_count - 1);
+            assert!(model.selection_is_single_cursor(ctx));
+            assert!(cursor > updated_mermaid_range.start && cursor < updated_mermaid_range.end);
+            assert!(!model.has_command_selection(ctx));
+        });
+    });
+}
+
+#[test]
 fn test_pasting_link_on_selected_text() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);
@@ -2180,11 +2275,21 @@ fn test_adjacent_delete_with_rendered_mermaid_block_is_atomic() {
         initialize_deps(&mut app);
         let _flag = FeatureFlag::MarkdownMermaid.override_enabled(true);
         let _editable_flag = FeatureFlag::EditableMarkdownMermaid.override_enabled(true);
-        let markdown = "Text\n```mermaid\ngraph TD\nA --> B\n```\nMore text";
+        let markdown = "Text
+```mermaid
+graph TD
+A --> B
+```
+More text";
 
         let model_handle = model_from_markdown(markdown, &mut app, true);
         model_handle.update(&mut app, |model, ctx| {
             model.set_interaction_state(InteractionState::Editable, ctx);
+        });
+        layout_model(&mut app, &model_handle).await;
+
+        model_handle.update(&mut app, |model, ctx| {
+            model.set_mermaid_render_mode(CharOffset::from(5), MarkdownDisplayMode::Rendered, ctx);
         });
         layout_model(&mut app, &model_handle).await;
 
@@ -2214,6 +2319,16 @@ fn test_adjacent_delete_with_rendered_mermaid_block_is_atomic() {
 
         model_handle.update(&mut app, |model, ctx| model.undo(ctx));
         layout_model(&mut app, &model_handle).await;
+        model_handle.update(&mut app, |model, ctx| {
+            model.set_mermaid_render_mode(CharOffset::from(5), MarkdownDisplayMode::Rendered, ctx);
+        });
+        layout_model(&mut app, &model_handle).await;
+
+        let mermaid_command = command_models(&model_handle, &mut app)
+            .into_iter()
+            .exactly_one()
+            .expect("Mermaid command should exist after undo");
+        let mermaid_range = command_range(&mermaid_command, &mut app);
 
         model_handle.update(&mut app, |model, ctx| {
             model.cursor_at(mermaid_range.start, ctx);
@@ -2240,11 +2355,21 @@ fn test_backspace_with_cursor_inside_rendered_mermaid_block_is_atomic() {
         initialize_deps(&mut app);
         let _flag = FeatureFlag::MarkdownMermaid.override_enabled(true);
         let _editable_flag = FeatureFlag::EditableMarkdownMermaid.override_enabled(true);
-        let markdown = "Text\n```mermaid\ngraph TD\nA --> B\n```\nMore text";
+        let markdown = "Text
+```mermaid
+graph TD
+A --> B
+```
+More text";
 
         let model_handle = model_from_markdown(markdown, &mut app, true);
         model_handle.update(&mut app, |model, ctx| {
             model.set_interaction_state(InteractionState::Editable, ctx);
+        });
+        layout_model(&mut app, &model_handle).await;
+
+        model_handle.update(&mut app, |model, ctx| {
+            model.set_mermaid_render_mode(CharOffset::from(5), MarkdownDisplayMode::Rendered, ctx);
         });
         layout_model(&mut app, &model_handle).await;
 

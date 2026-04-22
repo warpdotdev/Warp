@@ -176,7 +176,7 @@ pub fn test_open_in_warp_banner() -> Builder {
         )
 }
 
-pub fn test_backspace_inside_rendered_mermaid_block_is_atomic() -> Builder {
+pub fn test_backspace_inside_raw_mermaid_block_edits_text_without_removing_block() -> Builder {
     FeatureFlag::MarkdownMermaid.set_enabled(true);
     FeatureFlag::EditableMarkdownMermaid.set_enabled(true);
 
@@ -207,8 +207,12 @@ pub fn test_backspace_inside_rendered_mermaid_block_is_atomic() -> Builder {
         )
         .with_step(move_notebook_cursor_to_offset(0, 0, cursor_offset))
         .with_step(
-            TestStep::new("Backspace from inside rendered Mermaid")
+            TestStep::new("Backspace from inside raw Mermaid")
                 .with_keystrokes(&["backspace"])
-                .add_assertion(assert_notebook_contents(0, 0, "Before\nAfter")),
+                .add_assertion(assert_notebook_contents(
+                    0,
+                    0,
+                    "Before\n```mermaid\ngraph TD\nA -> B\n```\nAfter",
+                )),
         )
 }

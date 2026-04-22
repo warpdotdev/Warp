@@ -1223,7 +1223,16 @@ impl NotebooksEditorModel {
             BlockType::Text(BufferBlockStyle::CodeBlock {
                 code_block_type: CodeBlockType::Mermaid,
             })
-        ) && Self::editable_markdown_mermaid_enabled()
+        ) && self
+            .child_models
+            .model_at::<NotebookCommand>(block_start)
+            .is_some_and(|command| {
+                matches!(
+                    command.as_ref(ctx).mermaid_display_mode,
+                    MarkdownDisplayMode::Rendered
+                )
+            })
+            && Self::editable_markdown_mermaid_enabled()
             && matches!(
                 self.interaction_state(ctx),
                 InteractionState::Selectable

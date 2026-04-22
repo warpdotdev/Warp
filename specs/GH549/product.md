@@ -51,26 +51,27 @@ The following invariants apply to notebook code blocks whose language is set to 
 **Raw mode**
 
 11. In Raw mode the block renders as an ordinary notebook code block: editable source text, the standard code-block chrome (border, copy button, language dropdown), and `Mermaid` shown as the selected language.
-12. All ordinary code-block editing behaviors apply in Raw mode: click to place a cursor, select, type, paste, copy, cut, and undo/redo.
+12. All ordinary code-block editing behaviors apply in Raw mode: click to place a cursor, select, type, paste, copy, cut, backspace/delete individual characters, and undo/redo.
 13. The buffer content is the source of truth and is preserved regardless of display mode.
 
 **Rendered mode — successful render**
 
 14. When the user selects Rendered, Warp attempts to render the block's current source as a Mermaid diagram using the existing SVG rendering pipeline.
 15. While the async render is in progress the block shows a "Rendering Mermaid diagram…" placeholder inside the diagram frame.
-16. On a successful render the block shows the rendered diagram inside the diagram frame. The diagram block has a maximum height of 400 px; diagrams taller than this are scaled down to fit.
+16. Before the Mermaid SVG has loaded, the diagram frame uses the same laid-out height as the Raw code block for that block's source so toggling between Raw and Rendered does not introduce an avoidable height jump.
+17. On a successful render the block shows the rendered diagram inside the diagram frame. The diagram block has a maximum height of 400 px; diagrams taller than this are scaled down to fit.
 
 **Rendered mode — failed render**
 
-17. If the Mermaid source cannot be parsed or rendered, the block shows an error frame in place of the diagram. The error frame displays a message such as "Error rendering Mermaid diagram. Please check syntax."
-18. The error frame uses the same dimensions and border style as the diagram frame — it does not fall back to code-block view.
-19. The Raw/Rendered toggle remains visible and functional in the error state. The user can switch back to Raw to edit and fix the source.
+18. If the Mermaid source cannot be parsed or rendered, the block shows an error frame in place of the diagram. The error frame displays a message such as "Error rendering Mermaid diagram. Please check syntax."
+19. The error frame uses the same dimensions and border style as the diagram frame — it does not fall back to code-block view.
+20. The Raw/Rendered toggle remains visible and functional in the error state. The user can switch back to Raw to edit and fix the source.
 
 **Round-trip and export**
 
-20. The block is persisted and exported as a ```` ```mermaid ```` fenced code block regardless of the current display mode.
-21. Reopening a notebook always opens Mermaid blocks in Raw mode (the toggle resets to Raw on every open).
+21. The block is persisted and exported as a ```` ```mermaid ```` fenced code block regardless of the current display mode.
+22. Reopening a notebook always opens Mermaid blocks in Raw mode (the toggle resets to Raw on every open).
 
 **Feature flag**
 
-22. This behavior is gated by the existing `FeatureFlag::MarkdownMermaid` flag. When the flag is off, Mermaid blocks render as ordinary code blocks with no toggle and no diagram rendering.
+23. This behavior is gated by the existing `FeatureFlag::MarkdownMermaid` flag. When the flag is off, Mermaid blocks render as ordinary code blocks with no toggle and no diagram rendering.

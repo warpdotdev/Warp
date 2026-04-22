@@ -334,7 +334,16 @@ fn test_layout_mermaid_block_uses_loaded_svg_aspect_ratio() {
                 content_length: CharOffset::from(content.chars().count()),
             };
             let spacing = TEST_STYLES.block_spacings.from_block_style(&block_style);
-            let mermaid_diagram = mermaid_diagram_layout(content, &text_layout, spacing, ctx);
+            let (raw_item, _) =
+                layout_text_block(block.clone(), &text_layout, BlockLocation::Middle, false)
+                    .expect("raw Mermaid code block layout should succeed");
+            let mermaid_diagram = mermaid_diagram_layout(
+                content,
+                raw_item.content_height(),
+                &text_layout,
+                spacing,
+                ctx,
+            );
 
             let (item, _has_trailing_newline) = layout_mermaid_diagram_block(
                 block,
@@ -383,6 +392,52 @@ fn test_layout_mermaid_block_uses_loaded_svg_aspect_ratio() {
                 }
                 item => panic!("expected MermaidDiagram block, got {item:?}"),
             }
+        });
+    })
+}
+
+#[test]
+fn test_unloaded_mermaid_diagram_matches_code_block_height() {
+    App::test((), |app| async move {
+        let _flag = FeatureFlag::MarkdownMermaid.override_enabled(true);
+        app.read(|ctx| {
+            let layout_cache = LayoutCache::new();
+            let text_layout = TextLayout::new(
+                &layout_cache,
+                ctx.font_cache().text_layout_system(),
+                &TEST_STYLES,
+                800.,
+            );
+            let contents = "graph TD\nA[Start] --> B[Finish]\n";
+            let block_style = BufferBlockStyle::CodeBlock {
+                code_block_type: CodeBlockType::Mermaid,
+            };
+            let spacing = TEST_STYLES.block_spacings.from_block_style(&block_style);
+            let (raw_item, _) = layout_text_block(
+                mermaid_code_block(contents),
+                &text_layout,
+                BlockLocation::Middle,
+                false,
+            )
+            .expect("raw Mermaid code block layout should succeed");
+            let (_asset_source, config) = mermaid_diagram_layout(
+                contents,
+                raw_item.content_height(),
+                &text_layout,
+                spacing,
+                ctx,
+            );
+
+            assert!(
+                matches!(raw_item, BlockItem::RunnableCodeBlock { .. }),
+                "expected raw Mermaid layout to stay a code block"
+            );
+            assert!(
+                (config.height.as_f32() - raw_item.content_height().as_f32()).abs() < 0.5,
+                "expected unloaded Mermaid diagram height {} to match raw code block height {}",
+                config.height.as_f32(),
+                raw_item.content_height().as_f32(),
+            );
         });
     })
 }

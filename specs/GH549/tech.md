@@ -266,6 +266,7 @@ Notebook model tests in `app/src/notebooks/editor/model_tests.rs`:
 
 Manual verification per `specs/GH549/PRODUCT.md`:
 - Add a code block, set language to Mermaid → block shows as code block with Raw/Rendered toggle defaulting to Raw.
+- In Raw mode, place the cursor inside the Mermaid source and press Backspace/Delete → only the adjacent character is removed; the Mermaid block remains in place.
 - Select Rendered → diagram frame appears (loading, then SVG, or error if source is invalid). **Toggle must remain visible inside the diagram frame.**
 - Click Raw from the diagram view → code block view restored with toggle visible.
 - Edit in Raw mode, then select Rendered again → new source is rendered.
