@@ -243,6 +243,16 @@ jobs:
           brew: vim
           apt: vim
 
+      - name: Install musl cross-compilation toolchain for remote server tests
+        if: runner.os == 'macos'
+        run: |
+          brew install filosottile/musl-cross/musl-cross
+          rustup target add x86_64-unknown-linux-musl
+
+      - name: Deploy remote server binary to test VM
+        if: runner.os == 'macos'
+        run: script/deploy_remote_server_to_test_vm
+
       - name: Compile tests
         run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} --no-run
         env:

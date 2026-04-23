@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+#
+# Cross-compiles the Oz CLI for Linux x86_64 (musl) and uploads it to the
+# SSH integration testing VM so that remote-server integration tests run
+# against the binary built from the current branch.
+#
+# This script is intended to be run once by CI before the integration test
+# suite, not by individual test functions. The binary is placed at
+# ~/.warp-dev/remote-server/oz-dev on the remote host, which is where the
+# Integration channel's `check_binary` looks.
+#
+# Prerequisites (same as script/deploy_remote_server):
+#   brew install filosottile/musl-cross/musl-cross
+#   rustup target add x86_64-unknown-linux-musl
+#   gcloud CLI authenticated for the warp-ssh-integration-testing project
+#
+# Usage:
+#   script/deploy_remote_server_to_test_vm
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+TARGET="x86_64-unknown-linux-musl"
+CARGO_PROFILE="dev-remote"
+FEATURES="release_bundle,crash_reporting,standalone,agent_mode_debug"
+WARP_BIN="warp"
+BINARY_NAME="oz-dev"
+REMOTE_DIR=".warp-dev/remote-server"
+
+# The same VM and proxy command used by the SSH integration tests
+# (see app/src/integration_testing/subshell/util.rs).
+REMOTE_USER="bash"
+REMOTE_HOST="ubuntu-14-04"
+REMOTE_PORT="25784"
+PROXY_COMMAND="gcloud compute start-iap-tunnel ubuntu-14-04 ${REMOTE_PORT} --listen-on-stdin --project=warp-ssh-integration-testing --zone=us-east4-a"
+
+# ── Preflight checks ──────────────────────────────────────────────
+
+if ! command -v x86_64-linux-musl-gcc &>/dev/null; then
+  echo "Error: x86_64-linux-musl-gcc not found." >&2
+  echo "Install it with: brew install filosottile/musl-cross/musl-cross" >&2
+  exit 1
+fi
+
+if ! rustup target list --installed 2>/dev/null | grep -q "$TARGET"; then
+  echo "Error: $TARGET target not installed." >&2
+  echo "Install it with: rustup target add $TARGET" >&2
+  exit 1
+fi
+
+# ── Build ─────────────────────────────────────────────────────────
+
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$WORKSPACE_ROOT/target}"
+OUTPUT_DIR="$CARGO_TARGET_DIR/$TARGET/$CARGO_PROFILE"
+BUILT_BINARY="$OUTPUT_DIR/$WARP_BIN"
+
+echo "==> Building Oz CLI for $TARGET (profile=$CARGO_PROFILE)"
+
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-linux-musl-gcc \
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C symbol-mangling-version=v0" \
+  cargo build \
+    -p warp \
+    --bin "$WARP_BIN" \
+    --target "$TARGET" \
+    --profile "$CARGO_PROFILE" \
+    --features "$FEATURES"
+
+if [[ ! -f "$BUILT_BINARY" ]]; then
+  echo "Error: Expected binary not found at $BUILT_BINARY" >&2
+  exit 1
+fi
+
+BINARY_SIZE=$(du -h "$BUILT_BINARY" | cut -f1)
+echo "==> Build complete ($BINARY_SIZE)"
+
+# ── Upload via SCP through GCP IAP tunnel ─────────────────────────
+# The test VM uses password auth (same as the SSH integration tests).
+# sshpass provides the password non-interactively for SSH/SCP.
+SSH_PASSWORD="password"
+SSH_OPTS=(-p "$REMOTE_PORT" -o "ProxyCommand=$PROXY_COMMAND" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+
+if command -v sshpass &>/dev/null; then
+  SSH_CMD="sshpass -p $SSH_PASSWORD ssh"
+  SCP_CMD="sshpass -p $SSH_PASSWORD scp"
+else
+  echo "Warning: sshpass not found, SSH/SCP will prompt for password interactively." >&2
+  echo "Install it with: brew install hudochenkov/sshpass/sshpass" >&2
+  SSH_CMD="ssh"
+  SCP_CMD="scp"
+fi
+
+echo "==> Ensuring remote directory exists"
+$SSH_CMD "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p ~/$REMOTE_DIR"
+
+echo "==> Uploading binary to ${REMOTE_USER}@${REMOTE_HOST}:~/$REMOTE_DIR/$BINARY_NAME"
+$SCP_CMD -P "$REMOTE_PORT" \
+    -o "ProxyCommand=$PROXY_COMMAND" \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    "$BUILT_BINARY" \
+    "${REMOTE_USER}@${REMOTE_HOST}:~/$REMOTE_DIR/$BINARY_NAME"
+
+echo "==> Setting executable permissions"
+$SSH_CMD "${SSH_OPTS[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "chmod 755 ~/$REMOTE_DIR/$BINARY_NAME"
+
+echo ""
+echo "==> Done! Binary deployed to ${REMOTE_USER}@${REMOTE_HOST}:~/$REMOTE_DIR/$BINARY_NAME"
