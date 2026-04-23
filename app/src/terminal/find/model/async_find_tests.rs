@@ -768,7 +768,9 @@ fn assert_async_focused_order_matches_sync(block_sort_direction: BlockSortDirect
                         .expect("Block should exist for focused async match.");
                     let grid = match grid_type {
                         GridType::Output => block.output_grid().grid_handler(),
-                        GridType::PromptAndCommand => block.prompt_and_command_grid().grid_handler(),
+                        GridType::PromptAndCommand => {
+                            block.prompt_and_command_grid().grid_handler()
+                        }
                         _ => panic!("Unexpected grid type in async focused match."),
                     };
                     let range = absolute_match
