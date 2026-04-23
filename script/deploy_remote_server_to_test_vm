@@ -6,8 +6,8 @@
 #
 # This script is intended to be run once by CI before the integration test
 # suite, not by individual test functions. The binary is placed at
-# ~/.warp-dev/remote-server/oz-dev on the remote host, which is where the
-# Integration channel's `check_binary` looks.
+# ~/.warp-dev/remote-server/oz-integration on the remote host, which is
+# where the Integration channel's `check_binary` looks.
 #
 # Prerequisites (same as script/deploy_remote_server):
 #   brew install filosottile/musl-cross/musl-cross
@@ -26,7 +26,10 @@ TARGET="x86_64-unknown-linux-musl"
 CARGO_PROFILE="dev-remote"
 FEATURES="release_bundle,crash_reporting,standalone,agent_mode_debug"
 WARP_BIN="warp"
-BINARY_NAME="oz-dev"
+# The integration test binary runs on Channel::Integration, which maps to
+# cli_command_name() = "oz-integration" and remote_server_dir() = "~/.warp-dev/remote-server".
+# See crates/warp_core/src/channel/mod.rs and crates/remote_server/src/setup.rs.
+BINARY_NAME="oz-integration"
 REMOTE_DIR=".warp-dev/remote-server"
 
 # The same VM and proxy command used by the SSH integration tests
