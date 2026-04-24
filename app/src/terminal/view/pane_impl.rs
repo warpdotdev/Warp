@@ -1,5 +1,6 @@
 //! This module contains the implementation of `BackingView` for `TerminalView`, as well as
 //! business logic for integrating the terminal view with the pane infra (`crate::pane_group`).
+use super::ambient_agent::is_cloud_agent_pre_first_exchange;
 use super::shared_session::adapter::Kind as SharedSessionKind;
 use super::{Event, PaneConfiguration, TerminalAction, TerminalViewState, Viewer};
 use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
@@ -7,7 +8,6 @@ use crate::ai::blocklist::agent_view::agent_view_bg_fill;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_navigation_card;
 use crate::ai::blocklist::agent_view::render_orchestration_breadcrumbs;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
 use crate::drive::sharing::ShareableObject;
 use crate::features::FeatureFlag;
@@ -30,24 +30,31 @@ use crate::terminal::shared_session::render_util::shared_session_indicator_color
 use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::TerminalManager;
 use crate::terminal::TerminalView;
+use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::icon_button_with_color;
+use crate::ui_components::icon_with_status::render_icon_with_status;
 use crate::ui_components::icons;
 use crate::workspace::tab_settings::TabSettings;
 use settings::Setting as _;
 use warp_core::context_flag::ContextFlag;
-use warp_core::ui::Icon as WarpIcon;
 use warpui::elements::{
-    ChildAnchor, ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize,
-    OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Shrinkable, Stack,
+    ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize, ParentElement,
+    Shrinkable,
 };
-use warpui::prelude::{vec2f, ChildView, Container, Hoverable};
+use warpui::prelude::{ChildView, Container};
 use warpui::text_layout::ClipConfig;
 use warpui::ui_components::components::UiComponent;
 #[cfg(not(target_arch = "wasm32"))]
 use warpui::ui_components::components::UiComponentStyles;
 use warpui::WeakModelHandle;
 use warpui::{AppContext, Element, ModelHandle, SingletonEntity, TypedActionView, ViewContext};
+
+/// Total size of the agent icon-with-status component rendered in the pane header.
+/// Sub-components (circle, badge, cloud) are derived inside `render_icon_with_status`.
+/// Sized so the component fits comfortably within `PANE_HEADER_HEIGHT` (34px) with a
+/// few pixels of vertical buffer.
+const PANE_HEADER_AGENT_SIZE: f32 = 26.;
 
 impl TerminalView {
     /// Returns a reference to the focus handle if one has been set.
@@ -309,8 +316,20 @@ impl TerminalView {
                     Some(ConversationTranscriptViewerStatus::ViewingAmbientConversation(_))
                 )
         };
+        let theme = appearance.theme();
+        let render_agent_circle = |variant| {
+            render_icon_with_status(
+                variant,
+                PANE_HEADER_AGENT_SIZE,
+                0.,
+                theme,
+                theme.background(),
+            )
+        };
         let pane_indicator = if should_render_ambient_agent_indicator {
-            Some(self.render_ambient_agent_indicator(app))
+            // Shared/viewed ambient session: route through the shared helper so the pane header
+            // renders the same brand-color circle + cloud lobe + status as the vertical tab.
+            terminal_view_agent_icon_variant(self, app).map(render_agent_circle)
         } else if let Some(shared_session) = self.shared_session.as_ref() {
             if let Some(Viewer {
                 sharer: Some(sharer),
@@ -342,17 +361,9 @@ impl TerminalView {
                     .selected_conversation(app)
                     .is_some())
         {
-            self.ai_context_model
-                .as_ref(app)
-                .selected_conversation(app)
-                .map(|conversation| {
-                    self.render_agent_indicator(
-                        conversation.id(),
-                        conversation.status().clone(),
-                        self.is_long_running(),
-                        app,
-                    )
-                })
+            // Conversation-bound terminal: same shared helper — produces an OzAgent variant for
+            // local conversations and a CLIAgent variant for the (rare) CLI-backed terminal.
+            terminal_view_agent_icon_variant(self, app).map(render_agent_circle)
         } else {
             self.render_terminal_mode_indicator(app)
         };
@@ -813,61 +824,6 @@ impl TerminalView {
             .finish()
     }
 
-    /// Render the agent indicator icon for when a conversation is selected.
-    fn render_agent_indicator(
-        &self,
-        conversation_id: crate::ai::agent::conversation::AIConversationId,
-        status: ConversationStatus,
-        is_long_running: bool,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let Some(conversation) =
-            BlocklistAIHistoryModel::as_ref(app).conversation(&conversation_id)
-        else {
-            return warpui::elements::Empty::new().finish();
-        };
-
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-
-        // Check if we're configuring or waiting on an ambient agent
-        let is_ambient_agent = self.is_ambient_agent_session(app);
-
-        // When a long-running command is active, show InProgress
-        // instead of the conversation's actual status.
-        let status = if is_long_running {
-            ConversationStatus::InProgress
-        } else {
-            status
-        };
-
-        if FeatureFlag::AgentView.is_enabled()
-            && conversation.exchange_count() == 0
-            && !is_long_running
-        {
-            ConstrainedBox::new(
-                if is_ambient_agent {
-                    WarpIcon::OzCloud
-                } else {
-                    WarpIcon::Oz
-                }
-                .to_warpui_icon(blended_colors::text_sub(theme, theme.background()).into())
-                .finish(),
-            )
-            .with_height(appearance.ui_font_size())
-            .with_width(appearance.ui_font_size())
-            .finish()
-        } else if FeatureFlag::NewTabStyling.is_enabled() {
-            let icon_size = appearance.ui_font_size() + 2.0 - STATUS_ELEMENT_PADDING * 2.;
-            render_status_element(&status, icon_size, appearance)
-        } else {
-            ConstrainedBox::new(status.render_icon(appearance).finish())
-                .with_height(appearance.ui_font_size())
-                .with_width(appearance.ui_font_size())
-                .finish()
-        }
-    }
-
     /// Render the indicator for terminal mode (no conversation selected).
     /// Shows error indicator if terminal is in error state, otherwise shell indicator on Windows.
     fn render_terminal_mode_indicator(&self, app: &AppContext) -> Option<Box<dyn Element>> {
@@ -906,47 +862,6 @@ impl TerminalView {
         }
 
         None
-    }
-
-    fn render_ambient_agent_indicator(&self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        let icon_color = appearance
-            .theme()
-            .main_text_color(appearance.theme().background());
-        let font_size = appearance.ui_font_size();
-        let ui_builder = appearance.ui_builder().clone();
-
-        Hoverable::new(
-            self.mouse_states
-                .ambient_agent_indicator_mouse_handle
-                .clone(),
-            move |state| {
-                let mut stack = Stack::new().with_child(
-                    ConstrainedBox::new(icons::Icon::OzCloud.to_warpui_icon(icon_color).finish())
-                        .with_height(font_size * 1.5)
-                        .with_width(font_size * 1.5)
-                        .finish(),
-                );
-                if state.is_hovered() {
-                    let tooltip = ui_builder
-                        .tool_tip("Cloud agent run".to_string())
-                        .build()
-                        .finish();
-                    stack.add_positioned_overlay_child(
-                        tooltip,
-                        OffsetPositioning::offset_from_parent(
-                            vec2f(0., 3.),
-                            ParentOffsetBounds::WindowByPosition,
-                            ParentAnchor::BottomMiddle,
-                            ChildAnchor::TopMiddle,
-                        ),
-                    );
-                }
-
-                stack.finish()
-            },
-        )
-        .finish()
     }
 
     /// Render shared session header content (participant avatars and role controls).
@@ -1028,21 +943,39 @@ impl TerminalView {
         }
     }
 
+    /// Returns `true` while a cloud-mode ambient agent run is still spinning up. This covers
+    /// both the `WaitingForSession` phase (env being provisioned, "Connecting to Host") and
+    /// the post-session pre-first-exchange phase (session ready, harness not started, no
+    /// exchange yet). In either case the run is committed and we want the UI to read as busy.
+    fn is_in_cloud_agent_setup_phase(&self, ctx: &AppContext) -> bool {
+        self.ambient_agent_view_model
+            .as_ref(ctx)
+            .is_waiting_for_session()
+            || is_cloud_agent_pre_first_exchange(
+                &self.ambient_agent_view_model,
+                &self.agent_view_controller,
+                ctx,
+            )
+    }
+
     /// Selected conversation status for chrome, or [`ConversationStatus::InProgress`] while the
-    /// active block is long-running (terminal-derived; not mirrored in history events).
+    /// active block is long-running (terminal-derived; not mirrored in history events) or while
+    /// a cloud-mode ambient agent is still in its environment-setup phase.
     pub fn selected_conversation_status(&self, ctx: &AppContext) -> Option<ConversationStatus> {
         let long_running = self.is_long_running();
+        let cloud_setup = self.is_in_cloud_agent_setup_phase(ctx);
 
         let Some(conversation) = self.selected_conversation_for_user_facing_chrome(ctx) else {
             // Ambient agent tabs can show Oz chrome without a filtered "chrome" conversation;
-            // still surface busy while a long-running shell command is active.
-            if long_running && self.is_ambient_agent_session(ctx) {
+            // still surface busy while a long-running shell command is active or the cloud
+            // environment is spinning up.
+            if (long_running || cloud_setup) && self.is_ambient_agent_session(ctx) {
                 return Some(ConversationStatus::InProgress);
             }
             return None;
         };
 
-        if long_running {
+        if long_running || cloud_setup {
             return Some(ConversationStatus::InProgress);
         }
 
@@ -1059,17 +992,19 @@ impl TerminalView {
     }
 
     /// Returns the conversation status for display purposes, suppressing the status when the
-    /// conversation is empty (no exchanges yet). This avoids showing a misleading "In progress"
-    /// indicator when a new conversation hasn't started streaming, except when a shell command
-    /// is actively long-running — that InProgress is real and should always surface.
+    /// conversation is empty (no exchanges yet) AND nothing else makes the run "busy". This
+    /// avoids showing a misleading "In progress" indicator on a brand-new conversation; real
+    /// InProgress states (long-running shell commands, cloud-environment setup) come through
+    /// because [`Self::selected_conversation_status`] surfaces them as `InProgress`.
     pub fn selected_conversation_status_for_display(
         &self,
         ctx: &AppContext,
     ) -> Option<ConversationStatus> {
-        if self.selected_conversation_is_empty(ctx) && !self.is_long_running() {
-            None
+        let status = self.selected_conversation_status(ctx)?;
+        if matches!(status, ConversationStatus::InProgress) || !self.selected_conversation_is_empty(ctx) {
+            Some(status)
         } else {
-            self.selected_conversation_status(ctx)
+            None
         }
     }
 

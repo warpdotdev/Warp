@@ -83,31 +83,17 @@ impl HarnessConfig {
     }
 }
 
-/// Parses a harness type name (e.g. `"claude"`) into a [`Harness`] variant.
-/// Unknown values fall back to [`Harness::Unknown`] so we don't
-/// misrepresent a future-server harness as Oz; UI surfaces should treat
-/// `Unknown` as a non-Oz, non-runnable harness.
-pub(crate) fn harness_from_name(name: &str) -> Harness {
-    match name {
-        "claude" => Harness::Claude,
-        "opencode" => Harness::OpenCode,
-        "gemini" => Harness::Gemini,
-        "codex" => Harness::Codex,
-        "oz" => Harness::Oz,
-        other => {
-            log::warn!("Unknown harness config name: {other:?}; treating as Unknown");
-            Harness::Unknown
-        }
-    }
-}
-
 fn serialize_harness<S: Serializer>(harness: &Harness, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&harness.to_string())
+    serializer.serialize_str(harness.config_name())
 }
 
 fn deserialize_harness<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Harness, D::Error> {
     let name = String::deserialize(deserializer)?;
-    Ok(harness_from_name(&name))
+    let harness = Harness::from_config_name(&name);
+    if matches!(harness, Harness::Unknown) && name != Harness::Unknown.config_name() {
+        log::warn!("Unknown harness config name: {name:?}; treating as Unknown");
+    }
+    Ok(harness)
 }
 
 /// Authentication secrets for third-party harnesses.

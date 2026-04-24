@@ -29,6 +29,7 @@ use crate::server::server_api::ai::{
 };
 use crate::server::server_api::{AIApiError, CloudAgentCapacityError, ServerApiProvider};
 use crate::terminal::view::ambient_agent::SetupCommandState;
+use crate::terminal::CLIAgent;
 
 use super::AmbientAgentProgressUIState;
 
@@ -252,6 +253,14 @@ impl AmbientAgentViewModel {
     /// required feature flags are enabled.
     pub(super) fn is_third_party_harness(&self) -> bool {
         FeatureFlag::AgentHarness.is_enabled() && self.harness != Harness::Oz
+    }
+
+    /// Returns the [`CLIAgent`] corresponding to the currently selected harness when it is a
+    /// third-party harness (e.g. Claude, Gemini). Returns `None` for [`Harness::Oz`].
+    /// Used to drive the correct tab icon for a cloud run as soon as a non-oz harness is
+    /// selected, even before the CLI session is registered with [`CLIAgentSessionsModel`].
+    pub fn selected_third_party_cli_agent(&self) -> Option<CLIAgent> {
+        CLIAgent::from_harness(self.harness)
     }
 
     /// Whether the harness CLI has started running. Only meaningful for non-oz runs.

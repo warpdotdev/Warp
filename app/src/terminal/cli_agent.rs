@@ -13,6 +13,7 @@ use markdown_parser::parse_markdown;
 use pathfinder_color::ColorU;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
+use warp_cli::agent::Harness;
 use warp_editor::content::{buffer::Buffer, markdown::MarkdownStyle};
 
 use warpui::{AppContext, SingletonEntity};
@@ -160,6 +161,19 @@ impl CLIAgent {
     /// Inverse of `to_serialized_name`. Falls back to `Unknown`.
     pub fn from_serialized_name(name: &str) -> CLIAgent {
         serde_json::from_value(name.into()).unwrap_or(CLIAgent::Unknown)
+    }
+
+    /// Returns the [`CLIAgent`] corresponding to a cloud-agent [`Harness`] when it represents a
+    /// third-party agent. Returns `None` for [`Harness::Oz`] (Warp's built-in harness has no
+    /// distinct CLI agent identity).
+    pub fn from_harness(harness: Harness) -> Option<Self> {
+        match harness {
+            Harness::Oz => None,
+            Harness::Claude => Some(CLIAgent::Claude),
+            Harness::Gemini => Some(CLIAgent::Gemini),
+            Harness::OpenCode => Some(CLIAgent::OpenCode),
+            Harness::Unknown => Some(CLIAgent::Unknown),
+        }
     }
 
     pub fn display_name(&self) -> &'static str {
