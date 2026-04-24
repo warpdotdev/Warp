@@ -72,65 +72,57 @@ async fn run_find_task_loop(
         return;
     };
 
-    loop {
-        match queue.pop().await {
-            Ok((item, queue_drained)) => {
-                match item {
-                    FindWorkItem::ScanFullBlock { block_index } => {
-                        scan_terminal_block_chunked(
-                            block_index,
-                            &terminal_model,
-                            &dfas,
-                            &result_tx,
-                            config.block_sort_direction,
-                        )
-                        .await;
-                    }
-                    FindWorkItem::ScanDirtyRange {
-                        block_index,
-                        grid_type,
-                        row_range,
+    while let Ok((item, queue_drained)) = queue.pop().await {
+        match item {
+            FindWorkItem::FullBlock { block_index } => {
+                scan_terminal_block_chunked(
+                    block_index,
+                    &terminal_model,
+                    &dfas,
+                    &result_tx,
+                    config.block_sort_direction,
+                )
+                .await;
+            }
+            FindWorkItem::DirtyRange {
+                block_index,
+                grid_type,
+                row_range,
+                num_lines_truncated,
+            } => {
+                scan_grid_chunked(
+                    block_index,
+                    grid_type,
+                    *row_range.start(),
+                    Some(*row_range.end() + 1),
+                    ScanResultMode::DirtyRange {
                         num_lines_truncated,
-                    } => {
-                        scan_grid_chunked(
-                            block_index,
-                            grid_type,
-                            *row_range.start(),
-                            Some(*row_range.end() + 1),
-                            ScanResultMode::DirtyRange {
-                                num_lines_truncated,
-                            },
-                            &terminal_model,
-                            &dfas,
-                            &result_tx,
-                        )
-                        .await;
-                    }
-                    FindWorkItem::ScanAIBlock {
+                    },
+                    &terminal_model,
+                    &dfas,
+                    &result_tx,
+                )
+                .await;
+            }
+            FindWorkItem::AIBlock {
+                view_id,
+                total_index,
+            } => {
+                // Forward to main thread for execution.
+                let _ = result_tx
+                    .send(FindTaskMessage::ScanAIBlock {
                         view_id,
                         total_index,
-                    } => {
-                        // Forward to main thread for execution.
-                        let _ = result_tx
-                            .send(FindTaskMessage::ScanAIBlock {
-                                view_id,
-                                total_index,
-                            })
-                            .await;
-                    }
-                }
+                    })
+                    .await;
+            }
+        }
 
-                // The emptiness flag is checked atomically with the pop inside
-                // the queue lock, avoiding the TOCTOU race of a separate
-                // `is_empty()` call.
-                if queue_drained {
-                    let _ = result_tx.send(FindTaskMessage::Done).await;
-                }
-            }
-            Err(_queue_closed) => {
-                // Queue was closed — exit the task.
-                break;
-            }
+        // The emptiness flag is checked atomically with the pop inside
+        // the queue lock, avoiding the TOCTOU race of a separate
+        // `is_empty()` call.
+        if queue_drained {
+            let _ = result_tx.send(FindTaskMessage::Done).await;
         }
     }
 }
@@ -192,6 +184,7 @@ enum ScanResultMode {
 /// * `end_row` — Upper bound on rows to scan (exclusive). `None` scans to
 ///   the end of the grid.
 /// * `mode` — Determines the message type sent per chunk.
+#[allow(clippy::too_many_arguments)]
 async fn scan_grid_chunked(
     block_index: BlockIndex,
     grid_type: GridType,
