@@ -22,16 +22,16 @@ use super::BlockInfo;
 #[derive(Debug, Clone)]
 pub enum FindWorkItem {
     /// Scan an entire terminal block.
-    ScanFullBlock { block_index: BlockIndex },
+    FullBlock { block_index: BlockIndex },
     /// Scan a dirty range within a specific grid of a terminal block.
-    ScanDirtyRange {
+    DirtyRange {
         block_index: BlockIndex,
         grid_type: GridType,
         row_range: RangeInclusive<usize>,
         num_lines_truncated: u64,
     },
     /// Request scanning of an AI block on the main thread.
-    ScanAIBlock {
+    AIBlock {
         view_id: EntityId,
         total_index: TotalIndex,
     },
@@ -79,13 +79,13 @@ impl FindWorkQueue {
         let mut inner = self.inner.lock().unwrap();
         for block in blocks {
             let item = match block {
-                BlockInfo::Terminal { block_index, .. } => FindWorkItem::ScanFullBlock {
+                BlockInfo::Terminal { block_index, .. } => FindWorkItem::FullBlock {
                     block_index: *block_index,
                 },
                 BlockInfo::RichContent {
                     view_id,
                     total_index,
-                } => FindWorkItem::ScanAIBlock {
+                } => FindWorkItem::AIBlock {
                     view_id: *view_id,
                     total_index: *total_index,
                 },
@@ -112,7 +112,7 @@ impl FindWorkQueue {
 
         // If there is already a pending full scan for this block, do nothing.
         let has_pending_full_scan = inner.items.iter().any(|item| {
-            matches!(item, FindWorkItem::ScanFullBlock { block_index: idx } if *idx == block_index)
+            matches!(item, FindWorkItem::FullBlock { block_index: idx } if *idx == block_index)
         });
         if has_pending_full_scan {
             return;
@@ -120,13 +120,13 @@ impl FindWorkQueue {
 
         // Enqueue the appropriate item at the front (high priority).
         let item = match dirty_range {
-            Some((row_range, grid_type, num_lines_truncated)) => FindWorkItem::ScanDirtyRange {
+            Some((row_range, grid_type, num_lines_truncated)) => FindWorkItem::DirtyRange {
                 block_index,
                 grid_type,
                 row_range,
                 num_lines_truncated,
             },
-            None => FindWorkItem::ScanFullBlock { block_index },
+            None => FindWorkItem::FullBlock { block_index },
         };
         inner.items.push_front(item);
         drop(inner);

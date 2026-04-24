@@ -35,20 +35,15 @@ use background_task::spawn_find_task;
 use work_queue::FindWorkQueue;
 
 /// Status of an async find operation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub enum AsyncFindStatus {
     /// No find operation in progress.
+    #[default]
     Idle,
     /// Find operation is running.
     Scanning,
     /// Find operation completed.
     Complete,
-}
-
-impl Default for AsyncFindStatus {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 impl std::fmt::Display for AsyncFindStatus {
