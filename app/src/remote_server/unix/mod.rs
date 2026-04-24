@@ -99,7 +99,9 @@ pub fn run_daemon(identity_key: String) -> anyhow::Result<()> {
                 match listener.accept().await {
                     Ok((stream, _)) => {
                         let conn_id = uuid::Uuid::new_v4();
-                        log::info!("Daemon: accepted connection {conn_id}");
+                        log::info!(
+                            "[MOIRA DEBUG] Daemon accepted proxy connection: connection_id={conn_id}"
+                        );
                         let spawner = spawner_loop.clone();
                         background_executor
                             .spawn(handle_daemon_connection(
@@ -178,19 +180,25 @@ pub(super) async fn handle_daemon_connection(
                         })
                         .await;
                     if result.is_err() {
-                        log::warn!("Daemon: ServerModel dropped, closing conn {conn_id}");
+                        log::warn!(
+                            "[MOIRA DEBUG] Daemon proxy reader closed: connection_id={conn_id}, reason=server_model_dropped"
+                        );
                         break;
                     }
                 }
                 Err(remote_server::protocol::ProtocolError::UnexpectedEof) => {
-                    log::info!("Daemon: proxy {conn_id} disconnected (EOF)");
+                    log::info!(
+                        "[MOIRA DEBUG] Daemon proxy reader closed: connection_id={conn_id}, reason=eof"
+                    );
                     break;
                 }
                 Err(e) if e.is_read_recoverable() => {
                     log::warn!("Daemon: skipping malformed message from conn {conn_id}: {e}");
                 }
                 Err(e) => {
-                    log::error!("Daemon: fatal read error from conn {conn_id}: {e}");
+                    log::error!(
+                        "[MOIRA DEBUG] Daemon proxy reader closed: connection_id={conn_id}, reason=read_error, error={e}"
+                    );
                     break;
                 }
             }
@@ -208,23 +216,36 @@ pub(super) async fn handle_daemon_connection(
     // ---- Writer loop -------------------------------------------------------
     // Drains outbound messages until conn_rx closes (reader called
     // deregister_connection) or a fatal write error occurs.
+    let mut writer_close_logged = false;
     while let Ok(msg) = conn_rx.recv().await {
         if let Err(e) = remote_server::protocol::write_server_message(&mut writer, &msg).await {
-            log::error!("Daemon: write error on conn {conn_id}: {e}");
+            log::error!(
+                "[MOIRA DEBUG] Daemon proxy writer closed: connection_id={conn_id}, reason=write_error, error={e}"
+            );
+            writer_close_logged = true;
             break;
         }
         // Flush after every message so responses reach the proxy without
         // waiting for the BufWriter's internal buffer to fill up.
         if let Err(e) = writer.flush().await {
-            log::error!("Daemon: flush error on conn {conn_id}: {e}");
+            log::error!(
+                "[MOIRA DEBUG] Daemon proxy writer closed: connection_id={conn_id}, reason=flush_error, error={e}"
+            );
+            writer_close_logged = true;
             break;
         }
+    }
+    if !writer_close_logged {
+        log::info!(
+            "[MOIRA DEBUG] Daemon proxy writer closed: connection_id={conn_id}, reason=response_channel_closed"
+        );
     }
 
     let _ = writer.flush().await;
 
     // Deregister in case the writer exited due to a write error before the
     // reader task called deregister. This is a no-op if already deregistered.
+    log::info!("[MOIRA DEBUG] Daemon proxy connection cleanup: connection_id={conn_id}");
     let _ = spawner
         .spawn(move |me, ctx| {
             me.deregister_connection(conn_id, ctx);

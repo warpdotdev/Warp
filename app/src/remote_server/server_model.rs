@@ -316,9 +316,9 @@ impl ServerModel {
         conn_tx: async_channel::Sender<ServerMessage>,
         ctx: &mut ModelContext<Self>,
     ) {
+        let active_connections = self.connection_senders.len() + 1;
         log::info!(
-            "Daemon: connection {conn_id} registered — {} active, host_id={}",
-            self.connection_senders.len() + 1,
+            "[MOIRA DEBUG] Daemon proxy connection registered: connection_id={conn_id}, active_connections={active_connections}, host_id={}",
             self.host_id
         );
         if let Some(handle) = self.grace_timer_cancel.take() {
@@ -337,12 +337,22 @@ impl ServerModel {
         // Guard against double-deregister (reader and writer tasks both call
         // this on connection close; the second call must be a safe no-op).
         if self.connection_senders.remove(&conn_id).is_none() {
+            log::info!(
+                "[MOIRA DEBUG] Daemon proxy connection deregister ignored: connection_id={conn_id}, active_connections={}, host_id={}",
+                self.connection_senders.len(),
+                self.host_id
+            );
             return;
         }
-        let remaining = self.connection_senders.len();
-        log::info!("Daemon: connection {conn_id} deregistered — {remaining} active remaining");
-        if remaining == 0 {
-            log::info!("Daemon: grace timer started ({GRACE_PERIOD:?})");
+        let active_connections = self.connection_senders.len();
+        log::info!(
+            "[MOIRA DEBUG] Daemon proxy connection deregistered: connection_id={conn_id}, active_connections={active_connections}, host_id={}",
+            self.host_id
+        );
+        if active_connections == 0 {
+            log::info!(
+                "[MOIRA DEBUG] Daemon grace timer started: active_connections=0, grace_period={GRACE_PERIOD:?}"
+            );
             self.start_grace_timer(ctx);
         }
         ctx.notify();
