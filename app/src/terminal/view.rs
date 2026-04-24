@@ -7228,6 +7228,15 @@ impl TerminalView {
             });
         } else if is_long_running {
             self.user_write_ctrl_c_to_pty(ctx);
+        } else if !self.model.lock().block_list().is_bootstrapped() {
+            // If the shell hasn't finished bootstrapping, forward SIGINT to
+            // the PTY so the user can interrupt the bootstrap script (or any
+            // program running during shell startup). Without this, Ctrl+C is
+            // silently swallowed and the terminal stays stuck in the
+            // "Starting shell..." state. This mirrors the ctrl_d handler
+            // which already forwards EOT during bootstrap.
+            self.model.lock().ignore_bootstrapping_messages();
+            self.user_write_ctrl_c_to_pty(ctx);
         } else {
             self.maybe_handle_ctrl_c_in_rich_content_block(ctx);
         }

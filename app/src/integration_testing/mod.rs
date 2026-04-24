@@ -22,9 +22,9 @@ pub mod navigation_palette;
 pub mod notebook;
 pub mod pane_group;
 pub mod persistence;
-pub mod remote_server;
 #[cfg(target_os = "macos")]
 pub mod preview_config_migration;
+pub mod remote_server;
 pub mod rules;
 pub mod secret_redaction;
 pub mod settings;

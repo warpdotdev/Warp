@@ -28,9 +28,7 @@ fn assert_remote_server_setup_ready(tab_idx: usize) -> AssertionCallback {
         let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
         terminal_view.read(app, |view, ctx| {
             let Some(session_id) = view.active_block_session_id() else {
-                return AssertionOutcome::PreconditionFailed(
-                    "No active session ID".into(),
-                );
+                return AssertionOutcome::PreconditionFailed("No active session ID".into());
             };
             let sessions = view.sessions(ctx);
             let Some(state) = sessions.remote_server_setup_state(session_id) else {
@@ -53,9 +51,7 @@ pub fn assert_remote_server_connected(tab_idx: usize) -> AssertionCallback {
         let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
         terminal_view.read(app, |view, ctx| {
             let Some(session_id) = view.active_block_session_id() else {
-                return AssertionOutcome::PreconditionFailed(
-                    "No active session ID".into(),
-                );
+                return AssertionOutcome::PreconditionFailed("No active session ID".into());
             };
             let mgr = RemoteServerManager::as_ref(ctx);
             let Some(session_state) = mgr.session(session_id) else {
@@ -79,14 +75,10 @@ pub fn assert_command_executor_is_remote_server(tab_idx: usize) -> AssertionCall
         let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
         terminal_view.read(app, |view, ctx| {
             let Some(session_id) = view.active_block_session_id() else {
-                return AssertionOutcome::PreconditionFailed(
-                    "No active session ID".into(),
-                );
+                return AssertionOutcome::PreconditionFailed("No active session ID".into());
             };
             let Some(session) = view.sessions(ctx).get(session_id) else {
-                return AssertionOutcome::PreconditionFailed(
-                    "Session not found".into(),
-                );
+                return AssertionOutcome::PreconditionFailed("Session not found".into());
             };
             let executor = session.command_executor();
             let is_remote_server = executor
@@ -150,9 +142,7 @@ pub fn load_repo_metadata_directory_via_remote_server(
 {
     Box::new(move |app, window_id, _| {
         let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
-        let maybe_session_id = terminal_view.read(app, |view, _ctx| {
-            view.active_block_session_id()
-        });
+        let maybe_session_id = terminal_view.read(app, |view, _ctx| view.active_block_session_id());
 
         let Some(session_id) = maybe_session_id else {
             log::error!("load_repo_metadata_directory_via_remote_server: no active session");
@@ -174,12 +164,13 @@ pub fn assert_remote_server_has_navigated(tab_idx: usize) -> AssertionCallback {
         let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
         terminal_view.read(app, |view, ctx| {
             let Some(session_id) = view.active_block_session_id() else {
-                return AssertionOutcome::PreconditionFailed(
-                    "No active session ID".into(),
-                );
+                return AssertionOutcome::PreconditionFailed("No active session ID".into());
             };
             let mgr = RemoteServerManager::as_ref(ctx);
-            if !matches!(mgr.session(session_id), Some(RemoteSessionState::Connected { .. })) {
+            if !matches!(
+                mgr.session(session_id),
+                Some(RemoteSessionState::Connected { .. })
+            ) {
                 return AssertionOutcome::PreconditionFailed(
                     "Session not in Connected state".into(),
                 );

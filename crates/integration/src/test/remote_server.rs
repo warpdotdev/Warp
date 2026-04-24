@@ -10,7 +10,9 @@ use warp::{
             assert_remote_server_has_navigated, wait_for_remote_server_ready,
         },
         step::new_step_with_default_assertions,
-        subshell::{enter_ssh_command, enter_ssh_password, setup_gcloud_sdk, wait_for_password_prompt},
+        subshell::{
+            enter_ssh_command, enter_ssh_password, setup_gcloud_sdk, wait_for_password_prompt,
+        },
         terminal::{
             execute_command_for_single_terminal_in_tab,
             util::{current_shell_starter_and_version, ExpectedExitStatus},
@@ -48,9 +50,7 @@ fn with_ssh_connect_steps(builder: Builder, shell: &'static str) -> Builder {
         .with_step(setup_gcloud_sdk())
         .with_step(enter_ssh_command(shell))
         .with_step(wait_for_password_prompt(0, shell))
-        .with_step(
-            enter_ssh_password().set_post_step_pause(Duration::from_millis(250)),
-        )
+        .with_step(enter_ssh_password().set_post_step_pause(Duration::from_millis(250)))
         .with_step(wait_for_remote_server_ready(0))
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
 }
@@ -66,10 +66,8 @@ macro_rules! generate_remote_server_connect_test {
             let builder = with_ssh_connect_steps(remote_server_builder(), $shell);
             builder
                 .with_step(
-                    new_step_with_default_assertions(
-                        "Assert remote server session is connected",
-                    )
-                    .add_assertion(assert_remote_server_connected(0)),
+                    new_step_with_default_assertions("Assert remote server session is connected")
+                        .add_assertion(assert_remote_server_connected(0)),
                 )
                 .with_step(
                     new_step_with_default_assertions(

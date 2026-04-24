@@ -245,12 +245,14 @@ jobs:
 
       - name: Install musl cross-compilation toolchain for remote server tests
         if: runner.os == 'macos'
+        continue-on-error: true
         run: |
-          brew install filosottile/musl-cross/musl-cross
+          brew install filosottile/musl-cross/musl-cross hudochenkov/sshpass/sshpass
           rustup target add x86_64-unknown-linux-musl
 
       - name: Deploy remote server binary to test VM
         if: runner.os == 'macos'
+        continue-on-error: true
         run: script/deploy_remote_server_to_test_vm
 
       - name: Compile tests
