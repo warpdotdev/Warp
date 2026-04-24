@@ -77,6 +77,40 @@ fn parse_uname_missing_arch() {
 }
 
 #[test]
+fn identity_dir_name_keeps_safe_characters() {
+    assert_eq!(
+        remote_server_identity_dir_name("user-ABC_123"),
+        "user-ABC_123"
+    );
+}
+
+#[test]
+fn identity_dir_name_percent_encodes_unsafe_characters() {
+    assert_eq!(
+        remote_server_identity_dir_name("user@example.com/foo"),
+        "user%40example%2Ecom%2Ffoo"
+    );
+}
+
+#[test]
+fn identity_dir_name_percent_encodes_utf8_bytes() {
+    assert_eq!(
+        remote_server_identity_dir_name("moira/☃"),
+        "moira%2F%E2%98%83"
+    );
+}
+
+#[test]
+fn identity_dir_name_handles_empty_identity() {
+    assert_eq!(remote_server_identity_dir_name(""), "empty");
+}
+
+#[test]
+fn daemon_dir_appends_identity_directory() {
+    assert!(remote_server_daemon_dir("user-123").ends_with("/remote-server/user-123"));
+}
+
+#[test]
 fn state_is_ready() {
     assert!(RemoteServerSetupState::Ready.is_ready());
     assert!(!RemoteServerSetupState::Checking.is_ready());

@@ -21,11 +21,11 @@ use warpui::r#async::executor;
 /// Ensures the daemon is running (starting it if necessary), then bridges
 /// this process's stdin/stdout to the daemon's Unix socket for the lifetime
 /// of the SSH session.
-pub fn run_proxy() -> anyhow::Result<()> {
+pub fn run_proxy(identity_key: String) -> anyhow::Result<()> {
     env_logger::Builder::from_default_env()
         .target(env_logger::Target::Stderr)
         .init();
-    proxy::run()
+    proxy::run(&identity_key)
 }
 
 /// Run the `remote-server-daemon` subcommand.
@@ -33,7 +33,7 @@ pub fn run_proxy() -> anyhow::Result<()> {
 /// Binds a Unix domain socket and writes a PID file, then delegates the
 /// WarpUI app startup to [`super::run_daemon_app`] with the Unix-specific
 /// `ServerModel` constructor.
-pub fn run_daemon() -> anyhow::Result<()> {
+pub fn run_daemon(identity_key: String) -> anyhow::Result<()> {
     // Log to a rotating file so daemon output is preserved across invocations.
     // The file is written to the same directory as client logs (~/Library/Logs
     // on macOS, ~/.local/share/warp-terminal on Linux). Since the daemon runs
@@ -43,16 +43,23 @@ pub fn run_daemon() -> anyhow::Result<()> {
         log_destination: Some(warp_logging::LogDestination::File),
     })?;
 
-    // socket_path: ~/.warp[-channel]/remote-server/server.sock
+    // socket_path: ~/.warp[-channel]/remote-server/{identity_key}/server.sock
     //   The Unix domain socket the daemon binds on.  Proxy processes connect
     //   to it and bridge their SSH stdio channel through it.
     //
-    // pid_path:    ~/.warp[-channel]/remote-server/server.pid
+    // pid_path:    ~/.warp[-channel]/remote-server/{identity_key}/server.pid
     //   Contains the daemon's PID.  Proxy processes read it and use
     //   kill(pid, 0) to detect whether the daemon is still alive before
     //   deciding whether to start a new one.
-    let socket_path = proxy::socket_path();
-    let pid_path = proxy::pid_path();
+    let socket_path = proxy::socket_path(&identity_key);
+    let pid_path = proxy::pid_path(&identity_key);
+
+    log::info!(
+        "[MOIRA DEBUG] Daemon using identity-scoped paths: identity_key={}, daemon_socket_path={}, daemon_pid_path={}",
+        identity_key,
+        socket_path.display(),
+        pid_path.display()
+    );
 
     if let Some(parent) = socket_path.parent() {
         std::fs::create_dir_all(parent)?;

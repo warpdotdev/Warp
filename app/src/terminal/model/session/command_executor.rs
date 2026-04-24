@@ -168,30 +168,22 @@ fn new_command_executor_for_local_tty_session(
     use super::IsLegacySSHSession;
 
     // When the remote server feature flag is enabled and the session is a
-    // legacy SSH session, use the remote server executor *if* the manager
-    // already has a live `Connected` client for this session.
-    //
-    // By construction this branch is only reached after
-    // `ModelEventDispatcher::complete_bootstrapped_session` has gated on
-    // both `Bootstrapped` and the remote-server setup result
-    // (`RemoteServerReady` / `RemoteServerFailed` / skipped). So
-    // `client_for_session` returning `Some` corresponds to a successful
-    // setup and `None` corresponds to the skip / failure paths, where we
-    // fall through to the existing ControlMaster-based
-    // `RemoteCommandExecutor` below. This preserves the fallback behavior
-    // described in specs/APP-3797.
+    // legacy SSH session, use the remote server executor after the manager has
+    // a connected client. If setup was skipped or failed, fall through to the
+    // existing SSH command executor. Future reconnects swap the whole executor
+    // via `RemoteServerManagerEvent::SessionReconnected`.
     if FeatureFlag::SshRemoteServer.is_enabled() {
         if let IsLegacySSHSession::Yes { .. } = &session_info.is_legacy_ssh_session {
             let session_id = session_info.session_id;
-            let maybe_client = RemoteServerManager::handle(ctx)
-                .read(ctx, |mgr, _| mgr.client_for_session(session_id).cloned());
-            if let Some(client) = maybe_client {
+            if let Some(client) = RemoteServerManager::handle(ctx)
+                .read(ctx, |mgr, _| mgr.client_for_session(session_id).cloned())
+            {
                 log::info!("creating a remote server executor for session {session_id:?}");
                 return Arc::new(RemoteServerCommandExecutor::new(session_id, client));
             }
             log::info!(
-                "SshRemoteServer flag on but no connected client for session {session_id:?}; \
-                 falling back to ControlMaster executor"
+                "remote server client unavailable for session {session_id:?}; falling back to \
+                 existing SSH command executor"
             );
         }
     }

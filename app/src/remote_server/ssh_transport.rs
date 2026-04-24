@@ -12,8 +12,11 @@ use std::sync::Arc;
 use anyhow::Result;
 use warpui::r#async::executor;
 
+use remote_server::auth::AuthProvider;
 use remote_server::client::RemoteServerClient;
-use remote_server::setup::{self, RemotePlatform, CHECK_TIMEOUT, INSTALL_TIMEOUT};
+use remote_server::setup::{
+    self, remote_server_daemon_dir, RemotePlatform, CHECK_TIMEOUT, INSTALL_TIMEOUT,
+};
 use remote_server::ssh::{run_ssh_command, run_ssh_script, ssh_args};
 use remote_server::transport::{Connection, RemoteTransport};
 
@@ -23,16 +26,53 @@ use remote_server::transport::{Connection, RemoteTransport};
 /// process (`ssh -N -o ControlMaster=yes -o ControlPath=<path>`). All SSH
 /// commands (binary check, install, proxy launch) are multiplexed through
 /// this socket without re-authenticating.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SshTransport {
     socket_path: PathBuf,
+    auth_provider: Arc<dyn AuthProvider>,
+}
+
+impl std::fmt::Debug for SshTransport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SshTransport")
+            .field("socket_path", &self.socket_path)
+            .finish_non_exhaustive()
+    }
 }
 
 impl SshTransport {
-    pub fn new(socket_path: PathBuf) -> Self {
-        Self { socket_path }
+    pub fn new(socket_path: PathBuf, auth_provider: Arc<dyn AuthProvider>) -> Self {
+        Self {
+            socket_path,
+            auth_provider,
+        }
+    }
+
+    pub fn socket_path(&self) -> &PathBuf {
+        &self.socket_path
+    }
+
+    pub fn remote_daemon_socket_path(&self) -> String {
+        format!(
+            "{}/server.sock",
+            remote_server_daemon_dir(&self.auth_provider.remote_server_identity_key())
+        )
+    }
+
+    pub fn remote_daemon_pid_path(&self) -> String {
+        format!(
+            "{}/server.pid",
+            remote_server_daemon_dir(&self.auth_provider.remote_server_identity_key())
+        )
+    }
+
+    fn remote_proxy_command(&self) -> String {
+        let binary = remote_server::setup::remote_server_binary();
+        let identity_key = shell_words::quote(&self.auth_provider.remote_server_identity_key());
+        format!("{binary} remote-server-proxy --identity-key {identity_key}")
     }
 }
+
 impl RemoteTransport for SshTransport {
     fn detect_platform(
         &self,
@@ -100,16 +140,24 @@ impl RemoteTransport for SshTransport {
         executor: Arc<executor::Background>,
     ) -> Pin<Box<dyn Future<Output = Result<Connection>> + Send>> {
         let socket_path = self.socket_path.clone();
+        let remote_proxy_command = self.remote_proxy_command();
         Box::pin(async move {
-            let binary = setup::remote_server_binary();
             let mut args = ssh_args(&socket_path);
-            args.push(format!("{binary} remote-server-proxy"));
+            args.push(remote_proxy_command);
 
             // `kill_on_drop(true)` pairs with ownership of the `Child` being
             // returned in the [`Connection`] below: the
             // [`RemoteServerManager`] holds the `Child` on its per-session
             // state, and dropping that state (on explicit teardown or
             // spontaneous disconnect) sends SIGKILL to this ssh process.
+            // Without this the ssh child is orphaned and keeps a channel
+            // open on the ControlMaster socket, blocking the master from
+            // exiting cleanly when the user logs out.
+            //
+            // Note that the child's lifetime is decoupled from any
+            // `Arc<RemoteServerClient>` clones: other owners (e.g. the
+            // per-session command executor) can keep the client alive for
+            // their own purposes without pinning the subprocess.
             let mut child = command::r#async::Command::new("ssh")
                 .args(&args)
                 .stdin(Stdio::piped())
@@ -140,5 +188,40 @@ impl RemoteTransport for SshTransport {
                 control_path: Some(socket_path),
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use warpui::r#async::BoxFuture;
+
+    struct StaticAuthProvider;
+
+    impl AuthProvider for StaticAuthProvider {
+        fn get_auth_token(&self) -> BoxFuture<'static, Option<String>> {
+            Box::pin(async { None })
+        }
+
+        fn actor_debug_label(&self) -> String {
+            "test".to_string()
+        }
+
+        fn remote_server_identity_key(&self) -> String {
+            "user id/with spaces".to_string()
+        }
+    }
+
+    #[test]
+    fn remote_proxy_command_quotes_identity_key() {
+        let transport = SshTransport::new(
+            PathBuf::from("/tmp/control-master.sock"),
+            Arc::new(StaticAuthProvider),
+        );
+
+        let command = transport.remote_proxy_command();
+
+        assert!(command.contains("remote-server-proxy --identity-key"));
+        assert!(command.contains("'user id/with spaces'"));
     }
 }

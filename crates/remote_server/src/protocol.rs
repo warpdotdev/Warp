@@ -3,7 +3,7 @@ use std::fmt;
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use prost::Message;
 
-use crate::proto::{ClientMessage, ServerMessage};
+use crate::proto::{client_message, ClientMessage, ServerMessage};
 
 /// Maximum allowed message payload size (64 MB).
 ///
@@ -152,6 +152,26 @@ pub async fn write_server_message(
     msg: &ServerMessage,
 ) -> Result<(), ProtocolError> {
     write_message(writer, msg).await
+}
+
+/// Returns a log-safe description of a client message.
+///
+/// Authentication credentials are intentionally redacted; use this instead of
+/// `Debug` when logging full client messages.
+pub fn describe_client_message(msg: &ClientMessage) -> String {
+    match msg.message.as_ref() {
+        Some(client_message::Message::Initialize(init)) => format!(
+            "ClientMessage {{ request_id: {:?}, message: Initialize {{ auth_token: <redacted>, present: {} }} }}",
+            msg.request_id,
+            !init.auth_token.is_empty()
+        ),
+        Some(client_message::Message::Authenticate(auth)) => format!(
+            "ClientMessage {{ request_id: {:?}, message: Authenticate {{ auth_token: <redacted>, present: {} }} }}",
+            msg.request_id,
+            !auth.auth_token.is_empty()
+        ),
+        _ => format!("{msg:?}"),
+    }
 }
 
 impl ProtocolError {

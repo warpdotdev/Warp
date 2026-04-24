@@ -54,6 +54,7 @@ use parking_lot::{Mutex, RwLock};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -355,7 +356,7 @@ cfg_if::cfg_if! {
 /// An event related to the server API itself (and not a particular API call).
 /// Most errors should be handled in callbacks to individual APIs, rather than sent over the
 /// server API channel.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ServerApiEvent {
     /// We made a staging API call that was blocked, which may indicate a firewall misconfiguration.
     StagingAccessBlocked,
@@ -364,6 +365,24 @@ pub enum ServerApiEvent {
     NeedsReauth,
     /// The user's account has been disabled.
     UserAccountDisabled,
+    /// The current bearer token was refreshed and should be rotated in
+    /// long-lived remote-server daemons.
+    AuthTokenRotated { token: String, actor_label: String },
+}
+
+impl fmt::Debug for ServerApiEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::StagingAccessBlocked => f.write_str("StagingAccessBlocked"),
+            Self::NeedsReauth => f.write_str("NeedsReauth"),
+            Self::UserAccountDisabled => f.write_str("UserAccountDisabled"),
+            Self::AuthTokenRotated { actor_label, .. } => f
+                .debug_struct("AuthTokenRotated")
+                .field("token", &"<redacted>")
+                .field("actor_label", actor_label)
+                .finish(),
+        }
+    }
 }
 
 /// An API wrapper struct with methods to requests to warp-server.

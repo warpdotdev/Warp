@@ -1,7 +1,8 @@
 use prost::Message;
 
 use crate::proto::{
-    client_message, server_message, ClientMessage, Initialize, InitializeResponse, ServerMessage,
+    client_message, server_message, Authenticate, ClientMessage, Initialize, InitializeResponse,
+    ServerMessage,
 };
 
 use super::*;
@@ -10,7 +11,9 @@ use super::*;
 async fn round_trip_client_message() {
     let msg = ClientMessage {
         request_id: "test-123".to_string(),
-        message: Some(client_message::Message::Initialize(Initialize {})),
+        message: Some(client_message::Message::Initialize(Initialize {
+            auth_token: String::new(),
+        })),
     };
 
     let mut buf = Vec::new();
@@ -24,6 +27,38 @@ async fn round_trip_client_message() {
         Some(client_message::Message::Initialize(_)) => {}
         other => panic!("unexpected message variant: {other:?}"),
     }
+}
+
+#[test]
+fn describe_client_message_redacts_initialize_auth_token() {
+    let msg = ClientMessage {
+        request_id: "init-1".to_string(),
+        message: Some(client_message::Message::Initialize(Initialize {
+            auth_token: "super-secret-token".to_string(),
+        })),
+    };
+
+    let description = describe_client_message(&msg);
+
+    assert!(description.contains("<redacted>"));
+    assert!(description.contains("present: true"));
+    assert!(!description.contains("super-secret-token"));
+}
+
+#[test]
+fn describe_client_message_redacts_authenticate_auth_token() {
+    let msg = ClientMessage {
+        request_id: String::new(),
+        message: Some(client_message::Message::Authenticate(Authenticate {
+            auth_token: "rotated-secret-token".to_string(),
+        })),
+    };
+
+    let description = describe_client_message(&msg);
+
+    assert!(description.contains("<redacted>"));
+    assert!(description.contains("present: true"));
+    assert!(!description.contains("rotated-secret-token"));
 }
 
 #[tokio::test]
@@ -119,7 +154,9 @@ async fn write_message_too_large() {
 fn try_extract_request_id_from_valid_message() {
     let msg = ClientMessage {
         request_id: "abc-123".to_string(),
-        message: Some(client_message::Message::Initialize(Initialize {})),
+        message: Some(client_message::Message::Initialize(Initialize {
+            auth_token: String::new(),
+        })),
     };
     let buf = msg.encode_to_vec();
     assert_eq!(try_extract_request_id(&buf), Some("abc-123".to_string()));

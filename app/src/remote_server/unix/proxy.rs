@@ -18,15 +18,15 @@ use std::time::Duration;
 use super::super::setup;
 
 /// Path to the daemon's Unix domain socket.
-pub(super) fn socket_path() -> PathBuf {
-    let dir = setup::remote_server_dir();
+pub(super) fn socket_path(identity_key: &str) -> PathBuf {
+    let dir = setup::remote_server_daemon_dir(identity_key);
     let expanded = shellexpand::tilde(&dir).into_owned();
     PathBuf::from(expanded).join("server.sock")
 }
 
 /// Path to the daemon's PID file (also used as the flock target).
-pub(super) fn pid_path() -> PathBuf {
-    let dir = setup::remote_server_dir();
+pub(super) fn pid_path(identity_key: &str) -> PathBuf {
+    let dir = setup::remote_server_daemon_dir(identity_key);
     let expanded = shellexpand::tilde(&dir).into_owned();
     PathBuf::from(expanded).join("server.pid")
 }
@@ -35,9 +35,16 @@ pub(super) fn pid_path() -> PathBuf {
 ///
 /// Ensures the daemon is running, then bridges stdin/stdout to the daemon's
 /// Unix socket for the lifetime of this SSH session.
-pub fn run() -> anyhow::Result<()> {
-    let socket_path = socket_path();
-    let pid_path = pid_path();
+pub fn run(identity_key: &str) -> anyhow::Result<()> {
+    let socket_path = socket_path(identity_key);
+    let pid_path = pid_path(identity_key);
+
+    log::info!(
+        "[MOIRA DEBUG] Proxy using identity-scoped daemon paths: identity_key={}, daemon_socket_path={}, daemon_pid_path={}",
+        identity_key,
+        socket_path.display(),
+        pid_path.display()
+    );
 
     // Ensure the parent directory exists.
     if let Some(parent) = socket_path.parent() {
@@ -83,6 +90,8 @@ pub fn run() -> anyhow::Result<()> {
         let exe = std::env::current_exe()?;
         let mut cmd = command::blocking::Command::new(&exe);
         cmd.arg("remote-server-daemon")
+            .arg("--identity-key")
+            .arg(identity_key)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());

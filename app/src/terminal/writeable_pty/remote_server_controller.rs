@@ -1,5 +1,11 @@
+use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
+use crate::auth::auth_state::AuthStateProvider;
+use crate::remote_server::auth_provider::ServerApiAuthProvider;
 use instant::Instant;
+use remote_server::auth::AuthProvider;
 use settings::Setting;
+use std::path::PathBuf;
+use std::sync::Arc;
 use warp_core::SessionId;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 
@@ -7,6 +13,7 @@ use crate::terminal::warpify::settings::SshExtensionInstallMode;
 
 use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
 use crate::remote_server::ssh_transport::SshTransport;
+use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::session::{IsLegacySSHSession, SessionInfo};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::terminal::warpify::settings::WarpifySettings;
@@ -59,6 +66,7 @@ enum SshInitState {
 pub struct RemoteServerController<T: EventLoopSender> {
     pty_controller: WeakModelHandle<PtyController<T>>,
     model_event_dispatcher: ModelHandle<ModelEventDispatcher>,
+    auth_provider: Arc<dyn AuthProvider>,
     state: SshInitState,
     /// Whether the binary was installed during this setup flow.
     did_install: bool,
@@ -76,6 +84,10 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         model_event_dispatcher: ModelHandle<ModelEventDispatcher>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
+        let auth_provider: Arc<dyn AuthProvider> = Arc::new(ServerApiAuthProvider::new(
+            AuthStateProvider::as_ref(ctx).get().clone(),
+            ServerApiProvider::as_ref(ctx).get_auth_client(),
+        ));
         ctx.subscribe_to_model(&model_event_dispatcher, |me, event, ctx| {
             if let ModelEvent::SshInitShell {
                 pending_session_info,
@@ -83,6 +95,22 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             {
                 me.on_ssh_init_shell_requested(pending_session_info.as_ref().clone(), ctx);
             }
+        });
+        let auth_manager = AuthManager::handle(ctx);
+        ctx.subscribe_to_model(&auth_manager, |me, event, ctx| match event {
+            AuthManagerEvent::AuthComplete => {
+                RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
+                    mgr.reconnect_all_sessions_for_current_auth_identity(ctx);
+                });
+            }
+            AuthManagerEvent::AuthFailed(_)
+            | AuthManagerEvent::CreateAnonymousUserFailed
+            | AuthManagerEvent::SkippedLogin
+            | AuthManagerEvent::NeedsReauth
+            | AuthManagerEvent::AttemptedLoginGatedFeature { .. }
+            | AuthManagerEvent::LoginOverrideDetected(_)
+            | AuthManagerEvent::MintCustomTokenFailed(_)
+            | AuthManagerEvent::ReceivedDeviceAuthorizationCode { .. } => {}
         });
 
         let mgr = RemoteServerManager::handle(ctx);
@@ -104,12 +132,25 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             RemoteServerManagerEvent::SessionConnectionFailed { session_id, .. } => {
                 me.on_session_connection_failed(*session_id, ctx);
             }
-            _ => {}
+            RemoteServerManagerEvent::SessionConnecting { .. }
+            | RemoteServerManagerEvent::SessionDisconnected { .. }
+            | RemoteServerManagerEvent::SessionReconnected { .. }
+            | RemoteServerManagerEvent::SessionDeregistered { .. }
+            | RemoteServerManagerEvent::HostConnected { .. }
+            | RemoteServerManagerEvent::HostDisconnected { .. }
+            | RemoteServerManagerEvent::NavigatedToDirectory { .. }
+            | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
+            | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
+            | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
+            | RemoteServerManagerEvent::SetupStateChanged { .. }
+            | RemoteServerManagerEvent::ClientRequestFailed { .. }
+            | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
         });
 
         Self {
             pty_controller,
             model_event_dispatcher,
+            auth_provider,
             state: SshInitState::Idle,
             did_install: false,
             remote_platform: None,
@@ -135,7 +176,6 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         };
         let session_id = info.session_id;
         let socket_path = socket_path.clone();
-
         debug_assert!(matches!(self.state, SshInitState::Idle));
         match std::mem::replace(&mut self.state, SshInitState::Idle) {
             SshInitState::Idle => {}
@@ -158,8 +198,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 self.flush_stashed_bootstrap(old_info, ctx);
             }
         }
-
-        let transport = SshTransport::new(socket_path);
+        let transport = SshTransport::new(socket_path, self.auth_provider.clone());
         self.did_install = false;
         self.remote_platform = None;
         self.state = SshInitState::AwaitingCheck {
@@ -199,14 +238,13 @@ impl<T: EventLoopSender> RemoteServerController<T> {
 
         match result {
             Ok(true) => {
+                let socket_path = transport.socket_path().clone();
                 self.state = SshInitState::AwaitingConnect {
                     session_id,
                     session_info,
                     setup_start,
                 };
-                RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-                    mgr.connect_session(session_id, transport, ctx);
-                });
+                self.connect_session_for_current_identity(session_id, socket_path, ctx);
             }
             Ok(false) => {
                 let install_mode = *WarpifySettings::as_ref(ctx)
@@ -404,14 +442,13 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         };
         match result {
             Ok(()) => {
+                let socket_path = transport.socket_path().clone();
                 self.state = SshInitState::AwaitingConnect {
                     session_id,
                     session_info,
                     setup_start,
                 };
-                RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-                    mgr.connect_session(session_id, transport, ctx);
-                });
+                self.connect_session_for_current_identity(session_id, socket_path, ctx);
             }
             Err(err) => {
                 log::error!("Binary install failed for {session_id:?}: {err}");
@@ -419,4 +456,18 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             }
         }
     }
+
+    fn connect_session_for_current_identity(
+        &mut self,
+        session_id: SessionId,
+        socket_path: PathBuf,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let transport = SshTransport::new(socket_path, self.auth_provider.clone());
+        let auth_provider = self.auth_provider.clone();
+        RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
+            mgr.connect_session(session_id, transport, auth_provider, ctx);
+        });
+    }
+
 }
