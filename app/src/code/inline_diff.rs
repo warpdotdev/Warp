@@ -136,7 +136,7 @@ impl InlineDiffView {
                         full: (
                             "Failed to convert StandardizedPath to local path: {file_path}; diff \
                             will be read-only"
-                        ),
+                        )
                     );
                     return;
                 };
