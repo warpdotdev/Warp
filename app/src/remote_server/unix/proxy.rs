@@ -39,13 +39,6 @@ pub fn run(identity_key: &str) -> anyhow::Result<()> {
     let socket_path = socket_path(identity_key);
     let pid_path = pid_path(identity_key);
 
-    log::info!(
-        "[MOIRA DEBUG] Proxy using identity-scoped daemon paths: identity_key={}, daemon_socket_path={}, daemon_pid_path={}",
-        identity_key,
-        socket_path.display(),
-        pid_path.display()
-    );
-
     // Ensure the parent directory exists.
     if let Some(parent) = socket_path.parent() {
         std::fs::create_dir_all(parent)?;

@@ -9,7 +9,5 @@ use warpui::r#async::BoxFuture;
 pub trait AuthProvider: Send + Sync + 'static {
     fn get_auth_token(&self) -> BoxFuture<'static, Option<String>>;
 
-    fn actor_debug_label(&self) -> String;
-
     fn remote_server_identity_key(&self) -> String;
 }

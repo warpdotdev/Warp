@@ -27,53 +27,17 @@ impl ServerApiAuthProvider {
 
 impl AuthProvider for ServerApiAuthProvider {
     fn get_auth_token(&self) -> BoxFuture<'static, Option<String>> {
-        let actor_label = self.actor_debug_label();
         if !self.use_authenticated_user_identity() {
-            return Box::pin(async move {
-                log::info!(
-                    "[MOIRA DEBUG] Remote server auth token fetch skipped: actor_label={}, auth_token_present=false",
-                    actor_label,
-                );
-                None
-            });
+            return Box::pin(async { None });
         }
 
         let auth_client = self.auth_client.clone();
         Box::pin(async move {
             match auth_client.get_or_refresh_access_token().await {
-                Ok(token) => {
-                    let bearer = token.bearer_token();
-                    log::info!(
-                        "[MOIRA DEBUG] Remote server auth token fetch: actor_label={}, auth_token_present={}",
-                        actor_label,
-                        bearer.as_deref().is_some_and(|token| !token.is_empty())
-                    );
-                    bearer
-                }
-                Err(err) => {
-                    log::info!(
-                        "[MOIRA DEBUG] Remote server auth token fetch failed: actor_label={}, error={err:#}",
-                        actor_label
-                    );
-                    None
-                }
+                Ok(token) => token.bearer_token(),
+                Err(_) => None,
             }
         })
-    }
-
-    fn actor_debug_label(&self) -> String {
-        if self.use_authenticated_user_identity() {
-            let user_id = self
-                .auth_state
-                .user_id()
-                .map(|uid| uid.as_string())
-                .unwrap_or_default();
-            format!("user:{user_id}")
-        } else if self.auth_state.is_logged_in() {
-            format!("anonymous:{}", self.auth_state.anonymous_id())
-        } else {
-            format!("logged_out:{}", self.auth_state.anonymous_id())
-        }
     }
 
     fn remote_server_identity_key(&self) -> String {
