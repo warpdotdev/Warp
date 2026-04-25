@@ -474,10 +474,15 @@ inherits = "dev"
 opt-level = "s"
 
 [patch.crates-io]
-core-foundation = { git = "https://github.com/servo/core-foundation-rs", rev = "0bcad1e103ead6bd71c4e5f85598ada9508e3a82" }
-core-foundation-sys = { git = "https://github.com/servo/core-foundation-rs", rev = "0bcad1e103ead6bd71c4e5f85598ada9508e3a82" }
-core-graphics = { git = "https://github.com/servo/core-foundation-rs", rev = "0bcad1e103ead6bd71c4e5f85598ada9508e3a82" }
-core-text = { git = "https://github.com/servo/core-foundation-rs", rev = "0bcad1e103ead6bd71c4e5f85598ada9508e3a82" }
+# Pinned to the merge commit of servo/core-foundation-rs#746, which fixes a
+# double-retain bug in `CTFontCollection::get_descriptors` that leaks the
+# CoreText font-descriptor NSArray on every call. The fix is not yet in any
+# crates.io release; the latest published `core-text` (21.1.0) was cut from
+# a commit that predates the merge.
+core-foundation = { git = "https://github.com/servo/core-foundation-rs", rev = "6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff" }
+core-foundation-sys = { git = "https://github.com/servo/core-foundation-rs", rev = "6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff" }
+core-graphics = { git = "https://github.com/servo/core-foundation-rs", rev = "6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff" }
+core-text = { git = "https://github.com/servo/core-foundation-rs", rev = "6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff" }
 objc = { git = "https://github.com/warpdotdev/rust-objc.git", rev = "5b656827fa9f863ef0eb22e444a3fedac009e78a" }
 pathfinder_simd = { git = "https://github.com/warpdotdev/pathfinder.git", rev = "34128a129ca6aee168fbc5060a4f21b4f7e486a9" }
 yaml-rust = { git = "https://github.com/warpdotdev/yaml-rust.git", rev = "51684719d0102ca85ff4b21cec39877a0c669e19" }
