@@ -185,7 +185,8 @@ impl TerminalView {
                 // Re-render to show loading state.
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::SessionReady { .. } => {
+            AmbientAgentViewModelEvent::SessionReady { .. }
+            | AmbientAgentViewModelEvent::FollowupSessionReady { .. } => {
                 // Auto-open details panel for local cloud mode once the session is ready.
                 self.maybe_auto_open_cloud_mode_details_panel(ctx);
                 // Re-render to hide the loading screen now that the session is ready.
