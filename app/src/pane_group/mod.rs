@@ -3791,11 +3791,13 @@ impl PaneGroup {
                     );
                     // Keep the viewer's AmbientAgentViewModel harness in sync with the loaded run.
                     if let Some(harness) = harness {
-                        view.ambient_agent_view_model()
-                            .clone()
-                            .update(ctx, |model, ctx| {
+                        if let Some(ambient_agent_view_model) =
+                            view.ambient_agent_view_model().cloned()
+                        {
+                            ambient_agent_view_model.update(ctx, |model, ctx| {
                                 model.set_harness(harness, ctx);
                             });
+                        }
                     }
                     // 3p runs have no materialized AIConversation, so enter agent view with a
                     // fresh vehicle conversation and retag the restored snapshot block onto it so
