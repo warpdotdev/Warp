@@ -207,6 +207,11 @@ pub struct SpawnAgentRequest {
     pub referenced_attachments: Vec<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RunFollowupRequest {
+    pub message: String,
+}
+
 // --- Orchestrations V2 messaging types ---
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -657,6 +662,10 @@ pub(crate) fn build_list_agent_runs_url(limit: i32, filter: &TaskListFilter) -> 
     url
 }
 
+pub(crate) fn build_run_followup_url(run_id: &AmbientAgentTaskId) -> String {
+    format!("agent/runs/{run_id}/followups")
+}
+
 struct ListRunsResponse {
     runs: Vec<AmbientAgentTask>,
 }
@@ -824,6 +833,12 @@ pub trait AIClient: 'static + Send + Sync {
         &self,
         task_id: &AmbientAgentTaskId,
     ) -> anyhow::Result<serde_json::Value, anyhow::Error>;
+
+    async fn submit_run_followup(
+        &self,
+        run_id: &AmbientAgentTaskId,
+        request: RunFollowupRequest,
+    ) -> anyhow::Result<(), anyhow::Error>;
 
     async fn get_scheduled_agent_history(
         &self,
@@ -1452,6 +1467,15 @@ impl AIClient for ServerApi {
             .get_public_api(&format!("agent/runs/{task_id}"))
             .await?;
         Ok(response)
+    }
+
+    async fn submit_run_followup(
+        &self,
+        run_id: &AmbientAgentTaskId,
+        request: RunFollowupRequest,
+    ) -> anyhow::Result<(), anyhow::Error> {
+        self.post_public_api_unit(&build_run_followup_url(run_id), &request)
+            .await
     }
 
     async fn get_scheduled_agent_history(

@@ -767,13 +767,15 @@ impl TerminalManager {
                 };
                 let is_ambient_agent = model.lock().is_shared_ambient_agent_session();
                 if is_ambient_agent {
-                    Self::ambient_session_ended(
+                    if !Self::end_current_ambient_session(
                         &view,
                         model.clone(),
                         &current_network,
                         &network,
                         ctx,
-                    );
+                    ) {
+                        return;
+                    }
                 } else {
                     Self::shared_session_ended(&view, model.clone(), ctx);
                 }
@@ -1537,13 +1539,19 @@ impl TerminalManager {
             .clear_write_to_pty_events_for_shared_session_tx();
     }
 
-    fn ambient_session_ended(
+    fn end_current_ambient_session(
         terminal_view: &ViewHandle<TerminalView>,
         model: Arc<FairMutex<TerminalModel>>,
         current_network: &Arc<FairMutex<Option<ModelHandle<Network>>>>,
         ended_network: &ModelHandle<Network>,
         ctx: &mut AppContext,
-    ) {
+    ) -> bool {
+        let ended_session_id = ended_network.as_ref(ctx).session_id();
+        if !Self::current_network(current_network)
+            .is_some_and(|network| network.as_ref(ctx).session_id() == ended_session_id)
+        {
+            return false;
+        }
         Manager::handle(ctx).update(ctx, |manager, _| {
             manager.left_share(terminal_view.id());
         });
@@ -1551,13 +1559,8 @@ impl TerminalManager {
         model
             .lock()
             .clear_write_to_pty_events_for_shared_session_tx();
-
-        let ended_session_id = ended_network.as_ref(ctx).session_id();
-        if Self::current_network(current_network)
-            .is_some_and(|network| network.as_ref(ctx).session_id() == ended_session_id)
-        {
-            *current_network.lock() = None;
-        }
+        *current_network.lock() = None;
+        true
     }
 }
 

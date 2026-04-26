@@ -2871,6 +2871,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::CloudModeInputV2,
         #[cfg(feature = "configurable_context_window")]
         FeatureFlag::ConfigurableContextWindow,
+        #[cfg(feature = "handoff_cloud_cloud")]
+        FeatureFlag::HandoffCloudCloud,
     ]);
 
     flags
