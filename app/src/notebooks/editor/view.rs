@@ -1352,8 +1352,12 @@ impl RichTextEditorView {
                     ctx.spawn(future, move |me, (), ctx| {
                         me.pending_layout_affecting_asset_loads.remove(&handle);
                         me.model.update(ctx, |model, ctx| {
-                            if matches!(model.interaction_state(ctx), InteractionState::Selectable)
-                            {
+                            if matches!(
+                                model.interaction_state(ctx),
+                                InteractionState::Selectable
+                                    | InteractionState::Editable
+                                    | InteractionState::EditableWithInvalidSelection
+                            ) {
                                 model.rebuild_layout(ctx);
                             }
                         });

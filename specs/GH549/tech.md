@@ -13,10 +13,10 @@ Relevant files:
 - `crates/editor/src/content/edit.rs (501-603)` — `EditDelta::layout_delta` iterates blocks with a `current_offset` counter that tracks each block's start `CharOffset`.
 - `crates/editor/src/content/mermaid_diagram.rs` — `mermaid_asset_source` and `mermaid_diagram_layout`; constructs the async `AssetSource` that fetches and caches the SVG.
 - `crates/editor/src/render/model/mod.rs (201-204, 1649-1656)` — `RenderLayoutOptions` (currently `Copy`) and `RenderState::set_render_mermaid_diagrams`.
-- `crates/editor/src/render/element/mermaid.rs` — `RenderableMermaidDiagram` shows the loading placeholder or SVG; currently shows no distinct error state.
+- `crates/editor/src/render/element/mermaid.rs` — `RenderableMermaidDiagram` shows the loading placeholder, SVG, or error state and paints the footer in rendered mode.
 - `app/src/notebooks/editor/model.rs (148-161, 337-343)` — `render_mermaid_diagrams_in_state` and the interaction-state handler that sets the global flag.
 - `app/src/notebooks/editor/notebook_command.rs (582-686)` — `render_block_footer` renders the language dropdown, copy button, and run button; Mermaid blocks get no special UI today.
-- `app/src/notebooks/editor/view.rs` — `EditorViewAction` enum and `RichTextEditorView::handle_action`.
+- `app/src/notebooks/editor/view.rs` — `EditorViewAction` enum, `RichTextEditorView::handle_action`, and `watch_visible_layout_affecting_asset_loads`, which rebuilds layout after visible Mermaid assets finish loading.
 - `app/src/view_components/markdown_toggle_view.rs` — `MarkdownToggleView` wraps `SegmentedControl<MarkdownDisplayMode>` and emits `MarkdownToggleEvent::ModeSelected`; already used by `FileNotebookView`.
 - `app/src/notebooks/file/mod.rs (78-81)` — `MarkdownDisplayMode` enum (`Rendered` / `Raw`).
 
@@ -24,6 +24,7 @@ Current layout-time flow (Mermaid language tag, `FeatureFlag::MarkdownMermaid` e
 1. `text.rs` classifies the block as `CodeBlockType::Mermaid`.
 2. `edit.rs` sees `render_mermaid_diagrams == true` and routes based on `AssetCache` state: `Loaded` → `MermaidDiagram`, `Loading` → `MermaidCodeFallback` with pending asset, `FailedToLoad` → `MermaidCodeFallback`.
 3. `RenderableMermaidDiagram` shows "Rendering Mermaid diagram…" while loading, then SVG.
+4. `mermaid_diagram_layout` previously used `width = min(available_width, intrinsic_svg_width)` for loaded SVGs, and fell back to the raw code-block height when the SVG was not loaded. This caused rendered blocks to sometimes use the raw source text height and sometimes use SVG aspect-ratio height.
 
 Key properties informing the design:
 - `render_mermaid_diagrams` is a global `bool` in `RenderLayoutOptions`; there is no per-block rendering control today.
@@ -74,9 +75,9 @@ if (layout_options.render_mermaid_diagrams
 ### 4. Produce `MermaidDiagram` for all states when user opted in
 
 For blocks in `mermaid_render_offsets`, always produce `LayoutTask::MermaidDiagram` regardless of `AssetCache` state (the render element will display the appropriate UI per state):
-- `Loaded` → existing path via `mermaid_diagram_layout` (SVG with correct sizing).
-- `Loading` → call `mermaid_diagram_layout` (uses default height when asset is not yet loaded) to get a config, emit `MermaidDiagram` (render element shows loading placeholder).
-- `FailedToLoad` → call `mermaid_diagram_layout` (uses default height), emit `MermaidDiagram` (render element shows error message).
+- `Loaded` → call `mermaid_diagram_layout`, which uses the full available code-block content width and derives height from the loaded SVG aspect ratio at that width.
+- `Loading` → call `mermaid_diagram_layout`, which uses the full available code-block content width and a stable placeholder height that is independent of raw source text height, then emit `MermaidDiagram` (render element shows loading placeholder).
+- `FailedToLoad` → call `mermaid_diagram_layout`, which uses the same full-width stable fallback dimensions, then emit `MermaidDiagram` (render element shows error message).
 
 Empty source always falls through to `MermaidCodeFallback` regardless of mode (Behavior invariant 8 — cannot render empty).
 
@@ -88,6 +89,7 @@ In `crates/editor/src/render/element/mermaid.rs`, extend `RenderableMermaidDiagr
 - `AssetState::Loading` → existing "Rendering Mermaid diagram…" `before_load` placeholder.
 - `AssetState::Loaded` → existing `Image` element (SVG render).
 - `AssetState::FailedToLoad` → create a text element with "Error rendering Mermaid diagram. Please check syntax." using `code_text` styles and `placeholder_color`, wrapped in `Align::finish()`, stored in `self.image_element` to reuse the same paint path.
+Do not draw a text cursor in `RenderableMermaidDiagram::paint`. A rendered diagram represents the whole Mermaid source block visually; a flashing insertion caret over the diagram is misleading and makes it look like the rendered frame itself is text-editable.
 
 ### 6. Add `mermaid_display_mode` to `NotebookCommand`
 
@@ -202,21 +204,30 @@ Add `mermaid_raw_button_state: MouseStateHandle` and `mermaid_rendered_button_st
 
 Using element-level click handlers that call `ctx.dispatch_typed_action` replaces the previous view-subscription mechanism, simplifying the implementation.
 
-### 11. Mermaid block maximum height 400 px (Behavior invariant 16)
+### 11. Mermaid block sizing and relayout (Behavior invariants 15–18)
 
-In `mermaid_diagram_layout` (`crates/editor/src/content/mermaid_diagram.rs`), clamp the computed height:
+In `mermaid_diagram_layout` (`crates/editor/src/content/mermaid_diagram.rs`):
+- Remove the `default_height` parameter that was supplied from raw code-block layout.
+- Compute `max_width = layout.max_width() - spacing.x_axis_offset()` and always use that value as the rendered frame width.
+- When the SVG is loaded, compute `height = max_width * intrinsic_svg_height / intrinsic_svg_width`.
+- When the SVG is loading, failed, evicted, or lacks valid intrinsic dimensions, use a stable placeholder height equal to `base_line_height * 10.0`.
+- Do not clamp loaded SVGs to their intrinsic width; a loaded rendered diagram should use the full available code-block content width.
+
+The resulting shape is:
 ```rust
-const MAX_MERMAID_HEIGHT: f32 = 400.0;
-let height = height.min(Pixels::new(MAX_MERMAID_HEIGHT));
+let width = max_width;
+let height = loaded_svg_height_for_full_width
+    .unwrap_or((layout.rich_text_styles().base_line_height().as_f32() * 10.0).into_pixels());
 ```
-This applies to all asset states (the default height for unloaded blocks is also capped at 400 px).
+
+In `app/src/notebooks/editor/view.rs`, keep watching visible `BlockItem::MermaidDiagram` asset loads and rebuild layout when they complete in `Selectable`, `Editable`, or `EditableWithInvalidSelection`. Rendered Mermaid blocks can now appear while the notebook is in editing mode, so restricting this rebuild to `Selectable` leaves the frame stuck at fallback dimensions until another unrelated layout event.
 
 ### 12. Keep markdown storage and classification unchanged
 
 - Do not change `From<&CodeBlockText> for CodeBlockType`. Block stays `CodeBlockType::Mermaid`.
 - Do not change `to_markdown_representation`. Block serializes as ```` ```mermaid ````.
 - Do not change `CodeBlockType::all()`. `Mermaid` stays in the dropdown.
-- `mermaid_display_mode` is transient (not saved to the notebook file); reopening always restores Raw (Behavior invariant 18).
+- `mermaid_display_mode` is transient (not saved to the notebook file); reopening always restores Raw (Behavior invariant 23).
 
 ## Diagram
 
@@ -246,8 +257,11 @@ Mitigation: `NotebooksEditorModel::set_mermaid_render_mode` recomputes the full 
 **Risk: Error state blocks are not re-laid out when source changes**
 Mitigation: The `MermaidCodeFallback` path for Raw mode already watches pending assets. For Rendered-mode blocks with a failed asset, the block is in `MermaidDiagram` state. When the user edits the source, the buffer changes, `rebuild_layout` is called, and `from_styled_block` re-checks `AssetCache` for the new source hash. No special watcher is needed.
 
+**Risk: Loading rendered blocks keep fallback dimensions after the SVG finishes**
+Mitigation: Keep `BlockItem::MermaidDiagram` in `layout_affecting_asset_load` and rebuild layout when a visible asset load resolves in all notebook states where rendered Mermaid can be visible (`Selectable`, `Editable`, and `EditableWithInvalidSelection`).
+
 **Risk: Cost of calling `mermaid_diagram_layout` for Loading/Failed blocks in Rendered mode**
-Mitigation: `mermaid_diagram_layout` calls `mermaid_diagram_size` which only checks `AssetCache` state — it does not trigger a new render. If the asset is not loaded, it falls back to the default height. There is no extra work.
+Mitigation: `mermaid_diagram_layout` calls `mermaid_diagram_size` which only checks `AssetCache` state — it does not trigger a new render. If the asset is not loaded, it falls back to the stable placeholder height. There is no extra work.
 
 ## Testing and validation
 
@@ -256,18 +270,20 @@ Layout unit tests in `crates/editor/src/content/edit_tests.rs`:
 - Behavior invariants 11–13: Mermaid block in `mermaid_render_offsets` with `AssetState::Loaded` lays out as `BlockItem::MermaidDiagram`.
 - Behavior invariant 12: Mermaid block in `mermaid_render_offsets` with `AssetState::Loading` lays out as `BlockItem::MermaidDiagram` (loading placeholder path).
 - Behavior invariant 14: Mermaid block in `mermaid_render_offsets` with `AssetState::FailedToLoad` lays out as `BlockItem::MermaidDiagram` (error path).
-- Behavior invariant 17: markdown export for a Mermaid-labeled block emits ```` ```mermaid ```` regardless of `mermaid_render_offsets`.
+- Behavior invariants 15–17: loaded Mermaid diagram layout uses full available width and derives height from the loaded SVG's aspect ratio at that width; unloaded Mermaid diagram layout uses full available width with stable placeholder height, not raw code-block height.
+- Behavior invariant 22: markdown export for a Mermaid-labeled block emits ```` ```mermaid ```` regardless of `mermaid_render_offsets`.
 
 Notebook model tests in `app/src/notebooks/editor/model_tests.rs`:
 - Behavior invariants 3, 5: setting a block's language to `Mermaid` produces a `RunnableCodeBlock` render by default (not `MermaidDiagram`).
 - Behavior invariants 11–14: calling `set_mermaid_render_mode(offset, Rendered, ctx)` updates `mermaid_render_offsets` and causes the block to lay out as `MermaidDiagram`.
-- Behavior invariants 5, 16: calling `set_mermaid_render_mode(offset, Raw, ctx)` removes the offset and restores code-block layout.
-- Behavior invariant 18: `mermaid_display_mode` is `Raw` on a freshly created `NotebookCommand`.
+- Behavior invariants 5, 18: calling `set_mermaid_render_mode(offset, Raw, ctx)` removes the offset and restores code-block layout.
+- Behavior invariant 23: `mermaid_display_mode` is `Raw` on a freshly created `NotebookCommand`.
 
 Manual verification per `specs/GH549/PRODUCT.md`:
 - Add a code block, set language to Mermaid → block shows as code block with Raw/Rendered toggle defaulting to Raw.
 - In Raw mode, place the cursor inside the Mermaid source and press Backspace/Delete → only the adjacent character is removed; the Mermaid block remains in place.
-- Select Rendered → diagram frame appears (loading, then SVG, or error if source is invalid). **Toggle must remain visible inside the diagram frame.**
+- Select Rendered → full-width diagram frame appears (loading, then SVG, or error if source is invalid). **Toggle must remain visible inside the diagram frame.** The loaded SVG should use the full available block width and derive height from that full-width render.
+- While in Rendered mode, click inside the diagram frame → no flashing text cursor appears over the diagram.
 - Click Raw from the diagram view → code block view restored with toggle visible.
 - Edit in Raw mode, then select Rendered again → new source is rendered.
 - Save and reopen notebook → toggle resets to Raw.

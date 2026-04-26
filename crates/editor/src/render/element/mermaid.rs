@@ -11,12 +11,11 @@ use crate::{
     extract_block,
     render::{
         BLOCK_FOOTER_HEIGHT,
-        element::paint::CursorData,
         model::{BlockItem, RenderState, viewport::ViewportItem},
     },
 };
 
-use super::{CursorDisplayType, RenderContext, RenderableBlock};
+use super::{RenderContext, RenderableBlock};
 
 pub struct RenderableMermaidDiagram {
     viewport_item: ViewportItem,
@@ -143,20 +142,6 @@ impl RenderableBlock for RenderableMermaidDiagram {
                 .draw_rect_with_hit_recording(content_rect)
                 .with_background(model.styles().selection_fill);
         }
-
-        if model.is_selection_head(start_offset) {
-            ctx.draw_and_save_cursor(
-                CursorDisplayType::Bar,
-                content_rect.origin(),
-                vec2f(
-                    model.styles().cursor_width,
-                    self.viewport_item.content_size.y(),
-                ),
-                CursorData::default(),
-                model.styles(),
-            );
-        }
-
         ctx.paint.scene.start_layer(warpui::ClipBounds::ActiveLayer);
         let button_origin = content_rect.lower_right()
             - vec2f(

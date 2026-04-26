@@ -9,7 +9,7 @@ use warpui::{
     AppContext, SingletonEntity,
     assets::asset_cache::{AssetCache, AssetSource, AssetState, AsyncAssetId, AsyncAssetType},
     image_cache::ImageType,
-    units::Pixels,
+    units::{IntoPixels, Pixels},
 };
 
 use crate::render::{
@@ -17,7 +17,7 @@ use crate::render::{
     model::{BlockSpacing, ImageBlockConfig},
 };
 
-const MAX_MERMAID_BLOCK_HEIGHT: f32 = 400.0;
+const MERMAID_PLACEHOLDER_HEIGHT_LINE_MULTIPLIER: f32 = 10.0;
 
 struct MermaidDiagramAsset;
 
@@ -45,16 +45,17 @@ pub fn mermaid_asset_source(source: &str) -> AssetSource {
 
 pub fn mermaid_diagram_layout(
     source: &str,
-    default_height: Pixels,
     layout: &TextLayout,
     spacing: BlockSpacing,
     app: &AppContext,
 ) -> (AssetSource, ImageBlockConfig) {
     let asset_source = mermaid_asset_source(source);
     let max_width = layout.max_width() - spacing.x_axis_offset();
-    let (width, height) =
-        mermaid_diagram_size(&asset_source, max_width, app).unwrap_or((max_width, default_height));
-    let height = height.min(Pixels::new(MAX_MERMAID_BLOCK_HEIGHT));
+    let placeholder_height = (layout.rich_text_styles().base_line_height().as_f32()
+        * MERMAID_PLACEHOLDER_HEIGHT_LINE_MULTIPLIER)
+        .into_pixels();
+    let (width, height) = mermaid_diagram_size(&asset_source, max_width, app)
+        .unwrap_or((max_width, placeholder_height));
 
     (
         asset_source,
@@ -85,7 +86,7 @@ fn mermaid_diagram_size(
     if intrinsic_width <= 0. || intrinsic_height <= 0. {
         return None;
     }
-    let width = Pixels::new(max_width.as_f32().min(intrinsic_width));
+    let width = max_width;
     let height = Pixels::new(width.as_f32() * intrinsic_height / intrinsic_width);
     Some((width, height))
 }
