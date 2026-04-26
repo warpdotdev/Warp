@@ -164,7 +164,7 @@ pub struct NotebookCommand {
     mouse_state_handles: MouseStateHandles,
     is_selected: bool,
     block_type_dropdown: ViewHandle<Dropdown<EditorViewAction>>,
-    /// Display mode for this Mermaid block (Raw or Rendered). Defaults to Raw.
+    /// Display mode for this Mermaid block (Raw or Rendered).
     pub mermaid_display_mode: MarkdownDisplayMode,
 
     #[cfg_attr(test, allow(dead_code))]

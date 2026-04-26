@@ -2763,6 +2763,43 @@ fn test_mermaid_feature_flag_disables_rendering_and_toggle() {
 }
 
 #[test]
+fn test_default_mermaid_display_mode_renders_initial_mermaid_blocks() {
+    App::test((), |mut app| async move {
+        initialize_deps(&mut app);
+        let _enabled = FeatureFlag::MarkdownMermaid.override_enabled(true);
+        let markdown = "```mermaid\ngraph TD\nA --> B\n```";
+
+        let model_handle = model_from_markdown(markdown, &mut app, true);
+        model_handle.update(&mut app, |model, ctx| {
+            model.set_default_mermaid_display_mode(MarkdownDisplayMode::Rendered);
+            model.set_interaction_state(InteractionState::Selectable, ctx);
+        });
+        layout_model(&mut app, &model_handle).await;
+        layout_model(&mut app, &model_handle).await;
+
+        let command = command_models(&model_handle, &mut app)
+            .into_iter()
+            .exactly_one()
+            .expect("Mermaid command should exist");
+        command.read(&app, |command, _| {
+            assert_eq!(command.mermaid_display_mode, MarkdownDisplayMode::Rendered);
+        });
+
+        let is_mermaid_diagram = model_handle.read(&app, |model, ctx| {
+            matches!(
+                model
+                    .render_state
+                    .as_ref(ctx)
+                    .content()
+                    .block_at_height(0.)
+                    .map(|item| item.item),
+                Some(BlockItem::MermaidDiagram { .. })
+            )
+        });
+        assert!(is_mermaid_diagram);
+    });
+}
+#[test]
 fn test_dont_invalidate_command_selection() {
     App::test((), |mut app| async move {
         initialize_deps(&mut app);

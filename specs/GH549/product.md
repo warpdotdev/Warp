@@ -1,7 +1,7 @@
 # Notebook editor: Raw/Rendered toggle for Mermaid code blocks
 
 ## Summary
-When a notebook code block's language is set to `Mermaid`, Warp shows a Raw/Rendered icon-button toggle in the block footer. The toggle defaults to Raw, which shows the Mermaid source as an editable code block. Selecting Rendered renders the source as a full-width diagram whose height is derived from the loaded SVG's aspect ratio; if rendering fails, an error frame is shown. The language dropdown also shows branded icons for each language.
+When a notebook code block's language is set to `Mermaid`, Warp shows a Raw/Rendered icon-button toggle in the block footer. The toggle defaults to Raw in ordinary notebooks, which shows the Mermaid source as an editable code block. Planning documents default Mermaid blocks to Rendered so plans open with diagrams visible. Selecting Rendered renders the source as a full-width diagram whose height is derived from the loaded SVG's aspect ratio; if rendering fails, an error frame is shown. The language dropdown also shows branded icons for each language.
 
 Reference: GitHub issue `warpdotdev/warp-external#549`.
 
@@ -12,6 +12,7 @@ The notebook code block language dropdown exposes `Mermaid` as a selectable lang
 
 **Goals:**
 - Mermaid code blocks default to Raw (source text) when the language is set to Mermaid.
+- Mermaid code blocks in planning documents default to Rendered diagrams.
 - A Raw/Rendered segmented control lets the user explicitly opt in to diagram rendering per block.
 - Rendered mode shows the rendered SVG diagram, or an error frame when the source is invalid.
 - The authored Mermaid source is always preserved in the buffer, regardless of display mode.
@@ -20,7 +21,7 @@ The notebook code block language dropdown exposes `Mermaid` as a selectable lang
 - Making the Raw/Rendered choice persistent across sessions or round-trips to markdown.
 - Reworking the code-block language dropdown, the list of supported languages, or the styling of non-Mermaid code blocks.
 - Changing the Mermaid render pipeline's theme, caching, or `mermaid_to_svg` conversion behavior.
-- Changing Mermaid behavior in non-notebook surfaces (agent output, plans).
+- Changing Mermaid behavior in other non-notebook surfaces such as read-only agent output.
 
 ## Figma
 Figma: https://www.figma.com/design/Lvb72IUdZsYXHj4pjMj6uu/Render-images-and-mermaid-diagrams?node-id=48-4195
@@ -44,7 +45,7 @@ The following invariants apply to notebook code blocks whose language is set to 
 
 6. A Mermaid-labeled block displays a Raw/Rendered toggle in the block footer using two icon buttons — a code-brackets icon (`<>`) for Raw and a dataflow/graph icon for Rendered. These form a segmented-control-style pair.
 7. The active button shows a visible background highlight (surface overlay) to indicate which mode is selected; the inactive button shows no background. The Raw button is highlighted in Raw mode; the Rendered button is highlighted in Rendered mode.
-8. The toggle defaults to Raw whenever the language is set to Mermaid (including on first open, on markdown round-trip, and when the language dropdown is changed to Mermaid).
+8. In ordinary notebooks, the toggle defaults to Raw whenever the language is set to Mermaid (including on first open, on markdown round-trip, and when the language dropdown is changed to Mermaid).
 9. The toggle is visible whenever the block's language is Mermaid, regardless of which mode is active — including when the diagram is successfully rendered. The toggle must not disappear when the block switches to Rendered mode.
 10. The Raw/Rendered choice is per-block and per-session only — it is not persisted to the notebook file or round-tripped through markdown export.
 
@@ -73,6 +74,12 @@ The following invariants apply to notebook code blocks whose language is set to 
 22. The block is persisted and exported as a ```` ```mermaid ```` fenced code block regardless of the current display mode.
 23. Reopening a notebook always opens Mermaid blocks in Raw mode (the toggle resets to Raw on every open).
 
+**Planning documents**
+
+24. AI planning documents use the same underlying Mermaid block UI and markdown serialization, but Mermaid blocks default to Rendered rather than Raw.
+25. A rendered Mermaid block in a planning document uses the same full-width/aspect-ratio sizing behavior and must not show a flashing text cursor over the diagram.
+26. Users can switch a planning-document Mermaid block back to Raw for the current session; the underlying markdown remains a fenced Mermaid code block.
+
 **Feature flag**
 
-24. This behavior is gated by the existing `FeatureFlag::MarkdownMermaid` flag. When the flag is off, Mermaid blocks render as ordinary code blocks with no toggle and no diagram rendering.
+27. This behavior is gated by the existing `FeatureFlag::MarkdownMermaid` flag. When the flag is off, Mermaid blocks render as ordinary code blocks with no toggle and no diagram rendering.

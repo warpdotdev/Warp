@@ -118,6 +118,7 @@ pub struct NotebooksEditorModel {
     resize_tx: async_channel::Sender<()>,
     /// Context used to generate clickable file path links for notebooks.
     file_link_resolution_context: Option<FileLinkResolutionContext>,
+    default_mermaid_display_mode: MarkdownDisplayMode,
 }
 
 #[derive(Clone)]
@@ -237,6 +238,7 @@ impl NotebooksEditorModel {
             rte_window_id,
             resize_tx,
             file_link_resolution_context: None,
+            default_mermaid_display_mode: MarkdownDisplayMode::Raw,
         }
     }
 
@@ -283,6 +285,10 @@ impl NotebooksEditorModel {
         self.file_link_resolution_context = file_link_resolution_context;
     }
 
+    pub fn set_default_mermaid_display_mode(&mut self, mode: MarkdownDisplayMode) {
+        self.default_mermaid_display_mode = mode;
+    }
+
     /// Create a new model for searching the editor.
     pub fn new_search(&self, ctx: &mut ModelContext<Self>) -> ModelHandle<Searcher> {
         let buffer = self.content.clone();
@@ -318,8 +324,12 @@ impl NotebooksEditorModel {
                     self.content.clone(),
                     self.selection_model.clone(),
                     window_id,
+                    self.default_mermaid_display_mode,
                     ctx,
                 );
+                if self.sync_mermaid_render_offsets(ctx) {
+                    self.rebuild_layout(ctx);
+                }
             }
             _ => (),
         }
@@ -357,9 +367,12 @@ impl NotebooksEditorModel {
             });
         }
 
-        // Compute the new set of offsets for Rendered blocks.
-        // The layout system uses 1-indexed positions (block_start = outline.start + 1),
-        // so we add 1 to each buffer outline offset before inserting into the set.
+        if self.sync_mermaid_render_offsets(ctx) {
+            self.rebuild_layout(ctx);
+        }
+    }
+
+    fn sync_mermaid_render_offsets(&mut self, ctx: &mut ModelContext<Self>) -> bool {
         let new_offsets: HashSet<CharOffset> = self
             .child_models
             .model_handles::<NotebookCommand>()
@@ -378,13 +391,8 @@ impl NotebooksEditorModel {
             })
             .collect();
 
-        let changed = self
-            .render_state
-            .update(ctx, |rs, _| rs.set_mermaid_render_offsets(new_offsets));
-
-        if changed {
-            self.rebuild_layout(ctx);
-        }
+        self.render_state
+            .update(ctx, |rs, _| rs.set_mermaid_render_offsets(new_offsets))
     }
 
     fn handle_content_model_event(&mut self, event: &BufferEvent, ctx: &mut ModelContext<Self>) {
@@ -2133,6 +2141,7 @@ impl ChildModels {
         content: ModelHandle<Buffer>,
         selection_model: ModelHandle<BufferSelectionModel>,
         rte_window_id: WindowId,
+        default_mermaid_display_mode: MarkdownDisplayMode,
         ctx: &mut ModelContext<T>,
     ) {
         // Resolve each existing model to its current offsets in the buffer, filtering out models
@@ -2216,7 +2225,7 @@ impl ChildModels {
                 outline.end
             );
             let new_model = ctx.add_model(|ctx| {
-                NotebookCommand::new(
+                let mut command = NotebookCommand::new(
                     outline.start,
                     outline.end,
                     interaction_state.clone(),
@@ -2224,7 +2233,9 @@ impl ChildModels {
                     selection_model.clone(),
                     rte_window_id,
                     ctx,
-                )
+                );
+                command.mermaid_display_mode = default_mermaid_display_mode;
+                command
             });
 
             self.models.insert(outline.start, Box::new(new_model));
