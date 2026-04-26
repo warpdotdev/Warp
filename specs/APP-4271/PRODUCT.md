@@ -2,7 +2,7 @@
 
 ## Summary
 
-Refine the Tabs / Summary tab item mode introduced in APP-3875. Render each work label and each working directory on its own line instead of coalescing them with ` • `, prefix conversation title lines with a status icon, and lock the card's region order to titles → working directories → branches.
+Refine the Tabs / Summary tab item mode introduced in APP-3875. Render each work label and each working directory on its own line instead of coalescing them with ` • `, prefix conversation title lines with a status icon, sort title lines so conversations come before non-conversation lines, and lock the card's region order to titles → working directories → branches.
 
 ## Problem
 
@@ -38,9 +38,9 @@ Regions with no data are omitted entirely. The card never renders placeholder te
 ### Title region
 
 4. Each unique work label gathered for the tab renders on its own line. Labels are not joined with ` • ` or any other separator.
-5. Title lines appear in first-seen order across the tab's visible panes, matching v1's existing label-gathering order.
+5. Title lines appear in first-seen order across the tab's visible panes, matching v1's existing label-gathering order, with one exception: lines whose contributing pane has a known `ConversationStatus` are sorted ahead of lines without one. The relative first-seen order is preserved within each group, so the title region effectively renders all conversation lines first (in first-seen order) followed by all non-conversation lines (in first-seen order).
 6. Title-line normalization and dedupe rules from APP-3875 carry over unchanged: trim leading and trailing whitespace, collapse repeated internal whitespace, drop empty labels, and dedupe exact-equivalent normalized labels while preserving the first-seen display text. The card must not semantically rewrite, fuzzy-match, or merge distinct labels.
-7. The title region renders at most three title lines. If more than three unique labels exist for the tab, the title region ends with a `+ N more` overflow line, where `N` is the number of additional unique labels not visible.
+7. The title region renders at most three title lines. If more than three unique labels exist for the tab, the title region ends with a `+ N more` overflow line, where `N` is the number of additional unique labels not visible. Because conversation lines are sorted first (invariant 5), they take precedence in the visible 3-line cap; non-conversation lines spill into the `+ N more` overflow before any conversation line does.
 8. Each title line truncates with an end-ellipsis when its content does not fit the card's available width on a single line.
 9. A tab with no work labels for any visible pane omits the title region entirely. No `+ 0 more` line is ever rendered.
 

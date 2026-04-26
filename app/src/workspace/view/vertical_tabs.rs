@@ -871,6 +871,14 @@ fn push_normalized_unique_summary_label(
     });
 }
 
+/// Stable sort that moves labels with a known `ConversationStatus` ahead of labels without
+/// one, while preserving the relative first-seen order within each group. Used in Summary
+/// mode so the visible 3-line title region (and the `+ N more` overflow) prioritizes
+/// conversation lines over plain terminal / non-conversation lines.
+fn sort_summary_primary_labels_status_first(values: &mut [VerticalTabsSummaryPrimaryLabel]) {
+    values.sort_by_key(|label| label.status.is_none());
+}
+
 fn normalize_summary_text(text: &str) -> Option<String> {
     let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
     (!normalized.is_empty()).then_some(normalized)
@@ -2812,6 +2820,8 @@ fn build_vertical_tabs_summary_data(
             }
         }
     }
+
+    sort_summary_primary_labels_status_first(&mut primary_labels);
 
     VerticalTabsSummaryData {
         primary_labels,

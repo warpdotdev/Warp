@@ -18,8 +18,9 @@ use super::{
     pane_ids_for_display_granularity, pane_search_text_fragments, preferred_agent_tab_titles,
     push_normalized_unique_summary_label, search_fragments_contain_query,
     select_summary_pane_kind_icons, should_keep_detail_sidecar_visible_for_mouse_position,
-    summary_overflow_count, summary_search_text_fragments, terminal_kind_badge_label,
-    terminal_primary_line_data, terminal_pull_request_badge_label, terminal_search_text_fragments,
+    sort_summary_primary_labels_status_first, summary_overflow_count,
+    summary_search_text_fragments, terminal_kind_badge_label, terminal_primary_line_data,
+    terminal_pull_request_badge_label, terminal_search_text_fragments,
     terminal_title_fallback_font, uses_outer_group_container, visible_pane_ids_for_detail_target,
     vtab_diff_stats_text, AgentTabTextPreference, SummaryPaneKind, SummaryPaneKindIcons,
     TerminalAgentText, TerminalPrimaryLineData, TerminalPrimaryLineFont, VerticalTabsDetailTarget,
@@ -1023,6 +1024,60 @@ fn primary_labels_preserve_status_through_aggregation() {
             },
             VerticalTabsSummaryPrimaryLabel {
                 text: "cargo build".to_string(),
+                status: None,
+            },
+        ]
+    );
+}
+
+#[test]
+fn sort_summary_primary_labels_moves_status_first_and_preserves_order() {
+    let mut values = vec![
+        VerticalTabsSummaryPrimaryLabel {
+            text: "plain terminal".to_string(),
+            status: None,
+        },
+        VerticalTabsSummaryPrimaryLabel {
+            text: "first conversation".to_string(),
+            status: Some(ConversationStatus::InProgress),
+        },
+        VerticalTabsSummaryPrimaryLabel {
+            text: "code pane".to_string(),
+            status: None,
+        },
+        VerticalTabsSummaryPrimaryLabel {
+            text: "second conversation".to_string(),
+            status: Some(ConversationStatus::Success),
+        },
+        VerticalTabsSummaryPrimaryLabel {
+            text: "last terminal".to_string(),
+            status: None,
+        },
+    ];
+
+    sort_summary_primary_labels_status_first(&mut values);
+
+    assert_eq!(
+        values,
+        vec![
+            VerticalTabsSummaryPrimaryLabel {
+                text: "first conversation".to_string(),
+                status: Some(ConversationStatus::InProgress),
+            },
+            VerticalTabsSummaryPrimaryLabel {
+                text: "second conversation".to_string(),
+                status: Some(ConversationStatus::Success),
+            },
+            VerticalTabsSummaryPrimaryLabel {
+                text: "plain terminal".to_string(),
+                status: None,
+            },
+            VerticalTabsSummaryPrimaryLabel {
+                text: "code pane".to_string(),
+                status: None,
+            },
+            VerticalTabsSummaryPrimaryLabel {
+                text: "last terminal".to_string(),
                 status: None,
             },
         ]

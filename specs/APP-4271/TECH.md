@@ -4,7 +4,7 @@
 
 This is a follow-up to APP-3875 that changes how the Tabs / Summary card lays out its content. See `specs/APP-4271/PRODUCT.md` for the user-visible behavior and `specs/APP-3875/PRODUCT.md` / `specs/APP-3875/TECH.md` for the v1 baseline.
 
-The v1 Summary path is fully contained in `app/src/workspace/view/vertical_tabs.rs`, with pure helpers covered by `vertical_tabs_tests.rs`. Most of the work for v2 is replacing the single-line title and working-directory rendering with per-line rendering, threading conversation-source info through the aggregation layer, and adding a per-line status icon prefix. No new settings, no new actions, no popup changes.
+The v1 Summary path is fully contained in `app/src/workspace/view/vertical_tabs.rs`, with pure helpers covered by `vertical_tabs_tests.rs`. Most of the work for v2 is replacing the single-line title and working-directory rendering with per-line rendering, threading per-pane status info through the aggregation layer, sorting title lines so conversations come before non-conversation lines, and adding a per-line status icon prefix on conversation lines. No new settings, no new actions, no popup changes.
 
 Key existing code to anchor against:
 
@@ -44,6 +44,8 @@ In the per-pane loop, tag each candidate primary label with its `Option<Conversa
 
 Replace `push_normalized_unique_summary_text` for the title region with `push_normalized_unique_summary_label(...)` that preserves the first-seen status alongside the first-seen display text. Keep dedupe semantics identical: dedupe by normalized text; if a later pane contributes the same normalized label, drop the duplicate (first-seen wins, matching invariant 14).
 
+After the per-pane loop, run a stable sort `sort_summary_primary_labels_status_first(&mut primary_labels)` (`Vec::sort_by_key` keyed on `label.status.is_none()`) so labels with a known `ConversationStatus` move ahead of labels without one while preserving the first-seen relative order within each group. This satisfies invariant 5 — the visible 3-line cap then naturally prioritizes conversation lines, and any non-conversation lines spill into the `+ N more` overflow first (invariant 7).
+
 The working-directory and branch helpers stay as-is.
 
 ### 3. Replace `format_summary_primary_labels` with a per-line API
@@ -71,6 +73,8 @@ In the title-region rendering loop:
 - When no visible title line has a status, no slot is reserved — plain text only (invariant 30).
 - The `+ N more` overflow line never gets a prefix and never reserves a slot (invariant 15).
 
+With the status-first sort from step 2, all visible status-bearing labels are at the front of the list. The `reserve_prefix_slot = visible_labels.iter().any(|l| l.status.is_some())` check therefore only ever turns on the spacer for non-conversation lines that share the visible region with at least one conversation line.
+
 ### 5. Lock region order in `render_summary_tab_item`
 
 Today `render_summary_tab_item` already renders title → working dir → branches in that order. Make this contract explicit: the function takes `summary: &VerticalTabsSummaryData` and emits regions in the documented order, omitting empty regions entirely (invariants 1–3). No setting affects ordering.
@@ -89,6 +93,7 @@ New tests:
 
 - `primary_labels_dedupe_preserves_first_seen_status` — given two panes that contribute the same normalized label where only the second has a status, the kept entry has `status: None` (first-seen wins).
 - `primary_labels_preserve_status_through_aggregation` — `ConversationStatus` values round-trip through the aggregation pass intact.
+- `sort_summary_primary_labels_moves_status_first_and_preserves_order` — a mixed input list interleaving status-bearing and non-status labels sorts to all status-bearing labels first (in first-seen order) followed by all non-status labels (in first-seen order).
 - `summary_search_fragments_use_label_text_only` — `summary_search_text_fragments` returns the label text and ignores the status.
 - `summary_overflow_count_caps_visible_region` — `summary_overflow_count` reports the remainder past a 3-line cap.
 - Update existing assertions that reference `primary_labels: vec!["..."]` to construct `VerticalTabsSummaryPrimaryLabel { text, status: None }` via a small `fn label(text)` test helper (mechanical).
@@ -103,6 +108,7 @@ Mapped to PRODUCT.md invariants. Each row covers one or more invariants:
 - Per-line titles + dedupe (4–6, 9): create a tab with multiple distinct work labels; confirm each renders on its own line. Add a duplicate normalized label (`  cargo   test  ` and `cargo test`) and confirm only one line.
 - Title overflow (7–8): create >3 unique labels; confirm exactly 3 visible lines plus `+ N more` and end-ellipsis on long single lines.
 - Status icon prefix (10–13): create a tab with a CLI agent, an Oz conversation, and a plain terminal command; confirm only the conversation lines have a status icon, status reflects current state, and the icon styling matches the Figma mock.
+- Status-first sort (5, 7): create a tab where the first-created pane is a plain terminal and a later pane is an Oz conversation; confirm the conversation line still renders before the terminal line in the title region. Add enough non-conversation labels that some would normally be cut off; confirm the `+ N more` overflow includes the non-conversation labels first while the conversation labels remain visible.
 - Prefix dedupe (14): two panes contribute the same conversation title with different statuses; the visible line shows the first-seen status.
 - Overflow has no prefix (15): >3 conversation labels; confirm the `+ N more` line has no icon.
 - Per-line directories (16–22): multi-directory tab renders each directory on its own line, deduped, capped at 3, with `+ N more`. Empty directory tab omits the region.
@@ -121,6 +127,12 @@ Run `./script/presubmit` (cargo fmt + clippy + tests) before opening the PR.
 If the prefix slot is reserved on some cards but not others, the eye sees subtle misalignment when scrolling the panel.
 
 Mitigation: reserve the slot per-region (per card), not globally per panel. Within one card, all visible title lines share the same left edge for text. Across cards, alignment may differ — that's fine and matches how branch-line right-side badges already behave.
+
+### Risk: Sort obscures pane creation order in the title region
+
+Users may expect title lines to appear in pane creation order (matching the v1 first-seen order). Promoting conversation lines above plain ones changes that.
+
+Mitigation: invariant 5 documents the new ordering explicitly (status-first, then first-seen within each group). The change is intentional — status-bearing lines are the most actionable and the visible cap of 3 needs to favor them. The card-level pane-kind icon, working-directory region, and branch region all keep their existing first-seen / coalesced ordering, so pane creation order is still discoverable for non-title metadata.
 
 ### Risk: Status changes do not trigger a re-render
 
