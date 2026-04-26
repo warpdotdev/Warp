@@ -733,6 +733,7 @@ impl RunnableCommandModel for NotebookCommand {
                         .finish(),
                 )
                 .with_uniform_padding(2.)
+                .with_margin_left(8.)
                 .with_background(appearance.theme().background())
                 .with_border(Border::all(1.).with_border_fill(appearance.theme().surface_3()))
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))

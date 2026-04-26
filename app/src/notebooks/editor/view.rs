@@ -917,6 +917,34 @@ impl EditorViewAction {
     }
 }
 
+#[derive(Default)]
+struct LayoutAffectingAssetLoads {
+    loading: HashSet<AssetHandle>,
+    loaded_needs_relayout: bool,
+}
+
+enum LayoutAffectingAssetLoad {
+    Loading(AssetHandle),
+    LoadedNeedsRelayout,
+}
+
+fn mermaid_diagram_needs_loaded_layout(
+    config: &warp_editor::render::model::ImageBlockConfig,
+    image: &ImageType,
+) -> bool {
+    let ImageType::Svg { svg } = image else {
+        return false;
+    };
+    let intrinsic_size = svg.size();
+    let intrinsic_width = intrinsic_size.width();
+    let intrinsic_height = intrinsic_size.height();
+    if intrinsic_width <= 0. || intrinsic_height <= 0. {
+        return false;
+    }
+    let expected_height = config.width.as_f32() * intrinsic_height / intrinsic_width;
+    (config.height.as_f32() - expected_height).abs() > 0.5
+}
+
 pub enum EditorViewEvent {
     Edited,
     Focused,
@@ -1304,45 +1332,69 @@ impl RichTextEditorView {
         }
     }
 
-    fn visible_layout_affecting_asset_loads(
-        &self,
-        ctx: &ViewContext<Self>,
-    ) -> HashSet<AssetHandle> {
+    fn layout_affecting_asset_loads(&self, ctx: &ViewContext<Self>) -> LayoutAffectingAssetLoads {
         let render_state = self.model.as_ref(ctx).render_state().clone();
         let render_state = render_state.as_ref(ctx);
-        let viewport = render_state.viewport();
         let asset_cache = AssetCache::as_ref(ctx);
+        let mut loads = LayoutAffectingAssetLoads::default();
 
         render_state
             .content()
-            .viewport_items(viewport.height(), viewport.width(), viewport.scroll_top())
-            .filter_map(|(_, block)| Self::layout_affecting_asset_load(block, asset_cache))
-            .collect()
+            .block_items()
+            .filter_map(|block| Self::layout_affecting_asset_load(block, asset_cache))
+            .for_each(|load| match load {
+                LayoutAffectingAssetLoad::Loading(handle) => {
+                    loads.loading.insert(handle);
+                }
+                LayoutAffectingAssetLoad::LoadedNeedsRelayout => {
+                    loads.loaded_needs_relayout = true;
+                }
+            });
+        loads
     }
 
     fn layout_affecting_asset_load(
         block: &BlockItem,
         asset_cache: &AssetCache,
-    ) -> Option<AssetHandle> {
-        let asset_source = match block {
-            BlockItem::MermaidDiagram { asset_source, .. } => asset_source.clone(),
+    ) -> Option<LayoutAffectingAssetLoad> {
+        match block {
+            BlockItem::MermaidDiagram {
+                asset_source,
+                config,
+                ..
+            } => match asset_cache.load_asset::<ImageType>(asset_source.clone()) {
+                AssetState::Loading { handle } => Some(LayoutAffectingAssetLoad::Loading(handle)),
+                AssetState::Loaded { data } => {
+                    mermaid_diagram_needs_loaded_layout(config, data.as_ref())
+                        .then_some(LayoutAffectingAssetLoad::LoadedNeedsRelayout)
+                }
+                AssetState::Evicted | AssetState::FailedToLoad(_) => None,
+            },
             // Mermaid-labeled code blocks that are currently rendered as code (because the
             // Mermaid source has not yet been verified as parseable) also need to be watched
             // so we can re-run layout when the asset load resolves.
             BlockItem::RunnableCodeBlock {
                 pending_mermaid_asset: Some(asset_source),
                 ..
-            } => asset_source.clone(),
-            _ => return None,
-        };
-        match asset_cache.load_asset::<ImageType>(asset_source) {
-            AssetState::Loading { handle } => Some(handle),
-            AssetState::Loaded { .. } | AssetState::Evicted | AssetState::FailedToLoad(_) => None,
+            } => match asset_cache.load_asset::<ImageType>(asset_source.clone()) {
+                AssetState::Loading { handle } => Some(LayoutAffectingAssetLoad::Loading(handle)),
+                AssetState::Loaded { .. } | AssetState::Evicted | AssetState::FailedToLoad(_) => {
+                    None
+                }
+            },
+            _ => None,
         }
     }
 
     fn watch_visible_layout_affecting_asset_loads(&mut self, ctx: &mut ViewContext<Self>) {
-        for handle in self.visible_layout_affecting_asset_loads(ctx) {
+        let loads = self.layout_affecting_asset_loads(ctx);
+        if loads.loaded_needs_relayout {
+            self.model.update(ctx, |model, ctx| {
+                model.rebuild_layout(ctx);
+            });
+        }
+
+        for handle in loads.loading {
             if self
                 .pending_layout_affecting_asset_loads
                 .insert(handle.clone())

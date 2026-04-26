@@ -4,19 +4,27 @@ use parking_lot::Mutex;
 use std::{path::PathBuf, sync::Arc};
 use string_offset::CharOffset;
 use tempfile::tempdir;
-use warp_editor::render::{
-    element::RichTextAction,
-    model::{HitTestBlockType, Location, RenderEvent},
+use warp_editor::{
+    content::mermaid_diagram::mermaid_asset_source,
+    render::{
+        element::RichTextAction,
+        model::{
+            BlockItem, BlockSpacing, HitTestBlockType, ImageBlockConfig, Location, RenderEvent,
+        },
+    },
 };
 use warp_util::user_input::UserInput;
+use warpui::assets::asset_cache::{AssetCache, AssetState};
 
 use warpui::event::ModifiersState;
+use warpui::image_cache::ImageType;
 use warpui::r#async::block_on;
+use warpui::units::Pixels;
 use warpui::windowing::WindowManager;
 use warpui::{platform::WindowStyle, presenter::ChildView, App, Element, Entity, View, ViewHandle};
 use warpui::{SingletonEntity, TypedActionView, WindowId};
 
-use super::{EditorViewAction, RichTextEditorConfig, RichTextEditorView};
+use super::{EditorViewAction, LayoutAffectingAssetLoad, RichTextEditorConfig, RichTextEditorView};
 use crate::appearance::Appearance;
 use crate::editor::InteractionState;
 use crate::notebooks::editor::keys::NotebookKeybindings;
@@ -181,6 +189,48 @@ fn rendered_mermaid_block_range(
     None
 }
 
+#[test]
+fn test_loaded_mermaid_diagram_with_placeholder_height_needs_relayout() {
+    App::test((), |app| async move {
+        let _flag = FeatureFlag::MarkdownMermaid.override_enabled(true);
+        let contents = "graph TD\nA[Start] --> B[Finish]\n";
+        let asset_source = mermaid_asset_source(contents);
+
+        let pending = app.read(|ctx| {
+            let asset_cache = AssetCache::as_ref(ctx);
+            match asset_cache.load_asset::<ImageType>(asset_source.clone()) {
+                AssetState::Loading { handle } => handle.when_loaded(asset_cache),
+                AssetState::Loaded { .. } => None,
+                AssetState::Evicted => panic!("Mermaid asset should not be evicted during test"),
+                AssetState::FailedToLoad(err) => {
+                    panic!("Mermaid asset should load successfully: {err}")
+                }
+            }
+        });
+        if let Some(future) = pending {
+            future.await;
+        }
+
+        app.read(|ctx| {
+            let config = ImageBlockConfig {
+                width: Pixels::new(640.),
+                height: Pixels::new(120.),
+                spacing: BlockSpacing::default(),
+            };
+            let block = BlockItem::MermaidDiagram {
+                content_length: CharOffset::from(contents.chars().count()),
+                asset_source,
+                config,
+            };
+            let asset_cache = AssetCache::as_ref(ctx);
+
+            assert!(matches!(
+                RichTextEditorView::layout_affecting_asset_load(&block, asset_cache),
+                Some(LayoutAffectingAssetLoad::LoadedNeedsRelayout)
+            ));
+        });
+    })
+}
 #[test]
 fn test_focus() {
     App::test((), |mut app| async move {
