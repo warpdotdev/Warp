@@ -8,10 +8,10 @@ use session_sharing_protocol::common::SessionId;
 
 use crate::ai::agent::UserQueryMode;
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
-use crate::server::server_api::ai::{MockAIClient, SpawnAgentResponse};
+use crate::server::server_api::ai::{MockAIClient, SpawnAgentResponse, TaskStatusMessage};
 use crate::terminal::shared_session;
 
-use super::{spawn_task, AmbientAgentEvent, SessionJoinInfo};
+use super::{spawn_task, submit_run_followup, AmbientAgentEvent, SessionJoinInfo};
 
 fn task_with(
     state: AmbientAgentTaskState,
@@ -40,6 +40,270 @@ fn task_with(
         last_event_sequence: None,
         children: vec![],
     }
+}
+
+#[tokio::test]
+async fn followup_submits_before_polling_and_ignores_previous_session_id() {
+    use futures::StreamExt;
+
+    let previous_session_id = SessionId::new();
+    let new_session_id = SessionId::new();
+    let submitted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let mut mock = MockAIClient::new();
+
+    mock.expect_submit_run_followup().times(1).returning({
+        let submitted = submitted.clone();
+        move |observed_run_id, request| {
+            assert_eq!(observed_run_id.to_string(), run_id().to_string());
+            assert_eq!(request.message, "continue from here");
+            submitted.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    });
+
+    mock.expect_get_ambient_agent_task().returning({
+        let submitted = submitted.clone();
+        let call_count = call_count.clone();
+        move |observed_run_id| {
+            assert!(submitted.load(Ordering::SeqCst));
+            assert_eq!(observed_run_id.to_string(), run_id().to_string());
+            let idx = call_count.fetch_add(1, Ordering::SeqCst);
+            let (session_id, session_link) = if idx == 0 {
+                (
+                    previous_session_id.to_string(),
+                    "https://example.com/session/previous".to_string(),
+                )
+            } else {
+                (
+                    new_session_id.to_string(),
+                    "https://example.com/session/new".to_string(),
+                )
+            };
+
+            Ok(task_with(
+                AmbientAgentTaskState::InProgress,
+                Some(session_id),
+                Some(session_link),
+            ))
+        }
+    });
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        "continue from here".to_string(),
+        run_id(),
+        Some(previous_session_id),
+        ai_client,
+        None,
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected state changed")
+        .expect("expected ok");
+    assert!(matches!(
+        event,
+        AmbientAgentEvent::StateChanged {
+            state: AmbientAgentTaskState::InProgress,
+            ..
+        }
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected session started")
+        .expect("expected ok");
+    let AmbientAgentEvent::SessionStarted { session_join_info } = event else {
+        panic!("Expected SessionStarted event");
+    };
+    assert_eq!(session_join_info.session_id, Some(new_session_id));
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn followup_api_error_does_not_poll() {
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+    mock.expect_submit_run_followup()
+        .times(1)
+        .returning(|_, _| Err(anyhow::anyhow!("follow-up rejected")));
+    mock.expect_get_ambient_agent_task().times(0);
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        "continue".to_string(),
+        run_id(),
+        Some(SessionId::new()),
+        ai_client,
+        None,
+    ));
+
+    let err = stream
+        .next()
+        .await
+        .expect("expected error")
+        .expect_err("expected follow-up error");
+    assert_eq!(err.to_string(), "follow-up rejected");
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn followup_terminal_failure_surfaces_status_message() {
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+    mock.expect_submit_run_followup()
+        .times(1)
+        .returning(|_, _| Ok(()));
+    mock.expect_get_ambient_agent_task()
+        .times(1)
+        .returning(|_| {
+            let mut task = task_with(AmbientAgentTaskState::Error, None, None);
+            task.status_message = Some(TaskStatusMessage {
+                message: "failed to provision runtime".to_string(),
+            });
+            Ok(task)
+        });
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        "continue".to_string(),
+        run_id(),
+        Some(SessionId::new()),
+        ai_client,
+        None,
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected state changed")
+        .expect("expected ok");
+    assert!(matches!(
+        event,
+        AmbientAgentEvent::StateChanged {
+            state: AmbientAgentTaskState::Error,
+            ..
+        }
+    ));
+
+    let err = stream
+        .next()
+        .await
+        .expect("expected terminal error")
+        .expect_err("expected terminal error");
+    assert_eq!(err.to_string(), "failed to provision runtime");
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn followup_without_previous_session_id_accepts_joinable_session() {
+    use futures::StreamExt;
+
+    let session_id = SessionId::new();
+    let expected_session_id = session_id;
+    let mut mock = MockAIClient::new();
+
+    mock.expect_submit_run_followup()
+        .times(1)
+        .returning(|_, _| Ok(()));
+    mock.expect_get_ambient_agent_task()
+        .times(1)
+        .returning(move |_| {
+            Ok(task_with(
+                AmbientAgentTaskState::InProgress,
+                Some(session_id.to_string()),
+                None,
+            ))
+        });
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        "continue".to_string(),
+        run_id(),
+        None,
+        ai_client,
+        None,
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected state changed")
+        .expect("expected ok");
+    assert!(matches!(
+        event,
+        AmbientAgentEvent::StateChanged {
+            state: AmbientAgentTaskState::InProgress,
+            ..
+        }
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected session started")
+        .expect("expected ok");
+    let AmbientAgentEvent::SessionStarted { session_join_info } = event else {
+        panic!("Expected SessionStarted event");
+    };
+    assert_eq!(session_join_info.session_id, Some(expected_session_id));
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn followup_without_previous_session_id_errors_if_run_finishes_before_session() {
+    use futures::StreamExt;
+
+    let mut mock = MockAIClient::new();
+
+    mock.expect_submit_run_followup()
+        .times(1)
+        .returning(|_, _| Ok(()));
+    mock.expect_get_ambient_agent_task()
+        .times(1)
+        .returning(|_| Ok(task_with(AmbientAgentTaskState::Succeeded, None, None)));
+
+    let ai_client = Arc::new(mock);
+    let mut stream = Box::pin(submit_run_followup(
+        "continue".to_string(),
+        run_id(),
+        None,
+        ai_client,
+        None,
+    ));
+
+    let event = stream
+        .next()
+        .await
+        .expect("expected state changed")
+        .expect("expected ok");
+    assert!(matches!(
+        event,
+        AmbientAgentEvent::StateChanged {
+            state: AmbientAgentTaskState::Succeeded,
+            ..
+        }
+    ));
+
+    let err = stream
+        .next()
+        .await
+        .expect("expected terminal error")
+        .expect_err("expected terminal error");
+    assert_eq!(
+        err.to_string(),
+        "Cloud follow-up finished before a new session became available"
+    );
+    assert!(stream.next().await.is_none());
+}
+
+fn run_id() -> crate::ai::ambient_agents::AmbientAgentTaskId {
+    "550e8400-e29b-41d4-a716-446655440000".parse().unwrap()
 }
 
 #[tokio::test]
