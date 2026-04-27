@@ -66,6 +66,8 @@ pub struct EventLoop {
 
     /// A buffer to maintain events we receive from the server that are unordered.
     buffer: HashMap<usize, OrderedTerminalEventType>,
+
+    should_suppress_existing_agent_conversation_replay: bool,
 }
 
 impl EventLoop {
@@ -127,6 +129,10 @@ impl EventLoop {
             next_event_no: 0,
             buffer: HashMap::new(),
             catching_up_to_event_no,
+            should_suppress_existing_agent_conversation_replay: matches!(
+                load_mode,
+                SharedSessionInitialLoadMode::AppendFollowupScrollback
+            ),
         };
 
         // Respect the sharer's window size.
@@ -311,14 +317,16 @@ impl EventLoop {
                     }
                 }
                 OrderedTerminalEventType::AgentConversationReplayStarted => {
-                    self.terminal_model
-                        .lock()
-                        .set_is_receiving_agent_conversation_replay(true);
+                    let mut model = self.terminal_model.lock();
+                    model.set_is_receiving_agent_conversation_replay(true);
+                    model.set_should_suppress_existing_agent_conversation_replay(
+                        self.should_suppress_existing_agent_conversation_replay,
+                    );
                 }
                 OrderedTerminalEventType::AgentConversationReplayEnded => {
-                    self.terminal_model
-                        .lock()
-                        .set_is_receiving_agent_conversation_replay(false);
+                    let mut model = self.terminal_model.lock();
+                    model.set_is_receiving_agent_conversation_replay(false);
+                    model.set_should_suppress_existing_agent_conversation_replay(false);
                 }
             }
 

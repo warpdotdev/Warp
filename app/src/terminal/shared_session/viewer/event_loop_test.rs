@@ -52,6 +52,13 @@ fn scrollback_block(block: &SerializedBlock) -> ScrollbackBlock {
     }
 }
 
+fn empty_scrollback() -> Scrollback {
+    Scrollback {
+        blocks: vec![],
+        is_alt_screen_active: false,
+    }
+}
+
 #[test]
 fn test_terminal_model_is_correct() {
     App::test((), |mut app| async move {
@@ -219,6 +226,104 @@ fn test_append_followup_scrollback_skips_duplicates() {
                 .count(),
             1
         );
+    })
+}
+
+#[test]
+fn test_append_followup_replay_marks_existing_conversations_suppressible() {
+    App::test((), |mut app| async move {
+        let channel_event_proxy = ChannelEventListener::new_for_test();
+        let model = Arc::new(FairMutex::new(terminal_model_for_viewer(
+            channel_event_proxy.clone(),
+        )));
+
+        let terminal_view = terminal_view(&mut app);
+        let event_loop = app.add_model(|ctx| {
+            EventLoop::new(
+                model.clone(),
+                terminal_view.downgrade(),
+                channel_event_proxy.clone(),
+                WindowSize {
+                    num_rows: 0,
+                    num_cols: 0,
+                },
+                empty_scrollback(),
+                None,
+                SharedSessionInitialLoadMode::AppendFollowupScrollback,
+                ctx,
+            )
+        });
+
+        event_loop.update(&mut app, |event_loop, ctx| {
+            event_loop.process_ordered_terminal_event(
+                OrderedTerminalEvent {
+                    event_no: 0,
+                    event_type: OrderedTerminalEventType::AgentConversationReplayStarted,
+                },
+                ctx,
+            );
+        });
+
+        {
+            let model = model.lock();
+            assert!(model.is_receiving_agent_conversation_replay());
+            assert!(model.should_suppress_existing_agent_conversation_replay());
+        }
+
+        event_loop.update(&mut app, |event_loop, ctx| {
+            event_loop.process_ordered_terminal_event(
+                OrderedTerminalEvent {
+                    event_no: 1,
+                    event_type: OrderedTerminalEventType::AgentConversationReplayEnded,
+                },
+                ctx,
+            );
+        });
+
+        let model = model.lock();
+        assert!(!model.is_receiving_agent_conversation_replay());
+        assert!(!model.should_suppress_existing_agent_conversation_replay());
+    })
+}
+
+#[test]
+fn test_fresh_session_replay_does_not_suppress_existing_conversations() {
+    App::test((), |mut app| async move {
+        let channel_event_proxy = ChannelEventListener::new_for_test();
+        let model = Arc::new(FairMutex::new(terminal_model_for_viewer(
+            channel_event_proxy.clone(),
+        )));
+
+        let terminal_view = terminal_view(&mut app);
+        let event_loop = app.add_model(|ctx| {
+            EventLoop::new(
+                model.clone(),
+                terminal_view.downgrade(),
+                channel_event_proxy.clone(),
+                WindowSize {
+                    num_rows: 0,
+                    num_cols: 0,
+                },
+                empty_scrollback(),
+                None,
+                SharedSessionInitialLoadMode::ReplaceFromSessionScrollback,
+                ctx,
+            )
+        });
+
+        event_loop.update(&mut app, |event_loop, ctx| {
+            event_loop.process_ordered_terminal_event(
+                OrderedTerminalEvent {
+                    event_no: 0,
+                    event_type: OrderedTerminalEventType::AgentConversationReplayStarted,
+                },
+                ctx,
+            );
+        });
+
+        let model = model.lock();
+        assert!(model.is_receiving_agent_conversation_replay());
+        assert!(!model.should_suppress_existing_agent_conversation_replay());
     })
 }
 

@@ -596,6 +596,7 @@ pub struct TerminalModel {
     /// Used to suppress live-conversation-specific actions (e.g. tombstone insertion)
     /// until the replay is complete.
     is_receiving_agent_conversation_replay: bool,
+    should_suppress_existing_agent_conversation_replay: bool,
 
     tmux_background_outputs: HashMap<u32, Vec<u8>>,
 
@@ -1161,6 +1162,7 @@ impl TerminalModel {
             ordered_terminal_events_for_shared_session_tx: None,
             write_to_pty_events_for_shared_session_tx: None,
             is_receiving_agent_conversation_replay: false,
+            should_suppress_existing_agent_conversation_replay: false,
             tmux_background_outputs: HashMap::new(),
             tmux_control_mode_context: None,
             pending_warp_initiated_control_mode: None,
@@ -1416,6 +1418,14 @@ impl TerminalModel {
 
     pub fn set_is_receiving_agent_conversation_replay(&mut self, value: bool) {
         self.is_receiving_agent_conversation_replay = value;
+    }
+
+    pub fn should_suppress_existing_agent_conversation_replay(&self) -> bool {
+        self.should_suppress_existing_agent_conversation_replay
+    }
+
+    pub fn set_should_suppress_existing_agent_conversation_replay(&mut self, value: bool) {
+        self.should_suppress_existing_agent_conversation_replay = value;
     }
 
     pub fn set_shared_session_source_type(
