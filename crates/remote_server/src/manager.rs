@@ -498,6 +498,14 @@ impl RemoteServerManager {
                     let result = transport.install_binary().await;
                     let _ = spawner
                         .spawn(move |_me, ctx| {
+                            if let Err(ref error) = result {
+                                ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                                    session_id,
+                                    state: RemoteServerSetupState::Failed {
+                                        error: error.clone(),
+                                    },
+                                });
+                            }
                             ctx.emit(RemoteServerManagerEvent::BinaryInstallComplete {
                                 session_id,
                                 result,

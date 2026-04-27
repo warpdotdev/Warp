@@ -11385,8 +11385,8 @@ impl TerminalView {
         })
     }
 
-    /// Returns `true` when the loading footer should be shown in place of the
-    /// input editor during the SSH remote-server setup flow.
+    /// Returns `true` when the pending session has a connecting remote-server setup state
+    /// and no failure banner is already shown for that session.
     fn show_remote_server_loading_footer(&self, model: &TerminalModel, app: &AppContext) -> bool {
         if !FeatureFlag::SshRemoteServer.is_enabled() {
             return false;
@@ -11399,6 +11399,16 @@ impl TerminalView {
         let Some(pending_sid) = model.pending_session_id() else {
             return false;
         };
+        let has_failed_banner = self.rich_content_views.iter().any(|view| {
+            matches!(
+                view.metadata(),
+                Some(RichContentMetadata::SshRemoteServerFailedBanner { handle })
+                if handle.as_ref(app).session_id() == pending_sid
+            )
+        });
+        if has_failed_banner {
+            return false;
+        }
         self.sessions
             .as_ref(app)
             .remote_server_setup_state(pending_sid)
