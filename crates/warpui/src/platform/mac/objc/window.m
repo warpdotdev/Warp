@@ -456,8 +456,12 @@ void init_warp_nswindow(NSWindow<WarpWindowProtocol> *window, bool testMode, boo
       WarpWindowDelegate *delegate = self.delegate;
       if (forceTermination) {
           [delegate setForceTermination];
+          // Bypass performClose: (which can be deferred or vetoed by the
+          // delegate's shouldClose) and tear the window down right away.
+          [self close];
+      } else {
+          [self performClose:nil];
       }
-      [self performClose:nil];
     });
 }
 

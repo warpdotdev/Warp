@@ -40,6 +40,7 @@ use crate::ui_components::icons::Icon as UiIcon;
 use crate::util::bindings::keybinding_name_to_display_string;
 use crate::util::color::Opacity;
 use crate::workspace::action::WorkspaceAction;
+use crate::workspace::cross_window_tab_drag::CrossWindowTabDrag;
 use crate::workspace::hoa_onboarding::HoaOnboardingStep;
 use crate::workspace::tab_settings::{
     TabSettings, VerticalTabsCompactSubtitle, VerticalTabsDisplayGranularity,
@@ -68,14 +69,15 @@ use warpui::elements::{
     resizable_state_handle, Border, ChildAnchor, Clipped, ClippedScrollStateHandle,
     ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DragAxis,
     DragBarSide, Draggable, DropShadow, DropTarget, Element, Empty, EventHandler, Expanded,
-    Fill as ElementFill, Flex, Hoverable, MainAxisSize, MouseStateHandle, OffsetPositioning,
-    Padding, ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor,
-    PositionedElementOffsetBounds, Radius, Resizable, ResizableStateHandle, SavePosition,
-    ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack, Text,
+    Fill as ElementFill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+    OffsetPositioning, Padding, ParentAnchor, ParentElement, ParentOffsetBounds,
+    PositionedElementAnchor, PositionedElementOffsetBounds, Radius, Resizable,
+    ResizableStateHandle, SavePosition, ScrollTarget, ScrollToPositionMode, ScrollbarWidth,
+    Shrinkable, Stack, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
-use warpui::prelude::{Align, MainAxisAlignment};
+use warpui::prelude::Align;
 use warpui::text_layout::ClipConfig;
 use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 use warpui::ui_components::text_input::TextInput;
@@ -1079,6 +1081,33 @@ fn any_workspace_pane_being_dragged(workspace: &Workspace, app: &AppContext) -> 
         .any(|tab| tab.pane_group.as_ref(app).any_pane_being_dragged(app))
 }
 
+/// Renders an empty insertion slot for a cross-window ghost drag in the
+/// vertical tabs panel. Shows a plain `fg_overlay_1` rectangle the same
+/// height as a real tab row — the floating chip at the cursor carries all
+/// visual content.
+fn render_ghost_vertical_tab_slot(workspace: &Workspace, app: &AppContext) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    // Match the height of a real tab group row from the last rendered frame.
+    // Falls back to 40px if no frame data is available yet.
+    let height = workspace
+        .tabs
+        .first()
+        .and_then(|_| {
+            app.element_position_by_id_at_last_frame(workspace.window_id, tab_position_id(0))
+        })
+        .map(|rect| rect.height())
+        .unwrap_or(40.);
+    ConstrainedBox::new(
+        Container::new(Empty::new().finish())
+            .with_background(internal_colors::fg_overlay_1(theme))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_CORNER_RADIUS)))
+            .finish(),
+    )
+    .with_height(height)
+    .finish()
+}
+
 fn vertical_tabs_tab_bar_location(insert_index: usize, tab_count: usize) -> TabBarLocation {
     if insert_index == tab_count {
         TabBarLocation::AfterTabIndex(tab_count)
@@ -1638,6 +1667,9 @@ fn render_groups(
     }
 
     let is_any_pane_dragging = any_workspace_pane_being_dragged(workspace, app);
+    // Ghost state for cross-window drag hovering over this window's vertical tabs panel.
+    let ghost_state = CrossWindowTabDrag::as_ref(app).ghost_state_for_window(workspace.window_id);
+    let ghost_insertion_index = ghost_state.as_ref().map(|g| g.insertion_index);
     let mut groups = Flex::column()
         .with_main_axis_size(MainAxisSize::Min)
         .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
@@ -1646,6 +1678,10 @@ fn render_groups(
     }
 
     for (visible_tab_index, (tab_index, filtered_pane_ids)) in visible_tabs.iter().enumerate() {
+        // Insert ghost slot before this tab group if the drop would land here.
+        if ghost_insertion_index == Some(*tab_index) {
+            groups.add_child(render_ghost_vertical_tab_slot(workspace, app));
+        }
         let insert_before_index = *tab_index;
         let insert_after_index =
             (visible_tab_index == visible_tabs.len() - 1).then_some(tab_index + 1);
@@ -1662,6 +1698,10 @@ fn render_groups(
             },
             app,
         ));
+    }
+    // Ghost after all tab groups (fencepost).
+    if ghost_insertion_index == Some(workspace.tabs.len()) {
+        groups.add_child(render_ghost_vertical_tab_slot(workspace, app));
     }
 
     // Prune stale badge mouse states for panes that no longer exist.
@@ -1700,6 +1740,29 @@ fn render_tab_group(
     tab: &TabData,
     filtered_pane_ids: Option<&[PaneId]>,
     drag_state: TabGroupDragState,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    render_tab_group_internal(
+        state,
+        workspace,
+        tab_index,
+        tab,
+        filtered_pane_ids,
+        drag_state,
+        false,
+        app,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_tab_group_internal(
+    state: &VerticalTabsPanelState,
+    workspace: &Workspace,
+    tab_index: usize,
+    tab: &TabData,
+    filtered_pane_ids: Option<&[PaneId]>,
+    drag_state: TabGroupDragState,
+    for_drag_ghost: bool,
     app: &AppContext,
 ) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
@@ -2051,9 +2114,16 @@ fn render_tab_group(
         })
         .on_drop(|ctx, _, _, _| {
             ctx.dispatch_typed_action(WorkspaceAction::DropTab);
-        })
-        .with_drag_axis(DragAxis::VerticalOnly)
-        .finish();
+        });
+    // Only lock the drag to the vertical axis when cross-window tab drag is
+    // disabled. When it is enabled, the user needs to be able to drag
+    // horizontally out of the panel to detach the tab into a new window.
+    let draggable = if FeatureFlag::DragTabsToWindows.is_enabled() {
+        draggable
+    } else {
+        draggable.with_drag_axis(DragAxis::VerticalOnly)
+    };
+    let draggable = draggable.finish();
 
     let draggable: Box<dyn Element> = if is_this_tab_dragging {
         Container::new(draggable)
@@ -2062,6 +2132,14 @@ fn render_tab_group(
     } else {
         draggable
     };
+    // When rendering inside the cross-window drag chip overlay, skip the
+    // outer `SavePosition` (it would clobber the target window's
+    // `tab_position_<index>` cache entry and break
+    // `tab_insertion_index_for_cursor`) and the `DropTarget` (the chip
+    // shouldn't be a drop target since it follows the cursor).
+    if for_drag_ghost {
+        return draggable;
+    }
     let draggable = SavePosition::new(draggable, &tab_position_id(tab_index)).finish();
 
     if is_this_tab_dragging {
@@ -2152,6 +2230,36 @@ fn render_group_action_buttons(
     .finish();
 
     SavePosition::new(belt, &vtab_action_buttons_position_id(tab_index)).finish()
+}
+
+/// Renders the same vertical tab group element used by the live vertical
+/// tabs panel, so the floating chip during a cross-window tab drag matches
+/// the source vertical-tabs row exactly. Constructed with neutral state
+/// (no drag/hover indicators) since the snapshot doesn't represent an
+/// in-progress local drag and isn't itself a drop target.
+pub(crate) fn render_tab_group_for_drag_ghost(
+    workspace: &Workspace,
+    tab_index: usize,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let Some(tab) = workspace.tabs.get(tab_index) else {
+        return Empty::new().finish();
+    };
+    let drag_state = TabGroupDragState {
+        is_any_pane_dragging: false,
+        insert_before_index: 0,
+        insert_after_index: None,
+    };
+    render_tab_group_internal(
+        &workspace.vertical_tabs_panel,
+        workspace,
+        tab_index,
+        tab,
+        None,
+        drag_state,
+        true, // for_drag_ghost
+        app,
+    )
 }
 
 fn render_group_header(props: GroupHeaderProps<'_>, app: &AppContext) -> Box<dyn Element> {
