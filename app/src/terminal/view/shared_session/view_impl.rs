@@ -69,7 +69,7 @@ use super::adapter::{Adapter, Kind, Participant};
 use super::sharer::inactivity_modal::InactivityModalEvent;
 use super::sharer::Sharer;
 use super::viewer::Viewer;
-use super::ConversationEndedTombstoneView;
+use super::{ConversationEndedTombstoneEvent, ConversationEndedTombstoneView};
 
 impl TerminalView {
     pub fn sharer_session_kind(&self) -> Option<&Kind> {
@@ -742,6 +742,48 @@ impl TerminalView {
             pane_config.notify_header_content_changed(ctx);
             ctx.notify();
         });
+    }
+
+    pub fn on_ambient_agent_execution_ended(&mut self, ctx: &mut ViewContext<Self>) {
+        if !FeatureFlag::HandoffCloudCloud.is_enabled()
+            || !FeatureFlag::CloudModeSetupV2.is_enabled()
+            || self.has_inserted_conversation_ended_tombstone
+        {
+            return;
+        }
+
+        self.insert_conversation_ended_tombstone(ctx);
+    }
+
+    fn start_cloud_followup_from_tombstone(
+        &mut self,
+        task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if !FeatureFlag::HandoffCloudCloud.is_enabled() {
+            return;
+        }
+
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
+            self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
+            return;
+        };
+
+        if ambient_agent_view_model.as_ref(ctx).task_id() != Some(task_id) {
+            self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
+            return;
+        }
+
+        self.pending_cloud_followup_task_id = Some(task_id);
+        self.input.update(ctx, |input, ctx| {
+            input.unfreeze_and_clear_agent_input(ctx);
+            input.set_input_mode_agent(true, ctx);
+            input.editor().update(ctx, |editor, ctx| {
+                editor.set_interaction_state(InteractionState::Editable, ctx);
+            });
+        });
+        self.focus_input_box(ctx);
+        ctx.notify();
     }
 
     pub fn handle_inactivity_modal_event(
@@ -1548,6 +1590,12 @@ impl TerminalView {
 
         let tombstone_view_handle = ctx.add_typed_action_view(|ctx| {
             ConversationEndedTombstoneView::new(ctx, terminal_view_id, task_id)
+        });
+        ctx.subscribe_to_view(&tombstone_view_handle, |me, _, event, ctx| match event {
+            #[cfg(not(target_family = "wasm"))]
+            ConversationEndedTombstoneEvent::ContinueInCloud { task_id } => {
+                me.start_cloud_followup_from_tombstone(*task_id, ctx);
+            }
         });
         self.insert_rich_content(
             None,

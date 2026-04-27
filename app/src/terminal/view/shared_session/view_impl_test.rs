@@ -444,3 +444,52 @@ fn test_on_session_share_ended_does_not_insert_tombstone_for_non_ambient_session
         });
     });
 }
+
+#[test]
+fn test_on_ambient_agent_execution_ended_inserts_tombstone_when_handoff_enabled() {
+    let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
+    let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        let terminal = terminal_view_for_viewer(&mut app);
+        let initial_block_height_items = terminal.read(&app, |view, _| {
+            view.model.lock().block_list().block_heights().items().len()
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            view.on_ambient_agent_execution_ended(ctx);
+            view.on_ambient_agent_execution_ended(ctx);
+        });
+
+        terminal.read(&app, |view, _| {
+            let final_block_height_items =
+                view.model.lock().block_list().block_heights().items().len();
+            assert_eq!(final_block_height_items, initial_block_height_items + 1);
+            assert!(view.has_inserted_conversation_ended_tombstone);
+        });
+    });
+}
+
+#[test]
+fn test_on_ambient_agent_execution_ended_does_not_insert_tombstone_without_handoff() {
+    let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(false);
+    let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        let terminal = terminal_view_for_viewer(&mut app);
+        let initial_block_height_items = terminal.read(&app, |view, _| {
+            view.model.lock().block_list().block_heights().items().len()
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            view.on_ambient_agent_execution_ended(ctx);
+        });
+
+        terminal.read(&app, |view, _| {
+            let final_block_height_items =
+                view.model.lock().block_list().block_heights().items().len();
+            assert_eq!(final_block_height_items, initial_block_height_items);
+            assert!(!view.has_inserted_conversation_ended_tombstone);
+        });
+    });
+}

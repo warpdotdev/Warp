@@ -68,6 +68,44 @@ impl View for CloudModeInitialUserQuery {
     }
 }
 
+pub struct CloudModeFollowupUserQuery {
+    prompt: String,
+    view_model: ModelHandle<AmbientAgentViewModel>,
+}
+
+impl CloudModeFollowupUserQuery {
+    pub fn new(
+        prompt: String,
+        view_model: ModelHandle<AmbientAgentViewModel>,
+        ctx: &mut ViewContext<Self>,
+    ) -> Self {
+        ctx.subscribe_to_model(&view_model, |_, _, event, ctx| match event {
+            AmbientAgentViewModelEvent::FollowupDispatched
+            | AmbientAgentViewModelEvent::ProgressUpdated
+            | AmbientAgentViewModelEvent::FollowupSessionReady { .. }
+            | AmbientAgentViewModelEvent::Failed { .. }
+            | AmbientAgentViewModelEvent::NeedsGithubAuth
+            | AmbientAgentViewModelEvent::Cancelled => ctx.notify(),
+            _ => (),
+        });
+        Self { prompt, view_model }
+    }
+}
+
+impl Entity for CloudModeFollowupUserQuery {
+    type Event = ();
+}
+
+impl View for CloudModeFollowupUserQuery {
+    fn ui_name() -> &'static str {
+        "CloudModeFollowupUserQuery"
+    }
+
+    fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        render_user_query(&self.prompt, &self.view_model, app)
+    }
+}
+
 fn render_user_query(
     prompt: &str,
     query_prefix_highlight_len: Option<usize>,

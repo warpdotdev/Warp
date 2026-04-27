@@ -137,6 +137,8 @@ pub struct AmbientAgentViewModel {
 
     active_execution_session_id: Option<SessionId>,
     last_ended_execution_session_id: Option<SessionId>,
+    pending_followup_prompt: Option<String>,
+    should_show_followup_progress: bool,
 }
 
 impl AmbientAgentViewModel {
@@ -171,6 +173,8 @@ impl AmbientAgentViewModel {
             harness_command_started: false,
             active_execution_session_id: None,
             last_ended_execution_session_id: None,
+            pending_followup_prompt: None,
+            should_show_followup_progress: false,
         }
     }
 
@@ -438,6 +442,7 @@ impl AmbientAgentViewModel {
 
         // Store the task ID for later use
         self.task_id = Some(task_id);
+        self.should_show_followup_progress = false;
 
         self.status = Status::AgentRunning;
 
@@ -473,6 +478,8 @@ impl AmbientAgentViewModel {
     /// terminal manager to append that session's scrollback to the existing transcript.
     pub fn attach_followup_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
         self.stop_progress_timer();
+        self.pending_followup_prompt = None;
+        self.should_show_followup_progress = false;
         self.active_execution_session_id = Some(session_id);
         self.last_ended_execution_session_id = None;
         self.status = Status::AgentRunning;
@@ -501,8 +508,16 @@ impl AmbientAgentViewModel {
             .active_execution_session_id
             .or(self.last_ended_execution_session_id);
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let stream = submit_run_followup(prompt, task_id, previous_session_id, ai_client, None);
+        let stream = submit_run_followup(
+            prompt.clone(),
+            task_id,
+            previous_session_id,
+            ai_client,
+            None,
+        );
 
+        self.pending_followup_prompt = Some(prompt);
+        self.should_show_followup_progress = true;
         self.status = Status::WaitingForSession {
             progress: AgentProgress::new(),
             kind: SessionStartupKind::Followup,
@@ -521,6 +536,21 @@ impl AmbientAgentViewModel {
         &self.status
     }
 
+    pub fn pending_followup_prompt(&self) -> Option<&str> {
+        self.pending_followup_prompt.as_deref()
+    }
+
+    pub fn should_show_followup_progress(&self) -> bool {
+        self.should_show_followup_progress
+            && matches!(
+                self.status,
+                Status::WaitingForSession { .. }
+                    | Status::Failed { .. }
+                    | Status::NeedsGithubAuth { .. }
+                    | Status::Cancelled { .. }
+            )
+    }
+
     /// Reset cloud-specific prompt state so a retained cloud view can compose a new task.
     pub fn reset_for_new_cloud_prompt(&mut self, ctx: &mut ModelContext<Self>) {
         self.status = Status::Composing;
@@ -531,6 +561,8 @@ impl AmbientAgentViewModel {
         self.harness_command_started = false;
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
+        self.pending_followup_prompt = None;
+        self.should_show_followup_progress = false;
         self.stop_progress_timer();
         ctx.notify();
     }
@@ -621,6 +653,7 @@ impl AmbientAgentViewModel {
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         self.request = Some(request.clone());
         let stream = spawn_task(request, ai_client, None);
+        self.should_show_followup_progress = false;
 
         ctx.spawn_stream_local(
             stream,
@@ -784,6 +817,8 @@ impl AmbientAgentViewModel {
                     };
                     self.active_execution_session_id = Some(session_id);
                     self.last_ended_execution_session_id = None;
+                    self.pending_followup_prompt = None;
+                    self.should_show_followup_progress = false;
                     self.status = Status::AgentRunning;
                     ctx.emit(event);
                 }
@@ -903,6 +938,7 @@ impl AmbientAgentViewModel {
             progress,
             error_message: error_message.clone(),
         };
+        self.pending_followup_prompt = None;
         ctx.emit(AmbientAgentViewModelEvent::Failed { error_message });
     }
 
@@ -938,6 +974,7 @@ impl AmbientAgentViewModel {
             error_message,
             auth_url,
         };
+        self.pending_followup_prompt = None;
 
         ctx.emit(AmbientAgentViewModelEvent::NeedsGithubAuth);
     }
@@ -965,6 +1002,7 @@ impl AmbientAgentViewModel {
         };
 
         self.status = Status::Cancelled { progress };
+        self.pending_followup_prompt = None;
 
         ctx.emit(AmbientAgentViewModelEvent::Cancelled);
     }

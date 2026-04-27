@@ -17,7 +17,9 @@ use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryM
 use crate::ai::conversation_details_panel::ConversationDetailsData;
 use crate::pane_group::TerminalViewResources;
 use crate::server::server_api::ai::SpawnAgentRequest;
-use crate::terminal::view::ambient_agent::CloudModeInitialUserQuery;
+use crate::terminal::view::ambient_agent::{
+    CloudModeFollowupUserQuery, CloudModeInitialUserQuery,
+};
 use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
 use crate::terminal::view::TerminalView;
 use crate::terminal::CLIAgent;
@@ -202,6 +204,28 @@ impl TerminalView {
                     None,
                     ctx,
                 );
+                let pending_prompt = ambient_agent_view_model
+                    .as_ref(ctx)
+                    .pending_followup_prompt()
+                    .map(str::to_owned);
+                if let Some(prompt) = pending_prompt {
+                    let followup_user_query = ctx.add_view(|ctx| {
+                        CloudModeFollowupUserQuery::new(
+                            prompt,
+                            ambient_agent_view_model.clone(),
+                            ctx,
+                        )
+                    });
+                    self.insert_rich_content(
+                        None,
+                        followup_user_query,
+                        None,
+                        RichContentInsertionPosition::Append {
+                            insert_below_long_running_block: true,
+                        },
+                        ctx,
+                    );
+                }
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::SessionReady { .. }

@@ -435,7 +435,7 @@ use crate::banner::{
     DismissalType,
 };
 use crate::debounce::debounce;
-use crate::editor::{AutosuggestionType, CrdtOperation, EditorAction};
+use crate::editor::{AutosuggestionType, CrdtOperation, EditorAction, InteractionState};
 use crate::features::FeatureFlag;
 use crate::pane_group::SplitPaneState;
 use crate::pane_group::{
@@ -2742,6 +2742,7 @@ pub struct TerminalView {
     is_using_conversation_for_pane_header_title: bool,
 
     ambient_agent_view_model: Option<ModelHandle<ambient_agent::AmbientAgentViewModel>>,
+    pending_cloud_followup_task_id: Option<AmbientAgentTaskId>,
 
     /// Cloud mode conversation details panel (side panel showing task metadata).
     cloud_mode_details_panel:
@@ -4178,6 +4179,7 @@ impl TerminalView {
             orchestration_pill_bar,
             is_using_conversation_for_pane_header_title: false,
             ambient_agent_view_model,
+            pending_cloud_followup_task_id: None,
             cloud_mode_details_panel,
             is_cloud_mode_details_panel_open: false,
             has_auto_opened_cloud_mode_details_panel: false,
@@ -19747,6 +19749,82 @@ impl TerminalView {
         }
     }
 
+    fn restore_followup_prompt_after_failed_submission(
+        &mut self,
+        prompt: &str,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.input.update(ctx, |input, ctx| {
+            input.unfreeze_and_clear_agent_input(ctx);
+            input.replace_buffer_content(prompt, ctx);
+            input.set_input_mode_agent(true, ctx);
+            input.editor().update(ctx, |editor, ctx| {
+                editor.set_interaction_state(InteractionState::Editable, ctx);
+            });
+        });
+        self.update_pane_configuration(ctx);
+        self.focus_input_box(ctx);
+        ctx.notify();
+    }
+
+    fn try_submit_pending_cloud_followup(
+        &mut self,
+        prompt: String,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let Some(task_id) = self.pending_cloud_followup_task_id else {
+            return false;
+        };
+
+        self.pending_cloud_followup_task_id = None;
+
+        if prompt.trim().is_empty() {
+            self.input.update(ctx, |input, ctx| {
+                input.unfreeze_and_clear_agent_input(ctx);
+                input.set_input_mode_agent(true, ctx);
+                input.editor().update(ctx, |editor, ctx| {
+                    editor.set_interaction_state(InteractionState::Editable, ctx);
+                });
+            });
+            self.update_pane_configuration(ctx);
+            self.focus_input_box(ctx);
+            ctx.notify();
+            return true;
+        }
+
+        if !FeatureFlag::HandoffCloudCloud.is_enabled() {
+            self.restore_followup_prompt_after_failed_submission(&prompt, ctx);
+            self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
+            return true;
+        }
+
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.clone() else {
+            self.restore_followup_prompt_after_failed_submission(&prompt, ctx);
+            self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
+            return true;
+        };
+
+        if ambient_agent_view_model.as_ref(ctx).task_id() != Some(task_id) {
+            self.restore_followup_prompt_after_failed_submission(&prompt, ctx);
+            self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
+            return true;
+        }
+
+        ambient_agent_view_model.update(ctx, |model, ctx| {
+            model.submit_cloud_followup(prompt, ctx);
+        });
+        self.input.update(ctx, |input, ctx| {
+            input.unfreeze_and_clear_agent_input(ctx);
+            input.set_input_mode_agent(true, ctx);
+            input.editor().update(ctx, |editor, ctx| {
+                editor.set_interaction_state(InteractionState::Editable, ctx);
+            });
+        });
+        self.update_pane_configuration(ctx);
+        ctx.notify();
+        true
+    }
+
     fn handle_input_event(&mut self, event: &InputEvent, ctx: &mut ViewContext<Self>) {
         match event {
             InputEvent::Enter => self.clear_prompt_suggestions(ctx),
@@ -19798,6 +19876,9 @@ impl TerminalView {
                 prompt,
                 attachments,
             } => {
+                if self.try_submit_pending_cloud_followup(prompt.clone(), ctx) {
+                    return;
+                }
                 ctx.emit(Event::SendAgentPrompt {
                     server_conversation_token: *server_conversation_token,
                     prompt: prompt.clone(),
@@ -25689,15 +25770,15 @@ impl View for TerminalView {
             self.render_grid_tooltip(&mut stack, &model, appearance, app);
         }
 
-        if !FeatureFlag::CloudModeSetupV2.is_enabled() {
-            // Show progress steps while waiting for an ambient agent to start.
-            if self
-                .ambient_agent_view_model
-                .as_ref()
-                .is_some_and(|model| model.as_ref(app).agent_progress().is_some())
-            {
-                stack.add_child(self.render_ambient_agent_progress(appearance, app));
-            }
+        // Show progress steps while waiting for an ambient agent to start. Under setup-v2, keep
+        // the existing initial-run UX but show the progress/error screen for PR3 follow-ups.
+        if self.ambient_agent_view_model.as_ref().is_some_and(|model| {
+            let model = model.as_ref(app);
+            model.agent_progress().is_some()
+                && (!FeatureFlag::CloudModeSetupV2.is_enabled()
+                    || model.should_show_followup_progress())
+        }) {
+            stack.add_child(self.render_ambient_agent_progress(appearance, app));
         }
 
         // For shared session viewers, we want to show a "Request edit access"

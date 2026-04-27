@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use std::pin::pin;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::str::FromStr;
 
 use crate::ai::agent::conversation::ConversationStatus;
 use parking_lot::FairMutex;
@@ -48,6 +49,7 @@ use crate::terminal::block_list_element::{SnackbarPoint, SnackbarTranslationMode
 use crate::terminal::block_list_viewport::{ClampingMode, ScrollLines};
 use crate::terminal::session_settings::AgentToolbarChipSelection;
 use crate::view_components::find::FindWithinBlockState;
+use crate::workspace::ToastStack;
 
 use crate::terminal::model::ansi::{self, InitShellValue};
 use crate::terminal::model::ansi::{BootstrappedValue, PreexecValue};
@@ -544,6 +546,30 @@ fn set_input_mode_agent_does_not_enter_local_agent_from_root_cloud_mode_pane() {
             assert!(!view.agent_view_controller().as_ref(ctx).is_active());
             view.handle_action(&TerminalAction::SetInputModeAgent, ctx);
             assert!(!view.agent_view_controller().as_ref(ctx).is_active());
+        });
+    });
+}
+
+#[test]
+fn pending_cloud_followup_without_ambient_model_restores_prompt() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(|_| ToastStack);
+        let _flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let task_id = AmbientAgentTaskId::from_str("123e4567-e89b-12d3-a456-426614174000")
+            .expect("valid task id");
+
+        terminal.update(&mut app, |view, ctx| {
+            view.pending_cloud_followup_task_id = Some(task_id);
+
+            assert!(view.try_submit_pending_cloud_followup("follow up".to_string(), ctx));
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert_eq!(view.pending_cloud_followup_task_id, None);
+            assert_eq!(view.input.as_ref(ctx).buffer_text(ctx), "follow up");
         });
     });
 }
