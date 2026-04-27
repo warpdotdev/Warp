@@ -170,6 +170,7 @@ impl Sessions {
                 | RemoteServerManagerEvent::SetupStateChanged { .. }
                 | RemoteServerManagerEvent::BinaryCheckComplete { .. }
                 | RemoteServerManagerEvent::BinaryInstallComplete { .. }
+                | RemoteServerManagerEvent::SessionReconnected { .. }
                 | RemoteServerManagerEvent::ClientRequestFailed { .. }
                 | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
             });
