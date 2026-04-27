@@ -1282,6 +1282,7 @@ fn create_window(
         // monitors. We only do this on Windows b/c Windows happily renders a window outside of any
         // monitor, whereas Linux window managers automatically correct this.
         if let WindowBounds::ExactPosition(bound_rect) = window_options.bounds {
+            log::info!("Session restore: requested window bounds {bound_rect:?}");
             most_overlapping_monitor = window_target
                 .available_monitors()
                 .filter_map(|monitor| {
@@ -1291,7 +1292,24 @@ fn create_window(
                 })
                 .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
                 .map(|pair| pair.0);
+            if let Some(ref monitor) = most_overlapping_monitor {
+                log::info!(
+                    "Session restore: most overlapping monitor: name={:?} scale_factor={} logical_bounds={:?}",
+                    monitor.name(),
+                    monitor.scale_factor(),
+                    get_monitor_logical_bounds(monitor),
+                );
+            }
             if most_overlapping_monitor.is_none() {
+                let monitor_bounds: Vec<RectF> = window_target
+                    .available_monitors()
+                    .map(|m| get_monitor_logical_bounds(&m))
+                    .collect();
+                log::warn!(
+                    "Restored window bounds {bound_rect:?} do not intersect any monitor; \
+                    falling back to default window dimensions. \
+                    Available monitor bounds: {monitor_bounds:?}"
+                );
                 window_bounds = WindowBounds::Default;
             }
         }
@@ -1316,10 +1334,22 @@ fn create_window(
         // Manually convert logical position to physical. Normally, winit does this for us.
         // However, this conversion is failing on Windows so we do it ourselves.
         if let (Some(monitor), true) = (most_overlapping_monitor, cfg!(windows)) {
-            position = Position::Physical(position.to_physical(monitor.scale_factor()));
+            let physical = position.to_physical(monitor.scale_factor());
+            log::info!(
+                "Session restore: converting logical origin {origin:?} to physical {physical:?} \
+                using scale_factor={}",
+                monitor.scale_factor()
+            );
+            position = Position::Physical(physical);
         }
         window_attributes.position = Some(position);
     }
+
+    #[cfg(windows)]
+    log::info!(
+        "Session restore: setting window attributes — size={size:?} fullscreen_state={:?}",
+        window_options.fullscreen_state
+    );
 
     if let Some(size) = size {
         window_attributes.inner_size = Some(Size::Logical(LogicalSize::new(
@@ -1372,6 +1402,12 @@ fn create_window(
             if let Err(e) = window.set_cloaked(true) {
                 log::error!("Failed to mark window as cloaked: {e:#?}");
             };
+
+            log::info!(
+                "Session restore: window created — outer_position={:?} outer_size={:?}",
+                window.outer_position(),
+                window.outer_size(),
+            );
 
             if let Some(adjustment) = maybe_adjust_window_vertically(window) {
                 let direction = if adjustment > 0 { "down" } else { "up" };
@@ -1433,6 +1469,9 @@ fn create_window(
 ///
 /// Returns the vertical difference of the adjustment, or None.
 fn maybe_adjust_window_vertically(window: &winit::window::Window) -> Option<i32> {
+    if window.is_maximized() || window.fullscreen().is_some() {
+        return None;
+    }
     let window_position = window.outer_position().ok()?;
     let window_size = window.outer_size();
     let bottom_of_window = window_position.y + window_size.height as i32;
