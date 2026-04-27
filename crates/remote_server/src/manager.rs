@@ -309,6 +309,34 @@ pub enum RemoteServerManagerEvent {
     ServerMessageDecodingError { session_id: SessionId },
 }
 
+impl RemoteServerManagerEvent {
+    /// Returns the [`SessionId`] this event pertains to, or `None` for
+    /// host-scoped variants.
+    pub fn session_id(&self) -> Option<SessionId> {
+        match self {
+            RemoteServerManagerEvent::SessionConnecting { session_id }
+            | RemoteServerManagerEvent::SessionConnected { session_id, .. }
+            | RemoteServerManagerEvent::SessionConnectionFailed { session_id, .. }
+            | RemoteServerManagerEvent::SessionDisconnected { session_id, .. }
+            | RemoteServerManagerEvent::SessionReconnected { session_id, .. }
+            | RemoteServerManagerEvent::SessionDeregistered { session_id }
+            | RemoteServerManagerEvent::NavigatedToDirectory { session_id, .. }
+            | RemoteServerManagerEvent::SetupStateChanged { session_id, .. }
+            | RemoteServerManagerEvent::BinaryCheckComplete { session_id, .. }
+            | RemoteServerManagerEvent::BinaryInstallComplete { session_id, .. }
+            | RemoteServerManagerEvent::ClientRequestFailed { session_id, .. }
+            | RemoteServerManagerEvent::ServerMessageDecodingError { session_id } => {
+                Some(*session_id)
+            }
+            RemoteServerManagerEvent::HostConnected { .. }
+            | RemoteServerManagerEvent::HostDisconnected { .. }
+            | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
+            | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
+            | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. } => None,
+        }
+    }
+}
+
 /// Shell info recorded by [`RemoteServerManager::notify_session_bootstrapped`].
 ///
 /// Persists for the lifetime of the session (removed only in

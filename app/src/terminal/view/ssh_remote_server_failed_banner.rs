@@ -13,6 +13,10 @@ use warpui::{
 
 use crate::{terminal::model::session::SessionId, ui_components::icons::Icon, Appearance};
 
+const BANNER_BODY: &str =
+    "While advanced features like file browsing and code review are currently \
+    disabled, the rest of your Warpified experience is fully available.";
+
 #[derive(Clone, Debug)]
 pub enum SshRemoteServerFailedBannerAction {
     Dismiss,
@@ -23,15 +27,36 @@ pub enum SshRemoteServerFailedBannerEvent {
     Dismissed,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum SshRemoteServerFailureKind {
+    BinaryCheck,
+    BinaryInstall,
+    Launch,
+}
+
+impl SshRemoteServerFailureKind {
+    fn title(self) -> &'static str {
+        match self {
+            Self::BinaryCheck => "SSH extension couldn't be found",
+            Self::BinaryInstall => "SSH extension couldn't be installed",
+            Self::Launch => "SSH extension couldn't be started",
+        }
+    }
+}
+
 pub struct SshRemoteServerFailedBanner {
     session_id: SessionId,
+    kind: SshRemoteServerFailureKind,
+    error: String,
     close_mouse_state: MouseStateHandle,
 }
 
 impl SshRemoteServerFailedBanner {
-    pub fn new(session_id: SessionId) -> Self {
+    pub fn new(session_id: SessionId, kind: SshRemoteServerFailureKind, error: String) -> Self {
         Self {
             session_id,
+            kind,
+            error,
             close_mouse_state: MouseStateHandle::default(),
         }
     }
@@ -68,27 +93,20 @@ impl View for SshRemoteServerFailedBanner {
         .with_margin_right(8.)
         .finish();
 
-        // Title
-        let title = Text::new(
-            "SSH extension couldn't be installed",
-            appearance.ui_font_family(),
-            font_size,
-        )
-        .with_color(fg_color)
-        .finish();
+        let title = Text::new(self.kind.title(), appearance.ui_font_family(), font_size)
+            .with_color(fg_color)
+            .finish();
 
-        // Description
-        let body = Text::new(
-            "The binary could not be written or executed on the remote host. \
-             This may be due to permission restrictions or missing dependencies. \
-             While advanced features like file browsing and code review are currently \
-             disabled, the rest of your Warpified experience is fully available.",
-            appearance.ui_font_family(),
-            small_font_size,
-        )
-        .soft_wrap(true)
-        .with_color(muted_color)
-        .finish();
+        let trimmed_error = self.error.trim();
+        let body_text = if trimmed_error.is_empty() {
+            format!("Failed to start the remote server. {BANNER_BODY}")
+        } else {
+            format!("Failed to start the remote server due to the following error: {trimmed_error}. {BANNER_BODY}")
+        };
+        let body = Text::new(body_text, appearance.ui_font_family(), small_font_size)
+            .soft_wrap(true)
+            .with_color(muted_color)
+            .finish();
 
         // Close (X) button
         let close_icon_color = muted_color;
