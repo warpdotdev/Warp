@@ -450,8 +450,16 @@ impl RemoteServerManager {
                     };
                     let _ = spawner
                         .spawn(move |me, ctx| {
-                            if let Some(ref p) = platform {
+                            if let Some(p) = &platform {
                                 me.session_platforms.insert(session_id, p.clone());
+                            }
+                            if let Err(error) = &check_result {
+                                ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+                                    session_id,
+                                    state: RemoteServerSetupState::Failed {
+                                        error: error.clone(),
+                                    },
+                                });
                             }
                             ctx.emit(RemoteServerManagerEvent::BinaryCheckComplete {
                                 session_id,
@@ -498,7 +506,7 @@ impl RemoteServerManager {
                     let result = transport.install_binary().await;
                     let _ = spawner
                         .spawn(move |_me, ctx| {
-                            if let Err(ref error) = result {
+                            if let Err(error) = &result {
                                 ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
                                     session_id,
                                     state: RemoteServerSetupState::Failed {
