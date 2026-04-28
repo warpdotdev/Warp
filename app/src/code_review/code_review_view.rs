@@ -6798,11 +6798,12 @@ impl CodeReviewView {
 
         match mode {
             PrimaryGitActionMode::Commit => {
-                let has_changes = self.has_uncommitted_changes(ctx);
+                let disabled = !self.has_uncommitted_changes(ctx);
                 self.git_primary_action_button.update(ctx, |button, ctx| {
                     button.set_label("Commit", ctx);
                     button.set_icon(Some(Icon::GitCommit), ctx);
-                    button.set_disabled(!has_changes, ctx);
+                    button.set_disabled(disabled, ctx);
+                    button.set_tooltip(disabled.then_some("No changes to commit"), ctx);
                     button.set_on_click(
                         |ctx| ctx.dispatch_typed_action(CodeReviewAction::OpenCommitDialog),
                         ctx,
@@ -6810,7 +6811,8 @@ impl CodeReviewView {
                     button.set_adjoined_side(AdjoinedSide::Right, ctx);
                 });
                 self.git_operations_chevron.update(ctx, |button, ctx| {
-                    button.set_disabled(!has_changes, ctx);
+                    button.set_disabled(disabled, ctx);
+                    button.set_tooltip(disabled.then_some("No git actions available"), ctx);
                 });
             }
             PrimaryGitActionMode::Push => {
@@ -6849,6 +6851,7 @@ impl CodeReviewView {
                     self.git_primary_action_button.update(ctx, |button, ctx| {
                         button.set_label(label, ctx);
                         button.set_icon(Some(Icon::Github), ctx);
+                        button.set_disabled(false, ctx);
                         button.set_on_click(
                             move |ctx| {
                                 ctx.dispatch_typed_action(CodeReviewAction::ViewPr(url.clone()))
@@ -7022,15 +7025,6 @@ impl CodeReviewView {
 
         let has_changes = matches!(self.state(), CodeReviewViewState::Loaded(loaded) if !loaded.to_diff_stats().has_no_changes());
 
-        if FeatureFlag::DiscardPerFileAndAllChanges.is_enabled() && has_changes {
-            items.push(
-                MenuItemFields::new("Discard all")
-                    .with_icon(Icon::ReverseLeft)
-                    .with_on_select_action(CodeReviewAction::ShowDiscardConfirmDialog(None))
-                    .into_item(),
-            );
-        }
-
         let is_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
         if is_ai_enabled && FeatureFlag::DiffSetAsContext.is_enabled() && has_changes {
             items.push(
@@ -7053,6 +7047,15 @@ impl CodeReviewView {
                 MenuItemFields::new(comment_label)
                     .with_icon(comment_icon)
                     .with_on_select_action(CodeReviewAction::OpenCommentComposerFromHeader)
+                    .into_item(),
+            );
+        }
+
+        if FeatureFlag::DiscardPerFileAndAllChanges.is_enabled() && has_changes {
+            items.push(
+                MenuItemFields::new("Discard all")
+                    .with_icon(Icon::ReverseLeft)
+                    .with_on_select_action(CodeReviewAction::ShowDiscardConfirmDialog(None))
                     .into_item(),
             );
         }

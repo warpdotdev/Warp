@@ -404,6 +404,39 @@ impl FileBasedMCPManager {
             .sorted()
             .collect()
     }
+
+    /// Returns the directory a file-based MCP installation should be spawned from
+    /// when its config does not specify `working_directory`.
+    ///
+    /// The spawn root is the directory the config was discovered in, with one
+    /// exception: global Warp installs are discovered in `~/.warp/` (Warp's data
+    /// dir) which isn't a useful cwd for spawned processes, so they are remapped
+    /// to the home directory instead.
+    /// - Project-scoped installations: the repo root.
+    /// - Global installations (`~/.warp/.mcp.json`, `~/.claude.json`, etc.): the
+    ///   home directory.
+    ///
+    /// If the installation is referenced from multiple roots, the lexicographically
+    /// smallest is returned for determinism. Returns `None` for installations that
+    /// are not tracked by `FileBasedMCPManager` (e.g. cloud-templated installs).
+    pub fn spawn_root_for_installation(&self, uuid: Uuid) -> Option<PathBuf> {
+        let hash = self.get_hash_by_uuid(uuid)?;
+        let discovery_root = self
+            .file_based_servers_by_root
+            .iter()
+            .filter(|(_, provider_map)| provider_map.values().any(|hashes| hashes.contains(&hash)))
+            .map(|(root, _)| root.clone())
+            .sorted()
+            .next()?;
+
+        // Global Warp installs live under `~/.warp/`, which is internal Warp state
+        // rather than a meaningful working directory. Map them to the home dir so
+        // all global installs (Warp and third-party) share a consistent cwd.
+        if discovery_root == warp_data_dir() {
+            return dirs::home_dir().or(Some(discovery_root));
+        }
+        Some(discovery_root)
+    }
 }
 
 pub enum FileBasedMCPManagerEvent {
