@@ -662,7 +662,7 @@ fn find_matching_config_name<'a>(
 /// user's home directory.
 fn parse_tab_path(url: &Url) -> Option<PathBuf> {
     let raw = url.query_pairs().find(|(k, _)| k == "path")?.1;
-    Some(PathBuf::from(shellexpand::tilde(&raw).as_ref()))
+    Some(PathBuf::from(shellexpand::tilde(&raw).into_owned()))
 }
 
 #[derive(Debug)]
