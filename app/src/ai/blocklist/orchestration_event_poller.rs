@@ -10,7 +10,7 @@ use crate::ai::agent_events::{
 };
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskId};
 use crate::server::server_api::ai::{AIClient, AgentRunEvent};
-use crate::server::server_api::{ServerApi, ServerApiProvider};
+use crate::server::server_api::{AIApiError, ServerApi, ServerApiProvider};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::channel::mpsc;
@@ -613,18 +613,41 @@ impl OrchestrationEventPoller {
             },
             move |me, result, ctx| match result {
                 Ok(task) => me.finish_restore_fetch(conversation_id, sqlite_cursor, task, ctx),
-                Err(err) => {
-                    log::warn!(
-                        "Failed to restore orchestration event state for {conversation_id:?}: {err:#}"
-                    );
-                    me.start_restore_fetch_retry_timer(
-                        conversation_id,
-                        retry_task_id_string.clone(),
-                        ctx,
-                    );
-                }
+                Err(err) => me.handle_restore_fetch_error(
+                    conversation_id,
+                    retry_task_id_string.clone(),
+                    err,
+                    ctx,
+                ),
             },
         );
+    }
+
+    fn handle_restore_fetch_error(
+        &mut self,
+        conversation_id: AIConversationId,
+        task_id: String,
+        err: anyhow::Error,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let should_retry = err
+            .downcast_ref::<AIApiError>()
+            .map(AIApiError::is_retryable)
+            .unwrap_or(true);
+
+        if should_retry {
+            log::warn!(
+                "Failed to restore orchestration event state for {conversation_id:?} task_id={task_id}; retrying: {err:#}"
+            );
+            self.start_restore_fetch_retry_timer(conversation_id, task_id, ctx);
+            return;
+        }
+
+        log::warn!(
+            "Failed to restore orchestration event state for {conversation_id:?} task_id={task_id}; using persisted run_ids/cursor without server task metadata: {err:#}"
+        );
+        self.restore_fetch_failures.remove(&conversation_id);
+        self.maybe_start_delivery_after_restore(conversation_id, ctx);
     }
 
     fn finish_restore_fetch(

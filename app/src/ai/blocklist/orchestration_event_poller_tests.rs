@@ -7,10 +7,11 @@ use crate::ai::agent_events::{
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::persistence::{model::AgentConversationData, ModelEvent};
 use crate::server::server_api::ai::MockAIClient;
-use crate::server::server_api::ServerApiProvider;
+use crate::server::server_api::{AIApiError, ServerApiProvider};
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider};
 use chrono::Utc;
+use http::StatusCode;
 use std::collections::HashSet;
 use std::sync::Arc;
 use warp_multi_agent_api as api;
@@ -200,12 +201,14 @@ fn finish_restore_fetch_merges_server_cursor_and_child_runs() {
             );
         });
 
+        let mut ai_client = MockAIClient::new();
+        ai_client
+            .expect_poll_agent_events()
+            .returning(|_, _, _| Ok(vec![]));
+
         let server_api = ServerApiProvider::new_for_test().get();
         let poller = app.add_singleton_model(move |_| {
-            OrchestrationEventPoller::new_with_clients_for_test(
-                Arc::new(MockAIClient::new()),
-                server_api,
-            )
+            OrchestrationEventPoller::new_with_clients_for_test(Arc::new(ai_client), server_api)
         });
 
         let child_run_id = uuid::Uuid::new_v4().to_string();
@@ -228,6 +231,124 @@ fn finish_restore_fetch_merges_server_cursor_and_child_runs() {
                 .expect("watched runs should exist");
             assert!(watched.contains(&run_id));
             assert!(watched.contains(&child_run_id));
+        });
+    });
+}
+
+#[test]
+fn non_retryable_restore_fetch_failure_falls_back_to_persisted_delivery_state() {
+    App::test((), |mut app| async move {
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+        let conversation_id = AIConversationId::new();
+        let run_id = uuid::Uuid::new_v4().to_string();
+
+        history_model.update(&mut app, |history_model, ctx| {
+            history_model.restore_conversations(
+                terminal_view_id,
+                vec![restored_conversation(
+                    conversation_id,
+                    run_id.clone(),
+                    Some(17),
+                )],
+                ctx,
+            );
+            history_model.update_conversation_status(
+                terminal_view_id,
+                conversation_id,
+                ConversationStatus::Success,
+                ctx,
+            );
+        });
+
+        let mut ai_client = MockAIClient::new();
+        ai_client
+            .expect_poll_agent_events()
+            .returning(|_, _, _| Ok(vec![]));
+
+        let server_api = ServerApiProvider::new_for_test().get();
+        let poller = app.add_singleton_model(move |_| {
+            OrchestrationEventPoller::new_with_clients_for_test(Arc::new(ai_client), server_api)
+        });
+
+        poller.update(&mut app, |poller, ctx| {
+            poller
+                .watched_run_ids
+                .insert(conversation_id, HashSet::from([run_id.clone()]));
+            poller.restore_fetch_failures.insert(conversation_id, 1);
+
+            poller.handle_restore_fetch_error(
+                conversation_id,
+                run_id.clone(),
+                anyhow::Error::new(AIApiError::ErrorStatus(
+                    StatusCode::NOT_FOUND,
+                    "missing task".to_string(),
+                )),
+                ctx,
+            );
+
+            assert!(!poller.restore_fetch_failures.contains_key(&conversation_id));
+            assert!(
+                poller.poll_in_flight.contains(&conversation_id)
+                    || poller.sse_connections.contains_key(&conversation_id)
+            );
+        });
+    });
+}
+
+#[test]
+fn retryable_restore_fetch_failure_keeps_retry_state() {
+    App::test((), |mut app| async move {
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+        let conversation_id = AIConversationId::new();
+        let run_id = uuid::Uuid::new_v4().to_string();
+
+        history_model.update(&mut app, |history_model, ctx| {
+            history_model.restore_conversations(
+                terminal_view_id,
+                vec![restored_conversation(
+                    conversation_id,
+                    run_id.clone(),
+                    Some(17),
+                )],
+                ctx,
+            );
+            history_model.update_conversation_status(
+                terminal_view_id,
+                conversation_id,
+                ConversationStatus::Success,
+                ctx,
+            );
+        });
+
+        let server_api = ServerApiProvider::new_for_test().get();
+        let poller = app.add_singleton_model(move |_| {
+            OrchestrationEventPoller::new_with_clients_for_test(
+                Arc::new(MockAIClient::new()),
+                server_api,
+            )
+        });
+
+        poller.update(&mut app, |poller, ctx| {
+            poller
+                .watched_run_ids
+                .insert(conversation_id, HashSet::from([run_id.clone()]));
+            poller.restore_fetch_failures.insert(conversation_id, 1);
+
+            poller.handle_restore_fetch_error(
+                conversation_id,
+                run_id.clone(),
+                anyhow::Error::new(AIApiError::ErrorStatus(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "server error".to_string(),
+                )),
+                ctx,
+            );
+
+            assert!(poller.restore_fetch_failures.contains_key(&conversation_id));
+            assert!(!poller.poll_in_flight.contains(&conversation_id));
+            assert!(!poller.sse_connections.contains_key(&conversation_id));
         });
     });
 }
