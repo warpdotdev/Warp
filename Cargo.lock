@@ -9337,6 +9337,7 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "serde",
+ "serde_json",
  "warp_multi_agent_api",
 ]
 

@@ -39,6 +39,8 @@ fn create_test_task(task_id: &str) -> AmbientAgentTask {
         agent_config_snapshot: None,
         artifacts: vec![],
         is_sandbox_running: false,
+        last_event_sequence: None,
+        children: vec![],
     }
 }
 
@@ -130,6 +132,7 @@ fn test_from_task_includes_linked_directory_when_run_id_matches() {
                 parent_conversation_id: None,
                 run_id: Some(task_id.to_string()),
                 autoexecute_override: None,
+                last_event_sequence: None,
             },
         );
 
@@ -244,6 +247,7 @@ fn test_from_task_includes_linked_directory_when_server_token_matches() {
                 parent_conversation_id: None,
                 run_id: None,
                 autoexecute_override: None,
+                last_event_sequence: None,
             },
         );
 
