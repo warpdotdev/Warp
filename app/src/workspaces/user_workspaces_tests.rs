@@ -615,6 +615,108 @@ fn test_joining_team_moves_objects() {
 }
 
 #[test]
+fn test_agent_attribution_default_with_no_workspace() {
+    App::test((), |mut app| async move {
+        initialize_app(
+            &mut app,
+            CachedResources { workspaces: vec![] },
+            Arc::new(MockTeamClient::new()),
+            Arc::new(MockWorkspaceClient::new()),
+        );
+
+        app.read(|ctx| {
+            let setting = UserWorkspaces::as_ref(ctx).get_agent_attribution_setting();
+            assert_eq!(
+                setting,
+                AdminEnablementSetting::RespectUserSetting,
+                "attribution should default to RespectUserSetting when there is no workspace"
+            );
+        });
+    })
+}
+
+#[test]
+fn test_agent_attribution_forced_on_by_team() {
+    let mut team = team_for_test();
+    team.organization_settings.enable_warp_attribution = AdminEnablementSetting::Enable;
+    let workspace = workspace_for_test(&team);
+
+    App::test((), |mut app| async move {
+        initialize_app(
+            &mut app,
+            CachedResources {
+                workspaces: vec![workspace],
+            },
+            Arc::new(MockTeamClient::new()),
+            Arc::new(MockWorkspaceClient::new()),
+        );
+
+        app.read(|ctx| {
+            let setting = UserWorkspaces::as_ref(ctx).get_agent_attribution_setting();
+            assert_eq!(
+                setting,
+                AdminEnablementSetting::Enable,
+                "attribution should be Enable when forced on by the team"
+            );
+        });
+    })
+}
+
+#[test]
+fn test_agent_attribution_forced_off_by_team() {
+    let mut team = team_for_test();
+    team.organization_settings.enable_warp_attribution = AdminEnablementSetting::Disable;
+    let workspace = workspace_for_test(&team);
+
+    App::test((), |mut app| async move {
+        initialize_app(
+            &mut app,
+            CachedResources {
+                workspaces: vec![workspace],
+            },
+            Arc::new(MockTeamClient::new()),
+            Arc::new(MockWorkspaceClient::new()),
+        );
+
+        app.read(|ctx| {
+            let setting = UserWorkspaces::as_ref(ctx).get_agent_attribution_setting();
+            assert_eq!(
+                setting,
+                AdminEnablementSetting::Disable,
+                "attribution should be Disable when forced off by the team"
+            );
+        });
+    })
+}
+
+#[test]
+fn test_agent_attribution_respects_user_setting() {
+    let mut team = team_for_test();
+    team.organization_settings.enable_warp_attribution = AdminEnablementSetting::RespectUserSetting;
+    let workspace = workspace_for_test(&team);
+
+    App::test((), |mut app| async move {
+        initialize_app(
+            &mut app,
+            CachedResources {
+                workspaces: vec![workspace],
+            },
+            Arc::new(MockTeamClient::new()),
+            Arc::new(MockWorkspaceClient::new()),
+        );
+
+        app.read(|ctx| {
+            let setting = UserWorkspaces::as_ref(ctx).get_agent_attribution_setting();
+            assert_eq!(
+                setting,
+                AdminEnablementSetting::RespectUserSetting,
+                "attribution should be RespectUserSetting when the team defers to user preference"
+            );
+        });
+    })
+}
+
+#[test]
 fn test_leaving_team_moves_objects() {
     let _flag = FeatureFlag::SharedWithMe.override_enabled(true);
 
