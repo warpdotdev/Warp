@@ -21,3 +21,6 @@ diesel = { workspace = true, features = [
 diesel_migrations = "2.2.0"
 serde.workspace = true
 warp_multi_agent_api.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
