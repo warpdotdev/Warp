@@ -644,13 +644,17 @@ impl GitDialog {
         if self.loading {
             return;
         }
-        let disabled = match &self.mode {
-            GitDialogMode::Commit(state) => !commit::is_ready_to_confirm(state, ctx),
-            GitDialogMode::Push(_) => false,
-            GitDialogMode::CreatePr(state) => !pr::is_ready_to_confirm(state),
+        let (disabled, tooltip) = match &self.mode {
+            GitDialogMode::Commit(state) => (
+                !commit::is_ready_to_confirm(state, ctx),
+                commit::confirm_tooltip(state, ctx),
+            ),
+            GitDialogMode::Push(_) => (false, None),
+            GitDialogMode::CreatePr(state) => (!pr::is_ready_to_confirm(state), None),
         };
         self.confirm_button.update(ctx, |b, ctx| {
             b.set_disabled(disabled, ctx);
+            b.set_tooltip(tooltip, ctx);
         });
     }
 

@@ -561,6 +561,32 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_cli_server_preserves_explicit_working_directory() {
+        // An explicitly-set `working_directory` in a `.mcp.json`-style config must
+        // round-trip into `CLIServer.cwd_parameter` so the file-based spawner does
+        // not overwrite it with the discovery-root default.
+        let json = r#"{
+            "my-server": {
+                "command": "node",
+                "args": ["./tooling/mcp/server.js"],
+                "working_directory": "/explicit/override/path"
+            }
+        }"#;
+
+        let servers = MCPServer::from_user_json(json).expect("Failed to parse MCP servers");
+        assert_eq!(servers.len(), 1);
+
+        let TransportType::CLIServer(cli_server) = &servers[0].transport_type else {
+            panic!("Expected CLIServer transport type");
+        };
+        assert_eq!(
+            cli_server.cwd_parameter.as_deref(),
+            Some("/explicit/override/path"),
+            "Explicit working_directory must be preserved through parsing"
+        );
+    }
+
+    #[test]
     fn test_parse_templatable_cli_server_without_args_and_resolve_json() {
         // Templatable MCP configs should work without an explicit "args" field.
         let json = r#"{

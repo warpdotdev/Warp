@@ -127,11 +127,26 @@ runs:
       run: corepack enable
 
     - name: Install protoc for generating rust bindings of protobuf APIs
+      id: install_protoc
       # Install protoc for generating rust bindings of protobuf APIs.
       uses: ConorMacBride/install-package@3e7ad059e07782ee54fa35f827df52aae0626f30 # v1
+      # Don't fail the job here so the winget fallback below has a chance to run on Windows.
+      continue-on-error: true
       with:
         brew: protobuf
         choco: protoc
+
+    - name: Install protoc via winget (fallback for Windows)
+      if: ${{ inputs.target_os == 'windows' && steps.install_protoc.outcome == 'failure' }}
+      shell: pwsh
+      run: winget install Google.Protobuf
+
+    - name: Fail if protoc install did not succeed
+      if: ${{ inputs.target_os != 'windows' && steps.install_protoc.outcome == 'failure' }}
+      shell: bash
+      run: |
+        echo "::error::protoc install step failed on ${{ inputs.target_os }}"
+        exit 1
 
     - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
       if: ${{ inputs.target_os == 'macos' && inputs.is_self_hosted != 'true' }}

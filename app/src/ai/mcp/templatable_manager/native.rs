@@ -782,6 +782,20 @@ impl TemplatableMCPServerManager {
                     value: execution_path,
                 },
             );
+
+            // For file-based MCP installations without an explicit `working_directory`,
+            // default the spawn cwd to the directory the config was discovered in
+            // (repo root for project-scoped configs, ~/.warp/ or ~ for globals). This
+            // matches user expectations for repo-relative commands in `.mcp.json`.
+            // Cloud-templated installations (lookup returns None) are unaffected and
+            // continue to inherit Warp's process cwd.
+            if cli_server.cwd_parameter.is_none() {
+                if let Some(spawn_root) =
+                    FileBasedMCPManager::as_ref(ctx).spawn_root_for_installation(installation_uuid)
+                {
+                    cli_server.cwd_parameter = Some(spawn_root.to_string_lossy().into_owned());
+                }
+            }
         }
 
         let executor = ctx.background_executor().clone();
@@ -1742,6 +1756,11 @@ async fn spawn_server(
                 }
             }
 
+            // Capture the command and configured cwd for diagnostics before they're
+            // moved into the Command builder closure.
+            let command_for_log = command.clone();
+            let cwd_for_log = cli_server.cwd_parameter.clone();
+
             // Try to spawn the child process.
             let (transport, stderr) = rmcp::transport::TokioChildProcess::builder(
                 tokio::process::Command::new(command).configure(|cmd| {
@@ -1768,6 +1787,17 @@ async fn spawn_server(
             .stderr(std::process::Stdio::piped())
             .spawn()
             .map_err(|err| {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    let cwd_display = cwd_for_log
+                        .as_deref()
+                        .unwrap_or("<inherited from Warp's process cwd>");
+                    logger.log(format!(
+                        "[error] MCP: Failed to spawn '{server_name}': command '{command_for_log}' \
+                         not found (cwd: {cwd_display}). If your MCP server depends on a specific \
+                         working directory, set the `working_directory` field in your config to \
+                         override the default."
+                    ));
+                }
                 rmcp::RmcpError::transport_creation::<rmcp::transport::TokioChildProcess>(err)
             })?;
 

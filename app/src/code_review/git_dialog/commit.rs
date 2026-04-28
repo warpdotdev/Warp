@@ -241,6 +241,16 @@ pub(super) fn is_ready_to_confirm(state: &CommitState, app: &AppContext) -> bool
     !state.file_changes.is_empty() && commit_message(state, app).is_some()
 }
 
+/// Returns a tooltip to show on the disabled Confirm button when the
+/// user needs to take action, or `None` when no tooltip is needed.
+pub(super) fn confirm_tooltip(state: &CommitState, app: &AppContext) -> Option<&'static str> {
+    if !state.file_changes.is_empty() && commit_message(state, app).is_none() {
+        Some("Enter a commit message")
+    } else {
+        None
+    }
+}
+
 /// Kicks off an open-time AI commit-message generation. On success, writes
 /// the result into the message editor (unless the user has already typed
 /// something). On failure, silently swaps the placeholder to the manual
