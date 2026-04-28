@@ -6,13 +6,13 @@
 //! in-process for tests) implement the same trait without touching the
 //! manager.
 //!
-//! Returns boxed futures for object safety — the manager stores
-//! `Arc<dyn RemoteTransport>` for reconnection.
+//! Methods are async. Callers use the trait via generics
+//! (`T: RemoteTransport`) rather than `dyn` dispatch.
 //!
 //! [`RemoteServerManager`]: crate::manager::RemoteServerManager
+use std::future::Future;
 #[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
-use std::pin::Pin;
 
 use async_channel::Receiver;
 use warpui::r#async::executor;
@@ -56,18 +56,12 @@ pub struct Connection {
     pub control_path: Option<PathBuf>,
 }
 
-/// Transport abstraction for remote server connections.
-///
-/// Object-safe: returns boxed futures so implementations can be stored
-/// as `Arc<dyn RemoteTransport>` for reconnection.
-pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
+pub trait RemoteTransport: Send + Sync {
     /// Detects the remote host's OS and architecture by running `uname -sm`.
     ///
     /// Returns the parsed [`RemotePlatform`] on success, or an error string
     /// if the command fails or the output cannot be parsed.
-    fn detect_platform(
-        &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<RemotePlatform, String>> + Send>>;
+    fn detect_platform(&self) -> impl Future<Output = Result<RemotePlatform, String>> + Send;
 
     /// Checks whether the remote server binary is present on the remote host.
     ///
@@ -78,9 +72,18 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// Returns `Ok(true)` if the binary is installed and executable,
     /// `Ok(false)` if it is definitively not installed, and
     /// `Err(_)` if the check failed (e.g. SSH timeout/unreachable).
-    fn check_binary(
-        &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<bool, String>> + Send>>;
+    fn check_binary(&self) -> impl Future<Output = Result<bool, String>> + Send;
+
+    /// Checks whether the remote host already has an existing install
+    /// of the remote server binary.
+    ///
+    /// Used by the manager to distinguish a fresh install (no prior
+    /// install on disk, user should be prompted) from an update (prior
+    /// install present, install should happen automatically).
+    ///
+    /// Returns `Ok(true)` if a prior install was detected, `Ok(false)`
+    /// if not, and `Err(_)` on SSH failure.
+    fn check_has_old_binary(&self) -> impl Future<Output = anyhow::Result<bool>> + Send;
 
     /// Installs the remote server binary on the remote host.
     ///
@@ -90,9 +93,7 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     ///
     /// Returns `Ok(())` if the install succeeded, and
     /// `Err(_)` if the install failed (e.g. SSH timeout, script error).
-    fn install_binary(
-        &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>>;
+    fn install_binary(&self) -> impl Future<Output = Result<(), String>> + Send;
 
     /// Establish a new connection to the remote server.
     ///
@@ -106,6 +107,18 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     /// a socket). Stderr forwarding to local logging should also happen here.
     fn connect(
         &self,
-        executor: std::sync::Arc<executor::Background>,
-    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<Connection>> + Send>>;
+        executor: &executor::Background,
+    ) -> impl Future<Output = anyhow::Result<Connection>> + Send;
+
+    /// Remove the remote server binary, forcing a reinstall on the next
+    /// [`install_binary`] call.
+    ///
+    /// Called by the manager after the initialize handshake reports a
+    /// version that disagrees with the client's: the file at the expected
+    /// path is stale/wrong, so we remove it so the next setup sees a miss
+    /// and reinstalls from the CDN instead of looping on the same bad
+    /// binary.
+    ///
+    /// [`install_binary`]: RemoteTransport::install_binary
+    fn remove_remote_server_binary(&self) -> impl Future<Output = anyhow::Result<()>> + Send;
 }

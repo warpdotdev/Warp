@@ -4335,6 +4335,7 @@ impl TerminalView {
                         session_id,
                         result,
                         remote_platform,
+                        has_old_binary: _,
                     } => {
                         let (remote_os, remote_arch) = remote_platform
                             .as_ref()
@@ -11478,6 +11479,7 @@ impl TerminalView {
                         RemoteServerSetupState::Installing {
                             progress_percent: None,
                         } => "Installing...".to_string(),
+                        RemoteServerSetupState::Updating => "Updating...".to_string(),
                         RemoteServerSetupState::Initializing => "Initializing...".to_string(),
                         _ => "Starting shell...".to_string(),
                     })
