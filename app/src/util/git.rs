@@ -643,12 +643,20 @@ pub async fn get_diff_for_commit_message(
     repo_path: &Path,
     include_unstaged: bool,
 ) -> Result<String> {
-    let args: &[&str] = if include_unstaged {
-        &["diff", "HEAD"]
+    let mut diff = if !include_unstaged {
+        run_git_command(repo_path, &["diff", "--cached"]).await?
+    } else if run_git_command(repo_path, &["rev-parse", "--verify", "HEAD"])
+        .await
+        .is_ok()
+    {
+        run_git_command(repo_path, &["diff", "HEAD"]).await?
     } else {
-        &["diff", "--cached"]
+        // No HEAD before the first commit. Include staged changes plus
+        // unstaged edits to staged files; untracked files are added below.
+        let mut diff = run_git_command(repo_path, &["diff", "--cached"]).await?;
+        diff.push_str(&run_git_command(repo_path, &["diff"]).await?);
+        diff
     };
-    let mut diff = run_git_command(repo_path, args).await?;
 
     // `git diff HEAD` only shows changes to already-tracked files. New files that
     // haven't been staged yet are invisible to it, so we synthesise diff hunks for
