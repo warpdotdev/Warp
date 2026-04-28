@@ -1,11 +1,14 @@
+use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use tempfile::NamedTempFile;
 use warp_cli::agent::Harness;
+use warp_managed_secrets::ManagedSecretValue;
 use warpui::{ModelHandle, ModelSpawner};
 
 use crate::ai::agent::conversation::AIConversationId;
@@ -41,6 +44,20 @@ impl ThirdPartyHarness for CodexHarness {
         Some("https://developers.openai.com/codex/cli")
     }
 
+    fn prepare_environment_config(
+        &self,
+        _working_dir: &Path,
+        system_prompt: Option<&str>,
+        _secrets: &HashMap<String, ManagedSecretValue>,
+    ) -> Result<(), AgentDriverError> {
+        prepare_codex_environment_config(system_prompt).map_err(|error| {
+            AgentDriverError::HarnessConfigSetupFailed {
+                harness: self.cli_agent().command_prefix().to_owned(),
+                error,
+            }
+        })
+    }
+
     fn build_runner(
         &self,
         prompt: &str,
@@ -68,7 +85,7 @@ impl ThirdPartyHarness for CodexHarness {
 /// Build the shell command that launches the Codex TUI.
 ///
 /// `--dangerously-bypass-approvals-and-sandbox` disables both the sandbox and approval
-/// prompts so the agent can run autonomously. 
+/// prompts so the agent can run autonomously.
 fn codex_command(cli_name: &str, prompt_path: &str) -> String {
     format!("{cli_name} --dangerously-bypass-approvals-and-sandbox \"$(cat '{prompt_path}')\"")
 }
@@ -192,6 +209,37 @@ impl HarnessRunner for CodexHarnessRunner {
         )
         .await
     }
+}
+
+const CODEX_CONFIG_DIR: &str = ".codex";
+const CODEX_AGENTS_OVERRIDE_FILE_NAME: &str = "AGENTS.override.md";
+
+fn prepare_codex_environment_config(system_prompt: Option<&str>) -> Result<()> {
+    let Some(prompt) = system_prompt else {
+        return Ok(());
+    };
+    let home_dir =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
+    write_codex_agents_override(&home_dir.join(CODEX_CONFIG_DIR), prompt)
+}
+
+fn write_codex_agents_override(codex_dir: &Path, system_prompt: &str) -> Result<()> {
+    fs::create_dir_all(codex_dir).with_context(|| {
+        format!(
+            "Failed to create Codex config dir at {}",
+            codex_dir.display()
+        )
+    })?;
+
+    // Note: this currently works because we are only doing this for cloud agents; if we enable
+    // this for local runs we'll want to make sure we don't clobber any existing file overrides.
+    let prompt_path = codex_dir.join(CODEX_AGENTS_OVERRIDE_FILE_NAME);
+    fs::write(&prompt_path, system_prompt).with_context(|| {
+        format!(
+            "Failed to write Codex system prompt to {}",
+            prompt_path.display()
+        )
+    })
 }
 
 #[cfg(test)]
