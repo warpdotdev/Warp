@@ -23,6 +23,16 @@ const MAX_RECONNECT_ATTEMPTS: u32 = 2;
 /// Delay between reconnection attempts.
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
+/// Parameters that travel together through the reconnection flow.
+#[cfg(not(target_family = "wasm"))]
+struct ReconnectParams {
+    attempt: u32,
+    host_id: HostId,
+    exit_status: Option<RemoteServerExitStatus>,
+    transport: Arc<dyn RemoteTransport>,
+    control_path: Option<PathBuf>,
+}
+
 /// Which phase of the remote server connection flow failed.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -263,11 +273,13 @@ pub enum RemoteServerManagerEvent {
     ServerMessageDecodingError { session_id: SessionId },
 }
 
-/// Shell info stashed by [`RemoteServerManager::notify_session_bootstrapped`]
-/// when the session is not yet in `Connected` state. Flushed automatically
-/// when [`RemoteServerManager::mark_session_connected`] fires.
+/// Shell info recorded by [`RemoteServerManager::notify_session_bootstrapped`].
+///
+/// Persists for the lifetime of the session (removed only in
+/// `deregister_session`) so that `mark_session_connected` can re-send
+/// the notification after a reconnect.
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
-struct PendingSessionBootstrappedNotification {
+struct SessionBootstrapInfo {
     shell_type: String,
     shell_path: Option<String>,
 }
@@ -292,9 +304,10 @@ pub struct RemoteServerManager {
     /// `navigate_to_directory` calls when `update_active_session` fires
     /// repeatedly for the same CWD.
     last_navigated_path: HashMap<SessionId, String>,
-    /// Per-session `SessionBootstrapped` notifications that arrived before the
-    /// session reached `Connected`. Flushed in `mark_session_connected`.
-    pending_bootstrapped_notifications: HashMap<SessionId, PendingSessionBootstrappedNotification>,
+    /// Per-session shell info recorded at bootstrap time and re-sent to the
+    /// remote server daemon on every (re)connect. Persists until
+    /// `deregister_session`.
+    session_bootstrap_info: HashMap<SessionId, SessionBootstrapInfo>,
     /// Detected remote platform per session, populated during the binary check
     /// phase via `detect_platform()`. Used for telemetry.
     session_platforms: HashMap<SessionId, RemotePlatform>,
@@ -313,7 +326,7 @@ impl RemoteServerManager {
             host_to_sessions: HashMap::new(),
             spawner: ctx.spawner(),
             last_navigated_path: HashMap::new(),
-            pending_bootstrapped_notifications: HashMap::new(),
+            session_bootstrap_info: HashMap::new(),
             session_platforms: HashMap::new(),
         }
     }
@@ -468,12 +481,15 @@ impl RemoteServerManager {
 
             let spawner = self.spawner.clone();
             let executor = ctx.background_executor().clone();
+            // Wrap the transport in an Arc so it can be stored on `Connected`
+            // for reconnection after a spontaneous disconnect.
+            let transport: Arc<dyn RemoteTransport> = Arc::new(transport);
 
             ctx.background_executor()
                 .spawn(async move {
                     match Self::run_connect_and_handshake(
                         session_id,
-                        &transport,
+                        &*transport,
                         &spawner,
                         &executor,
                     )
@@ -482,7 +498,12 @@ impl RemoteServerManager {
                         Ok(host_id) => {
                             let _ = spawner
                                 .spawn(move |me, ctx| {
-                                    me.mark_session_connected(session_id, host_id, None, ctx);
+                                    me.mark_session_connected(
+                                        session_id,
+                                        host_id,
+                                        Some(transport),
+                                        ctx,
+                                    );
                                 })
                                 .await;
                         }
@@ -610,7 +631,7 @@ impl RemoteServerManager {
     ///   spontaneous drops -- only for explicit teardown.
     pub fn deregister_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
         self.last_navigated_path.remove(&session_id);
-        self.pending_bootstrapped_notifications.remove(&session_id);
+        self.session_bootstrap_info.remove(&session_id);
         self.session_platforms.remove(&session_id);
 
         // Remove the session entry. Dropping the `RemoteSessionState`
@@ -772,19 +793,21 @@ impl RemoteServerManager {
         shell_type: &str,
         shell_path: Option<&str>,
     ) {
+        // Always persist so we can re-send after a reconnect.
+        self.session_bootstrap_info.insert(
+            session_id,
+            SessionBootstrapInfo {
+                shell_type: shell_type.to_owned(),
+                shell_path: shell_path.map(ToOwned::to_owned),
+            },
+        );
+
         if let Some(client) = self.client_for_session(session_id) {
             client.notify_session_bootstrapped(session_id, shell_type, shell_path);
         } else {
             log::info!(
                 "notify_session_bootstrapped: session {session_id:?} not yet connected, \
-                 stashing notification"
-            );
-            self.pending_bootstrapped_notifications.insert(
-                session_id,
-                PendingSessionBootstrappedNotification {
-                    shell_type: shell_type.to_owned(),
-                    shell_path: shell_path.map(ToOwned::to_owned),
-                },
+                 will send on connect"
             );
         }
     }
@@ -939,18 +962,16 @@ impl RemoteServerManager {
             host_id,
         });
 
-        // Flush any SessionBootstrapped notification that was stashed before
-        // the session reached Connected.
-        if let Some(notif) = self.pending_bootstrapped_notifications.remove(&session_id) {
+        // (Re-)send the SessionBootstrapped notification so the daemon
+        // registers an executor for this session. This fires on both the
+        // initial connect and every reconnect.
+        if let Some(info) = self.session_bootstrap_info.get(&session_id) {
             if let Some(client) = self.client_for_session(session_id) {
-                log::info!(
-                    "Flushing stashed SessionBootstrapped notification for session \
-                     {session_id:?}"
-                );
+                log::info!("Sending SessionBootstrapped notification for session {session_id:?}");
                 client.notify_session_bootstrapped(
                     session_id,
-                    &notif.shell_type,
-                    notif.shell_path.as_deref(),
+                    &info.shell_type,
+                    info.shell_path.as_deref(),
                 );
             }
         }
@@ -1001,7 +1022,6 @@ impl RemoteServerManager {
         session_id: SessionId,
         ctx: &mut ModelContext<Self>,
     ) {
-        self.pending_bootstrapped_notifications.remove(&session_id);
         let Some(prev) = self.sessions.remove(&session_id) else {
             return;
         };
@@ -1044,11 +1064,13 @@ impl RemoteServerManager {
 
                 self.attempt_reconnect(
                     session_id,
-                    1,
-                    host_id,
-                    exit_status,
-                    transport,
-                    control_path,
+                    ReconnectParams {
+                        attempt: 1,
+                        host_id,
+                        exit_status,
+                        transport,
+                        control_path,
+                    },
                     ctx,
                 );
             } else {
@@ -1078,13 +1100,17 @@ impl RemoteServerManager {
     fn attempt_reconnect(
         &mut self,
         session_id: SessionId,
-        attempt: u32,
-        host_id: HostId,
-        exit_status: Option<RemoteServerExitStatus>,
-        transport: Arc<dyn RemoteTransport>,
-        control_path: Option<PathBuf>,
+        params: ReconnectParams,
         ctx: &mut ModelContext<Self>,
     ) {
+        let ReconnectParams {
+            attempt,
+            host_id,
+            exit_status,
+            transport,
+            control_path,
+        } = params;
+
         log::info!(
             "Attempting reconnect for session {session_id:?} \
              (attempt {attempt}/{MAX_RECONNECT_ATTEMPTS})"
@@ -1155,11 +1181,13 @@ impl RemoteServerManager {
                             .spawn(move |me, ctx| {
                                 me.handle_reconnect_failure(
                                     session_id,
-                                    attempt,
-                                    host_id,
-                                    exit_status,
-                                    transport,
-                                    control_path,
+                                    ReconnectParams {
+                                        attempt,
+                                        host_id,
+                                        exit_status,
+                                        transport,
+                                        control_path,
+                                    },
                                     ctx,
                                 );
                             })
@@ -1175,34 +1203,34 @@ impl RemoteServerManager {
     fn handle_reconnect_failure(
         &mut self,
         session_id: SessionId,
-        attempt: u32,
-        host_id: HostId,
-        exit_status: Option<RemoteServerExitStatus>,
-        transport: Arc<dyn RemoteTransport>,
-        control_path: Option<PathBuf>,
+        params: ReconnectParams,
         ctx: &mut ModelContext<Self>,
     ) {
-        if attempt < MAX_RECONNECT_ATTEMPTS {
+        if params.attempt < MAX_RECONNECT_ATTEMPTS {
             self.attempt_reconnect(
                 session_id,
-                attempt + 1,
-                host_id,
-                exit_status,
-                transport,
-                control_path,
+                ReconnectParams {
+                    attempt: params.attempt + 1,
+                    ..params
+                },
                 ctx,
             );
         } else {
-            log::warn!("Reconnect exhausted for session {session_id:?} after {attempt} attempt(s)");
+            log::warn!(
+                "Reconnect exhausted for session {session_id:?} after {} attempt(s)",
+                params.attempt
+            );
             self.sessions
                 .insert(session_id, RemoteSessionState::Disconnected);
             ctx.emit(RemoteServerManagerEvent::SessionDisconnected {
                 session_id,
-                host_id: host_id.clone(),
-                exit_status,
+                host_id: params.host_id.clone(),
+                exit_status: params.exit_status,
             });
-            if !self.host_to_sessions.contains_key(&host_id) {
-                ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });
+            if !self.host_to_sessions.contains_key(&params.host_id) {
+                ctx.emit(RemoteServerManagerEvent::HostDisconnected {
+                    host_id: params.host_id,
+                });
             }
         }
     }
