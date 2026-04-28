@@ -654,9 +654,9 @@ jobs:
         shell: bash
         run: |
           if ${{ matrix.os == 'wasm' }}; then
-            ./script/wasm/bundle --bin oss --nouniversal --check-only
+            ./script/wasm/bundle --channel oss --nouniversal --check-only
           else
-            ./script/bundle --bin oss --nouniversal --check-only
+            ./script/bundle --channel oss --nouniversal --check-only
           fi
         env:
           # Attach the GitHub auth token so that requests to the GitHub API
