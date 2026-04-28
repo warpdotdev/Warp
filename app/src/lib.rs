@@ -503,9 +503,7 @@ impl LaunchMode {
     fn is_cli_like(&self) -> bool {
         match self {
             LaunchMode::App { .. } | LaunchMode::Test { .. } => false,
-            LaunchMode::CommandLine { .. }
-            | LaunchMode::Proxy
-            | LaunchMode::Daemon => true,
+            LaunchMode::CommandLine { .. } | LaunchMode::Proxy | LaunchMode::Daemon => true,
         }
     }
 
@@ -749,10 +747,7 @@ pub fn run_integration_test(driver: TestDriver) -> Result<()> {
 /// lightweight ones like Proxy.  Think carefully before adding here — if
 /// the step is only needed by the full app, add it to `run_internal`
 /// instead.
-fn init_common(
-    launch_mode: &LaunchMode,
-    timer: Option<&mut IntervalTimer>,
-) -> Result<()> {
+fn init_common(launch_mode: &LaunchMode, timer: Option<&mut IntervalTimer>) -> Result<()> {
     #[cfg(windows)]
     dynamic_libraries::configure_library_loading();
 
