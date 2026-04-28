@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 
 #[test]
 fn llm_info_deserializes_without_base_model_name() {
@@ -80,4 +81,69 @@ fn llm_info_round_trip_serializes_and_deserializes() {
         serde_json::from_str(&serialized).expect("should deserialize after round trip");
 
     assert_eq!(info, round_tripped);
+}
+
+#[test]
+fn open_router_model_maps_to_llm_info() {
+    let info = OpenRouterModel {
+        id: "anthropic/claude-sonnet-4.5".to_string(),
+        name: Some("Claude Sonnet 4.5".to_string()),
+        description: Some("OpenRouter hosted model".to_string()),
+        architecture: Some(OpenRouterArchitecture {
+            input_modalities: vec!["text".to_string(), "image".to_string()],
+        }),
+    }
+    .into_llm_info();
+
+    assert_eq!(info.id.to_string(), "anthropic/claude-sonnet-4.5");
+    assert_eq!(info.display_name, "Claude Sonnet 4.5");
+    assert_eq!(info.provider, LLMProvider::OpenRouter);
+    assert!(info.vision_supported);
+    assert!(info
+        .host_configs
+        .get(&LLMModelHost::DirectApi)
+        .is_some_and(|config| config.enabled));
+}
+
+#[test]
+fn merge_open_router_models_replaces_existing_open_router_choices() {
+    let mut models_by_feature = ModelsByFeature::default();
+    models_by_feature.agent_mode.choices.push(LLMInfo {
+        display_name: "Old OpenRouter Model".to_string(),
+        base_model_name: "Old OpenRouter Model".to_string(),
+        id: "old/openrouter".to_string().into(),
+        reasoning_level: None,
+        usage_metadata: LLMUsageMetadata {
+            request_multiplier: 1,
+            credit_multiplier: None,
+        },
+        description: None,
+        disable_reason: None,
+        vision_supported: false,
+        spec: None,
+        provider: LLMProvider::OpenRouter,
+        host_configs: HashMap::new(),
+        discount_percentage: None,
+    });
+
+    let replacement = OpenRouterModel {
+        id: "openai/gpt-4o".to_string(),
+        name: Some("GPT-4o".to_string()),
+        description: None,
+        architecture: None,
+    }
+    .into_llm_info();
+
+    merge_open_router_models(&mut models_by_feature, vec![replacement]);
+
+    assert!(models_by_feature
+        .agent_mode
+        .choices
+        .iter()
+        .any(|info| info.id.to_string() == "openai/gpt-4o"));
+    assert!(models_by_feature
+        .agent_mode
+        .choices
+        .iter()
+        .all(|info| info.id.to_string() != "old/openrouter"));
 }

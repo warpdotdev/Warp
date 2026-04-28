@@ -1882,6 +1882,7 @@ enum LlmProvider {
   ANTHROPIC
   GOOGLE
   OPENAI
+  OPENROUTER
   UNKNOWN
   XAI
 }

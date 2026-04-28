@@ -107,6 +107,7 @@ pub enum LlmProvider {
     Anthropic,
     Google,
     Xai,
+    Openrouter,
     Unknown,
     #[cynic(fallback)]
     Other(String),

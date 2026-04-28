@@ -2129,6 +2129,9 @@ impl From<warp_graphql::queries::get_feature_model_choices::LlmProvider> for LLM
                 LLMProvider::Google
             }
             warp_graphql::queries::get_feature_model_choices::LlmProvider::Xai => LLMProvider::Xai,
+            warp_graphql::queries::get_feature_model_choices::LlmProvider::Openrouter => {
+                LLMProvider::OpenRouter
+            }
             warp_graphql::queries::get_feature_model_choices::LlmProvider::Unknown => {
                 LLMProvider::Unknown
             }
@@ -2149,6 +2152,7 @@ impl From<warp_graphql::workspace::LlmProvider> for LLMProvider {
             warp_graphql::workspace::LlmProvider::Anthropic => LLMProvider::Anthropic,
             warp_graphql::workspace::LlmProvider::Google => LLMProvider::Google,
             warp_graphql::workspace::LlmProvider::Xai => LLMProvider::Xai,
+            warp_graphql::workspace::LlmProvider::Openrouter => LLMProvider::OpenRouter,
             warp_graphql::workspace::LlmProvider::Unknown => LLMProvider::Unknown,
             warp_graphql::workspace::LlmProvider::Other(value) => {
                 report_error!(anyhow!(

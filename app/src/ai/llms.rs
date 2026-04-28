@@ -1,3 +1,4 @@
+use anyhow::Context;
 use parking_lot::FairMutex;
 use serde::{de, Deserialize, Serialize};
 use std::{
@@ -36,6 +37,7 @@ pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -
         LLMProvider::OpenAI => api_keys.is_some_and(|keys| keys.openai.is_some()),
         LLMProvider::Anthropic => api_keys.is_some_and(|keys| keys.anthropic.is_some()),
         LLMProvider::Google => api_keys.is_some_and(|keys| keys.google.is_some()),
+        LLMProvider::OpenRouter => api_keys.is_some_and(|keys| keys.open_router.is_some()),
         _ => false,
     }
 }
@@ -89,6 +91,7 @@ pub enum LLMProvider {
     Anthropic,
     Google,
     Xai,
+    OpenRouter,
     Unknown,
 }
 
@@ -100,6 +103,7 @@ impl LLMProvider {
             LLMProvider::Anthropic => Some(Icon::ClaudeLogo),
             LLMProvider::Google => Some(Icon::GeminiLogo),
             LLMProvider::Xai => None,
+            LLMProvider::OpenRouter => None,
             LLMProvider::Unknown => None,
         }
     }
@@ -136,6 +140,25 @@ pub struct LLMInfo {
     pub provider: LLMProvider,
     pub host_configs: HashMap<LLMModelHost, RoutingHostConfig>,
     pub discount_percentage: Option<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModelsResponse {
+    data: Vec<OpenRouterModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModel {
+    id: String,
+    name: Option<String>,
+    description: Option<String>,
+    architecture: Option<OpenRouterArchitecture>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterArchitecture {
+    #[serde(default)]
+    input_modalities: Vec<String>,
 }
 
 impl<'de> Deserialize<'de> for LLMInfo {
@@ -853,9 +876,33 @@ impl LLMPreferences {
             return;
         }
 
+        let open_router_api_key = UserWorkspaces::as_ref(ctx)
+            .is_byo_api_key_enabled()
+            .then(|| {
+                ai::api_keys::ApiKeyManager::as_ref(ctx)
+                    .keys()
+                    .open_router
+                    .clone()
+            })
+            .flatten();
         let ai_api_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         ctx.spawn(
-            async move { ai_api_client.get_feature_model_choices().await },
+            async move {
+                let mut update = ai_api_client.get_feature_model_choices().await?;
+                if let Some(open_router_api_key) = open_router_api_key {
+                    match fetch_open_router_models(open_router_api_key).await {
+                        Ok(open_router_models) => {
+                            merge_open_router_models(&mut update, open_router_models);
+                        }
+                        Err(e) => {
+                            report_error!(e.context(
+                                "Failed to fetch OpenRouter models; using Warp model list"
+                            ));
+                        }
+                    }
+                }
+                Ok::<ModelsByFeature, anyhow::Error>(update)
+            },
             |me, result, ctx| match result {
                 Ok(update) => {
                     if update != me.models_by_feature {
@@ -1047,6 +1094,85 @@ fn get_new_agent_mode_choices(
         .filter(|info| !old_ids.contains(&info.id))
         .cloned()
         .collect()
+}
+
+async fn fetch_open_router_models(api_key: String) -> anyhow::Result<Vec<LLMInfo>> {
+    let response = reqwest::Client::new()
+        .get("https://openrouter.ai/api/v1/models")
+        .bearer_auth(api_key)
+        .header("HTTP-Referer", "https://warp.dev")
+        .header("X-Title", "Warp")
+        .send()
+        .await
+        .context("Failed to call OpenRouter models endpoint")?
+        .error_for_status()
+        .context("OpenRouter models endpoint returned an error")?
+        .json::<OpenRouterModelsResponse>()
+        .await
+        .context("Failed to parse OpenRouter models response")?;
+
+    Ok(response
+        .data
+        .into_iter()
+        .map(OpenRouterModel::into_llm_info)
+        .collect())
+}
+
+impl OpenRouterModel {
+    fn into_llm_info(self) -> LLMInfo {
+        let display_name = self.name.unwrap_or_else(|| self.id.clone());
+        let vision_supported = self.architecture.is_some_and(|architecture| {
+            architecture
+                .input_modalities
+                .iter()
+                .any(|modality| modality.eq_ignore_ascii_case("image"))
+        });
+
+        LLMInfo {
+            display_name: display_name.clone(),
+            base_model_name: display_name,
+            id: self.id.into(),
+            reasoning_level: None,
+            usage_metadata: LLMUsageMetadata {
+                request_multiplier: 1,
+                credit_multiplier: None,
+            },
+            description: self.description,
+            disable_reason: None,
+            vision_supported,
+            spec: None,
+            provider: LLMProvider::OpenRouter,
+            host_configs: HashMap::from([(
+                LLMModelHost::DirectApi,
+                RoutingHostConfig {
+                    enabled: true,
+                    model_routing_host: LLMModelHost::DirectApi,
+                },
+            )]),
+            discount_percentage: None,
+        }
+    }
+}
+
+fn merge_open_router_models(
+    models_by_feature: &mut ModelsByFeature,
+    open_router_models: Vec<LLMInfo>,
+) {
+    merge_open_router_models_into_available(&mut models_by_feature.agent_mode, &open_router_models);
+    merge_open_router_models_into_available(&mut models_by_feature.coding, &open_router_models);
+    if let Some(cli_agent) = &mut models_by_feature.cli_agent {
+        merge_open_router_models_into_available(cli_agent, &open_router_models);
+    }
+}
+
+fn merge_open_router_models_into_available(
+    available: &mut AvailableLLMs,
+    open_router_models: &[LLMInfo],
+) {
+    available
+        .choices
+        .retain(|choice| choice.provider != LLMProvider::OpenRouter);
+    available.choices.extend(open_router_models.iter().cloned());
 }
 
 /// Gets the last cached LLM metadata.
