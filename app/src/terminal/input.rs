@@ -2963,15 +2963,21 @@ impl Input {
         });
 
         let slash_command_data_source = ctx.add_model(|ctx| {
-            SlashCommandDataSource::new(
-                slash_commands::DataSourceArgs {
-                    active_session: active_session.clone(),
-                    agent_view_controller: agent_view_controller.clone(),
-                    cli_subagent_controller: cli_subagent_controller.clone(),
-                    terminal_view_id,
-                },
-                ctx,
-            )
+            let args = slash_commands::DataSourceArgs {
+                active_session: active_session.clone(),
+                agent_view_controller: agent_view_controller.clone(),
+                cli_subagent_controller: cli_subagent_controller.clone(),
+                terminal_view_id,
+            };
+            // The V2 menu renders in a narrow 320px floating panel where the
+            // legacy fixed-width name column would push descriptions
+            // offscreen. When V2 is active we use the compact layout for
+            // every emitted item; legacy menus keep the column rendering.
+            if FeatureFlag::CloudModeInputV2.is_enabled() {
+                SlashCommandDataSource::for_cloud_mode_v2(args, ctx)
+            } else {
+                SlashCommandDataSource::new(args, ctx)
+            }
         });
         let slash_command_model = ctx.add_model(|ctx| {
             SlashCommandModel::new(

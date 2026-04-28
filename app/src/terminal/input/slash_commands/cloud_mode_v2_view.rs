@@ -470,7 +470,7 @@ impl CloudModeV2SlashCommandView {
                 QueryResultRenderer::new(
                     result.clone(),
                     format!("v2_slash:{idx}"),
-                    on_click_fn.clone(),
+                    on_click_fn,
                     *QUERY_RESULT_RENDERER_STYLES,
                 )
             })

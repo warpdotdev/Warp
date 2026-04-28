@@ -59,10 +59,28 @@ pub struct SlashCommandDataSource {
     terminal_view_id: EntityId,
     active_commands_by_id: HashMap<SlashCommandId, StaticCommand>,
     active_repo_root: Option<PathBuf>,
+    /// When true, items emitted from this source carry `compact_layout =
+    /// true` so the V2 cloud-mode menu renders them with a tight
+    /// `name → 8px → description` layout instead of the legacy fixed-width
+    /// name column. The legacy menu sets this to false to preserve column
+    /// alignment across rows.
+    compact_layout: bool,
 }
 
 impl SlashCommandDataSource {
     pub fn new(args: DataSourceArgs, ctx: &mut ModelContext<Self>) -> Self {
+        Self::build(args, false, ctx)
+    }
+
+    /// Constructor used when the V2 cloud-mode menu is active. Items
+    /// emitted by `run_query` carry `compact_layout = true` so the narrow
+    /// floating menu (320px) renders descriptions close to the name
+    /// instead of pushing them offscreen behind a fixed name column.
+    pub fn for_cloud_mode_v2(args: DataSourceArgs, ctx: &mut ModelContext<Self>) -> Self {
+        Self::build(args, true, ctx)
+    }
+
+    fn build(args: DataSourceArgs, compact_layout: bool, ctx: &mut ModelContext<Self>) -> Self {
         let DataSourceArgs {
             active_session,
             agent_view_controller,
@@ -133,6 +151,7 @@ impl SlashCommandDataSource {
             terminal_view_id,
             active_commands_by_id: Default::default(),
             active_repo_root: None,
+            compact_layout,
         };
         me.recompute_active_commands(ctx);
         me
@@ -320,6 +339,7 @@ impl SyncDataSource for SlashCommandDataSource {
                     InlineItem::from_slash_command(id, command, app)
                         .with_name_match_result(fuzzy_result.name_match_result)
                         .with_description_match_result(fuzzy_result.description_match_result)
+                        .with_compact_layout(self.compact_layout)
                         .with_score(
                             OrderedFloat(score) * SCORE_MULTIPLIER
                                 + OrderedFloat(prefix_boost) * SCORE_MULTIPLIER
@@ -373,6 +393,7 @@ impl SyncDataSource for SlashCommandDataSource {
                         InlineItem::from_skill(&skill, app)
                             .with_name_match_result(fuzzy_result.name_match_result)
                             .with_description_match_result(fuzzy_result.description_match_result)
+                            .with_compact_layout(self.compact_layout)
                             .with_score(
                                 OrderedFloat(score) * SCORE_MULTIPLIER
                                     + OrderedFloat(prefix_boost) * SCORE_MULTIPLIER
@@ -423,6 +444,11 @@ pub struct InlineItem {
     pub name_match_result: Option<FuzzyMatchResult>,
     pub description_match_result: Option<FuzzyMatchResult>,
     pub score: OrderedFloat<f64>,
+    /// When true, render with a tight `name → 8px → description` layout
+    /// instead of the legacy fixed-width name column. Set by V2 data
+    /// sources where the menu is narrow (320px) and a fixed name column
+    /// would push descriptions offscreen.
+    pub compact_layout: bool,
 }
 
 impl InlineItem {
@@ -441,6 +467,7 @@ impl InlineItem {
             name_match_result: None,
             description_match_result: None,
             score: OrderedFloat(f64::MIN),
+            compact_layout: false,
         }
     }
 
@@ -465,6 +492,7 @@ impl InlineItem {
             name_match_result: None,
             description_match_result: None,
             score: OrderedFloat(f64::MIN),
+            compact_layout: false,
         }
     }
 
@@ -497,6 +525,7 @@ impl InlineItem {
             name_match_result: None,
             description_match_result: None,
             score: OrderedFloat(f64::MIN),
+            compact_layout: false,
         }
     }
 
@@ -512,6 +541,14 @@ impl InlineItem {
 
     fn with_score(mut self, score: OrderedFloat<f64>) -> Self {
         self.score = score;
+        self
+    }
+
+    /// Toggles the compact layout flag used by `SearchItem::render_item`
+    /// to choose between the legacy fixed-width name column and the V2
+    /// tight `name → 8px → description` layout.
+    pub(crate) fn with_compact_layout(mut self, compact: bool) -> Self {
+        self.compact_layout = compact;
         self
     }
 }

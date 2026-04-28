@@ -24,6 +24,11 @@ pub struct ZeroStateDataSource {
     /// prompts in their own section. The legacy inline menu keeps this
     /// disabled.
     include_saved_prompts: bool,
+    /// When true, items emitted carry `compact_layout = true` so the V2
+    /// menu renders them with a tight `name → 8px → description` layout.
+    /// Tracked separately from `include_*` so the layout decision is
+    /// explicit rather than coupled to which sections are surfaced.
+    compact_layout: bool,
 }
 
 impl ZeroStateDataSource {
@@ -32,6 +37,7 @@ impl ZeroStateDataSource {
             slash_command_data_source: slash_command_data_source.clone(),
             include_skills: false,
             include_saved_prompts: false,
+            compact_layout: false,
         }
     }
 
@@ -46,6 +52,7 @@ impl ZeroStateDataSource {
             slash_command_data_source: slash_command_data_source.clone(),
             include_skills: true,
             include_saved_prompts: true,
+            compact_layout: true,
         }
     }
 }
@@ -99,7 +106,9 @@ impl SyncDataSource for ZeroStateDataSource {
                 active_prioritized_commands.push((active_command_id, active_command));
             } else {
                 results.push(
-                    InlineItem::from_slash_command(active_command_id, active_command, app).into(),
+                    InlineItem::from_slash_command(active_command_id, active_command, app)
+                        .with_compact_layout(self.compact_layout)
+                        .into(),
                 );
             }
         }
@@ -109,7 +118,11 @@ impl SyncDataSource for ZeroStateDataSource {
                 .iter()
                 .find(|(_, active_command)| active_command.name == prioritized_command.name)
             {
-                results.push(InlineItem::from_slash_command(id, command, app).into());
+                results.push(
+                    InlineItem::from_slash_command(id, command, app)
+                        .with_compact_layout(self.compact_layout)
+                        .into(),
+                );
             }
         }
 
@@ -144,7 +157,11 @@ impl SyncDataSource for ZeroStateDataSource {
                     }
                     skill.provider = skill_manager.best_supported_provider(&skill, providers);
                 }
-                results.push(InlineItem::from_skill(&skill, app).into());
+                results.push(
+                    InlineItem::from_skill(&skill, app)
+                        .with_compact_layout(self.compact_layout)
+                        .into(),
+                );
             }
         }
 
@@ -164,7 +181,11 @@ impl SyncDataSource for ZeroStateDataSource {
                 })
                 .collect();
             for saved_prompt in saved_prompts {
-                results.push(InlineItem::from_saved_prompt(saved_prompt, app).into());
+                results.push(
+                    InlineItem::from_saved_prompt(saved_prompt, app)
+                        .with_compact_layout(self.compact_layout)
+                        .into(),
+                );
             }
         }
 
