@@ -5256,6 +5256,19 @@ impl TerminalView {
                         .set_is_executing_oz_environment_startup_commands(false);
                 }
 
+                // REMOTE-1486: clear the queued-prompt block on the cloud agent's first
+                // exchange for an Oz local-to-cloud handoff. Mirrors the third-party-harness
+                // path's `HarnessCommandStarted` cleanup, but for the Oz harness the first
+                // `AppendedExchange` is the analogous transition. Idempotent when no block
+                // is currently inserted.
+                if self
+                    .ambient_agent_view_model
+                    .as_ref()
+                    .is_some_and(|model| model.as_ref(ctx).is_local_to_cloud_handoff())
+                {
+                    self.remove_pending_user_query_block(ctx);
+                }
+
                 let should_add_ai_block = history_model
                     .as_ref(ctx)
                     .conversation(conversation_id)

@@ -228,6 +228,13 @@ pub struct AgentInputFooter {
     // Fast-forward (auto-approve) toggle button shown in the agent view footer.
     fast_forward_button: ViewHandle<ActionButton>,
 
+    // "Hand off to cloud" chip. Visibility is gated only on the
+    // `OzHandoff && HandoffLocalCloud` feature flags. Per-conversation
+    // eligibility is enforced by `Workspace::start_local_to_cloud_handoff`,
+    // which falls through to splitting a fresh cloud-mode pane when the
+    // active conversation isn't handoff-able.
+    handoff_to_cloud_button: ViewHandle<ActionButton>,
+
     // CLI agent voice input state (self-contained, bypasses editor voice flow).
     #[cfg(feature = "voice_input")]
     cli_voice_input_state: CLIVoiceInputState,
@@ -346,6 +353,22 @@ impl AgentInputFooter {
                 .with_tooltip_alignment(TooltipAlignment::Left)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(TerminalAction::ToggleAutoexecuteMode);
+                })
+        });
+
+        // "Hand off to cloud" chip. On click dispatches the workspace action that
+        // splits a new cloud-mode pane next to the local pane; that pane handles
+        // the rest of the handoff flow. The chip is always visible when the feature
+        // flags are on; per-conversation eligibility falls through to splitting a
+        // fresh cloud-mode pane in `Workspace::start_local_to_cloud_handoff`.
+        let handoff_to_cloud_button = ctx.add_typed_action_view(|_ctx| {
+            ActionButton::new("", AgentInputButtonTheme)
+                .with_icon(Icon::UploadCloud)
+                .with_tooltip("Hand off to cloud")
+                .with_size(button_size)
+                .with_tooltip_alignment(TooltipAlignment::Left)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(AgentInputFooterAction::OpenHandoffPane);
                 })
         });
 
@@ -770,6 +793,7 @@ impl AgentInputFooter {
             cli_display_chips: vec![],
             display_chip_config,
             fast_forward_button,
+            handoff_to_cloud_button,
             #[cfg(feature = "voice_input")]
             cli_voice_input_state: CLIVoiceInputState::default(),
             #[cfg(feature = "voice_input")]
@@ -1365,7 +1389,8 @@ impl AgentInputFooter {
             AgentToolbarItemKind::ModelSelector
             | AgentToolbarItemKind::NLDToggle
             | AgentToolbarItemKind::ContextWindowUsage
-            | AgentToolbarItemKind::FastForwardToggle => None,
+            | AgentToolbarItemKind::FastForwardToggle
+            | AgentToolbarItemKind::HandoffToCloud => None,
         }
     }
 
@@ -1950,6 +1975,19 @@ impl AgentInputFooter {
             AgentToolbarItemKind::FastForwardToggle => FeatureFlag::FastForwardAutoexecuteButton
                 .is_enabled()
                 .then(|| ChildView::new(&self.fast_forward_button).finish()),
+            AgentToolbarItemKind::HandoffToCloud => {
+                if !FeatureFlag::OzHandoff.is_enabled()
+                    || !FeatureFlag::HandoffLocalCloud.is_enabled()
+                {
+                    return None;
+                }
+                // Always render the chip when the feature flags are on.
+                // Per-conversation eligibility (synced server token, non-empty
+                // history) is enforced by `Workspace::start_local_to_cloud_handoff`,
+                // which falls through to splitting a fresh cloud-mode pane when
+                // the active conversation isn't handoff-able.
+                Some(ChildView::new(&self.handoff_to_cloud_button).finish())
+            }
             // Handled by the available_in() guard above; included for exhaustiveness.
             AgentToolbarItemKind::FileExplorer
             | AgentToolbarItemKind::RichInput
@@ -2213,6 +2251,9 @@ pub enum AgentInputFooterAction {
     StartRemoteControl,
     StopRemoteControl,
     OpenCodingAgentSettings,
+    /// Open the local-to-cloud handoff pane. Dispatched by the
+    /// "Hand off to cloud" footer chip.
+    OpenHandoffPane,
     ShowContextMenu {
         position: Vector2F,
     },
@@ -2409,6 +2450,11 @@ impl TypedActionView for AgentInputFooter {
                     widget_id: crate::settings_view::cli_agent_settings_widget_id(),
                 });
             }
+            AgentInputFooterAction::OpenHandoffPane => {
+                ctx.emit(AgentInputFooterEvent::OpenHandoffPane {
+                    initial_prompt: None,
+                });
+            }
             AgentInputFooterAction::ShowContextMenu { position } => {
                 ctx.emit(AgentInputFooterEvent::ShowContextMenu {
                     position: *position,
@@ -2455,6 +2501,11 @@ pub enum AgentInputFooterEvent {
     PluginInstalled(CLIAgent),
     #[cfg(not(target_family = "wasm"))]
     OpenPluginInstructionsPane(CLIAgent, PluginModalKind),
+    /// Local-to-cloud handoff chip clicked. The terminal `Input` subscriber
+    /// forwards this to `WorkspaceAction::OpenLocalToCloudHandoffPane`.
+    OpenHandoffPane {
+        initial_prompt: Option<String>,
+    },
 }
 
 impl Entity for AgentInputFooter {

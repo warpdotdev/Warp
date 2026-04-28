@@ -741,8 +741,6 @@ async fn upload_snapshot_from_declarations_file(
 ///   it at an incomplete prefix. Manifest-upload failures are also routed through
 ///   `report_error!` so on-call alerting catches the silent regression.
 /// - `Err(_)` only for hard failures of `upload_local_handoff_snapshot` itself (auth, etc.).
-// TODO(REMOTE-1486): drop once the handoff UI in the parent stack branch wires this up.
-#[allow(dead_code)]
 pub(crate) async fn upload_snapshot_for_handoff(
     repo_paths: Vec<PathBuf>,
     orphan_file_paths: Vec<PathBuf>,

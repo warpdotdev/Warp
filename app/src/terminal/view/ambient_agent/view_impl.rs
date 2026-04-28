@@ -321,6 +321,18 @@ impl TerminalView {
                 ctx.emit(TerminalViewEvent::TerminalViewStateChanged);
                 ctx.notify();
             }
+            AmbientAgentViewModelEvent::PendingHandoffChanged => {
+                // REMOTE-1486: re-render so the handoff banner picks up the new
+                // touched-workspace data, submission state, or pending-handoff
+                // teardown.
+                ctx.notify();
+            }
+            AmbientAgentViewModelEvent::HandoffSubmissionFailed { .. } => {
+                // Restoration of the editor buffer + the user-visible toast are
+                // handled by `Input`'s subscription to the same event; nothing
+                // for the terminal view to do here beyond the implicit re-render.
+                ctx.notify();
+            }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => (),
         }
     }

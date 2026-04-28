@@ -331,7 +331,7 @@ use super::{
         UniversalDeveloperInputButtonBar, UniversalDeveloperInputButtonBarEvent,
     },
     view::{
-        ambient_agent::AmbientAgentViewModel,
+        ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent},
         inline_banner::{
             PromptSuggestionBannerState, ZeroStatePromptSuggestionTriggeredFrom,
             ZeroStatePromptSuggestionType,
@@ -2154,7 +2154,7 @@ impl Input {
         });
 
         if let Some(ambient_agent_view_model) = ambient_agent_view_model.as_ref() {
-            ctx.subscribe_to_model(ambient_agent_view_model, |me, handle, _, ctx| {
+            ctx.subscribe_to_model(ambient_agent_view_model, |me, handle, event, ctx| {
                 let is_ambient = handle.as_ref(ctx).is_ambient_agent();
                 me.editor.update(ctx, |editor, ctx| {
                     if let Some(ai_context_menu) = editor.ai_context_menu() {
@@ -2163,7 +2163,49 @@ impl Input {
                         });
                     }
                 });
-                if handle.as_ref(ctx).should_show_status_footer() {
+                // REMOTE-1486: prep+upload failures arrive here so we can
+                // repopulate the editor with the user's original prompt (the
+                // submit path cleared it before the orchestrator started) and
+                // surface the error as a toast. Without this branch the user is
+                // left staring at a blank composing pane after a silent log
+                // line.
+                if let AmbientAgentViewModelEvent::HandoffSubmissionFailed {
+                    prompt,
+                    error_message,
+                } = event
+                {
+                    me.replace_buffer_content(prompt, ctx);
+                    let window_id = ctx.window_id();
+                    let toast_message = format!("Failed to prepare cloud handoff: {error_message}");
+                    ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+                        ts.add_ephemeral_toast(
+                            DismissibleToast::error(toast_message),
+                            window_id,
+                            ctx,
+                        );
+                    });
+                }
+                // Re-render on status-footer transitions (V1 cloud-mode setup) and on the
+                // status-affecting events that decide whether the input is in its composing
+                // shape. The composing-shape transitions matter for the V1 handoff path:
+                // its submit goes through `submit_handoff` which only flips the model to
+                // `WaitingForSession` after the async prep+upload completes, so the input
+                // would otherwise keep rendering the composing chrome (harness selector,
+                // attachment chips) until something else triggers a notify.
+                let should_notify = handle.as_ref(ctx).should_show_status_footer()
+                    || matches!(
+                        event,
+                        AmbientAgentViewModelEvent::EnteredSetupState
+                            | AmbientAgentViewModelEvent::EnteredComposingState
+                            | AmbientAgentViewModelEvent::DispatchedAgent
+                            | AmbientAgentViewModelEvent::SessionReady { .. }
+                            | AmbientAgentViewModelEvent::Failed { .. }
+                            | AmbientAgentViewModelEvent::Cancelled
+                            | AmbientAgentViewModelEvent::NeedsGithubAuth
+                            | AmbientAgentViewModelEvent::HarnessSelected
+                            | AmbientAgentViewModelEvent::HandoffSubmissionFailed { .. }
+                    );
+                if should_notify {
                     ctx.notify();
                 }
             });
@@ -2417,6 +2459,13 @@ impl Input {
                 #[cfg(not(target_family = "wasm"))]
                 AgentInputFooterEvent::OpenPluginInstructionsPane(agent, kind) => {
                     ctx.emit(Event::OpenPluginInstructionsPane(*agent, *kind));
+                }
+                AgentInputFooterEvent::OpenHandoffPane { initial_prompt } => {
+                    ctx.dispatch_typed_action(
+                        &crate::workspace::WorkspaceAction::OpenLocalToCloudHandoffPane {
+                            initial_prompt: initial_prompt.clone(),
+                        },
+                    );
                 }
             }
         });
@@ -12133,6 +12182,32 @@ impl Input {
                     vec![]
                 };
 
+                // For local-to-cloud handoff panes, gate the buffer clear on the
+                // async `derive_touched_workspace` derivation having completed and
+                // no orchestrator already being in flight. If we cleared early and
+                // then bailed inside `submit_handoff`, the user's prompt and
+                // pending attachments would be silently dropped. Surface a toast
+                // so the user gets some feedback instead of seeing the submit do
+                // nothing — the prompt and attachments are intentionally left
+                // intact so the next submit picks them back up.
+                if let Some(ambient_agent_view_model) = self.ambient_agent_view_model() {
+                    let model = ambient_agent_view_model.as_ref(ctx);
+                    if model.is_local_to_cloud_handoff() && !model.is_handoff_ready_to_submit() {
+                        let window_id = ctx.window_id();
+                        ToastStack::handle(ctx).update(ctx, |ts, ctx| {
+                            ts.add_ephemeral_toast(
+                                DismissibleToast::default(
+                                    "Preparing handoff — try again in a moment.".to_owned(),
+                                )
+                                .with_object_id("local-to-cloud-handoff-not-ready".to_owned()),
+                                window_id,
+                                ctx,
+                            );
+                        });
+                        return;
+                    }
+                }
+
                 // Clear the buffer and pending attachments after collecting them.
                 self.editor.update(ctx, |editor, ctx| {
                     editor.clear_buffer(ctx);
@@ -12143,7 +12218,11 @@ impl Input {
 
                 if let Some(ambient_agent_view_model) = self.ambient_agent_view_model() {
                     ambient_agent_view_model.update(ctx, |state, ctx| {
-                        state.spawn_agent(prompt, attachments, ctx);
+                        if state.is_local_to_cloud_handoff() {
+                            state.submit_handoff(prompt, attachments, ctx);
+                        } else {
+                            state.spawn_agent(prompt, attachments, ctx);
+                        }
                     });
                 }
                 return;
