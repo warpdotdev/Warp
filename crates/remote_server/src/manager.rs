@@ -19,8 +19,10 @@ use warp_core::SessionId;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
 
 /// Maximum number of reconnection attempts after a spontaneous disconnect.
+#[cfg(not(target_family = "wasm"))]
 const MAX_RECONNECT_ATTEMPTS: u32 = 2;
 /// Delay between reconnection attempts.
+#[cfg(not(target_family = "wasm"))]
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
 /// Parameters that travel together through the reconnection flow.
