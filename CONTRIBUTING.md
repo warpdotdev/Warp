@@ -63,7 +63,7 @@ A good bug report includes:
 - A clear title and a one-paragraph summary of the problem.
 - Steps to reproduce (with a minimal example where possible).
 - Expected vs. actual behavior.
-- Warp version and OS (see `Settings → About` or `warp --version`).
+- Warp version and OS (see `Settings → About`).
 - Logs, screenshots, or screen recordings when relevant.
 
 Once an issue is triaged as a bug (by Oz's triage agent or a maintainer), it is implicitly **`ready-to-implement`** — you can pick it up and open a code PR without waiting for a separate label.
