@@ -491,13 +491,17 @@ impl Input {
                         let expanded_path = tilde(&unescaped_path);
                         let expanded_path_str: &str = expanded_path.as_ref();
                         let file_path = if let Some(launch_data) = session.launch_data() {
+                            let has_windows_drive_prefix = expanded_path_str
+                                .as_bytes()
+                                .get(..3)
+                                .is_some_and(|bytes| {
+                                    bytes[0].is_ascii_alphabetic()
+                                        && bytes[1] == b':'
+                                        && matches!(bytes[2], b'/' | b'\\')
+                                });
                             let is_absolute = expanded_path_str.starts_with('/')
                                 || expanded_path_str.starts_with('\\')
-                                || expanded_path_str
-                                    .chars()
-                                    .next()
-                                    .is_some_and(|c: char| c.is_alphabetic())
-                                    && expanded_path_str.contains(':');
+                                || has_windows_drive_prefix;
                             if is_absolute {
                                 launch_data
                                     .maybe_convert_absolute_path(expanded_path_str)
