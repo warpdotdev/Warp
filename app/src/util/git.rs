@@ -643,7 +643,12 @@ pub async fn get_diff_for_commit_message(
     repo_path: &Path,
     include_unstaged: bool,
 ) -> Result<String> {
-    let args: &[&str] = if include_unstaged {
+    // `git diff HEAD` fails before the first commit. Use `--cached` for
+    // staged files; the untracked-file synthesis below covers the rest.
+    let has_head = run_git_command(repo_path, &["rev-parse", "--verify", "HEAD"])
+        .await
+        .is_ok();
+    let args: &[&str] = if include_unstaged && has_head {
         &["diff", "HEAD"]
     } else {
         &["diff", "--cached"]
