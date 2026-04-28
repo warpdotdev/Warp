@@ -204,17 +204,30 @@ pub async fn detect_fork_point(_repo_path: &Path) -> Result<Option<String>> {
 /// See the no-`local_fs` stub above for documentation.
 #[cfg(feature = "local_fs")]
 pub async fn detect_fork_point(repo_path: &Path) -> Result<Option<String>> {
-    // Exclude both `<current>` and `origin/<current>` so the branch isn't
-    // subtracted from itself. `--exclude` applies to the next `--branches`
-    // / `--remotes` and matches the short ref name.
+    // Exclude `<current>`, `origin/<current>`, and the resolved `@{u}` so
+    // the branch isn't subtracted from itself.
     let current = detect_current_branch(repo_path).await.ok();
+    let upstream = run_git_command(
+        repo_path,
+        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    )
+    .await
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty());
+
     let branch_exclude = current.as_deref().map(|c| format!("--exclude={c}"));
     let remote_exclude = current.as_deref().map(|c| format!("--exclude=origin/{c}"));
+    // `@{u}` may be local or remote, and `--exclude` applies only to the
+    // next `--branches`/`--remotes`, so we extend it before both.
+    let upstream_exclude = upstream.as_deref().map(|u| format!("--exclude={u}"));
 
     let mut args: Vec<&str> = vec!["rev-list", "HEAD", "--not"];
     args.extend(branch_exclude.as_deref());
+    args.extend(upstream_exclude.as_deref());
     args.push("--branches");
     args.extend(remote_exclude.as_deref());
+    args.extend(upstream_exclude.as_deref());
     args.push("--remotes");
 
     let unique = match run_git_command(repo_path, &args).await {
