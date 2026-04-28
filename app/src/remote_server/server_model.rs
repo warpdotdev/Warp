@@ -537,8 +537,7 @@ impl ServerModel {
         self.auth_token = Some(msg.auth_token);
     }
 
-    #[cfg(test)]
-    fn auth_token(&self) -> Option<&str> {
+    pub fn auth_token(&self) -> Option<&str> {
         self.auth_token.as_deref()
     }
 
