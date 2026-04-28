@@ -36,8 +36,7 @@ impl ConversationListViewModel {
                 // to rebuild the cached ID list.
                 AgentConversationsModelEvent::ConversationsLoaded
                 | AgentConversationsModelEvent::NewTasksReceived
-                | AgentConversationsModelEvent::TasksUpdated
-                | AgentConversationsModelEvent::TaskManuallyOpened => {
+                | AgentConversationsModelEvent::TasksUpdated => {
                     me.refresh_cached_items(ctx);
                 }
                 // Status changes don't affect the set of IDs (status is read
@@ -88,16 +87,6 @@ impl ConversationListViewModel {
             .filter(|item| {
                 item.get_session_status()
                     .is_none_or(|status| status == SessionStatus::Available)
-            })
-            // Only show user-initiated sources (Slack, Linear, Interactive) or tasks that have
-            // been manually opened from the management page.
-            .filter(|item| {
-                let is_user_initiated = item.source().is_some_and(|s| s.is_user_initiated());
-                let is_manually_opened = match item {
-                    ConversationOrTask::Task(task) => model.is_task_manually_opened(&task.task_id),
-                    ConversationOrTask::Conversation(_) => false,
-                };
-                is_user_initiated || is_manually_opened
             })
             .map(|item| match item {
                 ConversationOrTask::Task(task) => ConversationOrTaskId::TaskId(task.task_id),
