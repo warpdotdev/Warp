@@ -1,5 +1,25 @@
-use super::{truncate_from_beginning, GitLineChanges};
+use super::{format_git_branch_command, truncate_from_beginning, GitLineChanges};
 use crate::context_chips::{github_pr_display_text_from_url, ContextChipKind};
+
+#[test]
+fn test_format_git_branch_command_strips_worktree_marker() {
+    // The picker preserves the leading `+ ` marker from `git branch --no-color`
+    // so users can see which branches are in another worktree. This must be
+    // stripped before constructing the `git checkout` command.
+    assert_eq!(
+        format_git_branch_command("+ feature-b"),
+        "git checkout feature-b"
+    );
+    // Regular branches are unaffected.
+    assert_eq!(format_git_branch_command("main"), "git checkout main");
+    // `+` is a legal character inside a ref name — only the exact `"+ "`
+    // prefix that git emits is treated as the worktree marker. A branch
+    // literally named `+feature` must round-trip unchanged.
+    assert_eq!(
+        format_git_branch_command("+feature"),
+        "git checkout +feature"
+    );
+}
 
 #[test]
 fn test_github_pr_display_text_from_url() {

@@ -1779,6 +1779,14 @@ fn format_change_directory_command(dir_name: &str) -> String {
 }
 
 pub fn format_git_branch_command(branch_name: &str) -> String {
+    // The picker preserves the leading `+ ` marker that `git branch --no-color`
+    // prints for a branch checked out in another linked worktree, so users can
+    // see which branches are unavailable. Strip it here so it isn't forwarded
+    // to `git checkout`, which would fail with `pathspec '+' did not match`.
+    // Only the exact `"+ "` prefix is stripped — `+` is a legal character
+    // inside ref names, so a branch literally named `+feature` must be left
+    // alone.
+    let branch_name = branch_name.strip_prefix("+ ").unwrap_or(branch_name);
     format!("git checkout {branch_name}")
 }
 

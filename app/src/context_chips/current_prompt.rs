@@ -625,8 +625,10 @@ impl CurrentPrompt {
 
             // We want to sort the branches so the current branch is first (denoted by *).
             // The rest of the branches maintain their relative order. The `+` marker
-            // (branch checked out in another linked worktree) is treated as a regular
-            // entry; we strip it below so it isn't passed to `git checkout`.
+            // (branch checked out in another linked worktree) is preserved in the
+            // displayed value so users can see at a glance which branches are
+            // unavailable for direct checkout; it is stripped at command-construction
+            // time in `format_git_branch_command`.
             trimmed.sort_by(|a, b| {
                 let a_starts_with_star = a.starts_with('*');
                 let b_starts_with_star = b.starts_with('*');
@@ -635,7 +637,7 @@ impl CurrentPrompt {
 
             trimmed
                 .into_iter()
-                .map(|s| s.trim_start_matches(['*', '+']).trim().to_string())
+                .map(|s| s.trim_start_matches('*').trim().to_string())
                 .collect()
         })
     }

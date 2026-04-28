@@ -1362,7 +1362,7 @@ impl CommandExecutor for RecordingCommandExecutor {
 }
 
 #[test]
-fn test_filter_git_branch_on_click_values_strips_markers() {
+fn test_filter_git_branch_on_click_values_preserves_worktree_marker() {
     // `git branch --no-color --sort=-committerdate` output for a repo where
     // `feature-a` is the current branch and `feature-b` is checked out in a
     // linked worktree.
@@ -1377,15 +1377,16 @@ fn test_filter_git_branch_on_click_values_strips_markers() {
     let filtered = CurrentPrompt::filter_git_branch_on_click_values(Some(raw))
         .expect("Some input should produce Some output");
 
-    // Current branch (`*`) is sorted first; remaining entries keep their
-    // relative order. Both `*` and `+` markers are stripped so the strings
-    // can be passed directly to `git checkout`.
+    // Current branch (`*`) is sorted first and its marker stripped. The `+`
+    // marker is preserved so users can see which branches are checked out in
+    // another linked worktree; it is stripped later in
+    // `format_git_branch_command` before being passed to `git checkout`.
     assert_eq!(
         filtered,
         vec![
             "feature-a".to_string(),
             "main".to_string(),
-            "feature-b".to_string(),
+            "+ feature-b".to_string(),
             "release/1.0".to_string(),
         ]
     );
