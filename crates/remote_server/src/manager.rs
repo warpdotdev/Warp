@@ -159,7 +159,7 @@ pub enum RemoteSessionState {
         control_path: Option<PathBuf>,
         /// Transport stored for reconnection after spontaneous disconnect.
         #[cfg(not(target_family = "wasm"))]
-        transport: Option<Arc<dyn RemoteTransport>>,
+        transport: Arc<dyn RemoteTransport>,
     },
     /// A reconnection attempt is in progress after a spontaneous disconnect.
     #[cfg(not(target_family = "wasm"))]
@@ -525,12 +525,7 @@ impl RemoteServerManager {
                         Ok(host_id) => {
                             let _ = spawner
                                 .spawn(move |me, ctx| {
-                                    me.mark_session_connected(
-                                        session_id,
-                                        host_id,
-                                        Some(transport),
-                                        ctx,
-                                    );
+                                    me.mark_session_connected(session_id, host_id, transport, ctx);
                                 })
                                 .await;
                         }
@@ -953,16 +948,14 @@ impl RemoteServerManager {
         }
     }
 
-    /// Transitions a session from `Initializing` to `Connected`. Accepts an
-    /// optional `transport` for reconnection support. When called from the
-    /// initial connect path the transport is `None`. When called from the
-    /// reconnect path the transport is carried forward.
+    /// Transitions a session from `Initializing` to `Connected`. Stores the
+    /// `transport` for reconnection support after a spontaneous disconnect.
     #[cfg(not(target_family = "wasm"))]
     fn mark_session_connected(
         &mut self,
         session_id: SessionId,
         host_id: HostId,
-        transport: Option<Arc<dyn RemoteTransport>>,
+        transport: Arc<dyn RemoteTransport>,
         ctx: &mut ModelContext<Self>,
     ) {
         log::info!("Remote server connected for session {session_id:?}, host {host_id}");
@@ -1084,53 +1077,37 @@ impl RemoteServerManager {
             // Drop the old child process explicitly before reconnecting.
             drop(_child);
 
-            let can_reconnect = transport.is_some();
+            log::info!(
+                "Spontaneous disconnect for session {session_id:?}, \
+                 will attempt reconnect (transport={transport:?})"
+            );
 
-            if can_reconnect {
-                let transport = transport.unwrap();
-                log::info!(
-                    "Spontaneous disconnect for session {session_id:?}, \
-                     will attempt reconnect (transport={transport:?})"
-                );
-
-                // Clear stale repo metadata and host index so downstream
-                // models don't hold onto data from the dead server process.
-                self.remove_from_host_index(&host_id, session_id);
-                if !self.host_to_sessions.contains_key(&host_id) {
-                    ctx.emit(RemoteServerManagerEvent::HostDisconnected {
-                        host_id: host_id.clone(),
-                    });
-                }
-
-                // Clear last navigated path so navigate_to_directory
-                // re-fires after reconnect.
-                self.last_navigated_path.remove(&session_id);
-
-                self.attempt_reconnect(
-                    session_id,
-                    ReconnectParams {
-                        attempt: 1,
-                        host_id,
-                        exit_status,
-                        transport,
-                        control_path,
-                    },
-                    ctx,
-                );
-            } else {
-                // No reconnect — fall through to terminal Disconnected.
-                self.sessions
-                    .insert(session_id, RemoteSessionState::Disconnected);
-                self.remove_from_host_index(&host_id, session_id);
-                ctx.emit(RemoteServerManagerEvent::SessionDisconnected {
-                    session_id,
+            // Clear stale repo metadata and host index so downstream
+            // models don't hold onto data from the dead server process.
+            self.remove_from_host_index(&host_id, session_id);
+            if !self.host_to_sessions.contains_key(&host_id) {
+                ctx.emit(RemoteServerManagerEvent::HostDisconnected {
                     host_id: host_id.clone(),
-                    exit_status,
                 });
-                if !self.host_to_sessions.contains_key(&host_id) {
-                    ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });
-                }
             }
+
+            // Clear last navigated path so navigate_to_directory
+            // re-fires after reconnect.
+            // We need to do this on disconnect because the cached
+            // navigated path is only deduping for the current _remote server session.
+            self.last_navigated_path.remove(&session_id);
+
+            self.attempt_reconnect(
+                session_id,
+                ReconnectParams {
+                    attempt: 1,
+                    host_id,
+                    exit_status,
+                    transport,
+                    control_path,
+                },
+                ctx,
+            );
         } else {
             // Non-Connected states (Initializing, Connecting, etc.) —
             // no reconnect, just mark disconnected.
@@ -1211,7 +1188,7 @@ impl RemoteServerManager {
                                 me.mark_session_connected(
                                     session_id,
                                     new_host_id.clone(),
-                                    Some(transport),
+                                    transport,
                                     ctx,
                                 );
                                 if let Some(client) = me.client_for_session(session_id).cloned() {
