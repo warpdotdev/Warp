@@ -204,6 +204,58 @@ fn test_append_followup_scrollback_skips_duplicates() {
             )
         });
 
+        {
+            let model = model.lock();
+            let commands = model
+                .block_list()
+                .blocks()
+                .iter()
+                .map(|block| block.command_to_string())
+                .collect::<Vec<_>>();
+            assert_eq!(model.block_list().blocks().len(), 5);
+            assert_eq!(
+                commands
+                    .iter()
+                    .filter(|command| command.as_str() == "initial-command")
+                    .count(),
+                1
+            );
+            assert_eq!(
+                commands
+                    .iter()
+                    .filter(|command| command.as_str() == "followup-command")
+                    .count(),
+                1
+            );
+        }
+
+        let second_followup_completed =
+            completed_block("second-followup-command", "second-followup-output");
+        let second_followup_active = active_block();
+        app.add_model(|ctx| {
+            EventLoop::new(
+                model.clone(),
+                terminal_view.downgrade(),
+                channel_event_proxy.clone(),
+                WindowSize {
+                    num_rows: 0,
+                    num_cols: 0,
+                },
+                Scrollback {
+                    blocks: vec![
+                        scrollback_block(&initial_completed),
+                        scrollback_block(&followup_completed),
+                        scrollback_block(&second_followup_completed),
+                        scrollback_block(&second_followup_active),
+                    ],
+                    is_alt_screen_active: false,
+                },
+                None,
+                SharedSessionInitialLoadMode::AppendFollowupScrollback,
+                ctx,
+            )
+        });
+
         let model = model.lock();
         let commands = model
             .block_list()
@@ -211,21 +263,20 @@ fn test_append_followup_scrollback_skips_duplicates() {
             .iter()
             .map(|block| block.command_to_string())
             .collect::<Vec<_>>();
-        assert_eq!(model.block_list().blocks().len(), 5);
-        assert_eq!(
-            commands
-                .iter()
-                .filter(|command| command.contains("initial-command"))
-                .count(),
-            1
-        );
-        assert_eq!(
-            commands
-                .iter()
-                .filter(|command| command.contains("followup-command"))
-                .count(),
-            1
-        );
+        assert_eq!(model.block_list().blocks().len(), 7);
+        for command in [
+            "initial-command",
+            "followup-command",
+            "second-followup-command",
+        ] {
+            assert_eq!(
+                commands
+                    .iter()
+                    .filter(|existing_command| existing_command.as_str() == command)
+                    .count(),
+                1
+            );
+        }
     })
 }
 

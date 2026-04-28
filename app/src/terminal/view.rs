@@ -435,7 +435,7 @@ use crate::banner::{
     DismissalType,
 };
 use crate::debounce::debounce;
-use crate::editor::{AutosuggestionType, CrdtOperation, EditorAction, InteractionState};
+use crate::editor::{AutosuggestionType, CrdtOperation, EditorAction};
 use crate::features::FeatureFlag;
 use crate::pane_group::SplitPaneState;
 use crate::pane_group::{
@@ -6718,6 +6718,17 @@ impl TerminalView {
         };
 
         if task.is_no_longer_running() {
+            if self.owned_ambient_agent_task_id(ctx).is_some() {
+                if !self
+                    .model
+                    .lock()
+                    .shared_session_status()
+                    .is_sharer_or_viewer()
+                {
+                    self.enable_owned_cloud_followup_input(task_id, ctx);
+                }
+                return;
+            }
             self.insert_conversation_ended_tombstone(ctx);
         }
     }
@@ -19755,12 +19766,9 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         self.input.update(ctx, |input, ctx| {
-            input.unfreeze_and_clear_agent_input(ctx);
+            input.reset_after_cloud_followup_submission(ctx);
             input.replace_buffer_content(prompt, ctx);
             input.set_input_mode_agent(true, ctx);
-            input.editor().update(ctx, |editor, ctx| {
-                editor.set_interaction_state(InteractionState::Editable, ctx);
-            });
         });
         self.update_pane_configuration(ctx);
         self.focus_input_box(ctx);
@@ -19780,11 +19788,8 @@ impl TerminalView {
 
         if prompt.trim().is_empty() {
             self.input.update(ctx, |input, ctx| {
-                input.unfreeze_and_clear_agent_input(ctx);
+                input.reset_after_cloud_followup_submission(ctx);
                 input.set_input_mode_agent(true, ctx);
-                input.editor().update(ctx, |editor, ctx| {
-                    editor.set_interaction_state(InteractionState::Editable, ctx);
-                });
             });
             self.update_pane_configuration(ctx);
             self.focus_input_box(ctx);
@@ -19814,11 +19819,8 @@ impl TerminalView {
             model.submit_cloud_followup(prompt, ctx);
         });
         self.input.update(ctx, |input, ctx| {
-            input.unfreeze_and_clear_agent_input(ctx);
+            input.reset_after_cloud_followup_submission(ctx);
             input.set_input_mode_agent(true, ctx);
-            input.editor().update(ctx, |editor, ctx| {
-                editor.set_interaction_state(InteractionState::Editable, ctx);
-            });
         });
         self.update_pane_configuration(ctx);
         ctx.notify();
@@ -25770,13 +25772,11 @@ impl View for TerminalView {
             self.render_grid_tooltip(&mut stack, &model, appearance, app);
         }
 
-        // Show progress steps while waiting for an ambient agent to start. Under setup-v2, keep
-        // the existing initial-run UX but show the progress/error screen for PR3 follow-ups.
+        // Show progress steps while waiting for an ambient agent to start. CloudModeSetupV2 uses
+        // the agent status bar for setup/follow-up progress.
         if self.ambient_agent_view_model.as_ref().is_some_and(|model| {
             let model = model.as_ref(app);
-            model.agent_progress().is_some()
-                && (!FeatureFlag::CloudModeSetupV2.is_enabled()
-                    || model.should_show_followup_progress())
+            model.agent_progress().is_some() && !FeatureFlag::CloudModeSetupV2.is_enabled()
         }) {
             stack.add_child(self.render_ambient_agent_progress(appearance, app));
         }

@@ -6396,6 +6396,16 @@ impl Input {
         }
     }
 
+    pub fn reset_after_cloud_followup_submission(&mut self, ctx: &mut ViewContext<Self>) {
+        self.editor.update(ctx, |editor, ctx| {
+            editor.set_interaction_state(InteractionState::Editable, ctx);
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+
+            let appearance: &Appearance = Appearance::as_ref(ctx);
+            editor.set_text_colors(TextColors::from_appearance(appearance), ctx);
+        });
+    }
+
     /// Cancel any active agent conversation in a shared session
     /// and fan out a cancellation control action.
     pub(crate) fn cancel_active_agent_conversation_for_shared_session(

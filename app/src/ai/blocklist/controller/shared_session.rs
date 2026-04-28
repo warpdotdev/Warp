@@ -100,7 +100,8 @@ impl BlocklistAIController {
     ) {
         let stream_id = ResponseStreamId::for_shared_session(&init_event);
         self.shared_session_state.current_response_id = None;
-        self.shared_session_state.should_skip_current_replayed_response = false;
+        self.shared_session_state
+            .should_skip_current_replayed_response = false;
         let terminal_view_id = self.terminal_view_id;
         let history = BlocklistAIHistoryModel::handle(ctx);
 
@@ -149,12 +150,12 @@ impl BlocklistAIController {
                     h.start_new_conversation(terminal_view_id, false, true, ctx)
                 })
             });
-        if self.should_skip_replayed_response_for_existing_conversation(
-            existing_conversation_id,
-            ctx,
-        ) {
+        if self
+            .should_skip_replayed_response_for_existing_conversation(existing_conversation_id, ctx)
+        {
             self.shared_session_state.current_response_id = Some(stream_id);
-            self.shared_session_state.should_skip_current_replayed_response = true;
+            self.shared_session_state
+                .should_skip_current_replayed_response = true;
             return;
         }
 
@@ -360,7 +361,8 @@ impl BlocklistAIController {
             .should_skip_current_replayed_response
         {
             self.shared_session_state.current_response_id.take();
-            self.shared_session_state.should_skip_current_replayed_response = false;
+            self.shared_session_state
+                .should_skip_current_replayed_response = false;
             return;
         }
         let Some(stream_id) = self.shared_session_state.current_response_id.take() else {

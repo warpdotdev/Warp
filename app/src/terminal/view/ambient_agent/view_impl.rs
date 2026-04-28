@@ -17,9 +17,7 @@ use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryM
 use crate::ai::conversation_details_panel::ConversationDetailsData;
 use crate::pane_group::TerminalViewResources;
 use crate::server::server_api::ai::SpawnAgentRequest;
-use crate::terminal::view::ambient_agent::{
-    CloudModeFollowupUserQuery, CloudModeInitialUserQuery,
-};
+use crate::terminal::view::ambient_agent::{CloudModeFollowupUserQuery, CloudModeInitialUserQuery};
 use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
 use crate::terminal::view::TerminalView;
 use crate::terminal::CLIAgent;
@@ -181,6 +179,11 @@ impl TerminalView {
                         );
                         ambient_agent_view_model.update(ctx, |model, _| {
                             model.set_has_inserted_cloud_mode_user_query_block(true);
+                            if let Some(prompt) =
+                                model.request().map(|request| request.prompt.clone())
+                            {
+                                model.record_optimistic_user_query(prompt);
+                            }
                         });
                     }
                 } else {
@@ -209,9 +212,10 @@ impl TerminalView {
                     .pending_followup_prompt()
                     .map(str::to_owned);
                 if let Some(prompt) = pending_prompt {
+                    let prompt_for_query = prompt.clone();
                     let followup_user_query = ctx.add_view(|ctx| {
                         CloudModeFollowupUserQuery::new(
-                            prompt,
+                            prompt_for_query,
                             ambient_agent_view_model.clone(),
                             ctx,
                         )
@@ -225,6 +229,9 @@ impl TerminalView {
                         },
                         ctx,
                     );
+                    ambient_agent_view_model.update(ctx, |model, _| {
+                        model.record_optimistic_user_query(prompt);
+                    });
                 }
                 ctx.notify();
             }

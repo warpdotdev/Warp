@@ -134,6 +134,7 @@ pub struct AmbientAgentViewModel {
     /// Used to transition the cloud-mode setup UI out of the pre-first-exchange phase when
     /// there is no oz `AppendedExchange` to key off of.
     harness_command_started: bool,
+    optimistically_rendered_user_queries: Vec<String>,
 
     active_execution_session_id: Option<SessionId>,
     last_ended_execution_session_id: Option<SessionId>,
@@ -171,6 +172,7 @@ impl AmbientAgentViewModel {
             worker_host: None,
             has_inserted_cloud_mode_user_query_block: false,
             harness_command_started: false,
+            optimistically_rendered_user_queries: vec![],
             active_execution_session_id: None,
             last_ended_execution_session_id: None,
             pending_followup_prompt: None,
@@ -345,6 +347,16 @@ impl AmbientAgentViewModel {
 
     pub fn set_has_inserted_cloud_mode_user_query_block(&mut self, has_inserted: bool) {
         self.has_inserted_cloud_mode_user_query_block = has_inserted;
+    }
+
+    pub fn record_optimistic_user_query(&mut self, prompt: String) {
+        self.optimistically_rendered_user_queries.push(prompt);
+    }
+
+    pub fn has_optimistic_user_query(&self, prompt: &str) -> bool {
+        self.optimistically_rendered_user_queries
+            .iter()
+            .any(|query| query == prompt)
     }
 
     /// Whether or not this terminal session is in the setup state (first-time environment creation).
@@ -559,6 +571,7 @@ impl AmbientAgentViewModel {
         self.conversation_id = None;
         self.has_inserted_cloud_mode_user_query_block = false;
         self.harness_command_started = false;
+        self.optimistically_rendered_user_queries.clear();
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
         self.pending_followup_prompt = None;

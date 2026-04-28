@@ -248,6 +248,9 @@ impl AgentRunDisplayStatus {
             | AmbientAgentTaskState::Pending
             | AmbientAgentTaskState::Claimed => Self::from_task_state(task),
             AmbientAgentTaskState::InProgress => {
+                if task.has_active_execution() {
+                    return Self::from_task_state(task);
+                }
                 let history_model = BlocklistAIHistoryModel::as_ref(app);
                 AgentConversationsModel::conversation_id_shadowed_by_task(task, history_model)
                     .and_then(|conversation_id| history_model.conversation(&conversation_id))
@@ -528,15 +531,13 @@ impl ConversationOrTask<'_> {
     /// Returns the session ID for tasks, if we have one.
     pub fn session_id(&self) -> Option<SessionId> {
         match self {
-            ConversationOrTask::Task(task) => {
-                task.active_run_execution().session_id.and_then(|s| {
-                    let session_id = s.parse::<SessionId>();
-                    if let Err(ref e) = session_id {
-                        log::warn!("Failed to parse shared session ID: {e}");
-                    }
-                    session_id.ok()
-                })
-            }
+            ConversationOrTask::Task(task) => task.latest_execution_session_id().and_then(|s| {
+                let session_id = s.parse::<SessionId>();
+                if let Err(ref e) = session_id {
+                    log::warn!("Failed to parse shared session ID: {e}");
+                }
+                session_id.ok()
+            }),
             ConversationOrTask::Conversation(_) => None,
         }
     }
@@ -623,12 +624,11 @@ impl ConversationOrTask<'_> {
     fn link_preference(&self) -> LinkPreference {
         match self {
             ConversationOrTask::Task(task) => {
-                let run_execution = task.active_run_execution();
                 // Always open session link if there's a live session.
                 // Without cloud conversations, also open session link as long as it's not expired.
                 // With cloud conversations, even if the link is not expired, we load conversation
                 // data from graphql as long as the session isn't live.
-                if run_execution.is_sandbox_running
+                if task.has_active_execution()
                     || (!FeatureFlag::CloudConversations.is_enabled()
                         && self.get_session_status() != Some(SessionStatus::Expired))
                 {
@@ -1361,6 +1361,11 @@ impl AgentConversationsModel {
     /// Returns an iterator over all ambient agent tasks.
     pub fn tasks_iter(&self) -> impl Iterator<Item = &AmbientAgentTask> {
         self.tasks.values()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert_task_for_test(&mut self, task: AmbientAgentTask) {
+        self.tasks.insert(task.task_id, task);
     }
 
     /// Returns the local conversation ID represented by the given task, if this task and a
