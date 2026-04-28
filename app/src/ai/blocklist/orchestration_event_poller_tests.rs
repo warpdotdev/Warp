@@ -154,6 +154,14 @@ fn ai_conversation_new_restored_preserves_last_event_sequence() {
 
 // ---- Helpers for App-based poller tests ----
 
+fn make_ambient_task_with_children(
+    children: Vec<String>,
+) -> crate::ai::ambient_agents::AmbientAgentTask {
+    let mut task = make_ambient_task_with_event_seq(None);
+    task.children = children;
+    task
+}
+
 fn make_ambient_task_with_event_seq(
     last_event_sequence: Option<i64>,
 ) -> crate::ai::ambient_agents::AmbientAgentTask {
@@ -211,6 +219,13 @@ fn finish_restore_fetch_uses_server_cursor_when_sqlite_is_absent() {
 
         let poller = app.add_singleton_model(|ctx| {
             OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+        });
+
+        // Seed event_cursor as on_restored_conversations would before spawning
+        // the async fetch. Without this the guard that detects mid-flight
+        // conversation deletion would fire and return early.
+        poller.update(&mut app, |me, _| {
+            me.event_cursor.insert(conversation_id, 0);
         });
 
         let task_id: crate::ai::ambient_agents::AmbientAgentTaskId =
@@ -415,5 +430,173 @@ fn handle_poll_result_persists_max_seq_to_history_model() {
         // path was triggered (sanity check for the side effect, not the
         // primary assertion).
         let _ = receiver.recv_timeout(std::time::Duration::from_secs(1));
+    });
+}
+
+#[test]
+fn finish_restore_fetch_no_ops_when_conversation_deleted_mid_flight() {
+    // If the conversation is removed while the async fetch is in-flight, the
+    // RemoveConversation handler clears event_cursor. finish_restore_fetch
+    // uses the missing cursor as a sentinel and must not re-populate
+    // watched_run_ids or event_cursor for the deleted conversation.
+    use crate::ai::agent::conversation::AIConversation;
+    use crate::server::server_api::ai::MockAIClient;
+    use crate::server::server_api::ServerApiProvider;
+    use std::sync::Arc;
+    use warpui::App;
+
+    App::test((), |mut app| async move {
+        let _v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+
+        let mut conversation = AIConversation::new(false);
+        conversation.set_run_id("550e8400-e29b-41d4-a716-446655440300".to_string());
+        let conversation_id = conversation.id();
+        let terminal_view_id = warpui::EntityId::new();
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![conversation], ctx);
+        });
+
+        let mock = MockAIClient::new();
+        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
+        let server_api = ServerApiProvider::new_for_test().get();
+
+        let poller = app.add_singleton_model(|ctx| {
+            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+        });
+
+        // Seed cursor as on_restored_conversations would.
+        poller.update(&mut app, |me, _| {
+            me.event_cursor.insert(conversation_id, 0);
+        });
+
+        // Simulate the RemoveConversation handler firing while the fetch is
+        // in-flight: it clears event_cursor (and all other state).
+        poller.update(&mut app, |me, _| {
+            me.watched_run_ids.remove(&conversation_id);
+            me.event_cursor.remove(&conversation_id);
+        });
+
+        // The in-flight fetch now completes — with children.
+        let task_id: crate::ai::ambient_agents::AmbientAgentTaskId =
+            "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
+        poller.update(&mut app, |me, ctx| {
+            me.finish_restore_fetch(
+                conversation_id,
+                task_id,
+                /* sqlite_cursor */ 0,
+                Ok(make_ambient_task_with_children(vec![
+                    "child-run-1".to_string()
+                ])),
+                ctx,
+            );
+        });
+
+        poller.read(&app, |me, _| {
+            assert!(
+                !me.watched_run_ids.contains_key(&conversation_id),
+                "watched_run_ids must not be repopulated for a deleted conversation"
+            );
+            assert!(
+                !me.event_cursor.contains_key(&conversation_id),
+                "event_cursor must not be repopulated for a deleted conversation"
+            );
+        });
+    });
+}
+
+#[test]
+fn finish_restore_fetch_reconnects_sse_when_children_added_to_open_connection() {
+    // When a status transition races with the restore fetch and opens SSE
+    // before children are known, finish_restore_fetch must reconnect SSE
+    // with the updated run_id set rather than leaving children unwatched.
+    use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
+    use crate::server::server_api::ai::MockAIClient;
+    use crate::server::server_api::ServerApiProvider;
+    use std::sync::Arc;
+    use warpui::App;
+
+    App::test((), |mut app| async move {
+        let _v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+
+        let own_run_id = "550e8400-e29b-41d4-a716-446655440400";
+        let mut conversation = AIConversation::new(false);
+        conversation.set_run_id(own_run_id.to_string());
+        let conversation_id = conversation.id();
+        let terminal_view_id = warpui::EntityId::new();
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![conversation], ctx);
+            model.update_conversation_status(
+                terminal_view_id,
+                conversation_id,
+                ConversationStatus::InProgress,
+                ctx,
+            );
+        });
+
+        let mock = MockAIClient::new();
+        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
+        let server_api = ServerApiProvider::new_for_test().get();
+
+        let poller = app.add_singleton_model(|ctx| {
+            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+        });
+
+        // Seed the state on_restored_conversations would have set up, then
+        // inject a fake open SSE connection (generation 0) simulating the
+        // race: a status transition fired before the restore fetch completed.
+        let (_, rx) = futures::channel::mpsc::unbounded::<SseStreamItem>();
+        poller.update(&mut app, |me, _| {
+            me.event_cursor.insert(conversation_id, 0);
+            me.watched_run_ids
+                .entry(conversation_id)
+                .or_default()
+                .insert(own_run_id.to_string());
+            me.sse_connections.insert(
+                conversation_id,
+                SseConnectionState {
+                    event_receiver: rx,
+                    generation: 0,
+                },
+            );
+            me.next_sse_generation = 1;
+        });
+
+        // The restore fetch returns with a child run_id.
+        let task_id: crate::ai::ambient_agents::AmbientAgentTaskId =
+            "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
+        poller.update(&mut app, |me, ctx| {
+            me.finish_restore_fetch(
+                conversation_id,
+                task_id,
+                /* sqlite_cursor */ 0,
+                Ok(make_ambient_task_with_children(vec![
+                    "child-run-1".to_string()
+                ])),
+                ctx,
+            );
+        });
+
+        poller.read(&app, |me, _| {
+            assert!(
+                me.watched_run_ids
+                    .get(&conversation_id)
+                    .is_some_and(|w| w.contains("child-run-1")),
+                "child run_id must be in watched set"
+            );
+            // The old generation-0 connection must have been replaced by a
+            // new one with a higher generation, proving SSE was reconnected.
+            let gen = me
+                .sse_connections
+                .get(&conversation_id)
+                .map(|s| s.generation);
+            assert!(
+                gen.is_some_and(|g| g > 0),
+                "SSE must be reconnected (new generation) after children are discovered; got gen={gen:?}"
+            );
+        });
     });
 }

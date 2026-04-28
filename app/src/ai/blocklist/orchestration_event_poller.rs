@@ -362,6 +362,14 @@ impl OrchestrationEventPoller {
     ) {
         match run_result {
             Ok(task) => {
+                // If the conversation was removed while the fetch was in-flight,
+                // the removal handler already cleaned up all poller state. Return
+                // early to avoid recreating watched_run_ids for a deleted conversation.
+                if !self.event_cursor.contains_key(&conv_id) {
+                    self.restore_fetch_failures.remove(&conv_id);
+                    return;
+                }
+
                 // Reset the retry counter on success.
                 self.restore_fetch_failures.remove(&conv_id);
 
@@ -375,9 +383,21 @@ impl OrchestrationEventPoller {
                 // The server response includes `children` inline on
                 // `AmbientAgentTask`; this is the authoritative set of
                 // direct child run_ids for the parent.
+                //
+                // Insert children and reconnect SSE once if any new run_ids
+                // were added and a connection is already open (e.g. because a
+                // status transition raced with this fetch and opened SSE with
+                // only the parent's own run_id).
+                let had_sse = self.sse_connections.contains_key(&conv_id);
                 let watched = self.watched_run_ids.entry(conv_id).or_default();
+                let mut any_new_children = false;
                 for child in task.children {
-                    watched.insert(child);
+                    if watched.insert(child) {
+                        any_new_children = true;
+                    }
+                }
+                if any_new_children && had_sse {
+                    self.reconnect_sse(conv_id, ctx);
                 }
 
                 let status = BlocklistAIHistoryModel::as_ref(ctx)
