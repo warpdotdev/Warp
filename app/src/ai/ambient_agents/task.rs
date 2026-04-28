@@ -262,6 +262,20 @@ pub struct AmbientAgentTask {
     pub agent_config_snapshot: Option<AgentConfigSnapshot>,
     #[serde(default, deserialize_with = "deserialize_artifacts")]
     pub artifacts: Vec<Artifact>,
+
+    /// The last event sequence number recorded for this run by the server.
+    /// Used by orchestration event delivery to resume from the correct
+    /// cursor on restart. Populated by `GET /agent/runs/{run_id}` when the
+    /// server supports it; `None` on older servers.
+    #[serde(default)]
+    pub last_event_sequence: Option<i64>,
+
+    /// The server-recorded `run_id`s of direct children of this run. Used
+    /// by orchestration event-delivery restore to discover children whose
+    /// records may not exist locally (e.g. remote-worker children in the
+    /// driver case). Empty on older servers.
+    #[serde(default)]
+    pub children: Vec<String>,
 }
 
 /// Represents a single attachment input from the client (e.g., file upload)

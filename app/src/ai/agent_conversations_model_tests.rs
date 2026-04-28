@@ -60,6 +60,8 @@ fn create_test_task(
         agent_config_snapshot: None,
         artifacts: vec![],
         is_sandbox_running: false,
+        last_event_sequence: None,
+        children: vec![],
     }
 }
 
@@ -152,6 +154,7 @@ fn test_display_status_uses_matching_conversation_for_in_progress_task() {
                 parent_conversation_id: None,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
+                last_event_sequence: None,
             },
         );
 
@@ -203,6 +206,7 @@ fn test_display_status_updates_when_blocked_conversation_resumes() {
                 parent_conversation_id: None,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
+                last_event_sequence: None,
             },
         );
 
@@ -278,6 +282,7 @@ fn test_display_status_terminal_task_state_overrides_matching_conversation() {
                 parent_conversation_id: None,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
+                last_event_sequence: None,
             },
         );
 
@@ -329,6 +334,7 @@ fn test_status_filter_uses_display_status_for_task_backed_conversations() {
                 parent_conversation_id: None,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
+                last_event_sequence: None,
             },
         );
 
@@ -763,6 +769,7 @@ fn test_get_tasks_and_conversations_prefers_task_when_task_id_matches_conversati
                 parent_conversation_id: None,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
+                last_event_sequence: None,
             },
         );
 
@@ -819,6 +826,7 @@ fn test_get_tasks_and_conversations_prefers_task_when_server_token_matches() {
                 parent_conversation_id: None,
                 run_id: None,
                 autoexecute_override: None,
+                last_event_sequence: None,
             },
         );
 
@@ -874,6 +882,7 @@ fn test_get_tasks_and_conversations_keeps_unrelated_tasks_and_conversations() {
                 parent_conversation_id: None,
                 run_id: None,
                 autoexecute_override: None,
+                last_event_sequence: None,
             },
         );
 

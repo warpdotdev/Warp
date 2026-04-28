@@ -452,6 +452,23 @@ impl BlocklistAIHistoryModel {
             .unwrap_or_default()
     }
 
+    /// Updates the persisted `last_event_sequence` for a conversation and
+    /// writes the updated conversation state to SQLite. Used by the
+    /// orchestration event poller after draining an event batch to keep the
+    /// cursor durable across restarts.
+    pub fn update_event_sequence(
+        &mut self,
+        conversation_id: AIConversationId,
+        sequence: i64,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) else {
+            return;
+        };
+        conversation.set_last_event_sequence(sequence);
+        conversation.write_updated_conversation_state(ctx);
+    }
+
     /// Sets a live conversation's server token, and updates the mapping in the history
     /// model.
     pub fn set_server_conversation_token_for_conversation(
@@ -1075,6 +1092,9 @@ impl BlocklistAIHistoryModel {
             parent_conversation_id: None,
             run_id: None,
             autoexecute_override: Some(source_conversation.autoexecute_override().into()),
+            // The event cursor belongs to the source conversation's run; the
+            // forked conversation will establish its own cursor.
+            last_event_sequence: None,
         };
         let forked_conversation_id = AIConversationId::new();
         if let Err(e) = sqlite_sender.send(ModelEvent::UpdateMultiAgentConversation {
@@ -1227,6 +1247,9 @@ impl BlocklistAIHistoryModel {
             parent_conversation_id: None,
             run_id: None,
             autoexecute_override: Some(conversation.autoexecute_override().into()),
+            // The event cursor belongs to the source conversation's run; the
+            // forked conversation will establish its own cursor.
+            last_event_sequence: None,
         };
 
         let forked_conversation_id = AIConversationId::new();
