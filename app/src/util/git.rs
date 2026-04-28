@@ -254,7 +254,6 @@ pub async fn detect_fork_point(
         .map(|s| s.trim().to_string()))
 }
 
-
 /// Git summary for a repo: current branch + uncommitted diff stats.
 #[derive(Debug, Clone)]
 #[cfg(feature = "local_fs")]

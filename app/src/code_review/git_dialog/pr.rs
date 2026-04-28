@@ -167,7 +167,9 @@ pub(super) async fn create_pr_with_ai_content(
     path_env: Option<&str>,
 ) -> anyhow::Result<PrInfo> {
     let diff = get_diff_for_pr(repo_path).await?;
-    let commit_messages = get_branch_commit_messages(repo_path).await.unwrap_or_default();
+    let commit_messages = get_branch_commit_messages(repo_path)
+        .await
+        .unwrap_or_default();
 
     let title_req = GenerateCodeReviewContentRequest {
         output_type: OutputType::PrTitle,

@@ -513,7 +513,6 @@ impl DiffStateModel {
             .map(|metadata| metadata.main_branch_name.clone())
     }
 
-
     /// Converts an optional base branch name into a `DiffMode`.
     /// Falls back to `DiffMode::MainBranch` when no branch is specified.
     pub fn diff_mode_for_base_branch(&self, base_branch: Option<&str>) -> DiffMode {

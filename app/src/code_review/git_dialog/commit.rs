@@ -415,13 +415,8 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                             // AI autogen disabled (global toggle, per-feature
                             // toggle, or enterprise) — skip AI entirely and use
                             // `gh pr create --fill`
-                            crate::util::git::create_pr(
-                                &repo_path,
-                                None,
-                                None,
-                                path_env_ref,
-                            )
-                            .await?
+                            crate::util::git::create_pr(&repo_path, None, None, path_env_ref)
+                                .await?
                         }
                     };
                     CommitOutcome::PrCreated(pr)
