@@ -16,7 +16,8 @@ use warp_core::ui::theme::Fill;
 use warpui::elements::{
     Border, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DispatchEventResult, DropShadow, EventHandler, Flex, Hoverable,
-    MainAxisSize, MouseInBehavior, MouseStateHandle, ParentElement, Radius, ScrollbarWidth, Text,
+    MainAxisSize, MouseInBehavior, MouseStateHandle, ParentElement, Radius, SavePosition,
+    ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Text,
 };
 use warpui::platform::Cursor;
 use warpui::{
@@ -73,6 +74,14 @@ const DIVIDER_HEIGHT: f32 = 1.;
 /// so adding more here produced a visible gap below the "Show N more"
 /// highlight before the next section.
 const DIVIDER_VERTICAL_PADDING: f32 = 0.;
+
+/// Stable position id for the selectable row at `visible_idx`. Wrapping each
+/// row in a `SavePosition` with this id lets `ClippedScrollStateHandle::
+/// scroll_to_position` find the row's painted bounds and scroll the viewport
+/// just enough to bring it fully into view when keyboard selection moves.
+fn row_position_id(visible_idx: usize) -> String {
+    format!("cloud_mode_v2_slash_row_{visible_idx}")
+}
 
 /// Shared renderer styles for the V2 menu rows. Mirrors the subset of
 /// `InlineMenuView::QUERY_RESULT_RENDERER_STYLES` we need; we don't reuse that
@@ -347,6 +356,16 @@ impl CloudModeV2SlashCommandView {
         self.move_selection(SelectionDirection::Down, ctx);
     }
 
+    /// Asks the outer `ClippedScrollable` to scroll the row at `visible_idx`
+    /// fully into view. Each row is wrapped in `SavePosition` with the
+    /// matching id so the position cache resolves it at paint time.
+    fn scroll_selected_into_view(&self, visible_idx: usize) {
+        self.scroll_state.scroll_to_position(ScrollTarget {
+            position_id: row_position_id(visible_idx),
+            mode: ScrollToPositionMode::FullyIntoView,
+        });
+    }
+
     pub fn accept_selected_item(&mut self, cmd_or_ctrl_enter: bool, ctx: &mut ViewContext<Self>) {
         match &self.menu_state {
             MenuState::NoSearchActive {
@@ -564,7 +583,7 @@ impl CloudModeV2SlashCommandView {
     }
 
     fn move_selection(&mut self, direction: SelectionDirection, ctx: &mut ViewContext<Self>) {
-        match &mut self.menu_state {
+        let next_idx: Option<usize> = match &mut self.menu_state {
             MenuState::NoSearchActive {
                 sections,
                 expanded_sections,
@@ -579,6 +598,7 @@ impl CloudModeV2SlashCommandView {
                 if let Some(next) = next {
                     *selected_idx = Some(next);
                 }
+                next
             }
             MenuState::SearchActive {
                 results,
@@ -591,7 +611,11 @@ impl CloudModeV2SlashCommandView {
                 if let Some(next) = next {
                     *selected_idx = Some(next);
                 }
+                next
             }
+        };
+        if let Some(idx) = next_idx {
+            self.scroll_selected_into_view(idx);
         }
         ctx.notify();
     }
@@ -607,6 +631,10 @@ impl CloudModeV2SlashCommandView {
             let rows = browsing_rows(sections, expanded_sections);
             if rows.get(idx).is_some_and(|r| r.is_selectable()) {
                 *selected_idx = Some(idx);
+                // Mouse-driven hover updates also benefit from re-anchoring
+                // the scroll position so keyboard navigation continues from
+                // a row that's actually visible.
+                self.scroll_selected_into_view(idx);
                 ctx.notify();
             }
         }
@@ -621,6 +649,7 @@ impl CloudModeV2SlashCommandView {
             if let Some(item) = results.get(idx) {
                 if !item.search_result.is_disabled() {
                     *selected_idx = Some(idx);
+                    self.scroll_selected_into_view(idx);
                     ctx.notify();
                 }
             }
@@ -797,11 +826,17 @@ impl CloudModeV2SlashCommandView {
                     let Some(renderer) = rendered.items.get(item_idx) else {
                         continue;
                     };
-                    column.add_child(self.wrap_with_hover(
+                    let row_element = self.wrap_with_hover(
                         renderer.render_inline(visible_idx, is_selected, app),
                         visible_idx,
                         /*is_browsing=*/ true,
-                    ));
+                    );
+                    // Cache the row's painted bounds so the scrollable can
+                    // scroll it into view when keyboard navigation lands on
+                    // a row outside the viewport.
+                    column.add_child(
+                        SavePosition::new(row_element, &row_position_id(visible_idx)).finish(),
+                    );
                 }
                 NoSearchActiveRow::ShowMore {
                     section,
@@ -811,14 +846,17 @@ impl CloudModeV2SlashCommandView {
                         .get(&section)
                         .cloned()
                         .unwrap_or_default();
-                    column.add_child(render_show_more_row(
+                    let row_element = render_show_more_row(
                         section,
                         hidden_count,
                         is_selected,
                         mouse_state,
                         visible_idx,
                         app,
-                    ));
+                    );
+                    column.add_child(
+                        SavePosition::new(row_element, &row_position_id(visible_idx)).finish(),
+                    );
                 }
                 NoSearchActiveRow::Divider => {
                     column.add_child(render_divider(app));
@@ -840,11 +878,15 @@ impl CloudModeV2SlashCommandView {
             .with_main_axis_size(MainAxisSize::Min);
         for (idx, renderer) in results.iter().enumerate() {
             let is_selected = selected_idx == Some(idx);
-            column.add_child(self.wrap_with_hover(
+            let row_element = self.wrap_with_hover(
                 renderer.render_inline(idx, is_selected, app),
                 idx,
                 /*is_browsing=*/ false,
-            ));
+            );
+            // Cache row bounds for `scroll_to_position` keyboard
+            // navigation; `idx` here is the same index `selected_idx`
+            // tracks in `MenuState::SearchActive`.
+            column.add_child(SavePosition::new(row_element, &row_position_id(idx)).finish());
         }
         column.finish()
     }
