@@ -17,9 +17,6 @@
 //! (one `git remote get-url origin` per unique repo). Callers run them in sequence
 //! off the main thread; see `app/src/workspace/view.rs::start_local_to_cloud_handoff`.
 
-// TODO(REMOTE-1486): drop once the handoff UI in the parent stack branch wires this up.
-#![allow(dead_code)]
-
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

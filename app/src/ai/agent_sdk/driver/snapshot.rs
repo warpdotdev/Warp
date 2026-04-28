@@ -739,8 +739,6 @@ async fn upload_snapshot_from_declarations_file(
 /// - `Ok(None)` when the workspace was empty (no repos, no orphan files); callers should
 ///   spawn the cloud agent without a `handoff_prep_token`.
 /// - `Err(_)` only for hard failures of `upload_local_handoff_snapshot` itself (auth, etc.).
-// TODO(REMOTE-1486): drop once the handoff UI in the parent stack branch wires this up.
-#[allow(dead_code)]
 pub(crate) async fn upload_snapshot_for_handoff(
     repo_paths: Vec<PathBuf>,
     orphan_file_paths: Vec<PathBuf>,

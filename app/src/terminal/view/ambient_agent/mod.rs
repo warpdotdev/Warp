@@ -19,7 +19,11 @@ pub use host_selector::{
     Host, HostSelector, HostSelectorAction, HostSelectorEvent, NakedHeaderButtonTheme,
 };
 pub use loading_screen::{render_cloud_mode_error_screen, render_cloud_mode_loading_screen};
-pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
+pub(crate) use model::PendingHandoff;
+pub use model::{
+    AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, HandoffSubmissionState,
+    Status,
+};
 pub use model_selector::{ModelSelector, ModelSelectorAction, ModelSelectorEvent};
 pub use progress::{render_progress, ProgressProps, ProgressStep, ProgressStepState};
 pub use progress_ui_state::AmbientAgentProgressUIState;
@@ -101,6 +105,8 @@ pub fn create_cloud_mode_view(
                 | AmbientAgentViewModelEvent::HarnessSelected
                 | AmbientAgentViewModelEvent::HostSelected
                 | AmbientAgentViewModelEvent::HarnessCommandStarted
+                | AmbientAgentViewModelEvent::PendingHandoffChanged
+                | AmbientAgentViewModelEvent::HandoffSubmissionFailed { .. }
                 | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => {}
             }
         });
