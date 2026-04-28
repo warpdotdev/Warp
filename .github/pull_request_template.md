@@ -18,3 +18,22 @@ How did you test this change? What automated tests did you add? If you didn't ad
 
 ## Agent Mode
 - [ ] Warp Agent Mode - This PR was created via Warp's AI Agent Mode
+
+<!--
+## Changelog Entries for Stable
+
+The entries below will be used when constructing a soft-copy of the stable release changelog. Leave blank or remove the lines if no entry in the stable changelog is needed. Entries should be on the same line, without the `{{` `}}` brackets. You can use multiple lines, even of the same type. The valid suffixes are:
+
+* NEW-FEATURE: for new, relatively sizable features. Features listed here will likely have docs / social media posts / marketing launches associated with them, so use sparingly.
+* IMPROVEMENT: for new functionality of existing features.
+* BUG-FIX: for fixes related to known bugs or regressions.
+* IMAGE: the image specified by the URL (hosted on GCP) will be added to Dev & Preview releases. For Stable releases, see the pinned doc in the #release Slack channel.
+* OZ: Oz-related updates. Use `CHANGELOG-OZ`. At most 4 Oz updates are shown in-app per release.
+
+CHANGELOG-NEW-FEATURE: {{text goes here...}}
+CHANGELOG-IMPROVEMENT: {{text goes here...}}
+CHANGELOG-BUG-FIX: {{text goes here...}}
+CHANGELOG-BUG-FIX: {{more text goes here...}}
+CHANGELOG-IMAGE: {{GCP-hosted URL goes here...}}
+CHANGELOG-OZ: {{text goes here...}}
+-->
