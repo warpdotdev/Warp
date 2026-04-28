@@ -371,11 +371,13 @@ fn is_warp_bundle(bundle_id: &str) -> bool {
 }
 
 fn open_with_bundle(bundle_id: &str, path: &Path) -> bool {
+    // Wait for `open` to exit; a non-zero status needs to bubble up so
+    // the caller's ctx.open_file_path fallback still runs.
     std::process::Command::new("/usr/bin/open")
         .args(["-b", bundle_id])
         .arg(path)
-        .spawn()
-        .is_ok()
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 // Get the Mac default app for opening the file path.
