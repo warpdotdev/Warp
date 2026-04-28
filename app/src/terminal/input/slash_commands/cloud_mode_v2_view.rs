@@ -11,7 +11,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
-use pathfinder_color::ColorU;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill;
 use warpui::elements::{
@@ -69,20 +68,11 @@ const ICON_TO_TEXT_GAP: f32 = 8.;
 
 const DIVIDER_HEIGHT: f32 = 1.;
 
-const DIVIDER_VERTICAL_PADDING: f32 = 4.;
-
-/// Drop shadow color: Figma `rgba(0, 0, 0, 0.3)`. Sourced once here rather than
-/// inline so the magic alpha is greppable.
-const DROP_SHADOW_COLOR: ColorU = ColorU {
-    r: 0,
-    g: 0,
-    b: 0,
-    a: 77, // 0.3 * 255 = 76.5
-};
-
-const DROP_SHADOW_OFFSET_Y: f32 = 7.;
-
-const DROP_SHADOW_BLUR_RADIUS: f32 = 7.;
+/// No vertical padding on the divider itself: the show-more row above and the
+/// section header below already contribute their own `ROW_VERTICAL_PADDING`,
+/// so adding more here produced a visible gap below the "Show N more"
+/// highlight before the next section.
+const DIVIDER_VERTICAL_PADDING: f32 = 0.;
 
 /// Shared renderer styles for the V2 menu rows. Mirrors the subset of
 /// `InlineMenuView::QUERY_RESULT_RENDERER_STYLES` we need; we don't reuse that
@@ -1001,12 +991,9 @@ impl View for CloudModeV2SlashCommandView {
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(MENU_CORNER_RADIUS)))
         .with_padding_top(MENU_VERTICAL_PADDING)
         .with_padding_bottom(MENU_VERTICAL_PADDING)
-        .with_drop_shadow(DropShadow {
-            color: DROP_SHADOW_COLOR,
-            offset: pathfinder_geometry::vector::vec2f(0., DROP_SHADOW_OFFSET_Y),
-            blur_radius: DROP_SHADOW_BLUR_RADIUS,
-            spread_radius: 0.,
-        })
+        // Match the inline model/profile selector menus, which use the
+        // shared default shadow from `DropShadow::default()`.
+        .with_drop_shadow(DropShadow::default())
         .finish()
     }
 }
@@ -1079,12 +1066,19 @@ fn render_show_more_row(
 fn render_divider(app: &AppContext) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
+    // Paint the 1px constrained box itself; the outer container only
+    // contributes transparent vertical spacing. Putting the background
+    // on the outer container would also color its padding, producing a
+    // band of `padding + height + padding` pixels instead of 1px.
     Container::new(
-        ConstrainedBox::new(warpui::elements::Empty::new().finish())
-            .with_height(DIVIDER_HEIGHT)
-            .finish(),
+        ConstrainedBox::new(
+            Container::new(warpui::elements::Empty::new().finish())
+                .with_background(theme.surface_overlay_2())
+                .finish(),
+        )
+        .with_height(DIVIDER_HEIGHT)
+        .finish(),
     )
-    .with_background(theme.surface_overlay_2())
     .with_vertical_padding(DIVIDER_VERTICAL_PADDING)
     .finish()
 }
