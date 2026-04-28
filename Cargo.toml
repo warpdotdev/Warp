@@ -460,7 +460,6 @@ inherits = "release-lto-debug_assertions"
 [profile.release-cli]
 inherits = "release-lto"
 opt-level = "s"
-lto = "fat"
 codegen-units = 1
 
 # A custom CLI release-like profile that forces debug assertions on, used for
