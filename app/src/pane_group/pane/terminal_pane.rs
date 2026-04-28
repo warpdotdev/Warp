@@ -1223,14 +1223,14 @@ fn handle_terminal_view_event(
                                         );
 
                                         new_terminal_view.update(ctx, |terminal_view, ctx| {
-                                            terminal_view.execute_command_or_set_pending(
-                                                &command,
-                                                ctx,
-                                            );
                                             terminal_view.enter_agent_view(
                                                 None,
                                                 Some(conversation_id),
                                                 AgentViewEntryOrigin::ChildAgent,
+                                                ctx,
+                                            );
+                                            terminal_view.execute_command_or_set_pending(
+                                                &command,
                                                 ctx,
                                             );
                                         });

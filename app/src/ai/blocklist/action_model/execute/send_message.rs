@@ -57,14 +57,19 @@ impl SendMessageToAgentExecutor {
         let message_body = message.clone();
 
         if FeatureFlag::OrchestrationV2.is_enabled() {
-            let sender_run_id = BlocklistAIHistoryModel::as_ref(ctx)
+            let (sender_run_id, task_id) = BlocklistAIHistoryModel::as_ref(ctx)
                 .conversation(&conversation_id)
-                .and_then(|c| c.run_id())
-                .map(|s| s.to_string())
-                .unwrap_or_default();
+                .map(|conversation| {
+                    (
+                        conversation.run_id().unwrap_or_default(),
+                        conversation.task_id(),
+                    )
+                })
+                .unwrap_or_else(|| (String::new(), None));
             let log_addresses = addresses.clone();
             let log_subject = subject.clone();
             let log_sender_run_id = sender_run_id.clone();
+            let server_api = ServerApiProvider::as_ref(ctx).get();
             let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
             let request = SendAgentMessageRequest {
                 to: addresses,
@@ -73,7 +78,12 @@ impl SendMessageToAgentExecutor {
                 sender_run_id,
             };
             return ActionExecution::new_async(
-                async move { ai_client.send_agent_message(request).await },
+                async move {
+                    match task_id {
+                        Some(task_id) => server_api.send_agent_message_for_task(&task_id, request).await,
+                        None => ai_client.send_agent_message(request).await,
+                    }
+                },
                 move |result, ctx| match result {
                     Ok(response) => {
                         let message_id =

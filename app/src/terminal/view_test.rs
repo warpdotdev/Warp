@@ -4159,6 +4159,88 @@ fn cli_session_status_updates_active_child_conversation() {
 }
 
 #[test]
+fn cli_session_status_updates_single_child_conversation_without_agent_view() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let child_conversation_id = terminal.update(&mut app, |view, ctx| {
+            let parent_conversation_id =
+                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                    history_model.start_new_conversation(view.view_id, false, false, ctx)
+                });
+            let child_conversation_id =
+                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                    history_model.start_new_child_conversation(
+                        view.view_id,
+                        "Agent 2".to_string(),
+                        parent_conversation_id,
+                        ctx,
+                    )
+                });
+
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::Claude,
+                        status: CLIAgentSessionStatus::InProgress,
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: false,
+                        listener: None,
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+            });
+
+            child_conversation_id
+        });
+
+        terminal.read(&app, |_view, ctx| {
+            let conversation = BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&child_conversation_id)
+                .expect("child conversation should exist");
+            assert_eq!(conversation.status(), &ConversationStatus::InProgress);
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.update_from_event(
+                    view.view_id,
+                    &CLIAgentEvent {
+                        v: 1,
+                        agent: CLIAgent::Claude,
+                        event: CLIAgentEventType::Stop,
+                        session_id: None,
+                        cwd: None,
+                        project: None,
+                        payload: CLIAgentEventPayload {
+                            response: Some("Done".to_owned()),
+                            ..Default::default()
+                        },
+                    },
+                    ctx,
+                );
+            });
+        });
+
+        terminal.read(&app, |_view, ctx| {
+            let conversation = BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&child_conversation_id)
+                .expect("child conversation should exist");
+            assert_eq!(conversation.status(), &ConversationStatus::Success);
+        });
+    })
+}
+
+#[test]
 fn manual_dismiss_disables_auto_toggle_for_session() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);

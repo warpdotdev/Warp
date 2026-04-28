@@ -11622,6 +11622,32 @@ impl TerminalView {
         }
     }
 
+    fn child_conversation_id_for_cli_status_updates(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<AIConversationId> {
+        if let Some(conversation_id) = BlocklistAIHistoryModel::as_ref(ctx)
+            .active_conversation(self.view_id)
+            .and_then(|conversation| {
+                conversation
+                    .is_child_agent_conversation()
+                    .then_some(conversation.id())
+            })
+        {
+            return Some(conversation_id);
+        }
+
+        let mut child_conversation_ids = BlocklistAIHistoryModel::as_ref(ctx)
+            .all_live_conversations_for_terminal_view(self.view_id)
+            .filter(|conversation| conversation.is_child_agent_conversation())
+            .map(|conversation| conversation.id());
+        let child_conversation_id = child_conversation_ids.next()?;
+        child_conversation_ids
+            .next()
+            .is_none()
+            .then_some(child_conversation_id)
+    }
+
     /// If the startup auto-open setting is enabled, auto-opens rich input for a
     /// CLI agent session. Called after creating a command-detected session or
     /// registering a listener so rich input is shown immediately.
@@ -11705,14 +11731,7 @@ impl TerminalView {
             return;
         }
 
-        let active_child_conversation_id = BlocklistAIHistoryModel::as_ref(ctx)
-            .active_conversation(self.view_id)
-            .and_then(|conversation| {
-                conversation
-                    .is_child_agent_conversation()
-                    .then_some(conversation.id())
-            });
-        if let Some(conversation_id) = active_child_conversation_id {
+        if let Some(conversation_id) = self.child_conversation_id_for_cli_status_updates(ctx) {
             BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
                 history_model.update_conversation_status(
                     self.view_id,

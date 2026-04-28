@@ -193,7 +193,7 @@ impl ServerApi {
         }
     }
 
-    async fn post_public_api_response_for_task<B>(
+    pub(crate) async fn post_public_api_response_for_task<B>(
         &self,
         task_id: &AmbientAgentTaskId,
         path: &str,

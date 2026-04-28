@@ -979,6 +979,20 @@ fn into_file_artifact_record(
     }
 }
 
+impl ServerApi {
+    pub(crate) async fn send_agent_message_for_task(
+        &self,
+        task_id: &AmbientAgentTaskId,
+        request: SendAgentMessageRequest,
+    ) -> anyhow::Result<SendAgentMessageResponse, anyhow::Error> {
+        let response = self
+            .post_public_api_response_for_task(task_id, "agent/messages", &request)
+            .await?;
+        let response = response.json::<SendAgentMessageResponse>().await?;
+        Ok(response)
+    }
+}
+
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl AIClient for ServerApi {
