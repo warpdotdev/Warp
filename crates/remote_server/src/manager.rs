@@ -36,6 +36,30 @@ struct ReconnectParams {
     control_path: Option<PathBuf>,
 }
 
+/// Error from [`RemoteServerManager::run_connect_and_handshake`] that
+/// preserves which phase failed so callers can report accurate telemetry.
+#[cfg(not(target_family = "wasm"))]
+#[derive(Debug, thiserror::Error)]
+enum ConnectAndHandshakeError {
+    /// `transport.connect()` failed, or the session was deregistered
+    /// before the connect phase could complete.
+    #[error("connect: {0:#}")]
+    Connect(anyhow::Error),
+    /// `client.initialize()` handshake failed.
+    #[error("initialize: {0:#}")]
+    Initialize(anyhow::Error),
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl ConnectAndHandshakeError {
+    fn phase(&self) -> RemoteServerInitPhase {
+        match self {
+            Self::Connect(_) => RemoteServerInitPhase::Connect,
+            Self::Initialize(_) => RemoteServerInitPhase::Initialize,
+        }
+    }
+}
+
 /// Which phase of the remote server connection flow failed.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -511,8 +535,9 @@ impl RemoteServerManager {
                                 .await;
                         }
                         Err(e) => {
-                            log::error!("Connection failed for session {session_id:?}: {e:#}");
-                            let error = format!("{e:#}");
+                            log::error!("Connection failed for session {session_id:?}: {e}");
+                            let phase = e.phase();
+                            let error = format!("{e}");
                             let _ = spawner
                                 .spawn(move |me, ctx| {
                                     ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
@@ -523,7 +548,7 @@ impl RemoteServerManager {
                                     });
                                     ctx.emit(RemoteServerManagerEvent::SessionConnectionFailed {
                                         session_id,
-                                        phase: RemoteServerInitPhase::Connect,
+                                        phase,
                                         error,
                                     });
                                     me.mark_session_disconnected(session_id, ctx);
@@ -544,28 +569,36 @@ impl RemoteServerManager {
     ///    event channel.
     /// 3. Runs the initialize handshake.
     ///
-    /// Returns `Ok(host_id)` on success, or an error if either phase fails.
+    /// Returns `Ok(host_id)` on success, or a phase-tagged error.
     #[cfg(not(target_family = "wasm"))]
     async fn run_connect_and_handshake(
         session_id: SessionId,
         transport: &dyn RemoteTransport,
         spawner: &ModelSpawner<Self>,
         executor: &Arc<warpui::r#async::executor::Background>,
-    ) -> anyhow::Result<HostId> {
+    ) -> Result<HostId, ConnectAndHandshakeError> {
         // Phase 1: Connect (establish streams, create client).
         let Connection {
             client,
             event_rx,
             child,
             control_path,
-        } = transport.connect(executor.clone()).await?;
+        } = transport
+            .connect(executor.clone())
+            .await
+            .map_err(ConnectAndHandshakeError::Connect)?;
 
         let client = Arc::new(client);
         let client_for_init = Arc::clone(&client);
 
         // Transition to Initializing and start draining the event channel.
-        let _ = spawner
+        // Guard: if the session was deregistered during `transport.connect()`,
+        // the entry will have been removed; don't re-insert it.
+        let was_inserted = spawner
             .spawn(move |me, ctx| {
+                if !me.sessions.contains_key(&session_id) {
+                    return false;
+                }
                 me.sessions.insert(
                     session_id,
                     RemoteSessionState::Initializing {
@@ -584,14 +617,22 @@ impl RemoteServerManager {
                         me.mark_session_disconnected(session_id, ctx);
                     },
                 );
+                true
             })
-            .await;
+            .await
+            .unwrap_or(false);
+
+        if !was_inserted {
+            return Err(ConnectAndHandshakeError::Connect(anyhow::anyhow!(
+                "Session {session_id:?} was deregistered during connect"
+            )));
+        }
 
         // Phase 2: Initialize handshake.
         let resp = client
             .initialize()
             .await
-            .map_err(|e| anyhow::anyhow!("{e:#}"))?;
+            .map_err(|e| ConnectAndHandshakeError::Initialize(anyhow::anyhow!("{e:#}")))?;
         Ok(HostId::new(resp.host_id))
     }
 
@@ -1158,6 +1199,15 @@ impl RemoteServerManager {
                     Ok(new_host_id) => {
                         let _ = spawner
                             .spawn(move |me, ctx| {
+                                // If the session was deregistered during the
+                                // handshake, don't resurrect it.
+                                if !me.sessions.contains_key(&session_id) {
+                                    log::info!(
+                                        "Session {session_id:?} deregistered during \
+                                         reconnect handshake, aborting"
+                                    );
+                                    return;
+                                }
                                 me.mark_session_connected(
                                     session_id,
                                     new_host_id.clone(),
@@ -1178,10 +1228,19 @@ impl RemoteServerManager {
                     Err(e) => {
                         log::error!(
                             "Reconnect failed for session {session_id:?} \
-                             (attempt {attempt}): {e:#}"
+                             (attempt {attempt}): {e}"
                         );
                         let _ = spawner
                             .spawn(move |me, ctx| {
+                                // If the session was deregistered during the
+                                // handshake, don't retry or insert Disconnected.
+                                if !me.sessions.contains_key(&session_id) {
+                                    log::info!(
+                                        "Session {session_id:?} deregistered during \
+                                         reconnect handshake, aborting"
+                                    );
+                                    return;
+                                }
                                 me.handle_reconnect_failure(
                                     session_id,
                                     ReconnectParams {
@@ -1227,14 +1286,11 @@ impl RemoteServerManager {
                 .insert(session_id, RemoteSessionState::Disconnected);
             ctx.emit(RemoteServerManagerEvent::SessionDisconnected {
                 session_id,
-                host_id: params.host_id.clone(),
+                host_id: params.host_id,
                 exit_status: params.exit_status,
             });
-            if !self.host_to_sessions.contains_key(&params.host_id) {
-                ctx.emit(RemoteServerManagerEvent::HostDisconnected {
-                    host_id: params.host_id,
-                });
-            }
+            // Note: HostDisconnected was already emitted by
+            // mark_session_disconnected when entering the reconnect flow.
         }
     }
 
