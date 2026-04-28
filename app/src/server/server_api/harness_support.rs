@@ -10,6 +10,7 @@ use mockall::automock;
 
 use super::ServerApi;
 use crate::ai::agent::conversation::AIConversationId;
+#[cfg(not(target_family = "wasm"))]
 use crate::ai::agent_sdk::retry::with_bounded_retry;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::artifacts::Artifact;
@@ -87,8 +88,10 @@ pub struct ResolvedHarnessPrompt {
     pub prompt: String,
     #[serde(default)]
     pub system_prompt: Option<String>,
-    /// Optional user-turn preamble for resumed third-party harness sessions.
-    /// Each harness decides how to surface this.
+    /// Optional user-turn preamble for resumed third-party harness sessions. The harness
+    /// decides how to surface this — Claude Code prepends it to the user-turn prompt fed
+    /// into the CLI so the agent treats it as immediate intent rather than background
+    /// system context. Empty when no resumption is in effect.
     #[serde(default)]
     pub resumption_prompt: Option<String>,
 }
@@ -151,8 +154,16 @@ pub trait HarnessSupportClient: 'static + Send + Sync {
         request: &SnapshotUploadRequest,
     ) -> Result<Vec<UploadTarget>>;
 
-    /// Download the raw third-party harness transcript bytes for the current
-    /// task's conversation.
+    /// Download the raw third-party harness transcript bytes for the current task's
+    /// conversation.
+    ///
+    /// Hits `GET /harness-support/transcript`, which redirects to a signed GCS URL.
+    /// The conversation is resolved from the task's `agent_conversation_id` server-side,
+    /// so callers do not pass a conversation id. Each harness deserializes the returned
+    /// bytes into its own envelope shape (e.g. Claude Code parses
+    /// `ClaudeTranscriptEnvelope`). Transient failures retry with bounded exponential
+    /// backoff; permanent 4xx (e.g. 404 "no transcript") fail fast so the caller can
+    /// surface a resume-specific error.
     async fn fetch_transcript(&self) -> Result<bytes::Bytes>;
 
     /// Get an HTTP client to use with [`UploadTarget`]s for saving blobs.
@@ -249,16 +260,26 @@ impl ServerApi {
         &self,
         task_id: &AmbientAgentTaskId,
     ) -> Result<bytes::Bytes> {
-        with_bounded_retry("fetch task-scoped harness-support transcript", || async {
-            let response = self
-                .get_public_api_response_for_task(task_id, "harness-support/transcript")
-                .await?;
-            response
-                .bytes()
-                .await
-                .context("Failed to read harness-support transcript response body")
-        })
-        .await
+        #[cfg(not(target_family = "wasm"))]
+        {
+            with_bounded_retry("fetch task-scoped harness-support transcript", || async {
+                let response = self
+                    .get_public_api_response_for_task(task_id, "harness-support/transcript")
+                    .await?;
+                response
+                    .bytes()
+                    .await
+                    .context("Failed to read task-scoped harness-support transcript body")
+            })
+            .await
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            let _ = task_id;
+            unreachable!(
+                "fetch_transcript_for_task is not supported on wasm; agent_sdk is not built on this target"
+            );
+        }
     }
 }
 
@@ -347,16 +368,25 @@ impl HarnessSupportClient for ServerApi {
     }
 
     async fn fetch_transcript(&self) -> Result<bytes::Bytes> {
-        with_bounded_retry("fetch harness-support transcript", || async {
-            let response = self
-                .get_public_api_response("harness-support/transcript")
-                .await?;
-            response
-                .bytes()
-                .await
-                .context("Failed to read harness-support transcript response body")
-        })
-        .await
+        #[cfg(not(target_family = "wasm"))]
+        {
+            with_bounded_retry("fetch harness-support transcript", || async {
+                let response = self
+                    .get_public_api_response("harness-support/transcript")
+                    .await?;
+                response
+                    .bytes()
+                    .await
+                    .context("Failed to read harness-support transcript body")
+            })
+            .await
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            unreachable!(
+                "fetch_transcript is not supported on wasm; agent_sdk is not built on this target"
+            );
+        }
     }
 
     fn http_client(&self) -> &http_client::Client {

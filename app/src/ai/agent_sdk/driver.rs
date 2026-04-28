@@ -197,6 +197,16 @@ impl<T: Send + 'static> IdleTimeoutSender<T> {
     }
 }
 
+/// How to resume an existing conversation when starting an agent run.
+///
+/// The Oz harness restores the full conversation transcript into the terminal pane and treats
+/// any new prompt as a follow-up; third-party harnesses round-trip a harness-specific payload
+/// (see [`ResumePayload`]) instead.
+pub enum ResumeOptions {
+    Oz(Box<ConversationRestorationInNewPaneType>),
+    ThirdParty(Box<ResumePayload>),
+}
+
 /// Options for initializing the agent driver.
 pub struct AgentDriverOptions {
     /// Initial working directory for the agent's terminal session.
@@ -211,12 +221,10 @@ pub struct AgentDriverOptions {
     pub should_share: bool,
     /// How long to keep the session alive after the agent run completes, if at all.
     pub idle_on_complete: Option<Duration>,
-    /// Conversation to restore when creating the terminal.
-    /// Any ambient agent prompt will be sent as a follow-up to this conversation.
-    pub conversation_restoration: Option<ConversationRestorationInNewPaneType>,
-    /// If set, resume an existing third-party-harness conversation instead of
-    /// starting fresh.
-    pub resume_payload: Option<ResumePayload>,
+    /// If set, resume an existing conversation instead of starting fresh. The variant
+    /// determines which harness-specific path is taken (Oz transcript restore vs.
+    /// third-party-harness payload rehydration).
+    pub resume: Option<ResumeOptions>,
     /// Cloud providers to configure within the agent's session.
     pub cloud_providers: Vec<Box<dyn cloud_provider::CloudProvider>>,
     /// Resolved environment configuration, if any.
@@ -405,6 +413,15 @@ pub enum AgentDriverError {
         got: String,
     },
     #[error(
+        "Task {task_id} was created with the {expected} harness, but --harness {got} was requested. \
+         Re-run with --harness {expected} (or omit --harness to match) to continue this task."
+    )]
+    TaskHarnessMismatch {
+        task_id: String,
+        expected: String,
+        got: String,
+    },
+    #[error(
         "Conversation {conversation_id} has no stored transcript for the {harness} harness. \
          The prior run may have crashed before saving any state."
     )]
@@ -452,8 +469,7 @@ impl AgentDriver {
             should_share,
             idle_on_complete,
             secrets,
-            conversation_restoration,
-            resume_payload,
+            resume,
             cloud_providers,
             environment,
             selected_harness,
@@ -461,6 +477,15 @@ impl AgentDriver {
             snapshot_upload_timeout,
             snapshot_script_timeout,
         } = options;
+
+        // Split the unified resume option into the two internal slots that the rest of
+        // the driver consumes: terminal-driven Oz transcript restoration vs. third-party
+        // harness payload rehydration.
+        let (conversation_restoration, resume_payload) = match resume {
+            Some(ResumeOptions::Oz(restoration)) => (Some(*restoration), None),
+            Some(ResumeOptions::ThirdParty(payload)) => (None, Some(*payload)),
+            None => (None, None),
+        };
 
         safe_info!(
             safe: ("Initializing agent driver: share={should_share}, idle_on_complete={idle_on_complete:?}"),

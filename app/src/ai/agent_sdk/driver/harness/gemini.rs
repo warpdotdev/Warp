@@ -74,6 +74,9 @@ impl ThirdPartyHarness for GeminiHarness {
         terminal_driver: ModelHandle<TerminalDriver>,
         _resume: Option<ResumePayload>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
+        // Gemini does not support conversation resume yet. When it does, it will add its
+        // own `ResumePayload::Gemini(..)` variant and override `fetch_resume_payload`,
+        // and decide how to surface the user-turn resumption preamble.
         let client: Arc<dyn HarnessSupportClient> = server_api;
         Ok(Box::new(GeminiHarnessRunner::new(
             self.cli_agent().command_prefix(),

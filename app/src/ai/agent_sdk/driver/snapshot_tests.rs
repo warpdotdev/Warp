@@ -142,10 +142,6 @@ impl HarnessSupportClient for TestClient {
         Ok(targets)
     }
 
-    async fn fetch_transcript(&self) -> Result<bytes::Bytes> {
-        unimplemented!("not used by upload_snapshot_from_declarations_file")
-    }
-
     fn http_client(&self) -> &http_client::Client {
         &self.http
     }

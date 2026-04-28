@@ -5,7 +5,14 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::ai::agent::conversation::{AIAgentHarness, ServerAIConversationMetadata};
+use futures::TryFutureExt;
+use inquire::{InquireError, Select};
+use warp_cli::agent::Harness;
+use warp_cli::environment::{EnvironmentCreateArgs, EnvironmentUpdateArgs};
+use warpui::r#async::FutureExt;
+use warpui::{AppContext, GetSingletonModelHandle, SingletonEntity as _, UpdateModel};
+
+use crate::ai::agent::conversation::ServerAIConversationMetadata;
 use crate::ai::agent_sdk::driver::{AgentDriverError, WARP_DRIVE_SYNC_TIMEOUT};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
@@ -18,12 +25,6 @@ use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::ServerApiProvider;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
-use futures::TryFutureExt;
-use inquire::{InquireError, Select};
-use warp_cli::agent::Harness;
-use warp_cli::environment::{EnvironmentCreateArgs, EnvironmentUpdateArgs};
-use warpui::r#async::FutureExt;
-use warpui::{AppContext, GetSingletonModelHandle, SingletonEntity as _, UpdateModel};
 
 /// How long to wait for workspace metadata to refresh.
 pub const WORKSPACE_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
@@ -143,8 +144,14 @@ pub fn refresh_warp_drive(
         .map_err(|_| anyhow::anyhow!("Timed out waiting for Warp Drive to sync"))
 }
 
-/// Fetch the conversation's server metadata and validate that its harness
-/// matches the caller's `--harness` choice.
+/// Fetch the conversation's server metadata and validate that its harness matches the caller's
+/// `--harness` choice. Returns the metadata on success so the caller can reuse it (e.g. for the
+/// server conversation token).
+///
+/// Called up-front before any task/config-build logic consumes `args.harness`, so a mismatch
+/// error surfaces before side effects like task creation. We deliberately do NOT auto-upgrade
+/// the harness: `Harness::Oz` default with a Claude conversation id is treated as a mismatch
+/// and errors out.
 pub(super) async fn fetch_and_validate_conversation_harness(
     ai_client: Arc<dyn AIClient>,
     conversation_id: &str,
@@ -153,7 +160,7 @@ pub(super) async fn fetch_and_validate_conversation_harness(
     let metadata = ai_client
         .list_ai_conversation_metadata(Some(vec![conversation_id.to_string()]))
         .await
-        .map_err(|error| AgentDriverError::ConversationLoadFailed(format!("{error:#}")))?
+        .map_err(|e| AgentDriverError::ConversationLoadFailed(format!("{e:#}")))?
         .into_iter()
         .next()
         .ok_or_else(|| {
@@ -162,34 +169,15 @@ pub(super) async fn fetch_and_validate_conversation_harness(
             ))
         })?;
 
-    let expected = harness_label(metadata.harness);
-    let got = harness_label_from_cli(args_harness);
-    if expected != got {
+    if metadata.harness != args_harness {
         return Err(AgentDriverError::ConversationHarnessMismatch {
             conversation_id: conversation_id.to_string(),
-            expected: expected.to_string(),
-            got: got.to_string(),
+            expected: Harness::from(metadata.harness).to_string(),
+            got: args_harness.to_string(),
         });
     }
 
     Ok(metadata)
-}
-
-fn harness_label(harness: AIAgentHarness) -> &'static str {
-    match harness {
-        AIAgentHarness::Oz => "oz",
-        AIAgentHarness::ClaudeCode => "claude",
-        AIAgentHarness::Gemini => "gemini",
-    }
-}
-
-fn harness_label_from_cli(harness: Harness) -> &'static str {
-    match harness {
-        Harness::Oz => "oz",
-        Harness::Claude => "claude",
-        Harness::OpenCode => "opencode",
-        Harness::Gemini => "gemini",
-    }
 }
 
 /// Format an object owner for display in the CLI.
