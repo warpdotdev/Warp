@@ -1425,9 +1425,13 @@ impl Session {
                     );
                     return vec![];
                 };
+                // `git branch --no-color` prefixes lines with `* ` (current branch)
+                // or `+ ` (branch checked out in another linked worktree). Strip both
+                // so callers (e.g. command corrections) get clean branch names.
                 let res = output_string
                     .lines()
-                    .map(|s| s.trim().to_string())
+                    .map(|s| s.trim().trim_start_matches(['*', '+']).trim().to_string())
+                    .filter(|s| !s.is_empty())
                     .collect();
                 res
             }
