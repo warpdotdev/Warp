@@ -1,0 +1,39 @@
+{
+  "vBRIEFInfo": {
+    "version": "0.6",
+    "created": "2026-04-28T19:37:00Z",
+    "updated": "2026-04-28T19:37:00Z"
+  },
+  "plan": {
+    "title": "ACP Foundation: Enum, Config, Feature Flag",
+    "status": "pending",
+    "narratives": {
+      "Overview": "Add the Harness::Acp variant everywhere the Harness enum is matched, extend HarnessConfig with an optional command field for the agent binary, and add the FeatureFlag::AcpHarness gate. This story has no user-visible behaviour but establishes the compile-time skeleton that all other ACP stories depend on.",
+      "AcceptanceCriteria": "1. Harness::Acp added to crates/warp_cli/src/agent.rs Harness enum with #[value(name = 'acp')]. 2. Harness::display_name, fmt::Display, parse_local_child_harness all handle Acp. 3. HarnessConfig in app/src/ai/ambient_agents/task.rs gains command: Option<String> (skip_serializing_if = None). 4. AgentConfigSnapshotFile in app/src/ai/agent_sdk/config_file.rs gains matching harness_command field. 5. harness_from_name in ambient_agents/task.rs handles 'acp'. 6. FeatureFlag::AcpHarness added to warp_core/src/features.rs (DOGFOOD_FLAGS). 7. Exhaustive match arms added in: agent_sdk/mod.rs (resolve_orchestration_harness_label), ambient_agents/task.rs (harness_from_name), harness_display.rs (display_name, icon_for, brand_color, From<AIAgentHarness>), conversation.rs (AIAgentHarness), pane_group/mod.rs, view_impl.rs, harness_selector.rs, conversation_loader.rs, telemetry/events.rs (CLIAgentType). 8. cargo build passes with no warnings on the new variants."
+    },
+    "items": [
+      {
+        "id": "1",
+        "title": "Add Harness::Acp to warp_cli Harness enum",
+        "status": "proposed"
+      },
+      {
+        "id": "2",
+        "title": "Add HarnessConfig.command: Option<String>",
+        "status": "proposed"
+      },
+      {
+        "id": "3",
+        "title": "Add FeatureFlag::AcpHarness (dogfood)",
+        "status": "proposed"
+      },
+      {
+        "id": "4",
+        "title": "Propagate Acp variant to all exhaustive match sites",
+        "status": "proposed"
+      }
+    ],
+    "references": [],
+    "updated": "2026-04-28T19:45:44Z"
+  }
+}

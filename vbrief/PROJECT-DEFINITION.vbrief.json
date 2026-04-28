@@ -1,0 +1,21 @@
+{
+  "vBRIEFInfo": {
+    "version": "0.6",
+    "created": "2026-04-28T19:30:47Z",
+    "updated": "2026-04-28T19:37:00Z"
+  },
+  "plan": {
+    "title": "ACP Harness Integration",
+    "status": "approved",
+    "narratives": {
+      "Overview": "Add Harness::Acp to the Warp terminal, enabling any ACP (Agent Client Protocol) compliant coding agent to be used as a third-party harness. Warp acts as the ACP client, launching the agent as a background subprocess over piped stdin/stdout JSON-RPC, forwarding MCP server configuration, providing file system and terminal capabilities, and mapping ACP permission requests to Warp's existing autonomy gates. Gated behind FeatureFlag::AcpHarness for dogfood rollout.",
+      "Architecture": "New harness module at app/src/ai/agent_sdk/driver/harness/acp.rs implementing ThirdPartyHarness and HarnessRunner traits. Warp uses the agent-client-protocol Rust crate as the ACP client. ACP agent subprocess runs as a background piped process (NOT in terminal PTY). Session lifecycle: initialize -> session/new (with MCP server configs) -> session/prompt (streaming notifications). Agent output events (AgentMessageChunk, AgentThoughtChunk, ToolCall, ToolCallUpdate, Diff) rendered in conversation view. Agent resource requests (fs/read_text_file, fs/write_text_file, terminal/create, request_permission) handled by Warp's existing capability layer. ACP agent binary specified in agent config file as harness: { type: acp, command: my-binary }, loaded via existing -f/WARP_AGENT_CONFIG_FILE mechanism. HarnessConfig gains command: Option<String>. Touch surface mirrors PR #9255 (Hermes): ~21 locations.",
+      "TechStack": "Rust, agent-client-protocol crate (ACP Rust SDK v0.11+), JSON-RPC 2.0 over stdio, tokio. Crates: warp_cli (Harness enum), app/src/ai/agent_sdk (driver, harness), warp_core (FeatureFlag), app/src/ai/ambient_agents (HarnessConfig).",
+      "Goals": "Enable Warp to work with any ACP-compliant coding agent via a standardized protocol analogous to LSP. Reuse existing Warp infrastructure (MCP forwarding, permission gates, conversation view) rather than per-agent integrations. Dogfood gated.",
+      "Requirements": "FR-1: Harness::Acp in warp_cli Harness enum. FR-2: HarnessConfig.command: Option<String>; binary in config file. FR-3: Background piped subprocess (not terminal PTY); JSON-RPC via agent-client-protocol SDK. FR-4: ACP client capabilities: fs.readTextFile=true, fs.writeTextFile=true, terminal=true. FR-5: MCP servers forwarded in session/new. FR-6: RequestPermission -> Warp autonomy gate/BlockedAction. FR-7: AgentMessageChunk/AgentThoughtChunk/ToolCall/ToolCallUpdate/Diff -> conversation view. FR-8: FeatureFlag::AcpHarness gates all new paths. NFR-1: No regression to Oz/Claude/Gemini/Hermes. NFR-2: cargo fmt + clippy pass. NFR-3: Unit tests for session lifecycle, event mapping, command validation.",
+      "AllowDirectCommitsToMaster": "false"
+    },
+    "items": [],
+    "references": []
+  }
+}

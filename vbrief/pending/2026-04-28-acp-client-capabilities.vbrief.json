@@ -1,0 +1,52 @@
+{
+  "vBRIEFInfo": {
+    "version": "0.6",
+    "created": "2026-04-28T19:37:00Z",
+    "updated": "2026-04-28T19:37:00Z"
+  },
+  "plan": {
+    "title": "ACP Client Capabilities: fs read/write, terminal, permission gates",
+    "status": "pending",
+    "narratives": {
+      "Overview": "Handle the inbound ACP requests that the agent sends TO Warp as the client: fs/read_text_file, fs/write_text_file, terminal/create, and request_permission. These are the callbacks the agent uses to interact with the user's filesystem and environment. request_permission maps to Warp's existing autonomy gate/BlockedAction flow. Depends on the core harness story.",
+      "AcceptanceCriteria": "1. AcpHarnessRunner handles AgentRequest::ReadTextFile by reading the file from disk (honoring working_dir) and responding with ReadTextFileResponse. 2. AcpHarnessRunner handles AgentRequest::WriteTextFile by writing to disk and responding with WriteTextFileResponse. 3. AcpHarnessRunner handles AgentRequest::CreateTerminal by starting a terminal session in Warp and returning the terminal ID. 4. AcpHarnessRunner handles AgentRequest::RequestPermission by suspending the JSON-RPC loop, emitting a BlockedAction event through the existing Warp autonomy gate, waiting for user response, then sending the PermissionResponse back to the agent. 5. All file operations are path-validated (no directory traversal outside working dir). 6. Unit tests for each request type: happy path + error cases (file not found, permission denied by user).",
+      "Dependencies": [
+        "2026-04-28-acp-core-harness"
+      ]
+    },
+    "items": [
+      {
+        "id": "1",
+        "title": "Handle fs/read_text_file requests from agent",
+        "status": "proposed"
+      },
+      {
+        "id": "2",
+        "title": "Handle fs/write_text_file requests from agent",
+        "status": "proposed"
+      },
+      {
+        "id": "3",
+        "title": "Handle terminal/create requests from agent",
+        "status": "proposed"
+      },
+      {
+        "id": "4",
+        "title": "Handle request_permission -> Warp autonomy gate",
+        "status": "proposed"
+      },
+      {
+        "id": "5",
+        "title": "Path validation for file operations",
+        "status": "proposed"
+      },
+      {
+        "id": "6",
+        "title": "Unit tests for all client capability handlers",
+        "status": "proposed"
+      }
+    ],
+    "references": [],
+    "updated": "2026-04-28T19:45:44Z"
+  }
+}

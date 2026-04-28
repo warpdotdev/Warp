@@ -1,0 +1,53 @@
+{
+  "vBRIEFInfo": {
+    "version": "0.6",
+    "created": "2026-04-28T19:37:00Z",
+    "updated": "2026-04-28T19:37:00Z"
+  },
+  "plan": {
+    "title": "ACP UI Integration: CLIAgent, icons, harness selector, session listener",
+    "status": "pending",
+    "narratives": {
+      "Overview": "Complete the UI-layer wiring that makes Harness::Acp a first-class citizen in the Warp UI: CLIAgent::Acp variant, brand icon/color, harness selector display, session listener registration, plugin manager (no plugin needed), and the use_agent_footer submit strategy. These changes mirror the Hermes PR #9255 pattern exactly for the UI side. Can be done in parallel with or after the core harness story.",
+      "AcceptanceCriteria": "1. CLIAgent::Acp added to terminal/cli_agent.rs with command_prefix='acp-agent' (placeholder, overridden by config), display_name='ACP Agent', icon -> Icon::AcpLogo, color -> ACP_COLOR (neutral grey or configurable). 2. app/assets/bundled/svg/acp.svg created (simple placeholder icon). 3. Icon::AcpLogo added to warp_core/src/ui/icons.rs with svg path mapping. 4. CLIAgentType::Acp added to telemetry/events.rs and From<CLIAgent> impl. 5. is_agent_supported in cli_agent_sessions/listener/mod.rs includes CLIAgent::Acp; create_handler returns DefaultSessionListener. 6. plugin_manager_for_with_shell returns None for CLIAgent::Acp. 7. rich_input_submit_strategy returns DelayedEnter for CLIAgent::Acp. 8. harness_selector.rs build_menu_items includes item_for(Harness::Acp) (gated on FeatureFlag::AcpHarness). 9. view_impl.rs harness/cli_agent match handles Harness::Acp -> CLIAgent::Acp. 10. agent_management/view.rs harness list includes Harness::Acp.",
+      "Dependencies": [
+        "2026-04-28-acp-foundation"
+      ]
+    },
+    "items": [
+      {
+        "id": "1",
+        "title": "Add CLIAgent::Acp with display metadata",
+        "status": "proposed"
+      },
+      {
+        "id": "2",
+        "title": "Create acp.svg icon asset and Icon::AcpLogo",
+        "status": "proposed"
+      },
+      {
+        "id": "3",
+        "title": "Wire CLIAgent::Acp into session listener, plugin manager, footer",
+        "status": "proposed"
+      },
+      {
+        "id": "4",
+        "title": "Add Acp to harness selector UI (feature-flagged)",
+        "status": "proposed"
+      },
+      {
+        "id": "5",
+        "title": "Wire telemetry CLIAgentType::Acp",
+        "status": "proposed"
+      }
+    ],
+    "references": [
+      {
+        "uri": "https://github.com/warpdotdev/warp/pull/9255",
+        "type": "x-vbrief/github-pr",
+        "title": "PR #9255: feat: add Hermes Agent as a third-party harness (reference implementation)"
+      }
+    ],
+    "updated": "2026-04-28T19:45:44Z"
+  }
+}

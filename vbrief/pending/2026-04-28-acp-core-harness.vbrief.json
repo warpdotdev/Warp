@@ -1,0 +1,57 @@
+{
+  "vBRIEFInfo": {
+    "version": "0.6",
+    "created": "2026-04-28T19:37:00Z",
+    "updated": "2026-04-28T19:37:00Z"
+  },
+  "plan": {
+    "title": "ACP Core Harness: ThirdPartyHarness + HarnessRunner + JSON-RPC session lifecycle",
+    "status": "pending",
+    "narratives": {
+      "Overview": "Implement AcpHarness (ThirdPartyHarness) and AcpHarnessRunner (HarnessRunner) in app/src/ai/agent_sdk/driver/harness/acp.rs. This is the core story: spawn the ACP agent as a background piped subprocess and drive the full JSON-RPC session lifecycle (initialize, session/new, session/prompt, session/cancel) using the agent-client-protocol Rust SDK. Depends on the foundation story.",
+      "AcceptanceCriteria": "1. agent-client-protocol crate added to app/Cargo.toml (gated by feature or unconditional). 2. app/src/ai/agent_sdk/driver/harness/acp.rs implements AcpHarness (ThirdPartyHarness) with: harness() -> Harness::Acp, cli_agent() -> CLIAgent::Acp (new variant), validate() checks HarnessConfig.command is present and binary is on PATH. 3. AcpHarnessRunner manages subprocess lifecycle: spawn with piped stdin/stdout using agent-client-protocol SDK, send initialize (client caps: fs.read=true, fs.write=true, terminal=true), send session/new with MCP server configs, send session/prompt with prompt text, receive streaming notifications. 4. HarnessRunner::start() returns a CommandHandle-equivalent future that resolves when session/prompt returns (stop_reason: end_turn/cancelled/failed). 5. HarnessRunner::exit() sends session/cancel and closes stdin. 6. HarnessRunner::save_conversation() uploads block snapshot (same pattern as Hermes). 7. mod hermes and mod acp both in harness/mod.rs; harness_kind() returns HarnessKind::ThirdParty(Box::new(AcpHarness)) for Harness::Acp. 8. Unit tests in harness/acp-tests.rs covering: validate with missing command, session lifecycle happy path (mocked SDK), exit/cancel flow.",
+      "Dependencies": [
+        "2026-04-28-acp-foundation"
+      ]
+    },
+    "items": [
+      {
+        "id": "1",
+        "title": "Add agent-client-protocol crate dependency",
+        "status": "proposed"
+      },
+      {
+        "id": "2",
+        "title": "Implement AcpHarness (ThirdPartyHarness trait)",
+        "status": "proposed"
+      },
+      {
+        "id": "3",
+        "title": "Implement AcpHarnessRunner: spawn piped subprocess",
+        "status": "proposed"
+      },
+      {
+        "id": "4",
+        "title": "Implement JSON-RPC session lifecycle (init, session/new, session/prompt)",
+        "status": "proposed"
+      },
+      {
+        "id": "5",
+        "title": "Implement HarnessRunner::exit() via session/cancel",
+        "status": "proposed"
+      },
+      {
+        "id": "6",
+        "title": "Wire into harness_kind() dispatch",
+        "status": "proposed"
+      },
+      {
+        "id": "7",
+        "title": "Unit tests for session lifecycle",
+        "status": "proposed"
+      }
+    ],
+    "references": [],
+    "updated": "2026-04-28T19:45:44Z"
+  }
+}
