@@ -487,13 +487,32 @@ impl Input {
                         };
 
                         let parsed_path = CleanPathResult::with_line_and_column_number(args.trim());
-                        // The argument may contain shell-escaped characters (e.g. `\ ` for
-                        // spaces) from auto-suggest. Unescape them so the path matches the
-                        // actual filesystem entry.
                         let unescaped_path = session.shell_family().unescape(&parsed_path.path);
-                        // Expand `~` to the user's home directory.
                         let expanded_path = tilde(&unescaped_path);
-                        let file_path = current_dir.join(&*expanded_path);
+                        let expanded_path_str: &str = expanded_path.as_ref();
+                        let file_path = if let Some(launch_data) = session.launch_data() {
+                            let is_absolute = expanded_path_str.starts_with('/')
+                                || expanded_path_str.starts_with('\\')
+                                || expanded_path_str
+                                    .chars()
+                                    .next()
+                                    .is_some_and(|c: char| c.is_alphabetic())
+                                    && expanded_path_str.contains(':');
+                            if is_absolute {
+                                launch_data
+                                    .maybe_convert_absolute_path(expanded_path_str)
+                                    .unwrap_or_else(|| current_dir.join(expanded_path_str))
+                            } else {
+                                launch_data
+                                    .maybe_convert_relative_path(
+                                        &current_dir.to_string_lossy(),
+                                        expanded_path_str,
+                                    )
+                                    .unwrap_or_else(|| current_dir.join(expanded_path_str))
+                            }
+                        } else {
+                            current_dir.join(expanded_path_str)
+                        };
 
                         match std::fs::metadata(&file_path) {
                             Ok(metadata) if metadata.is_file() => {
