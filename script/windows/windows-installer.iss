@@ -28,7 +28,8 @@
   ((ReleaseChannel == "preview") ? "Preview" : \
   ((ReleaseChannel == "local") ? "Local" : \
   ((ReleaseChannel == "integration") ? "Integration" : \
-  "Unknown"))))
+  ((ReleaseChannel == "oss") ? "Oss" : \
+  "Unknown")))))
 #define AppMutexName "Local\Warp" + ChannelPascalCase + "_SingleInstance"
 
 
@@ -226,9 +227,12 @@ begin
     if not DirExists(BinDir) then
       CreateDir(BinDir);
 
-    { Determine the channel-specific script name. }
+    { Determine the channel-specific script name.  These values must match
+      `Channel::cli_command_name` in the Rust source. }
 #if ReleaseChannel == "stable"
     CmdScriptName := 'oz.cmd'
+#elif ReleaseChannel == "oss"
+    CmdScriptName := 'warp-oss.cmd';
 #else
     CmdScriptName := 'oz-{#ReleaseChannel}.cmd';
 #endif
