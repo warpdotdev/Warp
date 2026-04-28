@@ -168,7 +168,7 @@ impl SlashCommandRequest {
         }
     }
 
-    fn conversation_id(
+    pub(super) fn conversation_id(
         &self,
         controller: &BlocklistAIController,
         app: &AppContext,

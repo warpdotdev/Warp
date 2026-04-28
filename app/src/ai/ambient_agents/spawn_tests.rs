@@ -34,6 +34,8 @@ fn task_with(
         agent_config_snapshot: None,
         artifacts: vec![],
         is_sandbox_running: true,
+        last_event_sequence: None,
+        children: vec![],
     }
 }
 

@@ -12,7 +12,7 @@ ENV PATH=/usr/local/cargo/bin:/usr/local/go/bin:$PATH
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends \
-    pkg-config git build-essential curl zsh fish vim locales sudo gnupg2 \
+    pkg-config git build-essential libclang-dev curl unzip zsh fish vim locales sudo gnupg2 \
     protobuf-compiler libprotobuf-dev \
     fontconfig zlib1g libasound2-dev \
     libx11-6 libxcb1 libxi6 libxcursor1 libxkbcommon-x11-0 \
