@@ -196,30 +196,35 @@ pub async fn detect_main_branch(repo_path: &Path) -> Result<String> {
 /// Returns the SHA where `HEAD` forked from any other ref. Use
 /// `<fork>..HEAD` for "commits unique to this branch".
 #[cfg(not(feature = "local_fs"))]
-pub async fn detect_fork_point(_repo_path: &Path) -> Result<Option<String>> {
+pub async fn detect_fork_point(
+    _repo_path: &Path,
+    _current_branch_name: Option<&str>,
+    _upstream_ref: Option<&str>,
+) -> Result<Option<String>> {
     Err(anyhow!("Not supported without local_fs"))
 }
 
 /// See the no-`local_fs` stub above for documentation.
 #[cfg(feature = "local_fs")]
-pub async fn detect_fork_point(repo_path: &Path) -> Result<Option<String>> {
+pub async fn detect_fork_point(
+    repo_path: &Path,
+    current_branch_name: Option<&str>,
+    upstream_ref: Option<&str>,
+) -> Result<Option<String>> {
     // Exclude `<current>`, `origin/<current>`, and the resolved `@{u}` so
     // the branch isn't subtracted from itself.
-    let current = detect_current_branch(repo_path).await.ok();
-    let upstream = run_git_command(
-        repo_path,
-        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
-    )
-    .await
-    .ok()
-    .map(|s| s.trim().to_string())
-    .filter(|s| !s.is_empty());
+    let current = current_branch_name
+        .map(str::trim)
+        .filter(|branch| !branch.is_empty() && *branch != "HEAD");
+    let upstream = upstream_ref
+        .map(str::trim)
+        .filter(|branch| !branch.is_empty());
 
-    let branch_exclude = current.as_deref().map(|c| format!("--exclude={c}"));
-    let remote_exclude = current.as_deref().map(|c| format!("--exclude=origin/{c}"));
+    let branch_exclude = current.map(|c| format!("--exclude={c}"));
+    let remote_exclude = current.map(|c| format!("--exclude=origin/{c}"));
     // `@{u}` may be local or remote, and `--exclude` applies only to the
     // next `--branches`/`--remotes`, so we extend it before both.
-    let upstream_exclude = upstream.as_deref().map(|u| format!("--exclude={u}"));
+    let upstream_exclude = upstream.map(|u| format!("--exclude={u}"));
 
     let mut args: Vec<&str> = vec!["rev-list", "HEAD", "--not"];
     args.extend(branch_exclude.as_deref());
@@ -392,40 +397,40 @@ pub async fn get_file_change_entries(
     Err(anyhow!("Not supported on wasm"))
 }
 
-/// Unpushed commits: `@{u}..HEAD`, or `<fork_point>..HEAD` if no upstream.
+/// Unpushed commits: `<upstream>..HEAD`, or `<fork_point>..HEAD` if no upstream.
 #[cfg(feature = "local_fs")]
-pub async fn get_unpushed_commits(repo_path: &Path) -> Result<Vec<Commit>> {
-    let output = match run_git_command(
-        repo_path,
-        &["log", "@{u}..HEAD", "--format=COMMIT:%H\t%s", "--numstat"],
-    )
-    .await
-    {
-        Ok(output) => output,
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("no upstream configured") || msg.contains("unknown revision") {
-                // No upstream — fall back to the fork-point commit so we show
-                // exactly the commits unique to this branch, regardless of
-                // where the parent branch's tip currently sits.
-                let fork_point = detect_fork_point(repo_path).await.ok().flatten();
+pub async fn get_unpushed_commits(
+    repo_path: &Path,
+    current_branch_name: Option<&str>,
+    upstream_ref: Option<&str>,
+) -> Result<Vec<Commit>> {
+    let output = if let Some(upstream_ref) = upstream_ref.map(str::trim).filter(|s| !s.is_empty()) {
+        let range = format!("{upstream_ref}..HEAD");
+        run_git_command(
+            repo_path,
+            &["log", &range, "--format=COMMIT:%H\t%s", "--numstat"],
+        )
+        .await?
+    } else {
+        // No upstream — fall back to the fork-point commit so we show
+        // exactly the commits unique to this branch
+        let fork_point = detect_fork_point(repo_path, current_branch_name, upstream_ref)
+            .await
+            .ok()
+            .flatten();
 
-                let range = match fork_point {
-                    Some(sha) => format!("{sha}..HEAD"),
-                    None => "HEAD".to_string(),
-                };
+        let range = match fork_point {
+            Some(sha) => format!("{sha}..HEAD"),
+            None => "HEAD".to_string(),
+        };
 
-                run_git_command(
-                    repo_path,
-                    &["log", &range, "--format=COMMIT:%H\t%s", "--numstat"],
-                )
-                .await
-                .inspect_err(|e| log::warn!("Fallback unpushed-commits log failed: {e}"))
-                .unwrap_or_default()
-            } else {
-                return Err(e);
-            }
-        }
+        run_git_command(
+            repo_path,
+            &["log", &range, "--format=COMMIT:%H\t%s", "--numstat"],
+        )
+        .await
+        .inspect_err(|e| log::warn!("Fallback unpushed-commits log failed: {e}"))
+        .unwrap_or_default()
     };
     parse_commit_log(&output)
 }
@@ -471,7 +476,11 @@ fn parse_commit_log(output: &str) -> Result<Vec<Commit>> {
 }
 
 #[cfg(not(feature = "local_fs"))]
-pub async fn get_unpushed_commits(_repo_path: &Path) -> Result<Vec<Commit>> {
+pub async fn get_unpushed_commits(
+    _repo_path: &Path,
+    _current_branch_name: Option<&str>,
+    _upstream_ref: Option<&str>,
+) -> Result<Vec<Commit>> {
     Err(anyhow!("Not supported on wasm"))
 }
 

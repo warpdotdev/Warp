@@ -1386,8 +1386,15 @@ impl DiffStateModel {
                 )
                 .await
                 .ok()
-                .map(|s| s.trim().to_string());
-                let unpushed = get_unpushed_commits(&repo_path).await.unwrap_or_default();
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+                let unpushed = get_unpushed_commits(
+                    &repo_path,
+                    Some(current_branch_name.as_str()),
+                    upstream_branch.as_deref(),
+                )
+                .await
+                .unwrap_or_default();
                 (unpushed, upstream_branch)
             } else {
                 (Vec::new(), None)
