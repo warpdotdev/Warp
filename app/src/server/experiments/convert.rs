@@ -36,6 +36,8 @@ impl Display for ServerExperiment {
             Self::FreeUserNoAiExperiment => "FREE_USER_NO_AI_EXPERIMENT",
             Self::OzMultiHarnessControl => "OZ_MULTI_HARNESS_CONTROL",
             Self::OzMultiHarnessExperiment => "OZ_MULTI_HARNESS_EXPERIMENT",
+            Self::DemoLaunchBannerControl => "DEMO_LAUNCH_BANNER_CONTROL",
+            Self::DemoLaunchBannerExperiment => "DEMO_LAUNCH_BANNER_EXPERIMENT",
             #[cfg(test)]
             Self::TestExperiment => "TEST_EXPERIMENT",
         };
@@ -69,6 +71,8 @@ impl ServerExperiment {
             "FREE_USER_NO_AI_EXPERIMENT" => Ok(Self::FreeUserNoAiExperiment),
             "OZ_MULTI_HARNESS_CONTROL" => Ok(Self::OzMultiHarnessControl),
             "OZ_MULTI_HARNESS_EXPERIMENT" => Ok(Self::OzMultiHarnessExperiment),
+            "DEMO_LAUNCH_BANNER_CONTROL" => Ok(Self::DemoLaunchBannerControl),
+            "DEMO_LAUNCH_BANNER_EXPERIMENT" => Ok(Self::DemoLaunchBannerExperiment),
             s => Err(anyhow::anyhow!(
                 "String doesn't match any server experiment variant {s}"
             )),
@@ -108,6 +112,8 @@ impl TryFrom<Experiment> for ServerExperiment {
             Experiment::FreeUserNoAiExperiment => Ok(Self::FreeUserNoAiExperiment),
             Experiment::OzMultiHarnessControl => Ok(Self::OzMultiHarnessControl),
             Experiment::OzMultiHarnessExperiment => Ok(Self::OzMultiHarnessExperiment),
+            Experiment::DemoLaunchBannerControl => Ok(Self::DemoLaunchBannerControl),
+            Experiment::DemoLaunchBannerExperiment => Ok(Self::DemoLaunchBannerExperiment),
             // Experiments that we no longer support on the client.
             e => Err(anyhow::anyhow!(
                 "Server-side enabled experiment '{e:?}' is no longer supported by the client."

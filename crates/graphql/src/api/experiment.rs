@@ -67,6 +67,8 @@ pub enum Experiment {
     FreeUserInitialCreditsThreeHundred,
     OzMultiHarnessControl,
     OzMultiHarnessExperiment,
+    DemoLaunchBannerControl,
+    DemoLaunchBannerExperiment,
     #[cynic(fallback)]
     Other(String),
 }
