@@ -121,7 +121,7 @@ use crate::server::telemetry::{
 };
 use crate::ui_components::icons::Icon;
 use crate::view_components::dropdown::DropdownAction;
-use crate::workspaces::workspace::CustomerType;
+use crate::workspaces::workspace::{AdminEnablementSetting, CustomerType};
 use crate::{
     appearance::Appearance,
     editor::Event as EditorEvent,
@@ -148,8 +148,7 @@ const AI_SETTINGS_DROPDOWN_WIDTH: f32 = 250.;
 const AI_SETTINGS_DROPDOWN_MAX_HEIGHT: f32 = 250.;
 const NEXT_COMMAND_DESCRIPTION: &str = "Let AI suggest the next command to run based on your command history, outputs, and common workflows.";
 const PROMPT_SUGGESTIONS_DESCRIPTION: &str = "Let AI suggest natural language prompts, as inline banners in the input, based on recent commands and their outputs.";
-const SUGGESTED_CODE_BANNERS_DESCRIPTION: &str =
-    "Let AI suggest code diffs and queries as inline banners in the blocklist, based on recent commands and their outputs.";
+const SUGGESTED_CODE_BANNERS_DESCRIPTION: &str = "Let AI suggest code diffs and queries as inline banners in the blocklist, based on recent commands and their outputs.";
 const NATURAL_LANGUAGE_AUTOSUGGESTIONS: &str =
     "Let AI suggest natural language autosuggestions, based on recent commands and their outputs.";
 const SHARED_BLOCK_TITLE_GENERATION_DESCRIPTION: &str =
@@ -1470,6 +1469,7 @@ impl AISettingsPageView {
                 widgets.push(Box::new(CLIAgentWidget::default()));
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+                widgets.push(Box::new(AgentAttributionWidget::default()));
                 widgets.push(Box::new(OtherAIWidget::default()));
                 if FeatureFlag::AgentModeComputerUse.is_enabled() {
                     widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
@@ -1509,6 +1509,7 @@ impl AISettingsPageView {
                 }
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+                widgets.push(Box::new(AgentAttributionWidget::default()));
                 widgets.push(Box::new(OtherAIWidget::default()));
                 if FeatureFlag::AgentModeComputerUse.is_enabled() {
                     widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
@@ -2112,6 +2113,7 @@ pub enum AISettingsPageAction {
     ToggleCloudAgentComputerUse,
     ToggleFileBasedMcp,
     ToggleIncludeAgentCommandsInHistory,
+    ToggleAgentAttribution,
     #[cfg(feature = "local_fs")]
     SetConversationLayout(crate::util::file::external_editor::settings::OpenConversationPreference),
     ToggleOrchestration,
@@ -2269,7 +2271,9 @@ impl TypedActionView for AISettingsPageView {
                         );
                     }
                     Err(e) => {
-                        log::warn!("Failed to set value for Natural Language Autosuggestions setting: {e:?}");
+                        log::warn!(
+                            "Failed to set value for Natural Language Autosuggestions setting: {e:?}"
+                        );
                     }
                 }
                 ctx.notify();
@@ -2821,6 +2825,17 @@ impl TypedActionView for AISettingsPageView {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings
                         .show_conversation_history
+                        .toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            AISettingsPageAction::ToggleAgentAttribution => {
+                // The updated value syncs to warp-server automatically via
+                // `CloudPreferencesSyncer` as a `JsonPreference` GSO keyed
+                // `Global_AgentAttributionEnabled`; no bespoke server call needed.
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .agent_attribution_enabled
                         .toggle_and_save_value(ctx));
                 });
                 ctx.notify();
@@ -4314,10 +4329,13 @@ impl AgentsWidget {
         render_dropdown_item(
             appearance,
             "Base model",
-            Some("This model serves as the primary engine behind the Warp Agent. It powers most interactions and invokes other models for tasks like planning or code generation when necessary. Warp may automatically switch to alternate models based on model availability or for auxiliary tasks such as conversation summarization."),
+            Some(
+                "This model serves as the primary engine behind the Warp Agent. It powers most interactions and invokes other models for tasks like planning or code generation when necessary. Warp may automatically switch to alternate models based on model availability or for auxiliary tasks such as conversation summarization.",
+            ),
             Some(show_in_prompt_checkbox),
             LocalOnlyIconState::Hidden,
-            (!ai_settings.is_any_ai_enabled(app)).then(|| appearance.theme().disabled_ui_text_color()),
+            (!ai_settings.is_any_ai_enabled(app))
+                .then(|| appearance.theme().disabled_ui_text_color()),
             &view.base_model_dropdown,
         )
     }
@@ -4343,7 +4361,7 @@ impl AgentsWidget {
 
         let codebase_context_description = vec![
             FormattedTextFragment::plain_text(
-                "Allow the Warp Agent to generate an outline of your codebase that can be used for context. No code is ever stored on our servers. "
+                "Allow the Warp Agent to generate an outline of your codebase that can be used for context. No code is ever stored on our servers. ",
             ),
             FormattedTextFragment::hyperlink(
                 "Learn more",
@@ -4415,10 +4433,18 @@ impl AgentsWidget {
 
         let subtext = {
             let subtext_fragments = vec![
-                FormattedTextFragment::plain_text("You haven't added any MCP servers yet. Once you do, you'll be able to control how much autonomy the Warp Agent has when interacting with them. "),
-                FormattedTextFragment::hyperlink_action("Add a server", AISettingsPageAction::OpenMCPServerCollection),
+                FormattedTextFragment::plain_text(
+                    "You haven't added any MCP servers yet. Once you do, you'll be able to control how much autonomy the Warp Agent has when interacting with them. ",
+                ),
+                FormattedTextFragment::hyperlink_action(
+                    "Add a server",
+                    AISettingsPageAction::OpenMCPServerCollection,
+                ),
                 FormattedTextFragment::plain_text(" or "),
-                FormattedTextFragment::hyperlink("learn more about MCPs.", "https://docs.warp.dev/agent-platform/capabilities/mcp"),
+                FormattedTextFragment::hyperlink(
+                    "learn more about MCPs.",
+                    "https://docs.warp.dev/agent-platform/capabilities/mcp",
+                ),
             ];
 
             Container::new(
@@ -4764,11 +4790,16 @@ impl AIInputWidget {
                 Vec<FormattedTextFragment>,
             > = LazyLock::new(|| {
                 vec![
-                FormattedTextFragment::plain_text(
-                "Enabling natural language detection will detect when natural language is written in the terminal input, and then automatically switch to Agent Mode for AI queries."
-                ),
-                FormattedTextFragment::plain_text(" Encountered an incorrect input detection? "),
-                FormattedTextFragment::hyperlink("Let us know", "https://warpdotdev.typeform.com/to/offrTIpq"),
+                    FormattedTextFragment::plain_text(
+                        "Enabling natural language detection will detect when natural language is written in the terminal input, and then automatically switch to Agent Mode for AI queries.",
+                    ),
+                    FormattedTextFragment::plain_text(
+                        " Encountered an incorrect input detection? ",
+                    ),
+                    FormattedTextFragment::hyperlink(
+                        "Let us know",
+                        "https://warpdotdev.typeform.com/to/offrTIpq",
+                    ),
                 ]
             });
 
@@ -4871,7 +4902,7 @@ impl SettingsWidget for MCPServersWidget {
 
         let mcp_description = vec![
             FormattedTextFragment::plain_text(
-               "Add MCP servers to extend the Warp Agent's capabilities. \
+                "Add MCP servers to extend the Warp Agent's capabilities. \
             MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. ",
             ),
             FormattedTextFragment::hyperlink(
@@ -5170,10 +5201,12 @@ impl VoiceWidget {
         ));
 
         let voice_input_description_text_fragments = vec![
-                FormattedTextFragment::plain_text("Voice input allows you to control Warp by speaking directly to your terminal (powered by "),
-                FormattedTextFragment::hyperlink("Wispr Flow", WISPR_FLOW_URL),
-                FormattedTextFragment::plain_text(")."),
-            ];
+            FormattedTextFragment::plain_text(
+                "Voice input allows you to control Warp by speaking directly to your terminal (powered by ",
+            ),
+            FormattedTextFragment::hyperlink("Wispr Flow", WISPR_FLOW_URL),
+            FormattedTextFragment::plain_text(")."),
+        ];
 
         let voice_input_description = FormattedTextElement::new(
             FormattedText::new([FormattedTextLine::Line(
@@ -5679,6 +5712,139 @@ impl SettingsWidget for CLIAgentWidget {
     }
 }
 
+/// The presentation state of the agent attribution toggle, derived from the
+/// org-level [`AdminEnablementSetting`], the user's stored preference, and
+/// whether AI is globally enabled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AgentAttributionToggleState {
+    /// Whether the toggle is rendered in the checked state.
+    pub(crate) is_enabled: bool,
+    /// Whether the org has forced the value (locking the toggle with a tooltip).
+    pub(crate) is_forced_by_org: bool,
+    /// Whether the toggle should be rendered as non-interactive overall
+    /// (forced by the org, or AI globally disabled).
+    pub(crate) is_disabled: bool,
+}
+
+/// Derive the toggle state from its three inputs.
+pub(crate) fn derive_agent_attribution_toggle_state(
+    org_setting: &AdminEnablementSetting,
+    user_pref: bool,
+    is_any_ai_enabled: bool,
+) -> AgentAttributionToggleState {
+    let is_forced_by_org = match org_setting {
+        AdminEnablementSetting::Enable | AdminEnablementSetting::Disable => true,
+        AdminEnablementSetting::RespectUserSetting => false,
+    };
+    let is_enabled = match org_setting {
+        AdminEnablementSetting::Enable => true,
+        AdminEnablementSetting::Disable => false,
+        AdminEnablementSetting::RespectUserSetting => user_pref,
+    };
+    AgentAttributionToggleState {
+        is_enabled,
+        is_forced_by_org,
+        is_disabled: is_forced_by_org || !is_any_ai_enabled,
+    }
+}
+
+#[derive(Default)]
+struct AgentAttributionWidget {
+    toggle: SwitchStateHandle,
+}
+
+impl SettingsWidget for AgentAttributionWidget {
+    type View = AISettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "agent attribution commit pull request co-author author credit oz warp"
+    }
+
+    fn render(
+        &self,
+        _view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let ai_settings = AISettings::as_ref(app);
+        let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
+
+        let org_setting = UserWorkspaces::as_ref(app).get_agent_attribution_setting();
+        let state = derive_agent_attribution_toggle_state(
+            &org_setting,
+            *ai_settings.agent_attribution_enabled,
+            is_any_ai_enabled,
+        );
+
+        let ui_builder = appearance.ui_builder();
+        let toggle = if state.is_forced_by_org {
+            ui_builder
+                .switch(self.toggle.clone())
+                .check(state.is_enabled)
+                .with_tooltip(TooltipConfig {
+                    text: "This option is enforced by your organization's settings and cannot be customized.".to_string(),
+                    styles: ui_builder.default_tool_tip_styles(),
+                })
+                .disable()
+                .build()
+                .finish()
+        } else if !is_any_ai_enabled {
+            ui_builder
+                .switch(self.toggle.clone())
+                .check(state.is_enabled)
+                .with_disabled(true)
+                .build()
+                .finish()
+        } else {
+            ui_builder
+                .switch(self.toggle.clone())
+                .check(state.is_enabled)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(AISettingsPageAction::ToggleAgentAttribution);
+                })
+                .finish()
+        };
+
+        let toggle_row = build_toggle_element(
+            render_body_item_label::<AISettingsPageAction>(
+                "Enable agent attribution".to_string(),
+                Some(styles::header_font_color(!state.is_disabled, app)),
+                None,
+                LocalOnlyIconState::Hidden,
+                ToggleState::Enabled,
+                appearance,
+            ),
+            toggle,
+            appearance,
+            None,
+        );
+
+        Flex::column()
+            .with_child(render_separator(appearance))
+            .with_child(
+                build_sub_header(
+                    appearance,
+                    "Agent Attribution",
+                    Some(styles::header_font_color(is_any_ai_enabled, app)),
+                )
+                .with_padding_bottom(HEADER_PADDING)
+                .finish(),
+            )
+            .with_child(toggle_row)
+            .with_child(render_ai_setting_description(
+                "Oz can add attribution to commit messages and pull requests it creates",
+                !state.is_disabled,
+                app,
+            ))
+            .finish()
+    }
+}
+
+#[cfg(test)]
+#[path = "ai_page_tests.rs"]
+mod tests;
+
 #[derive(Default)]
 struct CloudAgentComputerUseWidget {
     toggle: SwitchStateHandle,
@@ -6028,11 +6194,9 @@ impl ApiKeysWidget {
                             FormattedTextFragment::plain_text(" to use your own API keys."),
                         ]
                     } else {
-                        vec![
-                            FormattedTextFragment::plain_text(
-                                "Ask your team's admin to upgrade to the Build plan to use your own API keys.",
-                            ),
-                        ]
+                        vec![FormattedTextFragment::plain_text(
+                            "Ask your team's admin to upgrade to the Build plan to use your own API keys.",
+                        )]
                     }
                 }
             } else {
