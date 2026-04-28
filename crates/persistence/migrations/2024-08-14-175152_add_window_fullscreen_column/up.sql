@@ -1,1 +1,0 @@
-ALTER TABLE windows ADD COLUMN fullscreen BOOLEAN NOT NULL DEFAULT false;

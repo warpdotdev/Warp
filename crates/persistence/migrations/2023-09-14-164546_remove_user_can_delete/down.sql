@@ -1,1 +1,0 @@
-ALTER TABLE workflows ADD user_can_delete BOOLEAN NOT NULL DEFAULT FALSE;

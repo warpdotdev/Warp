@@ -1,2 +1,0 @@
-pub const MAX_DISPLAYED_RESULT_COUNT: usize = 4;
-pub const ESTIMATED_RESULT_HEIGHT: f32 = 48.0;

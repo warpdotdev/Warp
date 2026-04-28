@@ -1,9 +1,0 @@
-[
-  (object)
-  (array)
-] @indent
-
-[
-  "]"
-  "}"
-] @outdent

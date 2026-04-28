@@ -1,2 +1,0 @@
-ALTER TABLE workflows ADD COLUMN last_updated_at DATETIME NOT NULL;
-ALTER TABLE workflows ADD COLUMN user_id INTEGER NOT NULL REFERENCES users(id);

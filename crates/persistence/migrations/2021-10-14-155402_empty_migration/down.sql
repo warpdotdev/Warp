@@ -1,2 +1,0 @@
--- This migration is a no-op. It serves just to make diesel do its own bookkeeping.
--- As a result, the sqlite database gets created.

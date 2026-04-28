@@ -1,1 +1,0 @@
-ALTER TABLE object_metadata ADD metadata_last_updated_ts BIGINTEGER;

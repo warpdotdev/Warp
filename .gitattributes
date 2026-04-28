@@ -1,3 +1,0 @@
-*.pdb filter=lfs diff=lfs merge=lfs -text
-input_classifier/models/* filter=lfs diff=lfs merge=lfs -text
-input_classifier/models/**/*tokenizer.json linguist-generated=true

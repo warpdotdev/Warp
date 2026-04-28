@@ -1,1 +1,0 @@
-ALTER TABLE tabs DROP COLUMN color;
