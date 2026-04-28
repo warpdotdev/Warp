@@ -336,9 +336,9 @@ fn determine_agent_source(
         LaunchMode::App { .. } | LaunchMode::Test { .. } => {
             Some(crate::ai::ambient_agents::AgentSource::CloudMode)
         }
-        // Proxy and Daemon are headless server processes that don't use the
-        // agent subsystem.
-        LaunchMode::Proxy | LaunchMode::Daemon => None,
+        // RemoteServerProxy and RemoteServerDaemon are headless server
+        // processes that don't use the agent subsystem.
+        LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon => None,
     }
 }
 
@@ -371,11 +371,11 @@ pub enum LaunchMode {
 
     /// Remote server proxy — bridges SSH stdio to the daemon's Unix socket.
     /// This is a short-lived process that runs for the lifetime of an SSH session.
-    Proxy,
+    RemoteServerProxy,
 
     /// Remote server daemon — long-lived headless process serving remote
     /// connections via a Unix domain socket.
-    Daemon,
+    RemoteServerDaemon,
 }
 
 impl LaunchMode {
@@ -384,8 +384,8 @@ impl LaunchMode {
             LaunchMode::App { args, .. } => Cow::Borrowed(args),
             LaunchMode::CommandLine { .. }
             | LaunchMode::Test { .. }
-            | LaunchMode::Proxy
-            | LaunchMode::Daemon => Cow::Owned(warp_cli::AppArgs::default()),
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon => Cow::Owned(warp_cli::AppArgs::default()),
         }
     }
 
@@ -398,8 +398,8 @@ impl LaunchMode {
             } => *is_integration_test,
             LaunchMode::App { .. }
             | LaunchMode::CommandLine { .. }
-            | LaunchMode::Proxy
-            | LaunchMode::Daemon => false,
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon => false,
         }
     }
 
@@ -408,8 +408,8 @@ impl LaunchMode {
             LaunchMode::Test { driver, .. } => driver.take(),
             LaunchMode::App { .. }
             | LaunchMode::CommandLine { .. }
-            | LaunchMode::Proxy
-            | LaunchMode::Daemon => None,
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon => None,
         }
     }
 
@@ -426,9 +426,9 @@ impl LaunchMode {
             LaunchMode::App { .. } => ExecutionMode::App,
             LaunchMode::CommandLine { .. } => ExecutionMode::Sdk,
             LaunchMode::Test { .. } => ExecutionMode::App,
-            // Proxy and Daemon don't use execution mode, but Sdk is the
-            // closest match (headless, no GUI).
-            LaunchMode::Proxy | LaunchMode::Daemon => ExecutionMode::Sdk,
+            // RemoteServerProxy and RemoteServerDaemon don't use execution
+            // mode, but Sdk is the closest match (headless, no GUI).
+            LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon => ExecutionMode::Sdk,
         }
     }
 
@@ -437,8 +437,8 @@ impl LaunchMode {
             LaunchMode::CommandLine { is_sandboxed, .. } => *is_sandboxed,
             LaunchMode::App { .. }
             | LaunchMode::Test { .. }
-            | LaunchMode::Proxy
-            | LaunchMode::Daemon => false,
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon => false,
         }
     }
 
@@ -449,7 +449,7 @@ impl LaunchMode {
                 CliCommand::Agent(AgentCommand::Run(args)) => !args.gui,
                 _ => true,
             },
-            LaunchMode::Proxy | LaunchMode::Daemon => true,
+            LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon => true,
             LaunchMode::App { .. } | LaunchMode::Test { .. } => false,
         }
     }
@@ -461,7 +461,7 @@ impl LaunchMode {
                 matches!(command, CliCommand::Agent(AgentCommand::Run { .. }))
             }
             LaunchMode::App { .. } | LaunchMode::Test { .. } => true,
-            LaunchMode::Proxy | LaunchMode::Daemon => false,
+            LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon => false,
         }
     }
 
@@ -472,8 +472,8 @@ impl LaunchMode {
             LaunchMode::App { .. } => true,
             LaunchMode::CommandLine { .. }
             | LaunchMode::Test { .. }
-            | LaunchMode::Proxy
-            | LaunchMode::Daemon => false,
+            | LaunchMode::RemoteServerProxy
+            | LaunchMode::RemoteServerDaemon => false,
         }
     }
 
@@ -481,30 +481,22 @@ impl LaunchMode {
     #[cfg_attr(not(feature = "crash_reporting"), allow(dead_code))]
     fn needs_crash_reporting(&self) -> bool {
         match self {
-            LaunchMode::App { .. } => true,
-            LaunchMode::CommandLine { .. } => true,
-            LaunchMode::Test { .. } => true,
-            LaunchMode::Daemon => true,
-            LaunchMode::Proxy => false,
+            LaunchMode::App { .. }
+            | LaunchMode::CommandLine { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::RemoteServerDaemon
+            | LaunchMode::RemoteServerProxy => true,
         }
     }
 
     /// Whether profiling and tracing should be initialized in `init_common`.
     fn needs_profiling(&self) -> bool {
         match self {
-            LaunchMode::App { .. } => true,
-            LaunchMode::CommandLine { .. } => true,
-            LaunchMode::Test { .. } => true,
-            LaunchMode::Daemon => true,
-            LaunchMode::Proxy => false,
-        }
-    }
-
-    /// Whether this is a CLI-like mode (logs to file/stderr, not stdout).
-    fn is_cli_like(&self) -> bool {
-        match self {
-            LaunchMode::App { .. } | LaunchMode::Test { .. } => false,
-            LaunchMode::CommandLine { .. } | LaunchMode::Proxy | LaunchMode::Daemon => true,
+            LaunchMode::App { .. }
+            | LaunchMode::CommandLine { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::RemoteServerDaemon
+            | LaunchMode::RemoteServerProxy => true,
         }
     }
 
@@ -519,8 +511,8 @@ impl LaunchMode {
                 }
             }
             // Proxy must log to stderr because stdout is the protocol channel.
-            LaunchMode::Proxy => Some(LogDestination::Stderr),
-            LaunchMode::Daemon => Some(LogDestination::File),
+            LaunchMode::RemoteServerProxy => Some(LogDestination::Stderr),
+            LaunchMode::RemoteServerDaemon => Some(LogDestination::File),
             LaunchMode::App { .. } | LaunchMode::Test { .. } => None,
         }
     }
@@ -643,6 +635,7 @@ pub fn run() -> Result<()> {
                 }
             }
             #[cfg(not(target_family = "wasm"))]
+<<<<<<< HEAD
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerProxy(args)) => {
                 init_common(&LaunchMode::Proxy, None)?;
                 return crate::remote_server::run_proxy(args.identity_key.clone());
@@ -651,6 +644,16 @@ pub fn run() -> Result<()> {
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerDaemon(args)) => {
                 init_common(&LaunchMode::Daemon, None)?;
                 return crate::remote_server::run_daemon(args.identity_key.clone());
+=======
+            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerProxy) => {
+                init_common(&LaunchMode::RemoteServerProxy, None)?;
+                return crate::remote_server::run_proxy();
+            }
+            #[cfg(not(target_family = "wasm"))]
+            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerDaemon) => {
+                init_common(&LaunchMode::RemoteServerDaemon, None)?;
+                return crate::remote_server::run_daemon();
+>>>>>>> f8ebef6 (comments)
             }
             #[cfg(not(target_family = "wasm"))]
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RipgrepSearch {
@@ -773,8 +776,8 @@ fn init_common(launch_mode: &LaunchMode, timer: Option<&mut IntervalTimer>) -> R
         tracing::init()?;
     }
 
-    let is_cli = launch_mode.is_cli_like();
     let log_destination = launch_mode.log_destination();
+    let is_cli = log_destination.is_some();
 
     cfg_if::cfg_if! {
         if #[cfg(enable_crash_recovery)] {
@@ -809,6 +812,10 @@ fn init_common(launch_mode: &LaunchMode, timer: Option<&mut IntervalTimer>) -> R
 }
 
 /// Runs the app.
+///
+/// Note that every initialization step in this function is specific to the GUI app and Oz. If you want
+/// to add setup steps that should be generic to all launch modes (e.g. remote server). It should be added
+/// in init_common instead.
 fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     let mut timer = IntervalTimer::new();
 
@@ -2374,9 +2381,10 @@ fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode
                 }
             }
         }
-        // Proxy and Daemon never go through run_internal / launch; they call
-        // init_common directly and then their own entry points.
-        LaunchMode::Proxy | LaunchMode::Daemon => {
+        // RemoteServerProxy and RemoteServerDaemon never go through
+        // run_internal / launch; they call init_common directly and then
+        // their own entry points.
+        LaunchMode::RemoteServerProxy | LaunchMode::RemoteServerDaemon => {
             log::error!("Proxy/Daemon modes should not use the launch() path");
             std::process::exit(1);
         }
