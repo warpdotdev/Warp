@@ -1,9 +1,11 @@
 use pathfinder_geometry::vector::vec2f;
 use session_sharing_protocol::sharer::SessionSourceType;
 
-use crate::ai::agent_conversations_model::AgentConversationsModel;
+use crate::ai::agent::conversation::ConversationStatus;
+use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentRunDisplayStatus};
 use crate::ai::ambient_agents::task::TaskCreatorInfo;
 use crate::ai::ambient_agents::{AgentSource, AmbientAgentTask, AmbientAgentTaskState};
+use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::auth::user::TEST_USER_UID;
 use warpui::platform::WindowStyle;
 use warpui::{App, ViewHandle};
@@ -758,7 +760,8 @@ fn test_non_owned_tombstone_is_removed_for_followup_and_reinserted_after_complet
                 model.enter_viewing_existing_session(task_id, ctx);
             });
 
-            let initial_block_height_items = view.model.lock().block_list().block_heights().items().len();
+            let initial_block_height_items =
+                view.model.lock().block_list().block_heights().items().len();
 
             view.insert_conversation_ended_tombstone(ctx);
             assert!(view.conversation_ended_tombstone_view_id.is_some());
@@ -790,6 +793,87 @@ fn test_non_owned_tombstone_is_removed_for_followup_and_reinserted_after_complet
         });
     });
 }
+
+#[test]
+fn test_on_ambient_agent_execution_ended_refreshes_open_details_panel_to_terminal_status() {
+    let _cloud_mode_flag = FeatureFlag::CloudMode.override_enabled(true);
+    let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
+    let _orchestration_v2_flag = FeatureFlag::OrchestrationV2.override_enabled(true);
+    let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        let terminal = cloud_mode_terminal_for_test(&mut app);
+        let session_id = SessionId::new();
+        let mut task = create_cloud_mode_task_for_user("another-user");
+        let task_id = task.task_id;
+        task.state = AmbientAgentTaskState::InProgress;
+        task.session_id = Some(session_id.to_string());
+        task.session_link = Some("https://example.com/session/active".to_string());
+        task.is_sandbox_running = true;
+
+        AgentConversationsModel::handle(&app).update(&mut app, |model, _| {
+            model.insert_task_for_test(task);
+        });
+        BlocklistAIHistoryModel::handle(&app).update(&mut app, |model, ctx| {
+            let conversation_id = model.start_new_conversation(terminal.id(), false, false, ctx);
+            model.assign_run_id_for_conversation(
+                conversation_id,
+                task_id.to_string(),
+                Some(task_id),
+                terminal.id(),
+                ctx,
+            );
+            model.update_conversation_status(
+                terminal.id(),
+                conversation_id,
+                ConversationStatus::Success,
+                ctx,
+            );
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            let mut model = view.model.lock();
+            model.set_shared_session_source_type(SessionSourceType::AmbientAgent {
+                task_id: Some(task_id.to_string()),
+            });
+            model.set_shared_session_status(SharedSessionStatus::executor());
+            drop(model);
+
+            let ambient_agent_view_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .clone();
+            ambient_agent_view_model.update(ctx, |model, ctx| {
+                model.enter_viewing_existing_session(task_id, ctx);
+            });
+
+            view.is_cloud_mode_details_panel_open = true;
+            view.fetch_and_update_cloud_mode_details_panel(ctx);
+            assert_eq!(
+                view.cloud_mode_details_panel
+                    .as_ref(ctx)
+                    .task_display_status_for_test(),
+                Some(AgentRunDisplayStatus::TaskInProgress)
+            );
+
+            view.on_ambient_agent_execution_ended(ctx);
+            assert_eq!(
+                view.cloud_mode_details_panel
+                    .as_ref(ctx)
+                    .task_display_status_for_test(),
+                Some(AgentRunDisplayStatus::ConversationSucceeded)
+            );
+        });
+
+        let task = AgentConversationsModel::handle(&app).read(&app, |model, _| {
+            model
+                .get_task_data(&task_id)
+                .expect("task should remain cached")
+        });
+        assert!(!task.is_sandbox_running);
+    });
+}
+
 #[test]
 fn test_on_ambient_agent_execution_ended_does_not_insert_tombstone_without_handoff() {
     let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(false);

@@ -805,6 +805,12 @@ impl TerminalView {
         has_live_shared_session: bool,
         ctx: &mut ViewContext<Self>,
     ) {
+        if let Some(task_id) = self.ambient_agent_task_id_for_details_panel(ctx) {
+            AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
+                model.mark_task_execution_ended(task_id, ctx);
+            });
+        }
+        self.refresh_cloud_mode_details_panel_if_open(ctx);
         if !FeatureFlag::HandoffCloudCloud.is_enabled()
             || !FeatureFlag::CloudModeSetupV2.is_enabled()
             || self.conversation_ended_tombstone_view_id.is_some()

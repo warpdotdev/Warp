@@ -1368,6 +1368,21 @@ impl AgentConversationsModel {
         self.tasks.insert(task.task_id, task);
     }
 
+    pub(crate) fn mark_task_execution_ended(
+        &mut self,
+        task_id: AmbientAgentTaskId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(task) = self.tasks.get_mut(&task_id) else {
+            return;
+        };
+        let was_active = task.has_active_execution();
+        task.is_sandbox_running = false;
+        if was_active {
+            ctx.emit(AgentConversationsModelEvent::TasksUpdated);
+        }
+    }
+
     /// Returns the local conversation ID represented by the given task, if this task and a
     /// conversation entry both point at the same underlying local run.
     ///

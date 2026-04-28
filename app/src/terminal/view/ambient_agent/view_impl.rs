@@ -898,6 +898,16 @@ impl TerminalView {
         });
     }
 
+    pub(in crate::terminal::view) fn refresh_cloud_mode_details_panel_if_open(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.is_cloud_mode_details_panel_open && self.can_show_cloud_mode_details_ui(ctx) {
+            self.fetch_and_update_cloud_mode_details_panel(ctx);
+            ctx.notify();
+        }
+    }
+
     /// Auto-opens the cloud mode details panel once.
     /// This is used for local cloud mode sessions (after SessionReady) and shared ambient sessions (after join).
     pub(in crate::terminal::view) fn maybe_auto_open_cloud_mode_details_panel(

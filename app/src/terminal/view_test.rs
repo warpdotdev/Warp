@@ -2,8 +2,8 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::pin::pin;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use crate::ai::agent::conversation::ConversationStatus;
 use parking_lot::FairMutex;
