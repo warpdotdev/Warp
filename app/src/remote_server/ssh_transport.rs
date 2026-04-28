@@ -68,8 +68,9 @@ impl SshTransport {
 
     fn remote_proxy_command(&self) -> String {
         let binary = remote_server::setup::remote_server_binary();
-        let identity_key = shell_words::quote(&self.auth_provider.remote_server_identity_key());
-        format!("{binary} remote-server-proxy --identity-key {identity_key}")
+        let identity_key = self.auth_provider.remote_server_identity_key();
+        let quoted_identity_key = shell_words::quote(&identity_key);
+        format!("{binary} remote-server-proxy --identity-key {quoted_identity_key}")
     }
 }
 
@@ -201,10 +202,6 @@ mod tests {
     impl AuthProvider for StaticAuthProvider {
         fn get_auth_token(&self) -> BoxFuture<'static, Option<String>> {
             Box::pin(async { None })
-        }
-
-        fn actor_debug_label(&self) -> String {
-            "test".to_string()
         }
 
         fn remote_server_identity_key(&self) -> String {

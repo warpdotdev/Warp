@@ -97,7 +97,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             }
         });
         let auth_manager = AuthManager::handle(ctx);
-        ctx.subscribe_to_model(&auth_manager, |me, event, ctx| match event {
+        ctx.subscribe_to_model(&auth_manager, |_, event, ctx| match event {
             AuthManagerEvent::AuthComplete => {
                 RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
                     mgr.reconnect_all_sessions_for_current_auth_identity(ctx);
@@ -469,5 +469,4 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             mgr.connect_session(session_id, transport, auth_provider, ctx);
         });
     }
-
 }

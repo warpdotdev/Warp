@@ -365,9 +365,8 @@ pub enum ServerApiEvent {
     NeedsReauth,
     /// The user's account has been disabled.
     UserAccountDisabled,
-    /// The current bearer token was refreshed and should be rotated in
-    /// long-lived remote-server daemons.
-    AuthTokenRotated { token: String, actor_label: String },
+    /// The current bearer token was refreshed.
+    AccessTokenRefreshed { token: String },
 }
 
 impl fmt::Debug for ServerApiEvent {
@@ -376,10 +375,9 @@ impl fmt::Debug for ServerApiEvent {
             Self::StagingAccessBlocked => f.write_str("StagingAccessBlocked"),
             Self::NeedsReauth => f.write_str("NeedsReauth"),
             Self::UserAccountDisabled => f.write_str("UserAccountDisabled"),
-            Self::AuthTokenRotated { actor_label, .. } => f
-                .debug_struct("AuthTokenRotated")
+            Self::AccessTokenRefreshed { .. } => f
+                .debug_struct("AccessTokenRefreshed")
                 .field("token", &"<redacted>")
-                .field("actor_label", actor_label)
                 .finish(),
         }
     }

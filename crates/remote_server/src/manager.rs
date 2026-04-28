@@ -18,6 +18,7 @@ use crate::HostId;
 use repo_metadata::RepoMetadataUpdate;
 use serde::Serialize;
 use warp_core::SessionId;
+use warpui::r#async::Timer;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
 
 /// Maximum number of reconnection attempts after a spontaneous disconnect.
@@ -494,14 +495,16 @@ impl RemoteServerManager {
     ///
     /// Used when the app auth identity changes. Each stored transport will
     /// derive the current identity when reconnecting.
-    pub fn reconnect_all_sessions_for_current_auth_identity(&mut self, ctx: &mut ModelContext<Self>) {
+    pub fn reconnect_all_sessions_for_current_auth_identity(
+        &mut self,
+        ctx: &mut ModelContext<Self>,
+    ) {
         let session_ids = self
             .sessions
             .iter()
             .filter_map(|(session_id, state)| match state {
                 RemoteSessionState::Connected {
-                    transport: Some(_),
-                    ..
+                    transport: Some(_), ..
                 } => Some(*session_id),
                 RemoteSessionState::Connecting
                 | RemoteSessionState::Initializing { .. }
@@ -1295,7 +1298,7 @@ impl RemoteServerManager {
 
         ctx.background_executor()
             .spawn(async move {
-                async_io::Timer::after(RECONNECT_DELAY).await;
+                Timer::after(RECONNECT_DELAY).await;
 
                 // Check if the session was deregistered during the delay.
                 // (Checked via spawner since sessions lives on the main thread.)

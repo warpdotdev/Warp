@@ -268,16 +268,10 @@ impl AuthClient for ServerApi {
                     let new_firebase_token_info = result?;
                     self.auth_state
                         .update_firebase_tokens(new_firebase_token_info.clone());
-                    let actor_label = self
-                        .auth_state
-                        .user_id()
-                        .map(|uid| format!("user:{}", uid.as_string()))
-                        .unwrap_or_else(|| format!("anonymous:{}", self.auth_state.anonymous_id()));
                     let _ = self
                         .event_sender
-                        .send(ServerApiEvent::AuthTokenRotated {
+                        .send(ServerApiEvent::AccessTokenRefreshed {
                             token: new_firebase_token_info.id_token.clone(),
-                            actor_label,
                         })
                         .await;
                     return Ok(AuthToken::Firebase(new_firebase_token_info.id_token));
