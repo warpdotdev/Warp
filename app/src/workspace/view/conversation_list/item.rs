@@ -312,16 +312,14 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
                 Some(button_style),
                 appearance,
             );
-            let (parent_anchor, child_anchor, offset_x) = if tooltip_opens_right {
-                (ParentAnchor::TopRight, ChildAnchor::TopRight, -8.)
-            } else {
-                (ParentAnchor::TopLeft, ChildAnchor::TopLeft, 8.)
-            };
+            // The kebab button is pinned to the right edge of the item regardless of which
+            // side of the screen the conversation list panel is on; only the menu's open
+            // direction (handled above) flips with `tooltip_opens_right`.
             let overflow_offset = OffsetPositioning::offset_from_parent(
-                vec2f(offset_x, 6.),
+                vec2f(-8., 6.),
                 ParentOffsetBounds::ParentByPosition,
-                parent_anchor,
-                child_anchor,
+                ParentAnchor::TopRight,
+                ChildAnchor::TopRight,
             );
             // Use add_positioned_child (not overlay) so button stays within item bounds
             stack.add_positioned_child(overflow_button.finish(), overflow_offset);
