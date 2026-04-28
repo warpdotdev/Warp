@@ -2630,8 +2630,8 @@ pub struct TerminalView {
     /// Set when sharing is started from the remote control entrypoint.
     auto_stop_sharing_on_cli_end: bool,
 
-    /// Whether we've already inserted the conversation-ended tombstone for this view.
-    has_inserted_conversation_ended_tombstone: bool,
+    /// The inserted conversation-ended tombstone, if this view currently has one.
+    conversation_ended_tombstone_view_id: Option<EntityId>,
 
     /// The ID of the containing window.
     window_id: WindowId,
@@ -4139,7 +4139,7 @@ impl TerminalView {
             shared_session: None,
             pending_share_source: None,
             auto_stop_sharing_on_cli_end: false,
-            has_inserted_conversation_ended_tombstone: false,
+            conversation_ended_tombstone_view_id: None,
             ai_input_model,
             ai_context_model,
             window_id,
@@ -5379,7 +5379,7 @@ impl TerminalView {
                 // conversation completes.
                 // We only insert the tombstone once per session (when the conversation finishes).
                 // Skip during historical replay to avoid premature tombstone insertion.
-                let should_insert_tombstone = if !self.has_inserted_conversation_ended_tombstone
+                let should_insert_tombstone = if self.conversation_ended_tombstone_view_id.is_none()
                     && !self.model.lock().is_receiving_agent_conversation_replay()
                 {
                     #[cfg(target_family = "wasm")]
@@ -6695,7 +6695,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         if !FeatureFlag::CloudModeSetupV2.is_enabled()
-            || self.has_inserted_conversation_ended_tombstone
+            || self.conversation_ended_tombstone_view_id.is_some()
         {
             return;
         }
@@ -6718,6 +6718,9 @@ impl TerminalView {
         };
 
         if task.is_no_longer_running() {
+            if self.pending_cloud_followup_task_id == Some(task_id) {
+                return;
+            }
             if self.owned_ambient_agent_task_id(ctx).is_some() {
                 if !self
                     .model
@@ -19765,6 +19768,7 @@ impl TerminalView {
         prompt: &str,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.pending_cloud_followup_task_id = None;
         self.input.update(ctx, |input, ctx| {
             input.reset_after_cloud_followup_submission(ctx);
             input.replace_buffer_content(prompt, ctx);
@@ -19783,8 +19787,6 @@ impl TerminalView {
         let Some(task_id) = self.pending_cloud_followup_task_id else {
             return false;
         };
-
-        self.pending_cloud_followup_task_id = None;
 
         if prompt.trim().is_empty() {
             self.input.update(ctx, |input, ctx| {

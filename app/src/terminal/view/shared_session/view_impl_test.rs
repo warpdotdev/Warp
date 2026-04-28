@@ -492,7 +492,7 @@ fn test_on_session_share_ended_enables_followup_input_without_tombstone_for_owne
             let final_block_height_items =
                 view.model.lock().block_list().block_heights().items().len();
             assert_eq!(final_block_height_items, initial_block_height_items + 1);
-            assert!(!view.has_inserted_conversation_ended_tombstone);
+            assert!(view.conversation_ended_tombstone_view_id.is_none());
             assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
             assert_eq!(
                 view.input()
@@ -594,7 +594,7 @@ fn test_on_ambient_agent_execution_ended_inserts_tombstone_when_handoff_enabled(
             let final_block_height_items =
                 view.model.lock().block_list().block_heights().items().len();
             assert_eq!(final_block_height_items, initial_block_height_items + 1);
-            assert!(view.has_inserted_conversation_ended_tombstone);
+            assert!(view.conversation_ended_tombstone_view_id.is_some());
         });
     });
 }
@@ -631,7 +631,7 @@ fn test_on_ambient_agent_execution_ended_enables_followup_input_without_tombston
             let final_block_height_items =
                 view.model.lock().block_list().block_heights().items().len();
             assert_eq!(final_block_height_items, initial_block_height_items);
-            assert!(!view.has_inserted_conversation_ended_tombstone);
+            assert!(view.conversation_ended_tombstone_view_id.is_none());
             assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
             assert_eq!(
                 view.input()
@@ -676,7 +676,7 @@ fn test_on_ambient_agent_execution_ended_keeps_live_owned_session_on_session_sha
             let final_block_height_items =
                 view.model.lock().block_list().block_heights().items().len();
             assert_eq!(final_block_height_items, initial_block_height_items);
-            assert!(!view.has_inserted_conversation_ended_tombstone);
+            assert!(view.conversation_ended_tombstone_view_id.is_none());
             assert_eq!(view.pending_cloud_followup_task_id, None);
         });
     });
@@ -715,12 +715,77 @@ fn test_on_ambient_agent_session_ended_enables_followup_for_owned_task_before_st
             view.on_ambient_agent_session_ended(ctx);
             assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
             assert!(view.try_submit_pending_cloud_followup("follow up".to_string(), ctx));
-            assert_eq!(view.pending_cloud_followup_task_id, None);
+            assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
+            assert!(view.try_submit_pending_cloud_followup("second follow up".to_string(), ctx));
+            assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
             assert_eq!(
                 ambient_agent_view_model
                     .as_ref(ctx)
                     .pending_followup_prompt(),
-                Some("follow up")
+                Some("second follow up")
+            );
+        });
+    });
+}
+
+#[test]
+fn test_non_owned_tombstone_is_removed_for_followup_and_reinserted_after_completion() {
+    let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
+    let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        let terminal = cloud_mode_terminal_for_test(&mut app);
+        let task = create_cloud_mode_task_for_user("another-user");
+        let task_id = task.task_id;
+
+        AgentConversationsModel::handle(&app).update(&mut app, |model, _| {
+            model.insert_task_for_test(task);
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            let mut model = view.model.lock();
+            model.set_shared_session_source_type(SessionSourceType::AmbientAgent {
+                task_id: Some(task_id.to_string()),
+            });
+            model.set_shared_session_status(SharedSessionStatus::FinishedViewer);
+            drop(model);
+
+            let ambient_agent_view_model = view
+                .ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .clone();
+            ambient_agent_view_model.update(ctx, |model, ctx| {
+                model.enter_viewing_existing_session(task_id, ctx);
+            });
+
+            let initial_block_height_items = view.model.lock().block_list().block_heights().items().len();
+
+            view.insert_conversation_ended_tombstone(ctx);
+            assert!(view.conversation_ended_tombstone_view_id.is_some());
+            assert_eq!(
+                view.model.lock().block_list().block_heights().items().len(),
+                initial_block_height_items + 1
+            );
+
+            view.start_cloud_followup_from_tombstone(task_id, ctx);
+            assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
+            assert!(view.conversation_ended_tombstone_view_id.is_none());
+            assert_eq!(
+                view.model.lock().block_list().block_heights().items().len(),
+                initial_block_height_items
+            );
+
+            view.handle_ambient_agent_event(
+                &crate::terminal::view::ambient_agent::AmbientAgentViewModelEvent::FollowupSessionReady {
+                    session_id: SessionId::new(),
+                },
+                ctx,
+            );
+            view.on_ambient_agent_execution_ended(ctx);
+            assert!(view.conversation_ended_tombstone_view_id.is_some());
+            assert_eq!(
+                view.model.lock().block_list().block_heights().items().len(),
+                initial_block_height_items + 1
             );
         });
     });
@@ -744,7 +809,7 @@ fn test_on_ambient_agent_execution_ended_does_not_insert_tombstone_without_hando
             let final_block_height_items =
                 view.model.lock().block_list().block_heights().items().len();
             assert_eq!(final_block_height_items, initial_block_height_items);
-            assert!(!view.has_inserted_conversation_ended_tombstone);
+            assert!(view.conversation_ended_tombstone_view_id.is_none());
         });
     });
 }

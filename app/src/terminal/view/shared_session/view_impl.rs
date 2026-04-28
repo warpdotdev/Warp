@@ -728,7 +728,7 @@ impl TerminalView {
             FeatureFlag::CloudModeSetupV2.is_enabled()
                 && model.is_shared_ambient_agent_session()
                 && owned_ambient_task_id.is_none()
-                && !self.has_inserted_conversation_ended_tombstone
+                && self.conversation_ended_tombstone_view_id.is_none()
                 && !model.is_receiving_agent_conversation_replay()
         };
         if should_insert_tombstone {
@@ -807,7 +807,8 @@ impl TerminalView {
     ) {
         if !FeatureFlag::HandoffCloudCloud.is_enabled()
             || !FeatureFlag::CloudModeSetupV2.is_enabled()
-            || self.has_inserted_conversation_ended_tombstone
+            || self.conversation_ended_tombstone_view_id.is_some()
+            || self.pending_cloud_followup_task_id.is_some()
         {
             return;
         }
@@ -839,6 +840,7 @@ impl TerminalView {
             self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
             return;
         }
+        self.remove_conversation_ended_tombstone(ctx);
 
         self.pending_cloud_followup_task_id = Some(task_id);
         self.input.update(ctx, |input, ctx| {
@@ -1648,6 +1650,9 @@ impl TerminalView {
     }
 
     pub fn insert_conversation_ended_tombstone(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.conversation_ended_tombstone_view_id.is_some() {
+            return;
+        }
         let task_id = self.model.lock().ambient_agent_task_id();
         let terminal_view_id = self.id();
 
@@ -1660,6 +1665,7 @@ impl TerminalView {
                 me.start_cloud_followup_from_tombstone(*task_id, ctx);
             }
         });
+        let tombstone_view_id = tombstone_view_handle.id();
         self.insert_rich_content(
             None,
             tombstone_view_handle,
@@ -1669,7 +1675,19 @@ impl TerminalView {
             },
             ctx,
         );
-        self.has_inserted_conversation_ended_tombstone = true;
+        self.conversation_ended_tombstone_view_id = Some(tombstone_view_id);
+    }
+
+    fn remove_conversation_ended_tombstone(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(view_id) = self.conversation_ended_tombstone_view_id.take() else {
+            return;
+        };
+        self.model
+            .lock()
+            .block_list_mut()
+            .remove_rich_content(view_id);
+        self.rich_content_views.retain(|rc| rc.view_id() != view_id);
+        ctx.notify();
     }
 
     /// Updates shared session reconnection banner, participant avatars and
