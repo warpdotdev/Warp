@@ -24,3 +24,27 @@ impl TelemetryContextProvider for AppTelemetryContextProvider {
         auth_state.anonymous_id()
     }
 }
+
+/// A no-op telemetry context provider for headless contexts (e.g. the remote
+/// server daemon) that run without authentication. Telemetry events that
+/// require a user/anonymous ID will silently produce empty identifiers,
+/// preventing panics from an unregistered `TelemetryContextModel` singleton.
+pub struct NoopTelemetryContextProvider;
+
+impl NoopTelemetryContextProvider {
+    pub fn new_context_provider(
+        _ctx: &mut ModelContext<TelemetryContextModel>,
+    ) -> TelemetryContextModel {
+        Box::new(Self)
+    }
+}
+
+impl TelemetryContextProvider for NoopTelemetryContextProvider {
+    fn user_id(&self, _ctx: &AppContext) -> Option<String> {
+        None
+    }
+
+    fn anonymous_id(&self, _ctx: &AppContext) -> String {
+        String::new()
+    }
+}
