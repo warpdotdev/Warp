@@ -3569,6 +3569,67 @@ fn open_cli_agent_rich_input_for_agent(app: &mut App, agent: CLIAgent) -> ViewHa
 }
 
 #[test]
+fn ctrl_g_closes_cli_agent_rich_input_when_editor_is_focused() {
+    App::test((), |mut app| async move {
+        use crate::settings::import::model::ImportedConfigModel;
+
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(ImportedConfigModel::new);
+        app.update(|ctx| {
+            crate::terminal::init(ctx);
+            crate::editor::init(ctx);
+        });
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        let (window_id, terminal) = add_window_with_id_and_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::OpenCode,
+                        status: CLIAgentSessionStatus::InProgress,
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: false,
+                        listener: None,
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+            });
+
+            view.open_cli_agent_rich_input(CLIAgentInputEntrypoint::CtrlG, ctx);
+            assert!(view.has_active_cli_agent_input_session(ctx));
+        });
+
+        let (input_id, editor_id) = terminal.read(&app, |view, ctx| {
+            let input = view.input.clone();
+            let editor = input.as_ref(ctx).editor().clone();
+            (input.id(), editor.id())
+        });
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &[terminal.id(), input_id, editor_id],
+                &warpui::keymap::Keystroke::parse("ctrl-g").expect("valid keystroke"),
+                false,
+            )
+            .expect("dispatch should succeed");
+
+        assert!(handled, "ctrl-g should be handled from the focused editor");
+        terminal.read(&app, |view, ctx| {
+            assert!(!view.has_active_cli_agent_input_session(ctx));
+        });
+    })
+}
+
+#[test]
 fn cli_agent_rich_input_hint_text_mentions_active_cli_agent() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
