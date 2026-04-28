@@ -760,6 +760,9 @@ pub enum FeatureFlag {
     /// CLIs (e.g. `claude`) to execute prompts instead of Warp's agent harness.
     AgentHarness,
 
+    /// Enables the demo launch banner shown to users in the app.
+    DemoLaunchBanner,
+
     /// Enables workspace- and block-snapshot handoff between cloud agent runs
     /// and the local Warp client.
     /// When enabled:
@@ -901,6 +904,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::CodeReviewScrollPreservation,
     FeatureFlag::OzIdentityFederation,
     FeatureFlag::AgentHarness,
+    FeatureFlag::DemoLaunchBanner,
     FeatureFlag::OzHandoff,
     FeatureFlag::ConversationApi,
     FeatureFlag::RememberFastForwardState,
