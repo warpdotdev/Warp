@@ -44,9 +44,15 @@ Both. When you open a PR, Oz is auto-assigned and produces an initial review. On
 
 After you push changes that address Oz's feedback, comment `/oz-review` on the PR (up to three times per PR) to request a re-review. If something looks stuck or you've used your re-reviews, mention **@oss-maintainers** to escalate to the team.
 
+### What's the difference between a contributor and a collaborator?
+
+A **contributor** is anyone who contributes to the project — by filing an issue, opening a PR, helping triage, or participating in discussion. Most people who help out are contributors. You don't need permission or a status of any kind; just file an issue or open a PR.
+
+A **collaborator** is a formal GitHub role we grant to contributors with a track record of merged PRs in this repo. Collaborators get expanded permissions: applying and managing issue labels, dispatching Oz directly with `@oz` on any ready issue, and using complimentary Oz credits for work in this repo.
+
 ### How do I become a collaborator?
 
-Contributors with several merged PRs may be invited to become collaborators. Collaborators can assign Oz directly with `@oz` on any ready issue, get complimentary Oz credits for work in this repo, and can apply and manage issue labels.
+Contributors with several merged PRs may be invited to become collaborators. There's no formal application — keep contributing, and a maintainer will reach out.
 
 ## Using an agent on this repo
 
