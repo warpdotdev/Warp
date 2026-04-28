@@ -1008,11 +1008,6 @@ fn get_primary_window(
 /// * For other files, open a new session at the parent directory path, then possibly execute the
 ///   file.
 fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
-    let auth_state = AuthStateProvider::as_ref(ctx).get();
-    // Don't open files if we're not logged in.
-    if !auth_state.is_logged_in() {
-        return;
-    }
     let primary_window_and_view = window_id.and_then(|window_id| {
         ctx.root_view_id(window_id)
             .map(|view_id| (window_id, view_id))
