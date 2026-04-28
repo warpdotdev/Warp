@@ -1005,6 +1005,15 @@ void hide_window(WarpWindow<WarpWindowProtocol> *window) {
     [window orderOut:nil];
 }
 
+// Sets the per-window opacity. Unlike `hide_window`, this does not change the
+// window's z-order, key state, or the app's active state — making it a much
+// cheaper way to visually hide a window (e.g. a tab drag preview) without
+// triggering AppKit's `orderOut:` machinery or the previous-app activation
+// dance.
+void set_window_alpha(WarpWindow<WarpWindowProtocol> *window, double alpha) {
+    [window setAlphaValue:alpha];
+}
+
 void set_window_title(id window, NSString *title) {
     if ([window isKindOfClass:[WarpPanel class]] && [window isVisible]) {
         // For the hotkey window (which is an NSPanel), we need to explicitly

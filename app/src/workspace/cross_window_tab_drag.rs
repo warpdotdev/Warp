@@ -685,6 +685,9 @@ impl CrossWindowTabDrag {
             if let Some(ws) = WorkspaceRegistry::as_ref(ctx).get(target_window_id, ctx) {
                 ws.update(ctx, |_, ctx| ctx.notify());
             }
+            // Restore the preview's opacity (it was set to 0.0 on entry into
+            // the target in `on_drag_while_floating`) and re-focus it.
+            ctx.windows().set_window_alpha(preview_window_id, 1.0);
             ctx.windows().show_window_and_focus_app(preview_window_id);
             return drag_result;
         }
@@ -952,13 +955,22 @@ impl CrossWindowTabDrag {
                 ghost_cursor_in_target,
             };
 
-            // Bring the target to the front and hide the preview/source window
-            // so it is not visible during the hover. The real view-tree transfer
-            // is still deferred to drop time — hiding is independent of that.
-            // The window is restored in `on_drag_while_ghost` (cursor leaves)
-            // and in the `GhostInTarget` failsafe branch of `finalize`.
+            // Bring the target to the front and visually hide the preview/source
+            // window so it isn't visible during the hover. The real view-tree
+            // transfer is still deferred to drop time — hiding is independent
+            // of that.
+            //
+            // Use `set_window_alpha(0.0)` instead of `hide_window`: the latter
+            // calls `[NSWindow orderOut:]` and runs the `PreviousStateHelper`
+            // app-activation dance, which is heavy enough to noticeably stall
+            // the drag on entry into a target window. `setAlphaValue:` leaves
+            // the window in the window list, key/focus state, and z-order
+            // unchanged, so this is essentially free.
+            //
+            // The preview's alpha is restored in `on_drag_while_ghost` (cursor
+            // leaves) and in the `GhostInTarget` failsafe branch of `finalize`.
             ctx.windows().show_window_and_focus_app(target.window_id);
-            ctx.windows().hide_window(preview_window_id);
+            ctx.windows().set_window_alpha(preview_window_id, 0.0);
 
             // Notify the target workspace to render the ghost visuals.
             if let Some(ws) = WorkspaceRegistry::as_ref(ctx).get(target.window_id, ctx) {
@@ -1120,6 +1132,10 @@ impl CrossWindowTabDrag {
                 if let Some(ws) = WorkspaceRegistry::as_ref(ctx).get(*target_window_id, ctx) {
                     ws.update(ctx, |_, ctx| ctx.notify());
                 }
+                // Restore the preview's opacity — it was set to 0.0 on entry
+                // into the target in `on_drag_while_floating` and the normal
+                // restore path in `on_drag_while_ghost` was bypassed.
+                ctx.windows().set_window_alpha(drag.preview_window_id(), 1.0);
                 if drag.has_dedicated_preview_window() {
                     self.finalize_preview_as_new_window(&drag, ctx)
                 } else {
