@@ -1327,6 +1327,44 @@ fn declarations_writer_resolves_relative_paths_against_working_dir() {
 }
 
 #[test]
+fn declarations_writer_continues_after_per_path_write_failures() {
+    // Pre-create a directory at the declarations file path so the first append's open call
+    // fails. Once we remove the directory, a subsequent append must succeed, proving the
+    // writer task absorbed the failure and kept servicing commands.
+    let tempdir = snaptest_tempdir();
+    let workspace = tempdir.path().join("workspace");
+    fs::create_dir_all(&workspace).unwrap();
+    let decl_path = tempdir.path().join("declarations.jsonl");
+    fs::create_dir(&decl_path).unwrap();
+    let task_id = fake_task_id();
+
+    let rt = Runtime::new().unwrap();
+    rt.block_on(async {
+        let handle =
+            DeclarationsWriterHandle::new_at_path(decl_path.clone(), workspace.clone(), task_id);
+        handle.append(vec![workspace
+            .join("first.txt")
+            .to_string_lossy()
+            .into_owned()]);
+        handle.flush().await;
+        // Replace the staged directory so the next append's open call can succeed.
+        fs::remove_dir(&decl_path).unwrap();
+        handle.append(vec![workspace
+            .join("second.txt")
+            .to_string_lossy()
+            .into_owned()]);
+        handle.flush().await;
+    });
+
+    let paths = parsed_file_paths(&decl_path);
+    assert_eq!(
+        paths,
+        vec![workspace.join("second.txt").to_string_lossy().into_owned()],
+        "writer task should absorb the first failure and process the second append"
+    );
+}
+
+#[test]
 fn declarations_writer_preempts_paths_inside_existing_repo() {
     let tempdir = snaptest_tempdir();
     // Simulate an existing repo by creating the `.git` directory the ancestor walker checks.

@@ -38,6 +38,7 @@ use tokio::fs::{self as tokio_fs, OpenOptions};
 use tokio::io::AsyncWriteExt as _;
 use tokio::sync::{mpsc, oneshot};
 use warp_core::report_error;
+use warpui::r#async::executor::Background;
 use warpui::r#async::FutureExt as _;
 
 use crate::ai::agent_sdk::retry::with_bounded_retry;
@@ -100,6 +101,15 @@ struct DeclarationLine {
     version: Option<u32>,
     kind: String,
     path: String,
+}
+
+/// Serialize-only sibling of [`DeclarationLine`] used by the writer task to emit `file`
+/// entries with a fixed `version` and `kind`.
+#[derive(serde::Serialize)]
+struct FileDeclaration<'a> {
+    version: u32,
+    kind: &'a str,
+    path: &'a str,
 }
 
 /// Invoke `snapshot-declarations.sh` to (re)generate the declarations file consumed by the
@@ -314,14 +324,8 @@ fn parse_declarations(contents: &str, task_id: &AmbientAgentTaskId) -> Vec<Decla
     entries
 }
 
-/// Drop `file` declarations whose path is already covered by a declared `repo` path.
-///
-/// Complements the on-write preempt inside [`DeclarationsWriterHandle`]: the writer task
-/// skips `file` entries for paths that already sit inside an existing repo at enqueue
-/// time, and this filter catches the "agent wrote files, then `git init`s the parent
-/// directory" case where the `.git` directory appears after the `file` entry was recorded.
-/// Running both is cheap and keeps the gather step from double-uploading files that the
-/// repo patch already carries via `git diff` / `git ls-files`.
+/// Drop `file` declarations whose path is already covered by a declared `repo` path so the
+/// gather step does not double-upload files the repo patch already carries.
 fn drop_files_covered_by_repos(entries: Vec<DeclarationEntry>) -> Vec<DeclarationEntry> {
     let repo_paths: Vec<PathBuf> = entries
         .iter()
@@ -377,31 +381,24 @@ pub(super) struct DeclarationsWriterHandle {
 }
 
 impl DeclarationsWriterHandle {
-    /// Spawn the writer task and return a fire-and-forget handle.
-    pub(super) fn new(task_id: AmbientAgentTaskId, working_dir: PathBuf) -> Self {
-        let declarations_path = resolve_declarations_path(Some(&task_id));
-        Self::new_at_path(declarations_path, working_dir, task_id)
-    }
-
-    /// Test-facing constructor that skips the env-var-dependent path resolution. Writes
-    /// go to `declarations_path` directly so unit tests can point the writer at a tmpdir
-    /// without racing other tests on `OZ_SNAPSHOT_DECLARATIONS_FILE`.
-    #[cfg(test)]
-    pub(super) fn new_at_path(
-        declarations_path: PathBuf,
-        working_dir: PathBuf,
+    /// Spawn the writer task on `background` and return a fire-and-forget handle.
+    pub(super) fn new(
         task_id: AmbientAgentTaskId,
+        working_dir: PathBuf,
+        background: &Background,
     ) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
-        tokio::spawn(writer_task(rx, declarations_path, working_dir, task_id));
+        let declarations_path = resolve_declarations_path(Some(&task_id));
+        background
+            .spawn(writer_task(rx, declarations_path, working_dir, task_id))
+            .detach();
         Self { tx }
     }
 
-    /// Production-side path through `new_at_path` without the `#[cfg(test)]` gate — used
-    /// internally by [`DeclarationsWriterHandle::new`] to avoid duplicating the channel +
-    /// task-spawn setup.
-    #[cfg(not(test))]
-    fn new_at_path(
+    /// Test-facing constructor that bypasses env-var-dependent path resolution and uses
+    /// `tokio::spawn` directly so tests can run without standing up a `Background`.
+    #[cfg(all(test, not(windows)))]
+    pub(super) fn new_at_path(
         declarations_path: PathBuf,
         working_dir: PathBuf,
         task_id: AmbientAgentTaskId,
@@ -541,12 +538,6 @@ async fn append_declaration_line(declarations_path: &Path, path: &str) -> Result
         tokio_fs::create_dir_all(parent)
             .await
             .with_context(|| format!("create_dir_all {}", parent.display()))?;
-    }
-    #[derive(serde::Serialize)]
-    struct FileDeclaration<'a> {
-        version: u32,
-        kind: &'a str,
-        path: &'a str,
     }
     let mut line = serde_json::to_string(&FileDeclaration {
         version: DECLARATION_VERSION,
@@ -722,17 +713,7 @@ async fn upload_snapshot_from_declarations_file(
         path.display()
     );
     let declarations = read_and_parse_declarations(path, task_id)?;
-    // Apply the gather-time dedup layer: drop `file` entries that already fall under a
-    // declared `repo`. Pairs with the on-write preempt in `DeclarationsWriterHandle` to cover
-    // the case where the repo was created after the `file` entry was recorded.
     let declarations = drop_files_covered_by_repos(declarations);
-    if declarations.is_empty() {
-        log::warn!(
-            "Snapshot declarations file '{}' has no entries remaining after repo-overlap dedup; skipping upload (task {task_id})",
-            path.display()
-        );
-        return None;
-    }
     let (repo_count, file_count) = declarations
         .iter()
         .fold((0usize, 0usize), |(r, f), e| match e.kind {
