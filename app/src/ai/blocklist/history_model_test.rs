@@ -1132,6 +1132,7 @@ fn test_find_by_token_after_insert_forked_conversation_from_tasks() {
             parent_conversation_id: None,
             run_id: None,
             autoexecute_override: None,
+            last_event_sequence: None,
         };
         let tasks = vec![warp_multi_agent_api::Task {
             id: "root-task".to_string(),
