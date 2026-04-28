@@ -292,7 +292,8 @@ pub async fn detect_parent_branch_with_context(
 
 /// Picks the branch whose tip still contains the fork-point commit.
 /// `--contains` (unlike `--merged HEAD`) keeps refs that have advanced
-/// past the fork point. Ties prefer main, local over `origin/*`, then alpha.
+/// past the fork point. Candidates are ranked by distance from the fork
+/// (closer = more likely the direct parent), then main / local / alpha.
 #[cfg(feature = "local_fs")]
 pub async fn detect_parent_branch_with_context(
     repo_path: &Path,
@@ -331,16 +332,36 @@ pub async fn detect_parent_branch_with_context(
         .filter(|name| upstream != Some(name.as_str()))
         .collect();
 
-    // Tiebreakers: prefer detected main, then local over `origin/*`, then alpha.
+    // Score each candidate by the number of commits from the fork to its
+    // tip; smaller distance wins so an unrelated local branch sitting at
+    // some older shared ancestor can't beat the real parent on name alone.
+    let mut scored: Vec<(usize, String)> = Vec::with_capacity(candidates.len());
+    for name in candidates {
+        let range = format!("{fork}..{name}");
+        let distance = run_git_command(repo_path, &["rev-list", "--count", &range])
+            .await
+            .ok()
+            .and_then(|s| s.trim().parse::<usize>().ok())
+            .unwrap_or(usize::MAX);
+        scored.push((distance, name));
+    }
+
+    // Tiebreakers (after distance): prefer detected main, then local over
+    // `origin/*`, then alpha.
     let main_name = main.as_ref().ok().map(String::as_str);
-    let best = candidates.into_iter().min_by(|a, b| {
-        let a_is_main = main_name == Some(a.as_str());
-        let b_is_main = main_name == Some(b.as_str());
-        b_is_main
-            .cmp(&a_is_main)
-            .then_with(|| b.contains('/').cmp(&a.contains('/')))
-            .then_with(|| a.cmp(b))
-    });
+    let best = scored
+        .into_iter()
+        .min_by(|(da, a), (db, b)| {
+            da.cmp(db)
+                .then_with(|| {
+                    let a_is_main = main_name == Some(a.as_str());
+                    let b_is_main = main_name == Some(b.as_str());
+                    b_is_main.cmp(&a_is_main)
+                })
+                .then_with(|| b.contains('/').cmp(&a.contains('/')))
+                .then_with(|| a.cmp(b))
+        })
+        .map(|(_, name)| name);
 
     if let Some(branch) = best {
         let is_local = !branch.contains('/');
