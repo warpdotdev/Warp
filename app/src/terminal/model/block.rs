@@ -3211,6 +3211,23 @@ impl ansi::Handler for Block {
         delegate!(self.text_area_size_chars(writer));
     }
 
+    fn set_current_working_directory(&mut self, path: String) {
+        if self.pwd.as_deref() == Some(path.as_str()) {
+            return;
+        }
+        self.pwd = Some(path);
+        self.event_proxy
+            .send_terminal_event(Event::BlockMetadataReceived(BlockMetadataReceivedEvent {
+                block_metadata: self.metadata(),
+                block_index: self.block_index,
+                is_after_in_band_command: false,
+                is_done_bootstrapping: matches!(
+                    self.bootstrap_stage,
+                    BootstrapStage::PostBootstrapPrecmd
+                ),
+            }));
+    }
+
     fn precmd(&mut self, data: PrecmdValue) {
         record_trace_event!("command_execution:block:precmd");
         let is_after_in_band_command = data.was_sent_after_in_band_command();

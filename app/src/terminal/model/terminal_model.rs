@@ -2810,6 +2810,10 @@ impl ansi::Handler for TerminalModel {
         });
     }
 
+    fn set_current_working_directory(&mut self, path: String) {
+        delegate!(self.set_current_working_directory(path));
+    }
+
     fn precmd(&mut self, data: PrecmdValue) {
         self.ignore_bootstrapping_messages = false;
         let session_id = data.session_id;

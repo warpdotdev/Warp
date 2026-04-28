@@ -489,6 +489,49 @@ pub fn test_block_duration_formatting() {
 }
 
 #[test]
+pub fn test_set_current_working_directory_updates_pwd_and_emits_metadata_event() {
+    let (events_tx, events_rx) = async_channel::unbounded();
+    let event_proxy = ChannelEventListener::builder_for_test()
+        .with_terminal_events_tx(events_tx)
+        .build();
+    let mut block = TestBlockBuilder::new()
+        .with_event_proxy(event_proxy)
+        .build();
+    assert!(block.pwd().is_none());
+
+    block.set_current_working_directory("/Users/foo/bar".to_string());
+    assert_eq!(block.pwd(), Some(&"/Users/foo/bar".to_string()));
+
+    // A second call with the same path should be a no-op (no event emitted).
+    block.set_current_working_directory("/Users/foo/bar".to_string());
+
+    // A call with a different path updates pwd again and emits another event.
+    block.set_current_working_directory("/Users/foo/baz".to_string());
+    assert_eq!(block.pwd(), Some(&"/Users/foo/baz".to_string()));
+
+    events_rx.close();
+    let mut received_paths = Vec::new();
+    warpui::r#async::block_on(pin!(events_rx).for_each(|event| {
+        if let Event::BlockMetadataReceived(event) = event {
+            received_paths.push(
+                event
+                    .block_metadata
+                    .current_working_directory()
+                    .map(str::to_owned),
+            );
+        }
+    }));
+    assert_eq!(
+        received_paths,
+        vec![
+            Some("/Users/foo/bar".to_string()),
+            Some("/Users/foo/baz".to_string()),
+        ],
+        "set_current_working_directory should emit one BlockMetadataReceived per distinct path"
+    );
+}
+
+#[test]
 pub fn test_block_emits_block_completed_event_for_in_band_command() {
     let (events_tx, events_rx) = async_channel::unbounded();
 

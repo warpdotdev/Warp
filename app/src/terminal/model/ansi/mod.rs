@@ -157,6 +157,59 @@ fn parse_legacy_color(color: &[u8]) -> Option<ColorU> {
     ))
 }
 
+/// Parse the payload of an OSC 7 sequence (`file://<host>/<percent-encoded-path>`).
+///
+/// Returns the decoded absolute path if the host portion is empty, "localhost",
+/// or matches the local machine's hostname. Returns `None` for any other host
+/// to avoid hijacking the local CWD display when remote sessions emit OSC 7
+/// over an unrelated tunnel.
+fn parse_osc_7_cwd(payload: &[u8]) -> Option<String> {
+    let raw = str::from_utf8(payload).ok()?;
+    let after_scheme = raw.strip_prefix("file://")?;
+    let path_start = after_scheme.find('/')?;
+    let host = &after_scheme[..path_start];
+    let encoded_path = &after_scheme[path_start..];
+
+    if !osc_7_host_is_local(host) {
+        debug!("Ignoring OSC 7 from non-local host {host:?}");
+        return None;
+    }
+
+    percent_decode_utf8(encoded_path)
+}
+
+fn osc_7_host_is_local(host: &str) -> bool {
+    if host.is_empty() || host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    gethostname::gethostname()
+        .to_string_lossy()
+        .eq_ignore_ascii_case(host)
+}
+
+/// Percent-decode an ASCII URI path segment into a UTF-8 String. Returns `None`
+/// if the input contains a malformed `%xx` escape or the result is not UTF-8.
+fn percent_decode_utf8(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hi = (bytes[i + 1] as char).to_digit(16)?;
+                let lo = (bytes[i + 2] as char).to_digit(16)?;
+                decoded.push(((hi << 4) | lo) as u8);
+                i += 3;
+            }
+            other => {
+                decoded.push(other);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
 fn parse_number(input: &[u8]) -> Option<u8> {
     if input.is_empty() {
         return None;
@@ -850,6 +903,22 @@ where
                         .to_owned();
                     self.handler.set_title(Some(title));
                     return;
+                }
+                unhandled(params);
+            }
+
+            // OSC 7: Current working directory.
+            // Format: OSC 7 ; file://<host>/<percent-encoded-path> ST
+            // Lets external tools (worktree managers, project launchers, etc.)
+            // notify the terminal of CWD changes outside the shell prompt
+            // cycle, so the tab CWD/git-branch display can update mid-command.
+            // Reference: https://wezterm.org/shell-integration.html#osc-7-escape-sequence-to-set-the-working-directory
+            b"7" => {
+                if params.len() >= 2 {
+                    if let Some(path) = parse_osc_7_cwd(params[1]) {
+                        self.handler.set_current_working_directory(path);
+                        return;
+                    }
                 }
                 unhandled(params);
             }

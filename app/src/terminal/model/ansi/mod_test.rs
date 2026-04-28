@@ -19,6 +19,7 @@ struct MockHandler {
     identity_reported: bool,
     d_proto_hooks: Vec<DProtoHook>,
     pluggable_notifications: Vec<(Option<String>, String)>,
+    cwd_updates: Vec<String>,
 }
 
 impl Handler for MockHandler {
@@ -221,6 +222,10 @@ impl Handler for MockHandler {
         self.pluggable_notifications.push((title, body));
     }
 
+    fn set_current_working_directory(&mut self, path: String) {
+        self.cwd_updates.push(path);
+    }
+
     fn set_keyboard_enhancement_flags(
         &mut self,
         _mode: KeyboardModes,
@@ -244,6 +249,7 @@ impl Default for MockHandler {
             identity_reported: false,
             d_proto_hooks: Vec::new(),
             pluggable_notifications: Vec::new(),
+            cwd_updates: Vec::new(),
         }
     }
 }
@@ -843,6 +849,92 @@ fn parse_osc777_missing_parts_ignored() {
     let (_, handler) = parse_bytes(bytes);
 
     assert_eq!(handler.pluggable_notifications.len(), 0);
+}
+
+#[test]
+fn parse_osc7_simple_path() {
+    let bytes: &[u8] = b"\x1b]7;file:///Users/foo/bar\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(handler.cwd_updates, vec!["/Users/foo/bar".to_string()]);
+}
+
+#[test]
+fn parse_osc7_with_st_terminator() {
+    let bytes: &[u8] = b"\x1b]7;file:///Users/foo/bar\x1b\\";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(handler.cwd_updates, vec!["/Users/foo/bar".to_string()]);
+}
+
+#[test]
+fn parse_osc7_percent_encoded() {
+    let bytes: &[u8] = b"\x1b]7;file:///Users/foo%20bar/baz%2Fqux\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(
+        handler.cwd_updates,
+        vec!["/Users/foo bar/baz/qux".to_string()]
+    );
+}
+
+#[test]
+fn parse_osc7_localhost_host() {
+    let bytes: &[u8] = b"\x1b]7;file://localhost/Users/foo\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(handler.cwd_updates, vec!["/Users/foo".to_string()]);
+}
+
+#[test]
+fn parse_osc7_uppercase_localhost_host() {
+    let bytes: &[u8] = b"\x1b]7;file://LOCALHOST/Users/foo\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert_eq!(handler.cwd_updates, vec!["/Users/foo".to_string()]);
+}
+
+#[test]
+fn parse_osc7_non_local_host_ignored() {
+    // `.invalid` is reserved (RFC 2606) and is guaranteed never to match the
+    // local hostname, so this exercises the SSH-spoofing guard.
+    let bytes: &[u8] = b"\x1b]7;file://not-this-machine.invalid/Users/foo\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.cwd_updates.is_empty());
+}
+
+#[test]
+fn parse_osc7_non_file_scheme_ignored() {
+    let bytes: &[u8] = b"\x1b]7;http://example.com/foo\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.cwd_updates.is_empty());
+}
+
+#[test]
+fn parse_osc7_missing_path_ignored() {
+    // Host is present but no path segment — should be rejected, not panic.
+    let bytes: &[u8] = b"\x1b]7;file://localhost\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.cwd_updates.is_empty());
+}
+
+#[test]
+fn parse_osc7_malformed_percent_escape_ignored() {
+    let bytes: &[u8] = b"\x1b]7;file:///Users/foo%2/bar\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.cwd_updates.is_empty());
+}
+
+#[test]
+fn parse_osc7_empty_payload_ignored() {
+    let bytes: &[u8] = b"\x1b]7;\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.cwd_updates.is_empty());
 }
 
 #[test]
