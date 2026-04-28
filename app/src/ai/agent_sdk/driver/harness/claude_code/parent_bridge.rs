@@ -28,6 +28,7 @@ use crate::ai::agent_events::{
     AgentEventDriverConfig, MessageHydrator, ServerApiAgentEventSource,
 };
 use crate::ai::agent_sdk::driver::{AgentDriver, OZ_MESSAGE_LISTENER_STATE_ROOT_ENV};
+use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::ai::AgentRunEvent;
 use crate::server::server_api::ServerApi;
@@ -150,6 +151,12 @@ struct SelectedMessageBridgeMessages {
 }
 
 impl MessageBridge {
+    fn hydrator(&self, server_api: Arc<ServerApi>) -> MessageHydrator {
+        match self.run_id.parse::<AmbientAgentTaskId>() {
+            Ok(task_id) => MessageHydrator::for_task(server_api, task_id),
+            Err(_) => MessageHydrator::new(server_api),
+        }
+    }
     pub(super) fn new(run_id: String, session_id: Uuid) -> Result<Self> {
         Ok(Self {
             run_id,
@@ -197,8 +204,7 @@ impl MessageBridge {
         if !self.state_dir.exists() {
             return Ok(());
         }
-
-        let hydrator = MessageHydrator::new(server_api);
+        let hydrator = self.hydrator(server_api);
         let _guard = self.state_lock.lock().await;
         acknowledge_parent_bridge_hook_output(&hydrator, &self.state_dir).await?;
         prepare_parent_bridge_hook_output(
@@ -213,8 +219,7 @@ impl MessageBridge {
         if !self.state_dir.exists() {
             return Ok(());
         }
-
-        let hydrator = MessageHydrator::new(server_api);
+        let hydrator = self.hydrator(server_api);
         let _guard = self.state_lock.lock().await;
         acknowledge_parent_bridge_hook_output(&hydrator, &self.state_dir).await
     }

@@ -30,7 +30,7 @@ use crate::{
     app_state::{AmbientAgentPaneSnapshot, LeafContents, TerminalPaneSnapshot},
     pane_group::child_agent::{
         create_error_child_agent_conversation, create_hidden_child_agent_conversation,
-        HiddenChildAgentConversation,
+        HiddenChildAgentConversation, HiddenChildAgentTaskContext,
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
@@ -1129,6 +1129,7 @@ fn handle_terminal_view_event(
                             request.name,
                             request.parent_conversation_id,
                             HashMap::new(),
+                            None,
                             ctx,
                         ) {
                             register_legacy_local_lifecycle_subscription(
@@ -1164,6 +1165,7 @@ fn handle_terminal_view_event(
                     } => {
                         let startup_directory =
                             group.startup_path_for_new_session(Some(terminal_pane_id), ctx);
+                        let launch_startup_directory = startup_directory.clone();
                         let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
                         let parent_pane_id = pane_id;
                         let request_name = request.name.clone();
@@ -1183,7 +1185,7 @@ fn handle_terminal_view_event(
                                     harness_type,
                                     parent_run_id,
                                     shell_type,
-                                    startup_directory,
+                                    launch_startup_directory,
                                     ai_client,
                                 )
                                 .await
@@ -1207,6 +1209,10 @@ fn handle_terminal_view_event(
                                         request_name.clone(),
                                         parent_conversation_id,
                                         env_vars,
+                                        Some(HiddenChildAgentTaskContext {
+                                            task_id,
+                                            working_dir: startup_directory.clone(),
+                                        }),
                                         ctx,
                                     ) {
                                         BlocklistAIHistoryModel::handle(ctx).update(

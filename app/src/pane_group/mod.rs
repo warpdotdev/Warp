@@ -170,6 +170,7 @@ pub mod focus_state;
 pub mod pane;
 pub mod tree;
 pub mod working_directories;
+use child_agent::{apply_hidden_child_agent_task_context, HiddenChildAgentTaskContext};
 
 use focus_state::PaneGroupFocusState;
 
@@ -3083,10 +3084,23 @@ impl PaneGroup {
         ctx: &mut ViewContext<Self>,
     ) {
         let child_id = child_conversation.id();
+        let child_task_context =
+            child_conversation
+                .task_id()
+                .map(|task_id| HiddenChildAgentTaskContext {
+                    task_id,
+                    working_dir: child_conversation
+                        .current_working_directory()
+                        .or_else(|| child_conversation.initial_working_directory())
+                        .map(PathBuf::from),
+                });
         let new_pane_id =
             self.insert_terminal_pane_hidden_for_child_agent(parent_pane_id, HashMap::new(), ctx);
 
         if let Some(new_terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
+            if let Some(task_context) = child_task_context.as_ref() {
+                apply_hidden_child_agent_task_context(&new_terminal_view, task_context, ctx);
+            }
             new_terminal_view.update(ctx, |terminal_view, ctx| {
                 terminal_view.restore_conversation_after_view_creation(
                     RestoredAIConversation::new(child_conversation),

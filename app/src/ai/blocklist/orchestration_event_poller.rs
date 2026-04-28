@@ -112,6 +112,12 @@ pub enum OrchestrationEventPollerEvent {
 }
 
 impl OrchestrationEventPoller {
+    fn message_hydrator_for_run_id(&self, run_id: &str) -> MessageHydrator {
+        match run_id.parse::<AmbientAgentTaskId>() {
+            Ok(task_id) => MessageHydrator::for_task(self.server_api.clone(), task_id),
+            Err(_) => MessageHydrator::new(self.ai_client.clone()),
+        }
+    }
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let provider = ServerApiProvider::as_ref(ctx);
         let ai_client = provider.get_ai_client();
@@ -750,7 +756,8 @@ impl OrchestrationEventPoller {
             }
         }
 
-        let hydrator = MessageHydrator::new(self.ai_client.clone());
+        let hydrator =
+            self.message_hydrator_for_run_id(conversation.run_id().as_deref().unwrap_or_default());
         ctx.spawn(
             async move {
                 hydrator
@@ -784,15 +791,14 @@ impl OrchestrationEventPoller {
             .copied()
             .unwrap_or(0);
 
-        let ai_client = self.ai_client.clone();
-        let hydrator = MessageHydrator::new(ai_client.clone());
-
         // Capture own run_id to filter out self-originated lifecycle events.
         let self_run_id = BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(&conversation_id)
             .and_then(|c| c.run_id())
             .map(|s| s.to_string())
             .unwrap_or_default();
+        let ai_client = self.ai_client.clone();
+        let hydrator = self.message_hydrator_for_run_id(&self_run_id);
 
         struct PollResult {
             events: Vec<crate::server::server_api::ai::AgentRunEvent>,
@@ -1023,7 +1029,6 @@ impl OrchestrationEventPoller {
             .unwrap_or(0);
 
         let server_api = self.server_api.clone();
-        let ai_client = self.ai_client.clone();
 
         let self_run_id = BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(&conversation_id)
@@ -1050,7 +1055,7 @@ impl OrchestrationEventPoller {
 
         let config = AgentEventDriverConfig::retry_forever(watched.clone(), cursor);
         let source = ServerApiAgentEventSource::new(server_api);
-        let hydrator = MessageHydrator::new(ai_client);
+        let hydrator = self.message_hydrator_for_run_id(&self_run_id);
 
         ctx.spawn(
             async move {

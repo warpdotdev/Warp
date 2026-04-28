@@ -6,9 +6,12 @@ use std::sync::Arc;
 
 use tempfile::TempDir;
 use uuid::Uuid;
+use warp_cli::{OZ_HARNESS_ENV, OZ_PARENT_RUN_ID_ENV, OZ_RUN_ID_ENV};
 
 use super::*;
 use crate::ai::agent_events::MessageHydrator;
+use crate::ai::agent_sdk::driver::harness::claude_transcript::encode_cwd;
+use crate::ai::agent_sdk::driver::OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY_ENV;
 use crate::server::server_api::ai::{MockAIClient, ReadAgentMessageResponse};
 use crate::server::server_api::ServerApiProvider;
 
@@ -675,9 +678,13 @@ fn prepare_local_wake_command_rehydrates_transcript_and_stages_messages() {
         body: "Inspect the failing tests first.".to_string(),
         occurred_at: "2026-04-17T15:46:00Z".to_string(),
     };
+    let task_id: AmbientAgentTaskId = "550e8400-e29b-41d4-a716-446655440010".parse().unwrap();
+    let parent_run_id = "parent-run-456".to_string();
 
     let command = futures::executor::block_on(ClaudeHarness::prepare_local_wake_command(
         ServerApiProvider::new_for_test().get(),
+        task_id,
+        Some(parent_run_id.clone()),
         Some(working_dir.clone()),
         remote,
         vec![message.clone()],
@@ -690,8 +697,22 @@ fn prepare_local_wake_command_rehydrates_transcript_and_stages_messages() {
         parent_bridge_surfaced_message_path(&state_dir, message.sequence, &message.message_id);
 
     assert!(command.contains("--resume"));
+    assert!(command.starts_with("env "));
     assert!(command.contains(&session_id.to_string()));
     assert!(command.contains(CLAUDE_WAKE_PROMPT_FILE_NAME));
+    assert!(command.contains(&format!(
+        "{OZ_RUN_ID_ENV}={}",
+        shell_quote(&task_id.to_string())
+    )));
+    assert!(command.contains(&format!(
+        "{OZ_PARENT_RUN_ID_ENV}={}",
+        shell_quote(&parent_run_id)
+    )));
+    assert!(command.contains(&format!("{OZ_HARNESS_ENV}={}", shell_quote("claude"))));
+    assert!(command.contains(&format!(
+        "{OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY_ENV}={}",
+        shell_quote("1")
+    )));
     assert_eq!(
         fs::read_to_string(&prompt_path).unwrap(),
         "resume prompt\n\nwake prompt"
