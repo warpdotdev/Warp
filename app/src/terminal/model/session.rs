@@ -36,6 +36,8 @@ use crate::server::telemetry::{BootstrappingInfo, TelemetryEvent};
 use crate::terminal::event::ExecutedExecutorCommandEvent;
 use crate::terminal::ShellHost;
 use crate::terminal::ShellLaunchData;
+#[cfg(feature = "local_tty")]
+use command_executor::remote_server_executor::RemoteServerCommandExecutor;
 use parking_lot::{Mutex, RwLock};
 
 use crate::terminal::shell::{Shell, ShellType};
@@ -176,6 +178,18 @@ impl Sessions {
                 | RemoteServerManagerEvent::BinaryInstallComplete { .. }
                 | RemoteServerManagerEvent::ClientRequestFailed { .. }
                 | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
+                RemoteServerManagerEvent::SessionReconnected {
+                    session_id: sid,
+                    client,
+                    ..
+                } => {
+                    if let Some(session) = sessions.sessions.get(sid) {
+                        let new_executor =
+                            Arc::new(RemoteServerCommandExecutor::new(*sid, client.clone()));
+                        session.set_command_executor(new_executor);
+                        log::info!("Swapped command executor for session {sid:?} after reconnect");
+                    }
+                }
             });
         }
         #[cfg(not(feature = "local_tty"))]

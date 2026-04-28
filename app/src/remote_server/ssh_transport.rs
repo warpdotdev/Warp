@@ -5,6 +5,8 @@
 //! whose stdin/stdout become the protocol channel.
 use std::fmt;
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::Result;
 use warpui::r#async::executor;
@@ -69,170 +71,201 @@ impl SshTransport {
 }
 
 impl RemoteTransport for SshTransport {
-    async fn detect_platform(&self) -> Result<RemotePlatform, String> {
-        match remote_server::ssh::run_ssh_command(
-            &self.socket_path,
-            "uname -sm",
-            remote_server::setup::CHECK_TIMEOUT,
-        )
-        .await
-        {
-            Ok(output) if output.status.success() => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                remote_server::setup::parse_uname_output(&stdout).map_err(|e| format!("{e:#}"))
+    fn detect_platform(
+        &self,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<RemotePlatform, String>> + Send>> {
+        let socket_path = self.socket_path.clone();
+        Box::pin(async move {
+            match remote_server::ssh::run_ssh_command(
+                &socket_path,
+                "uname -sm",
+                remote_server::setup::CHECK_TIMEOUT,
+            )
+            .await
+            {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    remote_server::setup::parse_uname_output(&stdout).map_err(|e| format!("{e:#}"))
+                }
+                Ok(output) => {
+                    let code = output.status.code().unwrap_or(-1);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    Err(format!("uname -sm exited with code {code}: {stderr}"))
+                }
+                Err(e) => Err(format!("{e:#}")),
             }
-            Ok(output) => {
-                let code = output.status.code().unwrap_or(-1);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(format!("uname -sm exited with code {code}: {stderr}"))
-            }
-            Err(e) => Err(format!("{e:#}")),
-        }
+        })
     }
 
-    async fn check_binary(&self) -> Result<bool, String> {
-        let bin_path = remote_server::setup::remote_server_binary();
-        log::info!("Checking for remote server binary at {bin_path}");
-        match remote_server::ssh::run_ssh_command(
-            &self.socket_path,
-            &remote_server::setup::binary_check_command(),
-            remote_server::setup::CHECK_TIMEOUT,
-        )
-        .await
-        {
-            // `test -x` exits 0 when present, 1 when missing.
-            // Any other exit code (or None / signal) is treated as a check failure.
-            Ok(output) => match output.status.code() {
+    fn check_binary(
+        &self,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<bool, String>> + Send>> {
+        let socket_path = self.socket_path.clone();
+        Box::pin(async move {
+            let bin_path = remote_server::setup::remote_server_binary();
+            log::info!("Checking for remote server binary at {bin_path}");
+            match remote_server::ssh::run_ssh_command(
+                &socket_path,
+                &remote_server::setup::binary_check_command(),
+                remote_server::setup::CHECK_TIMEOUT,
+            )
+            .await
+            {
+                // `test -x` exits 0 when present, 1 when missing.
+                // Any other exit code (or None / signal) is treated as a check failure.
+                Ok(output) => match output.status.code() {
+                    Some(0) => Ok(true),
+                    Some(1) => Ok(false),
+                    Some(code) => {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        Err(format!("binary check exited with code {code}: {stderr}"))
+                    }
+                    None => Err("binary check terminated by signal".into()),
+                },
+                Err(e) => Err(format!("{e:#}")),
+            }
+        })
+    }
+
+    fn check_has_old_binary(
+        &self,
+    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<bool>> + Send>> {
+        let socket_path = self.socket_path.clone();
+        Box::pin(async move {
+            // Treat the existence of the remote-server install directory
+            // itself as evidence of a prior install. If `~/.warp-XX/remote-server`
+            // exists, something was installed there before, so any mismatch
+            // with the client's expected binary path should be auto-updated
+            // rather than surfaced as a first-time install prompt.
+            let cmd = format!("test -d {}", remote_server::setup::remote_server_dir());
+            let output = remote_server::ssh::run_ssh_command(
+                &socket_path,
+                &cmd,
+                remote_server::setup::CHECK_TIMEOUT,
+            )
+            .await?;
+            // `test -d` exits 0 when present, 1 when missing.
+            // Anything else is treated as a check failure.
+            match output.status.code() {
                 Some(0) => Ok(true),
                 Some(1) => Ok(false),
                 Some(code) => {
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    Err(format!("binary check exited with code {code}: {stderr}"))
+                    Err(anyhow::anyhow!(
+                        "remote-server dir check exited with code {code}: {stderr}"
+                    ))
                 }
-                None => Err("binary check terminated by signal".into()),
-            },
-            Err(e) => Err(format!("{e:#}")),
-        }
-    }
-
-    async fn check_has_old_binary(&self) -> anyhow::Result<bool> {
-        // Treat the existence of the remote-server install directory
-        // itself as evidence of a prior install. If `~/.warp-XX/remote-server`
-        // exists, something was installed there before, so any mismatch
-        // with the client's expected binary path should be auto-updated
-        // rather than surfaced as a first-time install prompt.
-        let cmd = format!("test -d {}", remote_server::setup::remote_server_dir());
-        let output = remote_server::ssh::run_ssh_command(
-            &self.socket_path,
-            &cmd,
-            remote_server::setup::CHECK_TIMEOUT,
-        )
-        .await?;
-        // `test -d` exits 0 when present, 1 when missing.
-        // Anything else is treated as a check failure.
-        match output.status.code() {
-            Some(0) => Ok(true),
-            Some(1) => Ok(false),
-            Some(code) => {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(anyhow::anyhow!(
-                    "remote-server dir check exited with code {code}: {stderr}"
-                ))
+                None => Err(anyhow::anyhow!(
+                    "remote-server dir check terminated by signal"
+                )),
             }
-            None => Err(anyhow::anyhow!(
-                "remote-server dir check terminated by signal"
-            )),
-        }
-    }
-
-    async fn install_binary(&self) -> Result<(), String> {
-        let script = remote_server::setup::install_script();
-        log::info!(
-            "Installing remote server binary to {}",
-            remote_server::setup::remote_server_binary()
-        );
-        match remote_server::ssh::run_ssh_script(
-            &self.socket_path,
-            &script,
-            remote_server::setup::INSTALL_TIMEOUT,
-        )
-        .await
-        {
-            Ok(output) if output.status.success() => Ok(()),
-            Ok(output) => {
-                let code = output.status.code().unwrap_or(-1);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(format!("install script failed (exit {code}): {stderr}"))
-            }
-            Err(e) => Err(format!("{e:#}")),
-        }
-    }
-
-    async fn connect(&self, executor: &executor::Background) -> Result<Connection> {
-        let binary = remote_server::setup::remote_server_binary();
-        let mut args = remote_server::ssh::ssh_args(&self.socket_path);
-        args.push(format!("{binary} remote-server-proxy"));
-
-        // `kill_on_drop(true)` pairs with ownership of the `Child` being
-        // returned in the [`Connection`] below: the
-        // [`RemoteServerManager`] holds the `Child` on its per-session
-        // state, and dropping that state (on explicit teardown or
-        // spontaneous disconnect) sends SIGKILL to this ssh process.
-        // Without this the ssh child is orphaned and keeps a channel
-        // open on the ControlMaster socket, blocking the master from
-        // exiting cleanly when the user logs out.
-        //
-        // Note that the child's lifetime is decoupled from any
-        // `Arc<RemoteServerClient>` clones: other owners (e.g. the
-        // per-session command executor) can keep the client alive for
-        // their own purposes without pinning the subprocess.
-        let mut child = command::r#async::Command::new("ssh")
-            .args(&args)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()?;
-
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("Failed to capture child stdin"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("Failed to capture child stdout"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("Failed to capture child stderr"))?;
-
-        let (client, event_rx) =
-            RemoteServerClient::from_child_streams(stdin, stdout, stderr, executor);
-        Ok(Connection {
-            client,
-            event_rx,
-            child,
-            control_path: Some(self.socket_path.clone()),
         })
     }
 
-    async fn remove_remote_server_binary(&self) -> anyhow::Result<()> {
-        let cmd = format!("rm -f {}", remote_server::setup::remote_server_binary());
-        log::info!("Removing stale remote server binary: {cmd}");
-        let output = remote_server::ssh::run_ssh_command(
-            &self.socket_path,
-            &cmd,
-            remote_server::setup::CHECK_TIMEOUT,
-        )
-        .await?;
-        if output.status.success() {
-            Ok(())
-        } else {
-            let code = output.status.code().unwrap_or(-1);
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(anyhow::anyhow!("rm -f failed (exit {code}): {stderr}"))
-        }
+    fn install_binary(
+        &self,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>> {
+        let socket_path = self.socket_path.clone();
+        Box::pin(async move {
+            let script = remote_server::setup::install_script();
+            log::info!(
+                "Installing remote server binary to {}",
+                remote_server::setup::remote_server_binary()
+            );
+            match remote_server::ssh::run_ssh_script(
+                &socket_path,
+                &script,
+                remote_server::setup::INSTALL_TIMEOUT,
+            )
+            .await
+            {
+                Ok(output) if output.status.success() => Ok(()),
+                Ok(output) => {
+                    let code = output.status.code().unwrap_or(-1);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    Err(format!("install script failed (exit {code}): {stderr}"))
+                }
+                Err(e) => Err(format!("{e:#}")),
+            }
+        })
+    }
+
+    fn connect(
+        &self,
+        executor: Arc<executor::Background>,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<Connection>> + Send>> {
+        let socket_path = self.socket_path.clone();
+        Box::pin(async move {
+            let binary = remote_server::setup::remote_server_binary();
+            let mut args = remote_server::ssh::ssh_args(&socket_path);
+            args.push(format!("{binary} remote-server-proxy"));
+
+            // `kill_on_drop(true)` pairs with ownership of the `Child` being
+            // returned in the [`Connection`] below: the
+            // [`RemoteServerManager`] holds the `Child` on its per-session
+            // state, and dropping that state (on explicit teardown or
+            // spontaneous disconnect) sends SIGKILL to this ssh process.
+            // Without this the ssh child is orphaned and keeps a channel
+            // open on the ControlMaster socket, blocking the master from
+            // exiting cleanly when the user logs out.
+            //
+            // Note that the child's lifetime is decoupled from any
+            // `Arc<RemoteServerClient>` clones: other owners (e.g. the
+            // per-session command executor) can keep the client alive for
+            // their own purposes without pinning the subprocess.
+            let mut child = command::r#async::Command::new("ssh")
+                .args(&args)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()?;
+
+            let stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Failed to capture child stdin"))?;
+            let stdout = child
+                .stdout
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Failed to capture child stdout"))?;
+            let stderr = child
+                .stderr
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("Failed to capture child stderr"))?;
+
+            let (client, event_rx) =
+                RemoteServerClient::from_child_streams(stdin, stdout, stderr, &executor);
+            Ok(Connection {
+                client,
+                event_rx,
+                child,
+                control_path: Some(socket_path),
+            })
+        })
+    }
+
+    fn remove_remote_server_binary(
+        &self,
+    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>> {
+        let socket_path = self.socket_path.clone();
+        Box::pin(async move {
+            let cmd = format!("rm -f {}", remote_server::setup::remote_server_binary());
+            log::info!("Removing stale remote server binary: {cmd}");
+            let output = remote_server::ssh::run_ssh_command(
+                &socket_path,
+                &cmd,
+                remote_server::setup::CHECK_TIMEOUT,
+            )
+            .await?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                let code = output.status.code().unwrap_or(-1);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(anyhow::anyhow!("rm -f failed (exit {code}): {stderr}"))
+            }
+        })
     }
 }
 

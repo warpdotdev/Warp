@@ -707,7 +707,7 @@ impl RemoteServerManager {
             child,
             control_path,
         } = transport
-            .connect(executor)
+            .connect(executor.clone())
             .await
             .map_err(ConnectAndHandshakeError::Connect)?;
 
