@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::ai::agent::conversation::ConversationStatus;
 use warp_terminal::model::escape_sequences::{BRACKETED_PASTE_END, BRACKETED_PASTE_START};
-use warpui::{notification::UserNotification, Presenter, WindowInvalidation};
+use warpui::{keymap::Trigger, notification::UserNotification, Presenter, WindowInvalidation};
 
 use crate::ai::agent::task::TaskId;
 use crate::ai::blocklist::block::cli_controller::UserTakeOverReason;
@@ -19,7 +19,7 @@ use crate::{
 };
 
 use crate::context_chips::prompt::Prompt;
-use crate::editor::{AutosuggestionLocation, AutosuggestionType};
+use crate::editor::{AutosuggestionLocation, AutosuggestionType, EditorAction};
 
 use crate::settings::{AISettings, AppEditorSettings, WarpPromptSeparator};
 
@@ -270,6 +270,72 @@ fn unregister_cli_agent_session_restores_unlocked_input_config() {
             );
             assert!(input.editor().as_ref(ctx).buffer_text(ctx).is_empty());
         });
+    })
+}
+
+#[test]
+fn ctrl_g_in_cli_agent_rich_input_resolves_to_escape() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_agent_rich_input = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::OpenCode,
+                        status: CLIAgentSessionStatus::InProgress,
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: false,
+                        listener: None,
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+            });
+
+            view.open_cli_agent_rich_input(CLIAgentInputEntrypoint::CtrlG, ctx);
+            assert!(view.has_active_cli_agent_input_session(ctx));
+        });
+
+        let editor = terminal.read(&app, |view, ctx| view.input.as_ref(ctx).editor().clone());
+        let window_id = app.read(|ctx| editor.window_id(ctx));
+
+        let ctrl_g_resolves_to_escape = app.read(|ctx| {
+            let binding = ctx
+                .key_bindings_for_view(window_id, editor.id())
+                .into_iter()
+                .find(|binding| {
+                    matches!(
+                        binding.trigger,
+                        Trigger::Keystrokes(keys)
+                            if keys.len() == 1 && keys[0].normalized() == "ctrl-g"
+                    )
+                })
+                .expect("ctrl-g should have an active binding while CLI agent rich input is open");
+
+            matches!(
+                binding
+                    .action
+                    .as_ref()
+                    .as_any()
+                    .downcast_ref::<EditorAction>(),
+                Some(EditorAction::Escape)
+            )
+        });
+
+        assert!(
+            ctrl_g_resolves_to_escape,
+            "ctrl-g should close CLI agent rich input instead of falling through to the editor"
+        );
     })
 }
 

@@ -203,6 +203,11 @@ pub fn init(ctx: &mut AppContext) {
             id!("EditorView") & !id!("IMEOpen"),
         ),
         FixedBinding::new(
+            "ctrl-g",
+            EditorAction::Escape,
+            id!("EditorView") & !id!("IMEOpen") & id!(flags::CLI_AGENT_RICH_INPUT_OPEN),
+        ),
+        FixedBinding::new(
             "backspace",
             EditorAction::Backspace,
             id!("EditorView") & !id!("IMEOpen") & !id!("Vim"),
@@ -514,7 +519,7 @@ pub fn init(ctx: &mut AppContext) {
             FixedBinding::new(
                 "ctrl-g",
                 EditorAction::AddNextOccurrence,
-                id!("EditorView") & !id!("IMEOpen"),
+                id!("EditorView") & !id!("IMEOpen") & !id!(flags::CLI_AGENT_RICH_INPUT_OPEN),
             ),
         ]);
     }
