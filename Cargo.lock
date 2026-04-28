@@ -9337,6 +9337,7 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "serde",
+ "serde_json",
  "warp_multi_agent_api",
 ]
 
@@ -10558,6 +10559,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
+ "async-io",
  "async-process",
  "command",
  "dashmap",

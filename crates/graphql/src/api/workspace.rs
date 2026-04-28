@@ -121,6 +121,11 @@ pub struct CodebaseContextSettings {
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]
+pub struct AmbientAgentSettings {
+    pub enable_warp_attribution: AdminEnablementSetting,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone)]
 pub struct WorkspaceSettings {
     pub is_discoverable: bool,
     pub is_invite_link_enabled: bool,
@@ -136,6 +141,7 @@ pub struct WorkspaceSettings {
     pub addon_credits_settings: AddonCreditsSettings,
     pub codebase_context_settings: CodebaseContextSettings,
     pub sandboxed_agent_settings: Option<SandboxedAgentSettings>,
+    pub ambient_agent_settings: Option<AmbientAgentSettings>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]

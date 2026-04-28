@@ -827,6 +827,10 @@ impl From<GqlWorkspaceSettings> for WorkspaceSettings {
                         .map(|denylist| denylist.to_predicates()),
                 }
             }),
+            enable_warp_attribution: gql_workspace_settings
+                .ambient_agent_settings
+                .map(|s| s.enable_warp_attribution.into())
+                .unwrap_or_default(),
         }
     }
 }

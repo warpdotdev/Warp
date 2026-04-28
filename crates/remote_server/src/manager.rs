@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 #[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(not(target_family = "wasm"))]
+use std::time::Duration;
 
 #[cfg(not(target_family = "wasm"))]
 use crate::client::ClientEvent;
@@ -16,6 +18,47 @@ use repo_metadata::RepoMetadataUpdate;
 use serde::Serialize;
 use warp_core::SessionId;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
+
+/// Maximum number of reconnection attempts after a spontaneous disconnect.
+#[cfg(not(target_family = "wasm"))]
+const MAX_RECONNECT_ATTEMPTS: u32 = 2;
+/// Delay between reconnection attempts.
+#[cfg(not(target_family = "wasm"))]
+const RECONNECT_DELAY: Duration = Duration::from_secs(2);
+
+/// Parameters that travel together through the reconnection flow.
+#[cfg(not(target_family = "wasm"))]
+struct ReconnectParams {
+    attempt: u32,
+    host_id: HostId,
+    exit_status: Option<RemoteServerExitStatus>,
+    transport: Arc<dyn RemoteTransport>,
+    control_path: Option<PathBuf>,
+}
+
+/// Error from [`RemoteServerManager::run_connect_and_handshake`] that
+/// preserves which phase failed so callers can report accurate telemetry.
+#[cfg(not(target_family = "wasm"))]
+#[derive(Debug, thiserror::Error)]
+enum ConnectAndHandshakeError {
+    /// `transport.connect()` failed, or the session was deregistered
+    /// before the connect phase could complete.
+    #[error("connect: {0:#}")]
+    Connect(anyhow::Error),
+    /// `client.initialize()` handshake failed.
+    #[error("initialize: {0:#}")]
+    Initialize(anyhow::Error),
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl ConnectAndHandshakeError {
+    fn phase(&self) -> RemoteServerInitPhase {
+        match self {
+            Self::Connect(_) => RemoteServerInitPhase::Connect,
+            Self::Initialize(_) => RemoteServerInitPhase::Initialize,
+        }
+    }
+}
 
 /// Which phase of the remote server connection flow failed.
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -43,6 +86,16 @@ pub enum RemoteServerErrorKind {
     Disconnected,
     ServerError,
     Other,
+}
+
+/// Exit status information captured from the remote server subprocess
+/// when the connection drops. Used for diagnostics and telemetry.
+#[derive(Clone, Debug, Serialize)]
+pub struct RemoteServerExitStatus {
+    /// Process exit code, if the process exited normally.
+    pub code: Option<i32>,
+    /// True if the process was killed by a signal (Unix only).
+    pub signal_killed: bool,
 }
 
 impl RemoteServerErrorKind {
@@ -104,6 +157,16 @@ pub enum RemoteSessionState {
         /// See type-level doc.
         #[cfg(not(target_family = "wasm"))]
         control_path: Option<PathBuf>,
+        /// Transport stored for reconnection after spontaneous disconnect.
+        #[cfg(not(target_family = "wasm"))]
+        transport: Arc<dyn RemoteTransport>,
+    },
+    /// A reconnection attempt is in progress after a spontaneous disconnect.
+    #[cfg(not(target_family = "wasm"))]
+    Reconnecting {
+        attempt: u32,
+        host_id: HostId,
+        control_path: Option<PathBuf>,
     },
     /// Connection dropped (EOF/error from the reader task).
     Disconnected,
@@ -145,6 +208,19 @@ pub enum RemoteServerManagerEvent {
     SessionDisconnected {
         session_id: SessionId,
         host_id: HostId,
+        /// Exit status of the remote server subprocess, if available.
+        /// `None` when the session was explicitly deregistered or when
+        /// the exit status could not be determined.
+        exit_status: Option<RemoteServerExitStatus>,
+    },
+    /// A reconnection attempt succeeded. Downstream owners (e.g.
+    /// `RemoteServerCommandExecutor`) should swap their client reference
+    /// to the new one carried in `client`.
+    SessionReconnected {
+        session_id: SessionId,
+        host_id: HostId,
+        attempt: u32,
+        client: Arc<RemoteServerClient>,
     },
     /// The manager is no longer tracking this session -- it has been
     /// removed from the `sessions` map via `deregister_session`. Fires
@@ -224,11 +300,13 @@ pub enum RemoteServerManagerEvent {
     ServerMessageDecodingError { session_id: SessionId },
 }
 
-/// Shell info stashed by [`RemoteServerManager::notify_session_bootstrapped`]
-/// when the session is not yet in `Connected` state. Flushed automatically
-/// when [`RemoteServerManager::mark_session_connected`] fires.
+/// Shell info recorded by [`RemoteServerManager::notify_session_bootstrapped`].
+///
+/// Persists for the lifetime of the session (removed only in
+/// `deregister_session`) so that `mark_session_connected` can re-send
+/// the notification after a reconnect.
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
-struct PendingSessionBootstrappedNotification {
+struct SessionBootstrapInfo {
     shell_type: String,
     shell_path: Option<String>,
 }
@@ -253,9 +331,10 @@ pub struct RemoteServerManager {
     /// `navigate_to_directory` calls when `update_active_session` fires
     /// repeatedly for the same CWD.
     last_navigated_path: HashMap<SessionId, String>,
-    /// Per-session `SessionBootstrapped` notifications that arrived before the
-    /// session reached `Connected`. Flushed in `mark_session_connected`.
-    pending_bootstrapped_notifications: HashMap<SessionId, PendingSessionBootstrappedNotification>,
+    /// Per-session shell info recorded at bootstrap time and re-sent to the
+    /// remote server daemon on every (re)connect. Persists until
+    /// `deregister_session`.
+    session_bootstrap_info: HashMap<SessionId, SessionBootstrapInfo>,
     /// Detected remote platform per session, populated during the binary check
     /// phase via `detect_platform()`. Used for telemetry.
     session_platforms: HashMap<SessionId, RemotePlatform>,
@@ -274,7 +353,7 @@ impl RemoteServerManager {
             host_to_sessions: HashMap::new(),
             spawner: ctx.spawner(),
             last_navigated_path: HashMap::new(),
-            pending_bootstrapped_notifications: HashMap::new(),
+            session_bootstrap_info: HashMap::new(),
             session_platforms: HashMap::new(),
         }
     }
@@ -417,10 +496,7 @@ impl RemoteServerManager {
         {
             log::info!("Starting remote server connection for session {session_id:?}");
 
-            // Advance the user-visible setup pipeline. Both callers (binary
-            // already installed, and binary just installed) enter this
-            // method right when the Initializing phase begins, so we emit
-            // the state change from one place.
+            // Advance the user-visible setup pipeline.
             ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
                 session_id,
                 state: RemoteServerSetupState::Initializing,
@@ -432,99 +508,31 @@ impl RemoteServerManager {
 
             let spawner = self.spawner.clone();
             let executor = ctx.background_executor().clone();
+            // Wrap the transport in an Arc so it can be stored on `Connected`
+            // for reconnection after a spontaneous disconnect.
+            let transport: Arc<dyn RemoteTransport> = Arc::new(transport);
 
             ctx.background_executor()
                 .spawn(async move {
-                    // ---- Phase 1: Connect (establish streams, create client) ----
-                    match transport.connect(&executor).await {
-                        Ok(Connection {
-                            client,
-                            event_rx,
-                            child,
-                            control_path,
-                        }) => {
-                            let client = Arc::new(client);
-
-                            // Transition to Initializing and start draining
-                            // the event channel for push events and disconnect.
-                            // The `Child` is stashed on the session state so
-                            // its lifetime is controlled by the manager -- on
-                            // teardown the state is dropped, which runs the
-                            // `Child`'s destructor and SIGKILLs the subprocess
-                            // via `kill_on_drop`. `control_path` is stashed
-                            // for explicit teardown's `ssh -O exit` call.
-                            let client_for_state = Arc::clone(&client);
+                    match Self::run_connect_and_handshake(
+                        session_id,
+                        &*transport,
+                        &spawner,
+                        &executor,
+                    )
+                    .await
+                    {
+                        Ok(host_id) => {
                             let _ = spawner
                                 .spawn(move |me, ctx| {
-                                    me.sessions.insert(
-                                        session_id,
-                                        RemoteSessionState::Initializing {
-                                            client: client_for_state,
-                                            _child: child,
-                                            control_path,
-                                        },
-                                    );
-
-                                    // Drain the event channel on the main thread.
-                                    // Each push event is forwarded as a manager
-                                    // event in real-time. When the stream closes
-                                    // (after Disconnected or channel drop), we
-                                    // transition the session to Disconnected.
-                                    ctx.spawn_stream_local(
-                                        event_rx,
-                                        move |me, event, ctx| {
-                                            me.forward_client_event(session_id, event, ctx);
-                                        },
-                                        move |me, ctx| {
-                                            me.mark_session_disconnected(session_id, ctx);
-                                        },
-                                    );
+                                    me.mark_session_connected(session_id, host_id, transport, ctx);
                                 })
                                 .await;
-
-                            // ---- Phase 2: Initialize handshake ----
-                            match client.initialize().await {
-                                Ok(resp) => {
-                                    let host_id = HostId::new(resp.host_id);
-                                    let _ = spawner
-                                        .spawn(move |me, ctx| {
-                                            me.mark_session_connected(session_id, host_id, ctx);
-                                        })
-                                        .await;
-                                }
-                                Err(e) => {
-                            log::error!(
-                                        "Initialize handshake failed for session {session_id:?}: {e}"
-                                    );
-                                    let error = format!("{e:#}");
-                                    let _ = spawner
-                                        .spawn(move |me, ctx| {
-                                            ctx.emit(
-                                                RemoteServerManagerEvent::SetupStateChanged {
-                                                    session_id,
-                                                    state: RemoteServerSetupState::Failed {
-                                                        error: error.clone(),
-                                                    },
-                                                },
-                                            );
-                                            ctx.emit(
-                                                RemoteServerManagerEvent::SessionConnectionFailed {
-                                                    session_id,
-                                                    phase: RemoteServerInitPhase::Initialize,
-                                                    error,
-                                                },
-                                            );
-                                            me.mark_session_disconnected(session_id, ctx);
-                                        })
-                                        .await;
-                                }
-                            }
                         }
                         Err(e) => {
-                            log::error!(
-                                "Failed to connect remote server for session {session_id:?}: {e:#}"
-                            );
-                            let error = format!("{e:#}");
+                            log::error!("Connection failed for session {session_id:?}: {e}");
+                            let phase = e.phase();
+                            let error = format!("{e}");
                             let _ = spawner
                                 .spawn(move |me, ctx| {
                                     ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
@@ -535,7 +543,7 @@ impl RemoteServerManager {
                                     });
                                     ctx.emit(RemoteServerManagerEvent::SessionConnectionFailed {
                                         session_id,
-                                        phase: RemoteServerInitPhase::Connect,
+                                        phase,
                                         error,
                                     });
                                     me.mark_session_disconnected(session_id, ctx);
@@ -546,6 +554,81 @@ impl RemoteServerManager {
                 })
                 .detach();
         }
+    }
+
+    /// Shared connect + handshake logic used by both `connect_session` and
+    /// `attempt_reconnect`.
+    ///
+    /// 1. Calls `transport.connect()` to establish streams.
+    /// 2. Transitions the session to `Initializing` and starts draining the
+    ///    event channel.
+    /// 3. Runs the initialize handshake.
+    ///
+    /// Returns `Ok(host_id)` on success, or a phase-tagged error.
+    #[cfg(not(target_family = "wasm"))]
+    async fn run_connect_and_handshake(
+        session_id: SessionId,
+        transport: &dyn RemoteTransport,
+        spawner: &ModelSpawner<Self>,
+        executor: &Arc<warpui::r#async::executor::Background>,
+    ) -> Result<HostId, ConnectAndHandshakeError> {
+        // Phase 1: Connect (establish streams, create client).
+        let Connection {
+            client,
+            event_rx,
+            child,
+            control_path,
+        } = transport
+            .connect(executor.clone())
+            .await
+            .map_err(ConnectAndHandshakeError::Connect)?;
+
+        let client = Arc::new(client);
+        let client_for_init = Arc::clone(&client);
+
+        // Transition to Initializing and start draining the event channel.
+        // Guard: if the session was deregistered during `transport.connect()`,
+        // the entry will have been removed; don't re-insert it.
+        let was_inserted = spawner
+            .spawn(move |me, ctx| {
+                if !me.sessions.contains_key(&session_id) {
+                    return false;
+                }
+                me.sessions.insert(
+                    session_id,
+                    RemoteSessionState::Initializing {
+                        client: client_for_init,
+                        _child: child,
+                        control_path,
+                    },
+                );
+
+                ctx.spawn_stream_local(
+                    event_rx,
+                    move |me, event, ctx| {
+                        me.forward_client_event(session_id, event, ctx);
+                    },
+                    move |me, ctx| {
+                        me.mark_session_disconnected(session_id, ctx);
+                    },
+                );
+                true
+            })
+            .await
+            .unwrap_or(false);
+
+        if !was_inserted {
+            return Err(ConnectAndHandshakeError::Connect(anyhow::anyhow!(
+                "Session {session_id:?} was deregistered during connect"
+            )));
+        }
+
+        // Phase 2: Initialize handshake.
+        let resp = client
+            .initialize()
+            .await
+            .map_err(|e| ConnectAndHandshakeError::Initialize(anyhow::anyhow!("{e:#}")))?;
+        Ok(HostId::new(resp.host_id))
     }
 
     /// Removes a session from the manager and tears down its connection.
@@ -587,7 +670,7 @@ impl RemoteServerManager {
     ///   spontaneous drops -- only for explicit teardown.
     pub fn deregister_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
         self.last_navigated_path.remove(&session_id);
-        self.pending_bootstrapped_notifications.remove(&session_id);
+        self.session_bootstrap_info.remove(&session_id);
         self.session_platforms.remove(&session_id);
 
         // Remove the session entry. Dropping the `RemoteSessionState`
@@ -604,19 +687,26 @@ impl RemoteServerManager {
         let control_path = match &prev {
             Some(RemoteSessionState::Connected { control_path, .. })
             | Some(RemoteSessionState::Initializing { control_path, .. }) => control_path.clone(),
+            Some(RemoteSessionState::Reconnecting { control_path, .. }) => control_path.clone(),
             _ => None,
         };
 
-        if let Some(RemoteSessionState::Connected { host_id, .. }) = prev {
+        // Extract `host_id` from states that track a host connection.
+        let host_id = match &prev {
+            Some(RemoteSessionState::Connected { host_id, .. }) => Some(host_id.clone()),
+            #[cfg(not(target_family = "wasm"))]
+            Some(RemoteSessionState::Reconnecting { host_id, .. }) => Some(host_id.clone()),
+            _ => None,
+        };
+        if let Some(host_id) = host_id {
             self.remove_from_host_index(&host_id, session_id);
             ctx.emit(RemoteServerManagerEvent::SessionDisconnected {
                 session_id,
                 host_id: host_id.clone(),
+                exit_status: None,
             });
             if !self.host_to_sessions.contains_key(&host_id) {
-                ctx.emit(RemoteServerManagerEvent::HostDisconnected {
-                    host_id: host_id.clone(),
-                });
+                ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });
             }
         }
         ctx.emit(RemoteServerManagerEvent::SessionDeregistered { session_id });
@@ -742,19 +832,21 @@ impl RemoteServerManager {
         shell_type: &str,
         shell_path: Option<&str>,
     ) {
+        // Always persist so we can re-send after a reconnect.
+        self.session_bootstrap_info.insert(
+            session_id,
+            SessionBootstrapInfo {
+                shell_type: shell_type.to_owned(),
+                shell_path: shell_path.map(ToOwned::to_owned),
+            },
+        );
+
         if let Some(client) = self.client_for_session(session_id) {
             client.notify_session_bootstrapped(session_id, shell_type, shell_path);
         } else {
             log::info!(
                 "notify_session_bootstrapped: session {session_id:?} not yet connected, \
-                 stashing notification"
-            );
-            self.pending_bootstrapped_notifications.insert(
-                session_id,
-                PendingSessionBootstrappedNotification {
-                    shell_type: shell_type.to_owned(),
-                    shell_path: shell_path.map(ToOwned::to_owned),
-                },
+                 will send on connect"
             );
         }
     }
@@ -856,18 +948,19 @@ impl RemoteServerManager {
         }
     }
 
+    /// Transitions a session from `Initializing` to `Connected`. Stores the
+    /// `transport` for reconnection support after a spontaneous disconnect.
     #[cfg(not(target_family = "wasm"))]
     fn mark_session_connected(
         &mut self,
         session_id: SessionId,
         host_id: HostId,
+        transport: Arc<dyn RemoteTransport>,
         ctx: &mut ModelContext<Self>,
     ) {
         log::info!("Remote server connected for session {session_id:?}, host {host_id}");
 
         // Only transition if the session is still in Initializing state.
-        // Remove first so we can move the client handle (and owned `Child`)
-        // out.
         let Some(RemoteSessionState::Initializing {
             client,
             _child,
@@ -881,10 +974,11 @@ impl RemoteServerManager {
         self.sessions.insert(
             session_id,
             RemoteSessionState::Connected {
-                client,
+                client: client.clone(),
                 host_id: host_id.clone(),
                 _child,
                 control_path,
+                transport,
             },
         );
         self.host_to_sessions
@@ -905,19 +999,56 @@ impl RemoteServerManager {
             host_id,
         });
 
-        // Flush any SessionBootstrapped notification that was stashed before
-        // the session reached Connected.
-        if let Some(notif) = self.pending_bootstrapped_notifications.remove(&session_id) {
+        // (Re-)send the SessionBootstrapped notification so the daemon
+        // registers an executor for this session. This fires on both the
+        // initial connect and every reconnect.
+        if let Some(info) = self.session_bootstrap_info.get(&session_id) {
             if let Some(client) = self.client_for_session(session_id) {
-                log::info!(
-                    "Flushing stashed SessionBootstrapped notification for session \
-                     {session_id:?}"
-                );
+                log::info!("Sending SessionBootstrapped notification for session {session_id:?}");
                 client.notify_session_bootstrapped(
                     session_id,
-                    &notif.shell_type,
-                    notif.shell_path.as_deref(),
+                    &info.shell_type,
+                    info.shell_path.as_deref(),
                 );
+            }
+        }
+    }
+
+    /// Captures the exit status from a `Child` process, if available.
+    #[cfg(not(target_family = "wasm"))]
+    fn capture_exit_status(
+        child: &mut async_process::Child,
+        session_id: SessionId,
+    ) -> Option<RemoteServerExitStatus> {
+        match child.try_status() {
+            Ok(Some(status)) => {
+                let code = status.code();
+                #[cfg(unix)]
+                let signal_killed = {
+                    use std::os::unix::process::ExitStatusExt;
+                    status.signal().is_some()
+                };
+                #[cfg(not(unix))]
+                let signal_killed = false;
+                log::warn!(
+                    "Remote server process exited for session {session_id:?}: \
+                     code={code:?}, signal_killed={signal_killed}"
+                );
+                Some(RemoteServerExitStatus {
+                    code,
+                    signal_killed,
+                })
+            }
+            Ok(None) => {
+                log::warn!(
+                    "Remote server process still running for session {session_id:?} \
+                     despite EOF on reader task"
+                );
+                None
+            }
+            Err(e) => {
+                log::warn!("Failed to read exit status for session {session_id:?}: {e}");
+                None
             }
         }
     }
@@ -928,28 +1059,215 @@ impl RemoteServerManager {
         session_id: SessionId,
         ctx: &mut ModelContext<Self>,
     ) {
-        self.pending_bootstrapped_notifications.remove(&session_id);
         let Some(prev) = self.sessions.remove(&session_id) else {
             return;
         };
-        self.sessions
-            .insert(session_id, RemoteSessionState::Disconnected);
 
-        if let RemoteSessionState::Connected { host_id, .. } = prev {
+        // Only attempt reconnect for sessions that were in Connected state
+        // with a transport available, and not being explicitly deregistered.
+        if let RemoteSessionState::Connected {
+            host_id,
+            mut _child,
+            control_path,
+            transport,
+            ..
+        } = prev
+        {
+            let exit_status = Self::capture_exit_status(&mut _child, session_id);
+            // Drop the old child process explicitly before reconnecting.
+            drop(_child);
+
+            log::info!(
+                "Spontaneous disconnect for session {session_id:?}, \
+                 will attempt reconnect (transport={transport:?})"
+            );
+
+            // Clear stale repo metadata and host index so downstream
+            // models don't hold onto data from the dead server process.
             self.remove_from_host_index(&host_id, session_id);
-            // Emit `SessionDisconnected` before `HostDisconnected` so that
-            // subscribers (e.g. the command executor) drop their
-            // `Arc<RemoteServerClient>` reference before any host-scoped
-            // teardown runs. This matches the ordering in
-            // `deregister_session` so both teardown paths look identical
-            // to subscribers.
+            if !self.host_to_sessions.contains_key(&host_id) {
+                ctx.emit(RemoteServerManagerEvent::HostDisconnected {
+                    host_id: host_id.clone(),
+                });
+            }
+
+            // Clear last navigated path so navigate_to_directory
+            // re-fires after reconnect.
+            // We need to do this on disconnect because the cached
+            // navigated path is only deduping for the current _remote server session.
+            self.last_navigated_path.remove(&session_id);
+
+            self.attempt_reconnect(
+                session_id,
+                ReconnectParams {
+                    attempt: 1,
+                    host_id,
+                    exit_status,
+                    transport,
+                    control_path,
+                },
+                ctx,
+            );
+        } else {
+            // Non-Connected states (Initializing, Connecting, etc.) —
+            // no reconnect, just mark disconnected.
+            self.sessions
+                .insert(session_id, RemoteSessionState::Disconnected);
+        }
+    }
+
+    /// Attempt to re-establish the remote server connection.
+    #[cfg(not(target_family = "wasm"))]
+    fn attempt_reconnect(
+        &mut self,
+        session_id: SessionId,
+        params: ReconnectParams,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let ReconnectParams {
+            attempt,
+            host_id,
+            exit_status,
+            transport,
+            control_path,
+        } = params;
+
+        log::info!(
+            "Attempting reconnect for session {session_id:?} \
+             (attempt {attempt}/{MAX_RECONNECT_ATTEMPTS})"
+        );
+
+        self.sessions.insert(
+            session_id,
+            RemoteSessionState::Reconnecting {
+                attempt,
+                host_id: host_id.clone(),
+                control_path: control_path.clone(),
+            },
+        );
+
+        let spawner = self.spawner.clone();
+        let executor = ctx.background_executor().clone();
+        let transport_clone = Arc::clone(&transport);
+
+        ctx.background_executor()
+            .spawn(async move {
+                async_io::Timer::after(RECONNECT_DELAY).await;
+
+                // Check if the session was deregistered during the delay.
+                // (Checked via spawner since sessions lives on the main thread.)
+                let was_removed = spawner
+                    .spawn(move |me, _ctx| !me.sessions.contains_key(&session_id))
+                    .await
+                    .unwrap_or(true);
+                if was_removed {
+                    log::info!("Session {session_id:?} removed during reconnect delay, aborting");
+                    return;
+                }
+
+                match Self::run_connect_and_handshake(
+                    session_id,
+                    &*transport_clone,
+                    &spawner,
+                    &executor,
+                )
+                .await
+                {
+                    Ok(new_host_id) => {
+                        let _ = spawner
+                            .spawn(move |me, ctx| {
+                                // If the session was deregistered during the
+                                // handshake, don't resurrect it.
+                                if !me.sessions.contains_key(&session_id) {
+                                    log::info!(
+                                        "Session {session_id:?} deregistered during \
+                                         reconnect handshake, aborting"
+                                    );
+                                    return;
+                                }
+                                me.mark_session_connected(
+                                    session_id,
+                                    new_host_id.clone(),
+                                    transport,
+                                    ctx,
+                                );
+                                if let Some(client) = me.client_for_session(session_id).cloned() {
+                                    ctx.emit(RemoteServerManagerEvent::SessionReconnected {
+                                        session_id,
+                                        host_id: new_host_id,
+                                        attempt,
+                                        client,
+                                    });
+                                }
+                            })
+                            .await;
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Reconnect failed for session {session_id:?} \
+                             (attempt {attempt}): {e}"
+                        );
+                        let _ = spawner
+                            .spawn(move |me, ctx| {
+                                // If the session was deregistered during the
+                                // handshake, don't retry or insert Disconnected.
+                                if !me.sessions.contains_key(&session_id) {
+                                    log::info!(
+                                        "Session {session_id:?} deregistered during \
+                                         reconnect handshake, aborting"
+                                    );
+                                    return;
+                                }
+                                me.handle_reconnect_failure(
+                                    session_id,
+                                    ReconnectParams {
+                                        attempt,
+                                        host_id,
+                                        exit_status,
+                                        transport,
+                                        control_path,
+                                    },
+                                    ctx,
+                                );
+                            })
+                            .await;
+                    }
+                }
+            })
+            .detach();
+    }
+
+    /// Handle a failed reconnection attempt: either retry or give up.
+    #[cfg(not(target_family = "wasm"))]
+    fn handle_reconnect_failure(
+        &mut self,
+        session_id: SessionId,
+        params: ReconnectParams,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if params.attempt < MAX_RECONNECT_ATTEMPTS {
+            self.attempt_reconnect(
+                session_id,
+                ReconnectParams {
+                    attempt: params.attempt + 1,
+                    ..params
+                },
+                ctx,
+            );
+        } else {
+            log::warn!(
+                "Reconnect exhausted for session {session_id:?} after {} attempt(s)",
+                params.attempt
+            );
+            self.sessions
+                .insert(session_id, RemoteSessionState::Disconnected);
             ctx.emit(RemoteServerManagerEvent::SessionDisconnected {
                 session_id,
-                host_id: host_id.clone(),
+                host_id: params.host_id,
+                exit_status: params.exit_status,
             });
-            if !self.host_to_sessions.contains_key(&host_id) {
-                ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });
-            }
+            // Note: HostDisconnected was already emitted by
+            // mark_session_disconnected when entering the reconnect flow.
         }
     }
 
