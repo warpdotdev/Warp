@@ -240,7 +240,7 @@ pub async fn detect_fork_point(repo_path: &Path) -> Result<Option<String>> {
 
     // Last non-empty line = oldest unique commit; its parent = fork point.
     // No unique commits means HEAD is fully shared, so fork = HEAD.
-    let target = match unique.lines().filter(|l| !l.trim().is_empty()).next_back() {
+    let target = match unique.lines().rfind(|l| !l.trim().is_empty()) {
         Some(sha) => format!("{}^", sha.trim()),
         None => "HEAD".to_string(),
     };
