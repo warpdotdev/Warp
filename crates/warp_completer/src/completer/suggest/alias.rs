@@ -20,11 +20,11 @@ struct NumAliasExpansionsAttempted(usize);
 
 impl NumAliasExpansionsAttempted {
     fn new() -> Self {
-        NumAliasExpansionsAttempted(0)
+        Self(0)
     }
 
     fn increment(self) -> Self {
-        NumAliasExpansionsAttempted(self.0 + 1)
+        Self(self.0 + 1)
     }
 
     fn reached_limit(&self) -> bool {

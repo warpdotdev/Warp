@@ -33,9 +33,9 @@ impl OnboardingTutorial {
     /// Extracts the onboarding intention from any tutorial variant.
     pub(crate) fn intention(&self) -> OnboardingIntention {
         match self {
-            OnboardingTutorial::NoProject { intention }
-            | OnboardingTutorial::Project { intention, .. }
-            | OnboardingTutorial::InitProject { intention, .. } => *intention,
+            Self::NoProject { intention }
+            | Self::Project { intention, .. }
+            | Self::InitProject { intention, .. } => *intention,
         }
     }
 }
@@ -53,22 +53,22 @@ impl From<SelectedSettings> for OnboardingTutorial {
                     let path = PathBuf::from(selected_local_folder);
                     // When AgentView is enabled, /init comes at the end of the tutorial.
                     if !FeatureFlag::AgentView.is_enabled() && initialize_projects_automatically {
-                        OnboardingTutorial::InitProject {
+                        Self::InitProject {
                             path,
                             intention: OnboardingIntention::AgentDrivenDevelopment,
                         }
                     } else {
-                        OnboardingTutorial::Project {
+                        Self::Project {
                             path,
                             intention: OnboardingIntention::AgentDrivenDevelopment,
                         }
                     }
                 }
-                ProjectOnboardingSettings::NoProject => OnboardingTutorial::NoProject {
+                ProjectOnboardingSettings::NoProject => Self::NoProject {
                     intention: OnboardingIntention::AgentDrivenDevelopment,
                 },
             },
-            SelectedSettings::Terminal { .. } => OnboardingTutorial::NoProject {
+            SelectedSettings::Terminal { .. } => Self::NoProject {
                 intention: OnboardingIntention::Terminal,
             },
         }

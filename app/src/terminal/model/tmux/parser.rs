@@ -36,7 +36,7 @@ pub enum TmuxMessage {
 impl std::fmt::Debug for TmuxMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TmuxMessage::CommandOutput {
+            Self::CommandOutput {
                 output_lines: output,
             } => match output {
                 Ok(v) => {
@@ -52,18 +52,18 @@ impl std::fmt::Debug for TmuxMessage {
                         .finish()
                 }
             },
-            TmuxMessage::Exit => write!(f, "Exit"),
-            TmuxMessage::Unknown { tag, rest } => f
+            Self::Exit => write!(f, "Exit"),
+            Self::Unknown { tag, rest } => f
                 .debug_struct("Unknown")
                 .field("tag", &AsciiDebug(tag))
                 .field("rest", &AsciiDebug(rest))
                 .finish(),
-            TmuxMessage::ParseError { message, byte } => f
+            Self::ParseError { message, byte } => f
                 .debug_struct("ParseError")
                 .field("message", message)
                 .field("byte", byte)
                 .finish(),
-            TmuxMessage::WindowClose { window_id } => f
+            Self::WindowClose { window_id } => f
                 .debug_struct("WindowClose")
                 .field("window_id", window_id)
                 .finish(),
@@ -145,7 +145,7 @@ pub struct TmuxControlModeParser {
 
 impl TmuxControlModeParser {
     pub fn new() -> Self {
-        TmuxControlModeParser {
+        Self {
             state: ParserState::BeginningOfLine,
         }
     }

@@ -285,13 +285,13 @@ pub enum ItemHighlightState {
 impl ItemHighlightState {
     pub fn new(is_selected: bool, mouse_state: &MouseState) -> Self {
         if is_selected {
-            ItemHighlightState::Selected {
+            Self::Selected {
                 is_hovered: mouse_state.is_hovered(),
             }
         } else if mouse_state.is_hovered() {
-            ItemHighlightState::Hovered
+            Self::Hovered
         } else {
-            ItemHighlightState::Default
+            Self::Default
         }
     }
 
@@ -299,8 +299,8 @@ impl ItemHighlightState {
     pub fn icon_fill(&self, appearance: &Appearance) -> Fill {
         let theme = appearance.theme();
         match self {
-            ItemHighlightState::Selected { .. } => theme.main_text_color(theme.accent()),
-            ItemHighlightState::Hovered | ItemHighlightState::Default => {
+            Self::Selected { .. } => theme.main_text_color(theme.accent()),
+            Self::Hovered | Self::Default => {
                 theme.main_text_color(theme.surface_2()).with_opacity(80)
             }
         }
@@ -310,12 +310,8 @@ impl ItemHighlightState {
     pub fn main_text_fill(&self, appearance: &Appearance) -> Fill {
         let theme = appearance.theme();
         match self {
-            ItemHighlightState::Selected { .. } => {
-                theme.main_text_color(theme.accent().with_opacity(80))
-            }
-            ItemHighlightState::Hovered | ItemHighlightState::Default => {
-                theme.main_text_color(theme.surface_2())
-            }
+            Self::Selected { .. } => theme.main_text_color(theme.accent().with_opacity(80)),
+            Self::Hovered | Self::Default => theme.main_text_color(theme.surface_2()),
         }
     }
 
@@ -323,45 +319,41 @@ impl ItemHighlightState {
     pub fn sub_text_fill(&self, appearance: &Appearance) -> Fill {
         let theme = appearance.theme();
         match self {
-            ItemHighlightState::Selected { .. } => {
-                theme.sub_text_color(theme.accent().with_opacity(80))
-            }
-            ItemHighlightState::Hovered | ItemHighlightState::Default => {
-                theme.sub_text_color(theme.surface_2())
-            }
+            Self::Selected { .. } => theme.sub_text_color(theme.accent().with_opacity(80)),
+            Self::Hovered | Self::Default => theme.sub_text_color(theme.surface_2()),
         }
     }
 
     /// Returns the fill to be used as the background of the search result.
     pub fn container_background_fill(&self, appearance: &Appearance) -> Option<Fill> {
         match self {
-            ItemHighlightState::Selected { .. } | ItemHighlightState::Hovered => Some(
+            Self::Selected { .. } | Self::Hovered => Some(
                 appearance
                     .theme()
                     .accent()
                     .with_opacity(self.container_background_opacity()),
             ),
-            ItemHighlightState::Default => None,
+            Self::Default => None,
         }
     }
 
     pub fn container_background_opacity(&self) -> u8 {
         match self {
-            ItemHighlightState::Selected { .. } => 90,
-            ItemHighlightState::Hovered => 20,
-            ItemHighlightState::Default => 0,
+            Self::Selected { .. } => 90,
+            Self::Hovered => 20,
+            Self::Default => 0,
         }
     }
 
     pub fn is_hovered(&self) -> bool {
         match self {
-            ItemHighlightState::Selected { is_hovered, .. } => *is_hovered,
-            ItemHighlightState::Hovered => true,
-            ItemHighlightState::Default => false,
+            Self::Selected { is_hovered, .. } => *is_hovered,
+            Self::Hovered => true,
+            Self::Default => false,
         }
     }
 
     pub fn is_selected(&self) -> bool {
-        matches!(self, ItemHighlightState::Selected { .. })
+        matches!(self, Self::Selected { .. })
     }
 }

@@ -26,31 +26,21 @@ impl TryFrom<StaticQueryType> for api::request::input::query_with_canned_respons
 
     fn try_from(value: StaticQueryType) -> Result<Self, Self::Error> {
         match value {
-            StaticQueryType::Install => Ok(
-                api::request::input::query_with_canned_response::Type::Install(
-                    api::request::input::query_with_canned_response::Install {},
-                ),
-            ),
-            StaticQueryType::Code => {
-                Ok(api::request::input::query_with_canned_response::Type::Code(
-                    api::request::input::query_with_canned_response::Code {},
-                ))
-            }
-            StaticQueryType::Deploy => Ok(
-                api::request::input::query_with_canned_response::Type::Deploy(
-                    api::request::input::query_with_canned_response::Deploy {},
-                ),
-            ),
-            StaticQueryType::SomethingElse => Ok(
-                api::request::input::query_with_canned_response::Type::SomethingElse(
-                    api::request::input::query_with_canned_response::SomethingElse {},
-                ),
-            ),
-            StaticQueryType::CustomOnboardingRequest => Ok(
-                api::request::input::query_with_canned_response::Type::CustomOnboardingRequest(
-                    api::request::input::query_with_canned_response::CustomOnboardingRequest {},
-                ),
-            ),
+            StaticQueryType::Install => Ok(Self::Install(
+                api::request::input::query_with_canned_response::Install {},
+            )),
+            StaticQueryType::Code => Ok(Self::Code(
+                api::request::input::query_with_canned_response::Code {},
+            )),
+            StaticQueryType::Deploy => Ok(Self::Deploy(
+                api::request::input::query_with_canned_response::Deploy {},
+            )),
+            StaticQueryType::SomethingElse => Ok(Self::SomethingElse(
+                api::request::input::query_with_canned_response::SomethingElse {},
+            )),
+            StaticQueryType::CustomOnboardingRequest => Ok(Self::CustomOnboardingRequest(
+                api::request::input::query_with_canned_response::CustomOnboardingRequest {},
+            )),
             StaticQueryType::EvaluationSuite => {
                 Err(anyhow::anyhow!("EvaluationSuite StaticQueryType not yet supported").into())
             }
@@ -450,14 +440,10 @@ fn convert_input_to_user_input(
 impl From<PassiveSuggestionTrigger> for api::request::input::generate_passive_suggestions::Trigger {
     fn from(value: PassiveSuggestionTrigger) -> Self {
         match value {
-            PassiveSuggestionTrigger::FilesChanged => {
-                api::request::input::generate_passive_suggestions::Trigger::FilesChanged(())
-            }
-            PassiveSuggestionTrigger::CommandRun => {
-                api::request::input::generate_passive_suggestions::Trigger::CommandRun(())
-            }
+            PassiveSuggestionTrigger::FilesChanged => Self::FilesChanged(()),
+            PassiveSuggestionTrigger::CommandRun => Self::CommandRun(()),
             PassiveSuggestionTrigger::ShellCommandCompleted(shell_trigger) => {
-                api::request::input::generate_passive_suggestions::Trigger::ShellCommandCompleted(
+                Self::ShellCommandCompleted(
                     api::request::input::generate_passive_suggestions::ShellCommandCompleted {
                         executed_shell_command: Some(
                             (*shell_trigger.executed_shell_command).into(),
@@ -471,7 +457,7 @@ impl From<PassiveSuggestionTrigger> for api::request::input::generate_passive_su
                 )
             }
             PassiveSuggestionTrigger::AgentResponseCompleted { .. } => {
-                api::request::input::generate_passive_suggestions::Trigger::AgentResponseCompleted(
+                Self::AgentResponseCompleted(
                     api::request::input::generate_passive_suggestions::AgentResponseCompleted {},
                 )
             }
@@ -482,11 +468,11 @@ impl From<PassiveSuggestionTrigger> for api::request::input::generate_passive_su
 impl From<UserQueryMode> for warp_multi_agent_api::UserQueryMode {
     fn from(value: UserQueryMode) -> Self {
         match value {
-            UserQueryMode::Normal => warp_multi_agent_api::UserQueryMode { r#type: None },
-            UserQueryMode::Plan => warp_multi_agent_api::UserQueryMode {
+            UserQueryMode::Normal => Self { r#type: None },
+            UserQueryMode::Plan => Self {
                 r#type: Some(warp_multi_agent_api::user_query_mode::Type::Plan(())),
             },
-            UserQueryMode::Orchestrate => warp_multi_agent_api::UserQueryMode {
+            UserQueryMode::Orchestrate => Self {
                 r#type: Some(warp_multi_agent_api::user_query_mode::Type::Orchestrate(())),
             },
         }
@@ -496,13 +482,13 @@ impl From<UserQueryMode> for warp_multi_agent_api::UserQueryMode {
 impl From<AIAgentAttachment> for api::Attachment {
     fn from(attachment: AIAgentAttachment) -> Self {
         match attachment {
-            AIAgentAttachment::PlainText(text) => api::Attachment {
+            AIAgentAttachment::PlainText(text) => Self {
                 value: Some(api::attachment::Value::PlainText(text)),
             },
-            AIAgentAttachment::Block(block) => api::Attachment {
+            AIAgentAttachment::Block(block) => Self {
                 value: Some(api::attachment::Value::ExecutedShellCommand(block.into())),
             },
-            AIAgentAttachment::DriveObject { uid, payload } => api::Attachment {
+            AIAgentAttachment::DriveObject { uid, payload } => Self {
                 value: Some(api::attachment::Value::DriveObject(api::DriveObject {
                     uid,
                     object_payload: payload.map(|p| match p {
@@ -542,7 +528,7 @@ impl From<AIAgentAttachment> for api::Attachment {
                 lines_removed,
                 current,
                 base,
-            } => api::Attachment {
+            } => Self {
                 value: Some(api::attachment::Value::DiffHunk(api::DiffHunk {
                     file_path,
                     line_range: Some(api::FileContentLineRange {
@@ -562,7 +548,7 @@ impl From<AIAgentAttachment> for api::Attachment {
                 line_range,
                 // TODO: Add attachment source to API
                 ..
-            } => api::Attachment {
+            } => Self {
                 value: Some(api::attachment::Value::DocumentContent(
                     api::DocumentContent {
                         document_id,
@@ -578,7 +564,7 @@ impl From<AIAgentAttachment> for api::Attachment {
                 file_diffs,
                 current,
                 base,
-            } => api::Attachment {
+            } => Self {
                 value: Some(api::attachment::Value::DiffSet(api::DiffSet {
                     hunks: file_diffs
                         .into_iter()
@@ -592,7 +578,7 @@ impl From<AIAgentAttachment> for api::Attachment {
                     base_ref: Some(base.into()),
                 })),
             },
-            AIAgentAttachment::FilePathReference { file_path, .. } => api::Attachment {
+            AIAgentAttachment::FilePathReference { file_path, .. } => Self {
                 value: Some(api::attachment::Value::FilePathReference(
                     api::FilePathReference { file_path },
                 )),
@@ -693,14 +679,10 @@ impl TryFrom<AIAgentActionResult> for api::request::input::user_inputs::user_inp
                 Some(ask_user_question_result.into())
             }
         };
-        Ok(
-            api::request::input::user_inputs::user_input::Input::ToolCallResult(
-                api::request::input::ToolCallResult {
-                    tool_call_id: action_result.id.into(),
-                    result,
-                },
-            ),
-        )
+        Ok(Self::ToolCallResult(api::request::input::ToolCallResult {
+            tool_call_id: action_result.id.into(),
+            result,
+        }))
     }
 }
 
@@ -878,7 +860,7 @@ impl From<MCPContext> for api::request::McpContext {
         // or the new grouped structure (servers populated)
         if value.servers.is_empty() {
             // Old behavior: use deprecated flat resources and tools lists
-            api::request::McpContext {
+            Self {
                 #[allow(deprecated)]
                 resources: value
                     .resources
@@ -915,7 +897,7 @@ impl From<MCPContext> for api::request::McpContext {
                 })
                 .collect();
 
-            api::request::McpContext {
+            Self {
                 #[allow(deprecated)]
                 resources: vec![], // Empty - everything is grouped by server
                 #[allow(deprecated)]
@@ -928,7 +910,7 @@ impl From<MCPContext> for api::request::McpContext {
 
 impl From<BlockContext> for api::ExecutedShellCommand {
     fn from(block: BlockContext) -> Self {
-        api::ExecutedShellCommand {
+        Self {
             command: block.command,
             output: block.output,
             exit_code: block.exit_code.value(),

@@ -407,8 +407,8 @@ impl TrashStatus {
     /// Whether or not the notebook can be edited in this state.
     pub fn is_editable(self) -> bool {
         match self {
-            TrashStatus::Active => true,
-            TrashStatus::Trashed | TrashStatus::Deleted => false,
+            Self::Active => true,
+            Self::Trashed | Self::Deleted => false,
         }
     }
 }

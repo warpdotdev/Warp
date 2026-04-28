@@ -20,7 +20,7 @@ where
 {
     pub fn new(input: I) -> Self {
         let iter = input.into_iter().peekable();
-        ParserInput {
+        Self {
             iter,
             peeked: None,
             pos: 0,

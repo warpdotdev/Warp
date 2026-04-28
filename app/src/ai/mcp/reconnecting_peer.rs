@@ -31,7 +31,7 @@ pub enum ReconnectingPeerError {
 
 impl From<ReconnectingPeerError> for rmcp::ServiceError {
     fn from(e: ReconnectingPeerError) -> Self {
-        rmcp::ServiceError::McpError(rmcp::model::ErrorData {
+        Self::McpError(rmcp::model::ErrorData {
             code: rmcp::model::ErrorCode::INTERNAL_ERROR,
             message: e.to_string().into(),
             data: None,

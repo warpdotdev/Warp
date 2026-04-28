@@ -98,7 +98,7 @@ impl Index {
     }
 
     /// Rebuilds an [`Index`] to wrap lines at a different number of columns.
-    pub fn rebuild(old_index: &Index, columns: usize) -> Self {
+    pub fn rebuild(old_index: &Self, columns: usize) -> Self {
         let mut index = Self::new(columns, Some(old_index.len()));
         // Update the content length to be the start offset of the first row,
         // to ensure we properly handle resizing after truncation.

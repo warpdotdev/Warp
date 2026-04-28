@@ -52,41 +52,39 @@ pub enum InlineMenuType {
 impl InlineMenuType {
     fn display_label(&self) -> &'static str {
         match self {
-            InlineMenuType::SlashCommands => "/Commands",
-            InlineMenuType::ModelSelector => "/Model",
-            InlineMenuType::ConversationMenu => "/Conversations",
-            InlineMenuType::ProfileSelector => "/Profiles",
-            InlineMenuType::PromptsMenu => "/Prompts",
-            InlineMenuType::SkillMenu => "/Skills",
-            InlineMenuType::UserQueryMenu => "/Fork",
-            InlineMenuType::RewindMenu => "/Rewind",
-            InlineMenuType::InlineHistoryMenu => "History",
-            InlineMenuType::IndexedReposMenu => "/Repos",
-            InlineMenuType::PlanMenu => "/Plans",
+            Self::SlashCommands => "/Commands",
+            Self::ModelSelector => "/Model",
+            Self::ConversationMenu => "/Conversations",
+            Self::ProfileSelector => "/Profiles",
+            Self::PromptsMenu => "/Prompts",
+            Self::SkillMenu => "/Skills",
+            Self::UserQueryMenu => "/Fork",
+            Self::RewindMenu => "/Rewind",
+            Self::InlineHistoryMenu => "History",
+            Self::IndexedReposMenu => "/Repos",
+            Self::PlanMenu => "/Plans",
         }
     }
 
     pub(crate) fn from_suggestions_mode(mode: &InputSuggestionsMode) -> Option<Self> {
         match mode {
-            InputSuggestionsMode::SlashCommands => Some(InlineMenuType::SlashCommands),
-            InputSuggestionsMode::ModelSelector => Some(InlineMenuType::ModelSelector),
-            InputSuggestionsMode::ConversationMenu => Some(InlineMenuType::ConversationMenu),
-            InputSuggestionsMode::ProfileSelector => Some(InlineMenuType::ProfileSelector),
-            InputSuggestionsMode::PromptsMenu => Some(InlineMenuType::PromptsMenu),
-            InputSuggestionsMode::SkillMenu => Some(InlineMenuType::SkillMenu),
+            InputSuggestionsMode::SlashCommands => Some(Self::SlashCommands),
+            InputSuggestionsMode::ModelSelector => Some(Self::ModelSelector),
+            InputSuggestionsMode::ConversationMenu => Some(Self::ConversationMenu),
+            InputSuggestionsMode::ProfileSelector => Some(Self::ProfileSelector),
+            InputSuggestionsMode::PromptsMenu => Some(Self::PromptsMenu),
+            InputSuggestionsMode::SkillMenu => Some(Self::SkillMenu),
             InputSuggestionsMode::UserQueryMenu {
                 action: UserQueryMenuAction::ForkFrom,
                 ..
-            } => Some(InlineMenuType::UserQueryMenu),
+            } => Some(Self::UserQueryMenu),
             InputSuggestionsMode::UserQueryMenu {
                 action: UserQueryMenuAction::Rewind,
                 ..
-            } => Some(InlineMenuType::RewindMenu),
-            InputSuggestionsMode::InlineHistoryMenu { .. } => {
-                Some(InlineMenuType::InlineHistoryMenu)
-            }
-            InputSuggestionsMode::IndexedReposMenu => Some(InlineMenuType::IndexedReposMenu),
-            InputSuggestionsMode::PlanMenu { .. } => Some(InlineMenuType::PlanMenu),
+            } => Some(Self::RewindMenu),
+            InputSuggestionsMode::InlineHistoryMenu { .. } => Some(Self::InlineHistoryMenu),
+            InputSuggestionsMode::IndexedReposMenu => Some(Self::IndexedReposMenu),
+            InputSuggestionsMode::PlanMenu { .. } => Some(Self::PlanMenu),
             InputSuggestionsMode::Closed
             | InputSuggestionsMode::HistoryUp { .. }
             | InputSuggestionsMode::CompletionSuggestions { .. }

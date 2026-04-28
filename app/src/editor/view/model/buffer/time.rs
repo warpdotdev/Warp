@@ -44,13 +44,13 @@ pub struct LamportValue(usize);
 
 impl LamportValue {
     fn next(&self) -> Self {
-        LamportValue(self.0 + 1)
+        Self(self.0 + 1)
     }
 }
 
 impl From<usize> for LamportValue {
     fn from(val: usize) -> Self {
-        LamportValue(val)
+        Self(val)
     }
 }
 
@@ -115,7 +115,7 @@ impl Default for Global {
 
 impl Global {
     pub fn new() -> Self {
-        Global(Rc::new(HashMap::new()))
+        Self(Rc::new(HashMap::new()))
     }
 
     pub fn get(&self, replica_id: &ReplicaId) -> LamportValue {

@@ -296,7 +296,7 @@ impl<T: Action + Clone> View for Banner<T> {
 
         if let Some(icon) = &self.icon {
             left_side.add_child(
-                Container::new(Banner::<T>::render_icon(appearance, icon))
+                Container::new(Self::render_icon(appearance, icon))
                     .with_margin_right(INNER_MARGIN)
                     .finish(),
             );
@@ -310,7 +310,7 @@ impl<T: Action + Clone> View for Banner<T> {
 
         for text_button in &self.end_buttons {
             right_side_banner_actions.add_child(
-                Container::new(Banner::<T>::render_text_button(appearance, text_button))
+                Container::new(Self::render_text_button(appearance, text_button))
                     .with_margin_left(INNER_MARGIN)
                     .finish(),
             );

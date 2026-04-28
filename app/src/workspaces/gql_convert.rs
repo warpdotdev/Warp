@@ -87,7 +87,7 @@ use warp_graphql::{
 pub const PLACEHOLDER_WORKSPACE_UID: &str = "NOT_A_REAL_WORKSPACE_UID";
 
 impl From<GqlTeamMember> for TeamMember {
-    fn from(gql_team_member: GqlTeamMember) -> TeamMember {
+    fn from(gql_team_member: GqlTeamMember) -> Self {
         Self {
             uid: UserUid::new(&gql_team_member.uid.into_inner()),
             email: gql_team_member.email,
@@ -99,14 +99,14 @@ impl From<GqlTeamMember> for TeamMember {
 impl From<GqlMembershipRole> for MembershipRole {
     fn from(role: GqlMembershipRole) -> Self {
         match role {
-            GqlMembershipRole::Owner => MembershipRole::Owner,
-            GqlMembershipRole::Admin => MembershipRole::Admin,
-            GqlMembershipRole::User => MembershipRole::User,
+            GqlMembershipRole::Owner => Self::Owner,
+            GqlMembershipRole::Admin => Self::Admin,
+            GqlMembershipRole::User => Self::User,
             GqlMembershipRole::Unknown => {
                 report_error!(anyhow!(
                     "Invalid MembershipRole from server; treating as User"
                 ));
-                MembershipRole::User
+                Self::User
             }
         }
     }
@@ -115,17 +115,15 @@ impl From<GqlMembershipRole> for MembershipRole {
 impl From<MembershipRole> for GqlMembershipRole {
     fn from(role: MembershipRole) -> Self {
         match role {
-            MembershipRole::Owner => GqlMembershipRole::Owner,
-            MembershipRole::Admin => GqlMembershipRole::Admin,
-            MembershipRole::User => GqlMembershipRole::User,
+            MembershipRole::Owner => Self::Owner,
+            MembershipRole::Admin => Self::Admin,
+            MembershipRole::User => Self::User,
         }
     }
 }
 
 impl From<GqlWorkspaceMemberUsageInfo> for WorkspaceMemberUsageInfo {
-    fn from(
-        gql_workspace_member_usage_info: GqlWorkspaceMemberUsageInfo,
-    ) -> WorkspaceMemberUsageInfo {
+    fn from(gql_workspace_member_usage_info: GqlWorkspaceMemberUsageInfo) -> Self {
         Self {
             request_limit: gql_workspace_member_usage_info.request_limit,
             requests_used_since_last_refresh: gql_workspace_member_usage_info
@@ -137,7 +135,7 @@ impl From<GqlWorkspaceMemberUsageInfo> for WorkspaceMemberUsageInfo {
 }
 
 impl From<GqlWorkspaceMember> for WorkspaceMember {
-    fn from(gql_workspace_member: GqlWorkspaceMember) -> WorkspaceMember {
+    fn from(gql_workspace_member: GqlWorkspaceMember) -> Self {
         Self {
             uid: UserUid::new(&gql_workspace_member.uid.into_inner()),
             email: gql_workspace_member.email,
@@ -148,7 +146,7 @@ impl From<GqlWorkspaceMember> for WorkspaceMember {
 }
 
 impl From<GqlEmailInvite> for EmailInvite {
-    fn from(gql_email_invite: GqlEmailInvite) -> EmailInvite {
+    fn from(gql_email_invite: GqlEmailInvite) -> Self {
         Self {
             invitee_email: gql_email_invite.email,
             expired: gql_email_invite.expired,
@@ -157,10 +155,8 @@ impl From<GqlEmailInvite> for EmailInvite {
 }
 
 impl From<GqlInviteLinkDomainRestriction> for InviteLinkDomainRestriction {
-    fn from(
-        gql_invite_link_domain_restriction: GqlInviteLinkDomainRestriction,
-    ) -> InviteLinkDomainRestriction {
-        InviteLinkDomainRestriction {
+    fn from(gql_invite_link_domain_restriction: GqlInviteLinkDomainRestriction) -> Self {
+        Self {
             uid: ServerId::from_string_lossy(gql_invite_link_domain_restriction.uid.inner()),
             domain: gql_invite_link_domain_restriction.domain,
         }
@@ -168,7 +164,7 @@ impl From<GqlInviteLinkDomainRestriction> for InviteLinkDomainRestriction {
 }
 
 impl From<GqlWarpAiPolicy> for WarpAiPolicy {
-    fn from(gql_warp_ai_policy: GqlWarpAiPolicy) -> WarpAiPolicy {
+    fn from(gql_warp_ai_policy: GqlWarpAiPolicy) -> Self {
         Self {
             limit: i64::from(gql_warp_ai_policy.limit),
             is_code_suggestions_toggleable: gql_warp_ai_policy.is_code_suggestions_toggleable,
@@ -180,7 +176,7 @@ impl From<GqlWarpAiPolicy> for WarpAiPolicy {
 }
 
 impl From<GqlTeamSizePolicy> for WorkspaceSizePolicy {
-    fn from(gql_workspace_size_policy: GqlTeamSizePolicy) -> WorkspaceSizePolicy {
+    fn from(gql_workspace_size_policy: GqlTeamSizePolicy) -> Self {
         Self {
             is_unlimited: gql_workspace_size_policy.is_unlimited,
             limit: i64::from(gql_workspace_size_policy.limit),
@@ -189,7 +185,7 @@ impl From<GqlTeamSizePolicy> for WorkspaceSizePolicy {
 }
 
 impl From<GqlSharedNotebooksPolicy> for SharedNotebooksPolicy {
-    fn from(gql_shared_notebooks_policy: GqlSharedNotebooksPolicy) -> SharedNotebooksPolicy {
+    fn from(gql_shared_notebooks_policy: GqlSharedNotebooksPolicy) -> Self {
         Self {
             is_unlimited: gql_shared_notebooks_policy.is_unlimited,
             limit: i64::from(gql_shared_notebooks_policy.limit),
@@ -198,7 +194,7 @@ impl From<GqlSharedNotebooksPolicy> for SharedNotebooksPolicy {
 }
 
 impl From<GqlSharedWorkflowsPolicy> for SharedWorkflowsPolicy {
-    fn from(gql_shared_workflows_policy: GqlSharedWorkflowsPolicy) -> SharedWorkflowsPolicy {
+    fn from(gql_shared_workflows_policy: GqlSharedWorkflowsPolicy) -> Self {
         Self {
             is_unlimited: gql_shared_workflows_policy.is_unlimited,
             limit: i64::from(gql_shared_workflows_policy.limit),
@@ -207,7 +203,7 @@ impl From<GqlSharedWorkflowsPolicy> for SharedWorkflowsPolicy {
 }
 
 impl From<GqlSessionSharingPolicy> for SessionSharingPolicy {
-    fn from(gql_session_sharing_policy: GqlSessionSharingPolicy) -> SessionSharingPolicy {
+    fn from(gql_session_sharing_policy: GqlSessionSharingPolicy) -> Self {
         Self {
             is_enabled: gql_session_sharing_policy.enabled,
             max_session_size: u64::try_from(gql_session_sharing_policy.max_session_bytes_size)
@@ -217,7 +213,7 @@ impl From<GqlSessionSharingPolicy> for SessionSharingPolicy {
 }
 
 impl From<GqlAiAutonomyPolicy> for AIAutonomyPolicy {
-    fn from(gql_ai_autonomy_policy: GqlAiAutonomyPolicy) -> AIAutonomyPolicy {
+    fn from(gql_ai_autonomy_policy: GqlAiAutonomyPolicy) -> Self {
         Self {
             is_enabled: gql_ai_autonomy_policy.enabled,
             toggleable: gql_ai_autonomy_policy.toggleable,
@@ -226,20 +222,16 @@ impl From<GqlAiAutonomyPolicy> for AIAutonomyPolicy {
 }
 
 impl From<GqlUgcCollectionEnablementSetting> for UgcCollectionEnablementSetting {
-    fn from(
-        gql_ugc_collection_enablement_setting: GqlUgcCollectionEnablementSetting,
-    ) -> UgcCollectionEnablementSetting {
+    fn from(gql_ugc_collection_enablement_setting: GqlUgcCollectionEnablementSetting) -> Self {
         match gql_ugc_collection_enablement_setting {
-            GqlUgcCollectionEnablementSetting::Disable => UgcCollectionEnablementSetting::Disable,
-            GqlUgcCollectionEnablementSetting::Enable => UgcCollectionEnablementSetting::Enable,
-            GqlUgcCollectionEnablementSetting::RespectUserSetting => {
-                UgcCollectionEnablementSetting::RespectUserSetting
-            }
+            GqlUgcCollectionEnablementSetting::Disable => Self::Disable,
+            GqlUgcCollectionEnablementSetting::Enable => Self::Enable,
+            GqlUgcCollectionEnablementSetting::RespectUserSetting => Self::RespectUserSetting,
             GqlUgcCollectionEnablementSetting::Other(value) => {
                 report_error!(anyhow!(
                     "Invalid UgcCollectionEnablementSetting '{value}'. Make sure to update client GraphQL types!"
                 ));
-                UgcCollectionEnablementSetting::RespectUserSetting
+                Self::RespectUserSetting
             }
         }
     }
@@ -254,7 +246,7 @@ impl From<&gql_usage::ConversationUsage> for ConversationUsageInfo {
             context_window_usage,
             ..
         } = (&gql.usage_metadata).into();
-        ConversationUsageInfo {
+        Self {
             credits_spent,
             credits_spent_for_last_block: None,
             tool_calls: tool.total_tool_calls(),
@@ -269,41 +261,37 @@ impl From<&gql_usage::ConversationUsage> for ConversationUsageInfo {
 }
 
 impl From<GqlAdminEnablementSetting> for AdminEnablementSetting {
-    fn from(gql_admin_enablement_setting: GqlAdminEnablementSetting) -> AdminEnablementSetting {
+    fn from(gql_admin_enablement_setting: GqlAdminEnablementSetting) -> Self {
         match gql_admin_enablement_setting {
-            GqlAdminEnablementSetting::Disable => AdminEnablementSetting::Disable,
-            GqlAdminEnablementSetting::Enable => AdminEnablementSetting::Enable,
-            GqlAdminEnablementSetting::RespectUserSetting => {
-                AdminEnablementSetting::RespectUserSetting
-            }
+            GqlAdminEnablementSetting::Disable => Self::Disable,
+            GqlAdminEnablementSetting::Enable => Self::Enable,
+            GqlAdminEnablementSetting::RespectUserSetting => Self::RespectUserSetting,
             GqlAdminEnablementSetting::Other(value) => {
                 report_error!(anyhow!(
                     "Invalid AdminEnablementSetting '{value}'. Make sure to update client GraphQL types!"
                 ));
-                AdminEnablementSetting::RespectUserSetting
+                Self::RespectUserSetting
             }
         }
     }
 }
 
 impl From<GqlHostEnablementSetting> for HostEnablementSetting {
-    fn from(gql_host_enablement_setting: GqlHostEnablementSetting) -> HostEnablementSetting {
+    fn from(gql_host_enablement_setting: GqlHostEnablementSetting) -> Self {
         match gql_host_enablement_setting {
-            GqlHostEnablementSetting::Enforce => HostEnablementSetting::Enforce,
-            GqlHostEnablementSetting::RespectUserSetting => {
-                HostEnablementSetting::RespectUserSetting
-            }
+            GqlHostEnablementSetting::Enforce => Self::Enforce,
+            GqlHostEnablementSetting::RespectUserSetting => Self::RespectUserSetting,
             GqlHostEnablementSetting::Other(value) => {
                 report_error!(anyhow!(
                     "Invalid HostEnablementSetting '{value}'. Make sure to update client GraphQL types!"
                 ));
-                HostEnablementSetting::RespectUserSetting
+                Self::RespectUserSetting
             }
         }
     }
 }
 impl From<&GqlAiPermissionsSettings> for AiPermissionsSettings {
-    fn from(gql_ai_permissions_settings: &GqlAiPermissionsSettings) -> AiPermissionsSettings {
+    fn from(gql_ai_permissions_settings: &GqlAiPermissionsSettings) -> Self {
         Self {
             allow_ai_in_remote_sessions: gql_ai_permissions_settings.allow_ai_in_remote_sessions,
             remote_session_regex_list: gql_ai_permissions_settings
@@ -325,7 +313,7 @@ impl From<&GqlAiPermissionsSettings> for AiPermissionsSettings {
 }
 
 impl From<GqlUgcDataCollectionPolicy> for UgcDataCollectionPolicy {
-    fn from(gql_ugc_data_collection_policy: GqlUgcDataCollectionPolicy) -> UgcDataCollectionPolicy {
+    fn from(gql_ugc_data_collection_policy: GqlUgcDataCollectionPolicy) -> Self {
         Self {
             default_setting: UgcCollectionEnablementSetting::from(
                 gql_ugc_data_collection_policy.default_setting,
@@ -336,9 +324,7 @@ impl From<GqlUgcDataCollectionPolicy> for UgcDataCollectionPolicy {
 }
 
 impl From<GqlTelemetryDataCollectionPolicy> for TelemetryDataCollectionPolicy {
-    fn from(
-        gql_telemetry_data_collection_policy: GqlTelemetryDataCollectionPolicy,
-    ) -> TelemetryDataCollectionPolicy {
+    fn from(gql_telemetry_data_collection_policy: GqlTelemetryDataCollectionPolicy) -> Self {
         Self {
             default: gql_telemetry_data_collection_policy.default,
             toggleable: gql_telemetry_data_collection_policy.toggleable,
@@ -347,7 +333,7 @@ impl From<GqlTelemetryDataCollectionPolicy> for TelemetryDataCollectionPolicy {
 }
 
 impl From<GqlUsageBasedPricingPolicy> for UsageBasedPricingPolicy {
-    fn from(gql_usage_based_pricing_policy: GqlUsageBasedPricingPolicy) -> UsageBasedPricingPolicy {
+    fn from(gql_usage_based_pricing_policy: GqlUsageBasedPricingPolicy) -> Self {
         Self {
             toggleable: gql_usage_based_pricing_policy.toggleable,
         }
@@ -355,7 +341,7 @@ impl From<GqlUsageBasedPricingPolicy> for UsageBasedPricingPolicy {
 }
 
 impl From<GqlAddonCreditsSettings> for AddonCreditsSettings {
-    fn from(gql_settings: GqlAddonCreditsSettings) -> AddonCreditsSettings {
+    fn from(gql_settings: GqlAddonCreditsSettings) -> Self {
         Self {
             auto_reload_enabled: gql_settings.auto_reload_enabled,
             max_monthly_spend_cents: gql_settings.max_monthly_spend_cents,
@@ -366,7 +352,7 @@ impl From<GqlAddonCreditsSettings> for AddonCreditsSettings {
 }
 
 impl From<GqlCodebaseContextPolicy> for CodebaseContextPolicy {
-    fn from(gql_codebase_context_policy: GqlCodebaseContextPolicy) -> CodebaseContextPolicy {
+    fn from(gql_codebase_context_policy: GqlCodebaseContextPolicy) -> Self {
         Self {
             toggleable: gql_codebase_context_policy.toggleable,
             index_limit: if gql_codebase_context_policy.is_unlimited_indices {
@@ -380,7 +366,7 @@ impl From<GqlCodebaseContextPolicy> for CodebaseContextPolicy {
 }
 
 impl From<GqlByoApiKeyPolicy> for ByoApiKeyPolicy {
-    fn from(gql_byo_api_key_policy: GqlByoApiKeyPolicy) -> ByoApiKeyPolicy {
+    fn from(gql_byo_api_key_policy: GqlByoApiKeyPolicy) -> Self {
         Self {
             enabled: gql_byo_api_key_policy.enabled,
         }
@@ -388,9 +374,7 @@ impl From<GqlByoApiKeyPolicy> for ByoApiKeyPolicy {
 }
 
 impl From<GqlPurchaseAddOnCreditsPolicy> for PurchaseAddOnCreditsPolicy {
-    fn from(
-        gql_purchase_add_on_credits_policy: GqlPurchaseAddOnCreditsPolicy,
-    ) -> PurchaseAddOnCreditsPolicy {
+    fn from(gql_purchase_add_on_credits_policy: GqlPurchaseAddOnCreditsPolicy) -> Self {
         Self {
             enabled: gql_purchase_add_on_credits_policy.enabled,
         }
@@ -398,7 +382,7 @@ impl From<GqlPurchaseAddOnCreditsPolicy> for PurchaseAddOnCreditsPolicy {
 }
 
 impl From<GqlEnterprisePayAsYouGoPolicy> for EnterprisePayAsYouGoPolicy {
-    fn from(gql_policy: GqlEnterprisePayAsYouGoPolicy) -> EnterprisePayAsYouGoPolicy {
+    fn from(gql_policy: GqlEnterprisePayAsYouGoPolicy) -> Self {
         Self {
             enabled: gql_policy.enabled,
         }
@@ -406,7 +390,7 @@ impl From<GqlEnterprisePayAsYouGoPolicy> for EnterprisePayAsYouGoPolicy {
 }
 
 impl From<GqlEnterpriseCreditsAutoReloadPolicy> for EnterpriseCreditsAutoReloadPolicy {
-    fn from(gql_policy: GqlEnterpriseCreditsAutoReloadPolicy) -> EnterpriseCreditsAutoReloadPolicy {
+    fn from(gql_policy: GqlEnterpriseCreditsAutoReloadPolicy) -> Self {
         Self {
             enabled: gql_policy.enabled,
         }
@@ -414,7 +398,7 @@ impl From<GqlEnterpriseCreditsAutoReloadPolicy> for EnterpriseCreditsAutoReloadP
 }
 
 impl From<GqlMultiAdminPolicy> for MultiAdminPolicy {
-    fn from(gql_policy: GqlMultiAdminPolicy) -> MultiAdminPolicy {
+    fn from(gql_policy: GqlMultiAdminPolicy) -> Self {
         Self {
             enabled: gql_policy.enabled,
         }
@@ -422,7 +406,7 @@ impl From<GqlMultiAdminPolicy> for MultiAdminPolicy {
 }
 
 impl From<GqlInstanceShape> for InstanceShape {
-    fn from(gql_instance_shape: GqlInstanceShape) -> InstanceShape {
+    fn from(gql_instance_shape: GqlInstanceShape) -> Self {
         Self {
             vcpus: gql_instance_shape.vcpus,
             memory_gb: gql_instance_shape.memory_gb,
@@ -431,7 +415,7 @@ impl From<GqlInstanceShape> for InstanceShape {
 }
 
 impl From<GqlAmbientAgentsPolicy> for AmbientAgentsPolicy {
-    fn from(gql_policy: GqlAmbientAgentsPolicy) -> AmbientAgentsPolicy {
+    fn from(gql_policy: GqlAmbientAgentsPolicy) -> Self {
         Self {
             max_concurrent_agents: gql_policy.max_concurrent_agents,
             instance_shape: gql_policy.instance_shape.map(From::from),
@@ -440,7 +424,7 @@ impl From<GqlAmbientAgentsPolicy> for AmbientAgentsPolicy {
 }
 
 impl From<GqlTier> for Tier {
-    fn from(gql_tier: GqlTier) -> Tier {
+    fn from(gql_tier: GqlTier) -> Self {
         Self {
             name: gql_tier.name,
             description: gql_tier.description,
@@ -471,33 +455,33 @@ impl From<GqlTier> for Tier {
 }
 
 impl From<GqlCustomerType> for CustomerType {
-    fn from(gql_customer_type: GqlCustomerType) -> CustomerType {
+    fn from(gql_customer_type: GqlCustomerType) -> Self {
         match gql_customer_type {
-            GqlCustomerType::Free => CustomerType::Free,
-            GqlCustomerType::Turbo => CustomerType::Turbo,
-            GqlCustomerType::SelfServe => CustomerType::SelfServe,
-            GqlCustomerType::Prosumer => CustomerType::Prosumer,
-            GqlCustomerType::Legacy => CustomerType::Legacy,
-            GqlCustomerType::Enterprise => CustomerType::Enterprise,
-            GqlCustomerType::Business => CustomerType::Business,
-            GqlCustomerType::Lightspeed => CustomerType::Lightspeed,
-            GqlCustomerType::Build => CustomerType::Build,
-            GqlCustomerType::BuildMax => CustomerType::BuildMax,
+            GqlCustomerType::Free => Self::Free,
+            GqlCustomerType::Turbo => Self::Turbo,
+            GqlCustomerType::SelfServe => Self::SelfServe,
+            GqlCustomerType::Prosumer => Self::Prosumer,
+            GqlCustomerType::Legacy => Self::Legacy,
+            GqlCustomerType::Enterprise => Self::Enterprise,
+            GqlCustomerType::Business => Self::Business,
+            GqlCustomerType::Lightspeed => Self::Lightspeed,
+            GqlCustomerType::Build => Self::Build,
+            GqlCustomerType::BuildMax => Self::BuildMax,
             GqlCustomerType::ProTrial | GqlCustomerType::TeamTrial | GqlCustomerType::Other(_) => {
-                CustomerType::Unknown
+                Self::Unknown
             }
         }
     }
 }
 
 impl From<GqlDelinquencyStatus> for DelinquencyStatus {
-    fn from(gql_delinquency_status: GqlDelinquencyStatus) -> DelinquencyStatus {
+    fn from(gql_delinquency_status: GqlDelinquencyStatus) -> Self {
         match gql_delinquency_status {
-            GqlDelinquencyStatus::NoDelinquency => DelinquencyStatus::NoDelinquency,
-            GqlDelinquencyStatus::PastDue => DelinquencyStatus::PastDue,
-            GqlDelinquencyStatus::Unpaid => DelinquencyStatus::Unpaid,
-            GqlDelinquencyStatus::TeamLimitExceeded => DelinquencyStatus::TeamLimitExceeded,
-            GqlDelinquencyStatus::Other(_) => DelinquencyStatus::Unknown,
+            GqlDelinquencyStatus::NoDelinquency => Self::NoDelinquency,
+            GqlDelinquencyStatus::PastDue => Self::PastDue,
+            GqlDelinquencyStatus::Unpaid => Self::Unpaid,
+            GqlDelinquencyStatus::TeamLimitExceeded => Self::TeamLimitExceeded,
+            GqlDelinquencyStatus::Other(_) => Self::Unknown,
         }
     }
 }
@@ -519,7 +503,7 @@ impl BonusGrant {
 }
 
 impl From<GqlBillingMetadata> for BillingMetadata {
-    fn from(gql_billing_metadata: GqlBillingMetadata) -> BillingMetadata {
+    fn from(gql_billing_metadata: GqlBillingMetadata) -> Self {
         Self {
             tier: gql_billing_metadata.tier.into(),
             customer_type: gql_billing_metadata.customer_type.into(),
@@ -539,9 +523,9 @@ impl TryFrom<&BillingMetadata> for StripeSubscriptionPlan {
 
     fn try_from(billing_metadata: &BillingMetadata) -> Result<Self, Self::Error> {
         match billing_metadata.customer_type {
-            CustomerType::Turbo => Ok(StripeSubscriptionPlan::Turbo),
-            CustomerType::SelfServe => Ok(StripeSubscriptionPlan::Team),
-            CustomerType::Prosumer => Ok(StripeSubscriptionPlan::Pro),
+            CustomerType::Turbo => Ok(Self::Turbo),
+            CustomerType::SelfServe => Ok(Self::Team),
+            CustomerType::Prosumer => Ok(Self::Pro),
             CustomerType::Business => {
                 // Check if this is a legacy Business Plan, or a new Build Business plan based on service agreement type
                 // See: https://github.com/warpdotdev/warp-server/pull/6828#discussion_r2496242091
@@ -550,15 +534,13 @@ impl TryFrom<&BillingMetadata> for StripeSubscriptionPlan {
                     .first()
                     .map(|sa| sa.type_.clone())
                 {
-                    Some(ServiceAgreementType::SelfServe) => {
-                        Ok(StripeSubscriptionPlan::BuildBusiness)
-                    }
-                    _ => Ok(StripeSubscriptionPlan::Business),
+                    Some(ServiceAgreementType::SelfServe) => Ok(Self::BuildBusiness),
+                    _ => Ok(Self::Business),
                 }
             }
-            CustomerType::Lightspeed => Ok(StripeSubscriptionPlan::Lightspeed),
-            CustomerType::Build => Ok(StripeSubscriptionPlan::Build),
-            CustomerType::BuildMax => Ok(StripeSubscriptionPlan::BuildMax),
+            CustomerType::Lightspeed => Ok(Self::Lightspeed),
+            CustomerType::Build => Ok(Self::Build),
+            CustomerType::BuildMax => Ok(Self::BuildMax),
             // legacy customer types we don't support anymore, or customer types that don't get billed via stripe
             CustomerType::Free
             | CustomerType::Legacy
@@ -701,7 +683,7 @@ impl From<warp_graphql::workspace::LlmSettings> for LlmSettings {
 }
 
 impl From<GqlWorkspaceSettings> for WorkspaceSettings {
-    fn from(gql_workspace_settings: GqlWorkspaceSettings) -> WorkspaceSettings {
+    fn from(gql_workspace_settings: GqlWorkspaceSettings) -> Self {
         Self {
             llm_settings: gql_workspace_settings.llm_settings.into(),
             telemetry_settings: TelemetrySettings {
@@ -836,7 +818,7 @@ impl From<GqlWorkspaceSettings> for WorkspaceSettings {
 }
 
 impl Team {
-    pub fn from_gql(gql_workspace: GqlWorkspace, gql_team: GqlTeam) -> Team {
+    pub fn from_gql(gql_workspace: GqlWorkspace, gql_team: GqlTeam) -> Self {
         Self {
             // TEAM FIELDS
             // These fields will persist in the Team rust type even after we finish
@@ -883,7 +865,7 @@ impl Team {
 }
 
 impl From<GqlWorkspace> for Workspace {
-    fn from(gql_workspace: GqlWorkspace) -> Workspace {
+    fn from(gql_workspace: GqlWorkspace) -> Self {
         Self {
             uid: ServerId::from_string_lossy(gql_workspace.uid.inner()).into(),
             name: gql_workspace.name.clone(),
@@ -938,7 +920,7 @@ impl From<GqlWorkspace> for Workspace {
 }
 
 impl From<GqlUser> for WorkspacesMetadataResponse {
-    fn from(gql_user: GqlUser) -> WorkspacesMetadataResponse {
+    fn from(gql_user: GqlUser) -> Self {
         let feature_model_choices = gql_user
             .workspaces
             .first()
@@ -968,7 +950,7 @@ impl From<GqlUser> for WorkspacesMetadataResponse {
             .and_then(|experiments| convert_to_server_experiment!(experiments));
 
         // TODO(skambashi) refactor to return back workspaces, and not teams
-        WorkspacesMetadataResponse {
+        Self {
             workspaces,
             joinable_teams,
             experiments,
@@ -979,7 +961,7 @@ impl From<GqlUser> for WorkspacesMetadataResponse {
 
 impl From<PublicUserProfile> for UserProfileWithUID {
     fn from(value: PublicUserProfile) -> Self {
-        UserProfileWithUID {
+        Self {
             firebase_uid: UserUid::new(&value.uid),
             display_name: value.display_name,
             email: value.email.unwrap_or_default(),
@@ -993,29 +975,25 @@ impl TryFrom<WarpDriveUpdate> for ObjectUpdateMessage {
 
     fn try_from(value: WarpDriveUpdate) -> Result<Self, Self::Error> {
         match value {
-            WarpDriveUpdate::ObjectActionOccurred(message) => {
-                Ok(ObjectUpdateMessage::ObjectActionOccurred {
-                    history: message.history.try_into()?,
-                })
-            }
+            WarpDriveUpdate::ObjectActionOccurred(message) => Ok(Self::ObjectActionOccurred {
+                history: message.history.try_into()?,
+            }),
             WarpDriveUpdate::ObjectContentUpdated(message) => {
                 let server_object = message.object.try_into()?;
                 let last_editor = message.last_editor.map(|e| e.into());
-                Ok(ObjectUpdateMessage::ObjectContentChanged {
+                Ok(Self::ObjectContentChanged {
                     server_object: Box::new(server_object),
                     last_editor,
                 })
             }
-            WarpDriveUpdate::ObjectDeleted(message) => Ok(ObjectUpdateMessage::ObjectDeleted {
+            WarpDriveUpdate::ObjectDeleted(message) => Ok(Self::ObjectDeleted {
                 object_uid: ServerId::from_string_lossy(message.object_uid.inner()),
             }),
-            WarpDriveUpdate::ObjectMetadataUpdated(message) => {
-                Ok(ObjectUpdateMessage::ObjectMetadataChanged {
-                    metadata: message.metadata.try_into()?,
-                })
-            }
+            WarpDriveUpdate::ObjectMetadataUpdated(message) => Ok(Self::ObjectMetadataChanged {
+                metadata: message.metadata.try_into()?,
+            }),
             WarpDriveUpdate::ObjectPermissionsUpdated(message) => {
-                Ok(ObjectUpdateMessage::ObjectPermissionsChangedV2 {
+                Ok(Self::ObjectPermissionsChangedV2 {
                     object_uid: ServerId::from_string_lossy(message.object_uid.inner()),
                     user_profiles: message
                         .user_profiles
@@ -1026,15 +1004,11 @@ impl TryFrom<WarpDriveUpdate> for ObjectUpdateMessage {
                     permissions: message.permissions.try_into()?,
                 })
             }
-            WarpDriveUpdate::TeamMembershipsChanged(_) => {
-                Ok(ObjectUpdateMessage::TeamMembershipsChanged)
-            }
-            WarpDriveUpdate::AmbientTaskUpdated(message) => {
-                Ok(ObjectUpdateMessage::AmbientTaskUpdated {
-                    task_id: message.task_id.inner().to_string(),
-                    timestamp: message.task_updated_ts.utc(),
-                })
-            }
+            WarpDriveUpdate::TeamMembershipsChanged(_) => Ok(Self::TeamMembershipsChanged),
+            WarpDriveUpdate::AmbientTaskUpdated(message) => Ok(Self::AmbientTaskUpdated {
+                task_id: message.task_id.inner().to_string(),
+                timestamp: message.task_updated_ts.utc(),
+            }),
             WarpDriveUpdate::Unknown => bail!("Unexpected WarpDriveUpdate variant"),
         }
     }
@@ -1044,7 +1018,7 @@ impl TryFrom<warp_graphql::folder::Folder> for ServerFolder {
     type Error = anyhow::Error;
 
     fn try_from(folder: warp_graphql::folder::Folder) -> Result<Self, Self::Error> {
-        ServerFolder::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(folder.metadata.uid.inner()),
             Some(folder.name),
             folder.metadata.try_into()?,
@@ -1058,7 +1032,7 @@ impl TryFrom<warp_graphql::notebook::Notebook> for ServerNotebook {
     type Error = anyhow::Error;
 
     fn try_from(notebook: warp_graphql::notebook::Notebook) -> Result<Self, Self::Error> {
-        ServerNotebook::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(notebook.metadata.uid.inner()),
             Some(notebook.title),
             Some(notebook.data),
@@ -1073,7 +1047,7 @@ impl TryFrom<warp_graphql::workflow::Workflow> for ServerWorkflow {
     type Error = anyhow::Error;
 
     fn try_from(workflow: warp_graphql::workflow::Workflow) -> Result<Self, Self::Error> {
-        ServerWorkflow::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(workflow.metadata.uid.inner()),
             workflow.data,
             workflow.metadata.try_into()?,
@@ -1088,7 +1062,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerEnvVarCollection::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,
@@ -1103,7 +1077,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerWorkflowEnum::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,
@@ -1118,7 +1092,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerAIFact::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,
@@ -1135,7 +1109,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerAIExecutionProfile::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,
@@ -1149,7 +1123,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerMCPServer::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,
@@ -1165,7 +1139,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerTemplatableMCPServer::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,
@@ -1180,7 +1154,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerPreference::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,
@@ -1197,7 +1171,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerAmbientAgentEnvironment::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,
@@ -1214,7 +1188,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerScheduledAmbientAgent::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,
@@ -1229,7 +1203,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerCloudAgentConfig::try_from_graphql_fields(
+        Self::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,
@@ -1247,44 +1221,44 @@ impl TryFrom<warp_graphql::object::CloudObject> for ServerCloudObject {
                 Err(anyhow::anyhow!("AIConversation is not a supported object type for this operation"))
             }
             warp_graphql::object::CloudObject::Folder(folder) => {
-                Ok(ServerCloudObject::Folder(folder.try_into()?))
+                Ok(Self::Folder(folder.try_into()?))
             }
             warp_graphql::object::CloudObject::GenericStringObject(gso) => {
                 match gso.format {
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonEnvVarCollection => {
-                        Ok(ServerCloudObject::EnvVarCollection(gso.try_into()?))
+                        Ok(Self::EnvVarCollection(gso.try_into()?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonPreference => {
-                        Ok(ServerCloudObject::Preference(gso.try_into()?))
+                        Ok(Self::Preference(gso.try_into()?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
-                        Ok(ServerCloudObject::WorkflowEnum(gso.try_into()?))
+                        Ok(Self::WorkflowEnum(gso.try_into()?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
-                        Ok(ServerCloudObject::AIFact(gso.try_into()?))
+                        Ok(Self::AIFact(gso.try_into()?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
-                        Ok(ServerCloudObject::MCPServer(gso.try_into()?))
+                        Ok(Self::MCPServer(gso.try_into()?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
-                        Ok(ServerCloudObject::AIExecutionProfile(gso.try_into()?))
+                        Ok(Self::AIExecutionProfile(gso.try_into()?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
-                        Ok(ServerCloudObject::TemplatableMCPServer(gso.try_into()?))
+                        Ok(Self::TemplatableMCPServer(gso.try_into()?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
-                        Ok(ServerCloudObject::AmbientAgentEnvironment(gso.try_into()?))
+                        Ok(Self::AmbientAgentEnvironment(gso.try_into()?))
                     }
                     warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
-                        Ok(ServerCloudObject::ScheduledAmbientAgent(gso.try_into()?))
+                        Ok(Self::ScheduledAmbientAgent(gso.try_into()?))
                     }
                 }
             }
             warp_graphql::object::CloudObject::Notebook(notebook) => {
-                Ok(ServerCloudObject::Notebook(notebook.try_into()?))
+                Ok(Self::Notebook(notebook.try_into()?))
             }
             warp_graphql::object::CloudObject::Workflow(workflow) => {
-                Ok(ServerCloudObject::Workflow(Box::new(workflow.try_into()?)))
+                Ok(Self::Workflow(Box::new(workflow.try_into()?)))
             }
             warp_graphql::object::CloudObject::Unknown => {
                 Err(anyhow::anyhow!("Unable to convert cloud object type"))
@@ -1302,46 +1276,46 @@ impl TryFrom<CloudObjectWithDescendants> for ServerCloudObject {
                 Err(anyhow::anyhow!("AIConversation is not a supported object type for this operation"))
             }
             CloudObjectWithDescendants::FolderWithDescendants(fwd) => {
-                Ok(ServerCloudObject::Folder(fwd.folder.try_into()?))
+                Ok(Self::Folder(fwd.folder.try_into()?))
             }
             CloudObjectWithDescendants::GenericStringObject(gso) => match gso.format {
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonEnvVarCollection => {
-                    Ok(ServerCloudObject::EnvVarCollection(gso.try_into()?))
+                    Ok(Self::EnvVarCollection(gso.try_into()?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonPreference => {
-                    Ok(ServerCloudObject::Preference(gso.try_into()?))
+                    Ok(Self::Preference(gso.try_into()?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonWorkflowEnum => {
-                    Ok(ServerCloudObject::WorkflowEnum(gso.try_into()?))
+                    Ok(Self::WorkflowEnum(gso.try_into()?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIFact => {
-                    Ok(ServerCloudObject::AIFact(gso.try_into()?))
+                    Ok(Self::AIFact(gso.try_into()?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonMCPServer => {
-                    Ok(ServerCloudObject::MCPServer(gso.try_into()?))
+                    Ok(Self::MCPServer(gso.try_into()?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonAIExecutionProfile => {
-                    Ok(ServerCloudObject::AIExecutionProfile(gso.try_into()?))
+                    Ok(Self::AIExecutionProfile(gso.try_into()?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonTemplatableMCPServer => {
-                    Ok(ServerCloudObject::TemplatableMCPServer(gso.try_into()?))
+                    Ok(Self::TemplatableMCPServer(gso.try_into()?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonCloudEnvironment => {
-                    Ok(ServerCloudObject::AmbientAgentEnvironment(gso.try_into()?))
+                    Ok(Self::AmbientAgentEnvironment(gso.try_into()?))
                 }
                 warp_graphql::generic_string_object::GenericStringObjectFormat::JsonScheduledAmbientAgent => {
-                    Ok(ServerCloudObject::ScheduledAmbientAgent(gso.try_into()?))
+                    Ok(Self::ScheduledAmbientAgent(gso.try_into()?))
                 }
             }
-            CloudObjectWithDescendants::Notebook(notebook) => Ok(ServerCloudObject::Notebook(notebook.try_into()?)),
-            CloudObjectWithDescendants::Workflow(workflow) => Ok(ServerCloudObject::Workflow(Box::new(workflow.try_into()?))),
+            CloudObjectWithDescendants::Notebook(notebook) => Ok(Self::Notebook(notebook.try_into()?)),
+            CloudObjectWithDescendants::Workflow(workflow) => Ok(Self::Workflow(Box::new(workflow.try_into()?))),
             CloudObjectWithDescendants::Unknown => Err(anyhow::anyhow!("Unable to convert cloud object with descendants type")),
         }
     }
 }
 
 impl From<GqlDiscoverableTeamData> for DiscoverableTeam {
-    fn from(gql_discoverable_team: GqlDiscoverableTeamData) -> DiscoverableTeam {
+    fn from(gql_discoverable_team: GqlDiscoverableTeamData) -> Self {
         Self {
             team_uid: gql_discoverable_team.team_uid.into_inner(),
             num_members: i64::from(gql_discoverable_team.num_members),

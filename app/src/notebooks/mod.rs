@@ -147,7 +147,7 @@ impl CloudModelType for CloudNotebookModel {
 
     fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
         if let ServerCloudObject::Notebook(server_notebook) = server_cloud_object {
-            return Some(CloudNotebookModel {
+            return Some(Self {
                 title: server_notebook.model.title.clone(),
                 data: server_notebook.model.data.clone(),
                 ai_document_id: server_notebook.model.ai_document_id,
@@ -240,8 +240,8 @@ impl From<Owner> for NotebookLocation {
     fn from(owner: Owner) -> Self {
         // TODO(ben): Account for shared objects in notebook telemetry.
         match owner {
-            Owner::User { .. } => NotebookLocation::PersonalCloud,
-            Owner::Team { .. } => NotebookLocation::Team,
+            Owner::User { .. } => Self::PersonalCloud,
+            Owner::Team { .. } => Self::Team,
         }
     }
 }

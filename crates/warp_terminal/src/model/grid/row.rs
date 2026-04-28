@@ -31,7 +31,7 @@ impl PartialEq for Row {
 
 impl Row {
     /// Create a new terminal row.
-    pub fn new(usizes: usize) -> Row {
+    pub fn new(usizes: usize) -> Self {
         debug_assert!(usizes >= 1);
 
         let mut inner: Vec<Cell> = Vec::with_capacity(usizes);
@@ -49,7 +49,7 @@ impl Row {
             inner.set_len(usizes);
         }
 
-        Row { inner, occ: 0 }
+        Self { inner, occ: 0 }
     }
 
     /// Increase the number of usizes in the row.
@@ -146,8 +146,8 @@ impl Row {
 #[allow(clippy::len_without_is_empty)]
 impl Row {
     #[inline]
-    pub fn from_vec(vec: Vec<Cell>, occ: usize) -> Row {
-        Row { inner: vec, occ }
+    pub fn from_vec(vec: Vec<Cell>, occ: usize) -> Self {
+        Self { inner: vec, occ }
     }
 
     #[inline]

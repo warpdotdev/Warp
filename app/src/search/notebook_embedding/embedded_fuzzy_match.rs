@@ -10,17 +10,13 @@ pub struct FuzzyMatchEmbeddedObjectResult {
 
 impl FuzzyMatchEmbeddedObjectResult {
     /// Attempts to fuzzy match the embedded object. Returns `None` if the embedded object was not matched.
-    pub fn try_match(
-        query: &str,
-        name: &str,
-        breadcrumb: &str,
-    ) -> Option<FuzzyMatchEmbeddedObjectResult> {
+    pub fn try_match(query: &str, name: &str, breadcrumb: &str) -> Option<Self> {
         let name_match_result = fuzzy_match::match_indices_case_insensitive(name, query);
         let breadcrumb_match_result =
             fuzzy_match::match_indices_case_insensitive(breadcrumb, query);
         match (&name_match_result, &breadcrumb_match_result) {
             (None, None) => None,
-            _ => Some(FuzzyMatchEmbeddedObjectResult {
+            _ => Some(Self {
                 name_match_result,
                 breadcrumb_match_result,
             }),

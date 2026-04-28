@@ -27,7 +27,7 @@ impl Clipboard {
         if pboard.is_null() {
             Err(anyhow!("NSPasteboard::generalPasteboard returned nil"))
         } else {
-            Ok(Clipboard(pboard))
+            Ok(Self(pboard))
         }
     }
 }

@@ -18,7 +18,7 @@ impl FuzzyMatchEnvVarCollectionResult {
         query: &str,
         env_var_collection: &EnvVarCollection,
         breadcrumbs: &str,
-    ) -> Option<FuzzyMatchEnvVarCollectionResult> {
+    ) -> Option<Self> {
         let title_match_result = env_var_collection
             .title
             .as_ref()
@@ -67,7 +67,7 @@ impl FuzzyMatchEnvVarCollectionResult {
             &breadcrumbs_match_result,
         ) {
             (None, None, None, None) => None,
-            _ => Some(FuzzyMatchEnvVarCollectionResult {
+            _ => Some(Self {
                 title_match_result,
                 var_name_match_result,
                 description_match_result,
@@ -77,7 +77,7 @@ impl FuzzyMatchEnvVarCollectionResult {
     }
 
     /// Returns a dummy [`FuzzyMatchEnvVarCollectionResult`] for an item that is unmatched.
-    pub fn no_match() -> FuzzyMatchEnvVarCollectionResult {
+    pub fn no_match() -> Self {
         Self {
             title_match_result: Some(FuzzyMatchResult::no_match()),
             var_name_match_result: Some(FuzzyMatchResult::no_match()),

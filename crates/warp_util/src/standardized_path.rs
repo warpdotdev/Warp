@@ -133,12 +133,12 @@ impl StandardizedPath {
     }
 
     /// Returns the parent path, if any.
-    pub fn parent(&self) -> Option<StandardizedPath> {
-        self.0.parent().map(|p| StandardizedPath(p.to_path_buf()))
+    pub fn parent(&self) -> Option<Self> {
+        self.0.parent().map(|p| Self(p.to_path_buf()))
     }
 
     /// Whether this path starts with the given prefix.
-    pub fn starts_with(&self, base: &StandardizedPath) -> bool {
+    pub fn starts_with(&self, base: &Self) -> bool {
         self.0.starts_with(&base.0)
     }
 
@@ -152,7 +152,7 @@ impl StandardizedPath {
     }
 
     /// Strip a prefix from this path, returning the relative remainder.
-    pub fn strip_prefix(&self, base: &StandardizedPath) -> Option<&str> {
+    pub fn strip_prefix(&self, base: &Self) -> Option<&str> {
         let self_str = self.as_str();
         let base_str = base.as_str();
         self_str.strip_prefix(base_str).map(|remainder| {
@@ -165,8 +165,8 @@ impl StandardizedPath {
     }
 
     /// Join a relative segment onto this path.
-    pub fn join(&self, segment: &str) -> StandardizedPath {
-        StandardizedPath(self.0.join(segment).normalize())
+    pub fn join(&self, segment: &str) -> Self {
+        Self(self.0.join(segment).normalize())
     }
 
     /// Whether the path uses Unix encoding.
@@ -188,7 +188,7 @@ impl StandardizedPath {
 
     /// Returns an iterator over the ancestors of this path, starting with
     /// the path itself and ending at the root.
-    pub fn ancestors(&self) -> impl Iterator<Item = StandardizedPath> {
+    pub fn ancestors(&self) -> impl Iterator<Item = Self> {
         let mut current = Some(self.clone());
         std::iter::from_fn(move || {
             let path = current.take()?;

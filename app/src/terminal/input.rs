@@ -730,7 +730,7 @@ pub enum DynamicEnumSuggestionStatus {
 
 impl InputSuggestionsMode {
     pub fn is_visible(&self) -> bool {
-        *self != InputSuggestionsMode::Closed
+        *self != Self::Closed
     }
 
     pub fn is_inline_menu(&self) -> bool {
@@ -768,69 +768,57 @@ impl InputSuggestionsMode {
     /// Returns the placeholder text for this mode, if it has a custom one.
     pub fn placeholder_text(&self) -> Option<&'static str> {
         match self {
-            InputSuggestionsMode::UserQueryMenu {
+            Self::UserQueryMenu {
                 action: UserQueryMenuAction::ForkFrom,
                 ..
             } => Some("Search queries"),
-            InputSuggestionsMode::UserQueryMenu {
+            Self::UserQueryMenu {
                 action: UserQueryMenuAction::Rewind,
                 ..
             } => Some("Search queries to rewind to"),
-            InputSuggestionsMode::ConversationMenu => Some("Search conversations"),
-            InputSuggestionsMode::SkillMenu => Some("Search skills"),
-            InputSuggestionsMode::ModelSelector => Some("Search models"),
-            InputSuggestionsMode::ProfileSelector => Some("Search profiles"),
-            InputSuggestionsMode::SlashCommands if FeatureFlag::AgentView.is_enabled() => {
-                Some("Search commands")
-            }
-            InputSuggestionsMode::PromptsMenu => Some("Search prompts"),
-            InputSuggestionsMode::IndexedReposMenu => Some("Search indexed repos"),
-            InputSuggestionsMode::PlanMenu { .. } => Some("Search plans"),
+            Self::ConversationMenu => Some("Search conversations"),
+            Self::SkillMenu => Some("Search skills"),
+            Self::ModelSelector => Some("Search models"),
+            Self::ProfileSelector => Some("Search profiles"),
+            Self::SlashCommands if FeatureFlag::AgentView.is_enabled() => Some("Search commands"),
+            Self::PromptsMenu => Some("Search prompts"),
+            Self::IndexedReposMenu => Some("Search indexed repos"),
+            Self::PlanMenu { .. } => Some("Search plans"),
             _ => None,
         }
     }
 
     fn to_telemetry_mode(&self) -> TelemetryInputSuggestionsMode {
         match *self {
-            InputSuggestionsMode::HistoryUp {
+            Self::HistoryUp {
                 search_mode: HistorySearchMode::Prefix,
                 ..
             } => TelemetryInputSuggestionsMode::HistoryUp,
-            InputSuggestionsMode::HistoryUp {
+            Self::HistoryUp {
                 search_mode: HistorySearchMode::Fuzzy,
                 ..
             } => TelemetryInputSuggestionsMode::HistoryFuzzySearch,
-            InputSuggestionsMode::CompletionSuggestions { .. } => {
+            Self::CompletionSuggestions { .. } => {
                 TelemetryInputSuggestionsMode::CompletionSuggestions
             }
-            InputSuggestionsMode::StaticWorkflowEnumSuggestions { .. } => {
+            Self::StaticWorkflowEnumSuggestions { .. } => {
                 TelemetryInputSuggestionsMode::StaticWorkflowEnumSuggestions
             }
-            InputSuggestionsMode::DynamicWorkflowEnumSuggestions { .. } => {
+            Self::DynamicWorkflowEnumSuggestions { .. } => {
                 TelemetryInputSuggestionsMode::DynamicWorkflowEnumSuggestions
             }
-            InputSuggestionsMode::AIContextMenu { .. } => {
-                TelemetryInputSuggestionsMode::AIContextMenu
-            }
-            InputSuggestionsMode::SlashCommands => TelemetryInputSuggestionsMode::SlashCommands,
-            InputSuggestionsMode::ConversationMenu => {
-                TelemetryInputSuggestionsMode::ConversationMenu
-            }
-            InputSuggestionsMode::ModelSelector => TelemetryInputSuggestionsMode::ModelSelector,
-            InputSuggestionsMode::ProfileSelector => TelemetryInputSuggestionsMode::ProfileSelector,
-            InputSuggestionsMode::PromptsMenu => TelemetryInputSuggestionsMode::PromptsMenu,
-            InputSuggestionsMode::SkillMenu => TelemetryInputSuggestionsMode::SkillMenu,
-            InputSuggestionsMode::UserQueryMenu { .. } => {
-                TelemetryInputSuggestionsMode::ConversationMenu
-            }
-            InputSuggestionsMode::InlineHistoryMenu { .. } => {
-                TelemetryInputSuggestionsMode::InlineHistoryMenu
-            }
-            InputSuggestionsMode::IndexedReposMenu => {
-                TelemetryInputSuggestionsMode::IndexedReposMenu
-            }
-            InputSuggestionsMode::PlanMenu { .. } => TelemetryInputSuggestionsMode::PlanMenu,
-            InputSuggestionsMode::Closed => unreachable!(),
+            Self::AIContextMenu { .. } => TelemetryInputSuggestionsMode::AIContextMenu,
+            Self::SlashCommands => TelemetryInputSuggestionsMode::SlashCommands,
+            Self::ConversationMenu => TelemetryInputSuggestionsMode::ConversationMenu,
+            Self::ModelSelector => TelemetryInputSuggestionsMode::ModelSelector,
+            Self::ProfileSelector => TelemetryInputSuggestionsMode::ProfileSelector,
+            Self::PromptsMenu => TelemetryInputSuggestionsMode::PromptsMenu,
+            Self::SkillMenu => TelemetryInputSuggestionsMode::SkillMenu,
+            Self::UserQueryMenu { .. } => TelemetryInputSuggestionsMode::ConversationMenu,
+            Self::InlineHistoryMenu { .. } => TelemetryInputSuggestionsMode::InlineHistoryMenu,
+            Self::IndexedReposMenu => TelemetryInputSuggestionsMode::IndexedReposMenu,
+            Self::PlanMenu { .. } => TelemetryInputSuggestionsMode::PlanMenu,
+            Self::Closed => unreachable!(),
         }
     }
 }
@@ -894,8 +882,8 @@ impl CommandExecutionSource {
         // into one source variant, as they are both AI sources.
         matches!(
             self,
-            CommandExecutionSource::AI { .. }
-                | CommandExecutionSource::SharedSession {
+            Self::AI { .. }
+                | Self::SharedSession {
                     ai_metadata: Some(_),
                     ..
                 }
@@ -918,10 +906,10 @@ pub enum HistoryUpMode {
 impl HistoryUpMode {
     pub fn as_str(&self) -> &'static str {
         match self {
-            HistoryUpMode::Prefixed => "prefixed history up",
-            HistoryUpMode::RegularNoQuery => "regular history up (no query)",
-            HistoryUpMode::RegularWithQuery => "regular history up (with query)",
-            HistoryUpMode::NotApplicable => "history up",
+            Self::Prefixed => "prefixed history up",
+            Self::RegularNoQuery => "regular history up (no query)",
+            Self::RegularWithQuery => "regular history up (with query)",
+            Self::NotApplicable => "history up",
         }
     }
 }
@@ -1166,8 +1154,8 @@ impl MenuPositioning {
 
     fn history_y_offset(&self) -> OffsetType {
         match *self {
-            MenuPositioning::AboveInputBox => OffsetType::Pixel(0.),
-            MenuPositioning::BelowInputBox => OffsetType::Pixel(-11.),
+            Self::AboveInputBox => OffsetType::Pixel(0.),
+            Self::BelowInputBox => OffsetType::Pixel(-11.),
         }
     }
 
@@ -1181,33 +1169,29 @@ impl MenuPositioning {
 
     fn voltron_parent_anchor(&self) -> ParentAnchor {
         match *self {
-            MenuPositioning::AboveInputBox => ParentAnchor::BottomLeft,
-            MenuPositioning::BelowInputBox => ParentAnchor::TopLeft,
+            Self::AboveInputBox => ParentAnchor::BottomLeft,
+            Self::BelowInputBox => ParentAnchor::TopLeft,
         }
     }
 
     fn voltron_child_anchor(&self) -> ChildAnchor {
         match *self {
-            MenuPositioning::AboveInputBox => ChildAnchor::BottomLeft,
-            MenuPositioning::BelowInputBox => ChildAnchor::TopLeft,
+            Self::AboveInputBox => ChildAnchor::BottomLeft,
+            Self::BelowInputBox => ChildAnchor::TopLeft,
         }
     }
 
     fn voltron_offset(&self) -> Vector2F {
         match *self {
-            MenuPositioning::AboveInputBox => vec2f(11., -11.),
-            MenuPositioning::BelowInputBox => vec2f(11., -66.),
+            Self::AboveInputBox => vec2f(11., -11.),
+            Self::BelowInputBox => vec2f(11., -66.),
         }
     }
 
     fn y_anchor(&self) -> AnchorPair<YAxisAnchor> {
         match *self {
-            MenuPositioning::AboveInputBox => {
-                AnchorPair::new(YAxisAnchor::Top, YAxisAnchor::Bottom)
-            }
-            MenuPositioning::BelowInputBox => {
-                AnchorPair::new(YAxisAnchor::Bottom, YAxisAnchor::Top)
-            }
+            Self::AboveInputBox => AnchorPair::new(YAxisAnchor::Top, YAxisAnchor::Bottom),
+            Self::BelowInputBox => AnchorPair::new(YAxisAnchor::Bottom, YAxisAnchor::Top),
         }
     }
 }
@@ -1467,7 +1451,7 @@ enum DenyExecutionReason {
 
 impl DenyExecutionReason {
     pub fn is_existing_active_command(&self) -> bool {
-        matches!(self, DenyExecutionReason::ExistingActiveCommand)
+        matches!(self, Self::ExistingActiveCommand)
     }
 }
 
@@ -1479,7 +1463,7 @@ enum CanExecuteCommand {
 
 impl CanExecuteCommand {
     pub fn is_no(&self) -> bool {
-        matches!(self, CanExecuteCommand::No(_))
+        matches!(self, Self::No(_))
     }
 }
 
@@ -1661,7 +1645,7 @@ pub struct Input {
     is_editor_empty_on_last_edit: bool,
 
     /// Weak handle to this input view for drop target data
-    weak_view_handle: WeakViewHandle<Input>,
+    weak_view_handle: WeakViewHandle<Self>,
 
     buy_credits_banner: ViewHandle<BuyCreditsBanner>,
     agent_status_view: ViewHandle<BlocklistAIStatusBar>,
@@ -6434,7 +6418,7 @@ impl Input {
         workflow_source: WorkflowSource,
         workflow_selection_source: WorkflowSelectionSource,
         argument_override: Option<HashMap<String, String>>,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) {
         // Should not show workflows info box for read-only viewers
         let should_show_more_info_view = !self.model.lock().shared_session_status().is_reader();
@@ -6457,7 +6441,7 @@ impl Input {
         workflow_type: WorkflowType,
         workflow_source: WorkflowSource,
         workflow_selection_source: WorkflowSelectionSource,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) {
         // Should not show workflows info box for read-only viewers
         let should_show_more_info_view = !self.model.lock().shared_session_status().is_reader();
@@ -6513,7 +6497,7 @@ impl Input {
         history_command: Option<&str>,
         selected_env_vars: Option<SyncId>,
         should_show_more_info_view: bool,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) {
         let input_type = if workflow_type.as_workflow().is_agent_mode_workflow() {
             InputType::AI
@@ -6723,7 +6707,7 @@ impl Input {
         &mut self,
         workflow: WorkflowType,
         show_shift_tab_treatment: bool,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<WorkflowsMoreInfoView> {
         let workflow_more_info_view = ctx.add_typed_action_view(|ctx| {
             WorkflowsMoreInfoView::new(
@@ -7195,7 +7179,7 @@ impl Input {
 
     /// Resets the SelectedWorkflowState back to the original workflow, with its original arguments. This
     /// is useful when the command does not match the original workflow.
-    fn reset_workflow_state(&mut self, env_vars: Option<SyncId>, ctx: &mut ViewContext<Input>) {
+    fn reset_workflow_state(&mut self, env_vars: Option<SyncId>, ctx: &mut ViewContext<Self>) {
         // We want to also initially clear the stored selected env var.
         self.clear_selected_env_var_collection();
 
@@ -7215,14 +7199,14 @@ impl Input {
         ctx.notify();
     }
 
-    fn confirm_suggestion(&mut self, suggestion: &str, ctx: &mut ViewContext<Input>) -> bool {
+    fn confirm_suggestion(&mut self, suggestion: &str, ctx: &mut ViewContext<Self>) -> bool {
         self.confirm_suggestion_internal(suggestion, Executing::No, ctx)
     }
 
     fn confirm_and_execute_suggestion(
         &mut self,
         suggestion: &str,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) -> bool {
         self.confirm_suggestion_internal(suggestion, Executing::Yes, ctx)
     }
@@ -7234,7 +7218,7 @@ impl Input {
         &mut self,
         suggestion: &str,
         executing: Executing,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) -> bool {
         match self.suggestions_mode_model.as_ref(ctx).mode() {
             InputSuggestionsMode::Closed => false,
@@ -7480,7 +7464,7 @@ impl Input {
     pub fn close_overlays(
         &mut self,
         should_restore_buffer_before_history_up: bool,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) {
         self.close_voltron(ctx);
         self.close_input_suggestions_and_restore_buffer(
@@ -7501,7 +7485,7 @@ impl Input {
         });
     }
 
-    fn close_voltron(&mut self, ctx: &mut ViewContext<Input>) {
+    fn close_voltron(&mut self, ctx: &mut ViewContext<Self>) {
         self.is_voltron_open = false;
         ctx.notify();
     }
@@ -7853,7 +7837,7 @@ impl Input {
         });
     }
 
-    fn clear_current_workflow(&mut self, ctx: &mut ViewContext<Input>) {
+    fn clear_current_workflow(&mut self, ctx: &mut ViewContext<Self>) {
         // Whenever we clear the workflow we also want to clear the env vars
         self.clear_selected_env_var_collection();
 
@@ -10080,7 +10064,7 @@ impl Input {
         replacement_start: usize,
         buffer_text_original: &str,
         completion_results: &SuggestionResults,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) -> bool {
         let editor_text = self.editor.as_ref(ctx).buffer_text(ctx);
         let cursor_position = self.start_byte_index_of_last_selection(ctx);
@@ -10298,7 +10282,7 @@ impl Input {
         }
     }
 
-    fn history_commands<'b>(&self, ctx: &'b ViewContext<Input>) -> Vec<&'b HistoryEntry> {
+    fn history_commands<'b>(&self, ctx: &'b ViewContext<Self>) -> Vec<&'b HistoryEntry> {
         self.active_block_session_id()
             .map_or_else(Vec::new, |session_id| {
                 History::as_ref(ctx)
@@ -10307,7 +10291,7 @@ impl Input {
             })
     }
 
-    fn insert_last_word_previous_command(&mut self, ctx: &mut ViewContext<Input>) {
+    fn insert_last_word_previous_command(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(word_to_insert) = self.get_last_word_of_command_in_history(
             self.last_word_insertion.insert_command_from_history_index,
             ctx,
@@ -10323,7 +10307,7 @@ impl Input {
     fn get_last_word_of_command_in_history(
         &mut self,
         command_history_index: usize,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) -> Option<String> {
         let commands = self.history_commands(ctx);
         if commands.is_empty() {
@@ -10505,7 +10489,7 @@ impl Input {
         editor_snapshot: EditorSnapshot,
         cursor_position: ByteOffset,
         completion_context: SessionContext,
-        ctx: &mut ViewContext<'_, Input>,
+        ctx: &mut ViewContext<'_, Self>,
     ) {
         let buffer_text = self.buffer_text(ctx);
 
@@ -10644,7 +10628,7 @@ impl Input {
         &mut self,
         command: String,
         editor_snapshot: EditorSnapshot,
-        ctx: &mut ViewContext<'_, Input>,
+        ctx: &mut ViewContext<'_, Self>,
     ) {
         if let Some(completion_context) = self.completion_session_context(ctx) {
             self.suggestions_mode_model.update(ctx, |m, ctx| {
@@ -10975,7 +10959,7 @@ impl Input {
     /// itself is not the completion result so we don't add a space.
     fn insert_completion_prefix_into_editor(
         &mut self,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
         completion_prefix: &str,
         replacement_start: usize,
     ) {
@@ -10996,7 +10980,7 @@ impl Input {
         completion_result: &str,
         replacement_start: usize,
         executing: Executing,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) {
         let is_completions_as_you_type_enabled = self.is_completions_while_typing_turned_on(ctx);
         self.editor.update(ctx, |input, ctx| {
@@ -13704,7 +13688,7 @@ impl Input {
     fn select_and_refresh_voltron(
         &mut self,
         feature_item: VoltronItem,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) {
         // View-only sessions should not show workflows menu
         if self.model.lock().shared_session_status().is_reader() {
@@ -13766,7 +13750,7 @@ impl Input {
     /// This modifies the input buffer as needed to display the panel (i.e.:
     /// inserting a leading #, which is the trigger when typed manually by the
     /// user).
-    fn show_ai_command_search(&mut self, ctx: &mut ViewContext<Input>) {
+    fn show_ai_command_search(&mut self, ctx: &mut ViewContext<Self>) {
         // Should not show ai command search for read-only viewers
         if self.model.lock().shared_session_status().is_reader() {
             return;

@@ -39,7 +39,7 @@ impl LoginFailureReason {
             fragments
         }
         let fragments = match self {
-            LoginFailureReason::InvalidRedirectUrl { was_pasted } => {
+            Self::InvalidRedirectUrl { was_pasted } => {
                 let text = if *was_pasted {
                     "An invalid auth token was entered into the modal."
                 } else {
@@ -48,17 +48,17 @@ impl LoginFailureReason {
                 };
                 with_troubleshooting_text(vec![FormattedTextFragment::plain_text(text)])
             }
-            LoginFailureReason::FailedUserAuthentication => {
+            Self::FailedUserAuthentication => {
                 with_troubleshooting_text(vec![FormattedTextFragment::plain_text(
                     "Request to log in failed.",
                 )])
             }
-            LoginFailureReason::FailedMintCustomToken => {
+            Self::FailedMintCustomToken => {
                 with_troubleshooting_text(vec![FormattedTextFragment::plain_text(
                     "Request to sign up failed.",
                 )])
             }
-            LoginFailureReason::InvalidStateParameter | LoginFailureReason::MissingStateParameter => {
+            Self::InvalidStateParameter | Self::MissingStateParameter => {
                 with_troubleshooting_text(vec![FormattedTextFragment::plain_text(
                     "The redirect URL pasted did not originate from this app. Please click the button below to try again.",
                 )])

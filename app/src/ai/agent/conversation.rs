@@ -86,7 +86,7 @@ pub enum TodoStatus {
 
 impl TodoStatus {
     pub fn is_cancelled(&self) -> bool {
-        matches!(self, TodoStatus::Cancelled)
+        matches!(self, Self::Cancelled)
     }
 }
 
@@ -3630,7 +3630,7 @@ pub enum AIConversationAutoexecuteMode {
 
 impl AIConversationAutoexecuteMode {
     pub fn is_autoexecute_any_action(&self) -> bool {
-        matches!(self, AIConversationAutoexecuteMode::RunToCompletion)
+        matches!(self, Self::RunToCompletion)
     }
 }
 
@@ -3673,11 +3673,11 @@ pub enum ConversationStatus {
 impl std::fmt::Display for ConversationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConversationStatus::InProgress => write!(f, "In progress"),
-            ConversationStatus::Success => write!(f, "Done"),
-            ConversationStatus::Error => write!(f, "Error"),
-            ConversationStatus::Cancelled => write!(f, "Cancelled"),
-            ConversationStatus::Blocked { .. } => write!(f, "Blocked"),
+            Self::InProgress => write!(f, "In progress"),
+            Self::Success => write!(f, "Done"),
+            Self::Error => write!(f, "Error"),
+            Self::Cancelled => write!(f, "Cancelled"),
+            Self::Blocked { .. } => write!(f, "Blocked"),
         }
     }
 }
@@ -3685,45 +3685,42 @@ impl std::fmt::Display for ConversationStatus {
 impl ConversationStatus {
     pub fn render_icon(&self, appearance: &Appearance) -> warpui::elements::Icon {
         match self {
-            ConversationStatus::InProgress => in_progress_icon(appearance),
-            ConversationStatus::Success => succeeded_icon(appearance),
-            ConversationStatus::Blocked { .. } => yellow_stop_icon(appearance),
-            ConversationStatus::Error => failed_icon(appearance),
-            ConversationStatus::Cancelled => gray_stop_icon(appearance),
+            Self::InProgress => in_progress_icon(appearance),
+            Self::Success => succeeded_icon(appearance),
+            Self::Blocked { .. } => yellow_stop_icon(appearance),
+            Self::Error => failed_icon(appearance),
+            Self::Cancelled => gray_stop_icon(appearance),
         }
     }
 
     pub fn status_icon_and_color(&self, theme: &WarpTheme) -> (Icon, ColorU) {
         match self {
-            ConversationStatus::InProgress => (Icon::ClockLoader, theme.ansi_fg_magenta()),
-            ConversationStatus::Success => (Icon::Check, theme.ansi_fg_green()),
-            ConversationStatus::Error => (Icon::Triangle, theme.ansi_fg_red()),
-            ConversationStatus::Cancelled => (Icon::StopFilled, internal_colors::neutral_5(theme)),
-            ConversationStatus::Blocked { .. } => (Icon::StopFilled, theme.ansi_fg_yellow()),
+            Self::InProgress => (Icon::ClockLoader, theme.ansi_fg_magenta()),
+            Self::Success => (Icon::Check, theme.ansi_fg_green()),
+            Self::Error => (Icon::Triangle, theme.ansi_fg_red()),
+            Self::Cancelled => (Icon::StopFilled, internal_colors::neutral_5(theme)),
+            Self::Blocked { .. } => (Icon::StopFilled, theme.ansi_fg_yellow()),
         }
     }
 
     pub fn is_in_progress(&self) -> bool {
-        matches!(self, ConversationStatus::InProgress)
+        matches!(self, Self::InProgress)
     }
 
     pub fn is_blocked(&self) -> bool {
-        matches!(self, ConversationStatus::Blocked { .. })
+        matches!(self, Self::Blocked { .. })
     }
 
     pub fn is_cancelled(&self) -> bool {
-        matches!(self, ConversationStatus::Cancelled)
+        matches!(self, Self::Cancelled)
     }
 
     pub fn is_done(&self) -> bool {
-        matches!(
-            self,
-            ConversationStatus::Success | ConversationStatus::Error | ConversationStatus::Cancelled
-        )
+        matches!(self, Self::Success | Self::Error | Self::Cancelled)
     }
 
     pub fn is_error(&self) -> bool {
-        matches!(self, ConversationStatus::Error)
+        matches!(self, Self::Error)
     }
 }
 

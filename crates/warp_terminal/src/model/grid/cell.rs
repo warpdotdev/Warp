@@ -148,8 +148,8 @@ pub struct Cell {
 
 impl Default for Cell {
     #[inline]
-    fn default() -> Cell {
-        Cell {
+    fn default() -> Self {
+        Self {
             c: DEFAULT_CHAR,
             bg: Color::Named(NamedColor::Background),
             fg: Color::Named(NamedColor::Foreground),
@@ -327,9 +327,9 @@ impl Cell {
 
     #[inline]
     pub(crate) fn reset(&mut self, template: &Self) {
-        *self = Cell {
+        *self = Self {
             bg: template.bg,
-            ..Cell::default()
+            ..Self::default()
         };
     }
 }
@@ -339,7 +339,7 @@ impl From<Color> for Cell {
     fn from(color: Color) -> Self {
         Self {
             bg: color,
-            ..Cell::default()
+            ..Self::default()
         }
     }
 }

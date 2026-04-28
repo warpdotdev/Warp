@@ -71,7 +71,7 @@ impl From<warp_command_signatures::Priority> for Priority {
                     Self::new(-(101 - order.0 as i32))
                 }
             },
-            warp_command_signatures::Priority::Default => Priority::default(),
+            warp_command_signatures::Priority::Default => Self::default(),
         }
     }
 }
@@ -79,17 +79,13 @@ impl From<warp_command_signatures::Priority> for Priority {
 impl From<Priority> for warp_command_signatures::Priority {
     fn from(value: Priority) -> Self {
         match value.cmp(&Priority::default()) {
-            Ordering::Less => warp_command_signatures::Priority::Global(
-                warp_command_signatures::Importance::Less(warp_command_signatures::Order(
-                    101 - value.value().unsigned_abs(),
-                )),
-            ),
-            Ordering::Equal => warp_command_signatures::Priority::default(),
-            Ordering::Greater => warp_command_signatures::Priority::Global(
-                warp_command_signatures::Importance::More(warp_command_signatures::Order(
-                    value.value().unsigned_abs(),
-                )),
-            ),
+            Ordering::Less => Self::Global(warp_command_signatures::Importance::Less(
+                warp_command_signatures::Order(101 - value.value().unsigned_abs()),
+            )),
+            Ordering::Equal => Self::default(),
+            Ordering::Greater => Self::Global(warp_command_signatures::Importance::More(
+                warp_command_signatures::Order(value.value().unsigned_abs()),
+            )),
         }
     }
 }

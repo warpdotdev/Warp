@@ -77,14 +77,14 @@ pub struct KittyImage {
 impl TryFrom<PendingKittyMessage> for KittyMessage {
     type Error = InvalidKittyPayload;
 
-    fn try_from(pending: PendingKittyMessage) -> Result<KittyMessage, InvalidKittyPayload> {
+    fn try_from(pending: PendingKittyMessage) -> Result<Self, InvalidKittyPayload> {
         let mut decoded_payload = vec![];
 
         for payload in pending.payload {
             decoded_payload.extend(base64_decode_padding_agnostic(&payload[..])?);
         }
 
-        Ok(KittyMessage {
+        Ok(Self {
             control_data: pending.control_data,
             payload: decoded_payload,
         })
@@ -152,7 +152,7 @@ pub enum StorageError {
 
 impl From<StorageError> for KittyError {
     fn from(value: StorageError) -> Self {
-        KittyError::StorageError(value)
+        Self::StorageError(value)
     }
 }
 
@@ -165,7 +165,7 @@ pub enum InvalidKittyAction {
 
 impl From<InvalidKittyAction> for KittyError {
     fn from(value: InvalidKittyAction) -> Self {
-        KittyError::InvalidKittyAction(value)
+        Self::InvalidKittyAction(value)
     }
 }
 
@@ -177,7 +177,7 @@ pub enum InvalidControlData {
 
 impl From<InvalidControlData> for KittyError {
     fn from(value: InvalidControlData) -> Self {
-        KittyError::InvalidKittyAction(InvalidKittyAction::InvalidControlData(value))
+        Self::InvalidKittyAction(InvalidKittyAction::InvalidControlData(value))
     }
 }
 
@@ -198,7 +198,7 @@ pub enum FileError {
 
 impl From<InvalidKittyPayload> for KittyError {
     fn from(value: InvalidKittyPayload) -> Self {
-        KittyError::InvalidKittyAction(InvalidKittyAction::InvalidKittyPayload(value))
+        Self::InvalidKittyAction(InvalidKittyAction::InvalidKittyPayload(value))
     }
 }
 
@@ -225,13 +225,13 @@ pub enum KittyDecodeError {
 
 impl From<KittyDecodeError> for InvalidKittyPayload {
     fn from(value: KittyDecodeError) -> Self {
-        InvalidKittyPayload::KittyDecodeError(value)
+        Self::KittyDecodeError(value)
     }
 }
 
 impl From<KittyDecodeError> for KittyError {
     fn from(value: KittyDecodeError) -> Self {
-        KittyError::InvalidKittyAction(InvalidKittyAction::InvalidKittyPayload(
+        Self::InvalidKittyAction(InvalidKittyAction::InvalidKittyPayload(
             InvalidKittyPayload::KittyDecodeError(value),
         ))
     }
@@ -246,7 +246,7 @@ pub enum InvalidKittyImage {
 
 impl From<InvalidKittyImage> for KittyError {
     fn from(value: InvalidKittyImage) -> Self {
-        KittyError::InvalidKittyAction(InvalidKittyAction::InvalidKittyPayload(
+        Self::InvalidKittyAction(InvalidKittyAction::InvalidKittyPayload(
             InvalidKittyPayload::InvalidKittyImage(value),
         ))
     }
@@ -259,7 +259,7 @@ pub enum KittyPngError {
 
 impl From<KittyPngError> for KittyError {
     fn from(value: KittyPngError) -> Self {
-        KittyError::InvalidKittyAction(InvalidKittyAction::InvalidKittyPayload(
+        Self::InvalidKittyAction(InvalidKittyAction::InvalidKittyPayload(
             InvalidKittyPayload::InvalidKittyImage(InvalidKittyImage::KittyPngError(value)),
         ))
     }
@@ -275,7 +275,7 @@ pub enum KittyRgbError {
 
 impl From<KittyRgbError> for KittyError {
     fn from(value: KittyRgbError) -> Self {
-        KittyError::InvalidKittyAction(InvalidKittyAction::InvalidKittyPayload(
+        Self::InvalidKittyAction(InvalidKittyAction::InvalidKittyPayload(
             InvalidKittyPayload::InvalidKittyImage(InvalidKittyImage::KittyRgbError(value)),
         ))
     }
@@ -287,7 +287,7 @@ impl From<CustomHeaderCreationError> for KittyRgbError {
             CustomHeaderCreationError::ExpectedDataSizeMismatch {
                 expected_bytes,
                 actual_bytes,
-            } => KittyRgbError::ExpectedDataSizeMismatch {
+            } => Self::ExpectedDataSizeMismatch {
                 expected_bytes,
                 actual_bytes,
             },
@@ -298,7 +298,7 @@ impl From<CustomHeaderCreationError> for KittyRgbError {
 impl TryFrom<KittyMessage> for KittyAction {
     type Error = KittyError;
 
-    fn try_from(message: KittyMessage) -> Result<KittyAction, KittyError> {
+    fn try_from(message: KittyMessage) -> Result<Self, KittyError> {
         match message.control_data.placement_action {
             KittyPlacementAction::StoreOnly => {
                 let mut action = StoreOnly {
@@ -315,7 +315,7 @@ impl TryFrom<KittyMessage> for KittyAction {
                     action.image = set_kitty_rgb_headers(action.image)?;
                 }
 
-                Ok(KittyAction::StoreOnly(action))
+                Ok(Self::StoreOnly(action))
             }
             KittyPlacementAction::StoreAndDisplay => {
                 if message.control_data.unicode_placeholder {
@@ -346,7 +346,7 @@ impl TryFrom<KittyMessage> for KittyAction {
                     action.image = set_kitty_rgb_headers(action.image)?;
                 }
 
-                Ok(KittyAction::StoreAndDisplay(action))
+                Ok(Self::StoreAndDisplay(action))
             }
             KittyPlacementAction::DisplayStoredImage => {
                 if message.control_data.unicode_placeholder {
@@ -358,7 +358,7 @@ impl TryFrom<KittyMessage> for KittyAction {
                     None => return Err(InvalidControlData::IdMissing.into()),
                 };
 
-                Ok(KittyAction::DisplayStoredImage(DisplayStoredImage {
+                Ok(Self::DisplayStoredImage(DisplayStoredImage {
                     image_id: id,
                     placement_id: message
                         .control_data
@@ -387,7 +387,7 @@ impl TryFrom<KittyMessage> for KittyAction {
                     action.image = set_kitty_rgb_headers(action.image)?;
                 }
 
-                Ok(KittyAction::QuerySupport(action))
+                Ok(Self::QuerySupport(action))
             }
             KittyPlacementAction::Delete => {
                 let deletion_type = match message.control_data.delete_action {
@@ -405,7 +405,7 @@ impl TryFrom<KittyMessage> for KittyAction {
                     }
                 };
 
-                Ok(KittyAction::Delete {
+                Ok(Self::Delete {
                     deletion_type,
                     delete_placements_only: message.control_data.delete_placements_only,
                 })
@@ -587,12 +587,11 @@ pub enum KittyResponseVerbosity {
 
 impl KittyResponseVerbosity {
     pub fn send_ok(&self) -> bool {
-        matches!(self, KittyResponseVerbosity::All)
+        matches!(self, Self::All)
     }
 
     pub fn send_error(&self) -> bool {
-        matches!(self, KittyResponseVerbosity::All)
-            || matches!(self, KittyResponseVerbosity::ErrorsOnly)
+        matches!(self, Self::All) || matches!(self, Self::ErrorsOnly)
     }
 }
 

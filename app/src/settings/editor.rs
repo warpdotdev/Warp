@@ -72,9 +72,9 @@ impl CursorDisplayType {
 impl Display for CursorDisplayType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let value = match &self {
-            CursorDisplayType::Bar => "Bar",
-            CursorDisplayType::Block => "Block",
-            CursorDisplayType::Underline => "Underline",
+            Self::Bar => "Bar",
+            Self::Block => "Block",
+            Self::Underline => "Underline",
         };
         write!(f, "{value}")
     }
@@ -91,9 +91,9 @@ pub enum TabBehavior {
 impl TabBehavior {
     pub fn dropdown_item_label(&self) -> &'static str {
         match self {
-            TabBehavior::Completions => "Open completions menu",
-            TabBehavior::Autosuggestions => "Accept autosuggestion",
-            TabBehavior::UserDefined => "User defined",
+            Self::Completions => "Open completions menu",
+            Self::Autosuggestions => "Accept autosuggestion",
+            Self::UserDefined => "User defined",
         }
     }
 }

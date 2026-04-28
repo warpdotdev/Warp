@@ -312,7 +312,7 @@ fn maximum_table_cell_width(table_style: &TableStyle) -> Pixels {
 }
 
 impl LayOutArgs {
-    fn new() -> LayOutArgs {
+    fn new() -> Self {
         Self {
             text: String::new(),
             style_runs: vec![],

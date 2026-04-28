@@ -37,7 +37,7 @@ pub struct ConversationMatchResult {
 impl ConversationMatchResult {
     /// Returns a dummy match result when there is no match.
     pub fn no_match() -> Self {
-        ConversationMatchResult {
+        Self {
             score: 0,
             highlight_indices: ConversationHighlightIndices {
                 title_indices: vec![],
@@ -65,8 +65,8 @@ impl ConversationHighlightIndices {
         title_indices: Vec<usize>,
         initial_query_indices: Vec<usize>,
         working_directory_indices: Vec<usize>,
-    ) -> ConversationHighlightIndices {
-        ConversationHighlightIndices {
+    ) -> Self {
+        Self {
             title_indices,
             initial_query_indices,
             working_directory_indices,

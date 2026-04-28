@@ -42,10 +42,10 @@ impl TmuxCommand {
     pub fn get_command_string(&self) -> String {
         // All commands must end with `\n`
         match self {
-            TmuxCommand::GetPrimaryWindowPane => format!(
+            Self::GetPrimaryWindowPane => format!(
                 "list-panes -F \"#{{?pane_active,{PRIMARY_WINDOW_PANE_PREFIX}: ,}}#{{window_id}} #{{pane_id}}\"\n"
             ),
-            TmuxCommand::RunInBackgroundWindow {
+            Self::RunInBackgroundWindow {
                 current_directory_path,
                 command,
                 environment_variables,
@@ -103,11 +103,11 @@ impl TmuxCommand {
                     r#"new-window -d {set_directory} {set_env_vars} -PF "{BACKGROUND_WINDOW_PREFIX}: #{{window_id}} #{{pane_id}}" '(builtin echo -n "^^^{command_id}|||"; {escaped_command}; builtin echo "|||$?\$\$\$")|command cat; command sleep 1'{newline}"#
                 )
             }
-            TmuxCommand::UpdateClientSize { num_rows, num_cols } => {
+            Self::UpdateClientSize { num_rows, num_cols } => {
                 format!("refresh-client -C {num_cols},{num_rows}\n")
             }
-            TmuxCommand::SetDestroyUnattached => "set destroy-unattached on\n".to_string(),
-            TmuxCommand::SetWindowSizeToSmallest => "set window-size smallest\n".to_string(),
+            Self::SetDestroyUnattached => "set destroy-unattached on\n".to_string(),
+            Self::SetWindowSizeToSmallest => "set window-size smallest\n".to_string(),
         }
     }
 }

@@ -103,7 +103,7 @@ impl BlockGrid {
             perform_reset_grid_checks,
         );
 
-        BlockGrid {
+        Self {
             grid_handler,
             started: false,
             finished: false,
@@ -132,7 +132,7 @@ impl BlockGrid {
     ///
     /// The row index here is the index into the full grid, not the visible
     /// region (i.e.: includes any rows in the scrollback buffer).
-    pub fn split(&self, row_to_split_on: NonZeroUsize) -> (BlockGrid, Option<BlockGrid>) {
+    pub fn split(&self, row_to_split_on: NonZeroUsize) -> (Self, Option<Self>) {
         let (top_grid, bottom_grid) = self.grid_handler.split(row_to_split_on);
 
         (
@@ -143,8 +143,8 @@ impl BlockGrid {
 
     /// Constructs a new [`BlockGrid`] from a [`GridHandler`] that holds a
     /// subset of rows in `self`.
-    fn new_for_split(&self, grid_handler: GridHandler) -> BlockGrid {
-        BlockGrid {
+    fn new_for_split(&self, grid_handler: GridHandler) -> Self {
+        Self {
             grid_handler,
             started: self.started,
             finished: self.finished,

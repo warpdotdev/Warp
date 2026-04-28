@@ -51,31 +51,31 @@ impl ChipValue {
     /// Returns the text representation, or `None` for non-text variants.
     pub fn as_text(&self) -> Option<&str> {
         match self {
-            ChipValue::Text(s) => Some(s),
-            ChipValue::GitDiffStats(_) => None,
+            Self::Text(s) => Some(s),
+            Self::GitDiffStats(_) => None,
         }
     }
 
     /// Returns the `GitLineChanges` payload, if this is the `GitDiffStats` variant.
     pub fn as_git_diff_stats(&self) -> Option<&display_chip::GitLineChanges> {
         match self {
-            ChipValue::GitDiffStats(g) => Some(g),
-            ChipValue::Text(_) => None,
+            Self::GitDiffStats(g) => Some(g),
+            Self::Text(_) => None,
         }
     }
 }
 
 impl Default for ChipValue {
     fn default() -> Self {
-        ChipValue::Text(String::new())
+        Self::Text(String::new())
     }
 }
 
 impl std::fmt::Display for ChipValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ChipValue::Text(s) => f.write_str(s),
-            ChipValue::GitDiffStats(g) => {
+            Self::Text(s) => f.write_str(s),
+            Self::GitDiffStats(g) => {
                 write!(
                     f,
                     "{} • +{} -{}",
@@ -88,7 +88,7 @@ impl std::fmt::Display for ChipValue {
 
 impl From<String> for ChipValue {
     fn from(s: String) -> Self {
-        ChipValue::Text(s)
+        Self::Text(s)
     }
 }
 

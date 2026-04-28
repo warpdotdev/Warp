@@ -31,15 +31,15 @@ pub enum BlockOnboarding {
 const BLOCK_ONBOARDING_VARIANT_ONE: &str = "VariantOne";
 const BLOCK_ONBOARDING_VARIANT_TWO: &str = "VariantTwo";
 
-impl Experiment<BlockOnboarding> for BlockOnboarding {
+impl Experiment<Self> for BlockOnboarding {
     fn name() -> &'static str {
         "BlockOnboarding"
     }
 
     fn variant(&self) -> &'static str {
         match self {
-            BlockOnboarding::VariantOne => BLOCK_ONBOARDING_VARIANT_ONE,
-            BlockOnboarding::VariantTwo => BLOCK_ONBOARDING_VARIANT_TWO,
+            Self::VariantOne => BLOCK_ONBOARDING_VARIANT_ONE,
+            Self::VariantTwo => BLOCK_ONBOARDING_VARIANT_TWO,
         }
     }
 
@@ -53,8 +53,8 @@ impl FromStr for BlockOnboarding {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            BLOCK_ONBOARDING_VARIANT_ONE => Ok(BlockOnboarding::VariantOne),
-            BLOCK_ONBOARDING_VARIANT_TWO => Ok(BlockOnboarding::VariantTwo),
+            BLOCK_ONBOARDING_VARIANT_ONE => Ok(Self::VariantOne),
+            BLOCK_ONBOARDING_VARIANT_TWO => Ok(Self::VariantTwo),
             _ => Err(anyhow::anyhow!(
                 "Variant {} is not a valid group in BlockOnboarding",
                 s

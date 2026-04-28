@@ -168,20 +168,20 @@ pub enum WorkflowType {
 impl WorkflowType {
     pub fn as_workflow(&self) -> &Workflow {
         match self {
-            WorkflowType::Local(workflow) => workflow,
-            WorkflowType::AIGenerated { workflow, .. } => workflow,
-            WorkflowType::Cloud(workflow) => &workflow.model().data,
-            WorkflowType::Notebook(workflow) => workflow,
+            Self::Local(workflow) => workflow,
+            Self::AIGenerated { workflow, .. } => workflow,
+            Self::Cloud(workflow) => &workflow.model().data,
+            Self::Notebook(workflow) => workflow,
         }
     }
 
     /// Returns the contained [`Workflow`], consuming `self`.
     pub fn take_workflow(self) -> Workflow {
         match self {
-            WorkflowType::Local(workflow) => workflow,
-            WorkflowType::AIGenerated { workflow, .. } => workflow,
-            WorkflowType::Cloud(workflow) => workflow.model().data.clone(),
-            WorkflowType::Notebook(workflow) => workflow,
+            Self::Local(workflow) => workflow,
+            Self::AIGenerated { workflow, .. } => workflow,
+            Self::Cloud(workflow) => workflow.model().data.clone(),
+            Self::Notebook(workflow) => workflow,
         }
     }
 
@@ -189,14 +189,14 @@ impl WorkflowType {
     /// one. This is currently only supported for cloud workflows, not workflows within notebooks.
     pub fn object_id(&self) -> Option<CloudObjectTypeAndId> {
         match self {
-            WorkflowType::Cloud(workflow) => Some(CloudObjectTypeAndId::Workflow(workflow.id)),
+            Self::Cloud(workflow) => Some(CloudObjectTypeAndId::Workflow(workflow.id)),
             _ => None,
         }
     }
 
     pub fn sync_id(&self) -> Option<SyncId> {
         match self {
-            WorkflowType::Cloud(workflow) => Some(workflow.id),
+            Self::Cloud(workflow) => Some(workflow.id),
             _ => None,
         }
     }
@@ -210,7 +210,7 @@ impl WorkflowType {
 
     /// We don't show env var selection for Agent Mode suggested commands.
     pub(super) fn should_show_env_var_selection(&self) -> bool {
-        !matches!(self, WorkflowType::AIGenerated { .. },)
+        !matches!(self, Self::AIGenerated { .. },)
     }
 }
 
@@ -315,7 +315,7 @@ impl CloudModelType for CloudWorkflowModel {
 
     fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
         if let ServerCloudObject::Workflow(server_workflow) = server_cloud_object {
-            return Some(CloudWorkflowModel {
+            return Some(Self {
                 data: server_workflow.model.data.clone(),
             });
         }
@@ -371,8 +371,8 @@ impl PartialEq<Workflow> for CloudWorkflow {
     }
 }
 
-impl PartialEq<CloudWorkflow> for CloudWorkflow {
-    fn eq(&self, other: &CloudWorkflow) -> bool {
+impl PartialEq<Self> for CloudWorkflow {
+    fn eq(&self, other: &Self) -> bool {
         self.model().data == other.model().data && self.id == other.id
     }
 }

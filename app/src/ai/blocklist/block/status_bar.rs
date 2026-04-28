@@ -103,7 +103,7 @@ struct StateHandles {
 }
 
 pub struct BlocklistAIStatusBar {
-    active_exchange_model: Option<Box<dyn AIBlockModel<View = BlocklistAIStatusBar>>>,
+    active_exchange_model: Option<Box<dyn AIBlockModel<View = Self>>>,
     action_model: ModelHandle<BlocklistAIActionModel>,
     controller: ModelHandle<BlocklistAIController>,
     cli_subagent_controller: ModelHandle<CLISubagentController>,
@@ -467,21 +467,14 @@ impl BlocklistAIStatusBar {
             };
             self.active_exchange_model = exchange
                 .and_then(|e| {
-                    AIBlockModelImpl::<BlocklistAIStatusBar>::new(
-                        e.id,
-                        conversation.id(),
-                        false,
-                        false,
-                        ctx,
-                    )
-                    .ok()
+                    AIBlockModelImpl::<Self>::new(e.id, conversation.id(), false, false, ctx).ok()
                 })
                 .map(|model| {
                     model.on_updated_output(
                         Box::new(|me, ctx| me.on_updated_active_exchange_output(ctx)),
                         ctx,
                     );
-                    Box::new(model) as Box<dyn AIBlockModel<View = BlocklistAIStatusBar>>
+                    Box::new(model) as Box<dyn AIBlockModel<View = Self>>
                 });
             self.is_summarization_cancel_dialog_open = false;
             self.stop_summarization_timer();

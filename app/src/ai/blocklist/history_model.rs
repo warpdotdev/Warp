@@ -2175,63 +2175,62 @@ impl BlocklistAIHistoryEvent {
     /// Returns `None` for events that apply globally (e.g., historical conversation metadata updates).
     pub fn terminal_view_id(&self) -> Option<EntityId> {
         match self {
-            BlocklistAIHistoryEvent::StartedNewConversation {
+            Self::StartedNewConversation {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::AppendedExchange {
+            | Self::AppendedExchange {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::UpdatedStreamingExchange {
+            | Self::UpdatedStreamingExchange {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::UpdatedConversationStatus {
+            | Self::UpdatedConversationStatus {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::SetActiveConversation {
+            | Self::SetActiveConversation {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::ClearedActiveConversation {
+            | Self::ClearedActiveConversation {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::ClearedConversationsInTerminalView {
-                terminal_view_id,
-                ..
-            }
-            | BlocklistAIHistoryEvent::ReassignedExchange {
+            | Self::ClearedConversationsInTerminalView {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::UpdatedTodoList {
+            | Self::ReassignedExchange {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride {
+            | Self::UpdatedTodoList {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::SplitConversation {
+            | Self::UpdatedAutoexecuteOverride {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::RemoveConversation {
+            | Self::SplitConversation {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::DeletedConversation {
+            | Self::RemoveConversation {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::CreatedSubtask {
+            | Self::DeletedConversation {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::RestoredConversations {
+            | Self::CreatedSubtask {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::UpgradedTask {
+            | Self::RestoredConversations {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::UpdatedConversationArtifacts {
+            | Self::UpgradedTask {
                 terminal_view_id, ..
             }
-            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+            | Self::UpdatedConversationArtifacts {
+                terminal_view_id, ..
+            }
+            | Self::ConversationServerTokenAssigned {
                 terminal_view_id, ..
             } => Some(*terminal_view_id),
             // UpdatedConversationMetadata can have None when updating historical-only conversations
-            BlocklistAIHistoryEvent::UpdatedConversationMetadata {
+            Self::UpdatedConversationMetadata {
                 terminal_view_id, ..
             } => *terminal_view_id,
         }
@@ -2337,19 +2336,19 @@ impl AIQueryHistoryOutputStatus {
     /// Returns a string representation of the output status.
     pub(crate) fn display_text(&self) -> &'static str {
         match self {
-            AIQueryHistoryOutputStatus::Completed => "Completed successfully",
-            AIQueryHistoryOutputStatus::Pending => "Pending",
-            AIQueryHistoryOutputStatus::Cancelled => "Cancelled by user",
-            AIQueryHistoryOutputStatus::Failed => "Failed",
+            Self::Completed => "Completed successfully",
+            Self::Pending => "Pending",
+            Self::Cancelled => "Cancelled by user",
+            Self::Failed => "Failed",
         }
     }
 
     pub(crate) fn icon(&self) -> Icon {
         match self {
-            AIQueryHistoryOutputStatus::Completed => Icon::Check,
-            AIQueryHistoryOutputStatus::Pending => Icon::Loading,
-            AIQueryHistoryOutputStatus::Cancelled => Icon::SlashCircle,
-            AIQueryHistoryOutputStatus::Failed => Icon::AlertTriangle,
+            Self::Completed => Icon::Check,
+            Self::Pending => Icon::Loading,
+            Self::Cancelled => Icon::SlashCircle,
+            Self::Failed => Icon::AlertTriangle,
         }
     }
 }

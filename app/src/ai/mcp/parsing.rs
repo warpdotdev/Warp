@@ -115,7 +115,7 @@ impl From<CodexServerEntry> for JSONTransportType {
                     merged_env.insert(k, v);
                 }
 
-                JSONTransportType::CLIServer {
+                Self::CLIServer {
                     command,
                     args,
                     env: merged_env,
@@ -145,7 +145,7 @@ impl From<CodexServerEntry> for JSONTransportType {
                     merged_headers.insert(header, value);
                 }
 
-                JSONTransportType::SSEServer {
+                Self::SSEServer {
                     url,
                     headers: merged_headers,
                 }
@@ -372,7 +372,7 @@ impl ParsedTemplatableMCPServerResult {
             false => None,
         };
 
-        ParsedTemplatableMCPServerResult {
+        Self {
             templatable_mcp_server,
             templatable_mcp_server_installation,
         }

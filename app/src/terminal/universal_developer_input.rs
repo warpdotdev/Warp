@@ -99,17 +99,15 @@ impl AtContextMenuDisabledReason {
     fn tooltip_text(&self) -> String {
         match self {
             #[cfg(not(target_family = "wasm"))]
-            AtContextMenuDisabledReason::NoObjectsAvailable => {
-                "No available objects in the current context.".to_string()
-            }
+            Self::NoObjectsAvailable => "No available objects in the current context.".to_string(),
             #[cfg(not(target_family = "wasm"))]
-            AtContextMenuDisabledReason::SshSession => "Not supported in SSH sessions".to_string(),
+            Self::SshSession => "Not supported in SSH sessions".to_string(),
             #[cfg(not(target_family = "wasm"))]
-            AtContextMenuDisabledReason::Subshell => "Not supported in subshells".to_string(),
+            Self::Subshell => "Not supported in subshells".to_string(),
             #[cfg(target_family = "wasm")]
             AtContextMenuDisabledReason::Wasm => "Requires a filesystem".to_string(),
             #[cfg(not(target_family = "wasm"))]
-            AtContextMenuDisabledReason::DisabledInTerminalMode => {
+            Self::DisabledInTerminalMode => {
                 "Disabled in terminal mode, re-enable in settings".to_string()
             }
         }
@@ -131,7 +129,7 @@ impl AtContextMenuDisabledReason {
         sessions: &Sessions,
         input_config: &InputConfig,
         ctx: &AppContext,
-    ) -> Option<AtContextMenuDisabledReason> {
+    ) -> Option<Self> {
         // Derive session information from block metadata and sessions
         let (is_ssh_session, is_subshell) = active_block_metadata
             .and_then(|metadata| metadata.session_id())
@@ -150,14 +148,14 @@ impl AtContextMenuDisabledReason {
                 .at_context_menu_in_terminal_mode
                 .value()
         {
-            return Some(AtContextMenuDisabledReason::DisabledInTerminalMode);
+            return Some(Self::DisabledInTerminalMode);
         }
 
         if is_ssh_session {
-            return Some(AtContextMenuDisabledReason::SshSession);
+            return Some(Self::SshSession);
         }
         if is_subshell {
-            return Some(AtContextMenuDisabledReason::Subshell);
+            return Some(Self::Subshell);
         }
 
         // Allow @ context menu outside of git repositories, when we have categories available.
@@ -175,7 +173,7 @@ impl AtContextMenuDisabledReason {
         )
         .is_empty()
         {
-            return Some(AtContextMenuDisabledReason::NoObjectsAvailable);
+            return Some(Self::NoObjectsAvailable);
         }
 
         None
@@ -259,11 +257,11 @@ impl From<&BlocklistAIInputModel> for InputToggleMode {
     fn from(input_model: &BlocklistAIInputModel) -> Self {
         if input_model.is_input_type_locked() {
             match input_model.input_type() {
-                InputType::Shell => InputToggleMode::Terminal,
-                InputType::AI => InputToggleMode::AgentMode,
+                InputType::Shell => Self::Terminal,
+                InputType::AI => Self::AgentMode,
             }
         } else {
-            InputToggleMode::AutoDetection
+            Self::AutoDetection
         }
     }
 }

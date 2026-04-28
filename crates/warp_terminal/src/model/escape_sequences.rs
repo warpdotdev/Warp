@@ -304,7 +304,7 @@ impl ToModifierEscapeByte for Keystroke {
     // Mirrors the [xterm implementation](https://www.xfree86.org/current/ctlseqs.html#PC-Style%20Function%20Keys).
     fn to_modifier_escape_byte(&self) -> Option<u8> {
         match self {
-            Keystroke {
+            Self {
                 shift: true,
                 alt: false,
                 ctrl: false,
@@ -312,7 +312,7 @@ impl ToModifierEscapeByte for Keystroke {
                 cmd: _,
                 key: _,
             } => Some(b'2'),
-            Keystroke {
+            Self {
                 shift: false,
                 alt: true,
                 ctrl: false,
@@ -320,7 +320,7 @@ impl ToModifierEscapeByte for Keystroke {
                 cmd: _,
                 key: _,
             } => Some(b'3'),
-            Keystroke {
+            Self {
                 shift: true,
                 alt: true,
                 ctrl: false,
@@ -328,7 +328,7 @@ impl ToModifierEscapeByte for Keystroke {
                 cmd: _,
                 key: _,
             } => Some(b'4'),
-            Keystroke {
+            Self {
                 shift: false,
                 alt: false,
                 ctrl: true,
@@ -336,7 +336,7 @@ impl ToModifierEscapeByte for Keystroke {
                 cmd: _,
                 key: _,
             } => Some(b'5'),
-            Keystroke {
+            Self {
                 shift: true,
                 alt: false,
                 ctrl: true,
@@ -344,7 +344,7 @@ impl ToModifierEscapeByte for Keystroke {
                 cmd: _,
                 key: _,
             } => Some(b'6'),
-            Keystroke {
+            Self {
                 shift: false,
                 alt: true,
                 ctrl: true,
@@ -352,7 +352,7 @@ impl ToModifierEscapeByte for Keystroke {
                 cmd: _,
                 key: _,
             } => Some(b'7'),
-            Keystroke {
+            Self {
                 shift: true,
                 alt: true,
                 ctrl: true,
@@ -361,7 +361,7 @@ impl ToModifierEscapeByte for Keystroke {
                 key: _,
             } => Some(b'8'),
             // meta can be basically treated the same way as alt...
-            Keystroke {
+            Self {
                 meta: true,
                 ctrl: _,
                 alt: _,

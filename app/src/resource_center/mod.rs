@@ -104,19 +104,19 @@ pub enum TipAction {
 impl TipAction {
     pub fn editable_binding_name(&self) -> &'static str {
         match self {
-            TipAction::CommandPalette => "workspace:toggle_command_palette",
-            TipAction::SplitPane => "pane_group:add_right",
-            TipAction::HistorySearch => "input:search_command_history",
-            TipAction::CommandSearch => "workspace:show_command_search",
-            TipAction::AiCommandSearch => "input:toggle_natural_language_command_search",
-            TipAction::ThemePicker => "workspace:show_theme_chooser",
-            TipAction::SaveNewLaunchConfig => "workspace:open_launch_config_save_modal",
-            TipAction::WarpAI => "workspace:toggle_ai_assistant",
-            TipAction::OpenWarpDrive => "workspace:toggle_left_panel",
+            Self::CommandPalette => "workspace:toggle_command_palette",
+            Self::SplitPane => "pane_group:add_right",
+            Self::HistorySearch => "input:search_command_history",
+            Self::CommandSearch => "workspace:show_command_search",
+            Self::AiCommandSearch => "input:toggle_natural_language_command_search",
+            Self::ThemePicker => "workspace:show_theme_chooser",
+            Self::SaveNewLaunchConfig => "workspace:open_launch_config_save_modal",
+            Self::WarpAI => "workspace:toggle_ai_assistant",
+            Self::OpenWarpDrive => "workspace:toggle_left_panel",
             // Slash commands are also registered as editable bindings, so callers can look them up here
             // the same way they do regular app actions.
-            TipAction::Changelog => "/changelog",
-            TipAction::Workflows => "input:toggle_workflows",
+            Self::Changelog => "/changelog",
+            Self::Workflows => "input:toggle_workflows",
         }
     }
 

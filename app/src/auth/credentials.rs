@@ -34,9 +34,9 @@ impl Credentials {
     /// Returns the Firebase auth tokens if this is a Firebase credential.
     pub fn as_firebase(&self) -> Option<&FirebaseAuthTokens> {
         match self {
-            Credentials::Firebase(tokens) => Some(tokens),
-            Credentials::ApiKey { .. } => None,
-            Credentials::SessionCookie => None,
+            Self::Firebase(tokens) => Some(tokens),
+            Self::ApiKey { .. } => None,
+            Self::SessionCookie => None,
             #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => None,
         }
@@ -45,9 +45,9 @@ impl Credentials {
     /// Returns the API key string if this is an API key credential.
     pub fn as_api_key(&self) -> Option<&str> {
         match self {
-            Credentials::ApiKey { key, .. } => Some(key),
-            Credentials::Firebase(_) => None,
-            Credentials::SessionCookie => None,
+            Self::ApiKey { key, .. } => Some(key),
+            Self::Firebase(_) => None,
+            Self::SessionCookie => None,
             #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => None,
         }
@@ -56,9 +56,9 @@ impl Credentials {
     /// Returns the owner type if this is an API key credential.
     pub fn api_key_owner_type(&self) -> Option<OwnerType> {
         match self {
-            Credentials::ApiKey { owner_type, .. } => *owner_type,
-            Credentials::Firebase(_) => None,
-            Credentials::SessionCookie => None,
+            Self::ApiKey { owner_type, .. } => *owner_type,
+            Self::Firebase(_) => None,
+            Self::SessionCookie => None,
             #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => None,
         }
@@ -67,9 +67,9 @@ impl Credentials {
     /// Returns the Firebase refresh token if this is a Firebase credential.
     pub fn refresh_token(&self) -> Option<&str> {
         match self {
-            Credentials::Firebase(tokens) => Some(&tokens.refresh_token),
-            Credentials::ApiKey { .. } => None,
-            Credentials::SessionCookie => None,
+            Self::Firebase(tokens) => Some(&tokens.refresh_token),
+            Self::ApiKey { .. } => None,
+            Self::SessionCookie => None,
             #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => None,
         }
@@ -78,9 +78,9 @@ impl Credentials {
     /// Returns the short-lived token to use in HTTP requests to the server.
     pub fn bearer_token(&self) -> AuthToken {
         match self {
-            Credentials::Firebase(tokens) => AuthToken::Firebase(tokens.id_token.clone()),
-            Credentials::ApiKey { key, .. } => AuthToken::ApiKey(key.clone()),
-            Credentials::SessionCookie => AuthToken::NoAuth,
+            Self::Firebase(tokens) => AuthToken::Firebase(tokens.id_token.clone()),
+            Self::ApiKey { key, .. } => AuthToken::ApiKey(key.clone()),
+            Self::SessionCookie => AuthToken::NoAuth,
             #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => AuthToken::NoAuth,
         }
@@ -89,11 +89,11 @@ impl Credentials {
     /// Get the long-lived login token for these credentials. Returns `None` if there is no such token.
     pub fn login_token(&self) -> Option<LoginToken> {
         match self {
-            Credentials::Firebase(tokens) => Some(LoginToken::Firebase(FirebaseToken::Refresh(
+            Self::Firebase(tokens) => Some(LoginToken::Firebase(FirebaseToken::Refresh(
                 RefreshToken::new(&tokens.refresh_token),
             ))),
-            Credentials::ApiKey { key, .. } => Some(LoginToken::ApiKey(key.clone())),
-            Credentials::SessionCookie => Some(LoginToken::SessionCookie),
+            Self::ApiKey { key, .. } => Some(LoginToken::ApiKey(key.clone())),
+            Self::SessionCookie => Some(LoginToken::SessionCookie),
             #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => None,
         }
@@ -120,18 +120,18 @@ impl AuthToken {
     /// header-based (e.g. session cookie) or there is no auth.
     pub fn as_bearer_token(&self) -> Option<&str> {
         match self {
-            AuthToken::Firebase(token) => Some(token),
-            AuthToken::ApiKey(key) => Some(key),
-            AuthToken::NoAuth => None,
+            Self::Firebase(token) => Some(token),
+            Self::ApiKey(key) => Some(key),
+            Self::NoAuth => None,
         }
     }
 
     /// Returns the bearer token as an owned string, or `None` if auth is not header-based.
     pub fn bearer_token(&self) -> Option<String> {
         match self {
-            AuthToken::Firebase(token) => Some(token.clone()),
-            AuthToken::ApiKey(key) => Some(key.clone()),
-            AuthToken::NoAuth => None,
+            Self::Firebase(token) => Some(token.clone()),
+            Self::ApiKey(key) => Some(key.clone()),
+            Self::NoAuth => None,
         }
     }
 }
@@ -166,10 +166,10 @@ impl FirebaseToken {
         // See https://firebase.google.com/docs/reference/rest/auth for info on these
         // authentication endpoints.
         match self {
-            FirebaseToken::Refresh(_) => {
+            Self::Refresh(_) => {
                 format!("https://securetoken.googleapis.com/v1/token?key={api_key}")
             }
-            FirebaseToken::Custom(_) => {
+            Self::Custom(_) => {
                 format!("https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key={api_key}")
             }
         }
@@ -178,11 +178,11 @@ impl FirebaseToken {
     /// Returns the POST body for to include when trading this long lived token into an access token.
     pub fn access_token_request_body(&self) -> Vec<(&str, &str)> {
         match self {
-            FirebaseToken::Refresh(refresh_token) => vec![
+            Self::Refresh(refresh_token) => vec![
                 ("grant_type", "refresh_token"),
                 ("refresh_token", refresh_token.get()),
             ],
-            FirebaseToken::Custom(custom_token) => {
+            Self::Custom(custom_token) => {
                 vec![("returnSecureToken", "true"), ("token", custom_token)]
             }
         }
@@ -193,8 +193,8 @@ impl FirebaseToken {
     /// through our server.
     pub fn proxy_url(&self, server_root: &str, api_key: &str) -> String {
         match self {
-            FirebaseToken::Refresh(_) => format!("{server_root}/proxy/token?key={api_key}"),
-            FirebaseToken::Custom(_) => {
+            Self::Refresh(_) => format!("{server_root}/proxy/token?key={api_key}"),
+            Self::Custom(_) => {
                 format!("{server_root}/proxy/customToken?key={api_key}")
             }
         }

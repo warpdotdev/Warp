@@ -1898,7 +1898,7 @@ where
 
 impl From<api::ExecutedShellCommand> for BlockContext {
     fn from(cmd: api::ExecutedShellCommand) -> Self {
-        BlockContext {
+        Self {
             id: cmd.command_id.into(),
             index: BlockIndex::from(0),
             command: cmd.command,
@@ -1992,7 +1992,7 @@ fn proto_timestamp_to_local_datetime(seconds: i64, nanos: i32) -> DateTime<Local
 
 impl From<String> for crate::ai::agent::MessageId {
     fn from(s: String) -> Self {
-        crate::ai::agent::MessageId(s)
+        Self(s)
     }
 }
 

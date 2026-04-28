@@ -165,7 +165,7 @@ enum ScrollingAcceleration {
 impl ScrollingAcceleration {
     fn accelerated_delta(&self, delta: f32) -> f32 {
         match *self {
-            ScrollingAcceleration::Polynomial(degree) => delta.powf(degree) / 100.0,
+            Self::Polynomial(degree) => delta.powf(degree) / 100.0,
         }
     }
 }
@@ -324,7 +324,7 @@ impl SnackbarHeader {
         blocklist_element_bounds: RectF,
         params: &BlockGridParams,
         scroll_position: ScrollPosition,
-    ) -> Option<SnackbarHeader> {
+    ) -> Option<Self> {
         if !snackbar_enabled {
             self.clear_state();
             return None;
@@ -787,12 +787,12 @@ pub enum VisibleItem {
 impl VisibleItem {
     pub fn index(&self) -> TotalIndex {
         match self {
-            VisibleItem::Block { index, .. } => *index,
-            VisibleItem::Gap { index, .. } => *index,
-            VisibleItem::RestoredBlockSeparator { index, .. } => *index,
-            VisibleItem::Banner { index, .. } => *index,
-            VisibleItem::SubshellSeparator { index, .. } => *index,
-            VisibleItem::RichContent { index, .. } => *index,
+            Self::Block { index, .. } => *index,
+            Self::Gap { index, .. } => *index,
+            Self::RestoredBlockSeparator { index, .. } => *index,
+            Self::Banner { index, .. } => *index,
+            Self::SubshellSeparator { index, .. } => *index,
+            Self::RichContent { index, .. } => *index,
         }
     }
 }

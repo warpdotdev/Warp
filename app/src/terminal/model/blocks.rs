@@ -163,9 +163,9 @@ pub enum BlockHeightItem {
 impl BlockHeightItem {
     pub fn height(&self) -> BlockHeight {
         match self {
-            BlockHeightItem::Block(height) => *height,
-            BlockHeightItem::Gap(height) => *height,
-            BlockHeightItem::RestoredBlockSeparator {
+            Self::Block(height) => *height,
+            Self::Gap(height) => *height,
+            Self::RestoredBlockSeparator {
                 height_when_visible: height,
                 is_hidden,
                 ..
@@ -176,7 +176,7 @@ impl BlockHeightItem {
                     *height
                 }
             }
-            BlockHeightItem::InlineBanner {
+            Self::InlineBanner {
                 height_when_visible: height,
                 is_hidden,
                 ..
@@ -187,7 +187,7 @@ impl BlockHeightItem {
                     *height
                 }
             }
-            BlockHeightItem::SubshellSeparator {
+            Self::SubshellSeparator {
                 height_when_visible,
                 is_hidden,
                 ..
@@ -198,7 +198,7 @@ impl BlockHeightItem {
                     *height_when_visible
                 }
             }
-            BlockHeightItem::RichContent(item) => {
+            Self::RichContent(item) => {
                 if item.should_hide {
                     BlockHeight::zero()
                 } else {
@@ -382,8 +382,8 @@ impl BlockFilter {
 
     /// Block filter for visible command blocks. This excludes background output
     /// blocks and hidden blocks.
-    pub fn commands() -> BlockFilter {
-        BlockFilter {
+    pub fn commands() -> Self {
+        Self {
             include_background: false,
             include_hidden: false,
         }
@@ -432,7 +432,7 @@ pub struct BlockListPoint {
 
 impl BlockListPoint {
     pub fn new(row: impl IntoLines, column: usize) -> Self {
-        BlockListPoint {
+        Self {
             row: row.into_lines(),
             column,
         }
@@ -459,7 +459,7 @@ impl BlockListPoint {
             + delta_to_top_of_block
             + block_heights_cursor.start().height;
 
-        BlockListPoint::new(row, within_block_point.get().col)
+        Self::new(row, within_block_point.get().col)
     }
 }
 
@@ -486,7 +486,7 @@ pub struct BlockHeight(Lines);
 pub struct TotalIndex(pub usize);
 
 impl std::ops::Add<usize> for TotalIndex {
-    type Output = TotalIndex;
+    type Output = Self;
 
     fn add(self, rhs: usize) -> Self::Output {
         Self(self.0 + rhs)
@@ -611,7 +611,7 @@ impl BlockList {
     ) -> Self {
         let bootstrap_stage = BootstrapStage::RestoreBlocks;
         let block_heights = SumTree::new();
-        BlockList {
+        Self {
             blocks: vec![],
             block_heights,
             block_id_to_block_index: HashMap::new(),
@@ -3783,7 +3783,7 @@ impl ansi::Handler for BlockList {
     }
 }
 
-impl AddAssign<&BlockHeightSummary> for BlockHeightSummary {
+impl AddAssign<&Self> for BlockHeightSummary {
     fn add_assign(&mut self, other: &Self) {
         self.height += other.height;
         self.total_count += other.total_count;
@@ -3802,12 +3802,12 @@ impl Item for BlockHeightItem {
 
     fn summary(&self) -> Self::Summary {
         let block_count = match self {
-            BlockHeightItem::Block(_) => 1,
-            BlockHeightItem::Gap(_)
-            | BlockHeightItem::RestoredBlockSeparator { .. }
-            | BlockHeightItem::InlineBanner { .. }
-            | BlockHeightItem::SubshellSeparator { .. }
-            | BlockHeightItem::RichContent { .. } => 0,
+            Self::Block(_) => 1,
+            Self::Gap(_)
+            | Self::RestoredBlockSeparator { .. }
+            | Self::InlineBanner { .. }
+            | Self::SubshellSeparator { .. }
+            | Self::RichContent { .. } => 0,
         };
 
         Self::Summary {
@@ -3828,7 +3828,7 @@ where
 }
 
 impl From<BlockHeight> for f64 {
-    fn from(block_height: BlockHeight) -> f64 {
+    fn from(block_height: BlockHeight) -> Self {
         block_height.0.as_f64()
     }
 }
@@ -3857,8 +3857,8 @@ impl<'a> Dimension<'a, BlockHeightSummary> for TotalIndex {
     }
 }
 
-impl<'a> Dimension<'a, BlockHeightSummary> for BlockHeightSummary {
-    fn add_summary(&mut self, summary: &'a BlockHeightSummary) {
+impl<'a> Dimension<'a, Self> for BlockHeightSummary {
+    fn add_summary(&mut self, summary: &'a Self) {
         *self += summary
     }
 }

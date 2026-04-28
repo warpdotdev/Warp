@@ -28,15 +28,15 @@ pub trait FilterChipRenderer {
 impl FilterChipRenderer for QueryFilter {
     fn icon_size_offset(&self) -> f32 {
         match self {
-            QueryFilter::NaturalLanguage => 2.,
+            Self::NaturalLanguage => 2.,
             _ => 0.,
         }
     }
 
     fn icon_margin_top(&self) -> f32 {
         match self {
-            QueryFilter::Sessions => 2.,
-            QueryFilter::NaturalLanguage => 2.,
+            Self::Sessions => 2.,
+            Self::NaturalLanguage => 2.,
             _ => 0.,
         }
     }
@@ -48,7 +48,7 @@ impl FilterChipRenderer for QueryFilter {
         on_click_fn: fn(&mut EventContext, Self),
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
-        let self_copy: QueryFilter = *self;
+        let self_copy: Self = *self;
         Hoverable::new(mouse_state_handle, |mouse_state| {
             let font_size = appearance.monospace_font_size() + 2.;
             let icon_size = font_size + self.icon_size_offset();

@@ -316,8 +316,8 @@ pub enum AIBlockResponseRating {
 impl AIBlockResponseRating {
     pub fn name(&self) -> &'static str {
         match self {
-            AIBlockResponseRating::Positive => "positive",
-            AIBlockResponseRating::Negative => "negative",
+            Self::Positive => "positive",
+            Self::Negative => "negative",
         }
     }
 }
@@ -651,7 +651,7 @@ impl CommentElementState {
             ctx,
         );
 
-        CommentElementState {
+        Self {
             header_toggle_mouse_state: MouseStateHandle::default(),
             maximize_minimize_button: action_button,
             rich_text_editor,
@@ -778,7 +778,7 @@ impl CollapsibleElementState {
 }
 
 pub struct AIBlock {
-    model: Rc<dyn AIBlockModel<View = AIBlock>>,
+    model: Rc<dyn AIBlockModel<View = Self>>,
     terminal_model: Arc<FairMutex<TerminalModel>>,
     client_ids: ClientIdentifiers,
     profile_image_path: Option<String>,
@@ -961,7 +961,7 @@ struct EmbeddedCodeEditorView {
 impl AIBlock {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        model: Rc<dyn AIBlockModel<View = AIBlock>>,
+        model: Rc<dyn AIBlockModel<View = Self>>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         client_ids: ClientIdentifiers,
         controller: ModelHandle<BlocklistAIController>,
@@ -1614,7 +1614,7 @@ impl AIBlock {
     pub fn reset_conversation_id(
         &mut self,
         new_conversation_id: AIConversationId,
-        new_model: Rc<dyn AIBlockModel<View = AIBlock>>,
+        new_model: Rc<dyn AIBlockModel<View = Self>>,
         ctx: &mut ViewContext<Self>,
     ) {
         let conversation_contains_exchange = BlocklistAIHistoryModel::as_ref(ctx)

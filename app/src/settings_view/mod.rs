@@ -230,20 +230,20 @@ use std::fmt::{self, Display};
 impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SettingsSection::BillingAndUsage => write!(f, "Billing and usage"),
-            SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
-            SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
-            SettingsSection::MCPServers => write!(f, "MCP Servers"),
-            SettingsSection::WarpDrive => write!(f, "Warp Drive"),
-            SettingsSection::WarpAgent => write!(f, "Warp Agent"),
-            SettingsSection::AgentProfiles => write!(f, "Profiles"),
-            SettingsSection::AgentMCPServers => write!(f, "MCP servers"),
-            SettingsSection::Knowledge => write!(f, "Knowledge"),
-            SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
-            SettingsSection::CodeIndexing => write!(f, "Indexing and projects"),
-            SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
-            SettingsSection::CloudEnvironments => write!(f, "Environments"),
-            SettingsSection::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
+            Self::BillingAndUsage => write!(f, "Billing and usage"),
+            Self::Keybindings => write!(f, "Keyboard shortcuts"),
+            Self::SharedBlocks => write!(f, "Shared blocks"),
+            Self::MCPServers => write!(f, "MCP Servers"),
+            Self::WarpDrive => write!(f, "Warp Drive"),
+            Self::WarpAgent => write!(f, "Warp Agent"),
+            Self::AgentProfiles => write!(f, "Profiles"),
+            Self::AgentMCPServers => write!(f, "MCP servers"),
+            Self::Knowledge => write!(f, "Knowledge"),
+            Self::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
+            Self::CodeIndexing => write!(f, "Indexing and projects"),
+            Self::EditorAndCodeReview => write!(f, "Editor and Code Review"),
+            Self::CloudEnvironments => write!(f, "Environments"),
+            Self::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
             _ => write!(f, "{self:?}"),
         }
     }
@@ -659,7 +659,7 @@ impl<T: Action + Clone> ToggleSettingActionPair<T> {
     ) -> Self {
         use warpui::keymap::macros::id;
 
-        ToggleSettingActionPair {
+        Self {
             descriptions: SettingActionPairDescriptions {
                 enable: format!("Enable {description_suffix}"),
                 disable: format!("Disable {description_suffix}"),
@@ -682,7 +682,7 @@ impl<T: Action + Clone> ToggleSettingActionPair<T> {
         contexts: SettingActionPairContexts,
         custom_action: Option<CustomAction>,
     ) -> Self {
-        ToggleSettingActionPair {
+        Self {
             toggle_action,
             contexts,
             descriptions,
@@ -704,7 +704,7 @@ impl<T: Action + Clone> ToggleSettingActionPair<T> {
     }
 
     pub fn is_supported_on_current_platform(&self, value: bool) -> Self {
-        ToggleSettingActionPair {
+        Self {
             descriptions: self.descriptions.clone(),
             toggle_action: self.toggle_action.clone(),
             contexts: self.contexts.clone(),
@@ -717,14 +717,14 @@ impl<T: Action + Clone> ToggleSettingActionPair<T> {
 
     /// Creates enable/disable bindings for a toggle feature, given a list of `ToggleSettingActionPair`'s.
     pub fn add_toggle_setting_action_pairs_as_bindings(
-        action_pairs: Vec<ToggleSettingActionPair<T>>,
+        action_pairs: Vec<Self>,
         app: &mut AppContext,
     ) {
         let (enable_bindings, disable_bindings): (Vec<FixedBinding>, Vec<FixedBinding>) =
             action_pairs
                 .into_iter()
                 .filter_map(|action_pair| {
-                    let ToggleSettingActionPair {
+                    let Self {
                         toggle_action,
                         contexts,
                         descriptions,

@@ -350,11 +350,11 @@ impl SizeInfo {
         cell_height_px: Pixels,
         padding_x_px: Pixels,
         padding_y_px: Pixels,
-    ) -> SizeInfo {
+    ) -> Self {
         let rows = (pane_size_px.y() - 2. * padding_y_px.as_f32()) / cell_height_px.as_f32();
         let columns = (pane_size_px.x() - 2. * padding_x_px.as_f32()) / cell_width_px.as_f32();
 
-        SizeInfo {
+        Self {
             pane_width_px: pane_size_px.x(),
             pane_height_px: pane_size_px.y(),
             columns: max(columns as usize, MIN_COLUMNS),
@@ -371,7 +371,7 @@ impl SizeInfo {
     pub fn new_without_font_metrics(rows: usize, cols: usize) -> Self {
         let width = cols as f32;
         let height = rows as f32;
-        SizeInfo::new(
+        Self::new(
             vec2f(width, height),
             1.0.into_pixels(), /* cell_width */
             1.0.into_pixels(), /* cell_height */
@@ -380,7 +380,7 @@ impl SizeInfo {
         )
     }
 
-    pub fn with_rows_and_columns(mut self, rows: usize, cols: usize) -> SizeInfo {
+    pub fn with_rows_and_columns(mut self, rows: usize, cols: usize) -> Self {
         self.columns = cols;
         self.rows = rows;
         self
@@ -485,7 +485,7 @@ impl BlockPadding {
         padding_middle: f32,
         padding_bottom: f32,
     ) -> Self {
-        BlockPadding {
+        Self {
             padding_top,
             command_padding_top,
             middle: padding_middle,

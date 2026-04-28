@@ -65,13 +65,13 @@ impl DisableReason {
     /// Returns a user-facing tooltip explaining why the model is disabled.
     pub fn tooltip_text(&self) -> &'static str {
         match self {
-            DisableReason::AdminDisabled => "This model has been disabled by your team admin.",
-            DisableReason::OutOfRequests => "Please upgrade your plan to make more requests.",
-            DisableReason::ProviderOutage => {
+            Self::AdminDisabled => "This model has been disabled by your team admin.",
+            Self::OutOfRequests => "Please upgrade your plan to make more requests.",
+            Self::ProviderOutage => {
                 "This model is temporarily unavailable due to a provider outage."
             }
-            DisableReason::RequiresUpgrade => "Please upgrade your plan to access this model.",
-            DisableReason::Unavailable => "This model is unavailable.",
+            Self::RequiresUpgrade => "Please upgrade your plan to access this model.",
+            Self::Unavailable => "This model is unavailable.",
         }
     }
 }
@@ -96,11 +96,11 @@ impl LLMProvider {
     /// Maps an LLMProvider to its corresponding icon.
     pub fn icon(&self) -> Option<Icon> {
         match self {
-            LLMProvider::OpenAI => Some(Icon::OpenAILogo),
-            LLMProvider::Anthropic => Some(Icon::ClaudeLogo),
-            LLMProvider::Google => Some(Icon::GeminiLogo),
-            LLMProvider::Xai => None,
-            LLMProvider::Unknown => None,
+            Self::OpenAI => Some(Icon::OpenAILogo),
+            Self::Anthropic => Some(Icon::ClaudeLogo),
+            Self::Google => Some(Icon::GeminiLogo),
+            Self::Xai => None,
+            Self::Unknown => None,
         }
     }
 }
@@ -155,7 +155,7 @@ impl<'de> Deserialize<'de> for LLMInfo {
 
         impl Default for HostConfigsWire {
             fn default() -> Self {
-                HostConfigsWire::Vec(Vec::new())
+                Self::Vec(Vec::new())
             }
         }
 

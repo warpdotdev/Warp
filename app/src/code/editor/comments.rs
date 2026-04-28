@@ -85,7 +85,7 @@ impl TryFrom<AttachedReviewComment> for EditorReviewComment {
 
     fn try_from(comment: AttachedReviewComment) -> Result<Self, Self::Error> {
         match comment.target {
-            AttachedReviewCommentTarget::Line { content, line, .. } => Ok(EditorReviewComment {
+            AttachedReviewCommentTarget::Line { content, line, .. } => Ok(Self {
                 id: comment.id,
                 line,
                 diff_content: content,

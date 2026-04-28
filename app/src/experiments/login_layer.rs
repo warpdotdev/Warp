@@ -32,7 +32,7 @@ pub enum AuthFlowInstructions {
     Experiment,
 }
 
-impl Experiment<AuthFlowInstructions> for AuthFlowInstructions {
+impl Experiment<Self> for AuthFlowInstructions {
     fn name() -> &'static str {
         "AuthFlowInstructions"
     }

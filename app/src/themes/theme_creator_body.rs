@@ -84,11 +84,11 @@ pub enum ThemeCreatorImageState {
 impl fmt::Display for ThemeCreatorImageState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ThemeCreatorImageState::Empty => write!(f, "{IMAGE_PICKER_BUTTON_PRE_SELECT_TEXT}"),
-            ThemeCreatorImageState::Uploading => {
+            Self::Empty => write!(f, "{IMAGE_PICKER_BUTTON_PRE_SELECT_TEXT}"),
+            Self::Uploading => {
                 write!(f, "{IMAGE_PICKER_BUTTON_SELECTING_TEXT}")
             }
-            ThemeCreatorImageState::Uploaded => {
+            Self::Uploaded => {
                 write!(f, "{IMAGE_PICKER_BUTTON_POST_SELECT_TEXT}")
             }
         }
@@ -188,7 +188,7 @@ impl ThemeCreatorBody {
             let mut errored = true;
             #[cfg(feature = "local_fs")]
             {
-                ThemeCreatorBody::write_theme(
+                Self::write_theme(
                     &theme_options.theme(),
                     dir,
                     theme_yaml_file_name,

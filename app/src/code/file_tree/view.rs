@@ -206,8 +206,8 @@ enum FileTreeItem {
 impl FileTreeItem {
     fn path(&self) -> &StandardizedPath {
         match self {
-            FileTreeItem::File { metadata, .. } => &metadata.path,
-            FileTreeItem::DirectoryHeader { directory, .. } => &directory.path,
+            Self::File { metadata, .. } => &metadata.path,
+            Self::DirectoryHeader { directory, .. } => &directory.path,
         }
     }
 }

@@ -66,8 +66,8 @@ pub struct Selection {
 }
 
 impl Selection {
-    pub fn single_cursor(cursor: Anchor) -> Selection {
-        Selection {
+    pub fn single_cursor(cursor: Anchor) -> Self {
+        Self {
             start: cursor.clone(),
             end: cursor,
             reversed: false,

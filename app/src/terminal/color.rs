@@ -21,7 +21,7 @@ pub struct Colors {
 
 impl Colors {
     pub fn with_foreground_background_color(foreground: ColorU, background: ColorU) -> Self {
-        Colors {
+        Self {
             primary: PrimaryColors {
                 foreground,
                 background,
@@ -32,7 +32,7 @@ impl Colors {
     }
 
     pub fn new(primary: PrimaryColors, normal: NormalColors, bright: BrightColors) -> Self {
-        Colors {
+        Self {
             primary,
             normal,
             bright,
@@ -44,7 +44,7 @@ impl Colors {
 impl From<WarpTheme> for Colors {
     fn from(theme: WarpTheme) -> Self {
         let colors = theme.terminal_colors();
-        Colors::new(
+        Self::new(
             PrimaryColors::new(
                 theme.foreground().into_solid(),
                 theme.background().into_solid(),
@@ -71,14 +71,14 @@ pub struct OverrideList([Option<ColorU>; COUNT]);
 
 impl OverrideList {
     pub fn empty() -> Self {
-        OverrideList([None; COUNT])
+        Self([None; COUNT])
     }
 }
 
 impl From<&Colors> for List {
-    fn from(colors: &Colors) -> List {
+    fn from(colors: &Colors) -> Self {
         // Type inference fails without this annotation.
-        let mut list = List([ColorU::black(); COUNT]);
+        let mut list = Self([ColorU::black(); COUNT]);
 
         list.fill_named(colors);
         list.fill_cube(colors);
@@ -219,7 +219,7 @@ pub struct PrimaryColors {
 
 impl PrimaryColors {
     pub fn new(foreground: ColorU, background: ColorU) -> Self {
-        PrimaryColors {
+        Self {
             foreground,
             background,
             ..Default::default()
@@ -229,7 +229,7 @@ impl PrimaryColors {
 
 impl Default for PrimaryColors {
     fn default() -> Self {
-        PrimaryColors {
+        Self {
             background: ColorU {
                 r: 0x1d,
                 g: 0x1f,
@@ -272,7 +272,7 @@ impl NormalColors {
         cyan: ColorU,
         white: ColorU,
     ) -> Self {
-        NormalColors {
+        Self {
             black,
             red,
             green,
@@ -301,7 +301,7 @@ impl From<AnsiColors> for NormalColors {
 
 impl Default for NormalColors {
     fn default() -> Self {
-        NormalColors {
+        Self {
             black: ColorU {
                 r: 0x1d,
                 g: 0x1f,
@@ -378,7 +378,7 @@ impl BrightColors {
         cyan: ColorU,
         white: ColorU,
     ) -> Self {
-        BrightColors {
+        Self {
             black,
             red,
             green,
@@ -407,7 +407,7 @@ impl From<AnsiColors> for BrightColors {
 
 impl Default for BrightColors {
     fn default() -> Self {
-        BrightColors {
+        Self {
             black: ColorU {
                 r: 0x66,
                 g: 0x66,
@@ -474,7 +474,7 @@ pub struct DimColors {
 
 impl Default for DimColors {
     fn default() -> Self {
-        DimColors {
+        Self {
             black: ColorU {
                 r: 0x13,
                 g: 0x14,

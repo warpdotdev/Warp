@@ -91,9 +91,9 @@ enum FooterMode {
 impl FooterMode {
     fn path(&self) -> &Path {
         match self {
-            FooterMode::TabConfig { path } => path,
-            FooterMode::SingleFile { path, .. } => path,
-            FooterMode::Workspace { root_path, .. } => root_path,
+            Self::TabConfig { path } => path,
+            Self::SingleFile { path, .. } => path,
+            Self::Workspace { root_path, .. } => root_path,
         }
     }
 
@@ -102,8 +102,8 @@ impl FooterMode {
     /// `DisabledAndInstalled` or `DisabledAndNotInstalled` entries.
     fn cta_lsp_repo_statuses(&self) -> Vec<&LspRepoStatus> {
         match self {
-            FooterMode::TabConfig { .. } => vec![],
-            FooterMode::SingleFile {
+            Self::TabConfig { .. } => vec![],
+            Self::SingleFile {
                 lsp_repo_status, ..
             } => {
                 if matches!(
@@ -116,7 +116,7 @@ impl FooterMode {
                     vec![]
                 }
             }
-            FooterMode::Workspace {
+            Self::Workspace {
                 lsp_repo_statuses, ..
             } => lsp_repo_statuses
                 .values()
@@ -169,34 +169,28 @@ enum LSPServerRenderStatus {
 impl LSPServerRenderStatus {
     fn to_icon_color(&self, theme: &WarpTheme) -> ColorU {
         match self {
-            LSPServerRenderStatus::Available => AnsiColorIdentifier::Green
+            Self::Available => AnsiColorIdentifier::Green
                 .to_ansi_color(&theme.terminal_colors().normal)
                 .into(),
-            LSPServerRenderStatus::Busy => AnsiColorIdentifier::Yellow
+            Self::Busy => AnsiColorIdentifier::Yellow
                 .to_ansi_color(&theme.terminal_colors().normal)
                 .into(),
-            LSPServerRenderStatus::Failed => AnsiColorIdentifier::Red
+            Self::Failed => AnsiColorIdentifier::Red
                 .to_ansi_color(&theme.terminal_colors().normal)
                 .into(),
-            LSPServerRenderStatus::Stopped => internal_colors::neutral_5(theme),
+            Self::Stopped => internal_colors::neutral_5(theme),
         }
     }
 
     fn render_status(server: Option<&LspServerModel>) -> Self {
         match server {
             Some(server) => match server.state() {
-                LspModelState::Available { .. } if !server.has_pending_tasks() => {
-                    LSPServerRenderStatus::Available
-                }
-                LspModelState::Starting | LspModelState::Available { .. } => {
-                    LSPServerRenderStatus::Busy
-                }
-                LspModelState::Failed { .. } => LSPServerRenderStatus::Failed,
-                LspModelState::Stopped { .. } | LspModelState::Stopping { .. } => {
-                    LSPServerRenderStatus::Stopped
-                }
+                LspModelState::Available { .. } if !server.has_pending_tasks() => Self::Available,
+                LspModelState::Starting | LspModelState::Available { .. } => Self::Busy,
+                LspModelState::Failed { .. } => Self::Failed,
+                LspModelState::Stopped { .. } | LspModelState::Stopping { .. } => Self::Stopped,
             },
-            None => LSPServerRenderStatus::Stopped,
+            None => Self::Stopped,
         }
     }
 }

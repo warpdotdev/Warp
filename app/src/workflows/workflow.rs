@@ -164,7 +164,7 @@ impl Workflow {
 
     pub fn default_env_vars(&self) -> Option<SyncId> {
         match self {
-            Workflow::Command {
+            Self::Command {
                 environment_variables,
                 ..
             } => *environment_variables,
@@ -207,7 +207,7 @@ impl Workflow {
     }
 
     pub fn new(name: impl Into<String>, command: impl Into<String>) -> Self {
-        Workflow::Command {
+        Self::Command {
             name: name.into(),
             command: command.into(),
             tags: Vec::new(),
@@ -223,12 +223,12 @@ impl Workflow {
 
     pub fn with_arguments(mut self, new_arguments: Vec<Argument>) -> Self {
         match self {
-            Workflow::AgentMode {
+            Self::AgentMode {
                 ref mut arguments, ..
             } => {
                 *arguments = new_arguments;
             }
-            Workflow::Command {
+            Self::Command {
                 ref mut arguments, ..
             } => {
                 *arguments = new_arguments;
@@ -239,13 +239,13 @@ impl Workflow {
 
     pub fn with_description(mut self, new_description: String) -> Self {
         match self {
-            Workflow::AgentMode {
+            Self::AgentMode {
                 ref mut description,
                 ..
             } => {
                 *description = Some(new_description);
             }
-            Workflow::Command {
+            Self::Command {
                 ref mut description,
                 ..
             } => {
@@ -257,8 +257,8 @@ impl Workflow {
 
     pub fn set_name(&mut self, new_name: &str) {
         match self {
-            Workflow::AgentMode { ref mut name, .. } => new_name.clone_into(name),
-            Workflow::Command { ref mut name, .. } => new_name.clone_into(name),
+            Self::AgentMode { ref mut name, .. } => new_name.clone_into(name),
+            Self::Command { ref mut name, .. } => new_name.clone_into(name),
         }
     }
 }
@@ -267,7 +267,7 @@ impl Workflow {
 /// https://github.com/warpdotdev/workflows/blob/main/workflow-types/src/lib.rs
 impl From<warp_workflows::Workflow> for Workflow {
     fn from(workflow: warp_workflows::Workflow) -> Self {
-        Workflow::Command {
+        Self::Command {
             name: workflow.name,
             command: workflow.command,
             description: workflow.description,
@@ -295,7 +295,7 @@ pub struct Argument {
 
 impl From<warp_workflows::Argument> for Argument {
     fn from(arg: warp_workflows::Argument) -> Self {
-        Argument {
+        Self {
             name: arg.name,
             arg_type: ArgumentType::Text, // public workflows only have text arguments
             description: arg.description,
@@ -306,7 +306,7 @@ impl From<warp_workflows::Argument> for Argument {
 
 impl Argument {
     pub fn new(name: impl Into<String>, arg_type: ArgumentType) -> Self {
-        Argument {
+        Self {
             arg_type,
             name: name.into(),
             description: None,

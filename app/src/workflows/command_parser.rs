@@ -183,14 +183,14 @@ impl WorkflowCommandDisplayData {
     }
 
     /// Create an empty command display data. Used for new workflows that don't have commands yet.
-    pub fn new_empty() -> WorkflowCommandDisplayData {
-        WorkflowCommandDisplayData {
+    pub fn new_empty() -> Self {
+        Self {
             command_parts: Vec::new(),
         }
     }
 
     /// Create a command display data from an existing workflow.
-    pub fn new_from_workflow(workflow: &Workflow) -> WorkflowCommandDisplayData {
+    pub fn new_from_workflow(workflow: &Workflow) -> Self {
         let (workflow_command, workflow_arguments) = parse_and_escape_workflow(workflow);
 
         let mut command_parts: VecDeque<WorkflowCommandPart> = VecDeque::new();
@@ -217,7 +217,7 @@ impl WorkflowCommandDisplayData {
             )));
         }
 
-        WorkflowCommandDisplayData {
+        Self {
             command_parts: Vec::from(command_parts),
         }
     }

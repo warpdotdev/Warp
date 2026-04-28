@@ -16,9 +16,9 @@ impl FromStr for RootAccess {
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         match input {
-            "is_root" => Ok(RootAccess::IsRoot),
-            "can_run_sudo" => Ok(RootAccess::CanRunSudo),
-            "no_root_access" => Ok(RootAccess::NoRootAccess),
+            "is_root" => Ok(Self::IsRoot),
+            "can_run_sudo" => Ok(Self::CanRunSudo),
+            "no_root_access" => Ok(Self::NoRootAccess),
             _ => Err(anyhow::anyhow!("Invalid RootAccess")),
         }
     }

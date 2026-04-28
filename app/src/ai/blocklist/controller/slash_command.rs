@@ -49,7 +49,7 @@ pub enum SlashCommandRequest {
 impl SlashCommandRequest {
     /// Parses user input into a SlashCommandRequest for slash commands that are handled
     /// via the AI query flow (as opposed to action-based slash commands handled in input.rs).
-    pub fn from_query(query: &str) -> Option<SlashCommandRequest> {
+    pub fn from_query(query: &str) -> Option<Self> {
         // Check if this is an exact /init query and route it to InitProjectRules instead
         if query == "/init" {
             return Some(Self::InitProjectRules);
@@ -192,20 +192,20 @@ impl SlashCommandRequest {
         app: &AppContext,
     ) -> Vec<AIAgentInput> {
         match self {
-            SlashCommandRequest::CreateNewProject { query } => {
+            Self::CreateNewProject { query } => {
                 vec![AIAgentInput::CreateNewProject { query, context }]
             }
-            SlashCommandRequest::CloneRepository { url } => {
+            Self::CloneRepository { url } => {
                 vec![AIAgentInput::CloneRepository {
                     clone_repo_url: CloneRepositoryURL::new(url),
                     context,
                 }]
             }
-            SlashCommandRequest::InitProjectRules => vec![AIAgentInput::InitProjectRules {
+            Self::InitProjectRules => vec![AIAgentInput::InitProjectRules {
                 context,
                 display_query: Some("/init".to_string()),
             }],
-            SlashCommandRequest::CreateEnvironment {
+            Self::CreateEnvironment {
                 mut repos,
                 use_current_dir,
             } => {
@@ -226,13 +226,13 @@ impl SlashCommandRequest {
                     repo_paths: repos,
                 }]
             }
-            SlashCommandRequest::Summarize { prompt, .. } => {
+            Self::Summarize { prompt, .. } => {
                 vec![AIAgentInput::SummarizeConversation { prompt }]
             }
-            SlashCommandRequest::FetchReviewComments { repo_path } => {
+            Self::FetchReviewComments { repo_path } => {
                 vec![AIAgentInput::FetchReviewComments { repo_path, context }]
             }
-            SlashCommandRequest::InvokeSkill { skill, user_query } => {
+            Self::InvokeSkill { skill, user_query } => {
                 let user_query = if FeatureFlag::SkillArguments.is_enabled() {
                     user_query
                         .map(|query| query.trim().to_string())
@@ -259,13 +259,13 @@ impl SlashCommandRequest {
 
     fn entrypoint(&self) -> EntrypointType {
         match self {
-            SlashCommandRequest::CloneRepository { .. } => EntrypointType::CloneRepository,
-            SlashCommandRequest::InitProjectRules => EntrypointType::InitProjectRules,
-            SlashCommandRequest::CreateNewProject { .. }
-            | SlashCommandRequest::CreateEnvironment { .. }
-            | SlashCommandRequest::Summarize { .. }
-            | SlashCommandRequest::FetchReviewComments { .. }
-            | SlashCommandRequest::InvokeSkill { .. } => EntrypointType::UserInitiated,
+            Self::CloneRepository { .. } => EntrypointType::CloneRepository,
+            Self::InitProjectRules => EntrypointType::InitProjectRules,
+            Self::CreateNewProject { .. }
+            | Self::CreateEnvironment { .. }
+            | Self::Summarize { .. }
+            | Self::FetchReviewComments { .. }
+            | Self::InvokeSkill { .. } => EntrypointType::UserInitiated,
         }
     }
 }

@@ -53,13 +53,13 @@ pub enum DetailContent {
 
 impl From<HistoryEntry> for DetailContent {
     fn from(entry: HistoryEntry) -> Self {
-        DetailContent::RichHistory(Box::new(entry))
+        Self::RichHistory(Box::new(entry))
     }
 }
 
 impl From<String> for DetailContent {
     fn from(description: String) -> Self {
-        DetailContent::Description(description)
+        Self::Description(description)
     }
 }
 
@@ -141,27 +141,27 @@ pub enum ItemIconType {
 impl ItemIconType {
     pub fn icon_path(&self) -> &'static str {
         match self {
-            ItemIconType::SubCommand => SUBCOMMAND_ICON_PATH,
-            ItemIconType::Option => OPTION_ICON_PATH,
-            ItemIconType::Argument => ARGUMENT_ICON_PATH,
-            ItemIconType::File => FILE_ICON_PATH,
-            ItemIconType::Folder => FOLDER_ICON_PATH,
-            ItemIconType::GitBranch => GIT_BRANCH_ICON_PATH,
-            ItemIconType::AIQuery => UIComponentsIcon::AgentMode.into(),
+            Self::SubCommand => SUBCOMMAND_ICON_PATH,
+            Self::Option => OPTION_ICON_PATH,
+            Self::Argument => ARGUMENT_ICON_PATH,
+            Self::File => FILE_ICON_PATH,
+            Self::Folder => FOLDER_ICON_PATH,
+            Self::GitBranch => GIT_BRANCH_ICON_PATH,
+            Self::AIQuery => UIComponentsIcon::AgentMode.into(),
         }
     }
 
     // The multiplication factor we need to apply on font size to get icon width.
     pub fn width_font_size_multiplication_factor(&self) -> f32 {
         match self {
-            ItemIconType::File | ItemIconType::Folder => 1.05,
+            Self::File | Self::Folder => 1.05,
             _ => 1.2,
         }
     }
 
     pub fn right_padding(&self) -> f32 {
         match self {
-            ItemIconType::File | ItemIconType::Folder => FILE_FOLDER_ICON_PADDING_RIGHT,
+            Self::File | Self::Folder => FILE_FOLDER_ICON_PADDING_RIGHT,
             _ => ICON_PADDING_RIGHT,
         }
     }
@@ -169,9 +169,7 @@ impl ItemIconType {
     pub fn left_padding(&self) -> f32 {
         match self {
             // We want to center the file and folder icon.
-            ItemIconType::File | ItemIconType::Folder => {
-                FILE_FOLDER_ICON_PADDING_RIGHT - ICON_PADDING_RIGHT
-            }
+            Self::File | Self::Folder => FILE_FOLDER_ICON_PADDING_RIGHT - ICON_PADDING_RIGHT,
             _ => 0.,
         }
     }
@@ -933,11 +931,8 @@ impl InputSuggestions {
                                 .finish()
                         });
 
-                        SavePosition::new(
-                            row_element.finish(),
-                            &InputSuggestions::position_id_at_index(index),
-                        )
-                        .finish()
+                        SavePosition::new(row_element.finish(), &Self::position_id_at_index(index))
+                            .finish()
                     })
                     .collect::<Vec<_>>()
                     .into_iter()
@@ -994,7 +989,7 @@ impl InputSuggestions {
                             AnchorPair::new(XAxisAnchor::Right, XAxisAnchor::Left),
                         ),
                         PositioningAxis::relative_to_stack_child(
-                            InputSuggestions::position_id_at_index(selected_index),
+                            Self::position_id_at_index(selected_index),
                             PositionedElementOffsetBounds::ParentByPosition,
                             OffsetType::Pixel(0.),
                             AnchorPair::new(YAxisAnchor::Top, YAxisAnchor::Top),
@@ -1107,8 +1102,8 @@ impl HistoryOrder {
     /// DifferentSession < CurrentSession
     fn ordering_value(&self) -> u8 {
         match self {
-            HistoryOrder::DifferentSession => 0,
-            HistoryOrder::CurrentSession => 1,
+            Self::DifferentSession => 0,
+            Self::CurrentSession => 1,
         }
     }
 }

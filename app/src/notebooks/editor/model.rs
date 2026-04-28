@@ -594,7 +594,7 @@ impl NotebooksEditorModel {
                     style,
                     override_text_style,
                 } => {
-                    NotebooksEditorModel::apply_inline_style_helper(
+                    Self::apply_inline_style_helper(
                         content,
                         selection_model.clone(),
                         matched_length,
@@ -611,7 +611,7 @@ impl NotebooksEditorModel {
                     tag,
                     url,
                 } => {
-                    NotebooksEditorModel::apply_inline_style_helper(
+                    Self::apply_inline_style_helper(
                         content,
                         selection_model.clone(),
                         matched_length,
@@ -1754,7 +1754,7 @@ impl Entity for NotebooksEditorModel {
 }
 
 impl CoreEditorModel for NotebooksEditorModel {
-    type T = NotebooksEditorModel;
+    type T = Self;
 
     fn content(&self) -> &ModelHandle<Buffer> {
         &self.content
@@ -1846,7 +1846,7 @@ impl CoreEditorModel for NotebooksEditorModel {
                 );
 
                 if markdown_shortcuts_active {
-                    let triggered_markdown_shortcut = NotebooksEditorModel::block_markdown_shortcut(
+                    let triggered_markdown_shortcut = Self::block_markdown_shortcut(
                         content.buffer(),
                         selection_model.clone(),
                         ctx,

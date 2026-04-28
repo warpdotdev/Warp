@@ -173,8 +173,8 @@ impl<T> WithinModel<T> {
 
     pub fn replace_inner<S>(self, inner: S) -> WithinModel<S> {
         match self {
-            WithinModel::AltScreen(_) => WithinModel::AltScreen(inner),
-            WithinModel::BlockList(within_block) => WithinModel::BlockList(WithinBlock::new(
+            Self::AltScreen(_) => WithinModel::AltScreen(inner),
+            Self::BlockList(within_block) => WithinModel::BlockList(WithinBlock::new(
                 inner,
                 within_block.block_index,
                 within_block.grid,
@@ -188,8 +188,8 @@ impl<T> WithinModel<T> {
         func: impl FnOnce(&'m GridHandler, &'s T) -> anyhow::Result<U>,
     ) -> anyhow::Result<U> {
         match self {
-            WithinModel::AltScreen(inner) => func(model.alt_screen().grid_handler(), inner),
-            WithinModel::BlockList(within_block) => {
+            Self::AltScreen(inner) => func(model.alt_screen().grid_handler(), inner),
+            Self::BlockList(within_block) => {
                 let grid_handler = model.block_list().grid_handler_within_block(within_block)?;
                 func(grid_handler, &within_block.inner)
             }
@@ -202,8 +202,8 @@ impl<T> WithinModel<T> {
         func: impl FnOnce(&'m mut GridHandler, &'s T) -> anyhow::Result<U>,
     ) -> anyhow::Result<U> {
         match self {
-            WithinModel::AltScreen(inner) => func(model.alt_screen_mut().grid_handler_mut(), inner),
-            WithinModel::BlockList(within_block) => {
+            Self::AltScreen(inner) => func(model.alt_screen_mut().grid_handler_mut(), inner),
+            Self::BlockList(within_block) => {
                 let grid_handler = model
                     .block_list_mut()
                     .grid_handler_mut_within_block(within_block)?;
@@ -219,10 +219,8 @@ where
 {
     pub fn contains(&self, other: &WithinModel<Point>) -> bool {
         match (self, other) {
-            (WithinModel::AltScreen(range), WithinModel::AltScreen(other)) => {
-                range.contains(*other)
-            }
-            (WithinModel::BlockList(block_range), WithinModel::BlockList(other)) => {
+            (Self::AltScreen(range), WithinModel::AltScreen(other)) => range.contains(*other),
+            (Self::BlockList(block_range), WithinModel::BlockList(other)) => {
                 block_range.grid == other.grid
                     && block_range.block_index == other.block_index
                     && block_range.inner.contains(other.inner)
@@ -240,7 +238,7 @@ pub struct WithinBlock<T> {
 }
 
 impl<T> WithinBlock<T> {
-    pub fn new(inner: T, block_index: BlockIndex, grid: GridType) -> WithinBlock<T> {
+    pub fn new(inner: T, block_index: BlockIndex, grid: GridType) -> Self {
         Self {
             inner,
             block_index,
@@ -297,7 +295,7 @@ impl<T: Copy> WithinBlock<RangeInclusive<T>> {
 
 impl WithinBlock<Point> {
     // Check if one point is visually before another in the blocklist.
-    pub fn is_visually_before(&self, other: &WithinBlock<Point>, inverted_blocklist: bool) -> bool {
+    pub fn is_visually_before(&self, other: &Self, inverted_blocklist: bool) -> bool {
         // If two points are within the same block OR if the blocklist is NOT inverted
         // the visual order should be the same as the points' logical order.
         if self.block_index == other.block_index || !inverted_blocklist {
@@ -402,17 +400,13 @@ impl FromStr for TmuxInstallationState {
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         match input {
-            "installed_by_warp_root_in_this_session" => {
-                Ok(TmuxInstallationState::InstalledByWarpRootInThisSession)
-            }
-            "installed_by_warp_in_this_session" => {
-                Ok(TmuxInstallationState::InstalledByWarpInThisSession)
-            }
+            "installed_by_warp_root_in_this_session" => Ok(Self::InstalledByWarpRootInThisSession),
+            "installed_by_warp_in_this_session" => Ok(Self::InstalledByWarpInThisSession),
             "warp" | "installed_by_warp_in_prior_session" => {
-                Ok(TmuxInstallationState::InstalledByWarpInPriorSession)
+                Ok(Self::InstalledByWarpInPriorSession)
             }
-            "user" | "installed_by_user" => Ok(TmuxInstallationState::InstalledByUser),
-            "not_installed" => Ok(TmuxInstallationState::NotInstalled),
+            "user" | "installed_by_user" => Ok(Self::InstalledByUser),
+            "not_installed" => Ok(Self::NotInstalled),
             _ => Err(anyhow::anyhow!("Invalid TmuxInstallationState")),
         }
     }
@@ -442,10 +436,8 @@ pub enum TmuxControlModeContext {
 impl TmuxControlModeContext {
     pub fn tmux_installation(&self) -> Option<TmuxInstallationState> {
         match self {
-            TmuxControlModeContext::UserInitiated => None,
-            TmuxControlModeContext::WarpInitiatedForSsh(warp_initiated) => {
-                warp_initiated.tmux_installation
-            }
+            Self::UserInitiated => None,
+            Self::WarpInitiatedForSsh(warp_initiated) => warp_initiated.tmux_installation,
         }
     }
 }
@@ -714,9 +706,9 @@ pub enum BlockSelectionCardinality {
 impl BlockSelectionCardinality {
     pub fn as_keymap_context_value(&self) -> &'static str {
         match self {
-            BlockSelectionCardinality::None => "None",
-            BlockSelectionCardinality::One => "One",
-            BlockSelectionCardinality::Many => "Many",
+            Self::None => "None",
+            Self::One => "One",
+            Self::Many => "Many",
         }
     }
 }

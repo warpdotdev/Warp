@@ -108,7 +108,7 @@ pub enum PaneTemplateType {
     },
     PaneBranchTemplate {
         split_direction: SplitDirection,
-        panes: Vec<PaneTemplateType>,
+        panes: Vec<Self>,
     },
 }
 
@@ -123,7 +123,7 @@ impl TryFrom<PaneNodeSnapshot> for PaneTemplateType {
                     .children
                     .iter()
                     .filter_map(|(_, snapshot)| snapshot.clone().try_into().ok())
-                    .collect::<Vec<PaneTemplateType>>();
+                    .collect::<Vec<Self>>();
                 match panes.len() {
                     0 => Err(()),
                     1 => Ok(panes
@@ -221,8 +221,8 @@ pub struct CommandTemplate {
 }
 
 impl From<&str> for CommandTemplate {
-    fn from(s: &str) -> CommandTemplate {
-        CommandTemplate {
+    fn from(s: &str) -> Self {
+        Self {
             exec: s.to_string(),
         }
     }

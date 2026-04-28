@@ -238,19 +238,19 @@ pub(super) enum LspHoverState {
 
 impl LspHoverState {
     pub(super) fn clear(&mut self) -> bool {
-        if matches!(self, LspHoverState::None) {
+        if matches!(self, Self::None) {
             return false;
         }
 
         if let Self::Loading(Some(handle)) = self {
             handle.abort();
         }
-        *self = LspHoverState::None;
+        *self = Self::None;
         true
     }
 
     pub(super) fn contains_offset(&self, offset: CharOffset) -> bool {
-        if let LspHoverState::Loaded {
+        if let Self::Loaded {
             hovered_offset_range,
             ..
         } = self

@@ -68,15 +68,15 @@ pub enum PendingAttachment {
 impl PendingAttachment {
     pub fn file_name(&self) -> &str {
         match self {
-            PendingAttachment::Image(img) => &img.file_name,
-            PendingAttachment::File(file) => &file.file_name,
+            Self::Image(img) => &img.file_name,
+            Self::File(file) => &file.file_name,
         }
     }
 
     pub fn attachment_type(&self) -> AttachmentType {
         match self {
-            PendingAttachment::Image(_) => AttachmentType::Image,
-            PendingAttachment::File(_) => AttachmentType::File,
+            Self::Image(_) => AttachmentType::Image,
+            Self::File(_) => AttachmentType::File,
         }
     }
 }
@@ -102,7 +102,7 @@ impl Default for PendingQueryState {
 
 impl PendingQueryState {
     pub fn targets_existing_conversation(&self) -> bool {
-        matches!(self, PendingQueryState::Existing { .. })
+        matches!(self, Self::Existing { .. })
     }
 }
 

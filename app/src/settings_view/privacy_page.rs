@@ -144,7 +144,7 @@ pub enum PrivacyPageViewEvent {
 impl PrivacyPageView {
     const BATCH_TIMEOUT_MS: u64 = 700;
 
-    pub fn new(ctx: &mut ViewContext<PrivacyPageView>) -> Self {
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let privacy_settings_handle = PrivacySettings::handle(ctx);
         ctx.observe(&privacy_settings_handle, |_, _, ctx| {
             // It is possible that PrivacySettings are updated without an interaction in this view
@@ -643,7 +643,7 @@ impl SettingsPageMeta for PrivacyPageView {
 
 impl From<ViewHandle<PrivacyPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<PrivacyPageView>) -> Self {
-        SettingsPageViewHandle::Privacy(view_handle)
+        Self::Privacy(view_handle)
     }
 }
 

@@ -125,18 +125,18 @@ pub enum CommentButton {
 impl GutterButton for CommentButton {
     fn background_color(&self, mouse_state: &MouseState, appearance: &Appearance) -> Fill {
         match self {
-            CommentButton::CreateNewComment => {
+            Self::CreateNewComment => {
                 if mouse_state.is_hovered() {
                     Fill::Solid(internal_colors::neutral_3(appearance.theme()))
                 } else {
                     Fill::Solid(internal_colors::neutral_1(appearance.theme()))
                 }
             }
-            CommentButton::EditorOpenedToCreateNewComment => {
+            Self::EditorOpenedToCreateNewComment => {
                 Fill::Solid(internal_colors::neutral_3(appearance.theme()))
             }
-            CommentButton::Disabled => Fill::Solid(internal_colors::neutral_1(appearance.theme())),
-            CommentButton::AddedComment | CommentButton::EditorOpenedToUpdateComment => {
+            Self::Disabled => Fill::Solid(internal_colors::neutral_1(appearance.theme())),
+            Self::AddedComment | Self::EditorOpenedToUpdateComment => {
                 internal_colors::accent(appearance.theme())
             }
         }
@@ -145,30 +145,25 @@ impl GutterButton for CommentButton {
     fn is_enabled(&self) -> bool {
         matches!(
             self,
-            CommentButton::AddedComment
-                | CommentButton::CreateNewComment
-                | CommentButton::EditorOpenedToCreateNewComment
+            Self::AddedComment | Self::CreateNewComment | Self::EditorOpenedToCreateNewComment
         )
     }
 
     fn tooltip_text(&self) -> Option<&'static str> {
         match self {
-            CommentButton::CreateNewComment => Some("Add comment on line"),
-            CommentButton::Disabled => Some("Save changes to add comment"),
-            CommentButton::AddedComment => Some("Show saved comment"),
-            CommentButton::EditorOpenedToCreateNewComment
-            | CommentButton::EditorOpenedToUpdateComment => None,
+            Self::CreateNewComment => Some("Add comment on line"),
+            Self::Disabled => Some("Save changes to add comment"),
+            Self::AddedComment => Some("Show saved comment"),
+            Self::EditorOpenedToCreateNewComment | Self::EditorOpenedToUpdateComment => None,
         }
     }
 
     fn icon(&self) -> Icon {
         match self {
-            CommentButton::CreateNewComment
-            | CommentButton::Disabled
-            | CommentButton::EditorOpenedToCreateNewComment => Icon::MessagePlusSquare,
-            CommentButton::AddedComment | CommentButton::EditorOpenedToUpdateComment => {
-                Icon::MessageText
+            Self::CreateNewComment | Self::Disabled | Self::EditorOpenedToCreateNewComment => {
+                Icon::MessagePlusSquare
             }
+            Self::AddedComment | Self::EditorOpenedToUpdateComment => Icon::MessageText,
         }
     }
 }

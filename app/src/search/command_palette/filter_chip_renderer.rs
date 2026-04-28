@@ -34,7 +34,7 @@ impl FilterChipRenderer for QueryFilter {
         on_click_fn: fn(&mut EventContext, Self),
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
-        let self_copy: QueryFilter = *self;
+        let self_copy: Self = *self;
         Hoverable::new(mouse_state_handle, |mouse_state| {
             let font_size = appearance.monospace_font_size() - 2.;
             Container::new({
@@ -96,49 +96,49 @@ impl FilterChipRenderer for QueryFilter {
 
     fn icon_color(&self, appearance: &Appearance) -> ColorU {
         match self {
-            QueryFilter::History
-            | QueryFilter::NaturalLanguage
-            | QueryFilter::Actions
-            | QueryFilter::Sessions
-            | QueryFilter::Drive
-            | QueryFilter::LaunchConfigurations
-            | QueryFilter::PromptHistory
-            | QueryFilter::Files
-            | QueryFilter::Commands
-            | QueryFilter::Blocks
-            | QueryFilter::Code
-            | QueryFilter::Rules
-            | QueryFilter::Repos
-            | QueryFilter::DiffSets
-            | QueryFilter::StaticSlashCommands
-            | QueryFilter::Skills
-            | QueryFilter::BaseModels
-            | QueryFilter::FullTerminalUseModels
-            | QueryFilter::CurrentDirectoryConversations => appearance
+            Self::History
+            | Self::NaturalLanguage
+            | Self::Actions
+            | Self::Sessions
+            | Self::Drive
+            | Self::LaunchConfigurations
+            | Self::PromptHistory
+            | Self::Files
+            | Self::Commands
+            | Self::Blocks
+            | Self::Code
+            | Self::Rules
+            | Self::Repos
+            | Self::DiffSets
+            | Self::StaticSlashCommands
+            | Self::Skills
+            | Self::BaseModels
+            | Self::FullTerminalUseModels
+            | Self::CurrentDirectoryConversations => appearance
                 .theme()
                 .main_text_color(appearance.theme().surface_2())
                 .into_solid(),
-            QueryFilter::Conversations | QueryFilter::HistoricalConversations => appearance
+            Self::Conversations | Self::HistoricalConversations => appearance
                 .theme()
                 .main_text_color(appearance.theme().surface_2())
                 .into_solid(),
-            QueryFilter::Workflows => warp_drive_icon_color(appearance, DriveObjectType::Workflow),
-            QueryFilter::Notebooks => warp_drive_icon_color(
+            Self::Workflows => warp_drive_icon_color(appearance, DriveObjectType::Workflow),
+            Self::Notebooks => warp_drive_icon_color(
                 appearance,
                 DriveObjectType::Notebook {
                     is_ai_document: false,
                 },
             ),
-            QueryFilter::Plans => warp_drive_icon_color(
+            Self::Plans => warp_drive_icon_color(
                 appearance,
                 DriveObjectType::Notebook {
                     is_ai_document: true,
                 },
             ),
-            QueryFilter::EnvironmentVariables => {
+            Self::EnvironmentVariables => {
                 warp_drive_icon_color(appearance, DriveObjectType::EnvVarCollection)
             }
-            QueryFilter::AgentModeWorkflows => {
+            Self::AgentModeWorkflows => {
                 warp_drive_icon_color(appearance, DriveObjectType::AgentModeWorkflow)
             }
         }

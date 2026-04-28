@@ -1143,8 +1143,8 @@ impl warp_editor::editor::EditorView for CodeEditorView {
 impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
     fn scroll(delta: Pixels, axis: Axis) -> Option<Self> {
         Some(match axis {
-            Axis::Horizontal => CodeEditorViewAction::ScrollHorizontal(delta),
-            Axis::Vertical => CodeEditorViewAction::ScrollVertical(delta),
+            Axis::Horizontal => Self::ScrollHorizontal(delta),
+            Axis::Vertical => Self::ScrollVertical(delta),
         })
     }
 
@@ -1157,7 +1157,7 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
         if !view.as_ref(ctx).is_editable(ctx) {
             return None;
         }
-        Some(CodeEditorViewAction::UserTyped(UserInput::new(chars)))
+        Some(Self::UserTyped(UserInput::new(chars)))
     }
 
     fn vim_user_typed(
@@ -1169,7 +1169,7 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
         if !view.as_ref(ctx).is_editable(ctx) {
             return None;
         }
-        Some(CodeEditorViewAction::VimUserTyped(UserInput::new(chars)))
+        Some(Self::VimUserTyped(UserInput::new(chars)))
     }
 
     fn left_mouse_down(
@@ -1195,18 +1195,16 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
         match location {
             Location::Text { char_offset, .. } => match click_count {
                 // TODO(CLD-558): We need to align render model with the content model offset.
-                1 if modifiers.shift => {
-                    Some(CodeEditorViewAction::SelectionUpdate(char_offset + 1))
-                }
-                1 => Some(CodeEditorViewAction::SelectionStart {
+                1 if modifiers.shift => Some(Self::SelectionUpdate(char_offset + 1)),
+                1 => Some(Self::SelectionStart {
                     offset: char_offset + 1,
                     modifiers,
                 }),
-                2 => Some(CodeEditorViewAction::SelectWord {
+                2 => Some(Self::SelectWord {
                     offset: char_offset + 1,
                     modifiers,
                 }),
-                3 => Some(CodeEditorViewAction::SelectLine {
+                3 => Some(Self::SelectLine {
                     offset: char_offset + 1,
                     modifiers,
                 }),
@@ -1226,7 +1224,7 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
         let view = view.upgrade(ctx)?;
         match location {
             Location::Text { char_offset, .. } if view.as_ref(ctx).is_selecting => {
-                Some(CodeEditorViewAction::SelectionUpdate(char_offset + 1))
+                Some(Self::SelectionUpdate(char_offset + 1))
             }
             _ => None,
         }
@@ -1245,11 +1243,10 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
         };
 
         if view.as_ref(ctx).is_selecting {
-            actions_to_dispatch.push(CodeEditorViewAction::SelectionEnd);
+            actions_to_dispatch.push(Self::SelectionEnd);
         } else if cmd {
             if let Location::Text { char_offset, .. } = location {
-                actions_to_dispatch
-                    .push(CodeEditorViewAction::MaybeClickOnHoveredLink(char_offset));
+                actions_to_dispatch.push(Self::MaybeClickOnHoveredLink(char_offset));
             }
         }
         actions_to_dispatch
@@ -1267,7 +1264,7 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
                 char_offset,
                 clamped,
                 ..
-            }) => Some(CodeEditorViewAction::MouseHovered {
+            }) => Some(Self::MouseHovered {
                 offset: char_offset,
                 clamped,
                 cmd,
@@ -1275,7 +1272,7 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
             }),
             // When the mouse moves outside the editor bounds (location is None),
             // emit a clamped hover event to clear any active hover state.
-            _ => Some(CodeEditorViewAction::MouseHovered {
+            _ => Some(Self::MouseHovered {
                 offset: CharOffset::default(),
                 clamped: true,
                 cmd,
@@ -1302,7 +1299,7 @@ impl RichTextAction<CodeEditorView> for CodeEditorViewAction {
         _ctx: &AppContext,
     ) -> Option<Self> {
         match location {
-            Location::Text { char_offset, .. } => Some(CodeEditorViewAction::RightMouseDown {
+            Location::Text { char_offset, .. } => Some(Self::RightMouseDown {
                 offset: char_offset + 1,
             }),
             _ => None,

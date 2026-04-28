@@ -689,7 +689,7 @@ impl AppearanceSettingsPageView {
         ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<EditorView>
     where
-        F: 'static + FnMut(&mut AppearanceSettingsPageView, &EditorEvent, &mut ViewContext<Self>),
+        F: 'static + FnMut(&mut Self, &EditorEvent, &mut ViewContext<Self>),
     {
         let editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
@@ -713,7 +713,7 @@ impl AppearanceSettingsPageView {
         editor
     }
 
-    pub fn new(ctx: &mut ViewContext<AppearanceSettingsPageView>) -> Self {
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let (
             ui_font_size,
             monospace_font_size,
@@ -1188,7 +1188,7 @@ impl AppearanceSettingsPageView {
         let header_toolbar_inline_editor =
             ctx.add_typed_action_view(HeaderToolbarInlineEditor::new);
 
-        AppearanceSettingsPageView {
+        Self {
             page: Self::build_page(ctx),
             window_id: ctx.window_id(),
             local_only_icon_tooltip_states: Default::default(),
@@ -5108,6 +5108,6 @@ impl SettingsPageMeta for AppearanceSettingsPageView {
 
 impl From<ViewHandle<AppearanceSettingsPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<AppearanceSettingsPageView>) -> Self {
-        SettingsPageViewHandle::Appearance(view_handle)
+        Self::Appearance(view_handle)
     }
 }

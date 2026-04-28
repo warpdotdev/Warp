@@ -51,10 +51,10 @@ pub fn brand_color(harness: Harness) -> Option<ColorU> {
 impl From<AIAgentHarness> for Harness {
     fn from(harness: AIAgentHarness) -> Self {
         match harness {
-            AIAgentHarness::Oz => Harness::Oz,
-            AIAgentHarness::ClaudeCode => Harness::Claude,
-            AIAgentHarness::Gemini => Harness::Gemini,
-            AIAgentHarness::Unknown => Harness::Unknown,
+            AIAgentHarness::Oz => Self::Oz,
+            AIAgentHarness::ClaudeCode => Self::Claude,
+            AIAgentHarness::Gemini => Self::Gemini,
+            AIAgentHarness::Unknown => Self::Unknown,
         }
     }
 }

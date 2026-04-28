@@ -36,18 +36,16 @@ impl TryFrom<api::Attachment> for AIAgentAttachment {
 
     fn try_from(attachment: api::Attachment) -> Result<Self, Self::Error> {
         match attachment.value {
-            Some(api::attachment::Value::FilePathReference(fpr)) => {
-                Ok(AIAgentAttachment::FilePathReference {
-                    file_id: String::new(),
-                    file_name: fpr
-                        .file_path
-                        .rsplit('/')
-                        .next()
-                        .unwrap_or(&fpr.file_path)
-                        .to_string(),
-                    file_path: fpr.file_path,
-                })
-            }
+            Some(api::attachment::Value::FilePathReference(fpr)) => Ok(Self::FilePathReference {
+                file_id: String::new(),
+                file_name: fpr
+                    .file_path
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(&fpr.file_path)
+                    .to_string(),
+                file_path: fpr.file_path,
+            }),
             _ => anyhow::bail!("Unsupported attachment type for conversion"),
         }
     }
@@ -578,7 +576,7 @@ impl ConvertAPIMessageToClientOutputMessage for api::Message {
 
 impl From<api::message::AgentOutput> for AIAgentText {
     fn from(value: api::message::AgentOutput) -> Self {
-        AIAgentText {
+        Self {
             sections: parse_markdown_into_text_and_code_sections(value.text.as_str()),
         }
     }
@@ -586,7 +584,7 @@ impl From<api::message::AgentOutput> for AIAgentText {
 
 impl From<api::message::AgentReasoning> for AIAgentText {
     fn from(value: api::message::AgentReasoning) -> Self {
-        AIAgentText {
+        Self {
             sections: parse_markdown_into_text_and_code_sections(value.reasoning.as_str()),
         }
     }
@@ -821,7 +819,7 @@ impl From<api::Suggestions> for Suggestions {
 
 impl From<api::TodoItem> for AIAgentTodo {
     fn from(value: api::TodoItem) -> Self {
-        AIAgentTodo {
+        Self {
             id: value.id.into(),
             title: value.title,
             description: value.description,

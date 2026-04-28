@@ -103,15 +103,15 @@ impl SharedSessionStatus {
     }
 
     pub fn is_view_pending(&self) -> bool {
-        matches!(self, SharedSessionStatus::ViewPending)
+        matches!(self, Self::ViewPending)
     }
 
     pub fn is_active_viewer(&self) -> bool {
-        matches!(self, SharedSessionStatus::ActiveViewer { .. })
+        matches!(self, Self::ActiveViewer { .. })
     }
 
     pub fn is_finished_viewer(&self) -> bool {
-        matches!(self, SharedSessionStatus::FinishedViewer)
+        matches!(self, Self::FinishedViewer)
     }
 
     pub fn is_viewer(&self) -> bool {
@@ -119,26 +119,22 @@ impl SharedSessionStatus {
     }
 
     pub fn is_executor(&self) -> bool {
-        matches!(self, SharedSessionStatus::ActiveViewer { role } if role.can_execute())
+        matches!(self, Self::ActiveViewer { role } if role.can_execute())
     }
 
     pub fn is_reader(&self) -> bool {
-        matches!(
-            self,
-            SharedSessionStatus::ActiveViewer { role: Role::Reader }
-        )
+        matches!(self, Self::ActiveViewer { role: Role::Reader })
     }
 
     pub fn is_share_pending(&self) -> bool {
         matches!(
             self,
-            SharedSessionStatus::SharePending
-                | SharedSessionStatus::SharePendingPreBootstrap { .. }
+            Self::SharePending | Self::SharePendingPreBootstrap { .. }
         )
     }
 
     pub fn is_active_sharer(&self) -> bool {
-        matches!(self, SharedSessionStatus::ActiveSharer)
+        matches!(self, Self::ActiveSharer)
     }
 
     pub fn is_sharer(&self) -> bool {
@@ -363,12 +359,10 @@ impl From<EventNumber> for usize {
 impl From<GridType> for session_sharing_protocol::common::GridType {
     fn from(val: GridType) -> Self {
         match val {
-            GridType::Prompt => session_sharing_protocol::common::GridType::Prompt,
-            GridType::Rprompt => session_sharing_protocol::common::GridType::Rprompt,
-            GridType::Output => session_sharing_protocol::common::GridType::Output,
-            GridType::PromptAndCommand => {
-                session_sharing_protocol::common::GridType::PromptAndCommand
-            }
+            GridType::Prompt => Self::Prompt,
+            GridType::Rprompt => Self::Rprompt,
+            GridType::Output => Self::Output,
+            GridType::PromptAndCommand => Self::PromptAndCommand,
         }
     }
 }
@@ -392,16 +386,16 @@ impl From<ReplicaId> for session_sharing_protocol::common::InputReplicaId {
 
 impl From<session_sharing_protocol::common::InputReplicaId> for ReplicaId {
     fn from(value: session_sharing_protocol::common::InputReplicaId) -> Self {
-        ReplicaId::new(value)
+        Self::new(value)
     }
 }
 
 impl From<&Role> for InteractionState {
-    fn from(value: &Role) -> InteractionState {
+    fn from(value: &Role) -> Self {
         match value {
-            Role::Reader => InteractionState::Selectable,
-            Role::Executor => InteractionState::Editable,
-            Role::Full => InteractionState::Editable,
+            Role::Reader => Self::Selectable,
+            Role::Executor => Self::Editable,
+            Role::Full => Self::Editable,
         }
     }
 }

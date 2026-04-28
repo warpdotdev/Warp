@@ -672,8 +672,8 @@ impl SelectionModel {
     fn update_selections_internal<T>(&mut self, selection_update: T, ctx: &mut ModelContext<Self>)
     where
         T: Fn(
-            &SelectionModel,
-            &mut ModelContext<SelectionModel>,
+            &Self,
+            &mut ModelContext<Self>,
             &SelectionOffsets,
             &Option<Pixels>,
         ) -> (Option<Pixels>, SelectionOffsets),

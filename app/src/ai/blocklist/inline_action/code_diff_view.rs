@@ -300,8 +300,8 @@ pub struct FileDiff {
 }
 
 impl FileDiff {
-    pub fn new(content: String, file_path: String, diff_type: DiffType) -> FileDiff {
-        FileDiff {
+    pub fn new(content: String, file_path: String, diff_type: DiffType) -> Self {
+        Self {
             base: DiffBase { content, file_path },
             diff_type,
         }
@@ -370,7 +370,7 @@ enum SaveStatus {
 
 impl SaveStatus {
     fn is_complete(&self) -> bool {
-        !matches!(self, SaveStatus::Pending)
+        !matches!(self, Self::Pending)
     }
 }
 
@@ -406,15 +406,15 @@ impl CodeDiffState {
     fn is_complete(&self) -> bool {
         matches!(
             self,
-            CodeDiffState::Accepted(_)
-                | CodeDiffState::Rejected
-                | CodeDiffState::Reverted
-                | CodeDiffState::ViewOnly { is_complete: true }
+            Self::Accepted(_)
+                | Self::Rejected
+                | Self::Reverted
+                | Self::ViewOnly { is_complete: true }
         )
     }
 
     fn is_waiting_for_user(&self) -> bool {
-        matches!(self, CodeDiffState::WaitingForUser)
+        matches!(self, Self::WaitingForUser)
     }
 }
 

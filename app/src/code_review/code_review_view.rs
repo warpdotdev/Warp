@@ -546,35 +546,28 @@ pub enum DiscardOperationType {
 impl DiscardOperationType {
     pub fn title(&self) -> String {
         match self {
-            DiscardOperationType::AllUncommittedChanges => {
-                "Discard uncommitted changes?".to_string()
-            }
-            DiscardOperationType::FileUncommittedChanges => {
-                "Discard all uncommitted changes to file?".to_string()
-            }
-            DiscardOperationType::AllChangesAgainstBranch(_) => "Discard all changes?".to_string(),
-            DiscardOperationType::FileChangesAgainstBranch(_) => {
-                "Discard all changes to file?".to_string()
-            }
+            Self::AllUncommittedChanges => "Discard uncommitted changes?".to_string(),
+            Self::FileUncommittedChanges => "Discard all uncommitted changes to file?".to_string(),
+            Self::AllChangesAgainstBranch(_) => "Discard all changes?".to_string(),
+            Self::FileChangesAgainstBranch(_) => "Discard all changes to file?".to_string(),
         }
     }
 
     pub fn description(&self) -> Option<String> {
         match self {
-            DiscardOperationType::AllUncommittedChanges => Some("You're about to discard all local changes that haven't been committed.".to_string()),
-            DiscardOperationType::FileUncommittedChanges => Some("This will restore this file to the last committed version and discard local edits.".to_string()),
-            DiscardOperationType::AllChangesAgainstBranch(None) => Some("You're about to discard all committed and uncommitted changes.".to_string()),
-            DiscardOperationType::FileChangesAgainstBranch(None) => Some("This will restore this file to the main branch version and discard all committed and uncommitted edits.".to_string()),
-            DiscardOperationType::AllChangesAgainstBranch(Some(_)) => Some("You're about to discard all committed and uncommitted changes.".to_string()),
-            DiscardOperationType::FileChangesAgainstBranch(Some(branch)) => Some(format!("This will reset this file to the {branch} branch version and discard all committed and uncommitted edits.")),
+            Self::AllUncommittedChanges => Some("You're about to discard all local changes that haven't been committed.".to_string()),
+            Self::FileUncommittedChanges => Some("This will restore this file to the last committed version and discard local edits.".to_string()),
+            Self::AllChangesAgainstBranch(None) => Some("You're about to discard all committed and uncommitted changes.".to_string()),
+            Self::FileChangesAgainstBranch(None) => Some("This will restore this file to the main branch version and discard all committed and uncommitted edits.".to_string()),
+            Self::AllChangesAgainstBranch(Some(_)) => Some("You're about to discard all committed and uncommitted changes.".to_string()),
+            Self::FileChangesAgainstBranch(Some(branch)) => Some(format!("This will reset this file to the {branch} branch version and discard all committed and uncommitted edits.")),
         }
     }
 
     fn is_uncommitted_changes(&self) -> bool {
         matches!(
             self,
-            DiscardOperationType::AllUncommittedChanges
-                | DiscardOperationType::FileUncommittedChanges
+            Self::AllUncommittedChanges | Self::FileUncommittedChanges
         )
     }
 }
@@ -3992,7 +3985,7 @@ impl CodeReviewView {
         let placeholder = (0..4).map(|_| {
             Shrinkable::new(
                 1.,
-                Container::new(CodeReviewView::render_code_diff_placeholder(appearance))
+                Container::new(Self::render_code_diff_placeholder(appearance))
                     .with_margin_bottom(EDITOR_GAP)
                     .finish(),
             )
@@ -4001,7 +3994,7 @@ impl CodeReviewView {
         Container::new(
             Flex::column()
                 .with_child(
-                    Container::new(CodeReviewView::render_placeholder_header(appearance))
+                    Container::new(Self::render_placeholder_header(appearance))
                         .with_padding_bottom(12.)
                         .finish(),
                 )
@@ -6614,7 +6607,7 @@ impl CodeReviewView {
         }
     }
 
-    fn save_file(&mut self, path: &PathBuf, ctx: &mut ViewContext<CodeReviewView>) {
+    fn save_file(&mut self, path: &PathBuf, ctx: &mut ViewContext<Self>) {
         if let CodeReviewViewState::Loaded(state) = self.state() {
             if let Some(file_state) = state.file_states.get(path) {
                 if let Some(editor) = file_state.editor_state.as_ref().map(|state| state.editor()) {
@@ -7240,12 +7233,12 @@ impl View for CodeReviewView {
             .unwrap_or(false);
 
         let main_content = match self.state() {
-            CodeReviewViewState::None => CodeReviewView::render_loading_state(appearance),
+            CodeReviewViewState::None => Self::render_loading_state(appearance),
             CodeReviewViewState::Loaded(loaded_state) => {
                 // For global buffer mode, show loading state until all editors have loaded
                 // their buffer content. This prevents a brief flash of empty editors.
                 if !self.all_editors_loaded() {
-                    CodeReviewView::render_loading_state(appearance)
+                    Self::render_loading_state(appearance)
                 } else {
                     self.render_loaded_state(loaded_state, appearance, is_in_split_pane, ctx)
                 }

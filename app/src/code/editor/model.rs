@@ -149,7 +149,7 @@ pub enum CaseTransform {
 impl CaseTransform {
     fn apply_to(&self, input: String) -> String {
         match self {
-            CaseTransform::Toggle => input
+            Self::Toggle => input
                 .chars()
                 .map(|c| {
                     if c.is_lowercase() {
@@ -161,8 +161,8 @@ impl CaseTransform {
                     }
                 })
                 .collect(),
-            CaseTransform::Uppercase => input.to_uppercase(),
-            CaseTransform::Lowercase => input.to_lowercase(),
+            Self::Uppercase => input.to_uppercase(),
+            Self::Lowercase => input.to_lowercase(),
         }
     }
 }
@@ -1578,7 +1578,7 @@ impl CodeEditorModel {
     }
 
     /// Update the line highlights for the current cursor positions.
-    fn update_cursor_line_highlights(&self, ctx: &mut ModelContext<CodeEditorModel>) {
+    fn update_cursor_line_highlights(&self, ctx: &mut ModelContext<Self>) {
         let selection_model = self.selection_model.as_ref(ctx);
 
         let overlay = Appearance::as_ref(ctx).theme().surface_2();
@@ -3378,7 +3378,7 @@ impl CodeEditorModel {
     /// Apply a case transformation after adjusting selections with the provided closure.
     pub fn apply_case_transformation_with_selection_change(
         &mut self,
-        selection_change: impl FnOnce(&mut CodeEditorModel, &mut ModelContext<CodeEditorModel>),
+        selection_change: impl FnOnce(&mut Self, &mut ModelContext<Self>),
         transform: CaseTransform,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -3635,7 +3635,7 @@ impl CodeEditorModel {
 }
 
 impl CoreEditorModel for CodeEditorModel {
-    type T = CodeEditorModel;
+    type T = Self;
 
     fn on_buffer_version_updated(
         &self,

@@ -75,7 +75,7 @@ impl ModalSizes {
     }
 
     pub fn default_with_panel_defaults(left_default: f32, right_default: f32) -> Self {
-        ModalSizes {
+        Self {
             universal_search_width: resizable_state_handle(DEFAULT_UNIVERSAL_SEARCH_WIDTH),
             warp_ai_width: resizable_state_handle(DEFAULT_WARP_AI_WIDTH),
             voltron_width: resizable_state_handle(DEFAULT_VOLTRON_WIDTH),

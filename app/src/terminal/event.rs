@@ -409,66 +409,66 @@ pub enum ParseGeneratorOutputError {
 impl Debug for Event {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Event::CompletionsFinished(_) => write!(f, "CompletionsFinished"),
-            Event::MouseCursorDirty => write!(f, "MouseCursorDirty"),
-            Event::BlockCompleted(_) => write!(f, "BlockCompleted"),
-            Event::AfterBlockCompleted(_) => write!(f, "AfterBlockCompleted"),
-            Event::BlockMetadataReceived(event) => write!(
+            Self::CompletionsFinished(_) => write!(f, "CompletionsFinished"),
+            Self::MouseCursorDirty => write!(f, "MouseCursorDirty"),
+            Self::BlockCompleted(_) => write!(f, "BlockCompleted"),
+            Self::AfterBlockCompleted(_) => write!(f, "AfterBlockCompleted"),
+            Self::BlockMetadataReceived(event) => write!(
                 f,
                 "BlockStarted({:?}, Done bootstrapping: {:?})",
                 event.block_metadata, event.is_done_bootstrapping
             ),
-            Event::AfterBlockStarted { .. } => write!(f, "BlockExecutionStarted"),
-            Event::BackgroundBlockStarted => write!(f, "BackgroundBlockStarted"),
-            Event::VisibleBootstrapBlock => write!(f, "VisibleBootstrapBlock"),
-            Event::Title(title) => write!(f, "Title({title})"),
-            Event::ClipboardStore(_, text) => write!(f, "ClipboardStore({text})"),
-            Event::ClipboardLoad(_, _) => write!(f, "ClipboardLoad()"),
-            Event::TerminalClear => write!(f, "TerminalClear"),
-            Event::Bell => write!(f, "Bell"),
-            Event::Exit { reason } => write!(f, "Exit({reason:?})"),
-            Event::CursorBlinkingChange(blinking) => write!(f, "CursorBlinking({blinking})"),
-            Event::PreInteractiveSSHSession => write!(f, "Pre-Interactive SSH Session"),
-            Event::SSH(remote_shell) => write!(f, "SSH(remote shell: {remote_shell}"),
-            Event::SSHControlMasterError => write!(f, "SSH ControlMaster error"),
-            Event::TerminalModeSwapped(_) => write!(f, "Terminal mode swapped"),
-            Event::TmuxControlModeReady { primary_pane } => {
+            Self::AfterBlockStarted { .. } => write!(f, "BlockExecutionStarted"),
+            Self::BackgroundBlockStarted => write!(f, "BackgroundBlockStarted"),
+            Self::VisibleBootstrapBlock => write!(f, "VisibleBootstrapBlock"),
+            Self::Title(title) => write!(f, "Title({title})"),
+            Self::ClipboardStore(_, text) => write!(f, "ClipboardStore({text})"),
+            Self::ClipboardLoad(_, _) => write!(f, "ClipboardLoad()"),
+            Self::TerminalClear => write!(f, "TerminalClear"),
+            Self::Bell => write!(f, "Bell"),
+            Self::Exit { reason } => write!(f, "Exit({reason:?})"),
+            Self::CursorBlinkingChange(blinking) => write!(f, "CursorBlinking({blinking})"),
+            Self::PreInteractiveSSHSession => write!(f, "Pre-Interactive SSH Session"),
+            Self::SSH(remote_shell) => write!(f, "SSH(remote shell: {remote_shell}"),
+            Self::SSHControlMasterError => write!(f, "SSH ControlMaster error"),
+            Self::TerminalModeSwapped(_) => write!(f, "Terminal mode swapped"),
+            Self::TmuxControlModeReady { primary_pane } => {
                 write!(f, "TmuxControlModeReady(primary_pane: {primary_pane})")
             }
-            Event::DetectedEndOfSshLogin(check_type) => {
+            Self::DetectedEndOfSshLogin(check_type) => {
                 write!(f, "DetectedEndOfSshLogin: {check_type:?}")
             }
-            Event::RemoteWarpificationIsUnavailable(_) => {
+            Self::RemoteWarpificationIsUnavailable(_) => {
                 write!(f, "RemoteWarpificationIsUnavailable")
             }
-            Event::SshTmuxInstaller(installer) => {
+            Self::SshTmuxInstaller(installer) => {
                 write!(f, "SshTmuxInstaller({installer:?})")
             }
-            Event::TmuxInstallFailed { line, command } => {
+            Self::TmuxInstallFailed { line, command } => {
                 write!(f, "TmuxInstallFailed(line: {line}, command: {command})")
             }
-            Event::ExecutedInBandCommand(event) => write!(
+            Self::ExecutedInBandCommand(event) => write!(
                 f,
                 "Executed in-band command with ID {} and exit code {}",
                 event.command_id, event.exit_code
             ),
-            Event::InitSubshell(event) => {
+            Self::InitSubshell(event) => {
                 write!(f, "InitSubshell({event:?})")
             }
-            Event::SourcedRcFileInSubshell(event) => {
+            Self::SourcedRcFileInSubshell(event) => {
                 write!(f, "SourcedRcFileInSubshell({event:?})")
             }
-            Event::InitSsh(event) => {
+            Self::InitSsh(event) => {
                 write!(f, "InitSsh({event:?})")
             }
-            Event::PromptUpdated => write!(f, "PromptUpdated"),
-            Event::HonorPS1OutOfSync => write!(f, "HonorPS1OutOfSync"),
-            Event::Typeahead => write!(f, "Typeahead"),
-            Event::AgentTaggedInChanged { is_tagged_in } => {
+            Self::PromptUpdated => write!(f, "PromptUpdated"),
+            Self::HonorPS1OutOfSync => write!(f, "HonorPS1OutOfSync"),
+            Self::Typeahead => write!(f, "Typeahead"),
+            Self::AgentTaggedInChanged { is_tagged_in } => {
                 write!(f, "AgentTaggedInChanged(is_tagged_in: {is_tagged_in})")
             }
-            Event::Handler(handler_event) => write!(f, "Handler({handler_event:?}))"),
-            Event::RemoteServerSetupStateChanged {
+            Self::Handler(handler_event) => write!(f, "Handler({handler_event:?}))"),
+            Self::RemoteServerSetupStateChanged {
                 session_id,
                 ref state,
             } => {
@@ -477,10 +477,10 @@ impl Debug for Event {
                     "RemoteServerSetupStateChanged(session: {session_id:?}, state: {state:?})"
                 )
             }
-            Event::RemoteServerReady { session_id } => {
+            Self::RemoteServerReady { session_id } => {
                 write!(f, "RemoteServerReady(session: {session_id:?})")
             }
-            Event::RemoteServerFailed {
+            Self::RemoteServerFailed {
                 session_id,
                 ref error,
             } => {
@@ -489,18 +489,18 @@ impl Debug for Event {
                     "RemoteServerFailed(session: {session_id:?}, error: {error})"
                 )
             }
-            Event::FinishUpdate(data) => write!(f, "FinishUpdate({})", data.update_id),
-            Event::TextSelectionChanged => write!(f, "TextSelectionChanged"),
-            Event::ShellSpawned(shell_type) => write!(f, "ShellSpawned({shell_type:?})"),
-            Event::SendCompletionsPrompt => write!(f, "SendCompletionsPrompt"),
-            Event::ImageReceived { image_id, .. } => {
+            Self::FinishUpdate(data) => write!(f, "FinishUpdate({})", data.update_id),
+            Self::TextSelectionChanged => write!(f, "TextSelectionChanged"),
+            Self::ShellSpawned(shell_type) => write!(f, "ShellSpawned({shell_type:?})"),
+            Self::SendCompletionsPrompt => write!(f, "SendCompletionsPrompt"),
+            Self::ImageReceived { image_id, .. } => {
                 write!(f, "ImageReceived(image_id: {image_id})")
             }
-            Event::BootstrapPrecmdDone => write!(f, "BootstrapPrecmdDone"),
-            Event::PluggableNotification { title, body } => {
+            Self::BootstrapPrecmdDone => write!(f, "BootstrapPrecmdDone"),
+            Self::PluggableNotification { title, body } => {
                 write!(f, "PluggableNotification(title: {title:?}, body: {body})")
             }
-            Event::ExitShell { session_id } => {
+            Self::ExitShell { session_id } => {
                 write!(f, "ExitShell(session: {session_id:?})")
             }
         }

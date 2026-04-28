@@ -770,7 +770,7 @@ impl UpdateManager {
         &mut self,
         request_state: RequestState<InitialLoadResponse>,
         force_refresh: bool,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) {
         match request_state {
             RequestState::RequestSucceeded(response) => {
@@ -793,7 +793,7 @@ impl UpdateManager {
         &mut self,
         response: InitialLoadResponse,
         force_refresh: bool,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) {
         let is_first_load = !self.has_initial_load.is_set();
         let cloud_model = CloudModel::as_ref(ctx);
@@ -1108,7 +1108,7 @@ impl UpdateManager {
         }
     }
 
-    fn handle_team_memberships_changed(&mut self, ctx: &mut ModelContext<UpdateManager>) {
+    fn handle_team_memberships_changed(&mut self, ctx: &mut ModelContext<Self>) {
         // Immediately check for updates in workspace metadata
         TeamUpdateManager::handle(ctx).update(ctx, |manager, ctx| {
             std::mem::drop(manager.refresh_workspace_metadata(ctx));
@@ -1120,14 +1120,14 @@ impl UpdateManager {
         &mut self,
         _task_id: String,
         timestamp: DateTime<Utc>,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) {
         ctx.emit(UpdateManagerEvent::AmbientTaskUpdated { timestamp });
     }
 
     /// Fetches environment "last used" timestamps from the server and merges them
     /// into the in-memory environment objects.
-    fn fetch_and_merge_environment_timestamps(&mut self, ctx: &mut ModelContext<UpdateManager>) {
+    fn fetch_and_merge_environment_timestamps(&mut self, ctx: &mut ModelContext<Self>) {
         let object_client = self.object_client.clone();
         let future = ctx.spawn(
             async move {
@@ -1154,7 +1154,7 @@ impl UpdateManager {
         updated_objects: Vec<GenericServerObject<K, M>>,
         force_refresh: bool,
         emit_events: bool,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) -> ModelEvent
     where
         K: HashableId
@@ -1185,7 +1185,7 @@ impl UpdateManager {
     /// Updates the CloudModel directly and returns a model event for updating SQLite.
     fn handle_object_deletions<K>(
         deleted_objects: Vec<K>,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) -> Vec<SyncId>
     where
         K: HashableId
@@ -1291,7 +1291,7 @@ impl UpdateManager {
         &mut self,
         cloud_object: ServerCloudObject,
         last_editor: Option<UserProfileWithUID>,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) {
         let uid = cloud_object.uid();
 
@@ -1355,7 +1355,7 @@ impl UpdateManager {
     fn handle_cloud_object_metadata_changed_event(
         &mut self,
         new_metadata: ServerMetadata,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) {
         let uid = new_metadata.uid.uid();
 
@@ -1384,7 +1384,7 @@ impl UpdateManager {
     fn handle_cloud_object_deleted_event(
         &mut self,
         object_uid: ServerId,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) {
         self.on_object_delete_success(vec![object_uid.into()], ctx);
         ctx.notify();
@@ -1393,7 +1393,7 @@ impl UpdateManager {
     fn handle_object_action_event(
         &mut self,
         history: &ObjectActionHistory,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) {
         self.maybe_overwrite_object_action_history(history, ctx);
         self.sync_actions_for_objects_to_sqlite(vec![&history.uid], ctx);
@@ -1564,7 +1564,7 @@ impl UpdateManager {
         &self,
         object_uid: &ObjectUid,
         last_updated_at: ServerTimestamp,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) -> bool {
         let cloud_model = CloudModel::as_ref(ctx);
         if let Some(object) = cloud_model.get_by_uid(object_uid) {
@@ -2138,7 +2138,7 @@ impl UpdateManager {
         current_folder: Option<SyncId>,
         current_owner: Owner,
         current_permissions_last_updated_ts: Option<ServerTimestamp>,
-        ctx: &mut ModelContext<UpdateManager>,
+        ctx: &mut ModelContext<Self>,
     ) {
         // Since the move failed, let's return the object to its original location.
         // TODO: technically the HTTP request could have failed (e.g. network blip)
@@ -4677,7 +4677,7 @@ impl UpdateManager {
     pub fn on_object_delete_success(
         &mut self,
         deleted_ids: Vec<SyncId>,
-        ctx: &mut ModelContext<'_, UpdateManager>,
+        ctx: &mut ModelContext<'_, Self>,
     ) -> i32 {
         let cloud_model_handle = CloudModel::handle(ctx);
         let all_object_uids: Vec<ObjectUid> = deleted_ids.iter().map(|&id| id.uid()).collect();

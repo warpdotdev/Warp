@@ -105,7 +105,7 @@ where
             me.handle_filter_editor_event(event, ctx);
         });
 
-        FilterableDropdown {
+        Self {
             is_expanded: false,
             disabled: false,
             dropdown,

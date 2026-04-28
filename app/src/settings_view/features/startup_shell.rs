@@ -52,11 +52,11 @@ impl NewSessionShellAction {
     /// trying to use a custom shell but are unable to).
     fn telemetry_event(&self) -> TelemetryEvent {
         match self {
-            NewSessionShellAction::Set(option) => TelemetryEvent::FeaturesPageAction {
+            Self::Set(option) => TelemetryEvent::FeaturesPageAction {
                 action: "NewSessionShellOverride".to_string(),
                 value: option.telemetry_value(),
             },
-            NewSessionShellAction::ShowCustomPathInput => TelemetryEvent::FeaturesPageAction {
+            Self::ShowCustomPathInput => TelemetryEvent::FeaturesPageAction {
                 action: "ShowCustomPathInput".to_string(),
                 value: String::new(),
             },

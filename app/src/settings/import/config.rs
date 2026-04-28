@@ -80,17 +80,17 @@ pub enum SettingType {
 impl SettingType {
     pub fn get_name(&self) -> &'static str {
         match self {
-            SettingType::Theme => "Theme",
-            SettingType::OptionAsMeta => "Option as Meta",
-            SettingType::MouseAndScrollReporting => "Mouse/Scroll Reporting",
-            SettingType::Font => "Font",
-            SettingType::DefaultShell => "Default Shell",
-            SettingType::WorkingDirectory => "Working Directory",
-            SettingType::HotkeyMode => "Global hotkey",
-            SettingType::WindowSize => "Window Dimensions",
-            SettingType::CopyOnSelect => "Copy On Select",
-            SettingType::Opacity => "Window Opacity",
-            SettingType::CursorBlinking => "Cursor Blinking",
+            Self::Theme => "Theme",
+            Self::OptionAsMeta => "Option as Meta",
+            Self::MouseAndScrollReporting => "Mouse/Scroll Reporting",
+            Self::Font => "Font",
+            Self::DefaultShell => "Default Shell",
+            Self::WorkingDirectory => "Working Directory",
+            Self::HotkeyMode => "Global hotkey",
+            Self::WindowSize => "Window Dimensions",
+            Self::CopyOnSelect => "Copy On Select",
+            Self::Opacity => "Window Opacity",
+            Self::CursorBlinking => "Cursor Blinking",
         }
     }
 }
@@ -239,19 +239,17 @@ impl Config {
     ) -> (Result<Vec<Self>, ConfigError>, IntervalTimer) {
         match terminal {
             TerminalType::Alacritty => {
-                Config::create_from_external_configs::<AlacrittyConfig>(fonts).await
+                Self::create_from_external_configs::<AlacrittyConfig>(fonts).await
             }
             #[cfg(target_os = "macos")]
-            TerminalType::ITerm => {
-                Config::create_from_external_configs::<ITermProfile>(fonts).await
-            }
+            TerminalType::ITerm => Self::create_from_external_configs::<ITermProfile>(fonts).await,
         }
     }
 
     /// Returns the list of [`SettingType`]s that have an importable setting associated with it.
     pub(super) fn valid_setting_types(&self) -> Vec<SettingType> {
         let mut out = vec![];
-        let default_config = Config::default();
+        let default_config = Self::default();
         if self.theme.value().is_ok() {
             out.push(self.theme.setting_type().clone());
         }

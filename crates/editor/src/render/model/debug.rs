@@ -91,14 +91,14 @@ impl Describe for SumTree<BlockItem> {
 impl Describe for BlockItem {
     fn describe_to(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            BlockItem::Paragraph(_) => f.write_str("Paragraph")?,
-            BlockItem::TextBlock { .. } => f.write_str("Text Block")?,
-            BlockItem::RunnableCodeBlock {
+            Self::Paragraph(_) => f.write_str("Paragraph")?,
+            Self::TextBlock { .. } => f.write_str("Text Block")?,
+            Self::RunnableCodeBlock {
                 code_block_type, ..
             } => write!(f, "Code Block - {code_block_type}",)?,
-            BlockItem::MermaidDiagram { .. } => f.write_str("Mermaid Diagram")?,
-            BlockItem::TemporaryBlock { .. } => f.write_str("Temporary Paragraph")?,
-            BlockItem::TaskList {
+            Self::MermaidDiagram { .. } => f.write_str("Mermaid Diagram")?,
+            Self::TemporaryBlock { .. } => f.write_str("Temporary Paragraph")?,
+            Self::TaskList {
                 indent_level,
                 complete,
                 ..
@@ -107,24 +107,22 @@ impl Describe for BlockItem {
                 "Task List @ {indent_level} [{}]",
                 if *complete { "X" } else { " " }
             )?,
-            BlockItem::UnorderedList { indent_level, .. } => {
+            Self::UnorderedList { indent_level, .. } => {
                 write!(f, "Unordered List @ {indent_level}")?
             }
-            BlockItem::OrderedList { indent_level, .. } => {
-                write!(f, "Ordered List @ {indent_level}")?
-            }
-            BlockItem::Header { header_size, .. } => write!(f, "{header_size:?}")?,
-            BlockItem::HorizontalRule(_) => f.write_str("Horizontal Rule")?,
-            BlockItem::Image { alt_text, .. } => write!(f, "Image: {alt_text}")?,
-            BlockItem::Table(laid_out_table) => write!(
+            Self::OrderedList { indent_level, .. } => write!(f, "Ordered List @ {indent_level}")?,
+            Self::Header { header_size, .. } => write!(f, "{header_size:?}")?,
+            Self::HorizontalRule(_) => f.write_str("Horizontal Rule")?,
+            Self::Image { alt_text, .. } => write!(f, "Image: {alt_text}")?,
+            Self::Table(laid_out_table) => write!(
                 f,
                 "Table: {}x{}",
                 laid_out_table.table.rows.len() + 1,
                 laid_out_table.table.headers.len()
             )?,
-            BlockItem::TrailingNewLine(_) => f.write_str("Trailing Newline")?,
-            BlockItem::Embedded(_) => f.write_str("Embedded Item")?,
-            BlockItem::Hidden { .. } => f.write_str("Hidden")?,
+            Self::TrailingNewLine(_) => f.write_str("Trailing Newline")?,
+            Self::Embedded(_) => f.write_str("Embedded Item")?,
+            Self::Hidden { .. } => f.write_str("Hidden")?,
         }
 
         write!(

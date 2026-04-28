@@ -95,11 +95,11 @@ impl WarpDriveItemStyles {
         }
     }
 
-    fn default(appearance: &Appearance) -> WarpDriveItemStyles {
+    fn default(appearance: &Appearance) -> Self {
         let theme = appearance.theme();
         let item_height = ITEM_FONT_SIZE * 2.0 - ITEM_MARGIN_BOTTOM;
         let background = theme.background();
-        WarpDriveItemStyles {
+        Self {
             item_height,
             default: UiComponentStyles::default()
                 .set_font_color(blended_colors::text_sub(theme, background))

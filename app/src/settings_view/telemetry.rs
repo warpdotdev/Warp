@@ -28,7 +28,7 @@ impl TelemetryEvent for SettingsTelemetryEvent {
 
     fn contains_ugc(&self) -> bool {
         match self {
-            SettingsTelemetryEvent::EnvironmentsPageOpened => false,
+            Self::EnvironmentsPageOpened => false,
         }
     }
 
@@ -40,23 +40,19 @@ impl TelemetryEvent for SettingsTelemetryEvent {
 impl TelemetryEventDesc for SettingsTelemetryEventDiscriminants {
     fn name(&self) -> &'static str {
         match self {
-            SettingsTelemetryEventDiscriminants::EnvironmentsPageOpened => {
-                "Settings.Environments.PageOpened"
-            }
+            Self::EnvironmentsPageOpened => "Settings.Environments.PageOpened",
         }
     }
 
     fn description(&self) -> &'static str {
         match self {
-            SettingsTelemetryEventDiscriminants::EnvironmentsPageOpened => {
-                "User opened the Environments settings page"
-            }
+            Self::EnvironmentsPageOpened => "User opened the Environments settings page",
         }
     }
 
     fn enablement_state(&self) -> EnablementState {
         match self {
-            SettingsTelemetryEventDiscriminants::EnvironmentsPageOpened => EnablementState::Always,
+            Self::EnvironmentsPageOpened => EnablementState::Always,
         }
     }
 }

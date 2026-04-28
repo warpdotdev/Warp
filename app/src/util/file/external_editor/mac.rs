@@ -43,12 +43,12 @@ impl OpenFileInEditorMethod {
         let mut open_command = Command::new("/usr/bin/open");
 
         match self {
-            OpenFileInEditorMethod::Binary(binary_path)
+            Self::Binary(binary_path)
                 if application_bundle_info.path.join(binary_path).exists() =>
             {
                 Command::new(application_bundle_info.path.join(binary_path))
             }
-            OpenFileInEditorMethod::AppUrl(_) => open_command,
+            Self::AppUrl(_) => open_command,
             _ => {
                 open_command.arg("-a").arg(application_bundle_info.path);
                 open_command
@@ -92,27 +92,27 @@ impl<'a> Editor {
 
     pub fn new_from_identifier(app_identifier: &str) -> Option<Self> {
         match app_identifier {
-            Editor::VSCODE_IDENTIFIER => Some(Editor::VSCode),
-            Editor::VSCODE_INSIDERS_IDENTIFIER => Some(Editor::VSCodeInsiders),
-            Editor::PYCHARM_CE_IDENTIFIER => Some(Editor::PyCharmCE),
-            Editor::PYCHARM_IDENTIFIER => Some(Editor::PyCharm),
-            Editor::INTELLIJ_CE_IDENTIFIER => Some(Editor::IntelliJCE),
-            Editor::INTELLIJ_IDENTIFIER => Some(Editor::IntelliJ),
-            Editor::CLION_IDENTIFIER => Some(Editor::CLion),
-            Editor::CLION_CE_IDENTIFIER => Some(Editor::CLionCE),
-            Editor::ATOM_IDENTIFIER => Some(Editor::Atom),
-            Editor::SUBLIME_4_IDENTIFIER => Some(Editor::Sublime4),
-            Editor::SUBLIME_3_IDENTIFIER => Some(Editor::Sublime3),
-            Editor::SUBLIME_2_IDENTIFIER => Some(Editor::Sublime2),
-            Editor::ZED_IDENTIFIER => Some(Editor::Zed),
-            Editor::ZED_PREVIEW_IDENTIFIER => Some(Editor::ZedPreview),
-            Editor::GOLAND_IDENTIFIER => Some(Editor::GoLand),
-            Editor::RIDER_IDENTIFIER => Some(Editor::Rider),
-            Editor::DATASPELL_IDENTIFIER => Some(Editor::DataSpell),
-            Editor::DATAGRIP_IDENTIFIER => Some(Editor::DataGrip),
-            Editor::ANDROID_STUDIO_IDENTIFIER => Some(Editor::AndroidStudio),
-            Editor::CURSOR_IDENTIFIER => Some(Editor::Cursor),
-            Editor::WINDSURF_IDENTIFIER => Some(Editor::Windsurf),
+            Self::VSCODE_IDENTIFIER => Some(Self::VSCode),
+            Self::VSCODE_INSIDERS_IDENTIFIER => Some(Self::VSCodeInsiders),
+            Self::PYCHARM_CE_IDENTIFIER => Some(Self::PyCharmCE),
+            Self::PYCHARM_IDENTIFIER => Some(Self::PyCharm),
+            Self::INTELLIJ_CE_IDENTIFIER => Some(Self::IntelliJCE),
+            Self::INTELLIJ_IDENTIFIER => Some(Self::IntelliJ),
+            Self::CLION_IDENTIFIER => Some(Self::CLion),
+            Self::CLION_CE_IDENTIFIER => Some(Self::CLionCE),
+            Self::ATOM_IDENTIFIER => Some(Self::Atom),
+            Self::SUBLIME_4_IDENTIFIER => Some(Self::Sublime4),
+            Self::SUBLIME_3_IDENTIFIER => Some(Self::Sublime3),
+            Self::SUBLIME_2_IDENTIFIER => Some(Self::Sublime2),
+            Self::ZED_IDENTIFIER => Some(Self::Zed),
+            Self::ZED_PREVIEW_IDENTIFIER => Some(Self::ZedPreview),
+            Self::GOLAND_IDENTIFIER => Some(Self::GoLand),
+            Self::RIDER_IDENTIFIER => Some(Self::Rider),
+            Self::DATASPELL_IDENTIFIER => Some(Self::DataSpell),
+            Self::DATAGRIP_IDENTIFIER => Some(Self::DataGrip),
+            Self::ANDROID_STUDIO_IDENTIFIER => Some(Self::AndroidStudio),
+            Self::CURSOR_IDENTIFIER => Some(Self::Cursor),
+            Self::WINDSURF_IDENTIFIER => Some(Self::Windsurf),
             _ => None,
         }
     }
@@ -122,32 +122,32 @@ impl<'a> Editor {
         ctx: &'a mut AppContext,
     ) -> Option<ApplicationBundleInfo<'a>> {
         ctx.application_bundle_info(match self {
-            Editor::VSCode => Editor::VSCODE_IDENTIFIER,
-            Editor::VSCodeInsiders => Editor::VSCODE_INSIDERS_IDENTIFIER,
-            Editor::PyCharmCE => Editor::PYCHARM_CE_IDENTIFIER,
-            Editor::PyCharm => Editor::PYCHARM_IDENTIFIER,
-            Editor::IntelliJCE => Editor::INTELLIJ_CE_IDENTIFIER,
-            Editor::IntelliJ => Editor::INTELLIJ_IDENTIFIER,
-            Editor::CLionCE => Editor::CLION_CE_IDENTIFIER,
-            Editor::CLion => Editor::CLION_IDENTIFIER,
-            Editor::Sublime4 => Editor::SUBLIME_4_IDENTIFIER,
-            Editor::Sublime3 => Editor::SUBLIME_3_IDENTIFIER,
-            Editor::Sublime2 => Editor::SUBLIME_2_IDENTIFIER,
-            Editor::Atom => Editor::ATOM_IDENTIFIER,
-            Editor::PhpStorm => Editor::PHPSTORM_IDENTIFIER,
-            Editor::WebStorm => Editor::WEBSTORM_IDENTIFIER,
-            Editor::RubyMine => Editor::RUBYMINE_IDENTIFIER,
-            Editor::Zed => Editor::ZED_IDENTIFIER,
-            Editor::ZedPreview => Editor::ZED_PREVIEW_IDENTIFIER,
-            Editor::GoLand => Editor::GOLAND_IDENTIFIER,
-            Editor::Rider => Editor::RIDER_IDENTIFIER,
-            Editor::DataSpell => Editor::DATASPELL_IDENTIFIER,
-            Editor::DataGrip => Editor::DATAGRIP_IDENTIFIER,
-            Editor::AndroidStudio => Editor::ANDROID_STUDIO_IDENTIFIER,
-            Editor::Cursor => Editor::CURSOR_IDENTIFIER,
-            Editor::RustRoverPreview => Editor::RUST_ROVER_PREVIEW_IDENTIFIER,
-            Editor::RustRover => Editor::RUST_ROVER_IDENTIFIER,
-            Editor::Windsurf => Editor::WINDSURF_IDENTIFIER,
+            Self::VSCode => Self::VSCODE_IDENTIFIER,
+            Self::VSCodeInsiders => Self::VSCODE_INSIDERS_IDENTIFIER,
+            Self::PyCharmCE => Self::PYCHARM_CE_IDENTIFIER,
+            Self::PyCharm => Self::PYCHARM_IDENTIFIER,
+            Self::IntelliJCE => Self::INTELLIJ_CE_IDENTIFIER,
+            Self::IntelliJ => Self::INTELLIJ_IDENTIFIER,
+            Self::CLionCE => Self::CLION_CE_IDENTIFIER,
+            Self::CLion => Self::CLION_IDENTIFIER,
+            Self::Sublime4 => Self::SUBLIME_4_IDENTIFIER,
+            Self::Sublime3 => Self::SUBLIME_3_IDENTIFIER,
+            Self::Sublime2 => Self::SUBLIME_2_IDENTIFIER,
+            Self::Atom => Self::ATOM_IDENTIFIER,
+            Self::PhpStorm => Self::PHPSTORM_IDENTIFIER,
+            Self::WebStorm => Self::WEBSTORM_IDENTIFIER,
+            Self::RubyMine => Self::RUBYMINE_IDENTIFIER,
+            Self::Zed => Self::ZED_IDENTIFIER,
+            Self::ZedPreview => Self::ZED_PREVIEW_IDENTIFIER,
+            Self::GoLand => Self::GOLAND_IDENTIFIER,
+            Self::Rider => Self::RIDER_IDENTIFIER,
+            Self::DataSpell => Self::DATASPELL_IDENTIFIER,
+            Self::DataGrip => Self::DATAGRIP_IDENTIFIER,
+            Self::AndroidStudio => Self::ANDROID_STUDIO_IDENTIFIER,
+            Self::Cursor => Self::CURSOR_IDENTIFIER,
+            Self::RustRoverPreview => Self::RUST_ROVER_PREVIEW_IDENTIFIER,
+            Self::RustRover => Self::RUST_ROVER_IDENTIFIER,
+            Self::Windsurf => Self::WINDSURF_IDENTIFIER,
         })
     }
 
@@ -163,63 +163,59 @@ impl<'a> Editor {
         let full_path_with_line_column =
             Self::format_file_path_with_line_and_column(full_path, line_column_number);
         match self {
-            Editor::VSCode => (
+            Self::VSCode => (
                 OpenFileInEditorMethod::AppUrl(None),
                 vec![format!("vscode://file{}", full_path_with_line_column)],
             ),
-            Editor::VSCodeInsiders => (
+            Self::VSCodeInsiders => (
                 OpenFileInEditorMethod::AppUrl(None),
                 vec![format!(
                     "vscode-insiders://file{}",
                     full_path_with_line_column
                 )],
             ),
-            Editor::Windsurf => (
+            Self::Windsurf => (
                 OpenFileInEditorMethod::AppUrl(None),
                 vec![format!("windsurf://file{}", full_path_with_line_column)],
             ),
-            Editor::PyCharm | Editor::PyCharmCE => {
+            Self::PyCharm | Self::PyCharmCE => {
                 Self::jetbrains_command("pycharm", line_column_number, full_path)
             }
-            Editor::IntelliJ | Editor::IntelliJCE => {
+            Self::IntelliJ | Self::IntelliJCE => {
                 Self::jetbrains_command("idea", line_column_number, full_path)
             }
-            Editor::CLion | Editor::CLionCE => {
+            Self::CLion | Self::CLionCE => {
                 Self::jetbrains_command("clion", line_column_number, full_path)
             }
-            Editor::RubyMine => Self::jetbrains_command("rubymine", line_column_number, full_path),
-            Editor::PhpStorm => Self::jetbrains_command("phpstorm", line_column_number, full_path),
-            Editor::WebStorm => Self::jetbrains_command("webstorm", line_column_number, full_path),
-            Editor::Sublime4 | Editor::Sublime3 | Editor::Sublime2 => (
+            Self::RubyMine => Self::jetbrains_command("rubymine", line_column_number, full_path),
+            Self::PhpStorm => Self::jetbrains_command("phpstorm", line_column_number, full_path),
+            Self::WebStorm => Self::jetbrains_command("webstorm", line_column_number, full_path),
+            Self::Sublime4 | Self::Sublime3 | Self::Sublime2 => (
                 OpenFileInEditorMethod::Binary("Contents/SharedSupport/bin/subl".to_string()),
                 vec![full_path_with_line_column],
             ),
-            Editor::Atom => (
+            Self::Atom => (
                 OpenFileInEditorMethod::FromApplicationBundleInfo,
                 vec![full_path_with_line_column],
             ),
-            Editor::Zed => (
-                OpenFileInEditorMethod::AppUrl(Some(Editor::ZED_IDENTIFIER)),
+            Self::Zed => (
+                OpenFileInEditorMethod::AppUrl(Some(Self::ZED_IDENTIFIER)),
                 vec![format!("zed://file{}", full_path_with_line_column)],
             ),
-            Editor::ZedPreview => (
-                OpenFileInEditorMethod::AppUrl(Some(Editor::ZED_PREVIEW_IDENTIFIER)),
+            Self::ZedPreview => (
+                OpenFileInEditorMethod::AppUrl(Some(Self::ZED_PREVIEW_IDENTIFIER)),
                 vec![format!("zed://file{}", full_path_with_line_column)],
             ),
-            Editor::GoLand => Self::jetbrains_command("goland", line_column_number, full_path),
-            Editor::Rider => Self::jetbrains_command("rider", line_column_number, full_path),
-            Editor::DataSpell => {
-                Self::jetbrains_command("dataspell", line_column_number, full_path)
-            }
-            Editor::DataGrip => Self::jetbrains_command("datagrip", line_column_number, full_path),
-            Editor::AndroidStudio => {
-                Self::jetbrains_command("studio", line_column_number, full_path)
-            }
-            Editor::Cursor => (
+            Self::GoLand => Self::jetbrains_command("goland", line_column_number, full_path),
+            Self::Rider => Self::jetbrains_command("rider", line_column_number, full_path),
+            Self::DataSpell => Self::jetbrains_command("dataspell", line_column_number, full_path),
+            Self::DataGrip => Self::jetbrains_command("datagrip", line_column_number, full_path),
+            Self::AndroidStudio => Self::jetbrains_command("studio", line_column_number, full_path),
+            Self::Cursor => (
                 OpenFileInEditorMethod::AppUrl(None),
                 vec![format!("cursor://file{}", full_path_with_line_column)],
             ),
-            Editor::RustRoverPreview | Editor::RustRover => {
+            Self::RustRoverPreview | Self::RustRover => {
                 Self::jetbrains_command("rustrover", line_column_number, full_path)
             }
         }

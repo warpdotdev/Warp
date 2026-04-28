@@ -2090,7 +2090,7 @@ impl BackingView for EnvironmentsPageView {
 
 impl From<ViewHandle<EnvironmentsPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<EnvironmentsPageView>) -> Self {
-        SettingsPageViewHandle::CloudEnvironments(view_handle)
+        Self::CloudEnvironments(view_handle)
     }
 }
 

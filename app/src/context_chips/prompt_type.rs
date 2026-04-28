@@ -48,7 +48,7 @@ impl PromptType {
         same_line_prompt_enabled: bool,
         separator: WarpPromptSeparator,
     ) -> Self {
-        PromptType::Static {
+        Self::Static {
             snapshot: PromptSnapshot::from_chips(chips, same_line_prompt_enabled, separator),
         }
     }

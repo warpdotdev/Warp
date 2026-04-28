@@ -207,7 +207,7 @@ struct StateHandles {
 
 pub struct CLISubagentView {
     block_id: BlockId,
-    model: Rc<dyn AIBlockModel<View = CLISubagentView>>,
+    model: Rc<dyn AIBlockModel<View = Self>>,
     subagent_controller: ModelHandle<CLISubagentController>,
     action_model: ModelHandle<BlocklistAIActionModel>,
     terminal_model: Arc<FairMutex<TerminalModel>>,
@@ -369,7 +369,7 @@ impl CLISubagentView {
                     ..
                 } => {
                     if task_id == &task_id_clone {
-                        if let Ok(model) = AIBlockModelImpl::<CLISubagentView>::new(
+                        if let Ok(model) = AIBlockModelImpl::<Self>::new(
                             *exchange_id,
                             *conversation_id,
                             false,
@@ -436,14 +436,8 @@ impl CLISubagentView {
                     .and_then(|t| t.last_exchange().map(|e| e.id))
             })
             .expect("Exchange exists.");
-        let model = AIBlockModelImpl::<CLISubagentView>::new(
-            exchange_id,
-            conversation_id,
-            false,
-            false,
-            ctx,
-        )
-        .expect("Exchange exists.");
+        let model = AIBlockModelImpl::<Self>::new(exchange_id, conversation_id, false, false, ctx)
+            .expect("Exchange exists.");
         model.on_updated_output(
             Box::new(|me, ctx| {
                 me.handle_updated_exchange_output(ctx);

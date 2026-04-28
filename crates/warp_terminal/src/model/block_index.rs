@@ -21,8 +21,8 @@ impl BlockIndex {
         Self(0)
     }
 
-    pub fn range_as_iter(range: Range<BlockIndex>) -> impl Iterator<Item = BlockIndex> {
-        (range.start.0..range.end.0).map(BlockIndex::from)
+    pub fn range_as_iter(range: Range<Self>) -> impl Iterator<Item = Self> {
+        (range.start.0..range.end.0).map(Self::from)
     }
 
     pub fn next(self) -> Self {
@@ -32,18 +32,18 @@ impl BlockIndex {
 
 impl From<usize> for BlockIndex {
     fn from(index: usize) -> Self {
-        BlockIndex(index)
+        Self(index)
     }
 }
 
 impl From<BlockIndex> for usize {
-    fn from(block_index: BlockIndex) -> usize {
+    fn from(block_index: BlockIndex) -> Self {
         block_index.0
     }
 }
 
 impl Add for BlockIndex {
-    type Output = BlockIndex;
+    type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
         Self(self.0 + rhs.0)
@@ -57,7 +57,7 @@ impl AddAssign for BlockIndex {
 }
 
 impl Sub for BlockIndex {
-    type Output = BlockIndex;
+    type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
         Self(self.0 - rhs.0)

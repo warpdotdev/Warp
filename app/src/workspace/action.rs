@@ -665,7 +665,7 @@ pub enum WorkspaceAction {
 }
 
 impl From<&WorkspaceAction> for LoginGatedFeature {
-    fn from(val: &WorkspaceAction) -> LoginGatedFeature {
+    fn from(val: &WorkspaceAction) -> Self {
         use WorkspaceAction::*;
         match val {
             ImportToTeamDrive => "Importing to a team drive",

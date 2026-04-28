@@ -32,9 +32,9 @@ pub struct FileId(usize);
 impl FileId {
     /// Constructs a new globally-unique file ID.
     #[allow(clippy::new_without_default)]
-    pub fn new() -> FileId {
+    pub fn new() -> Self {
         static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
         let raw = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        FileId(raw)
+        Self(raw)
     }
 }

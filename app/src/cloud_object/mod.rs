@@ -611,7 +611,7 @@ where
 impl<K, M> CloudObject for GenericCloudObject<K, M>
 where
     K: HashableId + ToServerId + Debug + Into<String> + Clone + 'static,
-    M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+    M: CloudModelType<IdType = K, CloudObjectType = Self> + 'static,
 {
     fn model_type_name(&self) -> &'static str {
         self.model.model_type_name()
@@ -819,7 +819,7 @@ where
 impl<K, M> GenericCloudObject<K, M>
 where
     K: HashableId + ToServerId + Debug + Into<String> + Clone + 'static,
-    M: CloudModelType<IdType = K, CloudObjectType = GenericCloudObject<K, M>> + 'static,
+    M: CloudModelType<IdType = K, CloudObjectType = Self> + 'static,
 {
     /// Gets a reference to the model held by the object.
     pub fn model(&self) -> &M {
@@ -1020,7 +1020,7 @@ impl<T> ConflictStatus<T> {
     /// Utility function that allows for a more ergonomic way of figuring out whether there is a
     /// conflict (for cases where we don't care about the conflict details).
     pub fn has_conflicts(&self) -> bool {
-        matches!(self, ConflictStatus::ConflictingChanges { .. })
+        matches!(self, Self::ConflictingChanges { .. })
     }
 }
 
@@ -1048,7 +1048,7 @@ impl From<&dyn CloudObject> for ObjectType {
 
 impl From<&Box<dyn CloudObject>> for ObjectType {
     fn from(value: &Box<dyn CloudObject>) -> Self {
-        <ObjectType as From<&dyn CloudObject>>::from(value.as_ref())
+        <Self as From<&dyn CloudObject>>::from(value.as_ref())
     }
 }
 
@@ -1192,53 +1192,45 @@ pub enum ServerCloudObject {
 impl ServerCloudObject {
     pub fn metadata(&self) -> &ServerMetadata {
         match self {
-            ServerCloudObject::Notebook(notebook) => &notebook.metadata,
-            ServerCloudObject::Workflow(workflow) => &workflow.metadata,
-            ServerCloudObject::Folder(folder) => &folder.metadata,
-            ServerCloudObject::Preference(preferences) => &preferences.metadata,
-            ServerCloudObject::EnvVarCollection(env_var_collection) => &env_var_collection.metadata,
-            ServerCloudObject::WorkflowEnum(workflow_enum) => &workflow_enum.metadata,
-            ServerCloudObject::AIFact(aifact) => &aifact.metadata,
-            ServerCloudObject::MCPServer(mcp_server) => &mcp_server.metadata,
-            ServerCloudObject::TemplatableMCPServer(templatable_mcp_server) => {
-                &templatable_mcp_server.metadata
-            }
-            ServerCloudObject::AIExecutionProfile(ai_execution_profile) => {
-                &ai_execution_profile.metadata
-            }
-            ServerCloudObject::AmbientAgentEnvironment(ambient_agent_environment) => {
+            Self::Notebook(notebook) => &notebook.metadata,
+            Self::Workflow(workflow) => &workflow.metadata,
+            Self::Folder(folder) => &folder.metadata,
+            Self::Preference(preferences) => &preferences.metadata,
+            Self::EnvVarCollection(env_var_collection) => &env_var_collection.metadata,
+            Self::WorkflowEnum(workflow_enum) => &workflow_enum.metadata,
+            Self::AIFact(aifact) => &aifact.metadata,
+            Self::MCPServer(mcp_server) => &mcp_server.metadata,
+            Self::TemplatableMCPServer(templatable_mcp_server) => &templatable_mcp_server.metadata,
+            Self::AIExecutionProfile(ai_execution_profile) => &ai_execution_profile.metadata,
+            Self::AmbientAgentEnvironment(ambient_agent_environment) => {
                 &ambient_agent_environment.metadata
             }
-            ServerCloudObject::ScheduledAmbientAgent(scheduled_ambient_agent) => {
+            Self::ScheduledAmbientAgent(scheduled_ambient_agent) => {
                 &scheduled_ambient_agent.metadata
             }
-            ServerCloudObject::CloudAgentConfig(cloud_agent_config) => &cloud_agent_config.metadata,
+            Self::CloudAgentConfig(cloud_agent_config) => &cloud_agent_config.metadata,
         }
     }
 
     pub fn uid(&self) -> ObjectUid {
         match self {
-            ServerCloudObject::Notebook(notebook) => notebook.id.uid(),
-            ServerCloudObject::Workflow(workflow) => workflow.id.uid(),
-            ServerCloudObject::Folder(folder) => folder.id.uid(),
-            ServerCloudObject::Preference(preferences) => preferences.id.uid(),
-            ServerCloudObject::EnvVarCollection(env_var_collection) => env_var_collection.id.uid(),
-            ServerCloudObject::WorkflowEnum(workflow_enum) => workflow_enum.id.uid(),
-            ServerCloudObject::AIFact(aifact) => aifact.id.uid(),
-            ServerCloudObject::MCPServer(mcp_server) => mcp_server.id.uid(),
-            ServerCloudObject::AIExecutionProfile(ai_execution_profile) => {
-                ai_execution_profile.id.uid()
-            }
-            ServerCloudObject::TemplatableMCPServer(templatable_mcp_server) => {
-                templatable_mcp_server.id.uid()
-            }
-            ServerCloudObject::AmbientAgentEnvironment(ambient_agent_environment) => {
+            Self::Notebook(notebook) => notebook.id.uid(),
+            Self::Workflow(workflow) => workflow.id.uid(),
+            Self::Folder(folder) => folder.id.uid(),
+            Self::Preference(preferences) => preferences.id.uid(),
+            Self::EnvVarCollection(env_var_collection) => env_var_collection.id.uid(),
+            Self::WorkflowEnum(workflow_enum) => workflow_enum.id.uid(),
+            Self::AIFact(aifact) => aifact.id.uid(),
+            Self::MCPServer(mcp_server) => mcp_server.id.uid(),
+            Self::AIExecutionProfile(ai_execution_profile) => ai_execution_profile.id.uid(),
+            Self::TemplatableMCPServer(templatable_mcp_server) => templatable_mcp_server.id.uid(),
+            Self::AmbientAgentEnvironment(ambient_agent_environment) => {
                 ambient_agent_environment.id.uid()
             }
-            ServerCloudObject::ScheduledAmbientAgent(scheduled_ambient_agent) => {
+            Self::ScheduledAmbientAgent(scheduled_ambient_agent) => {
                 scheduled_ambient_agent.id.uid()
             }
-            ServerCloudObject::CloudAgentConfig(cloud_agent_config) => cloud_agent_config.id.uid(),
+            Self::CloudAgentConfig(cloud_agent_config) => cloud_agent_config.id.uid(),
         }
     }
 }
@@ -1250,46 +1242,46 @@ where
 {
     fn from(value: &GenericServerObject<K, M>) -> Self {
         if let Some(server_notebook) = value.as_any().downcast_ref::<ServerNotebook>() {
-            ServerCloudObject::Notebook(server_notebook.clone())
+            Self::Notebook(server_notebook.clone())
         } else if let Some(server_workflow) = value.as_any().downcast_ref::<ServerWorkflow>() {
-            ServerCloudObject::Workflow(Box::new(server_workflow.clone()))
+            Self::Workflow(Box::new(server_workflow.clone()))
         } else if let Some(server_folder) = value.as_any().downcast_ref::<ServerFolder>() {
-            ServerCloudObject::Folder(server_folder.clone())
+            Self::Folder(server_folder.clone())
         } else if let Some(server_preferences) = value.as_any().downcast_ref::<ServerPreference>() {
-            ServerCloudObject::Preference(server_preferences.clone())
+            Self::Preference(server_preferences.clone())
         } else if let Some(server_env_var_collection) =
             value.as_any().downcast_ref::<ServerEnvVarCollection>()
         {
-            ServerCloudObject::EnvVarCollection(server_env_var_collection.clone())
+            Self::EnvVarCollection(server_env_var_collection.clone())
         } else if let Some(server_workflow_enum) =
             value.as_any().downcast_ref::<ServerWorkflowEnum>()
         {
-            ServerCloudObject::WorkflowEnum(server_workflow_enum.clone())
+            Self::WorkflowEnum(server_workflow_enum.clone())
         } else if let Some(server_aifact) = value.as_any().downcast_ref::<ServerAIFact>() {
-            ServerCloudObject::AIFact(server_aifact.clone())
+            Self::AIFact(server_aifact.clone())
         } else if let Some(server_mcp_server) = value.as_any().downcast_ref::<ServerMCPServer>() {
-            ServerCloudObject::MCPServer(server_mcp_server.clone())
+            Self::MCPServer(server_mcp_server.clone())
         } else if let Some(server_ai_execution_profile) =
             value.as_any().downcast_ref::<ServerAIExecutionProfile>()
         {
-            ServerCloudObject::AIExecutionProfile(server_ai_execution_profile.clone())
+            Self::AIExecutionProfile(server_ai_execution_profile.clone())
         } else if let Some(server_templatable_mcp_server) =
             value.as_any().downcast_ref::<ServerTemplatableMCPServer>()
         {
-            ServerCloudObject::TemplatableMCPServer(server_templatable_mcp_server.clone())
+            Self::TemplatableMCPServer(server_templatable_mcp_server.clone())
         } else if let Some(server_ambient_agent_environment) = value
             .as_any()
             .downcast_ref::<ServerAmbientAgentEnvironment>(
         ) {
-            ServerCloudObject::AmbientAgentEnvironment(server_ambient_agent_environment.clone())
+            Self::AmbientAgentEnvironment(server_ambient_agent_environment.clone())
         } else if let Some(server_scheduled_ambient_agent) =
             value.as_any().downcast_ref::<ServerScheduledAmbientAgent>()
         {
-            ServerCloudObject::ScheduledAmbientAgent(server_scheduled_ambient_agent.clone())
+            Self::ScheduledAmbientAgent(server_scheduled_ambient_agent.clone())
         } else if let Some(server_cloud_agent_config) =
             value.as_any().downcast_ref::<ServerCloudAgentConfig>()
         {
-            ServerCloudObject::CloudAgentConfig(server_cloud_agent_config.clone())
+            Self::CloudAgentConfig(server_cloud_agent_config.clone())
         } else {
             panic!("Unknown server object type");
         }
@@ -1517,8 +1509,8 @@ pub enum Space {
 impl Space {
     pub fn name(&self, app: &AppContext) -> String {
         match self {
-            Space::Personal => "Personal".to_string(),
-            Space::Team { team_uid, .. } => {
+            Self::Personal => "Personal".to_string(),
+            Self::Team { team_uid, .. } => {
                 let user_workspaces = UserWorkspaces::as_ref(app);
                 if let Some(team) = user_workspaces.team_from_uid(*team_uid) {
                     team.name.clone()
@@ -1526,7 +1518,7 @@ impl Space {
                     "Team".to_string()
                 }
             }
-            Space::Shared => "Shared with me".to_string(),
+            Self::Shared => "Shared with me".to_string(),
         }
     }
 }
@@ -1667,16 +1659,16 @@ pub struct ServerCreationInfo {
 impl From<Space> for WorkflowSource {
     fn from(space: Space) -> Self {
         match space {
-            Space::Personal => WorkflowSource::PersonalCloud,
-            Space::Team { team_uid } => WorkflowSource::Team { team_uid },
+            Space::Personal => Self::PersonalCloud,
+            Space::Team { team_uid } => Self::Team { team_uid },
             // TODO(ben): Model sharing in workflow telemetry.
-            Space::Shared => WorkflowSource::PersonalCloud,
+            Space::Shared => Self::PersonalCloud,
         }
     }
 }
 
 impl From<Owner> for WorkflowSource {
-    fn from(owner: Owner) -> WorkflowSource {
+    fn from(owner: Owner) -> Self {
         match owner {
             // TODO(ben): Represent shared objects in telemetry.
             Owner::User { .. } => Self::PersonalCloud,

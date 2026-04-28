@@ -15,17 +15,17 @@ use super::team::{MembershipRole, Team};
 pub struct WorkspaceUid(ServerId);
 impl From<String> for WorkspaceUid {
     fn from(uid: String) -> Self {
-        WorkspaceUid(ServerId::from_string_lossy(uid))
+        Self(ServerId::from_string_lossy(uid))
     }
 }
 impl From<WorkspaceUid> for String {
-    fn from(workspace_uid: WorkspaceUid) -> String {
+    fn from(workspace_uid: WorkspaceUid) -> Self {
         workspace_uid.0.to_string()
     }
 }
 impl From<ServerId> for WorkspaceUid {
     fn from(uid: ServerId) -> Self {
-        WorkspaceUid(uid)
+        Self(uid)
     }
 }
 
@@ -259,17 +259,17 @@ pub enum CustomerType {
 impl CustomerType {
     pub fn to_display_string(self) -> String {
         match self {
-            CustomerType::Free => "Free".to_string(),
-            CustomerType::Turbo => "Turbo".to_string(),
-            CustomerType::SelfServe => "Team".to_string(),
-            CustomerType::Prosumer => "Pro".to_string(),
-            CustomerType::Legacy => "Early adopter".to_string(),
-            CustomerType::Enterprise => "Enterprise".to_string(),
-            CustomerType::Business => "Business".to_string(),
-            CustomerType::Lightspeed => "Lightspeed".to_string(),
-            CustomerType::Build => "Build".to_string(),
-            CustomerType::BuildMax => "Max".to_string(),
-            CustomerType::Unknown => "".to_string(),
+            Self::Free => "Free".to_string(),
+            Self::Turbo => "Turbo".to_string(),
+            Self::SelfServe => "Team".to_string(),
+            Self::Prosumer => "Pro".to_string(),
+            Self::Legacy => "Early adopter".to_string(),
+            Self::Enterprise => "Enterprise".to_string(),
+            Self::Business => "Business".to_string(),
+            Self::Lightspeed => "Lightspeed".to_string(),
+            Self::Build => "Build".to_string(),
+            Self::BuildMax => "Max".to_string(),
+            Self::Unknown => "".to_string(),
         }
     }
 }
@@ -515,7 +515,7 @@ impl BillingMetadata {
     }
 
     pub fn is_on_stripe_paid_plan(&self) -> bool {
-        BillingMetadata::is_stripe_paid_plan(self.customer_type)
+        Self::is_stripe_paid_plan(self.customer_type)
     }
 
     pub fn is_on_build_plan(&self) -> bool {

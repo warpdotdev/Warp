@@ -305,15 +305,15 @@ pub enum StoredImageMetadata {
 impl StoredImageMetadata {
     pub fn image_size(&self) -> Vector2F {
         match self {
-            StoredImageMetadata::ITerm(metadata) => metadata.image_size,
-            StoredImageMetadata::Kitty(metadata) => metadata.image_size,
+            Self::ITerm(metadata) => metadata.image_size,
+            Self::Kitty(metadata) => metadata.image_size,
         }
     }
 
     pub fn preserve_aspect_ratio(&self) -> bool {
         match self {
-            StoredImageMetadata::ITerm(metadata) => metadata.preserve_aspect_ratio,
-            StoredImageMetadata::Kitty(_) => false,
+            Self::ITerm(metadata) => metadata.preserve_aspect_ratio,
+            Self::Kitty(_) => false,
         }
     }
 }

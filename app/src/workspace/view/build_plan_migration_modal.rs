@@ -100,7 +100,7 @@ impl BuildPlanMigrationModal {
             },
         );
 
-        let mut me = BuildPlanMigrationModal {
+        let mut me = Self {
             state_handles: Default::default(),
             selected_addon_credits_option: 0,
             addon_credits_options: Default::default(),

@@ -57,7 +57,7 @@ impl SecretHandle {
     pub(super) fn next() -> Self {
         static SECRET_HANDLE: AtomicUsize = AtomicUsize::new(0);
         let next = SECRET_HANDLE.fetch_add(1, Ordering::Relaxed);
-        SecretHandle(next)
+        Self(next)
     }
 
     pub fn id(&self) -> String {
@@ -94,19 +94,19 @@ pub enum SecretLevel {
 impl SecretLevel {
     /// Returns true if this is an enterprise level secret
     pub fn is_enterprise(self) -> bool {
-        matches!(self, SecretLevel::Enterprise)
+        matches!(self, Self::Enterprise)
     }
 
     /// Returns true if this is a user level secret
     pub fn is_user(self) -> bool {
-        matches!(self, SecretLevel::User)
+        matches!(self, Self::User)
     }
 
     /// Returns the priority of the secret level. Enterprise has highest priority.
     pub fn priority(self) -> u8 {
         match self {
-            SecretLevel::User => 0,
-            SecretLevel::Enterprise => 1,
+            Self::User => 0,
+            Self::Enterprise => 1,
         }
     }
 }
@@ -136,41 +136,34 @@ impl Not for ObfuscateSecrets {
 
     fn not(self) -> Self::Output {
         match self {
-            ObfuscateSecrets::Yes => ObfuscateSecrets::No,
-            ObfuscateSecrets::No => ObfuscateSecrets::Yes,
-            ObfuscateSecrets::Strikethrough => ObfuscateSecrets::Yes,
-            ObfuscateSecrets::AlwaysShow => ObfuscateSecrets::Yes,
+            Self::Yes => Self::No,
+            Self::No => Self::Yes,
+            Self::Strikethrough => Self::Yes,
+            Self::AlwaysShow => Self::Yes,
         }
     }
 }
 
 impl ObfuscateSecrets {
     /// Returns the "stronger" obfuscation mode. Priority: Yes > Strikethrough > AlwaysShow > No
-    pub fn and(&self, other: &ObfuscateSecrets) -> ObfuscateSecrets {
+    pub fn and(&self, other: &Self) -> Self {
         match (self, other) {
-            (ObfuscateSecrets::Yes, _) | (_, ObfuscateSecrets::Yes) => ObfuscateSecrets::Yes,
-            (ObfuscateSecrets::Strikethrough, _) | (_, ObfuscateSecrets::Strikethrough) => {
-                ObfuscateSecrets::Strikethrough
-            }
-            (ObfuscateSecrets::AlwaysShow, _) | (_, ObfuscateSecrets::AlwaysShow) => {
-                ObfuscateSecrets::AlwaysShow
-            }
-            (ObfuscateSecrets::No, ObfuscateSecrets::No) => ObfuscateSecrets::No,
+            (Self::Yes, _) | (_, Self::Yes) => Self::Yes,
+            (Self::Strikethrough, _) | (_, Self::Strikethrough) => Self::Strikethrough,
+            (Self::AlwaysShow, _) | (_, Self::AlwaysShow) => Self::AlwaysShow,
+            (Self::No, Self::No) => Self::No,
         }
     }
 
     /// Returns whether the secret should be redacted given the current safe mode settings.
     /// This includes obfuscation, strikethrough, and always show (for interaction purposes).
     pub fn should_redact_secret(&self) -> bool {
-        matches!(
-            self,
-            ObfuscateSecrets::Yes | ObfuscateSecrets::Strikethrough | ObfuscateSecrets::AlwaysShow
-        )
+        matches!(self, Self::Yes | Self::Strikethrough | Self::AlwaysShow)
     }
 
     /// Returns whether the current obfuscation mode is `ObfuscateSecrets::Yes`
     pub fn is_visually_obfuscated(&self) -> bool {
-        matches!(self, ObfuscateSecrets::Yes)
+        matches!(self, Self::Yes)
     }
 }
 
@@ -409,7 +402,7 @@ impl StepLite for RangeMapPoint {
             new_point.row += 1;
         }
 
-        RangeMapPoint {
+        Self {
             point: new_point,
             num_cols: self.num_cols,
         }
@@ -427,7 +420,7 @@ impl StepLite for RangeMapPoint {
             new_point.col -= 1;
         }
 
-        RangeMapPoint {
+        Self {
             point: new_point,
             num_cols: self.num_cols,
         }

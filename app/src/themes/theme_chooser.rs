@@ -96,10 +96,10 @@ impl ThemeChooserMode {
     pub fn for_active_theme(app: &AppContext) -> Self {
         match respect_system_theme(ThemeSettings::as_ref(app)) {
             RespectSystemTheme::On(_) => match app.system_theme() {
-                SystemTheme::Dark => ThemeChooserMode::SystemDark,
-                SystemTheme::Light => ThemeChooserMode::SystemLight,
+                SystemTheme::Dark => Self::SystemDark,
+                SystemTheme::Light => Self::SystemLight,
             },
-            RespectSystemTheme::Off => ThemeChooserMode::SystemAgnostic,
+            RespectSystemTheme::Off => Self::SystemAgnostic,
         }
     }
 
@@ -107,26 +107,24 @@ impl ThemeChooserMode {
         let theme_settings = ThemeSettings::as_ref(ctx);
         let theme_kind = theme_settings.theme_kind.value();
         match (self, &respect_system_theme(theme_settings)) {
-            (ThemeChooserMode::SystemAgnostic, _) => theme_kind.clone(),
-            (ThemeChooserMode::SystemLight, RespectSystemTheme::On(system_themes)) => {
+            (Self::SystemAgnostic, _) => theme_kind.clone(),
+            (Self::SystemLight, RespectSystemTheme::On(system_themes)) => {
                 system_themes.light.clone()
             }
-            (ThemeChooserMode::SystemDark, RespectSystemTheme::On(system_themes)) => {
-                system_themes.dark.clone()
-            }
+            (Self::SystemDark, RespectSystemTheme::On(system_themes)) => system_themes.dark.clone(),
             (_, _) => ThemeKind::default(),
         }
     }
 
     fn render_hint_text(&self, appearance: &Appearance) -> Box<dyn Element> {
         let hint_text = match self {
-            ThemeChooserMode::SystemAgnostic => appearance
+            Self::SystemAgnostic => appearance
                 .ui_builder()
                 .paragraph("Change your current theme.".to_string()),
-            ThemeChooserMode::SystemLight => appearance
+            Self::SystemLight => appearance
                 .ui_builder()
                 .paragraph("Pick a theme for when your system is in light mode.".to_string()),
-            ThemeChooserMode::SystemDark => appearance
+            Self::SystemDark => appearance
                 .ui_builder()
                 .paragraph("Pick a theme for when your system is in dark mode.".to_string()),
         };

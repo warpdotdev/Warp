@@ -164,31 +164,31 @@ pub enum AgentSource {
 impl AgentSource {
     pub fn as_str(&self) -> &str {
         match self {
-            AgentSource::Linear => "LINEAR",
-            AgentSource::AgentWebhook => "API",
-            AgentSource::Slack => "SLACK",
-            AgentSource::Cli => "CLI",
-            AgentSource::ScheduledAgent => "SCHEDULED_AGENT",
+            Self::Linear => "LINEAR",
+            Self::AgentWebhook => "API",
+            Self::Slack => "SLACK",
+            Self::Cli => "CLI",
+            Self::ScheduledAgent => "SCHEDULED_AGENT",
             // The public API's run source for local interactive tasks is named
             // `LOCAL`.
-            AgentSource::Interactive => "LOCAL",
-            AgentSource::WebApp => "WEB_APP",
-            AgentSource::GitHubAction => "GITHUB_ACTION",
-            AgentSource::CloudMode => "CLOUD_MODE",
+            Self::Interactive => "LOCAL",
+            Self::WebApp => "WEB_APP",
+            Self::GitHubAction => "GITHUB_ACTION",
+            Self::CloudMode => "CLOUD_MODE",
         }
     }
 
     pub fn display_name(&self) -> &str {
         match self {
-            AgentSource::Linear => "Linear",
-            AgentSource::AgentWebhook => "API",
-            AgentSource::Slack => "Slack",
-            AgentSource::Cli => "CLI",
-            AgentSource::ScheduledAgent => "Scheduled",
-            AgentSource::Interactive => "Warp (local agent)",
-            AgentSource::WebApp => "Oz Web",
-            AgentSource::GitHubAction => "GitHub Action",
-            AgentSource::CloudMode => "Warp (cloud agent)",
+            Self::Linear => "Linear",
+            Self::AgentWebhook => "API",
+            Self::Slack => "Slack",
+            Self::Cli => "CLI",
+            Self::ScheduledAgent => "Scheduled",
+            Self::Interactive => "Warp (local agent)",
+            Self::WebApp => "Oz Web",
+            Self::GitHubAction => "GitHub Action",
+            Self::CloudMode => "Warp (cloud agent)",
         }
     }
 
@@ -196,15 +196,8 @@ impl AgentSource {
     /// (as opposed to automated/programmatic sources like CLI or scheduled runs).
     pub fn is_user_initiated(&self) -> bool {
         match self {
-            AgentSource::Linear
-            | AgentSource::Slack
-            | AgentSource::Interactive
-            | AgentSource::WebApp
-            | AgentSource::CloudMode => true,
-            AgentSource::Cli
-            | AgentSource::ScheduledAgent
-            | AgentSource::AgentWebhook
-            | AgentSource::GitHubAction => false,
+            Self::Linear | Self::Slack | Self::Interactive | Self::WebApp | Self::CloudMode => true,
+            Self::Cli | Self::ScheduledAgent | Self::AgentWebhook | Self::GitHubAction => false,
         }
     }
 }
@@ -342,33 +335,30 @@ impl AmbientAgentTaskState {
     /// Returns the query param value for the server API.
     pub fn as_query_param(&self) -> Option<&str> {
         match self {
-            AmbientAgentTaskState::Queued => Some("QUEUED"),
-            AmbientAgentTaskState::Pending => Some("PENDING"),
-            AmbientAgentTaskState::Claimed => Some("CLAIMED"),
-            AmbientAgentTaskState::InProgress => Some("INPROGRESS"),
-            AmbientAgentTaskState::Succeeded => Some("SUCCEEDED"),
-            AmbientAgentTaskState::Failed => Some("FAILED"),
-            AmbientAgentTaskState::Error => Some("ERROR"),
-            AmbientAgentTaskState::Blocked => Some("BLOCKED"),
-            AmbientAgentTaskState::Cancelled => Some("CANCELLED"),
+            Self::Queued => Some("QUEUED"),
+            Self::Pending => Some("PENDING"),
+            Self::Claimed => Some("CLAIMED"),
+            Self::InProgress => Some("INPROGRESS"),
+            Self::Succeeded => Some("SUCCEEDED"),
+            Self::Failed => Some("FAILED"),
+            Self::Error => Some("ERROR"),
+            Self::Blocked => Some("BLOCKED"),
+            Self::Cancelled => Some("CANCELLED"),
             // Unknown states are only for resilient deserialization and should not be
             // sent back as filter values.
-            AmbientAgentTaskState::Unknown => None,
+            Self::Unknown => None,
         }
     }
 
     pub fn is_working(&self) -> bool {
         match self {
-            AmbientAgentTaskState::Queued
-            | AmbientAgentTaskState::Pending
-            | AmbientAgentTaskState::Claimed
-            | AmbientAgentTaskState::InProgress => true,
-            AmbientAgentTaskState::Succeeded
-            | AmbientAgentTaskState::Failed
-            | AmbientAgentTaskState::Error
-            | AmbientAgentTaskState::Blocked
-            | AmbientAgentTaskState::Cancelled
-            | AmbientAgentTaskState::Unknown => false,
+            Self::Queued | Self::Pending | Self::Claimed | Self::InProgress => true,
+            Self::Succeeded
+            | Self::Failed
+            | Self::Error
+            | Self::Blocked
+            | Self::Cancelled
+            | Self::Unknown => false,
         }
     }
 
@@ -378,46 +368,37 @@ impl AmbientAgentTaskState {
 
     pub fn is_failure_like(&self) -> bool {
         match self {
-            AmbientAgentTaskState::Failed
-            | AmbientAgentTaskState::Error
-            | AmbientAgentTaskState::Blocked
-            | AmbientAgentTaskState::Unknown => true,
-            AmbientAgentTaskState::Queued
-            | AmbientAgentTaskState::Pending
-            | AmbientAgentTaskState::Claimed
-            | AmbientAgentTaskState::InProgress
-            | AmbientAgentTaskState::Succeeded
-            | AmbientAgentTaskState::Cancelled => false,
+            Self::Failed | Self::Error | Self::Blocked | Self::Unknown => true,
+            Self::Queued
+            | Self::Pending
+            | Self::Claimed
+            | Self::InProgress
+            | Self::Succeeded
+            | Self::Cancelled => false,
         }
     }
 
     pub fn is_terminal(&self) -> bool {
         match self {
-            AmbientAgentTaskState::Succeeded
-            | AmbientAgentTaskState::Failed
-            | AmbientAgentTaskState::Error
-            | AmbientAgentTaskState::Blocked
-            | AmbientAgentTaskState::Cancelled
-            | AmbientAgentTaskState::Unknown => true,
-            AmbientAgentTaskState::Queued
-            | AmbientAgentTaskState::Pending
-            | AmbientAgentTaskState::Claimed
-            | AmbientAgentTaskState::InProgress => false,
+            Self::Succeeded
+            | Self::Failed
+            | Self::Error
+            | Self::Blocked
+            | Self::Cancelled
+            | Self::Unknown => true,
+            Self::Queued | Self::Pending | Self::Claimed | Self::InProgress => false,
         }
     }
 
     pub fn status_icon_and_color(&self, theme: &WarpTheme) -> (Icon, ColorU) {
         match self {
-            AmbientAgentTaskState::Queued
-            | AmbientAgentTaskState::Pending
-            | AmbientAgentTaskState::Claimed
-            | AmbientAgentTaskState::InProgress => (Icon::ClockLoader, theme.ansi_fg_magenta()),
-            AmbientAgentTaskState::Succeeded => (Icon::Check, theme.ansi_fg_green()),
-            AmbientAgentTaskState::Failed
-            | AmbientAgentTaskState::Error
-            | AmbientAgentTaskState::Unknown => (Icon::Triangle, theme.ansi_fg_red()),
-            AmbientAgentTaskState::Blocked => (Icon::StopFilled, theme.ansi_fg_yellow()),
-            AmbientAgentTaskState::Cancelled => (
+            Self::Queued | Self::Pending | Self::Claimed | Self::InProgress => {
+                (Icon::ClockLoader, theme.ansi_fg_magenta())
+            }
+            Self::Succeeded => (Icon::Check, theme.ansi_fg_green()),
+            Self::Failed | Self::Error | Self::Unknown => (Icon::Triangle, theme.ansi_fg_red()),
+            Self::Blocked => (Icon::StopFilled, theme.ansi_fg_yellow()),
+            Self::Cancelled => (
                 Icon::Cancelled,
                 theme.disabled_text_color(theme.background()).into_solid(),
             ),
@@ -428,16 +409,16 @@ impl AmbientAgentTaskState {
 impl std::fmt::Display for AmbientAgentTaskState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AmbientAgentTaskState::Queued => write!(f, "Queued"),
-            AmbientAgentTaskState::Pending => write!(f, "Pending"),
-            AmbientAgentTaskState::Claimed => write!(f, "Claimed"),
-            AmbientAgentTaskState::InProgress => write!(f, "In progress"),
-            AmbientAgentTaskState::Succeeded => write!(f, "Done"),
-            AmbientAgentTaskState::Failed => write!(f, "Failed"),
-            AmbientAgentTaskState::Error => write!(f, "Error"),
-            AmbientAgentTaskState::Blocked => write!(f, "Blocked"),
-            AmbientAgentTaskState::Cancelled => write!(f, "Cancelled"),
-            AmbientAgentTaskState::Unknown => write!(f, "Failed"),
+            Self::Queued => write!(f, "Queued"),
+            Self::Pending => write!(f, "Pending"),
+            Self::Claimed => write!(f, "Claimed"),
+            Self::InProgress => write!(f, "In progress"),
+            Self::Succeeded => write!(f, "Done"),
+            Self::Failed => write!(f, "Failed"),
+            Self::Error => write!(f, "Error"),
+            Self::Blocked => write!(f, "Blocked"),
+            Self::Cancelled => write!(f, "Cancelled"),
+            Self::Unknown => write!(f, "Failed"),
         }
     }
 }

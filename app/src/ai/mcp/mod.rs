@@ -73,39 +73,39 @@ pub enum MCPProvider {
 impl MCPProvider {
     pub fn display_name(&self) -> &str {
         match self {
-            MCPProvider::Warp => "Warp",
-            MCPProvider::Claude => "Claude",
-            MCPProvider::Codex => "Codex",
-            MCPProvider::Agents => "Other Agents",
+            Self::Warp => "Warp",
+            Self::Claude => "Claude",
+            Self::Codex => "Codex",
+            Self::Agents => "Other Agents",
         }
     }
 
     pub fn icon(&self) -> Icon {
         match self {
-            MCPProvider::Warp => Icon::Warp,
-            MCPProvider::Claude => Icon::ClaudeLogo,
-            MCPProvider::Codex => Icon::OpenAILogo,
-            MCPProvider::Agents => Icon::Warp,
+            Self::Warp => Icon::Warp,
+            Self::Claude => Icon::ClaudeLogo,
+            Self::Codex => Icon::OpenAILogo,
+            Self::Agents => Icon::Warp,
         }
     }
 
     /// Returns the path of the provider's config file relative to the home directory.
     pub fn home_config_path(&self) -> &'static Path {
         match self {
-            MCPProvider::Warp => Path::new(".warp/.mcp.json"),
-            MCPProvider::Claude => Path::new(".claude.json"),
-            MCPProvider::Codex => Path::new(".codex/config.toml"),
-            MCPProvider::Agents => Path::new(".agents/.mcp.json"),
+            Self::Warp => Path::new(".warp/.mcp.json"),
+            Self::Claude => Path::new(".claude.json"),
+            Self::Codex => Path::new(".codex/config.toml"),
+            Self::Agents => Path::new(".agents/.mcp.json"),
         }
     }
 
     /// Returns the path of the provider's config file relative to a project root.
     pub fn project_config_path(&self) -> &'static Path {
         match self {
-            MCPProvider::Warp => Path::new(".warp/.mcp.json"),
-            MCPProvider::Claude => Path::new(".mcp.json"),
-            MCPProvider::Codex => Path::new(".codex/config.toml"),
-            MCPProvider::Agents => Path::new(".agents/.mcp.json"),
+            Self::Warp => Path::new(".warp/.mcp.json"),
+            Self::Claude => Path::new(".mcp.json"),
+            Self::Codex => Path::new(".codex/config.toml"),
+            Self::Agents => Path::new(".agents/.mcp.json"),
         }
     }
 }
@@ -267,22 +267,19 @@ pub type CloudMCPServer = GenericCloudObject<GenericStringObjectId, CloudMCPServ
 pub type CloudMCPServerModel = GenericStringModel<MCPServer, JsonSerializer>;
 
 impl CloudMCPServer {
-    pub fn get_all(app: &AppContext) -> Vec<CloudMCPServer> {
+    pub fn get_all(app: &AppContext) -> Vec<Self> {
         CloudModel::as_ref(app)
             .get_all_objects_of_type::<GenericStringObjectId, CloudMCPServerModel>()
             .cloned()
             .collect()
     }
 
-    pub fn get_by_id<'a>(sync_id: &'a SyncId, app: &'a AppContext) -> Option<&'a CloudMCPServer> {
+    pub fn get_by_id<'a>(sync_id: &'a SyncId, app: &'a AppContext) -> Option<&'a Self> {
         CloudModel::as_ref(app)
             .get_object_of_type::<GenericStringObjectId, CloudMCPServerModel>(sync_id)
     }
 
-    pub fn get_by_uuid<'a>(
-        uuid: &'a uuid::Uuid,
-        app: &'a AppContext,
-    ) -> Option<&'a CloudMCPServer> {
+    pub fn get_by_uuid<'a>(uuid: &'a uuid::Uuid, app: &'a AppContext) -> Option<&'a Self> {
         CloudModel::as_ref(app)
             .get_all_objects_of_type::<GenericStringObjectId, CloudMCPServerModel>()
             .find(|server| server.model().string_model.uuid == *uuid)
@@ -520,7 +517,7 @@ impl MCPServer {
         }
         serde_json::from_value::<HashMap<String, JSONMCPServer>>(config)
     }
-    pub fn from_user_json(json: &str) -> serde_json::Result<Vec<MCPServer>> {
+    pub fn from_user_json(json: &str) -> serde_json::Result<Vec<Self>> {
         // Some docs don't show curly braces around the json object, so add them if necessary.
         let json = json.trim();
         let json = if json.starts_with("{") {
@@ -554,7 +551,7 @@ impl MCPServer {
                         })
                     }
                 };
-                MCPServer {
+                Self {
                     name: name.to_owned(),
                     transport_type,
                     uuid: uuid::Uuid::new_v4(),

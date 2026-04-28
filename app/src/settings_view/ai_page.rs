@@ -1419,7 +1419,7 @@ impl AISettingsPageView {
     fn build_page(subpage: Option<AISubpage>, ctx: &mut ViewContext<Self>) -> PageType<Self> {
         let ai_settings = AISettings::as_ref(ctx);
 
-        let mut widgets: Vec<Box<dyn SettingsWidget<View = AISettingsPageView>>> = Vec::new();
+        let mut widgets: Vec<Box<dyn SettingsWidget<View = Self>>> = Vec::new();
 
         // When viewing a specific subpage, only include its widgets.
         // When subpage is None (legacy/backward-compat), show all widgets.
@@ -2128,7 +2128,7 @@ pub enum AISettingsPageAction {
 }
 
 impl From<&AISettingsPageAction> for LoginGatedFeature {
-    fn from(val: &AISettingsPageAction) -> LoginGatedFeature {
+    fn from(val: &AISettingsPageAction) -> Self {
         use AISettingsPageAction::*;
         match val {
             AttemptLoginGatedUpgrade => "Upgrade AI Usage",
@@ -2874,7 +2874,7 @@ impl SettingsPageMeta for AISettingsPageView {
 
 impl From<ViewHandle<AISettingsPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<AISettingsPageView>) -> Self {
-        SettingsPageViewHandle::AI(view_handle)
+        Self::AI(view_handle)
     }
 }
 
@@ -4880,7 +4880,7 @@ impl SettingsWidget for MCPServersWidget {
     }
 
     fn should_render(&self, _app: &AppContext) -> bool {
-        MCPServersWidget::should_show_mcp()
+        Self::should_show_mcp()
     }
 
     fn render(

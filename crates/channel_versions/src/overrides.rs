@@ -16,7 +16,7 @@ pub struct Context {
 
 impl Context {
     pub fn from_env() -> Self {
-        Context {
+        Self {
             target_os: TargetOS::current(),
         }
     }
@@ -46,13 +46,13 @@ impl TargetOS {
     /// cfg variable, or None if it is not supported.
     pub fn current() -> Option<Self> {
         if cfg!(target_family = "wasm") {
-            Some(TargetOS::Web)
+            Some(Self::Web)
         } else if cfg!(target_os = "macos") {
-            Some(TargetOS::MacOS)
+            Some(Self::MacOS)
         } else if cfg!(target_os = "linux") {
-            Some(TargetOS::Linux)
+            Some(Self::Linux)
         } else if cfg!(target_os = "windows") {
-            Some(TargetOS::Windows)
+            Some(Self::Windows)
         } else {
             None
         }
@@ -61,10 +61,10 @@ impl TargetOS {
     /// Returns the name of the [`TargetOS`], or None if it is unknown.
     pub fn name(&self) -> Option<String> {
         let name = match self {
-            TargetOS::MacOS => "MacOS".to_owned(),
-            TargetOS::Linux => "Linux".to_owned(),
-            TargetOS::Windows => "Windows".to_owned(),
-            TargetOS::Web => "Web".to_owned(),
+            Self::MacOS => "MacOS".to_owned(),
+            Self::Linux => "Linux".to_owned(),
+            Self::Windows => "Windows".to_owned(),
+            Self::Web => "Web".to_owned(),
             _ => return None,
         };
         Some(name)
@@ -80,7 +80,7 @@ enum OverridePredicate {
 impl OverridePredicate {
     fn matches(&self, context: &Context) -> bool {
         match self {
-            OverridePredicate::TargetOS(os) => {
+            Self::TargetOS(os) => {
                 if let Some(target_os) = &context.target_os {
                     os == target_os
                 } else {
@@ -115,7 +115,7 @@ impl VersionInfo {
         new
     }
 
-    fn apply_override(&mut self, other: VersionInfo) {
+    fn apply_override(&mut self, other: Self) {
         self.version = other.version;
         if let Some(soft_cutoff) = other.soft_cutoff {
             self.soft_cutoff = Some(soft_cutoff);

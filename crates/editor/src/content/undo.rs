@@ -43,8 +43,8 @@ impl NonAtomicType {
     // Whether the change adds or removes content.
     fn is_addition(&self) -> bool {
         match self {
-            NonAtomicType::Insert => true,
-            NonAtomicType::Backspace => false,
+            Self::Insert => true,
+            Self::Backspace => false,
         }
     }
 }
@@ -184,7 +184,7 @@ pub(super) struct UndoStack {
 }
 
 impl UndoStack {
-    pub fn new(capacity: usize, initial_version: ContentVersion) -> UndoStack {
+    pub fn new(capacity: usize, initial_version: ContentVersion) -> Self {
         Self {
             stack: Default::default(),
             current_index: 0,

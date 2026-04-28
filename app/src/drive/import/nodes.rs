@@ -42,7 +42,7 @@ pub struct FileId(pub usize);
 
 impl FileId {
     pub(super) fn first_id() -> Self {
-        FileId(0)
+        Self(0)
     }
 }
 
@@ -52,7 +52,7 @@ pub(super) struct FolderId(pub usize);
 
 impl FolderId {
     pub(super) fn root_id() -> Self {
-        FolderId(0)
+        Self(0)
     }
 }
 
@@ -124,7 +124,7 @@ impl ImportedNode {
             while let Some(entry) = entries.try_next().await.ok()? {
                 let child_path = entry.path();
 
-                if let Some(child_node) = ImportedNode::initiate_from_path(
+                if let Some(child_node) = Self::initiate_from_path(
                     child_path,
                     current_folder_id,
                     next_folder_id,
@@ -142,7 +142,7 @@ impl ImportedNode {
             // it has no children.
             if !folder_node.children.is_empty() || parent_folder_id == FolderId::root_id() {
                 folder_id_to_node.insert(current_folder_id, folder_node);
-                return Some(ImportedNode::Folder(current_folder_id));
+                return Some(Self::Folder(current_folder_id));
             }
 
             // If the folder children is empty, we don't consider the folder as an import node.
@@ -155,7 +155,7 @@ impl ImportedNode {
                 file_id_to_node.insert(current_file_id, file_node);
                 *next_file_id += 1;
 
-                return Some(ImportedNode::File(current_file_id));
+                return Some(Self::File(current_file_id));
             }
         }
 
@@ -172,7 +172,7 @@ impl ImportedNode {
         file_id_to_node: &HashMap<FileId, FileNode>,
     ) -> Box<dyn Element> {
         match &self {
-            ImportedNode::File(file_id) => {
+            Self::File(file_id) => {
                 let file_node = file_id_to_node.get(file_id).expect("Should exist");
                 file_node.render(
                     indent_level,
@@ -182,7 +182,7 @@ impl ImportedNode {
                     appearance,
                 )
             }
-            ImportedNode::Folder(folder_id) => {
+            Self::Folder(folder_id) => {
                 let folder_node = folder_id_to_node.get(folder_id).expect("Should exist");
                 folder_node.render(
                     sync_queue_dequeueing,
@@ -264,7 +264,7 @@ impl FolderNode {
 
     fn are_children_saved_locally(
         &self,
-        folder_id_to_node: &HashMap<FolderId, FolderNode>,
+        folder_id_to_node: &HashMap<FolderId, Self>,
         file_id_to_node: &HashMap<FileId, FileNode>,
     ) -> bool {
         self.children.iter().all(|node| match node {
@@ -282,7 +282,7 @@ impl FolderNode {
     // Check if the folder is loaded. This is true if all of its children are loaded.
     fn are_children_loaded(
         &self,
-        folder_id_to_node: &HashMap<FolderId, FolderNode>,
+        folder_id_to_node: &HashMap<FolderId, Self>,
         file_id_to_node: &HashMap<FileId, FileNode>,
     ) -> bool {
         self.children.iter().all(|node| match node {
@@ -319,7 +319,7 @@ impl FolderNode {
         appearance: &Appearance,
         indent_level: usize,
         allow_click_to_open_target: bool,
-        folder_id_to_node: &HashMap<FolderId, FolderNode>,
+        folder_id_to_node: &HashMap<FolderId, Self>,
         file_id_to_node: &HashMap<FileId, FileNode>,
     ) -> Box<dyn Element> {
         let override_color = self.status.override_text_color(appearance);
@@ -411,11 +411,11 @@ impl TryFrom<&Path> for FileType {
 
     fn try_from(path: &Path) -> Result<Self, Self::Error> {
         if is_markdown_file(path) {
-            Ok(FileType::Notebook)
+            Ok(Self::Notebook)
         } else {
             let extension = path.extension();
             if extension == Some(OsStr::new("yaml")) || extension == Some(OsStr::new("yml")) {
-                Ok(FileType::Workflow)
+                Ok(Self::Workflow)
             } else {
                 Err(())
             }
@@ -458,24 +458,24 @@ impl UploadStatus {
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let status_icon_element = match &self {
-            UploadStatus::SavedLocally if !sync_queue_dequeueing => Icon::Laptop
+            Self::SavedLocally if !sync_queue_dequeueing => Icon::Laptop
                 .to_warpui_icon(
                     appearance
                         .theme()
                         .sub_text_color(appearance.theme().surface_1()),
                 )
                 .finish(),
-            UploadStatus::Loading | UploadStatus::SavedLocally => Icon::Refresh
+            Self::Loading | Self::SavedLocally => Icon::Refresh
                 .to_warpui_icon(
                     appearance
                         .theme()
                         .sub_text_color(appearance.theme().surface_1()),
                 )
                 .finish(),
-            UploadStatus::Loaded(_) => Icon::Check
+            Self::Loaded(_) => Icon::Check
                 .to_warpui_icon(Fill::Solid(ColorU::new(11, 142, 71, 255)))
                 .finish(),
-            UploadStatus::Error(_) => Icon::AlertTriangle
+            Self::Error(_) => Icon::AlertTriangle
                 .to_warpui_icon(Fill::Solid(appearance.theme().ui_error_color()))
                 .finish(),
         };

@@ -411,7 +411,7 @@ impl<T: EventLoopSender> PtyController<T> {
 
     /// Writes the bytes to to terminate and run the bootstrap script.
     #[cfg(feature = "local_fs")]
-    fn write_terminating_bootstrap_bytes(&mut self, ctx: &mut ModelContext<PtyController<T>>) {
+    fn write_terminating_bootstrap_bytes(&mut self, ctx: &mut ModelContext<Self>) {
         cfg_if::cfg_if! {
             if #[cfg(unix)] {
                 self.write_bytes(&b"\n"[..], ctx);
@@ -425,7 +425,7 @@ impl<T: EventLoopSender> PtyController<T> {
     fn write_bootstrap_script_to_shell(
         &mut self,
         pending_session_info: &SessionInfo,
-        ctx: &mut ModelContext<PtyController<T>>,
+        ctx: &mut ModelContext<Self>,
         shell_type: ShellType,
         bootstrap: Cow<'static, [u8]>,
     ) {

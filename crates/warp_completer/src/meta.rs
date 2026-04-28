@@ -7,79 +7,79 @@ pub struct Span {
 }
 
 impl From<(usize, usize)> for Span {
-    fn from((start, end): (usize, usize)) -> Span {
-        Span::new(start, end)
+    fn from((start, end): (usize, usize)) -> Self {
+        Self::new(start, end)
     }
 }
 
-impl From<&Span> for Span {
-    fn from(span: &Span) -> Span {
+impl From<&Self> for Span {
+    fn from(span: &Self) -> Self {
         *span
     }
 }
 
-impl From<Option<Span>> for Span {
-    fn from(input: Option<Span>) -> Span {
-        input.unwrap_or_else(|| Span::new(0, 0))
+impl From<Option<Self>> for Span {
+    fn from(input: Option<Self>) -> Self {
+        input.unwrap_or_else(|| Self::new(0, 0))
     }
 }
 
 impl From<Span> for std::ops::Range<usize> {
-    fn from(input: Span) -> std::ops::Range<usize> {
+    fn from(input: Span) -> Self {
         let start = input.start;
         let end = input.end;
 
-        std::ops::Range { start, end }
+        Self { start, end }
     }
 }
 
 impl Span {
     /// Creates a new `Span` that has 0 start and 0 end.
-    pub fn unknown() -> Span {
-        Span::new(0, 0)
+    pub fn unknown() -> Self {
+        Self::new(0, 0)
     }
 
-    pub fn for_char(pos: usize) -> Span {
-        Span {
+    pub fn for_char(pos: usize) -> Self {
+        Self {
             start: pos,
             end: pos + 1,
         }
     }
 
-    pub fn until(&self, other: impl Into<Span>) -> Span {
+    pub fn until(&self, other: impl Into<Self>) -> Self {
         let other = other.into();
 
-        Span::new(self.start, other.end)
+        Self::new(self.start, other.end)
     }
 
-    pub fn from_list(list: &[impl HasSpan]) -> Span {
+    pub fn from_list(list: &[impl HasSpan]) -> Self {
         let mut iterator = list.iter();
 
         match iterator.next() {
-            None => Span::new(0, 0),
+            None => Self::new(0, 0),
             Some(first) => {
                 let last = iterator.last().unwrap_or(first);
 
-                Span::new(first.span().start, last.span().end)
+                Self::new(first.span().start, last.span().end)
             }
         }
     }
 
-    pub fn new(start: usize, end: usize) -> Span {
+    pub fn new(start: usize, end: usize) -> Self {
         assert!(
             end >= start,
             "Can't create a Span whose end < start, start={start}, end={end}"
         );
 
-        Span { start, end }
+        Self { start, end }
     }
 
     pub fn is_empty(&self) -> bool {
         self.start == self.end
     }
 
-    pub fn skip(&self, n_chars: usize) -> Span {
-        Span::new(self.start + n_chars, self.end)
+    pub fn skip(&self, n_chars: usize) -> Self {
+        Self::new(self.start + n_chars, self.end)
     }
 
     pub fn distance(&self) -> usize {
@@ -166,8 +166,8 @@ where
 {
     fn span(&self) -> Span {
         match self {
-            Result::Ok(val) => val.span(),
-            Result::Err(_) => Span::unknown(),
+            Self::Ok(val) => val.span(),
+            Self::Err(_) => Span::unknown(),
         }
     }
 }

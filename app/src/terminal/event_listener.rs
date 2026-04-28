@@ -22,7 +22,7 @@ impl ChannelEventListener {
         terminal_events_tx: Sender<TerminalEvent>,
         pty_reads_tx: async_broadcast::Sender<Arc<Vec<u8>>>,
     ) -> Self {
-        ChannelEventListener {
+        Self {
             wakeups_tx,
             terminal_events_tx,
             pty_reads_tx,

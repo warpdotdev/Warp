@@ -38,7 +38,7 @@ pub struct GeneratedArgument {
 
 impl From<GenerateMetadataForCommandSuccess> for GeneratedCommandMetadata {
     fn from(value: GenerateMetadataForCommandSuccess) -> Self {
-        GeneratedCommandMetadata {
+        Self {
             command: value.parameterized_command,
             title: value.title,
             description: value.description,

@@ -57,7 +57,7 @@ impl TryFrom<&str> for ParsedVersion {
                         let date_str = captures.get(2)?.as_str();
                         let date =
                             NaiveDateTime::parse_from_str(date_str, "%Y.%m.%d.%H.%M").ok()?;
-                        Some(ParsedVersion {
+                        Some(Self {
                             major: captures.get(1)?.as_str().parse().ok()?,
                             date,
                             patch: captures.get(4)?.as_str().parse().ok()?,

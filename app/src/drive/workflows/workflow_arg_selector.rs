@@ -101,7 +101,7 @@ struct EnumMenuItem {
 
 impl EnumMenuItem {
     fn new(data: &WorkflowEnumData) -> Self {
-        EnumMenuItem {
+        Self {
             name: data.name.clone(),
             item_row_state_handle: Default::default(),
             select_item_state_handle: Default::default(),
@@ -110,7 +110,7 @@ impl EnumMenuItem {
     }
 
     fn from_text(text: String) -> Self {
-        EnumMenuItem {
+        Self {
             name: text,
             item_row_state_handle: Default::default(),
             select_item_state_handle: Default::default(),
@@ -149,8 +149,8 @@ pub enum ArgumentSelectType {
 impl From<ArgumentType> for ArgumentSelectType {
     fn from(arg_type: ArgumentType) -> Self {
         match arg_type {
-            ArgumentType::Text => ArgumentSelectType::Text,
-            ArgumentType::Enum { .. } => ArgumentSelectType::Enum,
+            ArgumentType::Text => Self::Text,
+            ArgumentType::Enum { .. } => Self::Enum,
         }
     }
 }
@@ -207,7 +207,7 @@ impl WorkflowArgSelector {
 
         let arg_type_options = ArgumentSelectType::iter().collect();
 
-        let mut me = WorkflowArgSelector {
+        let mut me = Self {
             text_editor,
             is_expanded: false,
             is_disabled: false,

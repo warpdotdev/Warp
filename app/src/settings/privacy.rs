@@ -230,7 +230,7 @@ impl PrivacySettings {
     /// instantiation another PrivacySettings struct, in the case where a developer might be
     /// unaware that it is registered as a singleton model.
     pub fn register_singleton(ctx: &mut AppContext) {
-        let handle = ctx.add_singleton_model(PrivacySettings::new);
+        let handle = ctx.add_singleton_model(Self::new);
 
         register_settings_events!(
             PrivacySettings,
@@ -416,7 +416,7 @@ impl PrivacySettings {
     fn initialize_from_fetched_settings_or_update_settings(
         &mut self,
         fetched_settings: Result<Option<SyncedUserSettings>>,
-        ctx: &mut ModelContext<PrivacySettings>,
+        ctx: &mut ModelContext<Self>,
     ) {
         match fetched_settings {
             Ok(Some(fetched_settings)) => {
@@ -523,7 +523,7 @@ impl PrivacySettings {
     pub fn set_is_crash_reporting_enabled(
         &mut self,
         new_value: bool,
-        ctx: &mut ModelContext<PrivacySettings>,
+        ctx: &mut ModelContext<Self>,
     ) {
         let old_value = self.is_crash_reporting_enabled;
         if new_value != old_value {
@@ -556,11 +556,7 @@ impl PrivacySettings {
     /// Additionally, this writes the given value to the user's local defaults, and additionally
     /// sends a request to update the user's `is_telemetry_enabled` value stored server-side.
     /// Finally, emits a `PrivacySettingsEvent::UpdateIsTelemetryEnabled` event.
-    pub fn set_is_telemetry_enabled(
-        &mut self,
-        new_value: bool,
-        ctx: &mut ModelContext<PrivacySettings>,
-    ) {
+    pub fn set_is_telemetry_enabled(&mut self, new_value: bool, ctx: &mut ModelContext<Self>) {
         let old_value = self.is_telemetry_enabled;
         if new_value != old_value {
             self.is_telemetry_enabled = new_value;
@@ -588,7 +584,7 @@ impl PrivacySettings {
     pub fn set_is_cloud_conversation_storage_enabled(
         &mut self,
         new_value: bool,
-        ctx: &mut ModelContext<PrivacySettings>,
+        ctx: &mut ModelContext<Self>,
     ) {
         let old_value = self.is_cloud_conversation_storage_enabled;
         if new_value == old_value {

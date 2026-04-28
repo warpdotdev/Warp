@@ -919,35 +919,35 @@ pub struct TerminalViewResources {
 impl SplitPaneState {
     pub fn is_in_split_pane(&self) -> bool {
         match self {
-            SplitPaneState::InSplitPane(_) => true,
-            SplitPaneState::NotInSplitPane => false,
+            Self::InSplitPane(_) => true,
+            Self::NotInSplitPane => false,
         }
     }
 
     /// Is the focused pane.
     pub fn is_focused(&self) -> bool {
         match self {
-            SplitPaneState::InSplitPane(state) => match state {
+            Self::InSplitPane(state) => match state {
                 PaneState::Focused | PaneState::Maximized => true,
                 PaneState::Unfocused => false,
             },
-            SplitPaneState::NotInSplitPane => true,
+            Self::NotInSplitPane => true,
         }
     }
 
     /// Is in split pane and is the focused pane.
     pub fn is_focused_pane(&self) -> bool {
         match self {
-            SplitPaneState::InSplitPane(state) => match state {
+            Self::InSplitPane(state) => match state {
                 PaneState::Focused | PaneState::Maximized => true,
                 PaneState::Unfocused => false,
             },
-            SplitPaneState::NotInSplitPane => false,
+            Self::NotInSplitPane => false,
         }
     }
 
     pub fn is_maximized(&self) -> bool {
-        matches!(self, SplitPaneState::InSplitPane(PaneState::Maximized))
+        matches!(self, Self::InSplitPane(PaneState::Maximized))
     }
 }
 
@@ -960,7 +960,7 @@ struct InitialFocus {
 }
 
 impl InitialFocus {
-    fn merge(&mut self, other: InitialFocus) {
+    fn merge(&mut self, other: Self) {
         if self.focused_pane.is_some() {
             if other.focused_pane.is_some() {
                 log::error!("Restored pane tree has more than one focused pane");
@@ -1136,7 +1136,7 @@ impl PaneGroup {
         &mut self,
         pane_id: PaneId,
         event: &PaneViewEvent,
-        ctx: &mut ViewContext<PaneGroup>,
+        ctx: &mut ViewContext<Self>,
     ) {
         if self.pane_contents.contains_key(&pane_id) {
             match event {
@@ -1224,24 +1224,23 @@ impl PaneGroup {
     fn pane_tree_from_template(
         root: PaneTemplateType,
         resources: TerminalViewResources,
-        ctx: &mut ViewContext<PaneGroup>,
+        ctx: &mut ViewContext<Self>,
         pane_contents: &mut HashMap<PaneId, Box<dyn AnyPaneContent>>,
         is_left_pane: bool,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         view_size: Vector2F,
         model_event_sender: Option<SyncSender<ModelEvent>>,
     ) -> (PaneData, InitialFocus) {
-        let (leftmost_pane_id, pane_data, initial_focus) =
-            PaneGroup::pane_tree_from_template_recursive(
-                root,
-                resources,
-                ctx,
-                pane_contents,
-                is_left_pane,
-                user_default_shell_unsupported_banner_model_handle,
-                view_size,
-                model_event_sender,
-            );
+        let (leftmost_pane_id, pane_data, initial_focus) = Self::pane_tree_from_template_recursive(
+            root,
+            resources,
+            ctx,
+            pane_contents,
+            is_left_pane,
+            user_default_shell_unsupported_banner_model_handle,
+            view_size,
+            model_event_sender,
+        );
         if initial_focus.focused_pane.is_some() && initial_focus.active_session.is_some() {
             (pane_data, initial_focus)
         } else {
@@ -1260,7 +1259,7 @@ impl PaneGroup {
     fn pane_tree_from_template_recursive(
         root: PaneTemplateType,
         resources: TerminalViewResources,
-        ctx: &mut ViewContext<PaneGroup>,
+        ctx: &mut ViewContext<Self>,
         pane_contents: &mut HashMap<PaneId, Box<dyn AnyPaneContent>>,
         is_left_pane: bool,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
@@ -1291,7 +1290,7 @@ impl PaneGroup {
                     PaneMode::Cloud => {
                         Self::create_ambient_agent_terminal(resources, view_size, ctx)
                     }
-                    PaneMode::Terminal | PaneMode::Agent => PaneGroup::create_session(
+                    PaneMode::Terminal | PaneMode::Agent => Self::create_session(
                         // Use cwd from the template iff such path exists, otherwise None
                         // TODO(CORE-3187): On Windows, support WSL directory restoration.
                         Some(cwd).filter(|p| p.exists()),
@@ -1387,7 +1386,7 @@ impl PaneGroup {
 
                 for (idx, node) in panes.iter().enumerate() {
                     let (child_leftmost_pane_id, child, child_focus) =
-                        PaneGroup::pane_tree_from_template_recursive(
+                        Self::pane_tree_from_template_recursive(
                             node.clone(),
                             resources.clone(),
                             ctx,
@@ -1420,7 +1419,7 @@ impl PaneGroup {
         root: PaneNodeSnapshot,
         block_lists: Arc<HashMap<PaneUuid, Vec<SerializedBlockListItem>>>,
         resources: TerminalViewResources,
-        ctx: &mut ViewContext<PaneGroup>,
+        ctx: &mut ViewContext<Self>,
         pane_contents: &mut HashMap<PaneId, Box<dyn AnyPaneContent>>,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         view_size: Vector2F,
@@ -1460,7 +1459,7 @@ impl PaneGroup {
                 };
 
                 for (flex, node) in pane.children {
-                    match PaneGroup::restore_pane_tree(
+                    match Self::restore_pane_tree(
                         node,
                         block_lists.clone(),
                         resources.clone(),
@@ -1500,7 +1499,7 @@ impl PaneGroup {
         leaf: LeafSnapshot,
         block_lists: Arc<HashMap<PaneUuid, Vec<SerializedBlockListItem>>>,
         resources: TerminalViewResources,
-        ctx: &mut ViewContext<PaneGroup>,
+        ctx: &mut ViewContext<Self>,
         pane_contents: &mut HashMap<PaneId, Box<dyn AnyPaneContent>>,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         view_size: Vector2F,
@@ -1585,7 +1584,7 @@ impl PaneGroup {
                             active_conversation_id: terminal_snapshot.active_conversation_id,
                         },
                     );
-                let (terminal_view, terminal_manager) = PaneGroup::create_session(
+                let (terminal_view, terminal_manager) = Self::create_session(
                     startup_directory,
                     HashMap::new(),
                     IsSharedSessionCreator::No,
@@ -3396,7 +3395,7 @@ impl PaneGroup {
         pane_history: &mut Vec<PaneId>,
         ctx: &mut ViewContext<Self>,
     ) -> (PaneData, InitialFocus) {
-        let (view, terminal_manager) = PaneGroup::create_session(
+        let (view, terminal_manager) = Self::create_session(
             options.initial_directory,
             options.env_vars,
             options.is_shared_session_creator,
@@ -3587,12 +3586,8 @@ impl PaneGroup {
                                    pane_history: &mut Vec<PaneId>,
                                    view_bounds: RectF,
                                    ctx: &mut ViewContext<Self>| {
-            let (view, terminal_manager) = PaneGroup::create_shared_session_viewer(
-                session_id,
-                resources,
-                view_bounds.size(),
-                ctx,
-            );
+            let (view, terminal_manager) =
+                Self::create_shared_session_viewer(session_id, resources, view_bounds.size(), ctx);
 
             Self::terminal_pane_data(
                 Uuid::new_v4().as_bytes().to_vec(),
@@ -3630,7 +3625,7 @@ impl PaneGroup {
                                    pane_history: &mut Vec<PaneId>,
                                    view_bounds: RectF,
                                    ctx: &mut ViewContext<Self>| {
-            let (view, terminal_manager) = PaneGroup::create_conversation_viewer(
+            let (view, terminal_manager) = Self::create_conversation_viewer(
                 conversation.clone(),
                 ambient_agent_task_id,
                 resources,
@@ -5725,7 +5720,7 @@ impl PaneGroup {
         };
 
         let view_bounds = Self::estimated_view_bounds(ctx);
-        let (view, terminal_manager) = PaneGroup::create_session(
+        let (view, terminal_manager) = Self::create_session(
             startup_directory,
             HashMap::new(),
             IsSharedSessionCreator::No,
@@ -5851,7 +5846,7 @@ impl PaneGroup {
         };
 
         let view_bounds = Self::estimated_view_bounds(ctx);
-        let (view, terminal_manager) = PaneGroup::create_session(
+        let (view, terminal_manager) = Self::create_session(
             startup_directory,
             env_vars,
             IsSharedSessionCreator::No,

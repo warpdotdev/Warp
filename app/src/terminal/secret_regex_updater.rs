@@ -10,7 +10,7 @@ pub struct CustomSecretRegexUpdater;
 
 impl CustomSecretRegexUpdater {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        let updater = CustomSecretRegexUpdater;
+        let updater = Self;
         // Initialize with current custom regexes (will be empty until safe mode is enabled)
         updater.update_custom_secret_regex_list(ctx);
 

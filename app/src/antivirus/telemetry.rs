@@ -17,7 +17,7 @@ impl TelemetryEvent for AntivirusInfoTelemetryEvent {
 
     fn payload(&self) -> Option<Value> {
         match self {
-            AntivirusInfoTelemetryEvent::AntivirusDetected { name } => Some(json!({
+            Self::AntivirusDetected { name } => Some(json!({
                 "antivirus_name": name,
             })),
         }
@@ -33,7 +33,7 @@ impl TelemetryEvent for AntivirusInfoTelemetryEvent {
 
     fn contains_ugc(&self) -> bool {
         match self {
-            AntivirusInfoTelemetryEvent::AntivirusDetected { .. } => false,
+            Self::AntivirusDetected { .. } => false,
         }
     }
 
@@ -45,15 +45,13 @@ impl TelemetryEvent for AntivirusInfoTelemetryEvent {
 impl TelemetryEventDesc for AntivirusInfoTelemetryEventDiscriminants {
     fn name(&self) -> &'static str {
         match self {
-            AntivirusInfoTelemetryEventDiscriminants::AntivirusDetected => {
-                "Identified Antivirus Software"
-            }
+            Self::AntivirusDetected => "Identified Antivirus Software",
         }
     }
 
     fn description(&self) -> &'static str {
         match self {
-            AntivirusInfoTelemetryEventDiscriminants::AntivirusDetected => {
+            Self::AntivirusDetected => {
                 "Identified running antivirus software on the user's machine"
             }
         }
@@ -61,7 +59,7 @@ impl TelemetryEventDesc for AntivirusInfoTelemetryEventDiscriminants {
 
     fn enablement_state(&self) -> EnablementState {
         match self {
-            AntivirusInfoTelemetryEventDiscriminants::AntivirusDetected => EnablementState::Always,
+            Self::AntivirusDetected => EnablementState::Always,
         }
     }
 }

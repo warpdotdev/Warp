@@ -124,17 +124,17 @@ impl CLIAgent {
     /// The command prefix used to invoke this CLI agent.
     pub fn command_prefix(&self) -> &'static str {
         match self {
-            CLIAgent::Claude => "claude",
-            CLIAgent::Gemini => "gemini",
-            CLIAgent::Codex => "codex",
-            CLIAgent::Amp => "amp",
-            CLIAgent::Droid => "droid",
-            CLIAgent::OpenCode => "opencode",
-            CLIAgent::Copilot => "copilot",
-            CLIAgent::Pi => "pi",
-            CLIAgent::Auggie => "auggie",
-            CLIAgent::CursorCli => "agent",
-            CLIAgent::Unknown => "",
+            Self::Claude => "claude",
+            Self::Gemini => "gemini",
+            Self::Codex => "codex",
+            Self::Amp => "amp",
+            Self::Droid => "droid",
+            Self::OpenCode => "opencode",
+            Self::Copilot => "copilot",
+            Self::Pi => "pi",
+            Self::Auggie => "auggie",
+            Self::CursorCli => "agent",
+            Self::Unknown => "",
         }
     }
 
@@ -148,40 +148,40 @@ impl CLIAgent {
     }
 
     /// Inverse of `to_serialized_name`. Falls back to `Unknown`.
-    pub fn from_serialized_name(name: &str) -> CLIAgent {
-        serde_json::from_value(name.into()).unwrap_or(CLIAgent::Unknown)
+    pub fn from_serialized_name(name: &str) -> Self {
+        serde_json::from_value(name.into()).unwrap_or(Self::Unknown)
     }
 
     pub fn display_name(&self) -> &'static str {
         match self {
-            CLIAgent::Claude => "Claude Code",
-            CLIAgent::Gemini => "Gemini",
-            CLIAgent::Codex => "Codex",
-            CLIAgent::Amp => "Amp",
-            CLIAgent::Droid => "Droid",
-            CLIAgent::OpenCode => "OpenCode",
-            CLIAgent::Copilot => "Copilot",
-            CLIAgent::Pi => "Pi",
-            CLIAgent::Auggie => "Auggie",
-            CLIAgent::CursorCli => "Cursor",
-            CLIAgent::Unknown => "CLI Agent",
+            Self::Claude => "Claude Code",
+            Self::Gemini => "Gemini",
+            Self::Codex => "Codex",
+            Self::Amp => "Amp",
+            Self::Droid => "Droid",
+            Self::OpenCode => "OpenCode",
+            Self::Copilot => "Copilot",
+            Self::Pi => "Pi",
+            Self::Auggie => "Auggie",
+            Self::CursorCli => "Cursor",
+            Self::Unknown => "CLI Agent",
         }
     }
 
     /// Returns the Icon for this CLI agent, or `None` for unknown/custom agents.
     pub fn icon(&self) -> Option<Icon> {
         match self {
-            CLIAgent::Claude => Some(Icon::ClaudeLogo),
-            CLIAgent::Gemini => Some(Icon::GeminiLogo),
-            CLIAgent::Codex => Some(Icon::OpenAILogo),
-            CLIAgent::Amp => Some(Icon::AmpLogo),
-            CLIAgent::Droid => Some(Icon::DroidLogo),
-            CLIAgent::OpenCode => Some(Icon::OpenCodeLogo),
-            CLIAgent::Copilot => Some(Icon::CopilotLogo),
-            CLIAgent::Pi => Some(Icon::PiLogo),
-            CLIAgent::Auggie => Some(Icon::AuggieLogo),
-            CLIAgent::CursorCli => Some(Icon::CursorLogo),
-            CLIAgent::Unknown => None,
+            Self::Claude => Some(Icon::ClaudeLogo),
+            Self::Gemini => Some(Icon::GeminiLogo),
+            Self::Codex => Some(Icon::OpenAILogo),
+            Self::Amp => Some(Icon::AmpLogo),
+            Self::Droid => Some(Icon::DroidLogo),
+            Self::OpenCode => Some(Icon::OpenCodeLogo),
+            Self::Copilot => Some(Icon::CopilotLogo),
+            Self::Pi => Some(Icon::PiLogo),
+            Self::Auggie => Some(Icon::AuggieLogo),
+            Self::CursorCli => Some(Icon::CursorLogo),
+            Self::Unknown => None,
         }
     }
 
@@ -190,25 +190,25 @@ impl CLIAgent {
     /// in the slash menu. Returns an empty slice for agents with no known skills support.
     pub fn supported_skill_providers(&self) -> &'static [SkillProvider] {
         match self {
-            CLIAgent::Claude => &[SkillProvider::Claude],
-            CLIAgent::Codex => &[
+            Self::Claude => &[SkillProvider::Claude],
+            Self::Codex => &[
                 SkillProvider::Agents,
                 SkillProvider::Claude,
                 SkillProvider::Codex,
             ],
-            CLIAgent::OpenCode => &[
+            Self::OpenCode => &[
                 SkillProvider::OpenCode,
                 SkillProvider::Agents,
                 SkillProvider::Claude,
             ],
-            CLIAgent::Gemini => &[SkillProvider::Agents, SkillProvider::Gemini],
-            CLIAgent::Amp => &[SkillProvider::Agents],
-            CLIAgent::Copilot => &[SkillProvider::Agents, SkillProvider::Copilot],
-            CLIAgent::Droid => &[SkillProvider::Droid, SkillProvider::Agents],
-            CLIAgent::Pi => &[SkillProvider::Agents],
-            CLIAgent::Auggie => &[SkillProvider::Agents],
-            CLIAgent::CursorCli => &[SkillProvider::Agents],
-            CLIAgent::Unknown => &[],
+            Self::Gemini => &[SkillProvider::Agents, SkillProvider::Gemini],
+            Self::Amp => &[SkillProvider::Agents],
+            Self::Copilot => &[SkillProvider::Agents, SkillProvider::Copilot],
+            Self::Droid => &[SkillProvider::Droid, SkillProvider::Agents],
+            Self::Pi => &[SkillProvider::Agents],
+            Self::Auggie => &[SkillProvider::Agents],
+            Self::CursorCli => &[SkillProvider::Agents],
+            Self::Unknown => &[],
         }
     }
 
@@ -216,7 +216,7 @@ impl CLIAgent {
     /// Most agents use `/` (e.g. `/skill-name`), but Codex uses `$` (e.g. `$skill-name`).
     pub fn skill_command_prefix(&self) -> &'static str {
         match self {
-            CLIAgent::Codex => "$",
+            Self::Codex => "$",
             _ => "/",
         }
     }
@@ -228,26 +228,23 @@ impl CLIAgent {
     /// TODO(advait): Check whether Gemini, Amp, Droid, and Copilot support `!` bash
     /// mode and enable them here if so.
     pub fn supports_bash_mode(&self) -> bool {
-        matches!(
-            self,
-            CLIAgent::Claude | CLIAgent::Codex | CLIAgent::OpenCode
-        )
+        matches!(self, Self::Claude | Self::Codex | Self::OpenCode)
     }
 
     /// Returns the brand color for this CLI agent, or `None` for unknown/custom agents.
     pub fn brand_color(&self) -> Option<ColorU> {
         match self {
-            CLIAgent::Claude => Some(CLAUDE_ORANGE),
-            CLIAgent::Gemini => Some(GEMINI_BLUE),
-            CLIAgent::Codex => Some(OPENAI_COLOR),
-            CLIAgent::Amp => Some(AMP_COLOR),
-            CLIAgent::Droid => Some(DROID_COLOR),
-            CLIAgent::OpenCode => Some(OPENCODE_COLOR),
-            CLIAgent::Copilot => Some(COPILOT_COLOR),
-            CLIAgent::Pi => Some(PI_COLOR),
-            CLIAgent::Auggie => Some(AUGGIE_COLOR),
-            CLIAgent::CursorCli => Some(CURSOR_COLOR),
-            CLIAgent::Unknown => None,
+            Self::Claude => Some(CLAUDE_ORANGE),
+            Self::Gemini => Some(GEMINI_BLUE),
+            Self::Codex => Some(OPENAI_COLOR),
+            Self::Amp => Some(AMP_COLOR),
+            Self::Droid => Some(DROID_COLOR),
+            Self::OpenCode => Some(OPENCODE_COLOR),
+            Self::Copilot => Some(COPILOT_COLOR),
+            Self::Pi => Some(PI_COLOR),
+            Self::Auggie => Some(AUGGIE_COLOR),
+            Self::CursorCli => Some(CURSOR_COLOR),
+            Self::Unknown => None,
         }
     }
 
@@ -255,7 +252,7 @@ impl CLIAgent {
     /// Agents with light brand colors use a dark icon for contrast.
     pub fn brand_icon_color(&self) -> ColorU {
         match self {
-            CLIAgent::Pi | CLIAgent::Auggie | CLIAgent::Droid => ColorU::new(0, 0, 0, 255),
+            Self::Pi | Self::Auggie | Self::Droid => ColorU::new(0, 0, 0, 255),
             _ => ColorU::white(),
         }
     }
@@ -288,7 +285,7 @@ impl CLIAgent {
         escape_char: Option<EscapeChar>,
         aliases: Option<&HashMap<SmolStr, String>>,
         ctx: &AppContext,
-    ) -> Option<CLIAgent> {
+    ) -> Option<Self> {
         let trimmed = command.trim_start();
         let first_word = Self::extract_first_command(trimmed, escape_char)?;
 
@@ -309,11 +306,11 @@ impl CLIAgent {
 
         // Check if resolved command matches any known CLI agent.
         // Also matches `aifx agent run claude` as Claude for Uber employees.
-        enum_iterator::all::<CLIAgent>()
-            .filter(|agent| !matches!(agent, CLIAgent::Unknown))
+        enum_iterator::all::<Self>()
+            .filter(|agent| !matches!(agent, Self::Unknown))
             .find(|agent| {
                 resolved_first_word == agent.command_prefix()
-                    || (matches!(agent, CLIAgent::Claude)
+                    || (matches!(agent, Self::Claude)
                         && Self::is_aifx_agent_run_claude(&resolved_command, ctx))
             })
     }
@@ -497,17 +494,17 @@ pub fn build_selection_line_range_prompt(
 impl From<CLIAgent> for CLIAgentType {
     fn from(agent: CLIAgent) -> Self {
         match agent {
-            CLIAgent::Claude => CLIAgentType::Claude,
-            CLIAgent::Gemini => CLIAgentType::Gemini,
-            CLIAgent::Codex => CLIAgentType::Codex,
-            CLIAgent::Amp => CLIAgentType::Amp,
-            CLIAgent::Droid => CLIAgentType::Droid,
-            CLIAgent::OpenCode => CLIAgentType::OpenCode,
-            CLIAgent::Copilot => CLIAgentType::Copilot,
-            CLIAgent::Pi => CLIAgentType::Pi,
-            CLIAgent::Auggie => CLIAgentType::Auggie,
-            CLIAgent::CursorCli => CLIAgentType::Cursor,
-            CLIAgent::Unknown => CLIAgentType::Unknown,
+            CLIAgent::Claude => Self::Claude,
+            CLIAgent::Gemini => Self::Gemini,
+            CLIAgent::Codex => Self::Codex,
+            CLIAgent::Amp => Self::Amp,
+            CLIAgent::Droid => Self::Droid,
+            CLIAgent::OpenCode => Self::OpenCode,
+            CLIAgent::Copilot => Self::Copilot,
+            CLIAgent::Pi => Self::Pi,
+            CLIAgent::Auggie => Self::Auggie,
+            CLIAgent::CursorCli => Self::Cursor,
+            CLIAgent::Unknown => Self::Unknown,
         }
     }
 }

@@ -629,7 +629,7 @@ impl EditorModel {
 
     fn start_batch<U>(&mut self, update: Option<&UpdateBuffer<U>>, ctx: &mut ModelContext<Self>)
     where
-        U: FnOnce(&mut EditorModel, &mut ModelContext<EditorModel>),
+        U: FnOnce(&mut Self, &mut ModelContext<Self>),
     {
         if let Some(update) = update {
             if !self.is_ephemeral() {

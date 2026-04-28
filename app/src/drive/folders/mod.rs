@@ -122,7 +122,7 @@ impl CloudModelType for CloudFolderModel {
 
     fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
         if let ServerCloudObject::Folder(server_folder) = server_cloud_object {
-            return Some(CloudFolderModel {
+            return Some(Self {
                 name: server_folder.model.name.clone(),
                 is_open: self.is_open,
                 is_warp_pack: server_folder.model.is_warp_pack,

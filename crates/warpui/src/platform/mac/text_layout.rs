@@ -101,21 +101,21 @@ struct ParagraphStyleSetting {
 }
 
 impl ParagraphStyleSetting {
-    fn new_float_setting(spec: CTParagraphStyleSpecifier, value: CGFloat) -> ParagraphStyleSetting {
-        ParagraphStyleSetting {
+    fn new_float_setting(spec: CTParagraphStyleSpecifier, value: CGFloat) -> Self {
+        Self {
             spec,
             value: ParagraphStyleValue::Float(Box::new(value)),
         }
     }
 
-    fn new_empty_tab_stops() -> ParagraphStyleSetting {
+    fn new_empty_tab_stops() -> Self {
         // Core Text has a built-in default list of tab stops. Setting DefaultTabInterval alone
         // doesn't override those initial stops, so we set an explicit (empty) TabStops array
         // to force Core Text to use DefaultTabInterval from the first tab.
         let array: CFArray<CFType> = CFArray::from_CFTypes(&[]);
         let array_ref = array.as_concrete_TypeRef() as *const c_void;
 
-        ParagraphStyleSetting {
+        Self {
             spec: CTParagraphStyleSpecifier::TabStops,
             value: ParagraphStyleValue::Array {
                 _array: array,
@@ -154,7 +154,7 @@ struct ParagraphStyle<'a> {
 }
 
 impl<'a> ParagraphStyle<'a> {
-    fn new(ct_style_settings: Vec<CTParagraphStyleSetting<'a>>) -> ParagraphStyle<'a> {
+    fn new(ct_style_settings: Vec<CTParagraphStyleSetting<'a>>) -> Self {
         let paragraph_style = unsafe {
             CTParagraphStyle::wrap_under_create_rule(CTParagraphStyleCreate(
                 ct_style_settings.as_slice().as_ptr(),

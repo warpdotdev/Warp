@@ -31,7 +31,7 @@ impl TryFrom<String> for DockerContainerId {
                 "Could not find valid docker container id to open warpified shell"
             ))
         } else {
-            Ok(DockerContainerId(input))
+            Ok(Self(input))
         }
     }
 }

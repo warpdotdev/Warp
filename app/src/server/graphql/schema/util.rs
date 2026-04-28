@@ -11,7 +11,7 @@ impl From<GenericStringObjectUniqueKey>
 {
     fn from(key: GenericStringObjectUniqueKey) -> Self {
         use warp_graphql::generic_string_object::GenericStringObjectUniqueKey as GraphQLFormat;
-        GraphQLFormat {
+        Self {
             key: key.key,
             unique_per: key.unique_per.into(),
         }
@@ -22,7 +22,7 @@ impl From<UniquePer> for warp_graphql::generic_string_object::UniquePer {
     fn from(unique_per: UniquePer) -> Self {
         use warp_graphql::generic_string_object::UniquePer as GraphQLUniquePer;
         match unique_per {
-            UniquePer::User => GraphQLUniquePer::User,
+            UniquePer::User => Self::User,
         }
     }
 }
@@ -30,7 +30,7 @@ impl From<UniquePer> for warp_graphql::generic_string_object::UniquePer {
 impl From<ObjectActionType> for warp_graphql::object_actions::ActionType {
     fn from(action: ObjectActionType) -> Self {
         match action {
-            ObjectActionType::Execute => warp_graphql::object_actions::ActionType::Executed,
+            ObjectActionType::Execute => Self::Executed,
         }
     }
 }

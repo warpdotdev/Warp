@@ -50,7 +50,7 @@ impl MatchStrategy {
         use Match::*;
 
         match self {
-            MatchStrategy::CaseSensitive => {
+            Self::CaseSensitive => {
                 if from == partial {
                     Some(Exact {
                         is_case_sensitive: true,
@@ -63,8 +63,8 @@ impl MatchStrategy {
                     None
                 }
             }
-            MatchStrategy::CaseInsensitive => match_type_for_case_insensitive(partial, from),
-            MatchStrategy::Fuzzy => {
+            Self::CaseInsensitive => match_type_for_case_insensitive(partial, from),
+            Self::Fuzzy => {
                 let case_insensitive_match = match_type_for_case_insensitive(partial, from);
                 if case_insensitive_match.is_some() {
                     return case_insensitive_match;
@@ -102,9 +102,9 @@ pub enum MatchType {
 impl From<Match> for MatchType {
     fn from(match_type: Match) -> Self {
         match match_type {
-            Match::Prefix { is_case_sensitive } => MatchType::Prefix { is_case_sensitive },
-            Match::Exact { is_case_sensitive } => MatchType::Exact { is_case_sensitive },
-            Match::Fuzzy { .. } => MatchType::Fuzzy,
+            Match::Prefix { is_case_sensitive } => Self::Prefix { is_case_sensitive },
+            Match::Exact { is_case_sensitive } => Self::Exact { is_case_sensitive },
+            Match::Fuzzy { .. } => Self::Fuzzy,
         }
     }
 }

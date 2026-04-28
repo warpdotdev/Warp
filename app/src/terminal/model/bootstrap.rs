@@ -17,44 +17,38 @@ pub enum BootstrapStage {
 impl BootstrapStage {
     pub fn next_stage(&self) -> Self {
         match self {
-            BootstrapStage::RestoreBlocks => BootstrapStage::WarpInput,
-            BootstrapStage::WarpInput => BootstrapStage::ScriptExecution,
-            BootstrapStage::ScriptExecution => {
+            Self::RestoreBlocks => Self::WarpInput,
+            Self::WarpInput => Self::ScriptExecution,
+            Self::ScriptExecution => {
                 log::error!("calling next_stage on a block that should be bootstrapped");
-                BootstrapStage::ScriptExecution
+                Self::ScriptExecution
             }
-            BootstrapStage::Bootstrapped => BootstrapStage::PostBootstrapPrecmd,
-            BootstrapStage::PostBootstrapPrecmd => {
+            Self::Bootstrapped => Self::PostBootstrapPrecmd,
+            Self::PostBootstrapPrecmd => {
                 log::error!(
                     "calling next_stage on an already bootstrapped block that has seen precmd"
                 );
-                BootstrapStage::PostBootstrapPrecmd
+                Self::PostBootstrapPrecmd
             }
         }
     }
 
     pub fn is_bootstrapped(&self) -> bool {
-        matches!(
-            self,
-            BootstrapStage::Bootstrapped | BootstrapStage::PostBootstrapPrecmd
-        )
+        matches!(self, Self::Bootstrapped | Self::PostBootstrapPrecmd)
     }
 
     pub fn is_done(&self) -> bool {
-        matches!(self, BootstrapStage::PostBootstrapPrecmd)
+        matches!(self, Self::PostBootstrapPrecmd)
     }
 
     /// WarpInput is the one block that is hidden by default (unless debug mode is on).
     pub fn is_hidden(&self) -> bool {
-        matches!(self, BootstrapStage::WarpInput)
+        matches!(self, Self::WarpInput)
     }
 
     /// We only can have an empty block that's shown if it's a block a user created by hitting enter, or if it's
     /// a restored block that was created by the user hitting enter.
     pub fn is_empty_block_allowed(&self) -> bool {
-        matches!(
-            self,
-            BootstrapStage::RestoreBlocks | BootstrapStage::PostBootstrapPrecmd
-        )
+        matches!(self, Self::RestoreBlocks | Self::PostBootstrapPrecmd)
     }
 }

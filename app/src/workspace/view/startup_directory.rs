@@ -63,7 +63,7 @@ impl Workspace {
             // Otherwise, lookup the Workspace in that window and query it.
             Some(window_id) => {
                 let workspace_handle = ctx
-                    .views_of_type::<Workspace>(window_id)
+                    .views_of_type::<Self>(window_id)
                     .and_then(|views| views.first().cloned());
                 workspace_handle.map(|workspace| {
                     workspace.read(ctx, |workspace, ctx| {

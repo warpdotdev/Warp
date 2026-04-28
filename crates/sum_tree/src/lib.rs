@@ -48,7 +48,7 @@ impl<T: Item> Default for SumTree<T> {
 
 impl<T: Item> SumTree<T> {
     pub fn new() -> Self {
-        SumTree(Arc::new(Node::Leaf {
+        Self(Arc::new(Node::Leaf {
             summary: T::Summary::default(),
             items: ArrayVec::new(),
             item_summaries: ArrayVec::new(),
@@ -118,7 +118,7 @@ impl<T: Item> SumTree<T> {
 
         for item in iter {
             if leaf.is_some() && leaf.as_ref().unwrap().items().len() == 2 * TREE_BASE {
-                self.push_tree(SumTree(Arc::new(leaf.take().unwrap())));
+                self.push_tree(Self(Arc::new(leaf.take().unwrap())));
             }
 
             if leaf.is_none() {
@@ -145,19 +145,17 @@ impl<T: Item> SumTree<T> {
         }
 
         if leaf.is_some() {
-            self.push_tree(SumTree(Arc::new(leaf.take().unwrap())));
+            self.push_tree(Self(Arc::new(leaf.take().unwrap())));
         }
     }
 
     pub fn push(&mut self, item: T) {
         let summary = item.summary();
-        self.push_tree(SumTree::from_child_trees(vec![SumTree(Arc::new(
-            Node::Leaf {
-                summary: summary.clone(),
-                items: ArrayVec::from_iter(Some(item)),
-                item_summaries: ArrayVec::from_iter(Some(summary)),
-            },
-        ))]))
+        self.push_tree(Self::from_child_trees(vec![Self(Arc::new(Node::Leaf {
+            summary: summary.clone(),
+            items: ArrayVec::from_iter(Some(item)),
+            item_summaries: ArrayVec::from_iter(Some(summary)),
+        }))]))
     }
 
     pub fn push_tree(&mut self, other: Self) {
@@ -173,7 +171,7 @@ impl<T: Item> SumTree<T> {
         }
     }
 
-    fn push_tree_recursive(&mut self, other: SumTree<T>) -> Option<SumTree<T>> {
+    fn push_tree_recursive(&mut self, other: Self) -> Option<Self> {
         match Arc::make_mut(&mut self.0) {
             Node::Internal {
                 height,
@@ -187,7 +185,7 @@ impl<T: Item> SumTree<T> {
 
                 let height_delta = *height - other_node.height();
                 let mut summaries_to_append = ArrayVec::<T::Summary, { 2 * TREE_BASE }>::new();
-                let mut trees_to_append = ArrayVec::<SumTree<T>, { 2 * TREE_BASE }>::new();
+                let mut trees_to_append = ArrayVec::<Self, { 2 * TREE_BASE }>::new();
                 if height_delta == 0 {
                     summaries_to_append.extend(other_node.child_summaries().iter().cloned());
                     trees_to_append.extend(other_node.child_trees().iter().cloned());
@@ -229,7 +227,7 @@ impl<T: Item> SumTree<T> {
                     *child_summaries = left_summaries;
                     *child_trees = left_trees;
 
-                    Some(SumTree(Arc::new(Node::Internal {
+                    Some(Self(Arc::new(Node::Internal {
                         height: *height,
                         summary: sum(right_summaries.iter()),
                         child_summaries: right_summaries,
@@ -271,7 +269,7 @@ impl<T: Item> SumTree<T> {
                     *items = left_items;
                     *item_summaries = left_summaries;
                     *summary = sum(item_summaries.iter());
-                    Some(SumTree(Arc::new(Node::Leaf {
+                    Some(Self(Arc::new(Node::Leaf {
                         items: right_items,
                         summary: sum(right_summaries.iter()),
                         item_summaries: right_summaries,
@@ -343,14 +341,14 @@ impl<T: Item> SumTree<T> {
         }
     }
 
-    fn from_child_trees(child_trees: Vec<SumTree<T>>) -> Self {
+    fn from_child_trees(child_trees: Vec<Self>) -> Self {
         let height = child_trees[0].0.height() + 1;
         let mut child_summaries = ArrayVec::new();
         for child in &child_trees {
             child_summaries.push(child.0.summary().clone());
         }
         let summary = sum(child_summaries.iter());
-        SumTree(Arc::new(Node::Internal {
+        Self(Arc::new(Node::Internal {
             height,
             summary,
             child_summaries,
@@ -398,7 +396,7 @@ impl<T: KeyedItem> SumTree<T> {
 
         *self = {
             let mut cursor = self.cursor::<T::Key, ()>();
-            let mut new_tree = SumTree::new();
+            let mut new_tree = Self::new();
             let mut buffered_items = Vec::new();
 
             cursor.seek(&T::Key::default(), SeekBias::Left);
@@ -450,50 +448,50 @@ pub enum Node<T: Item> {
 
 impl<T: Item> Node<T> {
     fn is_leaf(&self) -> bool {
-        matches!(self, Node::Leaf { .. })
+        matches!(self, Self::Leaf { .. })
     }
 
     fn height(&self) -> u8 {
         match self {
-            Node::Internal { height, .. } => *height,
-            Node::Leaf { .. } => 0,
+            Self::Internal { height, .. } => *height,
+            Self::Leaf { .. } => 0,
         }
     }
 
     fn summary(&self) -> &T::Summary {
         match self {
-            Node::Internal { summary, .. } => summary,
-            Node::Leaf { summary, .. } => summary,
+            Self::Internal { summary, .. } => summary,
+            Self::Leaf { summary, .. } => summary,
         }
     }
 
     fn child_summaries(&self) -> &[T::Summary] {
         match self {
-            Node::Internal {
+            Self::Internal {
                 child_summaries, ..
             } => child_summaries.as_slice(),
-            Node::Leaf { item_summaries, .. } => item_summaries.as_slice(),
+            Self::Leaf { item_summaries, .. } => item_summaries.as_slice(),
         }
     }
 
     fn child_trees(&self) -> &ArrayVec<SumTree<T>, { 2 * TREE_BASE }> {
         match self {
-            Node::Internal { child_trees, .. } => child_trees,
-            Node::Leaf { .. } => panic!("Leaf nodes have no child trees"),
+            Self::Internal { child_trees, .. } => child_trees,
+            Self::Leaf { .. } => panic!("Leaf nodes have no child trees"),
         }
     }
 
     fn items(&self) -> &ArrayVec<T, { 2 * TREE_BASE }> {
         match self {
-            Node::Leaf { items, .. } => items,
-            Node::Internal { .. } => panic!("Internal nodes have no items"),
+            Self::Leaf { items, .. } => items,
+            Self::Internal { .. } => panic!("Internal nodes have no items"),
         }
     }
 
     fn is_underflowing(&self) -> bool {
         match self {
-            Node::Internal { child_trees, .. } => child_trees.len() < TREE_BASE,
-            Node::Leaf { items, .. } => items.len() < TREE_BASE,
+            Self::Internal { child_trees, .. } => child_trees.len() < TREE_BASE,
+            Self::Leaf { items, .. } => items.len() < TREE_BASE,
         }
     }
 }
@@ -508,7 +506,7 @@ pub enum Edit<T: KeyedItem> {
 impl<T: KeyedItem> Edit<T> {
     fn key(&self) -> T::Key {
         match self {
-            Edit::Insert(item) | Edit::Remove(item) => item.key(),
+            Self::Insert(item) | Self::Remove(item) => item.key(),
         }
     }
 }

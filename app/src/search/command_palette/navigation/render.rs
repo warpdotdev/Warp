@@ -332,9 +332,9 @@ pub(super) struct CommandRenderInfo {
 }
 
 impl CommandRenderInfo {
-    pub fn from_context(command_context: CommandContext) -> CommandRenderInfo {
+    pub fn from_context(command_context: CommandContext) -> Self {
         match command_context {
-            CommandContext::RunningCommand { running_command } => CommandRenderInfo {
+            CommandContext::RunningCommand { running_command } => Self {
                 command_text: Some(running_command),
                 hint_text: "Running...".to_string(),
                 row_spacing: styles::NAVIGATION_PALETTE_COMMAND_ROW_SPACING,
@@ -343,7 +343,7 @@ impl CommandRenderInfo {
             CommandContext::LastRunCommand {
                 last_run_command,
                 mins_since_completion,
-            } => CommandRenderInfo {
+            } => Self {
                 row_spacing: match last_run_command.is_empty() {
                     true => 0., // Don't include any spacing if the command is empty.
                     false => styles::NAVIGATION_PALETTE_COMMAND_ROW_SPACING,
@@ -360,19 +360,19 @@ impl CommandRenderInfo {
                     None => "No timestamp found".to_string(),
                 },
             },
-            CommandContext::RunningAIBlock { prompt } => CommandRenderInfo {
+            CommandContext::RunningAIBlock { prompt } => Self {
                 command_text: Some(prompt),
                 hint_text: "Running...".to_string(),
                 row_spacing: styles::NAVIGATION_PALETTE_COMMAND_ROW_SPACING,
                 hint_margin: styles::NAVIGATION_PALETTE_COMMAND_HINT_MARGIN,
             },
-            CommandContext::LastRunAIBlock { prompt } => CommandRenderInfo {
+            CommandContext::LastRunAIBlock { prompt } => Self {
                 command_text: Some(prompt),
                 hint_text: "Completed".to_string(),
                 row_spacing: styles::NAVIGATION_PALETTE_COMMAND_ROW_SPACING,
                 hint_margin: styles::NAVIGATION_PALETTE_COMMAND_HINT_MARGIN,
             },
-            CommandContext::None => CommandRenderInfo {
+            CommandContext::None => Self {
                 command_text: Some(String::new()),
                 hint_text: "Empty Session".to_string(),
                 row_spacing: 0.,

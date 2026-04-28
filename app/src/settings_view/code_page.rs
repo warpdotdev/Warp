@@ -156,7 +156,7 @@ pub struct CodeSettingsPageView {
 }
 
 impl CodeSettingsPageView {
-    pub fn new(ctx: &mut ViewContext<CodeSettingsPageView>) -> Self {
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let index_manager = CodebaseIndexManager::handle(ctx);
         let codebase_count = index_manager
             .as_ref(ctx)
@@ -2289,7 +2289,7 @@ impl SettingsPageMeta for CodeSettingsPageView {
 
 impl From<ViewHandle<CodeSettingsPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<CodeSettingsPageView>) -> Self {
-        SettingsPageViewHandle::Code(view_handle)
+        Self::Code(view_handle)
     }
 }
 

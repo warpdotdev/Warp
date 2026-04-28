@@ -342,16 +342,16 @@ impl AvailableShell {
 impl From<AvailableShell> for NewSessionShell {
     fn from(value: AvailableShell) -> Self {
         match value.state.as_ref() {
-            Config::SystemDefault => NewSessionShell::SystemDefault,
+            Config::SystemDefault => Self::SystemDefault,
             Config::KnownLocal(LocalConfig {
                 executable_path, ..
-            }) => NewSessionShell::Executable(executable_path.display().to_string()),
-            Config::Wsl { distro } => NewSessionShell::WSL(distro.clone()),
+            }) => Self::Executable(executable_path.display().to_string()),
+            Config::Wsl { distro } => Self::WSL(distro.clone()),
             Config::Custom(LocalConfig {
                 executable_path, ..
-            }) => NewSessionShell::Custom(executable_path.display().to_string()),
+            }) => Self::Custom(executable_path.display().to_string()),
             Config::MSYS2(local_config) => {
-                NewSessionShell::MSYS2(local_config.executable_path.display().to_string())
+                Self::MSYS2(local_config.executable_path.display().to_string())
             }
             // Docker sandbox isn't a persistable "preferred shell" today —
             // it's always launched on-demand via a tab action or slash
@@ -359,7 +359,7 @@ impl From<AvailableShell> for NewSessionShell {
             // default.
             // TODO(advait): If we ever let users pin the sandbox as their
             // default shell, add a `NewSessionShell::DockerSandbox` variant.
-            Config::DockerSandbox { .. } => NewSessionShell::SystemDefault,
+            Config::DockerSandbox { .. } => Self::SystemDefault,
         }
     }
 }
@@ -367,20 +367,20 @@ impl From<AvailableShell> for NewSessionShell {
 impl From<AvailableShell> for StartupShell {
     fn from(value: AvailableShell) -> Self {
         match value.state.as_ref() {
-            Config::SystemDefault | Config::Wsl { .. } => StartupShell::Default,
+            Config::SystemDefault | Config::Wsl { .. } => Self::Default,
             Config::KnownLocal(LocalConfig { shell_type, .. }) => {
-                StartupShell::from(Some(shell_type.name().to_string()))
+                Self::from(Some(shell_type.name().to_string()))
             }
             Config::Custom(LocalConfig {
                 executable_path, ..
-            }) => StartupShell::Custom(executable_path.display().to_string()),
+            }) => Self::Custom(executable_path.display().to_string()),
             Config::MSYS2(local_config) => {
-                StartupShell::from(Some(local_config.shell_type.name().to_string()))
+                Self::from(Some(local_config.shell_type.name().to_string()))
             }
             // See the matching comment on `From<AvailableShell> for
             // NewSessionShell`: the sandbox isn't persistable as a startup
             // shell today, so fall back to default.
-            Config::DockerSandbox { .. } => StartupShell::Default,
+            Config::DockerSandbox { .. } => Self::Default,
         }
     }
 }
@@ -416,7 +416,7 @@ impl TryFrom<NewSessionShell> for AvailableShell {
 
     fn try_from(value: NewSessionShell) -> Result<Self, Self::Error> {
         if let NewSessionShell::Custom(path) = &value {
-            Ok(AvailableShell::try_from(path.as_str())?)
+            Ok(Self::try_from(path.as_str())?)
         } else {
             Err(())
         }

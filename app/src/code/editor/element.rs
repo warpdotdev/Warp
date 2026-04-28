@@ -97,15 +97,15 @@ pub enum InnerEditor<V: EditorView> {
 impl<V: EditorView> InnerEditor<V> {
     fn blocks(&self) -> Option<&[Box<dyn RenderableBlock>]> {
         match self {
-            InnerEditor::FullEditor(element) => element.blocks(),
-            InnerEditor::Lens(element) => element.blocks(),
+            Self::FullEditor(element) => element.blocks(),
+            Self::Lens(element) => element.blocks(),
         }
     }
 
     fn model(&self) -> &ModelHandle<RenderState> {
         match self {
-            InnerEditor::FullEditor(element) => &element.model,
-            InnerEditor::Lens(element) => &element.model,
+            Self::FullEditor(element) => &element.model,
+            Self::Lens(element) => &element.model,
         }
     }
 }
@@ -118,22 +118,22 @@ impl<V: EditorView> Element for InnerEditor<V> {
         app: &AppContext,
     ) -> Vector2F {
         match self {
-            InnerEditor::FullEditor(element) => element.layout(constraint, ctx, app),
-            InnerEditor::Lens(element) => element.layout(constraint, ctx, app),
+            Self::FullEditor(element) => element.layout(constraint, ctx, app),
+            Self::Lens(element) => element.layout(constraint, ctx, app),
         }
     }
 
     fn after_layout(&mut self, ctx: &mut AfterLayoutContext, app: &AppContext) {
         match self {
-            InnerEditor::FullEditor(element) => element.after_layout(ctx, app),
-            InnerEditor::Lens(element) => element.after_layout(ctx, app),
+            Self::FullEditor(element) => element.after_layout(ctx, app),
+            Self::Lens(element) => element.after_layout(ctx, app),
         }
     }
 
     fn paint(&mut self, origin: Vector2F, ctx: &mut PaintContext, app: &AppContext) {
         match self {
-            InnerEditor::FullEditor(element) => element.paint(origin, ctx, app),
-            InnerEditor::Lens(element) => element.paint(origin, ctx, app),
+            Self::FullEditor(element) => element.paint(origin, ctx, app),
+            Self::Lens(element) => element.paint(origin, ctx, app),
         };
     }
 
@@ -152,8 +152,8 @@ impl<V: EditorView> Element for InnerEditor<V> {
         app: &AppContext,
     ) -> bool {
         match self {
-            InnerEditor::FullEditor(element) => element.dispatch_event(event, ctx, app),
-            InnerEditor::Lens(element) => element.dispatch_event(event, ctx, app),
+            Self::FullEditor(element) => element.dispatch_event(event, ctx, app),
+            Self::Lens(element) => element.dispatch_event(event, ctx, app),
         }
     }
 }
@@ -343,8 +343,8 @@ pub enum GutterRange {
 impl GutterRange {
     pub fn line(&self) -> &EditorLineLocation {
         match self {
-            GutterRange::DiffHunk { line, .. } => line,
-            GutterRange::HiddenSection { line, .. } => line,
+            Self::DiffHunk { line, .. } => line,
+            Self::HiddenSection { line, .. } => line,
         }
     }
 }

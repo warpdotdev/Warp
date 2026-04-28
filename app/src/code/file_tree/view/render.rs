@@ -12,7 +12,7 @@ impl FileTreeItem {
         appearance: &Appearance,
     ) -> RenderState {
         match self {
-            FileTreeItem::File {
+            Self::File {
                 metadata,
                 mouse_state_handle,
                 depth,
@@ -37,7 +37,7 @@ impl FileTreeItem {
                     is_ignored: metadata.ignored,
                 }
             }
-            FileTreeItem::DirectoryHeader {
+            Self::DirectoryHeader {
                 directory,
                 mouse_state_handle,
                 depth,

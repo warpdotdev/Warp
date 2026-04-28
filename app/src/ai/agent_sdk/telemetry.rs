@@ -121,7 +121,7 @@ impl TelemetryEvent for CliTelemetryEvent {
 
     fn payload(&self) -> Option<Value> {
         match self {
-            CliTelemetryEvent::AgentRun {
+            Self::AgentRun {
                 gui,
                 requested_mcp_servers,
                 has_environment,
@@ -134,60 +134,56 @@ impl TelemetryEvent for CliTelemetryEvent {
                 "task_id": task_id,
                 "harness": harness,
             })),
-            CliTelemetryEvent::AgentRunAmbient => None,
-            CliTelemetryEvent::AgentProfileList => None,
-            CliTelemetryEvent::AgentList => None,
-            CliTelemetryEvent::EnvironmentList => None,
-            CliTelemetryEvent::EnvironmentCreate => None,
-            CliTelemetryEvent::EnvironmentDelete => None,
-            CliTelemetryEvent::EnvironmentUpdate => None,
-            CliTelemetryEvent::EnvironmentGet => None,
-            CliTelemetryEvent::EnvironmentImageList => None,
-            CliTelemetryEvent::MCPList => None,
-            CliTelemetryEvent::ModelList => None,
-            CliTelemetryEvent::TaskList => None,
-            CliTelemetryEvent::TaskGet => None,
-            CliTelemetryEvent::ConversationGet => None,
-            CliTelemetryEvent::RunConversationGet => None,
-            CliTelemetryEvent::RunMessageWatch { harness } => Some(json!({ "harness": harness })),
-            CliTelemetryEvent::RunMessageSend { harness } => Some(json!({ "harness": harness })),
-            CliTelemetryEvent::RunMessageList { harness } => Some(json!({ "harness": harness })),
-            CliTelemetryEvent::RunMessageRead { harness } => Some(json!({ "harness": harness })),
-            CliTelemetryEvent::RunMessageMarkDelivered { harness } => {
-                Some(json!({ "harness": harness }))
-            }
-            CliTelemetryEvent::Login => None,
-            CliTelemetryEvent::Logout => None,
-            CliTelemetryEvent::Whoami => None,
-            CliTelemetryEvent::ProviderSetup => None,
-            CliTelemetryEvent::ProviderList => None,
-            CliTelemetryEvent::IntegrationCreate => None,
-            CliTelemetryEvent::IntegrationUpdate => None,
-            CliTelemetryEvent::IntegrationList => None,
-            CliTelemetryEvent::ArtifactUpload => None,
-            CliTelemetryEvent::ArtifactGet => None,
-            CliTelemetryEvent::ArtifactDownload => None,
-            CliTelemetryEvent::ScheduleCreate => None,
-            CliTelemetryEvent::ScheduleList => None,
-            CliTelemetryEvent::ScheduleGet => None,
-            CliTelemetryEvent::SchedulePause => None,
-            CliTelemetryEvent::ScheduleUnpause => None,
-            CliTelemetryEvent::ScheduleUpdate => None,
-            CliTelemetryEvent::ScheduleDelete => None,
-            CliTelemetryEvent::SecretCreate => None,
-            CliTelemetryEvent::SecretDelete => None,
-            CliTelemetryEvent::SecretUpdate => None,
-            CliTelemetryEvent::SecretList => None,
-            CliTelemetryEvent::FederateIssueToken => None,
-            CliTelemetryEvent::FederateIssueGcpToken => None,
-            CliTelemetryEvent::HarnessSupportPing => None,
-            CliTelemetryEvent::HarnessSupportReportArtifact { artifact_type } => {
+            Self::AgentRunAmbient => None,
+            Self::AgentProfileList => None,
+            Self::AgentList => None,
+            Self::EnvironmentList => None,
+            Self::EnvironmentCreate => None,
+            Self::EnvironmentDelete => None,
+            Self::EnvironmentUpdate => None,
+            Self::EnvironmentGet => None,
+            Self::EnvironmentImageList => None,
+            Self::MCPList => None,
+            Self::ModelList => None,
+            Self::TaskList => None,
+            Self::TaskGet => None,
+            Self::ConversationGet => None,
+            Self::RunConversationGet => None,
+            Self::RunMessageWatch { harness } => Some(json!({ "harness": harness })),
+            Self::RunMessageSend { harness } => Some(json!({ "harness": harness })),
+            Self::RunMessageList { harness } => Some(json!({ "harness": harness })),
+            Self::RunMessageRead { harness } => Some(json!({ "harness": harness })),
+            Self::RunMessageMarkDelivered { harness } => Some(json!({ "harness": harness })),
+            Self::Login => None,
+            Self::Logout => None,
+            Self::Whoami => None,
+            Self::ProviderSetup => None,
+            Self::ProviderList => None,
+            Self::IntegrationCreate => None,
+            Self::IntegrationUpdate => None,
+            Self::IntegrationList => None,
+            Self::ArtifactUpload => None,
+            Self::ArtifactGet => None,
+            Self::ArtifactDownload => None,
+            Self::ScheduleCreate => None,
+            Self::ScheduleList => None,
+            Self::ScheduleGet => None,
+            Self::SchedulePause => None,
+            Self::ScheduleUnpause => None,
+            Self::ScheduleUpdate => None,
+            Self::ScheduleDelete => None,
+            Self::SecretCreate => None,
+            Self::SecretDelete => None,
+            Self::SecretUpdate => None,
+            Self::SecretList => None,
+            Self::FederateIssueToken => None,
+            Self::FederateIssueGcpToken => None,
+            Self::HarnessSupportPing => None,
+            Self::HarnessSupportReportArtifact { artifact_type } => {
                 Some(json!({ "artifact_type": artifact_type }))
             }
-            CliTelemetryEvent::HarnessSupportNotifyUser => None,
-            CliTelemetryEvent::HarnessSupportFinishTask { success } => {
-                Some(json!({ "success": success }))
-            }
+            Self::HarnessSupportNotifyUser => None,
+            Self::HarnessSupportFinishTask { success } => Some(json!({ "success": success })),
         }
     }
 
@@ -211,189 +207,115 @@ impl TelemetryEvent for CliTelemetryEvent {
 impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
     fn name(&self) -> &'static str {
         match self {
-            CliTelemetryEventDiscriminants::AgentRun => "CLI.Execute.Agent.Run",
-            CliTelemetryEventDiscriminants::AgentRunAmbient => "CLI.Execute.Agent.RunAmbient",
-            CliTelemetryEventDiscriminants::AgentProfileList => "CLI.Execute.Agent.Profile.List",
-            CliTelemetryEventDiscriminants::AgentList => "CLI.Execute.Agent.List",
-            CliTelemetryEventDiscriminants::EnvironmentList => "CLI.Execute.Environment.List",
-            CliTelemetryEventDiscriminants::EnvironmentCreate => "CLI.Execute.Environment.Create",
-            CliTelemetryEventDiscriminants::EnvironmentDelete => "CLI.Execute.Environment.Delete",
-            CliTelemetryEventDiscriminants::EnvironmentUpdate => "CLI.Execute.Environment.Update",
-            CliTelemetryEventDiscriminants::EnvironmentGet => "CLI.Execute.Environment.Get",
-            CliTelemetryEventDiscriminants::EnvironmentImageList => {
-                "CLI.Execute.Environment.Image.List"
-            }
-            CliTelemetryEventDiscriminants::MCPList => "CLI.Execute.MCP.List",
-            CliTelemetryEventDiscriminants::ModelList => "CLI.Execute.Model.List",
-            CliTelemetryEventDiscriminants::TaskList => "CLI.Execute.Task.List",
-            CliTelemetryEventDiscriminants::TaskGet => "CLI.Execute.Task.Get",
-            CliTelemetryEventDiscriminants::ConversationGet => "CLI.Execute.Conversation.Get",
-            CliTelemetryEventDiscriminants::RunConversationGet => {
-                "CLI.Execute.Run.Conversation.Get"
-            }
-            CliTelemetryEventDiscriminants::RunMessageWatch => "CLI.Execute.Run.Message.Watch",
-            CliTelemetryEventDiscriminants::RunMessageSend => "CLI.Execute.Run.Message.Send",
-            CliTelemetryEventDiscriminants::RunMessageList => "CLI.Execute.Run.Message.List",
-            CliTelemetryEventDiscriminants::RunMessageRead => "CLI.Execute.Run.Message.Read",
-            CliTelemetryEventDiscriminants::RunMessageMarkDelivered => {
-                "CLI.Execute.Run.Message.MarkDelivered"
-            }
-            CliTelemetryEventDiscriminants::Login => "CLI.Execute.Login",
-            CliTelemetryEventDiscriminants::Logout => "CLI.Execute.Logout",
-            CliTelemetryEventDiscriminants::Whoami => "CLI.Execute.Whoami",
-            CliTelemetryEventDiscriminants::ProviderSetup => "CLI.Execute.Provider.Setup",
-            CliTelemetryEventDiscriminants::ProviderList => "CLI.Execute.Provider.List",
-            CliTelemetryEventDiscriminants::IntegrationCreate => "CLI.Execute.Integration.Create",
-            CliTelemetryEventDiscriminants::IntegrationUpdate => "CLI.Execute.Integration.Update",
-            CliTelemetryEventDiscriminants::IntegrationList => "CLI.Execute.Integration.List",
-            CliTelemetryEventDiscriminants::ArtifactUpload => "CLI.Execute.Artifact.Upload",
-            CliTelemetryEventDiscriminants::ArtifactGet => "CLI.Execute.Artifact.Get",
-            CliTelemetryEventDiscriminants::ArtifactDownload => "CLI.Execute.Artifact.Download",
-            CliTelemetryEventDiscriminants::ScheduleCreate => "CLI.Execute.Schedule.Create",
-            CliTelemetryEventDiscriminants::ScheduleList => "CLI.Execute.Schedule.List",
-            CliTelemetryEventDiscriminants::ScheduleGet => "CLI.Execute.Schedule.Get",
-            CliTelemetryEventDiscriminants::SchedulePause => "CLI.Execute.Schedule.Pause",
-            CliTelemetryEventDiscriminants::ScheduleUnpause => "CLI.Execute.Schedule.Unpause",
-            CliTelemetryEventDiscriminants::ScheduleUpdate => "CLI.Execute.Schedule.Update",
-            CliTelemetryEventDiscriminants::ScheduleDelete => "CLI.Execute.Schedule.Delete",
-            CliTelemetryEventDiscriminants::SecretCreate => "CLI.Execute.Secret.Create",
-            CliTelemetryEventDiscriminants::SecretDelete => "CLI.Execute.Secret.Delete",
-            CliTelemetryEventDiscriminants::SecretUpdate => "CLI.Execute.Secret.Update",
-            CliTelemetryEventDiscriminants::SecretList => "CLI.Execute.Secret.List",
-            CliTelemetryEventDiscriminants::FederateIssueToken => "CLI.Execute.Federate.IssueToken",
-            CliTelemetryEventDiscriminants::FederateIssueGcpToken => {
-                "CLI.Execute.Federate.IssueGcpToken"
-            }
-            CliTelemetryEventDiscriminants::HarnessSupportPing => "CLI.Execute.HarnessSupport.Ping",
-            CliTelemetryEventDiscriminants::HarnessSupportReportArtifact => {
-                "CLI.Execute.HarnessSupport.ReportArtifact"
-            }
-            CliTelemetryEventDiscriminants::HarnessSupportNotifyUser => {
-                "CLI.Execute.HarnessSupport.NotifyUser"
-            }
-            CliTelemetryEventDiscriminants::HarnessSupportFinishTask => {
-                "CLI.Execute.HarnessSupport.FinishTask"
-            }
+            Self::AgentRun => "CLI.Execute.Agent.Run",
+            Self::AgentRunAmbient => "CLI.Execute.Agent.RunAmbient",
+            Self::AgentProfileList => "CLI.Execute.Agent.Profile.List",
+            Self::AgentList => "CLI.Execute.Agent.List",
+            Self::EnvironmentList => "CLI.Execute.Environment.List",
+            Self::EnvironmentCreate => "CLI.Execute.Environment.Create",
+            Self::EnvironmentDelete => "CLI.Execute.Environment.Delete",
+            Self::EnvironmentUpdate => "CLI.Execute.Environment.Update",
+            Self::EnvironmentGet => "CLI.Execute.Environment.Get",
+            Self::EnvironmentImageList => "CLI.Execute.Environment.Image.List",
+            Self::MCPList => "CLI.Execute.MCP.List",
+            Self::ModelList => "CLI.Execute.Model.List",
+            Self::TaskList => "CLI.Execute.Task.List",
+            Self::TaskGet => "CLI.Execute.Task.Get",
+            Self::ConversationGet => "CLI.Execute.Conversation.Get",
+            Self::RunConversationGet => "CLI.Execute.Run.Conversation.Get",
+            Self::RunMessageWatch => "CLI.Execute.Run.Message.Watch",
+            Self::RunMessageSend => "CLI.Execute.Run.Message.Send",
+            Self::RunMessageList => "CLI.Execute.Run.Message.List",
+            Self::RunMessageRead => "CLI.Execute.Run.Message.Read",
+            Self::RunMessageMarkDelivered => "CLI.Execute.Run.Message.MarkDelivered",
+            Self::Login => "CLI.Execute.Login",
+            Self::Logout => "CLI.Execute.Logout",
+            Self::Whoami => "CLI.Execute.Whoami",
+            Self::ProviderSetup => "CLI.Execute.Provider.Setup",
+            Self::ProviderList => "CLI.Execute.Provider.List",
+            Self::IntegrationCreate => "CLI.Execute.Integration.Create",
+            Self::IntegrationUpdate => "CLI.Execute.Integration.Update",
+            Self::IntegrationList => "CLI.Execute.Integration.List",
+            Self::ArtifactUpload => "CLI.Execute.Artifact.Upload",
+            Self::ArtifactGet => "CLI.Execute.Artifact.Get",
+            Self::ArtifactDownload => "CLI.Execute.Artifact.Download",
+            Self::ScheduleCreate => "CLI.Execute.Schedule.Create",
+            Self::ScheduleList => "CLI.Execute.Schedule.List",
+            Self::ScheduleGet => "CLI.Execute.Schedule.Get",
+            Self::SchedulePause => "CLI.Execute.Schedule.Pause",
+            Self::ScheduleUnpause => "CLI.Execute.Schedule.Unpause",
+            Self::ScheduleUpdate => "CLI.Execute.Schedule.Update",
+            Self::ScheduleDelete => "CLI.Execute.Schedule.Delete",
+            Self::SecretCreate => "CLI.Execute.Secret.Create",
+            Self::SecretDelete => "CLI.Execute.Secret.Delete",
+            Self::SecretUpdate => "CLI.Execute.Secret.Update",
+            Self::SecretList => "CLI.Execute.Secret.List",
+            Self::FederateIssueToken => "CLI.Execute.Federate.IssueToken",
+            Self::FederateIssueGcpToken => "CLI.Execute.Federate.IssueGcpToken",
+            Self::HarnessSupportPing => "CLI.Execute.HarnessSupport.Ping",
+            Self::HarnessSupportReportArtifact => "CLI.Execute.HarnessSupport.ReportArtifact",
+            Self::HarnessSupportNotifyUser => "CLI.Execute.HarnessSupport.NotifyUser",
+            Self::HarnessSupportFinishTask => "CLI.Execute.HarnessSupport.FinishTask",
         }
     }
 
     fn description(&self) -> &'static str {
         match self {
-            CliTelemetryEventDiscriminants::AgentRun => "Ran an agent from the Warp CLI",
-            CliTelemetryEventDiscriminants::AgentRunAmbient => {
-                "Ran an ambient agent from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::AgentProfileList => {
-                "Listed agent profiles from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::AgentList => "Listed agents from the Warp CLI",
-            CliTelemetryEventDiscriminants::EnvironmentList => {
-                "Listed cloud environments from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::EnvironmentCreate => {
-                "Created a cloud environment from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::EnvironmentDelete => {
-                "Deleted a cloud environment from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::EnvironmentUpdate => {
-                "Updated a cloud environment from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::EnvironmentGet => {
-                "Got cloud environment details from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::EnvironmentImageList => {
-                "Listed available base images from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::MCPList => "Listed MCP servers from the Warp CLI",
-            CliTelemetryEventDiscriminants::ModelList => "Listed models from the Warp CLI",
-            CliTelemetryEventDiscriminants::TaskList => "Listed tasks from the Warp CLI",
-            CliTelemetryEventDiscriminants::TaskGet => "Got status of task from the Warp CLI",
-            CliTelemetryEventDiscriminants::ConversationGet => {
-                "Got conversation by ID from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::RunConversationGet => {
-                "Got run conversation from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::RunMessageWatch => {
-                "Watched run messages from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::RunMessageSend => {
-                "Sent a run message from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::RunMessageList => {
-                "Listed run messages from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::RunMessageRead => {
-                "Read a run message from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::RunMessageMarkDelivered => {
-                "Marked a run message as delivered from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::Login => "Logged in via the Warp CLI",
-            CliTelemetryEventDiscriminants::Logout => "Logged out via the Warp CLI",
-            CliTelemetryEventDiscriminants::Whoami => "Printed current user info from the Warp CLI",
-            CliTelemetryEventDiscriminants::ProviderSetup => "Set up a provider via the Warp CLI",
-            CliTelemetryEventDiscriminants::ProviderList => "Listed providers from the Warp CLI",
-            CliTelemetryEventDiscriminants::IntegrationCreate => {
-                "Created an integration from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::IntegrationUpdate => {
-                "Updated an integration from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::IntegrationList => {
-                "Listed integrations from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ArtifactUpload => {
-                "Uploaded an artifact from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ArtifactGet => {
-                "Got artifact metadata from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ArtifactDownload => {
-                "Downloaded an artifact from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ScheduleCreate => {
-                "Created a scheduled agent from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ScheduleList => {
-                "Listed scheduled agents from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ScheduleGet => {
-                "Got scheduled agent configuration from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::SchedulePause => {
-                "Paused a scheduled agent from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ScheduleUnpause => {
-                "Unpaused a scheduled agent from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ScheduleUpdate => {
-                "Updated a scheduled agent from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ScheduleDelete => {
-                "Deleted a scheduled agent from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::SecretCreate => "Created a secret from the Warp CLI",
-            CliTelemetryEventDiscriminants::SecretDelete => "Deleted a secret from the Warp CLI",
-            CliTelemetryEventDiscriminants::SecretUpdate => "Updated a secret from the Warp CLI",
-            CliTelemetryEventDiscriminants::SecretList => "Listed secrets from the Warp CLI",
-            CliTelemetryEventDiscriminants::FederateIssueToken => {
-                "Issued a federated identity token from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::FederateIssueGcpToken => {
+            Self::AgentRun => "Ran an agent from the Warp CLI",
+            Self::AgentRunAmbient => "Ran an ambient agent from the Warp CLI",
+            Self::AgentProfileList => "Listed agent profiles from the Warp CLI",
+            Self::AgentList => "Listed agents from the Warp CLI",
+            Self::EnvironmentList => "Listed cloud environments from the Warp CLI",
+            Self::EnvironmentCreate => "Created a cloud environment from the Warp CLI",
+            Self::EnvironmentDelete => "Deleted a cloud environment from the Warp CLI",
+            Self::EnvironmentUpdate => "Updated a cloud environment from the Warp CLI",
+            Self::EnvironmentGet => "Got cloud environment details from the Warp CLI",
+            Self::EnvironmentImageList => "Listed available base images from the Warp CLI",
+            Self::MCPList => "Listed MCP servers from the Warp CLI",
+            Self::ModelList => "Listed models from the Warp CLI",
+            Self::TaskList => "Listed tasks from the Warp CLI",
+            Self::TaskGet => "Got status of task from the Warp CLI",
+            Self::ConversationGet => "Got conversation by ID from the Warp CLI",
+            Self::RunConversationGet => "Got run conversation from the Warp CLI",
+            Self::RunMessageWatch => "Watched run messages from the Warp CLI",
+            Self::RunMessageSend => "Sent a run message from the Warp CLI",
+            Self::RunMessageList => "Listed run messages from the Warp CLI",
+            Self::RunMessageRead => "Read a run message from the Warp CLI",
+            Self::RunMessageMarkDelivered => "Marked a run message as delivered from the Warp CLI",
+            Self::Login => "Logged in via the Warp CLI",
+            Self::Logout => "Logged out via the Warp CLI",
+            Self::Whoami => "Printed current user info from the Warp CLI",
+            Self::ProviderSetup => "Set up a provider via the Warp CLI",
+            Self::ProviderList => "Listed providers from the Warp CLI",
+            Self::IntegrationCreate => "Created an integration from the Warp CLI",
+            Self::IntegrationUpdate => "Updated an integration from the Warp CLI",
+            Self::IntegrationList => "Listed integrations from the Warp CLI",
+            Self::ArtifactUpload => "Uploaded an artifact from the Warp CLI",
+            Self::ArtifactGet => "Got artifact metadata from the Warp CLI",
+            Self::ArtifactDownload => "Downloaded an artifact from the Warp CLI",
+            Self::ScheduleCreate => "Created a scheduled agent from the Warp CLI",
+            Self::ScheduleList => "Listed scheduled agents from the Warp CLI",
+            Self::ScheduleGet => "Got scheduled agent configuration from the Warp CLI",
+            Self::SchedulePause => "Paused a scheduled agent from the Warp CLI",
+            Self::ScheduleUnpause => "Unpaused a scheduled agent from the Warp CLI",
+            Self::ScheduleUpdate => "Updated a scheduled agent from the Warp CLI",
+            Self::ScheduleDelete => "Deleted a scheduled agent from the Warp CLI",
+            Self::SecretCreate => "Created a secret from the Warp CLI",
+            Self::SecretDelete => "Deleted a secret from the Warp CLI",
+            Self::SecretUpdate => "Updated a secret from the Warp CLI",
+            Self::SecretList => "Listed secrets from the Warp CLI",
+            Self::FederateIssueToken => "Issued a federated identity token from the Warp CLI",
+            Self::FederateIssueGcpToken => {
                 "Issued a GCP federated identity token from the Warp CLI"
             }
-            CliTelemetryEventDiscriminants::HarnessSupportPing => {
-                "Pinged harness-support from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::HarnessSupportReportArtifact => {
+            Self::HarnessSupportPing => "Pinged harness-support from the Warp CLI",
+            Self::HarnessSupportReportArtifact => {
                 "Reported an artifact via harness-support from the Warp CLI"
             }
-            CliTelemetryEventDiscriminants::HarnessSupportNotifyUser => {
+            Self::HarnessSupportNotifyUser => {
                 "Sent a user notification via harness-support from the Warp CLI"
             }
-            CliTelemetryEventDiscriminants::HarnessSupportFinishTask => {
+            Self::HarnessSupportFinishTask => {
                 "Reported task completion via harness-support from the Warp CLI"
             }
         }

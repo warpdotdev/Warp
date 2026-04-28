@@ -62,7 +62,7 @@ impl InputConfig {
         let ai_settings = AISettings::as_ref(app);
         let is_autodetection_enabled = ai_settings.is_ai_autodetection_enabled(app);
 
-        InputConfig {
+        Self {
             input_type: InputType::Shell,
             is_locked: !is_autodetection_enabled, // Locked if auto-detection disabled
         }
@@ -126,7 +126,7 @@ impl From<InputConfig> for InputMode {
             InputType::AI => ProtocolInputType::AI,
         };
 
-        InputMode::new(protocol_input_type, config.is_locked)
+        Self::new(protocol_input_type, config.is_locked)
     }
 }
 
@@ -780,15 +780,13 @@ pub enum BlocklistAIInputEvent {
 impl BlocklistAIInputEvent {
     pub fn did_update_input_config(&self) -> bool {
         match self {
-            BlocklistAIInputEvent::InputTypeChanged { .. }
-            | BlocklistAIInputEvent::LockChanged { .. } => true,
+            Self::InputTypeChanged { .. } | Self::LockChanged { .. } => true,
         }
     }
 
     pub fn updated_config(&self) -> &InputConfig {
         match self {
-            BlocklistAIInputEvent::InputTypeChanged { config }
-            | BlocklistAIInputEvent::LockChanged { config } => config,
+            Self::InputTypeChanged { config } | Self::LockChanged { config } => config,
         }
     }
 }

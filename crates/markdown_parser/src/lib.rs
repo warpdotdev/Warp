@@ -242,17 +242,17 @@ impl FormattedTextLine {
 
     fn inline_fragments(&self) -> Option<&FormattedTextInline> {
         match &self {
-            FormattedTextLine::Heading(header) => Some(&header.text),
-            FormattedTextLine::Line(texts) => Some(texts),
-            FormattedTextLine::OrderedList(texts) => Some(&texts.indented_text.text),
-            FormattedTextLine::UnorderedList(texts) => Some(&texts.text),
-            FormattedTextLine::TaskList(list) => Some(&list.text),
-            FormattedTextLine::CodeBlock(_)
-            | FormattedTextLine::LineBreak
-            | FormattedTextLine::HorizontalRule
-            | FormattedTextLine::Embedded(_)
-            | FormattedTextLine::Image(_)
-            | FormattedTextLine::Table(_) => None,
+            Self::Heading(header) => Some(&header.text),
+            Self::Line(texts) => Some(texts),
+            Self::OrderedList(texts) => Some(&texts.indented_text.text),
+            Self::UnorderedList(texts) => Some(&texts.text),
+            Self::TaskList(list) => Some(&list.text),
+            Self::CodeBlock(_)
+            | Self::LineBreak
+            | Self::HorizontalRule
+            | Self::Embedded(_)
+            | Self::Image(_)
+            | Self::Table(_) => None,
         }
     }
 
@@ -515,8 +515,8 @@ impl Hyperlink {
     /// Returns the URL if this is a URL, or `None` otherwise.
     pub fn url(self) -> Option<String> {
         match self {
-            Hyperlink::Url(url) => Some(url),
-            Hyperlink::Action(_) => None,
+            Self::Url(url) => Some(url),
+            Self::Action(_) => None,
         }
     }
 }

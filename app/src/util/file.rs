@@ -99,8 +99,8 @@ impl FilePathType {
     /// returns the absolute path.
     pub fn absolute_path(&self, path: PathBuf) -> PathBuf {
         match self {
-            FilePathType::Absolute => path,
-            FilePathType::Relative(directory) => directory.join(&path),
+            Self::Absolute => path,
+            Self::Relative(directory) => directory.join(&path),
         }
     }
 }

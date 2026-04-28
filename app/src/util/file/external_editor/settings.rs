@@ -52,16 +52,14 @@ impl<'de> Deserialize<'de> for EditorChoice {
 
         match EditorChoiceCompat::deserialize(deserializer)? {
             EditorChoiceCompat::New(inner) => match inner {
-                EditorChoiceInner::SystemDefault => Ok(EditorChoice::SystemDefault),
-                EditorChoiceInner::Warp => Ok(EditorChoice::Warp),
-                EditorChoiceInner::EnvEditor => Ok(EditorChoice::EnvEditor),
-                EditorChoiceInner::ExternalEditor(editor) => {
-                    Ok(EditorChoice::ExternalEditor(editor))
-                }
+                EditorChoiceInner::SystemDefault => Ok(Self::SystemDefault),
+                EditorChoiceInner::Warp => Ok(Self::Warp),
+                EditorChoiceInner::EnvEditor => Ok(Self::EnvEditor),
+                EditorChoiceInner::ExternalEditor(editor) => Ok(Self::ExternalEditor(editor)),
             },
             EditorChoiceCompat::Old(old_value) => match old_value {
-                None => Ok(EditorChoice::SystemDefault),
-                Some(editor) => Ok(EditorChoice::ExternalEditor(editor)),
+                None => Ok(Self::SystemDefault),
+                Some(editor) => Ok(Self::ExternalEditor(editor)),
             },
         }
     }

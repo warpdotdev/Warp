@@ -50,8 +50,8 @@ pub enum ContainingObjectKind {
 impl ContainingObjectKind {
     pub fn into_item_id(self) -> WarpDriveItemId {
         match self {
-            ContainingObjectKind::Space(space) => WarpDriveItemId::Space(space),
-            ContainingObjectKind::Object(object) => WarpDriveItemId::Object(object),
+            Self::Space(space) => WarpDriveItemId::Space(space),
+            Self::Object(object) => WarpDriveItemId::Object(object),
         }
     }
 }

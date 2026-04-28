@@ -256,21 +256,21 @@ pub enum BlockListMatch {
 impl BlockListMatch {
     pub fn is_filtered(&self) -> bool {
         match self {
-            BlockListMatch::CommandBlock(BlockGridMatch { is_filtered, .. }) => *is_filtered,
+            Self::CommandBlock(BlockGridMatch { is_filtered, .. }) => *is_filtered,
             _ => false,
         }
     }
 
     fn grid_type(&self) -> Option<GridType> {
         match self {
-            BlockListMatch::CommandBlock(BlockGridMatch { grid_type, .. }) => Some(*grid_type),
+            Self::CommandBlock(BlockGridMatch { grid_type, .. }) => Some(*grid_type),
             _ => None,
         }
     }
 
     pub fn matches_block(&self, block_index: BlockIndex) -> bool {
         match self {
-            BlockListMatch::CommandBlock(BlockGridMatch {
+            Self::CommandBlock(BlockGridMatch {
                 block_index: match_block_index,
                 ..
             }) => block_index == *match_block_index,
@@ -280,7 +280,7 @@ impl BlockListMatch {
 
     fn matches_blockgrid(&self, block_index: BlockIndex, grid_type: GridType) -> bool {
         match self {
-            BlockListMatch::CommandBlock(BlockGridMatch {
+            Self::CommandBlock(BlockGridMatch {
                 block_index: match_block_index,
                 grid_type: match_grid_type,
                 ..

@@ -567,7 +567,7 @@ impl ToastFlavor {
     fn text_color(&self, appearance: &Appearance) -> ColorU {
         let theme = appearance.theme();
         match self {
-            ToastFlavor::Default => theme.main_text_color(theme.background()).into(),
+            Self::Default => theme.main_text_color(theme.background()).into(),
             _ => theme.background().into(),
         }
     }
@@ -584,9 +584,9 @@ impl ToastFlavor {
     fn border_color(&self, appearance: &Appearance) -> Fill {
         let theme = appearance.theme();
         match self {
-            ToastFlavor::Default => internal_colors::neutral_3(theme).into(),
-            ToastFlavor::Success => theme.ansi_bg_green().into(),
-            ToastFlavor::Error => theme.ansi_bg_red().into(),
+            Self::Default => internal_colors::neutral_3(theme).into(),
+            Self::Success => theme.ansi_bg_green().into(),
+            Self::Error => theme.ansi_bg_red().into(),
         }
     }
 }

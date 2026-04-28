@@ -112,7 +112,7 @@ impl SecretInput {
     /// Returns `Ok(None)` when the user cancels the prompt.
     fn read(self) -> Result<Option<ManagedSecretValue>> {
         match self {
-            SecretInput::Simple {
+            Self::Simple {
                 secret_type,
                 value_args,
             } => {
@@ -122,11 +122,11 @@ impl SecretInput {
                 };
                 Ok(Some(make_simple_secret_value(secret_type, &raw)))
             }
-            SecretInput::Bedrock {
+            Self::Bedrock {
                 bedrock_api_key,
                 region,
             } => read_bedrock_secret_value(bedrock_api_key, region),
-            SecretInput::BedrockAccessKey {
+            Self::BedrockAccessKey {
                 access_key_id,
                 secret_access_key,
                 session_token,

@@ -135,9 +135,7 @@ pub trait Serializer<M>: Debug + Clone + 'static {
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct GenericStringModel<M, S>
 where
-    M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
-    >,
+    M: StringModel<CloudObjectType = GenericCloudObject<GenericStringObjectId, Self>>,
     S: Serializer<M>,
 {
     pub string_model: M,
@@ -145,9 +143,7 @@ where
 
 impl<M, S> CloudStringObject for GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>
 where
-    M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
-    >,
+    M: StringModel<CloudObjectType = Self>,
     S: Serializer<M>,
 {
     fn generic_string_object_format(&self) -> GenericStringObjectFormat {
@@ -176,9 +172,7 @@ where
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl<M, S> CloudModelType for GenericStringModel<M, S>
 where
-    M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
-    >,
+    M: StringModel<CloudObjectType = GenericCloudObject<GenericStringObjectId, Self>>,
     S: Serializer<M>,
 {
     type CloudObjectType = GenericCloudObject<GenericStringObjectId, Self>;
@@ -352,9 +346,7 @@ where
 
 impl<M, S> GenericStringModel<M, S>
 where
-    M: StringModel<
-        CloudObjectType = GenericCloudObject<GenericStringObjectId, GenericStringModel<M, S>>,
-    >,
+    M: StringModel<CloudObjectType = GenericCloudObject<GenericStringObjectId, Self>>,
     S: Serializer<M>,
 {
     pub fn deserialize_owned(serialized: &str) -> Result<Self> {

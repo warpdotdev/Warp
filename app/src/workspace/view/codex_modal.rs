@@ -78,7 +78,7 @@ impl CodexModal {
                 })
         });
 
-        CodexModal {
+        Self {
             state_handles: Default::default(),
             cta_button,
         }

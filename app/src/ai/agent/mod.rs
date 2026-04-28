@@ -76,7 +76,7 @@ pub struct InvokeSkillUserQuery {
 
 impl ServerOutputId {
     pub fn new(value: String) -> Self {
-        ServerOutputId(value)
+        Self(value)
     }
 }
 
@@ -107,12 +107,12 @@ pub enum CancellationReason {
 impl Display for CancellationReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CancellationReason::ManuallyCancelled => write!(f, "manual cancellation"),
-            CancellationReason::FollowUpSubmitted { .. } => write!(f, "follow-up submission"),
-            CancellationReason::UserCommandExecuted => write!(f, "user command execution"),
-            CancellationReason::Reverted => write!(f, "revert"),
-            CancellationReason::Deleted => write!(f, "deleted"),
-            CancellationReason::OptimisticCLISubagentCompletion => {
+            Self::ManuallyCancelled => write!(f, "manual cancellation"),
+            Self::FollowUpSubmitted { .. } => write!(f, "follow-up submission"),
+            Self::UserCommandExecuted => write!(f, "user command execution"),
+            Self::Reverted => write!(f, "revert"),
+            Self::Deleted => write!(f, "deleted"),
+            Self::OptimisticCLISubagentCompletion => {
                 write!(f, "LRC command completed")
             }
         }
@@ -123,7 +123,7 @@ impl CancellationReason {
     pub fn is_follow_up_for_same_conversation(&self) -> bool {
         matches!(
             self,
-            CancellationReason::FollowUpSubmitted {
+            Self::FollowUpSubmitted {
                 is_for_same_conversation: true
             }
         )
@@ -132,15 +132,15 @@ impl CancellationReason {
 
 impl CancellationReason {
     pub fn is_manually_cancelled(&self) -> bool {
-        matches!(self, CancellationReason::ManuallyCancelled)
+        matches!(self, Self::ManuallyCancelled)
     }
 
     pub fn is_reverted(&self) -> bool {
-        matches!(self, CancellationReason::Reverted)
+        matches!(self, Self::Reverted)
     }
 
     pub fn is_lrc_command_completed(&self) -> bool {
-        matches!(self, CancellationReason::OptimisticCLISubagentCompletion)
+        matches!(self, Self::OptimisticCLISubagentCompletion)
     }
 }
 
@@ -166,9 +166,9 @@ pub enum FinishedAIAgentOutput {
 impl Display for FinishedAIAgentOutput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FinishedAIAgentOutput::Cancelled { .. } => write!(f, "Cancelled"),
-            FinishedAIAgentOutput::Error { error, .. } => write!(f, "Error: {error}"),
-            FinishedAIAgentOutput::Success { output } => write!(f, "\n{output}"),
+            Self::Cancelled { .. } => write!(f, "Cancelled"),
+            Self::Error { error, .. } => write!(f, "Error: {error}"),
+            Self::Success { output } => write!(f, "\n{output}"),
         }
     }
 }
@@ -224,7 +224,7 @@ impl<T: Clone + std::fmt::Debug> Shared<T> {
     ///
     /// While `Clone` performs a deep copy on the other value, this ultimately points to the same
     /// value `T`.
-    pub fn get_owned(&self) -> Shared<T> {
+    pub fn get_owned(&self) -> Self {
         Self {
             value: self.value.clone(),
         }
@@ -255,8 +255,8 @@ pub enum AIAgentOutputStatus {
 impl Display for AIAgentOutputStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AIAgentOutputStatus::Streaming { .. } => write!(f, "Streaming..."),
-            AIAgentOutputStatus::Finished { finished_output } => write!(f, "{finished_output}"),
+            Self::Streaming { .. } => write!(f, "Streaming..."),
+            Self::Finished { finished_output } => write!(f, "{finished_output}"),
         }
     }
 }
@@ -761,8 +761,8 @@ impl ProgrammingLanguage {
 impl Display for ProgrammingLanguage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProgrammingLanguage::Shell(shell_type) => write!(f, "{}", shell_type.name()),
-            ProgrammingLanguage::Other(language) => write!(f, "{}", language.to_lowercase()),
+            Self::Shell(shell_type) => write!(f, "{}", shell_type.name()),
+            Self::Other(language) => write!(f, "{}", language.to_lowercase()),
         }
     }
 }
@@ -771,9 +771,9 @@ impl From<String> for ProgrammingLanguage {
     // Returns a programming language for a markdown language specifier
     fn from(value: String) -> Self {
         if let Some(shell_type) = ShellType::from_markdown_language_spec(value.as_str()) {
-            ProgrammingLanguage::Shell(shell_type)
+            Self::Shell(shell_type)
         } else {
-            ProgrammingLanguage::Other(value)
+            Self::Other(value)
         }
     }
 }
@@ -800,7 +800,7 @@ pub struct AIAgentActionId(String);
 
 impl From<String> for AIAgentActionId {
     fn from(value: String) -> Self {
-        AIAgentActionId(value)
+        Self(value)
     }
 }
 
@@ -824,7 +824,7 @@ impl From<crate::persistence::model::AIAgentActionId> for AIAgentActionId {
 
 impl From<AIAgentActionId> for crate::persistence::model::AIAgentActionId {
     fn from(value: AIAgentActionId) -> Self {
-        crate::persistence::model::AIAgentActionId(value.0)
+        Self(value.0)
     }
 }
 
@@ -1416,11 +1416,11 @@ pub enum AIAgentTextSection {
 impl AIAgentTextSection {
     pub fn is_empty(&self) -> bool {
         match self {
-            AIAgentTextSection::PlainText { text } => text.text().is_empty(),
-            AIAgentTextSection::Code { code, .. } => code.is_empty(),
-            AIAgentTextSection::Table { table } => table.markdown_source.is_empty(),
-            AIAgentTextSection::Image { image } => image.markdown_source.is_empty(),
-            AIAgentTextSection::MermaidDiagram { diagram } => diagram.markdown_source.is_empty(),
+            Self::PlainText { text } => text.text().is_empty(),
+            Self::Code { code, .. } => code.is_empty(),
+            Self::Table { table } => table.markdown_source.is_empty(),
+            Self::Image { image } => image.markdown_source.is_empty(),
+            Self::MermaidDiagram { diagram } => diagram.markdown_source.is_empty(),
         }
     }
 }
@@ -1490,10 +1490,10 @@ pub enum TodoOperation {
 impl Display for TodoOperation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TodoOperation::UpdateTodos { todos } => {
+            Self::UpdateTodos { todos } => {
                 write!(f, "UpdateTodos: {} items", todos.len())
             }
-            TodoOperation::MarkAsCompleted { completed_todos } => {
+            Self::MarkAsCompleted { completed_todos } => {
                 write!(f, "MarkAsCompleted: {} items", completed_todos.len())
             }
         }
@@ -2106,8 +2106,8 @@ pub enum CurrentHead {
 impl CurrentHead {
     pub fn title(&self) -> String {
         match self {
-            CurrentHead::BranchName(name) => name.clone(),
-            CurrentHead::HeadlessCommitSha(sha) => {
+            Self::BranchName(name) => name.clone(),
+            Self::HeadlessCommitSha(sha) => {
                 let short = sha.chars().take(7).collect::<String>();
                 format!("Commit {short}")
             }
@@ -2133,10 +2133,8 @@ impl From<CurrentHead> for warp_multi_agent_api::CurrentRef {
 impl From<CurrentHead> for diff_hunk_api::Current {
     fn from(value: CurrentHead) -> Self {
         match value {
-            CurrentHead::BranchName(name) => diff_hunk_api::Current::CurrentBranchName(name),
-            CurrentHead::HeadlessCommitSha(sha) => {
-                diff_hunk_api::Current::CurrentHeadlessCommitSha(sha)
-            }
+            CurrentHead::BranchName(name) => Self::CurrentBranchName(name),
+            CurrentHead::HeadlessCommitSha(sha) => Self::CurrentHeadlessCommitSha(sha),
         }
     }
 }
@@ -2167,12 +2165,12 @@ impl From<DiffBase> for warp_multi_agent_api::BaseRef {
 impl From<DiffBase> for diff_hunk_api::Base {
     fn from(value: DiffBase) -> Self {
         match value {
-            DiffBase::BranchName(branch_name) => diff_hunk_api::Base::BaseBranchName(branch_name),
-            DiffBase::HeadlessCommitSha(sha) => diff_hunk_api::Base::BaseHeadlessCommitSha(sha),
+            DiffBase::BranchName(branch_name) => Self::BaseBranchName(branch_name),
+            DiffBase::HeadlessCommitSha(sha) => Self::BaseHeadlessCommitSha(sha),
             DiffBase::UncommittedChanges =>
             {
                 #[warn(clippy::unit_arg)]
-                diff_hunk_api::Base::UncommittedChanges(())
+                Self::UncommittedChanges(())
             }
         }
     }
@@ -2283,14 +2281,10 @@ pub enum PassiveSuggestionTrigger {
 impl From<&PassiveSuggestionTrigger> for PassiveSuggestionTriggerType {
     fn from(value: &PassiveSuggestionTrigger) -> Self {
         match value {
-            PassiveSuggestionTrigger::FilesChanged => PassiveSuggestionTriggerType::FilesChanged,
-            PassiveSuggestionTrigger::CommandRun => PassiveSuggestionTriggerType::CommandRun,
-            PassiveSuggestionTrigger::ShellCommandCompleted(_) => {
-                PassiveSuggestionTriggerType::ShellCommandCompleted
-            }
-            PassiveSuggestionTrigger::AgentResponseCompleted { .. } => {
-                PassiveSuggestionTriggerType::AgentResponseCompleted
-            }
+            PassiveSuggestionTrigger::FilesChanged => Self::FilesChanged,
+            PassiveSuggestionTrigger::CommandRun => Self::CommandRun,
+            PassiveSuggestionTrigger::ShellCommandCompleted(_) => Self::ShellCommandCompleted,
+            PassiveSuggestionTrigger::AgentResponseCompleted { .. } => Self::AgentResponseCompleted,
         }
     }
 }
@@ -2644,7 +2638,7 @@ impl AIAgentInput {
 
     pub fn user_query_mode(&self) -> Option<UserQueryMode> {
         match self {
-            AIAgentInput::UserQuery {
+            Self::UserQuery {
                 user_query_mode, ..
             } => Some(*user_query_mode),
             _ => None,
@@ -2667,17 +2661,17 @@ impl AIAgentInput {
 
     pub fn passive_suggestion_trigger(&self) -> Option<&PassiveSuggestionTrigger> {
         match self {
-            AIAgentInput::TriggerPassiveSuggestion { trigger, .. } => Some(trigger),
+            Self::TriggerPassiveSuggestion { trigger, .. } => Some(trigger),
             _ => None,
         }
     }
 
     pub fn is_passive_suggestion_trigger(&self) -> bool {
-        matches!(self, AIAgentInput::TriggerPassiveSuggestion { .. })
+        matches!(self, Self::TriggerPassiveSuggestion { .. })
     }
 
     pub fn is_user_query(&self) -> bool {
-        matches!(self, AIAgentInput::UserQuery { .. })
+        matches!(self, Self::UserQuery { .. })
     }
 
     pub fn prompt_suggestion_result(&self) -> Option<&String> {
@@ -2695,7 +2689,7 @@ impl AIAgentInput {
     pub fn is_passive_request(&self) -> bool {
         matches!(
             self,
-            AIAgentInput::AutoCodeDiffQuery { .. } | AIAgentInput::TriggerPassiveSuggestion { .. }
+            Self::AutoCodeDiffQuery { .. } | Self::TriggerPassiveSuggestion { .. }
         )
     }
 
@@ -2753,7 +2747,7 @@ impl AIAgentInput {
     }
 
     pub fn is_auto_code_diff_query(&self) -> bool {
-        matches!(self, AIAgentInput::AutoCodeDiffQuery { .. })
+        matches!(self, Self::AutoCodeDiffQuery { .. })
     }
 
     /// Returns true if this input type provides its own display query that should be preserved
@@ -2761,10 +2755,10 @@ impl AIAgentInput {
     pub fn has_custom_display_query(&self) -> bool {
         matches!(
             self,
-            AIAgentInput::InitProjectRules { .. }
-                | AIAgentInput::CreateEnvironment { .. }
-                | AIAgentInput::FetchReviewComments { .. }
-                | AIAgentInput::InvokeSkill { .. }
+            Self::InitProjectRules { .. }
+                | Self::CreateEnvironment { .. }
+                | Self::FetchReviewComments { .. }
+                | Self::InvokeSkill { .. }
         )
     }
 }
@@ -3001,7 +2995,7 @@ pub struct Suggestions {
 
 impl Suggestions {
     /// Extend the suggestions, ensuring that we don't add duplicates by checking the logging_id
-    pub fn extend(&mut self, other: &Suggestions) {
+    pub fn extend(&mut self, other: &Self) {
         let existing_logging_ids: Vec<_> = self
             .rules
             .iter()

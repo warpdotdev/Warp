@@ -542,7 +542,7 @@ impl Pty {
             File::from_raw_fd(leader_fd)
         };
 
-        let mut pty = Pty {
+        let mut pty = Self {
             pty_handle,
             fd,
             token: PTY_TOKEN,

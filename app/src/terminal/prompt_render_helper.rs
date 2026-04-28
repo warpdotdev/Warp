@@ -191,8 +191,8 @@ enum PromptSide {
 impl fmt::Display for PromptSide {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PromptSide::Left => f.write_str("prompt_area"),
-            PromptSide::Right => f.write_str("rprompt_area"),
+            Self::Left => f.write_str("prompt_area"),
+            Self::Right => f.write_str("rprompt_area"),
         }
     }
 }

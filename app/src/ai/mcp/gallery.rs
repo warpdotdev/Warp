@@ -78,7 +78,7 @@ impl TryFrom<GalleryMCPServer> for TemplatableMCPServer {
             json_template,
         } = gallery_server;
 
-        Ok(TemplatableMCPServer {
+        Ok(Self {
             uuid: Uuid::new_v4(),
             name: title,
             description: Some(description),

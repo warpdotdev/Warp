@@ -58,14 +58,14 @@ impl AgentConfig {
 }
 
 impl CloudAgentConfig {
-    pub fn get_all(app: &AppContext) -> Vec<CloudAgentConfig> {
+    pub fn get_all(app: &AppContext) -> Vec<Self> {
         CloudModel::as_ref(app)
             .get_all_objects_of_type::<GenericStringObjectId, CloudAgentConfigModel>()
             .cloned()
             .collect()
     }
 
-    pub fn get_by_id<'a>(sync_id: &'a SyncId, app: &'a AppContext) -> Option<&'a CloudAgentConfig> {
+    pub fn get_by_id<'a>(sync_id: &'a SyncId, app: &'a AppContext) -> Option<&'a Self> {
         CloudModel::as_ref(app)
             .get_object_of_type::<GenericStringObjectId, CloudAgentConfigModel>(sync_id)
     }

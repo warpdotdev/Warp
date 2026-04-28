@@ -44,9 +44,9 @@ pub enum AcceptHistoryItem {
 impl AcceptHistoryItem {
     pub fn buffer_replacement_text(&self) -> Option<&String> {
         match self {
-            AcceptHistoryItem::Command { command, .. } => Some(command),
-            AcceptHistoryItem::AIPrompt { query_text } => Some(query_text),
-            AcceptHistoryItem::Conversation { .. } => None,
+            Self::Command { command, .. } => Some(command),
+            Self::AIPrompt { query_text } => Some(query_text),
+            Self::Conversation { .. } => None,
         }
     }
 }
@@ -56,10 +56,8 @@ impl InlineMenuAction for AcceptHistoryItem {
 
     fn click_behavior(&self) -> InlineMenuClickBehavior {
         match self {
-            AcceptHistoryItem::Conversation { .. } => InlineMenuClickBehavior::AcceptOnClick,
-            AcceptHistoryItem::Command { .. } | AcceptHistoryItem::AIPrompt { .. } => {
-                InlineMenuClickBehavior::SelectOnClick
-            }
+            Self::Conversation { .. } => InlineMenuClickBehavior::AcceptOnClick,
+            Self::Command { .. } | Self::AIPrompt { .. } => InlineMenuClickBehavior::SelectOnClick,
         }
     }
 }

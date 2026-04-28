@@ -167,9 +167,9 @@ impl CodeSource {
         )
     }
 
-    pub fn omit_line_col(&self) -> CodeSource {
-        if let CodeSource::Link { path, .. } = self {
-            CodeSource::Link {
+    pub fn omit_line_col(&self) -> Self {
+        if let Self::Link { path, .. } = self {
+            Self::Link {
                 path: path.clone(),
                 range_start: None,
                 range_end: None,

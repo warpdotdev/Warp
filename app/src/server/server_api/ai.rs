@@ -303,8 +303,7 @@ pub enum ArtifactDownloadResponse {
 impl ArtifactDownloadResponse {
     fn common(&self) -> &ArtifactDownloadCommonFields {
         match self {
-            ArtifactDownloadResponse::Screenshot { common, .. }
-            | ArtifactDownloadResponse::File { common, .. } => common,
+            Self::Screenshot { common, .. } | Self::File { common, .. } => common,
         }
     }
 
@@ -314,8 +313,8 @@ impl ArtifactDownloadResponse {
 
     pub fn artifact_type(&self) -> &'static str {
         match self {
-            ArtifactDownloadResponse::Screenshot { .. } => "SCREENSHOT",
-            ArtifactDownloadResponse::File { .. } => "FILE",
+            Self::Screenshot { .. } => "SCREENSHOT",
+            Self::File { .. } => "FILE",
         }
     }
 
@@ -325,50 +324,50 @@ impl ArtifactDownloadResponse {
 
     pub fn download_url(&self) -> &str {
         match self {
-            ArtifactDownloadResponse::Screenshot { data, .. } => &data.download_url,
-            ArtifactDownloadResponse::File { data, .. } => &data.download_url,
+            Self::Screenshot { data, .. } => &data.download_url,
+            Self::File { data, .. } => &data.download_url,
         }
     }
 
     pub fn expires_at(&self) -> DateTime<Utc> {
         match self {
-            ArtifactDownloadResponse::Screenshot { data, .. } => data.expires_at,
-            ArtifactDownloadResponse::File { data, .. } => data.expires_at,
+            Self::Screenshot { data, .. } => data.expires_at,
+            Self::File { data, .. } => data.expires_at,
         }
     }
 
     pub fn content_type(&self) -> &str {
         match self {
-            ArtifactDownloadResponse::Screenshot { data, .. } => &data.content_type,
-            ArtifactDownloadResponse::File { data, .. } => &data.content_type,
+            Self::Screenshot { data, .. } => &data.content_type,
+            Self::File { data, .. } => &data.content_type,
         }
     }
 
     pub fn filepath(&self) -> Option<&str> {
         match self {
-            ArtifactDownloadResponse::Screenshot { .. } => None,
-            ArtifactDownloadResponse::File { data, .. } => Some(&data.filepath),
+            Self::Screenshot { .. } => None,
+            Self::File { data, .. } => Some(&data.filepath),
         }
     }
 
     pub fn filename(&self) -> Option<&str> {
         match self {
-            ArtifactDownloadResponse::Screenshot { .. } => None,
-            ArtifactDownloadResponse::File { data, .. } => Some(&data.filename),
+            Self::Screenshot { .. } => None,
+            Self::File { data, .. } => Some(&data.filename),
         }
     }
 
     pub fn description(&self) -> Option<&str> {
         match self {
-            ArtifactDownloadResponse::Screenshot { data, .. } => data.description.as_deref(),
-            ArtifactDownloadResponse::File { data, .. } => data.description.as_deref(),
+            Self::Screenshot { data, .. } => data.description.as_deref(),
+            Self::File { data, .. } => data.description.as_deref(),
         }
     }
 
     pub fn size_bytes(&self) -> Option<i64> {
         match self {
-            ArtifactDownloadResponse::Screenshot { .. } => None,
-            ArtifactDownloadResponse::File { data, .. } => data.size_bytes,
+            Self::Screenshot { .. } => None,
+            Self::File { data, .. } => data.size_bytes,
         }
     }
 }
@@ -522,8 +521,8 @@ pub enum ExecutionLocation {
 impl ExecutionLocation {
     pub fn as_query_param(&self) -> &'static str {
         match self {
-            ExecutionLocation::Local => "LOCAL",
-            ExecutionLocation::Remote => "REMOTE",
+            Self::Local => "LOCAL",
+            Self::Remote => "REMOTE",
         }
     }
 }
@@ -540,10 +539,10 @@ pub enum ArtifactType {
 impl ArtifactType {
     pub fn as_query_param(&self) -> &'static str {
         match self {
-            ArtifactType::Plan => "PLAN",
-            ArtifactType::PullRequest => "PULL_REQUEST",
-            ArtifactType::Screenshot => "SCREENSHOT",
-            ArtifactType::File => "FILE",
+            Self::Plan => "PLAN",
+            Self::PullRequest => "PULL_REQUEST",
+            Self::Screenshot => "SCREENSHOT",
+            Self::File => "FILE",
         }
     }
 }
@@ -560,10 +559,10 @@ pub enum RunSortBy {
 impl RunSortBy {
     pub fn as_query_param(&self) -> &'static str {
         match self {
-            RunSortBy::UpdatedAt => "updated_at",
-            RunSortBy::CreatedAt => "created_at",
-            RunSortBy::Title => "title",
-            RunSortBy::Agent => "agent",
+            Self::UpdatedAt => "updated_at",
+            Self::CreatedAt => "created_at",
+            Self::Title => "title",
+            Self::Agent => "agent",
         }
     }
 }
@@ -578,8 +577,8 @@ pub enum RunSortOrder {
 impl RunSortOrder {
     pub fn as_query_param(&self) -> &'static str {
         match self {
-            RunSortOrder::Asc => "asc",
-            RunSortOrder::Desc => "desc",
+            Self::Asc => "asc",
+            Self::Desc => "desc",
         }
     }
 }
@@ -684,7 +683,7 @@ impl<'de> serde::Deserialize<'de> for ListRunsResponse {
             }
         }
 
-        Ok(ListRunsResponse { runs })
+        Ok(Self { runs })
     }
 }
 
@@ -2127,16 +2126,16 @@ impl From<warp_graphql::queries::get_feature_model_choices::LlmModelHost> for LL
     fn from(value: warp_graphql::queries::get_feature_model_choices::LlmModelHost) -> Self {
         match value {
             warp_graphql::queries::get_feature_model_choices::LlmModelHost::DirectApi => {
-                LLMModelHost::DirectApi
+                Self::DirectApi
             }
             warp_graphql::queries::get_feature_model_choices::LlmModelHost::AwsBedrock => {
-                LLMModelHost::AwsBedrock
+                Self::AwsBedrock
             }
             warp_graphql::queries::get_feature_model_choices::LlmModelHost::Other(value) => {
                 report_error!(anyhow!(
                     "Unknown LlmModelHost '{value}'. Make sure to update client GraphQL types!"
                 ));
-                LLMModelHost::Unknown
+                Self::Unknown
             }
         }
     }
@@ -2145,24 +2144,18 @@ impl From<warp_graphql::queries::get_feature_model_choices::LlmModelHost> for LL
 impl From<warp_graphql::queries::get_feature_model_choices::LlmProvider> for LLMProvider {
     fn from(value: warp_graphql::queries::get_feature_model_choices::LlmProvider) -> Self {
         match value {
-            warp_graphql::queries::get_feature_model_choices::LlmProvider::Openai => {
-                LLMProvider::OpenAI
-            }
+            warp_graphql::queries::get_feature_model_choices::LlmProvider::Openai => Self::OpenAI,
             warp_graphql::queries::get_feature_model_choices::LlmProvider::Anthropic => {
-                LLMProvider::Anthropic
+                Self::Anthropic
             }
-            warp_graphql::queries::get_feature_model_choices::LlmProvider::Google => {
-                LLMProvider::Google
-            }
-            warp_graphql::queries::get_feature_model_choices::LlmProvider::Xai => LLMProvider::Xai,
-            warp_graphql::queries::get_feature_model_choices::LlmProvider::Unknown => {
-                LLMProvider::Unknown
-            }
+            warp_graphql::queries::get_feature_model_choices::LlmProvider::Google => Self::Google,
+            warp_graphql::queries::get_feature_model_choices::LlmProvider::Xai => Self::Xai,
+            warp_graphql::queries::get_feature_model_choices::LlmProvider::Unknown => Self::Unknown,
             warp_graphql::queries::get_feature_model_choices::LlmProvider::Other(value) => {
                 report_error!(anyhow!(
                     "Invalid LlmProvider '{value}'. Make sure to update client GraphQL types!"
                 ));
-                LLMProvider::Unknown
+                Self::Unknown
             }
         }
     }
@@ -2171,16 +2164,16 @@ impl From<warp_graphql::queries::get_feature_model_choices::LlmProvider> for LLM
 impl From<warp_graphql::workspace::LlmProvider> for LLMProvider {
     fn from(value: warp_graphql::workspace::LlmProvider) -> Self {
         match value {
-            warp_graphql::workspace::LlmProvider::Openai => LLMProvider::OpenAI,
-            warp_graphql::workspace::LlmProvider::Anthropic => LLMProvider::Anthropic,
-            warp_graphql::workspace::LlmProvider::Google => LLMProvider::Google,
-            warp_graphql::workspace::LlmProvider::Xai => LLMProvider::Xai,
-            warp_graphql::workspace::LlmProvider::Unknown => LLMProvider::Unknown,
+            warp_graphql::workspace::LlmProvider::Openai => Self::OpenAI,
+            warp_graphql::workspace::LlmProvider::Anthropic => Self::Anthropic,
+            warp_graphql::workspace::LlmProvider::Google => Self::Google,
+            warp_graphql::workspace::LlmProvider::Xai => Self::Xai,
+            warp_graphql::workspace::LlmProvider::Unknown => Self::Unknown,
             warp_graphql::workspace::LlmProvider::Other(value) => {
                 report_error!(anyhow!(
                     "Invalid LlmProvider '{value}'. Make sure to update client GraphQL types!"
                 ));
-                LLMProvider::Unknown
+                Self::Unknown
             }
         }
     }
@@ -2228,19 +2221,19 @@ impl From<warp_graphql::queries::get_feature_model_choices::DisableReason> for D
     fn from(value: warp_graphql::queries::get_feature_model_choices::DisableReason) -> Self {
         match value {
             warp_graphql::queries::get_feature_model_choices::DisableReason::AdminDisabled => {
-                DisableReason::AdminDisabled
+                Self::AdminDisabled
             }
             warp_graphql::queries::get_feature_model_choices::DisableReason::OutOfRequests => {
-                DisableReason::OutOfRequests
+                Self::OutOfRequests
             }
             warp_graphql::queries::get_feature_model_choices::DisableReason::ProviderOutage => {
-                DisableReason::ProviderOutage
+                Self::ProviderOutage
             }
             warp_graphql::queries::get_feature_model_choices::DisableReason::RequiresUpgrade => {
-                DisableReason::RequiresUpgrade
+                Self::RequiresUpgrade
             }
             warp_graphql::queries::get_feature_model_choices::DisableReason::Other(_) => {
-                DisableReason::Unavailable
+                Self::Unavailable
             }
         }
     }
@@ -2249,13 +2242,11 @@ impl From<warp_graphql::queries::get_feature_model_choices::DisableReason> for D
 impl From<warp_graphql::workspace::DisableReason> for DisableReason {
     fn from(value: warp_graphql::workspace::DisableReason) -> Self {
         match value {
-            warp_graphql::workspace::DisableReason::AdminDisabled => DisableReason::AdminDisabled,
-            warp_graphql::workspace::DisableReason::OutOfRequests => DisableReason::OutOfRequests,
-            warp_graphql::workspace::DisableReason::ProviderOutage => DisableReason::ProviderOutage,
-            warp_graphql::workspace::DisableReason::RequiresUpgrade => {
-                DisableReason::RequiresUpgrade
-            }
-            warp_graphql::workspace::DisableReason::Other(_) => DisableReason::Unavailable,
+            warp_graphql::workspace::DisableReason::AdminDisabled => Self::AdminDisabled,
+            warp_graphql::workspace::DisableReason::OutOfRequests => Self::OutOfRequests,
+            warp_graphql::workspace::DisableReason::ProviderOutage => Self::ProviderOutage,
+            warp_graphql::workspace::DisableReason::RequiresUpgrade => Self::RequiresUpgrade,
+            warp_graphql::workspace::DisableReason::Other(_) => Self::Unavailable,
         }
     }
 }

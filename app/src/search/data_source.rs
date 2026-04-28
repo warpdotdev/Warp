@@ -224,145 +224,141 @@ pub enum QueryFilter {
 impl QueryFilter {
     /// Returns all possible `QueryFilter`s. Note all filters may not be enabled for a given
     /// instance of a `SearchMixer`.
-    pub fn all() -> impl Iterator<Item = QueryFilter> {
+    pub fn all() -> impl Iterator<Item = Self> {
         all::<Self>()
     }
 
     /// Returns placeholder text to be shown in an empty input when the filter is active.
     pub fn placeholder_text(&self) -> &'static str {
         match self {
-            QueryFilter::History => "Search history",
-            QueryFilter::Workflows => "Search workflows",
-            QueryFilter::AgentModeWorkflows => "Search prompts",
-            QueryFilter::Notebooks => "Search notebooks",
-            QueryFilter::Plans => "Search plans",
-            QueryFilter::NaturalLanguage => "e.g. replace string in file",
-            QueryFilter::Actions => "Search actions",
-            QueryFilter::Sessions => "Search sessions",
-            QueryFilter::Conversations => "Search conversations",
-            QueryFilter::HistoricalConversations => "Search historical conversations",
-            QueryFilter::LaunchConfigurations => "Search launch configurations",
-            QueryFilter::Drive => "Search objects in drive",
-            QueryFilter::EnvironmentVariables => "Search environment variables",
-            QueryFilter::PromptHistory => "Search prompt history",
-            QueryFilter::Files => "Search files",
-            QueryFilter::Commands => "Search commands",
-            QueryFilter::Blocks => "Search blocks",
-            QueryFilter::Code => "Search code symbols",
-            QueryFilter::Rules => "Search AI rules",
-            QueryFilter::Repos => "Search code repos",
-            QueryFilter::DiffSets => "Search diff sets",
-            QueryFilter::StaticSlashCommands => "Search static slash commands",
-            QueryFilter::Skills => "Search skills",
-            QueryFilter::BaseModels => "Search base models",
-            QueryFilter::FullTerminalUseModels => "Search full terminal use models",
-            QueryFilter::CurrentDirectoryConversations => {
-                "Search conversations in current directory"
-            }
+            Self::History => "Search history",
+            Self::Workflows => "Search workflows",
+            Self::AgentModeWorkflows => "Search prompts",
+            Self::Notebooks => "Search notebooks",
+            Self::Plans => "Search plans",
+            Self::NaturalLanguage => "e.g. replace string in file",
+            Self::Actions => "Search actions",
+            Self::Sessions => "Search sessions",
+            Self::Conversations => "Search conversations",
+            Self::HistoricalConversations => "Search historical conversations",
+            Self::LaunchConfigurations => "Search launch configurations",
+            Self::Drive => "Search objects in drive",
+            Self::EnvironmentVariables => "Search environment variables",
+            Self::PromptHistory => "Search prompt history",
+            Self::Files => "Search files",
+            Self::Commands => "Search commands",
+            Self::Blocks => "Search blocks",
+            Self::Code => "Search code symbols",
+            Self::Rules => "Search AI rules",
+            Self::Repos => "Search code repos",
+            Self::DiffSets => "Search diff sets",
+            Self::StaticSlashCommands => "Search static slash commands",
+            Self::Skills => "Search skills",
+            Self::BaseModels => "Search base models",
+            Self::FullTerminalUseModels => "Search full terminal use models",
+            Self::CurrentDirectoryConversations => "Search conversations in current directory",
         }
     }
 
     /// Returns text that is used to represent the filter as a filter 'atom' in the search input.
     pub fn filter_atom(&self) -> &'static FilterAtom {
         match self {
-            QueryFilter::History => &HISTORY_FILTER_ATOM,
-            QueryFilter::Workflows => &WORKFLOWS_FILTER_ATOM,
-            QueryFilter::AgentModeWorkflows => &AGENT_MODE_WORKFLOWS_FILTER_ATOM,
-            QueryFilter::Notebooks => &NOTEBOOKS_FILTER_ATOM,
-            QueryFilter::Plans => &PLANS_FILTER_ATOM,
-            QueryFilter::NaturalLanguage => &NATURAL_LANGUAGE_FILTER_ATOM,
-            QueryFilter::Actions => &ACTIONS_FILTER_ATOM,
-            QueryFilter::Sessions => &SESSIONS_FILTER_ATOM,
-            QueryFilter::Conversations => &CONVERSATIONS_FILTER_ATOM,
-            QueryFilter::LaunchConfigurations => &LAUNCH_CONFIG_FILTER_ATOM,
-            QueryFilter::Drive => &DRIVE_FILTER_ATOM,
-            QueryFilter::EnvironmentVariables => &ENV_VARS_FILTER_ATOM,
-            QueryFilter::PromptHistory => &AI_PROMPTS_FILTER_ATOM,
-            QueryFilter::Files => &FILES_FILTER_ATOM,
-            QueryFilter::Commands => &COMMANDS_FILTER_ATOM,
-            QueryFilter::Blocks => &BLOCKS_FILTER_ATOM,
-            QueryFilter::Code => &CODE_FILTER_ATOM,
-            QueryFilter::Rules => &RULES_FILTER_ATOM,
-            QueryFilter::Repos => &REPOS_FILTER_ATOM,
-            QueryFilter::DiffSets => &DIFFSETS_FILTER_ATOM,
-            QueryFilter::StaticSlashCommands => &STATIC_SLASH_COMMANDS_FILTER_ATOM,
-            QueryFilter::HistoricalConversations => &NO_FILTER_ATOM,
-            QueryFilter::Skills => &NO_FILTER_ATOM,
-            QueryFilter::BaseModels => &NO_FILTER_ATOM,
-            QueryFilter::FullTerminalUseModels => &NO_FILTER_ATOM,
-            QueryFilter::CurrentDirectoryConversations => &NO_FILTER_ATOM,
+            Self::History => &HISTORY_FILTER_ATOM,
+            Self::Workflows => &WORKFLOWS_FILTER_ATOM,
+            Self::AgentModeWorkflows => &AGENT_MODE_WORKFLOWS_FILTER_ATOM,
+            Self::Notebooks => &NOTEBOOKS_FILTER_ATOM,
+            Self::Plans => &PLANS_FILTER_ATOM,
+            Self::NaturalLanguage => &NATURAL_LANGUAGE_FILTER_ATOM,
+            Self::Actions => &ACTIONS_FILTER_ATOM,
+            Self::Sessions => &SESSIONS_FILTER_ATOM,
+            Self::Conversations => &CONVERSATIONS_FILTER_ATOM,
+            Self::LaunchConfigurations => &LAUNCH_CONFIG_FILTER_ATOM,
+            Self::Drive => &DRIVE_FILTER_ATOM,
+            Self::EnvironmentVariables => &ENV_VARS_FILTER_ATOM,
+            Self::PromptHistory => &AI_PROMPTS_FILTER_ATOM,
+            Self::Files => &FILES_FILTER_ATOM,
+            Self::Commands => &COMMANDS_FILTER_ATOM,
+            Self::Blocks => &BLOCKS_FILTER_ATOM,
+            Self::Code => &CODE_FILTER_ATOM,
+            Self::Rules => &RULES_FILTER_ATOM,
+            Self::Repos => &REPOS_FILTER_ATOM,
+            Self::DiffSets => &DIFFSETS_FILTER_ATOM,
+            Self::StaticSlashCommands => &STATIC_SLASH_COMMANDS_FILTER_ATOM,
+            Self::HistoricalConversations => &NO_FILTER_ATOM,
+            Self::Skills => &NO_FILTER_ATOM,
+            Self::BaseModels => &NO_FILTER_ATOM,
+            Self::FullTerminalUseModels => &NO_FILTER_ATOM,
+            Self::CurrentDirectoryConversations => &NO_FILTER_ATOM,
         }
     }
 
     /// Returns the display name (e.g. the string to be used in UI) representing the filter.
     pub fn display_name(&self) -> &'static str {
         match self {
-            QueryFilter::History => "history",
-            QueryFilter::Workflows => "workflows",
-            QueryFilter::AgentModeWorkflows => "prompts",
-            QueryFilter::Notebooks => "notebooks",
-            QueryFilter::Plans => "plans",
-            QueryFilter::NaturalLanguage => "AI command suggestions",
-            QueryFilter::Actions => "actions",
-            QueryFilter::Sessions => "sessions",
-            QueryFilter::Conversations => "conversations",
-            QueryFilter::LaunchConfigurations => "launch configurations",
-            QueryFilter::Drive => "Warp Drive",
-            QueryFilter::EnvironmentVariables => "environment variables",
-            QueryFilter::PromptHistory => "prompt history",
-            QueryFilter::Files => "files",
-            QueryFilter::Commands => "commands",
-            QueryFilter::Blocks => "blocks",
-            QueryFilter::Code => "code",
-            QueryFilter::Rules => "rules",
-            QueryFilter::Repos => "repos",
-            QueryFilter::DiffSets => "diff sets",
-            QueryFilter::StaticSlashCommands => "slash commands",
-            QueryFilter::HistoricalConversations => "historical conversations",
-            QueryFilter::Skills => "skills",
-            QueryFilter::BaseModels => "base models",
-            QueryFilter::FullTerminalUseModels => "full terminal use models",
-            QueryFilter::CurrentDirectoryConversations => "current directory conversations",
+            Self::History => "history",
+            Self::Workflows => "workflows",
+            Self::AgentModeWorkflows => "prompts",
+            Self::Notebooks => "notebooks",
+            Self::Plans => "plans",
+            Self::NaturalLanguage => "AI command suggestions",
+            Self::Actions => "actions",
+            Self::Sessions => "sessions",
+            Self::Conversations => "conversations",
+            Self::LaunchConfigurations => "launch configurations",
+            Self::Drive => "Warp Drive",
+            Self::EnvironmentVariables => "environment variables",
+            Self::PromptHistory => "prompt history",
+            Self::Files => "files",
+            Self::Commands => "commands",
+            Self::Blocks => "blocks",
+            Self::Code => "code",
+            Self::Rules => "rules",
+            Self::Repos => "repos",
+            Self::DiffSets => "diff sets",
+            Self::StaticSlashCommands => "slash commands",
+            Self::HistoricalConversations => "historical conversations",
+            Self::Skills => "skills",
+            Self::BaseModels => "base models",
+            Self::FullTerminalUseModels => "full terminal use models",
+            Self::CurrentDirectoryConversations => "current directory conversations",
         }
     }
 
     /// Returns the path to the canonical icon for the filter.
     pub fn icon_svg_path(&self) -> Option<&'static str> {
         match self {
-            QueryFilter::History => Some("bundled/svg/history.svg"),
-            QueryFilter::Workflows => Some("bundled/svg/workflow.svg"),
-            QueryFilter::Notebooks => Some("bundled/svg/notebook.svg"),
-            QueryFilter::Plans => Some("bundled/svg/compass-3.svg"),
-            QueryFilter::NaturalLanguage => {
+            Self::History => Some("bundled/svg/history.svg"),
+            Self::Workflows => Some("bundled/svg/workflow.svg"),
+            Self::Notebooks => Some("bundled/svg/notebook.svg"),
+            Self::Plans => Some("bundled/svg/compass-3.svg"),
+            Self::NaturalLanguage => {
                 if !FeatureFlag::AgentMode.is_enabled() {
                     Some(Icon::AiAssistant.into())
                 } else {
                     Some(Icon::Oz.into())
                 }
             }
-            QueryFilter::Actions => None,
-            QueryFilter::Sessions => Some("bundled/svg/terminal-input.svg"),
-            QueryFilter::Conversations | QueryFilter::HistoricalConversations => {
+            Self::Actions => None,
+            Self::Sessions => Some("bundled/svg/terminal-input.svg"),
+            Self::Conversations | Self::HistoricalConversations => {
                 Some("bundled/svg/conversation.svg")
             }
-            QueryFilter::LaunchConfigurations => Some("bundled/svg/navigation.svg"),
-            QueryFilter::Drive => Some("bundled/svg/warp-drive.svg"),
-            QueryFilter::EnvironmentVariables => Some("bundled/svg/env-var-collection.svg"),
-            QueryFilter::AgentModeWorkflows | QueryFilter::PromptHistory => {
-                Some(Icon::Prompt.into())
-            }
-            QueryFilter::Files => Some("bundled/svg/completion-file.svg"),
-            QueryFilter::Commands => Some("bundled/svg/terminal.svg"),
-            QueryFilter::Blocks => Some("bundled/svg/block.svg"),
-            QueryFilter::Code => Some("bundled/svg/code-02.svg"),
-            QueryFilter::Rules => Some("bundled/svg/book-open.svg"),
-            QueryFilter::Repos => Some("bundled/svg/folder.svg"),
-            QueryFilter::DiffSets => Some("bundled/svg/diff.svg"),
-            QueryFilter::StaticSlashCommands => None,
-            QueryFilter::Skills => None,
-            QueryFilter::BaseModels => None,
-            QueryFilter::FullTerminalUseModels => None,
-            QueryFilter::CurrentDirectoryConversations => None,
+            Self::LaunchConfigurations => Some("bundled/svg/navigation.svg"),
+            Self::Drive => Some("bundled/svg/warp-drive.svg"),
+            Self::EnvironmentVariables => Some("bundled/svg/env-var-collection.svg"),
+            Self::AgentModeWorkflows | Self::PromptHistory => Some(Icon::Prompt.into()),
+            Self::Files => Some("bundled/svg/completion-file.svg"),
+            Self::Commands => Some("bundled/svg/terminal.svg"),
+            Self::Blocks => Some("bundled/svg/block.svg"),
+            Self::Code => Some("bundled/svg/code-02.svg"),
+            Self::Rules => Some("bundled/svg/book-open.svg"),
+            Self::Repos => Some("bundled/svg/folder.svg"),
+            Self::DiffSets => Some("bundled/svg/diff.svg"),
+            Self::StaticSlashCommands => None,
+            Self::Skills => None,
+            Self::BaseModels => None,
+            Self::FullTerminalUseModels => None,
+            Self::CurrentDirectoryConversations => None,
         }
     }
 }

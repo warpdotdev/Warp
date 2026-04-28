@@ -18,21 +18,21 @@ pub(crate) enum ItemHighlightState {
 impl ItemHighlightState {
     pub fn new(is_selected: bool, mouse_state: &MouseState) -> Self {
         if is_selected {
-            ItemHighlightState::Selected
+            Self::Selected
         } else if mouse_state.is_hovered() {
-            ItemHighlightState::Hovered
+            Self::Hovered
         } else {
-            ItemHighlightState::None
+            Self::None
         }
     }
 
     pub fn text_and_icon_color(&self, appearance: &Appearance) -> ColorU {
         match self {
-            ItemHighlightState::None => {
+            Self::None => {
                 blended_colors::text_sub(appearance.theme(), appearance.theme().background())
             }
-            ItemHighlightState::Selected => appearance.theme().foreground().into(),
-            ItemHighlightState::Hovered => {
+            Self::Selected => appearance.theme().foreground().into(),
+            Self::Hovered => {
                 blended_colors::text_main(appearance.theme(), appearance.theme().background())
             }
         }
@@ -40,18 +40,16 @@ impl ItemHighlightState {
 
     pub fn background_color(&self, appearance: &Appearance) -> Option<Fill> {
         match self {
-            ItemHighlightState::None => None,
-            ItemHighlightState::Selected => Some(internal_colors::fg_overlay_4(appearance.theme())),
-            ItemHighlightState::Hovered => Some(internal_colors::fg_overlay_2(appearance.theme())),
+            Self::None => None,
+            Self::Selected => Some(internal_colors::fg_overlay_4(appearance.theme())),
+            Self::Hovered => Some(internal_colors::fg_overlay_2(appearance.theme())),
         }
     }
 
     pub fn corner_radius(&self) -> Option<CornerRadius> {
         match self {
-            ItemHighlightState::None => None,
-            ItemHighlightState::Selected | ItemHighlightState::Hovered => {
-                Some(CornerRadius::with_all(Radius::Pixels(4.)))
-            }
+            Self::None => None,
+            Self::Selected | Self::Hovered => Some(CornerRadius::with_all(Radius::Pixels(4.))),
         }
     }
 }

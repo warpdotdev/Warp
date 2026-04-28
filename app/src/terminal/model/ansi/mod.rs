@@ -201,7 +201,7 @@ struct TmuxControlMode {
 
 impl TmuxControlMode {
     fn new() -> Self {
-        TmuxControlMode {
+        Self {
             control_mode_parser: TmuxControlModeParser::new(),
             control_mode_state: TmuxControlModeState {
                 ansi_processor: Box::new(Processor::new()),
@@ -351,8 +351,8 @@ pub struct Processor {
 }
 
 impl Default for Processor {
-    fn default() -> Processor {
-        Processor {
+    fn default() -> Self {
+        Self {
             state: ProcessorState {
                 preceding_char: None,
                 dcs_data: DcsData::default(),
@@ -366,7 +366,7 @@ impl Default for Processor {
 }
 
 impl Processor {
-    pub fn new() -> Processor {
+    pub fn new() -> Self {
         Default::default()
     }
 
@@ -1624,7 +1624,7 @@ impl<W: io::Write> io::Write for TmuxPaneWriter<'_, W> {
 
 impl PrimaryPaneState {
     fn new() -> Self {
-        PrimaryPaneState::Pending {
+        Self::Pending {
             pane_output_map: HashMap::new(),
         }
     }

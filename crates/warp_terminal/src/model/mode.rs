@@ -65,11 +65,8 @@ bitflags! {
 }
 
 impl Default for TermMode {
-    fn default() -> TermMode {
-        TermMode::SHOW_CURSOR
-            | TermMode::LINE_WRAP
-            | TermMode::ALTERNATE_SCROLL
-            | TermMode::URGENCY_HINTS
+    fn default() -> Self {
+        Self::SHOW_CURSOR | Self::LINE_WRAP | Self::ALTERNATE_SCROLL | Self::URGENCY_HINTS
     }
 }
 
@@ -90,22 +87,22 @@ bitflags! {
 /// Convert KeyboardModes to TermMode flags
 impl From<KeyboardModes> for TermMode {
     fn from(modes: KeyboardModes) -> Self {
-        let mut term_mode = TermMode::NONE;
+        let mut term_mode = Self::NONE;
 
         if modes.contains(KeyboardModes::DISAMBIGUATE_ESC_CODES) {
-            term_mode |= TermMode::KEYBOARD_DISAMBIGUATE_ESCAPE;
+            term_mode |= Self::KEYBOARD_DISAMBIGUATE_ESCAPE;
         }
         if modes.contains(KeyboardModes::REPORT_EVENT_TYPES) {
-            term_mode |= TermMode::KEYBOARD_REPORT_EVENT_TYPES;
+            term_mode |= Self::KEYBOARD_REPORT_EVENT_TYPES;
         }
         if modes.contains(KeyboardModes::REPORT_ALTERNATE_KEYS) {
-            term_mode |= TermMode::KEYBOARD_REPORT_ALTERNATE_KEYS;
+            term_mode |= Self::KEYBOARD_REPORT_ALTERNATE_KEYS;
         }
         if modes.contains(KeyboardModes::REPORT_ALL_KEYS_AS_ESC) {
-            term_mode |= TermMode::KEYBOARD_REPORT_ALL_AS_ESCAPE;
+            term_mode |= Self::KEYBOARD_REPORT_ALL_AS_ESCAPE;
         }
         if modes.contains(KeyboardModes::REPORT_ASSOCIATED_TEXT) {
-            term_mode |= TermMode::KEYBOARD_REPORT_ASSOCIATED_TEXT;
+            term_mode |= Self::KEYBOARD_REPORT_ASSOCIATED_TEXT;
         }
 
         term_mode

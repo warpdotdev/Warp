@@ -447,7 +447,7 @@ impl TypedActionView for ReferralsPageView {
 
 impl From<ViewHandle<ReferralsPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<ReferralsPageView>) -> Self {
-        SettingsPageViewHandle::Referrals(view_handle)
+        Self::Referrals(view_handle)
     }
 }
 #[derive(Error, Debug)]
@@ -462,8 +462,8 @@ impl EmailValidationError {
     /// The user-readable error descriptions.
     fn ui_message(&self) -> String {
         match self {
-            EmailValidationError::Empty => "Please enter an email.".to_owned(),
-            EmailValidationError::Invalid(invalid_email) => {
+            Self::Empty => "Please enter an email.".to_owned(),
+            Self::Invalid(invalid_email) => {
                 format!("Please ensure the following email is valid: {invalid_email}")
             }
         }

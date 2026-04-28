@@ -176,13 +176,13 @@ pub struct AbsolutePoint {
 }
 
 impl PartialOrd for AbsolutePoint {
-    fn partial_cmp(&self, other: &AbsolutePoint) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for AbsolutePoint {
-    fn cmp(&self, other: &AbsolutePoint) -> Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         match (self.row.cmp(&other.row), self.col.cmp(&other.col)) {
             (Ordering::Equal, ord) | (ord, _) => ord,
         }
@@ -190,14 +190,14 @@ impl Ord for AbsolutePoint {
 }
 
 impl AbsolutePoint {
-    pub fn from_point(point: Point, grid: &GridHandler) -> AbsolutePoint {
+    pub fn from_point(point: Point, grid: &GridHandler) -> Self {
         let original_point = if grid.has_displayed_output() {
             grid.maybe_translate_point_from_displayed_to_original(point)
         } else {
             point
         };
 
-        AbsolutePoint {
+        Self {
             row: original_point.row as u64 + grid.num_lines_truncated(),
             col: original_point.col,
         }
@@ -224,8 +224,8 @@ impl AbsolutePoint {
         self.row < num_lines_truncated
     }
 
-    pub fn add_rows(&self, rows: usize) -> AbsolutePoint {
-        AbsolutePoint {
+    pub fn add_rows(&self, rows: usize) -> Self {
+        Self {
             row: self.row + (rows as u64),
             col: self.col,
         }
@@ -253,7 +253,7 @@ impl AbsoluteRectangle {
         }
     }
 
-    pub fn from_range(start_row: usize, end_row: usize, grid: &GridHandler) -> AbsoluteRectangle {
+    pub fn from_range(start_row: usize, end_row: usize, grid: &GridHandler) -> Self {
         let temp_start_point = Point::new(start_row, 0);
         let original_start_row = if grid.has_displayed_output() {
             grid.maybe_translate_point_from_displayed_to_original(temp_start_point)
@@ -270,13 +270,13 @@ impl AbsoluteRectangle {
             temp_end_point.row
         };
 
-        AbsoluteRectangle {
+        Self {
             start_row: original_start_row as u64 + grid.num_lines_truncated(),
             end_row: original_end_row as u64 + grid.num_lines_truncated(),
         }
     }
 
-    pub fn overlaps(&self, rectangle: AbsoluteRectangle) -> bool {
+    pub fn overlaps(&self, rectangle: Self) -> bool {
         self.start_row <= rectangle.end_row && self.end_row >= rectangle.start_row
     }
 }
@@ -373,7 +373,7 @@ impl GridHandler {
             perform_reset_grid_checks,
         );
 
-        GridHandler {
+        Self {
             grid,
             flat_storage: FlatStorage::new(size_info.columns(), Some(max_scroll_limit), None),
             finished: false,
@@ -497,7 +497,7 @@ impl GridHandler {
         ansi_handler_state.scroll_region = VisibleRow(0)..VisibleRow(grid.visible_rows());
 
         // Create a new grid handler with the new grid.
-        let mut grid = GridHandler {
+        let mut grid = Self {
             grid,
             flat_storage: FlatStorage::new(self.columns(), self.flat_storage.max_rows(), None),
             finished: self.finished,
@@ -2265,7 +2265,7 @@ impl GridHandler {
     }
 
     /// Append the contents of another grid to this one, cell-by-cell.
-    pub(in crate::terminal::model) fn append_cells_from_grid(&mut self, other: &GridHandler) {
+    pub(in crate::terminal::model) fn append_cells_from_grid(&mut self, other: &Self) {
         let max_point = other.grid.max_cursor_point.convert_to_absolute(other);
 
         // We ensure that we don't copy "extra" empty cells over - only copy till the end of the "real content".

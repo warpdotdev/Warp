@@ -126,7 +126,7 @@ pub enum FileNotebookEvent {
 
 impl From<PaneEvent> for FileNotebookEvent {
     fn from(event: PaneEvent) -> Self {
-        FileNotebookEvent::Pane(event)
+        Self::Pane(event)
     }
 }
 
@@ -148,7 +148,7 @@ pub enum FileNotebookAction {
 
 impl From<ContextMenuAction> for FileNotebookAction {
     fn from(action: ContextMenuAction) -> Self {
-        FileNotebookAction::ContextMenu(action)
+        Self::ContextMenu(action)
     }
 }
 
@@ -172,15 +172,15 @@ enum SourceFile {
 impl SourceFile {
     fn local_path(&self) -> Option<&Path> {
         match self {
-            SourceFile::Local { local_path, .. } => Some(local_path.as_path()),
-            SourceFile::Static { .. } => None,
+            Self::Local { local_path, .. } => Some(local_path.as_path()),
+            Self::Static { .. } => None,
         }
     }
 
     fn display_name(&self) -> String {
         match self {
-            SourceFile::Local { local_path, .. } => local_path.display().to_string(),
-            SourceFile::Static { title } => title.clone(),
+            Self::Local { local_path, .. } => local_path.display().to_string(),
+            Self::Static { title } => title.clone(),
         }
     }
 }
@@ -201,10 +201,8 @@ impl FileState {
 
     fn source(&self) -> Option<&SourceFile> {
         match self {
-            FileState::NoFile => None,
-            FileState::Loading(source) | FileState::Error(source) | FileState::Loaded(source) => {
-                Some(source)
-            }
+            Self::NoFile => None,
+            Self::Loading(source) | Self::Error(source) | Self::Loaded(source) => Some(source),
         }
     }
 

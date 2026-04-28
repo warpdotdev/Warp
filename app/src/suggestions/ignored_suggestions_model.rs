@@ -14,15 +14,15 @@ pub enum SuggestionType {
 impl SuggestionType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            SuggestionType::ShellCommand => "shell_command",
-            SuggestionType::AIQuery => "ai_query",
+            Self::ShellCommand => "shell_command",
+            Self::AIQuery => "ai_query",
         }
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "shell_command" => Some(SuggestionType::ShellCommand),
-            "ai_query" => Some(SuggestionType::AIQuery),
+            "shell_command" => Some(Self::ShellCommand),
+            "ai_query" => Some(Self::AIQuery),
             _ => None,
         }
     }

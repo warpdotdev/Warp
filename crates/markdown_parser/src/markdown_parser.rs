@@ -1781,7 +1781,7 @@ impl Delimiter {
     }
 
     /// Whether or not this delimiter can open for the given closing delimiter.
-    fn can_open_for(&self, other: &Delimiter) -> bool {
+    fn can_open_for(&self, other: &Self) -> bool {
         // Base rules that apply to all styling.
         if !self.can_open || self.kind != other.kind {
             return false;
@@ -1820,22 +1820,22 @@ impl DelimiterKind {
     fn valid_count(self, count: u8) -> bool {
         match self {
             // Emphasis and strong emphasis may be repeated arbitrarily.
-            DelimiterKind::Asterisk | DelimiterKind::Underscore => true,
-            DelimiterKind::LinkStart => count == 1,
+            Self::Asterisk | Self::Underscore => true,
+            Self::LinkStart => count == 1,
             // According to https://github.github.com/gfm/#strikethrough-extension-, 3 or more
             // tildes do not create strikethrough.
-            DelimiterKind::Strikethrough => count <= 2,
-            DelimiterKind::UnderlineStart => count == 1,
+            Self::Strikethrough => count <= 2,
+            Self::UnderlineStart => count == 1,
         }
     }
 
     fn as_str(&self) -> &'static str {
         match self {
-            DelimiterKind::Asterisk => "*",
-            DelimiterKind::Underscore => "_",
-            DelimiterKind::LinkStart => "[",
-            DelimiterKind::Strikethrough => "~",
-            DelimiterKind::UnderlineStart => "<u>",
+            Self::Asterisk => "*",
+            Self::Underscore => "_",
+            Self::LinkStart => "[",
+            Self::Strikethrough => "~",
+            Self::UnderlineStart => "<u>",
         }
     }
 }

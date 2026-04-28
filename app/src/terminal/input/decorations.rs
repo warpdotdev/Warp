@@ -351,7 +351,7 @@ impl Input {
     fn apply_colors_syntax_highlighting_all_tokens(
         &mut self,
         terminal_colors_normal: AnsiColors,
-        ctx: &mut ViewContext<Input>,
+        ctx: &mut ViewContext<Self>,
     ) {
         let Some(parsed_tokens_snapshot) = &self.last_parsed_tokens else {
             return;

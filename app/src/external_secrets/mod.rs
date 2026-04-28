@@ -64,13 +64,13 @@ impl ExternalSecret {
             ShellFamily::PowerShell => "",
         };
         match self {
-            ExternalSecret::OnePassword(secret) => {
+            Self::OnePassword(secret) => {
                 format!(
                     "{}op item get --fields credential --reveal {}",
                     prefix, secret.reference
                 )
             }
-            ExternalSecret::LastPass(secret) => {
+            Self::LastPass(secret) => {
                 format!("{}lpass show --password {}", prefix, secret.reference)
             }
         }
@@ -78,8 +78,8 @@ impl ExternalSecret {
 
     pub fn get_display_name(&self) -> String {
         match self {
-            ExternalSecret::OnePassword(secret) => secret.name.clone(),
-            ExternalSecret::LastPass(secret) => secret.name.clone(),
+            Self::OnePassword(secret) => secret.name.clone(),
+            Self::LastPass(secret) => secret.name.clone(),
         }
     }
 }
@@ -114,7 +114,7 @@ impl SecretManager {
         #[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
         {
             match self {
-                SecretManager::OnePassword => {
+                Self::OnePassword => {
                     return execute_command(
                         shell_type,
                         shell_path,
@@ -124,7 +124,7 @@ impl SecretManager {
                     .await
                     .is_ok()
                 }
-                SecretManager::LastPass => {
+                Self::LastPass => {
                     return execute_command(
                         shell_type,
                         shell_path,
@@ -149,7 +149,7 @@ impl SecretManager {
         #[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
         {
             match self {
-                SecretManager::OnePassword => {
+                Self::OnePassword => {
                     return execute_command(
                         shell_type,
                         shell_path,
@@ -160,7 +160,7 @@ impl SecretManager {
                     .ok()
                     .and_then(|output| parse_onepassword_secrets(&output).ok())
                 }
-                SecretManager::LastPass => {
+                Self::LastPass => {
                     let lastpass_command: Vec<&str> = LASTPASS_LIST_SECRETS_COMMAND
                         .iter()
                         .map(|s| s.as_str())
@@ -221,8 +221,8 @@ impl SecretManager {
 
                 let (link, link_message) = (
                     match self {
-                        SecretManager::OnePassword => Some(ONEPASSWORD_DOCS_LINK.to_owned()),
-                        SecretManager::LastPass => Some(LASTPASS_DOCS_LINK.to_owned()),
+                        Self::OnePassword => Some(ONEPASSWORD_DOCS_LINK.to_owned()),
+                        Self::LastPass => Some(LASTPASS_DOCS_LINK.to_owned()),
                     },
                     Some(format!("View {} CLI installation documentation", &self)),
                 );
@@ -235,11 +235,11 @@ impl SecretManager {
             }
             SecretErrorType::FetchFailed => {
                 let (link, link_message) = match self {
-                    SecretManager::OnePassword => (
+                    Self::OnePassword => (
                         Some(ONEPASSWORD_DOCS_LINK.to_owned()),
                         Some("Integrate 1Password app with CLI".to_owned()),
                     ),
-                    SecretManager::LastPass => (None, None),
+                    Self::LastPass => (None, None),
                 };
                 ErrorMessageAndCommand {
                     message: format!(
@@ -262,8 +262,8 @@ impl SecretManager {
 impl fmt::Display for SecretManager {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            SecretManager::OnePassword => write!(f, "1Password"),
-            SecretManager::LastPass => write!(f, "LastPass"),
+            Self::OnePassword => write!(f, "1Password"),
+            Self::LastPass => write!(f, "LastPass"),
         }
     }
 }
@@ -275,8 +275,8 @@ pub trait ExternalSecretManager {
 impl ExternalSecretManager for ExternalSecret {
     fn icon(&self) -> Icon {
         match self {
-            ExternalSecret::OnePassword(_) => Icon::OnePassword,
-            ExternalSecret::LastPass(_) => Icon::LastPass,
+            Self::OnePassword(_) => Icon::OnePassword,
+            Self::LastPass(_) => Icon::LastPass,
         }
     }
 }
@@ -284,8 +284,8 @@ impl ExternalSecretManager for ExternalSecret {
 impl ExternalSecretManager for SecretManager {
     fn icon(&self) -> Icon {
         match self {
-            SecretManager::OnePassword => Icon::OnePassword,
-            SecretManager::LastPass => Icon::LastPass,
+            Self::OnePassword => Icon::OnePassword,
+            Self::LastPass => Icon::LastPass,
         }
     }
 }

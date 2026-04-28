@@ -36,37 +36,33 @@ impl SecretDisplayMode {
     /// Convert to the corresponding ObfuscateSecrets enum for visual rendering
     pub fn to_obfuscate_secrets(self) -> ObfuscateSecrets {
         match self {
-            SecretDisplayMode::Asterisks => ObfuscateSecrets::Yes,
-            SecretDisplayMode::Strikethrough => ObfuscateSecrets::Strikethrough,
-            SecretDisplayMode::AlwaysShow => ObfuscateSecrets::AlwaysShow,
+            Self::Asterisks => ObfuscateSecrets::Yes,
+            Self::Strikethrough => ObfuscateSecrets::Strikethrough,
+            Self::AlwaysShow => ObfuscateSecrets::AlwaysShow,
         }
     }
 
     /// Convert from legacy boolean setting for backward compatibility
     pub fn from_legacy_hide_secrets(hide_secrets: bool) -> Self {
         if hide_secrets {
-            SecretDisplayMode::Asterisks
+            Self::Asterisks
         } else {
-            SecretDisplayMode::Strikethrough
+            Self::Strikethrough
         }
     }
 
     /// Display name for UI
     pub fn display_name(self) -> &'static str {
         match self {
-            SecretDisplayMode::Asterisks => "Asterisks",
-            SecretDisplayMode::Strikethrough => "Strikethrough",
-            SecretDisplayMode::AlwaysShow => "Always show secrets",
+            Self::Asterisks => "Asterisks",
+            Self::Strikethrough => "Strikethrough",
+            Self::AlwaysShow => "Always show secrets",
         }
     }
 
     /// Get all available modes for dropdown
-    pub fn all_modes() -> [SecretDisplayMode; 3] {
-        [
-            SecretDisplayMode::Asterisks,
-            SecretDisplayMode::Strikethrough,
-            SecretDisplayMode::AlwaysShow,
-        ]
+    pub fn all_modes() -> [Self; 3] {
+        [Self::Asterisks, Self::Strikethrough, Self::AlwaysShow]
     }
 }
 

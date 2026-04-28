@@ -46,7 +46,7 @@ impl From<AgentViewVisibility> for SerializedAgentViewVisibility {
             AgentViewVisibility::Terminal {
                 pending_conversation_ids,
                 conversation_ids,
-            } => SerializedAgentViewVisibility::Terminal {
+            } => Self::Terminal {
                 pending_conversation_ids,
                 conversation_ids,
             },
@@ -54,7 +54,7 @@ impl From<AgentViewVisibility> for SerializedAgentViewVisibility {
                 origin_conversation_id,
                 pending_other_conversation_ids,
                 other_conversation_ids,
-            } => SerializedAgentViewVisibility::Agent {
+            } => Self::Agent {
                 origin_conversation_id,
                 pending_other_conversation_ids,
                 other_conversation_ids,
@@ -69,7 +69,7 @@ impl From<SerializedAgentViewVisibility> for AgentViewVisibility {
             SerializedAgentViewVisibility::Terminal {
                 pending_conversation_ids,
                 conversation_ids,
-            } => AgentViewVisibility::Terminal {
+            } => Self::Terminal {
                 pending_conversation_ids,
                 conversation_ids,
             },
@@ -77,7 +77,7 @@ impl From<SerializedAgentViewVisibility> for AgentViewVisibility {
                 origin_conversation_id,
                 pending_other_conversation_ids,
                 other_conversation_ids,
-            } => AgentViewVisibility::Agent {
+            } => Self::Agent {
                 origin_conversation_id,
                 pending_other_conversation_ids,
                 other_conversation_ids,
@@ -117,7 +117,7 @@ pub struct SerializedAIMetadata {
 
 impl From<AgentInteractionMetadata> for SerializedAIMetadata {
     fn from(value: AgentInteractionMetadata) -> Self {
-        SerializedAIMetadata {
+        Self {
             requested_command_action_id: value.requested_command_action_id().cloned(),
             conversation_id: *value.conversation_id(),
             subagent_task_id: value.subagent_task_id().cloned(),
@@ -130,7 +130,7 @@ impl From<AgentInteractionMetadata> for SerializedAIMetadata {
 
 impl From<SerializedAIMetadata> for AgentInteractionMetadata {
     fn from(value: SerializedAIMetadata) -> Self {
-        AgentInteractionMetadata::new(
+        Self::new(
             value.requested_command_action_id,
             value.conversation_id,
             value.subagent_task_id,
@@ -311,7 +311,7 @@ impl From<&Block> for SerializedBlock {
             .map(Into::<SerializedAIMetadata>::into)
             .and_then(|metadata| serde_json::to_string(&metadata).ok());
 
-        SerializedBlock {
+        Self {
             id: block.id.clone(),
             stylized_command,
             stylized_output,

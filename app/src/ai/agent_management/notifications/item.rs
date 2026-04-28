@@ -35,9 +35,9 @@ pub enum NotificationFilter {
 impl NotificationFilter {
     pub(crate) fn label(&self) -> &'static str {
         match self {
-            NotificationFilter::All => "All tabs",
-            NotificationFilter::Unread => "Unread",
-            NotificationFilter::Errors => "Errors",
+            Self::All => "All tabs",
+            Self::Unread => "Unread",
+            Self::Errors => "Errors",
         }
     }
 }

@@ -22,14 +22,14 @@ impl sum_tree::Item for Run {
 
     fn summary(&self) -> Self::Summary {
         match *self {
-            Run::Newline => TextSummary {
+            Self::Newline => TextSummary {
                 chars: 1.into(),
                 bytes: 1.into(),
                 lines: Point::new(1, 0),
                 first_line_len: 0,
                 rightmost_point: Point::new(0, 0),
             },
-            Run::Chars { len, char_size } => TextSummary {
+            Self::Chars { len, char_size } => TextSummary {
                 chars: len.into(),
                 bytes: (len * char_size as usize).into(),
                 lines: Point::new(0, len as u32),
@@ -43,8 +43,8 @@ impl sum_tree::Item for Run {
 impl Run {
     fn char_size(&self) -> u8 {
         match self {
-            Run::Newline => 1,
-            Run::Chars { char_size, .. } => *char_size,
+            Self::Newline => 1,
+            Self::Chars { char_size, .. } => *char_size,
         }
     }
 }
@@ -85,8 +85,8 @@ impl std::ops::AddAssign<Self> for TextSummary {
     }
 }
 
-impl sum_tree::Dimension<'_, TextSummary> for TextSummary {
-    fn add_summary(&mut self, summary: &TextSummary) {
+impl sum_tree::Dimension<'_, Self> for TextSummary {
+    fn add_summary(&mut self, summary: &Self) {
         *self += summary;
     }
 }
@@ -119,7 +119,7 @@ pub struct Text {
 
 impl Text {
     pub fn new(text: impl Into<String>, text_style: Option<TextStyle>) -> Self {
-        let mut text = Text::from(text.into());
+        let mut text = Self::from(text.into());
         text.text_style = text_style;
         text
     }
@@ -174,7 +174,7 @@ impl From<String> for Text {
 
         let mut tree = SumTree::new();
         tree.extend(runs);
-        Text {
+        Self {
             text: text.into(),
             runs: tree,
             range: 0.into()..chars_len.into(),
@@ -237,7 +237,7 @@ impl Text {
         &self[..]
     }
 
-    pub fn slice<T: RangeBounds<CharOffset>>(&self, range: T) -> Text {
+    pub fn slice<T: RangeBounds<CharOffset>>(&self, range: T) -> Self {
         let start = match range.start_bound() {
             Bound::Included(start) => cmp::min(self.range.start + *start, self.range.end),
             Bound::Excluded(_) => unimplemented!(),
@@ -249,7 +249,7 @@ impl Text {
             Bound::Unbounded => self.range.end,
         };
 
-        Text {
+        Self {
             text: self.text.clone(),
             runs: self.runs.clone(),
             range: start..end,

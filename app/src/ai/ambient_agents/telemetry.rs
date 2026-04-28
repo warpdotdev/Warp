@@ -78,34 +78,34 @@ impl TelemetryEvent for CloudAgentTelemetryEvent {
 
     fn payload(&self) -> Option<Value> {
         match self {
-            CloudAgentTelemetryEvent::EnteredCloudMode { entry_point } => Some(json!({
+            Self::EnteredCloudMode { entry_point } => Some(json!({
                 "entry_point": entry_point,
             })),
-            CloudAgentTelemetryEvent::EnvironmentSelectorOpened => None,
-            CloudAgentTelemetryEvent::EnvironmentSelected { environment_id } => Some(json!({
+            Self::EnvironmentSelectorOpened => None,
+            Self::EnvironmentSelected { environment_id } => Some(json!({
                 "environment_id": environment_id.map(|id| id.to_string()),
             })),
-            CloudAgentTelemetryEvent::OpenedEnvironmentManagementPane => None,
-            CloudAgentTelemetryEvent::EnvironmentCreated => None,
-            CloudAgentTelemetryEvent::EnvironmentUpdated { environment_id } => Some(json!({
+            Self::OpenedEnvironmentManagementPane => None,
+            Self::EnvironmentCreated => None,
+            Self::EnvironmentUpdated { environment_id } => Some(json!({
                 "environment_id": environment_id.map(|id| id.to_string()),
             })),
-            CloudAgentTelemetryEvent::EnvironmentDeleted { environment_id } => Some(json!({
+            Self::EnvironmentDeleted { environment_id } => Some(json!({
                 "environment_id": environment_id.map(|id| id.to_string()),
             })),
-            CloudAgentTelemetryEvent::ImageSuggested {
+            Self::ImageSuggested {
                 image,
                 needs_custom_image,
             } => Some(json!({
                 "image": image,
                 "needs_custom_image": needs_custom_image,
             })),
-            CloudAgentTelemetryEvent::ImageSuggestionFailed { error } => Some(json!({
+            Self::ImageSuggestionFailed { error } => Some(json!({
                 "error": error,
             })),
-            CloudAgentTelemetryEvent::LaunchedAgentFromEnvironmentForm => None,
-            CloudAgentTelemetryEvent::GitHubAuthFromEnvironmentForm => None,
-            CloudAgentTelemetryEvent::DispatchFailed { error } => Some(json!({
+            Self::LaunchedAgentFromEnvironmentForm => None,
+            Self::GitHubAuthFromEnvironmentForm => None,
+            Self::DispatchFailed { error } => Some(json!({
                 "error": error,
             })),
         }

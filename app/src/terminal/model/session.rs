@@ -492,8 +492,8 @@ impl Sessions {
 impl From<SessionType> for command_corrections::SessionType {
     fn from(session_type: SessionType) -> Self {
         match session_type {
-            SessionType::WarpifiedRemote { .. } => command_corrections::SessionType::Remote,
-            SessionType::Local => command_corrections::SessionType::Local,
+            SessionType::WarpifiedRemote { .. } => Self::Remote,
+            SessionType::Local => Self::Local,
         }
     }
 }
@@ -501,8 +501,8 @@ impl From<SessionType> for command_corrections::SessionType {
 impl From<&SessionType> for command_corrections::SessionType {
     fn from(session_type: &SessionType) -> Self {
         match session_type {
-            SessionType::WarpifiedRemote { .. } => command_corrections::SessionType::Remote,
-            SessionType::Local => command_corrections::SessionType::Local,
+            SessionType::WarpifiedRemote { .. } => Self::Remote,
+            SessionType::Local => Self::Local,
         }
     }
 }
@@ -616,7 +616,7 @@ impl SessionInfo {
             None
         };
 
-        SessionInfo {
+        Self {
             session_id: init_shell_value.session_id,
             shell: Shell::new(shell_type, None, None, Default::default(), None),
             launch_data,
@@ -742,7 +742,7 @@ impl SessionInfo {
             bootstrapped_value.shell_options
         };
 
-        SessionInfo {
+        Self {
             session_id: self.session_id,
             shell: Shell::new(
                 shell_type,
@@ -845,8 +845,8 @@ pub enum SessionType {
 impl From<BootstrapSessionType> for SessionType {
     fn from(bst: BootstrapSessionType) -> Self {
         match bst {
-            BootstrapSessionType::Local => SessionType::Local,
-            BootstrapSessionType::WarpifiedRemote => SessionType::WarpifiedRemote { host_id: None },
+            BootstrapSessionType::Local => Self::Local,
+            BootstrapSessionType::WarpifiedRemote => Self::WarpifiedRemote { host_id: None },
         }
     }
 }

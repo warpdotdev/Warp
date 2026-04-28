@@ -312,7 +312,7 @@ pub struct GlobalSearchView {
     last_error: Option<String>,
     scroll_state: ScrollStateHandle,
     uniform_list_state: UniformListState,
-    handle: WeakViewHandle<GlobalSearchView>,
+    handle: WeakViewHandle<Self>,
     focus_mode: FocusMode,
     enablement: CodingPanelEnablementState,
     current_search_id: Option<u32>,
@@ -601,30 +601,26 @@ impl GlobalSearchView {
         use warpui::keymap::macros::*;
 
         app.register_fixed_bindings([
-            FixedBinding::new(
-                "up",
-                GlobalSearchAction::ResultsUp,
-                id!(GlobalSearchView::ui_name()),
-            ),
+            FixedBinding::new("up", GlobalSearchAction::ResultsUp, id!(Self::ui_name())),
             FixedBinding::new(
                 "down",
                 GlobalSearchAction::ResultsDown,
-                id!(GlobalSearchView::ui_name()),
+                id!(Self::ui_name()),
             ),
             FixedBinding::new(
                 "left",
                 GlobalSearchAction::ResultsLeft,
-                id!(GlobalSearchView::ui_name()),
+                id!(Self::ui_name()),
             ),
             FixedBinding::new(
                 "right",
                 GlobalSearchAction::ResultsRight,
-                id!(GlobalSearchView::ui_name()),
+                id!(Self::ui_name()),
             ),
             FixedBinding::new(
                 "enter",
                 GlobalSearchAction::ResultsEnter,
-                id!(GlobalSearchView::ui_name()),
+                id!(Self::ui_name()),
             ),
         ]);
     }
@@ -691,7 +687,7 @@ impl GlobalSearchView {
         });
         let handle = ctx.handle();
 
-        GlobalSearchView {
+        Self {
             find_model,
             query_editor,
             query_change_tx,
@@ -1275,10 +1271,10 @@ impl GlobalSearchView {
             };
 
             let highlight_indices =
-                GlobalSearchView::highlight_indices_from_submatches(&line_text, &submatches);
+                Self::highlight_indices_from_submatches(&line_text, &submatches);
 
             let (display_text, display_highlight_indices) =
-                GlobalSearchView::elide_match_text(&line_text, highlight_indices);
+                Self::elide_match_text(&line_text, highlight_indices);
 
             let mut match_text = Text::new_inline(
                 display_text,
@@ -1319,10 +1315,8 @@ impl GlobalSearchView {
                 file_path: file_path_for_select.clone(),
                 match_index: Some(match_index),
             });
-            let column_num = GlobalSearchView::column_from_submatches(
-                &line_text_for_click,
-                &submatches_for_click,
-            );
+            let column_num =
+                Self::column_from_submatches(&line_text_for_click, &submatches_for_click);
             ctx.dispatch_typed_action(GlobalSearchAction::OpenMatch {
                 path: path_for_click.clone(),
                 line_number,

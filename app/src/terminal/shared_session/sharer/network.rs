@@ -240,7 +240,7 @@ impl Network {
         let heartbeat = ctx.add_model(|_| Heartbeat::default());
         ctx.subscribe_to_model(&heartbeat, Self::handle_heartbeat_event);
 
-        let network = Network {
+        let network = Self {
             heartbeat,
             event_no: EventNumber::new(),
             selection_event_no: EventNumber::new(),

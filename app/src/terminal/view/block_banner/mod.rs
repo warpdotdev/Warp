@@ -43,7 +43,7 @@ impl WithinBlockBanner {
 
     pub fn warpify_mode(&self) -> Option<&WarpificationMode> {
         match self {
-            WithinBlockBanner::WarpifyBanner(state) => Some(&state.mode),
+            Self::WarpifyBanner(state) => Some(&state.mode),
         }
     }
 }

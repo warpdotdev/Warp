@@ -37,15 +37,11 @@ impl WebIntent {
         if let Some(segments) = segments {
             let url_scheme = ChannelState::url_scheme();
             if segments.is_empty() {
-                return Ok(WebIntent::Home(Url::parse(&format!(
-                    "{url_scheme}://home"
-                ))?));
+                return Ok(Self::Home(Url::parse(&format!("{url_scheme}://home"))?));
             } else {
                 match segments[0] {
                     "app" => {
-                        return Ok(WebIntent::Home(Url::parse(&format!(
-                            "{url_scheme}://home"
-                        ))?));
+                        return Ok(Self::Home(Url::parse(&format!("{url_scheme}://home"))?));
                     }
                     // For sessions, we expect the URL to be in the format: {scheme}/session/{session_id}
                     "session" => {
@@ -72,7 +68,7 @@ impl WebIntent {
                             session_intent.set_query(Some(query));
                         }
 
-                        return Ok(WebIntent::SessionView(session_intent));
+                        return Ok(Self::SessionView(session_intent));
                     }
                     // For conversations, we expect the URL to be in the format: {scheme}/conversation/{conversation_id}
                     "conversation" => {
@@ -86,7 +82,7 @@ impl WebIntent {
                         )
                         .map_err(|_| anyhow!("Attempting to parse invalid url: {}", url))?;
 
-                        return Ok(WebIntent::ConversationView(conversation_intent));
+                        return Ok(Self::ConversationView(conversation_intent));
                     }
                     // For drive objects, we expect the URL to be of the format: {scheme}/drive/{object-type}/{object-name}-{object-id}?focused_folder_id={focused_folder_id}
                     // The focused_folder_id is optional, and if it is not provided, we will not include it in the intent url.
@@ -103,7 +99,7 @@ impl WebIntent {
                         {
                             drive_intent.set_query(url.query());
                             drive_intent.query_pairs_mut().append_pair("id", id);
-                            return Ok(WebIntent::DriveObject(drive_intent));
+                            return Ok(Self::DriveObject(drive_intent));
                         }
                     }
                     "settings" => {
@@ -119,7 +115,7 @@ impl WebIntent {
                         if let Ok(settings_intent) = Url::parse(
                             format!("{url_scheme}://settings/{sub_section}?{query_str}").as_str(),
                         ) {
-                            return Ok(WebIntent::SettingsView(settings_intent));
+                            return Ok(Self::SettingsView(settings_intent));
                         }
                     }
                     "action" => {
@@ -136,7 +132,7 @@ impl WebIntent {
                         if let Ok(action_intent) =
                             Url::parse(format!("{url_scheme}://action/{action_type}").as_str())
                         {
-                            return Ok(WebIntent::Action(action_intent));
+                            return Ok(Self::Action(action_intent));
                         }
                     }
                     _ => return Err(anyhow!("Attempting to parse invalid url: {}", url)),
@@ -149,12 +145,12 @@ impl WebIntent {
     /// Convert this web intent into the underlying native desktop URL.
     pub fn into_intent_url(self) -> Url {
         match self {
-            WebIntent::SessionView(url) => url,
-            WebIntent::ConversationView(url) => url,
-            WebIntent::DriveObject(url) => url,
-            WebIntent::SettingsView(url) => url,
-            WebIntent::Home(url) => url,
-            WebIntent::Action(url) => url,
+            Self::SessionView(url) => url,
+            Self::ConversationView(url) => url,
+            Self::DriveObject(url) => url,
+            Self::SettingsView(url) => url,
+            Self::Home(url) => url,
+            Self::Action(url) => url,
         }
     }
 }

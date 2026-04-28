@@ -333,7 +333,7 @@ impl FontDB {
         // While .Apple Symbols Fallback is not a valid font. Apple Symbols is and it provides
         // many fallback characters. This implementation is consistent with Alacritty:
         // See: https://github.com/alacritty/crossfont/blob/d3515de22494c6fa70d84d2a9264c10097e303bd/src/darwin/mod.rs#L91
-        if let Some(font) = FontDB::descriptors_for_family("Apple Symbols")
+        if let Some(font) = Self::descriptors_for_family("Apple Symbols")
             .as_ref()
             .and_then(|descriptor| descriptor.into_iter().next())
             .and_then(|font_descriptor| self.descriptor_to_font_id(font_descriptor))
@@ -361,7 +361,7 @@ impl FontDB {
     // Convert a CTFontDescriptor to font_id. This function does not load fallback fonts
     // and assumes the descriptor refers to a valid system font.
     fn descriptor_to_font_id(&self, fontdesc: ItemRef<CTFontDescriptor>) -> Option<FontId> {
-        let name = match unsafe { FontDB::get_family_name(&fontdesc) } {
+        let name = match unsafe { Self::get_family_name(&fontdesc) } {
             Some(family) => family,
             None => {
                 log::warn!("Failed to load the font as it does not have a valid family name.");
@@ -369,7 +369,7 @@ impl FontDB {
             }
         };
 
-        let font_name = match unsafe { FontDB::get_font_name(&fontdesc) } {
+        let font_name = match unsafe { Self::get_font_name(&fontdesc) } {
             Some(name) => name,
             None => {
                 log::warn!("Failed to load the font as it does not have a valid name.");

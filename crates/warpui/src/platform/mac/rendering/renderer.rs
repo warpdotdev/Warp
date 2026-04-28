@@ -33,7 +33,7 @@ impl Device {
         {
             let gpu_device_info = get_gpu_device_info(&_metal_device);
             on_gpu_device_info(gpu_device_info);
-            Device::Metal(_metal_device)
+            Self::Metal(_metal_device)
         }
 
         #[cfg(wgpu)]

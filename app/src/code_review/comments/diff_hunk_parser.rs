@@ -23,12 +23,12 @@ pub(crate) enum DiffHunkParseError {
 impl std::fmt::Display for DiffHunkParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DiffHunkParseError::EmptyHunk => write!(f, "Empty diff hunk"),
-            DiffHunkParseError::InvalidHeader(err) => write!(f, "Invalid header: {err}"),
-            DiffHunkParseError::UnexpectedHunkHeader { line_index } => {
+            Self::EmptyHunk => write!(f, "Empty diff hunk"),
+            Self::InvalidHeader(err) => write!(f, "Invalid header: {err}"),
+            Self::UnexpectedHunkHeader { line_index } => {
                 write!(f, "Unexpected hunk header at line index {line_index}")
             }
-            DiffHunkParseError::LineNotFound { target_line } => {
+            Self::LineNotFound { target_line } => {
                 write!(f, "Target line {target_line} not found in hunk")
             }
         }
@@ -37,7 +37,7 @@ impl std::fmt::Display for DiffHunkParseError {
 
 impl From<anyhow::Error> for DiffHunkParseError {
     fn from(err: anyhow::Error) -> Self {
-        DiffHunkParseError::InvalidHeader(err)
+        Self::InvalidHeader(err)
     }
 }
 

@@ -764,7 +764,7 @@ impl TerminalManager {
                       ctx| {
                     let Some(terminal_manager) =
                         crate::terminal::TerminalManager::as_any_mut(terminal_manager.as_mut())
-                            .downcast_mut::<TerminalManager>()
+                            .downcast_mut::<Self>()
                     else {
                         return;
                     };
@@ -937,7 +937,7 @@ impl TerminalManager {
         #[cfg(unix)]
         {
             let terminal_attributes_poller = ctx.add_model(|_| TerminalAttributesPoller::new(fd));
-            TerminalManager::wire_up_terminal_attribute_poller_with_view(
+            Self::wire_up_terminal_attribute_poller_with_view(
                 &terminal_attributes_poller,
                 &self.view,
                 model.clone(),
@@ -1184,7 +1184,7 @@ impl TerminalManager {
                     // instead so that we can send multiple notifications for a single command.
                     let Some(terminal_manager) =
                         crate::terminal::TerminalManager::as_any_mut(terminal_manager.as_mut())
-                            .downcast_mut::<TerminalManager>()
+                            .downcast_mut::<Self>()
                     else {
                         return;
                     };

@@ -454,12 +454,7 @@ impl ConversationStatus {
     /// Returns true if the updating the conversation with this status should trigger some
     /// notification to the user.
     pub fn should_trigger_notification(&self) -> bool {
-        matches!(
-            self,
-            ConversationStatus::Success
-                | ConversationStatus::Blocked { .. }
-                | ConversationStatus::Error
-        )
+        matches!(self, Self::Success | Self::Blocked { .. } | Self::Error)
     }
 }
 

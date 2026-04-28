@@ -9,7 +9,7 @@ impl BufferVersion {
     pub fn new() -> Self {
         static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
         let raw = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        BufferVersion(raw)
+        Self(raw)
     }
 
     pub fn as_usize(&self) -> usize {

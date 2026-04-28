@@ -746,7 +746,7 @@ enum ShowTabBar {
 
 impl ShowTabBar {
     fn has_tab_bar(self) -> bool {
-        matches!(self, ShowTabBar::Stacked)
+        matches!(self, Self::Stacked)
     }
 }
 
@@ -2780,7 +2780,7 @@ impl Workspace {
         let ai_assistant_panel =
             Self::build_ai_assistant_panel_view(ctx, server_api.clone(), ai_client.clone());
 
-        ctx.observe(&tips_completed, Workspace::on_tips_model_changed);
+        ctx.observe(&tips_completed, Self::on_tips_model_changed);
 
         let autoupdate_handle = AutoupdateState::handle(ctx);
         ctx.subscribe_to_model(&autoupdate_handle, |_view, _handle, evt, ctx| {
@@ -15273,8 +15273,8 @@ impl Workspace {
     fn save_theme_chooser(&mut self, mode: &ThemeChooserMode, ctx: &mut ViewContext<Self>) {
         let keep_theme = match mode {
             ThemeChooserMode::SystemAgnostic => true,
-            ThemeChooserMode::SystemLight => Workspace::should_keep_theme(SystemTheme::Light, ctx),
-            ThemeChooserMode::SystemDark => Workspace::should_keep_theme(SystemTheme::Dark, ctx),
+            ThemeChooserMode::SystemLight => Self::should_keep_theme(SystemTheme::Light, ctx),
+            ThemeChooserMode::SystemDark => Self::should_keep_theme(SystemTheme::Dark, ctx),
         };
         if keep_theme {
             self.keep_theme(ctx);

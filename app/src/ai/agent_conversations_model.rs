@@ -160,8 +160,8 @@ pub enum HarnessFilter {
 impl Serialize for HarnessFilter {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
-            HarnessFilter::All => serializer.serialize_str("all"),
-            HarnessFilter::Specific(harness) => serializer.collect_str(harness),
+            Self::All => serializer.serialize_str("all"),
+            Self::Specific(harness) => serializer.collect_str(harness),
         }
     }
 }
@@ -172,7 +172,7 @@ impl<'de> Deserialize<'de> for HarnessFilter {
         Ok(Harness::from_str(&raw, false)
             .ok()
             .map(HarnessFilter::Specific)
-            .unwrap_or(HarnessFilter::All))
+            .unwrap_or(Self::All))
     }
 }
 
@@ -298,22 +298,20 @@ impl AgentRunDisplayStatus {
 
     pub fn status_filter(&self) -> StatusFilter {
         match self {
-            AgentRunDisplayStatus::TaskQueued
-            | AgentRunDisplayStatus::TaskPending
-            | AgentRunDisplayStatus::TaskClaimed
-            | AgentRunDisplayStatus::TaskInProgress
-            | AgentRunDisplayStatus::ConversationInProgress => StatusFilter::Working,
-            AgentRunDisplayStatus::TaskSucceeded | AgentRunDisplayStatus::ConversationSucceeded => {
-                StatusFilter::Done
-            }
-            AgentRunDisplayStatus::TaskFailed
-            | AgentRunDisplayStatus::TaskError
-            | AgentRunDisplayStatus::TaskBlocked { .. }
-            | AgentRunDisplayStatus::TaskCancelled
-            | AgentRunDisplayStatus::TaskUnknown
-            | AgentRunDisplayStatus::ConversationError
-            | AgentRunDisplayStatus::ConversationBlocked { .. }
-            | AgentRunDisplayStatus::ConversationCancelled => StatusFilter::Failed,
+            Self::TaskQueued
+            | Self::TaskPending
+            | Self::TaskClaimed
+            | Self::TaskInProgress
+            | Self::ConversationInProgress => StatusFilter::Working,
+            Self::TaskSucceeded | Self::ConversationSucceeded => StatusFilter::Done,
+            Self::TaskFailed
+            | Self::TaskError
+            | Self::TaskBlocked { .. }
+            | Self::TaskCancelled
+            | Self::TaskUnknown
+            | Self::ConversationError
+            | Self::ConversationBlocked { .. }
+            | Self::ConversationCancelled => StatusFilter::Failed,
         }
     }
 
@@ -324,41 +322,35 @@ impl AgentRunDisplayStatus {
     pub fn is_working(&self) -> bool {
         matches!(
             self,
-            AgentRunDisplayStatus::TaskQueued
-                | AgentRunDisplayStatus::TaskPending
-                | AgentRunDisplayStatus::TaskClaimed
-                | AgentRunDisplayStatus::TaskInProgress
-                | AgentRunDisplayStatus::ConversationInProgress
+            Self::TaskQueued
+                | Self::TaskPending
+                | Self::TaskClaimed
+                | Self::TaskInProgress
+                | Self::ConversationInProgress
         )
     }
 
     pub fn status_icon_and_color(&self, theme: &WarpTheme) -> (Icon, ColorU) {
         match self {
-            AgentRunDisplayStatus::TaskQueued
-            | AgentRunDisplayStatus::TaskPending
-            | AgentRunDisplayStatus::TaskClaimed
-            | AgentRunDisplayStatus::TaskInProgress
-            | AgentRunDisplayStatus::ConversationInProgress => {
-                (Icon::ClockLoader, theme.ansi_fg_magenta())
-            }
-            AgentRunDisplayStatus::TaskSucceeded | AgentRunDisplayStatus::ConversationSucceeded => {
+            Self::TaskQueued
+            | Self::TaskPending
+            | Self::TaskClaimed
+            | Self::TaskInProgress
+            | Self::ConversationInProgress => (Icon::ClockLoader, theme.ansi_fg_magenta()),
+            Self::TaskSucceeded | Self::ConversationSucceeded => {
                 (Icon::Check, theme.ansi_fg_green())
             }
-            AgentRunDisplayStatus::TaskFailed
-            | AgentRunDisplayStatus::TaskError
-            | AgentRunDisplayStatus::TaskUnknown
-            | AgentRunDisplayStatus::ConversationError => (Icon::Triangle, theme.ansi_fg_red()),
-            AgentRunDisplayStatus::TaskBlocked { .. }
-            | AgentRunDisplayStatus::ConversationBlocked { .. } => {
+            Self::TaskFailed | Self::TaskError | Self::TaskUnknown | Self::ConversationError => {
+                (Icon::Triangle, theme.ansi_fg_red())
+            }
+            Self::TaskBlocked { .. } | Self::ConversationBlocked { .. } => {
                 (Icon::StopFilled, theme.ansi_fg_yellow())
             }
-            AgentRunDisplayStatus::TaskCancelled => (
+            Self::TaskCancelled => (
                 Icon::Cancelled,
                 theme.disabled_text_color(theme.background()).into_solid(),
             ),
-            AgentRunDisplayStatus::ConversationCancelled => {
-                (Icon::StopFilled, internal_colors::neutral_5(theme))
-            }
+            Self::ConversationCancelled => (Icon::StopFilled, internal_colors::neutral_5(theme)),
         }
     }
 }
@@ -366,24 +358,22 @@ impl AgentRunDisplayStatus {
 impl std::fmt::Display for AgentRunDisplayStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AgentRunDisplayStatus::TaskQueued => write!(f, "Queued"),
-            AgentRunDisplayStatus::TaskPending => write!(f, "Pending"),
-            AgentRunDisplayStatus::TaskClaimed => write!(f, "Claimed"),
-            AgentRunDisplayStatus::TaskInProgress
-            | AgentRunDisplayStatus::ConversationInProgress => write!(f, "In progress"),
-            AgentRunDisplayStatus::TaskSucceeded | AgentRunDisplayStatus::ConversationSucceeded => {
+            Self::TaskQueued => write!(f, "Queued"),
+            Self::TaskPending => write!(f, "Pending"),
+            Self::TaskClaimed => write!(f, "Claimed"),
+            Self::TaskInProgress | Self::ConversationInProgress => write!(f, "In progress"),
+            Self::TaskSucceeded | Self::ConversationSucceeded => {
                 write!(f, "Done")
             }
-            AgentRunDisplayStatus::TaskFailed => write!(f, "Failed"),
-            AgentRunDisplayStatus::TaskError | AgentRunDisplayStatus::ConversationError => {
+            Self::TaskFailed => write!(f, "Failed"),
+            Self::TaskError | Self::ConversationError => {
                 write!(f, "Error")
             }
-            AgentRunDisplayStatus::TaskBlocked { .. }
-            | AgentRunDisplayStatus::ConversationBlocked { .. } => write!(f, "Blocked"),
-            AgentRunDisplayStatus::TaskCancelled | AgentRunDisplayStatus::ConversationCancelled => {
+            Self::TaskBlocked { .. } | Self::ConversationBlocked { .. } => write!(f, "Blocked"),
+            Self::TaskCancelled | Self::ConversationCancelled => {
                 write!(f, "Cancelled")
             }
-            AgentRunDisplayStatus::TaskUnknown => write!(f, "Failed"),
+            Self::TaskUnknown => write!(f, "Failed"),
         }
     }
 }

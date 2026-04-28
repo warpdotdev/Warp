@@ -432,14 +432,14 @@ impl View for WordBlockEditorView {
 }
 
 impl WordBlockEditorStyles {
-    fn default_styles(app: &AppContext) -> WordBlockEditorStyles {
+    fn default_styles(app: &AppContext) -> Self {
         let appearance = Appearance::as_ref(app);
         let text_color = appearance
             .theme()
             .main_text_color(appearance.theme().background())
             .into_solid();
 
-        WordBlockEditorStyles {
+        Self {
             font_family: appearance.monospace_font_family(),
             editor_font_color: text_color,
             background: appearance.theme().background(),

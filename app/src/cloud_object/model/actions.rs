@@ -26,7 +26,7 @@ pub enum ObjectActionType {
 impl ToString for ObjectActionType {
     fn to_string(&self) -> String {
         match self {
-            ObjectActionType::Execute => String::from("EXECUTE"),
+            Self::Execute => String::from("EXECUTE"),
         }
     }
 }
@@ -34,13 +34,13 @@ impl ToString for ObjectActionType {
 impl ObjectActionType {
     fn singular(&self) -> String {
         match self {
-            ObjectActionType::Execute => "run".to_string(),
+            Self::Execute => "run".to_string(),
         }
     }
 
     fn plural(&self) -> String {
         match self {
-            ObjectActionType::Execute => "runs".to_string(),
+            Self::Execute => "runs".to_string(),
         }
     }
 }
@@ -132,7 +132,7 @@ impl TryFrom<PersistedObjectAction> for ObjectAction {
         // to index into CloudModel and store the object actions in memory.
         let uid = parse_sqlite_id_to_uid(hashed_object_id.clone())?;
 
-        Ok(ObjectAction {
+        Ok(Self {
             uid: uid.to_string(),
             hashed_sqlite_id: hashed_object_id,
             action_type,

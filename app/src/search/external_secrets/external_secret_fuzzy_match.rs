@@ -7,11 +7,11 @@ pub struct FuzzyMatchExternalSecretResult {
 }
 
 impl FuzzyMatchExternalSecretResult {
-    pub fn try_match(query: &str, name: &str) -> Option<FuzzyMatchExternalSecretResult> {
+    pub fn try_match(query: &str, name: &str) -> Option<Self> {
         let name_match_result = fuzzy_match::match_indices_case_insensitive(name, query);
         match name_match_result {
             None => None,
-            _ => Some(FuzzyMatchExternalSecretResult { name_match_result }),
+            _ => Some(Self { name_match_result }),
         }
     }
 

@@ -72,11 +72,9 @@ pub enum AskAIType {
 impl From<&AskAIType> for OpenedWarpAISource {
     fn from(value: &AskAIType) -> Self {
         match value {
-            AskAIType::FromAICommandSearch { .. } => OpenedWarpAISource::FromAICommandSearch,
-            AskAIType::FromBlock { .. } | AskAIType::FromBlocks { .. } => {
-                OpenedWarpAISource::HelpWithBlock
-            }
-            AskAIType::FromTextSelection { .. } => OpenedWarpAISource::HelpWithTextSelection,
+            AskAIType::FromAICommandSearch { .. } => Self::FromAICommandSearch,
+            AskAIType::FromBlock { .. } | AskAIType::FromBlocks { .. } => Self::HelpWithBlock,
+            AskAIType::FromTextSelection { .. } => Self::HelpWithTextSelection,
         }
     }
 }
@@ -95,7 +93,7 @@ pub struct AIGeneratedCommandParameter {
 impl From<AIGeneratedCommand> for Workflow {
     fn from(ai_command: AIGeneratedCommand) -> Self {
         // Note that we use the AI generated description as the _title_ of the workflow.
-        Workflow::new(ai_command.description, ai_command.command).with_arguments(
+        Self::new(ai_command.description, ai_command.command).with_arguments(
             ai_command
                 .parameters
                 .into_iter()
@@ -112,7 +110,7 @@ impl From<AIGeneratedCommand> for Workflow {
 
 impl From<GeneratedCommand> for AIGeneratedCommand {
     fn from(value: GeneratedCommand) -> Self {
-        AIGeneratedCommand {
+        Self {
             command: value.command,
             description: value.description,
             parameters: value
@@ -149,18 +147,16 @@ impl From<GenerateCommandsFailureType> for GenerateCommandsFromNaturalLanguageEr
 impl From<RequestLimitRefreshDurationGraphql> for RequestLimitRefreshDuration {
     fn from(value: RequestLimitRefreshDurationGraphql) -> Self {
         match value {
-            RequestLimitRefreshDurationGraphql::Monthly => RequestLimitRefreshDuration::Monthly,
-            RequestLimitRefreshDurationGraphql::Weekly => RequestLimitRefreshDuration::Weekly,
-            RequestLimitRefreshDurationGraphql::EveryTwoWeeks => {
-                RequestLimitRefreshDuration::EveryTwoWeeks
-            }
+            RequestLimitRefreshDurationGraphql::Monthly => Self::Monthly,
+            RequestLimitRefreshDurationGraphql::Weekly => Self::Weekly,
+            RequestLimitRefreshDurationGraphql::EveryTwoWeeks => Self::EveryTwoWeeks,
         }
     }
 }
 
 impl From<RequestLimitInfoGraphql> for RequestLimitInfo {
     fn from(value: RequestLimitInfoGraphql) -> Self {
-        RequestLimitInfo {
+        Self {
             is_unlimited: value.is_unlimited,
             limit: value.request_limit as usize,
             num_requests_used_since_refresh: value.requests_used_since_last_refresh as usize,

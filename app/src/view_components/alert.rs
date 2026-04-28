@@ -44,8 +44,8 @@ impl AlertFlavor {
     pub fn text_color(&self, appearance: &Appearance) -> ColorU {
         let theme = appearance.theme();
         match self {
-            AlertFlavor::Default => theme.main_text_color(theme.background()).into(),
-            AlertFlavor::Warning => theme.ansi_fg_yellow(),
+            Self::Default => theme.main_text_color(theme.background()).into(),
+            Self::Warning => theme.ansi_fg_yellow(),
             _ => theme.background().into(),
         }
     }
@@ -63,10 +63,10 @@ impl AlertFlavor {
     pub fn border_color(&self, appearance: &Appearance) -> Fill {
         let theme = appearance.theme();
         match self {
-            AlertFlavor::Default => internal_colors::neutral_3(theme).into(),
-            AlertFlavor::Success => theme.ansi_bg_green().into(),
-            AlertFlavor::Error => theme.ansi_bg_red().into(),
-            AlertFlavor::Warning => Fill::Solid(ColorU::transparent_black()),
+            Self::Default => internal_colors::neutral_3(theme).into(),
+            Self::Success => theme.ansi_bg_green().into(),
+            Self::Error => theme.ansi_bg_red().into(),
+            Self::Warning => Fill::Solid(ColorU::transparent_black()),
         }
     }
 }

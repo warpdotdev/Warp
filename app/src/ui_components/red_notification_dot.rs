@@ -63,7 +63,7 @@ impl RedNotificationDot {
         let mut stack = Stack::new().with_child(element);
 
         stack.add_positioned_child(
-            RedNotificationDot::render_internal(styles),
+            Self::render_internal(styles),
             OffsetPositioning::offset_from_parent(
                 vec2f(x_axis_offset + x_delta, y_axis_offset + y_delta),
                 ParentOffsetBounds::Unbounded,

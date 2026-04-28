@@ -227,14 +227,14 @@ impl CtrlTabBehavior {
 
 impl ExtraMetaKeys {
     pub fn toggle_left_key(&self) -> Self {
-        ExtraMetaKeys {
+        Self {
             left_alt: !self.left_alt,
             right_alt: self.right_alt,
         }
     }
 
     pub fn toggle_right_key(&self) -> Self {
-        ExtraMetaKeys {
+        Self {
             left_alt: self.left_alt,
             right_alt: !self.right_alt,
         }

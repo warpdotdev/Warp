@@ -101,8 +101,8 @@ impl Default for FileEntrySummary {
     }
 }
 
-impl AddAssign<&FileEntrySummary> for FileEntrySummary {
-    fn add_assign(&mut self, rhs: &FileEntrySummary) {
+impl AddAssign<&Self> for FileEntrySummary {
+    fn add_assign(&mut self, rhs: &Self) {
         // Entries are sorted by path, so the rightmost (rhs) summary has the max path.
         self.max_path = rhs.max_path.clone();
         self.count += rhs.count;

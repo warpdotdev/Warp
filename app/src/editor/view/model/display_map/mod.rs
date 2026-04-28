@@ -54,7 +54,7 @@ impl DisplayMap {
             ctx.subscribe_to_model(&buffer, Self::handle_buffer_event);
         }
 
-        DisplayMap {
+        Self {
             buffer: buffer.clone(),
             fold_map: FoldMap::new(buffer, ctx),
             soft_wrap_state: Default::default(),
@@ -386,7 +386,7 @@ impl DisplayPoint {
     fn expand_tabs(mut self, map: &DisplayMap, app: &AppContext) -> Result<Self> {
         let chars = map
             .fold_map
-            .chars_at(DisplayPoint(Point::new(self.row(), 0)), app)?;
+            .chars_at(Self(Point::new(self.row(), 0)), app)?;
         let expanded = expand_tabs(chars, self.column() as usize, map.tab_size);
         *self.column_mut() = expanded as u32;
 
@@ -401,7 +401,7 @@ impl DisplayPoint {
     ) -> Result<(Self, usize)> {
         let chars = map
             .fold_map
-            .chars_at(DisplayPoint(Point::new(self.0.row, 0)), app)?;
+            .chars_at(Self(Point::new(self.0.row, 0)), app)?;
         let expanded = self.column() as usize;
         let (collapsed, to_next_stop) = collapse_tabs(chars, expanded, bias, map.tab_size);
         *self.column_mut() = collapsed as u32;

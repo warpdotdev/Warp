@@ -81,20 +81,20 @@ enum SpawnMode {
 
 impl SpawnMode {
     fn should_send_telemetry(&self) -> bool {
-        matches!(self, SpawnMode::Initial { .. })
+        matches!(self, Self::Initial { .. })
     }
 
     fn should_persist_running_state_to_sqlite(&self) -> bool {
         matches!(
             self,
-            SpawnMode::Initial {
+            Self::Initial {
                 persist_running_state_to_sqlite: true
             }
         )
     }
 
     fn is_reconnect(&self) -> bool {
-        matches!(self, SpawnMode::Reconnect)
+        matches!(self, Self::Reconnect)
     }
 }
 
@@ -546,7 +546,7 @@ impl TemplatableMCPServerManager {
 
     /// Get all runnable MCP servers (templatable installations).
     pub fn get_all_runnable_mcp_servers(ctx: &AppContext) -> Vec<(Uuid, String)> {
-        TemplatableMCPServerManager::as_ref(ctx)
+        Self::as_ref(ctx)
             .get_installed_templatable_servers()
             .iter()
             .map(|(uuid, installation)| (*uuid, installation.templatable_mcp_server().name.clone()))
@@ -555,7 +555,7 @@ impl TemplatableMCPServerManager {
 
     /// Get all cloud synced MCP servers (templatable templates).
     pub fn get_all_cloud_synced_mcp_servers(ctx: &AppContext) -> HashMap<Uuid, String> {
-        TemplatableMCPServerManager::as_ref(ctx)
+        Self::as_ref(ctx)
             .get_all_templatable_mcp_servers()
             .iter()
             .map(|&server| (server.uuid, server.name.clone()))
@@ -564,9 +564,9 @@ impl TemplatableMCPServerManager {
 
     /// Get the name for an MCP server based on uuid.
     pub fn get_mcp_name(uuid: &Uuid, app: &AppContext) -> Option<String> {
-        TemplatableMCPServerManager::as_ref(app)
+        Self::as_ref(app)
             .get_installed_server_name(uuid)
-            .or_else(|| TemplatableMCPServerManager::as_ref(app).get_template_server_name(uuid))
+            .or_else(|| Self::as_ref(app).get_template_server_name(uuid))
     }
 
     /// Extracts some piece of server info for all servers (template & installation) and returns it in a HashSet.
@@ -1460,7 +1460,7 @@ impl TemplatableMCPServerManager {
         let sync_id = self
             .get_cloud_templatable_mcp_server(template_uuid)
             .map(|server| server.sync_id());
-        let team_uid = TemplatableMCPServerManager::get_first_team_space_id(ctx);
+        let team_uid = Self::get_first_team_space_id(ctx);
 
         if let Some(sync_id) = sync_id {
             if let Some(team_uid) = team_uid {

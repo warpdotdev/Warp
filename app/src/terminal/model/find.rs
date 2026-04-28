@@ -56,7 +56,7 @@ pub struct RegexDFAs {
 
 impl RegexDFAs {
     // Create case-insensitive Regex DFAs for all find directions.
-    pub fn new(find: &str) -> Result<RegexDFAs, Box<BuildError>> {
+    pub fn new(find: &str) -> Result<Self, Box<BuildError>> {
         Self::new_with_config(find, FindConfig::default())
     }
 
@@ -65,7 +65,7 @@ impl RegexDFAs {
         patterns: &[&str],
         enable_unicode_word_boundary: bool,
         case_sensitive: bool,
-    ) -> Result<RegexDFAs, Box<BuildError>> {
+    ) -> Result<Self, Box<BuildError>> {
         let mut builder = DFA::builder();
         builder.configure(
             DFA::config()
@@ -85,10 +85,7 @@ impl RegexDFAs {
     }
 
     // Based on FindConfig, create DFAs for all directions
-    pub fn new_with_config(
-        find: &str,
-        find_config: FindConfig,
-    ) -> Result<RegexDFAs, Box<BuildError>> {
+    pub fn new_with_config(find: &str, find_config: FindConfig) -> Result<Self, Box<BuildError>> {
         let mut builder = DFA::builder();
         if !find_config.is_case_sensitive {
             builder.syntax(Config::new().case_insensitive(true));
@@ -104,7 +101,7 @@ impl RegexDFAs {
     fn new_internal(
         patterns: &[&str],
         mut builder: regex_automata::hybrid::dfa::Builder,
-    ) -> Result<RegexDFAs, Box<BuildError>> {
+    ) -> Result<Self, Box<BuildError>> {
         // Build a forward and reverse DFA to allow us to find matches either left-to-right or
         // right-to-left.
         // We don't use the hybrid Regex (https://docs.rs/regex-automata/latest/regex_automata/hybrid/regex/struct.Regex.html)

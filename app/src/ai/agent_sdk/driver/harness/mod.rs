@@ -143,9 +143,9 @@ impl HarnessKind {
     /// Corresponding [`Harness`] enum value.
     pub(crate) fn harness(&self) -> Harness {
         match self {
-            HarnessKind::Oz => Harness::Oz,
-            HarnessKind::ThirdParty(h) => h.harness(),
-            HarnessKind::Unsupported(harness) => *harness,
+            Self::Oz => Harness::Oz,
+            Self::ThirdParty(h) => h.harness(),
+            Self::Unsupported(harness) => *harness,
         }
     }
 }

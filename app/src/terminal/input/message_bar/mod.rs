@@ -136,7 +136,7 @@ pub enum MessageItem {
     /// A clickable group of items.
     Clickable {
         /// The items in this clickable group.
-        items: Vec<MessageItem>,
+        items: Vec<Self>,
         /// Click handler for the group.
         action: ClickHandler,
         /// Mouse state handle for hover/click tracking.
@@ -147,7 +147,7 @@ pub enum MessageItem {
     /// A clickable chip group of items with container styling handled by renderers.
     Chip {
         /// The items rendered inside this chip.
-        items: Vec<MessageItem>,
+        items: Vec<Self>,
         /// Click handler for the chip.
         action: ClickHandler,
         /// Mouse state handle for hover/click tracking.
@@ -217,7 +217,7 @@ impl MessageItem {
 
     /// Creates a clickable group of items.
     pub fn clickable(
-        items: Vec<MessageItem>,
+        items: Vec<Self>,
         action: impl Fn(&mut EventContext) + 'static,
         mouse_state: MouseStateHandle,
     ) -> Self {
@@ -235,7 +235,7 @@ impl MessageItem {
 
     /// Creates a clickable chip group of items.
     pub fn chip(
-        items: Vec<MessageItem>,
+        items: Vec<Self>,
         action: impl Fn(&mut EventContext) + 'static,
         mouse_state: MouseStateHandle,
     ) -> Self {

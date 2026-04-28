@@ -197,7 +197,7 @@ impl From<reqwest::Error> for AIApiError {
 
 impl From<serde_json::Error> for AIApiError {
     fn from(err: serde_json::Error) -> Self {
-        AIApiError::Deserialization(err.into())
+        Self::Deserialization(err.into())
     }
 }
 
@@ -221,7 +221,7 @@ impl AIApiError {
         // render deserialization and transport errors differently, we try to detect those cases
         // here.
         if err.is_timeout() {
-            return AIApiError::Transport(err);
+            return Self::Transport(err);
         }
         if err.is_decode() {
             #[cfg(not(target_family = "wasm"))]
@@ -230,17 +230,17 @@ impl AIApiError {
                 let mut source = err.source();
                 while let Some(underlying) = source {
                     if underlying.is::<hyper::Error>() {
-                        return AIApiError::Transport(err);
+                        return Self::Transport(err);
                     }
 
                     source = underlying.source();
                 }
             }
 
-            return AIApiError::Deserialization(DeserializationError::Transport(err));
+            return Self::Deserialization(DeserializationError::Transport(err));
         }
 
-        AIApiError::Transport(err)
+        Self::Transport(err)
     }
 
     /// Returns the appropriate error for a 429 response by checking the X-Warp-Error-Code header.
@@ -250,9 +250,9 @@ impl AIApiError {
             .and_then(|v| v.to_str().ok())
             == Some(WARP_ERROR_CODE_OUT_OF_CREDITS)
         {
-            AIApiError::QuotaLimit
+            Self::QuotaLimit
         } else {
-            AIApiError::ServerOverloaded
+            Self::ServerOverloaded
         }
     }
 
@@ -271,7 +271,7 @@ impl AIApiError {
                     .unwrap_or_else(|e| format!("(no response body: {e:#})")),
             ),
             reqwest_eventsource::Error::Transport(err) => Self::from_transport_error(err),
-            err => AIApiError::Stream {
+            err => Self::Stream {
                 stream_type,
                 // On WASM, `reqwest_eventsource::Error` doesn't implement `Into<anyhow::Error>` or
                 // `Send` because it may contain a `wasm_bindgen` JS value.
@@ -293,8 +293,8 @@ impl AIApiError {
         }
 
         match self {
-            AIApiError::ErrorStatus(status, _) => is_retryable_status(*status),
-            AIApiError::Transport(e) => {
+            Self::ErrorStatus(status, _) => is_retryable_status(*status),
+            Self::Transport(e) => {
                 if let Some(status) = e.status() {
                     return is_retryable_status(status);
                 }
@@ -309,14 +309,12 @@ impl AIApiError {
 impl ErrorExt for AIApiError {
     fn is_actionable(&self) -> bool {
         match self {
-            AIApiError::Deserialization(_) => true,
-            AIApiError::Transport(error) => error.is_actionable(),
-            AIApiError::Other(error) => error.is_actionable(),
-            AIApiError::Stream { source, .. } => source.is_actionable(),
-            AIApiError::ErrorStatus(_, _) => self.is_retryable(),
-            AIApiError::QuotaLimit | AIApiError::ServerOverloaded | AIApiError::NoContextFound => {
-                false
-            }
+            Self::Deserialization(_) => true,
+            Self::Transport(error) => error.is_actionable(),
+            Self::Other(error) => error.is_actionable(),
+            Self::Stream { source, .. } => source.is_actionable(),
+            Self::ErrorStatus(_, _) => self.is_retryable(),
+            Self::QuotaLimit | Self::ServerOverloaded | Self::NoContextFound => false,
         }
     }
 }

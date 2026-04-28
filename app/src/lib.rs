@@ -370,7 +370,7 @@ pub enum LaunchMode {
 impl LaunchMode {
     fn args(&self) -> Cow<'_, warp_cli::AppArgs> {
         match self {
-            LaunchMode::App { args, .. } => Cow::Borrowed(args),
+            Self::App { args, .. } => Cow::Borrowed(args),
             _ => Cow::Owned(warp_cli::AppArgs::default()),
         }
     }
@@ -378,7 +378,7 @@ impl LaunchMode {
     /// Returns `true` if this process is running an integration test.
     fn is_integration_test(&self) -> bool {
         match self {
-            LaunchMode::Test {
+            Self::Test {
                 is_integration_test,
                 ..
             } => *is_integration_test,
@@ -388,7 +388,7 @@ impl LaunchMode {
 
     fn take_test_driver(&mut self) -> Option<TestDriver> {
         match self {
-            LaunchMode::Test { driver, .. } => driver.take(),
+            Self::Test { driver, .. } => driver.take(),
             _ => None,
         }
     }
@@ -396,22 +396,22 @@ impl LaunchMode {
     /// Add an URL to open. Only supported for [`LaunchMode::App`]
     #[allow(dead_code)]
     fn add_url(&mut self, url: Url) {
-        if let LaunchMode::App { ref mut args, .. } = self {
+        if let Self::App { ref mut args, .. } = self {
             args.urls.push(url);
         }
     }
 
     fn execution_mode(&self) -> ExecutionMode {
         match self {
-            LaunchMode::App { .. } => ExecutionMode::App,
-            LaunchMode::CommandLine { .. } => ExecutionMode::Sdk,
-            LaunchMode::Test { .. } => ExecutionMode::App,
+            Self::App { .. } => ExecutionMode::App,
+            Self::CommandLine { .. } => ExecutionMode::Sdk,
+            Self::Test { .. } => ExecutionMode::App,
         }
     }
 
     fn is_sandboxed(&self) -> bool {
         match self {
-            LaunchMode::CommandLine { is_sandboxed, .. } => *is_sandboxed,
+            Self::CommandLine { is_sandboxed, .. } => *is_sandboxed,
             _ => false,
         }
     }
@@ -419,7 +419,7 @@ impl LaunchMode {
     /// Returns `true` if Warp should run headlessly, without a visible UI.
     fn is_headless(&self) -> bool {
         match self {
-            LaunchMode::CommandLine { command, .. } => match command {
+            Self::CommandLine { command, .. } => match command {
                 CliCommand::Agent(AgentCommand::Run(args)) => !args.gui,
                 _ => true,
             },
@@ -430,7 +430,7 @@ impl LaunchMode {
     /// Returns `true` if running in app mode or via `agent run` to permit codebase indexing.
     fn supports_indexing(&self) -> bool {
         match self {
-            LaunchMode::CommandLine { command, .. } => {
+            Self::CommandLine { command, .. } => {
                 matches!(command, CliCommand::Agent(AgentCommand::Run { .. }))
             }
             _ => true,
@@ -458,7 +458,7 @@ impl LaunchMode {
 
 impl AssetProvider for Assets {
     fn get(&self, path: &str) -> Result<Cow<'_, [u8]>> {
-        <Assets as RustEmbed>::get(path)
+        <Self as RustEmbed>::get(path)
             .map(|f| f.data)
             .ok_or_else(|| anyhow!("no asset exists at path {}", path))
     }

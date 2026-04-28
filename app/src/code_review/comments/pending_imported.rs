@@ -75,13 +75,11 @@ pub(crate) enum PendingImportedReviewCommentTarget {
 impl PendingImportedReviewCommentTarget {
     pub(crate) fn file_path(&self) -> Option<&PathBuf> {
         match self {
-            PendingImportedReviewCommentTarget::Line {
+            Self::Line {
                 relative_file_path, ..
             } => Some(relative_file_path),
-            PendingImportedReviewCommentTarget::File { relative_file_path } => {
-                Some(relative_file_path)
-            }
-            PendingImportedReviewCommentTarget::General => None,
+            Self::File { relative_file_path } => Some(relative_file_path),
+            Self::General => None,
         }
     }
 }

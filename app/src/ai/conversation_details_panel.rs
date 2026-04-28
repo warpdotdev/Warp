@@ -104,7 +104,7 @@ enum PanelMode {
 
 impl Default for PanelMode {
     fn default() -> Self {
-        PanelMode::Conversation {
+        Self::Conversation {
             directory: None,
             server_conversation_id: None,
             ai_conversation_id: None,
@@ -346,7 +346,7 @@ impl ConversationDetailsData {
                 .or(Some(Harness::Oz))
         });
 
-        ConversationDetailsData {
+        Self {
             mode: PanelMode::Task {
                 task_id: Some(task.task_id),
                 directory: Self::directory_for_task(task, app),
@@ -374,7 +374,7 @@ impl ConversationDetailsData {
     /// Minimal details data for when we only know the task id (e.g. shared sessions)
     /// but have not loaded the full `AmbientAgentTask` yet.
     pub fn from_task_id(task_id: AmbientAgentTaskId) -> Self {
-        ConversationDetailsData {
+        Self {
             mode: PanelMode::Task {
                 task_id: Some(task_id),
                 directory: None,
@@ -415,7 +415,7 @@ impl ConversationDetailsData {
         copy_link_url: Option<String>,
         harness: Option<Harness>,
     ) -> Self {
-        ConversationDetailsData {
+        Self {
             mode: PanelMode::Conversation {
                 directory,
                 server_conversation_id: conversation_id,

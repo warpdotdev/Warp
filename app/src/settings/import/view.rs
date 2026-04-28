@@ -90,8 +90,8 @@ enum State {
 impl State {
     fn is_complete(&self) -> bool {
         match self {
-            State::Active | State::Loading => false,
-            State::Failed | State::Completed { .. } => true,
+            Self::Active | Self::Loading => false,
+            Self::Failed | Self::Completed { .. } => true,
         }
     }
 }
@@ -121,7 +121,7 @@ pub struct ToggleableSetting {
 
 impl ToggleableSetting {
     pub fn new(setting_type: SettingType) -> Self {
-        ToggleableSetting {
+        Self {
             setting_type,
             checkbox_handle: Default::default(),
         }
@@ -561,7 +561,7 @@ impl SettingsImportView {
 
     fn set_preferences(
         &self,
-        ctx: &mut ViewContext<SettingsImportView>,
+        ctx: &mut ViewContext<Self>,
         terminal_type_and_profile: &TerminalTypeAndProfile,
     ) {
         ImportedConfigModel::handle(ctx).update(ctx, |model, ctx| {
@@ -695,7 +695,7 @@ impl SettingsImportView {
         ctx.notify();
     }
 
-    fn reset_preferences(&self, ctx: &mut ViewContext<SettingsImportView>) {
+    fn reset_preferences(&self, ctx: &mut ViewContext<Self>) {
         ThemeSettings::handle(ctx).update(ctx, |theme_settings, ctx| {
             report_if_error!(theme_settings
                 .selected_system_themes
@@ -1076,11 +1076,7 @@ impl TypedActionView for SettingsImportView {
                 if let Some(theme_type) =
                     ImportedConfigModel::as_ref(ctx).write_theme(terminal_type_and_profile)
                 {
-                    SettingsImportView::set_theme(
-                        ctx,
-                        theme_type,
-                        &self.configs[selected_idx].config_name,
-                    );
+                    Self::set_theme(ctx, theme_type, &self.configs[selected_idx].config_name);
                     ctx.emit(SettingsImportEvent::Completed(true));
                 } else {
                     ctx.emit(SettingsImportEvent::Completed(false));

@@ -21,8 +21,8 @@ pub enum Provider {
 impl Provider {
     fn as_str(&self) -> &'static str {
         match self {
-            Provider::OpenAI => "openai",
-            Provider::Wispr => "wispr",
+            Self::OpenAI => "openai",
+            Self::Wispr => "wispr",
         }
     }
 }

@@ -726,8 +726,7 @@ enum TerminalPrimaryLineData {
 impl TerminalPrimaryLineData {
     fn text(&self) -> &str {
         match self {
-            TerminalPrimaryLineData::StatusText { text, .. }
-            | TerminalPrimaryLineData::Text { text, .. } => text,
+            Self::StatusText { text, .. } | Self::Text { text, .. } => text,
         }
     }
 }
@@ -794,14 +793,14 @@ impl TabGroupColorMode {
         visible_pane_ids: &[PaneId],
     ) -> Option<HashMap<PaneId, Option<ThemeFill>>> {
         match self {
-            TabGroupColorMode::PerPane(map) => Some(map),
-            TabGroupColorMode::Uniform(fill) => Some(
+            Self::PerPane(map) => Some(map),
+            Self::Uniform(fill) => Some(
                 visible_pane_ids
                     .iter()
                     .map(|&id| (id, Some(fill)))
                     .collect(),
             ),
-            TabGroupColorMode::None => None,
+            Self::None => None,
         }
     }
 }

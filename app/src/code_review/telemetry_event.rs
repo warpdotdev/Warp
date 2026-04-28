@@ -224,14 +224,14 @@ impl TelemetryEvent for CodeReviewTelemetryEvent {
 
     fn payload(&self) -> Option<serde_json::Value> {
         match self {
-            CodeReviewTelemetryEvent::PaneOpened {
+            Self::PaneOpened {
                 entrypoint,
                 is_code_mode_v2,
                 cli_agent,
             } => Some(
                 json!({ "entrypoint": entrypoint, "is_code_mode_v2": is_code_mode_v2, "agent_name": cli_agent}),
             ),
-            CodeReviewTelemetryEvent::AddToContext {
+            Self::AddToContext {
                 origin,
                 destination,
                 diff_set_scope,
@@ -240,39 +240,31 @@ impl TelemetryEvent for CodeReviewTelemetryEvent {
                 "destination": destination,
                 "diff_set_scope": diff_set_scope,
             })),
-            CodeReviewTelemetryEvent::RevertHunkClicked => None,
-            CodeReviewTelemetryEvent::FileSaved => None,
-            CodeReviewTelemetryEvent::PaneStateChanged { state_change } => {
+            Self::RevertHunkClicked => None,
+            Self::FileSaved => None,
+            Self::PaneStateChanged { state_change } => {
                 Some(json!({ "state_change": state_change }))
             }
-            CodeReviewTelemetryEvent::BaseChanged { mode } => Some(json!({ "mode": mode })),
-            CodeReviewTelemetryEvent::CalculateDiffMetadataFailed { error } => {
-                Some(json!({ "error": error }))
-            }
-            CodeReviewTelemetryEvent::LoadDiffFailed { error } => Some(json!({ "error": error })),
-            CodeReviewTelemetryEvent::FindBarToggled { is_open } => {
-                Some(json!({ "is_open": is_open }))
-            }
-            CodeReviewTelemetryEvent::FindBarModeChanged {
+            Self::BaseChanged { mode } => Some(json!({ "mode": mode })),
+            Self::CalculateDiffMetadataFailed { error } => Some(json!({ "error": error })),
+            Self::LoadDiffFailed { error } => Some(json!({ "error": error })),
+            Self::FindBarToggled { is_open } => Some(json!({ "is_open": is_open })),
+            Self::FindBarModeChanged {
                 case_sensitive,
                 regex,
             } => Some(json!({
                 "case_sensitive": case_sensitive,
                 "regex": regex,
             })),
-            CodeReviewTelemetryEvent::FindNavigated { direction } => {
-                Some(json!({ "direction": direction }))
-            }
-            CodeReviewTelemetryEvent::CommentEditorOpened => None,
-            CodeReviewTelemetryEvent::CommentAdded => None,
-            CodeReviewTelemetryEvent::CommentEdited => None,
-            CodeReviewTelemetryEvent::CommentDeleted { is_imported } => {
-                Some(json!({ "is_imported": is_imported }))
-            }
-            CodeReviewTelemetryEvent::CommentListExpanded { comment_count } => {
+            Self::FindNavigated { direction } => Some(json!({ "direction": direction })),
+            Self::CommentEditorOpened => None,
+            Self::CommentAdded => None,
+            Self::CommentEdited => None,
+            Self::CommentDeleted { is_imported } => Some(json!({ "is_imported": is_imported })),
+            Self::CommentListExpanded { comment_count } => {
                 Some(json!({ "comment_count": comment_count }))
             }
-            CodeReviewTelemetryEvent::ReviewSubmitted {
+            Self::ReviewSubmitted {
                 comment_count,
                 file_count,
                 destination,
@@ -281,14 +273,14 @@ impl TelemetryEvent for CodeReviewTelemetryEvent {
                 "file_count": file_count,
                 "destination": destination,
             })),
-            CodeReviewTelemetryEvent::CommentListItemClicked => None,
-            CodeReviewTelemetryEvent::CommentRelocationFailed { fallback_count } => {
+            Self::CommentListItemClicked => None,
+            Self::CommentRelocationFailed { fallback_count } => {
                 Some(json!({ "fallback_count": fallback_count }))
             }
-            CodeReviewTelemetryEvent::CommentResolved { resolved_count } => {
+            Self::CommentResolved { resolved_count } => {
                 Some(json!({ "resolved_count": resolved_count }))
             }
-            CodeReviewTelemetryEvent::CommentsReceived {
+            Self::CommentsReceived {
                 raw_count,
                 converted_count,
                 thread_count,
@@ -297,7 +289,7 @@ impl TelemetryEvent for CodeReviewTelemetryEvent {
                 "converted_count": converted_count,
                 "thread_count": thread_count,
             })),
-            CodeReviewTelemetryEvent::CommentsAttached {
+            Self::CommentsAttached {
                 active_count,
                 outdated_count,
             } => Some(json!({

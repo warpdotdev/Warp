@@ -143,8 +143,8 @@ impl TerminationType {
         const ICON_SIZE: f32 = 16.;
 
         let icon_type = match self {
-            TerminationType::Normal => ui_components::icons::Icon::Info,
-            TerminationType::Premature { .. } | TerminationType::PtySpawnFailure { .. } => {
+            Self::Normal => ui_components::icons::Icon::Info,
+            Self::Premature { .. } | Self::PtySpawnFailure { .. } => {
                 ui_components::icons::Icon::Warning
             }
         };
@@ -165,9 +165,9 @@ impl TerminationType {
 
     fn text(&self, appearance: &Appearance) -> Box<dyn Element> {
         let text = match self {
-            TerminationType::Normal => "Shell process exited",
-            TerminationType::PtySpawnFailure { .. } => "Shell process could not start!",
-            TerminationType::Premature { .. } => "Shell process exited prematurely!",
+            Self::Normal => "Shell process exited",
+            Self::PtySpawnFailure { .. } => "Shell process could not start!",
+            Self::Premature { .. } => "Shell process exited prematurely!",
         };
 
         Text::new(text, appearance.ui_font_family(), 14.)
@@ -178,11 +178,9 @@ impl TerminationType {
 
     fn subtext(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
         let text: Cow<str> = match self {
-            TerminationType::Normal => return None,
-            TerminationType::PtySpawnFailure { pty_spawn_error } => {
-                format!("{pty_spawn_error:#}").into()
-            }
-            TerminationType::Premature { shell_detail, .. } => format!(
+            Self::Normal => return None,
+            Self::PtySpawnFailure { pty_spawn_error } => format!("{pty_spawn_error:#}").into(),
+            Self::Premature { shell_detail, .. } => format!(
                 "Something went wrong while starting {shell_detail} and Warpifying it, causing the \
                 process to terminate. Warpify script output is displayed here, which may point at \
                 a cause."
@@ -204,8 +202,8 @@ impl TerminationType {
         handles: &mut Vec<MouseStateHandle>,
     ) -> Vec<Box<dyn Element>> {
         match self {
-            TerminationType::Normal => vec![],
-            TerminationType::Premature { .. } => {
+            Self::Normal => vec![],
+            Self::Premature { .. } => {
                 let ui_builder = inverted_color_ui_builder(appearance);
 
                 handles.resize_with(2, MouseStateHandle::default);
@@ -232,7 +230,7 @@ impl TerminationType {
                         .finish(),
                 ]
             }
-            TerminationType::PtySpawnFailure { pty_spawn_error } => {
+            Self::PtySpawnFailure { pty_spawn_error } => {
                 let ui_builder = inverted_color_ui_builder(appearance);
 
                 handles.resize_with(3, MouseStateHandle::default);

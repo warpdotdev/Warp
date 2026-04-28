@@ -102,7 +102,7 @@ pub struct KeyBindingModifyingState {
 }
 
 impl KeyBindingModifyingState {
-    pub fn new(state: Option<Keystroke>) -> KeyBindingModifyingState {
+    pub fn new(state: Option<Keystroke>) -> Self {
         Self {
             current_binding: state.clone(),
             unsaved_binding: state,
@@ -154,7 +154,7 @@ impl FromIterator<Option<Keystroke>> for ConflictMap {
             *counter += 1;
         }
 
-        ConflictMap { map }
+        Self { map }
     }
 }
 
@@ -498,7 +498,7 @@ impl KeybindingRow {
 }
 
 impl KeybindingsView {
-    pub fn new(ctx: &mut ViewContext<KeybindingsView>) -> Self {
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let search_editor = {
             let appearance = Appearance::as_ref(ctx);
             let options = SingleLineEditorOptions {
@@ -842,7 +842,7 @@ impl SettingsPageMeta for KeybindingsView {
 
 impl From<ViewHandle<KeybindingsView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<KeybindingsView>) -> Self {
-        SettingsPageViewHandle::Keybindings(view_handle)
+        Self::Keybindings(view_handle)
     }
 }
 

@@ -70,10 +70,10 @@ pub enum CTAButtonAction<S: Slide> {
 impl<S: Slide> Clone for CTAButtonAction<S> {
     fn clone(&self) -> Self {
         match self {
-            CTAButtonAction::NextSlide(s) => CTAButtonAction::NextSlide(*s),
-            CTAButtonAction::Close => CTAButtonAction::Close,
-            CTAButtonAction::OpenUrl(url) => CTAButtonAction::OpenUrl(url.clone()),
-            CTAButtonAction::Custom(f) => CTAButtonAction::Custom(f.clone()),
+            Self::NextSlide(s) => Self::NextSlide(*s),
+            Self::Close => Self::Close,
+            Self::OpenUrl(url) => Self::OpenUrl(url.clone()),
+            Self::Custom(f) => Self::Custom(f.clone()),
         }
     }
 }

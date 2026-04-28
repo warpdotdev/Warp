@@ -546,10 +546,7 @@ impl BufferBlockStyle {
     /// Whether or not punctuation that may be misinterpreted as Markdown formatting should be
     /// escaped. This is true for _most_ block types, but some do not allow escapes.
     fn escape_markdown_punctuation(&self) -> bool {
-        !matches!(
-            self,
-            BufferBlockStyle::CodeBlock { .. } | BufferBlockStyle::Table { .. }
-        )
+        !matches!(self, Self::CodeBlock { .. } | Self::Table { .. })
     }
 }
 

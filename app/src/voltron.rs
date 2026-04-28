@@ -90,9 +90,9 @@ pub enum VoltronItem {
 impl VoltronItem {
     pub fn as_str(&self) -> &'static str {
         match self {
-            VoltronItem::AiCommands => "A.I. Command Search",
-            VoltronItem::Workflows => "Workflows",
-            VoltronItem::History => "History Search",
+            Self::AiCommands => "A.I. Command Search",
+            Self::Workflows => "Workflows",
+            Self::History => "History Search",
         }
     }
 }
@@ -158,7 +158,7 @@ pub struct Voltron {
 impl VoltronFeatureViewHandle {
     fn custom_action(&self) -> Option<CustomAction> {
         match self {
-            VoltronFeatureViewHandle::Workflows(_) => CategoriesView::custom_action(),
+            Self::Workflows(_) => CategoriesView::custom_action(),
         }
     }
 

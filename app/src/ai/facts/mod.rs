@@ -42,7 +42,7 @@ pub struct AIMemory {
 
 impl AIFact {
     pub fn is_memory(&self) -> bool {
-        matches!(self, AIFact::Memory { .. })
+        matches!(self, Self::Memory { .. })
     }
 }
 
@@ -74,7 +74,7 @@ impl StringModel for AIFact {
 
     fn display_name(&self) -> String {
         match self {
-            AIFact::Memory(memory) => memory.content.clone(),
+            Self::Memory(memory) => memory.content.clone(),
         }
     }
 

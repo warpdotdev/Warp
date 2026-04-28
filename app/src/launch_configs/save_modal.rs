@@ -184,12 +184,9 @@ impl LaunchConfigSaveModal {
         });
 
         let snapshot_source = ctx.add_model(|_| SnapshotTrigger::None);
-        ctx.observe(
-            &snapshot_source,
-            LaunchConfigSaveModal::on_snapshot_source_change,
-        );
+        ctx.observe(&snapshot_source, Self::on_snapshot_source_change);
 
-        LaunchConfigSaveModal {
+        Self {
             editor,
             mouse_states: Default::default(),
             current_app_state: Default::default(),

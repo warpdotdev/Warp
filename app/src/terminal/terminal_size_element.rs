@@ -19,7 +19,7 @@ pub struct TerminalSizeElement {
 
 impl TerminalSizeElement {
     pub fn new(resize_tx: Sender<Vector2F>, child: Box<dyn Element>) -> Self {
-        TerminalSizeElement { child, resize_tx }
+        Self { child, resize_tx }
     }
 }
 

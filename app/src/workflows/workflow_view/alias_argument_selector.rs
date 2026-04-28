@@ -94,7 +94,7 @@ impl AliasArgumentSelector {
             d
         });
 
-        AliasArgumentSelector {
+        Self {
             string_argument_editor: editor,
             dropdown,
             argument_type: AliasArgumentType::Text,

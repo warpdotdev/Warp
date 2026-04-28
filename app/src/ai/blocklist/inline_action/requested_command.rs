@@ -174,11 +174,11 @@ pub enum RequestedActionViewType {
 
 impl RequestedActionViewType {
     fn is_requested_command(&self) -> bool {
-        matches!(self, RequestedActionViewType::Command)
+        matches!(self, Self::Command)
     }
 
     fn is_mcp_tool(&self) -> bool {
-        matches!(self, RequestedActionViewType::McpTool)
+        matches!(self, Self::McpTool)
     }
 }
 

@@ -36,7 +36,7 @@ impl EnvVarCollectionManager {
             Self::handle_update_manager_event,
         );
 
-        EnvVarCollectionManager {
+        Self {
             panes_by_hashed_id: HashMap::new(),
         }
     }

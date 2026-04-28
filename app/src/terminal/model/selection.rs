@@ -33,8 +33,8 @@ struct Anchor {
 }
 
 impl Anchor {
-    fn new(point: Point, side: Side) -> Anchor {
-        Anchor { point, side }
+    fn new(point: Point, side: Side) -> Self {
+        Self { point, side }
     }
 }
 
@@ -62,7 +62,7 @@ pub enum ExpandedSelectionRange<T: Debug> {
 impl<T: Debug> ExpandedSelectionRange<T> {
     /// Create a new regular renderable selection.
     pub fn regular(start: T, end: T, reversed: bool) -> Self {
-        ExpandedSelectionRange::Regular {
+        Self::Regular {
             start,
             end,
             reversed,
@@ -71,7 +71,7 @@ impl<T: Debug> ExpandedSelectionRange<T> {
 
     /// Create a new rect renderable selection.
     pub fn rect(rows: Vec1<(T, T)>) -> Self {
-        ExpandedSelectionRange::Rect { rows }
+        Self::Rect { rows }
     }
 
     /// The head of the selection (where the user first clicked before dragging).
@@ -269,7 +269,7 @@ impl ScrollDelta {
 
 impl Default for ScrollDelta {
     fn default() -> Self {
-        ScrollDelta::zero()
+        Self::zero()
     }
 }
 
@@ -300,7 +300,7 @@ pub struct Selection {
 }
 
 impl Selection {
-    pub fn new(ty: SelectionType, location: Point, side: Side) -> Selection {
+    pub fn new(ty: SelectionType, location: Point, side: Side) -> Self {
         Self {
             region: Range {
                 start: Anchor::new(location, side),
@@ -334,7 +334,7 @@ impl Selection {
         range: &Range<VisibleRow>,
         delta: ScrollDelta,
         end_column: usize,
-    ) -> Option<Selection> {
+    ) -> Option<Self> {
         let range_bottom = range.end.0;
         let range_top = range.start.0;
 

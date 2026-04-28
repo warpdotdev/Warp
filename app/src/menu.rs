@@ -431,7 +431,7 @@ impl<A: Action + Clone> std::fmt::Debug for MenuItemFields<A> {
 
 impl<A: Action + Clone> MenuItemFields<A> {
     pub fn new<T: Into<String>>(label: T) -> Self {
-        MenuItemFields {
+        Self {
             element: MenuItemLabel::Text(label.into()),
             timestamp: None,
             on_select_action: None,
@@ -458,7 +458,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
     }
 
     pub fn new_submenu<T: Into<String>>(label: T) -> Self {
-        MenuItemFields {
+        Self {
             element: MenuItemLabel::Text(label.into()),
             timestamp: None,
             on_select_action: None,
@@ -485,7 +485,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
     }
 
     pub fn new_with_label<T: Into<String>>(text: T, label: T) -> Self {
-        MenuItemFields {
+        Self {
             element: MenuItemLabel::LabeledText {
                 primary_text: text.into(),
                 secondary_text: label.into(),
@@ -518,7 +518,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
     /// This is useful for items that need both a title and description/subtitle,
     /// such as slash commands with their descriptions.
     pub fn new_with_stacked_label<T: Into<String>>(title: T, subtitle: T) -> Self {
-        MenuItemFields {
+        Self {
             element: MenuItemLabel::StackedText {
                 primary_text: title.into(),
                 secondary_text: subtitle.into(),
@@ -548,7 +548,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
     }
 
     pub fn new_with_icon(icon_path: &'static str, icon_color: Fill, icon_label: String) -> Self {
-        MenuItemFields {
+        Self {
             element: MenuItemLabel::Icon {
                 path: icon_path,
                 color: icon_color,
@@ -579,7 +579,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
     }
 
     pub fn new_multiline<T: Into<String>>(label: T, max_lines: usize) -> Self {
-        MenuItemFields {
+        Self {
             element: MenuItemLabel::MultilineText {
                 label: label.into(),
                 max_lines,
@@ -609,7 +609,7 @@ impl<A: Action + Clone> MenuItemFields<A> {
     }
 
     pub fn new_with_custom_label(builder: CustomMenuItemLabelFn, label: Option<String>) -> Self {
-        MenuItemFields {
+        Self {
             element: MenuItemLabel::Custom { builder, label },
             timestamp: None,
             on_select_action: None,
@@ -1268,9 +1268,9 @@ pub enum MenuItem<A: Action + Clone = ()> {
 
 impl<A: Action + Clone> MenuItem<A> {
     #[deprecated(note = "Submenus are not ready for use yet.")]
-    pub fn submenu<T: Into<String>>(label: T, items: Vec<MenuItem<A>>) -> Self {
+    pub fn submenu<T: Into<String>>(label: T, items: Vec<Self>) -> Self {
         let menu = SubMenu::new(items);
-        MenuItem::Submenu {
+        Self::Submenu {
             fields: MenuItemFields::new_submenu(label),
             menu,
         }
@@ -1278,20 +1278,20 @@ impl<A: Action + Clone> MenuItem<A> {
 
     fn items_len(&self) -> Option<usize> {
         match self {
-            MenuItem::Item(_) => Some(1),
-            MenuItem::Separator => None,
-            MenuItem::ItemsRow { items } => Some(items.len()),
-            MenuItem::Submenu { menu, .. } => {
+            Self::Item(_) => Some(1),
+            Self::Separator => None,
+            Self::ItemsRow { items } => Some(items.len()),
+            Self::Submenu { menu, .. } => {
                 // This includes the label as well.
                 Some(menu.items_len() + 1)
             }
-            MenuItem::Header { clickable, .. } => Some(if *clickable { 1 } else { 0 }),
+            Self::Header { clickable, .. } => Some(if *clickable { 1 } else { 0 }),
         }
     }
 
     pub fn item_on_select_action(&self) -> Option<&A> {
         match self {
-            MenuItem::Item(fields) => fields.on_select_action.as_ref(),
+            Self::Item(fields) => fields.on_select_action.as_ref(),
             _ => None,
         }
     }
@@ -1299,17 +1299,17 @@ impl<A: Action + Clone> MenuItem<A> {
     pub fn selectable(&self) -> bool {
         match self {
             // Whether it's selectable depends only on whether the item is disabled or not.
-            MenuItem::Item(fields) => !fields.disabled && !fields.no_interaction_on_hover,
+            Self::Item(fields) => !fields.disabled && !fields.no_interaction_on_hover,
             // For items row, right now, we assume that it's either entire row that's selectable or
             // not (so for simplicity, either all items are selectable or none of them).
             // TODO be smarter about it
-            MenuItem::ItemsRow { items } => items
+            Self::ItemsRow { items } => items
                 .iter()
                 .any(|i| !i.disabled && !i.no_interaction_on_hover),
             // Separator is simply a non-selectable option in the menu list.
-            MenuItem::Separator => false,
-            MenuItem::Submenu { menu, .. } => !menu.items.is_empty(),
-            MenuItem::Header { clickable, .. } => *clickable,
+            Self::Separator => false,
+            Self::Submenu { menu, .. } => !menu.items.is_empty(),
+            Self::Header { clickable, .. } => *clickable,
         }
     }
 
@@ -1330,7 +1330,7 @@ impl<A: Action + Clone> MenuItem<A> {
         app: &AppContext,
     ) -> Box<dyn Element> {
         match self {
-            MenuItem::Item(fields) => fields.render(
+            Self::Item(fields) => fields.render(
                 menu_background_color,
                 depth,
                 row_index,
@@ -1346,7 +1346,7 @@ impl<A: Action + Clone> MenuItem<A> {
                 menu_width,
                 app,
             ),
-            MenuItem::ItemsRow { items } => {
+            Self::ItemsRow { items } => {
                 let horizontal_padding = ((menu_width - (MENU_ITEM_HORIZONTAL_PADDING * 2.))
                     / (items.len() as f32)
                     / 5.)
@@ -1380,7 +1380,7 @@ impl<A: Action + Clone> MenuItem<A> {
                     .with_padding_right(MENU_ITEM_HORIZONTAL_PADDING)
                     .finish()
             }
-            MenuItem::Separator => Container::new(
+            Self::Separator => Container::new(
                 ConstrainedBox::new(
                     Rect::new()
                         .with_background(appearance.theme().disabled_ui_text_color())
@@ -1394,7 +1394,7 @@ impl<A: Action + Clone> MenuItem<A> {
             .with_padding_left(MENU_ITEM_HORIZONTAL_PADDING)
             .with_padding_right(MENU_ITEM_HORIZONTAL_PADDING)
             .finish(),
-            MenuItem::Submenu { fields, .. } => {
+            Self::Submenu { fields, .. } => {
                 fields.render(
                     menu_background_color,
                     depth,
@@ -1412,7 +1412,7 @@ impl<A: Action + Clone> MenuItem<A> {
                     app,
                 )
             }
-            MenuItem::Header {
+            Self::Header {
                 fields,
                 clickable,
                 right_side_fields,
@@ -1750,7 +1750,7 @@ impl<A: Action + Clone> SubMenu<A> {
         }
     }
 
-    fn selected_submenu_mut(&mut self) -> Option<&mut SubMenu<A>> {
+    fn selected_submenu_mut(&mut self) -> Option<&mut Self> {
         let selected_row_index = self.selected_row_index?;
         match self.items.get_mut(selected_row_index)? {
             MenuItem::Submenu { menu, .. } => Some(menu),

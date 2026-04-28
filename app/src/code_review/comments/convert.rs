@@ -17,10 +17,10 @@ pub enum ConversionError {
 impl std::fmt::Display for ConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConversionError::InvalidTimestamp(ts) => {
+            Self::InvalidTimestamp(ts) => {
                 write!(f, "Invalid timestamp: {}", ts)
             }
-            ConversionError::InvalidFilePath(path) => {
+            Self::InvalidFilePath(path) => {
                 write!(f, "Pending imported review comment targets must use repo-relative paths, invalid path: {}", path.display())
             }
         }

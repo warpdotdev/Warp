@@ -105,9 +105,9 @@ settings::macros::implement_setting_for_enum!(
 impl SshExtensionInstallMode {
     pub fn display_name(&self) -> &'static str {
         match self {
-            SshExtensionInstallMode::AlwaysAsk => "Always ask",
-            SshExtensionInstallMode::AlwaysInstall => "Always install",
-            SshExtensionInstallMode::NeverInstall => "Never install",
+            Self::AlwaysAsk => "Always ask",
+            Self::AlwaysInstall => "Always install",
+            Self::NeverInstall => "Never install",
         }
     }
 }

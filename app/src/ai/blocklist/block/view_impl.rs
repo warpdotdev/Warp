@@ -1320,29 +1320,29 @@ impl AIAgentInput {
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
         match self {
-            AIAgentInput::CodeReview {
+            Self::CodeReview {
                 review_comments, ..
             } => Some(address_comment_chips(
                 &review_comments.review_comments(),
                 props,
                 app,
             )),
-            AIAgentInput::UserQuery { .. }
-            | AIAgentInput::AutoCodeDiffQuery { .. }
-            | AIAgentInput::ResumeConversation { .. }
-            | AIAgentInput::InitProjectRules { .. }
-            | AIAgentInput::CreateEnvironment { .. }
-            | AIAgentInput::TriggerPassiveSuggestion { .. }
-            | AIAgentInput::CreateNewProject { .. }
-            | AIAgentInput::CloneRepository { .. }
-            | AIAgentInput::FetchReviewComments { .. }
-            | AIAgentInput::SummarizeConversation { .. }
-            | AIAgentInput::InvokeSkill { .. }
-            | AIAgentInput::StartFromAmbientRunPrompt { .. }
-            | AIAgentInput::ActionResult { .. }
-            | AIAgentInput::MessagesReceivedFromAgents { .. }
-            | AIAgentInput::EventsFromAgents { .. }
-            | AIAgentInput::PassiveSuggestionResult { .. } => None,
+            Self::UserQuery { .. }
+            | Self::AutoCodeDiffQuery { .. }
+            | Self::ResumeConversation { .. }
+            | Self::InitProjectRules { .. }
+            | Self::CreateEnvironment { .. }
+            | Self::TriggerPassiveSuggestion { .. }
+            | Self::CreateNewProject { .. }
+            | Self::CloneRepository { .. }
+            | Self::FetchReviewComments { .. }
+            | Self::SummarizeConversation { .. }
+            | Self::InvokeSkill { .. }
+            | Self::StartFromAmbientRunPrompt { .. }
+            | Self::ActionResult { .. }
+            | Self::MessagesReceivedFromAgents { .. }
+            | Self::EventsFromAgents { .. }
+            | Self::PassiveSuggestionResult { .. } => None,
         }
     }
 }

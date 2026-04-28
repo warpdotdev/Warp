@@ -49,15 +49,15 @@ pub enum UniquePer {
 impl std::fmt::Display for GenericStringObjectFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            GenericStringObjectFormat::JsonEnvVarCollection => "JsonEnvVarCollection",
-            GenericStringObjectFormat::JsonPreference => "JsonPreference",
-            GenericStringObjectFormat::JsonWorkflowEnum => "JsonWorkflowEnum",
-            GenericStringObjectFormat::JsonAIFact => "JsonAIFact",
-            GenericStringObjectFormat::JsonMCPServer => "JsonMCPServer",
-            GenericStringObjectFormat::JsonAIExecutionProfile => "JsonAIExecutionProfile",
-            GenericStringObjectFormat::JsonTemplatableMCPServer => "JsonTemplatableMCPServer",
-            GenericStringObjectFormat::JsonCloudEnvironment => "JsonCloudEnvironment",
-            GenericStringObjectFormat::JsonScheduledAmbientAgent => "JsonScheduledAmbientAgent",
+            Self::JsonEnvVarCollection => "JsonEnvVarCollection",
+            Self::JsonPreference => "JsonPreference",
+            Self::JsonWorkflowEnum => "JsonWorkflowEnum",
+            Self::JsonAIFact => "JsonAIFact",
+            Self::JsonMCPServer => "JsonMCPServer",
+            Self::JsonAIExecutionProfile => "JsonAIExecutionProfile",
+            Self::JsonTemplatableMCPServer => "JsonTemplatableMCPServer",
+            Self::JsonCloudEnvironment => "JsonCloudEnvironment",
+            Self::JsonScheduledAmbientAgent => "JsonScheduledAmbientAgent",
         };
         write!(f, "{s}")
     }

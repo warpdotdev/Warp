@@ -115,10 +115,10 @@ impl TryFrom<&str> for GitFileStatus {
 
     fn try_from(status_code: &str) -> Result<Self> {
         match status_code {
-            ".M" | "M." | "MM" => Ok(GitFileStatus::Modified),
-            ".A" | "A." | "AM" => Ok(GitFileStatus::New),
-            ".D" | "D." | "AD" => Ok(GitFileStatus::Deleted),
-            _ => Ok(GitFileStatus::Modified), // Default fallback
+            ".M" | "M." | "MM" => Ok(Self::Modified),
+            ".A" | "A." | "AM" => Ok(Self::New),
+            ".D" | "D." | "AD" => Ok(Self::Deleted),
+            _ => Ok(Self::Modified), // Default fallback
         }
     }
 }
@@ -279,9 +279,9 @@ impl DiffMode {
     /// otherwise returns `OtherBranch(branch)`.
     pub fn from_branch(branch: &str, main_branch_name: Option<&str>) -> Self {
         if main_branch_name == Some(branch) {
-            DiffMode::MainBranch
+            Self::MainBranch
         } else {
-            DiffMode::OtherBranch(branch.to_string())
+            Self::OtherBranch(branch.to_string())
         }
     }
 }

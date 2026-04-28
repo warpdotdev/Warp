@@ -190,13 +190,13 @@ impl<F: LineFormat> MultilineStr<F> {
         let endings = evaluate_line_endings(s);
         match endings {
             // If there are no line endings, then they trivially match.
-            TextLineEndings::SingleLine => Ok(MultilineStr::new_unchecked(s)),
+            TextLineEndings::SingleLine => Ok(Self::new_unchecked(s)),
             TextLineEndings::MultiLine {
                 primary_ending,
                 mixed_endings,
             } => {
                 if primary_ending == F::ending() && !mixed_endings {
-                    Ok(MultilineStr::new_unchecked(s))
+                    Ok(Self::new_unchecked(s))
                 } else {
                     Err(IncorrectLineEndingError {
                         expected: F::ending(),
@@ -215,13 +215,13 @@ impl<F: LineFormat> MultilineStr<F> {
         let s = s.as_ref();
         let endings = evaluate_line_endings(s);
         match endings {
-            TextLineEndings::SingleLine => Cow::Borrowed(MultilineStr::new_unchecked(s)),
+            TextLineEndings::SingleLine => Cow::Borrowed(Self::new_unchecked(s)),
             TextLineEndings::MultiLine {
                 primary_ending,
                 mixed_endings,
             } => {
                 if primary_ending == F::ending() && !mixed_endings {
-                    Cow::Borrowed(MultilineStr::new_unchecked(s))
+                    Cow::Borrowed(Self::new_unchecked(s))
                 } else {
                     Cow::Owned(MultilineString::<F>::apply(s))
                 }
@@ -289,7 +289,7 @@ impl<F: LineFormat> TryFrom<AnyMultilineString> for MultilineString<F> {
     /// endings.
     fn try_from(value: AnyMultilineString) -> Result<Self, Self::Error> {
         if value.line_ending == F::ending() {
-            Ok(MultilineString::new_unchecked(value.inner))
+            Ok(Self::new_unchecked(value.inner))
         } else {
             Err(IncorrectLineEndingError {
                 expected: F::ending(),
@@ -486,8 +486,8 @@ impl TextLineEndings {
     /// Whether or not the string contained a mix of line endings.
     fn is_mixed(&self) -> bool {
         match self {
-            TextLineEndings::SingleLine => false,
-            TextLineEndings::MultiLine { mixed_endings, .. } => *mixed_endings,
+            Self::SingleLine => false,
+            Self::MultiLine { mixed_endings, .. } => *mixed_endings,
         }
     }
 
@@ -495,11 +495,11 @@ impl TextLineEndings {
     #[allow(clippy::disallowed_methods)]
     fn primary_ending(&self, platform: Option<&SessionPlatform>) -> LineEnding {
         match self {
-            TextLineEndings::SingleLine => platform
+            Self::SingleLine => platform
                 .map_or_else(LineEnding::from_current_platform, |platform| {
                     platform.default_line_ending()
                 }),
-            TextLineEndings::MultiLine { primary_ending, .. } => *primary_ending,
+            Self::MultiLine { primary_ending, .. } => *primary_ending,
         }
     }
 }

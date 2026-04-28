@@ -192,7 +192,7 @@ impl AuthViewBody {
             ctx.notify();
         });
 
-        AuthViewBody {
+        Self {
             variant,
             mouse_state_handles: Default::default(),
             privacy_settings_handles: Default::default(),

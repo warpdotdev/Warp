@@ -55,19 +55,19 @@ impl LinkTarget {
     /// A secondary action to show in the tooltip for this link.
     pub fn secondary_action(&self) -> Option<SecondaryAction> {
         match self {
-            LinkTarget::LocalDirectory { .. } => Some(SecondaryAction {
+            Self::LocalDirectory { .. } => Some(SecondaryAction {
                 label: "New session".into(),
                 tooltip: Some("Open a new terminal session in this directory".into()),
                 accessibility_content: "Open in terminal session".into(),
             }),
-            LinkTarget::LocalFile {
+            Self::LocalFile {
                 is_markdown: true, ..
             } => Some(SecondaryAction {
                 label: "Open in editor".into(),
                 tooltip: None,
                 accessibility_content: "Edit Markdown file".into(),
             }),
-            LinkTarget::Url(_) | LinkTarget::LocalFile { .. } => None,
+            Self::Url(_) | Self::LocalFile { .. } => None,
         }
     }
 }
@@ -105,9 +105,9 @@ impl PartialEq for LinkTarget {
 impl fmt::Display for LinkTarget {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            LinkTarget::Url(url) => url.fmt(f),
-            LinkTarget::LocalFile { path, .. } => path.display().fmt(f),
-            LinkTarget::LocalDirectory { path, .. } => path.display().fmt(f),
+            Self::Url(url) => url.fmt(f),
+            Self::LocalFile { path, .. } => path.display().fmt(f),
+            Self::LocalDirectory { path, .. } => path.display().fmt(f),
         }
     }
 }
@@ -385,9 +385,9 @@ pub enum ResolveError {
 impl From<std::io::Error> for ResolveError {
     fn from(err: std::io::Error) -> Self {
         if err.kind() == std::io::ErrorKind::NotFound {
-            ResolveError::FileNotFound
+            Self::FileNotFound
         } else {
-            ResolveError::Unknown
+            Self::Unknown
         }
     }
 }
@@ -395,9 +395,9 @@ impl From<std::io::Error> for ResolveError {
 impl fmt::Display for ResolveError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ResolveError::FileNotFound => f.write_str("File not found"),
-            ResolveError::MissingContext => f.write_str("No base directory"),
-            ResolveError::Unknown => f.write_str("Broken file link"),
+            Self::FileNotFound => f.write_str("File not found"),
+            Self::MissingContext => f.write_str("No base directory"),
+            Self::Unknown => f.write_str("Broken file link"),
         }
     }
 }
@@ -449,17 +449,15 @@ pub enum SessionSource {
 impl SessionSource {
     fn session(&self, ctx: &AppContext) -> Option<Arc<Session>> {
         match self {
-            SessionSource::Target { session, .. } => Some(session.clone()),
-            SessionSource::Active(window_id) => ActiveSession::as_ref(ctx).session(*window_id),
+            Self::Target { session, .. } => Some(session.clone()),
+            Self::Active(window_id) => ActiveSession::as_ref(ctx).session(*window_id),
         }
     }
 
     fn base_directory<'a>(&'a self, ctx: &'a AppContext) -> Option<&'a Path> {
         match self {
-            SessionSource::Target { base_directory, .. } => Some(base_directory.as_path()),
-            SessionSource::Active(window_id) => {
-                ActiveSession::as_ref(ctx).path_if_local(*window_id)
-            }
+            Self::Target { base_directory, .. } => Some(base_directory.as_path()),
+            Self::Active(window_id) => ActiveSession::as_ref(ctx).path_if_local(*window_id),
         }
     }
 }

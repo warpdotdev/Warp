@@ -151,7 +151,7 @@ impl NotebookCommand {
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         let current_block_style =
-            NotebookCommand::block_type_to_code_type(content.as_ref(ctx).block_type_at_point(end));
+            Self::block_type_to_code_type(content.as_ref(ctx).block_type_at_point(end));
         let (start, end) = selection_model.update(ctx, |selection_model, ctx| {
             (
                 selection_model.anchor(start, ctx),
@@ -263,9 +263,7 @@ impl NotebookCommand {
     // Returns the CodeBlockType of this command
     fn code_block_type(&self, ctx: &AppContext) -> CodeBlockType {
         if let Some(offset) = self.end_offset(ctx) {
-            NotebookCommand::block_type_to_code_type(
-                self.content.as_ref(ctx).block_type_at_point(offset),
-            )
+            Self::block_type_to_code_type(self.content.as_ref(ctx).block_type_at_point(offset))
         } else {
             Default::default()
         }

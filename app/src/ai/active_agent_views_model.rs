@@ -47,8 +47,8 @@ pub enum ConversationOrTaskId {
 impl ConversationOrTaskId {
     pub fn conversation_id(&self) -> Option<AIConversationId> {
         match self {
-            ConversationOrTaskId::ConversationId(conversation_id) => Some(*conversation_id),
-            ConversationOrTaskId::TaskId(..) => None,
+            Self::ConversationId(conversation_id) => Some(*conversation_id),
+            Self::TaskId(..) => None,
         }
     }
 }

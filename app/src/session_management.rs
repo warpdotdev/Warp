@@ -105,7 +105,7 @@ impl SessionNavigationData {
         window_id: WindowId,
         shared_session_status: SharedSessionStatus,
     ) -> Self {
-        SessionNavigationData {
+        Self {
             prompt,
             prompt_elements,
             command_context,
@@ -150,7 +150,7 @@ impl SessionNavigationData {
     }
 
     /// Fetches all sessions currently open in the app.
-    pub fn all_sessions(app: &AppContext) -> impl Iterator<Item = SessionNavigationData> + '_ {
+    pub fn all_sessions(app: &AppContext) -> impl Iterator<Item = Self> + '_ {
         app.window_ids()
             .filter_map(move |window_id| {
                 let workspaces = app.views_of_type::<Workspace>(window_id)?;

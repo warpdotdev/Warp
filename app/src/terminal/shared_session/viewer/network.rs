@@ -166,7 +166,7 @@ impl Network {
         let heartbeat = ctx.add_model(|_| Heartbeat::default());
         ctx.subscribe_to_model(&heartbeat, Self::handle_heartbeat_event);
 
-        let model = Network {
+        let model = Self {
             heartbeat,
             session_id,
             event_loop: None,
@@ -1007,16 +1007,14 @@ impl FailedToJoinReason {
     /// This error message will be displayed to the user.
     pub fn user_facing_error_message(&self) -> &str {
         match self {
-            FailedToJoinReason::Unknown => "Failed to join shared session.",
-            FailedToJoinReason::FailedToConnectToServer => {
-                "Failed to connect. Please try again later."
-            }
-            FailedToJoinReason::SessionNotFound => "Shared session not found.",
-            FailedToJoinReason::WrongPassword => "Invalid session sharing link.",
-            FailedToJoinReason::MaxNumberOfParticipantsReached => {
+            Self::Unknown => "Failed to join shared session.",
+            Self::FailedToConnectToServer => "Failed to connect. Please try again later.",
+            Self::SessionNotFound => "Shared session not found.",
+            Self::WrongPassword => "Invalid session sharing link.",
+            Self::MaxNumberOfParticipantsReached => {
                 "The maximum number of participants for this shared session has been reached."
             }
-            FailedToJoinReason::SessionNotAccessible => "You don't have access to this link.",
+            Self::SessionNotAccessible => "You don't have access to this link.",
         }
     }
 }

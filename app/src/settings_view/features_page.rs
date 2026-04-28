@@ -1926,7 +1926,7 @@ impl View for FeaturesPageView {
 impl FeaturesPageView {
     pub fn new(
         global_resource_handles: GlobalResourceHandles,
-        ctx: &mut ViewContext<FeaturesPageView>,
+        ctx: &mut ViewContext<Self>,
     ) -> Self {
         ctx.observe(
             &DisplayCount::handle(ctx),
@@ -2358,7 +2358,7 @@ impl FeaturesPageView {
             }
         });
 
-        let mut features_page_view = FeaturesPageView {
+        let mut features_page_view = Self {
             page: Self::build_page(ctx),
             global_resource_handles,
             button_mouse_states: Default::default(),
@@ -4073,7 +4073,7 @@ impl SettingsPageMeta for FeaturesPageView {
 
 impl From<ViewHandle<FeaturesPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<FeaturesPageView>) -> Self {
-        SettingsPageViewHandle::Features(view_handle)
+        Self::Features(view_handle)
     }
 }
 

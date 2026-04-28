@@ -92,7 +92,7 @@ pub(crate) struct Anchors {
 }
 
 impl Anchors {
-    pub fn new() -> Anchors {
+    pub fn new() -> Self {
         Self {
             next_id: 0,
             anchors: HashMap::new(),

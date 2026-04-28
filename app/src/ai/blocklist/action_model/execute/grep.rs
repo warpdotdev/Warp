@@ -102,17 +102,17 @@ impl GrepError {
     /// This may contain UGC.
     pub fn error_for_conversation(&self) -> String {
         match &self {
-            GrepError {
+            Self {
                 error: GrepErrorType::NonZeroExitCode,
                 output: Some(output),
                 ..
             } => format!("{NON_ZERO_EXIT_CODE_ERROR}, output:\n{output}"),
-            GrepError {
+            Self {
                 error: GrepErrorType::NonZeroExitCode,
                 output: None,
                 ..
             } => NON_ZERO_EXIT_CODE_ERROR.to_string(),
-            GrepError {
+            Self {
                 error: GrepErrorType::Other(error),
                 ..
             } => error.clone(),

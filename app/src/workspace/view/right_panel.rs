@@ -138,7 +138,7 @@ struct CodeReviewSessionEnv {
 
 impl CodeReviewState {
     pub fn new(ctx: &mut ViewContext<RightPanelView>) -> Self {
-        CodeReviewState {
+        Self {
             dropdown: ctx.add_typed_action_view(|ctx| {
                 let appearance = Appearance::as_ref(ctx);
                 let font_color = appearance

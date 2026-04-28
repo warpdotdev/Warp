@@ -45,7 +45,7 @@ impl Keycode {
 
     // There could have multiple keycodes mapping to one virtual key. Return an iterator
     // to all possible values of keycode here.
-    pub fn keycodes_from_key_name(key_name: &str) -> impl Iterator<Item = Keycode> {
+    pub fn keycodes_from_key_name(key_name: &str) -> impl Iterator<Item = Self> {
         unsafe {
             let keycodes: id = charToKeyCodes(make_nsstring(key_name));
             let keycodes_length = keycodes.count();

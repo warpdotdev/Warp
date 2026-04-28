@@ -37,7 +37,7 @@ pub struct ImportedConfigModel {
 
 impl ImportedConfigModel {
     pub fn new(_ctx: &mut ModelContext<Self>) -> Self {
-        ImportedConfigModel {
+        Self {
             parsed_terminals: Default::default(),
             started: false,
         }

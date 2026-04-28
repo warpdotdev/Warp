@@ -288,7 +288,7 @@ pub enum NotebookEvent {
 
 impl From<PaneEvent> for NotebookEvent {
     fn from(event: PaneEvent) -> Self {
-        NotebookEvent::Pane(event)
+        Self::Pane(event)
     }
 }
 
@@ -321,7 +321,7 @@ pub enum NotebookAction {
 
 impl From<ContextMenuAction> for NotebookAction {
     fn from(action: ContextMenuAction) -> Self {
-        NotebookAction::ContextMenu(action)
+        Self::ContextMenu(action)
     }
 }
 

@@ -56,7 +56,7 @@ enum MoveDirection {
 impl MoveDirection {
     fn move_in_direction(&self, current_index: usize, len: usize) -> usize {
         match self {
-            MoveDirection::Up => {
+            Self::Up => {
                 // wrap when we hit the end of the list
                 if current_index == 0 {
                     len.saturating_sub(1)
@@ -64,7 +64,7 @@ impl MoveDirection {
                     current_index.saturating_sub(1)
                 }
             }
-            MoveDirection::Down => {
+            Self::Down => {
                 // wrap when we hit the start of the list
                 if current_index == len.saturating_sub(1) {
                     0
@@ -95,9 +95,9 @@ pub enum FilterState {
 impl FilterState {
     fn zero_state(&self) -> bool {
         match self {
-            FilterState::Unfiltered => true,
-            FilterState::Visible(_) => false,
-            FilterState::Fixed { .. } => true,
+            Self::Unfiltered => true,
+            Self::Visible(_) => false,
+            Self::Fixed { .. } => true,
         }
     }
 }

@@ -334,8 +334,8 @@ enum FinalCursorState {
 impl FinalCursorState {
     fn update_cursor(self, cursor: &mut Cursor, history_size: usize) {
         let (point, input_needs_wrap) = match self {
-            FinalCursorState::AtPoint(point) => (point, false),
-            FinalCursorState::AtCellAfterPoint {
+            Self::AtPoint(point) => (point, false),
+            Self::AtCellAfterPoint {
                 point,
                 input_needs_wrap,
             } => (point, input_needs_wrap),

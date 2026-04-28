@@ -50,7 +50,7 @@ struct GlyphCacheKey {
 
 impl GlyphCacheKey {
     fn new(glyph_key: GlyphKey, scale_factor: f32, subpixel_alignment: SubpixelAlignment) -> Self {
-        GlyphCacheKey {
+        Self {
             glyph_key,
             scale_factor: scale_factor.into(),
             subpixel_alignment,
@@ -69,7 +69,7 @@ pub(crate) struct GlyphTextureOffset {
 
 impl<Texture> GlyphCache<Texture> {
     pub(crate) fn new(glyph_config: rendering::GlyphConfig) -> Self {
-        GlyphCache {
+        Self {
             textures: Vec::new(),
             cache: HashMap::new(),
             glyph_config,
@@ -81,7 +81,7 @@ impl<Texture> GlyphCache<Texture> {
         // If the glyph rendering configuration has changed, blow away the cache
         // and replace ourself with a new one.
         if *glyph_config != self.glyph_config {
-            *self = GlyphCache::new(*glyph_config);
+            *self = Self::new(*glyph_config);
         }
     }
 

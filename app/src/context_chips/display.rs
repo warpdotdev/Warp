@@ -40,15 +40,15 @@ enum RowBuilder {
 impl RowBuilder {
     fn add_child(&mut self, child: Box<dyn Element>) {
         match self {
-            RowBuilder::Wrap(w) => w.add_child(child),
-            RowBuilder::Flex(f) => f.add_child(child),
+            Self::Wrap(w) => w.add_child(child),
+            Self::Flex(f) => f.add_child(child),
         }
     }
 
     fn finish(self) -> Box<dyn Element> {
         match self {
-            RowBuilder::Wrap(w) => w.finish(),
-            RowBuilder::Flex(f) => f.finish(),
+            Self::Wrap(w) => w.finish(),
+            Self::Flex(f) => f.finish(),
         }
     }
 }

@@ -8,18 +8,14 @@ pub struct SlashCommandFuzzyMatchResult {
 }
 
 impl SlashCommandFuzzyMatchResult {
-    pub fn try_match(
-        query: &str,
-        name: &str,
-        description: Option<&str>,
-    ) -> Option<SlashCommandFuzzyMatchResult> {
+    pub fn try_match(query: &str, name: &str, description: Option<&str>) -> Option<Self> {
         let name_match_result = match_indices_case_insensitive(name, query);
         let description_match_result =
             description.and_then(|desc| match_indices_case_insensitive(desc, query));
 
         match (&name_match_result, &description_match_result) {
             (None, None) => None,
-            _ => Some(SlashCommandFuzzyMatchResult {
+            _ => Some(Self {
                 name_match_result,
                 description_match_result,
             }),

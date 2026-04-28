@@ -18,13 +18,13 @@ pub trait StatusElementStyle {
 
 impl StatusElementStyle for ConversationStatus {
     fn status_icon_and_color(&self, theme: &WarpTheme) -> (Icon, ColorU) {
-        ConversationStatus::status_icon_and_color(self, theme)
+        Self::status_icon_and_color(self, theme)
     }
 }
 
 impl StatusElementStyle for AgentRunDisplayStatus {
     fn status_icon_and_color(&self, theme: &WarpTheme) -> (Icon, ColorU) {
-        AgentRunDisplayStatus::status_icon_and_color(self, theme)
+        Self::status_icon_and_color(self, theme)
     }
 }
 

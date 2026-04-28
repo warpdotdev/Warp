@@ -54,16 +54,16 @@ pub enum GridHighlightedLink {
 impl GridHighlightedLink {
     pub fn contains(&self, position: &WithinModel<Point>) -> bool {
         match self {
-            GridHighlightedLink::Url(url) => url.contains(position),
+            Self::Url(url) => url.contains(position),
             #[cfg(feature = "local_fs")]
-            GridHighlightedLink::File(file_link) => file_link.contains(position),
+            Self::File(file_link) => file_link.contains(position),
         }
     }
 
     pub fn tooltip_text(&self) -> &'static str {
         match &self {
             #[cfg(feature = "local_fs")]
-            GridHighlightedLink::File(file_link)
+            Self::File(file_link)
                 if file_link
                     .get_inner()
                     .absolute_path()
@@ -73,8 +73,8 @@ impl GridHighlightedLink {
                 "Open folder"
             }
             #[cfg(feature = "local_fs")]
-            GridHighlightedLink::File(_) => "Open file",
-            GridHighlightedLink::Url(_) => "Open link",
+            Self::File(_) => "Open file",
+            Self::Url(_) => "Open link",
         }
     }
 }
@@ -85,13 +85,9 @@ impl Serialize for GridHighlightedLink {
         S: Serializer,
     {
         match &self {
-            GridHighlightedLink::Url(_) => {
-                serializer.serialize_unit_variant("HighlightedLink", 0, "Url")
-            }
+            Self::Url(_) => serializer.serialize_unit_variant("HighlightedLink", 0, "Url"),
             #[cfg(feature = "local_fs")]
-            GridHighlightedLink::File(_) => {
-                serializer.serialize_unit_variant("HighlightedLink", 1, "File")
-            }
+            Self::File(_) => serializer.serialize_unit_variant("HighlightedLink", 1, "File"),
         }
     }
 }
@@ -156,12 +152,10 @@ impl RichContentLink {
     pub fn tooltip_text(&self) -> &'static str {
         match &self {
             #[cfg(feature = "local_fs")]
-            RichContentLink::FilePath { absolute_path, .. } if absolute_path.is_dir() => {
-                "Open folder"
-            }
+            Self::FilePath { absolute_path, .. } if absolute_path.is_dir() => "Open folder",
             #[cfg(feature = "local_fs")]
-            RichContentLink::FilePath { .. } => "Open file",
-            RichContentLink::Url(_) => "Open link",
+            Self::FilePath { .. } => "Open file",
+            Self::Url(_) => "Open link",
         }
     }
 }

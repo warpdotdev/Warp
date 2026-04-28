@@ -388,17 +388,17 @@ pub enum DisplayChipKind {
 impl DisplayChipKind {
     pub fn has_open_menu(&self) -> bool {
         match self {
-            DisplayChipKind::WorkingDirectory { menu_open, .. } => *menu_open,
-            DisplayChipKind::NodeVersion { popup_open, .. } => *popup_open,
-            DisplayChipKind::GitBranch { menu_open, .. } => *menu_open,
-            DisplayChipKind::GithubPullRequest
-            | DisplayChipKind::GitDiffStats { .. }
-            | DisplayChipKind::Text
-            | DisplayChipKind::Ssh
-            | DisplayChipKind::Subshell
-            | DisplayChipKind::VirtualEnvironment
-            | DisplayChipKind::CondaEnvironment
-            | DisplayChipKind::AgentPlanAndTodoList { .. } => false,
+            Self::WorkingDirectory { menu_open, .. } => *menu_open,
+            Self::NodeVersion { popup_open, .. } => *popup_open,
+            Self::GitBranch { menu_open, .. } => *menu_open,
+            Self::GithubPullRequest
+            | Self::GitDiffStats { .. }
+            | Self::Text
+            | Self::Ssh
+            | Self::Subshell
+            | Self::VirtualEnvironment
+            | Self::CondaEnvironment
+            | Self::AgentPlanAndTodoList { .. } => false,
         }
     }
 }
@@ -817,7 +817,7 @@ impl DisplayChip {
             .is_some()
     }
 
-    fn close_node_version_popup(&mut self, ctx: &mut ViewContext<'_, DisplayChip>) {
+    fn close_node_version_popup(&mut self, ctx: &mut ViewContext<'_, Self>) {
         if let DisplayChipKind::NodeVersion { popup_open, .. } = &mut self.display_chip_kind {
             *popup_open = false;
             ctx.notify();

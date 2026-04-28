@@ -343,8 +343,8 @@ impl InteractionMode {
         conversation_id: AIConversationId,
     ) -> Result<Self, UpdateInteractionModeError> {
         let requested_command_action_id = match self {
-            InteractionMode::User(_) => None,
-            InteractionMode::Agent(metadata) => {
+            Self::User(_) => None,
+            Self::Agent(metadata) => {
                 if metadata.conversation_id != conversation_id {
                     return Err(UpdateInteractionModeError::UnexpectedConversationId);
                 }
@@ -498,7 +498,7 @@ impl AgentInteractionMetadata {
         has_agent_written_to_block: bool,
         should_hide_block: bool,
     ) -> Self {
-        AgentInteractionMetadata {
+        Self {
             requested_command_action_id,
             conversation_id,
             subagent_task_id,

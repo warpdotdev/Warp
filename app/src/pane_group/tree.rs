@@ -123,13 +123,13 @@ pub struct PaneFlex(pub f32);
 
 impl Default for PaneFlex {
     fn default() -> Self {
-        PaneFlex(DEFAULT_FLEX_VALUE)
+        Self(DEFAULT_FLEX_VALUE)
     }
 }
 
 impl From<app_state::PaneFlex> for PaneFlex {
     fn from(pane_flex: app_state::PaneFlex) -> Self {
-        PaneFlex(pane_flex.0)
+        Self(pane_flex.0)
     }
 }
 
@@ -180,8 +180,8 @@ pub enum Direction {
 impl Direction {
     fn axis(&self) -> SplitDirection {
         match self {
-            Direction::Left | Direction::Right => SplitDirection::Horizontal,
-            Direction::Up | Direction::Down => SplitDirection::Vertical,
+            Self::Left | Self::Right => SplitDirection::Horizontal,
+            Self::Up | Self::Down => SplitDirection::Vertical,
         }
     }
 }
@@ -536,7 +536,7 @@ impl PaneData {
                 ids.into_iter()
                     .filter(|id| {
                         match ctx.element_position_by_id(id.position_id()) {
-                            Some(candidate_rect) => PaneData::are_rects_overlapping(
+                            Some(candidate_rect) => Self::are_rects_overlapping(
                                 &current_rect,
                                 &candidate_rect,
                                 direction.axis(),
@@ -588,27 +588,27 @@ impl PaneData {
 impl PaneNode {
     fn has_visible_children(&self, hidden_panes: &[HiddenPane]) -> bool {
         match self {
-            PaneNode::Leaf(pane_id) => {
+            Self::Leaf(pane_id) => {
                 !pane_hidden_for_job(hidden_panes, pane_id)
                     && !pane_hidden_for_undo(hidden_panes, pane_id)
                     && !pane_hidden_for_move(hidden_panes, pane_id)
                     && !pane_hidden_for_child_agent(hidden_panes, pane_id)
             }
-            PaneNode::Branch(branch) => branch.has_visible_children(hidden_panes),
+            Self::Branch(branch) => branch.has_visible_children(hidden_panes),
         }
     }
 
     fn has_children_hidden_for_move(&self, hidden_panes: &[HiddenPane]) -> bool {
         match self {
-            PaneNode::Leaf(pane_id) => pane_hidden_for_move(hidden_panes, pane_id),
-            PaneNode::Branch(branch) => branch.has_children_hidden_for_move(hidden_panes),
+            Self::Leaf(pane_id) => pane_hidden_for_move(hidden_panes, pane_id),
+            Self::Branch(branch) => branch.has_children_hidden_for_move(hidden_panes),
         }
     }
 
     pub fn has_horizontal_split(&self, hidden_panes: &[HiddenPane]) -> bool {
         match self {
-            PaneNode::Leaf(_) => false,
-            PaneNode::Branch(branch) => {
+            Self::Leaf(_) => false,
+            Self::Branch(branch) => {
                 let mut visible_or_move_children = 0usize;
                 let mut any_child_split = false;
 
@@ -636,26 +636,23 @@ impl PaneNode {
 
     fn split(&mut self, old_pane_id: PaneId, new_pane_id: PaneId, direction: Direction) -> bool {
         match self {
-            PaneNode::Leaf(pane) => {
+            Self::Leaf(pane) => {
                 if *pane == old_pane_id {
-                    *self = PaneNode::Branch(PaneBranch::for_leaves(
-                        old_pane_id,
-                        new_pane_id,
-                        direction,
-                    ));
+                    *self =
+                        Self::Branch(PaneBranch::for_leaves(old_pane_id, new_pane_id, direction));
                     true
                 } else {
                     false
                 }
             }
-            PaneNode::Branch(branch) => branch.split(old_pane_id, new_pane_id, direction),
+            Self::Branch(branch) => branch.split(old_pane_id, new_pane_id, direction),
         }
     }
 
     /// Number of splits at the node in the given axis. For leaf nodes, this is always one.
     pub fn num_splits_in_direction(&self, axis: SplitDirection) -> usize {
         match self {
-            PaneNode::Branch(branch) if branch.axis == axis => branch.nodes.len(),
+            Self::Branch(branch) if branch.axis == axis => branch.nodes.len(),
             _ => 1,
         }
     }
@@ -663,8 +660,8 @@ impl PaneNode {
     fn remove(&mut self, pane_id: PaneId) -> bool {
         match self {
             // Leaves can only be removed from the containing branch
-            PaneNode::Leaf(_) => false,
-            PaneNode::Branch(branch) => match branch.remove(pane_id) {
+            Self::Leaf(_) => false,
+            Self::Branch(branch) => match branch.remove(pane_id) {
                 BranchRemoveResult::NotFound => false,
                 BranchRemoveResult::Removed => true,
                 BranchRemoveResult::Collapse(last_node) => {
@@ -677,18 +674,17 @@ impl PaneNode {
 
     fn insert(&mut self, new_pane_id: PaneId, direction: Direction) {
         match self {
-            PaneNode::Leaf(old_pane_id) => {
-                *self =
-                    PaneNode::Branch(PaneBranch::for_leaves(*old_pane_id, new_pane_id, direction));
+            Self::Leaf(old_pane_id) => {
+                *self = Self::Branch(PaneBranch::for_leaves(*old_pane_id, new_pane_id, direction));
             }
-            PaneNode::Branch(branch) => branch.insert(new_pane_id, direction),
+            Self::Branch(branch) => branch.insert(new_pane_id, direction),
         }
     }
 
     fn pane_ids(&self) -> Vec<PaneId> {
         match self {
-            PaneNode::Leaf(pane) => vec![*pane],
-            PaneNode::Branch(branch) => branch.get_children(),
+            Self::Leaf(pane) => vec![*pane],
+            Self::Branch(branch) => branch.get_children(),
         }
     }
 
@@ -699,7 +695,7 @@ impl PaneNode {
         app: &AppContext,
     ) -> Box<dyn Element> {
         match self {
-            PaneNode::Leaf(view) => {
+            Self::Leaf(view) => {
                 let view = *view;
                 EventHandler::new(view.render(app))
                     .on_left_mouse_down(move |ctx, _, _| {
@@ -711,16 +707,16 @@ impl PaneNode {
                     })
                     .finish()
             }
-            PaneNode::Branch(branch) => branch.render(theme, hidden_panes, app),
+            Self::Branch(branch) => branch.render(theme, hidden_panes, app),
         }
     }
 
     pub fn pane_size(&self, ctx: &mut ViewContext<PaneGroup>) -> Vector2F {
         match self {
-            PaneNode::Leaf(pane) => ctx
+            Self::Leaf(pane) => ctx
                 .element_position_by_id(pane.position_id())
                 .map_or(Vector2F::zero(), |rect| rect.size()),
-            PaneNode::Branch(branch) => branch.size(ctx),
+            Self::Branch(branch) => branch.size(ctx),
         }
     }
 
@@ -731,8 +727,8 @@ impl PaneNode {
         ctx: &mut ViewContext<PaneGroup>,
     ) -> bool {
         match self {
-            PaneNode::Leaf(_) => false,
-            PaneNode::Branch(branch) => branch.adjust_pane_size(border_id, delta, ctx),
+            Self::Leaf(_) => false,
+            Self::Branch(branch) => branch.adjust_pane_size(border_id, delta, ctx),
         }
     }
 
@@ -751,10 +747,8 @@ impl PaneNode {
         ctx: &mut ViewContext<PaneGroup>,
     ) -> bool {
         match self {
-            PaneNode::Leaf(id) => *id == pane_id,
-            PaneNode::Branch(branch) => {
-                branch.adjust_pane_size_by_id(pane_id, direction, delta, ctx)
-            }
+            Self::Leaf(id) => *id == pane_id,
+            Self::Branch(branch) => branch.adjust_pane_size_by_id(pane_id, direction, delta, ctx),
         }
     }
 
@@ -762,8 +756,8 @@ impl PaneNode {
     fn first_panes_in_direction(&self, direction: Direction) -> HashSet<PaneId> {
         match self {
             // If this is a leaf, then this is the first pane from any direction.
-            PaneNode::Leaf(id) => HashSet::from([*id]),
-            PaneNode::Branch(branch) => {
+            Self::Leaf(id) => HashSet::from([*id]),
+            Self::Branch(branch) => {
                 // If the direction matches the split axis, then we only search the first sub-tree in the given direction.
                 //  --------------------     The first panes from the left are 1 and 3.
                 //  |   1     |    2   |     The first panes from the right are 2 and 3.
@@ -817,7 +811,7 @@ impl PaneNode {
     /// [`SplitDirection`] (or it is a [`PaneNode::Leaf`]).
     pub(in crate::pane_group) fn pane_flex_sum_along_axis(&self, axis: SplitDirection) -> f32 {
         match self {
-            PaneNode::Branch(pane_branch) if pane_branch.axis == axis => pane_branch
+            Self::Branch(pane_branch) if pane_branch.axis == axis => pane_branch
                 .nodes
                 .iter()
                 .fold(0., |sum, (pane_flex, _)| sum + pane_flex.0),
@@ -827,14 +821,14 @@ impl PaneNode {
 
     fn contains_pane(&self, pane_id: PaneId) -> bool {
         match self {
-            PaneNode::Leaf(id) => *id == pane_id,
-            PaneNode::Branch(branch) => branch.contains_pane(pane_id),
+            Self::Leaf(id) => *id == pane_id,
+            Self::Branch(branch) => branch.contains_pane(pane_id),
         }
     }
 
     fn replace_pane(&mut self, old_pane_id: PaneId, new_pane_id: PaneId) -> bool {
         match self {
-            PaneNode::Leaf(id) => {
+            Self::Leaf(id) => {
                 if *id == old_pane_id {
                     *id = new_pane_id;
                     true
@@ -842,7 +836,7 @@ impl PaneNode {
                     false
                 }
             }
-            PaneNode::Branch(branch) => branch.replace_pane(old_pane_id, new_pane_id),
+            Self::Branch(branch) => branch.replace_pane(old_pane_id, new_pane_id),
         }
     }
 }
@@ -854,14 +848,14 @@ impl FindPaneByDirection for PaneNode {
         direction: Direction,
     ) -> FindPaneByDirectionResult {
         match self {
-            PaneNode::Leaf(id) => {
+            Self::Leaf(id) => {
                 if *id == pane_id {
                     FindPaneByDirectionResult::Located
                 } else {
                     FindPaneByDirectionResult::NotFound
                 }
             }
-            PaneNode::Branch(branch) => branch.panes_by_direction(pane_id, direction),
+            Self::Branch(branch) => branch.panes_by_direction(pane_id, direction),
         }
     }
 }
@@ -869,7 +863,7 @@ impl FindPaneByDirection for PaneNode {
 impl PaneBranch {
     fn new(old_pane: PaneNode, new_pane: PaneNode, direction: Direction) -> Self {
         let axis = direction.axis();
-        PaneBranch {
+        Self {
             axis,
             nodes: match direction {
                 Direction::Left | Direction::Up => {
@@ -915,9 +909,7 @@ impl PaneBranch {
                             self.dividers.insert(idx, Divider::new());
                         } else {
                             // Otherwise, split the current leaf into a perpendicular branch
-                            *node = PaneNode::Branch(PaneBranch::for_leaves(
-                                *pane, new_pane, direction,
-                            ));
+                            *node = PaneNode::Branch(Self::for_leaves(*pane, new_pane, direction));
                         }
                         return true;
                     }
@@ -949,8 +941,8 @@ impl PaneBranch {
             let nodes = mem::take(&mut self.nodes);
             let dividers = mem::take(&mut self.dividers);
             let axis = self.axis;
-            *self = PaneBranch::new(
-                PaneNode::Branch(PaneBranch {
+            *self = Self::new(
+                PaneNode::Branch(Self {
                     nodes,
                     dividers,
                     axis,
@@ -1469,8 +1461,8 @@ impl fmt::Debug for PaneData {
 impl fmt::Debug for PaneNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PaneNode::Leaf(pane) => write!(f, "Leaf({pane:?})"),
-            PaneNode::Branch(branch) => write!(f, "Branch {branch:?}"),
+            Self::Leaf(pane) => write!(f, "Leaf({pane:?})"),
+            Self::Branch(branch) => write!(f, "Branch {branch:?}"),
         }
     }
 }
@@ -1495,8 +1487,8 @@ pub enum SplitDirection {
 impl From<app_state::SplitDirection> for SplitDirection {
     fn from(direction: app_state::SplitDirection) -> Self {
         match direction {
-            app_state::SplitDirection::Horizontal => SplitDirection::Horizontal,
-            app_state::SplitDirection::Vertical => SplitDirection::Vertical,
+            app_state::SplitDirection::Horizontal => Self::Horizontal,
+            app_state::SplitDirection::Vertical => Self::Vertical,
         }
     }
 }
@@ -1504,8 +1496,8 @@ impl From<app_state::SplitDirection> for SplitDirection {
 impl From<SplitDirection> for app_state::SplitDirection {
     fn from(direction: SplitDirection) -> Self {
         match direction {
-            SplitDirection::Horizontal => app_state::SplitDirection::Horizontal,
-            SplitDirection::Vertical => app_state::SplitDirection::Vertical,
+            SplitDirection::Horizontal => Self::Horizontal,
+            SplitDirection::Vertical => Self::Vertical,
         }
     }
 }
@@ -1513,12 +1505,8 @@ impl From<SplitDirection> for app_state::SplitDirection {
 impl From<crate::launch_configs::launch_config::SplitDirection> for SplitDirection {
     fn from(direction: crate::launch_configs::launch_config::SplitDirection) -> Self {
         match direction {
-            crate::launch_configs::launch_config::SplitDirection::Horizontal => {
-                SplitDirection::Horizontal
-            }
-            crate::launch_configs::launch_config::SplitDirection::Vertical => {
-                SplitDirection::Vertical
-            }
+            crate::launch_configs::launch_config::SplitDirection::Horizontal => Self::Horizontal,
+            crate::launch_configs::launch_config::SplitDirection::Vertical => Self::Vertical,
         }
     }
 }

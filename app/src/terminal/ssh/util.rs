@@ -91,7 +91,7 @@ pub struct InteractiveSshCommand {
 impl InteractiveSshCommand {
     /// Parses ssh commands of the form `ssh ...`.
     /// Only returns an `InteractiveSshCommand` if we determine the command is interactive.
-    fn parse_ssh_command(command: &str) -> Option<InteractiveSshCommand> {
+    fn parse_ssh_command(command: &str) -> Option<Self> {
         let command = if let Some(suffix) = command.strip_prefix("command ") {
             suffix
         } else {
@@ -137,7 +137,7 @@ impl InteractiveSshCommand {
             i += 1;
         }
 
-        Some(InteractiveSshCommand { host, port })
+        Some(Self { host, port })
     }
 }
 
@@ -161,7 +161,7 @@ impl SshWarpifyCommand {
     /// Not a literal `ssh` command, but another command that starts an interactive SSH
     /// session that we can Warpify with TMUX.
     pub fn is_ssh_like_command(&self) -> bool {
-        matches!(self, SshWarpifyCommand::SshLike(_))
+        matches!(self, Self::SshLike(_))
     }
 }
 
@@ -179,22 +179,20 @@ lazy_static! {
 }
 
 impl SshWarpifyCommand {
-    pub fn matches(command: &str) -> Option<SshWarpifyCommand> {
+    pub fn matches(command: &str) -> Option<Self> {
         let command = if let Some(suffix) = command.strip_prefix("command ") {
             suffix
         } else {
             command
         };
         if INTERACTIVE_SSH.is_match(command) {
-            Some(SshWarpifyCommand::Ssh)
+            Some(Self::Ssh)
         } else if GCLOUD_REGEX.is_match(command) {
-            Some(SshWarpifyCommand::SshLike(SshLikeCommand::Gcloud))
+            Some(Self::SshLike(SshLikeCommand::Gcloud))
         } else if ELASTIC_BEANSTALK_REGEX.is_match(command) {
-            Some(SshWarpifyCommand::SshLike(SshLikeCommand::ElasticBeanstalk))
+            Some(Self::SshLike(SshLikeCommand::ElasticBeanstalk))
         } else if DIGITAL_OCEAN_DROPLET_REGEX.is_match(command) {
-            Some(SshWarpifyCommand::SshLike(
-                SshLikeCommand::DigitalOceanDroplet,
-            ))
+            Some(Self::SshLike(SshLikeCommand::DigitalOceanDroplet))
         } else {
             None
         }

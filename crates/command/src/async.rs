@@ -38,7 +38,7 @@ impl Command {
     ///
     /// let mut cmd = Command::new("ls");
     /// ```
-    pub fn new<S: AsRef<OsStr>>(program: S) -> Command {
+    pub fn new<S: AsRef<OsStr>>(program: S) -> Self {
         let inner = async_process::Command::new(program);
         Self::new_internal(inner)
     }
@@ -50,7 +50,7 @@ impl Command {
     ///
     /// See [`setsid(2)`](https://man7.org/linux/man-pages/man2/setsid.2.html).
     #[cfg(unix)]
-    pub fn new_with_session<S: AsRef<OsStr>>(program: S) -> Command {
+    pub fn new_with_session<S: AsRef<OsStr>>(program: S) -> Self {
         let mut command = std::process::Command::new(program);
 
         // SAFETY: `pre_exec` requires the closure to be async-signal-safe.
@@ -76,7 +76,7 @@ impl Command {
     /// as the process ID.
     /// This allows for killing any other processes spawned by this process
     /// when we kill this process.
-    pub fn new_with_process_group<S: AsRef<OsStr>>(program: S) -> Command {
+    pub fn new_with_process_group<S: AsRef<OsStr>>(program: S) -> Self {
         #[allow(unused_mut)]
         let mut command = std::process::Command::new(program);
 
@@ -93,7 +93,7 @@ impl Command {
     }
 
     #[allow(unused_mut)]
-    fn new_internal(mut inner: async_process::Command) -> Command {
+    fn new_internal(mut inner: async_process::Command) -> Self {
         #[cfg(all(windows, not(feature = "test-util")))]
         {
             use async_process::windows::CommandExt;
@@ -123,7 +123,7 @@ impl Command {
     /// cmd.arg("hello");
     /// cmd.arg("world");
     /// ```
-    pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Command {
+    pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
         self.inner.arg(arg);
         self
     }
@@ -138,7 +138,7 @@ impl Command {
     /// let mut cmd = Command::new("echo");
     /// cmd.args(&["hello", "world"]);
     /// ```
-    pub fn args<I, S>(&mut self, args: I) -> &mut Command
+    pub fn args<I, S>(&mut self, args: I) -> &mut Self
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -160,7 +160,7 @@ impl Command {
     /// let mut cmd = Command::new("ls");
     /// cmd.env("PATH", "/bin");
     /// ```
-    pub fn env<K, V>(&mut self, key: K, val: V) -> &mut Command
+    pub fn env<K, V>(&mut self, key: K, val: V) -> &mut Self
     where
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
@@ -182,7 +182,7 @@ impl Command {
     /// let mut cmd = Command::new("ls");
     /// cmd.envs(vec![("PATH", "/bin"), ("TERM", "xterm-256color")]);
     /// ```
-    pub fn envs<I, K, V>(&mut self, vars: I) -> &mut Command
+    pub fn envs<I, K, V>(&mut self, vars: I) -> &mut Self
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -202,7 +202,7 @@ impl Command {
     /// let mut cmd = Command::new("ls");
     /// cmd.env_remove("PATH");
     /// ```
-    pub fn env_remove<K: AsRef<OsStr>>(&mut self, key: K) -> &mut Command {
+    pub fn env_remove<K: AsRef<OsStr>>(&mut self, key: K) -> &mut Self {
         self.inner.env_remove(key);
         self
     }
@@ -217,7 +217,7 @@ impl Command {
     /// let mut cmd = Command::new("ls");
     /// cmd.env_clear();
     /// ```
-    pub fn env_clear(&mut self) -> &mut Command {
+    pub fn env_clear(&mut self) -> &mut Self {
         self.inner.env_clear();
         self
     }
@@ -232,7 +232,7 @@ impl Command {
     /// let mut cmd = Command::new("ls");
     /// cmd.current_dir("/");
     /// ```
-    pub fn current_dir<P: AsRef<Path>>(&mut self, dir: P) -> &mut Command {
+    pub fn current_dir<P: AsRef<Path>>(&mut self, dir: P) -> &mut Self {
         self.inner.current_dir(dir);
         self
     }
@@ -247,7 +247,7 @@ impl Command {
     /// let mut cmd = Command::new("cat");
     /// cmd.stdin(Stdio::null());
     /// ```
-    pub fn stdin<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command {
+    pub fn stdin<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Self {
         self.inner.stdin(cfg);
         self.stdin_is_default = false;
         self
@@ -263,7 +263,7 @@ impl Command {
     /// let mut cmd = Command::new("ls");
     /// cmd.stdout(Stdio::piped());
     /// ```
-    pub fn stdout<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command {
+    pub fn stdout<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Self {
         self.inner.stdout(cfg);
         self.stdout_is_default = false;
         self
@@ -279,7 +279,7 @@ impl Command {
     /// let mut cmd = Command::new("ls");
     /// cmd.stderr(Stdio::piped());
     /// ```
-    pub fn stderr<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command {
+    pub fn stderr<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Self {
         self.inner.stderr(cfg);
         self.stderr_is_default = false;
         self
@@ -305,7 +305,7 @@ impl Command {
     /// let mut cmd = Command::new("cat");
     /// cmd.reap_on_drop(false);
     /// ```
-    pub fn reap_on_drop(&mut self, reap_on_drop: bool) -> &mut Command {
+    pub fn reap_on_drop(&mut self, reap_on_drop: bool) -> &mut Self {
         self.inner.reap_on_drop(reap_on_drop);
         self
     }
@@ -322,7 +322,7 @@ impl Command {
     /// let mut cmd = Command::new("cat");
     /// cmd.kill_on_drop(true);
     /// ```
-    pub fn kill_on_drop(&mut self, kill_on_drop: bool) -> &mut Command {
+    pub fn kill_on_drop(&mut self, kill_on_drop: bool) -> &mut Self {
         self.inner.kill_on_drop(kill_on_drop);
         self
     }

@@ -102,8 +102,8 @@ enum WorkflowTag {
 impl WorkflowTag {
     fn tag_name(&self) -> Option<&str> {
         match self {
-            WorkflowTag::Tagged { tag_name } => Some(tag_name.as_str()),
-            WorkflowTag::Untagged => None,
+            Self::Tagged { tag_name } => Some(tag_name.as_str()),
+            Self::Untagged => None,
         }
     }
 }
@@ -152,26 +152,26 @@ impl WorkflowViewType {
 
     fn as_str<'a>(&self, category_names: &'a [String]) -> &'a str {
         match self {
-            WorkflowViewType::All => "All",
-            WorkflowViewType::LocalPersonal => "My Workflows",
-            WorkflowViewType::Project => "Repository Workflows",
-            WorkflowViewType::Team => "Team Workflows",
-            WorkflowViewType::Category { category_index, .. } => &category_names[*category_index],
+            Self::All => "All",
+            Self::LocalPersonal => "My Workflows",
+            Self::Project => "Repository Workflows",
+            Self::Team => "Team Workflows",
+            Self::Category { category_index, .. } => &category_names[*category_index],
         }
     }
 
     fn as_accessibility_contents(&self, category_names: &[String]) -> AccessibilityContent {
         let a11y_content = match self {
-            WorkflowViewType::Category { .. } => {
+            Self::Category { .. } => {
                 format!(
                     "Showing workflows with category {}",
                     self.as_str(category_names)
                 )
             }
-            WorkflowViewType::All => "Showing all workflows".into(),
-            WorkflowViewType::LocalPersonal => "Showing my workflows".into(),
-            WorkflowViewType::Project => "Showing project workflows".into(),
-            WorkflowViewType::Team => "Showing team workflows".into(),
+            Self::All => "Showing all workflows".into(),
+            Self::LocalPersonal => "Showing my workflows".into(),
+            Self::Project => "Showing project workflows".into(),
+            Self::Team => "Showing team workflows".into(),
         };
 
         AccessibilityContent::new_without_help(a11y_content, WarpA11yRole::UserAction)
@@ -314,8 +314,8 @@ enum WorkflowMatchType {
 impl WorkflowMatchType {
     fn match_score(&self) -> i64 {
         match self {
-            WorkflowMatchType::Name { match_result } => match_result.score,
-            WorkflowMatchType::Command { match_result } => match_result.score,
+            Self::Name { match_result } => match_result.score,
+            Self::Command { match_result } => match_result.score,
             // For now a set of score of 0 for matches that aren't fuzzy matches.
             _ => 0,
         }
@@ -325,9 +325,9 @@ impl WorkflowMatchType {
 impl SelectionState {
     fn new(is_selected: bool, is_focused: bool) -> Self {
         match (is_selected, is_focused) {
-            (true, true) => SelectionState::SelectedAndFocused,
-            (true, false) => SelectionState::Selected,
-            _ => SelectionState::Unselected,
+            (true, true) => Self::SelectedAndFocused,
+            (true, false) => Self::Selected,
+            _ => Self::Unselected,
         }
     }
 
@@ -341,16 +341,16 @@ impl SelectionState {
 
     fn background_color(&self, theme: &WarpTheme) -> theme::Fill {
         match self {
-            SelectionState::Unselected => theme.surface_2(),
-            SelectionState::Selected => theme.surface_2().blend(&theme.accent_overlay()),
-            SelectionState::SelectedAndFocused => theme.accent(),
+            Self::Unselected => theme.surface_2(),
+            Self::Selected => theme.surface_2().blend(&theme.accent_overlay()),
+            Self::SelectedAndFocused => theme.accent(),
         }
     }
 
     fn is_selected(&self) -> bool {
         match self {
-            SelectionState::Unselected => false,
-            SelectionState::Selected | SelectionState::SelectedAndFocused => true,
+            Self::Unselected => false,
+            Self::Selected | Self::SelectedAndFocused => true,
         }
     }
 }
@@ -754,11 +754,10 @@ impl CategoriesView {
     }
 
     fn render_empty_list_placeholder(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let no_workflows_text =
-            CategoriesView::text_label("No matching workflows found.", appearance);
+        let no_workflows_text = Self::text_label("No matching workflows found.", appearance);
 
         let mut workflow_documentation_link_text =
-            Flex::row().with_child(CategoriesView::text_label("Try ", appearance));
+            Flex::row().with_child(Self::text_label("Try ", appearance));
 
         workflow_documentation_link_text.add_child(
             appearance
@@ -1083,7 +1082,7 @@ impl CategoriesView {
     fn set_focused_workflow_type(
         &mut self,
         workflow_type: &WorkflowViewType,
-        ctx: &mut ViewContext<CategoriesView>,
+        ctx: &mut ViewContext<Self>,
     ) {
         if workflow_type != &self.selected_workflow_type {
             self.selected_workflow_type = *workflow_type;

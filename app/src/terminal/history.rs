@@ -50,7 +50,7 @@ pub struct PersistedCommand {
 
 impl From<crate::persistence::model::Command> for PersistedCommand {
     fn from(command: crate::persistence::model::Command) -> Self {
-        PersistedCommand {
+        Self {
             id: command.id,
             command: command.command,
             exit_code: command.exit_code.map(ExitCode::from),
@@ -126,7 +126,7 @@ impl ShellHost {
             .shell
             .as_ref()
             .and_then(|name| ShellType::from_name(&name[..]))
-            .map(|shell| ShellHost {
+            .map(|shell| Self {
                 shell_type: shell,
                 user: block
                     .user
@@ -229,7 +229,7 @@ impl LinkedWorkflowData {
     /// any.
     pub fn linked_workflow(&self, ctx: &AppContext) -> Option<(WorkflowType, WorkflowSource)> {
         match self {
-            LinkedWorkflowData::Id(id) => {
+            Self::Id(id) => {
                 let cloud_model = CloudModel::as_ref(ctx);
                 let workflow = cloud_model.get_workflow(id);
                 let workflow_source = match CloudViewModel::as_ref(ctx).object_space(&id.uid(), ctx)
@@ -244,7 +244,7 @@ impl LinkedWorkflowData {
                     )
                 })
             }
-            LinkedWorkflowData::Command(workflow_command) => {
+            Self::Command(workflow_command) => {
                 if let Some((workflow_source, workflow)) = LocalWorkflows::as_ref(ctx)
                     .workflow_with_command(ctx, workflow_command.as_str())
                 {
@@ -332,7 +332,7 @@ impl HistoryEntry {
         workflow_command: Option<String>,
         is_agent_executed: bool,
     ) -> Self {
-        HistoryEntry {
+        Self {
             session_id: Some(session.id()),
             command,
             pwd: active_block.pwd().map(|pwd| pwd.to_owned()),
@@ -351,7 +351,7 @@ impl HistoryEntry {
     }
 
     pub fn for_restored_block(command: String, block: &Block) -> Self {
-        HistoryEntry {
+        Self {
             session_id: block.session_id(),
             command,
             pwd: block.pwd().map(|pwd| pwd.to_owned()),
@@ -368,7 +368,7 @@ impl HistoryEntry {
     }
 
     pub fn for_completed_block(command: String, block: &SerializedBlock) -> Self {
-        HistoryEntry {
+        Self {
             session_id: block.session_id,
             command,
             pwd: block.pwd.clone(),
@@ -404,7 +404,7 @@ impl HistoryEntry {
     pub fn has_metadata(&self) -> bool {
         // Destructure this so that we _must_ update this method when new metadata fields are added
         // to Self. `completed_ts` isn't useful without start_ts, so that is omitted in this check.
-        let HistoryEntry {
+        let Self {
             session_id: _,
             command: _,
             is_for_restored_block: _,
@@ -441,7 +441,7 @@ impl HistoryEntry {
 
 impl From<PersistedCommand> for HistoryEntry {
     fn from(command: PersistedCommand) -> Self {
-        HistoryEntry {
+        Self {
             session_id: command.session_id,
             command: command.command,
             exit_code: command.exit_code,

@@ -59,7 +59,7 @@ impl InlineMenuAction for AcceptRepo {
                 move |ctx| {
                     if let Some(path) = path.clone() {
                         ctx.dispatch_typed_action(InlineMenuRowAction::Accept {
-                            item: AcceptRepo { path },
+                            item: Self { path },
                             cmd_or_ctrl_enter: false,
                         });
                     }

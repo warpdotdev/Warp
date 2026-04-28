@@ -88,19 +88,19 @@ pub enum RememberForWarpification {
 impl RememberForWarpification {
     pub fn as_bool(&self) -> bool {
         match self {
-            RememberForWarpification::RememberSubshellCommand(_) => true,
-            RememberForWarpification::RememberSSHHost(_) => true,
-            RememberForWarpification::DoNotRememberSubshellCommand => false,
-            RememberForWarpification::DoNotRememberSSHHost => false,
+            Self::RememberSubshellCommand(_) => true,
+            Self::RememberSSHHost(_) => true,
+            Self::DoNotRememberSubshellCommand => false,
+            Self::DoNotRememberSSHHost => false,
         }
     }
 
     pub fn is_ssh(&self) -> bool {
         match self {
-            RememberForWarpification::RememberSSHHost(_) => true,
-            RememberForWarpification::DoNotRememberSSHHost => true,
-            RememberForWarpification::RememberSubshellCommand(_) => false,
-            RememberForWarpification::DoNotRememberSubshellCommand => false,
+            Self::RememberSSHHost(_) => true,
+            Self::DoNotRememberSSHHost => true,
+            Self::RememberSubshellCommand(_) => false,
+            Self::DoNotRememberSubshellCommand => false,
         }
     }
 }

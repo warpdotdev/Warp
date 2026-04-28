@@ -249,8 +249,8 @@ impl std::ops::AddAssign<Self> for TextSummary {
     }
 }
 
-impl sum_tree::Dimension<'_, TextSummary> for TextSummary {
-    fn add_summary(&mut self, summary: &TextSummary) {
+impl sum_tree::Dimension<'_, Self> for TextSummary {
+    fn add_summary(&mut self, summary: &Self) {
         *self += summary;
     }
 }
@@ -345,8 +345,8 @@ pub enum ColorMarker {
 impl ColorMarker {
     fn to_counter_delta(&self) -> i32 {
         match &self {
-            ColorMarker::Start(_) => 1,
-            ColorMarker::End => -1,
+            Self::Start(_) => 1,
+            Self::End => -1,
         }
     }
 }
@@ -360,8 +360,8 @@ pub enum LinkMarker {
 impl LinkMarker {
     fn to_counter_delta(&self) -> i32 {
         match &self {
-            LinkMarker::Start(_) => 1,
-            LinkMarker::End => -1,
+            Self::Start(_) => 1,
+            Self::End => -1,
         }
     }
 }
@@ -492,11 +492,11 @@ impl BufferBlockItem {
 
     pub fn to_formatted_text_line(&self) -> FormattedTextLine {
         match self {
-            BufferBlockItem::HorizontalRule => FormattedTextLine::HorizontalRule,
-            BufferBlockItem::Embedded { item } => {
+            Self::HorizontalRule => FormattedTextLine::HorizontalRule,
+            Self::Embedded { item } => {
                 FormattedTextLine::Embedded(item.to_mapping(MarkdownStyle::Internal))
             }
-            BufferBlockItem::Image {
+            Self::Image {
                 alt_text,
                 source,
                 title,
@@ -673,8 +673,8 @@ pub enum MarkerDir {
 impl MarkerDir {
     fn to_counter_delta(self) -> i32 {
         match self {
-            MarkerDir::Start => 1,
-            MarkerDir::End => -1,
+            Self::Start => 1,
+            Self::End => -1,
         }
     }
 }
@@ -682,12 +682,12 @@ impl MarkerDir {
 impl fmt::Display for CodeBlockType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CodeBlockType::Shell => write!(f, "{CODE_BLOCK_SHELL_DISPLAY_LANG}"),
-            CodeBlockType::Mermaid => write!(f, "Mermaid"),
-            CodeBlockType::Code { lang } if lang == "text" => {
+            Self::Shell => write!(f, "{CODE_BLOCK_SHELL_DISPLAY_LANG}"),
+            Self::Mermaid => write!(f, "Mermaid"),
+            Self::Code { lang } if lang == "text" => {
                 write!(f, "{CODE_BLOCK_DEFAULT_DISPLAY_LANG}")
             }
-            CodeBlockType::Code { lang } => write!(f, "{lang}"),
+            Self::Code { lang } => write!(f, "{lang}"),
         }
     }
 }
@@ -728,11 +728,11 @@ impl From<&CodeBlockText> for CodeBlockType {
             .to_lowercase();
 
         if MARKDOWN_SHELL_LANGUAGES.contains(lang.as_str()) {
-            CodeBlockType::Shell
+            Self::Shell
         } else if FeatureFlag::MarkdownMermaid.is_enabled()
             && mermaid_to_svg::is_mermaid_diagram(code_block_text.lang.as_str())
         {
-            CodeBlockType::Mermaid
+            Self::Mermaid
         } else {
             // Parse all the recognized languages supported by the code block.
             let recognized_lang = match lang.as_str() {
@@ -754,7 +754,7 @@ impl From<&CodeBlockText> for CodeBlockType {
                 "powershell" => "PowerShell",
                 text => text,
             };
-            CodeBlockType::Code {
+            Self::Code {
                 lang: recognized_lang.to_string(),
             }
         }
@@ -765,66 +765,66 @@ impl CodeBlockType {
     pub fn all() -> impl Iterator<Item = Self> {
         // TODO: This should include all supported languages
         [
-            CodeBlockType::Shell,
-            CodeBlockType::Mermaid,
-            CodeBlockType::Code {
+            Self::Shell,
+            Self::Mermaid,
+            Self::Code {
                 lang: "PowerShell".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "C++".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "C#".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Go".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Java".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "JavaScript".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "JSON".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Kotlin".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Lua".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Python".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Ruby".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Ruby on Rails".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Rust".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "SQL".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Swift".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "YAML".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "PHP".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Elixir".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: "Scala".to_owned(),
             },
-            CodeBlockType::Code {
+            Self::Code {
                 lang: CODE_BLOCK_DEFAULT_MARKDOWN_LANG.to_owned(),
             },
         ]
@@ -833,9 +833,9 @@ impl CodeBlockType {
 
     pub fn to_markdown_representation(&self, style: MarkdownStyle) -> &str {
         match self {
-            CodeBlockType::Shell => RUNNABLE_BLOCK_MARKDOWN_LANG,
-            CodeBlockType::Mermaid => "mermaid",
-            CodeBlockType::Code { lang } => match style {
+            Self::Shell => RUNNABLE_BLOCK_MARKDOWN_LANG,
+            Self::Mermaid => "mermaid",
+            Self::Code { lang } => match style {
                 MarkdownStyle::Internal => lang,
                 MarkdownStyle::Export { .. } => {
                     // Undo the language parsing done by From<&CodeBlockText>.
@@ -906,20 +906,20 @@ impl BufferBlockStyle {
 
     pub(super) fn line_break_behavior(&self) -> BlockLineBreakBehavior {
         match self {
-            Self::Header { .. } => BlockLineBreakBehavior::BlockMarker(BufferBlockStyle::PlainText),
+            Self::Header { .. } => BlockLineBreakBehavior::BlockMarker(Self::PlainText),
             Self::TaskList { indent_level, .. } => {
-                BlockLineBreakBehavior::BlockMarker(BufferBlockStyle::TaskList {
+                BlockLineBreakBehavior::BlockMarker(Self::TaskList {
                     indent_level: *indent_level,
                     complete: false,
                 })
             }
             Self::UnorderedList { indent_level } => {
-                BlockLineBreakBehavior::BlockMarker(BufferBlockStyle::UnorderedList {
+                BlockLineBreakBehavior::BlockMarker(Self::UnorderedList {
                     indent_level: *indent_level,
                 })
             }
             Self::OrderedList { indent_level, .. } => {
-                BlockLineBreakBehavior::BlockMarker(BufferBlockStyle::OrderedList {
+                BlockLineBreakBehavior::BlockMarker(Self::OrderedList {
                     indent_level: *indent_level,
                     number: None,
                 })
@@ -935,7 +935,7 @@ impl BufferBlockStyle {
     pub(super) fn should_inherit_style(
         &self,
         edit_cursor: CursorType,
-        previous_block_style: BufferBlockStyle,
+        previous_block_style: Self,
     ) -> bool {
         match self {
             // For plain text and runnable code blocks, always inherit the previous block's styling if
@@ -953,7 +953,7 @@ impl BufferBlockStyle {
                 previous_block_style != *self
                     && (edit_cursor == CursorType::Inline
                         || (edit_cursor == CursorType::NewLineStart
-                            && matches!(previous_block_style, BufferBlockStyle::CodeBlock { .. })))
+                            && matches!(previous_block_style, Self::CodeBlock { .. })))
             }
         }
     }
@@ -1292,7 +1292,7 @@ impl TextStylesWithMetadata {
 
 impl From<FormattedTextStyles> for TextStylesWithMetadata {
     fn from(styles: FormattedTextStyles) -> Self {
-        TextStylesWithMetadata {
+        Self {
             weight: styles.weight,
             italic: styles.italic,
             underline: styles.underline,
@@ -1307,7 +1307,7 @@ impl From<FormattedTextStyles> for TextStylesWithMetadata {
 
 impl From<TextStylesWithMetadata> for FormattedTextStyles {
     fn from(styles: TextStylesWithMetadata) -> Self {
-        FormattedTextStyles {
+        Self {
             weight: styles.weight,
             italic: styles.italic,
             underline: styles.underline,
@@ -1459,7 +1459,7 @@ impl TextStyles {
 }
 
 impl From<TextStylesWithMetadata> for TextStyles {
-    fn from(styles: TextStylesWithMetadata) -> TextStyles {
+    fn from(styles: TextStylesWithMetadata) -> Self {
         Self {
             weight: styles.weight,
             italic: styles.italic,
@@ -1539,7 +1539,7 @@ pub struct BlockSummary {
     pub block: BlockCount,
 }
 
-impl AddAssign<&BlockSummary> for BlockSummary {
+impl AddAssign<&Self> for BlockSummary {
     fn add_assign(&mut self, other: &Self) {
         self.block += other.block;
     }
@@ -1567,7 +1567,7 @@ pub struct StyleSummary {
     total_color_marker: i32,
 }
 
-impl AddAssign<&StyleSummary> for StyleSummary {
+impl AddAssign<&Self> for StyleSummary {
     fn add_assign(&mut self, other: &Self) {
         self.weight = CustomWeight::merge_weights(self.weight, other.weight);
         self.weight_counter += other.weight_counter;
@@ -1636,7 +1636,7 @@ impl StyleSummary {
 }
 
 impl From<TextStyles> for StyleSummary {
-    fn from(styles: TextStyles) -> StyleSummary {
+    fn from(styles: TextStyles) -> Self {
         Self {
             weight: styles.weight,
             weight_counter: styles.weight.is_some().into(),
@@ -1653,7 +1653,7 @@ impl From<TextStyles> for StyleSummary {
 }
 
 impl From<StyleSummary> for TextStyles {
-    fn from(summary: StyleSummary) -> TextStyles {
+    fn from(summary: StyleSummary) -> Self {
         summary.text_styles()
     }
 }
@@ -1679,7 +1679,7 @@ impl BufferSummary {
     }
 }
 
-impl AddAssign<&BufferSummary> for BufferSummary {
+impl AddAssign<&Self> for BufferSummary {
     fn add_assign(&mut self, other: &Self) {
         match (&mut self.style, &other.style) {
             (_, None) => {} // nothing to add
@@ -1695,8 +1695,8 @@ impl AddAssign<&BufferSummary> for BufferSummary {
     }
 }
 
-impl sum_tree::Dimension<'_, BufferSummary> for BufferSummary {
-    fn add_summary(&mut self, summary: &BufferSummary) {
+impl sum_tree::Dimension<'_, Self> for BufferSummary {
+    fn add_summary(&mut self, summary: &Self) {
         *self += summary;
     }
 }
@@ -1766,14 +1766,14 @@ impl sum_tree::Item for BufferText {
 
     fn summary(&self) -> Self::Summary {
         let text_summary = match &self {
-            BufferText::Newline => TextSummary {
+            Self::Newline => TextSummary {
                 chars: 1.into(),
                 bytes: 1.into(),
                 lines: Point::new(1, 0),
                 first_line_len: 0,
                 rightmost_point: Point::new(0, 0),
             },
-            BufferText::BlockItem { item_type } => {
+            Self::BlockItem { item_type } => {
                 let chars = item_type.content_length();
                 let lines = item_type.line_count();
                 TextSummary {
@@ -1784,7 +1784,7 @@ impl sum_tree::Item for BufferText {
                     rightmost_point: Point::new(lines.saturating_sub(1), 0),
                 }
             }
-            BufferText::Text {
+            Self::Text {
                 fragment,
                 char_count,
             } => TextSummary {
@@ -1794,14 +1794,14 @@ impl sum_tree::Item for BufferText {
                 first_line_len: (*char_count).into(),
                 rightmost_point: Point::new(0, (*char_count).into()),
             },
-            BufferText::Marker { .. } | BufferText::Link(_) | BufferText::Color(_) => TextSummary {
+            Self::Marker { .. } | Self::Link(_) | Self::Color(_) => TextSummary {
                 chars: 0.into(),
                 bytes: 0.into(),
                 lines: Point::new(0, 0),
                 first_line_len: 0,
                 rightmost_point: Point::new(0, 0),
             },
-            BufferText::BlockMarker { .. } => TextSummary {
+            Self::BlockMarker { .. } => TextSummary {
                 chars: 1.into(),
                 bytes: 1.into(),
                 lines: Point::new(1, 0),
@@ -1810,7 +1810,7 @@ impl sum_tree::Item for BufferText {
             },
             // Placeholders count as single special characters. This lets us distinguish between
             // the cursor being at a placeholder and at the character just after it.
-            BufferText::Placeholder { .. } => TextSummary {
+            Self::Placeholder { .. } => TextSummary {
                 chars: 1.into(),
                 bytes: 1.into(),
                 lines: Point::new(0, 1),
@@ -1823,7 +1823,7 @@ impl sum_tree::Item for BufferText {
         // data. For plain-text buffers (code editors) this is never the case,
         // so style is always None — zero heap allocations.
         let style_summary = match self {
-            BufferText::Marker { marker_type, dir } => {
+            Self::Marker { marker_type, dir } => {
                 let mut s = StyleSummary::default();
                 let delta = dir.to_counter_delta();
                 if let BufferTextStyle::Weight(weight) = marker_type {
@@ -1832,14 +1832,14 @@ impl sum_tree::Item for BufferText {
                 *s.style_counter_mut(marker_type) += delta;
                 Some(Box::new(s))
             }
-            BufferText::Color(marker) => {
+            Self::Color(marker) => {
                 let mut s = StyleSummary::default();
                 let delta = marker.to_counter_delta();
                 s.syntax_color_counter += delta;
                 s.total_color_marker += 1;
                 Some(Box::new(s))
             }
-            BufferText::Link(marker) => {
+            Self::Link(marker) => {
                 let mut s = StyleSummary::default();
                 let delta = marker.to_counter_delta();
                 s.link_counter += delta;
@@ -1850,9 +1850,7 @@ impl sum_tree::Item for BufferText {
         };
 
         let block_summary = match &self {
-            BufferText::BlockMarker { .. } | BufferText::BlockItem { .. } => {
-                BlockSummary { block: 1.into() }
-            }
+            Self::BlockMarker { .. } | Self::BlockItem { .. } => BlockSummary { block: 1.into() },
             _ => Default::default(),
         };
 

@@ -179,7 +179,7 @@ struct Chunk {
     /// We store this inline as a byte array rather than using a
     /// dynamically-sized type to avoid the extra heap allocation
     /// and pointer dereference needed to access it.
-    content: [u8; Chunk::CHUNK_SIZE],
+    content: [u8; Self::CHUNK_SIZE],
 
     /// The offset of the start of this chunk, in bytes.
     start_offset: ByteOffset,
@@ -192,7 +192,7 @@ impl Chunk {
     fn new(start_offset: ByteOffset) -> Self {
         Self {
             len: 0,
-            content: [0; Chunk::CHUNK_SIZE],
+            content: [0; Self::CHUNK_SIZE],
             start_offset,
         }
     }

@@ -295,15 +295,11 @@ pub(crate) enum SDKConversationOutputStatus {
 impl SDKConversationOutputStatus {
     pub fn into_result(self) -> Result<(), AgentDriverError> {
         match self {
-            SDKConversationOutputStatus::Success => Ok(()),
-            SDKConversationOutputStatus::Error { error } => {
-                Err(AgentDriverError::ConversationError { error })
-            }
+            Self::Success => Ok(()),
+            Self::Error { error } => Err(AgentDriverError::ConversationError { error }),
             // NOTE: this doesn't happen in the SDK (yet) because CTRL+C kills the whole program.
-            SDKConversationOutputStatus::Cancelled { reason } => {
-                Err(AgentDriverError::ConversationCancelled { reason })
-            }
-            SDKConversationOutputStatus::Blocked { blocked_action } => {
+            Self::Cancelled { reason } => Err(AgentDriverError::ConversationCancelled { reason }),
+            Self::Blocked { blocked_action } => {
                 Err(AgentDriverError::ConversationBlocked { blocked_action })
             }
         }
@@ -443,16 +439,16 @@ pub enum AgentDriverError {
 
 impl From<warpui::ModelDropped> for AgentDriverError {
     fn from(_: warpui::ModelDropped) -> Self {
-        AgentDriverError::InvalidRuntimeState
+        Self::InvalidRuntimeState
     }
 }
 
 impl From<PrepareEnvironmentError> for AgentDriverError {
     fn from(error: PrepareEnvironmentError) -> Self {
         match error {
-            PrepareEnvironmentError::InvalidRuntimeState => AgentDriverError::InvalidRuntimeState,
+            PrepareEnvironmentError::InvalidRuntimeState => Self::InvalidRuntimeState,
             PrepareEnvironmentError::TerminalDriver { source } => source,
-            error => AgentDriverError::EnvironmentSetupFailed(error.to_string()),
+            error => Self::EnvironmentSetupFailed(error.to_string()),
         }
     }
 }

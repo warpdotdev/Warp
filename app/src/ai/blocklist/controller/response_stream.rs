@@ -354,7 +354,7 @@ pub struct Consumable<T> {
 
 impl<T> Consumable<T> {
     fn new(value: T) -> Self {
-        Consumable {
+        Self {
             value: Rc::new(RefCell::new(Some(value))),
         }
     }
@@ -366,7 +366,7 @@ impl<T> Consumable<T> {
 
 impl<T> Clone for Consumable<T> {
     fn clone(&self) -> Self {
-        Consumable {
+        Self {
             value: Rc::clone(&self.value),
         }
     }

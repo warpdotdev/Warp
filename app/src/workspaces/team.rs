@@ -16,11 +16,11 @@ pub enum MembershipRole {
 
 impl MembershipRole {
     pub fn is_admin_or_owner(&self) -> bool {
-        matches!(self, MembershipRole::Admin | MembershipRole::Owner)
+        matches!(self, Self::Admin | Self::Owner)
     }
 
     pub fn is_owner(&self) -> bool {
-        matches!(self, MembershipRole::Owner)
+        matches!(self, Self::Owner)
     }
 }
 
@@ -61,15 +61,13 @@ pub enum TeamDeleteDisabledReason {
 impl TeamDeleteDisabledReason {
     pub fn user_facing_message(&self) -> &str {
         match self {
-            TeamDeleteDisabledReason::ActivePaidSubscription => {
+            Self::ActivePaidSubscription => {
                 "Your team cannot be deleted with an active subscription."
             }
-            TeamDeleteDisabledReason::RemainingBonusCredits => {
+            Self::RemainingBonusCredits => {
                 "Your team cannot be deleted with unused add-on credits."
             }
-            TeamDeleteDisabledReason::OtherMembers => {
-                "Your team cannot be deleted with other team members."
-            }
+            Self::OtherMembers => "Your team cannot be deleted with other team members.",
         }
     }
 }

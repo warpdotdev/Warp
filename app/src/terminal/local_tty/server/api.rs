@@ -11,8 +11,8 @@ pub(super) enum Result<T> {
 impl<T> From<anyhow::Result<T>> for Result<T> {
     fn from(value: anyhow::Result<T>) -> Self {
         match value {
-            Ok(val) => self::Result::Ok(val),
-            Err(err) => self::Result::Err(err.to_string()),
+            Ok(val) => Self::Ok(val),
+            Err(err) => Self::Err(err.to_string()),
         }
     }
 }

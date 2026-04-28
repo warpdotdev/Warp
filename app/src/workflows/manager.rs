@@ -49,7 +49,7 @@ impl WorkflowManager {
             Self::handle_update_manager_event,
         );
 
-        WorkflowManager {
+        Self {
             panes_by_hashed_id: HashMap::new(),
         }
     }

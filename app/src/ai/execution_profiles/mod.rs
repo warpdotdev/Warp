@@ -47,9 +47,9 @@ pub enum ActionPermission {
 impl ActionPermission {
     pub fn description(&self) -> &'static str {
         match self {
-            ActionPermission::AgentDecides | ActionPermission::Unknown => "The Agent chooses the safest path: acting on its own when confident, and asking for approval when uncertain.",
-            ActionPermission::AlwaysAllow => "Give the Agent full autonomy  — no manual approval ever required.",
-            ActionPermission::AlwaysAsk => "Require explicit approval before the Agent takes any action.",
+            Self::AgentDecides | Self::Unknown => "The Agent chooses the safest path: acting on its own when confident, and asking for approval when uncertain.",
+            Self::AlwaysAllow => "Give the Agent full autonomy  — no manual approval ever required.",
+            Self::AlwaysAsk => "Require explicit approval before the Agent takes any action.",
         }
     }
 
@@ -79,12 +79,12 @@ pub enum WriteToPtyPermission {
 impl WriteToPtyPermission {
     pub fn description(&self) -> &'static str {
         match self {
-            WriteToPtyPermission::AlwaysAllow => ActionPermission::AlwaysAllow.description(),
-            WriteToPtyPermission::AskOnFirstWrite => {
+            Self::AlwaysAllow => ActionPermission::AlwaysAllow.description(),
+            Self::AskOnFirstWrite => {
                 "The agent will ask for permission the first time it needs to interact with a running command. After that, it will continue automatically for the rest of that command."
             }
-            WriteToPtyPermission::AlwaysAsk => "The agent will always ask for permission to interact with a running command.",
-            WriteToPtyPermission::Unknown => ActionPermission::Unknown.description(),
+            Self::AlwaysAsk => "The agent will always ask for permission to interact with a running command.",
+            Self::Unknown => ActionPermission::Unknown.description(),
         }
     }
 
@@ -117,16 +117,16 @@ pub struct CloudAgentComputerUseState {
 impl ComputerUsePermission {
     pub fn description(&self) -> &'static str {
         match self {
-            ComputerUsePermission::Never => {
+            Self::Never => {
                 "Computer use tools are disabled and will not be available to the Agent."
             }
-            ComputerUsePermission::AlwaysAsk => {
+            Self::AlwaysAsk => {
                 "Require explicit approval before the Agent uses computer use tools."
             }
-            ComputerUsePermission::AlwaysAllow => {
+            Self::AlwaysAllow => {
                 "Give the Agent full autonomy to use computer use tools without approval."
             }
-            ComputerUsePermission::Unknown => "Unknown setting.",
+            Self::Unknown => "Unknown setting.",
         }
     }
 
@@ -154,11 +154,11 @@ impl ComputerUsePermission {
         let user_preference = *AISettings::as_ref(ctx).cloud_agent_computer_use_enabled;
 
         match autonomy_setting {
-            Some(ComputerUsePermission::Never) => CloudAgentComputerUseState {
+            Some(Self::Never) => CloudAgentComputerUseState {
                 enabled: false,
                 is_forced_by_org: true,
             },
-            Some(ComputerUsePermission::AlwaysAllow) => CloudAgentComputerUseState {
+            Some(Self::AlwaysAllow) => CloudAgentComputerUseState {
                 enabled: true,
                 is_forced_by_org: true,
             },
@@ -166,11 +166,11 @@ impl ComputerUsePermission {
             // AlwaysAsk variant isn't accessible in the admin console. We need to figure
             // out how to handle it when it eventually becomes available. For now, I'm
             // treating this conservatively and marking computer use as disabled.
-            Some(ComputerUsePermission::AlwaysAsk) => CloudAgentComputerUseState {
+            Some(Self::AlwaysAsk) => CloudAgentComputerUseState {
                 enabled: false,
                 is_forced_by_org: true,
             },
-            Some(ComputerUsePermission::Unknown) | None => CloudAgentComputerUseState {
+            Some(Self::Unknown) | None => CloudAgentComputerUseState {
                 enabled: user_preference,
                 is_forced_by_org: false,
             },
@@ -196,14 +196,14 @@ pub enum AskUserQuestionPermission {
 impl AskUserQuestionPermission {
     pub fn description(&self) -> &'static str {
         match self {
-            AskUserQuestionPermission::AskExceptInAutoApprove
-            | AskUserQuestionPermission::Unknown => {
+            Self::AskExceptInAutoApprove
+            | Self::Unknown => {
                 "The Agent may ask a question and pause for your response, but will continue automatically when auto-approve is on."
             }
-            AskUserQuestionPermission::Never => {
+            Self::Never => {
                 "The Agent will not ask questions and will continue with its best judgment."
             }
-            AskUserQuestionPermission::AlwaysAsk => {
+            Self::AlwaysAsk => {
                 "The Agent may ask a question and will pause for your response even when auto-approve is on."
             }
         }

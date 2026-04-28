@@ -94,8 +94,8 @@ enum ParamField {
 impl ParamField {
     fn current_value(&self, app: &AppContext) -> String {
         match self {
-            ParamField::Text(editor) => editor.as_ref(app).buffer_text(app),
-            ParamField::Branch { picker, selected } => picker
+            Self::Text(editor) => editor.as_ref(app).buffer_text(app),
+            Self::Branch { picker, selected } => picker
                 .as_ref(app)
                 .selected_value(app)
                 .or_else(|| selected.clone())
@@ -104,7 +104,7 @@ impl ParamField {
             // `RepoPickerEvent::Selected` subscription and by `on_new_repo_selected`.
             // `picker.selected_value()` is a fallback for the initial default-value
             // case before any explicit selection has been made.
-            ParamField::Repo { picker, selected } => selected
+            Self::Repo { picker, selected } => selected
                 .clone()
                 .or_else(|| picker.as_ref(app).selected_value(app))
                 .unwrap_or_default(),

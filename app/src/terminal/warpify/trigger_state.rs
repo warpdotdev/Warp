@@ -63,40 +63,40 @@ pub enum SshBlockState {
 
 impl SshBlockState {
     pub fn should_prevent_input(&self) -> bool {
-        !matches!(self, SshBlockState::InstallTmux { .. })
+        !matches!(self, Self::InstallTmux { .. })
     }
 
     pub fn get_block_view_id(&self) -> EntityId {
         match self {
-            SshBlockState::Warpifying { handle, .. } => handle.id(),
-            SshBlockState::WarpifySuccess { handle, .. } => handle.id(),
-            SshBlockState::InstallTmux { handle, .. } => handle.id(),
-            SshBlockState::Error { handle } => handle.id(),
+            Self::Warpifying { handle, .. } => handle.id(),
+            Self::WarpifySuccess { handle, .. } => handle.id(),
+            Self::InstallTmux { handle, .. } => handle.id(),
+            Self::Error { handle } => handle.id(),
         }
     }
 
     /// Returns `true` if the script was previously visible and is now collapsed.
     pub fn collapse_script(&mut self, ctx: &mut ViewContext<TerminalView>) -> bool {
         match self {
-            SshBlockState::InstallTmux { handle, .. } => {
+            Self::InstallTmux { handle, .. } => {
                 handle.update(ctx, |block, ctx| block.collapse_script(ctx))
             }
-            SshBlockState::Warpifying { .. } => false,
-            SshBlockState::WarpifySuccess { .. } => false,
-            SshBlockState::Error { .. } => false,
+            Self::Warpifying { .. } => false,
+            Self::WarpifySuccess { .. } => false,
+            Self::Error { .. } => false,
         }
     }
 
     pub fn focus(&mut self, ctx: &mut ViewContext<TerminalView>) {
         match self {
-            SshBlockState::Warpifying { handle } => {
+            Self::Warpifying { handle } => {
                 handle.update(ctx, |block, ctx| block.focus(ctx));
             }
-            SshBlockState::WarpifySuccess { .. } => {}
-            SshBlockState::InstallTmux { handle } => {
+            Self::WarpifySuccess { .. } => {}
+            Self::InstallTmux { handle } => {
                 handle.update(ctx, |block, ctx| block.focus(ctx));
             }
-            SshBlockState::Error { handle } => {
+            Self::Error { handle } => {
                 handle.update(ctx, |block, ctx| block.focus(ctx));
             }
         }
@@ -104,12 +104,12 @@ impl SshBlockState {
 
     pub fn get_system_details(&self, app: &AppContext) -> Option<SystemDetails> {
         match self {
-            SshBlockState::InstallTmux { handle, .. } => {
+            Self::InstallTmux { handle, .. } => {
                 Some(handle.read(app, |view, _| view.system_details()))
             }
-            SshBlockState::Warpifying { .. } => None,
-            SshBlockState::WarpifySuccess { .. } => None,
-            SshBlockState::Error { .. } => None,
+            Self::Warpifying { .. } => None,
+            Self::WarpifySuccess { .. } => None,
+            Self::Error { .. } => None,
         }
     }
 
@@ -118,16 +118,16 @@ impl SshBlockState {
         ctx: &mut ViewContext<TerminalView>,
     ) -> Option<EntityId> {
         match self {
-            SshBlockState::InstallTmux { .. } | SshBlockState::Warpifying { .. } => {
+            Self::InstallTmux { .. } | Self::Warpifying { .. } => {
                 let block_id = self.get_block_view_id();
                 return Some(block_id);
             }
-            SshBlockState::WarpifySuccess { handle } => {
+            Self::WarpifySuccess { handle } => {
                 handle.update(ctx, |block, ctx| {
                     block.on_warpified_session_complete(ctx);
                 });
             }
-            SshBlockState::Error { .. } => {}
+            Self::Error { .. } => {}
         }
         None
     }

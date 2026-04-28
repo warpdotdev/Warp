@@ -675,8 +675,8 @@ enum BlockSelector {
 impl BlockSelector {
     fn get_block<'a>(&self, model: &'a TerminalModel) -> Option<&'a Block> {
         match self {
-            BlockSelector::Id(block_id) => model.block_list().block_with_id(block_id),
-            BlockSelector::RequestedCommandId(requested_command_id) => model
+            Self::Id(block_id) => model.block_list().block_with_id(block_id),
+            Self::RequestedCommandId(requested_command_id) => model
                 .block_list()
                 .block_for_ai_action_id(requested_command_id),
         }

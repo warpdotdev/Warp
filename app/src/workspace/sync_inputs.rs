@@ -59,7 +59,7 @@ impl SingletonEntity for SyncedInputState {}
 
 impl Default for SyncedInputState {
     fn default() -> Self {
-        SyncedInputState::new()
+        Self::new()
     }
 }
 

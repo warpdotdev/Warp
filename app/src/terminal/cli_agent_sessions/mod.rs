@@ -25,9 +25,9 @@ impl CLIAgentSessionStatus {
     pub fn to_conversation_status(&self) -> crate::ai::agent::conversation::ConversationStatus {
         use crate::ai::agent::conversation::ConversationStatus;
         match self {
-            CLIAgentSessionStatus::InProgress => ConversationStatus::InProgress,
-            CLIAgentSessionStatus::Success => ConversationStatus::Success,
-            CLIAgentSessionStatus::Blocked { message } => ConversationStatus::Blocked {
+            Self::InProgress => ConversationStatus::InProgress,
+            Self::Success => ConversationStatus::Success,
+            Self::Blocked { message } => ConversationStatus::Blocked {
                 blocked_action: message.clone().unwrap_or_default(),
             },
         }
@@ -252,19 +252,19 @@ pub enum CLIAgentSessionsModelEvent {
 impl CLIAgentSessionsModelEvent {
     pub fn terminal_view_id(&self) -> EntityId {
         match self {
-            CLIAgentSessionsModelEvent::Started {
+            Self::Started {
                 terminal_view_id, ..
             }
-            | CLIAgentSessionsModelEvent::StatusChanged {
+            | Self::StatusChanged {
                 terminal_view_id, ..
             }
-            | CLIAgentSessionsModelEvent::InputSessionChanged {
+            | Self::InputSessionChanged {
                 terminal_view_id, ..
             }
-            | CLIAgentSessionsModelEvent::Ended {
+            | Self::Ended {
                 terminal_view_id, ..
             }
-            | CLIAgentSessionsModelEvent::SessionUpdated {
+            | Self::SessionUpdated {
                 terminal_view_id, ..
             } => *terminal_view_id,
         }

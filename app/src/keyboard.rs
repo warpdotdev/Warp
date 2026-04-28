@@ -26,7 +26,7 @@ pub enum UserDefinedKeybinding {
 
 impl UserDefinedKeybinding {
     pub fn keystroke(value: Keystroke) -> Self {
-        UserDefinedKeybinding::Keystrokes(vec1![value])
+        Self::Keystrokes(vec1![value])
     }
 }
 
@@ -179,11 +179,9 @@ impl From<UserDefinedKeybinding> for PersistedTrigger {
     fn from(keybinding: UserDefinedKeybinding) -> Self {
         match keybinding {
             UserDefinedKeybinding::Keystrokes(keystrokes) => {
-                PersistedTrigger(keystrokes.iter().map(Keystroke::normalized).join(" "))
+                Self(keystrokes.iter().map(Keystroke::normalized).join(" "))
             }
-            UserDefinedKeybinding::Removed => {
-                PersistedTrigger(REMOVED_KEYBINDING_SERIALIZATION.to_string())
-            }
+            UserDefinedKeybinding::Removed => Self(REMOVED_KEYBINDING_SERIALIZATION.to_string()),
         }
     }
 }
@@ -192,7 +190,7 @@ impl TryFrom<PersistedTrigger> for UserDefinedKeybinding {
     type Error = anyhow::Error;
     fn try_from(trigger: PersistedTrigger) -> anyhow::Result<Self> {
         if trigger.0 == REMOVED_KEYBINDING_SERIALIZATION {
-            return Ok(UserDefinedKeybinding::Removed);
+            return Ok(Self::Removed);
         }
 
         let mut keystrokes: Vec<Keystroke> = Vec::new();
@@ -210,7 +208,7 @@ impl TryFrom<PersistedTrigger> for UserDefinedKeybinding {
             trigger.0
         ))?;
 
-        Ok(UserDefinedKeybinding::Keystrokes(parsed_keystrokes))
+        Ok(Self::Keystrokes(parsed_keystrokes))
     }
 }
 

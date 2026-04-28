@@ -12,7 +12,7 @@ impl ContentVersion {
     pub fn new() -> Self {
         static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
         let raw = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        ContentVersion(raw)
+        Self(raw)
     }
 
     pub fn as_i32(&self) -> i32 {

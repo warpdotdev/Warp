@@ -149,7 +149,7 @@ impl SettingsPageViewHandle {
 
 impl From<ViewHandle<MCPServersSettingsPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<MCPServersSettingsPageView>) -> Self {
-        SettingsPageViewHandle::MCPServers(view_handle)
+        Self::MCPServers(view_handle)
     }
 }
 
@@ -159,7 +159,7 @@ impl SettingsPage {
         V: SettingsPageMeta,
         ViewHandle<V>: Into<SettingsPageViewHandle>,
     {
-        SettingsPage {
+        Self {
             section: V::section(),
             view_handle: view_handle.into(),
             button_state_handle: MouseStateHandle::default(),
@@ -1232,8 +1232,8 @@ pub(crate) enum MatchData {
 impl MatchData {
     pub(crate) fn is_truthy(&self) -> bool {
         match self {
-            MatchData::Countable(n) => *n > 0,
-            MatchData::Uncounted(flag) => *flag,
+            Self::Countable(n) => *n > 0,
+            Self::Uncounted(flag) => *flag,
         }
     }
 }
@@ -1241,21 +1241,21 @@ impl MatchData {
 impl Display for MatchData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MatchData::Countable(n) => write!(f, " ({n})"),
-            MatchData::Uncounted(_) => write!(f, ""),
+            Self::Countable(n) => write!(f, " ({n})"),
+            Self::Uncounted(_) => write!(f, ""),
         }
     }
 }
 
 impl From<bool> for MatchData {
     fn from(value: bool) -> Self {
-        MatchData::Uncounted(value)
+        Self::Uncounted(value)
     }
 }
 
 impl From<usize> for MatchData {
     fn from(value: usize) -> Self {
-        MatchData::Countable(value)
+        Self::Countable(value)
     }
 }
 
@@ -1542,15 +1542,15 @@ impl<V: warpui::View> PageType<V> {
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn scroll_by(&self, delta: Pixels) {
         match self {
-            PageType::Monolith {
+            Self::Monolith {
                 vertical_scroll_state: Some(scrollable_state),
                 ..
             }
-            | PageType::Uncategorized {
+            | Self::Uncategorized {
                 vertical_scroll_state: scrollable_state,
                 ..
             }
-            | PageType::Categorized {
+            | Self::Categorized {
                 vertical_scroll_state: scrollable_state,
                 ..
             } => scrollable_state.scroll_by(delta),

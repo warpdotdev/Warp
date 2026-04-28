@@ -26,7 +26,7 @@ pub struct WarpAiExecutionContext {
 
 impl WarpAiExecutionContext {
     pub fn new(session: &Arc<Session>) -> Self {
-        WarpAiExecutionContext {
+        Self {
             os: WarpAiOsContext {
                 category: session.host_info().os_category.clone(),
                 distribution: session.host_info().linux_distribution.clone(),

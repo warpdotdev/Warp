@@ -171,7 +171,7 @@ impl TryFrom<GqlBlock> for Block {
     fn try_from(value: GqlBlock) -> Result<Self, Self::Error> {
         match (value.uid, value.time_started_term) {
             (uid, Some(time_started_term)) => {
-                Ok(Block {
+                Ok(Self {
                     id: Some(uid.into_inner()),
                     command: value.command,
                     output: None,

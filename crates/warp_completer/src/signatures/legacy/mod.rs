@@ -22,7 +22,7 @@ impl CommandRegistry {
         GLOBAL_REGISTRY
             .get_or_init(|| {
                 // TODO(wasm): Determine how to asynchronously load command signatures on wasm.
-                Arc::new(CommandRegistry::new_with_embedded_signatures())
+                Arc::new(Self::new_with_embedded_signatures())
             })
             .clone()
     }
@@ -30,7 +30,7 @@ impl CommandRegistry {
     /// Returns a new [`CommandRegistry`] that looks up commands in the embedded
     /// set of command signatures.
     fn new_with_embedded_signatures() -> Self {
-        let registry = CommandRegistry::new(
+        let registry = Self::new(
             |command| {
                 let start = instant::Instant::now();
                 let signature = warp_command_signatures::signature_by_name(command);
@@ -71,7 +71,7 @@ impl CommandRegistry {
     /// Returns an empty [`CommandRegistry`] that contains no signatures nor
     /// generators.
     pub fn empty() -> Self {
-        CommandRegistry::new(|_| None, std::collections::HashMap::new())
+        Self::new(|_| None, std::collections::HashMap::new())
     }
 
     /// Returns a [`CommandRegistry`] that uses the provided set of signatures

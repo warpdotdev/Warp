@@ -155,30 +155,24 @@ impl TelemetryEvent for RequestFileEditsTelemetryEvent {
 
     fn payload(&self) -> Option<serde_json::Value> {
         match self {
-            RequestFileEditsTelemetryEvent::EditResolved(resolved_edit_event) => {
-                Some(json!(resolved_edit_event))
-            }
-            RequestFileEditsTelemetryEvent::EditAcceptClicked(edit_accept_clicked_event) => {
+            Self::EditResolved(resolved_edit_event) => Some(json!(resolved_edit_event)),
+            Self::EditAcceptClicked(edit_accept_clicked_event) => {
                 Some(json!(edit_accept_clicked_event))
             }
-            RequestFileEditsTelemetryEvent::EditAcceptAndContinueClicked(
-                edit_accept_and_continue_clicked_event,
-            ) => Some(json!(edit_accept_and_continue_clicked_event)),
-            RequestFileEditsTelemetryEvent::DiffMatchFailed(diff_application_error_event) => {
+            Self::EditAcceptAndContinueClicked(edit_accept_and_continue_clicked_event) => {
+                Some(json!(edit_accept_and_continue_clicked_event))
+            }
+            Self::DiffMatchFailed(diff_application_error_event) => {
                 Some(json!(diff_application_error_event))
             }
-            RequestFileEditsTelemetryEvent::DiffInvalidFile(diff_invalid_file_event) => {
-                Some(json!(diff_invalid_file_event))
-            }
-            RequestFileEditsTelemetryEvent::EditReceived(edit_received_event) => {
-                Some(json!(edit_received_event))
-            }
-            RequestFileEditsTelemetryEvent::MissingLineNumbers(missing_line_numbers_event) => {
+            Self::DiffInvalidFile(diff_invalid_file_event) => Some(json!(diff_invalid_file_event)),
+            Self::EditReceived(edit_received_event) => Some(json!(edit_received_event)),
+            Self::MissingLineNumbers(missing_line_numbers_event) => {
                 Some(json!(missing_line_numbers_event))
             }
-            RequestFileEditsTelemetryEvent::MalformedFinalLineProxy(
-                malformed_final_line_proxy_event,
-            ) => Some(json!(malformed_final_line_proxy_event)),
+            Self::MalformedFinalLineProxy(malformed_final_line_proxy_event) => {
+                Some(json!(malformed_final_line_proxy_event))
+            }
         }
     }
 

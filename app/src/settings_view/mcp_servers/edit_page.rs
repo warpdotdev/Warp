@@ -95,18 +95,16 @@ pub enum ServerModel {
 impl ServerModel {
     pub fn name(&self) -> Option<String> {
         match self {
-            ServerModel::CloudTemplatableMCPServer(cloud_templatable_server) => {
+            Self::CloudTemplatableMCPServer(cloud_templatable_server) => {
                 Some(cloud_templatable_server.display_name())
             }
-            ServerModel::LocalTemplatableMCPInstallation(templatable_mcp_server_installation) => {
-                Some(
-                    templatable_mcp_server_installation
-                        .templatable_mcp_server()
-                        .name
-                        .clone(),
-                )
-            }
-            ServerModel::None => None,
+            Self::LocalTemplatableMCPInstallation(templatable_mcp_server_installation) => Some(
+                templatable_mcp_server_installation
+                    .templatable_mcp_server()
+                    .name
+                    .clone(),
+            ),
+            Self::None => None,
         }
     }
 }

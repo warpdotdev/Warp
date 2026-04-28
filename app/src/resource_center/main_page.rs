@@ -176,7 +176,7 @@ impl ResourceCenterMainView {
     fn build_feature_section_view(
         section_data: &FeatureSectionData,
         action_target: ModelHandle<ActionTarget>,
-        ctx: &mut ViewContext<ResourceCenterMainView>,
+        ctx: &mut ViewContext<Self>,
         tips_completed: ModelHandle<TipsCompleted>,
         show_tips_progress: bool,
         is_expanded: bool,
@@ -235,14 +235,14 @@ impl ResourceCenterMainView {
 
     fn build_content_section_view(
         section_data: &ContentSectionData,
-        ctx: &mut ViewContext<ResourceCenterMainView>,
+        ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<ContentSectionView> {
         ctx.add_typed_action_view(|ctx| ContentSectionView::new(section_data.clone(), false, ctx))
     }
 
     fn build_changelog_section_view(
         changelog_model_handle: ModelHandle<ChangelogModel>,
-        ctx: &mut ViewContext<ResourceCenterMainView>,
+        ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<ChangelogSectionView> {
         let showing_new_changelog = match ChannelState::app_version() {
             Some(version) => !Settings::has_changelog_been_shown(version, ctx),

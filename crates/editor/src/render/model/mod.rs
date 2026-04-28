@@ -620,13 +620,13 @@ pub struct InlineCodeStyle {
 }
 
 impl InlineCodeStyle {
-    pub fn requires_relayout(&self, new_styles: &InlineCodeStyle) -> bool {
+    pub fn requires_relayout(&self, new_styles: &Self) -> bool {
         self.font_family != new_styles.font_family
     }
 }
 
 impl TableStyle {
-    pub fn requires_relayout(&self, new_styles: &TableStyle) -> bool {
+    pub fn requires_relayout(&self, new_styles: &Self) -> bool {
         self.font_family != new_styles.font_family
             || self.font_size != new_styles.font_size
             || self.cell_padding != new_styles.cell_padding
@@ -691,8 +691,8 @@ pub enum RenderLineLocation {
 impl RenderLineLocation {
     pub fn line_count(&self) -> LineCount {
         match self {
-            RenderLineLocation::Temporary { at_line, .. } => *at_line,
-            RenderLineLocation::Current(line_count) => *line_count,
+            Self::Temporary { at_line, .. } => *at_line,
+            Self::Current(line_count) => *line_count,
         }
     }
 }
@@ -3392,7 +3392,7 @@ impl RichTextStyles {
         }
     }
 
-    pub fn requires_relayout(&self, new_styles: &RichTextStyles) -> bool {
+    pub fn requires_relayout(&self, new_styles: &Self) -> bool {
         if self == new_styles {
             return false;
         }
@@ -3430,7 +3430,7 @@ impl ParagraphStyles {
         Properties::default().weight(self.font_weight)
     }
 
-    fn requires_relayout(&self, new_styles: &ParagraphStyles) -> bool {
+    fn requires_relayout(&self, new_styles: &Self) -> bool {
         self.font_size != new_styles.font_size
             || self.line_height_ratio != new_styles.line_height_ratio
             || self.baseline_ratio != new_styles.baseline_ratio
@@ -3440,8 +3440,8 @@ impl ParagraphStyles {
     }
 }
 
-impl AddAssign<&LayoutSummary> for LayoutSummary {
-    fn add_assign(&mut self, rhs: &LayoutSummary) {
+impl AddAssign<&Self> for LayoutSummary {
+    fn add_assign(&mut self, rhs: &Self) {
         self.height += rhs.height;
         self.content_length += rhs.content_length;
         self.width = self.width.max(rhs.width);
@@ -3457,8 +3457,8 @@ impl BlockItem {
         content_length: CharOffset,
         spacing: BlockSpacing,
         minimum_height: Option<Pixels>,
-    ) -> BlockItem {
-        BlockItem::Paragraph(Paragraph::new(
+    ) -> Self {
+        Self::Paragraph(Paragraph::new(
             frame,
             offsets,
             content_length,
@@ -3470,109 +3470,109 @@ impl BlockItem {
 
     pub fn first_line_height(&self) -> f32 {
         match self {
-            BlockItem::Paragraph(paragraph)
-            | BlockItem::Header { paragraph, .. }
-            | BlockItem::TaskList { paragraph, .. }
-            | BlockItem::UnorderedList { paragraph, .. }
-            | BlockItem::OrderedList { paragraph, .. } => paragraph.first_line_height(),
-            BlockItem::TextBlock { paragraph_block } => paragraph_block.first_line_height(),
-            BlockItem::RunnableCodeBlock {
+            Self::Paragraph(paragraph)
+            | Self::Header { paragraph, .. }
+            | Self::TaskList { paragraph, .. }
+            | Self::UnorderedList { paragraph, .. }
+            | Self::OrderedList { paragraph, .. } => paragraph.first_line_height(),
+            Self::TextBlock { paragraph_block } => paragraph_block.first_line_height(),
+            Self::RunnableCodeBlock {
                 paragraph_block, ..
             }
-            | BlockItem::TemporaryBlock {
+            | Self::TemporaryBlock {
                 paragraph_block, ..
             } => paragraph_block.first_line_height(),
-            BlockItem::MermaidDiagram { config, .. } => config.height.as_f32(),
-            BlockItem::TrailingNewLine(cursor) => cursor.height.as_f32(),
-            BlockItem::HorizontalRule(config) => config.line_height.as_f32(),
-            BlockItem::Image { config, .. } => config.height.as_f32(),
-            BlockItem::Table(laid_out_table) => laid_out_table.height().as_f32(),
-            BlockItem::Embedded(embedded_item) => embedded_item.height().as_f32(),
-            BlockItem::Hidden(config) => config.height().as_f32(),
+            Self::MermaidDiagram { config, .. } => config.height.as_f32(),
+            Self::TrailingNewLine(cursor) => cursor.height.as_f32(),
+            Self::HorizontalRule(config) => config.line_height.as_f32(),
+            Self::Image { config, .. } => config.height.as_f32(),
+            Self::Table(laid_out_table) => laid_out_table.height().as_f32(),
+            Self::Embedded(embedded_item) => embedded_item.height().as_f32(),
+            Self::Hidden(config) => config.height().as_f32(),
         }
     }
 
     pub fn spacing(&self) -> BlockSpacing {
         match self {
-            BlockItem::Paragraph(paragraph)
-            | BlockItem::Header { paragraph, .. }
-            | BlockItem::TaskList { paragraph, .. }
-            | BlockItem::UnorderedList { paragraph, .. }
-            | BlockItem::OrderedList { paragraph, .. } => paragraph.spacing(),
-            BlockItem::TextBlock { paragraph_block } => paragraph_block.spacing(),
-            BlockItem::RunnableCodeBlock {
+            Self::Paragraph(paragraph)
+            | Self::Header { paragraph, .. }
+            | Self::TaskList { paragraph, .. }
+            | Self::UnorderedList { paragraph, .. }
+            | Self::OrderedList { paragraph, .. } => paragraph.spacing(),
+            Self::TextBlock { paragraph_block } => paragraph_block.spacing(),
+            Self::RunnableCodeBlock {
                 paragraph_block, ..
             }
-            | BlockItem::TemporaryBlock {
+            | Self::TemporaryBlock {
                 paragraph_block, ..
             } => paragraph_block.spacing(),
-            BlockItem::MermaidDiagram { config, .. } => config.spacing,
-            BlockItem::TrailingNewLine(cursor) => cursor.spacing(),
-            BlockItem::HorizontalRule(config) => config.spacing,
-            BlockItem::Image { config, .. } => config.spacing,
-            BlockItem::Table(laid_out_table) => laid_out_table.spacing(),
-            BlockItem::Embedded(embedded_item) => embedded_item.spacing(),
-            BlockItem::Hidden { .. } => BlockSpacing::default(),
+            Self::MermaidDiagram { config, .. } => config.spacing,
+            Self::TrailingNewLine(cursor) => cursor.spacing(),
+            Self::HorizontalRule(config) => config.spacing,
+            Self::Image { config, .. } => config.spacing,
+            Self::Table(laid_out_table) => laid_out_table.spacing(),
+            Self::Embedded(embedded_item) => embedded_item.spacing(),
+            Self::Hidden { .. } => BlockSpacing::default(),
         }
     }
 
     /// The height of this item's content, without any padding or margins.
     pub fn content_height(&self) -> Pixels {
         match self {
-            BlockItem::Paragraph(paragraph) | BlockItem::Header { paragraph, .. } => {
+            Self::Paragraph(paragraph) | Self::Header { paragraph, .. } => {
                 let mut height = paragraph.height;
                 if let Some(minimum_height) = paragraph.minimum_height {
                     height = height.max(minimum_height);
                 }
                 height
             }
-            BlockItem::TextBlock { paragraph_block } => paragraph_block.height(),
-            BlockItem::UnorderedList { paragraph, .. }
-            | BlockItem::OrderedList { paragraph, .. }
-            | BlockItem::TaskList { paragraph, .. } => paragraph.height(),
-            BlockItem::RunnableCodeBlock {
+            Self::TextBlock { paragraph_block } => paragraph_block.height(),
+            Self::UnorderedList { paragraph, .. }
+            | Self::OrderedList { paragraph, .. }
+            | Self::TaskList { paragraph, .. } => paragraph.height(),
+            Self::RunnableCodeBlock {
                 paragraph_block, ..
             }
-            | BlockItem::TemporaryBlock {
+            | Self::TemporaryBlock {
                 paragraph_block, ..
             } => paragraph_block.height(),
-            BlockItem::MermaidDiagram { config, .. } => config.height,
-            BlockItem::TrailingNewLine(cursor) => {
+            Self::MermaidDiagram { config, .. } => config.height,
+            Self::TrailingNewLine(cursor) => {
                 let mut height = cursor.height;
                 if let Some(minimum_height) = cursor.minimum_height {
                     height = height.max(minimum_height);
                 }
                 height
             }
-            BlockItem::Embedded(embedded_item) => embedded_item.height(),
-            BlockItem::HorizontalRule(rule) => rule.line_height,
-            BlockItem::Image { config, .. } => config.height,
-            BlockItem::Table(laid_out_table) => laid_out_table.height(),
-            BlockItem::Hidden(config) => config.height(),
+            Self::Embedded(embedded_item) => embedded_item.height(),
+            Self::HorizontalRule(rule) => rule.line_height,
+            Self::Image { config, .. } => config.height,
+            Self::Table(laid_out_table) => laid_out_table.height(),
+            Self::Hidden(config) => config.height(),
         }
     }
 
     pub fn content_width(&self) -> Pixels {
         match self {
-            BlockItem::Paragraph(paragraph)
-            | BlockItem::Header { paragraph, .. }
-            | BlockItem::UnorderedList { paragraph, .. }
-            | BlockItem::OrderedList { paragraph, .. }
-            | BlockItem::TaskList { paragraph, .. } => paragraph.width(),
-            BlockItem::TextBlock { paragraph_block } => paragraph_block.width(),
-            BlockItem::RunnableCodeBlock {
+            Self::Paragraph(paragraph)
+            | Self::Header { paragraph, .. }
+            | Self::UnorderedList { paragraph, .. }
+            | Self::OrderedList { paragraph, .. }
+            | Self::TaskList { paragraph, .. } => paragraph.width(),
+            Self::TextBlock { paragraph_block } => paragraph_block.width(),
+            Self::RunnableCodeBlock {
                 paragraph_block, ..
             }
-            | BlockItem::TemporaryBlock {
+            | Self::TemporaryBlock {
                 paragraph_block, ..
             } => paragraph_block.width(),
-            BlockItem::MermaidDiagram { config, .. } => config.width,
-            BlockItem::TrailingNewLine(cursor) => cursor.width,
-            BlockItem::Embedded(object) => object.size().x().into_pixels(),
-            BlockItem::HorizontalRule(rule) => rule.width,
-            BlockItem::Image { config, .. } => config.width,
-            BlockItem::Table(laid_out_table) => laid_out_table.width(),
-            BlockItem::Hidden(_) => MIN_HIDDEN_BLOCK_WIDTH,
+            Self::MermaidDiagram { config, .. } => config.width,
+            Self::TrailingNewLine(cursor) => cursor.width,
+            Self::Embedded(object) => object.size().x().into_pixels(),
+            Self::HorizontalRule(rule) => rule.width,
+            Self::Image { config, .. } => config.width,
+            Self::Table(laid_out_table) => laid_out_table.width(),
+            Self::Hidden(_) => MIN_HIDDEN_BLOCK_WIDTH,
         }
     }
 
@@ -3587,45 +3587,45 @@ impl BlockItem {
 
     pub fn content_length(&self) -> CharOffset {
         match self {
-            BlockItem::Paragraph(paragraph)
-            | BlockItem::Header { paragraph, .. }
-            | BlockItem::UnorderedList { paragraph, .. }
-            | BlockItem::OrderedList { paragraph, .. }
-            | BlockItem::TaskList { paragraph, .. } => paragraph.content_length,
-            BlockItem::TextBlock { paragraph_block } => paragraph_block.content_length(),
-            BlockItem::RunnableCodeBlock {
+            Self::Paragraph(paragraph)
+            | Self::Header { paragraph, .. }
+            | Self::UnorderedList { paragraph, .. }
+            | Self::OrderedList { paragraph, .. }
+            | Self::TaskList { paragraph, .. } => paragraph.content_length,
+            Self::TextBlock { paragraph_block } => paragraph_block.content_length(),
+            Self::RunnableCodeBlock {
                 paragraph_block, ..
             } => paragraph_block.content_length(),
-            BlockItem::TemporaryBlock { .. } => CharOffset::zero(),
-            BlockItem::MermaidDiagram { content_length, .. } => *content_length,
-            BlockItem::TrailingNewLine(_)
-            | BlockItem::Embedded(_)
-            | BlockItem::HorizontalRule(_)
-            | BlockItem::Image { .. } => CharOffset::from(1),
-            BlockItem::Table(laid_out_table) => laid_out_table.content_length(),
-            BlockItem::Hidden(config) => config.content_length(),
+            Self::TemporaryBlock { .. } => CharOffset::zero(),
+            Self::MermaidDiagram { content_length, .. } => *content_length,
+            Self::TrailingNewLine(_)
+            | Self::Embedded(_)
+            | Self::HorizontalRule(_)
+            | Self::Image { .. } => CharOffset::from(1),
+            Self::Table(laid_out_table) => laid_out_table.content_length(),
+            Self::Hidden(config) => config.content_length(),
         }
     }
 
     pub fn lines(&self) -> LineCount {
         match self {
-            BlockItem::Paragraph(paragraph)
-            | BlockItem::Header { paragraph, .. }
-            | BlockItem::UnorderedList { paragraph, .. }
-            | BlockItem::OrderedList { paragraph, .. }
-            | BlockItem::TaskList { paragraph, .. } => paragraph.lines(),
-            BlockItem::TextBlock { paragraph_block } => paragraph_block.lines(),
-            BlockItem::RunnableCodeBlock {
+            Self::Paragraph(paragraph)
+            | Self::Header { paragraph, .. }
+            | Self::UnorderedList { paragraph, .. }
+            | Self::OrderedList { paragraph, .. }
+            | Self::TaskList { paragraph, .. } => paragraph.lines(),
+            Self::TextBlock { paragraph_block } => paragraph_block.lines(),
+            Self::RunnableCodeBlock {
                 paragraph_block, ..
             } => paragraph_block.lines(),
-            BlockItem::TemporaryBlock { .. } => LineCount(0),
-            BlockItem::MermaidDiagram { .. } => LineCount(1),
-            BlockItem::TrailingNewLine(_)
-            | BlockItem::Embedded(_)
-            | BlockItem::HorizontalRule(_)
-            | BlockItem::Image { .. } => LineCount(1),
-            BlockItem::Table(laid_out_table) => laid_out_table.lines(),
-            BlockItem::Hidden(config) => config.line_count(),
+            Self::TemporaryBlock { .. } => LineCount(0),
+            Self::MermaidDiagram { .. } => LineCount(1),
+            Self::TrailingNewLine(_)
+            | Self::Embedded(_)
+            | Self::HorizontalRule(_)
+            | Self::Image { .. } => LineCount(1),
+            Self::Table(laid_out_table) => laid_out_table.lines(),
+            Self::Hidden(config) => config.line_count(),
         }
     }
 
@@ -3633,33 +3633,33 @@ impl BlockItem {
     /// empty, despite having a content length of 1.
     pub fn is_empty(&self) -> bool {
         match self {
-            BlockItem::Paragraph(paragraph)
-            | BlockItem::Header { paragraph, .. }
-            | BlockItem::UnorderedList { paragraph, .. }
-            | BlockItem::OrderedList { paragraph, .. }
-            | BlockItem::TaskList { paragraph, .. } => paragraph.is_empty(),
-            BlockItem::TextBlock { paragraph_block } => paragraph_block.is_empty(),
-            BlockItem::RunnableCodeBlock {
+            Self::Paragraph(paragraph)
+            | Self::Header { paragraph, .. }
+            | Self::UnorderedList { paragraph, .. }
+            | Self::OrderedList { paragraph, .. }
+            | Self::TaskList { paragraph, .. } => paragraph.is_empty(),
+            Self::TextBlock { paragraph_block } => paragraph_block.is_empty(),
+            Self::RunnableCodeBlock {
                 paragraph_block, ..
             } => paragraph_block.is_empty(),
-            BlockItem::MermaidDiagram { .. } => false,
+            Self::MermaidDiagram { .. } => false,
             // Embeds, images, tables, and horizontal rules are never empty.
-            BlockItem::Embedded(_)
-            | BlockItem::HorizontalRule(_)
-            | BlockItem::Image { .. }
-            | BlockItem::Table(_)
-            | BlockItem::TemporaryBlock { .. } => false,
+            Self::Embedded(_)
+            | Self::HorizontalRule(_)
+            | Self::Image { .. }
+            | Self::Table(_)
+            | Self::TemporaryBlock { .. } => false,
             // The trailing newline placeholder and hidden blocks are always considered empty.
-            BlockItem::TrailingNewLine(_) | BlockItem::Hidden { .. } => true,
+            Self::TrailingNewLine(_) | Self::Hidden { .. } => true,
         }
     }
 
     pub fn is_hidden(&self) -> bool {
-        matches!(self, BlockItem::Hidden { .. })
+        matches!(self, Self::Hidden { .. })
     }
 
     pub fn is_trailing_newline(&self) -> bool {
-        matches!(self, BlockItem::TrailingNewLine(_))
+        matches!(self, Self::TrailingNewLine(_))
     }
 }
 
@@ -4496,8 +4496,8 @@ impl<'a> sum_tree::Dimension<'a, LayoutSummary> for Width {
     }
 }
 
-impl<'a> sum_tree::Dimension<'a, LayoutSummary> for LayoutSummary {
-    fn add_summary(&mut self, summary: &'a LayoutSummary) {
+impl<'a> sum_tree::Dimension<'a, Self> for LayoutSummary {
+    fn add_summary(&mut self, summary: &'a Self) {
         *self += summary
     }
 }
@@ -4649,8 +4649,8 @@ impl RenderedSelectionSet {
 }
 
 impl From<Vec1<RenderedSelection>> for RenderedSelectionSet {
-    fn from(selections: Vec1<RenderedSelection>) -> RenderedSelectionSet {
-        RenderedSelectionSet { selections }
+    fn from(selections: Vec1<RenderedSelection>) -> Self {
+        Self { selections }
     }
 }
 

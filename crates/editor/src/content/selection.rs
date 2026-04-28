@@ -140,8 +140,8 @@ impl SelectionSet {
 }
 
 impl From<Vec1<Selection>> for SelectionSet {
-    fn from(selections: Vec1<Selection>) -> SelectionSet {
-        SelectionSet { selections }
+    fn from(selections: Vec1<Selection>) -> Self {
+        Self { selections }
     }
 }
 
@@ -149,6 +149,6 @@ impl TryFrom<Vec<Selection>> for SelectionSet {
     type Error = vec1::Size0Error;
 
     fn try_from(selections: Vec<Selection>) -> Result<Self, Self::Error> {
-        Vec1::try_from(selections).map(SelectionSet::from)
+        Vec1::try_from(selections).map(Self::from)
     }
 }

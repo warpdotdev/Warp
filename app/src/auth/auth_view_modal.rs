@@ -138,7 +138,7 @@ impl AuthRedirectPayload {
     /// Like [`from_url()`], except first parses the given [`raw_url`] into a [`Url`] struct.
     pub fn from_raw_url(raw_url: String) -> Result<Self> {
         match Url::parse(&raw_url) {
-            Ok(parsed_url) => AuthRedirectPayload::from_url(parsed_url),
+            Ok(parsed_url) => Self::from_url(parsed_url),
             Err(error) => Err(anyhow!(error)),
         }
     }

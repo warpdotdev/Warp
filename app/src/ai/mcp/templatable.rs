@@ -127,10 +127,7 @@ impl TemplatableMCPServer {
     // Uses from_user_json to parse the json and then returns the first TemplatableMCPServer
     // This is meant to be used for stored json from the database, which should only contain
     // a single server and already checked for json validity
-    pub fn from_stored_json(
-        json: &str,
-        uuid: uuid::Uuid,
-    ) -> Result<TemplatableMCPServer, FromStoredJsonError> {
+    pub fn from_stored_json(json: &str, uuid: uuid::Uuid) -> Result<Self, FromStoredJsonError> {
         let templates = Self::from_user_json(json);
         match templates {
             Ok(templates) => {
@@ -151,7 +148,7 @@ impl TemplatableMCPServer {
         }
     }
 
-    pub fn from_user_json(json: &str) -> serde_json::Result<Vec<TemplatableMCPServer>> {
+    pub fn from_user_json(json: &str) -> serde_json::Result<Vec<Self>> {
         // Some docs don't show curly braces around the json object, so add them if necessary.
         let json = json.trim();
         let json = if json.starts_with("{") {
@@ -185,7 +182,7 @@ impl TemplatableMCPServer {
                     })
                     .collect::<Vec<TemplateVariable>>();
 
-                TemplatableMCPServer {
+                Self {
                     uuid: uuid::Uuid::new_v4(),
                     name: name.to_owned(),
                     description,
@@ -206,25 +203,19 @@ pub type CloudTemplatableMCPServer =
 pub type CloudTemplatableMCPServerModel = GenericStringModel<TemplatableMCPServer, JsonSerializer>;
 
 impl CloudTemplatableMCPServer {
-    pub fn get_all(app: &AppContext) -> Vec<CloudTemplatableMCPServer> {
+    pub fn get_all(app: &AppContext) -> Vec<Self> {
         CloudModel::as_ref(app)
             .get_all_objects_of_type::<GenericStringObjectId, CloudTemplatableMCPServerModel>()
             .cloned()
             .collect()
     }
 
-    pub fn get_by_id<'a>(
-        sync_id: &'a SyncId,
-        app: &'a AppContext,
-    ) -> Option<&'a CloudTemplatableMCPServer> {
+    pub fn get_by_id<'a>(sync_id: &'a SyncId, app: &'a AppContext) -> Option<&'a Self> {
         CloudModel::as_ref(app)
             .get_object_of_type::<GenericStringObjectId, CloudTemplatableMCPServerModel>(sync_id)
     }
 
-    pub fn get_by_uuid<'a>(
-        uuid: &'a uuid::Uuid,
-        app: &'a AppContext,
-    ) -> Option<&'a CloudTemplatableMCPServer> {
+    pub fn get_by_uuid<'a>(uuid: &'a uuid::Uuid, app: &'a AppContext) -> Option<&'a Self> {
         CloudModel::as_ref(app)
             .get_all_objects_of_type::<GenericStringObjectId, CloudTemplatableMCPServerModel>()
             .find(|server| server.model().string_model.uuid == *uuid)

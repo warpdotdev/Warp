@@ -46,7 +46,7 @@ impl LineEditorStatus {
         ctx.subscribe_to_model(&model_event_dispatcher, |me, event, ctx| {
             me.handle_model_event(event, ctx);
         });
-        LineEditorStatus {
+        Self {
             model_event_dispatcher,
             is_line_editor_active: false,
             mark_line_editor_active_abort_handle: None,

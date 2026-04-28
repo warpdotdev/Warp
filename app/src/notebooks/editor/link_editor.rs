@@ -73,7 +73,7 @@ impl LinkEditor {
             notebook.handle_url_editor_event(event, ctx);
         });
 
-        LinkEditor {
+        Self {
             model,
             tag_editor,
             url_editor,

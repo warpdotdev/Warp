@@ -34,7 +34,7 @@ impl App {
         self,
         init_fn: impl FnOnce(&mut AppContext, LocalBoxFuture<'static, crate::App>) + 'static,
     ) -> TerminationResult {
-        let App { callbacks, assets } = self;
+        let Self { callbacks, assets } = self;
 
         let (sender, receiver) = mpsc::channel::<AppEvent>();
 

@@ -179,7 +179,7 @@ where
             ActionExecution::Async {
                 execute_future,
                 on_complete,
-            } => AnyActionExecution::Async {
+            } => Self::Async {
                 execute_future: Box::pin(async move {
                     let result = execute_future.await;
                     Box::new(result) as Box<dyn AnySpawnableOutput>
@@ -188,9 +188,9 @@ where
                     on_complete(*result.downcast::<T>().expect("Type is correct."), app)
                 }),
             },
-            ActionExecution::Sync(result) => AnyActionExecution::Sync(result),
-            ActionExecution::NotReady => AnyActionExecution::NotReady,
-            ActionExecution::InvalidAction => AnyActionExecution::InvalidAction,
+            ActionExecution::Sync(result) => Self::Sync(result),
+            ActionExecution::NotReady => Self::NotReady,
+            ActionExecution::InvalidAction => Self::InvalidAction,
         }
     }
 }

@@ -29,7 +29,7 @@ impl From<ProfileData> for UserProfileWithUID {
 
 impl From<crate::persistence::model::UserProfile> for UserProfileWithUID {
     fn from(user_profile: crate::persistence::model::UserProfile) -> Self {
-        UserProfileWithUID {
+        Self {
             firebase_uid: UserUid::new(&user_profile.firebase_uid),
             display_name: user_profile.display_name,
             email: user_profile.email,

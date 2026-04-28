@@ -299,7 +299,7 @@ pub trait BufferSumTree {
 impl BufferSumTree for SumTree<BufferText> {
     fn replace_item_at_offset(&mut self, offset: CharOffset, item: BufferText) {
         let old_tree = self.clone();
-        let mut new_tree = SumTree::new();
+        let mut new_tree = Self::new();
         let cursor = old_tree.cursor::<CharOffset, CharOffset>();
         let mut buffer_cursor = BufferCursor::new(cursor);
 

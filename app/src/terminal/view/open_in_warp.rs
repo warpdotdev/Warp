@@ -56,7 +56,7 @@ impl TerminalView {
     pub(super) fn maybe_suggest_open_in_warp(
         &mut self,
         block_completed: &UserBlockCompleted,
-        ctx: &mut ViewContext<TerminalView>,
+        ctx: &mut ViewContext<Self>,
     ) {
         if let Some(active_block_metadata) = self.active_block_metadata.as_ref() {
             let Some(session) = active_block_metadata

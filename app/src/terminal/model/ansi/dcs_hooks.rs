@@ -87,25 +87,23 @@ pub(super) enum DProtoHook {
 impl DProtoHook {
     pub fn name(&self) -> &'static str {
         match self {
-            DProtoHook::CommandFinished { .. } => "CommandFinished",
-            DProtoHook::Precmd { .. } => "Precmd",
-            DProtoHook::Preexec { .. } => "Preexec",
-            DProtoHook::Bootstrapped { .. } => "Bootstrapped",
-            DProtoHook::PreInteractiveSSHSession { .. } => "PreInteractiveSSHSession",
-            DProtoHook::SSH { .. } => "SSH",
-            DProtoHook::InitShell { .. } => "InitShell",
-            DProtoHook::InputBuffer { .. } => "InputBuffer",
-            DProtoHook::Clear { .. } => "Clear",
-            DProtoHook::InitSubshell { .. } => "InitSubshell",
-            DProtoHook::SourcedRcFileForWarp { .. } => "SourcedRcFileForWarp",
-            DProtoHook::InitSsh { .. } => "InitSsh",
-            DProtoHook::FinishUpdate { .. } => "FinishUpdate",
-            DProtoHook::RemoteWarpificationIsUnavailable { .. } => {
-                "RemoteWarpificationIsUnavailable"
-            }
-            DProtoHook::SshTmuxInstaller { .. } => "SshTmuxInstaller",
-            DProtoHook::TmuxInstallFailed { .. } => "TmuxInstallFailed",
-            DProtoHook::ExitShell { .. } => "ExitShell",
+            Self::CommandFinished { .. } => "CommandFinished",
+            Self::Precmd { .. } => "Precmd",
+            Self::Preexec { .. } => "Preexec",
+            Self::Bootstrapped { .. } => "Bootstrapped",
+            Self::PreInteractiveSSHSession { .. } => "PreInteractiveSSHSession",
+            Self::SSH { .. } => "SSH",
+            Self::InitShell { .. } => "InitShell",
+            Self::InputBuffer { .. } => "InputBuffer",
+            Self::Clear { .. } => "Clear",
+            Self::InitSubshell { .. } => "InitSubshell",
+            Self::SourcedRcFileForWarp { .. } => "SourcedRcFileForWarp",
+            Self::InitSsh { .. } => "InitSsh",
+            Self::FinishUpdate { .. } => "FinishUpdate",
+            Self::RemoteWarpificationIsUnavailable { .. } => "RemoteWarpificationIsUnavailable",
+            Self::SshTmuxInstaller { .. } => "SshTmuxInstaller",
+            Self::TmuxInstallFailed { .. } => "TmuxInstallFailed",
+            Self::ExitShell { .. } => "ExitShell",
         }
     }
 
@@ -113,52 +111,52 @@ impl DProtoHook {
     /// hooks.
     pub fn default_from_name(hook: &str) -> Option<Self> {
         match hook {
-            "CommandFinished" => Some(DProtoHook::CommandFinished {
+            "CommandFinished" => Some(Self::CommandFinished {
                 value: Default::default(),
             }),
-            "Precmd" => Some(DProtoHook::Precmd {
+            "Precmd" => Some(Self::Precmd {
                 value: Default::default(),
             }),
-            "Preexec" => Some(DProtoHook::Preexec {
+            "Preexec" => Some(Self::Preexec {
                 value: Default::default(),
             }),
-            "Bootstrapped" => Some(DProtoHook::Bootstrapped {
+            "Bootstrapped" => Some(Self::Bootstrapped {
                 value: Default::default(),
             }),
-            "PreInteractiveSSHSession" => Some(DProtoHook::PreInteractiveSSHSession {
+            "PreInteractiveSSHSession" => Some(Self::PreInteractiveSSHSession {
                 value: Default::default(),
             }),
-            "SSH" => Some(DProtoHook::SSH {
+            "SSH" => Some(Self::SSH {
                 value: Default::default(),
             }),
-            "InitShell" => Some(DProtoHook::InitShell {
+            "InitShell" => Some(Self::InitShell {
                 value: Default::default(),
             }),
-            "InputBuffer" => Some(DProtoHook::InputBuffer {
+            "InputBuffer" => Some(Self::InputBuffer {
                 value: Default::default(),
             }),
-            "Clear" => Some(DProtoHook::Clear {
+            "Clear" => Some(Self::Clear {
                 value: Default::default(),
             }),
-            "InitSubshell" => Some(DProtoHook::InitSubshell {
+            "InitSubshell" => Some(Self::InitSubshell {
                 value: Default::default(),
             }),
-            "SourcedRcFileForWarp" => Some(DProtoHook::SourcedRcFileForWarp {
+            "SourcedRcFileForWarp" => Some(Self::SourcedRcFileForWarp {
                 value: Default::default(),
             }),
-            "InitSsh" => Some(DProtoHook::InitSsh {
+            "InitSsh" => Some(Self::InitSsh {
                 value: Default::default(),
             }),
-            "FinishUpdate" => Some(DProtoHook::FinishUpdate {
+            "FinishUpdate" => Some(Self::FinishUpdate {
                 value: Default::default(),
             }),
-            "SshTmuxInstaller" => Some(DProtoHook::SshTmuxInstaller {
+            "SshTmuxInstaller" => Some(Self::SshTmuxInstaller {
                 value: Default::default(),
             }),
-            "TmuxInstallFailed" => Some(DProtoHook::TmuxInstallFailed {
+            "TmuxInstallFailed" => Some(Self::TmuxInstallFailed {
                 value: Default::default(),
             }),
-            "ExitShell" => Some(DProtoHook::ExitShell {
+            "ExitShell" => Some(Self::ExitShell {
                 value: Default::default(),
             }),
             _ => {
@@ -181,7 +179,7 @@ impl DProtoHook {
             }
         };
         match self {
-            DProtoHook::CommandFinished { value } => match key.as_ref() {
+            Self::CommandFinished { value } => match key.as_ref() {
                 "exit_code" => value.exit_code = v.parse::<i32>().unwrap_or_default().into(),
                 "next_block_id" => {
                     value.next_block_id = v.to_string().into();
@@ -190,7 +188,7 @@ impl DProtoHook {
                     log::warn!("Tried to add unknown field to CommandFinished");
                 }
             },
-            DProtoHook::Precmd { value } => match key.as_ref() {
+            Self::Precmd { value } => match key.as_ref() {
                 "pwd" => {
                     value.pwd = map_empty_to_none(v);
                 }
@@ -222,7 +220,7 @@ impl DProtoHook {
                     log::warn!("Tried to add unknown field {key} to Precmd");
                 }
             },
-            DProtoHook::InitShell { value } => match key.as_ref() {
+            Self::InitShell { value } => match key.as_ref() {
                 "session_id" => {
                     value.session_id = v
                         .parse::<u64>()
@@ -246,7 +244,7 @@ impl DProtoHook {
                     log::warn!("Tried to add unknown field {key} to InitShell");
                 }
             },
-            DProtoHook::Bootstrapped { value } => match key.as_ref() {
+            Self::Bootstrapped { value } => match key.as_ref() {
                 "histfile" => {
                     value.histfile = map_empty_to_none(v);
                 }
@@ -307,7 +305,7 @@ impl DProtoHook {
                     log::warn!("Tried to add unknown field {key} to Bootstrapped hook");
                 }
             },
-            DProtoHook::Preexec { value } => match key.as_ref() {
+            Self::Preexec { value } => match key.as_ref() {
                 "command" => {
                     value.command = v;
                 }
@@ -315,10 +313,10 @@ impl DProtoHook {
                     log::warn!("Tried to add unknown field {key} to Preexec hook");
                 }
             },
-            DProtoHook::Clear { .. } => {
+            Self::Clear { .. } => {
                 log::warn!("Tried to add unknown field {key} to Clear hook");
             }
-            DProtoHook::FinishUpdate { value } => match key.as_ref() {
+            Self::FinishUpdate { value } => match key.as_ref() {
                 "update_id" => {
                     value.update_id = v;
                 }
@@ -326,7 +324,7 @@ impl DProtoHook {
                     log::warn!("Tried to add unknown field {key} to FinishUpdate hook");
                 }
             },
-            DProtoHook::InputBuffer { value } => match key.as_ref() {
+            Self::InputBuffer { value } => match key.as_ref() {
                 "buffer" => {
                     value.buffer = v;
                 }
@@ -334,7 +332,7 @@ impl DProtoHook {
                     log::warn!("Tried to add unknown field {key} to InputBuffer hook");
                 }
             },
-            DProtoHook::ExitShell { value } => match key.as_ref() {
+            Self::ExitShell { value } => match key.as_ref() {
                 "session_id" => {
                     value.session_id = v.parse::<u64>().ok().map(Into::into).unwrap_or_default()
                 }

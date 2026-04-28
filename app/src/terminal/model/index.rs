@@ -15,8 +15,8 @@ pub enum Direction {
 impl Direction {
     pub fn opposite(self) -> Self {
         match self {
-            Side::Right => Side::Left,
-            Side::Left => Side::Right,
+            Self::Right => Self::Left,
+            Self::Left => Self::Right,
         }
     }
 }

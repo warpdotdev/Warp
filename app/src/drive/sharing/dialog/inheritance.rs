@@ -27,7 +27,7 @@ impl InheritanceState {
     pub fn from_object_and_source(
         object_id: &SyncId,
         source: Option<&ServerObjectContainer>,
-    ) -> Option<InheritanceState> {
+    ) -> Option<Self> {
         let source_folder = match source? {
             ServerObjectContainer::Folder { folder_uid } => SyncId::ServerId(*folder_uid),
             _ => return None,
@@ -37,7 +37,7 @@ impl InheritanceState {
             return None;
         }
 
-        Some(InheritanceState {
+        Some(Self {
             source_folder,
             link_handle: Default::default(),
         })

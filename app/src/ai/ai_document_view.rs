@@ -139,7 +139,7 @@ pub enum AIDocumentEvent {
 
 impl From<PaneEvent> for AIDocumentEvent {
     fn from(event: PaneEvent) -> Self {
-        AIDocumentEvent::Pane(event)
+        Self::Pane(event)
     }
 }
 

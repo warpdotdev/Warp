@@ -39,7 +39,7 @@ impl InlineMenuAction for SelectUserQuery {
                 ],
                 move |ctx| {
                     ctx.dispatch_typed_action(InlineMenuRowAction::Accept {
-                        item: SelectUserQuery { exchange_id },
+                        item: Self { exchange_id },
                         cmd_or_ctrl_enter: false,
                     });
                 },
@@ -68,7 +68,7 @@ impl InlineMenuAction for SelectUserQuery {
                 ],
                 move |ctx| {
                     ctx.dispatch_typed_action(InlineMenuRowAction::Accept {
-                        item: SelectUserQuery { exchange_id },
+                        item: Self { exchange_id },
                         cmd_or_ctrl_enter: true,
                     });
                 },

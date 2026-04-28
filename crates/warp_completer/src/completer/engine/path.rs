@@ -93,8 +93,8 @@ impl Display for EngineFileType {
             f,
             "{}",
             match self {
-                EngineFileType::Directory => "Directory",
-                EngineFileType::File => "File",
+                Self::Directory => "Directory",
+                Self::File => "File",
             }
         )
     }
@@ -298,7 +298,7 @@ impl SplitPath {
         // Unescape escaped tildes in the filename.
         let file_name = file_name.replace(r"\~", "~");
 
-        SplitPath {
+        Self {
             directory_absolute_path,
             directory_relative_path_name: directory_relative_path_name.to_owned(),
             file_name,

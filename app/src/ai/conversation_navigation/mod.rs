@@ -145,7 +145,7 @@ impl ConversationNavigationData {
         self.terminal_view_id.is_none() || self.is_closed
     }
 
-    pub fn all_conversations(app: &AppContext) -> Vec<ConversationNavigationData> {
+    pub fn all_conversations(app: &AppContext) -> Vec<Self> {
         let history_model = BlocklistAIHistoryModel::as_ref(app);
 
         // Iterate through all registered workspaces and collect conversations from terminal views
@@ -225,24 +225,22 @@ impl ConversationNavigationData {
                                 pane_id,
                             };
 
-                            all_conversations.push(
-                                ConversationNavigationData::from_ai_conversation(
-                                    conversation,
-                                    Some(terminal_view_id),
-                                    Some(window_id),
-                                    Some(pane_view_locator),
-                                    conversation
-                                        .initial_working_directory()
-                                        .or_else(|| terminal_view.as_ref(app).pwd()),
-                                    is_selected,
-                                    // Check if the conversation is in the active pane, tab, and window
-                                    // to determine if its pane is currently focused.
-                                    Some(window_id) == active_window_id
-                                        && pane_group_handle.id() == active_tab_pane_group_id
-                                        && pane_group.focused_pane_id(app) == pane_id,
-                                    is_closed,
-                                ),
-                            );
+                            all_conversations.push(Self::from_ai_conversation(
+                                conversation,
+                                Some(terminal_view_id),
+                                Some(window_id),
+                                Some(pane_view_locator),
+                                conversation
+                                    .initial_working_directory()
+                                    .or_else(|| terminal_view.as_ref(app).pwd()),
+                                is_selected,
+                                // Check if the conversation is in the active pane, tab, and window
+                                // to determine if its pane is currently focused.
+                                Some(window_id) == active_window_id
+                                    && pane_group_handle.id() == active_tab_pane_group_id
+                                    && pane_group.focused_pane_id(app) == pane_id,
+                                is_closed,
+                            ));
                             all_conversation_ids.insert(conversation.id());
                         }
                     }
@@ -269,7 +267,7 @@ impl ConversationNavigationData {
                     && !all_conversation_ids.contains(&conversation.id())
                 {
                     all_conversation_ids.insert(conversation.id());
-                    all_conversations.push(ConversationNavigationData::from_ai_conversation(
+                    all_conversations.push(Self::from_ai_conversation(
                         conversation,
                         None,
                         None,
@@ -298,7 +296,7 @@ impl ConversationNavigationData {
 
                 if !all_conversation_ids.contains(&conversation.id()) {
                     all_conversation_ids.insert(conversation.id());
-                    all_conversations.push(ConversationNavigationData::from_ai_conversation(
+                    all_conversations.push(Self::from_ai_conversation(
                         conversation,
                         None,
                         None,
@@ -325,7 +323,7 @@ impl ConversationNavigationData {
         all_conversations
     }
 
-    pub fn historical_conversations(app: &AppContext) -> Vec<ConversationNavigationData> {
+    pub fn historical_conversations(app: &AppContext) -> Vec<Self> {
         let history_model = BlocklistAIHistoryModel::as_ref(app);
 
         let mut conversations = Vec::new();
@@ -334,8 +332,7 @@ impl ConversationNavigationData {
         history_model
             .get_local_conversations_metadata()
             .for_each(|metadata| {
-                let conversation =
-                    ConversationNavigationData::from_historical_conversation_metadata(metadata);
+                let conversation = Self::from_historical_conversation_metadata(metadata);
                 if !conversation_ids.contains(&conversation.id()) {
                     conversation_ids.insert(conversation.id());
                     conversations.push(conversation);

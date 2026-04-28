@@ -50,23 +50,23 @@ pub enum DriveObjectType {
 }
 
 impl From<DriveObjectType> for Icon {
-    fn from(cloud_object_type: DriveObjectType) -> Icon {
+    fn from(cloud_object_type: DriveObjectType) -> Self {
         match cloud_object_type {
-            DriveObjectType::Workflow => Icon::Workflow,
-            DriveObjectType::AgentModeWorkflow => Icon::Prompt,
-            DriveObjectType::AIFact => Icon::BookOpen,
-            DriveObjectType::AIFactCollection => Icon::BookOpen,
+            DriveObjectType::Workflow => Self::Workflow,
+            DriveObjectType::AgentModeWorkflow => Self::Prompt,
+            DriveObjectType::AIFact => Self::BookOpen,
+            DriveObjectType::AIFactCollection => Self::BookOpen,
             DriveObjectType::Notebook { is_ai_document } => {
                 if is_ai_document {
-                    Icon::Compass
+                    Self::Compass
                 } else {
-                    Icon::Notebook
+                    Self::Notebook
                 }
             }
-            DriveObjectType::Folder => Icon::Folder,
-            DriveObjectType::EnvVarCollection => Icon::EnvVarCollection,
-            DriveObjectType::MCPServer => Icon::Dataflow,
-            DriveObjectType::MCPServerCollection => Icon::Dataflow,
+            DriveObjectType::Folder => Self::Folder,
+            DriveObjectType::EnvVarCollection => Self::EnvVarCollection,
+            DriveObjectType::MCPServer => Self::Dataflow,
+            DriveObjectType::MCPServerCollection => Self::Dataflow,
         }
     }
 }
@@ -74,15 +74,15 @@ impl From<DriveObjectType> for Icon {
 impl fmt::Display for DriveObjectType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DriveObjectType::Notebook { .. } => write!(f, "notebook"),
-            DriveObjectType::Workflow => write!(f, "workflow"),
-            DriveObjectType::Folder => write!(f, "folder"),
-            DriveObjectType::EnvVarCollection => write!(f, "env var collection"),
-            DriveObjectType::AgentModeWorkflow => write!(f, "prompt"),
-            DriveObjectType::AIFact => write!(f, "ai fact"),
-            DriveObjectType::AIFactCollection => write!(f, "ai fact collection"),
-            DriveObjectType::MCPServer => write!(f, "mcp server"),
-            DriveObjectType::MCPServerCollection => write!(f, "mcp server collection"),
+            Self::Notebook { .. } => write!(f, "notebook"),
+            Self::Workflow => write!(f, "workflow"),
+            Self::Folder => write!(f, "folder"),
+            Self::EnvVarCollection => write!(f, "env var collection"),
+            Self::AgentModeWorkflow => write!(f, "prompt"),
+            Self::AIFact => write!(f, "ai fact"),
+            Self::AIFactCollection => write!(f, "ai fact collection"),
+            Self::MCPServer => write!(f, "mcp server"),
+            Self::MCPServerCollection => write!(f, "mcp server collection"),
         }
     }
 }
@@ -148,10 +148,10 @@ impl CloudObjectTypeAndId {
 
     pub fn sqlite_uid_hash(self) -> HashedSqliteId {
         match self {
-            CloudObjectTypeAndId::Notebook(id) => id.sqlite_uid_hash(ObjectIdType::Notebook),
-            CloudObjectTypeAndId::Workflow(id) => id.sqlite_uid_hash(ObjectIdType::Workflow),
-            CloudObjectTypeAndId::Folder(id) => id.sqlite_uid_hash(ObjectIdType::Folder),
-            CloudObjectTypeAndId::GenericStringObject { object_type: _, id } => {
+            Self::Notebook(id) => id.sqlite_uid_hash(ObjectIdType::Notebook),
+            Self::Workflow(id) => id.sqlite_uid_hash(ObjectIdType::Workflow),
+            Self::Folder(id) => id.sqlite_uid_hash(ObjectIdType::Folder),
+            Self::GenericStringObject { object_type: _, id } => {
                 id.sqlite_uid_hash(ObjectIdType::GenericStringObject)
             }
         }
@@ -159,19 +159,19 @@ impl CloudObjectTypeAndId {
 
     pub fn object_id_type(&self) -> ObjectIdType {
         match self {
-            CloudObjectTypeAndId::Notebook(_) => ObjectIdType::Notebook,
-            CloudObjectTypeAndId::Workflow(_) => ObjectIdType::Workflow,
-            CloudObjectTypeAndId::GenericStringObject { .. } => ObjectIdType::GenericStringObject,
-            CloudObjectTypeAndId::Folder(_) => ObjectIdType::Folder,
+            Self::Notebook(_) => ObjectIdType::Notebook,
+            Self::Workflow(_) => ObjectIdType::Workflow,
+            Self::GenericStringObject { .. } => ObjectIdType::GenericStringObject,
+            Self::Folder(_) => ObjectIdType::Folder,
         }
     }
 
     pub fn object_type(&self) -> ObjectType {
         match self {
-            CloudObjectTypeAndId::Notebook(_) => ObjectType::Notebook,
-            CloudObjectTypeAndId::Workflow(_) => ObjectType::Workflow,
-            CloudObjectTypeAndId::Folder(_) => ObjectType::Folder,
-            CloudObjectTypeAndId::GenericStringObject { object_type, .. } => {
+            Self::Notebook(_) => ObjectType::Notebook,
+            Self::Workflow(_) => ObjectType::Workflow,
+            Self::Folder(_) => ObjectType::Folder,
+            Self::GenericStringObject { object_type, .. } => {
                 ObjectType::GenericStringObject(*object_type)
             }
         }
@@ -179,23 +179,23 @@ impl CloudObjectTypeAndId {
 
     pub fn as_folder_id(self) -> Option<SyncId> {
         match self {
-            CloudObjectTypeAndId::Notebook(_) => None,
-            CloudObjectTypeAndId::Workflow(_) => None,
-            CloudObjectTypeAndId::GenericStringObject { .. } => None,
-            CloudObjectTypeAndId::Folder(f) => Some(f),
+            Self::Notebook(_) => None,
+            Self::Workflow(_) => None,
+            Self::GenericStringObject { .. } => None,
+            Self::Folder(f) => Some(f),
         }
     }
 
     pub fn as_notebook_id(self) -> Option<SyncId> {
         match self {
-            CloudObjectTypeAndId::Notebook(id) => Some(id),
+            Self::Notebook(id) => Some(id),
             _ => None,
         }
     }
 
     pub fn as_generic_string_object_id(self) -> Option<SyncId> {
         match self {
-            CloudObjectTypeAndId::GenericStringObject { object_type: _, id } => Some(id),
+            Self::GenericStringObject { object_type: _, id } => Some(id),
             _ => None,
         }
     }
@@ -203,10 +203,10 @@ impl CloudObjectTypeAndId {
     pub fn has_server_id(self) -> bool {
         matches!(
             self,
-            CloudObjectTypeAndId::Notebook(SyncId::ServerId(_))
-                | CloudObjectTypeAndId::Workflow(SyncId::ServerId(_))
-                | CloudObjectTypeAndId::Folder(SyncId::ServerId(_))
-                | CloudObjectTypeAndId::GenericStringObject {
+            Self::Notebook(SyncId::ServerId(_))
+                | Self::Workflow(SyncId::ServerId(_))
+                | Self::Folder(SyncId::ServerId(_))
+                | Self::GenericStringObject {
                     id: SyncId::ServerId(_),
                     ..
                 }
@@ -215,10 +215,10 @@ impl CloudObjectTypeAndId {
 
     pub fn server_id(self) -> Option<ServerId> {
         match self {
-            CloudObjectTypeAndId::Notebook(SyncId::ServerId(notebook_id)) => Some(notebook_id),
-            CloudObjectTypeAndId::Workflow(SyncId::ServerId(workflow_id)) => Some(workflow_id),
-            CloudObjectTypeAndId::Folder(SyncId::ServerId(folder_id)) => Some(folder_id),
-            CloudObjectTypeAndId::GenericStringObject {
+            Self::Notebook(SyncId::ServerId(notebook_id)) => Some(notebook_id),
+            Self::Workflow(SyncId::ServerId(workflow_id)) => Some(workflow_id),
+            Self::Folder(SyncId::ServerId(folder_id)) => Some(folder_id),
+            Self::GenericStringObject {
                 id: SyncId::ServerId(json_object_id),
                 ..
             } => Some(json_object_id),
@@ -350,11 +350,11 @@ impl DriveSortOrder {
     /// Returns the text that is used to display the sorting option in the KnowledgeIndex's sorting menu
     pub fn menu_text(&self, index_variant: DriveIndexVariant) -> &str {
         match (self, index_variant) {
-            (DriveSortOrder::ByTimestamp, DriveIndexVariant::MainIndex) => "Last updated",
-            (DriveSortOrder::ByTimestamp, DriveIndexVariant::Trash) => "Last trashed",
-            (DriveSortOrder::AlphabeticalDescending, _) => "A to Z",
-            (DriveSortOrder::AlphabeticalAscending, _) => "Z to A",
-            (DriveSortOrder::ByObjectType, _) => "Type",
+            (Self::ByTimestamp, DriveIndexVariant::MainIndex) => "Last updated",
+            (Self::ByTimestamp, DriveIndexVariant::Trash) => "Last trashed",
+            (Self::AlphabeticalDescending, _) => "A to Z",
+            (Self::AlphabeticalAscending, _) => "Z to A",
+            (Self::ByObjectType, _) => "Type",
         }
     }
 }

@@ -58,25 +58,21 @@ fn get_ssh_github_issue_url(title: &str) -> String {
 impl WarpificationUnavailableReason {
     fn error_message(&self) -> &'static str {
         match self {
-            WarpificationUnavailableReason::TmuxNotInstalled { .. } => TMUX_NOT_INSTALLED_ERROR,
-            WarpificationUnavailableReason::UnsupportedTmuxVersion { .. } => {
-                UNSUPPORTED_TMUX_VERSION_ERROR
-            }
-            WarpificationUnavailableReason::TmuxFailed => TMUX_FAILED_ERROR,
-            WarpificationUnavailableReason::Timeout { .. } => WARPIFY_TIMEOUT_ERROR,
-            WarpificationUnavailableReason::UnsupportedShell { .. } => UNSUPPORTED_SHELL_ERROR,
-            WarpificationUnavailableReason::TmuxInstallFailed { .. } => TMUX_INSTALL_FAILED_ERROR,
+            Self::TmuxNotInstalled { .. } => TMUX_NOT_INSTALLED_ERROR,
+            Self::UnsupportedTmuxVersion { .. } => UNSUPPORTED_TMUX_VERSION_ERROR,
+            Self::TmuxFailed => TMUX_FAILED_ERROR,
+            Self::Timeout { .. } => WARPIFY_TIMEOUT_ERROR,
+            Self::UnsupportedShell { .. } => UNSUPPORTED_SHELL_ERROR,
+            Self::TmuxInstallFailed { .. } => TMUX_INSTALL_FAILED_ERROR,
         }
     }
 
     fn error_title(&self) -> &'static str {
         match self {
-            WarpificationUnavailableReason::TmuxNotInstalled { .. } => "tmux Not Installed",
-            WarpificationUnavailableReason::UnsupportedTmuxVersion { .. } => {
-                "Unsupported Tmux Version"
-            }
-            WarpificationUnavailableReason::TmuxFailed => "tmux Failed",
-            WarpificationUnavailableReason::Timeout {
+            Self::TmuxNotInstalled { .. } => "tmux Not Installed",
+            Self::UnsupportedTmuxVersion { .. } => "Unsupported Tmux Version",
+            Self::TmuxFailed => "tmux Failed",
+            Self::Timeout {
                 is_tmux_install, ..
             } => {
                 if *is_tmux_install {
@@ -85,8 +81,8 @@ impl WarpificationUnavailableReason {
                     "SSH Warpify Timeout"
                 }
             }
-            WarpificationUnavailableReason::UnsupportedShell { .. } => "Unsupported Shell",
-            WarpificationUnavailableReason::TmuxInstallFailed { .. } => "tmux Install Failed",
+            Self::UnsupportedShell { .. } => "Unsupported Shell",
+            Self::TmuxInstallFailed { .. } => "tmux Install Failed",
         }
     }
 }

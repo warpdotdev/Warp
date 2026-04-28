@@ -135,8 +135,8 @@ pub enum ManagementCardItemId {
 impl ManagementCardItemId {
     fn as_key(&self) -> String {
         match self {
-            ManagementCardItemId::Task(id) => format!("task_{id}"),
-            ManagementCardItemId::Conversation(id) => format!("conv_{id}"),
+            Self::Task(id) => format!("task_{id}"),
+            Self::Conversation(id) => format!("conv_{id}"),
         }
     }
 }

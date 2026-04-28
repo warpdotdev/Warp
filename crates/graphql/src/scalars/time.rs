@@ -13,7 +13,7 @@ impl ServerTimestamp {
     pub fn from_unix_timestamp_micros(ms_since_epoch: i64) -> Result<Self> {
         let date_time = DateTime::from_timestamp_micros(ms_since_epoch)
             .ok_or_else(|| anyhow!("Unable to convert microseconds into NaiveDateTime"))?;
-        Ok(ServerTimestamp::new(date_time))
+        Ok(Self::new(date_time))
     }
 
     pub fn timestamp_micros(&self) -> i64 {
@@ -27,6 +27,6 @@ impl ServerTimestamp {
 
 impl From<DateTime<Utc>> for ServerTimestamp {
     fn from(value: DateTime<Utc>) -> Self {
-        ServerTimestamp::new(value)
+        Self::new(value)
     }
 }

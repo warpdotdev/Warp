@@ -114,10 +114,10 @@ pub enum StatusColor {
 impl StatusColor {
     fn to_color(&self, appearance: &Appearance) -> ColorU {
         match self {
-            StatusColor::Red => appearance.theme().ui_error_color(),
-            StatusColor::Yellow => appearance.theme().ansi_fg_yellow(),
-            StatusColor::Green => appearance.theme().ansi_fg_green(),
-            StatusColor::Neutral => {
+            Self::Red => appearance.theme().ui_error_color(),
+            Self::Yellow => appearance.theme().ansi_fg_yellow(),
+            Self::Green => appearance.theme().ansi_fg_green(),
+            Self::Neutral => {
                 blended_colors::text_sub(appearance.theme(), appearance.theme().surface_1())
             }
         }
@@ -169,22 +169,22 @@ pub enum ServerCardStatus {
 
 // TODO(aeybel): We'll want to get rid of this `from` function and the ServerCardStatus enum
 impl From<MCPServerState> for ServerCardStatus {
-    fn from(state: MCPServerState) -> ServerCardStatus {
+    fn from(state: MCPServerState) -> Self {
         match state {
-            MCPServerState::NotRunning => ServerCardStatus::Installed,
-            MCPServerState::Starting => ServerCardStatus::StartingServer,
-            MCPServerState::Authenticating => ServerCardStatus::Authenticating,
-            MCPServerState::Running => ServerCardStatus::Running,
-            MCPServerState::ShuttingDown => ServerCardStatus::ShuttingDown,
-            MCPServerState::FailedToStart => ServerCardStatus::Error,
+            MCPServerState::NotRunning => Self::Installed,
+            MCPServerState::Starting => Self::StartingServer,
+            MCPServerState::Authenticating => Self::Authenticating,
+            MCPServerState::Running => Self::Running,
+            MCPServerState::ShuttingDown => Self::ShuttingDown,
+            MCPServerState::FailedToStart => Self::Error,
         }
     }
 }
 
 impl From<ServerCardStatus> for ServerCardOptions {
-    fn from(status: ServerCardStatus) -> ServerCardOptions {
+    fn from(status: ServerCardStatus) -> Self {
         match status {
-            ServerCardStatus::AvailableToSave => ServerCardOptions {
+            ServerCardStatus::AvailableToSave => Self {
                 show_view_logs_icon_button: false,
                 show_log_out_icon_button: false,
                 show_share_icon_button: false,
@@ -201,7 +201,7 @@ impl From<ServerCardStatus> for ServerCardOptions {
                 background: Background::Transparent,
                 full_card_clickable: true,
             },
-            ServerCardStatus::SavedToDrive => ServerCardOptions {
+            ServerCardStatus::SavedToDrive => Self {
                 show_view_logs_icon_button: false,
                 show_log_out_icon_button: false,
                 show_share_icon_button: false,
@@ -218,7 +218,7 @@ impl From<ServerCardStatus> for ServerCardOptions {
                 background: Background::Filled,
                 full_card_clickable: false,
             },
-            ServerCardStatus::Installed => ServerCardOptions {
+            ServerCardStatus::Installed => Self {
                 show_view_logs_icon_button: true,
                 show_log_out_icon_button: false,
                 show_share_icon_button: false,
@@ -238,7 +238,7 @@ impl From<ServerCardStatus> for ServerCardOptions {
                 background: Background::Filled,
                 full_card_clickable: false,
             },
-            ServerCardStatus::StartingServer => ServerCardOptions {
+            ServerCardStatus::StartingServer => Self {
                 show_view_logs_icon_button: true,
                 show_log_out_icon_button: false,
                 show_share_icon_button: false,
@@ -258,7 +258,7 @@ impl From<ServerCardStatus> for ServerCardOptions {
                 background: Background::Filled,
                 full_card_clickable: false,
             },
-            ServerCardStatus::Authenticating => ServerCardOptions {
+            ServerCardStatus::Authenticating => Self {
                 show_view_logs_icon_button: true,
                 show_log_out_icon_button: false,
                 show_share_icon_button: false,
@@ -278,7 +278,7 @@ impl From<ServerCardStatus> for ServerCardOptions {
                 background: Background::Filled,
                 full_card_clickable: false,
             },
-            ServerCardStatus::Running => ServerCardOptions {
+            ServerCardStatus::Running => Self {
                 show_view_logs_icon_button: true,
                 show_log_out_icon_button: false,
                 show_share_icon_button: false,
@@ -298,7 +298,7 @@ impl From<ServerCardStatus> for ServerCardOptions {
                 background: Background::Filled,
                 full_card_clickable: false,
             },
-            ServerCardStatus::ShuttingDown => ServerCardOptions {
+            ServerCardStatus::ShuttingDown => Self {
                 show_view_logs_icon_button: true,
                 show_log_out_icon_button: false,
                 show_share_icon_button: false,
@@ -318,7 +318,7 @@ impl From<ServerCardStatus> for ServerCardOptions {
                 background: Background::Filled,
                 full_card_clickable: false,
             },
-            ServerCardStatus::Error => ServerCardOptions {
+            ServerCardStatus::Error => Self {
                 show_view_logs_icon_button: false,
                 show_log_out_icon_button: false,
                 show_share_icon_button: false,
@@ -1029,7 +1029,7 @@ impl View for ServerCardView {
         let mut hoverable = Hoverable::new(self.mouse_handles.card_hover.clone(), |state| {
             let server_icon = self.render_server_icon_and_status(appearance);
 
-            let title_and_title_chip = ServerCardView::render_title_and_title_chip(
+            let title_and_title_chip = Self::render_title_and_title_chip(
                 self.title.clone(),
                 &self.title_chips,
                 appearance,
@@ -1058,7 +1058,7 @@ impl View for ServerCardView {
 
             if self.is_tools_expanded {
                 if let Some(tools) = &self.tools {
-                    let tool_chips = ServerCardView::render_tool_chips(tools, appearance);
+                    let tool_chips = Self::render_tool_chips(tools, appearance);
                     let tool_chips_row = Wrap::row()
                         .with_run_spacing(6.)
                         .with_children(tool_chips)

@@ -177,7 +177,7 @@ struct Command {
 
 impl Command {
     pub fn new(parts: Vec<Spanned<Part>>) -> Self {
-        Command { parts }
+        Self { parts }
     }
 
     pub fn decompose(self, src: &str) -> Vec<String> {
@@ -213,7 +213,7 @@ impl Command {
                     }
 
                     // Recursively decompose each part in the concatenation.
-                    let new_command = Command::new(s);
+                    let new_command = Self::new(s);
                     all_commands.extend(new_command.decompose(src));
                 }
             }
@@ -262,5 +262,5 @@ enum Part {
     ///
     /// For example, Hello"World" would be a concatenation of /Hello/ and /"World"/ as individual
     /// parts
-    Concatenated(Vec<Spanned<Part>>),
+    Concatenated(Vec<Spanned<Self>>),
 }

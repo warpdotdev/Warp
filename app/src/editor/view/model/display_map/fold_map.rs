@@ -373,8 +373,8 @@ impl<'a> std::ops::AddAssign<&'a Self> for TransformSummary {
     }
 }
 
-impl<'a> Dimension<'a, TransformSummary> for TransformSummary {
-    fn add_summary(&mut self, summary: &'a TransformSummary) {
+impl<'a> Dimension<'a, Self> for TransformSummary {
+    fn add_summary(&mut self, summary: &'a Self) {
         *self += summary;
     }
 }
@@ -480,13 +480,13 @@ pub struct DisplayOffset(usize);
 
 impl From<usize> for DisplayOffset {
     fn from(usize: usize) -> Self {
-        DisplayOffset(usize)
+        Self(usize)
     }
 }
 
 impl From<CharOffset> for DisplayOffset {
     fn from(char_offset: CharOffset) -> Self {
-        DisplayOffset(char_offset.as_usize())
+        Self(char_offset.as_usize())
     }
 }
 

@@ -359,7 +359,7 @@ impl CodeReviewHeader {
 
         if is_disabled {
             let tooltip_text = get_discard_button_disabled_tooltip(git_operation_blocked);
-            Container::new(CodeReviewHeader::wrap_disabled_button_with_tooltip(
+            Container::new(Self::wrap_disabled_button_with_tooltip(
                 button_element,
                 tooltip_text,
                 self.state_handles.discard_all_button.clone(),

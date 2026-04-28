@@ -45,21 +45,21 @@ impl Ord for AnchorBias {
 }
 
 impl Anchor {
-    pub fn cmp(&self, other: &Anchor, buffer: &Buffer) -> Result<Ordering> {
+    pub fn cmp(&self, other: &Self, buffer: &Buffer) -> Result<Ordering> {
         if self == other {
             return Ok(Ordering::Equal);
         }
 
         Ok(match (self, other) {
-            (Anchor::Start, _) | (_, Anchor::End) => Ordering::Less,
-            (Anchor::End, _) | (_, Anchor::Start) => Ordering::Greater,
+            (Self::Start, _) | (_, Self::End) => Ordering::Less,
+            (Self::End, _) | (_, Self::Start) => Ordering::Greater,
             (
-                Anchor::Middle {
+                Self::Middle {
                     offset: self_offset,
                     bias: self_bias,
                     ..
                 },
-                Anchor::Middle {
+                Self::Middle {
                     offset: other_offset,
                     bias: other_bias,
                     ..
@@ -74,8 +74,8 @@ impl Anchor {
 
     pub fn observed(&self, buffer: &Buffer) -> bool {
         match self {
-            Anchor::Start | Anchor::End => true,
-            Anchor::Middle { insertion_id, .. } => buffer.versions().observed(insertion_id),
+            Self::Start | Self::End => true,
+            Self::Middle { insertion_id, .. } => buffer.versions().observed(insertion_id),
         }
     }
 }

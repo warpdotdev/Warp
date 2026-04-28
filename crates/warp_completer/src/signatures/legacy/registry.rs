@@ -113,11 +113,11 @@ impl CommandRegistry {
     pub(super) fn new<F>(
         signature_lookup_fn: F,
         dynamic_completion_data: HashMap<String, DynamicCompletionData>,
-    ) -> CommandRegistry
+    ) -> Self
     where
         F: 'static + Send + Sync + Fn(&str) -> Option<Signature>,
     {
-        CommandRegistry {
+        Self {
             signatures: SignatureCache::new(Box::new(signature_lookup_fn)),
             dynamic_completion_data: dynamic_completion_data.into_iter().collect(),
         }

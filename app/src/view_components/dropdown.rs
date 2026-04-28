@@ -45,7 +45,7 @@ pub enum DropdownStyle {
 impl DropdownStyle {
     fn ui_component_styles(&self) -> UiComponentStyles {
         match self {
-            DropdownStyle::Secondary | DropdownStyle::ActionButtonSecondary => UiComponentStyles {
+            Self::Secondary | Self::ActionButtonSecondary => UiComponentStyles {
                 padding: Some(Coords {
                     top: 5.,
                     bottom: 5.,
@@ -54,7 +54,7 @@ impl DropdownStyle {
                 }),
                 ..Default::default()
             },
-            DropdownStyle::Naked => UiComponentStyles {
+            Self::Naked => UiComponentStyles {
                 ..Default::default()
             },
         }
@@ -123,7 +123,7 @@ impl<A> From<&DropdownItem<A>> for MenuItem<DropdownAction<A>>
 where
     A: Action + Clone,
 {
-    fn from(dropdown_item: &DropdownItem<A>) -> MenuItem<DropdownAction<A>> {
+    fn from(dropdown_item: &DropdownItem<A>) -> Self {
         let menu_item = MenuItemFields::new(dropdown_item.display_text.clone())
             .with_on_select_action(DropdownAction::SelectActionAndClose(
                 dropdown_item.action.clone(),
@@ -140,8 +140,8 @@ impl<A> From<A> for DropdownAction<A>
 where
     A: Action + Clone,
 {
-    fn from(action: A) -> DropdownAction<A> {
-        DropdownAction::SelectActionAndClose(action)
+    fn from(action: A) -> Self {
+        Self::SelectActionAndClose(action)
     }
 }
 

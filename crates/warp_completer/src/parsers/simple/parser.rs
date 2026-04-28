@@ -31,7 +31,7 @@ where
     }
 
     fn with_tokens(tokens: ParserInput<I>) -> Self {
-        Parser {
+        Self {
             tokens,
             contains_redirection: false,
         }

@@ -94,9 +94,9 @@ impl SelectedTabColor {
         default: Option<AnsiColorIdentifier>,
     ) -> Option<AnsiColorIdentifier> {
         match self {
-            SelectedTabColor::Color(c) => Some(c),
-            SelectedTabColor::Cleared => None,
-            SelectedTabColor::Unset => default,
+            Self::Color(c) => Some(c),
+            Self::Cleared => None,
+            Self::Unset => default,
         }
     }
 }
@@ -574,9 +574,9 @@ enum Indicator {
 impl From<TerminalViewState> for Indicator {
     fn from(value: TerminalViewState) -> Self {
         match value {
-            TerminalViewState::Errored => Indicator::Error,
-            TerminalViewState::LongRunning => Indicator::None,
-            TerminalViewState::Normal => Indicator::None,
+            TerminalViewState::Errored => Self::Error,
+            TerminalViewState::LongRunning => Self::None,
+            TerminalViewState::Normal => Self::None,
         }
     }
 }
@@ -627,7 +627,7 @@ impl TabStyles {
 
     /// Returns the default styling (based on the current settings and ui builder, hence not
     /// implementing Default trait).
-    fn default(appearance: &Appearance, tab_color: Option<AnsiColorIdentifier>) -> TabStyles {
+    fn default(appearance: &Appearance, tab_color: Option<AnsiColorIdentifier>) -> Self {
         let theme = appearance.theme();
         let active_tab_bar_color: Option<ThemeFill> =
             tab_color.map(|color| color.to_ansi_color(&theme.terminal_colors().normal).into());
@@ -639,7 +639,7 @@ impl TabStyles {
                 color.into(),
             ))
         });
-        TabStyles {
+        Self {
             background,
             error_color,
             sharing_color,

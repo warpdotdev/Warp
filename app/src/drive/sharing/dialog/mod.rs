@@ -157,7 +157,7 @@ struct EmailInviteForm {
 }
 
 pub struct SharingDialog {
-    self_handle: WeakViewHandle<SharingDialog>,
+    self_handle: WeakViewHandle<Self>,
     target: Option<ShareableObject>,
 
     invite_form: EmailInviteForm,

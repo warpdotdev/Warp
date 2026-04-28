@@ -108,10 +108,10 @@ pub enum HoaOnboardingStep {
 impl HoaOnboardingStep {
     fn index(&self) -> usize {
         match self {
-            HoaOnboardingStep::WelcomeBanner => 0,
-            HoaOnboardingStep::VerticalTabsCallout => 0,
-            HoaOnboardingStep::AgentInboxCallout => 1,
-            HoaOnboardingStep::TabConfig => 2,
+            Self::WelcomeBanner => 0,
+            Self::VerticalTabsCallout => 0,
+            Self::AgentInboxCallout => 1,
+            Self::TabConfig => 2,
         }
     }
 

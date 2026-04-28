@@ -58,7 +58,7 @@ impl From<crate::code_review::comments::AttachedReviewComment> for ReviewComment
     fn from(comment: crate::code_review::comments::AttachedReviewComment) -> Self {
         let head_title = comment.head().map(|head| head.title());
 
-        ReviewComment {
+        Self {
             id: comment.id,
             content: comment.content,
             diff: comment.target.into(),

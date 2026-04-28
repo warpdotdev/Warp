@@ -84,7 +84,7 @@ impl TelemetryEvent for LspTelemetryEvent {
 
     fn payload(&self) -> Option<Value> {
         match self {
-            LspTelemetryEvent::ServerEnabled {
+            Self::ServerEnabled {
                 server_type,
                 source,
                 needed_install,
@@ -93,22 +93,22 @@ impl TelemetryEvent for LspTelemetryEvent {
                 "source": source,
                 "needed_install": needed_install,
             })),
-            LspTelemetryEvent::ServerEnablementSkipped => None,
-            LspTelemetryEvent::ServerInstallCompleted {
+            Self::ServerEnablementSkipped => None,
+            Self::ServerInstallCompleted {
                 server_type,
                 success,
             } => Some(json!({
                 "server_type": server_type,
                 "success": success,
             })),
-            LspTelemetryEvent::ServerRemoved {
+            Self::ServerRemoved {
                 server_type,
                 source,
             } => Some(json!({
                 "server_type": server_type,
                 "source": source,
             })),
-            LspTelemetryEvent::HoverShown {
+            Self::HoverShown {
                 server_type,
                 had_content,
                 had_diagnostics,
@@ -117,31 +117,31 @@ impl TelemetryEvent for LspTelemetryEvent {
                 "had_content": had_content,
                 "had_diagnostics": had_diagnostics,
             })),
-            LspTelemetryEvent::GotoDefinition {
+            Self::GotoDefinition {
                 server_type,
                 had_result,
             } => Some(json!({
                 "server_type": server_type,
                 "had_result": had_result,
             })),
-            LspTelemetryEvent::FindReferencesShown {
+            Self::FindReferencesShown {
                 server_type,
                 num_references,
             } => Some(json!({
                 "server_type": server_type,
                 "num_references": num_references,
             })),
-            LspTelemetryEvent::ControlAction {
+            Self::ControlAction {
                 action,
                 server_type,
             } => Some(json!({
                 "action": action,
                 "server_type": server_type,
             })),
-            LspTelemetryEvent::ServerStarted { server_type } => Some(json!({
+            Self::ServerStarted { server_type } => Some(json!({
                 "server_type": server_type,
             })),
-            LspTelemetryEvent::ServerFailed { server_type } => Some(json!({
+            Self::ServerFailed { server_type } => Some(json!({
                 "server_type": server_type,
             })),
         }

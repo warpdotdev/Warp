@@ -255,12 +255,12 @@ pub enum ShellType {
 }
 
 impl From<ShellType> for command_corrections::Shell {
-    fn from(s: ShellType) -> command_corrections::Shell {
+    fn from(s: ShellType) -> Self {
         match s {
-            ShellType::Bash => command_corrections::Shell::Bash,
-            ShellType::Zsh => command_corrections::Shell::Zsh,
-            ShellType::Fish => command_corrections::Shell::Fish,
-            ShellType::PowerShell => command_corrections::Shell::PowerShell,
+            ShellType::Bash => Self::Bash,
+            ShellType::Zsh => Self::Zsh,
+            ShellType::Fish => Self::Fish,
+            ShellType::PowerShell => Self::PowerShell,
         }
     }
 }
@@ -283,11 +283,11 @@ impl ShellType {
             || name.ends_with("/bash")
             || name.ends_with("bash.exe")
         {
-            Some(ShellType::Bash)
+            Some(Self::Bash)
         } else if name == "zsh" || name == "-zsh" || name.ends_with("/zsh") {
-            Some(ShellType::Zsh)
+            Some(Self::Zsh)
         } else if name == "fish" || name == "-fish" || name.ends_with("/fish") {
-            Some(ShellType::Fish)
+            Some(Self::Fish)
         } else if name == "pwsh"
             || name.ends_with("/pwsh")
             || name.ends_with("pwsh.exe")
@@ -295,7 +295,7 @@ impl ShellType {
             || name.ends_with("/powershell")
             || name.ends_with("powershell.exe")
         {
-            Some(ShellType::PowerShell)
+            Some(Self::PowerShell)
         } else {
             None
         }
@@ -304,10 +304,10 @@ impl ShellType {
     // Returns a shell type from a markdown code block language specifier
     pub fn from_markdown_language_spec(language: &str) -> Option<Self> {
         match language {
-            "bash" | "shell" | "sh" => Some(ShellType::Bash),
-            "zsh" => Some(ShellType::Zsh),
-            "fish" => Some(ShellType::Fish),
-            "powershell" | "pwsh" => Some(ShellType::PowerShell),
+            "bash" | "shell" | "sh" => Some(Self::Bash),
+            "zsh" => Some(Self::Zsh),
+            "fish" => Some(Self::Fish),
+            "powershell" | "pwsh" => Some(Self::PowerShell),
             _ => None,
         }
     }
@@ -315,11 +315,11 @@ impl ShellType {
     /// Returns locations of history files in order of search precedence
     pub fn history_files(self) -> Vec<String> {
         match self {
-            ShellType::Zsh => vec!["~/.zsh_history".to_string(), "~/.zhistory".to_string()],
-            ShellType::Bash => vec!["~/.bash_history".to_string()],
-            ShellType::Fish => vec!["~/.local/share/fish/fish_history".to_string()],
+            Self::Zsh => vec!["~/.zsh_history".to_string(), "~/.zhistory".to_string()],
+            Self::Bash => vec!["~/.bash_history".to_string()],
+            Self::Fish => vec!["~/.local/share/fish/fish_history".to_string()],
             #[cfg(not(windows))]
-            ShellType::PowerShell => {
+            Self::PowerShell => {
                 vec!["~/.local/share/powershell/PSReadLine/ConsoleHost_history.txt".to_string()]
             }
             #[cfg(windows)]
@@ -339,21 +339,21 @@ impl ShellType {
             _ => "~",
         });
         let relative_paths = match (self, os) {
-            (ShellType::PowerShell, TargetOS::Windows) => {
+            (Self::PowerShell, TargetOS::Windows) => {
                 vec![Path::new(
                     ".config/powershell/Microsoft.PowerShell_profile.ps1",
                 )]
             }
             // We need to make sure this works for either editor of PowerShell (PowerShell Core or
             // Windows PowerShell) so just write the file to both.
-            (ShellType::PowerShell, _) => vec![
+            (Self::PowerShell, _) => vec![
                 Path::new("Documents/PowerShell/Microsoft.PowerShell_profile.ps1"),
                 Path::new("Documents/WindowsPowerShell/Microsoft.PowerShell_profile.ps1"),
             ],
             (_, TargetOS::Windows) => vec![],
-            (ShellType::Bash, _) => vec![Path::new(".bashrc")],
-            (ShellType::Zsh, _) => vec![Path::new(".zshrc")],
-            (ShellType::Fish, _) => vec![Path::new(".config/fish/config.fish")],
+            (Self::Bash, _) => vec![Path::new(".bashrc")],
+            (Self::Zsh, _) => vec![Path::new(".zshrc")],
+            (Self::Fish, _) => vec![Path::new(".config/fish/config.fish")],
         };
         relative_paths
             .iter()
@@ -367,28 +367,28 @@ impl ShellType {
     #[cfg(unix)]
     pub fn and_combiner(self) -> &'static str {
         match self {
-            ShellType::Bash | ShellType::Zsh | ShellType::PowerShell => " && ",
-            ShellType::Fish => "; and ",
+            Self::Bash | Self::Zsh | Self::PowerShell => " && ",
+            Self::Fish => "; and ",
         }
     }
 
     /// Returns whether the current shell supports native shell completions.
     fn supports_native_shell_completions(&self) -> bool {
-        matches!(self, ShellType::Zsh)
+        matches!(self, Self::Zsh)
     }
 
     /// Returns the syntax to run a second command regardless if the first one succeeds.
     pub fn or_combiner(self) -> &'static str {
         match self {
-            ShellType::Bash | ShellType::Zsh | ShellType::PowerShell => " ; ",
-            ShellType::Fish => "; or ",
+            Self::Bash | Self::Zsh | Self::PowerShell => " ; ",
+            Self::Fish => "; or ",
         }
     }
 
     /// Given the output of the `alias` command, returns a map of alias keys to values.
     pub fn aliases(self, alias_output: &str) -> HashMap<SmolStr, String> {
         match self {
-            ShellType::Zsh => alias_output
+            Self::Zsh => alias_output
                 .lines()
                 .filter_map(|line| {
                     // ZSH outputs aliases in a key pair of `name=val`, with both the name and value
@@ -398,7 +398,7 @@ impl ShellType {
                         .and_then(|(key, value)| unescape_alias_key_value(key, value))
                 })
                 .collect(),
-            ShellType::Bash => {
+            Self::Bash => {
                 // Bash outputs aliases in a key pair of `alias name=val`. Alias values that
                 // span multiple lines are not escaped. For simplicity in parsing this, append a
                 // newline on the front of the string and then split on "\nalias"
@@ -411,7 +411,7 @@ impl ShellType {
                     })
                     .collect()
             }
-            ShellType::Fish => {
+            Self::Fish => {
                 let alias_output = format!("\n{alias_output}");
                 alias_output
                     .split("\nalias ")
@@ -428,7 +428,7 @@ impl ShellType {
                     })
                     .collect()
             }
-            ShellType::PowerShell => alias_output
+            Self::PowerShell => alias_output
                 .lines()
                 .filter_map(|line| {
                     // PowerShell outputs aliases in a key pair of `name -> val`, with both the name
@@ -444,7 +444,7 @@ impl ShellType {
 
     pub fn abbreviations(self, abbr_output: &str) -> HashMap<SmolStr, String> {
         match self {
-            ShellType::Fish => {
+            Self::Fish => {
                 abbr_output
                     .lines()
                     .filter_map(|line| {
@@ -471,7 +471,7 @@ impl ShellType {
     pub fn parse_history(self, history_file_bytes: &[u8]) -> Vec<String> {
         let mut history_lines: Vec<String> = Vec::new();
         match self {
-            ShellType::Zsh => {
+            Self::Zsh => {
                 let mut current_line = String::new();
 
                 let unmetafied_content = zsh_unmetafy(history_file_bytes);
@@ -498,7 +498,7 @@ impl ShellType {
                     }
                 }
             }
-            ShellType::Bash => {
+            Self::Bash => {
                 let history_file_contents = String::from_utf8_lossy(history_file_bytes);
                 // Bash format if HISTTIMEFORMAT not set
                 // <command>
@@ -517,7 +517,7 @@ impl ShellType {
                     .collect()
             }
 
-            ShellType::Fish => {
+            Self::Fish => {
                 let history_file_contents = String::from_utf8_lossy(history_file_bytes);
                 // fish has psuedo-yaml.
                 // The commands start with "- cmd: ".
@@ -528,7 +528,7 @@ impl ShellType {
                     .collect()
             }
 
-            ShellType::PowerShell => {
+            Self::PowerShell => {
                 let history_file_contents = String::from_utf8_lossy(history_file_bytes);
                 history_lines = history_file_contents
                     .lines()
@@ -553,45 +553,45 @@ impl ShellType {
         const POWERSHELL_BINDING: [u8; 2] = [escape_sequences::C0::ESC, b'2'];
         const OTHER_BINDING: [u8; 1] = [escape_sequences::C0::DLE];
         match self {
-            ShellType::PowerShell => POWERSHELL_BINDING.as_slice(),
-            ShellType::Zsh | ShellType::Bash | ShellType::Fish => OTHER_BINDING.as_slice(),
+            Self::PowerShell => POWERSHELL_BINDING.as_slice(),
+            Self::Zsh | Self::Bash | Self::Fish => OTHER_BINDING.as_slice(),
         }
     }
 
     /// Bytes used to execute a command, once the command text is sent
     pub fn execute_command_bytes(self) -> &'static [u8] {
         match self {
-            ShellType::Bash | ShellType::Zsh => &b"\n"[..],
-            ShellType::PowerShell => &b"\r"[..],
+            Self::Bash | Self::Zsh => &b"\n"[..],
+            Self::PowerShell => &b"\r"[..],
             // For Fish, we send an extra space, immediately followed by backspace, and then
             // the newline character. The backspace ensures that any autosuggestions are
             // suppressed, so we don't get erroneous ghosted autosuggestion text in the command
             // grid.
-            ShellType::Fish => &b" \x7f\n"[..],
+            Self::Fish => &b" \x7f\n"[..],
         }
     }
 
     /// The name of the shell
     pub fn name(self) -> &'static str {
         match self {
-            ShellType::Zsh => "zsh",
-            ShellType::Bash => "bash",
-            ShellType::Fish => "fish",
-            ShellType::PowerShell => "pwsh",
+            Self::Zsh => "zsh",
+            Self::Bash => "bash",
+            Self::Fish => "fish",
+            Self::PowerShell => "pwsh",
         }
     }
 
     /// If true, Warp will bootstrap the shell if it's the login shell on the remote host.
     pub fn is_fully_supported_remotely(&self) -> bool {
         match self {
-            ShellType::Zsh | ShellType::Bash => true,
-            ShellType::Fish | ShellType::PowerShell => false,
+            Self::Zsh | Self::Bash => true,
+            Self::Fish | Self::PowerShell => false,
         }
     }
 
     pub fn shell_command_to_get_executables(&self) -> &'static str {
         match self {
-            ShellType::Bash => {
+            Self::Bash => {
                 // Since `compgen -c` returns more than just executables (and the output itself
                 // doesn't include any info about what the type of the word is), we filter down to
                 // executable "file"s. Note that we do this at the shell level since if we did this
@@ -601,7 +601,7 @@ impl ShellType {
                 // systems with a lot of installed commands.
                 r#"COMMANDS=($(compgen -c)); TYPES=($(type -t ${COMMANDS[@]})); for i in "${!COMMANDS[@]}"; do if [[ ${TYPES[$i]} == "file" ]]; then echo ${COMMANDS[$i]}; fi; done"#
             }
-            ShellType::Fish => {
+            Self::Fish => {
                 // Although `complete -C` returns more than just executables, we don't check the type here
                 // since the output of `complete` already tells us what is an executable ('command') and what isn't
                 // (whereas the output of `compgen` doesn't so we need to check the `type` there).
@@ -609,11 +609,11 @@ impl ShellType {
                 // if we're running a version of fish that doesn't support it, try again without it.
                 "complete -C --escape '' || complete -C ''"
             }
-            ShellType::Zsh => {
+            Self::Zsh => {
                 // zsh is cool and has an API for just fetching executables
                 "builtin print -l -- ${(ok)commands}"
             }
-            ShellType::PowerShell => {
+            Self::PowerShell => {
                 // PowerShell does not deal in strings, but in Objects and Object lists
                 // Get-Command and Select-Object each return a list of Objects. In the shell,
                 // this will print one item per line. However, when it is converted to a string,
@@ -638,7 +638,7 @@ impl ShellType {
                     return Vec::new();
                 };
                 match self {
-                    ShellType::Bash | ShellType::Zsh => {
+                    Self::Bash | Self::Zsh => {
                         // For bash and zsh, we wrote the command such that the output is just
                         // a list of executable files.
                         if !is_msys2 {
@@ -668,7 +668,7 @@ impl ShellType {
                             .map_into()
                             .collect()
                     }
-                    ShellType::Fish => {
+                    Self::Fish => {
                         // This is the post-processing for Fish explained above.
                         output_string
                             .lines()
@@ -684,7 +684,7 @@ impl ShellType {
                             })
                             .collect()
                     }
-                    ShellType::PowerShell => {
+                    Self::PowerShell => {
                         // Windows allows certain suffixes, e.g. "exe", to be elided.
                         if cfg!(windows) {
                             output_string
@@ -767,12 +767,12 @@ impl ShellLaunchData {
     /// Converts the given path string to a OS-native PathBuf, performing any necessary shell-informed conversions.
     pub fn maybe_convert_absolute_path(&self, path_str: &str) -> Option<PathBuf> {
         match self {
-            ShellLaunchData::Executable { .. } => Some(PathBuf::from(path_str)),
-            ShellLaunchData::WSL { distro } => {
+            Self::Executable { .. } => Some(PathBuf::from(path_str)),
+            Self::WSL { distro } => {
                 let unix_path = TypedPath::unix(path_str);
                 convert_wsl_to_windows_host_path(&unix_path, distro).ok()
             }
-            ShellLaunchData::MSYS2 {
+            Self::MSYS2 {
                 executable_path, ..
             } => {
                 let unix_path = TypedPath::unix(path_str);
@@ -785,7 +785,7 @@ impl ShellLaunchData {
                 .ok()
             }
             // Paths inside the sandbox container are plain Unix paths.
-            ShellLaunchData::DockerSandbox { .. } => Some(PathBuf::from(path_str)),
+            Self::DockerSandbox { .. } => Some(PathBuf::from(path_str)),
         }
     }
 
@@ -795,13 +795,13 @@ impl ShellLaunchData {
         shell_encoded_path: TypedPathBuf,
     ) -> Option<PathBuf> {
         match self {
-            ShellLaunchData::Executable { .. } | ShellLaunchData::DockerSandbox { .. } => {
+            Self::Executable { .. } | Self::DockerSandbox { .. } => {
                 PathBuf::try_from(shell_encoded_path).ok()
             }
-            ShellLaunchData::WSL { distro } => {
+            Self::WSL { distro } => {
                 convert_wsl_to_windows_host_path(&shell_encoded_path.to_path(), distro).ok()
             }
-            ShellLaunchData::MSYS2 {
+            Self::MSYS2 {
                 executable_path, ..
             } => convert_msys2_to_windows_native_path(
                 &shell_encoded_path.to_path(),
@@ -816,30 +816,30 @@ impl ShellLaunchData {
     /// Naively changes the path string to an OS-native encoding, without performing shell-informed conversions.
     fn to_native_path_encoding(&self, path_str: &str) -> Option<PathBuf> {
         match self {
-            ShellLaunchData::Executable { .. } => Some(PathBuf::from(path_str)),
-            ShellLaunchData::WSL { .. } | ShellLaunchData::MSYS2 { .. } => {
+            Self::Executable { .. } => Some(PathBuf::from(path_str)),
+            Self::WSL { .. } | Self::MSYS2 { .. } => {
                 let windows_encoding = TypedPath::unix(path_str).with_windows_encoding();
                 PathBuf::try_from(windows_encoding).ok()
             }
             // The container is Unix; Warp runs on the host, so paths are
             // already in the host's native encoding. Pass through unchanged.
-            ShellLaunchData::DockerSandbox { .. } => Some(PathBuf::from(path_str)),
+            Self::DockerSandbox { .. } => Some(PathBuf::from(path_str)),
         }
     }
 
     /// Converts a path string to a shell's encoding.
     fn to_shell_encoding<'a>(&self, path_str: &'a str) -> TypedPath<'a> {
         match self {
-            ShellLaunchData::Executable { .. } => {
+            Self::Executable { .. } => {
                 if cfg!(unix) {
                     TypedPath::unix(path_str)
                 } else {
                     TypedPath::windows(path_str)
                 }
             }
-            ShellLaunchData::WSL { .. }
-            | ShellLaunchData::MSYS2 { .. }
-            | ShellLaunchData::DockerSandbox { .. } => TypedPath::unix(path_str),
+            Self::WSL { .. } | Self::MSYS2 { .. } | Self::DockerSandbox { .. } => {
+                TypedPath::unix(path_str)
+            }
         }
     }
 
@@ -883,10 +883,10 @@ impl ShellLaunchData {
 impl From<ShellLaunchData> for SessionPlatform {
     fn from(data: ShellLaunchData) -> Self {
         match data {
-            ShellLaunchData::Executable { .. } => SessionPlatform::Native,
-            ShellLaunchData::WSL { .. } => SessionPlatform::WSL,
-            ShellLaunchData::MSYS2 { .. } => SessionPlatform::MSYS2,
-            ShellLaunchData::DockerSandbox { .. } => SessionPlatform::DockerSandbox,
+            ShellLaunchData::Executable { .. } => Self::Native,
+            ShellLaunchData::WSL { .. } => Self::WSL,
+            ShellLaunchData::MSYS2 { .. } => Self::MSYS2,
+            ShellLaunchData::DockerSandbox { .. } => Self::DockerSandbox,
         }
     }
 }

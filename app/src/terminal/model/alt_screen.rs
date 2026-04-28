@@ -80,7 +80,7 @@ impl AltScreen {
             PerformResetGridChecks::default(),
         );
 
-        AltScreen {
+        Self {
             grid_handler,
             pending_lines_to_scroll: Lines::zero(),
             selection: None,

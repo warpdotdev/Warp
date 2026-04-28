@@ -94,7 +94,7 @@ impl WorkflowAliases {
     pub fn set_aliases(
         &mut self,
         aliases_to_add: Vec<WorkflowAlias>,
-        ctx: &mut ModelContext<WorkflowAliases>,
+        ctx: &mut ModelContext<Self>,
     ) -> Result<(), Error> {
         let mut aliases = self.aliases.clone();
         let to_exclude = aliases_to_add
@@ -110,7 +110,7 @@ impl WorkflowAliases {
     pub fn remove_aliases(
         &mut self,
         aliases_to_exclude: Vec<String>,
-        ctx: &mut ModelContext<WorkflowAliases>,
+        ctx: &mut ModelContext<Self>,
     ) -> Result<(), Error> {
         let mut aliases = self.aliases.clone();
         let to_exclude = aliases_to_exclude.into_iter().collect::<HashSet<_>>();
@@ -138,7 +138,7 @@ impl WorkflowAliases {
     pub fn remove_aliases_for_workflow(
         &mut self,
         workflow_id: SyncId,
-        ctx: &mut ModelContext<WorkflowAliases>,
+        ctx: &mut ModelContext<Self>,
     ) -> Result<(), Error> {
         let aliases = self
             .aliases

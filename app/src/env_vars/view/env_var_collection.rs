@@ -554,7 +554,7 @@ impl EnvVarCollectionView {
 
         let view_position_id = format!("env_var_collection_view_{}", ctx.view_id());
 
-        EnvVarCollectionView {
+        Self {
             focused: false,
             pane_configuration,
             focus_handle: None,

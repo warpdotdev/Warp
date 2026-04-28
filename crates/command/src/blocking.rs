@@ -65,7 +65,7 @@ impl Command {
     ///     .spawn()
     ///     .expect("sh command failed to start");
     /// ```
-    pub fn new<S: AsRef<OsStr>>(program: S) -> Command {
+    pub fn new<S: AsRef<OsStr>>(program: S) -> Self {
         #[cfg_attr(not(windows), expect(unused_mut))]
         let mut inner = std::process::Command::new(program);
 
@@ -210,7 +210,7 @@ impl Command {
     ///     .spawn()
     ///     .expect("ls command failed to start");
     /// ```
-    pub fn args<I, S>(&mut self, args: I) -> &mut Command
+    pub fn args<I, S>(&mut self, args: I) -> &mut Self
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -245,7 +245,7 @@ impl Command {
     ///     .spawn()
     ///     .expect("ls command failed to start");
     /// ```
-    pub fn env<K, V>(&mut self, key: K, val: V) -> &mut Command
+    pub fn env<K, V>(&mut self, key: K, val: V) -> &mut Self
     where
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
@@ -290,7 +290,7 @@ impl Command {
     ///     .spawn()
     ///     .expect("printenv failed to start");
     /// ```
-    pub fn envs<I, K, V>(&mut self, vars: I) -> &mut Command
+    pub fn envs<I, K, V>(&mut self, vars: I) -> &mut Self
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -325,7 +325,7 @@ impl Command {
     ///     .spawn()
     ///     .expect("ls command failed to start");
     /// ```
-    pub fn env_remove<K: AsRef<OsStr>>(&mut self, key: K) -> &mut Command {
+    pub fn env_remove<K: AsRef<OsStr>>(&mut self, key: K) -> &mut Self {
         self.inner.env_remove(key);
         self
     }
@@ -354,7 +354,7 @@ impl Command {
     ///     .spawn()
     ///     .expect("ls command failed to start");
     /// ```
-    pub fn env_clear(&mut self) -> &mut Command {
+    pub fn env_clear(&mut self) -> &mut Self {
         self.inner.env_clear();
         self
     }
@@ -383,7 +383,7 @@ impl Command {
     /// ```
     ///
     /// [`canonicalize`]: crate::fs::canonicalize
-    pub fn current_dir<P: AsRef<Path>>(&mut self, dir: P) -> &mut Command {
+    pub fn current_dir<P: AsRef<Path>>(&mut self, dir: P) -> &mut Self {
         self.inner.current_dir(dir);
         self
     }
@@ -411,7 +411,7 @@ impl Command {
     ///     .spawn()
     ///     .expect("ls command failed to start");
     /// ```
-    pub fn stdin<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command {
+    pub fn stdin<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Self {
         self.inner.stdin(cfg);
         self.stdin_is_default = false;
         self
@@ -440,7 +440,7 @@ impl Command {
     ///     .spawn()
     ///     .expect("ls command failed to start");
     /// ```
-    pub fn stdout<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command {
+    pub fn stdout<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Self {
         self.inner.stdout(cfg);
         self.stdout_is_default = false;
         self
@@ -469,7 +469,7 @@ impl Command {
     ///     .spawn()
     ///     .expect("ls command failed to start");
     /// ```
-    pub fn stderr<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command {
+    pub fn stderr<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Self {
         self.inner.stderr(cfg);
         self.stderr_is_default = false;
         self

@@ -31,10 +31,10 @@ pub enum DisplaySetting {
 impl From<DisplaySetting> for GqlDisplaySetting {
     fn from(value: DisplaySetting) -> Self {
         match value {
-            DisplaySetting::Command => GqlDisplaySetting::Command,
-            DisplaySetting::Output => GqlDisplaySetting::Output,
-            DisplaySetting::CommandAndOutput => GqlDisplaySetting::CommandAndOutput,
-            DisplaySetting::Other(s) => GqlDisplaySetting::Other(s),
+            DisplaySetting::Command => Self::Command,
+            DisplaySetting::Output => Self::Output,
+            DisplaySetting::CommandAndOutput => Self::CommandAndOutput,
+            DisplaySetting::Other(s) => Self::Other(s),
         }
     }
 }
@@ -197,7 +197,7 @@ impl Block {
                 }
             };
 
-        Block {
+        Self {
             id: None,
             command: block_contents.command,
             output: block_contents.output,

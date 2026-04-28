@@ -50,12 +50,12 @@ impl ShellCompletion {
 
 impl ShellData {
     /// Returns the corresponding `ShellData` given a format type.
-    pub fn from_format_type(format: &str) -> Option<ShellData> {
+    pub fn from_format_type(format: &str) -> Option<Self> {
         match format {
-            "raw" => Some(ShellData::Raw {
+            "raw" => Some(Self::Raw {
                 output: Default::default(),
             }),
-            "incrementally_typed" => Some(ShellData::IncrementallyTyped {
+            "incrementally_typed" => Some(Self::IncrementallyTyped {
                 output: Default::default(),
             }),
             _ => None,
@@ -89,7 +89,7 @@ impl From<ShellCompletion> for MatchedSuggestion {
             value.suggestion_type,
             Default::default(),
         );
-        MatchedSuggestion::new(
+        Self::new(
             suggestion,
             Match::Prefix {
                 is_case_sensitive: false,

@@ -17,8 +17,8 @@ pub enum PromptSuggestionResolution {
 impl From<PromptSuggestionResolution> for CodeDiffAction {
     fn from(value: PromptSuggestionResolution) -> Self {
         match value {
-            PromptSuggestionResolution::Accept { .. } => CodeDiffAction::Accept,
-            PromptSuggestionResolution::Reject { .. } => CodeDiffAction::Reject,
+            PromptSuggestionResolution::Accept { .. } => Self::Accept,
+            PromptSuggestionResolution::Reject { .. } => Self::Reject,
         }
     }
 }

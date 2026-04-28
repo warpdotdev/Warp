@@ -24,12 +24,12 @@ impl AppBackend {
         init_fn: impl FnOnce(&mut AppContext, LocalBoxFuture<'static, crate::App>) + 'static,
     ) -> TerminationResult {
         match self {
-            AppBackend::CurrentPlatform(inner) => {
+            Self::CurrentPlatform(inner) => {
                 inner.run(init_fn);
                 // We don't report errors for the GUI app on termination.
                 Ok(())
             }
-            AppBackend::Headless(inner) => inner.run(init_fn),
+            Self::Headless(inner) => inner.run(init_fn),
         }
     }
 }

@@ -54,7 +54,7 @@ impl TelemetryEvent for SkillTelemetryEvent {
 
     fn payload(&self) -> Option<serde_json::Value> {
         match self {
-            SkillTelemetryEvent::Read {
+            Self::Read {
                 reference,
                 name,
                 scope,
@@ -67,7 +67,7 @@ impl TelemetryEvent for SkillTelemetryEvent {
                 "provider": provider,
                 "error": error,
             })),
-            SkillTelemetryEvent::Opened {
+            Self::Opened {
                 reference,
                 name,
                 origin,

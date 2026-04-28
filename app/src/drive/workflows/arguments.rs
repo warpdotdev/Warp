@@ -54,15 +54,15 @@ impl ArgumentsState {
     ///
     /// If the edited result is instead `ls {{argument_10}} {{argument_2}} {{argument_3}}`, the number of
     /// words did not change, and so we use a by_word_index search (which will argument_10 to argument_1, etc.).
-    pub fn for_command_workflow(prev_state: &ArgumentsState, input_string: String) -> Self {
+    pub fn for_command_workflow(prev_state: &Self, input_string: String) -> Self {
         Self::new(prev_state, input_string, false)
     }
 
-    pub fn for_saved_prompt(prev_state: &ArgumentsState, input_string: String) -> Self {
+    pub fn for_saved_prompt(prev_state: &Self, input_string: String) -> Self {
         Self::new(prev_state, input_string, true)
     }
 
-    fn new(prev_state: &ArgumentsState, input_string: String, is_for_saved_prompt: bool) -> Self {
+    fn new(prev_state: &Self, input_string: String, is_for_saved_prompt: bool) -> Self {
         let mut arg_name_word_index_pairs: Vec<(String, usize)> = Vec::new();
         let mut arg_names = HashSet::new();
 
@@ -105,7 +105,7 @@ impl ArgumentsState {
         let number_of_words = arguments_iterator.word_count();
 
         let (arguments, word_index_to_arg_index_map, arg_name_to_arg_index_map) =
-            ArgumentsState::build_arguments_and_query_maps(
+            Self::build_arguments_and_query_maps(
                 prev_state,
                 number_of_words != prev_state.number_of_words,
                 arg_name_word_index_pairs,
@@ -135,7 +135,7 @@ impl ArgumentsState {
     }
 
     fn build_arguments_and_query_maps(
-        prev_state: &ArgumentsState,
+        prev_state: &Self,
         is_insertion_or_deletion: bool,
         arg_name_word_index_pairs: Vec<(String, usize)>,
     ) -> (Vec<Argument>, HashMap<usize, usize>, HashMap<String, usize>) {
@@ -154,7 +154,7 @@ impl ArgumentsState {
 
                 let argument: Argument = match prev_argument {
                     Some(prev_argument) => {
-                        ArgumentsState::new_argument_with_previous_data(name, prev_argument)
+                        Self::new_argument_with_previous_data(name, prev_argument)
                     }
                     None => Argument::new(name, Default::default()),
                 };

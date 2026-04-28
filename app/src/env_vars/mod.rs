@@ -33,7 +33,7 @@ pub enum EnvVarCollectionType {
 impl EnvVarCollectionType {
     pub fn as_cloud_env_var_collection(&self) -> &CloudEnvVarCollection {
         match self {
-            EnvVarCollectionType::Cloud(cloud_env_var) => cloud_env_var,
+            Self::Cloud(cloud_env_var) => cloud_env_var,
         }
     }
 }
@@ -66,7 +66,7 @@ pub enum EnvVarValue {
 
 impl Default for EnvVarValue {
     fn default() -> Self {
-        EnvVarValue::Constant(String::new())
+        Self::Constant(String::new())
     }
 }
 
@@ -237,8 +237,8 @@ impl JsonModel for EnvVarCollection {
     }
 }
 
-impl PartialEq<CloudEnvVarCollection> for CloudEnvVarCollection {
-    fn eq(&self, other: &CloudEnvVarCollection) -> bool {
+impl PartialEq<Self> for CloudEnvVarCollection {
+    fn eq(&self, other: &Self) -> bool {
         self.model().string_model == other.model().string_model && self.id == other.id
     }
 }

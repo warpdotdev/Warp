@@ -107,10 +107,10 @@ pub enum Command {
 impl Command {
     pub fn command_name_span(&self) -> Spanned<&str> {
         match self {
-            Command::Classified(shell_command) => {
+            Self::Classified(shell_command) => {
                 shell_command.name.as_str().spanned(shell_command.name_span)
             }
-            Command::Unclassified(external_command) => external_command
+            Self::Unclassified(external_command) => external_command
                 .name
                 .as_str()
                 .spanned(external_command.name_span),
@@ -152,8 +152,8 @@ pub struct CommandCallInfo {
 }
 
 impl CommandCallInfo {
-    pub fn new(head: Spanned<ParsedExpression>, span: Span) -> CommandCallInfo {
-        CommandCallInfo {
+    pub fn new(head: Spanned<ParsedExpression>, span: Span) -> Self {
+        Self {
             command_name: head,
             positionals: None,
             flags: None,
@@ -184,17 +184,17 @@ impl ArgType {
                 ArgumentType::Template(Template {
                     type_name: TemplateType::FilesAndFolders,
                     ..
-                }) => arg_types.extend(vec![ArgType::File, ArgType::Folder]),
+                }) => arg_types.extend(vec![Self::File, Self::Folder]),
                 ArgumentType::Template(Template {
                     type_name: TemplateType::Files { must_exist: true },
                     ..
-                }) => arg_types.push(ArgType::File),
+                }) => arg_types.push(Self::File),
                 ArgumentType::Template(Template {
                     type_name: TemplateType::Folders { must_exist: true },
                     ..
-                }) => arg_types.push(ArgType::Folder),
+                }) => arg_types.push(Self::Folder),
                 ArgumentType::Generator(generator_name) => {
-                    arg_types.push(ArgType::Generator(generator_name.clone()))
+                    arg_types.push(Self::Generator(generator_name.clone()))
                 }
                 // We don't want to validate against hard coded suggestions.
                 ArgumentType::Suggestion(_) => (),
@@ -259,7 +259,7 @@ pub struct Flags {
 }
 
 impl Flags {
-    pub fn new() -> Flags {
+    pub fn new() -> Self {
         Default::default()
     }
 

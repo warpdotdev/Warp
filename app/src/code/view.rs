@@ -502,7 +502,7 @@ impl CodeView {
                     return;
                 }
                 log::warn!("Failed to load file. {err:?}");
-                CodeView::display_load_failure(ctx.window_id(), ctx);
+                Self::display_load_failure(ctx.window_id(), ctx);
             }
             LocalCodeEditorEvent::SelectionAddedAsContext {
                 relative_file_path,
@@ -520,12 +520,12 @@ impl CodeView {
             LocalCodeEditorEvent::FileSaved => {
                 me.sync_active_tab_path(ctx);
                 me.set_title_after_content_update(ctx);
-                CodeView::display_save_success(ctx.window_id(), ctx);
+                Self::display_save_success(ctx.window_id(), ctx);
                 ctx.notify();
             }
             LocalCodeEditorEvent::FailedToSave { error: err } => {
                 log::warn!("Failed to load file. {err:?}");
-                CodeView::display_save_failure(ctx.window_id(), ctx);
+                Self::display_save_failure(ctx.window_id(), ctx);
             }
             LocalCodeEditorEvent::DiffAccepted => {
                 CodeManager::handle(ctx).update(ctx, |code_manager, ctx| {
@@ -844,7 +844,7 @@ impl CodeView {
             }
             Err(err) => {
                 log::warn!("Failed to save file. {err:?}");
-                CodeView::display_save_failure(ctx.window_id(), ctx);
+                Self::display_save_failure(ctx.window_id(), ctx);
                 if let Some(callback) = callback {
                     callback(SaveOutcome::Failed, self, ctx);
                 }
@@ -1787,7 +1787,7 @@ impl CodeView {
         let spacer = Container::new(Empty::new().finish())
             .with_border(Border::bottom(TAB_BAR_BORDER_HEIGHT).with_border_fill(theme.outline()))
             .finish();
-        let draggable_spacer = render_pane_header_draggable::<CodeView>(
+        let draggable_spacer = render_pane_header_draggable::<Self>(
             self.pane_configuration.clone(),
             spacer,
             header_ctx.draggable_state.clone(),
@@ -1973,7 +1973,7 @@ impl CodeView {
     }
 
     /// Merges tabs from another `CodeView`, avoiding duplicates and updating the active tab index.
-    pub fn merge_tabs(&mut self, source_code_view: &CodeView, ctx: &mut ViewContext<Self>) {
+    pub fn merge_tabs(&mut self, source_code_view: &Self, ctx: &mut ViewContext<Self>) {
         let existing_paths_to_idx: HashMap<String, usize> = self
             .tab_group
             .iter()

@@ -65,8 +65,8 @@ pub struct Point {
 }
 
 impl Point {
-    pub fn new(line: impl Into<Index>, col: impl Into<Index>) -> Point {
-        Point {
+    pub fn new(line: impl Into<Index>, col: impl Into<Index>) -> Self {
+        Self {
             row: line.into().0,
             col: col.into().0,
         }
@@ -80,7 +80,7 @@ impl Point {
     #[must_use = "this returns the result of the operation, without modifying the original"]
     /// Increments the `Point` by `distance` cells, wrapping around if the column value exceeds
     /// `num_cols`.
-    pub fn wrapping_add(mut self, num_cols: usize, distance: usize) -> Point {
+    pub fn wrapping_add(mut self, num_cols: usize, distance: usize) -> Self {
         self.row += (distance + self.col) / num_cols;
         self.col = (self.col + distance) % num_cols;
         self
@@ -92,14 +92,14 @@ impl Point {
     /// below zero.
     ///
     /// Note: This will also saturate at (0, 0) as a minimum value.
-    pub fn wrapping_sub(mut self, num_cols: usize, distance: usize) -> Point {
+    pub fn wrapping_sub(mut self, num_cols: usize, distance: usize) -> Self {
         let line_changes = (distance + num_cols - 1).saturating_sub(self.col) / num_cols;
         if self.row >= line_changes {
             self.row -= line_changes;
             self.col = (num_cols + self.col - distance % num_cols) % num_cols;
             self
         } else {
-            Point::new(0, 0)
+            Self::new(0, 0)
         }
     }
 
@@ -110,7 +110,7 @@ impl Point {
 
     /// Compares Point against another Point, returning the one that is maximal, given the number of
     /// columns in the grid being considered.
-    pub fn max_point<'a>(&'a self, other: &'a Point, num_cols: usize) -> &'a Point {
+    pub fn max_point<'a>(&'a self, other: &'a Self, num_cols: usize) -> &'a Self {
         if self.as_one_dimensional_index(num_cols) >= other.as_one_dimensional_index(num_cols) {
             self
         } else {
@@ -119,7 +119,7 @@ impl Point {
     }
 
     /// Computes left-to-right distance between two points. The result is an absolute value.
-    pub fn distance(&self, num_cols: usize, other: &Point) -> usize {
+    pub fn distance(&self, num_cols: usize, other: &Self) -> usize {
         let this_index = self.as_one_dimensional_index(num_cols);
         let other_index = other.as_one_dimensional_index(num_cols);
 
@@ -137,7 +137,7 @@ impl Point {
 impl Point {
     #[inline]
     #[must_use = "this returns the result of the operation, without modifying the original"]
-    pub fn sub_absolute<D>(mut self, dimensions: &D, boundary: Boundary, rhs: usize) -> Point
+    pub fn sub_absolute<D>(mut self, dimensions: &D, boundary: Boundary, rhs: usize) -> Self
     where
         D: Dimensions,
     {
@@ -149,8 +149,8 @@ impl Point {
 
         if self.row >= total_lines {
             match boundary {
-                Boundary::Clamp => Point::new(total_lines - 1, 0),
-                Boundary::Wrap => Point::new(self.row - total_lines, self.col),
+                Boundary::Clamp => Self::new(total_lines - 1, 0),
+                Boundary::Wrap => Self::new(self.row - total_lines, self.col),
             }
         } else {
             self
@@ -159,7 +159,7 @@ impl Point {
 
     #[inline]
     #[must_use = "this returns the result of the operation, without modifying the original"]
-    pub fn add_absolute<D>(mut self, dimensions: &D, boundary: Boundary, rhs: usize) -> Point
+    pub fn add_absolute<D>(mut self, dimensions: &D, boundary: Boundary, rhs: usize) -> Self
     where
         D: Dimensions,
     {
@@ -173,11 +173,11 @@ impl Point {
             self
         } else {
             match boundary {
-                Boundary::Clamp => Point::new(0, num_cols - 1),
+                Boundary::Clamp => Self::new(0, num_cols - 1),
                 Boundary::Wrap => {
                     let col = (self.col + rhs) % num_cols;
                     let line = dimensions.total_rows() + self.row - line_delta;
-                    Point::new(line, col)
+                    Self::new(line, col)
                 }
             }
         }
@@ -185,13 +185,13 @@ impl Point {
 }
 
 impl PartialOrd for Point {
-    fn partial_cmp(&self, other: &Point) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for Point {
-    fn cmp(&self, other: &Point) -> Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         match (self.row.cmp(&other.row), self.col.cmp(&other.col)) {
             (Ordering::Equal, ord) | (ord, _) => ord,
         }
@@ -202,7 +202,7 @@ impl Ord for Point {
 pub struct VisibleRow(pub usize);
 
 impl Sub<usize> for VisibleRow {
-    type Output = VisibleRow;
+    type Output = Self;
 
     fn sub(self, rhs: usize) -> Self::Output {
         Self(self.0 - rhs)
@@ -224,7 +224,7 @@ impl Sub<Self> for VisibleRow {
 }
 
 impl Add<Self> for VisibleRow {
-    type Output = VisibleRow;
+    type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
         Self(self.0 + rhs.0)
@@ -232,7 +232,7 @@ impl Add<Self> for VisibleRow {
 }
 
 impl Add<usize> for VisibleRow {
-    type Output = VisibleRow;
+    type Output = Self;
 
     fn add(self, rhs: usize) -> Self::Output {
         Self(self.0 + rhs)
@@ -246,13 +246,13 @@ impl AddAssign<usize> for VisibleRow {
 }
 
 impl VisibleRow {
-    pub fn saturating_sub(&self, rhs: usize) -> VisibleRow {
-        VisibleRow(self.0.saturating_sub(rhs))
+    pub fn saturating_sub(&self, rhs: usize) -> Self {
+        Self(self.0.saturating_sub(rhs))
     }
 
     #[inline]
-    pub fn steps_between(start: VisibleRow, end: VisibleRow, by: VisibleRow) -> Option<usize> {
-        if by == VisibleRow(0) {
+    pub fn steps_between(start: Self, end: Self, by: Self) -> Option<usize> {
+        if by == Self(0) {
             return None;
         }
         if start < end {
@@ -270,8 +270,8 @@ impl VisibleRow {
     }
 
     #[inline]
-    pub fn steps_between_by_one(start: VisibleRow, end: VisibleRow) -> Option<usize> {
-        Self::steps_between(start, end, VisibleRow(1))
+    pub fn steps_between_by_one(start: Self, end: Self) -> Option<usize> {
+        Self::steps_between(start, end, Self(1))
     }
 }
 
@@ -299,7 +299,7 @@ impl VisiblePoint {
     #[must_use = "this returns the result of the operation, without modifying the original"]
     /// Increments the `VisiblePoint` by `distance` cells, wrapping around if the column value
     /// exceeds `num_cols`.
-    pub fn wrapping_add(mut self, num_cols: usize, distance: usize) -> VisiblePoint {
+    pub fn wrapping_add(mut self, num_cols: usize, distance: usize) -> Self {
         self.row += (distance + self.col) / num_cols;
         self.col = (self.col + distance) % num_cols;
         self
@@ -311,14 +311,14 @@ impl VisiblePoint {
     /// would drop below zero.
     ///
     /// Note: This will also saturate at (0, 0) as a minimum value.
-    pub fn wrapping_sub(mut self, num_cols: usize, distance: usize) -> VisiblePoint {
+    pub fn wrapping_sub(mut self, num_cols: usize, distance: usize) -> Self {
         let line_changes = (distance + num_cols - 1).saturating_sub(self.col) / num_cols;
         if self.row >= VisibleRow(line_changes) {
             self.row = self.row - line_changes;
             self.col = (num_cols + self.col - distance % num_cols) % num_cols;
             self
         } else {
-            VisiblePoint {
+            Self {
                 row: VisibleRow(0),
                 col: 0,
             }
@@ -327,19 +327,19 @@ impl VisiblePoint {
 
     /// Wrap this point to a maximum width of `num_cols`, incrementing the row if it is beyond
     /// that value
-    pub fn wrap(self, num_cols: usize) -> VisiblePoint {
+    pub fn wrap(self, num_cols: usize) -> Self {
         self.wrapping_add(num_cols, 0)
     }
 }
 
 impl PartialOrd for VisiblePoint {
-    fn partial_cmp(&self, other: &VisiblePoint) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for VisiblePoint {
-    fn cmp(&self, other: &VisiblePoint) -> Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         match (self.row.cmp(&other.row), self.col.cmp(&other.col)) {
             (Ordering::Equal, ord) | (ord, _) => ord,
         }
@@ -354,7 +354,7 @@ pub struct IndexRange<T>(pub Range<T>);
 
 impl<T> From<Range<T>> for IndexRange<T> {
     fn from(from: Range<T>) -> Self {
-        IndexRange(from)
+        Self(from)
     }
 }
 

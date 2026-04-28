@@ -251,7 +251,7 @@ impl TeamsPageAction {
 }
 
 impl From<&TeamsPageAction> for LoginGatedFeature {
-    fn from(val: &TeamsPageAction) -> LoginGatedFeature {
+    fn from(val: &TeamsPageAction) -> Self {
         use TeamsPageAction::*;
         match val {
             LeaveTeam => "Leave Team",
@@ -279,11 +279,11 @@ impl TryFrom<&TeamsPageAction> for TelemetryEvent {
     type Error = anyhow::Error;
     fn try_from(action: &TeamsPageAction) -> Result<Self, Self::Error> {
         match action {
-            TeamsPageAction::CopyLink(_) => Ok(TelemetryEvent::TeamLinkCopied),
+            TeamsPageAction::CopyLink(_) => Ok(Self::TeamLinkCopied),
             TeamsPageAction::ChangeInviteViewOption(option) => {
-                Ok(TelemetryEvent::ChangedInviteViewOption(*option))
+                Ok(Self::ChangedInviteViewOption(*option))
             }
-            TeamsPageAction::SendEmailInvites { .. } => Ok(TelemetryEvent::SendEmailInvites),
+            TeamsPageAction::SendEmailInvites { .. } => Ok(Self::SendEmailInvites),
             // Some Team events are logged from the server so we do not want to log
             // them from the client as well. For more details see:
             // https://docs.google.com/document/d/1va3_qfkHtDFKZqYaMgNUn5nwU4f8NByzyhg1uolHlck/edit
@@ -338,15 +338,15 @@ impl std::fmt::Display for TeamsInviteOption {
             f,
             "{}",
             match self {
-                TeamsInviteOption::Link => "Link",
-                TeamsInviteOption::Email => "Email",
+                Self::Link => "Link",
+                Self::Email => "Email",
             },
         )
     }
 }
 
 impl Tabs for TeamsInviteOption {
-    fn action_on_click(&self, selection: TeamsInviteOption) -> TeamsPageAction {
+    fn action_on_click(&self, selection: Self) -> TeamsPageAction {
         TeamsPageAction::ChangeInviteViewOption(selection)
     }
 
@@ -618,10 +618,10 @@ impl TeamsPageView {
         mut event_handler: F,
         placeholder: &str,
         ui_font_size: f32,
-        ctx: &mut ViewContext<TeamsPageView>,
+        ctx: &mut ViewContext<Self>,
     ) -> ViewHandle<EditorView>
     where
-        F: 'static + FnMut(&mut TeamsPageView, &EditorEvent, &mut ViewContext<TeamsPageView>),
+        F: 'static + FnMut(&mut Self, &EditorEvent, &mut ViewContext<Self>),
     {
         let editor = ctx.add_typed_action_view(|ctx| {
             let options = SingleLineEditorOptions {
@@ -646,7 +646,7 @@ impl TeamsPageView {
         editor
     }
 
-    pub fn new(ctx: &mut ViewContext<TeamsPageView>) -> Self {
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let user_workspaces = UserWorkspaces::handle(ctx);
         ctx.observe(&user_workspaces, |me, _, ctx| {
             me.update_team_members_state(ctx);
@@ -791,7 +791,7 @@ impl TeamsPageView {
         });
 
         let page = PageType::new_monolith(TeamsWidget::default(), None, true);
-        TeamsPageView {
+        Self {
             page,
             auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             create_team_editor,
@@ -863,11 +863,7 @@ impl TeamsPageView {
         ctx.notify();
     }
 
-    fn handle_model_event(
-        &mut self,
-        event: &UserWorkspacesEvent,
-        ctx: &mut ViewContext<TeamsPageView>,
-    ) {
+    fn handle_model_event(&mut self, event: &UserWorkspacesEvent, ctx: &mut ViewContext<Self>) {
         match event {
             UserWorkspacesEvent::EmailInviteSent => {
                 self.email_invites_block_editor.update(ctx, |editor, ctx| {
@@ -1038,7 +1034,7 @@ impl TeamsPageView {
     fn handle_team_update_event(
         &mut self,
         event: &TeamUpdateManagerEvent,
-        ctx: &mut ViewContext<TeamsPageView>,
+        ctx: &mut ViewContext<Self>,
     ) {
         match event {
             TeamUpdateManagerEvent::LeaveError => {
@@ -1746,7 +1742,7 @@ impl SettingsPageMeta for TeamsPageView {
 
 impl From<ViewHandle<TeamsPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<TeamsPageView>) -> Self {
-        SettingsPageViewHandle::Teams(view_handle)
+        Self::Teams(view_handle)
     }
 }
 

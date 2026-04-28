@@ -106,7 +106,7 @@ impl Mode {
     /// Create mode from a primitive.
     ///
     /// TODO lots of unhandled values.
-    pub fn from_primitive(intermediate: Option<&u8>, num: u16) -> Option<Mode> {
+    pub fn from_primitive(intermediate: Option<&u8>, num: u16) -> Option<Self> {
         // 0 is not a valid DEC mode.
         if num == 0 {
             return None;
@@ -120,28 +120,28 @@ impl Mode {
 
         if private {
             Some(match num {
-                1 => Mode::CursorKeys,
-                3 => Mode::DECCOLM,
-                6 => Mode::Origin,
-                7 => Mode::LineWrap,
-                12 => Mode::BlinkingCursor,
-                25 => Mode::ShowCursor,
-                1000 => Mode::ReportMouseClicks,
-                1002 => Mode::ReportCellMouseMotion,
-                1003 => Mode::ReportAllMouseMotion,
-                1004 => Mode::ReportFocusInOut,
-                1005 => Mode::Utf8Mouse,
-                1006 => Mode::SgrMouse,
-                1007 => Mode::AlternateScroll,
-                1042 => Mode::UrgencyHints,
-                47 => Mode::SwapScreen {
+                1 => Self::CursorKeys,
+                3 => Self::DECCOLM,
+                6 => Self::Origin,
+                7 => Self::LineWrap,
+                12 => Self::BlinkingCursor,
+                25 => Self::ShowCursor,
+                1000 => Self::ReportMouseClicks,
+                1002 => Self::ReportCellMouseMotion,
+                1003 => Self::ReportAllMouseMotion,
+                1004 => Self::ReportFocusInOut,
+                1005 => Self::Utf8Mouse,
+                1006 => Self::SgrMouse,
+                1007 => Self::AlternateScroll,
+                1042 => Self::UrgencyHints,
+                47 => Self::SwapScreen {
                     save_cursor_and_clear_screen: false,
                 },
-                1049 => Mode::SwapScreen {
+                1049 => Self::SwapScreen {
                     save_cursor_and_clear_screen: true,
                 },
-                2004 => Mode::BracketedPaste,
-                2026 => Mode::SyncOutput,
+                2004 => Self::BracketedPaste,
+                2026 => Self::SyncOutput,
                 _ => {
                     trace!("[unimplemented] primitive mode: {num}");
                     return None;
@@ -149,8 +149,8 @@ impl Mode {
             })
         } else {
             Some(match num {
-                4 => Mode::Insert,
-                20 => Mode::LineFeedNewLine,
+                4 => Self::Insert,
+                20 => Self::LineFeedNewLine,
                 _ => return None,
             })
         }
@@ -240,48 +240,48 @@ pub enum NamedColor {
 impl NamedColor {
     pub fn to_bright(self) -> Self {
         match self {
-            NamedColor::Foreground => NamedColor::BrightForeground,
-            NamedColor::Black => NamedColor::BrightBlack,
-            NamedColor::Red => NamedColor::BrightRed,
-            NamedColor::Green => NamedColor::BrightGreen,
-            NamedColor::Yellow => NamedColor::BrightYellow,
-            NamedColor::Blue => NamedColor::BrightBlue,
-            NamedColor::Magenta => NamedColor::BrightMagenta,
-            NamedColor::Cyan => NamedColor::BrightCyan,
-            NamedColor::White => NamedColor::BrightWhite,
-            NamedColor::DimForeground => NamedColor::Foreground,
-            NamedColor::DimBlack => NamedColor::Black,
-            NamedColor::DimRed => NamedColor::Red,
-            NamedColor::DimGreen => NamedColor::Green,
-            NamedColor::DimYellow => NamedColor::Yellow,
-            NamedColor::DimBlue => NamedColor::Blue,
-            NamedColor::DimMagenta => NamedColor::Magenta,
-            NamedColor::DimCyan => NamedColor::Cyan,
-            NamedColor::DimWhite => NamedColor::White,
+            Self::Foreground => Self::BrightForeground,
+            Self::Black => Self::BrightBlack,
+            Self::Red => Self::BrightRed,
+            Self::Green => Self::BrightGreen,
+            Self::Yellow => Self::BrightYellow,
+            Self::Blue => Self::BrightBlue,
+            Self::Magenta => Self::BrightMagenta,
+            Self::Cyan => Self::BrightCyan,
+            Self::White => Self::BrightWhite,
+            Self::DimForeground => Self::Foreground,
+            Self::DimBlack => Self::Black,
+            Self::DimRed => Self::Red,
+            Self::DimGreen => Self::Green,
+            Self::DimYellow => Self::Yellow,
+            Self::DimBlue => Self::Blue,
+            Self::DimMagenta => Self::Magenta,
+            Self::DimCyan => Self::Cyan,
+            Self::DimWhite => Self::White,
             val => val,
         }
     }
 
     pub fn to_dim(self) -> Self {
         match self {
-            NamedColor::Black => NamedColor::DimBlack,
-            NamedColor::Red => NamedColor::DimRed,
-            NamedColor::Green => NamedColor::DimGreen,
-            NamedColor::Yellow => NamedColor::DimYellow,
-            NamedColor::Blue => NamedColor::DimBlue,
-            NamedColor::Magenta => NamedColor::DimMagenta,
-            NamedColor::Cyan => NamedColor::DimCyan,
-            NamedColor::White => NamedColor::DimWhite,
-            NamedColor::Foreground => NamedColor::DimForeground,
-            NamedColor::BrightBlack => NamedColor::Black,
-            NamedColor::BrightRed => NamedColor::Red,
-            NamedColor::BrightGreen => NamedColor::Green,
-            NamedColor::BrightYellow => NamedColor::Yellow,
-            NamedColor::BrightBlue => NamedColor::Blue,
-            NamedColor::BrightMagenta => NamedColor::Magenta,
-            NamedColor::BrightCyan => NamedColor::Cyan,
-            NamedColor::BrightWhite => NamedColor::White,
-            NamedColor::BrightForeground => NamedColor::Foreground,
+            Self::Black => Self::DimBlack,
+            Self::Red => Self::DimRed,
+            Self::Green => Self::DimGreen,
+            Self::Yellow => Self::DimYellow,
+            Self::Blue => Self::DimBlue,
+            Self::Magenta => Self::DimMagenta,
+            Self::Cyan => Self::DimCyan,
+            Self::White => Self::DimWhite,
+            Self::Foreground => Self::DimForeground,
+            Self::BrightBlack => Self::Black,
+            Self::BrightRed => Self::Red,
+            Self::BrightGreen => Self::Green,
+            Self::BrightYellow => Self::Yellow,
+            Self::BrightBlue => Self::Blue,
+            Self::BrightMagenta => Self::Magenta,
+            Self::BrightCyan => Self::Cyan,
+            Self::BrightWhite => Self::White,
+            Self::BrightForeground => Self::Foreground,
             val => val,
         }
     }
@@ -290,23 +290,23 @@ impl NamedColor {
     // NamedColor::Foreground, for example
     pub fn to_ansi_bg_escape_code(&self) -> anyhow::Result<u8> {
         let code = match self {
-            NamedColor::Black | NamedColor::DimBlack => 40,
-            NamedColor::Red | NamedColor::DimRed => 41,
-            NamedColor::Green | NamedColor::DimGreen => 42,
-            NamedColor::Yellow | NamedColor::DimYellow => 43,
-            NamedColor::Blue | NamedColor::DimBlue => 44,
-            NamedColor::Magenta | NamedColor::DimMagenta => 45,
-            NamedColor::Cyan | NamedColor::DimCyan => 46,
-            NamedColor::White | NamedColor::DimWhite => 47,
-            NamedColor::Background => 49,
-            NamedColor::BrightBlack => 100,
-            NamedColor::BrightRed => 101,
-            NamedColor::BrightGreen => 102,
-            NamedColor::BrightYellow => 103,
-            NamedColor::BrightBlue => 104,
-            NamedColor::BrightMagenta => 105,
-            NamedColor::BrightCyan => 106,
-            NamedColor::BrightWhite => 107,
+            Self::Black | Self::DimBlack => 40,
+            Self::Red | Self::DimRed => 41,
+            Self::Green | Self::DimGreen => 42,
+            Self::Yellow | Self::DimYellow => 43,
+            Self::Blue | Self::DimBlue => 44,
+            Self::Magenta | Self::DimMagenta => 45,
+            Self::Cyan | Self::DimCyan => 46,
+            Self::White | Self::DimWhite => 47,
+            Self::Background => 49,
+            Self::BrightBlack => 100,
+            Self::BrightRed => 101,
+            Self::BrightGreen => 102,
+            Self::BrightYellow => 103,
+            Self::BrightBlue => 104,
+            Self::BrightMagenta => 105,
+            Self::BrightCyan => 106,
+            Self::BrightWhite => 107,
             _ => bail!("{:?} is not a valid background", self),
         };
         Ok(code)
@@ -314,23 +314,23 @@ impl NamedColor {
 
     pub fn to_ansi_fg_escape_code(&self) -> anyhow::Result<u8> {
         let code = match self {
-            NamedColor::Black | NamedColor::DimBlack => 30,
-            NamedColor::Red | NamedColor::DimRed => 31,
-            NamedColor::Green | NamedColor::DimGreen => 32,
-            NamedColor::Yellow | NamedColor::DimYellow => 33,
-            NamedColor::Blue | NamedColor::DimBlue => 34,
-            NamedColor::Magenta | NamedColor::DimMagenta => 35,
-            NamedColor::Cyan | NamedColor::DimCyan => 36,
-            NamedColor::White | NamedColor::DimWhite => 37,
-            NamedColor::Foreground | NamedColor::BrightForeground | NamedColor::DimForeground => 39,
-            NamedColor::BrightBlack => 90,
-            NamedColor::BrightRed => 91,
-            NamedColor::BrightGreen => 92,
-            NamedColor::BrightYellow => 93,
-            NamedColor::BrightBlue => 94,
-            NamedColor::BrightMagenta => 95,
-            NamedColor::BrightCyan => 96,
-            NamedColor::BrightWhite => 97,
+            Self::Black | Self::DimBlack => 30,
+            Self::Red | Self::DimRed => 31,
+            Self::Green | Self::DimGreen => 32,
+            Self::Yellow | Self::DimYellow => 33,
+            Self::Blue | Self::DimBlue => 34,
+            Self::Magenta | Self::DimMagenta => 35,
+            Self::Cyan | Self::DimCyan => 36,
+            Self::White | Self::DimWhite => 37,
+            Self::Foreground | Self::BrightForeground | Self::DimForeground => 39,
+            Self::BrightBlack => 90,
+            Self::BrightRed => 91,
+            Self::BrightGreen => 92,
+            Self::BrightYellow => 93,
+            Self::BrightBlue => 94,
+            Self::BrightMagenta => 95,
+            Self::BrightCyan => 96,
+            Self::BrightWhite => 97,
             _ => bail!("{:?} is not a valid foreground", self),
         };
         Ok(code)
@@ -470,8 +470,8 @@ impl StandardCharset {
     #[allow(dead_code)]
     pub fn map(self, c: char) -> char {
         match self {
-            StandardCharset::Ascii => c,
-            StandardCharset::SpecialCharacterAndusizeDrawing => match c {
+            Self::Ascii => c,
+            Self::SpecialCharacterAndusizeDrawing => match c {
                 '`' => '◆',
                 'a' => '▒',
                 'b' => '\t',
@@ -642,10 +642,10 @@ impl TryFrom<&[&[u8]]> for PromptMarker {
     /// https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md
     fn try_from(params: &[&[u8]]) -> Result<Self, Self::Error> {
         match params.first() {
-            Some(&b"A") => Ok(PromptMarker::StartPrompt {
+            Some(&b"A") => Ok(Self::StartPrompt {
                 kind: PromptKind::Initial,
             }),
-            Some(&b"B") => Ok(PromptMarker::EndPrompt),
+            Some(&b"B") => Ok(Self::EndPrompt),
             Some(&b"P") => {
                 // Default to "Initial" as the kind, if one is not specified as an option.
                 let mut kind = PromptKind::Initial;
@@ -669,7 +669,7 @@ impl TryFrom<&[&[u8]]> for PromptMarker {
                         }
                     }
                 }
-                Ok(PromptMarker::StartPrompt { kind })
+                Ok(Self::StartPrompt { kind })
             }
             _ => Err(Self::Error::UnknownParam),
         }
@@ -696,8 +696,8 @@ impl TryFrom<&[u8]> for PromptKind {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         match value {
-            b"i" => Ok(PromptKind::Initial),
-            b"r" => Ok(PromptKind::Right),
+            b"i" => Ok(Self::Initial),
+            b"r" => Ok(Self::Right),
             _ => Err(Self::Error::UnknownValue),
         }
     }

@@ -156,7 +156,7 @@ impl View for SearchBar {
 
 impl SearchBar {
     pub fn new(search_editor: ViewHandle<EditorView>) -> Self {
-        SearchBar {
+        Self {
             editor: search_editor,
             custom_styles: UiComponentStyles::default(),
         }

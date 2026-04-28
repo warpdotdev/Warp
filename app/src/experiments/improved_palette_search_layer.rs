@@ -31,7 +31,7 @@ pub enum ImprovedPaletteSearch {
 const IMPROVED_PALETTE_SEARCH_CONTROL: &str = "Control";
 const IMPROVED_PALETTE_SEARCH_EXPERIMENT: &str = "ImprovedPaletteSearchExperiment";
 
-impl Experiment<ImprovedPaletteSearch> for ImprovedPaletteSearch {
+impl Experiment<Self> for ImprovedPaletteSearch {
     fn name() -> &'static str {
         "ImprovedPaletteSearch"
     }

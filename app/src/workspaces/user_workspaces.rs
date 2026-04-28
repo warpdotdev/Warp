@@ -245,12 +245,8 @@ impl UserWorkspaces {
         ctx: &AppContext,
     ) -> bool {
         match object_type {
-            ObjectType::Notebook => {
-                !UserWorkspaces::has_capacity_for_shared_notebooks(team_uid, ctx, 1)
-            }
-            ObjectType::Workflow => {
-                !UserWorkspaces::has_capacity_for_shared_workflows(team_uid, ctx, 1)
-            }
+            ObjectType::Notebook => !Self::has_capacity_for_shared_notebooks(team_uid, ctx, 1),
+            ObjectType::Workflow => !Self::has_capacity_for_shared_workflows(team_uid, ctx, 1),
             ObjectType::Folder => false,
             ObjectType::GenericStringObject(_) => false,
         }
@@ -260,8 +256,8 @@ impl UserWorkspaces {
         team_uid: ServerId,
         ctx: &AppContext,
     ) -> bool {
-        UserWorkspaces::is_at_tier_limit_for_object_type(team_uid, ObjectType::Notebook, ctx)
-            || UserWorkspaces::is_at_tier_limit_for_object_type(team_uid, ObjectType::Workflow, ctx)
+        Self::is_at_tier_limit_for_object_type(team_uid, ObjectType::Notebook, ctx)
+            || Self::is_at_tier_limit_for_object_type(team_uid, ObjectType::Workflow, ctx)
     }
 
     // Checks if the team has capacity for another shared notebook for their current
@@ -275,7 +271,7 @@ impl UserWorkspaces {
             .active_notebooks_in_space(Space::Team { team_uid }, ctx)
             .count();
 
-        let team = UserWorkspaces::as_ref(ctx).team_from_uid(team_uid);
+        let team = Self::as_ref(ctx).team_from_uid(team_uid);
         if let Some(team) = team {
             // If the team is past due or unpaid, then don't allow new notebooks.
             if team.billing_metadata.is_delinquent_due_to_payment_issue() {
@@ -312,7 +308,7 @@ impl UserWorkspaces {
             .active_workflows_in_space(Space::Team { team_uid }, ctx)
             .count();
 
-        let team = UserWorkspaces::as_ref(ctx).team_from_uid(team_uid);
+        let team = Self::as_ref(ctx).team_from_uid(team_uid);
         if let Some(team) = team {
             // If the team is past due or unpaid, then don't allow new workflows.
             if team.billing_metadata.is_delinquent_due_to_payment_issue() {
@@ -1166,11 +1162,7 @@ impl UserWorkspaces {
     }
 
     pub fn generate_upgrade_link(&mut self, team_uid: ServerId, ctx: &mut ModelContext<Self>) {
-        Self::on_generate_upgrade_link(
-            self,
-            Ok(UserWorkspaces::upgrade_link_for_team(team_uid)),
-            ctx,
-        );
+        Self::on_generate_upgrade_link(self, Ok(Self::upgrade_link_for_team(team_uid)), ctx);
     }
 
     pub fn on_generate_stripe_billing_portal_link(

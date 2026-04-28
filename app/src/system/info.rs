@@ -511,7 +511,7 @@ impl MemoryUsageStats {
 
 impl From<MemoryUsageStats> for TelemetryEvent {
     fn from(value: MemoryUsageStats) -> Self {
-        TelemetryEvent::MemoryUsageStats {
+        Self::MemoryUsageStats {
             total_application_usage_bytes: value.total_application_usage_bytes,
             total_blocks: value.total_blocks,
             total_lines: value.total_lines,

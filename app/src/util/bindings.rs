@@ -224,7 +224,7 @@ lazy_static! {
 
 impl From<CustomAction> for CustomTag {
     fn from(action: CustomAction) -> Self {
-        action as CustomTag
+        action as Self
     }
 }
 
@@ -729,7 +729,7 @@ fn keystroke_includes(search_keystroke: &Keystroke, candidate_keystroke: &Keystr
 
 impl CommandBinding {
     pub fn new(name: String, description: String, trigger: Option<Keystroke>) -> Self {
-        CommandBinding {
+        Self {
             name,
             description: BindingDescription::new(description),
             trigger,
@@ -752,7 +752,7 @@ impl CommandBinding {
     ///
     /// Returns `None` when the source binding has no description.
     pub fn from_lens(lens: BindingLens<'_>, ctx: &AppContext) -> Option<Self> {
-        lens.description.map(|desc| CommandBinding {
+        lens.description.map(|desc| Self {
             description: materialize_description(desc, ctx),
             trigger: trigger_to_keystroke(lens.trigger),
             action: Some(lens.action.clone()),
@@ -776,7 +776,7 @@ impl CommandBinding {
     }
 
     pub fn placeholder(placeholder: String) -> Self {
-        CommandBinding {
+        Self {
             name: Default::default(),
             description: placeholder.into(),
             trigger: None,

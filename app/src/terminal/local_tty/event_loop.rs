@@ -67,8 +67,8 @@ pub struct State {
 }
 
 impl Default for State {
-    fn default() -> State {
-        State {
+    fn default() -> Self {
+        Self {
             write_list: VecDeque::new(),
             parser: ansi::Processor::new(),
             writing: None,
@@ -107,8 +107,8 @@ impl State {
 
 impl Writing {
     #[inline]
-    fn new(c: Cow<'static, [u8]>) -> Writing {
-        Writing {
+    fn new(c: Cow<'static, [u8]>) -> Self {
+        Self {
             source: c,
             written: 0,
         }
@@ -145,8 +145,8 @@ where
         event_listener: ChannelEventListener,
         pty: T,
         rx: Receiver<Message>,
-    ) -> EventLoop<T> {
-        EventLoop {
+    ) -> Self {
+        Self {
             poll: mio::Poll::new().expect("create mio Poll"),
             pty,
             rx,

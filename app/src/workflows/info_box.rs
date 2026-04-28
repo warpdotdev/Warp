@@ -653,15 +653,11 @@ impl WorkflowsMoreInfoView {
         let content_and_args = self.render_content_and_arguments(appearance);
 
         let workflow = self.workflow.as_workflow();
-        let mut title_line = vec![WorkflowsMoreInfoView::render_workflow_title(
-            self,
-            WrapText::Yes,
-            appearance,
-        )];
+        let mut title_line = vec![Self::render_workflow_title(self, WrapText::Yes, appearance)];
 
         if let Some(workflow_source) = workflow.source_url() {
             if !workflow_source.is_empty() {
-                title_line.push(WorkflowsMoreInfoView::render_workflow_source(
+                title_line.push(Self::render_workflow_source(
                     self,
                     workflow_source.to_string(),
                     appearance,
@@ -858,7 +854,7 @@ impl WorkflowsMoreInfoView {
     fn render_content_and_arguments(&self, appearance: &Appearance) -> Box<dyn Element> {
         let content = self.render_content(appearance);
 
-        let vertical_divider = WorkflowsMoreInfoView::render_vertical_divider(appearance);
+        let vertical_divider = Self::render_vertical_divider(appearance);
 
         let mut workflow_info = Flex::row()
             .with_child(Shrinkable::new(1., Align::new(content).left().finish()).finish())

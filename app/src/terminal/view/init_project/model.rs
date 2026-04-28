@@ -62,15 +62,15 @@ pub enum InitStepStatus {
 
 impl InitStepStatus {
     pub fn is_pending(&self) -> bool {
-        matches!(self, InitStepStatus::Pending)
+        matches!(self, Self::Pending)
     }
 
     pub fn is_completed(&self) -> bool {
-        matches!(self, InitStepStatus::Completed(_))
+        matches!(self, Self::Completed(_))
     }
 
     pub fn is_running(&self) -> bool {
-        matches!(self, InitStepStatus::Running)
+        matches!(self, Self::Running)
     }
 }
 

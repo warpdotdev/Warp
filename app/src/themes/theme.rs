@@ -100,11 +100,11 @@ pub enum ThemeKind {
 }
 
 impl From<CustomTheme> for ThemeKind {
-    fn from(custom_theme: CustomTheme) -> ThemeKind {
+    fn from(custom_theme: CustomTheme) -> Self {
         if custom_theme.name.as_str().starts_with("Base16") {
-            ThemeKind::CustomBase16(custom_theme)
+            Self::CustomBase16(custom_theme)
         } else {
-            ThemeKind::Custom(custom_theme)
+            Self::Custom(custom_theme)
         }
     }
 }
@@ -112,32 +112,32 @@ impl From<CustomTheme> for ThemeKind {
 impl std::fmt::Display for ThemeKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let value = match &self {
-            ThemeKind::Light => "Light",
-            ThemeKind::Dark => "Dark",
-            ThemeKind::Dracula => "Dracula",
-            ThemeKind::SolarizedDark => "Solarized Dark",
-            ThemeKind::SolarizedLight => "Solarized Light",
-            ThemeKind::GruvboxDark => "Gruvbox Dark",
-            ThemeKind::GruvboxLight => "Gruvbox Light",
-            ThemeKind::JellyFish => "Jellyfish",
-            ThemeKind::Koi => "Koi",
-            ThemeKind::Leafy => "Leafy",
-            ThemeKind::Marble => "Marble",
-            ThemeKind::PinkCity => "Pink City",
-            ThemeKind::Snowy => "Snowy",
-            ThemeKind::DarkCity => "Dark City",
-            ThemeKind::RedRock => "Red Rock",
-            ThemeKind::CyberWave => "Cyber Wave",
-            ThemeKind::WillowDream => "Willow Dream",
-            ThemeKind::FancyDracula => "Fancy Dracula",
-            ThemeKind::Phenomenon => "Phenomenon",
-            ThemeKind::SolarFlare => "Solar Flare",
-            ThemeKind::Adeberry => "Adeberry",
-            ThemeKind::SentReferralReward => "Warp Referral",
-            ThemeKind::ReceivedReferralReward => "Referred to Warp",
-            ThemeKind::Custom(custom_theme) => custom_theme.name.as_str(),
-            ThemeKind::CustomBase16(custom_theme) => custom_theme.name.as_str(),
-            ThemeKind::InMemory(in_memory_theme) => in_memory_theme.name.as_str(),
+            Self::Light => "Light",
+            Self::Dark => "Dark",
+            Self::Dracula => "Dracula",
+            Self::SolarizedDark => "Solarized Dark",
+            Self::SolarizedLight => "Solarized Light",
+            Self::GruvboxDark => "Gruvbox Dark",
+            Self::GruvboxLight => "Gruvbox Light",
+            Self::JellyFish => "Jellyfish",
+            Self::Koi => "Koi",
+            Self::Leafy => "Leafy",
+            Self::Marble => "Marble",
+            Self::PinkCity => "Pink City",
+            Self::Snowy => "Snowy",
+            Self::DarkCity => "Dark City",
+            Self::RedRock => "Red Rock",
+            Self::CyberWave => "Cyber Wave",
+            Self::WillowDream => "Willow Dream",
+            Self::FancyDracula => "Fancy Dracula",
+            Self::Phenomenon => "Phenomenon",
+            Self::SolarFlare => "Solar Flare",
+            Self::Adeberry => "Adeberry",
+            Self::SentReferralReward => "Warp Referral",
+            Self::ReceivedReferralReward => "Referred to Warp",
+            Self::Custom(custom_theme) => custom_theme.name.as_str(),
+            Self::CustomBase16(custom_theme) => custom_theme.name.as_str(),
+            Self::InMemory(in_memory_theme) => in_memory_theme.name.as_str(),
         };
         write!(f, "{value}")
     }
@@ -173,7 +173,7 @@ pub struct CustomTheme {
 
 impl CustomTheme {
     pub fn new(s: String, p: PathBuf) -> Self {
-        CustomTheme { name: s, path: p }
+        Self { name: s, path: p }
     }
 
     pub fn name(&self) -> String {
@@ -208,7 +208,7 @@ pub struct InMemoryThemeOptions {
 
 impl InMemoryThemeOptions {
     pub async fn new(name: String, path: PathBuf) -> Result<Self> {
-        top_colors_for_image(path.clone()).map(|top_colors| InMemoryThemeOptions {
+        top_colors_for_image(path.clone()).map(|top_colors| Self {
             name,
             path,
             possible_bg_colors: top_colors,
@@ -322,7 +322,7 @@ impl WarpThemeConfig {
             (ThemeKind::SolarFlare, solar_flare()),
             (ThemeKind::Adeberry, adeberry()),
         ]);
-        WarpThemeConfig { theme_map }
+        Self { theme_map }
     }
 
     pub fn add_new_theme(&mut self, theme_name: ThemeKind, theme: WarpTheme) {
@@ -376,8 +376,8 @@ pub struct SelectedSystemThemes {
 impl RespectSystemTheme {
     pub fn selected_system_themes(&self) -> Option<&SelectedSystemThemes> {
         match self {
-            RespectSystemTheme::Off => None,
-            RespectSystemTheme::On(selected) => Some(selected),
+            Self::Off => None,
+            Self::On(selected) => Some(selected),
         }
     }
 }
@@ -413,7 +413,7 @@ pub struct PromptColors {
 
 impl From<WarpTheme> for PromptColors {
     fn from(theme: WarpTheme) -> Self {
-        PromptColors {
+        Self {
             input_prompt_conversation_management: theme.terminal_colors().normal.white.into(),
             input_prompt_pwd: theme.terminal_colors().normal.magenta.into(),
             input_prompt_git: theme.terminal_colors().normal.green.into(),

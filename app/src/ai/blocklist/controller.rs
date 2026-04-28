@@ -90,7 +90,7 @@ pub struct SessionContext {
 
 impl SessionContext {
     pub fn from_session(session: &ActiveSession, app: &AppContext) -> Self {
-        SessionContext {
+        Self {
             session_type: session.session_type(app),
             shell: session.shell_launch_data(app),
             current_working_directory: session.current_working_directory().cloned(),

@@ -82,13 +82,13 @@ impl TryFrom<ITermThemeType> for ThemeType {
     fn try_from(theme_type: ITermThemeType) -> Result<Self, Self::Error> {
         let (default_light, default_dark) = default_iterm_themes();
         match theme_type {
-            ITermThemeType::LightAndDark { light, dark } => Ok(ThemeType::LightAndDark {
+            ITermThemeType::LightAndDark { light, dark } => Ok(Self::LightAndDark {
                 light: light.into_warp_theme(" (Light)", &default_light)?,
                 dark: dark.into_warp_theme(" (Dark)", &default_dark)?,
             }),
-            ITermThemeType::Single(normal) => Ok(ThemeType::Single(
-                normal.into_warp_theme("", &default_dark)?,
-            )),
+            ITermThemeType::Single(normal) => {
+                Ok(Self::Single(normal.into_warp_theme("", &default_dark)?))
+            }
         }
     }
 }
@@ -103,7 +103,7 @@ struct ITermTheme {
 
 impl ITermTheme {
     fn from_dictionary(dict: &mut Dictionary, suffix: &'static str) -> Self {
-        ITermTheme {
+        Self {
             terminal_colors: (0..16)
                 .map(|color_idx| {
                     dict.remove(format!("Ansi {color_idx} Color{suffix}").as_str())
@@ -125,7 +125,7 @@ impl ITermTheme {
     fn into_warp_theme(
         mut self,
         suffix: &'static str,
-        default_theme: &ITermTheme,
+        default_theme: &Self,
     ) -> Result<WarpTheme, ThemeError> {
         if self.foreground == default_theme.foreground
             || self.background == default_theme.background
@@ -216,7 +216,7 @@ pub enum ITermWorkingDirectoryStrategy {
 impl From<ITermWorkingDirectoryStrategy> for WorkingDirectoryConfig {
     fn from(value: ITermWorkingDirectoryStrategy) -> Self {
         match value {
-            ITermWorkingDirectoryStrategy::Simple(strategy) => WorkingDirectoryConfig {
+            ITermWorkingDirectoryStrategy::Simple(strategy) => Self {
                 advanced_mode: false,
                 global: strategy.into(),
                 ..Default::default()
@@ -225,7 +225,7 @@ impl From<ITermWorkingDirectoryStrategy> for WorkingDirectoryConfig {
                 new_window,
                 new_tab,
                 new_pane,
-            } => WorkingDirectoryConfig {
+            } => Self {
                 advanced_mode: true,
                 new_window: new_window.into(),
                 new_tab: new_tab.into(),
@@ -245,12 +245,12 @@ pub enum ITermWorkingDirectory {
 }
 
 impl ITermWorkingDirectory {
-    pub fn from_str(strategy: String, directory: String) -> ITermWorkingDirectory {
+    pub fn from_str(strategy: String, directory: String) -> Self {
         match strategy.as_str() {
-            "No" => ITermWorkingDirectory::Home,
-            "Recycle" => ITermWorkingDirectory::ReuseLast,
-            "Yes" => ITermWorkingDirectory::Custom(directory),
-            _ => ITermWorkingDirectory::Home,
+            "No" => Self::Home,
+            "Recycle" => Self::ReuseLast,
+            "Yes" => Self::Custom(directory),
+            _ => Self::Home,
         }
     }
 }
@@ -258,15 +258,15 @@ impl ITermWorkingDirectory {
 impl From<ITermWorkingDirectory> for WorkingDirectoryPerSourceConfig {
     fn from(value: ITermWorkingDirectory) -> Self {
         match value {
-            ITermWorkingDirectory::Home => WorkingDirectoryPerSourceConfig {
+            ITermWorkingDirectory::Home => Self {
                 mode: WorkingDirectoryMode::HomeDir,
                 custom_dir: "".to_string(),
             },
-            ITermWorkingDirectory::ReuseLast => WorkingDirectoryPerSourceConfig {
+            ITermWorkingDirectory::ReuseLast => Self {
                 mode: WorkingDirectoryMode::PreviousDir,
                 custom_dir: "".to_string(),
             },
-            ITermWorkingDirectory::Custom(path) => WorkingDirectoryPerSourceConfig {
+            ITermWorkingDirectory::Custom(path) => Self {
                 mode: WorkingDirectoryMode::CustomDir,
                 custom_dir: path,
             },
@@ -293,7 +293,7 @@ impl TryFrom<ITermKeystroke> for Keystroke {
             Some(key) => key.to_string(),
             None => value.key,
         };
-        Ok(Keystroke {
+        Ok(Self {
             ctrl: modifier_flags.contains(Flags::CTRL),
             alt: modifier_flags.contains(Flags::ALT),
             shift: modifier_flags.contains(Flags::SHIFT),
@@ -318,7 +318,7 @@ pub struct ITermGlobalHotkeyWindow {
 
 impl ITermGlobalHotkeyWindow {
     pub fn new(hotkey_window: &Dictionary) -> Self {
-        ITermGlobalHotkeyWindow {
+        Self {
             keystroke: ITermKeystroke {
                 key: hotkey_window
                     .get("HotKey Characters Ignoring Modifiers")
@@ -349,7 +349,7 @@ impl ITermGlobalHotkeyWindow {
 impl TryFrom<ITermGlobalHotkeyWindow> for GlobalHotkey {
     type Error = HotkeyError;
     fn try_from(value: ITermGlobalHotkeyWindow) -> Result<Self, Self::Error> {
-        Ok(GlobalHotkey::QuakeMode(QuakeModeWindow {
+        Ok(Self::QuakeMode(QuakeModeWindow {
             keystroke: TryInto::<Keystroke>::try_into(value.keystroke)?,
             autohide: value.autohide,
             screen: if value.screen == 0 {
@@ -493,7 +493,7 @@ impl ITermProfile {
             hotkey_windows.push(ITermGlobalHotkeyWindow::new(&dict));
         }
 
-        ITermProfile {
+        Self {
             theme: theme_type,
             profile_name: dict.remove("Name").and_then(|name| name.into_string()),
             left_option_as_meta: dict
@@ -665,7 +665,7 @@ impl ParseableConfig for ITermProfile {
                     .is_some_and(|guid| guid == default_guid)
             })
             .map(|dictionary| {
-                ITermProfile::from_dictionary(
+                Self::from_dictionary(
                     dictionary,
                     hotkey_windows.clone(),
                     activation_keystroke.clone(),
@@ -811,7 +811,7 @@ impl ParseableConfig for ITermProfile {
             }
         };
 
-        let default_profile = ITermProfile::default();
+        let default_profile = Self::default();
 
         // Don't import font family if it is the default monospace font family.
         if self.font_name == default_profile.font_name

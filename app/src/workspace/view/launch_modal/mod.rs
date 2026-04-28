@@ -127,7 +127,7 @@ impl<S: Slide> Default for StateHandles<S> {
         for slide in S::all() {
             slide_handles.insert(slide, SlideStateHandles::default());
         }
-        StateHandles {
+        Self {
             close_button: Default::default(),
             slides: slide_handles,
             checkbox: Default::default(),
@@ -147,7 +147,7 @@ impl<S: Slide> LaunchModal<S> {
         let next_button = ctx.add_view(|_| ActionButton::new("", PrimaryTheme));
         let secondary_button = ctx.add_view(|_| ActionButton::new("", SecondaryTheme));
 
-        let mut me = LaunchModal {
+        let mut me = Self {
             slide: S::first(),
             next_button,
             secondary_button,

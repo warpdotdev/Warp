@@ -44,7 +44,7 @@ impl TelemetryCollector {
         Self { server_api }
     }
 
-    pub fn initialize_telemetry_collection(&self, ctx: &mut ModelContext<TelemetryCollector>) {
+    pub fn initialize_telemetry_collection(&self, ctx: &mut ModelContext<Self>) {
         // Start a background thread to periodically flush events from the telemetry event queue.
         if ChannelState::is_release_bundle() || FeatureFlag::WithSandboxTelemetry.is_enabled() {
             // Flush the events to Rudderstack that were persisted into a file the last time the app was
@@ -82,7 +82,7 @@ impl TelemetryCollector {
 
     /// Writes all queued but unsent telemetry telemetry events to disk so that they may be sent
     /// on the next app startup.
-    pub fn write_telemetry_events_to_disk(&self, ctx: &mut ModelContext<TelemetryCollector>) {
+    pub fn write_telemetry_events_to_disk(&self, ctx: &mut ModelContext<Self>) {
         match self.server_api.persist_telemetry_events(
             MAX_TELEMETRY_EVENTS_TO_STORE,
             PrivacySettings::as_ref(ctx).get_snapshot(ctx),
@@ -101,7 +101,7 @@ impl TelemetryCollector {
     /// Depending on the app's execution mode, this will either:
     /// * Write events to disk, for sending on the next app startup
     /// * Synchronously send events to rudderstack
-    pub fn flush_telemetry_events_for_shutdown(&self, ctx: &mut ModelContext<TelemetryCollector>) {
+    pub fn flush_telemetry_events_for_shutdown(&self, ctx: &mut ModelContext<Self>) {
         let execution_mode = AppExecutionMode::as_ref(ctx);
 
         if execution_mode.send_telemetry_at_shutdown() {
@@ -137,7 +137,7 @@ impl TelemetryCollector {
     /// Events may be written to disk at the end of a session prior to app termination; this
     /// function should be called on startup to track events that were recorded at the end of the
     /// last session and were not flushed.
-    fn flush_persisted_events_from_disk(&self, ctx: &mut ModelContext<TelemetryCollector>) {
+    fn flush_persisted_events_from_disk(&self, ctx: &mut ModelContext<Self>) {
         let privacy_settings_snapshot = PrivacySettings::as_ref(ctx).get_snapshot(ctx);
         let server_api = self.server_api.clone();
         let _ = ctx.spawn(
@@ -170,7 +170,7 @@ impl TelemetryCollector {
     /// Schedules a background task to send an active usage event in a rudderstack request if
     /// telemetry is enabled. The scheduled task once again schedules itself after
     /// `ACTIVE_USAGE_DURATION`.
-    fn schedule_send_active_usage_event(&self, ctx: &mut ModelContext<TelemetryCollector>) {
+    fn schedule_send_active_usage_event(&self, ctx: &mut ModelContext<Self>) {
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
         let is_telemetry_enabled = PrivacySettings::as_ref(ctx).is_telemetry_enabled;
         let _ = ctx.spawn(
@@ -200,7 +200,7 @@ impl TelemetryCollector {
     /// Flushes events from the in-memory event queue and schedules a background task to send
     /// them in rudderstack request if telemetry is enabled. The scheduled task once again schedules
     /// itself after `TELEMETRY_FLUSH_DURATION`.
-    fn schedule_event_queue_flush(&self, ctx: &mut ModelContext<TelemetryCollector>) {
+    fn schedule_event_queue_flush(&self, ctx: &mut ModelContext<Self>) {
         let server_api = self.server_api.clone();
         let privacy_settings_snapshot = PrivacySettings::as_ref(ctx).get_snapshot(ctx);
         let _ = ctx.spawn(

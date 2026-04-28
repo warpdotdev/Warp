@@ -80,7 +80,7 @@ pub fn init(app: &mut AppContext) {
 
 impl AuthOverrideWarningBody {
     pub fn new() -> Self {
-        AuthOverrideWarningBody {
+        Self {
             mouse_state_handles: Default::default(),
             confirmation_step: AuthOverrideConfirmationStep::Initial,
         }

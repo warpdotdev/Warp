@@ -71,7 +71,7 @@ pub struct CommentId(uuid::Uuid);
 
 impl CommentId {
     pub(crate) fn new() -> Self {
-        CommentId(uuid::Uuid::new_v4())
+        Self(uuid::Uuid::new_v4())
     }
 
     pub(crate) fn from_uuid(uuid: uuid::Uuid) -> Self {
@@ -151,7 +151,7 @@ impl From<AttachedReviewComment> for api::ReviewComment {
             }
         };
 
-        api::ReviewComment {
+        Self {
             id: val.id.to_string(),
             comment: val.content,
             comment_target: Some(comment_target),
@@ -176,17 +176,17 @@ pub enum AttachedReviewCommentTarget {
 impl AttachedReviewCommentTarget {
     pub(crate) fn absolute_file_path(&self) -> Option<&PathBuf> {
         match self {
-            AttachedReviewCommentTarget::Line {
+            Self::Line {
                 absolute_file_path, ..
             } => Some(absolute_file_path),
-            AttachedReviewCommentTarget::File { absolute_file_path } => Some(absolute_file_path),
-            AttachedReviewCommentTarget::General => None,
+            Self::File { absolute_file_path } => Some(absolute_file_path),
+            Self::General => None,
         }
     }
 
     pub(crate) fn line_number(&self) -> Option<LineCount> {
         match self {
-            AttachedReviewCommentTarget::Line { line, .. } => line.line_number(),
+            Self::Line { line, .. } => line.line_number(),
             _ => None,
         }
     }
@@ -198,8 +198,8 @@ impl AttachedReviewComment {
         absolute_file_path: PathBuf,
         base: Option<DiffBase>,
         head: Option<CurrentHead>,
-    ) -> AttachedReviewComment {
-        AttachedReviewComment {
+    ) -> Self {
+        Self {
             id: comment.id,
             content: comment.comment_content,
             base,

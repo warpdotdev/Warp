@@ -312,7 +312,7 @@ impl TryFrom<ObjectUpdateSuccess> for UpdateCloudObjectResult<ServerFolder> {
     type Error = anyhow::Error;
 
     fn try_from(value: ObjectUpdateSuccess) -> Result<Self, Self::Error> {
-        Ok(UpdateCloudObjectResult::Success {
+        Ok(Self::Success {
             revision_and_editor: RevisionAndLastEditor {
                 revision: value.revision_ts.into(),
                 last_editor_uid: Some(value.last_editor_uid.into_inner()),

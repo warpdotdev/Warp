@@ -42,8 +42,8 @@ pub enum GetRelevantFilesControllerEvent {
 impl GetRelevantFilesControllerEvent {
     pub fn action_id(&self) -> &AIAgentActionId {
         match self {
-            GetRelevantFilesControllerEvent::Success { action_id, .. } => action_id,
-            GetRelevantFilesControllerEvent::Error { action_id } => action_id,
+            Self::Success { action_id, .. } => action_id,
+            Self::Error { action_id } => action_id,
         }
     }
 }
@@ -75,8 +75,8 @@ enum RequestHandle {
 impl RequestHandle {
     fn abort(&mut self, ctx: &mut AppContext) {
         match self {
-            RequestHandle::AbortHandle(abort_handle) => abort_handle.abort(),
-            RequestHandle::RetrievalID {
+            Self::AbortHandle(abort_handle) => abort_handle.abort(),
+            Self::RetrievalID {
                 repo_path,
                 retrieval_id,
                 start_time: _,

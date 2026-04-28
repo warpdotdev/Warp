@@ -133,19 +133,19 @@ enum PromptType {
 }
 
 impl PromptType {
-    fn warp_prompt_from_settings(app: &AppContext) -> PromptType {
+    fn warp_prompt_from_settings(app: &AppContext) -> Self {
         let session_settings = SessionSettings::as_ref(app);
         if matches!(*session_settings.saved_prompt, PromptSelection::Default) {
-            PromptType::WarpDefault
+            Self::WarpDefault
         } else {
-            PromptType::Warp
+            Self::Warp
         }
     }
 
-    fn from_settings(app: &AppContext) -> PromptType {
+    fn from_settings(app: &AppContext) -> Self {
         let session_settings = SessionSettings::as_ref(app);
         if *session_settings.honor_ps1 {
-            PromptType::PS1
+            Self::PS1
         } else {
             Self::warp_prompt_from_settings(app)
         }

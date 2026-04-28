@@ -51,8 +51,8 @@ pub enum WarpAISearchItem {
 impl WarpAISearchItem {
     fn item_body_text(&self) -> &'static str {
         match self {
-            WarpAISearchItem::Translate => TRANSLATE_WITH_WARP_AI_ITEM_BODY_TEXT,
-            WarpAISearchItem::Open => OPEN_WARP_AI_ITEM_BODY_TEXT,
+            Self::Translate => TRANSLATE_WITH_WARP_AI_ITEM_BODY_TEXT,
+            Self::Open => OPEN_WARP_AI_ITEM_BODY_TEXT,
         }
     }
 }
@@ -127,15 +127,15 @@ impl SearchItem for WarpAISearchItem {
 
     fn accept_result(&self) -> CommandSearchItemAction {
         match self {
-            WarpAISearchItem::Translate => CommandSearchItemAction::TranslateUsingWarpAI,
-            WarpAISearchItem::Open => CommandSearchItemAction::OpenWarpAI,
+            Self::Translate => CommandSearchItemAction::TranslateUsingWarpAI,
+            Self::Open => CommandSearchItemAction::OpenWarpAI,
         }
     }
 
     fn execute_result(&self) -> CommandSearchItemAction {
         match self {
-            WarpAISearchItem::Translate => CommandSearchItemAction::TranslateUsingWarpAI,
-            WarpAISearchItem::Open => CommandSearchItemAction::OpenWarpAI,
+            Self::Translate => CommandSearchItemAction::TranslateUsingWarpAI,
+            Self::Open => CommandSearchItemAction::OpenWarpAI,
         }
     }
 

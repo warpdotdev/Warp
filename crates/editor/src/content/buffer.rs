@@ -429,7 +429,7 @@ pub enum EditOrigin {
 
 impl EditOrigin {
     pub fn from_user(&self) -> bool {
-        matches!(self, EditOrigin::UserTyped | EditOrigin::UserInitiated)
+        matches!(self, Self::UserTyped | Self::UserInitiated)
     }
 }
 
@@ -788,7 +788,7 @@ impl Buffer {
         selection_model: ModelHandle<BufferSelectionModel>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        let mut buffer = Buffer::new(tab_indentation);
+        let mut buffer = Self::new(tab_indentation);
         buffer.embedded_item_conversion = embedded_item_conversion;
         // If the formatted text is empty, keep the default buffer state - empty buffers are
         // invalid.
@@ -813,7 +813,7 @@ impl Buffer {
         selection_model: ModelHandle<BufferSelectionModel>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        let mut buffer = Buffer::new(tab_indentation);
+        let mut buffer = Self::new(tab_indentation);
         buffer.embedded_item_conversion = embedded_item_conversion;
 
         // If the parsed markdown is empty, keep the default buffer state - empty buffers are invalid.
@@ -897,14 +897,14 @@ impl Buffer {
         let old_byte_end = self.max_byte_offset();
 
         *self = match state.format {
-            ContentFormat::Markdown => Buffer::from_markdown(
+            ContentFormat::Markdown => Self::from_markdown(
                 state.text,
                 callback,
                 indentation,
                 selection_model.clone(),
                 ctx,
             ),
-            ContentFormat::PlainText => Buffer::from_plain_text(
+            ContentFormat::PlainText => Self::from_plain_text(
                 state.text,
                 callback,
                 indentation,
@@ -1430,7 +1430,7 @@ impl Buffer {
                 .as_ref(ctx)
                 .selection_is_single_cursor(selection)
             {
-                let inline_code_boundary = Buffer::inline_style_boundary_at(
+                let inline_code_boundary = Self::inline_style_boundary_at(
                     &self.content,
                     BufferTextStyle::InlineCode,
                     head_offset,
@@ -1451,7 +1451,7 @@ impl Buffer {
                             selection_model.set_clamped_selection_tail(selection, new_offset);
                         });
 
-                        let after_code_boundary = Buffer::inline_style_boundary_at(
+                        let after_code_boundary = Self::inline_style_boundary_at(
                             &self.content,
                             BufferTextStyle::InlineCode,
                             new_offset,
@@ -1506,7 +1506,7 @@ impl Buffer {
                 .as_ref(ctx)
                 .selection_is_single_cursor(selection)
             {
-                let inline_code_boundary = Buffer::inline_style_boundary_at(
+                let inline_code_boundary = Self::inline_style_boundary_at(
                     &self.content,
                     BufferTextStyle::InlineCode,
                     head_offset,
@@ -1526,7 +1526,7 @@ impl Buffer {
                             selection_model.set_clamped_selection_tail(selection, new_offset);
                         });
 
-                        let after_code_boundary = Buffer::inline_style_boundary_at(
+                        let after_code_boundary = Self::inline_style_boundary_at(
                             &self.content,
                             BufferTextStyle::InlineCode,
                             new_offset,
@@ -2064,7 +2064,7 @@ impl Buffer {
             let mut metadata =
                 self.text_styles_with_metadata_at(range.start.saturating_sub(&CharOffset::from(1)));
 
-            if Buffer::inline_style_boundary_at(
+            if Self::inline_style_boundary_at(
                 &self.content,
                 BufferTextStyle::InlineCode,
                 range.start,
@@ -2103,7 +2103,7 @@ impl Buffer {
         let tail_offset = selection_model.selection_tail(selection);
 
         let bias = if head_offset == tail_offset {
-            match Buffer::inline_style_boundary_at(
+            match Self::inline_style_boundary_at(
                 &self.content,
                 BufferTextStyle::InlineCode,
                 head_offset,
@@ -2149,7 +2149,7 @@ impl Buffer {
     ) {
         let bias = selection.bias();
         if bias == TextStyleBias::InStyle
-            && Buffer::inline_style_boundary_at(
+            && Self::inline_style_boundary_at(
                 &self.content,
                 BufferTextStyle::InlineCode,
                 new_selection_head,
@@ -2193,7 +2193,7 @@ impl Buffer {
 
     /// Clamp an offset to the editable range of the buffer.
     pub(super) fn clamp(&self, offset: CharOffset) -> CharOffset {
-        Buffer::clamp_with_max_offset(offset, self.max_charoffset())
+        Self::clamp_with_max_offset(offset, self.max_charoffset())
     }
 
     fn clamp_with_max_offset(offset: CharOffset, max_offset: CharOffset) -> CharOffset {
@@ -2230,7 +2230,7 @@ impl Buffer {
         embedded_item_conversion: Option<EmbeddedItemConversion>,
         style: MarkdownStyle,
     ) -> String {
-        let mut buffer = Buffer {
+        let mut buffer = Self {
             embedded_item_conversion,
             ..Default::default()
         };
@@ -4296,7 +4296,7 @@ impl Buffer {
     ) -> EditResult
     where
         T: FnMut(
-            &mut Buffer,
+            &mut Self,
             &mut Selection,
             &BufferSelectionModel,
             usize,
@@ -5855,11 +5855,11 @@ impl FusedIterator for StyledBufferBlocks<'_> {}
 impl ActiveStyledBlock {
     fn finish(self, offset: CharOffset) -> Option<StyledBufferBlock> {
         match self {
-            ActiveStyledBlock::Item(item) => Some(StyledBufferBlock::Item(item)),
+            Self::Item(item) => Some(StyledBufferBlock::Item(item)),
             // Note that, if the range ends in a block marker, we'll include it as both a newline
             // at the end of the previous block and as a completely empty new block (no runs). This
             // is important for undo/redo, so that we don't lose styling information.
-            ActiveStyledBlock::Text {
+            Self::Text {
                 block,
                 start_offset,
             } => Some(StyledBufferBlock::Text(StyledTextBlock {
@@ -5867,7 +5867,7 @@ impl ActiveStyledBlock {
                 style: block.block_style,
                 content_length: offset.saturating_sub(&start_offset),
             })),
-            ActiveStyledBlock::Finished => None,
+            Self::Finished => None,
         }
     }
 }
@@ -6044,7 +6044,7 @@ pub trait ToBufferCharOffset {
 
 impl ToBufferCharOffset for Point {
     fn to_buffer_char_offset(&self, buffer: &Buffer) -> CharOffset {
-        let mut fragments_cursor = buffer.content.cursor::<Point, TextSummary>();
+        let mut fragments_cursor = buffer.content.cursor::<Self, TextSummary>();
         let text_summary = fragments_cursor.summary::<TextSummary>(self, SeekBias::Right);
 
         let delta = self.column.saturating_sub(text_summary.lines.column);
@@ -6054,13 +6054,13 @@ impl ToBufferCharOffset for Point {
 
 impl ToBufferCharOffset for ByteOffset {
     fn to_buffer_char_offset(&self, buffer: &Buffer) -> CharOffset {
-        let mut fragments_cursor = buffer.content.cursor::<ByteOffset, TextSummary>();
+        let mut fragments_cursor = buffer.content.cursor::<Self, TextSummary>();
         let text_summary = fragments_cursor.summary::<TextSummary>(self, SeekBias::Right);
         let mut total_chars = text_summary.chars;
 
         let delta = self.saturating_sub(&text_summary.bytes);
         match fragments_cursor.item() {
-            Some(BufferText::Text { fragment, .. }) if delta > ByteOffset::zero() => {
+            Some(BufferText::Text { fragment, .. }) if delta > Self::zero() => {
                 if let Some(sub_fragment) = fragment.get(..delta.as_usize()) {
                     total_chars += sub_fragment.chars().count();
                 }
@@ -6077,13 +6077,13 @@ pub trait ToBufferByteOffset {
 
 impl ToBufferByteOffset for CharOffset {
     fn to_buffer_byte_offset(&self, buffer: &Buffer) -> ByteOffset {
-        let mut fragments_cursor = buffer.content.cursor::<CharOffset, TextSummary>();
+        let mut fragments_cursor = buffer.content.cursor::<Self, TextSummary>();
         let text_summary = fragments_cursor.summary::<TextSummary>(self, SeekBias::Right);
         let mut total_bytes = text_summary.bytes;
         let delta = self.saturating_sub(&text_summary.chars);
 
         match fragments_cursor.item() {
-            Some(BufferText::Text { fragment, .. }) if delta > CharOffset::zero() => {
+            Some(BufferText::Text { fragment, .. }) if delta > Self::zero() => {
                 if let Some((idx, _)) = fragment.char_indices().nth(delta.as_usize()) {
                     total_bytes += idx;
                 }
@@ -6101,7 +6101,7 @@ pub trait ToBufferPoint {
 
 impl ToBufferPoint for CharOffset {
     fn to_buffer_point(&self, buffer: &Buffer) -> Point {
-        let mut fragments_cursor = buffer.content.cursor::<CharOffset, TextSummary>();
+        let mut fragments_cursor = buffer.content.cursor::<Self, TextSummary>();
         let text_summary = fragments_cursor.summary::<TextSummary>(self, SeekBias::Right);
         let delta = self.saturating_sub(&text_summary.chars);
         let mut point = text_summary.lines;

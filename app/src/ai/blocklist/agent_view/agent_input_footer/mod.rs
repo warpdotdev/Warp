@@ -159,8 +159,8 @@ enum PluginChipKind {
 impl From<PluginChipKind> for PluginChipTelemetryKind {
     fn from(kind: PluginChipKind) -> Self {
         match kind {
-            PluginChipKind::Install => PluginChipTelemetryKind::Install,
-            PluginChipKind::Update => PluginChipTelemetryKind::Update,
+            PluginChipKind::Install => Self::Install,
+            PluginChipKind::Update => Self::Update,
         }
     }
 }

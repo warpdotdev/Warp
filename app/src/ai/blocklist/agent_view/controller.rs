@@ -52,11 +52,11 @@ pub enum AgentViewDisplayMode {
 
 impl AgentViewDisplayMode {
     pub fn is_inline(self) -> bool {
-        matches!(self, AgentViewDisplayMode::Inline)
+        matches!(self, Self::Inline)
     }
 
     pub fn is_fullscreen(self) -> bool {
-        matches!(self, AgentViewDisplayMode::FullScreen)
+        matches!(self, Self::FullScreen)
     }
 }
 
@@ -88,8 +88,8 @@ enum PendingConfirmation {
 impl PendingConfirmation {
     fn message_id(&self) -> &'static str {
         match self {
-            PendingConfirmation::Exit { .. } => EXIT_CONFIRMATION_MESSAGE_ID,
-            PendingConfirmation::NewConversationKeybinding { .. } => {
+            Self::Exit { .. } => EXIT_CONFIRMATION_MESSAGE_ID,
+            Self::NewConversationKeybinding { .. } => {
                 NEW_CONVERSATION_KEYBINDING_CONFIRMATION_MESSAGE_ID
             }
         }
@@ -208,15 +208,15 @@ impl AgentViewEntryOrigin {
 
     pub fn should_autotrigger_request(&self) -> AutoTriggerBehavior {
         match self {
-            AgentViewEntryOrigin::Input {
+            Self::Input {
                 was_prompt_autodetected,
             } if *was_prompt_autodetected => AutoTriggerBehavior::Always,
-            AgentViewEntryOrigin::SlashCommand { trigger } if !trigger.is_keybinding() => {
+            Self::SlashCommand { trigger } if !trigger.is_keybinding() => {
                 AutoTriggerBehavior::Always
             }
-            AgentViewEntryOrigin::Cli => AutoTriggerBehavior::Always,
-            AgentViewEntryOrigin::AcceptedPromptSuggestion => AutoTriggerBehavior::Always,
-            AgentViewEntryOrigin::LinearDeepLink => AutoTriggerBehavior::Never,
+            Self::Cli => AutoTriggerBehavior::Always,
+            Self::AcceptedPromptSuggestion => AutoTriggerBehavior::Always,
+            Self::LinearDeepLink => AutoTriggerBehavior::Never,
             _ => AutoTriggerBehavior::InAgentView,
         }
     }
@@ -242,24 +242,24 @@ pub enum AgentViewState {
 impl AgentViewState {
     pub fn active_conversation_id(&self) -> Option<AIConversationId> {
         match self {
-            AgentViewState::Active {
+            Self::Active {
                 conversation_id, ..
             } => Some(*conversation_id),
-            AgentViewState::Inactive => None,
+            Self::Inactive => None,
         }
     }
 
     /// Returns the display mode if active, `None` if inactive.
     pub fn display_mode(&self) -> Option<AgentViewDisplayMode> {
         match self {
-            AgentViewState::Active { display_mode, .. } => Some(*display_mode),
-            AgentViewState::Inactive => None,
+            Self::Active { display_mode, .. } => Some(*display_mode),
+            Self::Inactive => None,
         }
     }
 
     /// Returns `true` if in an active agent view state.
     pub fn is_active(&self) -> bool {
-        matches!(self, AgentViewState::Active { .. })
+        matches!(self, Self::Active { .. })
     }
 
     /// Returns `true` if in inline display mode.
@@ -274,7 +274,7 @@ impl AgentViewState {
 
     pub fn fullscreen_conversation_id(&self) -> Option<AIConversationId> {
         match self {
-            AgentViewState::Active {
+            Self::Active {
                 conversation_id,
                 display_mode: AgentViewDisplayMode::FullScreen,
                 ..
@@ -285,11 +285,11 @@ impl AgentViewState {
 
     pub fn is_new(&self) -> bool {
         match self {
-            AgentViewState::Active {
+            Self::Active {
                 original_conversation_length,
                 ..
             } => *original_conversation_length == 0,
-            AgentViewState::Inactive => false,
+            Self::Inactive => false,
         }
     }
 
@@ -301,7 +301,7 @@ impl AgentViewState {
         history_model: &BlocklistAIHistoryModel,
     ) -> bool {
         match self {
-            AgentViewState::Active {
+            Self::Active {
                 conversation_id,
                 original_conversation_length,
                 ..
@@ -316,7 +316,7 @@ impl AgentViewState {
                     .unwrap_or(0);
                 current_conversation_length > *original_conversation_length
             }
-            AgentViewState::Inactive => false,
+            Self::Inactive => false,
         }
     }
 

@@ -62,7 +62,7 @@ pub struct IntegrationTestDelegate {
 
 impl IntegrationTestDelegate {
     pub fn new() -> Result<Self> {
-        Ok(IntegrationTestDelegate {
+        Ok(Self {
             app_delegate: AppDelegate::new()?,
             clipboard: InMemoryClipboard::default(),
         })
@@ -187,7 +187,7 @@ pub struct DispatchDelegate;
 
 impl AppDelegate {
     pub fn new() -> Result<Self> {
-        Ok(AppDelegate {
+        Ok(Self {
             clipboard: Clipboard::new()?,
             dispatch_delegate: Arc::new(DispatchDelegate),
         })

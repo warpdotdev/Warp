@@ -890,23 +890,23 @@ impl EditorViewAction {
     fn is_new_text_selection(&self) -> bool {
         matches!(
             self,
-            EditorViewAction::SelectUp
-                | EditorViewAction::SelectDown
-                | EditorViewAction::SelectLeft
-                | EditorViewAction::SelectRight
-                | EditorViewAction::SelectBackwardsByWord
-                | EditorViewAction::SelectForwardsByWord
-                | EditorViewAction::SelectToLineStart
-                | EditorViewAction::SelectToLineEnd
-                | EditorViewAction::SelectToParagraphStart
-                | EditorViewAction::SelectToParagraphEnd
-                | EditorViewAction::SelectAll
-                | EditorViewAction::SelectWord { .. }
-                | EditorViewAction::SelectLine { .. }
-                | EditorViewAction::SelectionStart { .. }
-                | EditorViewAction::SelectionUpdate(_)
-                | EditorViewAction::SelectBlock { .. }
-                | EditorViewAction::SelectionEnd
+            Self::SelectUp
+                | Self::SelectDown
+                | Self::SelectLeft
+                | Self::SelectRight
+                | Self::SelectBackwardsByWord
+                | Self::SelectForwardsByWord
+                | Self::SelectToLineStart
+                | Self::SelectToLineEnd
+                | Self::SelectToParagraphStart
+                | Self::SelectToParagraphEnd
+                | Self::SelectAll
+                | Self::SelectWord { .. }
+                | Self::SelectLine { .. }
+                | Self::SelectionStart { .. }
+                | Self::SelectionUpdate(_)
+                | Self::SelectBlock { .. }
+                | Self::SelectionEnd
         )
     }
 }
@@ -985,7 +985,7 @@ enum LinkState {
 impl Drop for LinkState {
     fn drop(&mut self) {
         // If the link tooltip is dismissed while resolving, skip resolution.
-        if let LinkState::Resolving(handle) = self {
+        if let Self::Resolving(handle) = self {
             handle.abort();
         }
     }
@@ -2623,12 +2623,12 @@ impl View for RichTextEditorView {
         } else if let Some(selected_file_path) = &self.open_file_path {
             stack.add_positioned_overlay_child(
                 self.render_file_path_tooltip(selected_file_path, appearance, app),
-                RichTextEditorView::link_tooltip_positioning(render_state.as_ref(app)),
+                Self::link_tooltip_positioning(render_state.as_ref(app)),
             )
         } else if let Some(link) = self.open_link.as_ref() {
             stack.add_positioned_overlay_child(
                 self.render_link_tooltip(link, appearance, app),
-                RichTextEditorView::link_tooltip_positioning(render_state.as_ref(app)),
+                Self::link_tooltip_positioning(render_state.as_ref(app)),
             )
         }
 
@@ -3285,7 +3285,7 @@ impl warp_editor::editor::EditorView for RichTextEditorView {
 impl RichTextAction<RichTextEditorView> for EditorViewAction {
     fn scroll(delta: Pixels, axis: Axis) -> Option<Self> {
         match axis {
-            Axis::Vertical => Some(EditorViewAction::Scroll(delta)),
+            Axis::Vertical => Some(Self::Scroll(delta)),
             Axis::Horizontal => None,
         }
     }
@@ -3299,7 +3299,7 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
         // its children (like the omnibar) is focused. However, to check if a child view is focused,
         // we need a AppContext. For now, we always dispatch the event and check focus in the
         // event handler.
-        Some(EditorViewAction::UserTyped(UserInput::new(chars)))
+        Some(Self::UserTyped(UserInput::new(chars)))
     }
 
     fn vim_user_typed(
@@ -3308,7 +3308,7 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
         _ctx: &AppContext,
     ) -> Option<Self> {
         // Vim mode not enabled yet for notebooks; this should not be triggered.
-        Some(EditorViewAction::VimUserTyped(UserInput::new(chars)))
+        Some(Self::VimUserTyped(UserInput::new(chars)))
     }
 
     fn left_mouse_down(
@@ -3335,16 +3335,16 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
         match location {
             Location::Text { char_offset, .. } => match click_count {
                 // TODO(CLD-558): We need to align render model with the content model offset.
-                1 if modifiers.shift => Some(EditorViewAction::SelectionUpdate(char_offset + 1)),
-                1 => Some(EditorViewAction::SelectionStart {
+                1 if modifiers.shift => Some(Self::SelectionUpdate(char_offset + 1)),
+                1 => Some(Self::SelectionStart {
                     offset: char_offset + 1,
                     multiselect,
                 }),
-                2 => Some(EditorViewAction::SelectWord {
+                2 => Some(Self::SelectWord {
                     offset: char_offset + 1,
                     multiselect,
                 }),
-                3 => Some(EditorViewAction::SelectLine {
+                3 => Some(Self::SelectLine {
                     offset: char_offset + 1,
                     multiselect,
                 }),
@@ -3369,13 +3369,13 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
                             )
                     })
                     .map(EditorViewAction::SelectionUpdate)
-                    .or(Some(EditorViewAction::SelectBlock {
+                    .or(Some(Self::SelectBlock {
                         block_start: start_offset,
                     })),
-                1 => Some(EditorViewAction::SelectBlock {
+                1 => Some(Self::SelectBlock {
                     block_start: start_offset,
                 }),
-                2 => Some(EditorViewAction::ExitCommandSelection),
+                2 => Some(Self::ExitCommandSelection),
                 _ => None,
             },
         }
@@ -3395,7 +3395,7 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
         );
         match location {
             Location::Text { char_offset, .. } if is_selecting => {
-                Some(EditorViewAction::SelectionUpdate(char_offset + 1))
+                Some(Self::SelectionUpdate(char_offset + 1))
             }
             Location::Block {
                 start_offset,
@@ -3430,7 +3430,7 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
         } = location.clone()
         {
             if !clamped {
-                actions_to_dispatch.push(EditorViewAction::MaybeOpenFileOrUrl {
+                actions_to_dispatch.push(Self::MaybeOpenFileOrUrl {
                     offset: char_offset + 1,
                     link_in_text: link.map(UserInput::new),
                     cmd,
@@ -3439,9 +3439,7 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
         }
 
         match view.as_ref(ctx).ongoing_mouse_state {
-            OngoingMouseEvent::Selecting => {
-                actions_to_dispatch.push(EditorViewAction::SelectionEnd)
-            }
+            OngoingMouseEvent::Selecting => actions_to_dispatch.push(Self::SelectionEnd),
             OngoingMouseEvent::None => (),
         }
 
@@ -3474,7 +3472,7 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
 
         let block_start = location.map(|location| location.block_start());
 
-        Some(EditorViewAction::BlockHovered {
+        Some(Self::BlockHovered {
             char_offset,
             block_start,
         })
@@ -3485,10 +3483,10 @@ impl RichTextAction<RichTextEditorView> for EditorViewAction {
         _parent_view: &WeakViewHandle<RichTextEditorView>,
         _ctx: &AppContext,
     ) -> Option<Self> {
-        Some(EditorViewAction::ToggleTaskList(block_start))
+        Some(Self::ToggleTaskList(block_start))
     }
 
     fn middle_mouse_down(_ctx: &AppContext) -> Option<Self> {
-        Some(EditorViewAction::MiddleClickPaste)
+        Some(Self::MiddleClickPaste)
     }
 }

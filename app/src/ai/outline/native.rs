@@ -137,7 +137,7 @@ impl RepoOutlines {
                 .value()
     }
 
-    fn handle_setting_change_event(me: &mut RepoOutlines, ctx: &mut ModelContext<Self>) {
+    fn handle_setting_change_event(me: &mut Self, ctx: &mut ModelContext<Self>) {
         if Self::should_build_outlines(ctx) {
             // Add all working directories to the queue and start processing.
             for dir in all_working_directories(ctx).into_iter() {

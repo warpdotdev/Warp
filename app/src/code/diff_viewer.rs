@@ -29,11 +29,11 @@ pub enum DisplayMode {
 
 impl DisplayMode {
     pub fn with_embedded(max_height: f32) -> Self {
-        DisplayMode::Embedded { max_height }
+        Self::Embedded { max_height }
     }
 
     pub fn with_inline_banner(max_height: f32) -> Self {
-        DisplayMode::InlineBanner {
+        Self::InlineBanner {
             max_height,
             is_expanded: false,
             is_dismissed: false,
@@ -42,15 +42,15 @@ impl DisplayMode {
 
     pub fn max_height(&self) -> Option<f32> {
         match self {
-            DisplayMode::FullPane => None,
-            DisplayMode::Embedded { max_height } => Some(*max_height),
-            DisplayMode::InlineBanner { max_height, .. } => Some(*max_height),
+            Self::FullPane => None,
+            Self::Embedded { max_height } => Some(*max_height),
+            Self::InlineBanner { max_height, .. } => Some(*max_height),
         }
     }
 
     pub(crate) fn scroll_wheel_behavior(&self) -> ScrollWheelBehavior {
         match self {
-            DisplayMode::InlineBanner {
+            Self::InlineBanner {
                 is_expanded: false, ..
             } => ScrollWheelBehavior::NeverHandle,
             _ => ScrollWheelBehavior::AlwaysHandle,
@@ -59,7 +59,7 @@ impl DisplayMode {
 
     pub(crate) fn scrollbar_appearance(&self) -> ScrollableAppearance {
         match self {
-            DisplayMode::InlineBanner {
+            Self::InlineBanner {
                 is_expanded: false, ..
             } => ScrollableAppearance::new(ScrollbarWidth::None, true),
             _ => ScrollableAppearance::new(ScrollbarWidth::Auto, false),
@@ -68,9 +68,9 @@ impl DisplayMode {
 
     pub(crate) fn vertical_expansion_behavior(&self) -> VerticalExpansionBehavior {
         match self {
-            DisplayMode::FullPane => VerticalExpansionBehavior::FillMaxHeight,
-            DisplayMode::Embedded { .. } => VerticalExpansionBehavior::GrowToMaxHeight,
-            DisplayMode::InlineBanner { .. } => VerticalExpansionBehavior::GrowToMaxHeight,
+            Self::FullPane => VerticalExpansionBehavior::FillMaxHeight,
+            Self::Embedded { .. } => VerticalExpansionBehavior::GrowToMaxHeight,
+            Self::InlineBanner { .. } => VerticalExpansionBehavior::GrowToMaxHeight,
         }
     }
 
@@ -79,33 +79,33 @@ impl DisplayMode {
             return InteractionState::Selectable;
         }
         match self {
-            DisplayMode::FullPane => InteractionState::Editable,
-            DisplayMode::Embedded { .. } => InteractionState::Selectable,
-            DisplayMode::InlineBanner { .. } => InteractionState::Selectable,
+            Self::FullPane => InteractionState::Editable,
+            Self::Embedded { .. } => InteractionState::Selectable,
+            Self::InlineBanner { .. } => InteractionState::Selectable,
         }
     }
 
     pub(crate) fn show_nav_bar(&self) -> bool {
-        !matches!(self, DisplayMode::InlineBanner { .. })
+        !matches!(self, Self::InlineBanner { .. })
     }
 
     pub fn title(&self) -> Option<&str> {
         match self {
-            DisplayMode::InlineBanner { .. } => Some("Suggested fixes based on your last command:"),
+            Self::InlineBanner { .. } => Some("Suggested fixes based on your last command:"),
             _ => None,
         }
     }
 
     pub fn is_full_pane(&self) -> bool {
-        matches!(self, DisplayMode::FullPane)
+        matches!(self, Self::FullPane)
     }
 
     pub fn is_embedded(&self) -> bool {
-        matches!(self, DisplayMode::Embedded { .. })
+        matches!(self, Self::Embedded { .. })
     }
 
     pub fn is_inline_banner(&self) -> bool {
-        matches!(self, DisplayMode::InlineBanner { .. })
+        matches!(self, Self::InlineBanner { .. })
     }
 }
 

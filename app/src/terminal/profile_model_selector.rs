@@ -104,7 +104,7 @@ enum ButtonTextColor {
 impl ButtonTextColor {
     fn to_color_u(&self, _appearance: &Appearance) -> pathfinder_color::ColorU {
         match self {
-            ButtonTextColor::Fill(fill) => fill.into_solid(),
+            Self::Fill(fill) => fill.into_solid(),
         }
     }
 }
@@ -219,7 +219,7 @@ struct ModelSpecSidecar {
 impl ProfileModelSelectorAction {
     pub fn selected_model_id(&self) -> Option<LLMId> {
         match self {
-            ProfileModelSelectorAction::SelectModel(id) => Some(id.clone()),
+            Self::SelectModel(id) => Some(id.clone()),
             _ => None,
         }
     }

@@ -310,9 +310,9 @@ fn parse_internal_command(
 impl From<&Opt> for FlagArgumentsCardinality {
     fn from(option: &Opt) -> Self {
         if option.arguments().iter().any(|arg| arg.is_variadic) {
-            FlagArgumentsCardinality::Variadic
+            Self::Variadic
         } else {
-            FlagArgumentsCardinality::Fixed(
+            Self::Fixed(
                 option
                     .arguments()
                     .iter()

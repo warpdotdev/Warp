@@ -115,7 +115,7 @@ enum RuleRow {
 impl RuleRow {
     fn matches_search_term(&self, search_term: &str) -> bool {
         match self {
-            RuleRow::Global(row) => {
+            Self::Global(row) => {
                 let AIFact::Memory(AIMemory { name, content, .. }) =
                     row.fact.model().string_model.clone();
                 name.unwrap_or_default()
@@ -125,7 +125,7 @@ impl RuleRow {
                         .to_lowercase()
                         .contains(search_term.to_lowercase().as_str())
             }
-            RuleRow::ProjectScoped(row) => row
+            Self::ProjectScoped(row) => row
                 .file_path
                 .to_str()
                 .map(|s| s.to_lowercase().contains(search_term))
@@ -135,10 +135,10 @@ impl RuleRow {
 
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (RuleRow::Global(a), RuleRow::Global(b)) => {
+            (Self::Global(a), Self::Global(b)) => {
                 b.fact.metadata().revision.cmp(&a.fact.metadata().revision)
             }
-            (RuleRow::ProjectScoped(a), RuleRow::ProjectScoped(b)) => a.file_path.cmp(&b.file_path),
+            (Self::ProjectScoped(a), Self::ProjectScoped(b)) => a.file_path.cmp(&b.file_path),
             _ => std::cmp::Ordering::Equal,
         }
     }

@@ -219,7 +219,7 @@ impl EnvironmentChoice {
         ctx: &AppContext,
     ) -> Result<Self, ResolveConfigurationError> {
         if args.no_environment {
-            Ok(EnvironmentChoice::None)
+            Ok(Self::None)
         } else if let Some(id) = args.environment {
             Self::get_by_id(id, ctx)
         } else {
@@ -239,15 +239,15 @@ impl EnvironmentChoice {
             synced_environments
                 .sort_by_key(|(_, env)| env.model().string_model.name.to_lowercase());
 
-            let environments: Vec<EnvironmentChoice> = synced_environments
+            let environments: Vec<Self> = synced_environments
                 .into_iter()
-                .map(|(server_id, env)| EnvironmentChoice::Environment {
+                .map(|(server_id, env)| Self::Environment {
                     id: server_id.to_string(),
                     name: env.model().string_model.name.clone(),
                 })
                 .collect();
 
-            let mut options = vec![EnvironmentChoice::None];
+            let mut options = vec![Self::None];
             options.extend(environments);
 
             // If there are no synced environments, require the user to create one or use --no-environment.
@@ -285,7 +285,7 @@ Without an environment, the agent will not be able to access private repositorie
         ctx: &AppContext,
     ) -> Result<Option<Self>, ResolveConfigurationError> {
         if args.remove_environment {
-            Ok(Some(EnvironmentChoice::None))
+            Ok(Some(Self::None))
         } else if let Some(id) = args.environment {
             Self::get_by_id(id, ctx).map(Some)
         } else {
@@ -309,7 +309,7 @@ Without an environment, the agent will not be able to access private repositorie
                 }
             })?;
 
-        Ok(EnvironmentChoice::Environment {
+        Ok(Self::Environment {
             id,
             name: environment.model().string_model.name.clone(),
         })
@@ -319,11 +319,11 @@ Without an environment, the agent will not be able to access private repositorie
 impl fmt::Display for EnvironmentChoice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            EnvironmentChoice::None => write!(
+            Self::None => write!(
                 f,
                 "No environment (agent will not be able to access private repositories or create pull requests)",
             ),
-            EnvironmentChoice::Environment { id, name } => write!(f, "{name} ({id})"),
+            Self::Environment { id, name } => write!(f, "{name} ({id})"),
         }
     }
 }

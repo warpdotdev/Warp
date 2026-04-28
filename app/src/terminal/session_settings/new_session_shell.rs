@@ -37,11 +37,11 @@ pub enum NewSessionShell {
 impl NewSessionShell {
     pub fn shell_family(&self) -> ShellFamily {
         let shell = match self {
-            NewSessionShell::SystemDefault => return OperatingSystem::get().default_shell_family(),
-            NewSessionShell::WSL(_) => return ShellFamily::Posix,
-            NewSessionShell::Executable(shell) => shell,
-            NewSessionShell::MSYS2(shell) => shell,
-            NewSessionShell::Custom(shell) => shell,
+            Self::SystemDefault => return OperatingSystem::get().default_shell_family(),
+            Self::WSL(_) => return ShellFamily::Posix,
+            Self::Executable(shell) => shell,
+            Self::MSYS2(shell) => shell,
+            Self::Custom(shell) => shell,
         };
 
         let path = PathBuf::from(shell);

@@ -108,7 +108,7 @@ impl UriHost {
     fn handle(&self, primary_window_id: Option<WindowId>, url: &Url, ctx: &mut AppContext) {
         // Handle host
         match self {
-            UriHost::Auth => {
+            Self::Auth => {
                 ctx.window_ids()
                     .collect_vec()
                     .into_iter()
@@ -129,7 +129,7 @@ impl UriHost {
                         );
                     });
             }
-            UriHost::Team => {
+            Self::Team => {
                 match url.path_segments().into_iter().flatten().last() {
                     // If the last segment of the URL is "settings", open the team settings page.
                     Some("settings") => {
@@ -152,7 +152,7 @@ impl UriHost {
                 };
                 send_telemetry_from_app_ctx!(TelemetryEvent::OpenTeamFromURI, ctx);
             }
-            UriHost::Action => {
+            Self::Action => {
                 match Action::parse(url) {
                     Ok(action) => action.handle(primary_window_id, url, ctx),
                     Err(err) => {
@@ -160,7 +160,7 @@ impl UriHost {
                     }
                 };
             }
-            UriHost::Launch => {
+            Self::Launch => {
                 if let Some(desired_config_path) = get_launch_config_path(url.path()) {
                     let configs = load_launch_configs(&crate::user_config::launch_configs_dir());
                     if let Some(config) =
@@ -184,7 +184,7 @@ impl UriHost {
                     log::warn!("couldn't turn launch link '{}' into path", url.path());
                 }
             }
-            UriHost::SharedSession => {
+            Self::SharedSession => {
                 // We expect the uri to have the ID of the session to join as the last segment.
                 // e.g. warp://shared_session/{id}
                 let session_id = url
@@ -216,7 +216,7 @@ impl UriHost {
                     log::warn!("Failed to join shared session with uri={url}");
                 }
             }
-            UriHost::Conversation => {
+            Self::Conversation => {
                 // We expect the uri to have the conversation ID as the last segment.
                 // e.g. warp://conversation/{conversation_id}
                 let conversation_id: Option<ServerConversationToken> = url
@@ -250,7 +250,7 @@ impl UriHost {
                     log::warn!("Failed to open conversation with uri={url}");
                 }
             }
-            UriHost::Drive => {
+            Self::Drive => {
                 // We expect the uri to have the ID of the object we are trying to open and the object_type.
                 // e.g. warp://drive/{object_type}?id={UID}
                 // For folder links, we expect an additional query parameter primary_object_id which refers to the id object
@@ -315,7 +315,7 @@ impl UriHost {
                     log::warn!("Failed to open drive object with uri={url}");
                 }
             }
-            UriHost::Settings => {
+            Self::Settings => {
                 // We support opening different settings pages through URI:
                 // - warp://settings/teams?invite={email} - opens team settings with invite modal
                 // - warp://settings/billing_and_usage - opens billing and usage settings page
@@ -413,10 +413,10 @@ impl UriHost {
                     log::warn!("Failed to open settings pane with uri={url}");
                 }
             }
-            UriHost::Home => {
+            Self::Home => {
                 ctx.dispatch_global_action("root_view::open_new", &());
             }
-            UriHost::Mcp => {
+            Self::Mcp => {
                 #[cfg(not(target_family = "wasm"))]
                 {
                     let result = crate::ai::mcp::TemplatableMCPServerManager::handle(ctx)
@@ -426,7 +426,7 @@ impl UriHost {
                     }
                 }
             }
-            UriHost::Codex => {
+            Self::Codex => {
                 dispatch_action_in_new_or_existing_window(
                     primary_window_id,
                     "root_view:open_codex_in_existing_window",
@@ -435,7 +435,7 @@ impl UriHost {
                     ctx,
                 );
             }
-            UriHost::Linear => match LinearAction::parse(url) {
+            Self::Linear => match LinearAction::parse(url) {
                 Ok(LinearAction::WorkOnIssue) => {
                     let args = LinearIssueWork::from_url(url);
                     dispatch_action_in_new_or_existing_window(
@@ -549,7 +549,7 @@ impl WindowActivationFallbackBehavior {
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fn resolve(self, primary_window_id: WindowId, ctx: &mut AppContext) -> Option<WindowId> {
         match self {
-            WindowActivationFallbackBehavior::Notify { title, description } => {
+            Self::Notify { title, description } => {
                 if ctx
                     .windows()
                     .active_window()
@@ -576,7 +576,7 @@ impl WindowActivationFallbackBehavior {
                 }
                 Some(primary_window_id)
             }
-            WindowActivationFallbackBehavior::NewWindow { replace_existing } => {
+            Self::NewWindow { replace_existing } => {
                 let new_window_id = open_new_window_get_handles(None, ctx).0;
                 if replace_existing {
                     ctx.windows()
@@ -716,7 +716,7 @@ impl Action {
                 };
                 open_file(window_id, path, ctx);
             }
-            Action::Docker => {
+            Self::Docker => {
                 if let Err(err) = open_docker_container(url, ctx) {
                     if let Some(window_id) = primary_window_id {
                         ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
@@ -729,7 +729,7 @@ impl Action {
                     log::warn!("error opening docker container: {err}");
                 }
             }
-            Action::OpenRepo => {
+            Self::OpenRepo => {
                 let window_id =
                     primary_window_id.or_else(|| Some(open_new_window_get_handles(None, ctx).0));
 
@@ -752,7 +752,7 @@ impl Action {
                     log::warn!("no workspace views in window {window_id} for open repo action");
                 }
             }
-            Action::CloudAgentSetup => {
+            Self::CloudAgentSetup => {
                 let window_id =
                     primary_window_id.or_else(|| Some(open_new_window_get_handles(None, ctx).0));
 
@@ -778,7 +778,7 @@ impl Action {
                     );
                 }
             }
-            Action::NewCloudAgentConversation => {
+            Self::NewCloudAgentConversation => {
                 let window_id =
                     primary_window_id.or_else(|| Some(open_new_window_get_handles(None, ctx).0));
 
@@ -806,7 +806,7 @@ impl Action {
                     );
                 }
             }
-            Action::NewAgentConversation => {
+            Self::NewAgentConversation => {
                 let window_id =
                     primary_window_id.or_else(|| Some(open_new_window_get_handles(None, ctx).0));
 
@@ -826,7 +826,7 @@ impl Action {
                     workspace.handle_action(&WorkspaceAction::AddAgentTab, ctx);
                 });
             }
-            Action::CreateEnvironment { repos } => {
+            Self::CreateEnvironment { repos } => {
                 use crate::root_view::CreateEnvironmentArg;
 
                 let arg = CreateEnvironmentArg {
@@ -850,7 +850,7 @@ impl Action {
                     ctx.dispatch_global_action("root_view:create_environment", &arg);
                 }
             }
-            Action::FocusCloudMode => {
+            Self::FocusCloudMode => {
                 // Notify that GitHub auth completed so views can refresh
                 GitHubAuthNotifier::handle(ctx).update(ctx, |notifier, ctx| {
                     notifier.notify_auth_completed(ctx);

@@ -40,7 +40,7 @@ pub struct BlockAnchor {
 
 impl BlockAnchor {
     pub fn new(point: BlockListPoint, side: Side) -> Self {
-        BlockAnchor { point, side }
+        Self { point, side }
     }
 }
 
@@ -58,7 +58,7 @@ pub struct BlockListSelection {
 
 impl BlockListSelection {
     pub fn new(point: BlockListPoint, selection_type: SelectionType, side: Side) -> Self {
-        BlockListSelection {
+        Self {
             head: BlockAnchor::new(point, side),
             tail: BlockAnchor::new(point, side),
             selection_type,
@@ -324,7 +324,7 @@ struct ExpandedSelection {
 
 impl ExpandedSelection {
     pub fn new(absolute_point: BlockListPoint, within_grid_point: WithinBlock<Point>) -> Self {
-        ExpandedSelection {
+        Self {
             absolute_point,
             within_grid_point,
         }
@@ -341,7 +341,7 @@ pub struct SelectionRange {
 
 impl SelectionRange {
     pub fn new(start: BlockListPoint, end: BlockListPoint) -> Self {
-        SelectionRange { start, end }
+        Self { start, end }
     }
 }
 

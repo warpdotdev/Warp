@@ -171,9 +171,9 @@ pub enum AutosuggestionType {
 impl AutosuggestionType {
     pub fn matches_input_type(&self, input_type: InputType) -> bool {
         if input_type.is_ai() {
-            matches!(self, AutosuggestionType::AgentModeQuery { .. })
+            matches!(self, Self::AgentModeQuery { .. })
         } else {
-            matches!(self, AutosuggestionType::Command { .. })
+            matches!(self, Self::Command { .. })
         }
     }
 }
@@ -181,8 +181,8 @@ impl AutosuggestionType {
 impl fmt::Display for AutosuggestionLocation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            AutosuggestionLocation::EndOfBuffer => write!(f, "EndOfBuffer"),
-            AutosuggestionLocation::Inline(_) => write!(f, "Inline"),
+            Self::EndOfBuffer => write!(f, "EndOfBuffer"),
+            Self::Inline(_) => write!(f, "Inline"),
         }
     }
 }
@@ -1095,34 +1095,34 @@ impl EditorAction {
     fn should_report_active_cursor_position_updated(&self) -> bool {
         !matches!(
             self,
-            EditorAction::Scroll(_)
-                | EditorAction::Copy
-                | EditorAction::UnhandledModifierKey(_)
-                | EditorAction::ShowCharacterPalette
-                | EditorAction::TryToShowXRay(_)
-                | EditorAction::HideXRay
-                | EditorAction::Select(_)
+            Self::Scroll(_)
+                | Self::Copy
+                | Self::UnhandledModifierKey(_)
+                | Self::ShowCharacterPalette
+                | Self::TryToShowXRay(_)
+                | Self::HideXRay
+                | Self::Select(_)
         )
     }
 
     fn is_new_selection(&self) -> bool {
         matches!(
             self,
-            EditorAction::Select(
+            Self::Select(
                 SelectAction::Update { .. } | SelectAction::Extend { .. } | SelectAction::End,
-            ) | EditorAction::SelectToLineStart
-                | EditorAction::SelectToLineEnd
-                | EditorAction::SelectUp
-                | EditorAction::SelectDown
-                | EditorAction::SelectLeft
-                | EditorAction::SelectRight
-                | EditorAction::SelectWord(_)
-                | EditorAction::SelectLine(_)
-                | EditorAction::SelectAll
-                | EditorAction::SelectRightByWord
-                | EditorAction::SelectLeftByWord
-                | EditorAction::SelectRightBySubword
-                | EditorAction::SelectLeftBySubword
+            ) | Self::SelectToLineStart
+                | Self::SelectToLineEnd
+                | Self::SelectUp
+                | Self::SelectDown
+                | Self::SelectLeft
+                | Self::SelectRight
+                | Self::SelectWord(_)
+                | Self::SelectLine(_)
+                | Self::SelectAll
+                | Self::SelectRightByWord
+                | Self::SelectLeftByWord
+                | Self::SelectRightBySubword
+                | Self::SelectLeftBySubword
         )
     }
 }
@@ -1157,7 +1157,7 @@ struct NewCursorUpOrDownResult {
 
 impl From<MovementResult> for NewCursorUpOrDownResult {
     fn from(result: MovementResult) -> Self {
-        NewCursorUpOrDownResult {
+        Self {
             point_and_clamp_direction: result.point_and_clamp_direction,
             goal_column: result.goal_column,
         }
@@ -1173,7 +1173,7 @@ impl NewCursorDirection {
         clamp_direction: ClampDirection,
     ) -> Option<NewCursorUpOrDownResult> {
         match self {
-            NewCursorDirection::Up => match map.up(point, goal_column, clamp_direction) {
+            Self::Up => match map.up(point, goal_column, clamp_direction) {
                 Ok(result) => {
                     if result.is_same_row {
                         None
@@ -1186,7 +1186,7 @@ impl NewCursorDirection {
                     None
                 }
             },
-            NewCursorDirection::Down => match map.down(point, goal_column, clamp_direction) {
+            Self::Down => match map.down(point, goal_column, clamp_direction) {
                 Ok(result) => {
                     if result.is_same_row {
                         None
@@ -1617,14 +1617,11 @@ pub enum VoiceTranscriptionOptions {
 
 impl VoiceTranscriptionOptions {
     pub fn is_enabled(&self) -> bool {
-        matches!(self, VoiceTranscriptionOptions::Enabled { .. })
+        matches!(self, Self::Enabled { .. })
     }
 
     pub fn should_show_button(&self) -> bool {
-        matches!(
-            self,
-            VoiceTranscriptionOptions::Enabled { show_button: true }
-        )
+        matches!(self, Self::Enabled { show_button: true })
     }
 }
 
@@ -1645,7 +1642,7 @@ pub enum ImageContextOptions {
 impl ImageContextOptions {
     pub fn is_enabled(&self) -> bool {
         match self {
-            ImageContextOptions::Enabled {
+            Self::Enabled {
                 unsupported_model,
                 is_processing_attached_images,
                 num_images_attached,
@@ -1670,16 +1667,16 @@ impl ImageContextOptions {
 
                 true
             }
-            ImageContextOptions::Disabled => false,
+            Self::Disabled => false,
         }
     }
 
     pub fn should_show_button(&self) -> bool {
-        matches!(self, ImageContextOptions::Enabled { .. })
+        matches!(self, Self::Enabled { .. })
     }
 
     pub fn tooltip_text(&self) -> String {
-        if let ImageContextOptions::Enabled {
+        if let Self::Enabled {
             unsupported_model,
             is_processing_attached_images,
             num_images_attached,
@@ -1713,7 +1710,7 @@ impl ImageContextOptions {
 
     pub fn num_images_attached(&self) -> usize {
         match self {
-            ImageContextOptions::Enabled {
+            Self::Enabled {
                 num_images_attached,
                 ..
             } => *num_images_attached,
@@ -1723,7 +1720,7 @@ impl ImageContextOptions {
 
     pub fn num_images_in_conversation(&self) -> usize {
         match self {
-            ImageContextOptions::Enabled {
+            Self::Enabled {
                 num_images_in_conversation,
                 ..
             } => *num_images_in_conversation,
@@ -1734,7 +1731,7 @@ impl ImageContextOptions {
     pub fn is_unsupported_model(&self) -> bool {
         matches!(
             self,
-            ImageContextOptions::Enabled {
+            Self::Enabled {
                 unsupported_model: true,
                 ..
             }
@@ -1923,7 +1920,7 @@ impl ScrollState {
 
 impl From<&EditorView> for ScrollState {
     fn from(view: &EditorView) -> Self {
-        ScrollState {
+        Self {
             scroll_position: view.scroll_position.clone(),
             autoscroll_requested: view.autoscroll_requested.clone(),
         }
@@ -7564,7 +7561,7 @@ impl EditorView {
     /// autosuggestion was set. If these characters are a prefix of the original autosuggestion,
     /// update the current autosuggestion text to be the original autosuggestion text minus the
     /// prefix that is already inserted in the buffer.
-    fn update_autosuggestion_state(&mut self, ctx: &mut ViewContext<EditorView>) {
+    fn update_autosuggestion_state(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(autosuggestion_state) = self.autosuggestion_state.take() {
             // Retrieve the current state of the buffer. If the autosuggestion is location-less,
             // the buffer is the entire buffer text. If the autosuggestion belongs to a line,

@@ -130,8 +130,8 @@ pub struct DiffResult {
     pub lines_removed: usize,
 }
 
-impl AddAssign<&DiffResult> for DiffResult {
-    fn add_assign(&mut self, other: &DiffResult) {
+impl AddAssign<&Self> for DiffResult {
+    fn add_assign(&mut self, other: &Self) {
         self.lines_added += other.lines_added;
         self.lines_removed += other.lines_removed;
 

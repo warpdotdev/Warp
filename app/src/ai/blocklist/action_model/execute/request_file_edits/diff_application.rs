@@ -47,9 +47,9 @@ pub(crate) enum FileReadResult {
 impl From<std::io::Result<String>> for FileReadResult {
     fn from(result: std::io::Result<String>) -> Self {
         match result {
-            Ok(content) => FileReadResult::Found(content),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => FileReadResult::NotFound,
-            Err(err) => FileReadResult::ReadError(format!("{err:#}")),
+            Ok(content) => Self::Found(content),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Self::NotFound,
+            Err(err) => Self::ReadError(format!("{err:#}")),
         }
     }
 }
@@ -99,7 +99,7 @@ impl DiffApplicationError {
     /// retry and generate a valid diff.
     fn to_conversation_message(&self) -> String {
         match self {
-            DiffApplicationError::UnmatchedDiffs {
+            Self::UnmatchedDiffs {
                 file,
                 match_failures,
             } => {
@@ -117,33 +117,33 @@ impl DiffApplicationError {
                 }
                 message
             }
-            DiffApplicationError::MissingFile { file } => {
+            Self::MissingFile { file } => {
                 format!("{file} does not exist. Is the path correct?")
             }
-            DiffApplicationError::AlreadyExists { file } => {
+            Self::AlreadyExists { file } => {
                 format!("Could not create {file} because it already exists.")
             }
-            DiffApplicationError::ReadFailed { file, .. } => {
+            Self::ReadFailed { file, .. } => {
                 format!("Could not read {file}")
             }
-            DiffApplicationError::MultipleFileCreation { file } => {
+            Self::MultipleFileCreation { file } => {
                 format!("There can only be one attempt to create {file}.")
             }
-            DiffApplicationError::MultipleFileRenames { file } => {
+            Self::MultipleFileRenames { file } => {
                 format!("There can only be one attempt to rename {file}.")
             }
-            DiffApplicationError::MutatedDeletedFile { file } => {
+            Self::MutatedDeletedFile { file } => {
                 format!("Could not mutate a deleted file {file}.")
             }
-            DiffApplicationError::EmptyDiff => "No diffs could be applied.".to_string(),
-            DiffApplicationError::RemoteFileOperationsUnsupported => {
+            Self::EmptyDiff => "No diffs could be applied.".to_string(),
+            Self::RemoteFileOperationsUnsupported => {
                 "The file read/edit tool is not available on this remote session. Try using a different tool.".to_string()
             }
         }
     }
 
     /// Format a list of errors for inclusion in the agent conversation.
-    pub fn error_for_conversation(errors: &Vec1<DiffApplicationError>) -> String {
+    pub fn error_for_conversation(errors: &Vec1<Self>) -> String {
         if errors.len() == 1 {
             errors.first().to_conversation_message()
         } else {

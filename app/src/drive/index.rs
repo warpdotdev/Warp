@@ -378,7 +378,7 @@ impl DriveIndexAction {
     ) -> Self {
         match (space, object_type) {
             // creating a folder requires a name, which is entered from the cloud object dialog
-            (_, DriveObjectType::Folder) => DriveIndexAction::OpenCloudObjectNamingDialog {
+            (_, DriveObjectType::Folder) => Self::OpenCloudObjectNamingDialog {
                 object_type,
                 space,
                 cloud_object_type_and_id: None,
@@ -394,7 +394,7 @@ impl DriveIndexAction {
                 | DriveObjectType::AIFact
                 | DriveObjectType::MCPServer
                 | DriveObjectType::MCPServerCollection,
-            ) => DriveIndexAction::CreateObject {
+            ) => Self::CreateObject {
                 object_type,
                 space,
                 initial_folder_id,
@@ -412,7 +412,7 @@ impl DriveIndexAction {
 }
 
 impl From<&DriveIndexAction> for LoginGatedFeature {
-    fn from(val: &DriveIndexAction) -> LoginGatedFeature {
+    fn from(val: &DriveIndexAction) -> Self {
         use DriveIndexAction::*;
         match val {
             OpenTeamSettingsPage => "Open Team Settings",
@@ -1244,7 +1244,7 @@ impl DriveIndex {
     pub fn expand_section_for_drive_item_id(
         &mut self,
         item_id: WarpDriveItemId,
-        ctx: &mut ViewContext<DriveIndex>,
+        ctx: &mut ViewContext<Self>,
     ) {
         if let WarpDriveItemId::Object(object_id) = item_id {
             match object_id {
@@ -1271,7 +1271,7 @@ impl DriveIndex {
     }
 
     /// Expand the section that contains an object identified by `id`.
-    fn expand_section_for_object(&mut self, id: &ObjectUid, ctx: &mut ViewContext<DriveIndex>) {
+    fn expand_section_for_object(&mut self, id: &ObjectUid, ctx: &mut ViewContext<Self>) {
         let Some(space) = CloudViewModel::as_ref(ctx).object_space(id, ctx) else {
             return;
         };

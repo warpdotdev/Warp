@@ -74,7 +74,7 @@ impl FreeTierLimitHitModal {
             },
         );
 
-        FreeTierLimitHitModal {
+        Self {
             state_handles: Default::default(),
         }
     }

@@ -2,7 +2,7 @@ use crate::model::Point;
 
 impl From<Point> for session_sharing_protocol::common::Point {
     fn from(val: Point) -> Self {
-        session_sharing_protocol::common::Point {
+        Self {
             row: val.row,
             col: val.col,
         }

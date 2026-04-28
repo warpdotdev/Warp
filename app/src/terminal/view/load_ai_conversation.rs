@@ -197,7 +197,7 @@ pub struct RestoredAIConversation {
 
 impl RestoredAIConversation {
     pub fn new(conversation: AIConversation) -> Self {
-        RestoredAIConversation {
+        Self {
             ai_conversation: conversation,
         }
     }
@@ -251,9 +251,9 @@ impl TerminalView {
         let restore_context_state = self.resolve_dir_restoration_state(&cloud_conversation);
 
         let restore_and_continue =
-            move |me: &mut TerminalView,
+            move |me: &mut Self,
                   restore_dir_state: RestorationDirState,
-                  ctx: &mut ViewContext<TerminalView>| {
+                  ctx: &mut ViewContext<Self>| {
                 me.maybe_show_restore_context_hint(restore_dir_state, ctx);
 
                 match cloud_conversation {

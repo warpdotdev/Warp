@@ -30,8 +30,8 @@ impl From<warp_graphql::queries::get_user::PrincipalType> for PrincipalType {
     fn from(value: warp_graphql::queries::get_user::PrincipalType) -> Self {
         use warp_graphql::queries::get_user::PrincipalType as GqlPrincipalType;
         match value {
-            GqlPrincipalType::User => PrincipalType::User,
-            GqlPrincipalType::ServiceAccount => PrincipalType::ServiceAccount,
+            GqlPrincipalType::User => Self::User,
+            GqlPrincipalType::ServiceAccount => Self::ServiceAccount,
         }
     }
 }
@@ -44,9 +44,9 @@ impl TryFrom<warp_graphql::mutations::create_anonymous_user::AnonymousUserType>
         value: warp_graphql::mutations::create_anonymous_user::AnonymousUserType,
     ) -> Result<Self, Self::Error> {
         match value {
-            warp_graphql::mutations::create_anonymous_user::AnonymousUserType::NativeClientAnonymousUser => Ok(AnonymousUserType::NativeClientAnonymousUser),
-            warp_graphql::mutations::create_anonymous_user::AnonymousUserType::NativeClientAnonymousUserFeatureGated => Ok(AnonymousUserType::NativeClientAnonymousUserFeatureGated),
-            warp_graphql::mutations::create_anonymous_user::AnonymousUserType::WebClientAnonymousUser => Ok(AnonymousUserType::WebClientAnonymousUser),
+            warp_graphql::mutations::create_anonymous_user::AnonymousUserType::NativeClientAnonymousUser => Ok(Self::NativeClientAnonymousUser),
+            warp_graphql::mutations::create_anonymous_user::AnonymousUserType::NativeClientAnonymousUserFeatureGated => Ok(Self::NativeClientAnonymousUserFeatureGated),
+            warp_graphql::mutations::create_anonymous_user::AnonymousUserType::WebClientAnonymousUser => Ok(Self::WebClientAnonymousUser),
             warp_graphql::mutations::create_anonymous_user::AnonymousUserType::Other(_) => {
                 Err(anyhow!("could not convert unknown anonymous user type"))
             },

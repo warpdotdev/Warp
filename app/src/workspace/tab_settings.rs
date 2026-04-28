@@ -111,20 +111,20 @@ impl WorkspaceDecorationVisibility {
         // If we add other variants, there should still be logical opposites for each. For example,
         // toggling from any form of hidden workspace decorations should re-enable them.
         match self {
-            WorkspaceDecorationVisibility::AlwaysShow => WorkspaceDecorationVisibility::OnHover,
-            WorkspaceDecorationVisibility::OnHover => WorkspaceDecorationVisibility::HideFullscreen,
-            WorkspaceDecorationVisibility::HideFullscreen => WorkspaceDecorationVisibility::OnHover,
+            Self::AlwaysShow => Self::OnHover,
+            Self::OnHover => Self::HideFullscreen,
+            Self::HideFullscreen => Self::OnHover,
         }
     }
 
     /// True if this is a setting where workspace decorations are hidden by default.
     pub fn hides_decorations_by_default(self) -> bool {
-        matches!(self, WorkspaceDecorationVisibility::OnHover,)
+        matches!(self, Self::OnHover,)
     }
 
     /// True if *window* decorations should be shown.
     pub fn show_window_decorations(self) -> bool {
-        !matches!(self, WorkspaceDecorationVisibility::OnHover)
+        !matches!(self, Self::OnHover)
     }
 }
 
@@ -159,8 +159,8 @@ pub enum DirectoryTabColor {
 impl DirectoryTabColor {
     pub(crate) fn ansi_color(self) -> Option<AnsiColorIdentifier> {
         match self {
-            DirectoryTabColor::Color(c) => Some(c),
-            DirectoryTabColor::Suppressed | DirectoryTabColor::Unassigned => None,
+            Self::Color(c) => Some(c),
+            Self::Suppressed | Self::Unassigned => None,
         }
     }
 }

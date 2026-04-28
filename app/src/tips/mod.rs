@@ -23,12 +23,12 @@ pub const WELCOME_TIP_FEATURE_LENGTH: usize = 6;
 impl WelcomeTipFeature {
     pub fn editable_binding_name(&self) -> &'static str {
         match self {
-            WelcomeTipFeature::Workflows => "input:toggle_workflows",
-            WelcomeTipFeature::CommandPalette => "workspace:toggle_command_palette",
-            WelcomeTipFeature::SplitPane => "pane_group:add_right",
-            WelcomeTipFeature::HistorySearch => "input:search_command_history",
-            WelcomeTipFeature::AiCommandSearch => "input:toggle_natural_language_command_search",
-            WelcomeTipFeature::ThemePicker => "workspace:show_theme_chooser",
+            Self::Workflows => "input:toggle_workflows",
+            Self::CommandPalette => "workspace:toggle_command_palette",
+            Self::SplitPane => "pane_group:add_right",
+            Self::HistorySearch => "input:search_command_history",
+            Self::AiCommandSearch => "input:toggle_natural_language_command_search",
+            Self::ThemePicker => "workspace:show_theme_chooser",
         }
     }
 

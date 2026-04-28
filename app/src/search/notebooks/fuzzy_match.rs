@@ -69,11 +69,7 @@ pub fn render_notebook_matched_content_with_highlight(
 
 impl FuzzyMatchNotebookResult {
     /// Attempts to fuzzy match the `notebook`. Returns `None` if the `notebook` was not matched.
-    pub fn try_match(
-        query: &str,
-        notebook: &CloudNotebook,
-        app: &AppContext,
-    ) -> Option<FuzzyMatchNotebookResult> {
+    pub fn try_match(query: &str, notebook: &CloudNotebook, app: &AppContext) -> Option<Self> {
         let name_match_result =
             fuzzy_match::match_indices_case_insensitive(&notebook.model().title, query);
         let parsed_raw_text = NotebookManager::as_ref(app)
@@ -89,7 +85,7 @@ impl FuzzyMatchNotebookResult {
             &folder_match_result,
         ) {
             (None, None, None) => None,
-            _ => Some(FuzzyMatchNotebookResult {
+            _ => Some(Self {
                 name_match_result,
                 content_match_result,
                 folder_match_result,
@@ -98,7 +94,7 @@ impl FuzzyMatchNotebookResult {
     }
 
     /// Returns a dummy [`FuzzyMatchNotebookResult`] for an item that is unmatched.
-    pub fn no_match() -> FuzzyMatchNotebookResult {
+    pub fn no_match() -> Self {
         Self {
             name_match_result: Some(FuzzyMatchResult::no_match()),
             content_match_result: Some(FuzzyMatchResult::no_match()),

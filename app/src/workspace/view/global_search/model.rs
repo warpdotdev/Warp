@@ -45,7 +45,7 @@ async fn flush_batch(
 
 impl GlobalSearch {
     pub fn new() -> Self {
-        GlobalSearch {
+        Self {
             search_handle: None,
             next_search_id: 1,
         }
@@ -121,7 +121,7 @@ impl GlobalSearch {
         roots: Vec<PathBuf>,
         ignore_case: bool,
         multiline: bool,
-        spawner: ModelSpawner<GlobalSearch>,
+        spawner: ModelSpawner<Self>,
     ) -> Result<usize> {
         let roots_display: Vec<_> = roots.iter().map(|r| r.display().to_string()).collect();
         log::info!(

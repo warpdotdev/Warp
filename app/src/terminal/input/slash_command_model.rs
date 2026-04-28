@@ -65,9 +65,7 @@ pub enum SlashCommandEntryState {
 impl SlashCommandEntryState {
     pub fn detected_command(&self) -> Option<&StaticCommand> {
         match self {
-            SlashCommandEntryState::SlashCommand(detected_command) => {
-                Some(&detected_command.command)
-            }
+            Self::SlashCommand(detected_command) => Some(&detected_command.command),
             _ => None,
         }
     }
@@ -86,10 +84,10 @@ impl SlashCommandEntryState {
     /// in the input buffer, or `None` if no command/skill is detected.
     pub fn command_prefix_highlight_len(&self, buffer_text: &str) -> Option<usize> {
         match self {
-            SlashCommandEntryState::SlashCommand(detected) => buffer_text
+            Self::SlashCommand(detected) => buffer_text
                 .starts_with(detected.command.name)
                 .then_some(detected.command.name.len()),
-            SlashCommandEntryState::SkillCommand(detected) => {
+            Self::SkillCommand(detected) => {
                 // Skill name doesn't include the leading '/', so we prefix it for matching.
                 let prefix_len = 1 + detected.name.len();
                 buffer_text
@@ -97,9 +95,7 @@ impl SlashCommandEntryState {
                     .is_some_and(|p| p.starts_with('/') && p[1..] == *detected.name)
                     .then_some(prefix_len)
             }
-            SlashCommandEntryState::None
-            | SlashCommandEntryState::Composing { .. }
-            | SlashCommandEntryState::DisabledUntilEmptyBuffer => None,
+            Self::None | Self::Composing { .. } | Self::DisabledUntilEmptyBuffer => None,
         }
     }
 
@@ -109,7 +105,7 @@ impl SlashCommandEntryState {
 
     fn pending_command(&self) -> Option<&String> {
         match self {
-            SlashCommandEntryState::Composing { filter } => Some(filter),
+            Self::Composing { filter } => Some(filter),
             _ => None,
         }
     }

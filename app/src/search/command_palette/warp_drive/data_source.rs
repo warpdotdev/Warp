@@ -47,7 +47,7 @@ impl DataSource {
         searcher.refresh_search_index(ctx).unwrap_or_else(|err| {
             log::error!("Error refreshing search index: {err:?}");
         });
-        DataSource { searcher }
+        Self { searcher }
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -59,7 +59,7 @@ impl DataSource {
         searcher.refresh_search_index(ctx).unwrap_or_else(|err| {
             log::error!("Error refreshing search index: {err:?}");
         });
-        DataSource { searcher }
+        Self { searcher }
     }
 
     fn handle_cloud_object_updated(
@@ -1116,7 +1116,7 @@ mod full_text_searcher {
 
     impl FullTextWarpDriveSearcher {
         pub(crate) fn new(background: Arc<Background>) -> Self {
-            FullTextWarpDriveSearcher {
+            Self {
                 notebook_searcher: NOTEBOOK_SEARCH_SCHEMA
                     .create_async_searcher(MEMORY_BUDGET, background.clone()),
                 workflow_searcher: WORKFLOW_SEARCH_SCHEMA

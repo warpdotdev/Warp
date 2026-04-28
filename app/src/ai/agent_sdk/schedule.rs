@@ -189,7 +189,7 @@ impl ScheduleInfo {
     ) -> Self {
         let last_ran = history.and_then(|h| h.last_ran.as_ref().map(|t| t.utc()));
         let next_run = history.and_then(|h| h.next_run.as_ref().map(|t| t.utc()));
-        ScheduleInfo {
+        Self {
             id,
             name: config.name,
             cron_schedule: config.cron_schedule,

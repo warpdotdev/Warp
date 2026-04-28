@@ -127,77 +127,65 @@ impl TelemetryEvent for AgentManagementTelemetryEvent {
 
     fn payload(&self) -> Option<serde_json::Value> {
         match self {
-            AgentManagementTelemetryEvent::ViewToggled { is_open } => {
-                Some(json!({ "is_open": is_open }))
-            }
-            AgentManagementTelemetryEvent::OpenSetupGuide => None,
-            AgentManagementTelemetryEvent::DismissSetupGuide => None,
-            AgentManagementTelemetryEvent::SpawnNewLocalAgent => None,
-            AgentManagementTelemetryEvent::SpawnNewCloudAgent => None,
-            AgentManagementTelemetryEvent::AgentTypeSelectorOpened => None,
-            AgentManagementTelemetryEvent::SetupGuideStepRun { step } => {
-                Some(json!({ "step": step }))
-            }
-            AgentManagementTelemetryEvent::SetupGuideStepCopy { step } => {
-                Some(json!({ "step": step }))
-            }
-            AgentManagementTelemetryEvent::SetupGuideDocsLink { docs } => {
-                Some(json!({ "docs": docs }))
-            }
-            AgentManagementTelemetryEvent::ConversationOpened {
+            Self::ViewToggled { is_open } => Some(json!({ "is_open": is_open })),
+            Self::OpenSetupGuide => None,
+            Self::DismissSetupGuide => None,
+            Self::SpawnNewLocalAgent => None,
+            Self::SpawnNewCloudAgent => None,
+            Self::AgentTypeSelectorOpened => None,
+            Self::SetupGuideStepRun { step } => Some(json!({ "step": step })),
+            Self::SetupGuideStepCopy { step } => Some(json!({ "step": step })),
+            Self::SetupGuideDocsLink { docs } => Some(json!({ "docs": docs })),
+            Self::ConversationOpened {
                 conversation_id,
                 opened_from,
             } => Some(json!({
                 "conversation_id": conversation_id,
                 "opened_from": opened_from,
             })),
-            AgentManagementTelemetryEvent::CloudRunOpened {
+            Self::CloudRunOpened {
                 task_id,
                 opened_from,
             } => Some(json!({
                 "task_id": task_id,
                 "opened_from": opened_from,
             })),
-            AgentManagementTelemetryEvent::ArtifactClicked { artifact_type } => {
+            Self::ArtifactClicked { artifact_type } => {
                 Some(json!({ "artifact_type": artifact_type }))
             }
-            AgentManagementTelemetryEvent::FilterChanged { filter_type } => {
-                Some(json!({ "filter_type": filter_type }))
-            }
-            AgentManagementTelemetryEvent::DetailsViewed {
+            Self::FilterChanged { filter_type } => Some(json!({ "filter_type": filter_type })),
+            Self::DetailsViewed {
                 item_id,
                 viewed_from,
             } => Some(json!({
                 "item_id": item_id,
                 "viewed_from": viewed_from,
             })),
-            AgentManagementTelemetryEvent::ConversationLinkCopied {
+            Self::ConversationLinkCopied {
                 conversation_id,
                 copied_from,
             } => Some(json!({
                 "conversation_id": conversation_id,
                 "copied_from": copied_from,
             })),
-            AgentManagementTelemetryEvent::SessionLinkCopied {
+            Self::SessionLinkCopied {
                 task_id,
                 copied_from,
             } => Some(json!({
                 "task_id": task_id,
                 "copied_from": copied_from,
             })),
-            AgentManagementTelemetryEvent::TombstoneArtifactClicked { artifact_type } => {
+            Self::TombstoneArtifactClicked { artifact_type } => {
                 Some(json!({ "artifact_type": artifact_type }))
             }
             #[cfg(not(target_family = "wasm"))]
-            AgentManagementTelemetryEvent::TombstoneContinueLocally => None,
+            Self::TombstoneContinueLocally => None,
             #[cfg(not(target_family = "wasm"))]
-            AgentManagementTelemetryEvent::DetailsPanelContinueLocally => None,
+            Self::DetailsPanelContinueLocally => None,
             #[cfg(target_family = "wasm")]
             AgentManagementTelemetryEvent::TombstoneOpenInWarp => None,
-            AgentManagementTelemetryEvent::CloudRunCancelled { task_id } => {
-                Some(json!({ "task_id": task_id }))
-            }
-            AgentManagementTelemetryEvent::ConversationForked { conversation_id } => {
+            Self::CloudRunCancelled { task_id } => Some(json!({ "task_id": task_id })),
+            Self::ConversationForked { conversation_id } => {
                 Some(json!({ "conversation_id": conversation_id }))
             }
         }

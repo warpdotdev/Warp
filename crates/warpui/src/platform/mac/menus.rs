@@ -95,21 +95,21 @@ struct MenuItemData {
 impl MenuItemData {
     /// Convert self to a Cocoa context pointer, including the refcount.
     /// This should be balanced by consume_cocoa_context.
-    fn into_context(self: Rc<MenuItemData>) -> *mut c_void {
+    fn into_context(self: Rc<Self>) -> *mut c_void {
         Box::into_raw(Box::new(self)) as *mut c_void
     }
 
     /// Read out from the Cocoa context pointer, without consuming its refcount.
-    fn read_context(ctx: *const c_void) -> Rc<MenuItemData> {
+    fn read_context(ctx: *const c_void) -> Rc<Self> {
         unsafe {
-            let ptr = &*(ctx as *const Rc<MenuItemData>);
+            let ptr = &*(ctx as *const Rc<Self>);
             ptr.clone()
         }
     }
 
     /// Balances a call from to_cocoa_context.
     fn consume_context(ctx: *mut c_void) {
-        unsafe { std::mem::drop(Box::from_raw(ctx as *mut Rc<MenuItemData>)) }
+        unsafe { std::mem::drop(Box::from_raw(ctx as *mut Rc<Self>)) }
     }
 }
 

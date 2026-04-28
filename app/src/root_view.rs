@@ -1613,7 +1613,7 @@ pub enum NewWorkspaceSource {
 impl NewWorkspaceSource {
     pub fn has_horizontal_split(&self) -> bool {
         match self {
-            NewWorkspaceSource::Restored {
+            Self::Restored {
                 window_snapshot, ..
             } => {
                 if window_snapshot.tabs.is_empty() {
@@ -3514,14 +3514,13 @@ impl AuthOnboardingState {
 
         // If we didn't transition to Onboarding, set the Terminal state.
         match self {
-            AuthOnboardingState::Auth(ref args)
-            | AuthOnboardingState::ConfirmIncomingAuth(ref args) => {
+            Self::Auth(ref args) | Self::ConfirmIncomingAuth(ref args) => {
                 let workspace = args.clone().create_workspace(ctx);
-                *self = AuthOnboardingState::Terminal(workspace);
+                *self = Self::Terminal(workspace);
             }
-            AuthOnboardingState::LoginSlide { ref target, .. } => {
+            Self::LoginSlide { ref target, .. } => {
                 let workspace = target.to_workspace(ctx);
-                *self = AuthOnboardingState::Terminal(workspace);
+                *self = Self::Terminal(workspace);
             }
             _ => {}
         };
@@ -3530,12 +3529,10 @@ impl AuthOnboardingState {
 
     fn try_open_onboarding_slides(&mut self, ctx: &mut ViewContext<RootView>) {
         let target = match self {
-            AuthOnboardingState::Auth(args) | AuthOnboardingState::ConfirmIncomingAuth(args) => {
+            Self::Auth(args) | Self::ConfirmIncomingAuth(args) => {
                 AuthOnboardingTarget::Workspace(args.clone())
             }
-            AuthOnboardingState::Terminal(workspace) => {
-                AuthOnboardingTarget::Terminal(workspace.clone())
-            }
+            Self::Terminal(workspace) => AuthOnboardingTarget::Terminal(workspace.clone()),
             _ => {
                 // Onboarding slides can only be opened from Auth or Terminal states
                 return;
@@ -3546,15 +3543,15 @@ impl AuthOnboardingState {
         onboarding_view.update(ctx, |view, ctx| {
             view.start_onboarding(ctx);
         });
-        *self = AuthOnboardingState::Onboarding {
+        *self = Self::Onboarding {
             onboarding_view,
             target,
         };
     }
 
     fn complete_sso_link(&mut self, ctx: &mut ViewContext<RootView>) {
-        if let AuthOnboardingState::NeedsSsoLink(needs_sso_link_mode) = self {
-            *self = AuthOnboardingState::Terminal(needs_sso_link_mode.to_workspace(ctx));
+        if let Self::NeedsSsoLink(needs_sso_link_mode) = self {
+            *self = Self::Terminal(needs_sso_link_mode.to_workspace(ctx));
             ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
         }
     }
@@ -3590,11 +3587,8 @@ impl AuthOnboardingState {
 
     fn show_needs_sso_link_view(&mut self) {
         match self {
-            AuthOnboardingState::Auth(workspace_args)
-            | AuthOnboardingState::ConfirmIncomingAuth(workspace_args) => {
-                *self = AuthOnboardingState::NeedsSsoLink(AuthOnboardingTarget::Workspace(
-                    workspace_args.clone(),
-                ))
+            Self::Auth(workspace_args) | Self::ConfirmIncomingAuth(workspace_args) => {
+                *self = Self::NeedsSsoLink(AuthOnboardingTarget::Workspace(workspace_args.clone()))
             }
             #[cfg(target_family = "wasm")]
             AuthOnboardingState::WebImport(_) => {
@@ -3602,24 +3596,23 @@ impl AuthOnboardingState {
                 // in the host app.
                 log::error!("SSO link required after web user import");
             }
-            AuthOnboardingState::NeedsSsoLink { .. } => (),
-            AuthOnboardingState::Onboarding { .. } | AuthOnboardingState::LoginSlide { .. } => {
+            Self::NeedsSsoLink { .. } => (),
+            Self::Onboarding { .. } | Self::LoginSlide { .. } => {
                 // For onboarding/login slide, we don't have a workspace yet, so we can't convert to SSO link
                 // This case shouldn't normally occur
             }
-            AuthOnboardingState::Terminal(terminal_view_handle) => {
-                *self = AuthOnboardingState::NeedsSsoLink(AuthOnboardingTarget::Terminal(
-                    terminal_view_handle.clone(),
-                ))
+            Self::Terminal(terminal_view_handle) => {
+                *self =
+                    Self::NeedsSsoLink(AuthOnboardingTarget::Terminal(terminal_view_handle.clone()))
             }
         }
     }
 
     fn log_out(&mut self, ctx: &mut ViewContext<RootView>) {
         match self {
-            AuthOnboardingState::Auth(_) => (),
-            AuthOnboardingState::ConfirmIncomingAuth(workspace_args) => {
-                *self = AuthOnboardingState::Auth(workspace_args.clone());
+            Self::Auth(_) => (),
+            Self::ConfirmIncomingAuth(workspace_args) => {
+                *self = Self::Auth(workspace_args.clone());
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
             }
             #[cfg(target_family = "wasm")]
@@ -3627,17 +3620,17 @@ impl AuthOnboardingState {
                 // TODO(ben): Eventually, we could support logout here by logging out of the JS
                 // Firebase client.
             }
-            AuthOnboardingState::NeedsSsoLink(needs_sso_link_mode) => match needs_sso_link_mode {
+            Self::NeedsSsoLink(needs_sso_link_mode) => match needs_sso_link_mode {
                 AuthOnboardingTarget::Workspace(args) => {
-                    *self = AuthOnboardingState::Auth(args.clone());
+                    *self = Self::Auth(args.clone());
                     ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
                 }
                 AuthOnboardingTarget::Terminal(_) => {}
             },
-            AuthOnboardingState::Onboarding { .. } | AuthOnboardingState::LoginSlide { .. } => {
+            Self::Onboarding { .. } | Self::LoginSlide { .. } => {
                 // No workspace to clean up for onboarding/login slide state
             }
-            AuthOnboardingState::Terminal(workspace) => {
+            Self::Terminal(workspace) => {
                 // Clean up current workspace before resetting.
                 workspace.update(ctx, |workspace, ctx| {
                     workspace.on_log_out(ctx);
@@ -3660,7 +3653,7 @@ impl AuthOnboardingState {
                 // Auth no longer holds the original workspace view handle
                 // This way it is destroyed at this step, and we will re-create
                 // a new workspace view handle when the user logs in.
-                *self = AuthOnboardingState::Auth(workspace_args.into());
+                *self = Self::Auth(workspace_args.into());
                 ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
             }
         }
@@ -3670,8 +3663,8 @@ impl AuthOnboardingState {
 impl AuthOnboardingTarget {
     fn to_workspace(&self, ctx: &mut ViewContext<RootView>) -> ViewHandle<Workspace> {
         match self {
-            AuthOnboardingTarget::Terminal(workspace) => workspace.clone(),
-            AuthOnboardingTarget::Workspace(args) => args.clone().create_workspace(ctx),
+            Self::Terminal(workspace) => workspace.clone(),
+            Self::Workspace(args) => args.clone().create_workspace(ctx),
         }
     }
 }

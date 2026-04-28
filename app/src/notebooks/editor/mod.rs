@@ -74,19 +74,19 @@ pub enum BlockType {
 }
 
 impl BlockType {
-    const ALL: [BlockType; 12] = [
-        BlockType::RunnableCommand,
-        BlockType::Code,
-        BlockType::Header(BlockHeaderSize::Header1),
-        BlockType::Header(BlockHeaderSize::Header2),
-        BlockType::Header(BlockHeaderSize::Header3),
-        BlockType::Header(BlockHeaderSize::Header4),
-        BlockType::Header(BlockHeaderSize::Header5),
-        BlockType::Header(BlockHeaderSize::Header6),
-        BlockType::Text,
-        BlockType::UnorderedList,
-        BlockType::OrderedList,
-        BlockType::TaskList,
+    const ALL: [Self; 12] = [
+        Self::RunnableCommand,
+        Self::Code,
+        Self::Header(BlockHeaderSize::Header1),
+        Self::Header(BlockHeaderSize::Header2),
+        Self::Header(BlockHeaderSize::Header3),
+        Self::Header(BlockHeaderSize::Header4),
+        Self::Header(BlockHeaderSize::Header5),
+        Self::Header(BlockHeaderSize::Header6),
+        Self::Text,
+        Self::UnorderedList,
+        Self::OrderedList,
+        Self::TaskList,
     ];
 
     fn all() -> impl Iterator<Item = Self> {
@@ -100,49 +100,48 @@ impl BlockType {
     /// These types support multiple paragraphs and syntax highlighting, but not user-defined
     /// formatting. In the block insertion menu, these types are grouped together.
     fn code_block_types() -> impl Iterator<Item = Self> {
-        [BlockType::RunnableCommand, BlockType::Code].into_iter()
+        [Self::RunnableCommand, Self::Code].into_iter()
     }
 
     /// Block types that behave as text (plain text, headings, and lists). These types support
     /// user-defined formatting. In the block insertion menu, these types are grouped together.
     fn text_block_types() -> impl Iterator<Item = Self> {
-        Self::all().filter(|block_type| {
-            *block_type != BlockType::Code && *block_type != BlockType::RunnableCommand
-        })
+        Self::all()
+            .filter(|block_type| *block_type != Self::Code && *block_type != Self::RunnableCommand)
     }
 
     fn icon(self) -> Icon {
         match self {
-            BlockType::Text => Icon::TextBlock,
-            BlockType::Header(_) => Icon::HeaderBlock,
-            BlockType::RunnableCommand => Icon::RunnableCommandBlock,
-            BlockType::Code => Icon::Code1,
-            BlockType::UnorderedList => Icon::BulletedListBlock,
-            BlockType::OrderedList => Icon::OrderedListBlock,
-            BlockType::TaskList => Icon::TaskListBlock,
+            Self::Text => Icon::TextBlock,
+            Self::Header(_) => Icon::HeaderBlock,
+            Self::RunnableCommand => Icon::RunnableCommandBlock,
+            Self::Code => Icon::Code1,
+            Self::UnorderedList => Icon::BulletedListBlock,
+            Self::OrderedList => Icon::OrderedListBlock,
+            Self::TaskList => Icon::TaskListBlock,
         }
     }
 
     fn icon_color(self, appearance: &Appearance) -> Option<Fill> {
         match self {
-            BlockType::Text
-            | BlockType::Header(_)
-            | BlockType::UnorderedList
-            | BlockType::OrderedList
-            | BlockType::TaskList => Some(Fill::Solid(appearance.theme().ui_warning_color())),
-            BlockType::RunnableCommand | BlockType::Code => None,
+            Self::Text
+            | Self::Header(_)
+            | Self::UnorderedList
+            | Self::OrderedList
+            | Self::TaskList => Some(Fill::Solid(appearance.theme().ui_warning_color())),
+            Self::RunnableCommand | Self::Code => None,
         }
     }
 
     fn label(self) -> &'static str {
         match self {
-            BlockType::Text => "Text",
-            BlockType::Header(size) => size.label(),
-            BlockType::RunnableCommand => "Command",
-            BlockType::UnorderedList => "Bulleted list",
-            BlockType::OrderedList => "Numbered list",
-            BlockType::Code => "Code",
-            BlockType::TaskList => "To-do list",
+            Self::Text => "Text",
+            Self::Header(size) => size.label(),
+            Self::RunnableCommand => "Command",
+            Self::UnorderedList => "Bulleted list",
+            Self::OrderedList => "Numbered list",
+            Self::Code => "Code",
+            Self::TaskList => "To-do list",
         }
     }
 }
@@ -304,7 +303,7 @@ impl<'a> From<&'a ContentBlockType> for BlockType {
     fn from(block_type: &'a ContentBlockType) -> Self {
         match block_type {
             // TODO: Add support for block item here.
-            ContentBlockType::Item(_) => BlockType::Text,
+            ContentBlockType::Item(_) => Self::Text,
             ContentBlockType::Text(block_style) => Self::from(block_style),
         }
     }
@@ -314,15 +313,15 @@ impl<'a> From<&'a BufferBlockStyle> for BlockType {
     fn from(block_style: &'a BufferBlockStyle) -> Self {
         match block_style {
             BufferBlockStyle::CodeBlock { code_block_type } => match code_block_type {
-                CodeBlockType::Shell => BlockType::RunnableCommand,
-                CodeBlockType::Mermaid | CodeBlockType::Code { .. } => BlockType::Code,
+                CodeBlockType::Shell => Self::RunnableCommand,
+                CodeBlockType::Mermaid | CodeBlockType::Code { .. } => Self::Code,
             },
-            BufferBlockStyle::PlainText => BlockType::Text,
-            BufferBlockStyle::Header { header_size } => BlockType::Header(*header_size),
-            BufferBlockStyle::UnorderedList { .. } => BlockType::UnorderedList,
-            BufferBlockStyle::OrderedList { .. } => BlockType::OrderedList,
-            BufferBlockStyle::TaskList { .. } => BlockType::TaskList,
-            BufferBlockStyle::Table { .. } => BlockType::Text,
+            BufferBlockStyle::PlainText => Self::Text,
+            BufferBlockStyle::Header { header_size } => Self::Header(*header_size),
+            BufferBlockStyle::UnorderedList { .. } => Self::UnorderedList,
+            BufferBlockStyle::OrderedList { .. } => Self::OrderedList,
+            BufferBlockStyle::TaskList { .. } => Self::TaskList,
+            BufferBlockStyle::Table { .. } => Self::Text,
         }
     }
 }

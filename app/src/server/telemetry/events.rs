@@ -2869,36 +2869,36 @@ impl TelemetryEvent {
 
     pub fn payload(&self) -> Option<Value> {
         match self {
-            TelemetryEvent::ShowedSuggestedAgentModeWorkflowChip { logging_id } => Some(json!({
+            Self::ShowedSuggestedAgentModeWorkflowChip { logging_id } => Some(json!({
                 "logging_id": logging_id,
             })),
-            TelemetryEvent::ShowedSuggestedAgentModeWorkflowModal { logging_id } => Some(json!({
+            Self::ShowedSuggestedAgentModeWorkflowModal { logging_id } => Some(json!({
                 "logging_id": logging_id,
             })),
-            TelemetryEvent::AISuggestedAgentModeWorkflowAdded { logging_id } => Some(json!({
+            Self::AISuggestedAgentModeWorkflowAdded { logging_id } => Some(json!({
                 "logging_id": logging_id,
             })),
-            TelemetryEvent::AutosuggestionInserted {
+            Self::AutosuggestionInserted {
                 insertion_length,
                 buffer_length,
             } => {
                 Some(json!({"insertion_length": insertion_length, "buffer_length": buffer_length}))
             }
-            TelemetryEvent::AgentModeContinueConversationButtonClicked { conversation_id } => {
+            Self::AgentModeContinueConversationButtonClicked { conversation_id } => {
                 Some(json!({"conversation_id": conversation_id}))
             }
-            TelemetryEvent::AgentModeRewindDialogOpened { entrypoint } => {
+            Self::AgentModeRewindDialogOpened { entrypoint } => {
                 Some(json!({"entrypoint": entrypoint}))
             }
-            TelemetryEvent::AgentModeRewindExecuted {
+            Self::AgentModeRewindExecuted {
                 num_blocks_reverted,
             } => Some(json!({"num_blocks_reverted": num_blocks_reverted})),
-            TelemetryEvent::BootstrappingSlow(info) => Some(json!(info)),
-            TelemetryEvent::BootstrappingSlowContents(info) => Some(json!(info)),
-            TelemetryEvent::ToggleSettingsSync {
+            Self::BootstrappingSlow(info) => Some(json!(info)),
+            Self::BootstrappingSlowContents(info) => Some(json!(info)),
+            Self::ToggleSettingsSync {
                 is_settings_sync_enabled,
             } => Some(json!({ "is_settings_sync_enabled": is_settings_sync_enabled })),
-            TelemetryEvent::SessionAbandonedBeforeBootstrap {
+            Self::SessionAbandonedBeforeBootstrap {
                 pending_shell,
                 has_pending_ssh_session,
                 was_ever_visible,
@@ -2909,7 +2909,7 @@ impl TelemetryEvent {
                 "was_ever_visible": was_ever_visible,
                 "duration_since_start_secs": duration_since_start.as_secs_f32(),
             })),
-            TelemetryEvent::BlockCompleted {
+            Self::BlockCompleted {
                 block_finished_to_precmd_delay_ms,
                 honor_ps1_enabled,
                 num_secrets_redacted,
@@ -2928,10 +2928,10 @@ impl TelemetryEvent {
                 "is_udi_enabled": is_udi_enabled,
                 "is_in_agent_view": is_in_agent_view,
             })),
-            TelemetryEvent::ToggleFocusPaneOnHover { enabled } => Some(json!({
+            Self::ToggleFocusPaneOnHover { enabled } => Some(json!({
                 "enabled": enabled,
             })),
-            TelemetryEvent::BlockCompletedOnDogfoodOnly {
+            Self::BlockCompletedOnDogfoodOnly {
                 block_finished_to_precmd_delay_ms,
                 honor_ps1_enabled,
                 num_secrets_redacted,
@@ -2952,153 +2952,145 @@ impl TelemetryEvent {
                 "exit_code": exit_code,
                 "terminal_session_id": terminal_session_id,
             })),
-            TelemetryEvent::BootstrappingSucceeded(info) => Some(json!(info)),
-            TelemetryEvent::SSHBootstrapAttempt(remote_shell) => {
+            Self::BootstrappingSucceeded(info) => Some(json!(info)),
+            Self::SSHBootstrapAttempt(remote_shell) => {
                 Some(json!({ "shell": remote_shell.as_str() }))
             }
-            TelemetryEvent::OpenContextMenu { context_menu_info } => Some(
+            Self::OpenContextMenu { context_menu_info } => Some(
                 json!({ "type": context_menu_info.type_for_telemetry(), "open_method": context_menu_info.open_method_for_telemetry() }),
             ),
-            TelemetryEvent::ContextMenuCopy(entity, cardinality) => {
+            Self::ContextMenuCopy(entity, cardinality) => {
                 Some(json!({ "entity": entity.as_str(), "cardinality": cardinality }))
             }
-            TelemetryEvent::ContextMenuFindWithinBlocks(cardinality) => {
+            Self::ContextMenuFindWithinBlocks(cardinality) => {
                 Some(json!({ "cardinality": cardinality }))
             }
-            TelemetryEvent::ContextMenuOpenShareModal(cardinality) => {
+            Self::ContextMenuOpenShareModal(cardinality) => {
                 Some(json!({ "cardinality": cardinality }))
             }
-            TelemetryEvent::ContextMenuCopyPrompt { part } => Some(json!({ "part": part })),
-            TelemetryEvent::ReinputCommands(cardinality) => {
-                Some(json!({ "cardinality": cardinality }))
-            }
-            TelemetryEvent::ContextMenuToggleGitPromptDirtyIndicator { enabled } => {
+            Self::ContextMenuCopyPrompt { part } => Some(json!({ "part": part })),
+            Self::ReinputCommands(cardinality) => Some(json!({ "cardinality": cardinality })),
+            Self::ContextMenuToggleGitPromptDirtyIndicator { enabled } => {
                 Some(json!({ "enabled": enabled }))
             }
-            TelemetryEvent::BlockSelection(details) => Some(json!(details)),
-            TelemetryEvent::OpenSuggestionsMenu(mode) => Some(json!(mode)),
-            TelemetryEvent::ConfirmSuggestion { mode, match_type } => {
+            Self::BlockSelection(details) => Some(json!(details)),
+            Self::OpenSuggestionsMenu(mode) => Some(json!(mode)),
+            Self::ConfirmSuggestion { mode, match_type } => {
                 Some(json!({ "mode": mode, "match_type": match_type }))
             }
-            TelemetryEvent::EditorUnhandledModifierKey(normalized_keystroke) => {
+            Self::EditorUnhandledModifierKey(normalized_keystroke) => {
                 Some(json!(normalized_keystroke.as_str()))
             }
-            TelemetryEvent::ThemeSelection { theme, entrypoint } => {
+            Self::ThemeSelection { theme, entrypoint } => {
                 Some(json!({ "theme": theme, "entrypoint": entrypoint }))
             }
-            TelemetryEvent::AppIconSelection { icon } => Some(json!({"icon": icon})),
-            TelemetryEvent::CursorDisplayType {
+            Self::AppIconSelection { icon } => Some(json!({"icon": icon})),
+            Self::CursorDisplayType {
                 cursor: cursor_display_type,
             } => Some(json!({"cursor": cursor_display_type})),
-            TelemetryEvent::ObjectLinkCopied { link } => Some(json!({"link": link})),
-            TelemetryEvent::FileTreeToggled {
+            Self::ObjectLinkCopied { link } => Some(json!({"link": link})),
+            Self::FileTreeToggled {
                 source,
                 is_code_mode_v2,
                 cli_agent,
             } => Some(
                 json!({"source": source, "is_code_mode_v2": is_code_mode_v2, "cli_agent": cli_agent}),
             ),
-            TelemetryEvent::FileTreeItemAttachedAsContext { is_directory } => {
+            Self::FileTreeItemAttachedAsContext { is_directory } => {
                 Some(json!({"is_directory": is_directory}))
             }
-            TelemetryEvent::ToggleRestoreSession(enabled) => Some(json!({ "enabled": enabled })),
-            TelemetryEvent::DatabaseStartUpError(error) => Some(json!(error)),
-            TelemetryEvent::DatabaseReadError(error) => Some(json!(error)),
-            TelemetryEvent::DatabaseWriteError(error) => Some(json!(error)),
-            TelemetryEvent::AppStartup(info) => Some(json!(info)),
-            TelemetryEvent::DownloadSource(source) => Some(json!(source)),
-            TelemetryEvent::BaselineCommandLatency(info) => Some(json!(info)),
-            TelemetryEvent::KeybindingChanged { action, keystroke } => {
+            Self::ToggleRestoreSession(enabled) => Some(json!({ "enabled": enabled })),
+            Self::DatabaseStartUpError(error) => Some(json!(error)),
+            Self::DatabaseReadError(error) => Some(json!(error)),
+            Self::DatabaseWriteError(error) => Some(json!(error)),
+            Self::AppStartup(info) => Some(json!(info)),
+            Self::DownloadSource(source) => Some(json!(source)),
+            Self::BaselineCommandLatency(info) => Some(json!(info)),
+            Self::KeybindingChanged { action, keystroke } => {
                 Some(json!({ "action": action, "keystroke": keystroke.normalized() }))
             }
-            TelemetryEvent::KeybindingResetToDefault { action } => {
-                Some(json!({ "action": action }))
-            }
-            TelemetryEvent::KeybindingRemoved { action } => Some(json!({ "action": action })),
-            TelemetryEvent::FeaturesPageAction { action, value } => {
+            Self::KeybindingResetToDefault { action } => Some(json!({ "action": action })),
+            Self::KeybindingRemoved { action } => Some(json!({ "action": action })),
+            Self::FeaturesPageAction { action, value } => {
                 Some(json!({"action": action, "value": value}))
             }
-            TelemetryEvent::WorkflowExecuted(metadata) => Some(json!(metadata)),
-            TelemetryEvent::WorkflowSelected(metadata) => Some(json!(metadata)),
-            TelemetryEvent::CompleteWelcomeTipFeature {
+            Self::WorkflowExecuted(metadata) => Some(json!(metadata)),
+            Self::WorkflowSelected(metadata) => Some(json!(metadata)),
+            Self::CompleteWelcomeTipFeature {
                 total_completed_count,
                 tip_name,
             } => Some(
                 json!({ "total_completed_count": total_completed_count, "tip_name": tip_name }),
             ),
-            TelemetryEvent::NotificationsDiscoveryBannerAction(action) => {
-                Some(json!({ "action": action }))
-            }
-            TelemetryEvent::InputModeChanged { old_mode, new_mode } => {
+            Self::NotificationsDiscoveryBannerAction(action) => Some(json!({ "action": action })),
+            Self::InputModeChanged { old_mode, new_mode } => {
                 Some(json!({ "old_mode": old_mode, "new_mode": new_mode }))
             }
-            TelemetryEvent::NotificationsErrorBannerAction(action) => {
-                Some(json!({ "action": action }))
-            }
-            TelemetryEvent::NotificationPermissionsRequested { source, trigger } => {
+            Self::NotificationsErrorBannerAction(action) => Some(json!({ "action": action })),
+            Self::NotificationPermissionsRequested { source, trigger } => {
                 Some(json!({ "source": source, "trigger": trigger }))
             }
-            TelemetryEvent::NotificationFailedToSend { error } => Some(json!({ "error": error })),
-            TelemetryEvent::NotificationSent {
+            Self::NotificationFailedToSend { error } => Some(json!({ "error": error })),
+            Self::NotificationSent {
                 trigger,
                 agent_variant,
             } => Some(json!({
                 "trigger": trigger,
                 "agent_variant": agent_variant,
             })),
-            TelemetryEvent::NotificationsRequestPermissionsOutcome { outcome } => {
+            Self::NotificationsRequestPermissionsOutcome { outcome } => {
                 Some(json!({ "outcome": outcome }))
             }
-            TelemetryEvent::ToggleFindOption { option, enabled } => {
+            Self::ToggleFindOption { option, enabled } => {
                 Some(json!({ "option": option, "enabled": enabled }))
             }
-            TelemetryEvent::SelectCommandPaletteOption(option) => Some(json!({ "option": option })),
-            TelemetryEvent::PaletteSearchOpened { mode, source } => {
+            Self::SelectCommandPaletteOption(option) => Some(json!({ "option": option })),
+            Self::PaletteSearchOpened { mode, source } => {
                 Some(json!({ "mode": mode, "source": source }))
             }
-            TelemetryEvent::PaletteSearchResultAccepted {
+            Self::PaletteSearchResultAccepted {
                 result_type,
                 filter: mode,
                 buffer_length,
             } => Some(
                 json!({ "result_type": result_type, "mode": mode, "buffer_length": buffer_length }),
             ),
-            TelemetryEvent::PaletteSearchExited {
+            Self::PaletteSearchExited {
                 filter: mode,
                 buffer_length,
             } => Some(json!({ "mode": mode, "buffer_length": buffer_length })),
-            TelemetryEvent::AuthCommonQuestionClicked { question } => Some(json!(question)),
-            TelemetryEvent::AuthToggleFAQ { open } => {
+            Self::AuthCommonQuestionClicked { question } => Some(json!(question)),
+            Self::AuthToggleFAQ { open } => {
                 let payload = if *open { "open" } else { "close" };
                 Some(json!(payload))
             }
-            TelemetryEvent::TabRenamed(rename_event) => Some(json!(rename_event)),
-            TelemetryEvent::MoveActiveTab { direction } => Some(json!({ "direction": direction })),
-            TelemetryEvent::MoveTab { direction } => Some(json!({ "direction": direction })),
-            TelemetryEvent::TabOperations { action } => Some(json!({ "action": action })),
-            TelemetryEvent::ThinStrokesSettingChanged { new_value } => {
+            Self::TabRenamed(rename_event) => Some(json!(rename_event)),
+            Self::MoveActiveTab { direction } => Some(json!({ "direction": direction })),
+            Self::MoveTab { direction } => Some(json!({ "direction": direction })),
+            Self::TabOperations { action } => Some(json!({ "action": action })),
+            Self::ThinStrokesSettingChanged { new_value } => {
                 Some(json!({ "new_value": new_value }))
             }
-            TelemetryEvent::BookmarkBlockToggled { enable_bookmark } => {
+            Self::BookmarkBlockToggled { enable_bookmark } => {
                 Some(json!({ "enable_bookmark": enable_bookmark }))
             }
-            TelemetryEvent::OpenLink { link, open_with } => {
+            Self::OpenLink { link, open_with } => {
                 Some(json!({"link_type": link, "open_with": open_with}))
             }
-            TelemetryEvent::OpenChangelogLink { url } => Some(json!({ "url": url })),
-            TelemetryEvent::CommandXRayTriggered { trigger } => Some(json!({ "trigger": trigger })),
-            TelemetryEvent::SaveLaunchConfig { state } => Some(json!({ "state": state })),
-            TelemetryEvent::SaveAsWorkflowModal { source } => Some(json!({ "source": source })),
-            TelemetryEvent::CommandCorrection { event } => Some(json!({ "event": event })),
-            TelemetryEvent::SetLineHeight { new_value } => Some(json!({ "new_value": new_value })),
-            TelemetryEvent::CommandSearchOpened { has_initial_query } => {
+            Self::OpenChangelogLink { url } => Some(json!({ "url": url })),
+            Self::CommandXRayTriggered { trigger } => Some(json!({ "trigger": trigger })),
+            Self::SaveLaunchConfig { state } => Some(json!({ "state": state })),
+            Self::SaveAsWorkflowModal { source } => Some(json!({ "source": source })),
+            Self::CommandCorrection { event } => Some(json!({ "event": event })),
+            Self::SetLineHeight { new_value } => Some(json!({ "new_value": new_value })),
+            Self::CommandSearchOpened { has_initial_query } => {
                 Some(json!({ "has_initial_query": has_initial_query }))
             }
-            TelemetryEvent::CommandSearchExited {
+            Self::CommandSearchExited {
                 buffer_length,
                 query_filter,
             } => Some(json!({ "buffer_length": buffer_length, "query_filter": query_filter })),
-            TelemetryEvent::CommandSearchResultAccepted {
+            Self::CommandSearchResultAccepted {
                 result_index,
                 result_type,
                 query_filter,
@@ -3111,18 +3103,16 @@ impl TelemetryEvent {
                 "buffer_length": buffer_length,
                 "was_immediately_executed": was_immediately_executed
             })),
-            TelemetryEvent::CommandSearchFilterChanged { new_filter } => {
+            Self::CommandSearchFilterChanged { new_filter } => {
                 Some(json!({ "new_filter": new_filter }))
             }
-            TelemetryEvent::CommandSearchAsyncQueryCompleted {
+            Self::CommandSearchAsyncQueryCompleted {
                 filters,
                 error_payload,
             } => Some(json!({ "filter": filters, "error": error_payload })),
-            TelemetryEvent::AICommandSearchOpened { entrypoint } => {
-                Some(json!({ "entrypoint": entrypoint }))
-            }
-            TelemetryEvent::OpenNotebook(metadata) => Some(json!(metadata)),
-            TelemetryEvent::EditNotebook {
+            Self::AICommandSearchOpened { entrypoint } => Some(json!({ "entrypoint": entrypoint })),
+            Self::OpenNotebook(metadata) => Some(json!(metadata)),
+            Self::EditNotebook {
                 metadata,
                 meaningful_change,
             } => Some(json!({
@@ -3130,53 +3120,45 @@ impl TelemetryEvent {
                 "team_uid": metadata.team_uid,
                 "meaningful_change": meaningful_change,
             })),
-            TelemetryEvent::NotebookAction(event) => Some(json!(event)),
-            TelemetryEvent::UserInitiatedClose { initiated_on } => {
+            Self::NotebookAction(event) => Some(json!(event)),
+            Self::UserInitiatedClose { initiated_on } => {
                 Some(json!({ "initiated_on": initiated_on }))
             }
-            TelemetryEvent::QuitModalShown {
+            Self::QuitModalShown {
                 running_processes,
                 shared_sessions,
                 modal_for,
             } => Some(
                 json!({ "running_processes": running_processes, "shared_sessions": shared_sessions, "modal_for": modal_for }),
             ),
-            TelemetryEvent::QuitModalCancel {
+            Self::QuitModalCancel {
                 nav_palette,
                 modal_for,
             } => Some(json!({ "nav_palette": nav_palette, "modal_for": modal_for })),
-            TelemetryEvent::LogOutModalCancel { nav_palette } => {
-                Some(json!({ "nav_palette": nav_palette }))
-            }
-            TelemetryEvent::SetBlurRadius { blur_radius } => {
-                Some(json!({ "blur_radius": blur_radius }))
-            }
-            TelemetryEvent::SetOpacity { opacity } => Some(json!({ "opacity": opacity })),
-            TelemetryEvent::ToggleDimInactivePanes { enabled } => {
+            Self::LogOutModalCancel { nav_palette } => Some(json!({ "nav_palette": nav_palette })),
+            Self::SetBlurRadius { blur_radius } => Some(json!({ "blur_radius": blur_radius })),
+            Self::SetOpacity { opacity } => Some(json!({ "opacity": opacity })),
+            Self::ToggleDimInactivePanes { enabled } => Some(json!({ "enabled": enabled })),
+            Self::ToggleJumpToBottomofBlockButton { enabled } => {
                 Some(json!({ "enabled": enabled }))
             }
-            TelemetryEvent::ToggleJumpToBottomofBlockButton { enabled } => {
-                Some(json!({ "enabled": enabled }))
-            }
-            TelemetryEvent::PtySpawned { mode } => Some(json!({ "mode": mode })),
-            TelemetryEvent::InitialWorkingDirectoryConfigurationChanged {
+            Self::PtySpawned { mode } => Some(json!({ "mode": mode })),
+            Self::InitialWorkingDirectoryConfigurationChanged {
                 advanced_mode_enabled,
             } => Some(json!({ "advanced_mode_enabled": advanced_mode_enabled })),
-            TelemetryEvent::OpenedWarpAI { source } => Some(json!({ "source": source })),
-            TelemetryEvent::WarpAIRequestIssued { result } => Some(json!({ "result": result })),
-            TelemetryEvent::WarpAIAction { action_type } => {
-                Some(json!({ "action_type": action_type }))
-            }
-            TelemetryEvent::MCPServerCollectionPaneOpened { entrypoint } => {
+            Self::OpenedWarpAI { source } => Some(json!({ "source": source })),
+            Self::WarpAIRequestIssued { result } => Some(json!({ "result": result })),
+            Self::WarpAIAction { action_type } => Some(json!({ "action_type": action_type })),
+            Self::MCPServerCollectionPaneOpened { entrypoint } => {
                 Some(json!({ "entrypoint": entrypoint }))
             }
-            TelemetryEvent::MCPServerAdded { metadata } => Some(json!({
+            Self::MCPServerAdded { metadata } => Some(json!({
                 "object_id": metadata.object_id,
                 "name": metadata.name,
                 "transport_type": metadata.transport_type,
                 "mcp_server": metadata.mcp_server,
             })),
-            TelemetryEvent::MCPTemplateCreated {
+            Self::MCPTemplateCreated {
                 source,
                 variables,
                 name,
@@ -3185,18 +3167,18 @@ impl TelemetryEvent {
                 "variables": variables,
                 "name": name,
             })),
-            TelemetryEvent::MCPTemplateInstalled { source } => Some(json!({
+            Self::MCPTemplateInstalled { source } => Some(json!({
                 "source": source,
             })),
-            TelemetryEvent::MCPTemplateShared => None,
-            TelemetryEvent::MCPServerSpawned {
+            Self::MCPTemplateShared => None,
+            Self::MCPServerSpawned {
                 transport_type,
                 server_model,
                 error,
             } => Some(
                 json!({"transport_type": transport_type, "server_model": server_model, "error": error}),
             ),
-            TelemetryEvent::MCPToolCallAccepted {
+            Self::MCPToolCallAccepted {
                 server_output_id,
                 tool_call,
                 error,
@@ -3205,11 +3187,9 @@ impl TelemetryEvent {
                 "tool_call": tool_call,
                 "error": error,
             })),
-            TelemetryEvent::KnowledgePaneOpened { entrypoint } => {
-                Some(json!({ "entrypoint": entrypoint }))
-            }
+            Self::KnowledgePaneOpened { entrypoint } => Some(json!({ "entrypoint": entrypoint })),
             #[cfg(feature = "local_fs")]
-            TelemetryEvent::CodePaneOpened {
+            Self::CodePaneOpened {
                 source,
                 layout,
                 preview,
@@ -3217,7 +3197,7 @@ impl TelemetryEvent {
                 json!({ "source": source.telemetry_source_name(), "layout": layout, "preview": preview }),
             ),
             #[cfg(feature = "local_fs")]
-            TelemetryEvent::CodePanelsFileOpened { entrypoint, target } => {
+            Self::CodePanelsFileOpened { entrypoint, target } => {
                 let (target, layout, editor) = match target {
                     FileTarget::MarkdownViewer(layout) => {
                         ("warp_markdown_viewer", Some(*layout), None)
@@ -3237,90 +3217,69 @@ impl TelemetryEvent {
                 }))
             }
             #[cfg(feature = "local_fs")]
-            TelemetryEvent::PreviewPanePromoted => None,
-            TelemetryEvent::CodeSelectionAddedAsContext { destination } => Some(json!({
+            Self::PreviewPanePromoted => None,
+            Self::CodeSelectionAddedAsContext { destination } => Some(json!({
                 "destination": destination,
             })),
-            TelemetryEvent::AISuggestedRuleAdded { rule_id } => Some(json!({ "rule_id": rule_id })),
-            TelemetryEvent::AISuggestedRuleEdited { rule_id } => {
-                Some(json!({ "rule_id": rule_id }))
-            }
-            TelemetryEvent::AISuggestedRuleContentChanged { rule_id, is_saved } => {
+            Self::AISuggestedRuleAdded { rule_id } => Some(json!({ "rule_id": rule_id })),
+            Self::AISuggestedRuleEdited { rule_id } => Some(json!({ "rule_id": rule_id })),
+            Self::AISuggestedRuleContentChanged { rule_id, is_saved } => {
                 Some(json!({ "rule_id": rule_id, "is_saved": is_saved }))
             }
-            TelemetryEvent::UsedWarpAIPreparedPrompt { prompt } => {
-                Some(json!({ "prompt": prompt }))
-            }
-            TelemetryEvent::ExperimentTriggered {
+            Self::UsedWarpAIPreparedPrompt { prompt } => Some(json!({ "prompt": prompt })),
+            Self::ExperimentTriggered {
                 experiment,
                 layer,
                 group_assignment,
             } => Some(
                 json!({ "experiment": experiment, "layer": layer, "group_assignment": group_assignment }),
             ),
-            TelemetryEvent::ToggleSyncAllPanesInAllTabs { enabled } => {
-                Some(json!({ "enabled": enabled }))
-            }
-            TelemetryEvent::ToggleSyncAllPanesInTab { enabled } => {
-                Some(json!({ "enabled": enabled }))
-            }
-            TelemetryEvent::ToggleTabIndicators { enabled } => Some(json!({ "enabled": enabled })),
-            TelemetryEvent::TogglePreserveActiveTabColor { enabled } => {
-                Some(json!({ "enabled": enabled }))
-            }
-            TelemetryEvent::DeclineSubshellBootstrap { remember } => {
-                Some(json!({ "remember": remember }))
-            }
-            TelemetryEvent::AgentToolbarDismissed => None,
-            TelemetryEvent::WarpifyFooterShown { is_ssh }
-            | TelemetryEvent::WarpifyFooterAcceptedWarpify { is_ssh } => {
+            Self::ToggleSyncAllPanesInAllTabs { enabled } => Some(json!({ "enabled": enabled })),
+            Self::ToggleSyncAllPanesInTab { enabled } => Some(json!({ "enabled": enabled })),
+            Self::ToggleTabIndicators { enabled } => Some(json!({ "enabled": enabled })),
+            Self::TogglePreserveActiveTabColor { enabled } => Some(json!({ "enabled": enabled })),
+            Self::DeclineSubshellBootstrap { remember } => Some(json!({ "remember": remember })),
+            Self::AgentToolbarDismissed => None,
+            Self::WarpifyFooterShown { is_ssh } | Self::WarpifyFooterAcceptedWarpify { is_ssh } => {
                 Some(json!({ "is_ssh": is_ssh }))
             }
-            TelemetryEvent::ToggleSameLinePrompt { enabled } => Some(json!({ "enabled": enabled })),
-            TelemetryEvent::TriggerSubshellBootstrap {
+            Self::ToggleSameLinePrompt { enabled } => Some(json!({ "enabled": enabled })),
+            Self::TriggerSubshellBootstrap {
                 triggered_by_rc_file_snippet,
             } => Some(json!({
                 "triggered_by_rc_file_snippet": triggered_by_rc_file_snippet
             })),
-            TelemetryEvent::OpenLaunchConfig {
+            Self::OpenLaunchConfig {
                 ui_location,
                 open_in_active_window,
             } => Some(
                 json!({ "ui_location": ui_location, "open_in_active_window": open_in_active_window }),
             ),
-            TelemetryEvent::ToggleWarpAI { opened } => Some(json!({ "opened": opened })),
-            TelemetryEvent::ToggleSecretRedaction { enabled } => {
-                Some(json!({ "enabled": enabled }))
-            }
-            TelemetryEvent::ToggleObfuscateSecret { interaction } => {
+            Self::ToggleWarpAI { opened } => Some(json!({ "opened": opened })),
+            Self::ToggleSecretRedaction { enabled } => Some(json!({ "enabled": enabled })),
+            Self::ToggleObfuscateSecret { interaction } => {
                 Some(json!({ "interaction": interaction }))
             }
-            TelemetryEvent::AutoGenerateMetadataError { error_payload } => {
+            Self::AutoGenerateMetadataError { error_payload } => {
                 Some(json!({ "error": error_payload }))
             }
-            TelemetryEvent::UpdateSortingChoice { sorting_choice } => {
+            Self::UpdateSortingChoice { sorting_choice } => {
                 Some(json!({ "sorting_choice": sorting_choice }))
             }
-            TelemetryEvent::UndoClose { item_type } => Some(json!({ "item_type": item_type })),
-            TelemetryEvent::PromptEdited { prompt, entrypoint } => Some(json!({
+            Self::UndoClose { item_type } => Some(json!({ "item_type": item_type })),
+            Self::PromptEdited { prompt, entrypoint } => Some(json!({
                 "prompt": prompt,
                 "entrypoint": entrypoint
             })),
-            TelemetryEvent::OpenPromptEditor { entrypoint } => {
-                Some(json!({ "entrypoint": entrypoint }))
-            }
-            TelemetryEvent::PtyThroughput {
+            Self::OpenPromptEditor { entrypoint } => Some(json!({ "entrypoint": entrypoint })),
+            Self::PtyThroughput {
                 max_bytes_per_second,
             } => Some(json!({
                 "max_bytes_per_second": max_bytes_per_second,
             })),
-            TelemetryEvent::DuplicateObject(object_type) => {
-                Some(json!({ "object_type": object_type }))
-            }
-            TelemetryEvent::ExportObject(object_type) => {
-                Some(json!({ "object_type": object_type }))
-            }
-            TelemetryEvent::GenerateBlockSharingLink {
+            Self::DuplicateObject(object_type) => Some(json!({ "object_type": object_type })),
+            Self::ExportObject(object_type) => Some(json!({ "object_type": object_type })),
+            Self::GenerateBlockSharingLink {
                 share_type,
                 display_setting,
                 show_prompt,
@@ -3328,100 +3287,84 @@ impl TelemetryEvent {
             } => Some(
                 json!({"share_type": share_type, "display_setting": display_setting, "show_prompt": show_prompt, "redact_secrets": redact_secrets}),
             ),
-            TelemetryEvent::CopyBlockSharingLink(share_type) => {
-                Some(json!({ "share_type": share_type }))
-            }
-            TelemetryEvent::PageUpDownInEditorPressed {
+            Self::CopyBlockSharingLink(share_type) => Some(json!({ "share_type": share_type })),
+            Self::PageUpDownInEditorPressed {
                 is_empty_editor,
                 is_down,
             } => Some(json!({"is_empty_editor": is_empty_editor, "is_down": is_down})),
-            TelemetryEvent::StartedSharingCurrentSession {
+            Self::StartedSharingCurrentSession {
                 includes_scrollback,
                 source,
             } => Some(json!({ "includes_scrollback": includes_scrollback, "source": source })),
-            TelemetryEvent::StoppedSharingCurrentSession { source, reason } => {
+            Self::StoppedSharingCurrentSession { source, reason } => {
                 Some(json!({ "source": source, "reason": reason }))
             }
-            TelemetryEvent::UnsupportedShell { shell } => Some(json!({ "shell": shell })),
-            TelemetryEvent::CopyObjectToClipboard(object_type) => {
-                Some(json!({ "object_type": object_type }))
-            }
-            TelemetryEvent::OpenAndWarpifyDockerSubshell { shell_type } => {
+            Self::UnsupportedShell { shell } => Some(json!({ "shell": shell })),
+            Self::CopyObjectToClipboard(object_type) => Some(json!({ "object_type": object_type })),
+            Self::OpenAndWarpifyDockerSubshell { shell_type } => {
                 Some(json!({ "shell_type": shell_type }))
             }
-            TelemetryEvent::ToggleBlockFilterQuery { enabled, source } => {
+            Self::ToggleBlockFilterQuery { enabled, source } => {
                 Some(json!({"enabled": enabled, "source": source}))
             }
-            TelemetryEvent::ToggleBlockFilterRegex { enabled } => {
+            Self::ToggleBlockFilterRegex { enabled } => Some(json!({ "enabled": enabled })),
+            Self::ToggleShowBlockDividers { enabled } => Some(json!({ "enabled": enabled })),
+            Self::ToggleBlockFilterCaseSensitivity { enabled } => {
                 Some(json!({ "enabled": enabled }))
             }
-            TelemetryEvent::ToggleShowBlockDividers { enabled } => {
-                Some(json!({ "enabled": enabled }))
-            }
-            TelemetryEvent::ToggleBlockFilterCaseSensitivity { enabled } => {
-                Some(json!({ "enabled": enabled }))
-            }
-            TelemetryEvent::ToggleBlockFilterInvert { enabled } => {
-                Some(json!({ "enabled": enabled }))
-            }
-            TelemetryEvent::UpdateBlockFilterQueryContextLines { num_context_lines } => {
+            Self::ToggleBlockFilterInvert { enabled } => Some(json!({ "enabled": enabled })),
+            Self::UpdateBlockFilterQueryContextLines { num_context_lines } => {
                 Some(json!({ "num_context_lines": num_context_lines }))
             }
-            TelemetryEvent::ToggleNewWindowsAtCustomSize { enabled } => {
-                Some(json!({"enabled": enabled}))
-            }
-            TelemetryEvent::ToggleSshTmuxWrapper { enabled } => Some(json!({"enabled": enabled})),
-            TelemetryEvent::ToggleSshWarpification { enabled } => Some(json!({"enabled": enabled})),
-            TelemetryEvent::SetSshExtensionInstallMode { mode } => Some(json!({"mode": mode})),
-            TelemetryEvent::SshRemoteServerChoiceDoNotAskAgainToggled { checked } => {
+            Self::ToggleNewWindowsAtCustomSize { enabled } => Some(json!({"enabled": enabled})),
+            Self::ToggleSshTmuxWrapper { enabled } => Some(json!({"enabled": enabled})),
+            Self::ToggleSshWarpification { enabled } => Some(json!({"enabled": enabled})),
+            Self::SetSshExtensionInstallMode { mode } => Some(json!({"mode": mode})),
+            Self::SshRemoteServerChoiceDoNotAskAgainToggled { checked } => {
                 Some(json!({"checked": checked}))
             }
-            TelemetryEvent::SshInteractiveSessionDetected(ssh_interactive_session_detected) => {
+            Self::SshInteractiveSessionDetected(ssh_interactive_session_detected) => {
                 Some(json!({"ssh_interactive_session": ssh_interactive_session_detected}))
             }
-            TelemetryEvent::SshTmuxWarpificationSuccess {
+            Self::SshTmuxWarpificationSuccess {
                 duration_ms,
                 tmux_installation,
             } => Some(json!({
                 "duration_ms": duration_ms,
                 "tmux_installation": *tmux_installation,
             })),
-            TelemetryEvent::SshTmuxWarpificationErrorBlock {
+            Self::SshTmuxWarpificationErrorBlock {
                 error,
                 tmux_installation,
             } => Some(json!({
                 "error": error,
                 "tmux_installation": *tmux_installation,
             })),
-            TelemetryEvent::JoinedSharedSession {
+            Self::JoinedSharedSession {
                 session_id,
                 source_type,
             } => Some(json!({
                 "session_id": session_id,
                 "source_type": source_type,
             })),
-            TelemetryEvent::SharerCancelledGrantRole { role } => Some(json!({ "role": role })),
-            TelemetryEvent::JumpToSharedSessionParticipant { jumped_to } => {
+            Self::SharerCancelledGrantRole { role } => Some(json!({ "role": role })),
+            Self::JumpToSharedSessionParticipant { jumped_to } => {
                 Some(json!({ "jumped_to": jumped_to }))
             }
-            TelemetryEvent::CopiedSharedSessionLink { source } => Some(json!({ "source": source })),
-            TelemetryEvent::WebSessionOpenedOnDesktop { source } => {
-                Some(json!({ "source": source}))
-            }
-            TelemetryEvent::WebCloudObjectOpenedOnDesktop { object_metadata } => Some(json!({
+            Self::CopiedSharedSessionLink { source } => Some(json!({ "source": source })),
+            Self::WebSessionOpenedOnDesktop { source } => Some(json!({ "source": source})),
+            Self::WebCloudObjectOpenedOnDesktop { object_metadata } => Some(json!({
                 "object": object_metadata,
             })),
-            TelemetryEvent::ToggleSnackbarInActivePane { show_snackbar } => {
+            Self::ToggleSnackbarInActivePane { show_snackbar } => {
                 Some(json!({ "show_snackbar": show_snackbar }))
             }
-            TelemetryEvent::PaneDropped { drop_location } => {
-                Some(json!({ "location": drop_location }))
-            }
-            TelemetryEvent::InviteTeammates {
+            Self::PaneDropped { drop_location } => Some(json!({ "location": drop_location })),
+            Self::InviteTeammates {
                 num_teammates,
                 team_uid,
             } => Some(json!({"num_teammates": num_teammates, "team_uid": team_uid})),
-            TelemetryEvent::AgentModeCreatedAIBlock {
+            Self::AgentModeCreatedAIBlock {
                 client_exchange_id,
                 server_output_id,
                 was_autodetected_ai_query,
@@ -3442,61 +3385,59 @@ impl TelemetryEvent {
                 "conversation_id": conversation_id,
                 "is_udi_enabled": is_udi_enabled,
             })),
-            TelemetryEvent::TierLimitHit(event) => Some(json!(event)),
-            TelemetryEvent::AgentModeUserAttemptedQueryAtRequestLimit { limit } => {
+            Self::TierLimitHit(event) => Some(json!(event)),
+            Self::AgentModeUserAttemptedQueryAtRequestLimit { limit } => {
                 Some(json!({"limit": limit}))
             }
-            TelemetryEvent::AgentModeClickedEntrypoint { entrypoint } => {
+            Self::AgentModeClickedEntrypoint { entrypoint } => {
                 Some(json!({"entrypoint": entrypoint}))
             }
-            TelemetryEvent::AgentModeAttachedBlockContext { method } => {
-                Some(json!({"method": method}))
-            }
-            TelemetryEvent::AgentModeToggleAutoDetectionSetting {
+            Self::AgentModeAttachedBlockContext { method } => Some(json!({"method": method})),
+            Self::AgentModeToggleAutoDetectionSetting {
                 is_autodetection_enabled,
                 origin,
             } => Some(
                 json!({"is_autodetection_enabled": is_autodetection_enabled, "origin": origin }),
             ),
-            TelemetryEvent::ToggleIntelligentAutosuggestionsSetting {
+            Self::ToggleIntelligentAutosuggestionsSetting {
                 is_intelligent_autosuggestions_enabled,
             } => Some(
                 json!({"is_intelligent_autosuggestions_enabled": is_intelligent_autosuggestions_enabled}),
             ),
             // Using legacy name to avoid breaking telemetry.
-            TelemetryEvent::TogglePromptSuggestionsSetting {
+            Self::TogglePromptSuggestionsSetting {
                 is_prompt_suggestions_enabled,
             } => Some(
                 json!({"is_agent_mode_query_suggestions_enabled": is_prompt_suggestions_enabled}),
             ),
-            TelemetryEvent::ToggleCodeSuggestionsSetting {
+            Self::ToggleCodeSuggestionsSetting {
                 source,
                 is_code_suggestions_enabled,
             } => Some(
                 json!({"source": source, "is_code_suggestions_enabled": is_code_suggestions_enabled}),
             ),
-            TelemetryEvent::ToggleNaturalLanguageAutosuggestionsSetting {
+            Self::ToggleNaturalLanguageAutosuggestionsSetting {
                 is_natural_language_autosuggestions_enabled,
             } => Some(
                 json!({"is_natural_language_autosuggestions_enabled": is_natural_language_autosuggestions_enabled}),
             ),
-            TelemetryEvent::ToggleSharedBlockTitleGenerationSetting {
+            Self::ToggleSharedBlockTitleGenerationSetting {
                 is_shared_block_title_generation_enabled,
             } => Some(
                 json!({"is_shared_block_title_generation_enabled": is_shared_block_title_generation_enabled}),
             ),
-            TelemetryEvent::ToggleGitOperationsAutogenSetting {
+            Self::ToggleGitOperationsAutogenSetting {
                 is_git_operations_autogen_enabled,
             } => Some(
                 json!({"is_git_operations_autogen_enabled": is_git_operations_autogen_enabled}),
             ),
-            TelemetryEvent::ToggleVoiceInputSetting {
+            Self::ToggleVoiceInputSetting {
                 is_voice_input_enabled,
             } => Some(json!({"is_voice_input_enabled": is_voice_input_enabled})),
-            TelemetryEvent::AgentModePotentialAutoDetectionFalsePositive(
+            Self::AgentModePotentialAutoDetectionFalsePositive(
                 AgentModeAutoDetectionFalsePositivePayload::InternalDogfoodUsers { input_text },
             ) => Some(json!({"input_text": input_text})),
-            TelemetryEvent::AgentModeChangedInputType {
+            Self::AgentModeChangedInputType {
                 input,
                 buffer_length,
                 is_manually_changed,
@@ -3506,7 +3447,7 @@ impl TelemetryEvent {
             } => Some(
                 json!({"input": input, "buffer_length": buffer_length, "is_manually_changed": is_manually_changed, "new_input_type": new_input_type, "active_block_id": active_block_id, "is_udi_enabled": is_udi_enabled}),
             ),
-            TelemetryEvent::AgentModePrediction {
+            Self::AgentModePrediction {
                 was_suggestion_accepted,
                 request_duration_ms,
                 is_from_ai,
@@ -3544,7 +3485,7 @@ impl TelemetryEvent {
                     "history_command_prediction_likelihood": history_command_prediction_likelihood,
                 }))
             }
-            TelemetryEvent::PromptSuggestionShown {
+            Self::PromptSuggestionShown {
                 id,
                 request_duration_ms,
                 block_id,
@@ -3557,7 +3498,7 @@ impl TelemetryEvent {
                 "view": view,
                 "server_request_token": server_request_token,
             })),
-            TelemetryEvent::SuggestedCodeDiffBannerShown {
+            Self::SuggestedCodeDiffBannerShown {
                 prompt_suggestion_id,
                 code_exchange_id,
                 block_id,
@@ -3570,14 +3511,14 @@ impl TelemetryEvent {
                 "request_duration_ms": request_duration_ms,
                 "server_request_token": server_request_token,
             })),
-            TelemetryEvent::SuggestedCodeDiffFailed {
+            Self::SuggestedCodeDiffFailed {
                 prompt_suggestion_id,
                 reason,
             } => Some(json!({
                 "prompt_suggestion_id": prompt_suggestion_id,
                 "reason": reason,
             })),
-            TelemetryEvent::PromptSuggestionAccepted {
+            Self::PromptSuggestionAccepted {
                 id,
                 view,
                 interaction_source,
@@ -3586,7 +3527,7 @@ impl TelemetryEvent {
                 "view": view,
                 "interaction_source": interaction_source,
             })),
-            TelemetryEvent::StaticPromptSuggestionsBannerShown {
+            Self::StaticPromptSuggestionsBannerShown {
                 id,
                 query,
                 block_id,
@@ -3603,7 +3544,7 @@ impl TelemetryEvent {
                 "request_duration_ms": request_duration_ms,
                 "view": view,
             })),
-            TelemetryEvent::StaticPromptSuggestionAccepted {
+            Self::StaticPromptSuggestionAccepted {
                 id,
                 view,
                 interaction_source,
@@ -3612,16 +3553,16 @@ impl TelemetryEvent {
                 "view": view,
                 "interaction_source": interaction_source,
             })),
-            TelemetryEvent::ZeroStatePromptSuggestionUsed {
+            Self::ZeroStatePromptSuggestionUsed {
                 suggestion_type,
                 triggered_from,
             } => Some(json!({"type": suggestion_type, "triggered_from": triggered_from})),
-            TelemetryEvent::UnitTestSuggestionShown { identifiers } => Some(json!({
+            Self::UnitTestSuggestionShown { identifiers } => Some(json!({
                 "server_output_id": identifiers.server_output_id,
                 "exchange_id": identifiers.client_exchange_id,
                 "conversation_id": identifiers.server_conversation_id,
             })),
-            TelemetryEvent::UnitTestSuggestionAccepted {
+            Self::UnitTestSuggestionAccepted {
                 identifiers,
                 query,
                 interaction_source,
@@ -3632,7 +3573,7 @@ impl TelemetryEvent {
                 "query": query,
                 "interaction_source": interaction_source,
             })),
-            TelemetryEvent::UnitTestSuggestionCancelled {
+            Self::UnitTestSuggestionCancelled {
                 identifiers,
                 interaction_source,
             } => Some(json!({
@@ -3641,16 +3582,16 @@ impl TelemetryEvent {
                 "conversation_id": identifiers.server_conversation_id,
                 "interaction_source": interaction_source,
             })),
-            TelemetryEvent::AgentModeCodeSuggestionEditedByUser { output_id } => {
+            Self::AgentModeCodeSuggestionEditedByUser { output_id } => {
                 Some(json!({"output_id": output_id}))
             }
-            TelemetryEvent::AgentModeCodeFilesNavigated { output_id, source } => {
+            Self::AgentModeCodeFilesNavigated { output_id, source } => {
                 Some(json!({"output_id": output_id, "source": source}))
             }
-            TelemetryEvent::AgentModeCodeDiffHunksNavigated { output_id } => {
+            Self::AgentModeCodeDiffHunksNavigated { output_id } => {
                 Some(json!({"output_id": output_id}))
             }
-            TelemetryEvent::ResourceUsageStats { cpu, mem } => Some(json!({
+            Self::ResourceUsageStats { cpu, mem } => Some(json!({
                 "cpu": cpu,
                 "mem": {
                     // Only report the total application usage; skip sending
@@ -3658,7 +3599,7 @@ impl TelemetryEvent {
                     "total_application_usage_bytes": mem.total_application_usage_bytes,
                 },
             })),
-            TelemetryEvent::MemoryUsageStats {
+            Self::MemoryUsageStats {
                 total_application_usage_bytes,
                 total_blocks,
                 total_lines,
@@ -3675,51 +3616,51 @@ impl TelemetryEvent {
                 "inactive_1h_stats": inactive_1h_stats,
                 "inactive_24h_stats": inactive_24h_stats
             })),
-            TelemetryEvent::MemoryUsageHigh {
+            Self::MemoryUsageHigh {
                 total_application_usage_bytes,
                 memory_breakdown,
             } => Some(json!({
                 "total_application_usage_bytes": total_application_usage_bytes,
                 "memory_breakdown": memory_breakdown,
             })),
-            TelemetryEvent::EnvVarCollectionInvoked(metadata) => Some(json!(metadata)),
-            TelemetryEvent::EnvVarWorkflowParameterization(metadata) => Some(json!(metadata)),
-            TelemetryEvent::CompletedSettingsImport {
+            Self::EnvVarCollectionInvoked(metadata) => Some(json!(metadata)),
+            Self::EnvVarWorkflowParameterization(metadata) => Some(json!(metadata)),
+            Self::CompletedSettingsImport {
                 terminal_type,
                 imported_settings,
             } => Some(
                 json!({ "terminal_type": terminal_type, "imported_settings": imported_settings}),
             ),
-            TelemetryEvent::SettingsImportConfigParsed {
+            Self::SettingsImportConfigParsed {
                 timing_data,
                 terminal_type,
                 settings_shown_to_user,
             } => Some(
                 json!({"timing_data": timing_data,  "terminal_type": terminal_type, "settings_shown_to_user": settings_shown_to_user}),
             ),
-            TelemetryEvent::SettingsImportConfigFocused(terminal_type_and_profile) => {
+            Self::SettingsImportConfigFocused(terminal_type_and_profile) => {
                 Some(json!({"terminal_and_type_profile": terminal_type_and_profile}))
             }
-            TelemetryEvent::InitiateAnonymousUserSignup { entrypoint } => {
+            Self::InitiateAnonymousUserSignup { entrypoint } => {
                 Some(json!({"entrypoint": entrypoint}))
             }
-            TelemetryEvent::AnonymousUserAttemptLoginGatedFeature { feature } => {
+            Self::AnonymousUserAttemptLoginGatedFeature { feature } => {
                 Some(json!({"feature": feature}))
             }
-            TelemetryEvent::ToggleWorkspaceDecorationVisibility {
+            Self::ToggleWorkspaceDecorationVisibility {
                 previous_value,
                 new_value,
             } => Some(json!({
                 "previous_value": previous_value,
                 "new_value": new_value,
             })),
-            TelemetryEvent::UpdateAltScreenPaddingMode { new_mode } => Some(json!({
+            Self::UpdateAltScreenPaddingMode { new_mode } => Some(json!({
                 "new_mode": new_mode,
             })),
-            TelemetryEvent::AddTabWithShell { source, shell } => {
+            Self::AddTabWithShell { source, shell } => {
                 Some(json!({ "source": source, "shell": shell }))
             }
-            TelemetryEvent::AgentModeSurfacedCitations {
+            Self::AgentModeSurfacedCitations {
                 citations,
                 block_id,
                 conversation_id,
@@ -3727,7 +3668,7 @@ impl TelemetryEvent {
             } => Some(
                 json!({ "citations": citations, "block_id": block_id, "conversation_id": conversation_id, "server_output_id": server_output_id }),
             ),
-            TelemetryEvent::AgentModeOpenedCitation {
+            Self::AgentModeOpenedCitation {
                 citation,
                 block_id,
                 conversation_id,
@@ -3735,55 +3676,51 @@ impl TelemetryEvent {
             } => Some(
                 json!({ "citation": citation, "block_id": block_id, "conversation_id": conversation_id, "server_output_id": server_output_id }),
             ),
-            TelemetryEvent::OpenedSharingDialog(event) => Some(json!(event)),
-            TelemetryEvent::ToggleGlobalAI { is_ai_enabled } => {
-                Some(json!({"is_ai_enabled": is_ai_enabled}))
-            }
-            TelemetryEvent::ToggleActiveAI {
+            Self::OpenedSharingDialog(event) => Some(json!(event)),
+            Self::ToggleGlobalAI { is_ai_enabled } => Some(json!({"is_ai_enabled": is_ai_enabled})),
+            Self::ToggleActiveAI {
                 is_active_ai_enabled,
             } => Some(json!({"is_active_ai_enabled": is_active_ai_enabled})),
-            TelemetryEvent::ToggleCodebaseContext {
+            Self::ToggleCodebaseContext {
                 is_codebase_context_enabled,
             } => Some(json!( {
                 "is_codebase_context_enabled": is_codebase_context_enabled
             })),
-            TelemetryEvent::ToggleAutoIndexing {
+            Self::ToggleAutoIndexing {
                 is_autoindexing_enabled,
             } => Some(json!({
                 "is_autoindexing_enabled": is_autoindexing_enabled
             })),
-            TelemetryEvent::ActiveIndexedReposChanged {
+            Self::ActiveIndexedReposChanged {
                 updated_number_of_codebase_indices,
                 hit_max_indices,
             } => Some(json!({
                 "updated_number_of_codebase_indices": updated_number_of_codebase_indices,
                 "hit_max_indices": hit_max_indices
             })),
-            TelemetryEvent::ToggleLigatureRendering { enabled } => {
-                Some(json!({"enabled": enabled}))
-            }
-            TelemetryEvent::WorkflowAliasAdded {
+            Self::ToggleLigatureRendering { enabled } => Some(json!({"enabled": enabled})),
+            Self::WorkflowAliasAdded {
                 workflow_id,
                 workflow_space,
             } => Some(json!({
                 "workflow_id": workflow_id,
                 "workflow_space": workflow_space,
             })),
-            TelemetryEvent::WorkflowAliasRemoved {
+            Self::WorkflowAliasRemoved {
                 workflow_id,
                 workflow_space,
             } => Some(json!({
                 "workflow_id": workflow_id,
                 "workflow_space": workflow_space,
             })),
-            TelemetryEvent::WorkflowAliasArgumentEdited {
+            Self::WorkflowAliasArgumentEdited {
                 workflow_id,
                 workflow_space,
             } => Some(json!({
                 "workflow_id": workflow_id,
                 "workflow_space": workflow_space,
             })),
-            TelemetryEvent::WorkflowAliasEnvVarsAttached {
+            Self::WorkflowAliasEnvVarsAttached {
                 workflow_id,
                 workflow_space,
                 env_vars_id,
@@ -3794,20 +3731,20 @@ impl TelemetryEvent {
                 "env_vars_id": env_vars_id,
                 "env_vars_space": env_vars_space,
             })),
-            TelemetryEvent::AutoupdateRelaunchAttempt { new_version } => Some(json!({
+            Self::AutoupdateRelaunchAttempt { new_version } => Some(json!({
                 "new_version": new_version,
             })),
-            TelemetryEvent::ToggledAgentModeAutoexecuteReadonlyCommandsSetting { src, enabled } => {
+            Self::ToggledAgentModeAutoexecuteReadonlyCommandsSetting { src, enabled } => {
                 Some(json!({
                     "source": src,
                     "enabled": enabled,
                 }))
             }
-            TelemetryEvent::ChangedAgentModeCodingPermissions { src, new } => Some(json!({
+            Self::ChangedAgentModeCodingPermissions { src, new } => Some(json!({
                 "source": src,
                 "new": new,
             })),
-            TelemetryEvent::FullEmbedCodebaseContextSearchSuccess {
+            Self::FullEmbedCodebaseContextSearchSuccess {
                 action_id,
                 total_search_duration,
                 out_of_sync_delay,
@@ -3816,36 +3753,34 @@ impl TelemetryEvent {
                 "total_search_duration": total_search_duration,
                 "out_of_sync_delay": out_of_sync_delay
             })),
-            TelemetryEvent::FullEmbedCodebaseContextSearchFailed { action_id, error } => {
-                Some(json!({
-                    "action_id": action_id,
-                    "error": error
-                }))
-            }
-            TelemetryEvent::RepoOutlineConstructionSuccess {
+            Self::FullEmbedCodebaseContextSearchFailed { action_id, error } => Some(json!({
+                "action_id": action_id,
+                "error": error
+            })),
+            Self::RepoOutlineConstructionSuccess {
                 total_parse_seconds,
                 file_count,
             } => Some(json!({
                 "total_parse_seconds": total_parse_seconds,
                 "file_count": file_count,
             })),
-            TelemetryEvent::RepoOutlineConstructionFailed { error } => Some(json!({
+            Self::RepoOutlineConstructionFailed { error } => Some(json!({
                 "error": error,
             })),
-            TelemetryEvent::AutoexecutedAgentModeRequestedCommand { reason } => Some(json!({
+            Self::AutoexecutedAgentModeRequestedCommand { reason } => Some(json!({
                 "reason": reason,
             })),
-            TelemetryEvent::AgenticOnboardingBlockSelected { block_type } => Some(json!({
+            Self::AgenticOnboardingBlockSelected { block_type } => Some(json!({
                 "block_type": block_type,
             })),
-            TelemetryEvent::AttachedImagesToAgentModeQuery {
+            Self::AttachedImagesToAgentModeQuery {
                 num_images,
                 is_udi_enabled,
             } => Some(json!({
                 "num_images": num_images,
                 "is_udi_enabled": is_udi_enabled,
             })),
-            TelemetryEvent::AgentModeRatedResponse {
+            Self::AgentModeRatedResponse {
                 server_output_id,
                 conversation_id,
                 rating,
@@ -3854,22 +3789,22 @@ impl TelemetryEvent {
                 "conversation_id": conversation_id,
                 "rating": rating,
             })),
-            TelemetryEvent::ExecutedWarpDrivePrompt {
+            Self::ExecutedWarpDrivePrompt {
                 id,
                 selection_source,
             } => Some(json!({
                 "id": id,
                 "selection_source": selection_source,
             })),
-            TelemetryEvent::ImageReceived { image_protocol } => Some(json!({
+            Self::ImageReceived { image_protocol } => Some(json!({
                 "image_protocol": image_protocol,
             })),
-            TelemetryEvent::FileExceededContextLimit { identifiers } => Some(json!({
+            Self::FileExceededContextLimit { identifiers } => Some(json!({
                 "server_output_id": identifiers.server_output_id,
                 "exchange_id": identifiers.client_exchange_id,
                 "conversation_id": identifiers.server_conversation_id,
             })),
-            TelemetryEvent::AgentModeError {
+            Self::AgentModeError {
                 identifiers,
                 error,
                 is_user_visible,
@@ -3882,7 +3817,7 @@ impl TelemetryEvent {
                 "is_user_visible": is_user_visible,
                 "will_attempt_to_resume": will_attempt_to_resume,
             })),
-            TelemetryEvent::AgentModeRequestRetrySucceeded {
+            Self::AgentModeRequestRetrySucceeded {
                 identifiers,
                 retry_count,
                 original_error,
@@ -3893,7 +3828,7 @@ impl TelemetryEvent {
                 "retry_count": retry_count,
                 "original_error": original_error,
             })),
-            TelemetryEvent::GrepToolFailed {
+            Self::GrepToolFailed {
                 queries,
                 path,
                 shell_type,
@@ -3914,10 +3849,10 @@ impl TelemetryEvent {
                 "error": error,
                 "server_output_id": server_output_id,
             })),
-            TelemetryEvent::FileGlobToolFailed { server_output_id } => Some(json!({
+            Self::FileGlobToolFailed { server_output_id } => Some(json!({
                 "server_output_id": server_output_id,
             })),
-            TelemetryEvent::ShellTerminatedPrematurely {
+            Self::ShellTerminatedPrematurely {
                 shell_type,
                 shell_path,
                 reason,
@@ -3934,7 +3869,7 @@ impl TelemetryEvent {
                 "long_os_version": long_os_version,
                 "exit_reason": exit_reason,
             })),
-            TelemetryEvent::SearchCodebaseRequested {
+            Self::SearchCodebaseRequested {
                 action_id,
                 server_output_id,
                 is_cross_repo,
@@ -3943,18 +3878,18 @@ impl TelemetryEvent {
                 "server_output_id": server_output_id,
                 "is_cross_repo": is_cross_repo,
             })),
-            TelemetryEvent::SearchCodebaseRepoUnavailable { action_id, error } => Some(json!({
+            Self::SearchCodebaseRepoUnavailable { action_id, error } => Some(json!({
                 "action_id": action_id,
                 "error": error,
             })),
-            TelemetryEvent::InputUXModeChanged {
+            Self::InputUXModeChanged {
                 is_udi_enabled,
                 origin,
             } => Some(json!({
                 "is_udi_enabled": is_udi_enabled,
                 "origin": origin,
             })),
-            TelemetryEvent::ContextChipInteracted {
+            Self::ContextChipInteracted {
                 chip_type,
                 action,
                 is_udi_enabled,
@@ -3963,7 +3898,7 @@ impl TelemetryEvent {
                 "action": action,
                 "is_udi_enabled": is_udi_enabled,
             })),
-            TelemetryEvent::VoiceInputUsed {
+            Self::VoiceInputUsed {
                 action,
                 session_duration_ms,
                 is_udi_enabled,
@@ -3974,7 +3909,7 @@ impl TelemetryEvent {
                 "is_udi_enabled": is_udi_enabled,
                 "current_input_mode": current_input_mode,
             })),
-            TelemetryEvent::AtMenuInteracted {
+            Self::AtMenuInteracted {
                 action,
                 query_length,
                 item_count,
@@ -3987,134 +3922,134 @@ impl TelemetryEvent {
                 "is_udi_enabled": is_udi_enabled,
                 "current_input_mode": current_input_mode,
             })),
-            TelemetryEvent::TabCloseButtonPositionUpdated { position } => Some(json!({
+            Self::TabCloseButtonPositionUpdated { position } => Some(json!({
                 "position": position,
             })),
-            TelemetryEvent::ExpandedCodeSuggestions { identifiers } => Some(json!({
+            Self::ExpandedCodeSuggestions { identifiers } => Some(json!({
                 "server_output_id": identifiers.server_output_id,
                 "exchange_id": identifiers.client_exchange_id,
                 "conversation_id": identifiers.server_conversation_id,
             })),
-            TelemetryEvent::BackgroundBlockStarted
-            | TelemetryEvent::SessionCreation
-            | TelemetryEvent::Login
-            | TelemetryEvent::ContextMenuInsertSelectedText
-            | TelemetryEvent::ContextMenuCopySelectedText
-            | TelemetryEvent::JumpToPreviousCommand
-            | TelemetryEvent::TabSingleResultAutocompletion
-            | TelemetryEvent::CopyInviteLink
-            | TelemetryEvent::OpenThemeChooser
-            | TelemetryEvent::OpenThemeCreatorModal
-            | TelemetryEvent::CreateCustomTheme
-            | TelemetryEvent::DeleteCustomTheme
-            | TelemetryEvent::SplitPane
-            | TelemetryEvent::UnableToAutoUpdateToNewVersion
-            | TelemetryEvent::SkipOnboardingSurvey
-            | TelemetryEvent::LoggedOutStartup
-            | TelemetryEvent::OpenWorkflowSearch
-            | TelemetryEvent::OpenQuakeModeWindow
-            | TelemetryEvent::OpenWelcomeTips
-            | TelemetryEvent::DismissWelcomeTips
-            | TelemetryEvent::ShowNotificationsDiscoveryBanner
-            | TelemetryEvent::ShowNotificationsErrorBanner
-            | TelemetryEvent::NotificationClicked
-            | TelemetryEvent::SignUpButtonClicked
-            | TelemetryEvent::OpenNewSessionFromFilePath
-            | TelemetryEvent::OpenTeamFromURI
-            | TelemetryEvent::SelectNavigationPaletteItem
-            | TelemetryEvent::DragAndDropTab
-            | TelemetryEvent::EditedInputBeforePrecmd
-            | TelemetryEvent::TriedToExecuteBeforePrecmd
-            | TelemetryEvent::JumpToBookmark
-            | TelemetryEvent::JumpToBottomofBlockButtonClicked
-            | TelemetryEvent::ShowInFileExplorer
-            | TelemetryEvent::OpenLaunchConfigSaveModal
-            | TelemetryEvent::OpenLaunchConfigFile
-            | TelemetryEvent::TeamCreated
-            | TelemetryEvent::TeamJoined
-            | TelemetryEvent::TeamLeft
-            | TelemetryEvent::TeamLinkCopied
-            | TelemetryEvent::RemovedUserFromTeam
-            | TelemetryEvent::DeletedWorkflow
-            | TelemetryEvent::DeletedNotebook
-            | TelemetryEvent::ToggleApprovalsModal
-            | TelemetryEvent::ChangedInviteViewOption(_)
-            | TelemetryEvent::SendEmailInvites
-            | TelemetryEvent::ResourceCenterOpened
-            | TelemetryEvent::ResourceCenterTipsCompleted
-            | TelemetryEvent::ResourceCenterTipsSkipped
-            | TelemetryEvent::KeybindingsPageOpened
-            | TelemetryEvent::OpenedAltScreenFind
-            | TelemetryEvent::QuitModalDisabled
-            | TelemetryEvent::UserInitiatedLogOut
-            | TelemetryEvent::LogOutModalShown
-            | TelemetryEvent::WarpAICharacterLimitExceeded
-            | TelemetryEvent::OpenInputContextMenu
-            | TelemetryEvent::InputCutSelectedText
-            | TelemetryEvent::InputCopySelectedText
-            | TelemetryEvent::InputSelectAll
-            | TelemetryEvent::InputPaste
-            | TelemetryEvent::InputCommandSearch
-            | TelemetryEvent::InputAICommandSearch
-            | TelemetryEvent::InputAskWarpAI
-            | TelemetryEvent::SetNewWindowsAtCustomSize
-            | TelemetryEvent::DisableInputSync
-            | TelemetryEvent::ShowSubshellBanner
-            | TelemetryEvent::SshTmuxWarpifyBannerDisplayed
-            | TelemetryEvent::AddDenylistedSubshellCommand
-            | TelemetryEvent::RemoveDenylistedSubshellCommand
-            | TelemetryEvent::AddAddedSubshellCommand
-            | TelemetryEvent::RemoveAddedSubshellCommand
-            | TelemetryEvent::ReceivedSubshellRcFileDcs
-            | TelemetryEvent::AddDenylistedSshTmuxWrapperHost
-            | TelemetryEvent::RemoveDenylistedSshTmuxWrapperHost
-            | TelemetryEvent::SshTmuxWarpifyBlockAccepted
-            | TelemetryEvent::SshTmuxWarpifyBlockDismissed
-            | TelemetryEvent::SshInstallTmuxBlockDisplayed
-            | TelemetryEvent::SshInstallTmuxBlockAccepted
-            | TelemetryEvent::SshInstallTmuxBlockDismissed
-            | TelemetryEvent::ShowAliasExpansionBanner
-            | TelemetryEvent::EnableAliasExpansionFromBanner
-            | TelemetryEvent::DismissAliasExpansionBanner
-            | TelemetryEvent::ShowVimKeybindingsBanner
-            | TelemetryEvent::EnableVimKeybindingsFromBanner
-            | TelemetryEvent::DismissVimKeybindingsBanner
-            | TelemetryEvent::InitiateReauth
-            | TelemetryEvent::NeedsReauth
-            | TelemetryEvent::AnonymousUserExpirationLockout
-            | TelemetryEvent::AnonymousUserLinkedFromBrowser
-            | TelemetryEvent::AnonymousUserHitCloudObjectLimit
-            | TelemetryEvent::CustomSecretRegexAdded
-            | TelemetryEvent::CopySecret
-            | TelemetryEvent::AutoGenerateMetadataSuccess
-            | TelemetryEvent::CommandFileRun
-            | TelemetryEvent::SharerGrantModalDontShowAgain
-            | TelemetryEvent::LogOut
-            | TelemetryEvent::UpdateBlockFilterQuery
-            | TelemetryEvent::BlockFilterToolbeltButtonClicked
-            | TelemetryEvent::PaneDragInitiated
-            | TelemetryEvent::SharedObjectLimitHitBannerViewPlansButtonClicked
-            | TelemetryEvent::SharedSessionModalUpgradePressed
-            | TelemetryEvent::AgentModePotentialAutoDetectionFalsePositive(
+            Self::BackgroundBlockStarted
+            | Self::SessionCreation
+            | Self::Login
+            | Self::ContextMenuInsertSelectedText
+            | Self::ContextMenuCopySelectedText
+            | Self::JumpToPreviousCommand
+            | Self::TabSingleResultAutocompletion
+            | Self::CopyInviteLink
+            | Self::OpenThemeChooser
+            | Self::OpenThemeCreatorModal
+            | Self::CreateCustomTheme
+            | Self::DeleteCustomTheme
+            | Self::SplitPane
+            | Self::UnableToAutoUpdateToNewVersion
+            | Self::SkipOnboardingSurvey
+            | Self::LoggedOutStartup
+            | Self::OpenWorkflowSearch
+            | Self::OpenQuakeModeWindow
+            | Self::OpenWelcomeTips
+            | Self::DismissWelcomeTips
+            | Self::ShowNotificationsDiscoveryBanner
+            | Self::ShowNotificationsErrorBanner
+            | Self::NotificationClicked
+            | Self::SignUpButtonClicked
+            | Self::OpenNewSessionFromFilePath
+            | Self::OpenTeamFromURI
+            | Self::SelectNavigationPaletteItem
+            | Self::DragAndDropTab
+            | Self::EditedInputBeforePrecmd
+            | Self::TriedToExecuteBeforePrecmd
+            | Self::JumpToBookmark
+            | Self::JumpToBottomofBlockButtonClicked
+            | Self::ShowInFileExplorer
+            | Self::OpenLaunchConfigSaveModal
+            | Self::OpenLaunchConfigFile
+            | Self::TeamCreated
+            | Self::TeamJoined
+            | Self::TeamLeft
+            | Self::TeamLinkCopied
+            | Self::RemovedUserFromTeam
+            | Self::DeletedWorkflow
+            | Self::DeletedNotebook
+            | Self::ToggleApprovalsModal
+            | Self::ChangedInviteViewOption(_)
+            | Self::SendEmailInvites
+            | Self::ResourceCenterOpened
+            | Self::ResourceCenterTipsCompleted
+            | Self::ResourceCenterTipsSkipped
+            | Self::KeybindingsPageOpened
+            | Self::OpenedAltScreenFind
+            | Self::QuitModalDisabled
+            | Self::UserInitiatedLogOut
+            | Self::LogOutModalShown
+            | Self::WarpAICharacterLimitExceeded
+            | Self::OpenInputContextMenu
+            | Self::InputCutSelectedText
+            | Self::InputCopySelectedText
+            | Self::InputSelectAll
+            | Self::InputPaste
+            | Self::InputCommandSearch
+            | Self::InputAICommandSearch
+            | Self::InputAskWarpAI
+            | Self::SetNewWindowsAtCustomSize
+            | Self::DisableInputSync
+            | Self::ShowSubshellBanner
+            | Self::SshTmuxWarpifyBannerDisplayed
+            | Self::AddDenylistedSubshellCommand
+            | Self::RemoveDenylistedSubshellCommand
+            | Self::AddAddedSubshellCommand
+            | Self::RemoveAddedSubshellCommand
+            | Self::ReceivedSubshellRcFileDcs
+            | Self::AddDenylistedSshTmuxWrapperHost
+            | Self::RemoveDenylistedSshTmuxWrapperHost
+            | Self::SshTmuxWarpifyBlockAccepted
+            | Self::SshTmuxWarpifyBlockDismissed
+            | Self::SshInstallTmuxBlockDisplayed
+            | Self::SshInstallTmuxBlockAccepted
+            | Self::SshInstallTmuxBlockDismissed
+            | Self::ShowAliasExpansionBanner
+            | Self::EnableAliasExpansionFromBanner
+            | Self::DismissAliasExpansionBanner
+            | Self::ShowVimKeybindingsBanner
+            | Self::EnableVimKeybindingsFromBanner
+            | Self::DismissVimKeybindingsBanner
+            | Self::InitiateReauth
+            | Self::NeedsReauth
+            | Self::AnonymousUserExpirationLockout
+            | Self::AnonymousUserLinkedFromBrowser
+            | Self::AnonymousUserHitCloudObjectLimit
+            | Self::CustomSecretRegexAdded
+            | Self::CopySecret
+            | Self::AutoGenerateMetadataSuccess
+            | Self::CommandFileRun
+            | Self::SharerGrantModalDontShowAgain
+            | Self::LogOut
+            | Self::UpdateBlockFilterQuery
+            | Self::BlockFilterToolbeltButtonClicked
+            | Self::PaneDragInitiated
+            | Self::SharedObjectLimitHitBannerViewPlansButtonClicked
+            | Self::SharedSessionModalUpgradePressed
+            | Self::AgentModePotentialAutoDetectionFalsePositive(
                 AgentModeAutoDetectionFalsePositivePayload::ExternalUsers,
             )
-            | TelemetryEvent::SettingsImportResetButtonClicked
-            | TelemetryEvent::ITermMultipleHotkeys
-            | TelemetryEvent::DriveSharingOnboardingBlockShown
-            | TelemetryEvent::SSHControlMasterError
-            | TelemetryEvent::SettingsImportInitiated
-            | TelemetryEvent::GrepToolSucceeded
-            | TelemetryEvent::FileGlobToolSucceeded
-            | TelemetryEvent::UserMenuUpgradeClicked
-            | TelemetryEvent::AIExecutionProfileCreated
-            | TelemetryEvent::AIExecutionProfileDeleted
-            | TelemetryEvent::FileTreeItemCreated
-            | TelemetryEvent::ConversationListItemDeleted
-            | TelemetryEvent::ConversationListViewOpened
-            | TelemetryEvent::GlobalSearchOpened
-            | TelemetryEvent::GlobalSearchQueryStarted
-            | TelemetryEvent::GetStartedSkipToTerminal => None,
-            TelemetryEvent::RemoteServerBinaryCheck {
+            | Self::SettingsImportResetButtonClicked
+            | Self::ITermMultipleHotkeys
+            | Self::DriveSharingOnboardingBlockShown
+            | Self::SSHControlMasterError
+            | Self::SettingsImportInitiated
+            | Self::GrepToolSucceeded
+            | Self::FileGlobToolSucceeded
+            | Self::UserMenuUpgradeClicked
+            | Self::AIExecutionProfileCreated
+            | Self::AIExecutionProfileDeleted
+            | Self::FileTreeItemCreated
+            | Self::ConversationListItemDeleted
+            | Self::ConversationListViewOpened
+            | Self::GlobalSearchOpened
+            | Self::GlobalSearchQueryStarted
+            | Self::GetStartedSkipToTerminal => None,
+            Self::RemoteServerBinaryCheck {
                 found,
                 error,
                 remote_os,
@@ -4125,7 +4060,7 @@ impl TelemetryEvent {
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
-            TelemetryEvent::RemoteServerInstallation {
+            Self::RemoteServerInstallation {
                 error,
                 remote_os,
                 remote_arch,
@@ -4134,7 +4069,7 @@ impl TelemetryEvent {
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
-            TelemetryEvent::RemoteServerInitialization {
+            Self::RemoteServerInitialization {
                 phase,
                 error,
                 remote_os,
@@ -4145,14 +4080,14 @@ impl TelemetryEvent {
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
-            TelemetryEvent::RemoteServerDisconnection {
+            Self::RemoteServerDisconnection {
                 remote_os,
                 remote_arch,
             } => Some(json!({
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
-            TelemetryEvent::RemoteServerClientRequestError {
+            Self::RemoteServerClientRequestError {
                 operation,
                 error_type,
                 remote_os,
@@ -4163,14 +4098,14 @@ impl TelemetryEvent {
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
-            TelemetryEvent::RemoteServerMessageDecodingError {
+            Self::RemoteServerMessageDecodingError {
                 remote_os,
                 remote_arch,
             } => Some(json!({
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
-            TelemetryEvent::RemoteServerSetupDuration {
+            Self::RemoteServerSetupDuration {
                 duration_ms,
                 installed_binary,
                 remote_os,
@@ -4181,49 +4116,43 @@ impl TelemetryEvent {
                 "remote_os": remote_os,
                 "remote_arch": remote_arch,
             })),
-            TelemetryEvent::ConversationListItemOpened { is_ambient_agent } => Some(json!({
+            Self::ConversationListItemOpened { is_ambient_agent } => Some(json!({
                 "is_ambient_agent": is_ambient_agent,
             })),
-            TelemetryEvent::ConversationListLinkCopied { is_ambient_agent } => Some(json!({
+            Self::ConversationListLinkCopied { is_ambient_agent } => Some(json!({
                 "is_ambient_agent": is_ambient_agent,
             })),
-            TelemetryEvent::AIExecutionProfileSettingUpdated {
+            Self::AIExecutionProfileSettingUpdated {
                 setting_type,
                 setting_value,
             } => Some(json!({
                 "setting_type": setting_type,
                 "setting_value": setting_value,
             })),
-            TelemetryEvent::AIExecutionProfileAddedToAllowlist { list_type, value } => {
-                Some(json!({
-                    "list_type": list_type,
-                    "value": value,
-                }))
-            }
-            TelemetryEvent::AIExecutionProfileAddedToDenylist { list_type, value } => Some(json!({
+            Self::AIExecutionProfileAddedToAllowlist { list_type, value } => Some(json!({
                 "list_type": list_type,
                 "value": value,
             })),
-            TelemetryEvent::AIExecutionProfileRemovedFromAllowlist { list_type, value } => {
-                Some(json!({
-                    "list_type": list_type,
-                    "value": value,
-                }))
-            }
-            TelemetryEvent::AIExecutionProfileRemovedFromDenylist { list_type, value } => {
-                Some(json!({
-                    "list_type": list_type,
-                    "value": value,
-                }))
-            }
-            TelemetryEvent::AIExecutionProfileModelSelected {
+            Self::AIExecutionProfileAddedToDenylist { list_type, value } => Some(json!({
+                "list_type": list_type,
+                "value": value,
+            })),
+            Self::AIExecutionProfileRemovedFromAllowlist { list_type, value } => Some(json!({
+                "list_type": list_type,
+                "value": value,
+            })),
+            Self::AIExecutionProfileRemovedFromDenylist { list_type, value } => Some(json!({
+                "list_type": list_type,
+                "value": value,
+            })),
+            Self::AIExecutionProfileModelSelected {
                 model_type,
                 model_value,
             } => Some(json!({
                 "model_type": model_type,
                 "model_value": model_value,
             })),
-            TelemetryEvent::AIInputNotSent {
+            Self::AIInputNotSent {
                 entrypoint,
                 inputs,
                 active_server_conversation_id,
@@ -4234,7 +4163,7 @@ impl TelemetryEvent {
                 "active_server_conversation_id": active_server_conversation_id,
                 "active_client_conversation_id": active_client_conversation_id,
             })),
-            TelemetryEvent::OpenSlashMenu {
+            Self::OpenSlashMenu {
                 source,
                 is_inline_ui_enabled,
                 is_in_agent_view,
@@ -4243,22 +4172,22 @@ impl TelemetryEvent {
                 "is_inline_ui_enabled": is_inline_ui_enabled,
                 "is_in_agent_view": is_in_agent_view,
             })),
-            TelemetryEvent::SlashCommandAccepted {
+            Self::SlashCommandAccepted {
                 command_details,
                 is_in_agent_view,
             } => Some(json!({
                 "command_details": command_details,
                 "is_in_agent_view": is_in_agent_view,
             })),
-            TelemetryEvent::AgentModeSetupBannerAccepted => None,
-            TelemetryEvent::AgentModeSetupBannerDismissed => None,
-            TelemetryEvent::AgentModeSetupProjectScopedRulesAction { action } => Some(json!({
+            Self::AgentModeSetupBannerAccepted => None,
+            Self::AgentModeSetupBannerDismissed => None,
+            Self::AgentModeSetupProjectScopedRulesAction { action } => Some(json!({
                 "action": action,
             })),
-            TelemetryEvent::AgentModeSetupCodebaseContextAction { action } => Some(json!({
+            Self::AgentModeSetupCodebaseContextAction { action } => Some(json!({
                 "action": action,
             })),
-            TelemetryEvent::AgentModeSetupCreateEnvironmentAction { action } => Some(json!({
+            Self::AgentModeSetupCreateEnvironmentAction { action } => Some(json!({
                 "action": action,
             })),
             #[cfg(windows)]
@@ -4267,7 +4196,7 @@ impl TelemetryEvent {
             | TelemetryEvent::AutoupdateFileInUse
             | TelemetryEvent::AutoupdateMutexTimeout
             | TelemetryEvent::AutoupdateForcekillFailed => None,
-            TelemetryEvent::InputBufferSubmitted {
+            Self::InputBufferSubmitted {
                 input_type,
                 is_locked,
                 was_lock_set_with_empty_buffer,
@@ -4276,7 +4205,7 @@ impl TelemetryEvent {
                 "is_locked": is_locked,
                 "was_lock_set_with_empty_buffer": was_lock_set_with_empty_buffer,
             })),
-            TelemetryEvent::CreateProjectPromptSubmitted {
+            Self::CreateProjectPromptSubmitted {
                 is_custom_prompt,
                 suggested_prompt,
                 is_ftux,
@@ -4285,19 +4214,19 @@ impl TelemetryEvent {
                 "suggested_prompt": suggested_prompt,
                 "is_ftux": is_ftux,
             })),
-            TelemetryEvent::CreateProjectPromptSubmittedContent { custom_prompt } => Some(json!({
+            Self::CreateProjectPromptSubmittedContent { custom_prompt } => Some(json!({
                 "custom_prompt": custom_prompt
             })),
-            TelemetryEvent::CloneRepoPromptSubmitted { is_ftux } => Some(json!({
+            Self::CloneRepoPromptSubmitted { is_ftux } => Some(json!({
                 "is_ftux": is_ftux,
             })),
-            TelemetryEvent::RecentMenuItemSelected { kind } => Some(json!({
+            Self::RecentMenuItemSelected { kind } => Some(json!({
                 "kind": kind,
             })),
-            TelemetryEvent::OpenRepoFolderSubmitted { is_ftux } => Some(json!({
+            Self::OpenRepoFolderSubmitted { is_ftux } => Some(json!({
                 "is_ftux": is_ftux,
             })),
-            TelemetryEvent::OutOfCreditsBannerClosed {
+            Self::OutOfCreditsBannerClosed {
                 action,
                 selected_credits,
                 auto_reload_checkbox_enabled,
@@ -4310,7 +4239,7 @@ impl TelemetryEvent {
                 "banner_toggle_flag_enabled": banner_toggle_flag_enabled,
                 "post_purchase_modal_flag_enabled": post_purchase_modal_flag_enabled,
             })),
-            TelemetryEvent::AutoReloadModalClosed {
+            Self::AutoReloadModalClosed {
                 action,
                 selected_credits,
                 banner_toggle_flag_enabled,
@@ -4321,7 +4250,7 @@ impl TelemetryEvent {
                 "banner_toggle_flag_enabled": banner_toggle_flag_enabled,
                 "post_purchase_modal_flag_enabled": post_purchase_modal_flag_enabled,
             })),
-            TelemetryEvent::AutoReloadToggledFromBillingSettings {
+            Self::AutoReloadToggledFromBillingSettings {
                 enabled,
                 banner_toggle_flag_enabled,
                 post_purchase_modal_flag_enabled,
@@ -4330,24 +4259,24 @@ impl TelemetryEvent {
                 "banner_toggle_flag_enabled": banner_toggle_flag_enabled,
                 "post_purchase_modal_flag_enabled": post_purchase_modal_flag_enabled,
             })),
-            TelemetryEvent::WarpDriveOpened {
+            Self::WarpDriveOpened {
                 source,
                 is_code_mode_v2,
             } => Some(json!({
                 "source": source,
                 "is_code_mode_v2": is_code_mode_v2,
             })),
-            TelemetryEvent::AgentTipShown { tip } => Some(json!({
+            Self::AgentTipShown { tip } => Some(json!({
                 "tip": tip,
             })),
-            TelemetryEvent::AgentTipClicked { tip, click_target } => Some(json!({
+            Self::AgentTipClicked { tip, click_target } => Some(json!({
                 "tip": tip,
                 "click_target": click_target,
             })),
-            TelemetryEvent::ToggleShowAgentTips { is_enabled } => Some(json!({
+            Self::ToggleShowAgentTips { is_enabled } => Some(json!({
                 "is_enabled": is_enabled,
             })),
-            TelemetryEvent::CLISubagentControlStateChanged {
+            Self::CLISubagentControlStateChanged {
                 conversation_id,
                 block_id,
                 control_state,
@@ -4356,7 +4285,7 @@ impl TelemetryEvent {
                 "block_id": block_id,
                 "control_state": control_state,
             })),
-            TelemetryEvent::CLISubagentResponsesToggled {
+            Self::CLISubagentResponsesToggled {
                 conversation_id,
                 block_id,
                 is_hidden,
@@ -4365,14 +4294,14 @@ impl TelemetryEvent {
                 "block_id": block_id,
                 "is_hidden": is_hidden,
             })),
-            TelemetryEvent::CLISubagentInputDismissed {
+            Self::CLISubagentInputDismissed {
                 conversation_id,
                 block_id,
             } => Some(json!({
                 "conversation_id": conversation_id,
                 "block_id": block_id,
             })),
-            TelemetryEvent::CLISubagentActionExecuted {
+            Self::CLISubagentActionExecuted {
                 conversation_id,
                 block_id,
                 is_autoexecuted,
@@ -4381,7 +4310,7 @@ impl TelemetryEvent {
                 "block_id": block_id,
                 "is_autoexecuted": is_autoexecuted,
             })),
-            TelemetryEvent::CLISubagentActionRejected {
+            Self::CLISubagentActionRejected {
                 conversation_id,
                 block_id,
                 user_took_over,
@@ -4390,114 +4319,112 @@ impl TelemetryEvent {
                 "block_id": block_id,
                 "user_took_over": user_took_over,
             })),
-            TelemetryEvent::AgentManagementViewToggled { is_open } => Some(json!({
+            Self::AgentManagementViewToggled { is_open } => Some(json!({
                 "is_open": is_open,
             })),
-            TelemetryEvent::AgentManagementViewOpenedSession => None,
-            TelemetryEvent::AgentManagementViewCopiedSessionLink => None,
-            TelemetryEvent::DetectedIsolationPlatform { platform } => Some(json!({
+            Self::AgentManagementViewOpenedSession => None,
+            Self::AgentManagementViewCopiedSessionLink => None,
+            Self::DetectedIsolationPlatform { platform } => Some(json!({
                 "platform": platform,
             })),
-            TelemetryEvent::AgentExitedShellProcess {
+            Self::AgentExitedShellProcess {
                 command,
                 server_output_id,
             } => Some(json!({
                 "command": command,
                 "server_output_id": server_output_id,
             })),
-            TelemetryEvent::CLIAgentToolbarVoiceInputUsed { cli_agent } => Some(json!({
+            Self::CLIAgentToolbarVoiceInputUsed { cli_agent } => Some(json!({
                 "agent_name": cli_agent,
             })),
-            TelemetryEvent::CLIAgentToolbarImageAttached { cli_agent } => Some(json!({
+            Self::CLIAgentToolbarImageAttached { cli_agent } => Some(json!({
                 "agent_name": cli_agent,
             })),
-            TelemetryEvent::CLIAgentToolbarShown { cli_agent } => Some(json!({
+            Self::CLIAgentToolbarShown { cli_agent } => Some(json!({
                 "agent_name": cli_agent,
             })),
-            TelemetryEvent::CLIAgentRichInputOpened {
+            Self::CLIAgentRichInputOpened {
                 cli_agent,
                 entrypoint,
             } => Some(json!({
                 "agent_name": cli_agent,
                 "entrypoint": entrypoint,
             })),
-            TelemetryEvent::CLIAgentRichInputClosed { cli_agent, reason } => Some(json!({
+            Self::CLIAgentRichInputClosed { cli_agent, reason } => Some(json!({
                 "agent_name": cli_agent,
                 "reason": reason,
             })),
-            TelemetryEvent::CLIAgentRichInputSubmitted {
+            Self::CLIAgentRichInputSubmitted {
                 cli_agent,
                 prompt_length,
             } => Some(json!({
                 "agent_name": cli_agent,
                 "prompt_length": prompt_length,
             })),
-            TelemetryEvent::CLIAgentPluginChipClicked { cli_agent, action } => Some(json!({
+            Self::CLIAgentPluginChipClicked { cli_agent, action } => Some(json!({
                 "agent_name": cli_agent,
                 "action": action,
             })),
-            TelemetryEvent::CLIAgentPluginChipDismissed {
+            Self::CLIAgentPluginChipDismissed {
                 cli_agent,
                 chip_kind,
             } => Some(json!({
                 "agent_name": cli_agent,
                 "chip_kind": chip_kind,
             })),
-            TelemetryEvent::CLIAgentPluginOperationSucceeded {
+            Self::CLIAgentPluginOperationSucceeded {
                 cli_agent,
                 operation,
             } => Some(json!({
                 "agent_name": cli_agent,
                 "operation": operation,
             })),
-            TelemetryEvent::CLIAgentPluginOperationFailed {
+            Self::CLIAgentPluginOperationFailed {
                 cli_agent,
                 operation,
             } => Some(json!({
                 "agent_name": cli_agent,
                 "operation": operation,
             })),
-            TelemetryEvent::CLIAgentPluginDetected { cli_agent } => Some(json!({
+            Self::CLIAgentPluginDetected { cli_agent } => Some(json!({
                 "agent_name": cli_agent,
             })),
-            TelemetryEvent::AgentNotificationShown { agent_variant } => Some(json!({
+            Self::AgentNotificationShown { agent_variant } => Some(json!({
                 "agent_variant": agent_variant,
             })),
-            TelemetryEvent::ToggleCLIAgentToolbarSetting { is_enabled } => Some(json!({
+            Self::ToggleCLIAgentToolbarSetting { is_enabled } => Some(json!({
                 "is_enabled": is_enabled,
             })),
-            TelemetryEvent::ToggleUseAgentToolbarSetting { is_enabled } => Some(json!({
+            Self::ToggleUseAgentToolbarSetting { is_enabled } => Some(json!({
                 "is_enabled": is_enabled,
             })),
-            TelemetryEvent::AgentViewEntered {
+            Self::AgentViewEntered {
                 origin,
                 did_auto_trigger_request,
             } => Some(json!({
                 "origin": origin,
                 "did_auto_trigger_request": did_auto_trigger_request,
             })),
-            TelemetryEvent::AgentViewExited { origin, was_empty } => Some(json!({
+            Self::AgentViewExited { origin, was_empty } => Some(json!({
                 "origin": origin,
                 "was_empty": was_empty,
             })),
-            TelemetryEvent::InlineConversationMenuOpened { is_in_agent_view } => Some(json!({
+            Self::InlineConversationMenuOpened { is_in_agent_view } => Some(json!({
                 "is_in_agent_view": is_in_agent_view,
             })),
-            TelemetryEvent::InlineConversationMenuItemSelected { is_in_agent_view } => {
-                Some(json!({
-                    "is_in_agent_view": is_in_agent_view,
-                }))
-            }
-            TelemetryEvent::AgentShortcutsViewToggled { is_visible } => Some(json!({
+            Self::InlineConversationMenuItemSelected { is_in_agent_view } => Some(json!({
+                "is_in_agent_view": is_in_agent_view,
+            })),
+            Self::AgentShortcutsViewToggled { is_visible } => Some(json!({
                 "is_visible": is_visible,
             })),
-            TelemetryEvent::CodexModalOpened => None,
-            TelemetryEvent::CodexModalUseCodexClicked => None,
-            TelemetryEvent::LinearIssueLinkOpened => None,
-            TelemetryEvent::CloudAgentCapacityModalOpened => None,
-            TelemetryEvent::CloudAgentCapacityModalDismissed => None,
-            TelemetryEvent::CloudAgentCapacityModalUpgradeClicked => None,
-            TelemetryEvent::ComputerUseApproved {
+            Self::CodexModalOpened => None,
+            Self::CodexModalUseCodexClicked => None,
+            Self::LinearIssueLinkOpened => None,
+            Self::CloudAgentCapacityModalOpened => None,
+            Self::CloudAgentCapacityModalDismissed => None,
+            Self::CloudAgentCapacityModalUpgradeClicked => None,
+            Self::ComputerUseApproved {
                 conversation_id,
                 is_autoexecuted,
                 ambient_agent_task_id,
@@ -4506,20 +4433,20 @@ impl TelemetryEvent {
                 "is_autoexecuted": is_autoexecuted,
                 "ambient_agent_task_id": ambient_agent_task_id.map(|id| id.to_string()),
             })),
-            TelemetryEvent::ComputerUseCancelled {
+            Self::ComputerUseCancelled {
                 conversation_id,
                 ambient_agent_task_id,
             } => Some(json!({
                 "conversation_id": conversation_id,
                 "ambient_agent_task_id": ambient_agent_task_id.map(|id| id.to_string()),
             })),
-            TelemetryEvent::FreeTierLimitHitInterstitialDisplayed => None,
-            TelemetryEvent::FreeTierLimitHitInterstitialUpgradeButtonClicked => None,
-            TelemetryEvent::FreeTierLimitHitInterstitialClosed => None,
-            TelemetryEvent::LoginButtonClicked { source }
-            | TelemetryEvent::LoginLaterButtonClicked { source }
-            | TelemetryEvent::LoginLaterConfirmationButtonClicked { source }
-            | TelemetryEvent::OpenAuthPrivacySettings { source } => Some(json!({
+            Self::FreeTierLimitHitInterstitialDisplayed => None,
+            Self::FreeTierLimitHitInterstitialUpgradeButtonClicked => None,
+            Self::FreeTierLimitHitInterstitialClosed => None,
+            Self::LoginButtonClicked { source }
+            | Self::LoginLaterButtonClicked { source }
+            | Self::LoginLaterConfirmationButtonClicked { source }
+            | Self::OpenAuthPrivacySettings { source } => Some(json!({
                 "source": source,
             })),
         }
@@ -4529,13 +4456,13 @@ impl TelemetryEvent {
     /// be sent to a dedicated rudderstack source.
     pub fn contains_ugc(&self) -> bool {
         match self {
-            TelemetryEvent::GrepToolFailed { .. } => true,
-            TelemetryEvent::BootstrappingSlowContents { .. } => true,
-            TelemetryEvent::AIInputNotSent { .. } => true,
-            TelemetryEvent::AgentExitedShellProcess { .. } => true,
-            TelemetryEvent::CreateProjectPromptSubmitted { .. } => false,
-            TelemetryEvent::CreateProjectPromptSubmittedContent { .. } => true,
-            TelemetryEvent::AgentModePrediction {
+            Self::GrepToolFailed { .. } => true,
+            Self::BootstrappingSlowContents { .. } => true,
+            Self::AIInputNotSent { .. } => true,
+            Self::AgentExitedShellProcess { .. } => true,
+            Self::CreateProjectPromptSubmitted { .. } => false,
+            Self::CreateProjectPromptSubmittedContent { .. } => true,
+            Self::AgentModePrediction {
                 actual_next_command_run,
                 history_based_autosuggestion_state,
                 generate_ai_input_suggestions_request,
@@ -4548,450 +4475,450 @@ impl TelemetryEvent {
                     || generate_ai_input_suggestions_request.is_some()
                     || generate_ai_input_suggestions_response.is_some()
             }
-            TelemetryEvent::AgentModeChangedInputType { input, .. } => input.is_some(),
-            TelemetryEvent::UnitTestSuggestionAccepted { query, .. } => query.is_some(),
-            TelemetryEvent::AgentModePotentialAutoDetectionFalsePositive(payload) => {
+            Self::AgentModeChangedInputType { input, .. } => input.is_some(),
+            Self::UnitTestSuggestionAccepted { query, .. } => query.is_some(),
+            Self::AgentModePotentialAutoDetectionFalsePositive(payload) => {
                 // For internal dogfood users, the payload contains UGC.
                 matches!(
                     payload,
                     AgentModeAutoDetectionFalsePositivePayload::InternalDogfoodUsers { .. }
                 )
             }
-            TelemetryEvent::ShowedSuggestedAgentModeWorkflowModal { .. }
-            | TelemetryEvent::ShowedSuggestedAgentModeWorkflowChip { .. }
-            | TelemetryEvent::AISuggestedAgentModeWorkflowAdded { .. }
-            | TelemetryEvent::AutosuggestionInserted { .. }
-            | TelemetryEvent::BlockCompleted { .. }
-            | TelemetryEvent::BlockCompletedOnDogfoodOnly { .. }
-            | TelemetryEvent::BackgroundBlockStarted
-            | TelemetryEvent::BaselineCommandLatency(_)
-            | TelemetryEvent::SessionCreation
-            | TelemetryEvent::Login
-            | TelemetryEvent::AgentModeContinueConversationButtonClicked { .. }
-            | TelemetryEvent::AgentModeRewindDialogOpened { .. }
-            | TelemetryEvent::AgentModeRewindExecuted { .. }
-            | TelemetryEvent::OpenSuggestionsMenu(_)
-            | TelemetryEvent::ConfirmSuggestion { .. }
-            | TelemetryEvent::OpenContextMenu { .. }
-            | TelemetryEvent::ContextMenuCopy(_, _)
-            | TelemetryEvent::ContextMenuOpenShareModal(_)
-            | TelemetryEvent::ContextMenuFindWithinBlocks(_)
-            | TelemetryEvent::ContextMenuCopyPrompt { .. }
-            | TelemetryEvent::ContextMenuToggleGitPromptDirtyIndicator { .. }
-            | TelemetryEvent::ContextMenuInsertSelectedText
-            | TelemetryEvent::ContextMenuCopySelectedText
-            | TelemetryEvent::OpenPromptEditor { .. }
-            | TelemetryEvent::PromptEdited { .. }
-            | TelemetryEvent::ReinputCommands(_)
-            | TelemetryEvent::JumpToPreviousCommand
-            | TelemetryEvent::CopyBlockSharingLink(_)
-            | TelemetryEvent::GenerateBlockSharingLink { .. }
-            | TelemetryEvent::BlockSelection(_)
-            | TelemetryEvent::BootstrappingSlow(_)
-            | TelemetryEvent::SessionAbandonedBeforeBootstrap { .. }
-            | TelemetryEvent::BootstrappingSucceeded(_)
-            | TelemetryEvent::TabSingleResultAutocompletion
-            | TelemetryEvent::EditorUnhandledModifierKey(_)
-            | TelemetryEvent::CopyInviteLink
-            | TelemetryEvent::OpenThemeChooser
-            | TelemetryEvent::ThemeSelection { .. }
-            | TelemetryEvent::AppIconSelection { .. }
-            | TelemetryEvent::CursorDisplayType { .. }
-            | TelemetryEvent::OpenThemeCreatorModal
-            | TelemetryEvent::CreateCustomTheme
-            | TelemetryEvent::DeleteCustomTheme
-            | TelemetryEvent::SplitPane
-            | TelemetryEvent::UnableToAutoUpdateToNewVersion
-            | TelemetryEvent::AutoupdateRelaunchAttempt { .. }
-            | TelemetryEvent::SkipOnboardingSurvey
-            | TelemetryEvent::ToggleRestoreSession(_)
-            | TelemetryEvent::DatabaseStartUpError(_)
-            | TelemetryEvent::DatabaseReadError(_)
-            | TelemetryEvent::DatabaseWriteError(_)
-            | TelemetryEvent::AppStartup(_)
-            | TelemetryEvent::LoggedOutStartup
-            | TelemetryEvent::DownloadSource(_)
-            | TelemetryEvent::SSHBootstrapAttempt(_)
-            | TelemetryEvent::SSHControlMasterError
-            | TelemetryEvent::KeybindingChanged { .. }
-            | TelemetryEvent::KeybindingResetToDefault { .. }
-            | TelemetryEvent::KeybindingRemoved { .. }
-            | TelemetryEvent::FeaturesPageAction { .. }
-            | TelemetryEvent::WorkflowExecuted(_)
-            | TelemetryEvent::WorkflowSelected(_)
-            | TelemetryEvent::OpenWorkflowSearch
-            | TelemetryEvent::OpenQuakeModeWindow
-            | TelemetryEvent::OpenWelcomeTips
-            | TelemetryEvent::CompleteWelcomeTipFeature { .. }
-            | TelemetryEvent::DismissWelcomeTips
-            | TelemetryEvent::ShowNotificationsDiscoveryBanner
-            | TelemetryEvent::NotificationsDiscoveryBannerAction(_)
-            | TelemetryEvent::ShowNotificationsErrorBanner
-            | TelemetryEvent::NotificationsErrorBannerAction(_)
-            | TelemetryEvent::NotificationPermissionsRequested { .. }
-            | TelemetryEvent::NotificationsRequestPermissionsOutcome { .. }
-            | TelemetryEvent::NotificationSent { .. }
-            | TelemetryEvent::NotificationFailedToSend { .. }
-            | TelemetryEvent::NotificationClicked
-            | TelemetryEvent::ToggleFindOption { .. }
-            | TelemetryEvent::SignUpButtonClicked
-            | TelemetryEvent::LoginButtonClicked { .. }
-            | TelemetryEvent::LoginLaterButtonClicked { .. }
-            | TelemetryEvent::LoginLaterConfirmationButtonClicked { .. }
-            | TelemetryEvent::OpenNewSessionFromFilePath
-            | TelemetryEvent::OpenTeamFromURI
-            | TelemetryEvent::SelectNavigationPaletteItem
-            | TelemetryEvent::SelectCommandPaletteOption(_)
-            | TelemetryEvent::PaletteSearchOpened { .. }
-            | TelemetryEvent::PaletteSearchResultAccepted { .. }
-            | TelemetryEvent::PaletteSearchExited { .. }
-            | TelemetryEvent::AuthCommonQuestionClicked { .. }
-            | TelemetryEvent::AuthToggleFAQ { .. }
-            | TelemetryEvent::OpenAuthPrivacySettings { .. }
-            | TelemetryEvent::TabRenamed(_)
-            | TelemetryEvent::MoveActiveTab { .. }
-            | TelemetryEvent::MoveTab { .. }
-            | TelemetryEvent::DragAndDropTab
-            | TelemetryEvent::TabOperations { .. }
-            | TelemetryEvent::EditedInputBeforePrecmd
-            | TelemetryEvent::TriedToExecuteBeforePrecmd
-            | TelemetryEvent::ThinStrokesSettingChanged { .. }
-            | TelemetryEvent::BookmarkBlockToggled { .. }
-            | TelemetryEvent::JumpToBookmark
-            | TelemetryEvent::JumpToBottomofBlockButtonClicked
-            | TelemetryEvent::ToggleJumpToBottomofBlockButton { .. }
-            | TelemetryEvent::ToggleShowBlockDividers { .. }
-            | TelemetryEvent::OpenLink { .. }
-            | TelemetryEvent::OpenChangelogLink { .. }
-            | TelemetryEvent::ShowInFileExplorer
-            | TelemetryEvent::CommandXRayTriggered { .. }
-            | TelemetryEvent::OpenLaunchConfigSaveModal
-            | TelemetryEvent::SaveLaunchConfig { .. }
-            | TelemetryEvent::OpenLaunchConfigFile
-            | TelemetryEvent::OpenLaunchConfig { .. }
-            | TelemetryEvent::TeamCreated
-            | TelemetryEvent::TeamJoined
-            | TelemetryEvent::TeamLeft
-            | TelemetryEvent::ToggleSettingsSync { .. }
-            | TelemetryEvent::TeamLinkCopied
-            | TelemetryEvent::RemovedUserFromTeam
-            | TelemetryEvent::DeletedWorkflow
-            | TelemetryEvent::DeletedNotebook
-            | TelemetryEvent::ToggleApprovalsModal
-            | TelemetryEvent::ChangedInviteViewOption(_)
-            | TelemetryEvent::SendEmailInvites
-            | TelemetryEvent::CommandCorrection { .. }
-            | TelemetryEvent::SetLineHeight { .. }
-            | TelemetryEvent::ResourceCenterOpened
-            | TelemetryEvent::ResourceCenterTipsCompleted
-            | TelemetryEvent::ResourceCenterTipsSkipped
-            | TelemetryEvent::KeybindingsPageOpened
-            | TelemetryEvent::GlobalSearchOpened
-            | TelemetryEvent::GlobalSearchQueryStarted
-            | TelemetryEvent::CommandSearchOpened { .. }
-            | TelemetryEvent::CommandSearchExited { .. }
-            | TelemetryEvent::CommandSearchResultAccepted { .. }
-            | TelemetryEvent::CommandSearchFilterChanged { .. }
-            | TelemetryEvent::CommandSearchAsyncQueryCompleted { .. }
-            | TelemetryEvent::AICommandSearchOpened { .. }
-            | TelemetryEvent::OpenNotebook(_)
-            | TelemetryEvent::EditNotebook { .. }
-            | TelemetryEvent::NotebookAction(_)
-            | TelemetryEvent::OpenedAltScreenFind
-            | TelemetryEvent::UserInitiatedClose { .. }
-            | TelemetryEvent::QuitModalShown { .. }
-            | TelemetryEvent::QuitModalCancel { .. }
-            | TelemetryEvent::QuitModalDisabled
-            | TelemetryEvent::UserInitiatedLogOut
-            | TelemetryEvent::LogOutModalShown
-            | TelemetryEvent::LogOutModalCancel { .. }
-            | TelemetryEvent::SetOpacity { .. }
-            | TelemetryEvent::SetBlurRadius { .. }
-            | TelemetryEvent::ToggleDimInactivePanes { .. }
-            | TelemetryEvent::InputModeChanged { .. }
-            | TelemetryEvent::PtySpawned { .. }
-            | TelemetryEvent::InitialWorkingDirectoryConfigurationChanged { .. }
-            | TelemetryEvent::OpenedWarpAI { .. }
-            | TelemetryEvent::WarpAIRequestIssued { .. }
-            | TelemetryEvent::WarpAIAction { .. }
-            | TelemetryEvent::UsedWarpAIPreparedPrompt { .. }
-            | TelemetryEvent::ToggleFocusPaneOnHover { .. }
-            | TelemetryEvent::WarpAICharacterLimitExceeded
-            | TelemetryEvent::OpenInputContextMenu
-            | TelemetryEvent::InputCutSelectedText
-            | TelemetryEvent::InputCopySelectedText
-            | TelemetryEvent::InputSelectAll
-            | TelemetryEvent::InputPaste
-            | TelemetryEvent::InputCommandSearch
-            | TelemetryEvent::InputAICommandSearch
-            | TelemetryEvent::InputAskWarpAI
-            | TelemetryEvent::SaveAsWorkflowModal { .. }
-            | TelemetryEvent::ExperimentTriggered { .. }
-            | TelemetryEvent::ToggleSyncAllPanesInAllTabs { .. }
-            | TelemetryEvent::ToggleSyncAllPanesInTab { .. }
-            | TelemetryEvent::ToggleSameLinePrompt { .. }
-            | TelemetryEvent::ToggleNewWindowsAtCustomSize { .. }
-            | TelemetryEvent::SetNewWindowsAtCustomSize
-            | TelemetryEvent::DisableInputSync
-            | TelemetryEvent::ToggleTabIndicators { .. }
-            | TelemetryEvent::TogglePreserveActiveTabColor { .. }
-            | TelemetryEvent::ShowSubshellBanner
-            | TelemetryEvent::DeclineSubshellBootstrap { .. }
-            | TelemetryEvent::TriggerSubshellBootstrap { .. }
-            | TelemetryEvent::AddDenylistedSubshellCommand
-            | TelemetryEvent::RemoveDenylistedSubshellCommand
-            | TelemetryEvent::AddAddedSubshellCommand
-            | TelemetryEvent::RemoveAddedSubshellCommand
-            | TelemetryEvent::ReceivedSubshellRcFileDcs
-            | TelemetryEvent::AddDenylistedSshTmuxWrapperHost
-            | TelemetryEvent::RemoveDenylistedSshTmuxWrapperHost
-            | TelemetryEvent::ToggleSshTmuxWrapper { .. }
-            | TelemetryEvent::SshInteractiveSessionDetected(_)
-            | TelemetryEvent::SshTmuxWarpifyBannerDisplayed
-            | TelemetryEvent::SshTmuxWarpifyBlockAccepted
-            | TelemetryEvent::SshTmuxWarpifyBlockDismissed
-            | TelemetryEvent::WarpifyFooterShown { .. }
-            | TelemetryEvent::AgentToolbarDismissed
-            | TelemetryEvent::WarpifyFooterAcceptedWarpify { .. }
-            | TelemetryEvent::SshTmuxWarpificationSuccess { .. }
-            | TelemetryEvent::SshTmuxWarpificationErrorBlock { .. }
-            | TelemetryEvent::SshInstallTmuxBlockDisplayed
-            | TelemetryEvent::SshInstallTmuxBlockAccepted
-            | TelemetryEvent::SshInstallTmuxBlockDismissed
-            | TelemetryEvent::ShowAliasExpansionBanner
-            | TelemetryEvent::EnableAliasExpansionFromBanner
-            | TelemetryEvent::DismissAliasExpansionBanner
-            | TelemetryEvent::ShowVimKeybindingsBanner
-            | TelemetryEvent::EnableVimKeybindingsFromBanner
-            | TelemetryEvent::DismissVimKeybindingsBanner
-            | TelemetryEvent::InitiateReauth
-            | TelemetryEvent::InitiateAnonymousUserSignup { .. }
-            | TelemetryEvent::AnonymousUserExpirationLockout
-            | TelemetryEvent::AnonymousUserLinkedFromBrowser
-            | TelemetryEvent::AnonymousUserAttemptLoginGatedFeature { .. }
-            | TelemetryEvent::AnonymousUserHitCloudObjectLimit
-            | TelemetryEvent::NeedsReauth
-            | TelemetryEvent::WarpDriveOpened { .. }
-            | TelemetryEvent::ToggleWarpAI { .. }
-            | TelemetryEvent::ToggleSecretRedaction { .. }
-            | TelemetryEvent::CustomSecretRegexAdded
-            | TelemetryEvent::ToggleObfuscateSecret { .. }
-            | TelemetryEvent::CopySecret
-            | TelemetryEvent::AutoGenerateMetadataSuccess
-            | TelemetryEvent::AutoGenerateMetadataError { .. }
-            | TelemetryEvent::UpdateSortingChoice { .. }
-            | TelemetryEvent::UndoClose { .. }
-            | TelemetryEvent::PtyThroughput { .. }
-            | TelemetryEvent::DuplicateObject(_)
-            | TelemetryEvent::ExportObject(_)
-            | TelemetryEvent::DriveSharingOnboardingBlockShown
-            | TelemetryEvent::CommandFileRun
-            | TelemetryEvent::PageUpDownInEditorPressed { .. }
-            | TelemetryEvent::StartedSharingCurrentSession { .. }
-            | TelemetryEvent::StoppedSharingCurrentSession { .. }
-            | TelemetryEvent::JoinedSharedSession { .. }
-            | TelemetryEvent::SharedSessionModalUpgradePressed
-            | TelemetryEvent::SharerCancelledGrantRole { .. }
-            | TelemetryEvent::SharerGrantModalDontShowAgain
-            | TelemetryEvent::JumpToSharedSessionParticipant { .. }
-            | TelemetryEvent::CopiedSharedSessionLink { .. }
-            | TelemetryEvent::WebSessionOpenedOnDesktop { .. }
-            | TelemetryEvent::WebCloudObjectOpenedOnDesktop { .. }
-            | TelemetryEvent::UnsupportedShell { .. }
-            | TelemetryEvent::LogOut
-            | TelemetryEvent::InviteTeammates { .. }
-            | TelemetryEvent::CopyObjectToClipboard(_)
-            | TelemetryEvent::OpenAndWarpifyDockerSubshell { .. }
-            | TelemetryEvent::UpdateBlockFilterQuery
-            | TelemetryEvent::UpdateBlockFilterQueryContextLines { .. }
-            | TelemetryEvent::ToggleBlockFilterQuery { .. }
-            | TelemetryEvent::ToggleBlockFilterCaseSensitivity { .. }
-            | TelemetryEvent::ToggleBlockFilterRegex { .. }
-            | TelemetryEvent::ToggleBlockFilterInvert { .. }
-            | TelemetryEvent::BlockFilterToolbeltButtonClicked
-            | TelemetryEvent::ToggleSnackbarInActivePane { .. }
-            | TelemetryEvent::PaneDragInitiated
-            | TelemetryEvent::PaneDropped { .. }
-            | TelemetryEvent::ObjectLinkCopied { .. }
-            | TelemetryEvent::FileTreeToggled { .. }
-            | TelemetryEvent::AgentModeUserAttemptedQueryAtRequestLimit { .. }
-            | TelemetryEvent::AgentModeClickedEntrypoint { .. }
-            | TelemetryEvent::AgentModeAttachedBlockContext { .. }
-            | TelemetryEvent::AgentModeToggleAutoDetectionSetting { .. }
-            | TelemetryEvent::PromptSuggestionShown { .. }
-            | TelemetryEvent::SuggestedCodeDiffBannerShown { .. }
-            | TelemetryEvent::SuggestedCodeDiffFailed { .. }
-            | TelemetryEvent::PromptSuggestionAccepted { .. }
-            | TelemetryEvent::ZeroStatePromptSuggestionUsed { .. }
-            | TelemetryEvent::UnitTestSuggestionShown { .. }
-            | TelemetryEvent::UnitTestSuggestionCancelled { .. }
-            | TelemetryEvent::AgentModeCodeSuggestionEditedByUser { .. }
-            | TelemetryEvent::AgentModeCodeFilesNavigated { .. }
-            | TelemetryEvent::AgentModeCodeDiffHunksNavigated { .. }
-            | TelemetryEvent::ToggleIntelligentAutosuggestionsSetting { .. }
-            | TelemetryEvent::ToggleGlobalAI { .. }
-            | TelemetryEvent::ToggleCodebaseContext { .. }
-            | TelemetryEvent::ToggleAutoIndexing { .. }
-            | TelemetryEvent::ToggleActiveAI { .. }
-            | TelemetryEvent::TogglePromptSuggestionsSetting { .. }
-            | TelemetryEvent::ToggleCodeSuggestionsSetting { .. }
-            | TelemetryEvent::ToggleVoiceInputSetting { .. }
-            | TelemetryEvent::TierLimitHit(_)
-            | TelemetryEvent::SharedObjectLimitHitBannerViewPlansButtonClicked
-            | TelemetryEvent::ResourceUsageStats { .. }
-            | TelemetryEvent::MemoryUsageStats { .. }
-            | TelemetryEvent::MemoryUsageHigh { .. }
-            | TelemetryEvent::EnvVarCollectionInvoked(_)
-            | TelemetryEvent::EnvVarWorkflowParameterization(_)
-            | TelemetryEvent::CompletedSettingsImport { .. }
-            | TelemetryEvent::SettingsImportConfigFocused(_)
-            | TelemetryEvent::SettingsImportResetButtonClicked
-            | TelemetryEvent::SettingsImportConfigParsed { .. }
-            | TelemetryEvent::ITermMultipleHotkeys
-            | TelemetryEvent::ToggleWorkspaceDecorationVisibility { .. }
-            | TelemetryEvent::UpdateAltScreenPaddingMode { .. }
-            | TelemetryEvent::AddTabWithShell { .. }
-            | TelemetryEvent::AgentModeSurfacedCitations { .. }
-            | TelemetryEvent::AgentModeOpenedCitation { .. }
-            | TelemetryEvent::OpenedSharingDialog(_)
-            | TelemetryEvent::ToggleLigatureRendering { .. }
-            | TelemetryEvent::WorkflowAliasAdded { .. }
-            | TelemetryEvent::WorkflowAliasRemoved { .. }
-            | TelemetryEvent::WorkflowAliasEnvVarsAttached { .. }
-            | TelemetryEvent::WorkflowAliasArgumentEdited { .. }
-            | TelemetryEvent::ToggledAgentModeAutoexecuteReadonlyCommandsSetting { .. }
-            | TelemetryEvent::ChangedAgentModeCodingPermissions { .. }
-            | TelemetryEvent::RepoOutlineConstructionSuccess { .. }
-            | TelemetryEvent::RepoOutlineConstructionFailed { .. }
-            | TelemetryEvent::AutoexecutedAgentModeRequestedCommand { .. }
-            | TelemetryEvent::AgenticOnboardingBlockSelected { .. }
-            | TelemetryEvent::KnowledgePaneOpened { .. }
-            | TelemetryEvent::MCPServerCollectionPaneOpened { .. }
-            | TelemetryEvent::MCPServerAdded { .. }
-            | TelemetryEvent::MCPTemplateCreated { .. }
-            | TelemetryEvent::MCPTemplateInstalled { .. }
-            | TelemetryEvent::MCPTemplateShared
-            | TelemetryEvent::MCPServerSpawned { .. }
-            | TelemetryEvent::MCPToolCallAccepted { .. }
-            | TelemetryEvent::ExecutedWarpDrivePrompt { .. }
-            | TelemetryEvent::ToggleSshWarpification { .. }
-            | TelemetryEvent::SetSshExtensionInstallMode { .. }
-            | TelemetryEvent::SshRemoteServerChoiceDoNotAskAgainToggled { .. }
-            | TelemetryEvent::SettingsImportInitiated
-            | TelemetryEvent::AgentModeCreatedAIBlock { .. }
-            | TelemetryEvent::AgentModeRatedResponse { .. }
-            | TelemetryEvent::StaticPromptSuggestionsBannerShown { .. }
-            | TelemetryEvent::StaticPromptSuggestionAccepted { .. }
-            | TelemetryEvent::AISuggestedRuleAdded { .. }
-            | TelemetryEvent::AISuggestedRuleEdited { .. }
-            | TelemetryEvent::AISuggestedRuleContentChanged { .. }
-            | TelemetryEvent::AttachedImagesToAgentModeQuery { .. }
-            | TelemetryEvent::ImageReceived { .. }
-            | TelemetryEvent::FileExceededContextLimit { .. }
-            | TelemetryEvent::AgentModeError { .. }
-            | TelemetryEvent::AgentModeRequestRetrySucceeded { .. }
-            | TelemetryEvent::ToggleNaturalLanguageAutosuggestionsSetting { .. }
-            | TelemetryEvent::ToggleSharedBlockTitleGenerationSetting { .. }
-            | TelemetryEvent::ToggleGitOperationsAutogenSetting { .. }
-            | TelemetryEvent::GrepToolSucceeded
-            | TelemetryEvent::FileGlobToolSucceeded
-            | TelemetryEvent::FileGlobToolFailed { .. }
-            | TelemetryEvent::ShellTerminatedPrematurely { .. }
-            | TelemetryEvent::FullEmbedCodebaseContextSearchFailed { .. }
-            | TelemetryEvent::FullEmbedCodebaseContextSearchSuccess { .. }
-            | TelemetryEvent::SearchCodebaseRequested { .. }
-            | TelemetryEvent::SearchCodebaseRepoUnavailable { .. }
-            | TelemetryEvent::InputUXModeChanged { .. }
-            | TelemetryEvent::ContextChipInteracted { .. }
-            | TelemetryEvent::VoiceInputUsed { .. }
-            | TelemetryEvent::AtMenuInteracted { .. }
-            | TelemetryEvent::UserMenuUpgradeClicked
-            | TelemetryEvent::ActiveIndexedReposChanged { .. }
-            | TelemetryEvent::TabCloseButtonPositionUpdated { .. }
-            | TelemetryEvent::ExpandedCodeSuggestions { .. }
-            | TelemetryEvent::AIExecutionProfileCreated
-            | TelemetryEvent::AIExecutionProfileDeleted
-            | TelemetryEvent::AIExecutionProfileSettingUpdated { .. }
-            | TelemetryEvent::AIExecutionProfileAddedToAllowlist { .. }
-            | TelemetryEvent::AIExecutionProfileAddedToDenylist { .. }
-            | TelemetryEvent::AIExecutionProfileRemovedFromAllowlist { .. }
-            | TelemetryEvent::AIExecutionProfileRemovedFromDenylist { .. }
-            | TelemetryEvent::AIExecutionProfileModelSelected { .. }
-            | TelemetryEvent::OpenSlashMenu { .. }
-            | TelemetryEvent::SlashCommandAccepted { .. }
-            | TelemetryEvent::AgentModeSetupBannerAccepted
-            | TelemetryEvent::AgentModeSetupBannerDismissed
-            | TelemetryEvent::AgentModeSetupProjectScopedRulesAction { .. }
-            | TelemetryEvent::AgentModeSetupCodebaseContextAction { .. }
-            | TelemetryEvent::AgentModeSetupCreateEnvironmentAction { .. }
-            | TelemetryEvent::CloneRepoPromptSubmitted { .. }
-            | TelemetryEvent::GetStartedSkipToTerminal
-            | TelemetryEvent::FileTreeItemAttachedAsContext { .. }
-            | TelemetryEvent::CodeSelectionAddedAsContext { .. }
-            | TelemetryEvent::FileTreeItemCreated
-            | TelemetryEvent::ConversationListViewOpened
-            | TelemetryEvent::ConversationListItemOpened { .. }
-            | TelemetryEvent::ConversationListItemDeleted
-            | TelemetryEvent::ConversationListLinkCopied { .. }
-            | TelemetryEvent::AgentViewEntered { .. }
-            | TelemetryEvent::AgentViewExited { .. }
-            | TelemetryEvent::InlineConversationMenuOpened { .. }
-            | TelemetryEvent::InlineConversationMenuItemSelected { .. }
-            | TelemetryEvent::AgentShortcutsViewToggled { .. }
-            | TelemetryEvent::InputBufferSubmitted { .. }
-            | TelemetryEvent::RecentMenuItemSelected { .. }
-            | TelemetryEvent::OpenRepoFolderSubmitted { .. }
-            | TelemetryEvent::OutOfCreditsBannerClosed { .. }
-            | TelemetryEvent::AutoReloadModalClosed { .. }
-            | TelemetryEvent::AutoReloadToggledFromBillingSettings { .. }
-            | TelemetryEvent::CLISubagentControlStateChanged { .. }
-            | TelemetryEvent::CLISubagentResponsesToggled { .. }
-            | TelemetryEvent::CLISubagentInputDismissed { .. }
-            | TelemetryEvent::CLISubagentActionExecuted { .. }
-            | TelemetryEvent::CLISubagentActionRejected { .. }
-            | TelemetryEvent::AgentManagementViewToggled { .. }
-            | TelemetryEvent::AgentManagementViewOpenedSession
-            | TelemetryEvent::AgentManagementViewCopiedSessionLink
-            | TelemetryEvent::DetectedIsolationPlatform { .. }
-            | TelemetryEvent::AgentTipShown { .. }
-            | TelemetryEvent::AgentTipClicked { .. }
-            | TelemetryEvent::ToggleShowAgentTips { .. }
-            | TelemetryEvent::CLIAgentToolbarVoiceInputUsed { .. }
-            | TelemetryEvent::CLIAgentToolbarImageAttached { .. }
-            | TelemetryEvent::CLIAgentToolbarShown { .. }
-            | TelemetryEvent::CLIAgentPluginChipClicked { .. }
-            | TelemetryEvent::CLIAgentPluginChipDismissed { .. }
-            | TelemetryEvent::CLIAgentPluginOperationSucceeded { .. }
-            | TelemetryEvent::CLIAgentPluginOperationFailed { .. }
-            | TelemetryEvent::CLIAgentPluginDetected { .. }
-            | TelemetryEvent::AgentNotificationShown { .. }
-            | TelemetryEvent::CLIAgentRichInputOpened { .. }
-            | TelemetryEvent::CLIAgentRichInputClosed { .. }
-            | TelemetryEvent::CLIAgentRichInputSubmitted { .. }
-            | TelemetryEvent::ToggleCLIAgentToolbarSetting { .. }
-            | TelemetryEvent::ToggleUseAgentToolbarSetting { .. }
-            | TelemetryEvent::CodexModalOpened
-            | TelemetryEvent::CodexModalUseCodexClicked
-            | TelemetryEvent::LinearIssueLinkOpened
-            | TelemetryEvent::CloudAgentCapacityModalOpened
-            | TelemetryEvent::CloudAgentCapacityModalDismissed
-            | TelemetryEvent::CloudAgentCapacityModalUpgradeClicked
-            | TelemetryEvent::ComputerUseApproved { .. }
-            | TelemetryEvent::ComputerUseCancelled { .. }
-            | TelemetryEvent::FreeTierLimitHitInterstitialDisplayed
-            | TelemetryEvent::FreeTierLimitHitInterstitialUpgradeButtonClicked
-            | TelemetryEvent::FreeTierLimitHitInterstitialClosed
-            | TelemetryEvent::RemoteServerBinaryCheck { .. }
-            | TelemetryEvent::RemoteServerInstallation { .. }
-            | TelemetryEvent::RemoteServerInitialization { .. }
-            | TelemetryEvent::RemoteServerDisconnection { .. }
-            | TelemetryEvent::RemoteServerClientRequestError { .. }
-            | TelemetryEvent::RemoteServerMessageDecodingError { .. }
-            | TelemetryEvent::RemoteServerSetupDuration { .. } => false,
+            Self::ShowedSuggestedAgentModeWorkflowModal { .. }
+            | Self::ShowedSuggestedAgentModeWorkflowChip { .. }
+            | Self::AISuggestedAgentModeWorkflowAdded { .. }
+            | Self::AutosuggestionInserted { .. }
+            | Self::BlockCompleted { .. }
+            | Self::BlockCompletedOnDogfoodOnly { .. }
+            | Self::BackgroundBlockStarted
+            | Self::BaselineCommandLatency(_)
+            | Self::SessionCreation
+            | Self::Login
+            | Self::AgentModeContinueConversationButtonClicked { .. }
+            | Self::AgentModeRewindDialogOpened { .. }
+            | Self::AgentModeRewindExecuted { .. }
+            | Self::OpenSuggestionsMenu(_)
+            | Self::ConfirmSuggestion { .. }
+            | Self::OpenContextMenu { .. }
+            | Self::ContextMenuCopy(_, _)
+            | Self::ContextMenuOpenShareModal(_)
+            | Self::ContextMenuFindWithinBlocks(_)
+            | Self::ContextMenuCopyPrompt { .. }
+            | Self::ContextMenuToggleGitPromptDirtyIndicator { .. }
+            | Self::ContextMenuInsertSelectedText
+            | Self::ContextMenuCopySelectedText
+            | Self::OpenPromptEditor { .. }
+            | Self::PromptEdited { .. }
+            | Self::ReinputCommands(_)
+            | Self::JumpToPreviousCommand
+            | Self::CopyBlockSharingLink(_)
+            | Self::GenerateBlockSharingLink { .. }
+            | Self::BlockSelection(_)
+            | Self::BootstrappingSlow(_)
+            | Self::SessionAbandonedBeforeBootstrap { .. }
+            | Self::BootstrappingSucceeded(_)
+            | Self::TabSingleResultAutocompletion
+            | Self::EditorUnhandledModifierKey(_)
+            | Self::CopyInviteLink
+            | Self::OpenThemeChooser
+            | Self::ThemeSelection { .. }
+            | Self::AppIconSelection { .. }
+            | Self::CursorDisplayType { .. }
+            | Self::OpenThemeCreatorModal
+            | Self::CreateCustomTheme
+            | Self::DeleteCustomTheme
+            | Self::SplitPane
+            | Self::UnableToAutoUpdateToNewVersion
+            | Self::AutoupdateRelaunchAttempt { .. }
+            | Self::SkipOnboardingSurvey
+            | Self::ToggleRestoreSession(_)
+            | Self::DatabaseStartUpError(_)
+            | Self::DatabaseReadError(_)
+            | Self::DatabaseWriteError(_)
+            | Self::AppStartup(_)
+            | Self::LoggedOutStartup
+            | Self::DownloadSource(_)
+            | Self::SSHBootstrapAttempt(_)
+            | Self::SSHControlMasterError
+            | Self::KeybindingChanged { .. }
+            | Self::KeybindingResetToDefault { .. }
+            | Self::KeybindingRemoved { .. }
+            | Self::FeaturesPageAction { .. }
+            | Self::WorkflowExecuted(_)
+            | Self::WorkflowSelected(_)
+            | Self::OpenWorkflowSearch
+            | Self::OpenQuakeModeWindow
+            | Self::OpenWelcomeTips
+            | Self::CompleteWelcomeTipFeature { .. }
+            | Self::DismissWelcomeTips
+            | Self::ShowNotificationsDiscoveryBanner
+            | Self::NotificationsDiscoveryBannerAction(_)
+            | Self::ShowNotificationsErrorBanner
+            | Self::NotificationsErrorBannerAction(_)
+            | Self::NotificationPermissionsRequested { .. }
+            | Self::NotificationsRequestPermissionsOutcome { .. }
+            | Self::NotificationSent { .. }
+            | Self::NotificationFailedToSend { .. }
+            | Self::NotificationClicked
+            | Self::ToggleFindOption { .. }
+            | Self::SignUpButtonClicked
+            | Self::LoginButtonClicked { .. }
+            | Self::LoginLaterButtonClicked { .. }
+            | Self::LoginLaterConfirmationButtonClicked { .. }
+            | Self::OpenNewSessionFromFilePath
+            | Self::OpenTeamFromURI
+            | Self::SelectNavigationPaletteItem
+            | Self::SelectCommandPaletteOption(_)
+            | Self::PaletteSearchOpened { .. }
+            | Self::PaletteSearchResultAccepted { .. }
+            | Self::PaletteSearchExited { .. }
+            | Self::AuthCommonQuestionClicked { .. }
+            | Self::AuthToggleFAQ { .. }
+            | Self::OpenAuthPrivacySettings { .. }
+            | Self::TabRenamed(_)
+            | Self::MoveActiveTab { .. }
+            | Self::MoveTab { .. }
+            | Self::DragAndDropTab
+            | Self::TabOperations { .. }
+            | Self::EditedInputBeforePrecmd
+            | Self::TriedToExecuteBeforePrecmd
+            | Self::ThinStrokesSettingChanged { .. }
+            | Self::BookmarkBlockToggled { .. }
+            | Self::JumpToBookmark
+            | Self::JumpToBottomofBlockButtonClicked
+            | Self::ToggleJumpToBottomofBlockButton { .. }
+            | Self::ToggleShowBlockDividers { .. }
+            | Self::OpenLink { .. }
+            | Self::OpenChangelogLink { .. }
+            | Self::ShowInFileExplorer
+            | Self::CommandXRayTriggered { .. }
+            | Self::OpenLaunchConfigSaveModal
+            | Self::SaveLaunchConfig { .. }
+            | Self::OpenLaunchConfigFile
+            | Self::OpenLaunchConfig { .. }
+            | Self::TeamCreated
+            | Self::TeamJoined
+            | Self::TeamLeft
+            | Self::ToggleSettingsSync { .. }
+            | Self::TeamLinkCopied
+            | Self::RemovedUserFromTeam
+            | Self::DeletedWorkflow
+            | Self::DeletedNotebook
+            | Self::ToggleApprovalsModal
+            | Self::ChangedInviteViewOption(_)
+            | Self::SendEmailInvites
+            | Self::CommandCorrection { .. }
+            | Self::SetLineHeight { .. }
+            | Self::ResourceCenterOpened
+            | Self::ResourceCenterTipsCompleted
+            | Self::ResourceCenterTipsSkipped
+            | Self::KeybindingsPageOpened
+            | Self::GlobalSearchOpened
+            | Self::GlobalSearchQueryStarted
+            | Self::CommandSearchOpened { .. }
+            | Self::CommandSearchExited { .. }
+            | Self::CommandSearchResultAccepted { .. }
+            | Self::CommandSearchFilterChanged { .. }
+            | Self::CommandSearchAsyncQueryCompleted { .. }
+            | Self::AICommandSearchOpened { .. }
+            | Self::OpenNotebook(_)
+            | Self::EditNotebook { .. }
+            | Self::NotebookAction(_)
+            | Self::OpenedAltScreenFind
+            | Self::UserInitiatedClose { .. }
+            | Self::QuitModalShown { .. }
+            | Self::QuitModalCancel { .. }
+            | Self::QuitModalDisabled
+            | Self::UserInitiatedLogOut
+            | Self::LogOutModalShown
+            | Self::LogOutModalCancel { .. }
+            | Self::SetOpacity { .. }
+            | Self::SetBlurRadius { .. }
+            | Self::ToggleDimInactivePanes { .. }
+            | Self::InputModeChanged { .. }
+            | Self::PtySpawned { .. }
+            | Self::InitialWorkingDirectoryConfigurationChanged { .. }
+            | Self::OpenedWarpAI { .. }
+            | Self::WarpAIRequestIssued { .. }
+            | Self::WarpAIAction { .. }
+            | Self::UsedWarpAIPreparedPrompt { .. }
+            | Self::ToggleFocusPaneOnHover { .. }
+            | Self::WarpAICharacterLimitExceeded
+            | Self::OpenInputContextMenu
+            | Self::InputCutSelectedText
+            | Self::InputCopySelectedText
+            | Self::InputSelectAll
+            | Self::InputPaste
+            | Self::InputCommandSearch
+            | Self::InputAICommandSearch
+            | Self::InputAskWarpAI
+            | Self::SaveAsWorkflowModal { .. }
+            | Self::ExperimentTriggered { .. }
+            | Self::ToggleSyncAllPanesInAllTabs { .. }
+            | Self::ToggleSyncAllPanesInTab { .. }
+            | Self::ToggleSameLinePrompt { .. }
+            | Self::ToggleNewWindowsAtCustomSize { .. }
+            | Self::SetNewWindowsAtCustomSize
+            | Self::DisableInputSync
+            | Self::ToggleTabIndicators { .. }
+            | Self::TogglePreserveActiveTabColor { .. }
+            | Self::ShowSubshellBanner
+            | Self::DeclineSubshellBootstrap { .. }
+            | Self::TriggerSubshellBootstrap { .. }
+            | Self::AddDenylistedSubshellCommand
+            | Self::RemoveDenylistedSubshellCommand
+            | Self::AddAddedSubshellCommand
+            | Self::RemoveAddedSubshellCommand
+            | Self::ReceivedSubshellRcFileDcs
+            | Self::AddDenylistedSshTmuxWrapperHost
+            | Self::RemoveDenylistedSshTmuxWrapperHost
+            | Self::ToggleSshTmuxWrapper { .. }
+            | Self::SshInteractiveSessionDetected(_)
+            | Self::SshTmuxWarpifyBannerDisplayed
+            | Self::SshTmuxWarpifyBlockAccepted
+            | Self::SshTmuxWarpifyBlockDismissed
+            | Self::WarpifyFooterShown { .. }
+            | Self::AgentToolbarDismissed
+            | Self::WarpifyFooterAcceptedWarpify { .. }
+            | Self::SshTmuxWarpificationSuccess { .. }
+            | Self::SshTmuxWarpificationErrorBlock { .. }
+            | Self::SshInstallTmuxBlockDisplayed
+            | Self::SshInstallTmuxBlockAccepted
+            | Self::SshInstallTmuxBlockDismissed
+            | Self::ShowAliasExpansionBanner
+            | Self::EnableAliasExpansionFromBanner
+            | Self::DismissAliasExpansionBanner
+            | Self::ShowVimKeybindingsBanner
+            | Self::EnableVimKeybindingsFromBanner
+            | Self::DismissVimKeybindingsBanner
+            | Self::InitiateReauth
+            | Self::InitiateAnonymousUserSignup { .. }
+            | Self::AnonymousUserExpirationLockout
+            | Self::AnonymousUserLinkedFromBrowser
+            | Self::AnonymousUserAttemptLoginGatedFeature { .. }
+            | Self::AnonymousUserHitCloudObjectLimit
+            | Self::NeedsReauth
+            | Self::WarpDriveOpened { .. }
+            | Self::ToggleWarpAI { .. }
+            | Self::ToggleSecretRedaction { .. }
+            | Self::CustomSecretRegexAdded
+            | Self::ToggleObfuscateSecret { .. }
+            | Self::CopySecret
+            | Self::AutoGenerateMetadataSuccess
+            | Self::AutoGenerateMetadataError { .. }
+            | Self::UpdateSortingChoice { .. }
+            | Self::UndoClose { .. }
+            | Self::PtyThroughput { .. }
+            | Self::DuplicateObject(_)
+            | Self::ExportObject(_)
+            | Self::DriveSharingOnboardingBlockShown
+            | Self::CommandFileRun
+            | Self::PageUpDownInEditorPressed { .. }
+            | Self::StartedSharingCurrentSession { .. }
+            | Self::StoppedSharingCurrentSession { .. }
+            | Self::JoinedSharedSession { .. }
+            | Self::SharedSessionModalUpgradePressed
+            | Self::SharerCancelledGrantRole { .. }
+            | Self::SharerGrantModalDontShowAgain
+            | Self::JumpToSharedSessionParticipant { .. }
+            | Self::CopiedSharedSessionLink { .. }
+            | Self::WebSessionOpenedOnDesktop { .. }
+            | Self::WebCloudObjectOpenedOnDesktop { .. }
+            | Self::UnsupportedShell { .. }
+            | Self::LogOut
+            | Self::InviteTeammates { .. }
+            | Self::CopyObjectToClipboard(_)
+            | Self::OpenAndWarpifyDockerSubshell { .. }
+            | Self::UpdateBlockFilterQuery
+            | Self::UpdateBlockFilterQueryContextLines { .. }
+            | Self::ToggleBlockFilterQuery { .. }
+            | Self::ToggleBlockFilterCaseSensitivity { .. }
+            | Self::ToggleBlockFilterRegex { .. }
+            | Self::ToggleBlockFilterInvert { .. }
+            | Self::BlockFilterToolbeltButtonClicked
+            | Self::ToggleSnackbarInActivePane { .. }
+            | Self::PaneDragInitiated
+            | Self::PaneDropped { .. }
+            | Self::ObjectLinkCopied { .. }
+            | Self::FileTreeToggled { .. }
+            | Self::AgentModeUserAttemptedQueryAtRequestLimit { .. }
+            | Self::AgentModeClickedEntrypoint { .. }
+            | Self::AgentModeAttachedBlockContext { .. }
+            | Self::AgentModeToggleAutoDetectionSetting { .. }
+            | Self::PromptSuggestionShown { .. }
+            | Self::SuggestedCodeDiffBannerShown { .. }
+            | Self::SuggestedCodeDiffFailed { .. }
+            | Self::PromptSuggestionAccepted { .. }
+            | Self::ZeroStatePromptSuggestionUsed { .. }
+            | Self::UnitTestSuggestionShown { .. }
+            | Self::UnitTestSuggestionCancelled { .. }
+            | Self::AgentModeCodeSuggestionEditedByUser { .. }
+            | Self::AgentModeCodeFilesNavigated { .. }
+            | Self::AgentModeCodeDiffHunksNavigated { .. }
+            | Self::ToggleIntelligentAutosuggestionsSetting { .. }
+            | Self::ToggleGlobalAI { .. }
+            | Self::ToggleCodebaseContext { .. }
+            | Self::ToggleAutoIndexing { .. }
+            | Self::ToggleActiveAI { .. }
+            | Self::TogglePromptSuggestionsSetting { .. }
+            | Self::ToggleCodeSuggestionsSetting { .. }
+            | Self::ToggleVoiceInputSetting { .. }
+            | Self::TierLimitHit(_)
+            | Self::SharedObjectLimitHitBannerViewPlansButtonClicked
+            | Self::ResourceUsageStats { .. }
+            | Self::MemoryUsageStats { .. }
+            | Self::MemoryUsageHigh { .. }
+            | Self::EnvVarCollectionInvoked(_)
+            | Self::EnvVarWorkflowParameterization(_)
+            | Self::CompletedSettingsImport { .. }
+            | Self::SettingsImportConfigFocused(_)
+            | Self::SettingsImportResetButtonClicked
+            | Self::SettingsImportConfigParsed { .. }
+            | Self::ITermMultipleHotkeys
+            | Self::ToggleWorkspaceDecorationVisibility { .. }
+            | Self::UpdateAltScreenPaddingMode { .. }
+            | Self::AddTabWithShell { .. }
+            | Self::AgentModeSurfacedCitations { .. }
+            | Self::AgentModeOpenedCitation { .. }
+            | Self::OpenedSharingDialog(_)
+            | Self::ToggleLigatureRendering { .. }
+            | Self::WorkflowAliasAdded { .. }
+            | Self::WorkflowAliasRemoved { .. }
+            | Self::WorkflowAliasEnvVarsAttached { .. }
+            | Self::WorkflowAliasArgumentEdited { .. }
+            | Self::ToggledAgentModeAutoexecuteReadonlyCommandsSetting { .. }
+            | Self::ChangedAgentModeCodingPermissions { .. }
+            | Self::RepoOutlineConstructionSuccess { .. }
+            | Self::RepoOutlineConstructionFailed { .. }
+            | Self::AutoexecutedAgentModeRequestedCommand { .. }
+            | Self::AgenticOnboardingBlockSelected { .. }
+            | Self::KnowledgePaneOpened { .. }
+            | Self::MCPServerCollectionPaneOpened { .. }
+            | Self::MCPServerAdded { .. }
+            | Self::MCPTemplateCreated { .. }
+            | Self::MCPTemplateInstalled { .. }
+            | Self::MCPTemplateShared
+            | Self::MCPServerSpawned { .. }
+            | Self::MCPToolCallAccepted { .. }
+            | Self::ExecutedWarpDrivePrompt { .. }
+            | Self::ToggleSshWarpification { .. }
+            | Self::SetSshExtensionInstallMode { .. }
+            | Self::SshRemoteServerChoiceDoNotAskAgainToggled { .. }
+            | Self::SettingsImportInitiated
+            | Self::AgentModeCreatedAIBlock { .. }
+            | Self::AgentModeRatedResponse { .. }
+            | Self::StaticPromptSuggestionsBannerShown { .. }
+            | Self::StaticPromptSuggestionAccepted { .. }
+            | Self::AISuggestedRuleAdded { .. }
+            | Self::AISuggestedRuleEdited { .. }
+            | Self::AISuggestedRuleContentChanged { .. }
+            | Self::AttachedImagesToAgentModeQuery { .. }
+            | Self::ImageReceived { .. }
+            | Self::FileExceededContextLimit { .. }
+            | Self::AgentModeError { .. }
+            | Self::AgentModeRequestRetrySucceeded { .. }
+            | Self::ToggleNaturalLanguageAutosuggestionsSetting { .. }
+            | Self::ToggleSharedBlockTitleGenerationSetting { .. }
+            | Self::ToggleGitOperationsAutogenSetting { .. }
+            | Self::GrepToolSucceeded
+            | Self::FileGlobToolSucceeded
+            | Self::FileGlobToolFailed { .. }
+            | Self::ShellTerminatedPrematurely { .. }
+            | Self::FullEmbedCodebaseContextSearchFailed { .. }
+            | Self::FullEmbedCodebaseContextSearchSuccess { .. }
+            | Self::SearchCodebaseRequested { .. }
+            | Self::SearchCodebaseRepoUnavailable { .. }
+            | Self::InputUXModeChanged { .. }
+            | Self::ContextChipInteracted { .. }
+            | Self::VoiceInputUsed { .. }
+            | Self::AtMenuInteracted { .. }
+            | Self::UserMenuUpgradeClicked
+            | Self::ActiveIndexedReposChanged { .. }
+            | Self::TabCloseButtonPositionUpdated { .. }
+            | Self::ExpandedCodeSuggestions { .. }
+            | Self::AIExecutionProfileCreated
+            | Self::AIExecutionProfileDeleted
+            | Self::AIExecutionProfileSettingUpdated { .. }
+            | Self::AIExecutionProfileAddedToAllowlist { .. }
+            | Self::AIExecutionProfileAddedToDenylist { .. }
+            | Self::AIExecutionProfileRemovedFromAllowlist { .. }
+            | Self::AIExecutionProfileRemovedFromDenylist { .. }
+            | Self::AIExecutionProfileModelSelected { .. }
+            | Self::OpenSlashMenu { .. }
+            | Self::SlashCommandAccepted { .. }
+            | Self::AgentModeSetupBannerAccepted
+            | Self::AgentModeSetupBannerDismissed
+            | Self::AgentModeSetupProjectScopedRulesAction { .. }
+            | Self::AgentModeSetupCodebaseContextAction { .. }
+            | Self::AgentModeSetupCreateEnvironmentAction { .. }
+            | Self::CloneRepoPromptSubmitted { .. }
+            | Self::GetStartedSkipToTerminal
+            | Self::FileTreeItemAttachedAsContext { .. }
+            | Self::CodeSelectionAddedAsContext { .. }
+            | Self::FileTreeItemCreated
+            | Self::ConversationListViewOpened
+            | Self::ConversationListItemOpened { .. }
+            | Self::ConversationListItemDeleted
+            | Self::ConversationListLinkCopied { .. }
+            | Self::AgentViewEntered { .. }
+            | Self::AgentViewExited { .. }
+            | Self::InlineConversationMenuOpened { .. }
+            | Self::InlineConversationMenuItemSelected { .. }
+            | Self::AgentShortcutsViewToggled { .. }
+            | Self::InputBufferSubmitted { .. }
+            | Self::RecentMenuItemSelected { .. }
+            | Self::OpenRepoFolderSubmitted { .. }
+            | Self::OutOfCreditsBannerClosed { .. }
+            | Self::AutoReloadModalClosed { .. }
+            | Self::AutoReloadToggledFromBillingSettings { .. }
+            | Self::CLISubagentControlStateChanged { .. }
+            | Self::CLISubagentResponsesToggled { .. }
+            | Self::CLISubagentInputDismissed { .. }
+            | Self::CLISubagentActionExecuted { .. }
+            | Self::CLISubagentActionRejected { .. }
+            | Self::AgentManagementViewToggled { .. }
+            | Self::AgentManagementViewOpenedSession
+            | Self::AgentManagementViewCopiedSessionLink
+            | Self::DetectedIsolationPlatform { .. }
+            | Self::AgentTipShown { .. }
+            | Self::AgentTipClicked { .. }
+            | Self::ToggleShowAgentTips { .. }
+            | Self::CLIAgentToolbarVoiceInputUsed { .. }
+            | Self::CLIAgentToolbarImageAttached { .. }
+            | Self::CLIAgentToolbarShown { .. }
+            | Self::CLIAgentPluginChipClicked { .. }
+            | Self::CLIAgentPluginChipDismissed { .. }
+            | Self::CLIAgentPluginOperationSucceeded { .. }
+            | Self::CLIAgentPluginOperationFailed { .. }
+            | Self::CLIAgentPluginDetected { .. }
+            | Self::AgentNotificationShown { .. }
+            | Self::CLIAgentRichInputOpened { .. }
+            | Self::CLIAgentRichInputClosed { .. }
+            | Self::CLIAgentRichInputSubmitted { .. }
+            | Self::ToggleCLIAgentToolbarSetting { .. }
+            | Self::ToggleUseAgentToolbarSetting { .. }
+            | Self::CodexModalOpened
+            | Self::CodexModalUseCodexClicked
+            | Self::LinearIssueLinkOpened
+            | Self::CloudAgentCapacityModalOpened
+            | Self::CloudAgentCapacityModalDismissed
+            | Self::CloudAgentCapacityModalUpgradeClicked
+            | Self::ComputerUseApproved { .. }
+            | Self::ComputerUseCancelled { .. }
+            | Self::FreeTierLimitHitInterstitialDisplayed
+            | Self::FreeTierLimitHitInterstitialUpgradeButtonClicked
+            | Self::FreeTierLimitHitInterstitialClosed
+            | Self::RemoteServerBinaryCheck { .. }
+            | Self::RemoteServerInstallation { .. }
+            | Self::RemoteServerInitialization { .. }
+            | Self::RemoteServerDisconnection { .. }
+            | Self::RemoteServerClientRequestError { .. }
+            | Self::RemoteServerMessageDecodingError { .. }
+            | Self::RemoteServerSetupDuration { .. } => false,
             #[cfg(feature = "local_fs")]
-            TelemetryEvent::CodePaneOpened { .. }
-            | TelemetryEvent::CodePanelsFileOpened { .. }
-            | TelemetryEvent::PreviewPanePromoted => false,
+            Self::CodePaneOpened { .. }
+            | Self::CodePanelsFileOpened { .. }
+            | Self::PreviewPanePromoted => false,
             #[cfg(windows)]
             TelemetryEvent::WSLRegistryError
             | TelemetryEvent::AutoupdateUnableToCloseApplications

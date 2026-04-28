@@ -134,13 +134,13 @@ pub struct LineAndColumnArg {
 impl LineAndColumnArg {
     pub fn to_string_suffix(&self) -> String {
         match self {
-            LineAndColumnArg {
+            Self {
                 line_num,
                 column_num: Some(column_num),
             } => {
                 format!(":{line_num}:{column_num}")
             }
-            LineAndColumnArg {
+            Self {
                 line_num,
                 column_num: None,
             } => {

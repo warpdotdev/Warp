@@ -45,7 +45,7 @@ pub enum Host {
 impl Host {
     fn display_name(self) -> &'static str {
         match self {
-            Host::Warp => "Warp",
+            Self::Warp => "Warp",
         }
     }
 }

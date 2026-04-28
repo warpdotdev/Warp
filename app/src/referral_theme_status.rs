@@ -154,7 +154,7 @@ enum ReferralThemeFetchStatus {
 
 impl ReferralThemeFetchStatus {
     fn is_active(self) -> bool {
-        matches!(self, ReferralThemeFetchStatus::Active)
+        matches!(self, Self::Active)
     }
 
     fn to_json(self) -> String {

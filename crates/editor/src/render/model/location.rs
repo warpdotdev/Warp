@@ -47,8 +47,8 @@ impl Location {
     /// The starting [`CharOffset`] of the block that was hit. All hits are within a single block.
     pub fn block_start(&self) -> CharOffset {
         match self {
-            Location::Block { start_offset, .. } => *start_offset,
-            Location::Text { block_start, .. } => *block_start,
+            Self::Block { start_offset, .. } => *start_offset,
+            Self::Text { block_start, .. } => *block_start,
         }
     }
 }

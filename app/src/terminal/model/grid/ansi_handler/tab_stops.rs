@@ -12,8 +12,8 @@ pub struct TabStops {
 
 impl TabStops {
     #[inline]
-    pub fn new(num_cols: usize) -> TabStops {
-        TabStops {
+    pub fn new(num_cols: usize) -> Self {
+        Self {
             tabs: IndexRange::from(0..num_cols)
                 .map(|i| i % INITIAL_TABSTOPS == 0)
                 .collect::<Vec<bool>>(),

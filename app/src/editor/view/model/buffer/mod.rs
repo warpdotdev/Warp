@@ -285,7 +285,7 @@ pub enum EditOrigin {
 
 impl EditOrigin {
     pub fn is_user(&self) -> bool {
-        matches!(self, EditOrigin::UserTyped) || matches!(self, EditOrigin::UserInitiated)
+        matches!(self, Self::UserTyped) || matches!(self, Self::UserInitiated)
     }
 }
 
@@ -341,13 +341,13 @@ pub struct TextStyleOperation {
 
 impl Default for TextStyleOperation {
     fn default() -> Self {
-        TextStyleOperation::new()
+        Self::new()
     }
 }
 
 impl TextStyleOperation {
     pub fn new() -> Self {
-        TextStyleOperation {
+        Self {
             foreground_color: StyleOperation::None,
             syntax_color: StyleOperation::None,
             background_color: StyleOperation::None,
@@ -376,7 +376,7 @@ impl TextStyleOperation {
     ///
     pub fn apply_text_style_operation(
         mut text_style: TextStyle,
-        text_style_operation: TextStyleOperation,
+        text_style_operation: Self,
     ) -> TextStyle {
         text_style.foreground_color = text_style_operation
             .foreground_color
@@ -473,14 +473,14 @@ pub struct TextRun {
 
 impl TextRun {
     pub fn new(text: String, text_style: TextStyle, range: Range<ByteOffset>) -> Self {
-        TextRun {
+        Self {
             text,
             text_style,
             range,
         }
     }
 
-    pub fn text_from_text_runs(text_runs: &[TextRun]) -> String {
+    pub fn text_from_text_runs(text_runs: &[Self]) -> String {
         text_runs
             .iter()
             .map(|text_run| text_run.text().to_string())
@@ -511,7 +511,7 @@ pub struct StylizedChar {
 
 impl StylizedChar {
     pub fn new(char: char, style: TextStyle) -> Self {
-        StylizedChar { char, style }
+        Self { char, style }
     }
 
     pub fn char(&self) -> char {
@@ -756,7 +756,7 @@ impl TryFrom<OperationEditArgs> for EditOperation {
             anyhow::bail!("Tried to build EditOperation without end_character_offset")
         };
 
-        Ok(EditOperation {
+        Ok(Self {
             start_id,
             start_character_offset,
             end_id,
@@ -3247,11 +3247,11 @@ impl TextBuffer for Buffer {
         Self: 'a;
 
     fn chars_at(&self, offset: CharOffset) -> Result<Self::Chars<'_>> {
-        Buffer::chars_at(self, offset)
+        Self::chars_at(self, offset)
     }
 
     fn chars_rev_at(&self, offset: CharOffset) -> Result<Self::CharsReverse<'_>> {
-        Buffer::chars_at(self, offset).map(|chars| chars.rev())
+        Self::chars_at(self, offset).map(|chars| chars.rev())
     }
 
     fn to_point(&self, offset: CharOffset) -> Result<Point> {
@@ -3526,7 +3526,7 @@ impl FragmentId {
             }
         }
 
-        FragmentId(new_entries.into_boxed_slice())
+        Self(new_entries.into_boxed_slice())
     }
 }
 
@@ -3678,7 +3678,7 @@ impl sum_tree::Item for Fragment {
     }
 }
 
-impl AddAssign<&FragmentSummary> for FragmentSummary {
+impl AddAssign<&Self> for FragmentSummary {
     fn add_assign(&mut self, other: &Self) {
         self.text_summary += &other.text_summary;
         debug_assert!(self.max_fragment_id <= other.max_fragment_id);
@@ -3689,7 +3689,7 @@ impl AddAssign<&FragmentSummary> for FragmentSummary {
 
 impl Default for FragmentSummary {
     fn default() -> Self {
-        FragmentSummary {
+        Self {
             text_summary: TextSummary::default(),
             max_fragment_id: FragmentId::min_value().clone(),
             max_version: Global::new(),
@@ -3725,7 +3725,7 @@ impl sum_tree::Item for InsertionSplit {
     }
 }
 
-impl AddAssign<&InsertionSplitSummary> for InsertionSplitSummary {
+impl AddAssign<&Self> for InsertionSplitSummary {
     fn add_assign(&mut self, other: &Self) {
         self.extent += other.extent;
     }
@@ -3744,13 +3744,13 @@ impl Operation {
 
     fn lamport_timestamp(&self) -> &Lamport {
         match self {
-            Operation::Edit(EditOperation {
+            Self::Edit(EditOperation {
                 lamport_timestamp, ..
             }) => lamport_timestamp,
-            Operation::Undo(UndoOperation {
+            Self::Undo(UndoOperation {
                 lamport_timestamp, ..
             }) => lamport_timestamp,
-            Operation::UpdateSelections(UpdateSelectionsOperation {
+            Self::UpdateSelections(UpdateSelectionsOperation {
                 lamport_timestamp, ..
             }) => lamport_timestamp,
         }
@@ -3767,7 +3767,7 @@ pub trait ToBufferOffset {
 
 impl ToCharOffset for Point {
     fn to_char_offset(&self, buffer: &Buffer) -> Result<CharOffset> {
-        let mut fragments_cursor = buffer.fragments.cursor::<Point, TextSummary>();
+        let mut fragments_cursor = buffer.fragments.cursor::<Self, TextSummary>();
         fragments_cursor.seek(self, SeekBias::Left);
         fragments_cursor
             .item()
@@ -3799,7 +3799,7 @@ impl ToCharOffset for &Anchor {
 
 impl ToCharOffset for ByteOffset {
     fn to_char_offset(&self, buffer: &Buffer) -> Result<CharOffset> {
-        let mut fragments_cursor = buffer.fragments.cursor::<ByteOffset, TextSummary>();
+        let mut fragments_cursor = buffer.fragments.cursor::<Self, TextSummary>();
         fragments_cursor.seek(self, SeekBias::Left);
         fragments_cursor
             .item()
@@ -3818,7 +3818,7 @@ impl ToCharOffset for ByteOffset {
 
 impl ToBufferOffset for Point {
     fn to_byte_offset(&self, buffer: &Buffer) -> Result<ByteOffset> {
-        let mut fragments_cursor = buffer.fragments.cursor::<Point, TextSummary>();
+        let mut fragments_cursor = buffer.fragments.cursor::<Self, TextSummary>();
         fragments_cursor.seek(self, SeekBias::Left);
         fragments_cursor
             .item()
@@ -3868,7 +3868,7 @@ impl ToPoint for Anchor {
 
 impl ToPoint for CharOffset {
     fn to_point(&self, buffer: &Buffer) -> Result<Point> {
-        let mut fragments_cursor = buffer.fragments.cursor::<CharOffset, TextSummary>();
+        let mut fragments_cursor = buffer.fragments.cursor::<Self, TextSummary>();
         fragments_cursor.seek(self, SeekBias::Left);
         fragments_cursor
             .item()

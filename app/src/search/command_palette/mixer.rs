@@ -81,38 +81,34 @@ pub enum CommandPaletteItemAction {
 impl CommandPaletteItemAction {
     pub fn to_summary(&self) -> ItemSummary {
         match self {
-            CommandPaletteItemAction::AcceptBinding { binding } => ItemSummary::Action {
+            Self::AcceptBinding { binding } => ItemSummary::Action {
                 binding_id: binding.id,
             },
-            CommandPaletteItemAction::OpenNotebook { id } => ItemSummary::Notebook { id: *id },
-            CommandPaletteItemAction::ExecuteWorkflow { id } => ItemSummary::Workflow { id: *id },
-            CommandPaletteItemAction::InvokeEnvironmentVariables { id } => {
-                ItemSummary::EnvVarCollection { id: *id }
-            }
-            CommandPaletteItemAction::NavigateToSession {
+            Self::OpenNotebook { id } => ItemSummary::Notebook { id: *id },
+            Self::ExecuteWorkflow { id } => ItemSummary::Workflow { id: *id },
+            Self::InvokeEnvironmentVariables { id } => ItemSummary::EnvVarCollection { id: *id },
+            Self::NavigateToSession {
                 pane_view_locator, ..
             } => ItemSummary::Session {
                 pane_view_locator: *pane_view_locator,
             },
-            CommandPaletteItemAction::NavigateToConversation {
+            Self::NavigateToConversation {
                 conversation_id, ..
             } => ItemSummary::Conversation {
                 id: *conversation_id,
             },
-            CommandPaletteItemAction::ForkConversation { .. } => ItemSummary::ForkConversation,
-            CommandPaletteItemAction::NewSession { source } => ItemSummary::NewSession {
+            Self::ForkConversation { .. } => ItemSummary::ForkConversation,
+            Self::NewSession { source } => ItemSummary::NewSession {
                 id: source.id().clone(),
             },
-            CommandPaletteItemAction::OpenLaunchConfiguration { .. } => {
-                ItemSummary::LaunchConfiguration
-            }
-            CommandPaletteItemAction::ViewInWarpDrive { id } => match id {
+            Self::OpenLaunchConfiguration { .. } => ItemSummary::LaunchConfiguration,
+            Self::ViewInWarpDrive { id } => match id {
                 CloudObjectTypeAndId::Notebook(_)
                 | CloudObjectTypeAndId::Folder(_)
                 | CloudObjectTypeAndId::GenericStringObject { .. } => ItemSummary::CloudObject,
                 CloudObjectTypeAndId::Workflow(id) => ItemSummary::Workflow { id: *id },
             },
-            CommandPaletteItemAction::OpenFile {
+            Self::OpenFile {
                 path,
                 project_directory,
                 line_and_column_arg,
@@ -121,22 +117,22 @@ impl CommandPaletteItemAction {
                 project_directory: project_directory.clone(),
                 line_and_column_arg: *line_and_column_arg,
             },
-            CommandPaletteItemAction::OpenDirectory {
+            Self::OpenDirectory {
                 path,
                 project_directory,
             } => ItemSummary::Directory {
                 path: path.clone(),
                 project_directory: project_directory.clone(),
             },
-            CommandPaletteItemAction::CreateFile { .. } => {
+            Self::CreateFile { .. } => {
                 // CreateFile actions should not show up in recent items
                 ItemSummary::NoOp
             }
-            CommandPaletteItemAction::NewConversationInProject { path, .. } => {
+            Self::NewConversationInProject { path, .. } => {
                 ItemSummary::Project { path: path.clone() }
             }
-            CommandPaletteItemAction::NewConversation => ItemSummary::NewConversation,
-            CommandPaletteItemAction::NoOp => ItemSummary::NoOp,
+            Self::NewConversation => ItemSummary::NewConversation,
+            Self::NoOp => ItemSummary::NoOp,
         }
     }
 

@@ -55,7 +55,7 @@ struct UserOwnedBlock {
 
 impl From<Block> for UserOwnedBlock {
     fn from(block: Block) -> Self {
-        UserOwnedBlock::new(
+        Self::new(
             block.id.unwrap_or_default(),
             block.command.unwrap_or_default(),
             block.time_started_term,
@@ -305,18 +305,16 @@ impl GetBlocksForUserRequestState {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         match self {
-            GetBlocksForUserRequestState::NotStarted => pad(ui_builder
+            Self::NotStarted => pad(ui_builder
                 .label("You don't have any shared blocks yet.")
                 .build()
                 .finish()),
-            GetBlocksForUserRequestState::InFlight => {
-                pad(ui_builder.label("Getting blocks...").build().finish())
-            }
-            GetBlocksForUserRequestState::Failed => pad(ui_builder
+            Self::InFlight => pad(ui_builder.label("Getting blocks...").build().finish()),
+            Self::Failed => pad(ui_builder
                 .label("Failed to load blocks. Please try again.")
                 .build()
                 .finish()),
-            GetBlocksForUserRequestState::Done(user_blocks) => {
+            Self::Done(user_blocks) => {
                 let user_blocks = user_blocks.clone();
                 // Only consider the unshared blocks when rendering. We don't remove them from the
                 // list of blocks so that the indexing is consistent for the lifetime of the app.
@@ -640,7 +638,7 @@ impl SettingsPageMeta for ShowBlocksView {
 
 impl From<ViewHandle<ShowBlocksView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<ShowBlocksView>) -> Self {
-        SettingsPageViewHandle::SharedBlocks(view_handle)
+        Self::SharedBlocks(view_handle)
     }
 }
 

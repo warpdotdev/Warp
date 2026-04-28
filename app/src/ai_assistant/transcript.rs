@@ -91,7 +91,7 @@ struct MouseStateHandles {
 
 /// A view to render a Q/A style transcript.
 pub struct Transcript {
-    view_handle: WeakViewHandle<Transcript>,
+    view_handle: WeakViewHandle<Self>,
 
     requests_model: ModelHandle<Requests>,
     selected_code_block: Option<CodeBlockIndex>,

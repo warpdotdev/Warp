@@ -47,7 +47,7 @@ pub enum BaseImage {
 impl fmt::Display for BaseImage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BaseImage::DockerImage(s) => s.fmt(f),
+            Self::DockerImage(s) => s.fmt(f),
         }
     }
 }
@@ -111,17 +111,14 @@ pub type CloudAmbientAgentEnvironmentModel =
     GenericStringModel<AmbientAgentEnvironment, JsonSerializer>;
 
 impl CloudAmbientAgentEnvironment {
-    pub fn get_all(app: &AppContext) -> Vec<CloudAmbientAgentEnvironment> {
+    pub fn get_all(app: &AppContext) -> Vec<Self> {
         CloudModel::as_ref(app)
             .get_all_objects_of_type::<GenericStringObjectId, CloudAmbientAgentEnvironmentModel>()
             .cloned()
             .collect()
     }
 
-    pub fn get_by_id<'a>(
-        sync_id: &'a SyncId,
-        app: &'a AppContext,
-    ) -> Option<&'a CloudAmbientAgentEnvironment> {
+    pub fn get_by_id<'a>(sync_id: &'a SyncId, app: &'a AppContext) -> Option<&'a Self> {
         CloudModel::as_ref(app)
             .get_object_of_type::<GenericStringObjectId, CloudAmbientAgentEnvironmentModel>(sync_id)
     }

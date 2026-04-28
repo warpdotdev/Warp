@@ -72,7 +72,7 @@ impl ClosedItem {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
 
         match self {
-            ClosedItem::Window(data) => {
+            Self::Window(data) => {
                 let ClosedWindowData { window_id, .. } = *data;
                 ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
                     model.remove_focused_state_for_window(window_id, ctx);
@@ -91,7 +91,7 @@ impl ClosedItem {
                     });
                 }
             }
-            ClosedItem::Tab { data, .. } => {
+            Self::Tab { data, .. } => {
                 // Mark conversations from all terminal panes in the tab
                 Self::mark_conversations_historical_for_pane_group(
                     &data.pane_group,
@@ -100,7 +100,7 @@ impl ClosedItem {
                 );
                 Self::clean_up_pane_group(&data.pane_group, ctx);
             }
-            ClosedItem::Pane { data } => {
+            Self::Pane { data } => {
                 ctx.emit(UndoCloseStackEvent::DiscardPane(data.pane_id));
             }
         }

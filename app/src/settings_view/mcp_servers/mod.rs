@@ -44,14 +44,14 @@ impl PartialOrd for ServerCardItemId {
 impl Display for ServerCardItemId {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            ServerCardItemId::TemplatableMCP(template_uuid) => {
+            Self::TemplatableMCP(template_uuid) => {
                 write!(f, "Templatable MCP Id: {template_uuid}")
             }
-            ServerCardItemId::TemplatableMCPInstallation(uuid) => {
+            Self::TemplatableMCPInstallation(uuid) => {
                 write!(f, "Templatable MCP Installation Id: {uuid}")
             }
-            ServerCardItemId::GalleryMCP(uuid) => write!(f, "Gallery MCP Id: {uuid}"),
-            ServerCardItemId::FileBasedMCP(uuid) => write!(f, "File-Based MCP Id: {uuid}"),
+            Self::GalleryMCP(uuid) => write!(f, "Gallery MCP Id: {uuid}"),
+            Self::FileBasedMCP(uuid) => write!(f, "File-Based MCP Id: {uuid}"),
         }
     }
 }
@@ -59,10 +59,10 @@ impl Display for ServerCardItemId {
 impl ServerCardItemId {
     pub fn uid(&self) -> ObjectUid {
         match self {
-            ServerCardItemId::TemplatableMCP(template_uuid) => template_uuid.to_string(),
-            ServerCardItemId::TemplatableMCPInstallation(uuid) => uuid.to_string(),
-            ServerCardItemId::GalleryMCP(uuid) => uuid.to_string(),
-            ServerCardItemId::FileBasedMCP(uuid) => uuid.to_string(),
+            Self::TemplatableMCP(template_uuid) => template_uuid.to_string(),
+            Self::TemplatableMCPInstallation(uuid) => uuid.to_string(),
+            Self::GalleryMCP(uuid) => uuid.to_string(),
+            Self::FileBasedMCP(uuid) => uuid.to_string(),
         }
     }
 }

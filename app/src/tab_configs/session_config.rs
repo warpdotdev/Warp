@@ -32,29 +32,29 @@ impl SessionType {
     /// Returns `None` for Terminal and Oz (Oz uses agent view, not a CLI command).
     fn command_prefix(&self) -> Option<&'static str> {
         match self {
-            SessionType::Terminal | SessionType::Oz => None,
-            SessionType::CliAgent(agent) => Some(agent.command_prefix()),
+            Self::Terminal | Self::Oz => None,
+            Self::CliAgent(agent) => Some(agent.command_prefix()),
         }
     }
 
     /// The icon to display for this session type.
     pub(crate) fn icon(&self) -> Icon {
         match self {
-            SessionType::Terminal => Icon::Terminal,
-            SessionType::Oz => Icon::Oz,
-            SessionType::CliAgent(agent) => agent.icon().unwrap_or(Icon::Terminal),
+            Self::Terminal => Icon::Terminal,
+            Self::Oz => Icon::Oz,
+            Self::CliAgent(agent) => agent.icon().unwrap_or(Icon::Terminal),
         }
     }
 
     /// Short label for the session type pill in the modal.
     pub(crate) fn pill_label(&self) -> &'static str {
         match self {
-            SessionType::Terminal => "Terminal",
-            SessionType::Oz => "Built in agent",
-            SessionType::CliAgent(CLIAgent::Claude) => "Claude",
-            SessionType::CliAgent(CLIAgent::Codex) => "Codex",
-            SessionType::CliAgent(CLIAgent::Gemini) => "Gemini",
-            SessionType::CliAgent(agent) => agent.display_name(),
+            Self::Terminal => "Terminal",
+            Self::Oz => "Built in agent",
+            Self::CliAgent(CLIAgent::Claude) => "Claude",
+            Self::CliAgent(CLIAgent::Codex) => "Codex",
+            Self::CliAgent(CLIAgent::Gemini) => "Gemini",
+            Self::CliAgent(agent) => agent.display_name(),
         }
     }
 }

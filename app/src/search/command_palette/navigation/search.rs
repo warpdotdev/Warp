@@ -39,7 +39,7 @@ pub struct SessionMatchResult {
 impl SessionMatchResult {
     /// Returns a dummy match result when there is no match.
     pub fn no_match() -> Self {
-        SessionMatchResult {
+        Self {
             score: 0,
             highlight_indices: SessionHighlightIndices {
                 command_indices: None,
@@ -57,10 +57,7 @@ pub struct SessionHighlightIndices {
 }
 
 impl SessionHighlightIndices {
-    fn new(
-        matched_indices: Vec<usize>,
-        session_highlights: SearchableSessionStringRanges,
-    ) -> SessionHighlightIndices {
+    fn new(matched_indices: Vec<usize>, session_highlights: SearchableSessionStringRanges) -> Self {
         // Allow lazy evaluations here. Using `then_some` will eagerly compute these
         // values, which can lead to underflow.
         #[allow(clippy::unnecessary_lazy_evaluations)]
@@ -79,7 +76,7 @@ impl SessionHighlightIndices {
             .map(|idx| *idx - session_highlights.hint_text_range.start)
             .collect::<Vec<usize>>();
 
-        SessionHighlightIndices {
+        Self {
             command_indices,
             hint_text_indices,
         }

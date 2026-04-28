@@ -89,17 +89,17 @@ pub enum NextCommandSuggestionState {
 
 impl NextCommandSuggestionState {
     pub fn is_ready(&self) -> bool {
-        matches!(self, NextCommandSuggestionState::Ready { .. })
+        matches!(self, Self::Ready { .. })
     }
 
     pub fn is_cycling(&self) -> bool {
-        matches!(self, NextCommandSuggestionState::Cycling)
+        matches!(self, Self::Cycling)
     }
 
     pub fn command_suggestion(&self) -> Option<&str> {
         match &self {
             // The server only returns one command suggestion as the most likely action.
-            NextCommandSuggestionState::Ready { response, .. } => {
+            Self::Ready { response, .. } => {
                 let command = &response.most_likely_action;
                 // If AI accidentally returned JSON instead of a plain string for the most likely action, don't use it.
                 if command.starts_with('{') {

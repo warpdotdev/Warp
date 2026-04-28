@@ -519,7 +519,7 @@ impl SettingsPageMeta for WarpifyPageView {
 
 impl From<ViewHandle<WarpifyPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<WarpifyPageView>) -> Self {
-        SettingsPageViewHandle::Warpify(view_handle)
+        Self::Warpify(view_handle)
     }
 }
 

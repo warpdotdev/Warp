@@ -817,7 +817,7 @@ impl From<GqlUserOutput> for UserProperties {
             principal_type,
         };
 
-        UserProperties {
+        Self {
             user,
             server_experiments,
             llms,
@@ -848,21 +848,20 @@ pub enum UserAuthenticationError {
 impl ErrorExt for UserAuthenticationError {
     fn is_actionable(&self) -> bool {
         match self {
-            UserAuthenticationError::DeniedAccessToken(err) => {
+            Self::DeniedAccessToken(err) => {
                 // If a request to our server failed because the user's refresh token
                 // has expired, they should re-auth, but there's no value in reporting
                 // this back to us.
                 log::info!("ignoring denied access token error: {err:#}");
                 false
             }
-            UserAuthenticationError::UserAccountDisabled(err) => {
+            Self::UserAccountDisabled(err) => {
                 // Similarly, if their account is disabled, they can't make requests.
                 log::info!("ignoring user account disabled error: {err:#}");
                 false
             }
-            UserAuthenticationError::Unexpected(err) => err.is_actionable(),
-            UserAuthenticationError::InvalidStateParameter
-            | UserAuthenticationError::MissingStateParameter => {
+            Self::Unexpected(err) => err.is_actionable(),
+            Self::InvalidStateParameter | Self::MissingStateParameter => {
                 // For now, we're marking these as actionable, since a surplus of these errors
                 // could mean that something is wrong in our login flow (e.g. we're not properly
                 // passing the `state` variable back to the desktop client).
@@ -878,11 +877,11 @@ register_error!(UserAuthenticationError);
 impl From<FirebaseError> for UserAuthenticationError {
     fn from(error: FirebaseError) -> Self {
         if FETCH_ACCESS_TOKEN_SOFT_ERROR_MESSAGES.contains(&error.message.as_str()) {
-            UserAuthenticationError::DeniedAccessToken(error)
+            Self::DeniedAccessToken(error)
         } else if FETCH_ACCESS_TOKEN_HARD_ERROR_MESSAGES.contains(&error.message.as_str()) {
-            UserAuthenticationError::UserAccountDisabled(error)
+            Self::UserAccountDisabled(error)
         } else {
-            UserAuthenticationError::Unexpected(
+            Self::Unexpected(
                 anyhow::Error::from(error)
                     .context("Failed to exchange refresh token with access token."),
             )

@@ -87,11 +87,11 @@ pub enum GlobalBufferModelEvent {
 impl GlobalBufferModelEvent {
     pub fn file_id(&self) -> FileId {
         match self {
-            GlobalBufferModelEvent::BufferLoaded { file_id, .. }
-            | GlobalBufferModelEvent::FailedToLoad { file_id, .. }
-            | GlobalBufferModelEvent::BufferUpdatedFromFileEvent { file_id, .. }
-            | GlobalBufferModelEvent::FileSaved { file_id, .. }
-            | GlobalBufferModelEvent::FailedToSave { file_id, .. } => *file_id,
+            Self::BufferLoaded { file_id, .. }
+            | Self::FailedToLoad { file_id, .. }
+            | Self::BufferUpdatedFromFileEvent { file_id, .. }
+            | Self::FileSaved { file_id, .. }
+            | Self::FailedToSave { file_id, .. } => *file_id,
         }
     }
 }

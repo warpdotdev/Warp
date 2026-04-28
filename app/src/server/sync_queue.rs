@@ -244,9 +244,7 @@ pub enum QueueItem {
 }
 
 impl QueueItem {
-    pub fn from_cached_objects(
-        objects: impl Iterator<Item = Box<dyn CloudObject>>,
-    ) -> Vec<QueueItem> {
+    pub fn from_cached_objects(objects: impl Iterator<Item = Box<dyn CloudObject>>) -> Vec<Self> {
         objects
             .map(|object| {
                 if let Some(create_object_queue_item) = object.create_object_queue_item(
@@ -267,7 +265,7 @@ impl QueueItem {
     // Converts a list of pending actions into SyncQueue items that can be sent to the server.
     pub fn from_unsynced_actions(
         actions: impl Iterator<Item = (CloudObjectTypeAndId, ObjectAction)>,
-    ) -> Vec<QueueItem> {
+    ) -> Vec<Self> {
         actions
             .filter_map(|(id_and_type, action)| match action.action_subtype {
                 ObjectActionSubtype::SingleAction {
@@ -275,7 +273,7 @@ impl QueueItem {
                     data,
                     pending: true,
                     ..
-                } => Some(QueueItem::RecordObjectAction {
+                } => Some(Self::RecordObjectAction {
                     id_and_type,
                     action_type: action.action_type,
                     action_timestamp: timestamp,
@@ -1765,7 +1763,7 @@ impl SyncQueue {
     fn handle_dependency_failure(
         &mut self,
         queue_item_id: &QueueItemId,
-        ctx: &mut ModelContext<SyncQueue>,
+        ctx: &mut ModelContext<Self>,
     ) {
         // Filter the queue to get a list of all items dependent on this queue item
         let dependent_objects: Vec<(QueueItemId, QueueItem)> = self

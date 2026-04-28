@@ -13,11 +13,7 @@ pub struct FuzzyMatchWorkflowResult {
 
 impl FuzzyMatchWorkflowResult {
     /// Attempts to fuzzy match the `workflow`. Returns `None` if the `workflow` was not matched.
-    pub fn try_match(
-        query: &str,
-        workflow: &Workflow,
-        breadcrumbs: &str,
-    ) -> Option<FuzzyMatchWorkflowResult> {
+    pub fn try_match(query: &str, workflow: &Workflow, breadcrumbs: &str) -> Option<Self> {
         let name_match_result = fuzzy_match::match_indices_case_insensitive(workflow.name(), query);
         let content_match_result =
             fuzzy_match::match_indices_case_insensitive(workflow.content(), query);
@@ -32,7 +28,7 @@ impl FuzzyMatchWorkflowResult {
             &folder_match_result,
         ) {
             (None, None, None, None) => None,
-            _ => Some(FuzzyMatchWorkflowResult {
+            _ => Some(Self {
                 name_match_result,
                 content_match_result,
                 description_match_result,
@@ -42,7 +38,7 @@ impl FuzzyMatchWorkflowResult {
     }
 
     /// Returns a dummy [`FuzzyMatchWorkflowResult`] for an item that is unmatched.
-    pub fn no_match() -> FuzzyMatchWorkflowResult {
+    pub fn no_match() -> Self {
         Self {
             name_match_result: Some(FuzzyMatchResult::no_match()),
             content_match_result: Some(FuzzyMatchResult::no_match()),

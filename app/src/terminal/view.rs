@@ -804,18 +804,16 @@ pub enum NotificationsTrigger {
 impl NotificationsTrigger {
     pub fn discovery_banner_copy(&self) -> &'static str {
         match self {
-            NotificationsTrigger::LongRunningCommand(..) => {
+            Self::LongRunningCommand(..) => {
                 "Warp can notify you when long-running commands finish."
             }
-            NotificationsTrigger::AgentTaskCompleted(..) => {
+            Self::AgentTaskCompleted(..) => {
                 "Warp can notify you when an agent finishes responding."
             }
-            NotificationsTrigger::NeedsAttention => {
+            Self::NeedsAttention => {
                 "Warp can notify you when a command or agent needs your attention."
             }
-            NotificationsTrigger::PasswordPrompt => {
-                "Warp can notify you when you're prompted to enter a password."
-            }
+            Self::PasswordPrompt => "Warp can notify you when you're prompted to enter a password.",
         }
     }
 
@@ -867,7 +865,7 @@ impl NotificationsTrigger {
                     (" failed".to_string(), "Error: ".to_string())
                 }
             }
-            NotificationsTrigger::NeedsAttention => (" blocked".to_string(), "".to_string()),
+            Self::NeedsAttention => (" blocked".to_string(), "".to_string()),
             PasswordPrompt => (
                 " is waiting for a password".to_string(),
                 "Latest output: ".to_string(),
@@ -1558,8 +1556,8 @@ pub enum PromptPosition {
 impl PromptPosition {
     fn block<'a>(&self, model: &'a TerminalModel) -> Option<&'a Block> {
         match self {
-            PromptPosition::Block(block_index) => model.block_list().block_at(*block_index),
-            PromptPosition::Input => Some(model.block_list().active_block()),
+            Self::Block(block_index) => model.block_list().block_at(*block_index),
+            Self::Input => Some(model.block_list().active_block()),
         }
     }
 }
@@ -2044,7 +2042,7 @@ pub enum ContextMenuType {
 impl ContextMenuType {
     pub fn origin(&self) -> Option<Vector2F> {
         match self {
-            ContextMenuType::BlockList { menu_source } => match menu_source {
+            Self::BlockList { menu_source } => match menu_source {
                 BlockListMenuSource::RegularBlockRightClick {
                     position_in_terminal_view,
                     ..
@@ -2065,11 +2063,11 @@ impl ContextMenuType {
                 } => Some(*position_in_terminal_view),
                 BlockListMenuSource::RichContentTextRightClick { .. } => None,
             },
-            ContextMenuType::AltScreen { position } => Some(*position),
-            ContextMenuType::Prompt { position } => Some(*position),
-            ContextMenuType::Input { position } => Some(*position),
-            ContextMenuType::AIBlockAttachedContext { .. } => None,
-            ContextMenuType::AIBlockOverflowMenu { .. } => None,
+            Self::AltScreen { position } => Some(*position),
+            Self::Prompt { position } => Some(*position),
+            Self::Input { position } => Some(*position),
+            Self::AIBlockAttachedContext { .. } => None,
+            Self::AIBlockOverflowMenu { .. } => None,
         }
     }
 }
@@ -2129,10 +2127,10 @@ pub enum BlockEntity {
 impl BlockEntity {
     pub fn as_str(&self) -> &'static str {
         match self {
-            BlockEntity::Command => "Command",
-            BlockEntity::Output => "Output",
-            BlockEntity::CommandAndOutput => "Both",
-            BlockEntity::FilteredOutput => "FilteredOutput",
+            Self::Command => "Command",
+            Self::Output => "Output",
+            Self::CommandAndOutput => "Both",
+            Self::FilteredOutput => "FilteredOutput",
         }
     }
 }
@@ -2333,8 +2331,8 @@ pub struct TerminalViewStateChange {
 }
 
 impl Default for TerminalViewStateChange {
-    fn default() -> TerminalViewStateChange {
-        TerminalViewStateChange {
+    fn default() -> Self {
+        Self {
             state: TerminalViewState::Normal,
             timestamp: Instant::now(),
         }
@@ -10052,7 +10050,7 @@ impl TerminalView {
             }
             ModelEvent::ClipboardLoad(_, format) => {
                 self.write_to_pty(
-                    format(&TerminalView::read_from_clipboard(
+                    format(&Self::read_from_clipboard(
                         Some(self.shell_family(ctx)),
                         ctx,
                     ))
@@ -13435,7 +13433,7 @@ impl TerminalView {
     fn after_command_correction_generation(
         &mut self,
         corrections: Vec<Correction>,
-        ctx: &mut ViewContext<TerminalView>,
+        ctx: &mut ViewContext<Self>,
     ) {
         if let Some(correction) = corrections.into_iter().next() {
             let rule = correction.rule_applied;
@@ -13949,7 +13947,7 @@ impl TerminalView {
         block_id: BlockId,
         command: String,
         request_duration_ms: u64,
-        ctx: &mut ViewContext<TerminalView>,
+        ctx: &mut ViewContext<Self>,
     ) {
         match prompt_suggestion {
             AgentModePromptSuggestion::Success(suggestion) => {
@@ -14044,7 +14042,7 @@ impl TerminalView {
     fn maybe_generate_command_suggestions(
         &mut self,
         block_completed: &UserBlockCompleted,
-        ctx: &mut ViewContext<TerminalView>,
+        ctx: &mut ViewContext<Self>,
     ) {
         let block_completed = block_completed.to_owned();
 
@@ -14066,7 +14064,7 @@ impl TerminalView {
         }
     }
 
-    fn can_suggest_alias_expansion(&mut self, ctx: &mut ViewContext<TerminalView>) -> bool {
+    fn can_suggest_alias_expansion(&mut self, ctx: &mut ViewContext<Self>) -> bool {
         let has_user_seen_banner: bool = ctx
             .private_user_preferences()
             .read_value(ALIAS_EXPANSION_BANNER_SEEN_KEY)
@@ -14093,7 +14091,7 @@ impl TerminalView {
     fn maybe_suggest_alias_expansion(
         &mut self,
         block_completed: &UserBlockCompleted,
-        ctx: &mut ViewContext<TerminalView>,
+        ctx: &mut ViewContext<Self>,
     ) {
         if let Some(session) = self
             .active_block_session_id()
@@ -14112,7 +14110,7 @@ impl TerminalView {
     fn suggest_alias_expansion(
         &mut self,
         aliased_command: Option<AliasedCommand>,
-        ctx: &mut ViewContext<TerminalView>,
+        ctx: &mut ViewContext<Self>,
     ) {
         if let Some(aliased_command) = aliased_command {
             let _ = ctx
@@ -14126,7 +14124,7 @@ impl TerminalView {
         &mut self,
         block: &UserBlockCompleted,
         block_duration: Duration,
-        ctx: &mut ViewContext<TerminalView>,
+        ctx: &mut ViewContext<Self>,
     ) {
         let session_settings_handle = SessionSettings::as_ref(ctx);
 
@@ -14771,7 +14769,7 @@ impl TerminalView {
             Some(self.shell_family(ctx))
         };
         let mut copied = if middle_click {
-            TerminalView::middle_click_paste_content(shell_family, ctx)
+            Self::middle_click_paste_content(shell_family, ctx)
         } else {
             let clipboard_content = ctx.clipboard().read();
 
@@ -23851,7 +23849,7 @@ impl TerminalView {
     fn handle_detected_end_of_ssh_login(
         &mut self,
         check_type: &SshLoginStatus,
-        ctx: &mut ViewContext<TerminalView>,
+        ctx: &mut ViewContext<Self>,
     ) {
         match check_type {
             SshLoginStatus::RecheckBeforeWarpifying => {

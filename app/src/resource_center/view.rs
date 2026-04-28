@@ -49,17 +49,17 @@ pub enum ResourceCenterFooterItem {
 impl ResourceCenterFooterItem {
     pub fn ui_label(&self) -> &'static str {
         match self {
-            ResourceCenterFooterItem::Docs => "Docs",
-            ResourceCenterFooterItem::Slack => "Slack",
-            ResourceCenterFooterItem::Feedback => "Feedback",
+            Self::Docs => "Docs",
+            Self::Slack => "Slack",
+            Self::Feedback => "Feedback",
         }
     }
 
     pub fn svg_path(&self) -> &'static str {
         match self {
-            ResourceCenterFooterItem::Docs => DOCS_SVG_PATH,
-            ResourceCenterFooterItem::Slack => SLACK_SVG_PATH,
-            ResourceCenterFooterItem::Feedback => FEEDBACK_SVG_PATH,
+            Self::Docs => DOCS_SVG_PATH,
+            Self::Slack => SLACK_SVG_PATH,
+            Self::Feedback => FEEDBACK_SVG_PATH,
         }
     }
 }

@@ -150,8 +150,8 @@ settings::macros::implement_setting_for_enum!(
 );
 
 impl VoiceInputToggleKey {
-    pub fn all_possible_values() -> Vec<VoiceInputToggleKey> {
-        let all_keys = VoiceInputToggleKey::iter().collect();
+    pub fn all_possible_values() -> Vec<Self> {
+        let all_keys = Self::iter().collect();
         match OperatingSystem::get() {
             OperatingSystem::Mac => all_keys,
             // For non-Mac platforms, we exclude the `Fn` key since it may not be correctly identified by winit.
@@ -159,7 +159,7 @@ impl VoiceInputToggleKey {
             OperatingSystem::Windows | OperatingSystem::Linux | OperatingSystem::Other(_) => {
                 all_keys
                     .into_iter()
-                    .filter(|key| *key != VoiceInputToggleKey::Fn)
+                    .filter(|key| *key != Self::Fn)
                     .collect()
             }
         }
@@ -176,39 +176,31 @@ impl VoiceInputToggleKey {
             };
 
         match self {
-            VoiceInputToggleKey::None => "None",
-            VoiceInputToggleKey::Fn => "Fn",
-            VoiceInputToggleKey::AltLeft => {
-                Box::leak(format!("{alt_key_name} (Left)").into_boxed_str())
-            }
-            VoiceInputToggleKey::AltRight => {
-                Box::leak(format!("{alt_key_name} (Right)").into_boxed_str())
-            }
-            VoiceInputToggleKey::ControlLeft => "Control (Left)",
-            VoiceInputToggleKey::ControlRight => "Control (Right)",
-            VoiceInputToggleKey::SuperLeft => {
-                Box::leak(format!("{super_key_name} (Left)").into_boxed_str())
-            }
-            VoiceInputToggleKey::SuperRight => {
-                Box::leak(format!("{super_key_name} (Right)").into_boxed_str())
-            }
-            VoiceInputToggleKey::ShiftLeft => "Shift (Left)",
-            VoiceInputToggleKey::ShiftRight => "Shift (Right)",
+            Self::None => "None",
+            Self::Fn => "Fn",
+            Self::AltLeft => Box::leak(format!("{alt_key_name} (Left)").into_boxed_str()),
+            Self::AltRight => Box::leak(format!("{alt_key_name} (Right)").into_boxed_str()),
+            Self::ControlLeft => "Control (Left)",
+            Self::ControlRight => "Control (Right)",
+            Self::SuperLeft => Box::leak(format!("{super_key_name} (Left)").into_boxed_str()),
+            Self::SuperRight => Box::leak(format!("{super_key_name} (Right)").into_boxed_str()),
+            Self::ShiftLeft => "Shift (Left)",
+            Self::ShiftRight => "Shift (Right)",
         }
     }
 
     pub fn to_key_code(&self) -> Option<KeyCode> {
         match self {
-            VoiceInputToggleKey::None => None,
-            VoiceInputToggleKey::Fn => Some(KeyCode::Fn),
-            VoiceInputToggleKey::AltLeft => Some(KeyCode::AltLeft),
-            VoiceInputToggleKey::AltRight => Some(KeyCode::AltRight),
-            VoiceInputToggleKey::ControlLeft => Some(KeyCode::ControlLeft),
-            VoiceInputToggleKey::ControlRight => Some(KeyCode::ControlRight),
-            VoiceInputToggleKey::SuperLeft => Some(KeyCode::SuperLeft),
-            VoiceInputToggleKey::SuperRight => Some(KeyCode::SuperRight),
-            VoiceInputToggleKey::ShiftLeft => Some(KeyCode::ShiftLeft),
-            VoiceInputToggleKey::ShiftRight => Some(KeyCode::ShiftRight),
+            Self::None => None,
+            Self::Fn => Some(KeyCode::Fn),
+            Self::AltLeft => Some(KeyCode::AltLeft),
+            Self::AltRight => Some(KeyCode::AltRight),
+            Self::ControlLeft => Some(KeyCode::ControlLeft),
+            Self::ControlRight => Some(KeyCode::ControlRight),
+            Self::SuperLeft => Some(KeyCode::SuperLeft),
+            Self::SuperRight => Some(KeyCode::SuperRight),
+            Self::ShiftLeft => Some(KeyCode::ShiftLeft),
+            Self::ShiftRight => Some(KeyCode::ShiftRight),
         }
     }
 
@@ -219,24 +211,24 @@ impl VoiceInputToggleKey {
         use warpui::keymap::Keystroke;
 
         let keystroke = match self {
-            VoiceInputToggleKey::None => return None,
-            VoiceInputToggleKey::Fn => Keystroke {
+            Self::None => return None,
+            Self::Fn => Keystroke {
                 key: "fn".to_string(),
                 ..Default::default()
             },
-            VoiceInputToggleKey::AltLeft | VoiceInputToggleKey::AltRight => Keystroke {
+            Self::AltLeft | Self::AltRight => Keystroke {
                 alt: true,
                 ..Default::default()
             },
-            VoiceInputToggleKey::ControlLeft | VoiceInputToggleKey::ControlRight => Keystroke {
+            Self::ControlLeft | Self::ControlRight => Keystroke {
                 ctrl: true,
                 ..Default::default()
             },
-            VoiceInputToggleKey::SuperLeft | VoiceInputToggleKey::SuperRight => Keystroke {
+            Self::SuperLeft | Self::SuperRight => Keystroke {
                 cmd: true,
                 ..Default::default()
             },
-            VoiceInputToggleKey::ShiftLeft | VoiceInputToggleKey::ShiftRight => Keystroke {
+            Self::ShiftLeft | Self::ShiftRight => Keystroke {
                 shift: true,
                 ..Default::default()
             },
@@ -249,15 +241,13 @@ impl VoiceInputToggleKey {
             Some(keystroke) => {
                 let symbol = keystroke.displayed();
                 let side = match self {
-                    VoiceInputToggleKey::AltLeft
-                    | VoiceInputToggleKey::ControlLeft
-                    | VoiceInputToggleKey::SuperLeft
-                    | VoiceInputToggleKey::ShiftLeft => Some("Left"),
-                    VoiceInputToggleKey::AltRight
-                    | VoiceInputToggleKey::ControlRight
-                    | VoiceInputToggleKey::SuperRight
-                    | VoiceInputToggleKey::ShiftRight => Some("Right"),
-                    VoiceInputToggleKey::None | VoiceInputToggleKey::Fn => None,
+                    Self::AltLeft | Self::ControlLeft | Self::SuperLeft | Self::ShiftLeft => {
+                        Some("Left")
+                    }
+                    Self::AltRight | Self::ControlRight | Self::SuperRight | Self::ShiftRight => {
+                        Some("Right")
+                    }
+                    Self::None | Self::Fn => None,
                 };
                 let key_name = match side {
                     Some(side) => format!("{side} {symbol}"),
@@ -270,7 +260,7 @@ impl VoiceInputToggleKey {
     }
 
     pub fn is_none(&self) -> bool {
-        matches!(self, VoiceInputToggleKey::None)
+        matches!(self, Self::None)
     }
 }
 
@@ -321,11 +311,11 @@ impl DefaultSessionMode {
     /// Display name for the settings dropdown.
     pub fn display_name(&self) -> &'static str {
         match self {
-            DefaultSessionMode::Terminal => "Terminal",
-            DefaultSessionMode::Agent => "Agent",
-            DefaultSessionMode::CloudAgent => "Cloud Oz",
-            DefaultSessionMode::TabConfig => "Tab Config",
-            DefaultSessionMode::DockerSandbox => "Local Docker Sandbox",
+            Self::Terminal => "Terminal",
+            Self::Agent => "Agent",
+            Self::CloudAgent => "Cloud Oz",
+            Self::TabConfig => "Tab Config",
+            Self::DockerSandbox => "Local Docker Sandbox",
         }
     }
 }
@@ -371,26 +361,26 @@ impl ThinkingDisplayMode {
     /// Display name for the settings dropdown.
     pub fn display_name(&self) -> &'static str {
         match self {
-            ThinkingDisplayMode::ShowAndCollapse => "Show & collapse",
-            ThinkingDisplayMode::AlwaysShow => "Always show",
-            ThinkingDisplayMode::NeverShow => "Never show",
+            Self::ShowAndCollapse => "Show & collapse",
+            Self::AlwaysShow => "Always show",
+            Self::NeverShow => "Never show",
         }
     }
 
     pub fn command_palette_description(&self) -> &'static str {
         match self {
-            ThinkingDisplayMode::ShowAndCollapse => "Set agent thinking display: show & collapse",
-            ThinkingDisplayMode::AlwaysShow => "Set agent thinking display: always show",
-            ThinkingDisplayMode::NeverShow => "Set agent thinking display: never show",
+            Self::ShowAndCollapse => "Set agent thinking display: show & collapse",
+            Self::AlwaysShow => "Set agent thinking display: always show",
+            Self::NeverShow => "Set agent thinking display: never show",
         }
     }
 
     pub fn should_render(&self) -> bool {
-        !matches!(self, ThinkingDisplayMode::NeverShow)
+        !matches!(self, Self::NeverShow)
     }
 
     pub fn should_keep_expanded(&self) -> bool {
-        matches!(self, ThinkingDisplayMode::AlwaysShow)
+        matches!(self, Self::AlwaysShow)
     }
 }
 
@@ -653,13 +643,13 @@ impl<'de> Deserialize<'de> for ToolbarCommandMap {
         }
 
         match MapOrVec::deserialize(deserializer) {
-            Ok(MapOrVec::Map(map)) => Ok(ToolbarCommandMap::new(map)),
+            Ok(MapOrVec::Map(map)) => Ok(Self::new(map)),
             Ok(MapOrVec::Vec(vec)) => {
                 let map = vec
                     .into_iter()
                     .map(|pattern| (pattern, String::new()))
                     .collect();
-                Ok(ToolbarCommandMap::new(map))
+                Ok(Self::new(map))
             }
             Err(e) => Err(e),
         }
@@ -693,7 +683,7 @@ impl settings_value::SettingsValue for ToolbarCommandMap {
         // Try map format first (using from_value to preserve insertion order), then legacy array format.
         if value.is_object() {
             if let Ok(map) = serde_json::from_value::<IndexMap<String, String>>(value.clone()) {
-                return Some(ToolbarCommandMap::new(map));
+                return Some(Self::new(map));
             }
         }
         if let Some(arr) = value.as_array() {
@@ -701,7 +691,7 @@ impl settings_value::SettingsValue for ToolbarCommandMap {
                 .iter()
                 .filter_map(|v| v.as_str().map(|s| (s.to_string(), String::new())))
                 .collect();
-            return Some(ToolbarCommandMap::new(result));
+            return Some(Self::new(result));
         }
         None
     }

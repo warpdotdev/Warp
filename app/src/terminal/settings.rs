@@ -28,10 +28,10 @@ pub enum SpacingMode {
 }
 
 impl SpacingMode {
-    pub fn other_mode(&self) -> SpacingMode {
+    pub fn other_mode(&self) -> Self {
         match *self {
-            SpacingMode::Normal => SpacingMode::Compact,
-            SpacingMode::Compact => SpacingMode::Normal,
+            Self::Normal => Self::Compact,
+            Self::Compact => Self::Normal,
         }
     }
 }

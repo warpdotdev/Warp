@@ -145,7 +145,7 @@ impl MainPageAction {
 }
 
 impl From<&MainPageAction> for LoginGatedFeature {
-    fn from(val: &MainPageAction) -> LoginGatedFeature {
+    fn from(val: &MainPageAction) -> Self {
         use MainPageAction::*;
         match val {
             Upgrade { .. } => "Upgrade Plan",
@@ -254,7 +254,7 @@ impl View for MainSettingsPageView {
 }
 
 impl MainSettingsPageView {
-    pub fn new(ctx: &mut ViewContext<MainSettingsPageView>) -> Self {
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
 
         let autoupdate_state_handle = AutoupdateState::handle(ctx);
@@ -289,7 +289,7 @@ impl MainSettingsPageView {
 
         let page = PageType::new_uncategorized(widgets, Some("Account"));
 
-        MainSettingsPageView { page, auth_state }
+        Self { page, auth_state }
     }
 
     fn handle_autoupdate_state_change(
@@ -1123,6 +1123,6 @@ impl SettingsPageMeta for MainSettingsPageView {
 
 impl From<ViewHandle<MainSettingsPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<MainSettingsPageView>) -> Self {
-        SettingsPageViewHandle::Main(view_handle)
+        Self::Main(view_handle)
     }
 }

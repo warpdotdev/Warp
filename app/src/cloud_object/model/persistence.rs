@@ -304,7 +304,7 @@ impl CloudModel {
         &mut self,
         id: SyncId,
         object: impl CloudObject + 'static,
-        ctx: &mut ModelContext<CloudModel>,
+        ctx: &mut ModelContext<Self>,
     ) {
         ctx.emit(CloudModelEvent::ObjectCreated {
             type_and_id: object.cloud_object_type_and_id(),

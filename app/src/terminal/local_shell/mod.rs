@@ -86,17 +86,17 @@ impl LocalShellState {
             .read(ctx, |shells, ctx| shells.get_user_preferred_shell(ctx));
         let shell_starter_source_or_wsl_name = match ShellStarter::init(preferred_shell) {
             Some(shell_starter_source_or_wsl_name) => shell_starter_source_or_wsl_name,
-            None => return LocalShellState::NotLoaded,
+            None => return Self::NotLoaded,
         };
 
         let shell_starter = match shell_starter_source_or_wsl_name {
             ShellStarterSourceOrWslName::Source(starter_source) => match starter_source.into() {
                 ShellStarter::Direct(starter) | ShellStarter::MSYS2(starter) => starter,
                 ShellStarter::DockerSandbox(docker_starter) => docker_starter.direct,
-                ShellStarter::Wsl(_) => return LocalShellState::NotLoaded,
+                ShellStarter::Wsl(_) => return Self::NotLoaded,
             },
             // TODO(CORE-3020): Implement WSL for the Local Shell model.
-            ShellStarterSourceOrWslName::WSLName { .. } => return LocalShellState::NotLoaded,
+            ShellStarterSourceOrWslName::WSLName { .. } => return Self::NotLoaded,
         };
 
         let shell_path = shell_starter.logical_shell_path().to_owned();
@@ -114,11 +114,11 @@ impl LocalShellState {
         ctx.spawn(
             async move { execute_command(shell_type, clone, None, command).await },
             |me, res, _| match me {
-                LocalShellState::Loaded(local_shell_state) => {
+                Self::Loaded(local_shell_state) => {
                     // Trim to remove trailing newline from `echo $PATH` output
                     local_shell_state.path_env_var = res.ok().map(|s| s.trim().to_string());
                 }
-                LocalShellState::NotLoaded => {
+                Self::NotLoaded => {
                     log::warn!("Tried to execute a command on LocalShell that wasn't loaded")
                 }
             },
@@ -134,8 +134,8 @@ impl LocalShellState {
 
     pub fn local_shell_info(&self) -> Option<&LocalShell> {
         match self {
-            LocalShellState::Loaded(shell_state) => Some(shell_state),
-            LocalShellState::NotLoaded => None,
+            Self::Loaded(shell_state) => Some(shell_state),
+            Self::NotLoaded => None,
         }
     }
 
@@ -146,7 +146,7 @@ impl LocalShellState {
         &mut self,
         ctx: &mut ModelContext<Self>,
     ) -> BoxFuture<'static, Option<String>> {
-        let LocalShellState::Loaded(local_shell) = self else {
+        let Self::Loaded(local_shell) = self else {
             // Not loaded - return immediately with None
             return futures::future::ready(None).boxed();
         };
@@ -177,7 +177,7 @@ impl LocalShellState {
                         let path = result.ok();
 
                         // Notify all waiting receivers
-                        if let LocalShellState::Loaded(local_shell) = me {
+                        if let Self::Loaded(local_shell) = me {
                             if let InteractiveEnvState::Pending { waiters } = std::mem::replace(
                                 &mut local_shell.interactive_env_state,
                                 InteractiveEnvState::Ready(path.clone()),

@@ -27,29 +27,25 @@ enum ConversationSection {
 impl ConversationSection {
     fn title(&self) -> &'static str {
         match self {
-            ConversationSection::ActivePane => "Active pane conversations",
-            ConversationSection::OtherActive => "Other active conversations",
-            ConversationSection::Past => "Past conversations",
+            Self::ActivePane => "Active pane conversations",
+            Self::OtherActive => "Other active conversations",
+            Self::Past => "Past conversations",
         }
     }
 
     /// Returns the ordering of the sections for display in the command palette
     /// (the command palette renders items in reverse order).
-    fn reverse_order() -> [ConversationSection; 3] {
-        [
-            ConversationSection::Past,
-            ConversationSection::OtherActive,
-            ConversationSection::ActivePane,
-        ]
+    fn reverse_order() -> [Self; 3] {
+        [Self::Past, Self::OtherActive, Self::ActivePane]
     }
 
     fn for_conversation(conversation: &ConversationNavigationData) -> Self {
         if conversation.is_historical() {
-            ConversationSection::Past
+            Self::Past
         } else if conversation.is_in_active_pane {
-            ConversationSection::ActivePane
+            Self::ActivePane
         } else {
-            ConversationSection::OtherActive
+            Self::OtherActive
         }
     }
 }

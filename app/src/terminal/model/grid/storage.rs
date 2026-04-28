@@ -121,7 +121,7 @@ impl PartialEq for Storage {
 
 impl Storage {
     #[inline]
-    pub fn with_capacity(visible_lines: usize, cols: usize, is_sequential: bool) -> Storage {
+    pub fn with_capacity(visible_lines: usize, cols: usize, is_sequential: bool) -> Self {
         // Initialize visible lines; the scrollback buffer is initialized dynamically.
         let mut inner = Vec::with_capacity(visible_lines);
         inner.resize_with(visible_lines, || Row::new(cols));
@@ -131,7 +131,7 @@ impl Storage {
 
     /// Initialize Storage with given vector of rows.
     #[inline]
-    pub fn with_rows(rows: Vec<Row>, is_sequential: bool, visible_lines: usize) -> Storage {
+    pub fn with_rows(rows: Vec<Row>, is_sequential: bool, visible_lines: usize) -> Self {
         let len = rows.len();
         debug_assert!(
             visible_lines <= len,
@@ -143,7 +143,7 @@ impl Storage {
         // that we'll need to grow.
         let max_cache_size = 1;
 
-        Storage {
+        Self {
             inner,
             bottom_row: 0,
             visible_lines,

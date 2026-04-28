@@ -34,7 +34,7 @@ fn repo_display_name(repo_path: &Path) -> String {
 
 impl RepoSearchItem {
     pub fn new(metadata: WorkspaceMetadata) -> Self {
-        RepoSearchItem {
+        Self {
             display_name: repo_display_name(&metadata.path),
             metadata,
             match_result: FuzzyMatchResult::no_match(),

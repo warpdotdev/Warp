@@ -97,7 +97,7 @@ impl ScrollLines {
         content_element_height: Lines,
     ) -> Self {
         match input_mode {
-            InputMode::PinnedToBottom | InputMode::Waterfall => ScrollLines::ScrollTop(scroll_top),
+            InputMode::PinnedToBottom | InputMode::Waterfall => Self::ScrollTop(scroll_top),
             InputMode::PinnedToTop => {
                 let active_block = block_list.active_block();
                 let is_long_running = active_block.is_active_and_long_running();
@@ -116,9 +116,9 @@ impl ScrollLines {
                             .height(block_list.agent_view_state())
                             .into_lines()
                 {
-                    ScrollLines::ScrollTop(scroll_top)
+                    Self::ScrollTop(scroll_top)
                 } else {
-                    ScrollLines::ScrollBottom(
+                    Self::ScrollBottom(
                         block_list.block_heights().summary().height
                             - content_element_height
                             - scroll_top,
@@ -131,8 +131,8 @@ impl ScrollLines {
     /// Get the scroll top from the scroll lines, taking into account the input mode.
     fn scroll_top(&self, block_list: &BlockList, content_element_height: Lines) -> Lines {
         match *self {
-            ScrollLines::ScrollTop(scroll_top) => scroll_top,
-            ScrollLines::ScrollBottom(scroll_bottom) => {
+            Self::ScrollTop(scroll_top) => scroll_top,
+            Self::ScrollBottom(scroll_bottom) => {
                 block_list.block_heights().summary().height - content_element_height - scroll_bottom
             }
         }
@@ -278,7 +278,7 @@ impl InputMode {
     }
 
     pub fn is_pinned_to_top(&self) -> bool {
-        matches!(self, InputMode::PinnedToTop)
+        matches!(self, Self::PinnedToTop)
     }
 
     pub fn block_sort_direction(&self) -> BlockSortDirection {

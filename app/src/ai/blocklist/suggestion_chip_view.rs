@@ -140,17 +140,17 @@ enum Suggestion {
 impl Suggestion {
     pub fn icon(&self) -> Icon {
         match self {
-            Suggestion::Rule { .. } => Icon::BookOpen,
-            Suggestion::AgentModeWorkflow { .. } => Icon::Prompt,
+            Self::Rule { .. } => Icon::BookOpen,
+            Self::AgentModeWorkflow { .. } => Icon::Prompt,
         }
     }
 
     pub fn tooltip(&self) -> String {
         match self {
-            Suggestion::Rule { rule, .. } => {
+            Self::Rule { rule, .. } => {
                 format!("Add rule: {}", rule.content.clone())
             }
-            Suggestion::AgentModeWorkflow { workflow, .. } => {
+            Self::AgentModeWorkflow { workflow, .. } => {
                 let prompt = if workflow.prompt.chars().count() > MAX_PROMPT_TOOLTIP_LENGTH {
                     let truncated: String = workflow
                         .prompt
@@ -168,8 +168,8 @@ impl Suggestion {
 
     fn position_id(&self) -> String {
         match self {
-            Suggestion::Rule { rule, .. } => format!("rule_position_{}", rule.logging_id),
-            Suggestion::AgentModeWorkflow { workflow, .. } => {
+            Self::Rule { rule, .. } => format!("rule_position_{}", rule.logging_id),
+            Self::AgentModeWorkflow { workflow, .. } => {
                 format!("agent_mode_workflow_position_{}", workflow.logging_id)
             }
         }
@@ -177,8 +177,8 @@ impl Suggestion {
 
     fn chip_label(&self) -> String {
         match self {
-            Suggestion::Rule { rule, .. } => rule.content.clone(),
-            Suggestion::AgentModeWorkflow { workflow, .. } => workflow.name.clone(),
+            Self::Rule { rule, .. } => rule.content.clone(),
+            Self::AgentModeWorkflow { workflow, .. } => workflow.name.clone(),
         }
     }
 }

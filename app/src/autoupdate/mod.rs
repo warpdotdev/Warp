@@ -80,18 +80,18 @@ impl AutoupdateStage {
     pub fn ready_for_update(&self) -> bool {
         matches!(
             self,
-            AutoupdateStage::UpdateReady { .. } | AutoupdateStage::UpdatedPendingRestart { .. }
+            Self::UpdateReady { .. } | Self::UpdatedPendingRestart { .. }
         )
     }
 
     /// Returns the new version's VersionInfo, if available in the current autoupdate stage.
     pub fn available_new_version(&self) -> Option<&VersionInfo> {
         match self {
-            AutoupdateStage::UpdateReady { new_version, .. }
-            | AutoupdateStage::Updating { new_version, .. }
-            | AutoupdateStage::UpdatedPendingRestart { new_version }
-            | AutoupdateStage::UnableToLaunchNewVersion { new_version }
-            | AutoupdateStage::UnableToUpdateToNewVersion { new_version } => Some(new_version),
+            Self::UpdateReady { new_version, .. }
+            | Self::Updating { new_version, .. }
+            | Self::UpdatedPendingRestart { new_version }
+            | Self::UnableToLaunchNewVersion { new_version }
+            | Self::UnableToUpdateToNewVersion { new_version } => Some(new_version),
             _ => None,
         }
     }
@@ -365,7 +365,7 @@ impl AutoupdateState {
         update_id: String,
         version: Result<VersionInfo>,
         is_daily: bool,
-        ctx: &mut ModelContext<AutoupdateState>,
+        ctx: &mut ModelContext<Self>,
     ) {
         if is_daily && version.is_ok() {
             self.last_successful_daily_update_check = Some(DateTime::now());
@@ -436,7 +436,7 @@ impl AutoupdateState {
         update_id: String,
         request_type: RequestType,
         new_version: VersionInfo,
-        ctx: &mut ModelContext<AutoupdateState>,
+        ctx: &mut ModelContext<Self>,
     ) {
         self.stage = AutoupdateStage::DownloadingUpdate;
         ctx.notify();
@@ -474,7 +474,7 @@ impl AutoupdateState {
         new_version: VersionInfo,
         update_id: String,
         download_ready: Result<DownloadReady>,
-        ctx: &mut ModelContext<AutoupdateState>,
+        ctx: &mut ModelContext<Self>,
     ) {
         let was_update_available = match download_ready {
             Ok(DownloadReady::Yes) => {
@@ -540,7 +540,7 @@ impl AutoupdateState {
         &mut self,
         update_available: Result<UpdateReady>,
         request_type: RequestType,
-        ctx: &mut ModelContext<AutoupdateState>,
+        ctx: &mut ModelContext<Self>,
     ) {
         if let Some(content) = accessibility_content(&update_available, request_type) {
             ctx.emit_a11y_content(content);

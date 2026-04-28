@@ -150,11 +150,11 @@ impl ParagraphOffset for CharOffset {
     }
 
     fn zero() -> Self {
-        CharOffset::zero()
+        Self::zero()
     }
 
     fn as_usize(self) -> usize {
-        CharOffset::as_usize(self)
+        Self::as_usize(self)
     }
 }
 
@@ -164,10 +164,10 @@ impl ParagraphOffset for FrameOffset {
     }
 
     fn zero() -> Self {
-        FrameOffset::zero()
+        Self::zero()
     }
 
     fn as_usize(self) -> usize {
-        FrameOffset::as_usize(self)
+        Self::as_usize(self)
     }
 }

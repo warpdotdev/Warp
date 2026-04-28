@@ -37,10 +37,10 @@ pub struct ClientProfileId(usize);
 
 impl ClientProfileId {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> ClientProfileId {
+    pub fn new() -> Self {
         static NEXT_PROFILE_ID: AtomicUsize = AtomicUsize::new(0);
         let raw = NEXT_PROFILE_ID.fetch_add(1, Ordering::Relaxed);
-        ClientProfileId(raw)
+        Self(raw)
     }
 }
 
@@ -96,9 +96,9 @@ pub enum DefaultProfileState {
 impl std::fmt::Display for DefaultProfileState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DefaultProfileState::Unsynced { .. } => write!(f, "Unsynced"),
-            DefaultProfileState::Synced { .. } => write!(f, "Synced"),
-            DefaultProfileState::Cli { .. } => write!(f, "CLI"),
+            Self::Unsynced { .. } => write!(f, "Unsynced"),
+            Self::Synced { .. } => write!(f, "Synced"),
+            Self::Cli { .. } => write!(f, "CLI"),
         }
     }
 }
@@ -106,9 +106,9 @@ impl std::fmt::Display for DefaultProfileState {
 impl DefaultProfileState {
     pub fn id(&self) -> ClientProfileId {
         match self {
-            DefaultProfileState::Unsynced { id, .. } => *id,
-            DefaultProfileState::Synced { id } => *id,
-            DefaultProfileState::Cli { id, .. } => *id,
+            Self::Unsynced { id, .. } => *id,
+            Self::Synced { id } => *id,
+            Self::Cli { id, .. } => *id,
         }
     }
 }

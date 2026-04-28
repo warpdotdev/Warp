@@ -126,7 +126,7 @@ impl TipsView {
         parent_position_id: String,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        ctx.observe(&tips_completed, TipsView::on_tips_model_changed);
+        ctx.observe(&tips_completed, Self::on_tips_model_changed);
 
         let tip_items = vec![
             TipItem::new(

@@ -87,8 +87,8 @@ pub enum PaneNodeSnapshot {
 impl PaneNodeSnapshot {
     pub fn has_horizontal_split(&self) -> bool {
         match self {
-            PaneNodeSnapshot::Leaf(_) => false,
-            PaneNodeSnapshot::Branch(BranchSnapshot {
+            Self::Leaf(_) => false,
+            Self::Branch(BranchSnapshot {
                 direction,
                 children,
             }) => {
@@ -157,23 +157,23 @@ impl LeafContents {
             // Network log: the backing log is an in-memory ring buffer that
             // starts empty on launch; persisting would also regress back to
             // an on-disk log via the app-state database.
-            LeafContents::NetworkLog
+            Self::NetworkLog
             // Environment management panes are opened on-demand via workspace
             // actions and have no persistable state.
-            | LeafContents::EnvironmentManagement(_) => false,
-            LeafContents::Terminal(_)
-            | LeafContents::Notebook(_)
-            | LeafContents::AIDocument(_)
-            | LeafContents::Code(_)
-            | LeafContents::EnvVarCollection(_)
-            | LeafContents::Workflow(_)
-            | LeafContents::Settings(_)
-            | LeafContents::AIFact(_)
-            | LeafContents::ExecutionProfileEditor
-            | LeafContents::CodeReview(_)
-            | LeafContents::AmbientAgent(_)
-            | LeafContents::Welcome { .. }
-            | LeafContents::GetStarted => true,
+            | Self::EnvironmentManagement(_) => false,
+            Self::Terminal(_)
+            | Self::Notebook(_)
+            | Self::AIDocument(_)
+            | Self::Code(_)
+            | Self::EnvVarCollection(_)
+            | Self::Workflow(_)
+            | Self::Settings(_)
+            | Self::AIFact(_)
+            | Self::ExecutionProfileEditor
+            | Self::CodeReview(_)
+            | Self::AmbientAgent(_)
+            | Self::Welcome { .. }
+            | Self::GetStarted => true,
         }
     }
 }
@@ -305,10 +305,10 @@ pub enum LeftPanelDisplayedTab {
 impl From<ToolPanelView> for LeftPanelDisplayedTab {
     fn from(view: ToolPanelView) -> Self {
         match view {
-            ToolPanelView::ProjectExplorer => LeftPanelDisplayedTab::FileTree,
-            ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
-            ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
-            ToolPanelView::ConversationListView => LeftPanelDisplayedTab::ConversationListView,
+            ToolPanelView::ProjectExplorer => Self::FileTree,
+            ToolPanelView::GlobalSearch { .. } => Self::GlobalSearch,
+            ToolPanelView::WarpDrive => Self::WarpDrive,
+            ToolPanelView::ConversationListView => Self::ConversationListView,
         }
     }
 }

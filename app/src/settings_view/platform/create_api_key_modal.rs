@@ -37,10 +37,10 @@ pub(crate) enum ApiKeyType {
 impl ApiKeyType {
     fn description(&self) -> &'static str {
         match self {
-            ApiKeyType::Personal => {
+            Self::Personal => {
                 "This API key is tied to your user and can make requests against your Warp account."
             }
-            ApiKeyType::Team => {
+            Self::Team => {
                 "This API key is tied to your team and can make requests on behalf of your team."
             }
         }
@@ -71,28 +71,28 @@ pub(crate) enum ExpirationOption {
 impl ExpirationOption {
     fn display_text(&self) -> &'static str {
         match self {
-            ExpirationOption::OneDay => "1 day",
-            ExpirationOption::ThirtyDays => "30 days",
-            ExpirationOption::NinetyDays => "90 days",
-            ExpirationOption::Never => "Never",
+            Self::OneDay => "1 day",
+            Self::ThirtyDays => "30 days",
+            Self::NinetyDays => "90 days",
+            Self::Never => "Never",
         }
     }
 
     fn days(&self) -> Option<i64> {
         match self {
-            ExpirationOption::OneDay => Some(1),
-            ExpirationOption::ThirtyDays => Some(30),
-            ExpirationOption::NinetyDays => Some(90),
-            ExpirationOption::Never => None,
+            Self::OneDay => Some(1),
+            Self::ThirtyDays => Some(30),
+            Self::NinetyDays => Some(90),
+            Self::Never => None,
         }
     }
 
-    fn all() -> Vec<ExpirationOption> {
+    fn all() -> Vec<Self> {
         vec![
-            ExpirationOption::NinetyDays,
-            ExpirationOption::ThirtyDays,
-            ExpirationOption::OneDay,
-            ExpirationOption::Never,
+            Self::NinetyDays,
+            Self::ThirtyDays,
+            Self::OneDay,
+            Self::Never,
         ]
     }
 }

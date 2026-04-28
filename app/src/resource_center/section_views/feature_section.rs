@@ -38,10 +38,10 @@ pub enum FeatureSection {
 impl FeatureSection {
     pub fn section_name_string(&self) -> &'static str {
         match self {
-            FeatureSection::WhatsNew => "What's New?",
-            FeatureSection::GettingStarted => "Getting Started",
-            FeatureSection::MaximizeWarp => "Maximize Warp",
-            FeatureSection::AdvancedSetup => "Advanced Setup",
+            Self::WhatsNew => "What's New?",
+            Self::GettingStarted => "Getting Started",
+            Self::MaximizeWarp => "Maximize Warp",
+            Self::AdvancedSetup => "Advanced Setup",
         }
     }
 }
@@ -93,7 +93,7 @@ impl FeatureSectionView {
             ..Default::default()
         };
 
-        ctx.observe(&tips_completed, FeatureSectionView::on_tips_model_changed);
+        ctx.observe(&tips_completed, Self::on_tips_model_changed);
 
         let bindings_notifier = KeybindingChangedNotifier::handle(ctx);
         ctx.subscribe_to_model(&bindings_notifier, |me, _, event, ctx| {

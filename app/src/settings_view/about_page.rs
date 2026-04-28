@@ -24,8 +24,8 @@ pub struct AboutPageView {
 }
 
 impl AboutPageView {
-    pub fn new(_ctx: &mut ViewContext<AboutPageView>) -> Self {
-        AboutPageView {
+    pub fn new(_ctx: &mut ViewContext<Self>) -> Self {
+        Self {
             page: PageType::new_monolith(AboutPageWidget::default(), None, false),
         }
     }
@@ -153,6 +153,6 @@ impl SettingsPageMeta for AboutPageView {
 
 impl From<ViewHandle<AboutPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<AboutPageView>) -> Self {
-        SettingsPageViewHandle::About(view_handle)
+        Self::About(view_handle)
     }
 }

@@ -87,21 +87,17 @@ impl ShellStarter {
                         let executable_path = canonicalize_git_bash_path(executable_path.clone());
                         if is_msys2_path(&executable_path) {
                             return Some(
-                                ShellStarterSource::Override(ShellStarter::MSYS2(
-                                    DirectShellStarter {
-                                        args: msys2_arguments_for_session_spawning_command(
-                                            shell_type,
-                                        ),
-                                        shell_path: executable_path,
-                                        shell_type,
-                                    },
-                                ))
+                                ShellStarterSource::Override(Self::MSYS2(DirectShellStarter {
+                                    args: msys2_arguments_for_session_spawning_command(shell_type),
+                                    shell_path: executable_path,
+                                    shell_type,
+                                }))
                                 .into(),
                             );
                         }
                     }
                     return Some(
-                        ShellStarterSource::Override(ShellStarter::Direct(DirectShellStarter {
+                        ShellStarterSource::Override(Self::Direct(DirectShellStarter {
                             args: arguments_for_session_spawning_command(
                                 executable_path.to_string_lossy().as_ref(),
                                 shell_type,
@@ -122,7 +118,7 @@ impl ShellStarter {
                     shell_type,
                 } => {
                     return Some(
-                        ShellStarterSource::Override(ShellStarter::MSYS2(DirectShellStarter {
+                        ShellStarterSource::Override(Self::MSYS2(DirectShellStarter {
                             args: msys2_arguments_for_session_spawning_command(shell_type),
                             shell_path: executable_path,
                             shell_type,
@@ -140,7 +136,7 @@ impl ShellStarter {
                     // Bash` through so existing code that asks for the
                     // "shell type" of the session gets a sensible answer.
                     return Some(
-                        ShellStarterSource::Override(ShellStarter::DockerSandbox(
+                        ShellStarterSource::Override(Self::DockerSandbox(
                             DockerSandboxShellStarter::new(
                                 DirectShellStarter {
                                     args: Vec::new(),
@@ -251,18 +247,18 @@ impl ShellStarter {
 
     pub fn shell_type(&self) -> ShellType {
         match self {
-            ShellStarter::Direct(starter) | ShellStarter::MSYS2(starter) => starter.shell_type(),
-            ShellStarter::DockerSandbox(starter) => starter.shell_type(),
-            ShellStarter::Wsl(starter) => starter.shell_type(),
+            Self::Direct(starter) | Self::MSYS2(starter) => starter.shell_type(),
+            Self::DockerSandbox(starter) => starter.shell_type(),
+            Self::Wsl(starter) => starter.shell_type(),
         }
     }
 
     pub fn is_msys2(&self) -> bool {
-        matches!(self, ShellStarter::MSYS2(_))
+        matches!(self, Self::MSYS2(_))
     }
 
     pub fn is_docker_sandbox(&self) -> bool {
-        matches!(self, ShellStarter::DockerSandbox(_))
+        matches!(self, Self::DockerSandbox(_))
     }
 
     fn display_name(&self) -> &str {
@@ -384,8 +380,8 @@ impl ShellStarterSourceOrWslName {
     /// which can potentially be extremely latent.
     pub async fn to_shell_starter_source(self) -> Option<ShellStarterSource> {
         match self {
-            ShellStarterSourceOrWslName::Source(source) => Some(source),
-            ShellStarterSourceOrWslName::WSLName { distro_name } => {
+            Self::Source(source) => Some(source),
+            Self::WSLName { distro_name } => {
                 if let Some(wsl_shell_starter) =
                     WslShellStarter::init_from_wsl_distribution(distro_name.as_ref()).await
                 {
@@ -401,19 +397,17 @@ impl ShellStarterSourceOrWslName {
 
     pub fn name(&self) -> ShellName {
         match self {
-            ShellStarterSourceOrWslName::Source(shell_starter_source) => {
+            Self::Source(shell_starter_source) => {
                 ShellName::MoreDescriptive(shell_starter_source.display_name().to_owned())
             }
-            ShellStarterSourceOrWslName::WSLName { distro_name } => {
-                ShellName::LessDescriptive(distro_name.to_owned())
-            }
+            Self::WSLName { distro_name } => ShellName::LessDescriptive(distro_name.to_owned()),
         }
     }
 }
 
 impl From<ShellStarterSource> for ShellStarterSourceOrWslName {
     fn from(source: ShellStarterSource) -> Self {
-        ShellStarterSourceOrWslName::Source(source)
+        Self::Source(source)
     }
 }
 

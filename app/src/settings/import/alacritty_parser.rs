@@ -410,7 +410,7 @@ impl AlacrittyConfig {
             log::warn!(
                 "Maximum configuration depth reached while parsing Alacritty configuration at {path:?}"
             );
-            return Ok(vec![AlacrittyConfig::default()]);
+            return Ok(vec![Self::default()]);
         }
         let contents = match async_fs::read_to_string(path.clone()).await {
             Ok(string) => string,
@@ -423,7 +423,7 @@ impl AlacrittyConfig {
             }
         };
 
-        let Ok(mut out) = toml::from_str::<AlacrittyConfig>(contents.as_str()) else {
+        let Ok(mut out) = toml::from_str::<Self>(contents.as_str()) else {
             return Err(ConfigError::MalformattedFileError(path));
         };
         // Alacritty prioritizes settings set in the current config.
@@ -432,7 +432,7 @@ impl AlacrittyConfig {
         // It does support tilde as the home directory, but not environment variables or relative paths.
 
         // Start with a config with None in all fields.
-        let mut imported_config: AlacrittyConfig = Default::default();
+        let mut imported_config: Self = Default::default();
         if let Some(ref imports) = out.import {
             // Reverse the iterator, so that the last configs listed get priority.
             for file_path in imports.iter().rev() {

@@ -59,11 +59,11 @@ pub struct LocalUndoStack {
 }
 
 impl LocalUndoStack {
-    pub fn new(init_selections: LocalSelections) -> LocalUndoStack {
+    pub fn new(init_selections: LocalSelections) -> Self {
         Self::new_with_capacity(init_selections, DEFAULT_UNDO_STACK_CAPACITY)
     }
 
-    fn new_with_capacity(init_selections: LocalSelections, capacity: usize) -> LocalUndoStack {
+    fn new_with_capacity(init_selections: LocalSelections, capacity: usize) -> Self {
         let init_entry = UndoStackEntry {
             ops: vec![],
             selections: init_selections,
@@ -194,7 +194,7 @@ pub struct UndoHistory {
 
 impl UndoHistory {
     pub fn new() -> Self {
-        UndoHistory {
+        Self {
             map: HashMap::new(),
         }
     }
@@ -247,23 +247,23 @@ impl PlainTextEditorViewAction {
     pub fn is_atomic(&self) -> bool {
         matches!(
             self,
-            PlainTextEditorViewAction::Yank
-                | PlainTextEditorViewAction::AcceptCompletionSuggestion
-                | PlainTextEditorViewAction::NewLine
-                | PlainTextEditorViewAction::DeleteWordLeft
-                | PlainTextEditorViewAction::DeleteWordRight
-                | PlainTextEditorViewAction::AutoSuggestion
-                | PlainTextEditorViewAction::ReplaceBuffer
-                | PlainTextEditorViewAction::Paste
-                | PlainTextEditorViewAction::ClearLines
-                | PlainTextEditorViewAction::ClearAndCopyLines
-                | PlainTextEditorViewAction::DeleteAll
-                | PlainTextEditorViewAction::CutAll
-                | PlainTextEditorViewAction::InsertSelectedText
-                | PlainTextEditorViewAction::CutWordRight
-                | PlainTextEditorViewAction::SystemInsert
-                | PlainTextEditorViewAction::ExpandAlias
-                | PlainTextEditorViewAction::CycleCompletionSuggestion
+            Self::Yank
+                | Self::AcceptCompletionSuggestion
+                | Self::NewLine
+                | Self::DeleteWordLeft
+                | Self::DeleteWordRight
+                | Self::AutoSuggestion
+                | Self::ReplaceBuffer
+                | Self::Paste
+                | Self::ClearLines
+                | Self::ClearAndCopyLines
+                | Self::DeleteAll
+                | Self::CutAll
+                | Self::InsertSelectedText
+                | Self::CutWordRight
+                | Self::SystemInsert
+                | Self::ExpandAlias
+                | Self::CycleCompletionSuggestion
         )
     }
 }

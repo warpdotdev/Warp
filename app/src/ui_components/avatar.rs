@@ -160,7 +160,7 @@ impl UiComponent for Avatar {
     }
 
     fn with_style(self, styles: UiComponentStyles) -> Self {
-        Avatar {
+        Self {
             styles: self.styles.merge(styles),
             ..self
         }
@@ -169,7 +169,7 @@ impl UiComponent for Avatar {
 
 impl Avatar {
     pub fn new(content: AvatarContent, styles: UiComponentStyles) -> Self {
-        Avatar {
+        Self {
             content,
             styles,
             status_element_type: None,

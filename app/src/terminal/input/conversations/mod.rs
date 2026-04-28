@@ -68,7 +68,7 @@ impl InlineMenuAction for AcceptConversation {
                 ],
                 move |ctx| {
                     ctx.dispatch_typed_action(InlineMenuRowAction::Accept {
-                        item: AcceptConversation {
+                        item: Self {
                             navigation_data: navigation_data.clone(),
                         },
                         cmd_or_ctrl_enter: false,

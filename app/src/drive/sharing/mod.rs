@@ -50,11 +50,11 @@ impl ShareableObject {
     /// The canonical link to this object.
     pub fn link(&self, app: &AppContext) -> Option<String> {
         match self {
-            ShareableObject::WarpDriveObject(id) => CloudModel::as_ref(app)
+            Self::WarpDriveObject(id) => CloudModel::as_ref(app)
                 .get_by_uid(&id.uid())
                 .and_then(|object| object.object_link()),
-            ShareableObject::Session { session_id, .. } => Some(join_link(session_id)),
-            ShareableObject::AIConversation(id) => {
+            Self::Session { session_id, .. } => Some(join_link(session_id)),
+            Self::AIConversation(id) => {
                 // Use the unified helper that checks both loaded conversation and historical metadata
                 BlocklistAIHistoryModel::as_ref(app)
                     .get_server_conversation_metadata(id)
@@ -83,7 +83,7 @@ pub enum ContentEditability {
 
 impl ContentEditability {
     pub fn can_edit(self) -> bool {
-        matches!(self, ContentEditability::Editable)
+        matches!(self, Self::Editable)
     }
 }
 
@@ -107,15 +107,15 @@ pub trait SubjectExt {
 impl SubjectExt for Subject {
     fn name(&self, app: &AppContext) -> Option<Cow<'static, str>> {
         match self {
-            Subject::User(kind) => kind.name(app),
-            Subject::PendingUser { email } => email.clone().map(Cow::from),
-            Subject::Team(kind) => kind.display_name(app).map(Cow::from),
-            Subject::AnyoneWithLink(_) => Some(Cow::from("Anyone with the link")),
+            Self::User(kind) => kind.name(app),
+            Self::PendingUser { email } => email.clone().map(Cow::from),
+            Self::Team(kind) => kind.display_name(app).map(Cow::from),
+            Self::AnyoneWithLink(_) => Some(Cow::from("Anyone with the link")),
         }
     }
 
     fn detail(&self, app: &AppContext) -> Option<String> {
-        if let Subject::User(kind) = self {
+        if let Self::User(kind) = self {
             kind.detail(app)
         } else {
             None
@@ -124,13 +124,13 @@ impl SubjectExt for Subject {
 
     fn avatar(&self, appearance: &Appearance, app: &AppContext) -> Avatar {
         match self {
-            Subject::User(kind) => named_subject_avatar(kind.avatar_content(app), appearance),
-            Subject::PendingUser { email } => named_subject_avatar(
+            Self::User(kind) => named_subject_avatar(kind.avatar_content(app), appearance),
+            Self::PendingUser { email } => named_subject_avatar(
                 AvatarContent::DisplayName(email.clone().unwrap_or_default()),
                 appearance,
             ),
-            Subject::Team(_) => icon_avatar(Icon::Users, appearance),
-            Subject::AnyoneWithLink(subject_type) => {
+            Self::Team(_) => icon_avatar(Icon::Users, appearance),
+            Self::AnyoneWithLink(subject_type) => {
                 let icon = match subject_type {
                     LinkSharingSubjectType::Anyone => Icon::Globe,
                     LinkSharingSubjectType::None => Icon::Lock,
@@ -142,15 +142,15 @@ impl SubjectExt for Subject {
 
     fn email<'a>(&'a self, app: &'a AppContext) -> Option<&'a str> {
         match self {
-            Subject::User(user_kind) => match user_kind {
+            Self::User(user_kind) => match user_kind {
                 UserKind::Account(user_uid) => UserProfiles::as_ref(app)
                     .profile_for_uid(*user_uid)
                     .map(|profile| profile.email.as_str()),
                 UserKind::SharedSessionParticipant(profile_data) => profile_data.email.as_deref(),
             },
-            Subject::PendingUser { email } => email.as_deref(),
-            Subject::Team(_) => None,
-            Subject::AnyoneWithLink(_) => None,
+            Self::PendingUser { email } => email.as_deref(),
+            Self::Team(_) => None,
+            Self::AnyoneWithLink(_) => None,
         }
     }
 
@@ -183,10 +183,10 @@ pub trait UserKindExt {
 impl UserKindExt for UserKind {
     fn name(&self, app: &AppContext) -> Option<Cow<'static, str>> {
         match self {
-            UserKind::Account(id) => UserProfiles::as_ref(app)
+            Self::Account(id) => UserProfiles::as_ref(app)
                 .displayable_identifier_for_uid(*id)
                 .map(Cow::from),
-            UserKind::SharedSessionParticipant(participant_info) => {
+            Self::SharedSessionParticipant(participant_info) => {
                 Some(participant_info.display_name.clone().into())
             }
         }
@@ -194,7 +194,7 @@ impl UserKindExt for UserKind {
 
     fn detail(&self, app: &AppContext) -> Option<String> {
         match self {
-            UserKind::Account(uid) => {
+            Self::Account(uid) => {
                 let profile = UserProfiles::as_ref(app).profile_for_uid(*uid)?;
                 // Only show the user's email if we're already showing a display name.
                 if profile.display_name.is_some() {
@@ -203,7 +203,7 @@ impl UserKindExt for UserKind {
                     None
                 }
             }
-            UserKind::SharedSessionParticipant(participant_info) => {
+            Self::SharedSessionParticipant(participant_info) => {
                 // Only show the user's email if it's not the display name.
                 if participant_info
                     .email
@@ -220,22 +220,20 @@ impl UserKindExt for UserKind {
 
     fn avatar_content(&self, app: &AppContext) -> AvatarContent {
         match self {
-            UserKind::Account(uid) => match UserProfiles::as_ref(app).profile_for_uid(*uid) {
+            Self::Account(uid) => match UserProfiles::as_ref(app).profile_for_uid(*uid) {
                 Some(profile) => AvatarContent::Image {
                     url: profile.photo_url.clone(),
                     display_name: profile.displayable_identifier(),
                 },
                 None => AvatarContent::DisplayName(String::new()),
             },
-            UserKind::SharedSessionParticipant(participant_info) => {
-                match &participant_info.photo_url {
-                    Some(url) => AvatarContent::Image {
-                        url: url.clone(),
-                        display_name: participant_info.display_name.clone(),
-                    },
-                    None => AvatarContent::DisplayName(participant_info.display_name.clone()),
-                }
-            }
+            Self::SharedSessionParticipant(participant_info) => match &participant_info.photo_url {
+                Some(url) => AvatarContent::Image {
+                    url: url.clone(),
+                    display_name: participant_info.display_name.clone(),
+                },
+                None => AvatarContent::DisplayName(participant_info.display_name.clone()),
+            },
         }
     }
 }
@@ -249,10 +247,10 @@ pub trait TeamKindExt {
 impl TeamKindExt for TeamKind {
     fn display_name(&self, app: &AppContext) -> Option<String> {
         match self {
-            TeamKind::Team { team_uid, .. } => UserWorkspaces::as_ref(app)
+            Self::Team { team_uid, .. } => UserWorkspaces::as_ref(app)
                 .team_from_uid(*team_uid)
                 .map(|team| team.name.clone()),
-            TeamKind::SharedSessionTeam { name, .. } => Some(name.clone()),
+            Self::SharedSessionTeam { name, .. } => Some(name.clone()),
         }
     }
 }

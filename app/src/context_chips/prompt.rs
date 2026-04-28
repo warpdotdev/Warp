@@ -134,15 +134,15 @@ impl From<PromptConfiguration> for PromptSelection {
 impl PromptSelection {
     pub fn same_line_prompt_enabled(&self) -> bool {
         match self {
-            PromptSelection::Default => false,
-            PromptSelection::CustomChipSelection(config) => config.same_line_prompt_enabled(),
+            Self::Default => false,
+            Self::CustomChipSelection(config) => config.same_line_prompt_enabled(),
         }
     }
 
     pub fn separator(&self) -> WarpPromptSeparator {
         match self {
-            PromptSelection::Default => WarpPromptSeparator::None,
-            PromptSelection::CustomChipSelection(config) => config.separator(),
+            Self::Default => WarpPromptSeparator::None,
+            Self::CustomChipSelection(config) => config.separator(),
         }
     }
 }

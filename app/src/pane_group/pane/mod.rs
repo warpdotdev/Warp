@@ -100,7 +100,7 @@ pub struct TerminalPaneId(EntityId);
 
 impl From<TerminalPaneId> for PaneId {
     fn from(terminal_pane: TerminalPaneId) -> Self {
-        PaneId(IPaneId {
+        Self(IPaneId {
             pane_type: IPaneType::Terminal,
             pane_view_id: terminal_pane.0,
         })
@@ -160,22 +160,22 @@ pub(crate) enum IPaneType {
 impl Display for IPaneType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IPaneType::Terminal => write!(f, "Terminal"),
-            IPaneType::Notebook => write!(f, "Notebook"),
-            IPaneType::File => write!(f, "File"),
-            IPaneType::Code => write!(f, "Code"),
-            IPaneType::CodeDiff => write!(f, "Code Diff"),
-            IPaneType::EnvVarCollection => write!(f, "Environment Variable Collection"),
-            IPaneType::EnvironmentManagement => write!(f, "Environment Management"),
-            IPaneType::Workflow => write!(f, "Workflow"),
-            IPaneType::Settings => write!(f, "Settings"),
-            IPaneType::AIFact => write!(f, "AI Fact"),
-            IPaneType::AIDocument => write!(f, "AI Document"),
-            IPaneType::ExecutionProfileEditor => write!(f, "Execution Profile Editor"),
-            IPaneType::GetStarted => write!(f, "GetStarted"),
-            IPaneType::NetworkLog => write!(f, "Network Log"),
-            IPaneType::Welcome => write!(f, "Welcome"),
-            IPaneType::DeferredPlaceholder => write!(f, "Placeholder"),
+            Self::Terminal => write!(f, "Terminal"),
+            Self::Notebook => write!(f, "Notebook"),
+            Self::File => write!(f, "File"),
+            Self::Code => write!(f, "Code"),
+            Self::CodeDiff => write!(f, "Code Diff"),
+            Self::EnvVarCollection => write!(f, "Environment Variable Collection"),
+            Self::EnvironmentManagement => write!(f, "Environment Management"),
+            Self::Workflow => write!(f, "Workflow"),
+            Self::Settings => write!(f, "Settings"),
+            Self::AIFact => write!(f, "AI Fact"),
+            Self::AIDocument => write!(f, "AI Document"),
+            Self::ExecutionProfileEditor => write!(f, "Execution Profile Editor"),
+            Self::GetStarted => write!(f, "GetStarted"),
+            Self::NetworkLog => write!(f, "Network Log"),
+            Self::Welcome => write!(f, "Welcome"),
+            Self::DeferredPlaceholder => write!(f, "Placeholder"),
             #[cfg(test)]
             IPaneType::Dummy => write!(f, "Dummy"),
         }

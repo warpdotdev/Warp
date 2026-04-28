@@ -100,14 +100,14 @@ impl<'de> serde::Deserialize<'de> for Artifact {
                 document_uid,
                 notebook_uid,
                 title,
-            } => Artifact::Plan {
+            } => Self::Plan {
                 document_uid,
                 notebook_uid,
                 title,
             },
             ArtifactHelper::PullRequest { url, branch } => {
                 let (repo, number) = parse_github_pr_url(&url).unzip();
-                Artifact::PullRequest {
+                Self::PullRequest {
                     url,
                     branch,
                     repo,
@@ -118,7 +118,7 @@ impl<'de> serde::Deserialize<'de> for Artifact {
                 artifact_uid,
                 mime_type,
                 description,
-            } => Artifact::Screenshot {
+            } => Self::Screenshot {
                 artifact_uid,
                 mime_type,
                 description,
@@ -130,7 +130,7 @@ impl<'de> serde::Deserialize<'de> for Artifact {
                 mime_type,
                 description,
                 size_bytes,
-            } => Artifact::File {
+            } => Self::File {
                 artifact_uid,
                 filepath,
                 filename,
@@ -145,7 +145,7 @@ impl<'de> serde::Deserialize<'de> for Artifact {
 impl From<api::message::artifact_event::PullRequestArtifact> for Artifact {
     fn from(pr: api::message::artifact_event::PullRequestArtifact) -> Self {
         let (repo, number) = parse_github_pr_url(&pr.url).unzip();
-        Artifact::PullRequest {
+        Self::PullRequest {
             url: pr.url,
             branch: pr.branch,
             repo,
@@ -156,7 +156,7 @@ impl From<api::message::artifact_event::PullRequestArtifact> for Artifact {
 
 impl From<api::message::artifact_event::ScreenshotArtifact> for Artifact {
     fn from(screenshot: api::message::artifact_event::ScreenshotArtifact) -> Self {
-        Artifact::Screenshot {
+        Self::Screenshot {
             artifact_uid: screenshot.artifact_uid,
             mime_type: screenshot.mime_type,
             description: if screenshot.description.is_empty() {
@@ -170,7 +170,7 @@ impl From<api::message::artifact_event::ScreenshotArtifact> for Artifact {
 
 impl From<api::message::artifact_event::FileArtifact> for Artifact {
     fn from(file: api::message::artifact_event::FileArtifact) -> Self {
-        Artifact::File {
+        Self::File {
             artifact_uid: file.artifact_uid,
             filepath: file.filepath.clone(),
             filename: Path::new(&file.filepath)
@@ -192,7 +192,7 @@ impl From<api::message::artifact_event::FileArtifact> for Artifact {
 
 impl From<api::message::artifact_event::PlanArtifact> for Artifact {
     fn from(plan: api::message::artifact_event::PlanArtifact) -> Self {
-        Artifact::Plan {
+        Self::Plan {
             document_uid: plan.document_id,
             notebook_uid: if plan.notebook_uid.is_empty() {
                 None
@@ -213,7 +213,7 @@ impl TryFrom<warp_graphql::ai::AIConversationArtifact> for Artifact {
 
     fn try_from(value: warp_graphql::ai::AIConversationArtifact) -> Result<Self, Self::Error> {
         match value {
-            warp_graphql::ai::AIConversationArtifact::PlanArtifact(plan) => Ok(Artifact::Plan {
+            warp_graphql::ai::AIConversationArtifact::PlanArtifact(plan) => Ok(Self::Plan {
                 document_uid: plan.document_uid.into_inner(),
                 notebook_uid: plan
                     .notebook_uid
@@ -222,7 +222,7 @@ impl TryFrom<warp_graphql::ai::AIConversationArtifact> for Artifact {
             }),
             warp_graphql::ai::AIConversationArtifact::PullRequestArtifact(pr) => {
                 let (repo, number) = parse_github_pr_url(&pr.url).unzip();
-                Ok(Artifact::PullRequest {
+                Ok(Self::PullRequest {
                     url: pr.url,
                     branch: pr.branch,
                     repo,
@@ -230,13 +230,13 @@ impl TryFrom<warp_graphql::ai::AIConversationArtifact> for Artifact {
                 })
             }
             warp_graphql::ai::AIConversationArtifact::ScreenshotArtifact(screenshot) => {
-                Ok(Artifact::Screenshot {
+                Ok(Self::Screenshot {
                     artifact_uid: screenshot.artifact_uid.into_inner(),
                     mime_type: screenshot.mime_type,
                     description: screenshot.description,
                 })
             }
-            warp_graphql::ai::AIConversationArtifact::FileArtifact(file) => Ok(Artifact::File {
+            warp_graphql::ai::AIConversationArtifact::FileArtifact(file) => Ok(Self::File {
                 artifact_uid: file.artifact_uid.into_inner(),
                 filepath: file.filepath.clone(),
                 filename: sanitized_basename(&file.filepath).unwrap_or(file.filepath),

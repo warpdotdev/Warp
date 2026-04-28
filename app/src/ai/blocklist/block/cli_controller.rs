@@ -112,8 +112,8 @@ impl LongRunningCommandControlState {
 
     pub fn user_take_over_reason(&self) -> Option<&UserTakeOverReason> {
         match &self {
-            LongRunningCommandControlState::Agent { .. } => None,
-            LongRunningCommandControlState::User { reason } => Some(reason),
+            Self::Agent { .. } => None,
+            Self::User { reason } => Some(reason),
         }
     }
 }

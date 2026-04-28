@@ -29,10 +29,10 @@ impl fmt::Display for Direction {
             f,
             "{}",
             match self {
-                Direction::Down => "Down",
-                Direction::Right => "Right",
-                Direction::Up => "Up",
-                Direction::Left => "Left",
+                Self::Down => "Down",
+                Self::Right => "Right",
+                Self::Up => "Up",
+                Self::Left => "Left",
             }
         )
     }
@@ -48,9 +48,9 @@ pub(super) enum NewSessionConfig {
 impl NewSessionConfig {
     fn shell(&self) -> &AvailableShell {
         match self {
-            NewSessionConfig::NewTab(shell) => shell,
-            NewSessionConfig::NewWindow(shell) => shell,
-            NewSessionConfig::Split(_, shell) => shell,
+            Self::NewTab(shell) => shell,
+            Self::NewWindow(shell) => shell,
+            Self::Split(_, shell) => shell,
         }
     }
 }

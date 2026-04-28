@@ -60,7 +60,7 @@ struct CommandWithContext {
 
 impl From<&crate::persistence::model::Command> for CommandWithContext {
     fn from(command: &crate::persistence::model::Command) -> Self {
-        CommandWithContext {
+        Self {
             command: command.command.clone(),
             pwd: command.pwd.clone(),
             exit_code: command.exit_code,

@@ -9,8 +9,8 @@ pub struct ParseError {
 }
 
 impl ParseError {
-    pub fn unexpected_eof(expected: impl Into<String>, span: Span) -> ParseError {
-        ParseError {
+    pub fn unexpected_eof(expected: impl Into<String>, span: Span) -> Self {
+        Self {
             reason: ParseErrorReason::Eof {
                 expected: expected.into(),
                 span,
@@ -18,20 +18,20 @@ impl ParseError {
         }
     }
 
-    pub fn extra_tokens(actual: Spanned<impl Into<String>>) -> ParseError {
+    pub fn extra_tokens(actual: Spanned<impl Into<String>>) -> Self {
         let Spanned { span, item } = actual;
 
-        ParseError {
+        Self {
             reason: ParseErrorReason::ExtraTokens {
                 actual: item.into().spanned(span),
             },
         }
     }
 
-    pub fn mismatch(expected: impl Into<String>, actual: Spanned<impl Into<String>>) -> ParseError {
+    pub fn mismatch(expected: impl Into<String>, actual: Spanned<impl Into<String>>) -> Self {
         let Spanned { span, item } = actual;
 
-        ParseError {
+        Self {
             reason: ParseErrorReason::Mismatch {
                 expected: expected.into(),
                 actual: item.into().spanned(span),
@@ -39,16 +39,16 @@ impl ParseError {
         }
     }
 
-    pub fn internal_error(message: Spanned<impl Into<String>>) -> ParseError {
-        ParseError {
+    pub fn internal_error(message: Spanned<impl Into<String>>) -> Self {
+        Self {
             reason: ParseErrorReason::InternalError {
                 message: message.item.into().spanned(message.span),
             },
         }
     }
 
-    pub fn argument_error(command: Spanned<impl Into<String>>, kind: ArgumentError) -> ParseError {
-        ParseError {
+    pub fn argument_error(command: Spanned<impl Into<String>>, kind: ArgumentError) -> Self {
+        Self {
             reason: ParseErrorReason::ArgumentError {
                 command: command.item.into().spanned(command.span),
                 error: kind,

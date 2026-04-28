@@ -38,8 +38,8 @@ impl TemplatableMCPServerInstallation {
         uuid: Uuid,
         templatable_mcp_server: TemplatableMCPServer,
         variable_values: HashMap<String, VariableValue>,
-    ) -> TemplatableMCPServerInstallation {
-        TemplatableMCPServerInstallation {
+    ) -> Self {
+        Self {
             uuid,
             templatable_mcp_server,
             variable_values,

@@ -58,7 +58,7 @@ impl LoginErrorModal {
             ..Default::default()
         };
 
-        LoginErrorModal {
+        Self {
             modal_styles,
             header_styles,
             detail_styles,

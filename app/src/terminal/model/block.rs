@@ -463,7 +463,7 @@ impl BlockTime {
         time_started_term: DateTime<FixedOffset>,
         time_completed_term: DateTime<FixedOffset>,
     ) -> Self {
-        BlockTime {
+        Self {
             time_started_term,
             time_completed_term,
         }
@@ -487,7 +487,7 @@ impl BlockCommand {
         stylized_output: String,
         stylized_prompt: String,
     ) -> Self {
-        BlockCommand {
+        Self {
             command,
             output,
             stylized_command,
@@ -515,28 +515,28 @@ pub struct PromptInfo {
 impl From<&Block> for BlockType {
     fn from(block: &Block) -> Self {
         if block.is_for_in_band_command {
-            return BlockType::InBandCommand;
+            return Self::InBandCommand;
         }
         if block.is_static() {
-            return BlockType::Static;
+            return Self::Static;
         }
 
         match block.bootstrap_stage() {
-            BootstrapStage::RestoreBlocks => BlockType::Restored,
-            BootstrapStage::WarpInput | BootstrapStage::Bootstrapped => BlockType::BootstrapHidden,
+            BootstrapStage::RestoreBlocks => Self::Restored,
+            BootstrapStage::WarpInput | BootstrapStage::Bootstrapped => Self::BootstrapHidden,
             BootstrapStage::ScriptExecution => {
                 if block.is_empty(&AgentViewState::Inactive) {
-                    BlockType::BootstrapHidden
+                    Self::BootstrapHidden
                 } else {
                     let serialized_block = block.into();
-                    BlockType::BootstrapVisible(Arc::new(serialized_block))
+                    Self::BootstrapVisible(Arc::new(serialized_block))
                 }
             }
             BootstrapStage::PostBootstrapPrecmd => {
                 let serialized_block = block.into();
 
                 if block.is_background() {
-                    BlockType::Background(Arc::new(serialized_block))
+                    Self::Background(Arc::new(serialized_block))
                 } else {
                     let command = block.command_to_string();
                     let mut command_with_obfuscated_secrets =
@@ -578,7 +578,7 @@ impl From<&Block> for BlockType {
                         redact_secrets(&mut output_truncated_with_obfuscated_secrets);
                     }
 
-                    BlockType::User(UserBlockCompleted {
+                    Self::User(UserBlockCompleted {
                         index: block.block_index,
                         serialized_block: Arc::new(serialized_block),
                         command,
@@ -648,7 +648,7 @@ pub struct BlockMetadata {
 
 impl BlockMetadata {
     pub fn new(session_id: Option<SessionId>, current_working_directory: Option<String>) -> Self {
-        BlockMetadata {
+        Self {
             session_id,
             current_working_directory,
         }
@@ -691,21 +691,21 @@ pub enum BlockGridPoint {
 impl From<WithinBlock<Point>> for BlockGridPoint {
     fn from(point: WithinBlock<Point>) -> Self {
         match point.grid {
-            GridType::Prompt => BlockGridPoint::Prompt(*point.get()),
-            GridType::Rprompt => BlockGridPoint::Rprompt(*point.get()),
-            GridType::Output => BlockGridPoint::Output(*point.get()),
-            GridType::PromptAndCommand => BlockGridPoint::PromptAndCommand(*point.get()),
+            GridType::Prompt => Self::Prompt(*point.get()),
+            GridType::Rprompt => Self::Rprompt(*point.get()),
+            GridType::Output => Self::Output(*point.get()),
+            GridType::PromptAndCommand => Self::PromptAndCommand(*point.get()),
         }
     }
 }
 
 impl From<BlockGridPoint> for GridType {
-    fn from(p: BlockGridPoint) -> GridType {
+    fn from(p: BlockGridPoint) -> Self {
         match p {
-            BlockGridPoint::Output(_) => GridType::Output,
-            BlockGridPoint::Prompt(_) => GridType::Prompt,
-            BlockGridPoint::Rprompt(_) => GridType::Rprompt,
-            BlockGridPoint::PromptAndCommand(_) => GridType::PromptAndCommand,
+            BlockGridPoint::Output(_) => Self::Output,
+            BlockGridPoint::Prompt(_) => Self::Prompt,
+            BlockGridPoint::Rprompt(_) => Self::Rprompt,
+            BlockGridPoint::PromptAndCommand(_) => Self::PromptAndCommand,
         }
     }
 }
@@ -713,10 +713,10 @@ impl From<BlockGridPoint> for GridType {
 impl BlockGridPoint {
     pub fn grid_point(&self) -> Point {
         match self {
-            BlockGridPoint::Output(point) => *point,
-            BlockGridPoint::Prompt(point) => *point,
-            BlockGridPoint::Rprompt(point) => *point,
-            BlockGridPoint::PromptAndCommand(point) => *point,
+            Self::Output(point) => *point,
+            Self::Prompt(point) => *point,
+            Self::Rprompt(point) => *point,
+            Self::PromptAndCommand(point) => *point,
         }
     }
 
@@ -770,7 +770,7 @@ impl BlockMatches {
         command_grid_matches: Vec<RangeInclusive<Point>>,
         output_grid_matches: Vec<RangeInclusive<Point>>,
     ) -> Self {
-        BlockMatches {
+        Self {
             prompt_and_command_grid_matches,
             command_grid_matches,
             output_grid_matches,
@@ -962,7 +962,7 @@ impl Block {
             perform_reset_grid_checks,
         );
 
-        Block {
+        Self {
             id,
             size: sizes.size,
             header_grid,

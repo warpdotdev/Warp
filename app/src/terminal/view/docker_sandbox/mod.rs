@@ -201,7 +201,7 @@ impl TerminalView {
     /// Kick off async environment initialization for a docker sandbox terminal.
     #[cfg(not(target_family = "wasm"))]
     pub(crate) fn initialize_docker_sandbox_environment<V: View>(
-        terminal_view: &ViewHandle<TerminalView>,
+        terminal_view: &ViewHandle<Self>,
         ctx: &mut ViewContext<V>,
     ) {
         let terminal_driver = TerminalDriver::create_from_existing_view(terminal_view.clone(), ctx);

@@ -148,16 +148,16 @@ pub enum BillingUsageTab {
 impl BillingUsageTab {
     pub fn get_tab_from_label(label: &str) -> Self {
         match label {
-            OVERVIEW_TAB_TEXT => BillingUsageTab::Overview,
-            USAGE_HISTORY_TAB_TEXT => BillingUsageTab::UsageHistory,
-            _ => BillingUsageTab::Overview,
+            OVERVIEW_TAB_TEXT => Self::Overview,
+            USAGE_HISTORY_TAB_TEXT => Self::UsageHistory,
+            _ => Self::Overview,
         }
     }
 
     pub fn label(&self) -> &str {
         match self {
-            BillingUsageTab::Overview => OVERVIEW_TAB_TEXT,
-            BillingUsageTab::UsageHistory => USAGE_HISTORY_TAB_TEXT,
+            Self::Overview => OVERVIEW_TAB_TEXT,
+            Self::UsageHistory => USAGE_HISTORY_TAB_TEXT,
         }
     }
 }
@@ -1012,7 +1012,7 @@ impl TypedActionView for BillingAndUsagePageView {
 
 impl From<ViewHandle<BillingAndUsagePageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<BillingAndUsagePageView>) -> Self {
-        SettingsPageViewHandle::BillingAndUsage(view_handle)
+        Self::BillingAndUsage(view_handle)
     }
 }
 
@@ -1073,7 +1073,7 @@ impl BillingAndUsagePageAction {
 }
 
 impl From<&BillingAndUsagePageAction> for LoginGatedFeature {
-    fn from(val: &BillingAndUsagePageAction) -> LoginGatedFeature {
+    fn from(val: &BillingAndUsagePageAction) -> Self {
         use BillingAndUsagePageAction::*;
         match val {
             Upgrade { .. } => "Upgrade Plan",

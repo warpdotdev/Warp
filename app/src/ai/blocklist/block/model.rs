@@ -36,36 +36,33 @@ impl AIRequestType {
     pub fn from_passive_trigger(trigger: &PassiveSuggestionTrigger) -> Self {
         match trigger {
             PassiveSuggestionTrigger::CommandRun | PassiveSuggestionTrigger::FilesChanged => {
-                AIRequestType::Passive(PassiveRequestType::UnitTestSuggestion)
+                Self::Passive(PassiveRequestType::UnitTestSuggestion)
             }
-            _ => AIRequestType::Passive(PassiveRequestType::PassiveSuggestion(trigger.into())),
+            _ => Self::Passive(PassiveRequestType::PassiveSuggestion(trigger.into())),
         }
     }
 
     pub fn is_active(&self) -> bool {
-        matches!(self, AIRequestType::Active)
+        matches!(self, Self::Active)
     }
 
     pub fn is_passive(&self) -> bool {
-        matches!(self, AIRequestType::Passive(_))
+        matches!(self, Self::Passive(_))
     }
 
     pub fn is_passive_code_diff(&self) -> bool {
-        matches!(self, AIRequestType::Passive(PassiveRequestType::CodeDiff))
+        matches!(self, Self::Passive(PassiveRequestType::CodeDiff))
             || (FeatureFlag::PromptSuggestionsViaMAA.is_enabled()
                 && matches!(
                     self,
-                    AIRequestType::Passive(PassiveRequestType::PassiveSuggestion(
+                    Self::Passive(PassiveRequestType::PassiveSuggestion(
                         PassiveSuggestionTriggerType::ShellCommandCompleted
                     ))
                 ))
     }
 
     pub fn is_passive_unit_test_suggestion(&self) -> bool {
-        matches!(
-            self,
-            AIRequestType::Passive(PassiveRequestType::UnitTestSuggestion)
-        )
+        matches!(self, Self::Passive(PassiveRequestType::UnitTestSuggestion))
     }
 }
 
@@ -92,47 +89,42 @@ pub enum AIBlockOutputStatus {
 impl AIBlockOutputStatus {
     /// Returns true if the response is still actively being streamed from the server.
     pub fn is_streaming(&self) -> bool {
-        matches!(
-            self,
-            AIBlockOutputStatus::Pending | AIBlockOutputStatus::PartiallyReceived { .. }
-        )
+        matches!(self, Self::Pending | Self::PartiallyReceived { .. })
     }
 
     /// Returns `true` if the response stream was cancelled.
     pub fn is_cancelled(&self) -> bool {
-        matches!(self, AIBlockOutputStatus::Cancelled { .. })
+        matches!(self, Self::Cancelled { .. })
     }
 
     /// Returns the reason for the cancellation, if any.
     pub fn cancellation_reason(&self) -> Option<&CancellationReason> {
         match self {
-            AIBlockOutputStatus::Cancelled { reason, .. } => Some(reason),
+            Self::Cancelled { reason, .. } => Some(reason),
             _ => None,
         }
     }
 
     pub fn is_complete(&self) -> bool {
-        matches!(self, AIBlockOutputStatus::Complete { .. })
+        matches!(self, Self::Complete { .. })
     }
 
     /// Returns the output to be rendered, if any.
     pub fn output_to_render(&self) -> Option<Shared<AIAgentOutput>> {
         match self {
-            AIBlockOutputStatus::Pending => None,
-            AIBlockOutputStatus::PartiallyReceived { output } => Some(output.get_owned()),
-            AIBlockOutputStatus::Complete { output } => Some(output.get_owned()),
-            AIBlockOutputStatus::Cancelled { partial_output, .. } => {
+            Self::Pending => None,
+            Self::PartiallyReceived { output } => Some(output.get_owned()),
+            Self::Complete { output } => Some(output.get_owned()),
+            Self::Cancelled { partial_output, .. } => {
                 partial_output.as_ref().map(Shared::get_owned)
             }
-            AIBlockOutputStatus::Failed { partial_output, .. } => {
-                partial_output.as_ref().map(Shared::get_owned)
-            }
+            Self::Failed { partial_output, .. } => partial_output.as_ref().map(Shared::get_owned),
         }
     }
 
     pub fn error(&self) -> Option<&RenderableAIError> {
         match self {
-            AIBlockOutputStatus::Failed { error, .. } => Some(error),
+            Self::Failed { error, .. } => Some(error),
             _ => None,
         }
     }

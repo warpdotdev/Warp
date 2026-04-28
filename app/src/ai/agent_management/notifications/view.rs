@@ -78,27 +78,27 @@ impl NotificationMailboxView {
             FixedBinding::new(
                 "up",
                 NotificationMailboxViewAction::SelectPrevious,
-                id!(NotificationMailboxView::ui_name()),
+                id!(Self::ui_name()),
             ),
             FixedBinding::new(
                 "down",
                 NotificationMailboxViewAction::SelectNext,
-                id!(NotificationMailboxView::ui_name()),
+                id!(Self::ui_name()),
             ),
             FixedBinding::new(
                 "shift-tab",
                 NotificationMailboxViewAction::CycleFilter,
-                id!(NotificationMailboxView::ui_name()),
+                id!(Self::ui_name()),
             ),
             FixedBinding::new(
                 "enter",
                 NotificationMailboxViewAction::ActivateSelected,
-                id!(NotificationMailboxView::ui_name()),
+                id!(Self::ui_name()),
             ),
             FixedBinding::new(
                 "escape",
                 NotificationMailboxViewAction::Dismiss,
-                id!(NotificationMailboxView::ui_name()),
+                id!(Self::ui_name()),
             ),
         ]);
     }

@@ -62,7 +62,7 @@ pub struct PlatformPageView {
 }
 
 impl PlatformPageView {
-    fn fetch_api_keys(&mut self, ctx: &mut ViewContext<PlatformPageView>) {
+    fn fetch_api_keys(&mut self, ctx: &mut ViewContext<Self>) {
         // Set loading state only if we don't have any keys yet
         if self.api_keys.is_empty() {
             self.is_loading = true;
@@ -118,7 +118,7 @@ impl PlatformPageView {
             },
         );
     }
-    pub fn new(ctx: &mut ViewContext<PlatformPageView>) -> Self {
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         // Create the modal body
         let create_api_key_body = ctx.add_typed_action_view(CreateApiKeyModal::new);
         ctx.subscribe_to_view(&create_api_key_body, |me, _, event, ctx| {
@@ -160,7 +160,7 @@ impl PlatformPageView {
             me.handle_modal_event(event, ctx);
         });
 
-        PlatformPageView {
+        Self {
             page: PageType::new_monolith(PlatformPageWidget::default(), None, true),
             create_api_key_modal_state: CreateApiKeyModalViewState::new(ModalViewState::new(
                 create_api_key_modal_view,
@@ -721,6 +721,6 @@ impl SettingsPageMeta for PlatformPageView {
 
 impl From<ViewHandle<PlatformPageView>> for SettingsPageViewHandle {
     fn from(view_handle: ViewHandle<PlatformPageView>) -> Self {
-        SettingsPageViewHandle::OzCloudAPIKeys(view_handle)
+        Self::OzCloudAPIKeys(view_handle)
     }
 }

@@ -56,7 +56,7 @@ impl NativeModal {
             .show_warning_before_quitting
             .value();
         ctx.subscribe_to_model(&general_settings, Self::handle_general_settings_event);
-        NativeModal {
+        Self {
             alert_dialog: None,
             dont_show_again,
             dont_show_again_mouse_state: Default::default(),

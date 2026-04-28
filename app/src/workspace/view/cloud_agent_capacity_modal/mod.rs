@@ -65,7 +65,7 @@ pub struct CloudAgentCapacityModal {
 
 impl CloudAgentCapacityModal {
     pub fn new() -> Self {
-        CloudAgentCapacityModal {
+        Self {
             state_handles: Default::default(),
             variant: CloudAgentCapacityModalVariant::default(),
         }

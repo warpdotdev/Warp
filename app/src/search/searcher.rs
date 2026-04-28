@@ -59,11 +59,11 @@ pub enum FullTextSearchFieldTypes {
 impl FullTextSearchFieldTypes {
     fn field_entry_from_name(&self, name: String) -> FieldEntry {
         match self {
-            FullTextSearchFieldTypes::Str => FieldEntry::new_text(name, STORED.into()),
-            FullTextSearchFieldTypes::U64 => FieldEntry::new_u64(name, STORED.into()),
-            FullTextSearchFieldTypes::I64 => FieldEntry::new_i64(name, STORED.into()),
-            FullTextSearchFieldTypes::F64 => FieldEntry::new_f64(name, STORED.into()),
-            FullTextSearchFieldTypes::Bool => FieldEntry::new_bool(name, STORED.into()),
+            Self::Str => FieldEntry::new_text(name, STORED.into()),
+            Self::U64 => FieldEntry::new_u64(name, STORED.into()),
+            Self::I64 => FieldEntry::new_i64(name, STORED.into()),
+            Self::F64 => FieldEntry::new_f64(name, STORED.into()),
+            Self::Bool => FieldEntry::new_bool(name, STORED.into()),
         }
     }
 }
@@ -79,37 +79,37 @@ pub enum FullTextSearchFieldValue {
 
 impl From<String> for FullTextSearchFieldValue {
     fn from(value: String) -> Self {
-        FullTextSearchFieldValue::Str(value)
+        Self::Str(value)
     }
 }
 
 impl From<u64> for FullTextSearchFieldValue {
     fn from(value: u64) -> Self {
-        FullTextSearchFieldValue::U64(value)
+        Self::U64(value)
     }
 }
 
 impl From<i64> for FullTextSearchFieldValue {
     fn from(value: i64) -> Self {
-        FullTextSearchFieldValue::I64(value)
+        Self::I64(value)
     }
 }
 
 impl From<f64> for FullTextSearchFieldValue {
     fn from(value: f64) -> Self {
-        FullTextSearchFieldValue::F64(value)
+        Self::F64(value)
     }
 }
 
 impl From<bool> for FullTextSearchFieldValue {
     fn from(value: bool) -> Self {
-        FullTextSearchFieldValue::Bool(value)
+        Self::Bool(value)
     }
 }
 
 impl From<usize> for FullTextSearchFieldValue {
     fn from(value: usize) -> Self {
-        FullTextSearchFieldValue::U64(value as u64)
+        Self::U64(value as u64)
     }
 }
 
@@ -117,21 +117,21 @@ impl FullTextSearchFieldValue {
     #[allow(clippy::wrong_self_convention)]
     pub fn to_owned_value(self) -> OwnedValue {
         match self {
-            FullTextSearchFieldValue::Str(value) => OwnedValue::Str(value),
-            FullTextSearchFieldValue::U64(value) => OwnedValue::U64(value),
-            FullTextSearchFieldValue::I64(value) => OwnedValue::I64(value),
-            FullTextSearchFieldValue::F64(value) => OwnedValue::F64(value),
-            FullTextSearchFieldValue::Bool(value) => OwnedValue::Bool(value),
+            Self::Str(value) => OwnedValue::Str(value),
+            Self::U64(value) => OwnedValue::U64(value),
+            Self::I64(value) => OwnedValue::I64(value),
+            Self::F64(value) => OwnedValue::F64(value),
+            Self::Bool(value) => OwnedValue::Bool(value),
         }
     }
 
-    pub fn from_owned_value(value: OwnedValue) -> Option<FullTextSearchFieldValue> {
+    pub fn from_owned_value(value: OwnedValue) -> Option<Self> {
         match value {
-            OwnedValue::Str(s) => Some(FullTextSearchFieldValue::Str(s)),
-            OwnedValue::U64(n) => Some(FullTextSearchFieldValue::U64(n)),
-            OwnedValue::I64(n) => Some(FullTextSearchFieldValue::I64(n)),
-            OwnedValue::F64(n) => Some(FullTextSearchFieldValue::F64(n)),
-            OwnedValue::Bool(b) => Some(FullTextSearchFieldValue::Bool(b)),
+            OwnedValue::Str(s) => Some(Self::Str(s)),
+            OwnedValue::U64(n) => Some(Self::U64(n)),
+            OwnedValue::I64(n) => Some(Self::I64(n)),
+            OwnedValue::F64(n) => Some(Self::F64(n)),
+            OwnedValue::Bool(b) => Some(Self::Bool(b)),
             _ => None,
         }
     }
@@ -476,7 +476,7 @@ impl SearcherWriterWrapper {
             .writer_with_num_threads(memory_budget, num_threads)
             .ok();
 
-        SearcherWriterWrapper {
+        Self {
             search_index,
             memory_budget,
             composite_key_field,
@@ -704,7 +704,7 @@ impl<C: SearchSchemaConfig> SimpleFullTextSearcher<C> {
             memory_budget,
         )));
 
-        SimpleFullTextSearcher {
+        Self {
             writer,
             reader,
             _marker: std::marker::PhantomData,
@@ -1028,7 +1028,7 @@ impl<C: SearchSchemaConfig> FullTextSearchSchema<C> {
         id_fields: HashMap<String, FullTextSearchFieldTypes>,
         boost_factor: f32,
     ) -> Self {
-        FullTextSearchSchema {
+        Self {
             weighted_search_fields,
             id_fields,
             boost_factor,
@@ -1129,7 +1129,7 @@ impl FromOwnedValue for usize {
         let OwnedValue::U64(value) = value else {
             return None;
         };
-        Some(value as usize)
+        Some(value as Self)
     }
 }
 impl FromOwnedValue for u64 {

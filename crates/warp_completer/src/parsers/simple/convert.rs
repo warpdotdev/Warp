@@ -13,7 +13,7 @@ impl From<Spanned<Command>> for LiteCommand {
             }
         });
 
-        LiteCommand {
+        Self {
             parts: command.item.parts.into_iter().map(Into::into).collect(),
             post_whitespace,
         }
@@ -21,14 +21,14 @@ impl From<Spanned<Command>> for LiteCommand {
 }
 
 impl From<Spanned<Part>> for Spanned<String> {
-    fn from(spanned: Spanned<Part>) -> Spanned<String> {
+    fn from(spanned: Spanned<Part>) -> Self {
         spanned.map(|part| part.to_string())
     }
 }
 
 impl From<Option<LiteCommand>> for LiteRootNode {
     fn from(command: Option<LiteCommand>) -> Self {
-        LiteRootNode {
+        Self {
             groups: vec![LiteGroup {
                 pipelines: vec![LitePipeline {
                     commands: command.into_iter().collect(),
@@ -41,12 +41,12 @@ impl From<Option<LiteCommand>> for LiteRootNode {
 impl fmt::Display for Part {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Part::Literal(value) => f.write_str(value.as_str()),
-            Part::OpenSubshell(_) | Part::ClosedSubshell(_) => {
+            Self::Literal(value) => f.write_str(value.as_str()),
+            Self::OpenSubshell(_) | Self::ClosedSubshell(_) => {
                 // Since we aren't evaluating the subshell, include a placeholder value
                 f.write_str("$(...)")
             }
-            Part::Concatenated(parts) => {
+            Self::Concatenated(parts) => {
                 for part in parts {
                     part.item.fmt(f)?;
                 }

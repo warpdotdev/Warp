@@ -77,7 +77,7 @@ impl ExportArgument {
                 .unwrap_or(ExportArgumentType::Text),
         };
 
-        ExportArgument {
+        Self {
             name: argument.name.clone(),
             arg_type,
             description: argument.description.clone(),
@@ -86,7 +86,7 @@ impl ExportArgument {
     }
 
     /// Convert an ExportArgument to an Argument and create a new WorkflowEnum, if possible
-    fn to_argument(argument: ExportArgument) -> (Argument, Option<(ClientId, WorkflowEnum)>) {
+    fn to_argument(argument: Self) -> (Argument, Option<(ClientId, WorkflowEnum)>) {
         let mut new_enum_info = None;
 
         let name = argument.name;
@@ -269,7 +269,7 @@ where
     }
 
     impl<'de> Deserialize<'de> for Field {
-        fn deserialize<D>(deserializer: D) -> Result<Field, D::Error>
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {

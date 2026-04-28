@@ -99,48 +99,48 @@ pub enum AIActionStatus {
 impl AIActionStatus {
     /// Returns whether the action is currently preprocessing.
     pub fn is_preprocessing(&self) -> bool {
-        matches!(self, AIActionStatus::Preprocessing)
+        matches!(self, Self::Preprocessing)
     }
 
     pub fn is_queued(&self) -> bool {
-        matches!(self, AIActionStatus::Queued)
+        matches!(self, Self::Queued)
     }
 
     pub fn is_blocked(&self) -> bool {
-        matches!(self, AIActionStatus::Blocked)
+        matches!(self, Self::Blocked)
     }
 
     pub fn is_done(&self) -> bool {
-        matches!(self, AIActionStatus::Finished(..))
+        matches!(self, Self::Finished(..))
     }
 
     pub fn is_running(&self) -> bool {
-        matches!(self, AIActionStatus::RunningAsync)
+        matches!(self, Self::RunningAsync)
     }
 
     pub fn is_success(&self) -> bool {
-        let AIActionStatus::Finished(result) = self else {
+        let Self::Finished(result) = self else {
             return false;
         };
         result.result.is_successful()
     }
 
     pub fn is_failed(&self) -> bool {
-        let AIActionStatus::Finished(result) = self else {
+        let Self::Finished(result) = self else {
             return false;
         };
         result.result.is_failed()
     }
 
     pub fn is_cancelled(&self) -> bool {
-        let AIActionStatus::Finished(result) = self else {
+        let Self::Finished(result) = self else {
             return false;
         };
         result.result.is_cancelled()
     }
 
     pub fn is_cancelled_during_requested_command_execution(&self) -> bool {
-        let AIActionStatus::Finished(result) = self else {
+        let Self::Finished(result) = self else {
             return false;
         };
         result
@@ -149,7 +149,7 @@ impl AIActionStatus {
     }
 
     pub fn finished_result(&self) -> Option<&AIAgentActionResult> {
-        let AIActionStatus::Finished(result) = self else {
+        let Self::Finished(result) = self else {
             return None;
         };
         Some(result.as_ref())
@@ -1328,13 +1328,13 @@ pub enum BlocklistAIActionEvent {
 impl BlocklistAIActionEvent {
     pub fn action_id(&self) -> &AIAgentActionId {
         match self {
-            BlocklistAIActionEvent::QueuedAction(action_id) => action_id,
-            BlocklistAIActionEvent::ActionBlockedOnUserConfirmation(action_id) => action_id,
-            BlocklistAIActionEvent::ExecutingAction(action_id) => action_id,
-            BlocklistAIActionEvent::FinishedAction { action_id, .. } => action_id,
-            BlocklistAIActionEvent::InitProject(action_id) => action_id,
-            BlocklistAIActionEvent::ToggleCodeReview(action_id) => action_id,
-            BlocklistAIActionEvent::InsertCodeReviewComments { action_id, .. } => action_id,
+            Self::QueuedAction(action_id) => action_id,
+            Self::ActionBlockedOnUserConfirmation(action_id) => action_id,
+            Self::ExecutingAction(action_id) => action_id,
+            Self::FinishedAction { action_id, .. } => action_id,
+            Self::InitProject(action_id) => action_id,
+            Self::ToggleCodeReview(action_id) => action_id,
+            Self::InsertCodeReviewComments { action_id, .. } => action_id,
         }
     }
 }

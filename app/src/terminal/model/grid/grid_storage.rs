@@ -124,8 +124,8 @@ impl GridStorage {
         max_scroll_limit: usize,
         // TODO(vorporeal): remove this argument entirely
         _secret_obfuscation_mode: ObfuscateSecrets,
-    ) -> GridStorage {
-        GridStorage {
+    ) -> Self {
+        Self {
             raw: Storage::with_capacity(rows, columns, FeatureFlag::SequentialStorage.is_enabled()),
             max_scroll_limit,
             saved_cursor: Cursor::default(),
@@ -151,7 +151,7 @@ impl GridStorage {
         mut rows: Vec<Row>,
         num_preceding_rows: usize,
         initial_history_size: usize,
-    ) -> GridStorage {
+    ) -> Self {
         let visible_lines = rows.len();
 
         // If we're not using sequential storage, we store the rows in reverse
@@ -160,7 +160,7 @@ impl GridStorage {
             rows.reverse();
         }
 
-        let mut grid = GridStorage {
+        let mut grid = Self {
             cursor: self.cursor.clone(),
             max_cursor_point: self.max_cursor_point,
             saved_cursor: self.saved_cursor.clone(),

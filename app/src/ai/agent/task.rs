@@ -45,7 +45,7 @@ pub struct TaskId(String);
 
 impl TaskId {
     pub fn new(id: String) -> Self {
-        TaskId(id)
+        Self(id)
     }
 }
 
@@ -143,11 +143,11 @@ mod optimistic {
 
     impl Task {
         pub(super) fn is_root(&self) -> bool {
-            matches!(self, Task::Root)
+            matches!(self, Self::Root)
         }
 
         pub(super) fn is_cli_subagent(&self) -> bool {
-            matches!(self, Task::CLIAgent(..))
+            matches!(self, Self::CLIAgent(..))
         }
     }
 }
@@ -161,8 +161,8 @@ enum TaskImpl {
 impl TaskImpl {
     fn server_data(&self) -> Option<&ServerTask> {
         match &self {
-            TaskImpl::Server(data) => Some(data),
-            TaskImpl::Optimistic(_) => None,
+            Self::Server(data) => Some(data),
+            Self::Optimistic(_) => None,
         }
     }
 }

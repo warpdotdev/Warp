@@ -132,10 +132,10 @@ impl From<Flags> for FontStyle {
 impl FontStyle {
     fn to_properties(self) -> Properties {
         match self {
-            FontStyle::Default => Properties::default(),
-            FontStyle::Bold => Properties::default().weight(Weight::Bold),
-            FontStyle::Italic => Properties::default().style(Style::Italic),
-            FontStyle::BoldItalic => Properties::default()
+            Self::Default => Properties::default(),
+            Self::Bold => Properties::default().weight(Weight::Bold),
+            Self::Italic => Properties::default().style(Style::Italic),
+            Self::BoldItalic => Properties::default()
                 .weight(Weight::Bold)
                 .style(Style::Italic),
         }
@@ -216,7 +216,7 @@ struct CachedBackgroundColor {
 
 impl CachedBackgroundColor {
     fn new(color: ColorU, start_col: usize, start_row: usize) -> Self {
-        CachedBackgroundColor {
+        Self {
             background_color: color,
             start: SelectionPoint {
                 row: start_row.into_lines(),
@@ -230,7 +230,7 @@ impl CachedBackgroundColor {
     }
 
     fn from_selection_points(color: ColorU, start: &SelectionPoint, end: &SelectionPoint) -> Self {
-        CachedBackgroundColor {
+        Self {
             background_color: color,
             start: *start,
             end: *end,

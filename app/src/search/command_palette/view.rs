@@ -671,7 +671,7 @@ impl View {
     /// As a workaround, we recompute these when the [`BindingSource`] and [`SessionSource`] models
     /// change. The model update handler is called after any view handlers, so it won't run into the
     /// same restrictions.
-    fn compute_recent_items_for_zero_state(&mut self, ctx: &mut ViewContext<View>) {
+    fn compute_recent_items_for_zero_state(&mut self, ctx: &mut ViewContext<Self>) {
         let data_source_store = self.data_source_store.as_ref(ctx);
         let selected_items = SelectedItems::as_ref(ctx);
 

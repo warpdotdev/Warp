@@ -15,11 +15,11 @@ impl ManagedSecretType {
     /// The identifier for this secret type as used in the client-side upload envelope.
     pub fn envelope_name(&self) -> &str {
         match self {
-            ManagedSecretType::AnthropicApiKey => "anthropic_api_key",
-            ManagedSecretType::AnthropicBedrockAccessKey => "anthropic_bedrock_access_key",
-            ManagedSecretType::AnthropicBedrockApiKey => "anthropic_bedrock_api_key",
-            ManagedSecretType::Dotenvx => "dotenvx",
-            ManagedSecretType::RawValue => "raw_value",
+            Self::AnthropicApiKey => "anthropic_api_key",
+            Self::AnthropicBedrockAccessKey => "anthropic_bedrock_access_key",
+            Self::AnthropicBedrockApiKey => "anthropic_bedrock_api_key",
+            Self::Dotenvx => "dotenvx",
+            Self::RawValue => "raw_value",
         }
     }
 }

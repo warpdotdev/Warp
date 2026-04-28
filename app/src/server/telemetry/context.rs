@@ -66,15 +66,15 @@ impl AttachContext for RudderMessage {
     fn attach_context(&mut self) {
         let context = telemetry_context().as_value();
         match self {
-            RudderMessage::Identify(identify) => {
+            Self::Identify(identify) => {
                 identify.context = Some(context);
             }
-            RudderMessage::Track(track) => track.context = Some(context),
-            RudderMessage::Page(page) => page.context = Some(context),
-            RudderMessage::Screen(screen) => screen.context = Some(context),
-            RudderMessage::Group(group) => group.context = Some(context),
-            RudderMessage::Alias(alias) => alias.context = Some(context),
-            RudderMessage::Batch(batch) => batch.context = Some(context),
+            Self::Track(track) => track.context = Some(context),
+            Self::Page(page) => page.context = Some(context),
+            Self::Screen(screen) => screen.context = Some(context),
+            Self::Group(group) => group.context = Some(context),
+            Self::Alias(alias) => alias.context = Some(context),
+            Self::Batch(batch) => batch.context = Some(context),
         }
     }
 }

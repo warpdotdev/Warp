@@ -62,7 +62,7 @@ pub enum LocationType {
 
 impl LocationType {
     pub fn is_command(&self) -> bool {
-        matches!(self, LocationType::Command { .. })
+        matches!(self, Self::Command { .. })
     }
 }
 
@@ -352,7 +352,7 @@ impl<'s> Flatten<'s> {
         context: &'s CommandRegistry,
         command: Spanned<String>,
         error: Option<&'s ParseError>,
-    ) -> Flatten<'s> {
+    ) -> Self {
         Flatten {
             line,
             context,
@@ -362,7 +362,7 @@ impl<'s> Flatten<'s> {
         }
     }
 
-    pub fn with_flag(&self, flag: String) -> Flatten<'s> {
+    pub fn with_flag(&self, flag: String) -> Self {
         Flatten {
             line: self.line,
             context: self.context,

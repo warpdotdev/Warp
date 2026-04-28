@@ -221,13 +221,13 @@ impl CommandOutput {
 
 #[cfg(not(target_family = "wasm"))]
 impl From<command::Output> for CommandOutput {
-    fn from(other: command::Output) -> CommandOutput {
+    fn from(other: command::Output) -> Self {
         let status = if other.status.success() {
             CommandExitStatus::Success
         } else {
             CommandExitStatus::Failure
         };
-        CommandOutput {
+        Self {
             stdout: other.stdout,
             stderr: other.stderr,
             status,
