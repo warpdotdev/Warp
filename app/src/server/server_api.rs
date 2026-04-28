@@ -470,6 +470,16 @@ impl ServerApi {
             .collect())
     }
 
+    async fn ambient_agent_headers_for_task(
+        &self,
+        task_id: &AmbientAgentTaskId,
+    ) -> Result<Vec<(&'static str, String)>> {
+        let mut headers = self.ambient_agent_headers().await?;
+        headers.retain(|(name, _)| *name != CLOUD_AGENT_ID_HEADER);
+        headers.push((CLOUD_AGENT_ID_HEADER, task_id.to_string()));
+        Ok(headers)
+    }
+
     fn create_oauth_client() -> self::auth::OAuth2Client {
         let server_root =
             Url::parse(&ChannelState::server_root_url()).expect("Server root URL must be valid");

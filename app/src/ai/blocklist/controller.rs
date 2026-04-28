@@ -30,7 +30,7 @@ use crate::ai::agent::{
     PassiveSuggestionTriggerType, RunningCommand,
 };
 use crate::ai::agent::{DocumentContentAttachmentSource, FileContext};
-use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::ambient_agents::{AmbientAgentTaskId, AmbientAgentTaskState};
 use crate::ai::document::ai_document_model::{
     AIDocumentId, AIDocumentModel, AIDocumentUserEditStatus,
 };
@@ -42,6 +42,7 @@ use crate::ai::{
         FinishedAIAgentOutput, RenderableAIError, RequestCost, RequestMetadata, StaticQueryType,
         UserQueryMode,
     },
+    agent_sdk::{ClaudeHarness, ClaudeWakeMessage, ClaudeWakeRemoteContext},
     llms::LLMPreferences,
     AIRequestUsageModel,
 };
@@ -52,7 +53,8 @@ use crate::network::NetworkStatus;
 use crate::notebooks::editor::model::FileLinkResolutionContext;
 use crate::persistence::ModelEvent;
 use crate::search::slash_command_menu::static_commands::commands;
-use crate::server::server_api::AIApiError;
+use crate::server::server_api::ai::AIClient;
+use crate::server::server_api::{AIApiError, ServerApiProvider};
 use crate::terminal::model::block::{
     formatted_terminal_contents_for_input, BlockId, CURSOR_MARKER,
 };
@@ -72,13 +74,17 @@ use parking_lot::FairMutex;
 use pending_response_streams::PendingResponseStreams;
 use session_sharing_protocol::common::ParticipantId;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use warp_cli::agent::Harness;
 use warp_core::assertions::safe_assert;
 use warp_multi_agent_api::{message, Task, ToolType};
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 
-use super::orchestration_events::{OrchestrationEventService, OrchestrationEventServiceEvent};
+use super::orchestration_events::{
+    OrchestrationEventService, OrchestrationEventServiceEvent, PendingEvent, PendingEventDetail,
+};
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 #[derive(Debug, Clone)]
@@ -161,6 +167,10 @@ pub enum BlocklistAIControllerEvent {
     /// Emitted when the export-to-file slash command is executed.
     ExportConversationToFile {
         filename: Option<String>,
+    },
+
+    ExecuteLocalHarnessCommand {
+        command: String,
     },
 
     FreeTierLimitCheckTriggered,
@@ -313,6 +323,8 @@ pub struct BlocklistAIController {
     /// Pending auto-resume tasks that are waiting for network connectivity.
     /// These should be cancelled when a new request is sent for the same conversation.
     pending_auto_resume_handles: HashMap<AIConversationId, SpawnedFutureHandle>,
+    /// Pending dormant Claude wake preparations for success-idle child conversations.
+    pending_local_claude_wakes: HashMap<AIConversationId, SpawnedFutureHandle>,
     /// Passive conversations explicitly requested to follow up after actions complete.
     pending_passive_follow_ups: HashSet<AIConversationId>,
     /// Passive suggestion results that should be included with the next request
@@ -551,6 +563,7 @@ impl BlocklistAIController {
             ambient_agent_task_id: None,
             attachments_download_dir: None,
             pending_auto_resume_handles: HashMap::new(),
+            pending_local_claude_wakes: HashMap::new(),
             pending_passive_follow_ups: HashSet::new(),
             pending_passive_suggestion_results: HashMap::new(),
         }
@@ -1493,32 +1506,94 @@ impl BlocklistAIController {
         self.pending_passive_follow_ups.remove(&conversation_id);
     }
 
-    /// Handles the EventsReady signal. Checks readiness, drains
-    /// pending events from the service, and injects them into the conversation.
-    fn handle_pending_events_ready(
-        &mut self,
+    fn conversation_ready_for_pending_events(
+        &self,
         conversation_id: AIConversationId,
-        ctx: &mut ModelContext<Self>,
-    ) {
+        ctx: &ModelContext<Self>,
+    ) -> bool {
         let owns = BlocklistAIHistoryModel::as_ref(ctx)
             .all_live_conversations_for_terminal_view(self.terminal_view_id)
-            .any(|c| c.id() == conversation_id);
+            .any(|conversation| conversation.id() == conversation_id);
         if !owns {
-            return;
+            return false;
         }
 
         if self
             .in_flight_response_streams
             .has_active_stream_for_conversation(conversation_id, ctx)
         {
-            return;
+            return false;
         }
 
-        // Only drain when the conversation is actually idle.
-        let is_success = BlocklistAIHistoryModel::as_ref(ctx)
+        BlocklistAIHistoryModel::as_ref(ctx)
             .conversation(&conversation_id)
-            .is_some_and(|c| matches!(c.status(), ConversationStatus::Success));
-        if !is_success {
+            .is_some_and(|conversation| {
+                matches!(conversation.status(), ConversationStatus::Success)
+            })
+    }
+
+    fn local_claude_wake_candidate(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &ModelContext<Self>,
+    ) -> Option<(AmbientAgentTaskId, Option<PathBuf>)> {
+        let conversation = BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id)?;
+        if !conversation.is_child_agent_conversation() || conversation.is_remote_child() {
+            return None;
+        }
+
+        Some((
+            conversation.task_id()?,
+            self.active_session
+                .as_ref(ctx)
+                .current_working_directory()
+                .cloned()
+                .map(PathBuf::from),
+        ))
+    }
+
+    fn pending_event_to_claude_wake_message(event: &PendingEvent) -> Option<ClaudeWakeMessage> {
+        let PendingEventDetail::Message {
+            sequence,
+            message_id,
+            subject,
+            message_body,
+            occurred_at,
+            ..
+        } = &event.detail
+        else {
+            return None;
+        };
+
+        Some(ClaudeWakeMessage {
+            sequence: *sequence,
+            message_id: message_id.clone(),
+            sender_run_id: event.source_agent_id.clone(),
+            subject: subject.clone(),
+            body: message_body.clone(),
+            occurred_at: occurred_at.clone(),
+        })
+    }
+
+    fn schedule_pending_events_ready_retry(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        ctx.spawn(
+            async move { Timer::after(Duration::from_secs(2)).await },
+            move |me, _, ctx| {
+                me.handle_pending_events_ready(conversation_id, ctx);
+            },
+        );
+    }
+
+    fn inject_pending_events_for_request(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !self.conversation_ready_for_pending_events(conversation_id, ctx) {
             return;
         }
 
@@ -1553,6 +1628,182 @@ impl BlocklistAIController {
                 svc.requeue_awaiting_events(conversation_id, ctx);
             });
         }
+    }
+
+    fn maybe_prepare_local_claude_wake(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        if self
+            .pending_local_claude_wakes
+            .contains_key(&conversation_id)
+        {
+            return true;
+        }
+
+        let Some((task_id, working_dir)) = self.local_claude_wake_candidate(conversation_id, ctx)
+        else {
+            return false;
+        };
+
+        let pending_message_events = OrchestrationEventService::handle(ctx)
+            .update(ctx, |svc, _| {
+                svc.peek_pending_message_events(conversation_id)
+            });
+        if pending_message_events.is_empty() {
+            return false;
+        }
+
+        let pending_message_event_ids = pending_message_events
+            .iter()
+            .map(|event| event.event_id.clone())
+            .collect_vec();
+        let server_api = ServerApiProvider::as_ref(ctx).get();
+        let handle = ctx.spawn(
+            async move {
+                let task = server_api.get_ambient_agent_task(&task_id).await?;
+                let harness = task
+                    .agent_config_snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.harness.as_ref())
+                    .map(|config| config.harness_type);
+                if task.state != AmbientAgentTaskState::Succeeded
+                    || harness != Some(Harness::Claude)
+                {
+                    return Ok::<Option<ClaudeWakeRemoteContext>, anyhow::Error>(None);
+                }
+
+                ClaudeHarness::fetch_local_wake_remote_context(task_id, server_api.clone())
+                    .await
+                    .map(Some)
+            },
+            move |me, result, ctx| {
+                me.pending_local_claude_wakes.remove(&conversation_id);
+
+                let remote = match result {
+                    Ok(Some(remote)) => remote,
+                    Ok(None) => {
+                        me.inject_pending_events_for_request(conversation_id, ctx);
+                        return;
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to prepare dormant Claude wake context for {conversation_id:?}: {err:#}"
+                        );
+                        me.schedule_pending_events_ready_retry(conversation_id, ctx);
+                        return;
+                    }
+                };
+
+                if !me.conversation_ready_for_pending_events(conversation_id, ctx) {
+                    return;
+                }
+
+                let removed_events = OrchestrationEventService::handle(ctx).update(ctx, |svc, _| {
+                    svc.take_pending_events_by_id(conversation_id, &pending_message_event_ids)
+                });
+                if removed_events.len() != pending_message_event_ids.len() {
+                    if !removed_events.is_empty() {
+                        OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                            svc.prepend_pending_events(conversation_id, removed_events, ctx);
+                        });
+                    }
+                    return;
+                }
+
+                let wake_messages = removed_events
+                    .iter()
+                    .filter_map(Self::pending_event_to_claude_wake_message)
+                    .collect_vec();
+                if wake_messages.len() != removed_events.len() {
+                    OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                        svc.prepend_pending_events(conversation_id, removed_events, ctx);
+                    });
+                    return;
+                }
+
+                let removed_events_for_retry = removed_events.clone();
+                let server_api = ServerApiProvider::as_ref(ctx).get();
+                let handle = ctx.spawn(
+                    async move {
+                        ClaudeHarness::prepare_local_wake_command(
+                            server_api,
+                            working_dir,
+                            remote,
+                            wake_messages,
+                        )
+                        .await
+                    },
+                    move |me, result, ctx| {
+                        me.pending_local_claude_wakes.remove(&conversation_id);
+                        match result {
+                            Ok(command) => {
+                                if !me.conversation_ready_for_pending_events(conversation_id, ctx) {
+                                    OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                                        svc.prepend_pending_events(
+                                            conversation_id,
+                                            removed_events_for_retry.clone(),
+                                            ctx,
+                                        );
+                                    });
+                                    return;
+                                }
+
+                                BlocklistAIHistoryModel::handle(ctx).update(
+                                    ctx,
+                                    |history_model, ctx| {
+                                        history_model.update_conversation_status(
+                                            me.terminal_view_id,
+                                            conversation_id,
+                                            ConversationStatus::InProgress,
+                                            ctx,
+                                        );
+                                    },
+                                );
+                                ctx.emit(BlocklistAIControllerEvent::ExecuteLocalHarnessCommand {
+                                    command,
+                                });
+                            }
+                            Err(err) => {
+                                log::warn!(
+                                    "Failed to finalize dormant Claude wake for {conversation_id:?}: {err:#}"
+                                );
+                                OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                                    svc.prepend_pending_events(
+                                        conversation_id,
+                                        removed_events_for_retry.clone(),
+                                        ctx,
+                                    );
+                                });
+                            }
+                        }
+                    },
+                );
+                me.pending_local_claude_wakes.insert(conversation_id, handle);
+            },
+        );
+        self.pending_local_claude_wakes
+            .insert(conversation_id, handle);
+        true
+    }
+
+    /// Handles the EventsReady signal. Checks readiness, drains
+    /// pending events from the service, and injects them into the conversation.
+    fn handle_pending_events_ready(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !self.conversation_ready_for_pending_events(conversation_id, ctx) {
+            return;
+        }
+
+        if self.maybe_prepare_local_claude_wake(conversation_id, ctx) {
+            return;
+        }
+
+        self.inject_pending_events_for_request(conversation_id, ctx);
     }
 
     pub fn resume_conversation(

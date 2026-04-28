@@ -1402,6 +1402,24 @@ fn agent_run_cloud_accepts_snapshot_flags() {
 }
 
 #[test]
+fn agent_run_rejects_task_id_with_conversation() {
+    let err = Args::try_parse_from([
+        "warp",
+        "agent",
+        "run",
+        "--task-id",
+        "task-123",
+        "--conversation",
+        "conv-123",
+    ])
+    .unwrap_err()
+    .to_string();
+
+    assert!(err.contains("--task-id"));
+    assert!(err.contains("--conversation"));
+}
+
+#[test]
 fn agent_run_cloud_accepts_computer_use_flag() {
     let args = Args::try_parse_from([
         "warp",

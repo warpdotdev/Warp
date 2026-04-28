@@ -217,6 +217,13 @@ impl Client {
         )
     }
 
+    pub fn patch<U: IntoUrl + Clone>(&self, url: U) -> RequestBuilder<'_> {
+        self.builder(
+            self.wrapped.patch(url.clone()),
+            Self::include_warp_http_headers(url),
+        )
+    }
+
     pub fn delete<U: IntoUrl + Clone>(&self, url: U) -> RequestBuilder<'_> {
         self.builder(
             self.wrapped.delete(url.clone()),

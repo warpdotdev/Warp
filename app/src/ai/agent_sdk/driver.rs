@@ -22,7 +22,8 @@ use crate::ai::skills::{SkillManager, SkillWatcher};
 use crate::ai::{
     agent::conversation::AIConversationId,
     agent_sdk::driver::harness::{
-        task_env_vars, HarnessKind, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness,
+        task_env_vars, HarnessCleanupDisposition, HarnessKind, HarnessRunner, ResumePayload,
+        SavePoint, ThirdPartyHarness,
     },
 };
 use crate::terminal::cli_agent_sessions::plugin_manager::{
@@ -196,16 +197,6 @@ impl<T: Send + 'static> IdleTimeoutSender<T> {
     }
 }
 
-/// How to resume an existing conversation when starting an agent run.
-///
-/// The Oz harness restores the full conversation transcript into the terminal pane and treats
-/// any new prompt as a follow-up; third-party harnesses round-trip a harness-specific payload
-/// (see [`ResumePayload`]) instead.
-pub enum ResumeOptions {
-    Oz(Box<ConversationRestorationInNewPaneType>),
-    ThirdParty(Box<ResumePayload>),
-}
-
 /// Options for initializing the agent driver.
 pub struct AgentDriverOptions {
     /// Initial working directory for the agent's terminal session.
@@ -220,10 +211,12 @@ pub struct AgentDriverOptions {
     pub should_share: bool,
     /// How long to keep the session alive after the agent run completes, if at all.
     pub idle_on_complete: Option<Duration>,
-    /// If set, resume an existing conversation instead of starting fresh. The variant
-    /// determines which harness-specific path is taken (Oz transcript restore vs.
-    /// third-party-harness payload rehydration).
-    pub resume: Option<ResumeOptions>,
+    /// Conversation to restore when creating the terminal.
+    /// Any ambient agent prompt will be sent as a follow-up to this conversation.
+    pub conversation_restoration: Option<ConversationRestorationInNewPaneType>,
+    /// If set, resume an existing third-party-harness conversation instead of
+    /// starting fresh.
+    pub resume_payload: Option<ResumePayload>,
     /// Cloud providers to configure within the agent's session.
     pub cloud_providers: Vec<Box<dyn cloud_provider::CloudProvider>>,
     /// Resolved environment configuration, if any.
@@ -268,6 +261,10 @@ pub struct AgentDriver {
     // The conversation ID to continue (if provided).
     restored_conversation_id: Option<AIConversationId>,
 
+    /// If set, a third-party-harness conversation to resume. Consumed when
+    /// preparing the harness runner and cleared afterward.
+    resume_payload: Option<ResumePayload>,
+
     /// Cloud providers set up within this driver session.
     cloud_providers: Vec<Box<dyn cloud_provider::CloudProvider>>,
 
@@ -278,11 +275,6 @@ pub struct AgentDriver {
     snapshot_disabled: bool,
     snapshot_upload_timeout: Duration,
     snapshot_script_timeout: Duration,
-
-    /// If set, a third-party-harness conversation to resume. Consumed by `prepare_harness`
-    /// when building the runner and taken back to `None` after use so subsequent runs start
-    /// fresh.
-    resume_payload: Option<ResumePayload>,
 }
 
 pub(crate) enum SDKConversationOutputStatus {
@@ -413,15 +405,6 @@ pub enum AgentDriverError {
         got: String,
     },
     #[error(
-        "Task {task_id} was created with the {expected} harness, but --harness {got} was requested. \
-         Re-run with --harness {expected} (or omit --harness to match) to continue this task."
-    )]
-    TaskHarnessMismatch {
-        task_id: String,
-        expected: String,
-        got: String,
-    },
-    #[error(
         "Conversation {conversation_id} has no stored transcript for the {harness} harness. \
          The prior run may have crashed before saving any state."
     )]
@@ -469,7 +452,8 @@ impl AgentDriver {
             should_share,
             idle_on_complete,
             secrets,
-            resume,
+            conversation_restoration,
+            resume_payload,
             cloud_providers,
             environment,
             selected_harness,
@@ -477,15 +461,6 @@ impl AgentDriver {
             snapshot_upload_timeout,
             snapshot_script_timeout,
         } = options;
-
-        // Split the unified resume option into the two internal slots that the rest of
-        // the driver consumes: terminal-driven Oz transcript restoration vs. third-party
-        // harness payload rehydration.
-        let (conversation_restoration, resume_payload) = match resume {
-            Some(ResumeOptions::Oz(restoration)) => (Some(*restoration), None),
-            Some(ResumeOptions::ThirdParty(payload)) => (None, Some(*payload)),
-            None => (None, None),
-        };
 
         safe_info!(
             safe: ("Initializing agent driver: share={should_share}, idle_on_complete={idle_on_complete:?}"),
@@ -625,6 +600,7 @@ impl AgentDriver {
             harness: None,
             idle_on_complete,
             restored_conversation_id,
+            resume_payload,
             cloud_providers,
             environment,
             snapshot_disabled: snapshot_disabled.unwrap_or(false),
@@ -632,7 +608,6 @@ impl AgentDriver {
                 .unwrap_or(snapshot::DEFAULT_SNAPSHOT_UPLOAD_TIMEOUT),
             snapshot_script_timeout: snapshot_script_timeout
                 .unwrap_or(snapshot::DEFAULT_DECLARATIONS_SCRIPT_TIMEOUT),
-            resume_payload,
         })
     }
 
@@ -1520,11 +1495,6 @@ impl AgentDriver {
             .await
             .map_err(|_| AgentDriverError::InvalidRuntimeState)?;
         harness.prepare_environment_config(&working_dir, system_prompt.as_deref(), &secrets)?;
-
-        // Pull the resume payload off the driver so the harness runner can rehydrate any
-        // existing session/conversation state before launching its CLI. The payload variant
-        // is harness-specific; harnesses match on their own [`ResumePayload`] variant and
-        // ignore others.
         let resume = foreground
             .spawn(|me, _| me.resume_payload.take())
             .await
@@ -1588,14 +1558,31 @@ impl AgentDriver {
 
         // Final save after the command finishes.
         log::debug!("Triggering final save of harness conversation data");
-        report_if_error!(runner
+        let final_save_succeeded = match runner
             .save_conversation(SavePoint::Final, foreground)
             .await
-            .context("Failed to save harness conversation (final)"));
-        report_if_error!(runner
-            .cleanup(foreground)
+            .context("Failed to save harness conversation (final)")
+        {
+            Ok(()) => true,
+            Err(err) => {
+                report_error!(err);
+                false
+            }
+        };
+        let cleanup_disposition = if final_save_succeeded
+            && matches!(command_result.as_ref(), Ok(exit_code) if exit_code.was_successful())
+        {
+            HarnessCleanupDisposition::PreserveResumptionStateIfSupported
+        } else {
+            HarnessCleanupDisposition::DropResumptionState
+        };
+        if let Err(err) = runner
+            .cleanup(cleanup_disposition, foreground)
             .await
-            .context("Failed to clean up harness runtime state"));
+            .context("Failed to clean up harness runtime state")
+        {
+            report_error!(err);
+        }
 
         let exit_code = command_result?;
         log::debug!("Agent harness exited with status {exit_code}");

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -11,11 +12,15 @@ use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
 use uuid::Uuid;
 use warp_cli::agent::Harness;
+use warp_core::safe_warn;
 use warpui::{ModelHandle, ModelSpawner};
 
 use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent_events::MessageHydrator;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::server::server_api::harness_support::{upload_to_target, HarnessSupportClient};
+use crate::server::server_api::harness_support::{
+    upload_to_target, HarnessSupportClient, ResolvePromptRequest,
+};
 use crate::server::server_api::ServerApi;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::session::ExecuteCommandOptions;
@@ -23,30 +28,154 @@ use crate::terminal::CLIAgent;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
-use super::claude_transcript::{
-    claude_config_dir, read_envelope, write_envelope, write_session_index_entry, ClaudeResumeInfo,
-    ClaudeTranscriptEnvelope,
-};
 use super::json_utils::{read_json_file_or_default, write_json_file};
 use super::{
-    write_temp_file, HarnessRunner, ManagedSecretValue, ResumePayload, SavePoint, ThirdPartyHarness,
+    cli_agent_session_status, write_temp_file, HarnessCleanupDisposition, HarnessRunner,
+    ManagedSecretValue, ResumePayload, SavePoint, ThirdPartyHarness,
 };
 mod parent_bridge;
 
 #[cfg(test)]
 use super::super::OZ_MESSAGE_LISTENER_STATE_ROOT_ENV;
-use parent_bridge::MessageBridge;
-#[cfg(test)]
 use parent_bridge::{
     acknowledge_parent_bridge_hook_output, ensure_parent_bridge_state_dir,
-    parent_bridge_char_count, parent_bridge_hook_output_ack_file, parent_bridge_hook_output_file,
-    parent_bridge_root, parent_bridge_staged_message_path, parent_bridge_surfaced_message_path,
-    prepare_parent_bridge_hook_output, render_parent_bridge_message_block,
-    stage_parent_bridge_message, MessageBridgeHookOutput, MessageBridgeMessageRecord,
+    parent_bridge_max_context_chars, parent_bridge_root, prepare_parent_bridge_hook_output,
+    stage_parent_bridge_message, MessageBridge, MessageBridgeCleanupDisposition,
+    MessageBridgeMessageRecord,
+};
+#[cfg(test)]
+use parent_bridge::{
+    parent_bridge_char_count, parent_bridge_event_cursor_file, parent_bridge_hook_output_ack_file,
+    parent_bridge_hook_output_file, parent_bridge_staged_message_path,
+    parent_bridge_surfaced_message_path, read_parent_bridge_event_cursor,
+    render_parent_bridge_message_block, write_parent_bridge_event_cursor, MessageBridgeHookOutput,
     MESSAGE_BRIDGE_CONTEXT_PREAMBLE,
 };
 
+#[derive(Debug)]
+pub(crate) struct ClaudeResumeInfo {
+    pub(crate) conversation_id: AIConversationId,
+    pub(crate) session_id: Uuid,
+    pub(crate) envelope: ClaudeTranscriptEnvelope,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ClaudeWakeMessage {
+    pub(crate) sequence: i64,
+    pub(crate) message_id: String,
+    pub(crate) sender_run_id: String,
+    pub(crate) subject: String,
+    pub(crate) body: String,
+    pub(crate) occurred_at: String,
+}
+
+impl From<ClaudeWakeMessage> for MessageBridgeMessageRecord {
+    fn from(value: ClaudeWakeMessage) -> Self {
+        Self {
+            sequence: value.sequence,
+            message_id: value.message_id,
+            sender_run_id: value.sender_run_id,
+            subject: value.subject,
+            body: value.body,
+            occurred_at: value.occurred_at,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ClaudeWakeRemoteContext {
+    session_id: Uuid,
+    envelope: ClaudeTranscriptEnvelope,
+    wake_prompt: String,
+}
+
 pub(crate) struct ClaudeHarness;
+
+impl ClaudeHarness {
+    pub(crate) async fn fetch_local_wake_remote_context(
+        task_id: AmbientAgentTaskId,
+        server_api: Arc<ServerApi>,
+    ) -> Result<ClaudeWakeRemoteContext> {
+        let resolved = server_api
+            .resolve_prompt_for_task(
+                &task_id,
+                ResolvePromptRequest {
+                    skill: None,
+                    attachments_dir: None,
+                },
+            )
+            .await
+            .with_context(|| format!("Failed to resolve Claude wake prompt for task {task_id}"))?;
+        let bytes = server_api
+            .fetch_transcript_for_task(&task_id)
+            .await
+            .with_context(|| format!("Failed to fetch Claude transcript for task {task_id}"))?;
+        let envelope: ClaudeTranscriptEnvelope =
+            serde_json::from_slice(&bytes).with_context(|| {
+                format!("Failed to deserialize Claude transcript for wake task {task_id}")
+            })?;
+        let wake_prompt = match resolved.resumption_prompt {
+            Some(resumption_prompt) if !resumption_prompt.is_empty() => {
+                format!(
+                    "{resumption_prompt}
+
+{CLAUDE_WAKE_PROMPT}"
+                )
+            }
+            _ => CLAUDE_WAKE_PROMPT.to_string(),
+        };
+        Ok(ClaudeWakeRemoteContext {
+            session_id: envelope.uuid,
+            envelope,
+            wake_prompt,
+        })
+    }
+
+    pub(crate) async fn prepare_local_wake_command(
+        server_api: Arc<ServerApi>,
+        working_dir: Option<PathBuf>,
+        mut remote: ClaudeWakeRemoteContext,
+        pending_messages: Vec<ClaudeWakeMessage>,
+    ) -> Result<String> {
+        let working_dir = working_dir.unwrap_or_else(|| remote.envelope.cwd.clone());
+        prepare_claude_environment_config(&working_dir, &HashMap::new())
+            .context("Failed to prepare Claude environment for wake")?;
+
+        remote.envelope.cwd = working_dir.clone();
+        let config_root = claude_config_dir().context("Failed to resolve Claude config dir")?;
+        write_envelope(&remote.envelope, &config_root)
+            .context("Failed to rehydrate Claude transcript for wake")?;
+        if let Err(error) = write_session_index_entry(remote.session_id, &working_dir, &config_root)
+        {
+            log::warn!("Failed to update Claude sessions-index.json for wake: {error:#}");
+        }
+
+        let state_dir = parent_bridge_root()?.join(remote.session_id.to_string());
+        ensure_parent_bridge_state_dir(&state_dir)?;
+        let hydrator = MessageHydrator::new(server_api);
+        acknowledge_parent_bridge_hook_output(&hydrator, &state_dir).await?;
+        for record in pending_messages
+            .into_iter()
+            .map(MessageBridgeMessageRecord::from)
+        {
+            stage_parent_bridge_message(&state_dir, &record)?;
+        }
+        prepare_parent_bridge_hook_output(&hydrator, &state_dir, parent_bridge_max_context_chars())
+            .await?;
+
+        let prompt_path = state_dir.join(CLAUDE_WAKE_PROMPT_FILE_NAME);
+        std::fs::write(&prompt_path, remote.wake_prompt.as_bytes())
+            .with_context(|| format!("Failed to write {}", prompt_path.display()))?;
+
+        Ok(claude_command(
+            CLIAgent::Claude.command_prefix(),
+            &remote.session_id,
+            &prompt_path.display().to_string(),
+            None,
+            true,
+        ))
+    }
+}
 
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -77,10 +206,6 @@ impl ThirdPartyHarness for ClaudeHarness {
         })
     }
 
-    /// Fetch the Claude Code transcript for the current task's conversation and wrap it
-    /// into a [`ResumePayload::Claude`]. Maps a server 404 to
-    /// [`AgentDriverError::ConversationResumeStateMissing`] tagged as the `claude` harness
-    /// so the user sees a resume-specific error rather than a generic load failure.
     async fn fetch_resume_payload(
         &self,
         conversation_id: &AIConversationId,
@@ -91,8 +216,6 @@ impl ThirdPartyHarness for ClaudeHarness {
             .fetch_transcript()
             .await
             .map_err(|err| {
-                // A 404 from the server maps to "no stored transcript" so the CLI can tell
-                // the user the prior run never saved state.
                 let message = format!("{err:#}").to_lowercase();
                 if message.contains("status 404") {
                     AgentDriverError::ConversationResumeStateMissing {
@@ -108,10 +231,9 @@ impl ThirdPartyHarness for ClaudeHarness {
                 "Failed to deserialize Claude transcript for {conversation_id_str}: {err:#}"
             ))
         })?;
-        let session_id = envelope.uuid;
         Ok(Some(ResumePayload::Claude(ClaudeResumeInfo {
             conversation_id: *conversation_id,
-            session_id,
+            session_id: envelope.uuid,
             envelope,
         })))
     }
@@ -127,14 +249,9 @@ impl ThirdPartyHarness for ClaudeHarness {
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
-        // Extract the Claude variant; any other variant is ignored since it belongs to a
-        // different harness. Today there are no other variants, but this keeps the shape
-        // ready for future CLI-specific payloads.
         let claude_resume = resume.map(|payload| match payload {
             ResumePayload::Claude(info) => info,
         });
-        // Claude treats the user-turn message as immediate intent, so the resumption preamble
-        // is most reliable when prepended directly to the prompt that gets piped into the CLI.
         let owned_prompt = match resumption_prompt {
             Some(preamble) if !preamble.is_empty() => format!("{preamble}\n\n{prompt}"),
             _ => prompt.to_string(),
@@ -156,14 +273,12 @@ impl ThirdPartyHarness for ClaudeHarness {
 const CLAUDE_CODE_FORMAT: &str = "claude_code_cli";
 /// Command used to exit claude.
 const CLAUDE_EXIT_COMMAND: &str = "/exit";
+const CLAUDE_WAKE_PROMPT: &str =
+    "New lead-agent messages are available. Read the latest lead-agent updates and continue the task accordingly.";
+const CLAUDE_WAKE_PROMPT_FILE_NAME: &str = "wake-turn-prompt.txt";
 
 /// Build the shell command that launches the Claude CLI for a given session and
 /// prompt file.
-///
-/// When `resuming` is true we pass `--resume <uuid>` so Claude picks up the
-/// existing on-disk session; otherwise we pass `--session-id <uuid>` to pin a
-/// fresh session to that id. If `system_prompt_path` is provided, the CLI is
-/// told to append its contents to the base system prompt.
 fn claude_command(
     cli_name: &str,
     session_id: &Uuid,
@@ -207,14 +322,10 @@ struct ClaudeHarnessRunner {
     parent_bridge: Option<MessageBridge>,
     /// Lazily cached output of `claude --version`.
     claude_version: Mutex<Option<String>>,
-    /// When resuming an existing conversation, we pin the runner's server conversation id
-    /// up front instead of calling `create_external_conversation` in [`HarnessRunner::start`].
-    /// Subsequent saves overwrite the same GCS objects keyed by this id.
     preexisting_conversation_id: Option<AIConversationId>,
 }
 
 impl ClaudeHarnessRunner {
-    #[allow(clippy::too_many_arguments)]
     fn new(
         cli_command: &str,
         prompt: &str,
@@ -229,32 +340,26 @@ impl ClaudeHarnessRunner {
         // avoiding shell-quoting issues with complex content (e.g. skill instructions).
         let temp_file = write_temp_file("oz_prompt_", prompt)?;
         let prompt_path = temp_file.path().display().to_string();
-
         let (session_id, preexisting_conversation_id, resuming) = match resume {
             Some(ClaudeResumeInfo {
                 conversation_id,
                 session_id,
                 mut envelope,
             }) => {
-                // Rehydrate the stored envelope under the current working directory so
-                // `claude --resume <uuid>` finds the jsonl under ~/.claude/projects/<encoded_cwd>/.
-                // The original envelope's cwd usually points at the cloud sandbox path, which
-                // doesn't exist locally.
                 envelope.cwd = working_dir.to_path_buf();
-                let config_root = claude_config_dir().map_err(|e| {
+                let config_root = claude_config_dir().map_err(|error| {
                     AgentDriverError::ConfigBuildFailed(
-                        e.context("Failed to resolve Claude config dir"),
+                        error.context("Failed to resolve Claude config dir"),
                     )
                 })?;
-                write_envelope(&envelope, &config_root).map_err(|e| {
+                write_envelope(&envelope, &config_root).map_err(|error| {
                     AgentDriverError::ConfigBuildFailed(
-                        e.context("Failed to rehydrate Claude transcript"),
+                        error.context("Failed to rehydrate Claude transcript"),
                     )
                 })?;
-                // Index write is best-effort: upstream Claude versions vary in how they use
-                // `sessions-index.json`, so losing the index entry shouldn't abort the run.
-                if let Err(e) = write_session_index_entry(session_id, working_dir, &config_root) {
-                    log::warn!("Failed to update Claude sessions-index.json: {e:#}");
+                if let Err(error) = write_session_index_entry(session_id, working_dir, &config_root)
+                {
+                    log::warn!("Failed to update Claude sessions-index.json: {error:#}");
                 }
                 (session_id, Some(conversation_id), true)
             }
@@ -362,9 +467,33 @@ impl ClaudeHarnessRunner {
             .await
     }
 
-    fn cleanup_parent_bridge(&self) -> Result<()> {
+    async fn should_preserve_parent_bridge(
+        &self,
+        cleanup_disposition: HarnessCleanupDisposition,
+        foreground: &ModelSpawner<AgentDriver>,
+    ) -> bool {
+        if !matches!(
+            cleanup_disposition,
+            HarnessCleanupDisposition::PreserveResumptionStateIfSupported
+        ) {
+            return false;
+        }
+
+        !matches!(
+            cli_agent_session_status(&self.terminal_driver, foreground).await,
+            Some(crate::terminal::cli_agent_sessions::CLIAgentSessionStatus::Blocked { .. })
+                | Some(crate::terminal::cli_agent_sessions::CLIAgentSessionStatus::InProgress)
+        )
+    }
+
+    fn cleanup_parent_bridge(&self, preserve_state: bool) -> Result<()> {
         if let Some(parent_bridge) = self.parent_bridge.as_ref() {
-            parent_bridge.cleanup()?;
+            let cleanup_disposition = if preserve_state {
+                MessageBridgeCleanupDisposition::PreserveState
+            } else {
+                MessageBridgeCleanupDisposition::RemoveState
+            };
+            parent_bridge.cleanup(cleanup_disposition)?;
         }
         Ok(())
     }
@@ -377,28 +506,23 @@ impl HarnessRunner for ClaudeHarnessRunner {
         &self,
         foreground: &ModelSpawner<AgentDriver>,
     ) -> Result<CommandHandle, AgentDriverError> {
-        // When resuming, we already have a server conversation id from the prior run.
-        // Otherwise create a fresh external conversation record for this run.
-        // TODO(REMOTE-1149): `create_external_conversation` currently won't work for local CLI
-        // runs. We should either support it or have a fallback.
         let conversation_id = match self.preexisting_conversation_id {
-            Some(id) => {
-                log::info!("Resuming external conversation {id}");
-                id
+            Some(conversation_id) => {
+                log::info!("Resuming external conversation {conversation_id}");
+                conversation_id
             }
-            None => {
-                let id = self
-                    .client
-                    .create_external_conversation(CLAUDE_CODE_FORMAT)
-                    .await
-                    .map_err(|e| {
-                        log::error!("Failed to create external conversation: {e}");
-                        AgentDriverError::ConfigBuildFailed(e)
-                    })?;
-                log::info!("Created external conversation {id}");
-                id
-            }
+            None => self
+                .client
+                .create_external_conversation(CLAUDE_CODE_FORMAT)
+                .await
+                .map_err(|e| {
+                    log::error!("Failed to create external conversation: {e}");
+                    AgentDriverError::ConfigBuildFailed(e)
+                })?,
         };
+        if self.preexisting_conversation_id.is_none() {
+            log::info!("Created external conversation {conversation_id}");
+        }
         self.start_parent_bridge(foreground)
             .await
             .map_err(AgentDriverError::ConfigBuildFailed)?;
@@ -414,7 +538,7 @@ impl HarnessRunner for ClaudeHarnessRunner {
         {
             Ok(command_handle) => command_handle,
             Err(err) => {
-                self.cleanup_parent_bridge()
+                self.cleanup_parent_bridge(false)
                     .map_err(AgentDriverError::ConfigBuildFailed)?;
                 return Err(err);
             }
@@ -494,9 +618,16 @@ impl HarnessRunner for ClaudeHarnessRunner {
 
         Ok(())
     }
-    async fn cleanup(&self, _foreground: &ModelSpawner<AgentDriver>) -> Result<()> {
+    async fn cleanup(
+        &self,
+        cleanup_disposition: HarnessCleanupDisposition,
+        foreground: &ModelSpawner<AgentDriver>,
+    ) -> Result<()> {
         self.flush_parent_bridge_acks().await?;
-        self.cleanup_parent_bridge()
+        let preserve_state = self
+            .should_preserve_parent_bridge(cleanup_disposition, foreground)
+            .await;
+        self.cleanup_parent_bridge(preserve_state)
     }
 }
 
@@ -525,6 +656,283 @@ async fn upload_transcript(
         .await
         .with_context(|| format!("Failed to get transcript upload target for {conversation_id}"))?;
     upload_to_target(client.http_client(), &target, body).await
+}
+
+// ─── Transcript envelope ──────────────────────────────────────────────────────
+
+/// JSON envelope sent to the server representing a complete Claude Code session.
+///
+/// Bundles the main session transcript, any subagent transcripts, and
+/// per-agent TODO lists assembled from the Claude state directory.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ClaudeTranscriptEnvelope {
+    /// The directory that the Claude Code session started in.
+    cwd: PathBuf,
+    /// Unique session identifier.
+    uuid: Uuid,
+    /// Claude Code version, if available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    claude_version: Option<String>,
+    /// List of messages in the main agent conversation.
+    entries: Vec<Value>,
+    /// Messages in each subagent conversation, keyed by the agent filename (e.g. `"agent-aac0b7f3db6bccfaf"`).
+    subagents: HashMap<String, Vec<Value>>,
+    /// TODO lists for each agent, keyed on the session and agent (e.g. `"<session_uuid>-agent-<agent_id>"`).
+    todos: HashMap<String, Value>,
+}
+
+/// Encode a filesystem path as a Claude config directory name, matching the
+/// Claude CLI convention of replacing every `/` with `-`.
+///
+/// Example: `/Users/ben/src/foo` → `-Users-ben-src-foo`
+fn encode_cwd(cwd: &Path) -> String {
+    cwd.to_string_lossy().replace(['/', '.'], "-")
+}
+
+/// Resolve the Claude config directory.
+///
+/// Reads `$CLAUDE_CONFIG_DIR` if set, otherwise falls back to `~/.claude`.
+//
+/// TODO(REMOTE-1209): Use the transcript path reported by our hook.
+fn claude_config_dir() -> Result<PathBuf> {
+    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
+    dirs::home_dir()
+        .map(|h| h.join(".claude"))
+        .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
+}
+
+/// Assemble a [`ClaudeTranscriptEnvelope`] from the Claude config directory.
+///
+/// Reads:
+/// - `<config_root>/projects/<encoded_cwd>/<session_uuid>.jsonl` - main transcript
+/// - `<config_root>/projects/<encoded_cwd>/<session_uuid>/subagents/*.jsonl` - subagents
+/// - `<config_root>/todos/<session_uuid>-agent-*.json` - per-agent todo lists
+///
+/// If the main JSONL does not exist yet (e.g. during an early periodic save)
+/// the envelope is returned with an empty `entries` list rather than an error.
+fn read_envelope(
+    session_uuid: Uuid,
+    cwd: &Path,
+    config_root: &Path,
+) -> Result<ClaudeTranscriptEnvelope> {
+    let encoded = encode_cwd(cwd);
+    let projects_dir = config_root.join("projects").join(&encoded);
+
+    // Main session transcript.
+    let session_file = projects_dir.join(format!("{session_uuid}.jsonl"));
+    let entries = read_jsonl(&session_file)?;
+
+    // Subagents are stored in a directory named after the session UUID.
+    let mut subagents: HashMap<String, Vec<Value>> = HashMap::new();
+    let subagents_dir = projects_dir
+        .join(session_uuid.to_string())
+        .join("subagents");
+    if subagents_dir.is_dir() {
+        for entry in std::fs::read_dir(&subagents_dir)
+            .with_context(|| format!("Failed to read subagents dir {}", subagents_dir.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            subagents.insert(stem.to_owned(), read_jsonl(&path)?);
+        }
+    }
+
+    // Per-agent todo lists.
+    let mut todos: HashMap<String, Value> = HashMap::new();
+    let todos_dir = config_root.join("todos");
+    let todos_prefix = format!("{session_uuid}-agent-");
+    if todos_dir.is_dir() {
+        for entry in std::fs::read_dir(&todos_dir)
+            .with_context(|| format!("Failed to read todos dir {}", todos_dir.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !stem.starts_with(&todos_prefix) {
+                continue;
+            }
+            match std::fs::read_to_string(&path) {
+                Ok(content) => match serde_json::from_str(&content) {
+                    Ok(value) => {
+                        todos.insert(stem.to_owned(), value);
+                    }
+                    Err(e) => log::warn!("Failed to parse todos file {}: {e}", path.display()),
+                },
+                Err(e) => log::warn!("Failed to read todos file {}: {e}", path.display()),
+            }
+        }
+    }
+
+    Ok(ClaudeTranscriptEnvelope {
+        cwd: cwd.to_path_buf(),
+        uuid: session_uuid,
+        claude_version: None,
+        entries,
+        subagents,
+        todos,
+    })
+}
+
+/// Write a [`ClaudeTranscriptEnvelope`] back to disk using the same layout
+/// that Claude Code uses.
+///
+/// Creates:
+/// - `<config_root>/projects/<encoded_cwd>/<uuid>.jsonl` - main transcript
+/// - `<config_root>/projects/<encoded_cwd>/<uuid>/subagents/<stem>.jsonl` - subagents
+/// - `<config_root>/todos/<stem>.json` - per-agent todo lists
+fn write_envelope(envelope: &ClaudeTranscriptEnvelope, config_root: &Path) -> Result<()> {
+    let encoded = encode_cwd(&envelope.cwd);
+    let projects_dir = config_root.join("projects").join(&encoded);
+    std::fs::create_dir_all(&projects_dir)
+        .with_context(|| format!("Failed to create {}", projects_dir.display()))?;
+
+    // Main session JSONL.
+    let session_file = projects_dir.join(format!("{}.jsonl", envelope.uuid));
+    std::fs::write(&session_file, entries_to_jsonl(&envelope.entries)?)
+        .with_context(|| format!("Failed to write {}", session_file.display()))?;
+
+    // Subagent JSONLs.
+    if !envelope.subagents.is_empty() {
+        let subagents_dir = projects_dir
+            .join(envelope.uuid.to_string())
+            .join("subagents");
+        std::fs::create_dir_all(&subagents_dir)
+            .with_context(|| format!("Failed to create {}", subagents_dir.display()))?;
+        for (stem, entries) in &envelope.subagents {
+            let path = subagents_dir.join(format!("{stem}.jsonl"));
+            std::fs::write(&path, entries_to_jsonl(entries)?)
+                .with_context(|| format!("Failed to write {}", path.display()))?;
+        }
+    }
+
+    // Per-agent todo lists.
+    if !envelope.todos.is_empty() {
+        let todos_dir = config_root.join("todos");
+        std::fs::create_dir_all(&todos_dir)
+            .with_context(|| format!("Failed to create {}", todos_dir.display()))?;
+        for (stem, value) in &envelope.todos {
+            let path = todos_dir.join(format!("{stem}.json"));
+            std::fs::write(&path, serde_json::to_vec(value)?)
+                .with_context(|| format!("Failed to write {}", path.display()))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Filename of Claude's global session index.
+const SESSIONS_INDEX_FILENAME: &str = "sessions-index.json";
+
+/// Upsert an entry for `session_uuid` into `<config_root>/sessions-index.json` so Claude's
+/// `claude --resume <uuid>` lookup can find the rehydrated jsonl.
+///
+/// Best-effort: callers should log a warning on failure rather than aborting the run.
+fn write_session_index_entry(session_uuid: Uuid, cwd: &Path, config_root: &Path) -> Result<()> {
+    let index_path = config_root.join(SESSIONS_INDEX_FILENAME);
+
+    let mut index: serde_json::Map<String, Value> = match std::fs::read_to_string(&index_path) {
+        Ok(content) => match serde_json::from_str::<Value>(&content) {
+            Ok(Value::Object(map)) => map,
+            Ok(_) => {
+                safe_warn!(
+                    safe: ("sessions-index.json is not a JSON object; overwriting"),
+                    full: ("sessions-index.json at {} is not a JSON object; overwriting", index_path.display())
+                );
+                serde_json::Map::new()
+            }
+            Err(error) => {
+                safe_warn!(
+                    safe: ("Failed to parse sessions-index.json; overwriting"),
+                    full: ("Failed to parse sessions-index.json at {}: {error}; overwriting", index_path.display())
+                );
+                serde_json::Map::new()
+            }
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_json::Map::new(),
+        Err(error) => {
+            return Err(anyhow::Error::from(error)
+                .context(format!("Failed to read {}", index_path.display())));
+        }
+    };
+
+    let encoded = encode_cwd(cwd);
+    let transcript_path = format!("projects/{encoded}/{session_uuid}.jsonl");
+    let entry = serde_json::json!({
+        "sessionId": session_uuid.to_string(),
+        "cwd": cwd.to_string_lossy(),
+        "projectPath": encoded,
+        "transcriptPath": transcript_path,
+    });
+    index.insert(session_uuid.to_string(), entry);
+
+    if let Some(parent) = index_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    std::fs::write(
+        &index_path,
+        serde_json::to_vec_pretty(&Value::Object(index))
+            .context("Failed to serialize sessions-index.json")?,
+    )
+    .with_context(|| format!("Failed to write {}", index_path.display()))?;
+    Ok(())
+}
+/// Serialize a slice of JSON values as a JSONL byte string (one value per line).
+fn entries_to_jsonl(entries: &[Value]) -> Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    for entry in entries {
+        serde_json::to_writer(&mut buf, entry)?;
+        buf.push(b'\n');
+    }
+    Ok(buf)
+}
+
+/// Read a JSONL file, returning one parsed [`Value`] per non-blank line.
+///
+/// Lines that fail to parse as JSON are skipped with a warning rather than
+/// causing the entire read to fail. A missing file returns an empty [`Vec`].
+fn read_jsonl(path: &Path) -> Result<Vec<Value>> {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(
+                anyhow::Error::from(e).context(format!("Failed to open {}", path.display()))
+            );
+        }
+    };
+    let reader = BufReader::new(file);
+    let mut entries = Vec::new();
+    for line in reader.lines() {
+        let line = line.with_context(|| format!("Failed to read line from {}", path.display()))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        match serde_json::from_str(trimmed) {
+            Ok(value) => entries.push(value),
+            Err(e) => {
+                safe_warn!(
+                    safe: ("Skipping malformed JSONL entry"),
+                    full: ("Skipping malformed JSONL entry in {}: {e}", path.display())
+                );
+            }
+        }
+    }
+    Ok(entries)
 }
 
 fn prepare_claude_environment_config(
@@ -586,7 +994,7 @@ const CLAUDE_JSON_FILE_NAME: &str = ".claude.json";
 const CLAUDE_SETTINGS_FILE_NAME: &str = "settings.json";
 const ANTHROPIC_API_KEY_SUFFIX_LEN: usize = 20;
 
-#[derive(Default, Deserialize, Serialize, Debug)]
+#[derive(Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ClaudeConfig {
     #[serde(default)]
@@ -601,7 +1009,7 @@ struct ClaudeConfig {
     extra: Map<String, Value>,
 }
 
-#[derive(Default, Deserialize, Serialize, Debug)]
+#[derive(Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CustomApiKeyResponses {
     #[serde(default)]
@@ -610,7 +1018,7 @@ struct CustomApiKeyResponses {
     extra: Map<String, Value>,
 }
 
-#[derive(Default, Deserialize, Serialize, Debug)]
+#[derive(Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ClaudeProjectConfig {
     #[serde(default)]
@@ -619,7 +1027,7 @@ struct ClaudeProjectConfig {
     extra: Map<String, Value>,
 }
 
-#[derive(Default, Deserialize, Serialize, Debug)]
+#[derive(Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ClaudeSettings {
     #[serde(default)]

@@ -28,12 +28,14 @@ use crate::ai::agent_events::{
     AgentEventDriverConfig, MessageHydrator, ServerApiAgentEventSource,
 };
 use crate::ai::agent_sdk::driver::{AgentDriver, OZ_MESSAGE_LISTENER_STATE_ROOT_ENV};
+use crate::server::server_api::ai::AIClient;
 use crate::server::server_api::ai::AgentRunEvent;
 use crate::server::server_api::ServerApi;
 
 const LEGACY_MESSAGE_LISTENER_STATE_ROOT_ENV: &str = "OZ_PARENT_STATE_ROOT";
 const PARENT_BRIDGE_DEFAULT_STATE_ROOT: &str = ".claude-code/oz-parent-bridge";
 const PARENT_BRIDGE_SURFACED_DIR_NAME: &str = "surfaced";
+const PARENT_BRIDGE_EVENT_CURSOR_FILE_NAME: &str = "event-cursor.json";
 const PARENT_BRIDGE_HOOK_OUTPUT_FILE_NAME: &str = "pending-hook-output.json";
 const PARENT_BRIDGE_HOOK_OUTPUT_ACK_FILE_NAME: &str = "pending-hook-output.ack";
 const PARENT_BRIDGE_MAX_CONTEXT_CHARS_ENV: &str = "OZ_PARENT_MAX_CONTEXT_CHARS";
@@ -48,6 +50,16 @@ pub(super) struct MessageBridge {
     runtime: Mutex<Option<MessageBridgeRuntime>>,
     state_lock: AsyncMutex<()>,
 }
+
+pub(super) enum MessageBridgeCleanupDisposition {
+    RemoveState,
+    PreserveState,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct MessageBridgeEventCursor {
+    since_sequence: i64,
+}
 struct MessageBridgeRuntime {
     task: SpawnedFutureHandle,
 }
@@ -55,6 +67,7 @@ struct MessageBridgeRuntime {
 struct MessageBridgeEventConsumer {
     run_id: String,
     state_dir: PathBuf,
+    server_api: Arc<ServerApi>,
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -90,6 +103,13 @@ impl AgentEventConsumer for MessageBridgeEventConsumer {
         }
 
         Ok(AgentEventConsumerControlFlow::Continue)
+    }
+
+    async fn persist_cursor(&mut self, sequence: i64) -> anyhow::Result<()> {
+        write_parent_bridge_event_cursor(&self.state_dir, sequence)?;
+        self.server_api
+            .update_event_sequence_on_server(&self.run_id, sequence)
+            .await
     }
 }
 
@@ -199,9 +219,12 @@ impl MessageBridge {
         acknowledge_parent_bridge_hook_output(&hydrator, &self.state_dir).await
     }
 
-    pub(super) fn cleanup(&self) -> Result<()> {
+    pub(super) fn cleanup(&self, disposition: MessageBridgeCleanupDisposition) -> Result<()> {
         if let Some(runtime) = self.runtime.lock().take() {
             runtime.task.abort();
+        }
+        if matches!(disposition, MessageBridgeCleanupDisposition::PreserveState) {
+            return Ok(());
         }
         match fs::remove_dir_all(&self.state_dir) {
             Ok(()) => {}
@@ -249,6 +272,10 @@ pub(super) fn parent_bridge_hook_output_ack_file(state_dir: &Path) -> PathBuf {
     state_dir.join(PARENT_BRIDGE_HOOK_OUTPUT_ACK_FILE_NAME)
 }
 
+pub(super) fn parent_bridge_event_cursor_file(state_dir: &Path) -> PathBuf {
+    state_dir.join(PARENT_BRIDGE_EVENT_CURSOR_FILE_NAME)
+}
+
 fn parent_bridge_message_path(dir: &Path, sequence: i64, message_id: &str) -> PathBuf {
     dir.join(format!("{sequence:020}-{message_id}.json"))
 }
@@ -277,6 +304,28 @@ pub(super) fn ensure_parent_bridge_state_dir(state_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn read_parent_bridge_event_cursor(state_dir: &Path) -> Result<i64> {
+    let path = parent_bridge_event_cursor_file(state_dir);
+    if !path.exists() {
+        return Ok(0);
+    }
+
+    let cursor = serde_json::from_slice::<MessageBridgeEventCursor>(
+        &fs::read(&path).with_context(|| format!("Failed to read {}", path.display()))?,
+    )
+    .with_context(|| format!("Failed to parse {}", path.display()))?;
+    Ok(cursor.since_sequence)
+}
+
+pub(super) fn write_parent_bridge_event_cursor(state_dir: &Path, sequence: i64) -> Result<()> {
+    write_parent_bridge_json_atomically(
+        &parent_bridge_event_cursor_file(state_dir),
+        &MessageBridgeEventCursor {
+            since_sequence: sequence,
+        },
+    )
+}
+
 pub(super) fn stage_parent_bridge_message(
     state_dir: &Path,
     record: &MessageBridgeMessageRecord,
@@ -288,7 +337,7 @@ pub(super) fn stage_parent_bridge_message(
     Ok(())
 }
 
-fn parent_bridge_max_context_chars() -> usize {
+pub(super) fn parent_bridge_max_context_chars() -> usize {
     std::env::var(PARENT_BRIDGE_MAX_CONTEXT_CHARS_ENV)
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok())
@@ -579,13 +628,42 @@ async fn run_parent_bridge_forever(
     state_dir: PathBuf,
 ) -> Result<()> {
     ensure_parent_bridge_state_dir(&state_dir)?;
+    let since_sequence =
+        read_parent_bridge_resume_cursor(server_api.as_ref(), &run_id, &state_dir).await?;
     // The shared driver keeps `since_sequence` in memory across its own retry
-    // loop, which is all this per-session bridge needs because the state dir is
-    // not reused across sessions.
-    let config = AgentEventDriverConfig::retry_forever(vec![run_id.clone()], 0);
-    let source = ServerApiAgentEventSource::new(server_api);
-    let mut consumer = MessageBridgeEventConsumer { run_id, state_dir };
+    // loop and we also persist it inside the session state dir so dormant runs
+    // can resume without replaying already handled events.
+    let config = AgentEventDriverConfig::retry_forever(vec![run_id.clone()], since_sequence);
+    let source = ServerApiAgentEventSource::new(server_api.clone());
+    let mut consumer = MessageBridgeEventConsumer {
+        run_id,
+        state_dir,
+        server_api,
+    };
     run_agent_event_driver(source, config, &mut consumer).await
+}
+
+async fn read_parent_bridge_resume_cursor(
+    server_api: &ServerApi,
+    run_id: &str,
+    state_dir: &Path,
+) -> Result<i64> {
+    let local_sequence = read_parent_bridge_event_cursor(state_dir)?;
+    let Ok(task_id) = run_id.parse() else {
+        return Ok(local_sequence);
+    };
+
+    let server_sequence = match server_api.get_ambient_agent_task(&task_id).await {
+        Ok(task) => task.last_event_sequence.unwrap_or(0),
+        Err(err) => {
+            log::warn!(
+                "Failed to read server-backed event cursor for Claude message bridge run {run_id}: {err:#}"
+            );
+            0
+        }
+    };
+
+    Ok(local_sequence.max(server_sequence))
 }
 
 fn write_parent_bridge_json_atomically<T: Serialize>(path: &Path, value: &T) -> Result<()> {

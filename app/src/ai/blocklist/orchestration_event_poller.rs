@@ -8,6 +8,7 @@ use crate::ai::agent_events::{
     run_agent_event_driver, AgentEventConsumer, AgentEventConsumerControlFlow,
     AgentEventDriverConfig, MessageHydrator, ServerApiAgentEventSource,
 };
+use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskId};
 use crate::server::server_api::ai::{AIClient, AgentRunEvent};
 use crate::server::server_api::{ServerApi, ServerApiProvider};
 use anyhow::anyhow;
@@ -90,6 +91,7 @@ pub struct OrchestrationEventPoller {
     server_api: Arc<ServerApi>,
     watched_run_ids: HashMap<AIConversationId, HashSet<String>>,
     event_cursor: HashMap<AIConversationId, i64>,
+    restore_fetch_failures: HashMap<AIConversationId, usize>,
     poll_backoff_index: HashMap<AIConversationId, usize>,
     pending_delivery: HashMap<AIConversationId, PendingDeliveryConfirmation>,
     conversation_statuses: HashMap<AIConversationId, ConversationStatus>,
@@ -123,6 +125,24 @@ impl OrchestrationEventPoller {
             server_api,
             watched_run_ids: HashMap::new(),
             event_cursor: HashMap::new(),
+            restore_fetch_failures: HashMap::new(),
+            poll_backoff_index: HashMap::new(),
+            pending_delivery: HashMap::new(),
+            conversation_statuses: HashMap::new(),
+            poll_in_flight: HashSet::new(),
+            sse_connections: HashMap::new(),
+            next_sse_generation: 0,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_with_clients_for_test(ai_client: Arc<dyn AIClient>, server_api: Arc<ServerApi>) -> Self {
+        Self {
+            ai_client,
+            server_api,
+            watched_run_ids: HashMap::new(),
+            event_cursor: HashMap::new(),
+            restore_fetch_failures: HashMap::new(),
             poll_backoff_index: HashMap::new(),
             pending_delivery: HashMap::new(),
             conversation_statuses: HashMap::new(),
@@ -199,6 +219,9 @@ impl OrchestrationEventPoller {
                     self.on_conversation_status_updated(*conversation_id, ctx);
                 }
             }
+            BlocklistAIHistoryEvent::RestoredConversations {
+                conversation_ids, ..
+            } => self.on_restored_conversations(conversation_ids, ctx),
             BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
                 conversation_id, ..
             } => self.on_server_token_assigned(*conversation_id, ctx),
@@ -215,6 +238,7 @@ impl OrchestrationEventPoller {
             } => {
                 self.watched_run_ids.remove(conversation_id);
                 self.event_cursor.remove(conversation_id);
+                self.restore_fetch_failures.remove(conversation_id);
                 self.poll_backoff_index.remove(conversation_id);
                 self.pending_delivery.remove(conversation_id);
                 self.conversation_statuses.remove(conversation_id);
@@ -491,8 +515,53 @@ impl OrchestrationEventPoller {
         // Trigger event delivery when a conversation with watched run_ids
         // becomes idle. With the event-push flag this opens an SSE stream;
         // otherwise it falls back to the existing polling loop.
-        if became_success && self.watched_run_ids.contains_key(&conversation_id) {
+        if became_success
+            && self.watched_run_ids.contains_key(&conversation_id)
+            && !self.restore_fetch_failures.contains_key(&conversation_id)
+        {
             self.start_event_delivery(conversation_id, ctx);
+        }
+    }
+
+    fn on_restored_conversations(
+        &mut self,
+        conversation_ids: &[AIConversationId],
+        ctx: &mut ModelContext<Self>,
+    ) {
+        for conversation_id in conversation_ids {
+            let Some(conversation) =
+                BlocklistAIHistoryModel::as_ref(ctx).conversation(conversation_id)
+            else {
+                continue;
+            };
+            if conversation.is_viewing_shared_session() {
+                continue;
+            }
+
+            self.conversation_statuses
+                .insert(*conversation_id, conversation.status().clone());
+
+            let sqlite_cursor = conversation.last_event_sequence().unwrap_or(0);
+            self.event_cursor.insert(*conversation_id, sqlite_cursor);
+
+            let Some(run_id) = conversation.run_id() else {
+                continue;
+            };
+
+            self.watched_run_ids
+                .entry(*conversation_id)
+                .or_default()
+                .insert(run_id.clone());
+
+            let Ok(task_id) = run_id.parse::<AmbientAgentTaskId>() else {
+                self.maybe_start_delivery_after_restore(*conversation_id, ctx);
+                continue;
+            };
+
+            self.restore_fetch_failures
+                .entry(*conversation_id)
+                .or_insert(0);
+            self.spawn_restore_fetch(*conversation_id, task_id, sqlite_cursor, ctx);
         }
     }
 
@@ -519,6 +588,116 @@ impl OrchestrationEventPoller {
             run_id
         };
         self.register_watched_run_id(conversation_id, run_id, ctx);
+    }
+
+    fn spawn_restore_fetch(
+        &mut self,
+        conversation_id: AIConversationId,
+        task_id: AmbientAgentTaskId,
+        sqlite_cursor: i64,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let ai_client = self.ai_client.clone();
+        let task_id_string = task_id.to_string();
+        let retry_task_id_string = task_id_string.clone();
+        ctx.spawn(
+            async move {
+                let task_id: AmbientAgentTaskId = task_id_string.parse()?;
+                ai_client.get_ambient_agent_task(&task_id).await
+            },
+            move |me, result, ctx| match result {
+                Ok(task) => me.finish_restore_fetch(conversation_id, sqlite_cursor, task, ctx),
+                Err(err) => {
+                    log::warn!(
+                        "Failed to restore orchestration event state for {conversation_id:?}: {err:#}"
+                    );
+                    me.start_restore_fetch_retry_timer(
+                        conversation_id,
+                        retry_task_id_string.clone(),
+                        ctx,
+                    );
+                }
+            },
+        );
+    }
+
+    fn finish_restore_fetch(
+        &mut self,
+        conversation_id: AIConversationId,
+        sqlite_cursor: i64,
+        task: AmbientAgentTask,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.restore_fetch_failures.remove(&conversation_id);
+
+        let merged_cursor = sqlite_cursor.max(task.last_event_sequence.unwrap_or(0));
+        self.event_cursor.insert(conversation_id, merged_cursor);
+
+        let watched = self.watched_run_ids.entry(conversation_id).or_default();
+        let mut added_child = false;
+        for child_run_id in task.children {
+            if watched.insert(child_run_id) {
+                added_child = true;
+            }
+        }
+
+        if added_child && self.sse_connections.contains_key(&conversation_id) {
+            self.reconnect_sse(conversation_id, ctx);
+        }
+
+        self.maybe_start_delivery_after_restore(conversation_id, ctx);
+    }
+
+    fn start_restore_fetch_retry_timer(
+        &mut self,
+        conversation_id: AIConversationId,
+        task_id: String,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let failures = self
+            .restore_fetch_failures
+            .entry(conversation_id)
+            .or_insert(0);
+        *failures += 1;
+        let delay_secs = POLL_BACKOFF_STEPS[(*failures - 1).min(POLL_BACKOFF_STEPS.len() - 1)];
+
+        ctx.spawn(
+            async move { Timer::after(Duration::from_secs(delay_secs)).await },
+            move |me, _, ctx| {
+                if !me.restore_fetch_failures.contains_key(&conversation_id) {
+                    return;
+                }
+                let Some(_) = BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id)
+                else {
+                    me.restore_fetch_failures.remove(&conversation_id);
+                    return;
+                };
+
+                let Ok(task_id) = task_id.parse::<AmbientAgentTaskId>() else {
+                    me.restore_fetch_failures.remove(&conversation_id);
+                    me.maybe_start_delivery_after_restore(conversation_id, ctx);
+                    return;
+                };
+
+                let sqlite_cursor = me.event_cursor.get(&conversation_id).copied().unwrap_or(0);
+                me.spawn_restore_fetch(conversation_id, task_id, sqlite_cursor, ctx);
+            },
+        );
+    }
+
+    fn maybe_start_delivery_after_restore(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let status = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .map(|conversation| conversation.status().clone())
+            .or_else(|| self.conversation_statuses.get(&conversation_id).cloned());
+
+        if matches!(status, Some(ConversationStatus::Success)) {
+            self.start_event_delivery(conversation_id, ctx);
+        }
     }
 
     fn on_streaming_exchange_updated(
@@ -687,6 +866,26 @@ impl OrchestrationEventPoller {
             .max()
             .unwrap_or(previous_cursor);
         self.event_cursor.insert(conversation_id, max_seq);
+        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+            history_model.update_event_sequence(conversation_id, max_seq, ctx);
+        });
+
+        let own_run_id = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .and_then(|conversation| conversation.run_id());
+        if let Some(run_id) = own_run_id {
+            let ai_client = self.ai_client.clone();
+            ctx.spawn(
+                async move { ai_client.update_event_sequence_on_server(&run_id, max_seq).await },
+                move |_, result, _| {
+                    if let Err(err) = result {
+                        log::warn!(
+                            "Failed to persist server-backed event cursor for {conversation_id:?}: {err:#}"
+                        );
+                    }
+                },
+            );
+        }
 
         // Persist the cursor to SQLite so that after a restart we can resume
         // event delivery from this sequence number without re-delivering
@@ -746,7 +945,7 @@ impl OrchestrationEventPoller {
         // Only reset backoff when events actually produce pending items.
         self.poll_backoff_index.remove(&conversation_id);
 
-        let pending = build_pending_events(messages, lifecycle_events);
+        let pending = build_pending_events(&events, messages, lifecycle_events);
         OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
             svc.enqueue_polled_events(conversation_id, pending, ctx);
         });
@@ -1042,20 +1241,32 @@ fn convert_lifecycle_events(
 }
 
 fn build_pending_events(
+    events: &[AgentRunEvent],
     messages: Vec<ReceivedMessageInput>,
     lifecycle_events: Vec<api::AgentEvent>,
 ) -> Vec<PendingEvent> {
     let mut pending = Vec::with_capacity(messages.len() + lifecycle_events.len());
     for msg in &messages {
+        let metadata = events
+            .iter()
+            .find(|event| {
+                event.event_type == "new_message"
+                    && event.ref_id.as_deref() == Some(msg.message_id.as_str())
+            })
+            .map(|event| (event.sequence, event.occurred_at.clone()));
+        let (sequence, occurred_at) =
+            metadata.unwrap_or_else(|| (0, chrono::Utc::now().to_rfc3339()));
         pending.push(PendingEvent {
             event_id: msg.message_id.clone(),
             source_agent_id: msg.sender_agent_id.clone(),
             attempt_count: 0,
             detail: PendingEventDetail::Message {
+                sequence,
                 message_id: msg.message_id.clone(),
                 addresses: msg.addresses.clone(),
                 subject: msg.subject.clone(),
                 message_body: msg.message_body.clone(),
+                occurred_at,
             },
         });
     }

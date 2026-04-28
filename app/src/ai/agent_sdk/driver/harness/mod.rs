@@ -35,21 +35,15 @@ use super::{
 };
 
 mod claude_code;
-pub(crate) mod claude_transcript;
 mod gemini;
 mod json_utils;
 
-pub(crate) use claude_code::ClaudeHarness;
-use claude_transcript::ClaudeResumeInfo;
+use claude_code::ClaudeResumeInfo;
+pub(crate) use claude_code::{ClaudeHarness, ClaudeWakeMessage, ClaudeWakeRemoteContext};
 use gemini::GeminiHarness;
 
 /// Harness-agnostic payload describing how to resume an existing conversation.
-///
-/// Each variant carries the data a specific harness needs to rehydrate state before its CLI
-/// launches. Harnesses match on the variant they produce and ignore others; new CLIs that
-/// want resume support add a new variant and override [`ThirdPartyHarness::fetch_resume_payload`].
 pub(crate) enum ResumePayload {
-    /// Claude Code session state fetched from the server's transcript endpoint.
     Claude(ClaudeResumeInfo),
 }
 
@@ -88,15 +82,6 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
     }
 
     /// Fetch the harness-specific resume payload for an existing conversation.
-    ///
-    /// The driver calls this when the user passes `--conversation <id>` and the harness
-    /// matches the stored conversation's harness. Harnesses that don't support resume
-    /// use the default impl, which returns `Ok(None)` and causes the run to start fresh.
-    ///
-    /// Implementations download the raw transcript via [`HarnessSupportClient::fetch_transcript`]
-    /// (which derives the conversation from the current task's `agent_conversation_id`) and
-    /// own all harness-specific deserialization and error mapping (e.g. a 404 maps to
-    /// [`AgentDriverError::ConversationResumeStateMissing`] tagged with the harness label).
     async fn fetch_resume_payload(
         &self,
         _conversation_id: &AIConversationId,
@@ -106,15 +91,6 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
     }
 
     /// Build a runner for executing this harness with the given prompt.
-    ///
-    /// If `resume` is `Some`, the harness matches on its own [`ResumePayload`] variant and
-    /// reuses the stored session/conversation ids instead of minting fresh ones. Variants
-    /// belonging to other harnesses are ignored.
-    ///
-    /// `resumption_prompt`, when non-empty, is a short user-turn preamble the server emits
-    /// during a resumed session. Each harness decides exactly how to surface it (e.g. Claude
-    /// prepends it to the user-turn prompt that gets piped into the CLI). Harnesses that
-    /// don't yet support resumption can ignore it.
     #[allow(clippy::too_many_arguments)]
     fn build_runner(
         &self,
@@ -158,16 +134,12 @@ impl fmt::Debug for HarnessKind {
 }
 
 /// Build a [`HarnessKind`] for the given [`Harness`].
-///
-/// We shouldn't ever get a `--harness unknown` here because clap should handle
-/// it.
-pub(crate) fn harness_kind(harness: Harness) -> Result<HarnessKind, AgentDriverError> {
+pub(crate) fn harness_kind(harness: Harness) -> HarnessKind {
     match harness {
-        Harness::Oz => Ok(HarnessKind::Oz),
-        Harness::Claude => Ok(HarnessKind::ThirdParty(Box::new(ClaudeHarness))),
-        Harness::OpenCode => Ok(HarnessKind::Unsupported(Harness::OpenCode)),
-        Harness::Gemini => Ok(HarnessKind::ThirdParty(Box::new(GeminiHarness))),
-        Harness::Unknown => Err(AgentDriverError::InvalidRuntimeState),
+        Harness::Oz => HarnessKind::Oz,
+        Harness::Claude => HarnessKind::ThirdParty(Box::new(ClaudeHarness)),
+        Harness::OpenCode => HarnessKind::Unsupported(Harness::OpenCode),
+        Harness::Gemini => HarnessKind::ThirdParty(Box::new(GeminiHarness)),
     }
 }
 
@@ -322,6 +294,18 @@ pub(crate) enum SavePoint {
     PostTurn,
 }
 
+/// Controls how much harness-owned state should survive cleanup after the CLI
+/// exits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum HarnessCleanupDisposition {
+    /// Tear down all harness-owned resume and wake state.
+    DropResumptionState,
+    /// The harness exited cleanly and its final save completed, so wake/resume
+    /// state may be preserved if the harness-specific runtime also considers
+    /// the run complete.
+    PreserveResumptionStateIfSupported,
+}
+
 /// Stateful per-run representation of an external harness produced
 /// by [`ThirdPartyHarness::build_runner`].
 ///
@@ -359,7 +343,11 @@ pub(crate) trait HarnessRunner: Send + Sync {
     }
 
     /// Clean up any harness-owned background state after the harness exits.
-    async fn cleanup(&self, _foreground: &ModelSpawner<AgentDriver>) -> Result<()> {
+    async fn cleanup(
+        &self,
+        _cleanup_disposition: HarnessCleanupDisposition,
+        _foreground: &ModelSpawner<AgentDriver>,
+    ) -> Result<()> {
         Ok(())
     }
 }
@@ -370,20 +358,29 @@ pub(crate) async fn has_running_cli_agent(
     terminal_driver: &ModelHandle<TerminalDriver>,
     foreground: &ModelSpawner<AgentDriver>,
 ) -> bool {
+    matches!(
+        cli_agent_session_status(terminal_driver, foreground).await,
+        Some(CLIAgentSessionStatus::InProgress)
+    )
+}
+
+/// Returns the tracked CLI agent session status for the terminal, if any.
+pub(crate) async fn cli_agent_session_status(
+    terminal_driver: &ModelHandle<TerminalDriver>,
+    foreground: &ModelSpawner<AgentDriver>,
+) -> Option<CLIAgentSessionStatus> {
     let driver = terminal_driver.clone();
-    let Ok(running) = foreground
+    foreground
         .spawn(move |_, ctx| {
             let terminal_view_id = driver.as_ref(ctx).terminal_view().id();
             CLIAgentSessionsModel::handle(ctx)
                 .as_ref(ctx)
                 .session(terminal_view_id)
-                .is_some_and(|s| s.status == CLIAgentSessionStatus::InProgress)
+                .map(|session| session.status.clone())
         })
         .await
-    else {
-        return false;
-    };
-    running
+        .ok()
+        .flatten()
 }
 
 /// Create a [`NamedTempFile`] with the given prefix and write `content` into it.

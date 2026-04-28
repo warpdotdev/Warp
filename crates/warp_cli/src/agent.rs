@@ -278,7 +278,11 @@ pub struct RunAgentArgs {
     #[command(flatten)]
     pub snapshot: SnapshotArgs,
     /// Identifier for the task that spawned this agent, used to report progress.
-    #[arg(long = "task-id", hide = true, conflicts_with_all = ["prompt", "saved_prompt", "file"])]
+    ///
+    /// Mutually exclusive with `--conversation`: when `--task-id` is set the conversation id
+    /// (if any) is read off the server-side task metadata, so the caller never needs to pass
+    /// both.
+    #[arg(long = "task-id", hide = true, conflicts_with_all = ["prompt", "saved_prompt", "file", "conversation"])]
     pub task_id: Option<String>,
 
     /// Whether we are running the agent in a sandboxed environment.

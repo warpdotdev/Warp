@@ -122,6 +122,17 @@ fn restored_conversation_defaults_autoexecute_override_when_not_persisted() {
 }
 
 #[test]
+fn restored_conversation_uses_persisted_last_event_sequence() {
+    let conversation_data: AgentConversationData =
+        serde_json::from_str(r#"{"server_conversation_token":null,"last_event_sequence":42}"#)
+            .unwrap();
+
+    let conversation = restored_conversation(Some(conversation_data));
+
+    assert_eq!(conversation.last_event_sequence(), Some(42));
+}
+
+#[test]
 fn restored_conversation_defaults_unknown_persisted_autoexecute_override() {
     let _flag = FeatureFlag::RememberFastForwardState.override_enabled(true);
     let conversation_data: AgentConversationData = serde_json::from_str(

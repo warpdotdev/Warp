@@ -4612,6 +4612,9 @@ impl TerminalView {
         if let BlocklistAIControllerEvent::SentRequest { model_id, .. } = event {
             self.maybe_insert_aws_bedrock_login_banner(model_id, ctx);
         }
+        if let BlocklistAIControllerEvent::ExecuteLocalHarnessCommand { command } = event {
+            self.execute_command_or_set_pending(command, ctx);
+        }
         if let BlocklistAIControllerEvent::FinishedReceivingOutput {
             conversation_id, ..
         } = event

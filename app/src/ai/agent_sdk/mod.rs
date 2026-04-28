@@ -68,7 +68,8 @@ use crate::ai::skills::{
 };
 
 pub(crate) use driver::harness::{
-    task_env_vars, validate_cli_installed, ClaudeHarness, ThirdPartyHarness,
+    task_env_vars, validate_cli_installed, ClaudeHarness, ClaudeWakeMessage,
+    ClaudeWakeRemoteContext, ThirdPartyHarness,
 };
 pub use driver::AgentDriver;
 use telemetry::CliTelemetryEvent;
@@ -400,7 +401,7 @@ fn build_merged_config_and_task(
         model: model_override,
         profile: args.profile.clone(),
         mcp_specs: runtime_mcp_specs,
-        harness: harness_kind(args.harness)?,
+        harness: harness_kind(args.harness),
     };
 
     Ok((merged_config, task))
@@ -460,7 +461,7 @@ fn build_server_side_task(
         model: model_override,
         profile,
         mcp_specs: runtime_mcp_specs,
-        harness: harness_kind(args.harness)?,
+        harness: harness_kind(args.harness),
     };
 
     Ok((config, task))
@@ -567,43 +568,47 @@ impl AgentDriverRunner {
 
         // Set up and run the driver, reporting any errors back to the server.
         let result: Result<(), AgentDriverError> = async {
-            // Pull relevant variables out of args before moving it into the closure.
+            // Pull relevant variables out of args before moving it into the
+            // build_driver_options_and_task future.
             let share_requests = args.share.share.clone();
             let bedrock_inference_role = args.bedrock_inference_role.clone();
             let args_harness = args.harness;
 
-            // `--conversation` path (user-invoked local resume): validate before any task side
-            // effects so mismatches fail fast. The `--task-id` path derives its conversation id
-            // from the server-side task metadata inside `build_driver_options_and_task`. Both
-            // can currently be passed together (the worker server-side appends `--conversation`
-            // alongside `--task-id` for Slack/Linear followups); when both are set, the explicit
-            // `--conversation` value wins via the merge below.
-            if let Some(conversation_id) = args.conversation.as_deref() {
-                common::fetch_and_validate_conversation_harness(
+            let resume_context = if let Some(conversation_id) = args.conversation.clone() {
+                let metadata = common::fetch_and_validate_conversation_harness(
                     server_api.clone(),
-                    conversation_id,
+                    &conversation_id,
                     args_harness,
                 )
                 .await?;
-            }
-            let resume_conversation_id = args.conversation.clone();
+                Some((conversation_id, metadata))
+            } else {
+                None
+            };
 
-            // Build driver options and task, handling task creation or existing task setup.
-            // For the `--task-id` path, `task_conversation_id` is the `conversation_id` read off
-            // the fetched `AmbientAgentTask` (set by the server when linking the task to an
-            // existing conversation, e.g. via `run-cloud --conversation`).
-            let (mut driver_options, task, task_conversation_id) =
+            let (mut driver_options, task, environment_id, task_conversation_id) =
                 Self::build_driver_options_and_task(&foreground, args, &server_api).await?;
 
             // Update the effective task ID so errors are reported correctly.
             // This only matters if we created a task ID locally.
             task_id = driver_options.task_id.or(task_id);
+            let resume_context = match (resume_context, task_conversation_id) {
+                (Some(context), _) => Some(context),
+                (None, Some(conversation_id)) => {
+                    let metadata = common::fetch_and_validate_conversation_harness(
+                        server_api.clone(),
+                        &conversation_id,
+                        args_harness,
+                    )
+                    .await?;
+                    Some((conversation_id, metadata))
+                }
+                (None, None) => None,
+            };
 
-            // The `--task-id` branch already validated `args_harness` against the task's harness
-            // setting inside `build_driver_options_and_task`; the conversation that the task spawned
-            // necessarily uses the same harness, so no extra conversation-metadata roundtrip is
-            // needed here. Just merge the task's linked conversation id into the resume target.
-            let resume_conversation_id = resume_conversation_id.or(task_conversation_id);
+            // Resolve the environment. We make sure this happens after resolving the task ID
+            // so that errors are reported.
+            Self::resolve_environment(&foreground, environment_id, &mut driver_options).await?;
 
             let bedrock_task_id = driver_options.task_id.map(|id| id.to_string());
 
@@ -653,11 +658,13 @@ impl AgentDriverRunner {
             }
 
             // Pull conversation information, if we have it
-            if let Some(conversation_id) = resume_conversation_id {
-                driver_options.resume = Self::load_conversation_information(
+            if let Some((conversation_id, resume_metadata)) = resume_context {
+                Self::load_conversation_information(
                     &foreground,
                     conversation_id,
+                    resume_metadata,
                     &task.harness,
+                    &mut driver_options,
                 )
                 .await?;
             }
@@ -748,15 +755,13 @@ impl AgentDriverRunner {
 
     /// Build the AgentDriverOptions and Task, handling task creation or existing task setup.
     ///
-    /// The third tuple element is the conversation id read off the server-side task metadata
-    /// on the `--task-id` branch. It's `None` when no task id was passed or when the task is
-    /// not linked to a conversation; callers use it to drive `--task-id`-implied resume
-    /// without requiring the caller to also pass `--conversation`.
+    /// Returns the driver options, the task, the unresolved environment ID (if any), and any
+    /// conversation id read off server-side task metadata.
     async fn build_driver_options_and_task(
         foreground: &ModelSpawner<Self>,
         args: RunAgentArgs,
         server_api: &Arc<dyn AIClient>,
-    ) -> Result<(AgentDriverOptions, Task, Option<String>), AgentDriverError> {
+    ) -> Result<(AgentDriverOptions, Task, Option<String>, Option<String>), AgentDriverError> {
         // Get the working directory
         let working_dir = match args.cwd.as_ref() {
             Some(dir) => dunce::canonicalize(dir)
@@ -791,7 +796,8 @@ impl AgentDriverRunner {
                     should_share,
                     idle_on_complete: args.idle_on_complete.map(|d| d.into()),
                     secrets: Default::default(),
-                    resume: None,
+                    conversation_restoration: None,
+                    resume_payload: None,
                     cloud_providers: Vec::new(),
                     environment: None,
                     selected_harness: args.harness,
@@ -813,9 +819,7 @@ impl AgentDriverRunner {
 
         let environment_id = merged_config.environment_id.clone();
 
-        // Handle secrets/attachments fetch (existing task) or task creation (new run).
-        // The existing-task branch also surfaces the task's `conversation_id` (if any) so
-        // the caller can wire up resume without a separate `--conversation` arg.
+        // Handle secrets/attachments fetch (existing task) or task creation (new run)
         let task_conversation_id = if let Some(task_id_str) = task_id_str {
             Self::fetch_secrets_and_attachments(
                 foreground,
@@ -848,10 +852,7 @@ impl AgentDriverRunner {
             None
         };
 
-        // Resolve environment and cloud providers.
-        Self::resolve_environment(foreground, environment_id, &mut driver_options).await?;
-
-        Ok((driver_options, task, task_conversation_id))
+        Ok((driver_options, task, environment_id, task_conversation_id))
     }
 
     /// Creates a new task on the server for this agent run, sets the task ID on the driver
@@ -905,10 +906,6 @@ impl AgentDriverRunner {
 
     /// When starting an agent run from an existing task_id, fetch secrets, task metadata,
     /// and task attachments (images and files) from the server and update the driver options.
-    ///
-    /// Returns the task's `conversation_id` when the server has linked the task to an existing
-    /// AI conversation (e.g. a `run-cloud --conversation` spawn). The caller uses this to drive
-    /// transcript rehydration without a separate `--conversation` CLI arg.
     async fn fetch_secrets_and_attachments(
         foreground: &ModelSpawner<Self>,
         task_id_str: String,
@@ -1028,41 +1025,14 @@ impl AgentDriverRunner {
                 }
             }
         };
-        let (parent_run_id, task_conversation_id, task_harness) = match task_metadata_result {
-            Ok(Some(task_metadata)) => {
-                // The task's harness is stored on the snapshot; if absent, it's the default Oz.
-                let task_harness = task_metadata
-                    .agent_config_snapshot
-                    .as_ref()
-                    .and_then(|c| c.harness.as_ref())
-                    .map(|h| h.harness_type)
-                    .unwrap_or(Harness::Oz);
-                (
-                    task_metadata.parent_run_id,
-                    task_metadata.conversation_id,
-                    Some(task_harness),
-                )
-            }
-            Ok(None) => (None, None, None),
+        let (parent_run_id, task_conversation_id) = match task_metadata_result {
+            Ok(Some(task_metadata)) => (task_metadata.parent_run_id, task_metadata.conversation_id),
+            Ok(None) => (None, None),
             Err(err) => {
                 log::warn!("Failed to fetch task metadata: {err:#}");
-                (None, None, None)
+                (None, None)
             }
         };
-
-        // Validate the requested `--harness` against the task's harness setting. This avoids the
-        // extra conversation-metadata roundtrip that would otherwise be needed downstream when the
-        // task is linked to an existing conversation, since task harness and conversation harness
-        // always match (the task spawned the conversation).
-        if let Some(task_harness) = task_harness {
-            if task_harness != driver_options.selected_harness {
-                return Err(AgentDriverError::TaskHarnessMismatch {
-                    task_id: task_id_str,
-                    expected: task_harness.to_string(),
-                    got: driver_options.selected_harness.to_string(),
-                });
-            }
-        }
 
         // Set the task ID on the ServerApi so it's sent with all subsequent requests.
         foreground
@@ -1091,24 +1061,17 @@ impl AgentDriverRunner {
     }
 
     /// If we are starting this agent run from an existing conversation, load the conversation
-    /// data from the server and return the harness-specific [`ResumeOptions`] payload that the
-    /// caller plugs onto [`AgentDriverOptions::resume`].
-    ///
-    /// `harness` is the resolved harness from the task config (already validated against the
-    /// conversation's metadata up-front by [`common::fetch_and_validate_conversation_harness`]).
-    ///
-    /// For the Oz harness, fetches the full conversation and returns a [`driver::ResumeOptions::Oz`].
-    /// For third-party harnesses, delegates to [`ThirdPartyHarness::fetch_resume_payload`] and
-    /// wraps the returned payload (if any) in [`driver::ResumeOptions::ThirdParty`]; each harness
-    /// owns its server call and error mapping. Returns `None` if a third-party harness has no
-    /// resume payload to surface.
+    /// data from the server and set the relevant driver options.
     async fn load_conversation_information(
         foreground: &ModelSpawner<Self>,
         conversation_id: String,
+        resume_metadata: crate::ai::agent::conversation::ServerAIConversationMetadata,
         harness: &HarnessKind,
-    ) -> Result<Option<driver::ResumeOptions>, AgentDriverError> {
+        driver_options: &mut AgentDriverOptions,
+    ) -> Result<(), AgentDriverError> {
         match harness {
             HarnessKind::Oz => {
+                let _ = resume_metadata;
                 let server_api = foreground
                     .spawn(|_, ctx| {
                         ServerApiProvider::handle(ctx)
@@ -1134,33 +1097,35 @@ impl AgentDriverRunner {
                     )
                 })?;
 
-                Ok(Some(driver::ResumeOptions::Oz(Box::new(
-                    ConversationRestorationInNewPaneType::Historical {
+                driver_options.conversation_restoration =
+                    Some(ConversationRestorationInNewPaneType::Historical {
                         conversation,
                         should_use_live_appearance: false,
                         ambient_agent_task_id: None,
-                    },
-                ))))
+                    });
             }
-            HarnessKind::ThirdParty(h) => {
+            HarnessKind::ThirdParty(harness) => {
+                let _ = resume_metadata;
                 let harness_support_client = foreground
                     .spawn(|_, ctx| ServerApiProvider::as_ref(ctx).get_harness_support_client())
                     .await?;
-                let resume_conversation_id = AIConversationId::try_from(conversation_id.clone())
+                let resume_conversation_id = AIConversationId::try_from(conversation_id)
                     .map_err(|err| AgentDriverError::ConversationLoadFailed(format!("{err:#}")))?;
-                Ok(
-                    h.fetch_resume_payload(&resume_conversation_id, harness_support_client)
-                        .await?
-                        .map(|payload| driver::ResumeOptions::ThirdParty(Box::new(payload))),
-                )
+                driver_options.resume_payload = harness
+                    .fetch_resume_payload(&resume_conversation_id, harness_support_client)
+                    .await?;
             }
-            HarnessKind::Unsupported(harness) => Err(AgentDriverError::HarnessSetupFailed {
-                harness: harness.to_string(),
-                reason: format!(
-                    "The {harness} harness is only supported for local child agent launches."
-                ),
-            }),
+            HarnessKind::Unsupported(harness) => {
+                return Err(AgentDriverError::HarnessSetupFailed {
+                    harness: harness.to_string(),
+                    reason: format!(
+                        "The {harness} harness is only supported for local child agent launches."
+                    ),
+                });
+            }
         }
+
+        Ok(())
     }
 
     /// Resolve the environment and store into `driver_options`.
@@ -1389,7 +1354,7 @@ fn resolve_orchestration_harness_label() -> &'static str {
         Some(Harness::Claude) => "claude",
         Some(Harness::OpenCode) => "opencode",
         Some(Harness::Gemini) => "gemini",
-        Some(Harness::Unknown) | None => "unknown",
+        _ => "unknown",
     }
 }
 

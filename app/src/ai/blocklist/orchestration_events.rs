@@ -56,10 +56,12 @@ impl LifecycleEventDetailStage {
 #[derive(Debug, Clone)]
 pub enum PendingEventDetail {
     Message {
+        sequence: i64,
         message_id: String,
         addresses: Vec<String>,
         subject: String,
         message_body: String,
+        occurred_at: String,
     },
     Lifecycle {
         event: api::AgentEvent,
@@ -747,6 +749,7 @@ impl OrchestrationEventService {
         // We keep `message_id` stable across targets so dedupe/threading can reason
         // about a single message delivered to multiple recipients.
         let message_id = Uuid::new_v4().to_string();
+        let occurred_at = chrono::Utc::now().to_rfc3339();
 
         for (_, target_conversation_id) in resolved_targets {
             let event_id = Uuid::new_v4().to_string();
@@ -756,10 +759,12 @@ impl OrchestrationEventService {
                 source_agent_id: sender_agent_id.to_string(),
                 attempt_count: 0,
                 detail: PendingEventDetail::Message {
+                    sequence: 0,
                     message_id: message_id.clone(),
                     addresses: target_agent_ids.to_vec(),
                     subject: subject.clone(),
                     message_body: message_body.clone(),
+                    occurred_at: occurred_at.clone(),
                 },
             };
             self.pending_events
@@ -890,6 +895,67 @@ impl OrchestrationEventService {
         ctx.emit(OrchestrationEventServiceEvent::EventsReady { conversation_id });
     }
 
+    pub fn peek_pending_message_events(
+        &self,
+        conversation_id: AIConversationId,
+    ) -> Vec<PendingEvent> {
+        self.pending_events
+            .get(&conversation_id)
+            .into_iter()
+            .flatten()
+            .filter(|event| matches!(event.detail, PendingEventDetail::Message { .. }))
+            .cloned()
+            .collect()
+    }
+
+    pub fn take_pending_events_by_id(
+        &mut self,
+        conversation_id: AIConversationId,
+        event_ids: &[String],
+    ) -> Vec<PendingEvent> {
+        if event_ids.is_empty() {
+            return Vec::new();
+        }
+
+        let event_ids = event_ids.iter().map(String::as_str).collect::<HashSet<_>>();
+        let Some(queue) = self.pending_events.get_mut(&conversation_id) else {
+            return Vec::new();
+        };
+
+        let mut removed = Vec::new();
+        let mut retained = Vec::with_capacity(queue.len());
+        for event in std::mem::take(queue) {
+            if event_ids.contains(event.event_id.as_str()) {
+                removed.push(event);
+            } else {
+                retained.push(event);
+            }
+        }
+        *queue = retained;
+
+        if queue.is_empty() {
+            self.pending_events.remove(&conversation_id);
+        }
+
+        removed
+    }
+
+    pub fn prepend_pending_events(
+        &mut self,
+        conversation_id: AIConversationId,
+        mut events: Vec<PendingEvent>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if events.is_empty() {
+            return;
+        }
+
+        let queue = self.pending_events.entry(conversation_id).or_default();
+        events.append(queue);
+        *queue = events;
+        ctx.emit(OrchestrationEventServiceEvent::EventsReady { conversation_id });
+    }
+
     /// Drain and return all pending events for a conversation.
     fn drain_pending_events(&mut self, conversation_id: &AIConversationId) -> Vec<PendingEvent> {
         self.pending_events
@@ -933,10 +999,12 @@ impl OrchestrationEventService {
         for event in &deliverable {
             match &event.detail {
                 PendingEventDetail::Message {
+                    sequence: _,
                     message_id,
                     addresses,
                     subject,
                     message_body,
+                    occurred_at: _,
                 } => messages.push(ReceivedMessageInput {
                     message_id: message_id.clone(),
                     sender_agent_id: event.source_agent_id.clone(),

@@ -22,7 +22,10 @@ use crate::terminal::CLIAgent;
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
 use super::json_utils::{read_json_file_or_default, write_json_file};
-use super::{write_temp_file, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness};
+use super::{
+    write_temp_file, HarnessCleanupDisposition, HarnessRunner, ResumePayload, SavePoint,
+    ThirdPartyHarness,
+};
 
 pub(crate) struct GeminiHarness;
 
@@ -71,9 +74,6 @@ impl ThirdPartyHarness for GeminiHarness {
         terminal_driver: ModelHandle<TerminalDriver>,
         _resume: Option<ResumePayload>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
-        // Gemini does not support conversation resume yet. When it does, it will add its
-        // own `ResumePayload::Gemini(..)` variant and override `fetch_resume_payload`,
-        // and decide how to surface the user-turn resumption preamble.
         let client: Arc<dyn HarnessSupportClient> = server_api;
         Ok(Box::new(GeminiHarnessRunner::new(
             self.cli_agent().command_prefix(),
@@ -214,6 +214,14 @@ impl HarnessRunner for GeminiHarnessRunner {
             block_id,
         )
         .await
+    }
+
+    async fn cleanup(
+        &self,
+        _cleanup_disposition: HarnessCleanupDisposition,
+        _foreground: &ModelSpawner<AgentDriver>,
+    ) -> Result<()> {
+        Ok(())
     }
 }
 
