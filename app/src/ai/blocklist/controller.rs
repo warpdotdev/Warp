@@ -1209,6 +1209,24 @@ impl BlocklistAIController {
         slash_command: SlashCommandRequest,
         ctx: &mut ModelContext<Self>,
     ) {
+        // Slash commands are a fresh user turn, so mirror `send_query`'s
+        // cancel-and-resend: any in-flight stream on the target conversation
+        // must be cancelled before we hand off to `send_request_input`, which
+        // otherwise trips its in-flight invariant.
+        if let Some(conversation_id) = slash_command.conversation_id(self, ctx) {
+            if self
+                .in_flight_response_streams
+                .has_active_stream_for_conversation(conversation_id, ctx)
+            {
+                self.cancel_conversation_progress(
+                    conversation_id,
+                    CancellationReason::FollowUpSubmitted {
+                        is_for_same_conversation: true,
+                    },
+                    ctx,
+                );
+            }
+        }
         slash_command.send_request(self, /*is_queued_prompt*/ false, ctx);
     }
 
