@@ -33,6 +33,7 @@ use warp_core::ui::{
 };
 use warpui::elements::Shrinkable;
 use warpui::platform::FilePickerConfiguration;
+use warpui::text_layout::TextAlignment;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::{
     elements::{
@@ -886,6 +887,23 @@ impl RuleView {
             RuleScope::ProjectBased => ZERO_STATE_TEXT_PROJECT,
         };
 
+        // Use `FormattedTextElement::from_str` rather than `wrappable_text` so we
+        // can apply `TextAlignment::Center` — `wrappable_text` builds a `Text`
+        // element that always left-aligns within its bounds, even when the
+        // surrounding column centers the *block*.
+        let text_color = appearance
+            .theme()
+            .sub_text_color(appearance.theme().background())
+            .into();
+        let centered_text = FormattedTextElement::from_str(
+            text,
+            appearance.ui_font_family(),
+            style::TEXT_FONT_SIZE,
+        )
+        .with_color(text_color)
+        .with_alignment(TextAlignment::Center)
+        .finish();
+
         Container::new(
             ConstrainedBox::new(
                 Align::new(
@@ -894,11 +912,8 @@ impl RuleView {
                         .with_main_axis_alignment(MainAxisAlignment::Center)
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)
                         .with_child(
-                            appearance
-                                .ui_builder()
-                                .wrappable_text(text, true)
-                                .with_style(style::description_text(appearance))
-                                .build()
+                            Container::new(centered_text)
+                                .with_margin_bottom(8.)
                                 .finish(),
                         )
                         .with_child(self.render_add_button())
