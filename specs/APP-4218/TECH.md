@@ -1,76 +1,97 @@
 # APP-4218: Git operations dialogs compare against the branch's actual parent — Tech Spec
 Product spec: `specs/APP-4218/PRODUCT.md`
 ## Context
-Today the Push / Publish dialog, the Create PR dialog, and their AI helpers hard-code the repo's main branch as the comparison base whenever the current branch has no upstream. On a branch-off-a-branch, every commit inherited from the parent branch shows up as "included" in the push / PR.
-All of the offending code paths already route their base through one function call: `detect_main_branch`. The fix is to introduce a `detect_parent_branch` helper that returns the closest-ancestor branch (falling back to main), and swap the four callers that currently say `detect_main_branch` to say `detect_parent_branch`. No function signatures change.
+The Push / Publish dialog, the Create PR dialog, and their AI helpers compare the current branch against a base ref to compute "what's on this branch." The original v1 of this feature picked a base **branch name** via topology heuristics (`detect_parent_branch`), then used `<branch>..HEAD` everywhere.
+That shape has a structural bug: when the branch's actual parent (typically `master`/`main`) advances past the fork point, it stops being a strict ancestor of HEAD and gets dropped from the candidate pool. The algorithm then picks a random older ancestor branch, and `<wrong-branch>..HEAD` includes commits the user never wrote.
+The v2 design swaps the abstraction. Instead of asking "which branch is my parent?", we directly compute the **fork-point commit** — the most recent commit shared between HEAD and any other branch. All diff/log/AI flows use that SHA. PR creation, which still needs a branch name for `gh pr create --base`, gets a separate, smaller helper.
 Relevant code:
-- `app/src/util/git.rs:316-359` — `get_unpushed_commits`: `git log @{u}..HEAD` with `main..HEAD` fallback.
-- `app/src/util/git.rs:602-634` — `get_branch_diff_entries`: `main..<end>`.
-- `app/src/util/git.rs:743-766` — `get_diff_for_pr`: `main..<end>`, feeds AI.
-- `app/src/util/git.rs:775-784` — `get_branch_commit_messages`: `main..HEAD`, feeds AI.
-- `app/src/util/git.rs:803-826` — `create_pr`: invokes `gh pr create` without `--base`.
-- `app/src/code_review/git_dialog/{push,pr}.rs` — per-dialog state, unchanged in shape. The detected parent is used transparently through the four util helpers.
+- `app/src/util/git.rs` — `detect_parent_branch` / `detect_parent_branch_with_context` (returns a branch name; replaced).
+- `app/src/util/git.rs` — `get_unpushed_commits`, `get_branch_diff_entries`, `get_diff_for_pr`, `get_branch_commit_messages`, `create_pr` (callers; switched to fork-point SHA).
+- `app/src/code_review/git_dialog/{push,pr}.rs` — per-dialog state, unchanged in shape.
 ## Proposed changes
-### 1. `detect_parent_branch`
+### 1. `detect_fork_point` — primary
 ```rust path=null start=null
 // app/src/util/git.rs
-/// Returns the closest-ancestor branch of `HEAD`, or the main branch when
-/// no candidate qualifies. Ties prefer the detected main branch, then local
-/// over `origin/*`, then alphabetical for determinism.
-pub async fn detect_parent_branch(repo_path: &Path) -> Result<String>;
+/// Returns the SHA of the most recent commit shared between `HEAD` and any
+/// other branch. This is the commit at which the current branch began
+/// diverging from the rest of the repo.
+///
+/// Returns `None` when the current branch is fully shared with another
+/// branch (e.g. you're on `main` itself) or when no other refs exist.
+pub async fn detect_fork_point(repo_path: &Path) -> Result<Option<String>>;
 ```
-Implementation (all upfront queries run in parallel via `futures::join!`):
-1. `git for-each-ref --merged HEAD --format='%(objectname) %(refname:short)' refs/heads refs/remotes` to list ancestor refs with their commit SHAs. `--merged HEAD` filters out non-ancestors at the git level, avoiding per-candidate subprocess spawns.
-2. `git log HEAD --format=%H` to walk HEAD's history once. A `HashMap<&str, usize>` of `sha → position` gives each candidate's distance from HEAD in O(1) lookups.
-3. Resolve the actual upstream via `git rev-parse --abbrev-ref --symbolic-full-name @{u}` and exclude it (plus the current branch name) from candidates. Handles non-`origin` upstream configurations.
-4. Rank candidates by `(distance, !is_main, !is_local, name)`. Log the winner at debug.
-5. If no candidate qualified, return `detect_main_branch(repo_path)`.
-Return type is a plain `String` — either a local branch (`feature-a`) or a remote-tracking ref (`origin/feature-a`).
-### 2. Swap `detect_main_branch` for `detect_parent_branch` inside the four helpers
-No caller / signature changes. Each helper keeps its current shape; only the internal base-branch lookup changes:
-- `get_unpushed_commits`: the no-upstream fallback branch becomes `detect_parent_branch` instead of `detect_main_branch`. The primary `@{u}..HEAD` path is unchanged (when an upstream exists, it's still the most accurate "what will be pushed"). When upstream is unset, the fallback now uses the closest ancestor.
-- `get_branch_diff_entries`: `let base = detect_parent_branch(repo_path).await?;` in place of the current `detect_main_branch` call. The `{base}..{end_ref}` range logic is unchanged.
-- `get_diff_for_pr`: same one-line swap.
-- `get_branch_commit_messages`: same one-line swap.
-### 3. `create_pr` passes `--base`
-`create_pr` internally calls `detect_parent_branch`, strips any `origin/` prefix, and passes `--base <parent>` to `gh pr create`. Signature unchanged:
+Algorithm (3 subprocesses total, regardless of repo size):
+1. `git for-each-ref --format=%(refname) refs/heads refs/remotes` — list all refs.
+2. Filter out the current branch's ref and any `*/HEAD` symbolic refs.
+3. `git rev-list HEAD --not <other-refs>` — commits reachable from HEAD but not from any other branch. Output is reverse-chronological, so the **last** line is the oldest commit unique to HEAD.
+4. `git rev-parse <oldest-unique>^` — the parent of the oldest unique commit is the fork point.
+Why this fixes the v1 bug: the result depends only on what's reachable from each ref, never on which ref is a strict ancestor. A `master` that has advanced past your fork still contributes its reachability — your unique commits are still correctly identified, and their predecessor is the fork point.
+Edge cases:
+- HEAD has no commits unique to any other ref → fork point is HEAD itself; return `Some(HEAD)`.
+- No other refs exist → return `None`.
+- Detached HEAD → still works; HEAD resolves to a commit.
+### 2. `detect_pr_base_branch` — secondary
+```rust path=null start=null
+// app/src/util/git.rs
+/// Returns a branch *name* suitable for `gh pr create --base`. Picks the
+/// branch whose tip is closest to (or equals) the detected fork point,
+/// preferring the detected main branch on ties.
+pub async fn detect_pr_base_branch(repo_path: &Path) -> Result<Option<String>>;
+```
+Used only by `create_pr` and any UI label that wants to show "Comparing against `<name>`." Implementation can layer on top of `detect_fork_point`: walk the candidate refs, find the one whose tip equals (or has the smallest distance to) the fork point, with the same tiebreakers as v1 (prefer detected main, then local over `origin/*`, then alphabetical).
+Isolating the name lookup keeps the diff/log path independent of branch-naming details.
+### 3. Switch the four diff/log helpers to use the fork-point SHA
+Each helper drops its `parent_branch: Option<&str>` argument (or keeps it for caller-supplied overrides) and replaces internal `detect_parent_branch(...).await?` calls with `detect_fork_point(...).await?`. The range expression changes from `"{base}..{end_ref}"` to `"{fork_sha}..{end_ref}"` — git accepts a SHA on either side of `..`.
+- `get_unpushed_commits`: when `@{u}` is unresolvable, fall back to `<fork_sha>..HEAD` instead of `<parent-branch>..HEAD`. Primary `@{u}..HEAD` path is unchanged.
+- `get_branch_diff_entries`: `git diff --numstat <fork_sha>..<end_ref>`.
+- `get_diff_for_pr`: `git diff <fork_sha>..<end_ref>`, feeds AI.
+- `get_branch_commit_messages`: `git log <fork_sha>..HEAD --format=%s`, feeds AI.
+No dialog-level plumbing changes — the helpers are the seams.
+### 4. `create_pr` calls `detect_pr_base_branch`
 ```rust path=null start=null
 pub async fn create_pr(
     repo_path: &Path,
     title: Option<&str>,
     body: Option<&str>,
 ) -> Result<PrInfo> {
-    let base = detect_parent_branch(repo_path).await?;
-    let base = base.strip_prefix("origin/").unwrap_or(&base).to_string();
-    // ...existing gh pr create invocation, plus --base <base>...
+    let base = detect_pr_base_branch(repo_path).await?;
+    let base = base.map(|b| b.strip_prefix("origin/").unwrap_or(&b).to_string());
+    // ...existing gh pr create invocation; if Some(base), pass --base <base>...
 }
 ```
-If detection errors, propagate the error — the caller's existing `user_facing_git_error` path shows the generic failure toast.
-### 4. Dialogs
-No dialog-level plumbing. The four util helpers (`get_unpushed_commits`, `get_branch_diff_entries`, `get_diff_for_pr`, `get_branch_commit_messages`) already feed the Push and Create-PR dialogs; swapping them to `detect_parent_branch` internally is enough. The Commit dialog's `CommitAndCreatePr` chain inherits the fix via `create_pr` (§3).
-Surfacing the detected parent in the dialog chrome (e.g. a "Based on" row) was evaluated and dropped for now — it added visible latency waiting on detection to resolve, with limited user value. Tracked as a follow-up.
+If detection returns `None`, omit `--base` and let `gh` infer from repo defaults. Errors propagate to the existing `user_facing_git_error` toast.
 ### 5. Feature flag gating
 All changes live under `FeatureFlag::GitOperationsInCodeReview` (already gating the dialogs); no new flag.
 ## Risks and mitigations
-### Heuristic picks the wrong branch
-Two branches pointing at the same commit, deleted historical parents, etc. The parent isn't visible in the UI right now, so bad detections only manifest as a wrong commit list / wrong PR base. A follow-up can surface the parent or add a per-branch override.
-### Cost of repeated detection
-`detect_parent_branch` runs inside each of the four helpers on every dialog open (and once more in `create_pr`). Each detection is 2–4 parallel subprocess calls (`for-each-ref --merged HEAD`, `log HEAD --format=%H`, `rev-parse @{u}`, `detect_main_branch`) regardless of branch count — typically sub-100ms even in repos with thousands of remote-tracking refs. For the common PR-create flow, that's ~4× the cost on top of the AI call, which is already the dominant latency. Acceptable. If large-repo latency becomes measurable, cache per-repo inside `detect_parent_branch` itself (follow-up).
-### PR targets an unpushed base
-If the parent is a local-only branch, `gh pr create --base <b>` fails. Surfaces via the generic "Git operation failed." toast; we do not silently retry without `--base`.
+### A nearby branch shifts the fork-point earlier than the user expects
+If an unrelated branch (e.g. `dev-experiments`) happens to point at a commit close to HEAD's history, that commit becomes the fork point. The result is still mathematically correct — those commits really are shared with another ref — but it can be surprising. In practice this is rare; mitigation is to prune stale branches periodically.
+### Stacked parent gets amended/rebased
+With parent-feature originally at `B` and amended to `B'`, a child forked at `B` will report fork point `A` (the older common ancestor) and include `B` in its "unique" set. This is mathematically correct — `B` is no longer reachable from any other ref, so it genuinely belongs to the child now. Surprising but accurate.
+### Stale remote-tracking refs pollute the candidate set
+Long-untouched `refs/remotes/*` entries still feed into `rev-list --not`. Effect is conservative (fork point can only get pushed earlier, not later, by adding more refs to the exclusion set). Mitigation: `git fetch --prune` periodically, or filter the candidate set by `committerdate` if profiles show this matters.
+### Cost of detection
+`detect_fork_point` runs once per dialog open per helper. 3 subprocesses total (`for-each-ref`, `rev-list HEAD --not …`, `rev-parse`), with `rev-list` accelerated by reachability bitmaps where available. Sub-100ms even in large repos. Cheaper than v1's per-candidate `merge-base` calls.
 ### Backwards compatibility
-Fresh-feature-off-main shapes resolve to `main`, so today's behavior is preserved on the common path.
+Fresh-feature-off-main shapes still resolve correctly: HEAD's commits unique to any other ref end at the fork commit; its parent is `main`'s tip at fork time. Today's `main..HEAD` behavior is preserved on the common path.
 ## Testing and validation
 References below are to `specs/APP-4218/PRODUCT.md` success criteria.
 ### Manual validation
 - `feature-a` (pushed), `git checkout -b feature-b feature-a`, 1 new commit, no push: Publish dialog shows 1 commit (SC 1). Create PR shows only those files; confirming runs `gh pr create --base feature-a` and the PR targets `feature-a` (SC 2).
-- Fresh branch off main, no upstream: dialog shows `main..HEAD` (SC 3).
+- Fresh branch off main, no upstream: dialog shows commits since the fork from main (SC 3).
 - Rebase `feature-b` onto `main`, reopen dialog: commits list reflects the rebased range (SC 4).
+- **New regression case:** branch off `master`, then advance `master` past the fork point (`git pull` after a merge), reopen Publish dialog: shows only your commit, not master's intervening commits.
 - Commit-and-create-PR on `feature-b`: PR targets `feature-a` (SC 6).
 - Change the pane's diff-mode dropdown; reopen dialogs: previews are unchanged (SC 7).
+### Unit coverage
+- `detect_fork_point` regression tests in `app/src/util/git_tests.rs`:
+  - Branch off main, main advances past fork point — fork point still equals the original main tip.
+  - Stacked branch where parent is amended — fork point still well-defined and includes orphaned commits in the unique set.
+  - On main itself — returns `None`.
+  - No other refs — returns `None`.
 ### Integration / screenshot coverage
 None added. The `git_dialog` module ships without an integration harness today (see `specs/APP-4125/TECH.md`).
 ## Follow-ups
-- **Surface the detected parent in the dialog chrome** (a "Based on" row) once we have a way to populate it without visible latency — e.g. caching it on `DiffMetadata` so it's ready by the time the dialog opens.
-- **Per-branch override** for mis-detected parents (stored in `.git/config` as `branch.<name>.warpParent`).
-- **Per-repo caching** inside `detect_parent_branch` if repeated detection shows up in profiles.
+- **Surface the detected fork commit and base branch in the dialog chrome** (a "Based on" row) once we have a way to populate it without visible latency.
+- **Per-branch override** for misdetected base branches when a user has a stronger opinion than the heuristic (`branch.<name>.warpBase` in git config or a Warp DB row).
+- **Optionally cache the fork-point SHA at branch-creation time** (Warp DB, keyed by `(repo, branch)`), with the topology-based detection above as the fallback. Skips the 3 subprocess calls entirely on the happy path; falls back cleanly for branches Warp didn't create.
+- **Use `git merge-base --fork-point`** in `detect_pr_base_branch` once we know the candidate base, to handle the rebased-parent case via reflog. Complementary, not a replacement.

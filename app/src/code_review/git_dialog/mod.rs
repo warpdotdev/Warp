@@ -553,7 +553,7 @@ impl GitDialog {
     ) -> Self {
         let (confirm_button, cancel_button, close_button) =
             Self::build_dialog_buttons(pr::confirm_label_for(), Some(pr::confirm_icon_for()), ctx);
-        let state = pr::new_state(&repo_path, parent_branch_name.as_deref(), ctx);
+        let state = pr::new_state(&repo_path, ctx);
         Self {
             repo_path,
             branch_name,

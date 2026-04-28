@@ -60,15 +60,10 @@ pub(super) fn is_ready_to_confirm(_state: &PrState) -> bool {
     true
 }
 
-pub(super) fn new_state(
-    repo_path: &std::path::Path,
-    parent_branch: Option<&str>,
-    ctx: &mut ViewContext<GitDialog>,
-) -> PrState {
+pub(super) fn new_state(repo_path: &std::path::Path, ctx: &mut ViewContext<GitDialog>) -> PrState {
     let diff_repo_path = repo_path.to_path_buf();
-    let parent_branch = parent_branch.map(|s| s.to_string());
     ctx.spawn(
-        async move { get_branch_diff_entries(&diff_repo_path, parent_branch.as_deref()).await },
+        async move { get_branch_diff_entries(&diff_repo_path, None).await },
         |me, result, ctx| {
             if let GitDialogMode::CreatePr(state) = &mut me.mode {
                 match result {
@@ -172,8 +167,8 @@ pub(super) async fn create_pr_with_ai_content(
     code_review_ai: &dyn AIClient,
     path_env: Option<&str>,
 ) -> anyhow::Result<PrInfo> {
-    let diff = get_diff_for_pr(repo_path, parent_branch).await?;
-    let commit_messages = get_branch_commit_messages(repo_path, parent_branch)
+    let diff = get_diff_for_pr(repo_path, None).await?;
+    let commit_messages = get_branch_commit_messages(repo_path, None)
         .await
         .unwrap_or_default();
 
