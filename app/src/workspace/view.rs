@@ -5066,12 +5066,14 @@ impl Workspace {
     }
 
     /// Programmatically sets the manual color override for a tab.
-    /// `Some(color)` selects that color; `None` clears any manual selection,
-    /// falling back to the default directory color when present.
+    ///
+    /// - `Color(_)` applies that color.
+    /// - `Cleared` explicitly clears the color (also suppresses any directory default).
+    /// - `Unset` removes the manual override, letting the directory default apply.
     pub fn set_tab_color(
         &mut self,
         index: usize,
-        color: Option<AnsiColorIdentifier>,
+        color: SelectedTabColor,
         ctx: &mut ViewContext<Self>,
     ) {
         if self.tabs.get(index).is_none() {
@@ -5081,23 +5083,13 @@ impl Workspace {
             );
             return;
         }
-        let new_selected_color = match color {
-            Some(c) => SelectedTabColor::Color(c),
-            None => {
-                if FeatureFlag::DirectoryTabColors.is_enabled() {
-                    SelectedTabColor::Cleared
-                } else {
-                    SelectedTabColor::Unset
-                }
-            }
-        };
-        if self.tabs[index].selected_color == new_selected_color {
+        if self.tabs[index].selected_color == color {
             return;
         }
-        self.tabs[index].selected_color = new_selected_color;
+        self.tabs[index].selected_color = color;
         send_telemetry_from_ctx!(
             TelemetryEvent::TabOperations {
-                action: if color.is_some() {
+                action: if matches!(color, SelectedTabColor::Color(_)) {
                     TabTelemetryAction::SetColor
                 } else {
                     TabTelemetryAction::ResetColor
@@ -19720,9 +19712,7 @@ impl TypedActionView for Workspace {
             ResetPaneName(locator) => self.clear_pane_name(*locator, ctx),
             RenameActiveTab => self.rename_tab(self.active_tab_index, ctx),
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
-            SetActiveTabColor(color) => {
-                self.set_tab_color(self.active_tab_index, *color, ctx)
-            }
+            SetActiveTabColor(color) => self.set_tab_color(self.active_tab_index, *color, ctx),
             ToggleTabRightClickMenu { tab_index, anchor } => {
                 self.toggle_tab_right_click_menu(*tab_index, *anchor, ctx)
             }

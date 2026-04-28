@@ -25,6 +25,7 @@ use crate::search::slash_command_menu::{SlashCommandId, StaticCommand};
 use crate::server::ids::SyncId;
 use crate::server::telemetry::SlashCommandAcceptedDetails;
 use crate::settings::AISettings;
+use crate::tab::SelectedTabColor;
 use crate::terminal::input::decorations::InputBackgroundJobOptions;
 use crate::terminal::input::inline_menu::{InlineMenuAction, InlineMenuType};
 use crate::terminal::input::message_bar::Message;
@@ -427,25 +428,30 @@ impl Input {
                     .filter(|name| !name.is_empty())
                 else {
                     show_error_toast(
-                        "Please provide a color after /set-tab-color (red, green, yellow, blue, magenta, cyan, or none)"
+                        "Please provide a color after /set-tab-color (red, green, yellow, blue, magenta, cyan, none, or default)"
                             .to_owned(),
                         ctx,
                     );
                     return true;
                 };
 
+                // `none`/`clear` explicitly clear the color (suppressing any
+                // directory default); `default`/`reset` remove the manual override
+                // so the directory default can apply when `DirectoryTabColors`
+                // is enabled.
                 let color = match arg.to_ascii_lowercase().as_str() {
-                    "red" => Some(AnsiColorIdentifier::Red),
-                    "green" => Some(AnsiColorIdentifier::Green),
-                    "yellow" => Some(AnsiColorIdentifier::Yellow),
-                    "blue" => Some(AnsiColorIdentifier::Blue),
-                    "magenta" => Some(AnsiColorIdentifier::Magenta),
-                    "cyan" => Some(AnsiColorIdentifier::Cyan),
-                    "none" | "default" | "clear" | "reset" => None,
+                    "red" => SelectedTabColor::Color(AnsiColorIdentifier::Red),
+                    "green" => SelectedTabColor::Color(AnsiColorIdentifier::Green),
+                    "yellow" => SelectedTabColor::Color(AnsiColorIdentifier::Yellow),
+                    "blue" => SelectedTabColor::Color(AnsiColorIdentifier::Blue),
+                    "magenta" => SelectedTabColor::Color(AnsiColorIdentifier::Magenta),
+                    "cyan" => SelectedTabColor::Color(AnsiColorIdentifier::Cyan),
+                    "none" | "clear" => SelectedTabColor::Cleared,
+                    "default" | "reset" => SelectedTabColor::Unset,
                     other => {
                         show_error_toast(
                             format!(
-                                "Unknown tab color '{other}'. Use one of: red, green, yellow, blue, magenta, cyan, or none."
+                                "Unknown tab color '{other}'. Use one of: red, green, yellow, blue, magenta, cyan, none, or default."
                             ),
                             ctx,
                         );

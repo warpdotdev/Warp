@@ -142,8 +142,7 @@ pub static SET_TAB_COLOR: LazyLock<StaticCommand> = LazyLock::new(|| StaticComma
     availability: Availability::ALWAYS,
     auto_enter_ai_mode: false,
     argument: Some(
-        Argument::required()
-            .with_hint_text("<red|green|yellow|blue|magenta|cyan|none>"),
+        Argument::required().with_hint_text("<red|green|yellow|blue|magenta|cyan|none|default>"),
     ),
 });
 
@@ -677,7 +676,7 @@ mod tests {
         assert!(!argument.should_execute_on_selection);
         assert_eq!(
             argument.hint_text,
-            Some("<red|green|yellow|blue|magenta|cyan|none>")
+            Some("<red|green|yellow|blue|magenta|cyan|none|default>")
         );
     }
 

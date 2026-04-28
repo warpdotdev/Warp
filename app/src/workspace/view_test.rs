@@ -879,7 +879,9 @@ fn test_set_active_tab_color() {
 
             // Setting a color stores it as the manual selection and resolves to it.
             workspace.handle_action(
-                &WorkspaceAction::SetActiveTabColor(Some(AnsiColorIdentifier::Magenta)),
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Color(
+                    AnsiColorIdentifier::Magenta,
+                )),
                 ctx,
             );
             assert_eq!(
@@ -893,7 +895,9 @@ fn test_set_active_tab_color() {
 
             // Replacing with a different color overwrites the previous selection.
             workspace.handle_action(
-                &WorkspaceAction::SetActiveTabColor(Some(AnsiColorIdentifier::Green)),
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Color(
+                    AnsiColorIdentifier::Green,
+                )),
                 ctx,
             );
             assert_eq!(
@@ -901,28 +905,46 @@ fn test_set_active_tab_color() {
                 SelectedTabColor::Color(AnsiColorIdentifier::Green),
             );
 
-            // Clearing with `None` removes the manual selection.
-            workspace.handle_action(&WorkspaceAction::SetActiveTabColor(None), ctx);
-            assert!(matches!(
+            // `Cleared` explicitly suppresses any color (including a directory default).
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Cleared),
+                ctx,
+            );
+            assert_eq!(
                 workspace.tabs[active].selected_color,
-                SelectedTabColor::Cleared | SelectedTabColor::Unset,
-            ));
+                SelectedTabColor::Cleared,
+            );
             assert_eq!(workspace.tabs[active].color(), None);
 
-            // Action targets the active tab — switching to tab 0 leaves it unaffected.
+            // `Unset` removes the manual override so a directory default could apply.
+            // With no directory default configured, the resolved color is still `None`.
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Unset),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Unset,
+            );
+            assert_eq!(workspace.tabs[active].color(), None);
+
+            // Action targets the active tab — switching to tab 0 leaves the second tab
+            // unaffected.
             workspace.handle_action(&WorkspaceAction::ActivateTab(0), ctx);
             workspace.handle_action(
-                &WorkspaceAction::SetActiveTabColor(Some(AnsiColorIdentifier::Blue)),
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Color(
+                    AnsiColorIdentifier::Blue,
+                )),
                 ctx,
             );
             assert_eq!(
                 workspace.tabs[0].selected_color,
                 SelectedTabColor::Color(AnsiColorIdentifier::Blue),
             );
-            assert!(matches!(
+            assert_eq!(
                 workspace.tabs[active].selected_color,
-                SelectedTabColor::Cleared | SelectedTabColor::Unset,
-            ));
+                SelectedTabColor::Unset,
+            );
         });
     });
 }
