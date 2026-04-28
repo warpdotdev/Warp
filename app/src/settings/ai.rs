@@ -1455,7 +1455,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
         private: false,
         toml_path: "agents.oz.other.agent_attribution_enabled",
         description: "Whether Oz adds an attribution co-author line to commit messages and pull requests it creates.",
