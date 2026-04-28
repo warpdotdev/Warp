@@ -1457,8 +1457,8 @@ define_settings_group!(AISettings, settings: [
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
         private: false,
-        toml_path: "agents.oz.other.agent_attribution_enabled",
-        description: "Whether Oz adds an attribution co-author line to commit messages and pull requests it creates.",
+        toml_path: "agents.warp_agent.other.agent_attribution_enabled",
+        description: "Whether the Warp Agent adds an attribution co-author line to commit messages and pull requests it creates.",
     }
 ]);
 
