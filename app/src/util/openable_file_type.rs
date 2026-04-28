@@ -81,6 +81,58 @@ pub fn is_supported_image_file(path: impl AsRef<Path>) -> bool {
         .unwrap_or(false)
 }
 
+/// Returns true if `path` looks like a shell script the user intends to run when
+/// "Open with Warp" is invoked from Finder/another app via a `file://` URL.
+///
+/// Policy: extension in {sh, bash, zsh, fish, ksh} with the user-execute bit set on Unix,
+/// or extension in {ps1, bat, cmd} on Windows (no x-bit concept). On Unix, files with no
+/// extension but a `#!` shebang and the user-execute bit set also qualify.
+///
+/// Narrow on purpose: this only affects the URI entry point, not "Open in New Tab" from
+/// other UI surfaces, which still want shell scripts viewable in the editor.
+#[cfg(unix)]
+pub fn is_runnable_shell_script(path: &Path) -> bool {
+    use std::io::Read;
+    use std::os::unix::fs::PermissionsExt;
+
+    // Match the documented routing policy: only the owner's execute bit counts.
+    // A file `chmod 070` belongs to a group, not to the user invoking Warp.
+    let has_user_x_bit = std::fs::metadata(path)
+        .map(|m| m.permissions().mode() & 0o100 != 0)
+        .unwrap_or(false);
+    if !has_user_x_bit {
+        return false;
+    }
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+    if let Some(ext) = ext.as_deref() {
+        return matches!(ext, "sh" | "bash" | "zsh" | "fish" | "ksh");
+    }
+    // No extension: accept if file starts with a `#!` shebang. Read only the first
+    // two bytes — this path is reached from a `file://` URL, so the file is
+    // attacker-controlled in size; `std::fs::read` would risk an OOM.
+    let mut prefix = [0u8; 2];
+    if let Ok(mut file) = std::fs::File::open(path) {
+        return file.read_exact(&mut prefix).is_ok() && prefix == [b'#', b'!'];
+    }
+    false
+}
+
+#[cfg(windows)]
+pub fn is_runnable_shell_script(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .is_some_and(|ext| matches!(ext.as_str(), "ps1" | "bat" | "cmd"))
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn is_runnable_shell_script(_path: &Path) -> bool {
+    false
+}
+
 /// Determines if a file can be opened in Warp and returns its type.
 /// Returns `None` if the file is binary and should not be opened.
 pub fn is_file_openable_in_warp(path: &Path) -> Option<OpenableFileType> {
@@ -343,5 +395,103 @@ mod tests {
         assert!(is_supported_code_file(Path::new("script.py")));
         assert!(!is_supported_code_file(Path::new("data.txt")));
         assert!(!is_supported_code_file(Path::new("image.png")));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_runnable_shell_script_executable_sh() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("hello.sh");
+        std::fs::write(&p, b"#!/bin/bash\necho hi\n").unwrap();
+        let mut perms = std::fs::metadata(&p).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&p, perms).unwrap();
+        assert!(is_runnable_shell_script(&p));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_runnable_shell_script_non_executable_sh() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("hello.sh");
+        std::fs::write(&p, b"#!/bin/bash\necho hi\n").unwrap();
+        let mut perms = std::fs::metadata(&p).unwrap().permissions();
+        perms.set_mode(0o644);
+        std::fs::set_permissions(&p, perms).unwrap();
+        assert!(!is_runnable_shell_script(&p));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_runnable_shell_script_group_only_executable_rejected() {
+        // Mode 0o070: group-x and group-r/w only, no user-execute. Must NOT classify
+        // as runnable — only the owner's execute bit drives the routing decision.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("group_only.sh");
+        std::fs::write(&p, b"#!/bin/bash\necho hi\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o070)).unwrap();
+        assert!(!is_runnable_shell_script(&p));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_runnable_shell_script_other_shell_extensions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["run.bash", "run.zsh", "run.fish", "run.ksh"] {
+            let p = dir.path().join(name);
+            std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(is_runnable_shell_script(&p), "{name} should be runnable");
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_runnable_shell_script_shebang_no_extension() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("noext");
+        std::fs::write(&p, b"#!/bin/sh\necho hi\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(is_runnable_shell_script(&p));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_runnable_shell_script_shebang_no_extension_no_x_bit() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("noext");
+        std::fs::write(&p, b"#!/bin/sh\necho hi\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(!is_runnable_shell_script(&p));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_runnable_shell_script_plain_text_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("notes.txt");
+        std::fs::write(&p, b"just some text\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(!is_runnable_shell_script(&p));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_is_runnable_shell_script_symlink_to_executable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("real.sh");
+        std::fs::write(&target, b"#!/bin/sh\n:\n").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let link = dir.path().join("link.sh");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(is_runnable_shell_script(&link));
     }
 }
