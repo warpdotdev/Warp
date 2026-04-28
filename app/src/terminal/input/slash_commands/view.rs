@@ -274,8 +274,9 @@ impl View for InlineSlashCommandView {
 }
 
 /// Build a Query that includes the StaticSlashCommands filter so both sync and
-/// async sources run.
-fn slash_command_query(text: &str) -> Query {
+/// async sources run. Reused by the V2 cloud-mode menu so the two views agree on
+/// query shape.
+pub(super) fn slash_command_query(text: &str) -> Query {
     Query {
         text: text.to_owned(),
         filters: SLASH_COMMAND_FILTERS.clone(),

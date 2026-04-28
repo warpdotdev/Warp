@@ -255,6 +255,13 @@ impl SlashCommandDataSource {
         self.agent_view_controller.as_ref(ctx).is_active()
     }
 
+    /// Accessor used by `ZeroStateDataSource::for_cloud_mode_v2` so it can
+    /// resolve the current working directory for skill scoping without
+    /// duplicating the active-session model on the new data source.
+    pub fn active_session_for_v2_zero_state(&self) -> &ModelHandle<ActiveSession> {
+        &self.active_session
+    }
+
     /// Returns `true` if the CLI agent rich input is currently open for this terminal.
     pub fn is_cli_agent_input_open(&self, ctx: &AppContext) -> bool {
         CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.terminal_view_id)
@@ -431,6 +438,30 @@ impl InlineItem {
             name: command.name.to_owned(),
             description: Some(command.description.to_owned()),
             font_family: appearance.monospace_font_family(),
+            name_match_result: None,
+            description_match_result: None,
+            score: OrderedFloat(f64::MIN),
+        }
+    }
+
+    /// Builds an inline item for a saved prompt (cloud workflow). Used by the
+    /// V2 zero-state path; the legacy menu reaches saved prompts through the
+    /// async `saved_prompts_data_source` instead.
+    pub(crate) fn from_saved_prompt(
+        saved_prompt: &crate::workflows::CloudWorkflow,
+        app: &AppContext,
+    ) -> Self {
+        let appearance = Appearance::as_ref(app);
+        Self {
+            action: AcceptSlashCommandOrSavedPrompt::SavedPrompt {
+                id: saved_prompt.id,
+            },
+            // Matches the icon used by the legacy async `saved_prompts.rs` path.
+            icon_path: "bundled/svg/prompt.svg",
+            name: saved_prompt.model().data.name().to_owned(),
+            description: None,
+            // Saved prompts use the UI font family (matching the legacy async path).
+            font_family: appearance.ui_font_family(),
             name_match_result: None,
             description_match_result: None,
             score: OrderedFloat(f64::MIN),

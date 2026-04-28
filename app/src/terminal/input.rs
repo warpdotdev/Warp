@@ -75,7 +75,8 @@ use crate::terminal::input::rewind::{RewindMenuEvent, RewindMenuView};
 use crate::terminal::input::skills::{InlineSkillSelectorEvent, InlineSkillSelectorView};
 use crate::terminal::input::slash_command_model::{SlashCommandEntryState, SlashCommandModel};
 use crate::terminal::input::slash_commands::{
-    InlineSlashCommandView, SlashCommandDataSource, SlashCommandTrigger,
+    CloudModeV2SlashCommandView, InlineSlashCommandView, SlashCommandDataSource,
+    SlashCommandTrigger,
 };
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
@@ -1607,6 +1608,10 @@ pub struct Input {
     prompt_suggestions_view: ViewHandle<PromptSuggestionsView>,
 
     inline_slash_commands_view: ViewHandle<InlineSlashCommandView>,
+    /// V2 cloud-mode slash command menu, lazily constructed only when
+    /// `FeatureFlag::CloudModeInputV2` is on. Sibling of
+    /// `inline_slash_commands_view`; the legacy view is unaffected.
+    cloud_mode_v2_slash_commands_view: Option<ViewHandle<CloudModeV2SlashCommandView>>,
     slash_command_data_source: ModelHandle<SlashCommandDataSource>,
 
     /// Inline conversation menu for selecting AI conversations.
@@ -3129,6 +3134,27 @@ impl Input {
             me.handle_slash_commands_menu_event(event, ctx);
         });
 
+        // The V2 menu shares `SlashCommandsEvent` with the legacy view so
+        // `handle_slash_commands_menu_event` handles both. Only constructed
+        // when V2 is enabled at runtime.
+        let cloud_mode_v2_slash_commands_view = if FeatureFlag::CloudModeInputV2.is_enabled() {
+            let view = ctx.add_typed_action_view(|ctx| {
+                CloudModeV2SlashCommandView::new(
+                    &slash_command_model,
+                    slash_command_data_source.clone(),
+                    suggestions_mode_model.clone(),
+                    buffer_model.clone(),
+                    ctx,
+                )
+            });
+            ctx.subscribe_to_view(&view, |me, _, event, ctx| {
+                me.handle_slash_commands_menu_event(event, ctx);
+            });
+            Some(view)
+        } else {
+            None
+        };
+
         ctx.subscribe_to_model(&ai_input_model, move |me, _, event, ctx| {
             match event {
                 BlocklistAIInputEvent::InputTypeChanged { .. }
@@ -3265,6 +3291,7 @@ impl Input {
             prompt_suggestions_view,
             slash_command_model,
             inline_slash_commands_view,
+            cloud_mode_v2_slash_commands_view,
             inline_conversation_menu_view,
             inline_plan_menu_view,
             inline_repos_menu_view,
@@ -7563,9 +7590,17 @@ impl Input {
                 true
             }
             InputSuggestionsMode::SlashCommands => {
-                self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                    view.select_up(ctx);
-                });
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                        view.update(ctx, |view, ctx| {
+                            view.select_up(ctx);
+                        });
+                    }
+                } else {
+                    self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                        view.select_up(ctx);
+                    });
+                }
                 true
             }
             InputSuggestionsMode::ConversationMenu => {
@@ -7916,9 +7951,17 @@ impl Input {
                 true
             }
             InputSuggestionsMode::SlashCommands => {
-                self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                    view.select_down(ctx);
-                });
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                        view.update(ctx, |view, ctx| {
+                            view.select_down(ctx);
+                        });
+                    }
+                } else {
+                    self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                        view.select_down(ctx);
+                    });
+                }
                 true
             }
             InputSuggestionsMode::ConversationMenu => {
@@ -11774,9 +11817,17 @@ impl Input {
                 .update(ctx, |view, ctx| view.accept_selected_item(ctx));
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
-            self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                view.accept_selected_item(false, ctx);
-            });
+            if self.is_cloud_mode_input_v2_composing(ctx) {
+                if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                    view.update(ctx, |view, ctx| {
+                        view.accept_selected_item(false, ctx);
+                    });
+                }
+            } else {
+                self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                    view.accept_selected_item(false, ctx);
+                });
+            }
             return;
         } else if self.maybe_queue_input_for_in_progress_conversation(ctx)
             || self.maybe_handle_enter_for_slash_command(ctx)

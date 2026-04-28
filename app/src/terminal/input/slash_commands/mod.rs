@@ -1,9 +1,11 @@
+mod cloud_mode_v2_view;
 mod data_source;
 mod search_item;
-mod view;
+pub(super) mod view;
 
+pub use cloud_mode_v2_view::CloudModeV2SlashCommandView;
 pub use data_source::*;
-pub use view::*;
+pub use view::{CloseReason, InlineSlashCommandView, SlashCommandsEvent};
 
 use ai::skills::SkillReference;
 use warp_core::features::FeatureFlag;
@@ -948,9 +950,17 @@ impl Input {
             self.suggestions_mode_model.as_ref(ctx).mode(),
             InputSuggestionsMode::SlashCommands
         ) {
-            self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                view.accept_selected_item(true, ctx);
-            });
+            if self.is_cloud_mode_input_v2_composing(ctx) {
+                if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                    view.update(ctx, |view, ctx| {
+                        view.accept_selected_item(true, ctx);
+                    });
+                }
+            } else {
+                self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                    view.accept_selected_item(true, ctx);
+                });
+            }
             return true;
         }
 
@@ -999,9 +1009,17 @@ impl Input {
             self.suggestions_mode_model.as_ref(ctx).mode(),
             InputSuggestionsMode::SlashCommands
         ) {
-            self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                view.accept_selected_item(false, ctx);
-            });
+            if self.is_cloud_mode_input_v2_composing(ctx) {
+                if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                    view.update(ctx, |view, ctx| {
+                        view.accept_selected_item(false, ctx);
+                    });
+                }
+            } else {
+                self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                    view.accept_selected_item(false, ctx);
+                });
+            }
             return true;
         }
 
