@@ -719,6 +719,11 @@ pub enum FeatureFlag {
     /// and receives events in real time instead of short-polling.
     OrchestrationEventPush,
 
+    /// Renders a horizontal pill bar in the agent view pane header showing the
+    /// orchestrator agent and all of its child agents, with click-to-switch
+    /// behavior between siblings.
+    OrchestrationPillBar,
+
     /// Shows a pending user query indicator during summarization when a follow-up
     /// prompt is queued via `/fork-and-compact` or `/compact-and`.
     PendingUserQueryIndicator,
@@ -907,6 +912,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::HOANotifications,
     FeatureFlag::OrchestrationV2,
     FeatureFlag::OrchestrationEventPush,
+    FeatureFlag::OrchestrationPillBar,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
