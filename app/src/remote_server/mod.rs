@@ -58,9 +58,16 @@ pub(super) fn run_daemon_app(
             .spawn(warp_logging::rotate_log_files())
             .detach();
 
+        use crate::server::telemetry::context_provider::NoopTelemetryContextProvider;
         use repo_metadata::repositories::DetectedRepositories;
         use repo_metadata::watcher::DirectoryWatcher;
         use repo_metadata::RepoMetadataModel;
+
+        // Register a no-op telemetry context so that `send_telemetry_from_ctx!`
+        // calls (e.g. from RepoMetadataModel on ExceededMaxFileLimit) don't
+        // panic due to a missing TelemetryContextModel singleton.
+        ctx.add_singleton_model(NoopTelemetryContextProvider::new_context_provider);
+
         // Order matters: DetectedRepositories must be registered before
         // RepoMetadataModel because LocalRepoMetadataModel::new()
         // subscribes to DetectedRepositories::handle(ctx).
