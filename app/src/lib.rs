@@ -336,6 +336,9 @@ fn determine_agent_source(
         LaunchMode::App { .. } | LaunchMode::Test { .. } => {
             Some(crate::ai::ambient_agents::AgentSource::CloudMode)
         }
+        // Proxy and Daemon are headless server processes that don't use the
+        // agent subsystem.
+        LaunchMode::Proxy | LaunchMode::Daemon => None,
     }
 }
 
@@ -365,13 +368,24 @@ pub enum LaunchMode {
         driver: Box<Option<TestDriver>>,
         is_integration_test: bool,
     },
+
+    /// Remote server proxy — bridges SSH stdio to the daemon's Unix socket.
+    /// This is a short-lived process that runs for the lifetime of an SSH session.
+    Proxy,
+
+    /// Remote server daemon — long-lived headless process serving remote
+    /// connections via a Unix domain socket.
+    Daemon,
 }
 
 impl LaunchMode {
     fn args(&self) -> Cow<'_, warp_cli::AppArgs> {
         match self {
             LaunchMode::App { args, .. } => Cow::Borrowed(args),
-            _ => Cow::Owned(warp_cli::AppArgs::default()),
+            LaunchMode::CommandLine { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::Proxy
+            | LaunchMode::Daemon => Cow::Owned(warp_cli::AppArgs::default()),
         }
     }
 
@@ -382,14 +396,20 @@ impl LaunchMode {
                 is_integration_test,
                 ..
             } => *is_integration_test,
-            _ => false,
+            LaunchMode::App { .. }
+            | LaunchMode::CommandLine { .. }
+            | LaunchMode::Proxy
+            | LaunchMode::Daemon => false,
         }
     }
 
     fn take_test_driver(&mut self) -> Option<TestDriver> {
         match self {
             LaunchMode::Test { driver, .. } => driver.take(),
-            _ => None,
+            LaunchMode::App { .. }
+            | LaunchMode::CommandLine { .. }
+            | LaunchMode::Proxy
+            | LaunchMode::Daemon => None,
         }
     }
 
@@ -406,13 +426,19 @@ impl LaunchMode {
             LaunchMode::App { .. } => ExecutionMode::App,
             LaunchMode::CommandLine { .. } => ExecutionMode::Sdk,
             LaunchMode::Test { .. } => ExecutionMode::App,
+            // Proxy and Daemon don't use execution mode, but Sdk is the
+            // closest match (headless, no GUI).
+            LaunchMode::Proxy | LaunchMode::Daemon => ExecutionMode::Sdk,
         }
     }
 
     fn is_sandboxed(&self) -> bool {
         match self {
             LaunchMode::CommandLine { is_sandboxed, .. } => *is_sandboxed,
-            _ => false,
+            LaunchMode::App { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::Proxy
+            | LaunchMode::Daemon => false,
         }
     }
 
@@ -423,7 +449,8 @@ impl LaunchMode {
                 CliCommand::Agent(AgentCommand::Run(args)) => !args.gui,
                 _ => true,
             },
-            _ => false,
+            LaunchMode::Proxy | LaunchMode::Daemon => true,
+            LaunchMode::App { .. } | LaunchMode::Test { .. } => false,
         }
     }
 
@@ -433,7 +460,8 @@ impl LaunchMode {
             LaunchMode::CommandLine { command, .. } => {
                 matches!(command, CliCommand::Agent(AgentCommand::Run { .. }))
             }
-            _ => true,
+            LaunchMode::App { .. } | LaunchMode::Test { .. } => true,
+            LaunchMode::Proxy | LaunchMode::Daemon => false,
         }
     }
 
@@ -442,8 +470,59 @@ impl LaunchMode {
     pub(crate) fn crash_recovery_enabled(&self) -> bool {
         match self {
             LaunchMode::App { .. } => true,
-            LaunchMode::CommandLine { .. } => false,
-            LaunchMode::Test { .. } => false,
+            LaunchMode::CommandLine { .. }
+            | LaunchMode::Test { .. }
+            | LaunchMode::Proxy
+            | LaunchMode::Daemon => false,
+        }
+    }
+
+    /// Whether Sentry / crash reporting should be initialized in `init_common`.
+    fn needs_crash_reporting(&self) -> bool {
+        match self {
+            LaunchMode::App { .. } => true,
+            LaunchMode::CommandLine { .. } => true,
+            LaunchMode::Test { .. } => true,
+            LaunchMode::Daemon => true,
+            LaunchMode::Proxy => false,
+        }
+    }
+
+    /// Whether profiling and tracing should be initialized in `init_common`.
+    fn needs_profiling(&self) -> bool {
+        match self {
+            LaunchMode::App { .. } => true,
+            LaunchMode::CommandLine { .. } => true,
+            LaunchMode::Test { .. } => true,
+            LaunchMode::Daemon => true,
+            LaunchMode::Proxy => false,
+        }
+    }
+
+    /// Whether this is a CLI-like mode (logs to file/stderr, not stdout).
+    fn is_cli_like(&self) -> bool {
+        match self {
+            LaunchMode::App { .. } | LaunchMode::Test { .. } => false,
+            LaunchMode::CommandLine { .. }
+            | LaunchMode::Proxy
+            | LaunchMode::Daemon => true,
+        }
+    }
+
+    /// Log destination for this mode.
+    fn log_destination(&self) -> Option<LogDestination> {
+        match self {
+            LaunchMode::CommandLine { debug, .. } => {
+                if *debug {
+                    Some(LogDestination::Stderr)
+                } else {
+                    Some(LogDestination::File)
+                }
+            }
+            // Proxy must log to stderr because stdout is the protocol channel.
+            LaunchMode::Proxy => Some(LogDestination::Stderr),
+            LaunchMode::Daemon => Some(LogDestination::File),
+            LaunchMode::App { .. } | LaunchMode::Test { .. } => None,
         }
     }
 
@@ -566,10 +645,12 @@ pub fn run() -> Result<()> {
             }
             #[cfg(not(target_family = "wasm"))]
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerProxy(args)) => {
+                init_common(&LaunchMode::Proxy, None)?;
                 return crate::remote_server::run_proxy(args.identity_key.clone());
             }
             #[cfg(not(target_family = "wasm"))]
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerDaemon(args)) => {
+                init_common(&LaunchMode::Daemon, None)?;
                 return crate::remote_server::run_daemon(args.identity_key.clone());
             }
             #[cfg(not(target_family = "wasm"))]
@@ -663,21 +744,28 @@ pub fn run_integration_test(driver: TestDriver) -> Result<()> {
     run_internal(launch)
 }
 
-/// Runs the app.
-fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
+/// Shared early initialization for **every** process type (app, CLI, proxy,
+/// daemon).  Every step in this function runs for all modes, including
+/// lightweight ones like Proxy.  Think carefully before adding here — if
+/// the step is only needed by the full app, add it to `run_internal`
+/// instead.
+fn init_common(
+    launch_mode: &LaunchMode,
+    timer: Option<&mut IntervalTimer>,
+) -> Result<()> {
     #[cfg(windows)]
     dynamic_libraries::configure_library_loading();
 
-    profiling::init();
+    if launch_mode.needs_profiling() {
+        profiling::init();
+    }
 
     // The `run` function already initializes feature flags, but ensure they're initialized here
     // for other entrypoints.
     init_feature_flags();
 
-    let mut timer = IntervalTimer::new();
-
     #[cfg(feature = "crash_reporting")]
-    {
+    if launch_mode.needs_crash_reporting() {
         // Ensure that the main/root Sentry hub is initialized on the main
         // thread.  PtySpawner creates a background thread to receive logs from
         // the terminal server process, and we don't want it to be the host of
@@ -685,21 +773,12 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         sentry::Hub::main();
     }
 
-    tracing::init()?;
+    if launch_mode.needs_profiling() {
+        tracing::init()?;
+    }
 
-    let is_cli = matches!(launch_mode, LaunchMode::CommandLine { .. });
-
-    // Log to a file for CLI commands to not obscure the command output.
-    let log_destination = match &launch_mode {
-        LaunchMode::CommandLine { debug, .. } => {
-            if *debug {
-                Some(LogDestination::Stderr)
-            } else {
-                Some(LogDestination::File)
-            }
-        }
-        _ => None,
-    };
+    let is_cli = launch_mode.is_cli_like();
+    let log_destination = launch_mode.log_destination();
 
     cfg_if::cfg_if! {
         if #[cfg(enable_crash_recovery)] {
@@ -713,12 +792,31 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         }
     }
 
-    timer.mark_interval_end("LOG_FILE_SETUP_COMPLETE");
+    if let Some(timer) = timer {
+        timer.mark_interval_end("LOG_FILE_SETUP_COMPLETE");
+    }
 
     // Adjust resource limits early, before doing other work, to ensure that
     // any children we spawn (like the terminal server) inherit our adjusted
     // rlimits.
     resource_limits::adjust_resource_limits();
+
+    // Configure rustls to use its default crypto provider.  This MUST be called
+    // before making any network requests that use TLS, otherwise rustls will
+    // panic.
+    #[cfg(not(target_family = "wasm"))]
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("must be able to initialize crypto provider for TLS support");
+
+    Ok(())
+}
+
+/// Runs the app.
+fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
+    let mut timer = IntervalTimer::new();
+
+    init_common(&launch_mode, Some(&mut timer))?;
 
     // For wasm builds we have this special case to parse out the intent
     // from the url that is used to visite the app on web.
@@ -790,14 +888,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     // start spawning any child processes.
     #[cfg(windows)]
     command::windows::init();
-
-    // Configure rustls to use its default crypto provider.  This MUST be called
-    // before making any network requests that use TLS, otherwise rustls will
-    // panic.
-    #[cfg(not(target_family = "wasm"))]
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .expect("must be able to initialize crypto provider for TLS support");
 
     let private_preferences = settings::init_private_user_preferences();
     let (public_preferences, startup_toml_parse_error) = settings::init_public_user_preferences();
@@ -2287,6 +2377,12 @@ fn launch(ctx: &mut warpui::AppContext, app_state: Option<AppState>, launch_mode
                     }
                 }
             }
+        }
+        // Proxy and Daemon never go through run_internal / launch; they call
+        // init_common directly and then their own entry points.
+        LaunchMode::Proxy | LaunchMode::Daemon => {
+            log::error!("Proxy/Daemon modes should not use the launch() path");
+            std::process::exit(1);
         }
     }
 }

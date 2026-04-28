@@ -20,7 +20,7 @@ pub mod unix;
 /// Run the `remote-server-proxy` subcommand.
 #[cfg(unix)]
 pub fn run_proxy(identity_key: String) -> anyhow::Result<()> {
-    unix::run_proxy(identity_key)
+    unix::proxy::run(&identity_key)
 }
 
 #[cfg(not(unix))]
