@@ -61,6 +61,24 @@ Check whether the target config file exists.
 }
 ```
 
+By default, Warp spawns stdio servers from the directory the config was discovered in:
+- Project-scoped configs (`{repo_root}/.warp/.mcp.json`) run from the repo root.
+- Global configs (`~/.warp/.mcp.json`, `~/.claude.json`, etc.) run from the home directory.
+
+If the server's `command` or `args` are relative paths (e.g. `./tooling/mcp/server.js`) or the server expects a specific cwd, set `working_directory` to override the default:
+
+```json
+{
+  "mcpServers": {
+    "server-name": {
+      "command": "node",
+      "args": ["./tooling/mcp/server.js"],
+      "working_directory": "/absolute/path/to/repo"
+    }
+  }
+}
+```
+
 ### URL-based server (HTTP/SSE streaming transport)
 
 ```json
