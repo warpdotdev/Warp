@@ -9,6 +9,7 @@ use cocoa::{
     foundation::{NSAutoreleasePool, NSString},
 };
 use command::r#async::Command;
+use warp_core::{channel::ChannelState, AppId};
 use warpui::{platform::mac::make_nsstring, ApplicationBundleInfo};
 
 use super::*;
@@ -344,8 +345,37 @@ pub fn open_file_path_with_line_and_col(
                 return;
             }
         }
+
+        // NSWorkspace's default-app routing can hand files to a sibling
+        // Warp channel (e.g. Stable handling files while Preview is running).
+        // When the resolved default is a different Warp, open with the
+        // running channel's bundle directly.
+        let bundle_id = unsafe { default_app_to_open_path(full_path) };
+        if let Some(bundle_id) = bundle_id.as_deref() {
+            let current = ChannelState::app_id().to_string();
+            if bundle_id != current
+                && is_warp_bundle(bundle_id)
+                && open_with_bundle(&current, full_path)
+            {
+                return;
+            }
+        }
     }
     ctx.open_file_path(full_path);
+}
+
+fn is_warp_bundle(bundle_id: &str) -> bool {
+    AppId::parse(bundle_id)
+        .map(|id| id.qualifier() == "dev" && id.organization() == "warp")
+        .unwrap_or(false)
+}
+
+fn open_with_bundle(bundle_id: &str, path: &Path) -> bool {
+    std::process::Command::new("/usr/bin/open")
+        .args(["-b", bundle_id])
+        .arg(path)
+        .spawn()
+        .is_ok()
 }
 
 // Get the Mac default app for opening the file path.
@@ -367,4 +397,26 @@ unsafe fn default_app_to_open_path(file_path: &Path) -> Option<String> {
     };
     pool.drain();
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_warp_bundle;
+
+    #[test]
+    fn is_warp_bundle_recognises_warp_channels() {
+        assert!(is_warp_bundle("dev.warp.Warp"));
+        assert!(is_warp_bundle("dev.warp.WarpDev"));
+        assert!(is_warp_bundle("dev.warp.WarpPreview"));
+        assert!(is_warp_bundle("dev.warp.WarpOss"));
+    }
+
+    #[test]
+    fn is_warp_bundle_rejects_other_apps() {
+        assert!(!is_warp_bundle("com.microsoft.VSCode"));
+        assert!(!is_warp_bundle("com.apple.TextEdit"));
+        assert!(!is_warp_bundle("dev.zed.Zed"));
+        assert!(!is_warp_bundle("invalid"));
+        assert!(!is_warp_bundle(""));
+    }
 }
