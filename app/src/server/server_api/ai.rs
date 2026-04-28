@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use cynic::{MutationBuilder, QueryBuilder};
+use http::StatusCode;
 use itertools::Itertools;
 #[cfg(test)]
 use mockall::automock;
@@ -61,7 +62,7 @@ use ai::index::full_source_code_embedding::{
     store_client::{IntermediateNode, StoreClient},
     CodebaseContextConfig, ContentHash, EmbeddingConfig, NodeHash, RepoMetadata,
 };
-use warp_graphql::client::Operation;
+use warp_graphql::client::{GraphQLError, Operation};
 #[cfg(not(feature = "agent_mode_evals"))]
 use warp_graphql::queries::get_request_limit_info::{
     GetRequestLimitInfo, GetRequestLimitInfoVariables,
@@ -979,6 +980,23 @@ fn into_file_artifact_record(
     }
 }
 
+fn graphql_http_status(err: &anyhow::Error) -> Option<StatusCode> {
+    err.chain().find_map(|cause| {
+        cause
+            .downcast_ref::<GraphQLError>()
+            .and_then(|graphql_err| match graphql_err {
+                GraphQLError::HttpError { status, .. } => Some(*status),
+                GraphQLError::RequestError(_)
+                | GraphQLError::StagingAccessBlocked
+                | GraphQLError::ResponseError(_) => None,
+            })
+    })
+}
+
+fn should_retry_create_agent_task_without_parent_run_id(err: &anyhow::Error) -> bool {
+    graphql_http_status(err) == Some(StatusCode::UNPROCESSABLE_ENTITY)
+}
+
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl AIClient for ServerApi {
@@ -1352,19 +1370,49 @@ impl AIClient for ServerApi {
             .map(|c| serde_json::to_string(&c))
             .transpose()
             .map_err(|e| anyhow!("Failed to serialize agent config: {e}"))?;
-
-        let variables = CreateAgentTaskVariables {
-            input: CreateAgentTaskInput {
-                prompt,
-                environment_uid: environment_uid.map(|uid| uid.into()),
-                parent_run_id: parent_run_id.map(|run_id| run_id.into()),
-                agent_config_snapshot,
-            },
-            request_context: get_request_context(),
+        let response = match self
+            .send_graphql_request(
+                CreateAgentTask::build(CreateAgentTaskVariables {
+                    input: CreateAgentTaskInput {
+                        prompt: prompt.clone(),
+                        environment_uid: environment_uid.clone().map(Into::into),
+                        parent_run_id: parent_run_id.clone().map(Into::into),
+                        agent_config_snapshot: agent_config_snapshot.clone(),
+                    },
+                    request_context: get_request_context(),
+                }),
+                None,
+            )
+            .await
+        {
+            Ok(response) => response,
+            // Older warp-server builds reject the newer `parentRunId` field at GraphQL
+            // variable-coercion time with HTTP 422. Retry without the parent linkage so local
+            // child harnesses can still start; the child process still receives the parent run id
+            // via env vars for orchestration/messaging.
+            Err(err)
+                if parent_run_id.is_some()
+                    && should_retry_create_agent_task_without_parent_run_id(&err) =>
+            {
+                log::warn!(
+                    "CreateAgentTask rejected parent_run_id with HTTP 422; retrying without parent linkage for compatibility"
+                );
+                self.send_graphql_request(
+                    CreateAgentTask::build(CreateAgentTaskVariables {
+                        input: CreateAgentTaskInput {
+                            prompt,
+                            environment_uid: environment_uid.map(Into::into),
+                            parent_run_id: None,
+                            agent_config_snapshot,
+                        },
+                        request_context: get_request_context(),
+                    }),
+                    None,
+                )
+                .await?
+            }
+            Err(err) => return Err(err),
         };
-
-        let operation = CreateAgentTask::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
 
         match response.create_agent_task {
             CreateAgentTaskResult::CreateAgentTaskOutput(output) => output

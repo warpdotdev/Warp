@@ -1,5 +1,7 @@
 use chrono::TimeZone;
 use chrono::Utc;
+use http::StatusCode;
+use warp_graphql::client::GraphQLError;
 
 use super::{
     build_list_agent_runs_url, AgentMessageHeader, AgentRunEvent, AgentSource,
@@ -7,6 +9,29 @@ use super::{
     ListRunsResponse, ReadAgentMessageResponse, RunSortBy, RunSortOrder, TaskListFilter,
 };
 use crate::notebooks::NotebookId;
+
+#[test]
+fn create_agent_task_retry_detects_422_graphql_errors_through_context() {
+    let err = anyhow::anyhow!(GraphQLError::HttpError {
+        status: StatusCode::UNPROCESSABLE_ENTITY,
+        body: "unknown field".to_string(),
+    })
+    .context("wrapped for higher-level handling");
+
+    assert!(super::should_retry_create_agent_task_without_parent_run_id(
+        &err
+    ));
+}
+
+#[test]
+fn create_agent_task_retry_ignores_non_422_graphql_errors() {
+    let err = anyhow::anyhow!(GraphQLError::HttpError {
+        status: StatusCode::BAD_REQUEST,
+        body: "bad request".to_string(),
+    });
+
+    assert!(!super::should_retry_create_agent_task_without_parent_run_id(&err));
+}
 
 #[test]
 fn test_deserialize_file_artifact_download_response() {
