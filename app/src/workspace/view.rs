@@ -3390,6 +3390,17 @@ impl Workspace {
     ) {
         match event {
             TabSettingsChangedEvent::WorkspaceDecorationVisibility { .. } => {
+                // Vertical tabs render in the Tabs panel (`vertical_tabs_panel_open`), not the horizontal tab strip
+                // "Always show workspace decorations" must keep that panel open
+                if FeatureFlag::VerticalTabs.is_enabled()
+                    && *TabSettings::as_ref(ctx).use_vertical_tabs
+                    && TabSettings::as_ref(ctx)
+                        .workspace_decoration_visibility
+                        .value()
+                        == &WorkspaceDecorationVisibility::AlwaysShow
+                {
+                    self.vertical_tabs_panel_open = true;
+                }
                 self.sync_window_button_visibility(ctx);
                 ctx.notify();
             }
@@ -3718,7 +3729,18 @@ impl Workspace {
         match workspace_setting {
             NewWorkspaceSource::Restored {
                 window_snapshot, ..
-            } => window_snapshot.vertical_tabs_panel_open,
+            } => {
+                if should_default_open
+                    && TabSettings::as_ref(ctx)
+                        .workspace_decoration_visibility
+                        .value()
+                        == &WorkspaceDecorationVisibility::AlwaysShow
+                {
+                    true
+                } else {
+                    window_snapshot.vertical_tabs_panel_open
+                }
+            }
             NewWorkspaceSource::TransferredTab {
                 vertical_tabs_panel_open,
                 ..
