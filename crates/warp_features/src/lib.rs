@@ -835,6 +835,9 @@ pub enum FeatureFlag {
     VerticalTabsSummaryMode,
 
     CloudModeInputV2,
+
+    /// Controls the demo launch banner shown to users in the experiment arm.
+    DemoLaunchBanner,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
