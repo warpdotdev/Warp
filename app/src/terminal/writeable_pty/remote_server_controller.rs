@@ -1,4 +1,3 @@
-use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
 use crate::auth::auth_state::AuthStateProvider;
 use crate::remote_server::auth_provider::ServerApiAuthProvider;
 use instant::Instant;
@@ -95,22 +94,6 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             {
                 me.on_ssh_init_shell_requested(pending_session_info.as_ref().clone(), ctx);
             }
-        });
-        let auth_manager = AuthManager::handle(ctx);
-        ctx.subscribe_to_model(&auth_manager, |_, event, ctx| match event {
-            AuthManagerEvent::AuthComplete => {
-                RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-                    mgr.reconnect_all_sessions_for_current_auth_identity(ctx);
-                });
-            }
-            AuthManagerEvent::AuthFailed(_)
-            | AuthManagerEvent::CreateAnonymousUserFailed
-            | AuthManagerEvent::SkippedLogin
-            | AuthManagerEvent::NeedsReauth
-            | AuthManagerEvent::AttemptedLoginGatedFeature { .. }
-            | AuthManagerEvent::LoginOverrideDetected(_)
-            | AuthManagerEvent::MintCustomTokenFailed(_)
-            | AuthManagerEvent::ReceivedDeviceAuthorizationCode { .. } => {}
         });
 
         let mgr = RemoteServerManager::handle(ctx);

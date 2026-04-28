@@ -493,22 +493,17 @@ impl RemoteServerClient {
         >,
     ) {
         let mut writer = futures::io::BufWriter::new(writer);
-        loop {
-            match outbound_rx.recv().await {
-                Ok(msg) => {
-                    if let Err(e) = protocol::write_client_message(&mut writer, &msg).await {
-                        let request_id = RequestId::from(msg.request_id);
-                        if !e.is_write_recoverable() {
-                            log::error!("Writer task fatal error: request_id={request_id}: {e}");
-                            pending_requests.clear();
-                            break;
-                        }
-                        log::warn!("Writer task: request_id={request_id}: {e}");
-                        // Drop the sender so the caller receives ResponseChannelClosed.
-                        pending_requests.remove(&request_id);
-                    }
+        while let Ok(msg) = outbound_rx.recv().await {
+            if let Err(e) = protocol::write_client_message(&mut writer, &msg).await {
+                let request_id = RequestId::from(msg.request_id);
+                if !e.is_write_recoverable() {
+                    log::error!("Writer task fatal error: request_id={request_id}: {e}");
+                    pending_requests.clear();
+                    break;
                 }
-                Err(_) => break,
+                log::error!("Writer task: request_id={request_id}: {e}");
+                // Drop the sender so the caller receives ResponseChannelClosed.
+                pending_requests.remove(&request_id);
             }
         }
     }
@@ -612,16 +607,8 @@ pub fn spawn_stderr_forwarder(
         .spawn(async move {
             let reader = futures::io::BufReader::new(stderr);
             let mut lines = reader.lines();
-            while let Some(line) = lines.next().await {
-                match line {
-                    Ok(line) => {
-                        log::info!("[remote_server] {line}");
-                    }
-                    Err(e) => {
-                        log::warn!("Remote server stderr forwarding stopped: {e}");
-                        return;
-                    }
-                }
+            while let Some(Ok(line)) = lines.next().await {
+                log::info!("[remote_server] {line}");
             }
         })
         .detach();

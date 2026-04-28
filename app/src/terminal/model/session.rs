@@ -138,10 +138,10 @@ impl Sessions {
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         // Track the connected host_id on the `Session` type so downstream
-        // code can distinguish hosts. PR 25018 owns reconnect handling and
-        // emits `SessionReconnected` with the new client; use that event to
-        // swap in a fresh command executor rather than mutating the existing
-        // executor's client.
+        // code can distinguish hosts. The `RemoteServerCommandExecutor`
+        // client itself is baked in at session construction time
+        // (see `new_command_executor_for_local_tty_session`) so we no
+        // longer need to wire it here on connect/disconnect.
         #[cfg(feature = "local_tty")]
         if FeatureFlag::SshRemoteServer.is_enabled() {
             let mgr = RemoteServerManager::handle(ctx);
@@ -161,23 +161,9 @@ impl Sessions {
                         session.set_remote_host_id(None);
                     }
                 }
-                RemoteServerManagerEvent::SessionReconnected {
-                    session_id: sid,
-                    host_id,
-                    client,
-                    ..
-                } => {
-                    if let Some(session) = sessions.sessions.get(sid) {
-                        session.set_remote_host_id(Some(host_id.clone()));
-                        let new_executor =
-                            Arc::new(RemoteServerCommandExecutor::new(*sid, client.clone()));
-                        session.set_command_executor(new_executor);
-                        log::info!("Swapped command executor for session {sid:?} after reconnect");
-                    }
-                }
                 RemoteServerManagerEvent::SessionConnecting { .. }
-                | RemoteServerManagerEvent::SessionConnectionFailed { .. }
                 | RemoteServerManagerEvent::SessionDeregistered { .. }
+                | RemoteServerManagerEvent::SessionConnectionFailed { .. }
                 | RemoteServerManagerEvent::HostConnected { .. }
                 | RemoteServerManagerEvent::HostDisconnected { .. }
                 | RemoteServerManagerEvent::NavigatedToDirectory { .. }
@@ -189,6 +175,18 @@ impl Sessions {
                 | RemoteServerManagerEvent::BinaryInstallComplete { .. }
                 | RemoteServerManagerEvent::ClientRequestFailed { .. }
                 | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
+                RemoteServerManagerEvent::SessionReconnected {
+                    session_id: sid,
+                    client,
+                    ..
+                } => {
+                    if let Some(session) = sessions.sessions.get(sid) {
+                        let new_executor =
+                            Arc::new(RemoteServerCommandExecutor::new(*sid, client.clone()));
+                        session.set_command_executor(new_executor);
+                        log::info!("Swapped command executor for session {sid:?} after reconnect");
+                    }
+                }
             });
         }
         #[cfg(not(feature = "local_tty"))]
@@ -347,8 +345,9 @@ impl Sessions {
 
         // For warpified-remote sessions, pick up the current host_id from
         // the manager so session.remote_host_id() is populated without
-        // waiting for the next SessionConnected event. Client refresh is
-        // handled by the manager-event subscription in `Sessions::new`.
+        // waiting for the next SessionConnected event. The
+        // RemoteServerCommandExecutor already has its client baked in, so
+        // nothing else needs to be wired here.
         #[cfg(feature = "local_tty")]
         if FeatureFlag::SshRemoteServer.is_enabled()
             && matches!(

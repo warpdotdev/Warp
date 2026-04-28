@@ -18,7 +18,6 @@ use crate::HostId;
 use repo_metadata::RepoMetadataUpdate;
 use serde::Serialize;
 use warp_core::SessionId;
-use warpui::r#async::Timer;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
 
 /// Maximum number of reconnection attempts after a spontaneous disconnect.
@@ -427,97 +426,6 @@ impl RemoteServerManager {
                         .await;
                 })
                 .detach();
-        }
-    }
-
-    /// Forces an already-connected session through the same reconnect path used
-    /// for spontaneous disconnects.
-    ///
-    /// Used when app auth identity changes. The stored transport derives the
-    /// identity at connect time, so reconnecting starts a fresh
-    /// identity-scoped proxy for the current user while leaving the SSH
-    /// ControlMaster open.
-    #[cfg_attr(target_family = "wasm", allow(unused_variables))]
-    pub fn reconnect_session_for_current_auth_identity(
-        &mut self,
-        session_id: SessionId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        #[cfg(target_family = "wasm")]
-        {
-            log::warn!("reconnect_session_for_current_auth_identity is a no-op on WASM");
-        }
-
-        #[cfg(not(target_family = "wasm"))]
-        {
-            let Some(RemoteSessionState::Connected {
-                host_id,
-                mut _child,
-                control_path,
-                transport: Some(transport),
-                ..
-            }) = self.sessions.remove(&session_id)
-            else {
-                return;
-            };
-            let Some(auth_provider) = self.auth_providers.get(&session_id).cloned() else {
-                self.sessions
-                    .insert(session_id, RemoteSessionState::Disconnected);
-                return;
-            };
-
-            let exit_status = Self::capture_exit_status(&mut _child, session_id);
-            drop(_child);
-            self.remove_from_host_index(&host_id, session_id);
-            if !self.host_to_sessions.contains_key(&host_id) {
-                ctx.emit(RemoteServerManagerEvent::HostDisconnected {
-                    host_id: host_id.clone(),
-                });
-            }
-            self.last_navigated_path.remove(&session_id);
-
-            self.attempt_reconnect(
-                session_id,
-                ReconnectParams {
-                    attempt: 1,
-                    host_id,
-                    exit_status,
-                    transport,
-                    auth_provider,
-                    control_path,
-                },
-                ctx,
-            );
-        }
-    }
-
-    /// Forces all currently connected sessions through the reconnect path.
-    ///
-    /// Used when the app auth identity changes. Each stored transport will
-    /// derive the current identity when reconnecting.
-    pub fn reconnect_all_sessions_for_current_auth_identity(
-        &mut self,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let session_ids = self
-            .sessions
-            .iter()
-            .filter_map(|(session_id, state)| match state {
-                RemoteSessionState::Connected {
-                    transport: Some(_), ..
-                } => Some(*session_id),
-                RemoteSessionState::Connecting
-                | RemoteSessionState::Initializing { .. }
-                | RemoteSessionState::Connected {
-                    transport: None, ..
-                }
-                | RemoteSessionState::Reconnecting { .. }
-                | RemoteSessionState::Disconnected => None,
-            })
-            .collect::<Vec<_>>();
-
-        for session_id in session_ids {
-            self.reconnect_session_for_current_auth_identity(session_id, ctx);
         }
     }
 
@@ -1298,7 +1206,7 @@ impl RemoteServerManager {
 
         ctx.background_executor()
             .spawn(async move {
-                Timer::after(RECONNECT_DELAY).await;
+                async_io::Timer::after(RECONNECT_DELAY).await;
 
                 // Check if the session was deregistered during the delay.
                 // (Checked via spawner since sessions lives on the main thread.)

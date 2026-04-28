@@ -3,6 +3,7 @@
 //! [`SshTransport`] uses an existing SSH ControlMaster socket to check/install
 //! the remote server binary and to launch the `remote-server-proxy` process
 //! whose stdin/stdout become the protocol channel.
+use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -32,8 +33,8 @@ pub struct SshTransport {
     auth_provider: Arc<dyn AuthProvider>,
 }
 
-impl std::fmt::Debug for SshTransport {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for SshTransport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SshTransport")
             .field("socket_path", &self.socket_path)
             .finish_non_exhaustive()
@@ -151,14 +152,6 @@ impl RemoteTransport for SshTransport {
             // [`RemoteServerManager`] holds the `Child` on its per-session
             // state, and dropping that state (on explicit teardown or
             // spontaneous disconnect) sends SIGKILL to this ssh process.
-            // Without this the ssh child is orphaned and keeps a channel
-            // open on the ControlMaster socket, blocking the master from
-            // exiting cleanly when the user logs out.
-            //
-            // Note that the child's lifetime is decoupled from any
-            // `Arc<RemoteServerClient>` clones: other owners (e.g. the
-            // per-session command executor) can keep the client alive for
-            // their own purposes without pinning the subprocess.
             let mut child = command::r#async::Command::new("ssh")
                 .args(&args)
                 .stdin(Stdio::piped())
