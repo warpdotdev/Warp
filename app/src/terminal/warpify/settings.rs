@@ -92,15 +92,15 @@ pub enum SshExtensionInstallMode {
     NeverInstall,
 }
 
-settings::macros::implement_setting_for_enum!(
-    SshExtensionInstallMode,
-    WarpifySettings,
-    SupportedPlatforms::ALL,
-    SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+maybe_define_setting!(SshExtensionInstallModeSetting, group: WarpifySettings, {
+    type: SshExtensionInstallMode,
+    default: SshExtensionInstallMode::default(),
+    supported_platforms: SupportedPlatforms::ALL,
+    sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
     private: false,
     toml_path: "warpify.ssh.ssh_extension_install_mode",
     description: "Controls SSH extension installation behavior.",
-);
+});
 
 impl SshExtensionInstallMode {
     pub fn display_name(&self) -> &'static str {
@@ -158,7 +158,7 @@ pub struct WarpifySettings {
 
     /// Controls the installation behavior for the SSH extension (remote server) when the binary
     /// is not installed on the remote host.
-    pub ssh_extension_install_mode: SshExtensionInstallMode,
+    pub ssh_extension_install_mode: SshExtensionInstallModeSetting,
 }
 
 #[cfg(windows)]
@@ -224,7 +224,7 @@ impl WarpifySettings {
             ssh_hosts_denylist,
             enable_ssh_warpification: EnableSshWarpification::new_from_storage(ctx),
             use_ssh_tmux_wrapper: UseSshTmuxWrapper::new_from_storage(ctx),
-            ssh_extension_install_mode: SshExtensionInstallMode::new_from_storage(ctx),
+            ssh_extension_install_mode: SshExtensionInstallModeSetting::new_from_storage(ctx),
         }
     }
 
@@ -247,7 +247,7 @@ impl WarpifySettings {
             ssh_hosts_denylist,
             enable_ssh_warpification: EnableSshWarpification::new(None),
             use_ssh_tmux_wrapper: UseSshTmuxWrapper::new(None),
-            ssh_extension_install_mode: SshExtensionInstallMode::new(None),
+            ssh_extension_install_mode: SshExtensionInstallModeSetting::new(None),
         }
     }
 
@@ -272,7 +272,7 @@ impl WarpifySettings {
                 }
                 WarpifySettingsChangedEvent::EnableSshWarpification { .. } => {}
                 WarpifySettingsChangedEvent::UseSshTmuxWrapper { .. } => {}
-                WarpifySettingsChangedEvent::SshExtensionInstallMode { .. } => {}
+                WarpifySettingsChangedEvent::SshExtensionInstallModeSetting { .. } => {}
             })
         });
 
@@ -311,7 +311,7 @@ impl WarpifySettings {
         register_settings_events!(
             WarpifySettings,
             ssh_extension_install_mode,
-            SshExtensionInstallMode,
+            SshExtensionInstallModeSetting,
             handle.clone(),
             ctx
         );
@@ -345,7 +345,7 @@ pub enum WarpifySettingsChangedEvent {
     UseSshTmuxWrapper {
         change_event_reason: ChangeEventReason,
     },
-    SshExtensionInstallMode {
+    SshExtensionInstallModeSetting {
         change_event_reason: ChangeEventReason,
     },
 }
