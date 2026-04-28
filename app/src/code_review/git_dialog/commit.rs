@@ -369,7 +369,6 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
     let message_editor = state.message_editor.clone();
     let repo_path = me.repo_path().clone();
     let branch_name = me.branch_name().to_string();
-    let parent_branch = me.parent_branch_name.clone();
 
     me.set_loading(LOADING_LABEL, ctx);
 
@@ -407,7 +406,6 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                             create_pr_with_ai_content(
                                 &repo_path,
                                 &branch_name,
-                                parent_branch.as_deref(),
                                 ai.as_ref(),
                                 path_env_ref,
                             )
@@ -421,7 +419,6 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                                 &repo_path,
                                 None,
                                 None,
-                                parent_branch.as_deref(),
                                 path_env_ref,
                             )
                             .await?

@@ -482,7 +482,6 @@ pub enum GitDialogMode {
 pub struct GitDialog {
     repo_path: PathBuf,
     branch_name: String,
-    parent_branch_name: Option<String>,
     mode: GitDialogMode,
     loading: bool,
     confirm_button: ViewHandle<ActionButton>,
@@ -494,7 +493,6 @@ impl GitDialog {
     pub fn new_for_commit(
         repo_path: PathBuf,
         branch_name: String,
-        parent_branch_name: Option<String>,
         allow_create_pr: bool,
         has_upstream: bool,
         ctx: &mut ViewContext<Self>,
@@ -509,7 +507,6 @@ impl GitDialog {
         let this = Self {
             repo_path,
             branch_name,
-            parent_branch_name,
             mode: GitDialogMode::Commit(state),
             loading: false,
             confirm_button,
@@ -536,7 +533,6 @@ impl GitDialog {
         Self {
             repo_path,
             branch_name,
-            parent_branch_name: None,
             mode: GitDialogMode::Push(state),
             loading: false,
             confirm_button,
@@ -548,16 +544,15 @@ impl GitDialog {
     pub fn new_for_pr(
         repo_path: PathBuf,
         branch_name: String,
-        parent_branch_name: Option<String>,
+        base_branch_name: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let (confirm_button, cancel_button, close_button) =
             Self::build_dialog_buttons(pr::confirm_label_for(), Some(pr::confirm_icon_for()), ctx);
-        let state = pr::new_state(&repo_path, ctx);
+        let state = pr::new_state(&repo_path, base_branch_name, ctx);
         Self {
             repo_path,
             branch_name,
-            parent_branch_name,
             mode: GitDialogMode::CreatePr(state),
             loading: false,
             confirm_button,

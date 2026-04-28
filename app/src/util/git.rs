@@ -194,8 +194,7 @@ pub async fn detect_main_branch(repo_path: &Path) -> Result<String> {
 }
 
 /// Returns the SHA where `HEAD` forked from any other ref. Use
-/// `<fork>..HEAD` for "commits unique to this branch". For branch-name
-/// lookup, see [`detect_parent_branch`].
+/// `<fork>..HEAD` for "commits unique to this branch".
 #[cfg(not(feature = "local_fs"))]
 pub async fn detect_fork_point(_repo_path: &Path) -> Result<Option<String>> {
     Err(anyhow!("Not supported without local_fs"))
@@ -250,128 +249,6 @@ pub async fn detect_fork_point(repo_path: &Path) -> Result<Option<String>> {
         .map(|s| s.trim().to_string()))
 }
 
-/// Closest-ancestor *branch name* of `HEAD`, falling back to main. Used
-/// for `gh pr create --base` and UI labels; for diff/log ranges prefer
-/// [`detect_fork_point`] (returns a stable SHA).
-#[cfg(not(feature = "local_fs"))]
-pub async fn detect_parent_branch(_repo_path: &Path) -> Result<String> {
-    Err(anyhow!("Not supported without local_fs"))
-}
-
-/// See [`detect_parent_branch_with_context`] for the algorithm; this
-/// variant fetches `current`/`upstream`/`main` itself.
-#[cfg(feature = "local_fs")]
-pub async fn detect_parent_branch(repo_path: &Path) -> Result<String> {
-    let (current, upstream, main) = futures::join!(
-        async { detect_current_branch(repo_path).await.ok() },
-        async {
-            run_git_command(
-                repo_path,
-                &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
-            )
-            .await
-            .ok()
-            .map(|s| s.trim().to_string())
-        },
-        detect_main_branch(repo_path),
-    );
-
-    detect_parent_branch_with_context(repo_path, current.as_deref(), upstream.as_deref(), main)
-        .await
-}
-
-#[cfg(not(feature = "local_fs"))]
-pub async fn detect_parent_branch_with_context(
-    _repo_path: &Path,
-    _current: Option<&str>,
-    _upstream: Option<&str>,
-    _main: Result<String>,
-) -> Result<String> {
-    Err(anyhow!("Not supported without local_fs"))
-}
-
-/// Picks the branch whose tip still contains the fork-point commit.
-/// `--contains` (unlike `--merged HEAD`) keeps refs that have advanced
-/// past the fork point. Candidates are ranked by distance from the fork
-/// (closer = more likely the direct parent), then main / local / alpha.
-#[cfg(feature = "local_fs")]
-pub async fn detect_parent_branch_with_context(
-    repo_path: &Path,
-    current: Option<&str>,
-    upstream: Option<&str>,
-    main: Result<String>,
-) -> Result<String> {
-    let Some(fork) = detect_fork_point(repo_path).await.ok().flatten() else {
-        // No fork point — fall back to detected main.
-        return main;
-    };
-
-    let refs_output = run_git_command(
-        repo_path,
-        &[
-            "for-each-ref",
-            "--contains",
-            &fork,
-            "--format=%(refname:short)",
-            "refs/heads",
-            "refs/remotes",
-        ],
-    )
-    .await
-    .inspect_err(|e| log::debug!("detect_parent_branch: for-each-ref --contains failed: {e}"))
-    .unwrap_or_default();
-
-    // Skip bare `origin`, `*/HEAD` aliases, and self / upstream.
-    let candidates: Vec<String> = refs_output
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|name| !name.is_empty())
-        .filter(|name| name.contains('/') || name != "origin")
-        .filter(|name| !name.ends_with("/HEAD"))
-        .filter(|name| current != Some(name.as_str()))
-        .filter(|name| upstream != Some(name.as_str()))
-        .collect();
-
-    // Score each candidate by the number of commits from the fork to its
-    // tip; smaller distance wins so an unrelated local branch sitting at
-    // some older shared ancestor can't beat the real parent on name alone.
-    let mut scored: Vec<(usize, String)> = Vec::with_capacity(candidates.len());
-    for name in candidates {
-        let range = format!("{fork}..{name}");
-        let distance = run_git_command(repo_path, &["rev-list", "--count", &range])
-            .await
-            .ok()
-            .and_then(|s| s.trim().parse::<usize>().ok())
-            .unwrap_or(usize::MAX);
-        scored.push((distance, name));
-    }
-
-    // Tiebreakers (after distance): prefer detected main, then local over
-    // `origin/*`, then alpha.
-    let main_name = main.as_ref().ok().map(String::as_str);
-    let best = scored
-        .into_iter()
-        .min_by(|(da, a), (db, b)| {
-            da.cmp(db)
-                .then_with(|| {
-                    let a_is_main = main_name == Some(a.as_str());
-                    let b_is_main = main_name == Some(b.as_str());
-                    b_is_main.cmp(&a_is_main)
-                })
-                .then_with(|| b.contains('/').cmp(&a.contains('/')))
-                .then_with(|| a.cmp(b))
-        })
-        .map(|(_, name)| name);
-
-    if let Some(branch) = best {
-        let is_local = !branch.contains('/');
-        log::debug!("detect_parent_branch: picked {branch} (fork={fork}, local={is_local})");
-        return Ok(branch);
-    }
-
-    // No ref reaches the fork point; fall back to detected main.
-    main
-}
 
 /// Git summary for a repo: current branch + uncommitted diff stats.
 #[derive(Debug, Clone)]
@@ -796,20 +673,12 @@ pub async fn run_commit(
     Err(anyhow!("Not supported on wasm"))
 }
 
-/// Per-file stats for what would land in a PR: base (caller-supplied or
-/// fork-point SHA) vs `origin/<current>` (or HEAD when unpushed).
-/// `parent_branch` accepts a branch name or SHA; `None` uses the fork point.
+/// Per-file stats for what would land in a PR: default branch vs
+/// `origin/<current>` (or HEAD when unpushed).
 #[cfg(feature = "local_fs")]
-pub async fn get_branch_diff_entries(
-    repo_path: &Path,
-    parent_branch: Option<&str>,
-) -> Result<Vec<FileChangeEntry>> {
-    let base = match parent_branch {
-        Some(b) => b.to_string(),
-        None => detect_fork_point(repo_path)
-            .await?
-            .ok_or_else(|| anyhow!("Could not detect fork point for current branch"))?,
-    };
+pub async fn get_branch_diff_entries(repo_path: &Path) -> Result<Vec<FileChangeEntry>> {
+    let base = detect_main_branch(repo_path).await?;
+    let base = base.trim();
     let current = detect_current_branch(repo_path).await?;
     let remote_ref = format!("origin/{current}");
 
@@ -843,10 +712,7 @@ pub async fn get_branch_diff_entries(
 }
 
 #[cfg(not(feature = "local_fs"))]
-pub async fn get_branch_diff_entries(
-    _repo_path: &Path,
-    _parent_branch: Option<&str>,
-) -> Result<Vec<FileChangeEntry>> {
+pub async fn get_branch_diff_entries(_repo_path: &Path) -> Result<Vec<FileChangeEntry>> {
     Err(anyhow!("Not supported on wasm"))
 }
 
@@ -952,17 +818,12 @@ pub async fn get_pr_for_branch(
     Err(anyhow!("Not supported on wasm"))
 }
 
-/// PR-ready diff (base vs `origin/<current>` or HEAD), truncated for AI
-/// token limits. `parent_branch` accepts a branch name or SHA; `None`
-/// uses the fork point.
+/// PR-ready diff (default branch vs `origin/<current>` or HEAD),
+/// truncated for AI token limits.
 #[cfg(feature = "local_fs")]
-pub async fn get_diff_for_pr(repo_path: &Path, parent_branch: Option<&str>) -> Result<String> {
-    let base = match parent_branch {
-        Some(b) => b.to_string(),
-        None => detect_fork_point(repo_path)
-            .await?
-            .ok_or_else(|| anyhow!("Could not detect fork point for current branch"))?,
-    };
+pub async fn get_diff_for_pr(repo_path: &Path) -> Result<String> {
+    let base = detect_main_branch(repo_path).await?;
+    let base = base.trim();
     let current = detect_current_branch(repo_path).await?;
     let remote_ref = format!("origin/{current}");
 
@@ -987,23 +848,15 @@ pub async fn get_diff_for_pr(repo_path: &Path, parent_branch: Option<&str>) -> R
 }
 
 #[cfg(not(feature = "local_fs"))]
-pub async fn get_diff_for_pr(_repo_path: &Path, _parent_branch: Option<&str>) -> Result<String> {
+pub async fn get_diff_for_pr(_repo_path: &Path) -> Result<String> {
     Err(anyhow!("Not supported on wasm"))
 }
 
-/// Commit subject lines on the current branch since the base.
-/// `parent_branch` accepts a branch name or SHA; `None` uses the fork point.
+/// Commit subject lines on the current branch since the default branch.
 #[cfg(feature = "local_fs")]
-pub async fn get_branch_commit_messages(
-    repo_path: &Path,
-    parent_branch: Option<&str>,
-) -> Result<Vec<String>> {
-    let base = match parent_branch {
-        Some(b) => b.to_string(),
-        None => detect_fork_point(repo_path)
-            .await?
-            .ok_or_else(|| anyhow!("Could not detect fork point for current branch"))?,
-    };
+pub async fn get_branch_commit_messages(repo_path: &Path) -> Result<Vec<String>> {
+    let base = detect_main_branch(repo_path).await?;
+    let base = base.trim();
     let range = format!("{base}..HEAD");
     let output = run_git_command(repo_path, &["log", &range, "--format=%s"]).await?;
     Ok(output
@@ -1014,44 +867,40 @@ pub async fn get_branch_commit_messages(
 }
 
 #[cfg(not(feature = "local_fs"))]
-pub async fn get_branch_commit_messages(
-    _repo_path: &Path,
-    _parent_branch: Option<&str>,
-) -> Result<Vec<String>> {
+pub async fn get_branch_commit_messages(_repo_path: &Path) -> Result<Vec<String>> {
     Err(anyhow!("Not supported on wasm"))
 }
 
-/// Creates a PR for the current branch (must already be pushed) targeting
-/// the detected parent via `--base`. Falls back to `--fill` when title/body
-/// are `None`.
+/// Creates a PR for the current branch (must already be pushed). Falls back
+/// to `--fill` when title/body are `None`. Always targets the detected
+/// default branch.
 #[cfg(feature = "local_fs")]
 pub async fn create_pr(
     repo_path: &Path,
     title: Option<&str>,
     body: Option<&str>,
-    parent_branch: Option<&str>,
     path_env: Option<&str>,
 ) -> Result<PrInfo> {
-    // `gh pr create --base` wants a bare branch name, so strip `origin/`.
-    // If detection fails, omit --base and let gh infer the base from the repo default.
-    let base = match parent_branch {
-        Some(b) => Some(b.strip_prefix("origin/").unwrap_or(b).to_string()),
-        None => detect_parent_branch(repo_path)
-            .await
-            .ok()
-            .map(|b| b.strip_prefix("origin/").unwrap_or(&b).to_string()),
-    };
+    let base = detect_main_branch(repo_path).await?;
+    let base = base.trim();
+    let base = base.strip_prefix("origin/").unwrap_or(&base);
     let sanitized_title;
-    let mut args: Vec<&str> = match (title, body) {
+    let args: Vec<&str> = match (title, body) {
         (Some(t), Some(b)) => {
             sanitized_title = sanitize_pr_title(t);
-            vec!["pr", "create", "--title", &sanitized_title, "--body", b]
+            vec![
+                "pr",
+                "create",
+                "--base",
+                base,
+                "--title",
+                &sanitized_title,
+                "--body",
+                b,
+            ]
         }
-        _ => vec!["pr", "create", "--fill"],
+        _ => vec!["pr", "create", "--base", base, "--fill"],
     };
-    if let Some(ref b) = base {
-        args.extend_from_slice(&["--base", b]);
-    }
     let stdout = run_gh_command(repo_path, &args, path_env).await?;
     // `gh pr create` prints the PR URL on success.
     let url = stdout.trim().to_string();
@@ -1076,7 +925,6 @@ pub async fn create_pr(
     _repo_path: &Path,
     _title: Option<&str>,
     _body: Option<&str>,
-    _parent_branch: Option<&str>,
     _path_env: Option<&str>,
 ) -> Result<PrInfo> {
     Err(anyhow!("Not supported on wasm"))

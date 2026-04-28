@@ -6709,9 +6709,6 @@ impl CodeReviewView {
             .diff_state_model
             .read(ctx, |model, _| model.get_current_branch_name())
             .unwrap_or_default();
-        let parent_branch_name = self
-            .diff_state_model
-            .read(ctx, |model, _| model.get_parent_branch_name());
 
         let dialog = match kind {
             GitDialogKind::Commit => {
@@ -6728,7 +6725,6 @@ impl CodeReviewView {
                     GitDialog::new_for_commit(
                         repo_path,
                         branch_name,
-                        parent_branch_name,
                         allow_create_pr,
                         has_upstream,
                         ctx,
@@ -6743,9 +6739,14 @@ impl CodeReviewView {
                     GitDialog::new_for_push(repo_path, branch_name, publish, commits, ctx)
                 })
             }
-            GitDialogKind::CreatePr => ctx.add_typed_action_view(|ctx| {
-                GitDialog::new_for_pr(repo_path, branch_name, parent_branch_name, ctx)
-            }),
+            GitDialogKind::CreatePr => {
+                let base_branch_name = self
+                    .diff_state_model
+                    .read(ctx, |model, _| model.get_main_branch_name());
+                ctx.add_typed_action_view(|ctx| {
+                    GitDialog::new_for_pr(repo_path, branch_name, base_branch_name, ctx)
+                })
+            }
         };
 
         ctx.subscribe_to_view(&dialog, move |me, _, event, ctx| {
