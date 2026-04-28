@@ -1175,10 +1175,13 @@ impl ConversationDetailsPanel {
         .with_color(blended_colors::text_sub(theme, theme.surface_1()))
         .finish();
 
+        // Render commands as an unordered list rather than a numbered list:
+        // setup commands run sequentially but their position isn't a count the
+        // user cares about, and prefixed numbers read awkwardly in front of
+        // long, multi-line commands.
         let commands_text = setup_commands
             .iter()
-            .enumerate()
-            .map(|(i, cmd)| format!("{}. {cmd}", i + 1))
+            .map(|cmd| format!("\u{2022} {cmd}"))
             .collect::<Vec<_>>()
             .join("\n");
 
