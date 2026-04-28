@@ -26,8 +26,8 @@ use crate::{
         user_facing_git_error, GitDialog, GitDialogAction, GitDialogEvent, GitDialogMode,
     },
     editor::{
-        EditorOptions, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys,
-        TextOptions,
+        EditorOptions, EditorView, Event as EditorEvent, InteractionState,
+        PropagateAndNoOpNavigationKeys, TextOptions,
     },
     server::server_api::ServerApiProvider,
     ui_components::icons::Icon,
@@ -356,11 +356,17 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
     let intent = state.intent;
     let include_unstaged = state.include_unstaged;
     let ai_autogen_enabled = should_send_git_ops_ai_request(ctx);
+    let message_editor = state.message_editor.clone();
     let repo_path = me.repo_path().clone();
     let branch_name = me.branch_name().to_string();
     let parent_branch = me.parent_branch_name.clone();
 
     me.set_loading(LOADING_LABEL, ctx);
+
+    // Lock the commit message editor while the async op is in flight.
+    message_editor.update(ctx, |editor, ctx| {
+        editor.set_interaction_state(InteractionState::Disabled, ctx);
+    });
 
     let code_review_ai = if ai_autogen_enabled {
         Some(ServerApiProvider::handle(ctx).read(ctx, |p, _| p.get_ai_client()))
