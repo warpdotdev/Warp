@@ -657,6 +657,13 @@ fn find_matching_config_name<'a>(
         .find(|&config| config.name.to_lowercase() == target_name_lower)
 }
 
+/// Extract the `path` query parameter, expanding a leading `~` to the
+/// user's home directory.
+fn parse_tab_path(url: &Url) -> Option<PathBuf> {
+    let raw = url.query_pairs().find(|(k, _)| k == "path")?.1;
+    Some(PathBuf::from(shellexpand::tilde(&raw).into_owned()))
+}
+
 #[derive(Debug)]
 enum Action {
     NewTab,
@@ -706,11 +713,7 @@ impl Action {
                 } else {
                     None
                 };
-                let Some(Ok(path)) = url
-                    .query_pairs()
-                    .find(|(k, _v)| k == "path")
-                    .map(|(_, path)| PathBuf::from_str(&path))
-                else {
+                let Some(path) = parse_tab_path(url) else {
                     log::warn!("Could not parse path to open a new tab/window");
                     return;
                 };
