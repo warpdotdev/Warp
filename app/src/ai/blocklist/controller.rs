@@ -599,15 +599,8 @@ impl BlocklistAIController {
             .remove(&conversation_id)
             .unwrap_or_default();
 
-        let ai_history_model = BlocklistAIHistoryModel::as_ref(ctx);
-        let active_conversation_id = ai_history_model.active_conversation_id(self.terminal_view_id);
-        let cancellation_reason = CancellationReason::FollowUpSubmitted {
-            is_for_same_conversation: active_conversation_id
-                .is_some_and(|id| id == conversation_id),
-        };
-        if let Some(active_conversation_id) = active_conversation_id {
-            self.cancel_conversation_progress(active_conversation_id, cancellation_reason, ctx);
-        }
+        let cancellation_reason =
+            self.cancel_active_conversation_for_follow_up(conversation_id, ctx);
 
         if let Some(slash_command_request) = SlashCommandRequest::from_query(query.as_str()) {
             slash_command_request.send_request(self, is_queued_prompt, ctx);
@@ -1209,7 +1202,38 @@ impl BlocklistAIController {
         slash_command: SlashCommandRequest,
         ctx: &mut ModelContext<Self>,
     ) {
+        // Slash commands are a fresh user turn; mirror `send_query`'s
+        // cancel-and-resend so we don't trip `send_request_input`'s in-flight
+        // invariant.
+        if let Some(conversation_id) = slash_command.conversation_id(self, ctx) {
+            self.cancel_active_conversation_for_follow_up(conversation_id, ctx);
+        }
         slash_command.send_request(self, /*is_queued_prompt*/ false, ctx);
+    }
+
+    /// Cancel any in-flight progress on the active conversation in preparation
+    /// for sending a follow-up turn that will land on `target_conversation_id`.
+    /// Without this pre-cancel, [`Self::send_request_input`] would trip its
+    /// in-flight invariant when the new turn re-uses an existing conversation.
+    ///
+    /// Returns the [`CancellationReason::FollowUpSubmitted`] reason used so
+    /// callers can reuse it for downstream side effects (e.g. cancelling
+    /// pending actions on the target conversation).
+    fn cancel_active_conversation_for_follow_up(
+        &mut self,
+        target_conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) -> CancellationReason {
+        let active_conversation_id =
+            BlocklistAIHistoryModel::as_ref(ctx).active_conversation_id(self.terminal_view_id);
+        let reason = CancellationReason::FollowUpSubmitted {
+            is_for_same_conversation: active_conversation_id
+                .is_some_and(|id| id == target_conversation_id),
+        };
+        if let Some(active_conversation_id) = active_conversation_id {
+            self.cancel_conversation_progress(active_conversation_id, reason, ctx);
+        }
+        reason
     }
 
     /// Same as [`Self::send_slash_command_request`] but marks the emitted `SentRequest`
