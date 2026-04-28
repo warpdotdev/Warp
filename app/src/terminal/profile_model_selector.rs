@@ -1825,7 +1825,7 @@ impl TypedActionView for ProfileModelSelector {
             ProfileModelSelectorAction::ManageProfiles => {
                 self.set_profile_menu_visibility(false, ctx);
                 ctx.emit(ProfileModelSelectorEvent::OpenSettings(
-                    SettingsSection::WarpAgent,
+                    SettingsSection::AgentProfiles,
                 ));
             }
             ProfileModelSelectorAction::ToggleProfileMenu => {
