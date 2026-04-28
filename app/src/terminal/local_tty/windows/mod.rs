@@ -175,11 +175,14 @@ pub(super) fn spawn(
 
     let start_directory = options
         .start_dir
+        .as_ref()
         .filter(|start_dir| start_dir.is_dir())
+        .and_then(|dir| dunce::canonicalize(dir).ok())
         .or_else(|| {
             std::env::var_os("USERPROFILE")
                 .map(PathBuf::from)
                 .filter(|path| path.is_dir())
+                .and_then(|dir| dunce::canonicalize(&dir).ok())
         })
         .map(|path| HSTRING::from(path.as_os_str()));
 
