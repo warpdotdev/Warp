@@ -366,7 +366,10 @@ pub enum ServerApiEvent {
     /// The user's account has been disabled.
     UserAccountDisabled,
     /// The current bearer token was refreshed.
-    AccessTokenRefreshed { token: String },
+    AccessTokenRefreshed {
+        #[cfg_attr(target_family = "wasm", allow(dead_code))]
+        token: String,
+    },
 }
 
 impl fmt::Debug for ServerApiEvent {
