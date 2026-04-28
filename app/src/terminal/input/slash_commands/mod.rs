@@ -5,10 +5,17 @@ mod view;
 pub use data_source::*;
 pub use view::*;
 
+#[cfg(feature = "local_fs")]
+use std::path::PathBuf;
+
 use ai::skills::SkillReference;
+#[cfg(feature = "local_fs")]
+use typed_path::{TypedPath, TypedPathBuf};
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::appearance::Appearance;
+#[cfg(feature = "local_fs")]
+use warp_util::path::{CleanPathResult, LineAndColumnArg, ShellFamily};
 use warpui::clipboard::ClipboardContent;
 use warpui::{SingletonEntity, ViewContext};
 
@@ -33,7 +40,11 @@ use crate::terminal::input::slash_command_model::{
 use crate::terminal::input::{
     CompletionsTrigger, Event, Input, InputSuggestionsMode, UserQueryMenuAction,
 };
+#[cfg(feature = "local_fs")]
+use crate::terminal::model::session::Session;
 use crate::terminal::view::TerminalAction;
+#[cfg(feature = "local_fs")]
+use crate::terminal::ShellLaunchData;
 use crate::view_components::DismissibleToast;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
@@ -92,6 +103,63 @@ impl SlashCommandTrigger {
             }
         )
     }
+}
+
+#[cfg(feature = "local_fs")]
+fn shell_encoded_path<'a>(session: &Session, path: &'a str) -> TypedPath<'a> {
+    if cfg!(unix)
+        || matches!(
+            session.launch_data(),
+            Some(
+                ShellLaunchData::WSL { .. }
+                    | ShellLaunchData::MSYS2 { .. }
+                    | ShellLaunchData::DockerSandbox { .. }
+            )
+        )
+        || matches!(session.shell_family(), ShellFamily::Posix)
+    {
+        TypedPath::unix(path)
+    } else {
+        TypedPath::windows(path)
+    }
+}
+
+#[cfg(feature = "local_fs")]
+fn open_file_command_path(
+    session: &Session,
+    current_dir: &str,
+    raw_arg: &str,
+) -> (PathBuf, Option<LineAndColumnArg>) {
+    let (shell_path, line_col) = open_file_command_shell_path(session, current_dir, raw_arg);
+    let file_path = session
+        .maybe_convert_to_native_path(&shell_path.to_path())
+        .unwrap_or_else(|err| {
+            log::warn!("unable to convert /open-file path to native path: {err:?}");
+            PathBuf::from(shell_path.to_string_lossy().into_owned())
+        });
+
+    (file_path, line_col)
+}
+
+#[cfg(feature = "local_fs")]
+fn open_file_command_shell_path(
+    session: &Session,
+    current_dir: &str,
+    raw_arg: &str,
+) -> (TypedPathBuf, Option<LineAndColumnArg>) {
+    let parsed_path = CleanPathResult::with_line_and_column_number(raw_arg.trim());
+    // The argument may contain shell-escaped characters (e.g. `\ ` for
+    // spaces) from auto-suggest. Unescape them so the path matches the
+    // actual filesystem entry.
+    let unescaped_path = session.shell_family().unescape(&parsed_path.path);
+    // Expand `~` to the user's home directory.
+    let expanded_path = shellexpand::tilde(&unescaped_path);
+
+    let shell_path = shell_encoded_path(session, current_dir)
+        .join(shell_encoded_path(session, &expanded_path))
+        .normalize();
+
+    (shell_path, parsed_path.line_and_column_num)
 }
 
 impl Input {
@@ -450,9 +518,6 @@ impl Input {
                 #[cfg(feature = "local_fs")]
                 match argument {
                     Some(args) if !args.is_empty() => {
-                        use shellexpand::tilde;
-                        use warp_util::path::CleanPathResult;
-
                         let Some(session_id) = self.active_block_session_id() else {
                             return false;
                         };
@@ -480,20 +545,14 @@ impl Input {
                             .active_block_metadata
                             .as_ref()
                             .and_then(|metadata| metadata.current_working_directory())
-                            .map(std::path::PathBuf::from);
+                            .map(str::to_owned);
 
                         let Some(current_dir) = current_dir else {
                             return false;
                         };
 
-                        let parsed_path = CleanPathResult::with_line_and_column_number(args.trim());
-                        // The argument may contain shell-escaped characters (e.g. `\ ` for
-                        // spaces) from auto-suggest. Unescape them so the path matches the
-                        // actual filesystem entry.
-                        let unescaped_path = session.shell_family().unescape(&parsed_path.path);
-                        // Expand `~` to the user's home directory.
-                        let expanded_path = tilde(&unescaped_path);
-                        let file_path = current_dir.join(&*expanded_path);
+                        let (file_path, line_col) =
+                            open_file_command_path(&session, &current_dir, args);
 
                         match std::fs::metadata(&file_path) {
                             Ok(metadata) if metadata.is_file() => {
@@ -502,7 +561,7 @@ impl Input {
                                 ctx.dispatch_typed_action(&TerminalAction::OpenCodeInWarp {
                                     path: file_path,
                                     layout: external_editor::settings::EditorLayout::SplitPane,
-                                    line_col: parsed_path.line_and_column_num,
+                                    line_col,
                                 });
                             }
                             Ok(_) => {
@@ -977,5 +1036,48 @@ impl Input {
             | SlashCommandEntryState::Composing { .. }
             | SlashCommandEntryState::DisabledUntilEmptyBuffer => false,
         }
+    }
+}
+
+#[cfg(all(test, feature = "local_fs"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_file_command_uses_shell_separators_for_wsl_paths() {
+        let session = Session::test().with_shell_launch_data(ShellLaunchData::WSL {
+            distro: "Ubuntu".to_owned(),
+        });
+
+        let (path, line_col) =
+            open_file_command_shell_path(&session, "/home/ubuntu", "subdir/test.txt:4:2");
+
+        assert_eq!(
+            path.to_string_lossy(),
+            "/home/ubuntu/subdir/test.txt",
+            "WSL paths should be joined with Unix separators before host conversion"
+        );
+        assert_eq!(
+            line_col,
+            Some(LineAndColumnArg {
+                line_num: 4,
+                column_num: Some(2),
+            })
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn open_file_command_converts_wsl_paths_to_host_paths() {
+        let session = Session::test().with_shell_launch_data(ShellLaunchData::WSL {
+            distro: "Ubuntu".to_owned(),
+        });
+
+        let (path, _) = open_file_command_path(&session, "/home/ubuntu", "subdir/test.txt");
+
+        assert_eq!(
+            path,
+            PathBuf::from(r"\\WSL$\Ubuntu\home\ubuntu\subdir\test.txt")
+        );
     }
 }
