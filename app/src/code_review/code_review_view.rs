@@ -6855,7 +6855,6 @@ impl CodeReviewView {
                         button.set_label(label, ctx);
                         button.set_icon(Some(Icon::Github), ctx);
                         button.set_disabled(false, ctx);
-                        button.set_tooltip(None::<&str>, ctx);
                         button.set_on_click(
                             move |ctx| {
                                 ctx.dispatch_typed_action(CodeReviewAction::ViewPr(url.clone()))
