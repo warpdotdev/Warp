@@ -223,6 +223,11 @@ pub struct AIConversation {
     /// these conversations — the remote worker's own client handles status
     /// reporting. TaskStatusSyncModel skips status updates for these.
     is_remote_child: bool,
+
+    /// The last event sequence number observed from the v2 orchestration
+    /// event log. Used on restore to resume event delivery without
+    /// re-delivering already-processed events.
+    last_event_sequence: Option<i64>,
 }
 
 pub(crate) fn artifact_from_fork_proto(
@@ -272,6 +277,7 @@ impl AIConversation {
             agent_name: None,
             parent_conversation_id: None,
             is_remote_child: false,
+            last_event_sequence: None,
         }
     }
 
@@ -351,6 +357,7 @@ impl AIConversation {
             parent_conversation_id,
             run_id,
             autoexecute_override,
+            last_event_sequence,
         ) = if let Some(data) = conversation_data {
             let server_conversation_token = data
                 .server_conversation_token
@@ -381,6 +388,7 @@ impl AIConversation {
             } else {
                 AIConversationAutoexecuteMode::default()
             };
+            let last_event_sequence = data.last_event_sequence;
 
             (
                 server_conversation_token,
@@ -393,6 +401,7 @@ impl AIConversation {
                 parent_conversation_id,
                 run_id,
                 autoexecute_override,
+                last_event_sequence,
             )
         } else {
             (
@@ -406,6 +415,7 @@ impl AIConversation {
                 None,
                 None,
                 AIConversationAutoexecuteMode::default(),
+                None,
             )
         };
 
@@ -448,6 +458,7 @@ impl AIConversation {
             agent_name,
             parent_conversation_id,
             is_remote_child: false,
+            last_event_sequence,
         })
     }
 
@@ -784,6 +795,16 @@ impl AIConversation {
 
     pub fn set_parent_conversation_id(&mut self, id: AIConversationId) {
         self.parent_conversation_id = Some(id);
+    }
+
+    /// Returns the last observed v2 orchestration event sequence number, if any.
+    pub fn last_event_sequence(&self) -> Option<i64> {
+        self.last_event_sequence
+    }
+
+    /// Updates the last observed v2 orchestration event sequence number.
+    pub fn set_last_event_sequence(&mut self, sequence: i64) {
+        self.last_event_sequence = Some(sequence);
     }
 
     /// Returns true if this conversation was spawned by a parent orchestrator agent.
@@ -2811,6 +2832,7 @@ impl AIConversation {
                 parent_conversation_id: self.parent_conversation_id.map(|id| id.to_string()),
                 run_id: self.task_id.map(|id| id.to_string()),
                 autoexecute_override: Some(self.autoexecute_override.into()),
+                last_event_sequence: self.last_event_sequence,
             },
         };
         ctx.spawn(

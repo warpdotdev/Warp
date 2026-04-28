@@ -988,6 +988,7 @@ impl TerminalView {
             parent_conversation_id: None,
             run_id: None,
             autoexecute_override: None,
+            last_event_sequence: None,
         };
 
         match AIConversation::new_restored(conversation_id, tasks, Some(conversation_data)) {
