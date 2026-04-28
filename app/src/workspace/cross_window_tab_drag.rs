@@ -1135,7 +1135,8 @@ impl CrossWindowTabDrag {
                 // Restore the preview's opacity — it was set to 0.0 on entry
                 // into the target in `on_drag_while_floating` and the normal
                 // restore path in `on_drag_while_ghost` was bypassed.
-                ctx.windows().set_window_alpha(drag.preview_window_id(), 1.0);
+                ctx.windows()
+                    .set_window_alpha(drag.preview_window_id(), 1.0);
                 if drag.has_dedicated_preview_window() {
                     self.finalize_preview_as_new_window(&drag, ctx)
                 } else {
