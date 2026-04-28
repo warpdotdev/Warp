@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# Installs all cargo-managed dependencies required to build Warp release
+# artifacts (e.g., bundled license generation).
+
+# This script should be platform-agnostic (eg. no unix-only references like /dev/null).
+
+NO_BUILD_DEPS=false
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --no-build-deps)
+      NO_BUILD_DEPS=true
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+if [ "$NO_BUILD_DEPS" = false ]; then
+  "$PWD"/script/install_cargo_build_deps
+fi
+
+# Install cargo-about for generating third-party license attribution.
+cargo install --locked cargo-about@0.8.4

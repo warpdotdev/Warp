@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#
+# Installs cargo-binstall if not present, or updates it if already installed.
+
+# This script should be platform-agnostic (eg. no unix-only references like /dev/null).
+
+# Install cargo-binstall, then/or use it to update itself.
+if ! command -v cargo-binstall; then
+    cargo install cargo-binstall@1.14.3 --locked
+fi
+
+cargo binstall cargo-binstall

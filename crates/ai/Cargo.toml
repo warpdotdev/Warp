@@ -1,0 +1,85 @@
+[package]
+name = "ai"
+version = "0.1.0"
+edition = "2021"
+publish.workspace = true
+license.workspace = true
+
+[features]
+jemalloc = []
+local_fs = []
+test-util = []
+crash_reporting = ["dep:sentry"]
+
+[dependencies]
+async-channel.workspace = true
+async-trait.workspace = true
+bincode.workspace = true
+bytes.workspace = true
+cfg-if.workspace = true
+computer_use.workspace = true
+dunce.workspace = true
+prost-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+string-offset.workspace = true
+typed-path.workspace = true
+anyhow.workspace = true
+base16ct = "0.2.0"
+streaming-iterator.workspace = true
+instant.workspace = true
+itertools.workspace = true
+rayon.workspace = true
+ignore = "0.4.23"
+line-span = "0.1.5"
+log.workspace = true
+sentry = { workspace = true, optional = true }
+shellexpand.workspace = true
+strum.workspace = true
+strum_macros.workspace = true
+warpui.workspace = true
+warpui_extras = { workspace = true, features = ["default"] }
+warp_graphql.workspace = true
+warp_multi_agent_api.workspace = true
+dirs.workspace = true
+lazy_static.workspace = true
+regex.workspace = true
+rmcp.workspace = true
+sha2 = "0.10.8"
+strsim.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+futures.workspace = true
+generic-array = "0.14.7"
+derivative.workspace = true
+warp_core.workspace = true
+warp_terminal.workspace = true
+warp_util.workspace = true
+chrono.workspace = true
+persistence.workspace = true
+priority-queue = "2.3.1"
+repo_metadata.workspace = true
+uuid.workspace = true
+unicode-width.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+async-fs.workspace = true
+arborium.workspace = true
+languages.workspace = true
+syntax_tree.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+watcher.workspace = true
+notify-debouncer-full.workspace = true
+
+[dev-dependencies]
+filetime = "0.2.25"
+tempfile.workspace = true
+virtual-fs.workspace = true
+warp_core = { workspace = true, features = ["test-util"] }
+
+[build-dependencies]
+anyhow.workspace = true

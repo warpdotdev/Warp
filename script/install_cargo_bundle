@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Script to install cargo-bundle for CI. This is used as an optimization to speed up CI instead of having to install and
+# compile cargo-bundle on each CI workflow run.
+
+# This script should be platform-agnostic (eg. no unix-only references like /dev/null).
+
+cargo_location=$(dirname "$(which cargo)")
+if test -f "$cargo_location/cargo-bundle"; then
+    echo "cargo-bundle already exists, not installing."
+else
+    set -e
+    curl https://storage.googleapis.com/cached_crates/cargo-bundle.zip --output cargo-bundle.zip
+    unzip -o cargo-bundle.zip
+    chmod 755 cargo-bundle
+    cp cargo-bundle "$cargo_location"
+    echo "Successfully moved cached cargo-bundle to location $cargo_location"
+fi

@@ -1,0 +1,213 @@
+use std::str::FromStr;
+
+use warpui::{App, EntityId, WindowId};
+
+use super::*;
+
+fn setup_model(app: &mut App) -> ModelHandle<ActiveAgentViewsModel> {
+    app.add_singleton_model(|_| ActiveAgentViewsModel::new())
+}
+
+fn new_task_id() -> AmbientAgentTaskId {
+    AmbientAgentTaskId::from_str(&uuid::Uuid::new_v4().to_string()).unwrap()
+}
+
+#[test]
+fn per_window_focused_state_is_independent() {
+    App::test((), |mut app| async move {
+        let model = setup_model(&mut app);
+        let window_a = WindowId::new();
+        let window_b = WindowId::new();
+        let terminal_a = EntityId::new();
+        let terminal_b = EntityId::new();
+        let task_a = new_task_id();
+        let task_b = new_task_id();
+
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window_a, Some(terminal_a), Some(task_a), ctx);
+            model.handle_pane_focus_change(window_b, Some(terminal_b), Some(task_b), ctx);
+        });
+
+        model.read(&app, |model, _| {
+            assert_eq!(
+                model.get_focused_conversation(window_a),
+                Some(ConversationOrTaskId::TaskId(task_a))
+            );
+            assert_eq!(
+                model.get_focused_conversation(window_b),
+                Some(ConversationOrTaskId::TaskId(task_b))
+            );
+        });
+    });
+}
+
+#[test]
+fn clearing_one_window_does_not_affect_other() {
+    App::test((), |mut app| async move {
+        let model = setup_model(&mut app);
+        let window_a = WindowId::new();
+        let window_b = WindowId::new();
+        let terminal_a = EntityId::new();
+        let terminal_b = EntityId::new();
+        let task_a = new_task_id();
+        let task_b = new_task_id();
+
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window_a, Some(terminal_a), Some(task_a), ctx);
+            model.handle_pane_focus_change(window_b, Some(terminal_b), Some(task_b), ctx);
+        });
+
+        // Clear window A's focus by passing None for terminal_view_id.
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window_a, None, None, ctx);
+        });
+
+        model.read(&app, |model, _| {
+            assert_eq!(model.get_focused_conversation(window_a), None);
+            assert_eq!(
+                model.get_focused_conversation(window_b),
+                Some(ConversationOrTaskId::TaskId(task_b))
+            );
+        });
+    });
+}
+
+#[test]
+fn last_focused_terminal_tracks_most_recent_globally() {
+    App::test((), |mut app| async move {
+        let model = setup_model(&mut app);
+        let window_a = WindowId::new();
+        let window_b = WindowId::new();
+        let terminal_a = EntityId::new();
+        let terminal_b = EntityId::new();
+        let task_a = new_task_id();
+        let task_b = new_task_id();
+
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window_a, Some(terminal_a), Some(task_a), ctx);
+        });
+        model.read(&app, |model, _| {
+            assert_eq!(model.get_last_focused_terminal_id(), Some(terminal_a));
+        });
+
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window_b, Some(terminal_b), Some(task_b), ctx);
+        });
+        model.read(&app, |model, _| {
+            assert_eq!(model.get_last_focused_terminal_id(), Some(terminal_b));
+        });
+
+        // Clearing window B's focus should NOT clear last_focused (it persists).
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window_b, None, None, ctx);
+        });
+        model.read(&app, |model, _| {
+            assert_eq!(model.get_last_focused_terminal_id(), Some(terminal_b));
+        });
+    });
+}
+
+#[test]
+fn unknown_window_returns_none() {
+    App::test((), |mut app| async move {
+        let model = setup_model(&mut app);
+        let window_a = WindowId::new();
+        let unknown_window = WindowId::new();
+        let terminal = EntityId::new();
+        let task = new_task_id();
+
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window_a, Some(terminal), Some(task), ctx);
+        });
+
+        model.read(&app, |model, _| {
+            assert_eq!(model.get_focused_conversation(unknown_window), None);
+        });
+    });
+}
+
+#[test]
+fn focus_change_without_task_id_has_no_conversation() {
+    App::test((), |mut app| async move {
+        let model = setup_model(&mut app);
+        let window = WindowId::new();
+        let terminal = EntityId::new();
+
+        // No agent view handles registered, no task_id → active_conversation_id should be None.
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window, Some(terminal), None, ctx);
+        });
+
+        model.read(&app, |model, _| {
+            assert_eq!(model.get_focused_conversation(window), None);
+        });
+    });
+}
+
+#[test]
+fn remove_focused_state_for_window_cleans_up() {
+    App::test((), |mut app| async move {
+        let model = setup_model(&mut app);
+        let window_a = WindowId::new();
+        let window_b = WindowId::new();
+        let terminal_a = EntityId::new();
+        let terminal_b = EntityId::new();
+        let task_a = new_task_id();
+        let task_b = new_task_id();
+
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window_a, Some(terminal_a), Some(task_a), ctx);
+            model.handle_pane_focus_change(window_b, Some(terminal_b), Some(task_b), ctx);
+        });
+
+        // Remove window A's state (simulating undo-close expiry).
+        model.update(&mut app, |model, ctx| {
+            model.remove_focused_state_for_window(window_a, ctx);
+        });
+
+        model.read(&app, |model, _| {
+            assert_eq!(model.get_focused_conversation(window_a), None);
+            assert_eq!(
+                model.get_focused_conversation(window_b),
+                Some(ConversationOrTaskId::TaskId(task_b))
+            );
+        });
+
+        // Removing again is a no-op.
+        model.update(&mut app, |model, ctx| {
+            model.remove_focused_state_for_window(window_a, ctx);
+        });
+    });
+}
+
+#[test]
+fn overwriting_same_window_updates_state() {
+    App::test((), |mut app| async move {
+        let model = setup_model(&mut app);
+        let window = WindowId::new();
+        let terminal_1 = EntityId::new();
+        let terminal_2 = EntityId::new();
+        let task_1 = new_task_id();
+        let task_2 = new_task_id();
+
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window, Some(terminal_1), Some(task_1), ctx);
+        });
+        model.read(&app, |model, _| {
+            assert_eq!(
+                model.get_focused_conversation(window),
+                Some(ConversationOrTaskId::TaskId(task_1))
+            );
+        });
+
+        model.update(&mut app, |model, ctx| {
+            model.handle_pane_focus_change(window, Some(terminal_2), Some(task_2), ctx);
+        });
+        model.read(&app, |model, _| {
+            assert_eq!(
+                model.get_focused_conversation(window),
+                Some(ConversationOrTaskId::TaskId(task_2))
+            );
+        });
+    });
+}

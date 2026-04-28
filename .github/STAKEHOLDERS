@@ -1,0 +1,182 @@
+# STAKEHOLDERS
+#
+# Maps source-code paths to subject-matter experts for issue and PR triage.
+# Format follows CODEOWNERS: <pattern> @owner1 @owner2 ...
+#
+# Used by the triage-new-issues workflow to assign SMEs.
+# Source of truth: warpdotdev/feedback-triage-bot ownership-areas.md
+
+# Default fallback: FA leads are tagged when no more specific path matches
+/ @vorporeal @alokedesai @zachbai @bnavetta @szgupta @jefflloyd
+
+###########################################################################
+# Team: App
+###########################################################################
+
+# Conversation and session restoration / cloud-synced conversations / planning / Warp Drive
+/app/src/ai/agent_conversations_model.rs @seemeroland
+/app/src/ai/persisted_workspace.rs @seemeroland
+/app/src/ai/restored_conversations.rs @seemeroland
+/app/src/ai/conversation_details_panel.rs @seemeroland
+/app/src/drive/ @seemeroland
+/app/src/cloud_object/ @seemeroland
+/app/src/workflows/ @seemeroland
+/app/src/server/cloud_objects/ @seemeroland
+/app/src/terminal/find/ @seemeroland
+/app/src/uri/ @seemeroland
+
+# Code editor / LSP / notebooks / codebase context
+/app/src/code/ @kevinyang372
+/app/src/editor/ @kevinyang372
+/app/src/notebooks/ @kevinyang372 @bnavetta
+/app/src/ai/get_relevant_files/ @kevinyang372
+/crates/ai/src/index/ @kevinyang372
+/crates/ai/src/project_context/ @kevinyang372
+/crates/editor/ @kevinyang372 @bnavetta
+/crates/lsp/ @kevinyang372
+/crates/repo_metadata/ @kevinyang372
+
+# Settings and keybindings
+/app/src/settings/ @lucieleblanc
+/app/src/settings_view/ @lucieleblanc
+/app/src/resource_center/keybindings_page.rs @lucieleblanc
+
+# Input editor / window, tab, and pane management / grep tool call
+/app/src/terminal/input/ @vkodithala
+/app/src/pane_group/ @vkodithala
+/app/src/tab.rs @vkodithala
+/crates/warp_ripgrep/ @vkodithala @moirahuang @szgupta
+
+# Command palette
+/app/src/command_palette.rs @acarl005
+/app/src/palette.rs @acarl005
+/app/src/search/command_palette/ @acarl005
+
+# @ context, slash commands, and global search / file tree
+/app/src/context_chips/ @moirahuang
+/app/src/search/ai_context_menu/ @moirahuang
+/app/src/search/files/ @moirahuang
+/app/src/search/search_results_menu/ @moirahuang
+/app/src/search/slash_command_menu/ @moirahuang
+/app/src/terminal/input/slash_commands/ @moirahuang
+/app/src/code/file_tree/ @moirahuang
+/app/src/workspace/view/global_search/ @moirahuang
+
+# Onboarding / code review and git diff
+/app/src/ai/onboarding.rs @kevinchevalier
+/app/src/code_review/ @kevinchevalier
+/app/src/code/diff_viewer.rs @kevinchevalier
+/app/src/code/inline_diff.rs @kevinchevalier
+/crates/onboarding/ @kevinchevalier
+
+# MCP and skills
+/app/src/ai/mcp/ @peicodes
+/app/src/ai/skills/ @peicodes
+/crates/mcp/ @peicodes
+
+# Conversation management / credit usage footer / input UI / natural-language detection
+/app/src/ai/active_agent_views_model.rs @harryalbert
+/app/src/ai/conversation_navigation/ @harryalbert
+/app/src/ai/conversation_status_ui.rs @harryalbert
+/app/src/ai/request_usage_model.rs @harryalbert
+/app/src/search/command_palette/conversations/ @harryalbert
+/app/src/workspace/view/conversation_list/ @harryalbert
+/app/src/terminal/input/conversations/ @harryalbert
+/app/src/input_classifier.rs @harryalbert
+/crates/input_classifier/ @harryalbert
+/crates/natural_language_detection/ @harryalbert
+
+# Blocklist UX / modality and cloud mode UI / shell compatibility / completions and bootstrap / warpifying
+/app/src/ai/blocklist/ @zachbai
+/app/src/root_view.rs @zachbai
+/app/src/terminal/bootstrap.rs @zachbai
+/app/src/terminal/warpify/ @zachbai
+/app/src/settings_view/warpify_page.rs @zachbai
+/app/assets/bundled/bootstrap/ @zachbai
+/crates/warp_completer/ @zachbai @szgupta @alokedesai
+
+# Agent mode
+/app/src/ai/agent/ @zachbai
+
+# Image attachment, voice input, and passive suggestions
+/app/src/ai/attachment_utils.rs @Advait-M
+/app/src/ai/voice/ @Advait-M
+/app/src/ai/predict/ @Advait-M
+/app/src/ai/blocklist/passive_suggestions/ @Advait-M
+/app/src/voice/ @Advait-M
+/crates/voice_input/ @Advait-M
+
+# UI framework
+/crates/warpui/ @vorporeal
+/crates/warpui_core/ @vorporeal
+/crates/warpui_extras/ @vorporeal
+/crates/ui_components/ @vorporeal
+
+# Conversation rewind / CLI agent UI / macOS/Linux platform issues / performance issues
+/app/src/terminal/cli_agent.rs @zachbai
+/app/src/terminal/cli_agent_sessions/ @zachbai
+/app/src/terminal/input/rewind/ @alokedesai
+/app/src/workspace/rewind_confirmation_dialog.rs @alokedesai
+/app/src/platform/mac/ @alokedesai
+/resources/linux/ @acarl005
+
+# /pr-comments
+/app/src/search/slash_command_menu/static_commands/commands.rs @lucieleblanc
+
+# Grep tool call UI
+/app/src/ai/blocklist/action_model/execute/grep.rs @vkodithala
+
+###########################################################################
+# Team: Platform
+###########################################################################
+
+# REST API and SDKs
+/app/src/server/server_api/ @ianhodge
+/crates/graphql/ @ianhodge
+/crates/http_client/ @ianhodge
+/crates/http_server/ @ianhodge
+/crates/warp_server_client/ @ianhodge
+
+# Session sharing
+/app/src/terminal/shared_session/ @abhishekp106 @szgupta @bnavetta
+
+# Agent profiles and execution permissions
+/app/src/ai/cloud_agent_config/ @abhishekp106
+/app/src/ai/cloud_agent_settings.rs @abhishekp106
+/app/src/ai/execution_profiles/ @abhishekp106
+/app/src/terminal/profile_model_selector.rs @abhishekp106
+/app/src/settings_view/execution_profile_view.rs @abhishekp106
+
+# Environment setup / agent management view
+/app/src/ai/agent_management/ @liliwilson
+/app/src/ai/cloud_environments/ @liliwilson
+/app/src/settings_view/agent_assisted_environment_modal.rs @liliwilson
+/app/src/settings_view/environments_page/ @liliwilson
+/app/src/settings_view/environments_page.rs @liliwilson
+/app/src/settings_view/update_environment_form.rs @liliwilson
+
+# OAuth, Slack, Linear, and GitHub integrations
+/app/src/auth/ @Legoben @jefflloyd @vorporeal @bnavetta
+/app/src/linear.rs @Legoben @jefflloyd @vorporeal @bnavetta
+/app/src/server/server_api/integrations.rs @Legoben @jefflloyd @vorporeal @bnavetta
+/app/src/ai/agent_sdk/oauth_flow.rs @Legoben @jefflloyd @vorporeal @bnavetta
+/app/src/ai/mcp/manager/oauth.rs @Legoben @jefflloyd @vorporeal @bnavetta
+/app/src/ai/mcp/templatable_manager/oauth.rs @Legoben @jefflloyd @vorporeal @bnavetta
+
+# Self-hosted agents
+/crates/remote_server/ @kevinyang372 @alokedesai
+
+# Scheduled agents / Warp CLI / cloud and ambient agents
+/app/src/ai/ambient_agents/ @bnavetta
+/app/src/terminal/view/ambient_agent/ @bnavetta
+/app/src/workspace/view/launch_modal/oz_launch.rs @bnavetta
+/crates/warp_cli/ @bnavetta @ianhodge
+
+# Agent SDK and platform crates
+/app/src/ai/agent_sdk/ @bnavetta @ianhodge
+/crates/isolation_platform/ @bnavetta @ianhodge
+/crates/managed_secrets/ @bnavetta @ianhodge
+/crates/warp_web_event_bus/ @bnavetta @ianhodge
+
+# Shell completions in the Warp CLI
+/crates/warp_cli/src/completions.rs @zachbai @szgupta @alokedesai

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+OS_TYPE="$(uname -s)"
+
+if [[ "$OS_TYPE" = "Darwin" ]]; then
+  ./script/macos/bootstrap "$@"
+elif [[ "$OS_TYPE" = "Linux" ]]; then
+  ./script/linux/bootstrap "$@"
+elif [[ "$OS_TYPE" =~ ^[MINGW64_NT|MSYS_NT] ]]; then
+  ./script/windows/bootstrap.ps1 "$@"
+else
+  echo "No bootstrap script defined for the current platform!"
+  exit 1
+fi
