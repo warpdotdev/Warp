@@ -867,6 +867,67 @@ fn test_set_active_tab_name_clears_active_rename_editor_state() {
 }
 
 #[test]
+fn test_set_active_tab_color() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+            let active = workspace.active_tab_index;
+
+            // Setting a color stores it as the manual selection and resolves to it.
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(Some(AnsiColorIdentifier::Magenta)),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Magenta),
+            );
+            assert_eq!(
+                workspace.tabs[active].color(),
+                Some(AnsiColorIdentifier::Magenta),
+            );
+
+            // Replacing with a different color overwrites the previous selection.
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(Some(AnsiColorIdentifier::Green)),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Green),
+            );
+
+            // Clearing with `None` removes the manual selection.
+            workspace.handle_action(&WorkspaceAction::SetActiveTabColor(None), ctx);
+            assert!(matches!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Cleared | SelectedTabColor::Unset,
+            ));
+            assert_eq!(workspace.tabs[active].color(), None);
+
+            // Action targets the active tab — switching to tab 0 leaves it unaffected.
+            workspace.handle_action(&WorkspaceAction::ActivateTab(0), ctx);
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(Some(AnsiColorIdentifier::Blue)),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[0].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Blue),
+            );
+            assert!(matches!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Cleared | SelectedTabColor::Unset,
+            ));
+        });
+    });
+}
+
+#[test]
 fn test_workspace_sessions_retrieves_tabs() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);

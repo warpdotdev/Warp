@@ -135,6 +135,18 @@ pub static RENAME_TAB: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand 
     argument: Some(Argument::required().with_hint_text("<tab name>")),
 });
 
+pub static SET_TAB_COLOR: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
+    name: "/set-tab-color",
+    description: "Set the color of the current tab",
+    icon_path: "bundled/svg/ellipse.svg",
+    availability: Availability::ALWAYS,
+    auto_enter_ai_mode: false,
+    argument: Some(
+        Argument::required()
+            .with_hint_text("<red|green|yellow|blue|magenta|cyan|none>"),
+    ),
+});
+
 pub static FORK: LazyLock<StaticCommand> = LazyLock::new(|| {
     let hint_text = "<optional prompt to send in forked conversation>";
     StaticCommand {
@@ -526,6 +538,7 @@ fn all_commands() -> Vec<StaticCommand> {
         NEW.clone(),
         PLAN.clone(),
         RENAME_TAB.clone(),
+        SET_TAB_COLOR.clone(),
         USAGE,
         CONVERSATIONS,
         EXPORT_TO_CLIPBOARD,
@@ -648,6 +661,24 @@ mod tests {
         assert!(!argument.is_optional);
         assert!(!argument.should_execute_on_selection);
         assert_eq!(argument.hint_text, Some("<tab name>"));
+    }
+
+    #[test]
+    fn set_tab_color_command_requires_argument() {
+        let command = COMMAND_REGISTRY
+            .get_command_with_name(SET_TAB_COLOR.name)
+            .expect("expected /set-tab-color to be registered");
+        let argument = command
+            .argument
+            .as_ref()
+            .expect("expected /set-tab-color to require an argument");
+
+        assert!(!argument.is_optional);
+        assert!(!argument.should_execute_on_selection);
+        assert_eq!(
+            argument.hint_text,
+            Some("<red|green|yellow|blue|magenta|cyan|none>")
+        );
     }
 
     #[test]

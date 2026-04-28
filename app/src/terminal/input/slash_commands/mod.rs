@@ -9,6 +9,7 @@ use ai::skills::SkillReference;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::appearance::Appearance;
+use warp_core::ui::theme::AnsiColorIdentifier;
 use warpui::clipboard::ClipboardContent;
 use warpui::{SingletonEntity, ViewContext};
 
@@ -419,6 +420,40 @@ impl Input {
                 };
 
                 ctx.dispatch_typed_action(&WorkspaceAction::SetActiveTabName(name.to_owned()));
+            }
+            set_tab_color if command.name == commands::SET_TAB_COLOR.name => {
+                let Some(arg) = argument
+                    .map(|name| name.trim())
+                    .filter(|name| !name.is_empty())
+                else {
+                    show_error_toast(
+                        "Please provide a color after /set-tab-color (red, green, yellow, blue, magenta, cyan, or none)"
+                            .to_owned(),
+                        ctx,
+                    );
+                    return true;
+                };
+
+                let color = match arg.to_ascii_lowercase().as_str() {
+                    "red" => Some(AnsiColorIdentifier::Red),
+                    "green" => Some(AnsiColorIdentifier::Green),
+                    "yellow" => Some(AnsiColorIdentifier::Yellow),
+                    "blue" => Some(AnsiColorIdentifier::Blue),
+                    "magenta" => Some(AnsiColorIdentifier::Magenta),
+                    "cyan" => Some(AnsiColorIdentifier::Cyan),
+                    "none" | "default" | "clear" | "reset" => None,
+                    other => {
+                        show_error_toast(
+                            format!(
+                                "Unknown tab color '{other}'. Use one of: red, green, yellow, blue, magenta, cyan, or none."
+                            ),
+                            ctx,
+                        );
+                        return true;
+                    }
+                };
+
+                ctx.dispatch_typed_action(&WorkspaceAction::SetActiveTabColor(color));
             }
             create_env if command.name == commands::CREATE_ENVIRONMENT.name => {
                 // If the user included args after the slash command, treat them as repo paths/URLs.

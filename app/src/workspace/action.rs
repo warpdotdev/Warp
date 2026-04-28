@@ -113,6 +113,9 @@ pub enum WorkspaceAction {
     ResetPaneName(PaneViewLocator),
     RenameActiveTab,
     SetActiveTabName(String),
+    /// Sets the color of the active tab. `None` clears any selected color
+    /// (falling back to the default directory color, if any).
+    SetActiveTabColor(Option<AnsiColorIdentifier>),
     ToggleTabRightClickMenu {
         tab_index: usize,
         anchor: TabContextMenuAnchor,
@@ -721,6 +724,7 @@ impl WorkspaceAction {
             | ResetPaneName(_)
             | RenameActiveTab
             | SetActiveTabName(_)
+            | SetActiveTabColor(_)
             | CloseTab(_)
             | CloseActiveTab
             | CloseOtherTabs(_)
