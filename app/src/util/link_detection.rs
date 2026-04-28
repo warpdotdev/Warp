@@ -474,7 +474,7 @@ fn detect_line_ranges_after_file_path(
         .char_indices()
         .map(|(offs, ch)| (offs + file_path_byte_end, ch));
 
-    // Finds an opening paranthesis, allowing some whitespace after file path, or returns None on failure
+    // Finds an opening parenthesis, allowing some whitespace after file path, or returns None on failure
     let mut paren_start_idx = None;
     for (char_idx, ch) in chars_iter {
         if ch == '(' {
@@ -486,7 +486,7 @@ fn detect_line_ranges_after_file_path(
     }
     let paren_start_idx = paren_start_idx?;
 
-    // Find the matching closing paranthesis, or returns None on failure
+    // Find the matching closing parenthesis, or returns None on failure
     let paren_end_index = paren_start_idx + text[paren_start_idx..].find(')')?;
 
     // Extract the content between parentheses, and parse valid line ranges

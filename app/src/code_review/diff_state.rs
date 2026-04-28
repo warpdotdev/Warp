@@ -2957,7 +2957,7 @@ pub enum DiffStateModelEvent {
     RepositoryChanged,
     /// Event dispatched when the current branch changes.
     CurrentBranchChanged,
-    /// Event dispatched whenever the diff metadat changes in any way.
+    /// Event dispatched whenever the diff metadata changes in any way.
     DiffMetadataChanged(InvalidationBehavior),
     /// Event dispatched when new diffs are computed.
     NewDiffsComputed(Option<GitDiffWithBaseContent>),

@@ -627,7 +627,7 @@ pub enum SshLoginNotificationState {
     Completed,
 }
 
-/// This struct contains metadata for a subshell, and its precence in the SessionInfo indicates
+/// This struct contains metadata for a subshell, and its presence in the SessionInfo indicates
 /// that a session is in a bootstrapped subshell.
 #[derive(Clone, Debug)]
 pub struct SubshellInitializationInfo {
@@ -2439,7 +2439,7 @@ impl ansi::Handler for TerminalModel {
     }
 
     fn input(&mut self, c: char) {
-        // TODO: we should figure out what it means to be simultaneously expecing
+        // TODO: we should figure out what it means to be simultaneously expecting
         // in-band command output and completions data, which is technically possible
         // with the current data structures.
         if let IsReceivingInBandCommandOutput::Yes { output } =

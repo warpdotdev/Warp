@@ -1218,7 +1218,7 @@ fn open_new_with_shell(shell: &Option<AvailableShell>, ctx: &mut AppContext) {
 /// Global action that performs a few steps:
 /// 1. Open a new tab, or open a window if there is none.
 /// 2. Set the terminal input buffer to a command that should open a subshell
-/// 3. Set a flag that we should automatically bootstrap that subshell if its we can boostrap its
+/// 3. Set a flag that we should automatically bootstrap that subshell if its we can bootstrap its
 /// [`ShellType`].
 fn open_new_tab_insert_subshell_command_and_bootstrap_if_supported(
     arg: &SubshellCommandArg,

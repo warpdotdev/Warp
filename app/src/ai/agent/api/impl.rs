@@ -112,7 +112,7 @@ pub async fn generate_multi_agent_output(
                 .unwrap_or_default(),
             forked_from_conversation_id: if params.conversation_token.is_none() {
                 // We only include this param on our initial request to the server
-                // (when the forked conversation has not been asigned a new id yet).
+                // (when the forked conversation has not been assigned a new id yet).
                 params
                     .forked_from_conversation_token
                     .map(|token| token.as_str().to_string())

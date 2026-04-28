@@ -1287,7 +1287,7 @@ impl TerminalView {
         // This avoids a race condition if a viewer receives a role change
         // before catching up, by ensuring the view is still pending.
         if self.model.lock().shared_session_status().is_active_viewer() {
-            // If not an active viewer now, role and status will be udpated
+            // If not an active viewer now, role and status will be updated
             // in the call `process_ordered_terminal_event`.
             self.model
                 .lock()
@@ -1585,7 +1585,7 @@ impl TerminalView {
             shared_session.on_reconnection_status_changed(is_reconnecting, ctx);
         }
 
-        // Input is diabled for an offline executor and re-enabled when back online.
+        // Input is disabled for an offline executor and re-enabled when back online.
         if self.model.lock().shared_session_status().is_executor() {
             let interaction_state = if is_reconnecting {
                 InteractionState::Selectable

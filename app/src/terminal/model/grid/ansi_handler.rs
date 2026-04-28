@@ -407,7 +407,7 @@ impl ansi::Handler for GridHandler {
                 // the version `Pv` is higher than the `xterm` version when the SGR_MOUSE support
                 // was introduced[2] - version 277.
                 //
-                // Since we didn't want to claim xterm functionalities that we haven't yet implemnted in
+                // Since we didn't want to claim xterm functionalities that we haven't yet implemented in
                 // Warp, rather than passing the higher `Pv` value, we decided to use one of the
                 // hardcoded ones. `0;95;0` is set what iTerm2 sends.
 
@@ -1224,7 +1224,7 @@ impl ansi::Handler for GridHandler {
         self.maybe_scan_dirty_cells_for_secrets();
 
         if self.finished && self.num_lines_truncated() > 0 {
-            // Occassionally upon finishing the grid there are truncated rows that we have
+            // Occasionally upon finishing the grid there are truncated rows that we have
             // not yet accounted for.
             self.refilter_lines();
         } else {

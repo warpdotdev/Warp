@@ -2019,7 +2019,7 @@ impl CodeEditorView {
                         }
                     }
 
-                    // If the character is opening autcomplete symbol, we want to autocomplete it with a closing symbol.
+                    // If the character is opening autocomplete symbol, we want to autocomplete it with a closing symbol.
                     if let Some(close) = AUTOCOMPLETE_SYMBOLS.get(&first_char) {
                         self.model.update(ctx, |model, ctx| {
                             model.autocomplete_symbol(first_char, *close, ctx);

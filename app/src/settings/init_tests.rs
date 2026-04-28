@@ -422,7 +422,7 @@ use notifications_migration::{
 fn test_notifications_from_file_value_rejects_serde_format_enum() {
     // serde serializes NotificationsMode::Enabled as "Enabled" (PascalCase),
     // but from_file_value expects "enabled" (snake_case). When the field is
-    // present but unparseable, from_file_value should return None — not
+    // present but unparsable, from_file_value should return None — not
     // silently fall back to the #[serde(default)] value (Unset).
     let serde_json_value = serde_json::to_value(NotificationsSettings {
         mode: NotificationsMode::Enabled,

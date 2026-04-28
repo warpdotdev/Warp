@@ -1229,7 +1229,7 @@ impl GridHandler {
         let mut possible_paths = Vec::new();
 
         for prefix_chunk in prefix_chunks.into_iter().rev() {
-            // Preppend a new fragment to left.
+            // Prepend a new fragment to left.
             left = format!("{}{}", prefix_chunk.content, left);
             left_width += prefix_chunk.total_cell_width;
 

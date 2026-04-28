@@ -347,7 +347,7 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         let list_position_id = list_position_id.to_string();
         move |ctx, _, position| {
             let Some(parent_bounds) = ctx.element_position_by_id(&list_position_id) else {
-                log::warn!("Could not retreive the position of the conversation list for overflow menu display.");
+                log::warn!("Could not retrieve the position of the conversation list for overflow menu display.");
                 return;
             };
 

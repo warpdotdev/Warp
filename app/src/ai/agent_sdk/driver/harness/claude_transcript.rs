@@ -243,7 +243,7 @@ pub(crate) fn write_session_index_entry(
     let index_path = config_root.join(SESSIONS_INDEX_FILENAME);
 
     // Read the existing index if present. Missing or malformed files are treated as empty —
-    // we'd rather clobber an unparseable file than fail the whole resume.
+    // we'd rather clobber an unparsable file than fail the whole resume.
     let mut index: serde_json::Map<String, Value> = match std::fs::read_to_string(&index_path) {
         Ok(content) => match serde_json::from_str::<Value>(&content) {
             Ok(Value::Object(map)) => map,

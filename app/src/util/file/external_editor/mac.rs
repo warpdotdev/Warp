@@ -18,7 +18,7 @@ extern "C" {
     fn get_default_app_bundle_for_file(file_path: id) -> id;
 }
 
-/// The exeutable we use to launch the editor.
+/// The executable we use to launch the editor.
 #[derive(Debug)]
 pub enum OpenFileInEditorMethod {
     // A custom binary (e.g. the code CLI tool for VSCode).
