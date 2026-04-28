@@ -3494,6 +3494,7 @@ pub enum AIAgentHarness {
     Oz,
     ClaudeCode,
     Gemini,
+    Hermes,
     Unknown,
 }
 

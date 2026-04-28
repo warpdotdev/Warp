@@ -103,6 +103,14 @@ const CURSOR_COLOR: ColorU = ColorU {
     a: 255,
 };
 
+/// Hermes Agent brand color (#00B4D8, teal)
+pub(crate) const HERMES_COLOR: ColorU = ColorU {
+    r: 0,
+    g: 180,
+    b: 216,
+    a: 255,
+};
+
 /// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
@@ -116,6 +124,7 @@ pub enum CLIAgent {
     Pi,
     Auggie,
     CursorCli,
+    Hermes,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -134,6 +143,7 @@ impl CLIAgent {
             CLIAgent::Pi => "pi",
             CLIAgent::Auggie => "auggie",
             CLIAgent::CursorCli => "agent",
+            CLIAgent::Hermes => "hermes",
             CLIAgent::Unknown => "",
         }
     }
@@ -164,6 +174,7 @@ impl CLIAgent {
             CLIAgent::Pi => "Pi",
             CLIAgent::Auggie => "Auggie",
             CLIAgent::CursorCli => "Cursor",
+            CLIAgent::Hermes => "Hermes Agent",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -181,6 +192,7 @@ impl CLIAgent {
             CLIAgent::Pi => Some(Icon::PiLogo),
             CLIAgent::Auggie => Some(Icon::AuggieLogo),
             CLIAgent::CursorCli => Some(Icon::CursorLogo),
+            CLIAgent::Hermes => Some(Icon::HermesLogo),
             CLIAgent::Unknown => None,
         }
     }
@@ -208,6 +220,7 @@ impl CLIAgent {
             CLIAgent::Pi => &[SkillProvider::Agents],
             CLIAgent::Auggie => &[SkillProvider::Agents],
             CLIAgent::CursorCli => &[SkillProvider::Agents],
+            CLIAgent::Hermes => &[SkillProvider::Agents],
             CLIAgent::Unknown => &[],
         }
     }
@@ -247,6 +260,7 @@ impl CLIAgent {
             CLIAgent::Pi => Some(PI_COLOR),
             CLIAgent::Auggie => Some(AUGGIE_COLOR),
             CLIAgent::CursorCli => Some(CURSOR_COLOR),
+            CLIAgent::Hermes => Some(HERMES_COLOR),
             CLIAgent::Unknown => None,
         }
     }
@@ -507,6 +521,7 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Pi => CLIAgentType::Pi,
             CLIAgent::Auggie => CLIAgentType::Auggie,
             CLIAgent::CursorCli => CLIAgentType::Cursor,
+            CLIAgent::Hermes => CLIAgentType::Hermes,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }
     }
