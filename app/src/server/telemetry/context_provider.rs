@@ -29,9 +29,11 @@ impl TelemetryContextProvider for AppTelemetryContextProvider {
 /// server daemon) that run without authentication. Telemetry events that
 /// require a user/anonymous ID will silently produce empty identifiers,
 /// preventing panics from an unregistered `TelemetryContextModel` singleton.
+#[cfg_attr(target_family = "wasm", allow(dead_code))]
 pub struct NoopTelemetryContextProvider;
 
 impl NoopTelemetryContextProvider {
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub fn new_context_provider(
         _ctx: &mut ModelContext<TelemetryContextModel>,
     ) -> TelemetryContextModel {
