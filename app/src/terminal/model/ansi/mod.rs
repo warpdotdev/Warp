@@ -188,23 +188,22 @@ fn osc_7_host_is_local(host: &str) -> bool {
 }
 
 /// Percent-decode an ASCII URI path segment into a UTF-8 String. Returns `None`
-/// if the input contains a malformed `%xx` escape or the result is not UTF-8.
+/// if the input contains a malformed `%xx` escape (including `%` not followed
+/// by two hex digits, e.g. truncated at the end of the string) or the decoded
+/// bytes are not UTF-8.
 fn percent_decode_utf8(input: &str) -> Option<String> {
     let bytes = input.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        match bytes[i] {
-            b'%' if i + 2 < bytes.len() => {
-                let hi = (bytes[i + 1] as char).to_digit(16)?;
-                let lo = (bytes[i + 2] as char).to_digit(16)?;
-                decoded.push(((hi << 4) | lo) as u8);
-                i += 3;
-            }
-            other => {
-                decoded.push(other);
-                i += 1;
-            }
+        if bytes[i] == b'%' {
+            let hi = (*bytes.get(i + 1)? as char).to_digit(16)?;
+            let lo = (*bytes.get(i + 2)? as char).to_digit(16)?;
+            decoded.push(((hi << 4) | lo) as u8);
+            i += 3;
+        } else {
+            decoded.push(bytes[i]);
+            i += 1;
         }
     }
     String::from_utf8(decoded).ok()

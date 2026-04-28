@@ -3220,7 +3220,11 @@ impl ansi::Handler for Block {
             .send_terminal_event(Event::BlockMetadataReceived(BlockMetadataReceivedEvent {
                 block_metadata: self.metadata(),
                 block_index: self.block_index,
-                is_after_in_band_command: false,
+                // Preserve the block's in-band status so listeners can keep
+                // applying the same in-band guard they apply to precmd-driven
+                // metadata updates (e.g. skipping repo-detection / chip
+                // refreshes for in-band command blocks).
+                is_after_in_band_command: self.is_for_in_band_command,
                 is_done_bootstrapping: matches!(
                     self.bootstrap_stage,
                     BootstrapStage::PostBootstrapPrecmd

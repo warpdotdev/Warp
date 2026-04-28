@@ -930,6 +930,25 @@ fn parse_osc7_malformed_percent_escape_ignored() {
 }
 
 #[test]
+fn parse_osc7_truncated_percent_at_end_ignored() {
+    // A trailing `%` with no following digits must be rejected, not accepted
+    // as a literal byte.
+    let bytes: &[u8] = b"\x1b]7;file:///Users/foo%\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.cwd_updates.is_empty());
+}
+
+#[test]
+fn parse_osc7_truncated_percent_with_one_hex_digit_ignored() {
+    // A `%` with only one following hex digit must be rejected.
+    let bytes: &[u8] = b"\x1b]7;file:///Users/foo%2\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.cwd_updates.is_empty());
+}
+
+#[test]
 fn parse_osc7_empty_payload_ignored() {
     let bytes: &[u8] = b"\x1b]7;\x07";
     let (_, handler) = parse_bytes(bytes);
