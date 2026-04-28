@@ -2018,6 +2018,37 @@ pub fn test_removing_tabs_out_of_order() -> Builder {
         )
 }
 
+pub fn test_reopen_closed_session_from_tab_context_menu() -> Builder {
+    new_builder()
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(
+            new_step_with_default_assertions("Open a second tab")
+                .with_keystrokes(&[cmd_or_ctrl_shift("t")])
+                .set_timeout(Duration::from_secs(10))
+                .add_assertion(|app, window_id| {
+                    assert_single_terminal_in_tab_bootstrapped(app, window_id, 1)
+                })
+                .add_assertion(assert_tab_count(2)),
+        )
+        .with_step(
+            new_step_with_default_assertions("Close the second tab")
+                .with_keystrokes(&[cmd_or_ctrl_shift("w")])
+                .add_assertion(assert_tab_count(1)),
+        )
+        .with_step(
+            new_step_with_default_assertions("Right-click first tab to open context menu")
+                .with_right_click_on_saved_position("tab_position_0"),
+        )
+        .with_step(
+            new_step_with_default_assertions(
+                "Click 'Reopen closed session' and verify tab is restored",
+            )
+            .with_click_on_saved_position("Reopen closed session")
+            .set_timeout(Duration::from_secs(10))
+            .add_assertion(assert_tab_count(2)),
+        )
+}
+
 pub fn test_add_and_close_session() -> Builder {
     let pid = Rc::new(std::cell::RefCell::new(0_u32));
     let pid_clone = pid.clone();

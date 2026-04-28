@@ -20,6 +20,7 @@ integration_tests! {
     test_unescaped_prompt_bootstraps,
     test_unnecessary_resizes,
     test_removing_tabs_out_of_order,
+    test_reopen_closed_session_from_tab_context_menu,
     #[ignore = "Affected by agent_view feature flag UI changes"]
     test_suggestions_menu_positioning,
     test_open_and_close_theme_creator_modal,

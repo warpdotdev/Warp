@@ -23,6 +23,7 @@ use crate::ui_components::icons::{Icon, ICON_DIMENSIONS};
 use crate::util::color::{coloru_with_opacity, Opacity};
 use crate::util::truncation::truncate_from_end;
 
+use crate::undo_close::UndoCloseStack;
 use crate::window_settings::WindowSettings;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::tab_settings::{TabCloseButtonPosition, TabSettings};
@@ -408,6 +409,15 @@ impl TabData {
                 .into_item(),
             );
         }
+
+        let is_empty = UndoCloseStack::as_ref(ctx).is_empty();
+        menu_items.push(
+            MenuItemFields::new("Reopen closed session")
+                .with_on_select_action(WorkspaceAction::ReopenClosedSession)
+                .with_disabled(is_empty)
+                .into_item(),
+        );
+
         menu_items
     }
 
