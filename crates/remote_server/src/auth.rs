@@ -6,6 +6,9 @@ use warpui::r#async::BoxFuture;
 /// Bearer tokens are delivered only through protocol messages. Identity keys
 /// are non-secret stable partition keys used to select the remote daemon's
 /// socket/PID directory.
+///
+/// Returns a boxed future for object safety — the manager stores
+/// `Arc<dyn AuthProvider>` for reconnect handshakes.
 pub trait AuthProvider: Send + Sync + 'static {
     fn get_auth_token(&self) -> BoxFuture<'static, Option<String>>;
 
