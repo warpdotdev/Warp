@@ -39,7 +39,9 @@ use super::{
     ChipValue, ContextChipKind,
 };
 #[cfg(feature = "local_fs")]
-use crate::code_review::git_status_update::{GitRepoStatusEvent, GitRepoStatusModel};
+use crate::code_review::git_status_update::{
+    GitRepoStatusEvent, GitRepoStatusModel, GitStatusMetadata,
+};
 #[cfg(feature = "local_fs")]
 use crate::context_chips::display_chip::GitLineChanges;
 use std::collections::{HashMap, HashSet};
@@ -964,6 +966,92 @@ impl CurrentPrompt {
         state.on_click_generator_handle = Some(handle);
     }
 
+    #[cfg(feature = "local_fs")]
+    fn latest_git_status_metadata(&self, ctx: &AppContext) -> Option<GitStatusMetadata> {
+        self.git_repo_status
+            .as_ref()
+            .and_then(|w| w.upgrade(ctx))
+            .and_then(|h| h.as_ref(ctx).metadata().cloned())
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn update_chip_value_from_git_status_metadata(
+        &mut self,
+        chip_kind: &ContextChipKind,
+        metadata: &GitStatusMetadata,
+    ) {
+        match chip_kind {
+            ContextChipKind::ShellGitBranch => {
+                self.update_chip_value(
+                    chip_kind,
+                    Some(ChipValue::Text(metadata.current_branch_name.clone())),
+                );
+            }
+            ContextChipKind::GitDiffStats => {
+                self.update_chip_value(
+                    chip_kind,
+                    Some(ChipValue::GitDiffStats(GitLineChanges::from_diff_stats(
+                        &metadata.stats_against_head,
+                    ))),
+                );
+            }
+            ContextChipKind::WorkingDirectory
+            | ContextChipKind::Username
+            | ContextChipKind::Hostname
+            | ContextChipKind::Date
+            | ContextChipKind::Time12
+            | ContextChipKind::Time24
+            | ContextChipKind::VirtualEnvironment
+            | ContextChipKind::CondaEnvironment
+            | ContextChipKind::NodeVersion
+            | ContextChipKind::Custom { .. }
+            | ContextChipKind::GithubPullRequest
+            | ContextChipKind::KubernetesContext
+            | ContextChipKind::SvnBranch
+            | ContextChipKind::SvnDirtyItems
+            | ContextChipKind::Ssh
+            | ContextChipKind::Subshell
+            | ContextChipKind::AgentPlanAndTodoList => {}
+        }
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn update_git_chip_value_from_repo_status(
+        &mut self,
+        chip_kind: &ContextChipKind,
+        ctx: &AppContext,
+    ) {
+        if let Some(metadata) = self.latest_git_status_metadata(ctx) {
+            self.update_chip_value_from_git_status_metadata(chip_kind, &metadata);
+        }
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn update_git_chip_values_from_repo_status(&mut self, ctx: &AppContext) {
+        if let Some(metadata) = self.latest_git_status_metadata(ctx) {
+            self.update_chip_value_from_git_status_metadata(
+                &ContextChipKind::ShellGitBranch,
+                &metadata,
+            );
+            self.update_chip_value_from_git_status_metadata(
+                &ContextChipKind::GitDiffStats,
+                &metadata,
+            );
+        }
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn clear_git_chip_generators(&mut self) {
+        for chip_kind in [
+            ContextChipKind::ShellGitBranch,
+            ContextChipKind::GitDiffStats,
+        ] {
+            if let Some(state) = self.states.get_mut(&chip_kind) {
+                state.clear_abort_handlers();
+            }
+        }
+    }
+
     fn fetch_chip_value_at_interval(
         &mut self,
         chip_kind: &ContextChipKind,
@@ -1041,15 +1129,18 @@ impl CurrentPrompt {
                 }
                 RefreshConfig::Periodically { .. } => {
                     if self.is_updated_externally(chip_kind) {
-                        let initial_gen = chip_kind.initial_value_generator();
-                        let generator = initial_gen.as_ref().unwrap_or(chip.generator());
-                        self.fetch_chip_value_once(
-                            chip_kind,
-                            generator,
-                            chip.on_click_generator().cloned(),
-                            true,
-                            ctx,
-                        );
+                        if let Some(initial_gen) = chip_kind.initial_value_generator() {
+                            self.fetch_chip_value_once(
+                                chip_kind,
+                                &initial_gen,
+                                chip.on_click_generator().cloned(),
+                                true,
+                                ctx,
+                            );
+                        } else {
+                            #[cfg(feature = "local_fs")]
+                            self.update_git_chip_value_from_repo_status(chip_kind, ctx);
+                        }
                     } else {
                         self.fetch_chip_value_at_interval(
                             chip_kind,
@@ -1425,29 +1516,18 @@ impl CurrentPrompt {
         if let Some(weak) = handle {
             if let Some(strong) = weak.upgrade(ctx) {
                 self.git_repo_status = Some(weak);
+                self.clear_git_chip_generators();
                 ctx.subscribe_to_model(&strong, |me, event, ctx| match event {
                     GitRepoStatusEvent::MetadataChanged => {
-                        let metadata = me
-                            .git_repo_status
-                            .as_ref()
-                            .and_then(|w| w.upgrade(ctx))
-                            .and_then(|h| h.as_ref(ctx).metadata().cloned());
-
-                        let Some(metadata) = metadata else {
-                            return;
-                        };
-
-                        // Update ShellGitBranch.
-                        let new_branch = ChipValue::Text(metadata.current_branch_name.clone());
+                        let previous_branch = me
+                            .latest_chip_value(&ContextChipKind::ShellGitBranch)
+                            .cloned();
+                        me.update_git_chip_values_from_repo_status(ctx);
                         let current_branch = me
                             .latest_chip_value(&ContextChipKind::ShellGitBranch)
                             .cloned();
-                        if current_branch.as_ref() != Some(&new_branch) {
-                            me.update_chip_value(
-                                &ContextChipKind::ShellGitBranch,
-                                Some(new_branch),
-                            );
-                            // Refresh the branch dropdown so it stays in sync.
+
+                        if previous_branch != current_branch {
                             let chip_kind = ContextChipKind::ShellGitBranch;
                             if let Some(chip) = chip_kind.to_chip() {
                                 if let Some(on_click_gen) = chip.on_click_generator().cloned() {
@@ -1455,22 +1535,10 @@ impl CurrentPrompt {
                                 }
                             }
                         }
-
-                        // Update GitDiffStats with structured data directly.
-                        let new_diff_stats = ChipValue::GitDiffStats(
-                            GitLineChanges::from_diff_stats(&metadata.stats_against_head),
-                        );
-                        let current_diff_stats = me
-                            .latest_chip_value(&ContextChipKind::GitDiffStats)
-                            .cloned();
-                        if current_diff_stats.as_ref() != Some(&new_diff_stats) {
-                            me.update_chip_value(
-                                &ContextChipKind::GitDiffStats,
-                                Some(new_diff_stats),
-                            );
-                        }
                     }
                 });
+
+                self.update_git_chip_values_from_repo_status(ctx);
             }
         }
     }
