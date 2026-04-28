@@ -57,6 +57,16 @@ trigger detection; both the flag and the setting must be active. (Checking the
 setting at the call site rather than inside the feature flag preserves the clean
 separation between compile-time gating and user preference.)
 
+**Immediate reversion (Behavior #20):** `TerminalView` subscribes to settings
+change events (following the pattern of other settings-reactive views). When
+`render_rich_block_output` transitions from `true` to `false`, the handler
+clears `block_structured_view_active` (see §7), which causes all blocks to
+render their raw grid on the next paint cycle. The `StructuredDataBlock`
+`RichContent` items remain in the blocklist and retain their parsed values; they
+are simply not rendered while the setting is off. When the setting is re-enabled,
+adding a block's `BlockId` back to `block_structured_view_active` restores tree
+view instantly without re-parsing.
+
 ### 3. Detection module
 
 Create `app/src/terminal/structured_output.rs` with:
@@ -67,20 +77,38 @@ pub enum StructuredOutputKind {
     Yaml(serde_yaml::Value),
 }
 
-/// Strips ANSI escapes, trims whitespace, and attempts JSON then YAML parsing.
+/// Takes the canonical block text (ANSI-stripped, PTY-processed output from
+/// `BlockGrid::contents_to_string`), trims whitespace, enforces the size cap,
+/// and attempts JSON then YAML parsing synchronously.
 /// Returns None if neither succeeds, if the input exceeds MAX_DETECT_BYTES,
 /// or if the output is a bare YAML scalar.
-pub fn detect(raw: &str) -> Option<StructuredOutputKind>
+pub fn detect(canonical_text: &str) -> Option<StructuredOutputKind>
 ```
 
 `MAX_DETECT_BYTES = 5 * 1024 * 1024` (5 MB, per Behavior #4).
 
-YAML bare-scalar guard (Behavior #2): after `serde_yaml::from_str` succeeds,
-check that the root value is `Mapping` or `Sequence`; reject `Value::String`,
-`Value::Number`, `Value::Bool`, `Value::Null`.
+**Canonical text source:** `detect` receives the output of
+`BlockGrid::contents_to_string` (which already strips ANSI escape sequences as
+part of grid serialization), not the raw PTY byte stream. This is the same
+string used by the Copy button and Warp Drive serialization, so the detection
+input and the user-visible "raw" text are always identical.
 
-ANSI stripping: use the `strip_ansi_escapes` crate (already in the dependency
-tree via existing usages) or a simple regex over the raw text.
+**Timeout and CPU boundedness:** `serde_json::from_str` and
+`serde_yaml::from_str` are synchronous and cannot be externally cancelled once
+started. The 5 MB size cap is the primary bound on parse time: inputs are
+rejected before calling any parser if `canonical_text.len() > MAX_DETECT_BYTES`.
+This cap, not a runtime cancellation, is what guarantees bounded CPU work. The
+50 ms figure in Behavior #3 is an empirical budget for typical inputs, validated
+by the benchmark in the Testing section; it is not enforced via a thread-kill or
+`tokio::time::timeout` wrapper, because such a wrapper would not stop the
+underlying synchronous parse from running to completion on its thread. If
+profiling on CI shows worst-case parse time exceeds 50 ms within the 5 MB cap,
+reduce `MAX_DETECT_BYTES` or add a YAML-specific lower cap (e.g., 1 MB) rather
+than adding a cancellation mechanism.
+
+**YAML bare-scalar guard (Behavior #2):** after `serde_yaml::from_str`
+succeeds, check that the root value is `Mapping` or `Sequence`; reject
+`Value::String`, `Value::Number`, `Value::Bool`, `Value::Null`.
 
 ### 4. RichContentType variant
 
@@ -90,9 +118,11 @@ the parsed value is owned by the view model (see §5).
 
 ### 5. Tree view
 
-Create `app/src/terminal/view/structured_data_block.rs` implementing
-`View<TerminalView>` (following the pattern of
-`app/src/terminal/view/plugin_instructions_block.rs`). The view owns:
+Create `app/src/terminal/view/structured_data_block.rs`. The struct implements
+`warpui::View` (the same trait implemented by all WarpUI views; the pattern to
+follow is `app/src/terminal/view/plugin_instructions_block.rs`, which is a
+plain struct with a `render` method returning a `Box<dyn Element>`). The view
+owns:
 
 - `kind: StructuredOutputKind` — the parsed value.
 - `raw_text: String` — the original block output, for the Copy button and

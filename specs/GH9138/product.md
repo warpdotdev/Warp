@@ -9,7 +9,10 @@ Figma: none provided
 When a terminal block's output is valid JSON or YAML, Warp renders it as an
 interactive collapsible tree instead of raw text. A toggle button on the block
 lets the user switch between the tree view and the original raw output at any
-time. The raw bytes are never modified; the tree is a read-only rendering lens.
+time. The tree is a read-only rendering lens; the block's canonical text content
+— defined as the ANSI-stripped, PTY-processed output string produced by the
+grid at block completion — is never altered and is always used for Copy, Share,
+and AI context regardless of the current view mode.
 
 ## Goals / Non-goals
 
@@ -118,8 +121,16 @@ Out of scope for this spec (tracked separately in #9138):
     items: "Copy value" and "Copy path".
     - "Copy value" copies the scalar value as a plain string (unquoted for
       strings, JSON-literal for numbers/booleans/nulls).
-    - "Copy path" copies the dot-notation path from the root to the node
-      (e.g., `users[0].email`). Array indices use bracket notation.
+    - "Copy path" copies the path from the root to the node using the following
+      deterministic rules:
+      - Simple object keys (ASCII letters, digits, and underscores, not starting
+        with a digit) use dot notation: `users.email`.
+      - Array indices always use bracket notation: `users[0]`.
+      - Object keys that contain dots, spaces, quotes, or any character outside
+        the simple-key set use bracket-and-double-quote notation with internal
+        double quotes escaped as `\"`: `data["user.name"]`,
+        `data["key with spaces"]`, `data["has\"quote"]`.
+      - Segments are concatenated: `users[0]["full.name"]`.
 
 18. Right-clicking a non-leaf (object or array) node shows only "Copy value",
     which copies the subtree as pretty-printed JSON.
@@ -132,10 +143,15 @@ Out of scope for this spec (tracked separately in #9138):
 
 20. A "Render rich output in blocks" toggle in Settings → Terminal (or a
     dedicated subsection if one exists by the time this ships) controls whether
-    JSON/YAML detection runs at all. Default: on. When toggled off, all existing
-    tree-view blocks revert to raw text immediately; when toggled back on,
-    already-completed blocks are not re-detected (detection only runs at block
-    completion time).
+    JSON/YAML detection runs at all. Default: on. When toggled off:
+    - No new detection runs for subsequently-completed blocks.
+    - All blocks currently in tree view revert to raw-text rendering immediately,
+      without requiring a restart or session reload. This reversion is a pure
+      display switch; the parsed value and the canonical text are retained in
+      memory so toggling back on restores tree view instantly for blocks that
+      were already detected.
+    When toggled back on, already-completed blocks that were never detected are
+    not retroactively re-detected; detection only runs at block completion time.
 
 21. The setting applies globally across all sessions, terminals, and panes.
 
