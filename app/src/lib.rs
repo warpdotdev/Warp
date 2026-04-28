@@ -478,6 +478,7 @@ impl LaunchMode {
     }
 
     /// Whether Sentry / crash reporting should be initialized in `init_common`.
+    #[cfg_attr(not(feature = "crash_reporting"), allow(dead_code))]
     fn needs_crash_reporting(&self) -> bool {
         match self {
             LaunchMode::App { .. } => true,
