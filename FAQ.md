@@ -66,7 +66,7 @@ Not today. Warp's built-in agent harness runs server-side and isn't open in this
 
 That said, we plan to support [ACP (agent client protocol)](https://agentclientprotocol.com/) in Warp, so you could connect other models or subscriptions directly and get a native Warp experience for your coding agent of choice.
 
-We will update the community as we explore this.
+[This is tracked on our roadmap](https://github.com/warpdotdev/warp/issues/9233), and we will update the community as we explore this.
 
 ### How can I get Oz to implement an issue for me?
 
