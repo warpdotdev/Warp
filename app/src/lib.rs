@@ -1748,6 +1748,7 @@ fn initialize_app(
 
     // Index global rules (e.g. ~/.agents/AGENTS.md) on a background task so
     // they are available to subsequent agent queries.
+    #[cfg(feature = "local_fs")]
     ProjectContextModel::handle(ctx).update(ctx, |me, ctx| me.index_global_rules(ctx));
 
     ctx.add_singleton_model(|ctx| {

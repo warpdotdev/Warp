@@ -1,7 +1,7 @@
 use anyhow::Result;
 #[cfg(feature = "local_fs")]
 use repo_metadata::repositories::RepoDetectionSource;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use warpui::{Entity, ModelContext, SingletonEntity};
 
@@ -13,6 +13,8 @@ cfg_if::cfg_if! {
         use repo_metadata::repository::SubscriberId;
         use ignore::gitignore::Gitignore;
         use async_channel::Sender;
+        use warp_core::safe_warn;
+        use warp_util::standardized_path::StandardizedPath;
         use warpui::ModelHandle;
         use watcher::{HomeDirectoryWatcher, HomeDirectoryWatcherEvent};
 
@@ -22,25 +24,45 @@ cfg_if::cfg_if! {
     }
 }
 
-/// Configures a directory under `$HOME` to scan for a single global rule file.
-#[derive(Debug, Clone, Copy)]
-struct GlobalRuleSource {
-    /// Display name, e.g. `"agents"`.
-    #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-    name: &'static str,
-    /// Subdirectory under `$HOME` to scan, e.g. `".agents"`.
-    home_subdir: &'static str,
-    /// File name within the directory, e.g. `"AGENTS.md"`.
-    file_pattern: &'static str,
+/// A well-known location under `$HOME` that may contain a global rule file.
+/// Adding a new variant (plus its match arm in each accessor) is the only
+/// change required to support a new well-known rules location.
+#[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlobalRuleSource {
+    /// `~/.agents/AGENTS.md`.
+    Agents,
 }
 
-/// Registry of global rule sources. Each entry is a `(home_subdir, file_pattern)`
-/// pair under the user's home directory.
-const GLOBAL_RULE_SOURCES: &[GlobalRuleSource] = &[GlobalRuleSource {
-    name: "agents",
-    home_subdir: ".agents",
-    file_pattern: "AGENTS.md",
-}];
+#[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+impl GlobalRuleSource {
+    /// Iterates every known global rule source. Replaces the previous
+    /// `GLOBAL_RULE_SOURCES` slice.
+    fn iter() -> impl Iterator<Item = Self> {
+        [Self::Agents].into_iter()
+    }
+
+    /// Display name (used in safe logs that don't expose user paths).
+    fn name(self) -> &'static str {
+        match self {
+            Self::Agents => "agents",
+        }
+    }
+
+    /// Subdirectory under `$HOME`, e.g. `".agents"`.
+    fn home_subdir(self) -> &'static str {
+        match self {
+            Self::Agents => ".agents",
+        }
+    }
+
+    /// File name within the subdir, e.g. `"AGENTS.md"`.
+    fn file_pattern(self) -> &'static str {
+        match self {
+            Self::Agents => "AGENTS.md",
+        }
+    }
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct ProjectRule {
@@ -194,14 +216,16 @@ pub struct ProjectContextModel {
     /// Mapping from directory path to list of rule files found in that directory
     path_to_rules: HashMap<PathBuf, ProjectRules>,
     /// Global rule files keyed by absolute file path. Populated by
-    /// [`Self::index_global_rules`] from [`GLOBAL_RULE_SOURCES`]. Independent of
+    /// [`Self::index_global_rules`] from [`GlobalRuleSource`]. Independent of
     /// `path_to_rules`: project-level `AGENTS.md` files never write here.
-    global_rules: HashMap<PathBuf, ProjectRule>,
-    /// Active home-subdir directory watchers, keyed by index into
-    /// [`GLOBAL_RULE_SOURCES`]. Used to tear down the watcher when the subdir
-    /// is deleted at runtime.
+    /// Stored in a `BTreeMap` so iteration order is deterministic (sorted by
+    /// path), which keeps `find_applicable_rules` output stable.
+    global_rules: BTreeMap<PathBuf, ProjectRule>,
+    /// Active home-subdir directory watchers, keyed by the absolute subdir
+    /// path (e.g. `~/.agents`). Keying by path naturally deduplicates if two
+    /// [`GlobalRuleSource`] variants ever share the same `home_subdir`.
     #[cfg(feature = "local_fs")]
-    global_source_watchers: HashMap<usize, GlobalSourceWatcherState>,
+    global_source_watchers: HashMap<PathBuf, GlobalSourceWatcherState>,
     /// Sender used by global-rule directory subscribers to push updates back
     /// into the model's main-thread stream handler. Initialized once on the
     /// first call to [`Self::index_global_rules`].
@@ -214,16 +238,15 @@ pub struct ProjectContextModel {
 struct GlobalSourceWatcherState {
     repository: ModelHandle<Repository>,
     subscriber_id: SubscriberId,
-    /// Absolute path to the watched home subdir (e.g. `~/.agents`). Kept for
-    /// debugging/diagnostic purposes; not read in non-test code paths today.
-    #[allow(dead_code)]
-    subdir_path: PathBuf,
 }
 
 #[cfg(feature = "local_fs")]
 #[derive(Debug)]
 struct GlobalRulesUpdate {
-    source_idx: usize,
+    /// The [`GlobalRuleSource`] variant that produced this update. The
+    /// receiver uses it to look up the matching `home_subdir`/`file_pattern`
+    /// without needing a per-source channel.
+    source: GlobalRuleSource,
     update: RepositoryUpdate,
 }
 
@@ -429,7 +452,7 @@ impl ProjectContextModel {
         );
     }
 
-    /// Index all configured global rule sources (see [`GLOBAL_RULE_SOURCES`]).
+    /// Index all configured global rule sources (see [`GlobalRuleSource`]).
     ///
     /// All disk I/O is dispatched through `ctx.spawn` so this method does not
     /// block startup. Subscribes to [`HomeDirectoryWatcher`] to react to
@@ -437,67 +460,68 @@ impl ProjectContextModel {
     /// [`DirectoryWatcher`] per existing subdir for incremental updates.
     ///
     /// Idempotent: subsequent calls are a no-op once the channel is initialized.
-    #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
+    #[cfg(feature = "local_fs")]
     pub fn index_global_rules(&mut self, ctx: &mut ModelContext<Self>) {
-        #[cfg(feature = "local_fs")]
-        {
-            if self.global_updates_tx.is_some() {
-                return;
-            }
+        if self.global_updates_tx.is_some() {
+            return;
+        }
 
-            let Some(home_dir) = dirs::home_dir() else {
-                log::info!("Home directory not found; skipping global rules indexing");
-                return;
-            };
+        let Some(home_dir) = dirs::home_dir() else {
+            log::debug!("Home directory not found; skipping global rules indexing");
+            return;
+        };
 
-            // Set up the channel that all per-source subscribers push into.
-            let (tx, rx) = async_channel::unbounded::<GlobalRulesUpdate>();
-            self.global_updates_tx = Some(tx);
+        // Set up the channel that all per-source subscribers push into.
+        let (tx, rx) = async_channel::unbounded::<GlobalRulesUpdate>();
+        self.global_updates_tx = Some(tx);
 
-            ctx.spawn_stream_local(
-                rx,
-                |me, update, ctx| {
-                    me.handle_global_rules_update(update.source_idx, update.update, ctx);
-                },
-                |_, _| {},
-            );
+        ctx.spawn_stream_local(
+            rx,
+            |me, update, ctx| {
+                me.handle_global_rules_update(update.source, update.update, ctx);
+            },
+            |_, _| {},
+        );
 
-            // React to creation/deletion of home subdirs at runtime.
-            ctx.subscribe_to_model(&HomeDirectoryWatcher::handle(ctx), |me, event, ctx| {
-                me.handle_home_dir_event_for_global_rules(event, ctx);
-            });
+        // React to creation/deletion of home subdirs at runtime.
+        ctx.subscribe_to_model(&HomeDirectoryWatcher::handle(ctx), |me, event, ctx| {
+            me.handle_home_dir_event_for_global_rules(event, ctx);
+        });
 
-            for (idx, source) in GLOBAL_RULE_SOURCES.iter().enumerate() {
-                let subdir_path = home_dir.join(source.home_subdir);
-                let target_file = subdir_path.join(source.file_pattern);
+        for source in GlobalRuleSource::iter() {
+            let subdir_path = home_dir.join(source.home_subdir());
+            let target_file = subdir_path.join(source.file_pattern());
 
-                // Initial async read; if the file doesn't exist yet, the watcher
-                // will pick it up on creation.
-                Self::spawn_global_rule_read(idx, target_file, ctx);
+            // Initial async read; if the file doesn't exist yet, the watcher
+            // will pick it up on creation.
+            Self::spawn_global_rule_read(target_file, ctx);
 
-                if subdir_path.exists() {
-                    self.register_global_source_watcher(idx, &subdir_path, ctx);
-                }
+            if subdir_path.exists() {
+                self.register_global_source_watcher(source, &subdir_path, ctx);
             }
         }
     }
 
+    /// Async read of a single global rule file. The async block runs on a
+    /// background executor; the main-thread callback updates model state once
+    /// the read completes.
     #[cfg(feature = "local_fs")]
-    fn spawn_global_rule_read(source_idx: usize, file_path: PathBuf, ctx: &mut ModelContext<Self>) {
+    fn spawn_global_rule_read(file_path: PathBuf, ctx: &mut ModelContext<Self>) {
         ctx.spawn(
             async move {
+                // `read_to_string` returning `Err` (e.g. NotFound, permission
+                // denied) is treated as "no rule at this path" rather than an
+                // error; the watcher will rediscover the file on creation.
                 let content = async_fs::read_to_string(&file_path).await.ok();
                 (file_path, content)
             },
             move |me, (file_path, content_opt), ctx| {
-                if let Some(source) = GLOBAL_RULE_SOURCES.get(source_idx) {
-                    log::debug!(
-                        "global rules: read source={} path={} present={}",
-                        source.name,
-                        file_path.display(),
-                        content_opt.is_some(),
-                    );
-                }
+                // File is present: insert/replace the rule and notify subscribers.
+                // File is absent: do nothing here — the home-subdir watcher
+                // will fire `GlobalRulesChanged` deletion events separately
+                // when a previously-known file disappears, so missing reads
+                // here just mean "file never existed," which is the steady
+                // state for unconfigured sources.
                 if let Some(content) = content_opt {
                     me.global_rules.insert(
                         file_path.clone(),
@@ -518,16 +542,25 @@ impl ProjectContextModel {
     }
 
     /// Register a `DirectoryWatcher` on the given home subdir for incremental
-    /// updates. The subdir must exist (the underlying `add_directory` call
-    /// canonicalizes the path and rejects non-existent paths).
+    /// updates. Idempotent: subsequent calls for an already-watched subdir are
+    /// a no-op (the `subdir_path` key dedups by directory rather than by
+    /// source, so multiple sources sharing a `home_subdir` would only register
+    /// the watcher once — a future change can fan out to multiple file
+    /// patterns by extending the value).
+    ///
+    /// The subdir must exist on disk before this is called: `StandardizedPath::
+    /// from_local_canonicalized` resolves symlinks and validates existence,
+    /// and `DirectoryWatcher::add_directory` rejects non-existent paths.
+    /// Creation at runtime is handled by `handle_home_dir_event_for_global_rules`,
+    /// which calls back here once the subdir appears.
     #[cfg(feature = "local_fs")]
     fn register_global_source_watcher(
         &mut self,
-        source_idx: usize,
+        source: GlobalRuleSource,
         subdir_path: &Path,
         ctx: &mut ModelContext<Self>,
     ) {
-        if self.global_source_watchers.contains_key(&source_idx) {
+        if self.global_source_watchers.contains_key(subdir_path) {
             return;
         }
 
@@ -535,9 +568,11 @@ impl ProjectContextModel {
             return;
         };
 
-        let Ok(std_path) =
-            warp_util::standardized_path::StandardizedPath::from_local_canonicalized(subdir_path)
-        else {
+        // We use `StandardizedPath::from_local_canonicalized` (rather than
+        // `CanonicalizedPath::try_from`) because the underlying `DirectoryWatcher::
+        // add_directory` API takes `StandardizedPath` directly. The two are
+        // equivalent in terms of I/O; this just avoids an extra type conversion.
+        let Ok(std_path) = StandardizedPath::from_local_canonicalized(subdir_path) else {
             return;
         };
 
@@ -546,40 +581,45 @@ impl ProjectContextModel {
         {
             Ok(handle) => handle,
             Err(err) => {
-                log::warn!(
-                    "Failed to register {} for global rules watching: {err}",
-                    subdir_path.display(),
+                // `safe_warn!` because the path contains the user's home dir,
+                // which is PII; we only want the full path on dogfood builds.
+                safe_warn!(
+                    safe: ("Failed to register {} for global rules watching: {err}", source.name()),
+                    full: (
+                        "Failed to register {} for global rules watching: {err}",
+                        subdir_path.display()
+                    )
                 );
                 return;
             }
         };
 
-        let subscriber = Box::new(GlobalRulesRepositorySubscriber {
-            source_idx,
-            update_tx,
-        });
+        let subscriber = Box::new(GlobalRulesRepositorySubscriber { source, update_tx });
 
         let start = repo_handle.update(ctx, |repo, ctx| repo.start_watching(subscriber, ctx));
         let subscriber_id = start.subscriber_id;
         let subdir_path_owned = subdir_path.to_path_buf();
 
         self.global_source_watchers.insert(
-            source_idx,
+            subdir_path_owned.clone(),
             GlobalSourceWatcherState {
                 repository: repo_handle.clone(),
                 subscriber_id,
-                subdir_path: subdir_path_owned.clone(),
             },
         );
 
+        let cleanup_key = subdir_path_owned.clone();
         let subdir_for_log = subdir_path_owned;
         ctx.spawn(start.registration_future, move |me, res, ctx| {
             if let Err(err) = res {
-                log::warn!(
-                    "Failed to start watching {} for global rules: {err}",
-                    subdir_for_log.display()
+                safe_warn!(
+                    safe: ("Failed to start watching {} for global rules: {err}", source.name()),
+                    full: (
+                        "Failed to start watching {} for global rules: {err}",
+                        subdir_for_log.display()
+                    )
                 );
-                if let Some(state) = me.global_source_watchers.remove(&source_idx) {
+                if let Some(state) = me.global_source_watchers.remove(&cleanup_key) {
                     state.repository.update(ctx, |repo, ctx| {
                         repo.stop_watching(state.subscriber_id, ctx);
                     });
@@ -592,20 +632,19 @@ impl ProjectContextModel {
     #[cfg(feature = "local_fs")]
     fn handle_global_rules_update(
         &mut self,
-        source_idx: usize,
+        source: GlobalRuleSource,
         update: RepositoryUpdate,
         ctx: &mut ModelContext<Self>,
     ) {
         if update.is_empty() {
             return;
         }
-        let Some(source) = GLOBAL_RULE_SOURCES.get(source_idx) else {
-            return;
-        };
         let Some(home_dir) = dirs::home_dir() else {
             return;
         };
-        let target_file = home_dir.join(source.home_subdir).join(source.file_pattern);
+        let target_file = home_dir
+            .join(source.home_subdir())
+            .join(source.file_pattern());
 
         let was_deleted = update.deleted.iter().any(|f| f.path == target_file)
             || update.moved.values().any(|f| f.path == target_file);
@@ -622,7 +661,7 @@ impl ProjectContextModel {
         }
 
         if was_added_or_modified {
-            Self::spawn_global_rule_read(source_idx, target_file, ctx);
+            Self::spawn_global_rule_read(target_file, ctx);
         }
     }
 
@@ -638,26 +677,26 @@ impl ProjectContextModel {
             return;
         };
 
-        for (idx, source) in GLOBAL_RULE_SOURCES.iter().enumerate() {
-            let subdir_path = home_dir.join(source.home_subdir);
+        for source in GlobalRuleSource::iter() {
+            let subdir_path = home_dir.join(source.home_subdir());
 
             let subdir_added =
                 fs_event.added.contains(&subdir_path) || fs_event.moved.contains_key(&subdir_path);
             if subdir_added {
-                self.register_global_source_watcher(idx, &subdir_path, ctx);
-                let target_file = subdir_path.join(source.file_pattern);
-                Self::spawn_global_rule_read(idx, target_file, ctx);
+                self.register_global_source_watcher(source, &subdir_path, ctx);
+                let target_file = subdir_path.join(source.file_pattern());
+                Self::spawn_global_rule_read(target_file, ctx);
             }
 
             let subdir_deleted = fs_event.deleted.contains(&subdir_path)
                 || fs_event.moved.values().any(|v| v == &subdir_path);
             if subdir_deleted {
-                if let Some(state) = self.global_source_watchers.remove(&idx) {
+                if let Some(state) = self.global_source_watchers.remove(&subdir_path) {
                     state.repository.update(ctx, |repo, ctx| {
                         repo.stop_watching(state.subscriber_id, ctx);
                     });
                 }
-                let target_file = subdir_path.join(source.file_pattern);
+                let target_file = subdir_path.join(source.file_pattern());
                 if self.global_rules.remove(&target_file).is_some() {
                     ctx.emit(ProjectContextModelEvent::GlobalRulesChanged(
                         GlobalRulesDelta {
@@ -683,7 +722,11 @@ impl ProjectContextModel {
         let mut available_rule_paths: Vec<String> = Vec::new();
         let mut project_root: Option<PathBuf> = None;
 
-        // Find the root path with indexed project rules and collect active rules.
+        // Walk upwards from `path` toward the filesystem root, stopping at the
+        // first directory we have indexed project rules for. `path_to_rules` is
+        // keyed by indexed project root, so popping the path produces every
+        // ancestor directory until we hit a known root or `pop()` returns
+        // false (we've reached the top of the path).
         loop {
             if let Some(rules) = self.path_to_rules.get(&current_path) {
                 let result = rules.find_active_or_applicable_rules(path);
@@ -699,11 +742,10 @@ impl ProjectContextModel {
         }
 
         // Layered precedence: global rules are always included alongside
-        // project rules. We iterate `GLOBAL_RULE_SOURCES` first to keep
-        // ordering deterministic regardless of HashMap iteration order.
-        let mut active_rules: Vec<ProjectRule> = Vec::new();
-        let global_rules = self.global_rules_in_registry_order();
-        active_rules.extend(global_rules);
+        // project rules. `global_rules` is a `BTreeMap`, so iteration is
+        // sorted by path — deterministic without needing a separate ordering
+        // pass.
+        let mut active_rules: Vec<ProjectRule> = self.global_rules.values().cloned().collect();
         active_rules.extend(project_active_rules);
 
         if active_rules.is_empty() && available_rule_paths.is_empty() {
@@ -725,38 +767,6 @@ impl ProjectContextModel {
             active_rules,
             additional_rule_paths: available_rule_paths,
         })
-    }
-
-    /// Returns global rules in the order their sources are declared in
-    /// [`GLOBAL_RULE_SOURCES`], with any unknown-source entries appended.
-    fn global_rules_in_registry_order(&self) -> Vec<ProjectRule> {
-        if self.global_rules.is_empty() {
-            return Vec::new();
-        }
-
-        let mut ordered: Vec<ProjectRule> = Vec::with_capacity(self.global_rules.len());
-        let mut seen: std::collections::HashSet<PathBuf> =
-            std::collections::HashSet::with_capacity(self.global_rules.len());
-
-        if let Some(home_dir) = dirs::home_dir() {
-            for source in GLOBAL_RULE_SOURCES {
-                let key = home_dir.join(source.home_subdir).join(source.file_pattern);
-                if let Some(rule) = self.global_rules.get(&key) {
-                    ordered.push(rule.clone());
-                    seen.insert(key);
-                }
-            }
-        }
-
-        // Include any global rules that don't match the registry (e.g. inserted
-        // for tests). Order is HashMap order but is stable for a single call.
-        for (path, rule) in &self.global_rules {
-            if !seen.contains(path) {
-                ordered.push(rule.clone());
-            }
-        }
-
-        ordered
     }
 
     #[cfg(feature = "local_fs")]
@@ -992,11 +1002,11 @@ impl RepositorySubscriber for ProjectContextRepositorySubscriber {
 }
 
 /// Subscriber for a single global rules home subdir (e.g. `~/.agents`).
-/// Tags every update with `source_idx` so the model can dispatch to the
-/// right [`GLOBAL_RULE_SOURCES`] entry without per-source channels.
+/// Tags every update with the originating [`GlobalRuleSource`] variant so the
+/// model can dispatch to the right entry without per-source channels.
 #[cfg(feature = "local_fs")]
 struct GlobalRulesRepositorySubscriber {
-    source_idx: usize,
+    source: GlobalRuleSource,
     update_tx: Sender<GlobalRulesUpdate>,
 }
 
@@ -1019,10 +1029,10 @@ impl RepositorySubscriber for GlobalRulesRepositorySubscriber {
         _ctx: &mut ModelContext<Repository>,
     ) -> std::pin::Pin<Box<dyn std::prelude::rust_2024::Future<Output = ()> + Send + 'static>> {
         let tx = self.update_tx.clone();
-        let source_idx = self.source_idx;
+        let source = self.source;
         let update = update.clone();
         Box::pin(async move {
-            let _ = tx.send(GlobalRulesUpdate { source_idx, update }).await;
+            let _ = tx.send(GlobalRulesUpdate { source, update }).await;
         })
     }
 }
