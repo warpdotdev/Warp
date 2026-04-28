@@ -108,13 +108,6 @@ pub fn render_pane_header_buttons<A: ActionPayload, B: ActionPayload>(
 }
 
 /// Renders a title text element with the standard pane header font, color, and clipping.
-///
-/// Uses `line_height_ratio = 1.0` so the line-box hugs the actual font
-/// metrics. With the default 1.2 ratio, the extra ~20% of leading sits
-/// below the baseline (Warp's `DEFAULT_TOP_BOTTOM_RATIO = 0.8`), which
-/// makes the visible glyphs sit in the upper portion of a vertically
-/// centered row. The tighter ratio brings cap glyphs to the visual
-/// center of the row, mirroring how `ActionButton` lays out its label.
 pub fn render_pane_header_title_text(
     title: impl Into<std::borrow::Cow<'static, str>>,
     appearance: &Appearance,
@@ -127,7 +120,6 @@ pub fn render_pane_header_title_text(
     Text::new_inline(title, appearance.ui_font_family(), font_size)
         .with_color(font_color.into())
         .with_clip(clip_config)
-        .with_line_height_ratio(1.0)
         .finish()
 }
 

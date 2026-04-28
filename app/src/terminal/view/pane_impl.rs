@@ -17,6 +17,7 @@ use crate::pane_group::pane::view::header::components::{
     header_edge_min_width, render_pane_header_buttons, render_pane_header_title_text,
     render_three_column_header, CenteredHeaderEdgeWidth,
 };
+use crate::pane_group::pane::view::header::PANE_HEADER_HEIGHT;
 use crate::pane_group::pane::PaneStack;
 use crate::pane_group::{pane::view, pane::view::PaneHeaderAction, BackingView, SplitPaneState};
 use crate::settings::app_installation_detection::{
@@ -511,10 +512,23 @@ impl TerminalView {
             && FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(app).is_fullscreen()
         {
+            // The wrapping `Flex::column` would otherwise pass an infinite
+            // vertical max constraint down to its non-flex children. That
+            // breaks the title's vertical centering: with infinite max.y,
+            // the centered `Align` inside `render_three_column_header`
+            // collapses to the title's own (small) line-box height, and
+            // the outer row's `CrossAxisAlignment::Stretch` then pins the
+            // title to the top of the row. Pinning the header to its
+            // standard `PANE_HEADER_HEIGHT` here restores the finite
+            // vertical constraint the centering logic relies on, while
+            // letting the pill bar sit immediately below at its own height.
+            let pinned_header = ConstrainedBox::new(header)
+                .with_height(PANE_HEADER_HEIGHT)
+                .finish();
             let pill_bar = ChildView::new(&self.orchestration_pill_bar).finish();
             return Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_child(header)
+                .with_child(pinned_header)
                 .with_child(pill_bar)
                 .finish();
         }
