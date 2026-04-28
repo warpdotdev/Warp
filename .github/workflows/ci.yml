@@ -87,6 +87,17 @@ jobs:
   tests:
     name: Run ${{ matrix.name }} tests
     timeout-minutes: 25
+    env:
+      # When CI runs on a PR from a fork, the GCP OIDC auth used by
+      # `google-github-actions/auth` fails because our Workload Identity
+      # Federation provider is configured to only trust the base repository.
+      # We skip the auth + gcloud install steps in those runs and exclude SSH
+      # integration tests (which require gcloud to tunnel into a GCP test VM)
+      # via the filter suffix below. Tests that need gcloud all have `_ssh_`
+      # in their name. Fork PRs lose SSH integration test coverage; those
+      # tests still run post-merge against `master`.
+      HAS_GCP_AUTH: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      EXCLUDE_SSH_TESTS_FILTER: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && ' and not test(/_ssh_/)' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -211,12 +222,16 @@ jobs:
           echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
 
       - name: Set up gcloud authentication for SSH tests
+        # Skipped for fork PRs - see HAS_GCP_AUTH definition above.
+        if: env.HAS_GCP_AUTH == 'true'
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: projects/63595664881/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: github-ci-workflow@warp-ssh-integration-testing.iam.gserviceaccount.com
 
       - name: Install gcloud CLI tool
+        # Skipped for fork PRs - see HAS_GCP_AUTH definition above.
+        if: env.HAS_GCP_AUTH == 'true'
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
         with:
           version: '>= 397.0.0'
@@ -267,7 +282,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and not test(shell_integration_tests)"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and not test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}"
         env:
           # We run shell-agnostic tests against zsh, as it has the shortest
           # bootstrap times and tends to be the most reliable.
@@ -292,7 +307,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_shells_unix.outputs.default_bash_path }}
 
@@ -318,7 +333,7 @@ jobs:
         if: (success() || failure()) && runner.os == 'macos'
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_shells_unix.outputs.latest_bash_path }}
 
@@ -341,7 +356,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_shells_unix.outputs.fish_path }}
 
@@ -364,7 +379,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_shells_unix.outputs.zsh_path }}
 
@@ -387,7 +402,7 @@ jobs:
         if: matrix.os != 'windows' && (success() || failure())
         uses: coactions/setup-xvfb@b6b4fcfb9f5a895edadc3bc76318fae0ac17c8b3 # v1
         with:
-          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)"
+          run: cargo nextest run ${{ env.WORKSPACE_TEST_ARGS }} ${{ matrix.extra_test_args }} -E "package(integration) and test(shell_integration_tests)${{ env.EXCLUDE_SSH_TESTS_FILTER }}"
         env:
           WARP_SHELL_PATH: ${{ steps.echo_shells_unix.outputs.powershell_path }}
 
