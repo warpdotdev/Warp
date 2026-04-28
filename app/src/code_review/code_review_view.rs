@@ -6820,7 +6820,6 @@ impl CodeReviewView {
                     button.set_label("Push", ctx);
                     button.set_icon(Some(Icon::ArrowUp), ctx);
                     button.set_disabled(false, ctx);
-                    button.set_tooltip(None::<&str>, ctx);
                     button.set_on_click(
                         |ctx| ctx.dispatch_typed_action(CodeReviewAction::OpenPushDialog),
                         ctx,
@@ -6829,7 +6828,6 @@ impl CodeReviewView {
                 });
                 self.git_operations_chevron.update(ctx, |button, ctx| {
                     button.set_disabled(false, ctx);
-                    button.set_tooltip(None::<&str>, ctx);
                 });
             }
             PrimaryGitActionMode::CreatePr => {
@@ -6837,7 +6835,6 @@ impl CodeReviewView {
                     button.set_label("Create PR", ctx);
                     button.set_icon(Some(Icon::Github), ctx);
                     button.set_disabled(false, ctx);
-                    button.set_tooltip(None::<&str>, ctx);
                     button.set_on_click(
                         |ctx| ctx.dispatch_typed_action(CodeReviewAction::OpenCreatePrDialog),
                         ctx,
@@ -6870,7 +6867,6 @@ impl CodeReviewView {
                     button.set_label("Publish", ctx);
                     button.set_icon(Some(Icon::UploadCloud), ctx);
                     button.set_disabled(false, ctx);
-                    button.set_tooltip(None::<&str>, ctx);
                     button.set_on_click(
                         |ctx| ctx.dispatch_typed_action(CodeReviewAction::PublishBranch),
                         ctx,
