@@ -36,6 +36,13 @@ Validation should happen before committing settings:
 - require `http` or `https`
 - trim trailing slash for stable joining
 - reject empty model IDs
+- classify the endpoint as loopback, private-network, or public before saving
+- allow cleartext `http://` by default only for loopback endpoints
+- require an explicit cleartext warning for `http://` private-network endpoints
+- reject `http://` public endpoints
+- require an explicit remote-endpoint confirmation before saving a public `https://` endpoint or API key
+
+Persist the endpoint locality class with the setting or recompute it whenever the URL changes. The UI should use that class for model-picker labeling, telemetry bucketing, and warnings before any prompt or API key is sent to a non-loopback endpoint.
 
 ### 2. Extend model metadata for local providers
 Update `app/src/ai/llms.rs`:
@@ -124,6 +131,13 @@ Responsibilities:
 
 The first implementation can support a bounded single-agent loop and explicitly disable orchestration/subagent features for local models until a local multi-agent planner exists.
 
+The local runner must preserve the same prompt-injection and trust-boundary protections that the server harness applies today. In particular:
+- terminal output, command output, file contents, MCP resource contents, and tool results are untrusted data, not developer/system instructions
+- tool results must be wrapped or tagged so the model cannot reinterpret them as higher-priority instructions
+- any existing server-side system/developer prompt rules that distinguish user intent from observed terminal/tool data must be ported or replaced with equivalent client-side rules before enabling local tool use
+- local model tool calls must still flow through the existing permission, denylist, and approval logic before any file, shell, MCP, or diff action runs
+- tests must cover an injected instruction inside terminal output or a tool result and assert it remains untrusted context
+
 ### 8. Capability gating
 Before enabling a local model for native agent mode, check endpoint/model capabilities:
 - streaming chat completions
@@ -147,6 +161,8 @@ Audit local routing to ensure content-bearing data does not reach Warp generatio
 - no prompt/tool payload in telemetry
 - no transcript upload as a side effect of local generation
 - no cloud ambient task creation for local-model runs
+- no automatic local-to-cloud fallback after endpoint failure or model removal
+- no Warp Drive transcript upload in the first release
 
 Non-content existing app calls can remain unchanged, but the local model path should be testable by injecting a mock `ServerApi` that fails if generation is called.
 
@@ -173,16 +189,20 @@ For local conversations:
 - Persist enough local history for restore/retry in the same surfaces used by local Warp agent conversations.
 - Mark usage as provider-local and credit-free.
 - Do not depend on server conversation tokens for local-only turns.
+- Store local-model transcripts locally only in the first release. Do not sync transcript content to Warp Drive, even when general Drive sync is enabled.
+- If a selected local model is removed, store a blocked selection state and require explicit user selection before the next prompt can run. Do not silently select a cloud fallback.
 
 If existing history models require a server conversation token, introduce a local conversation token/ID variant rather than fabricating a server token.
 
 ## Testing and Validation
 ### Unit tests
-- `app/src/ai/llms` tests: local provider metadata serializes/deserializes, overlaid models appear only when enabled, fallback selection works when a local model is removed.
+- `app/src/ai/llms` tests: local provider metadata serializes/deserializes, overlaid models appear only when enabled, and removing the selected local model leaves local generation blocked until the user explicitly selects a replacement.
 - local settings tests: endpoint URL validation, model ID validation, secret omission from exported settings.
+- local endpoint policy tests: loopback `http://` is accepted, private-network `http://` requires warning state, public `http://` is rejected, and public `https://` is saved only after explicit confirmation.
 - local provider client tests: parses `GET /models`, handles unreachable/401/invalid JSON/timeouts.
 - `app/src/ai/agent/api/impl_tests.rs`: cloud model routes to `ServerApi`; local model does not call `ServerApi::generate_multi_agent_output`; supported tool set is reduced for local provider.
-- local runner tests: converts a simple user query into OpenAI-compatible messages; converts assistant text deltas into `ResponseEvent`; converts one tool call into the expected client action; converts tool results back into chat messages.
+- local runner tests: converts a simple user query into OpenAI-compatible messages; converts assistant text deltas into `ResponseEvent`; converts one tool call into the expected client action; converts tool results back into chat messages; preserves trust boundaries when terminal output or tool results contain injected instructions.
+- local history tests: local-model transcripts are not uploaded to Warp Drive and removed local models leave the selection blocked instead of falling back to cloud.
 
 ### Integration tests
 - Configure a fake OpenAI-compatible local server, select a local model, submit a simple prompt, and assert the conversation renders streamed text.
