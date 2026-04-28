@@ -14,6 +14,8 @@
 mod proxy;
 
 use super::server_model::{ConnectionId, ServerModel};
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
 use warpui::r#async::executor;
 
 /// Run the `remote-server-proxy` subcommand.
@@ -55,7 +57,7 @@ pub fn run_daemon(identity_key: String) -> anyhow::Result<()> {
     let pid_path = proxy::pid_path(&identity_key);
 
     if let Some(parent) = socket_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        proxy::ensure_private_daemon_dir(parent)?;
     }
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;
@@ -64,6 +66,7 @@ pub fn run_daemon(identity_key: String) -> anyhow::Result<()> {
     // Bind with std (no async runtime needed yet); converted to
     // async_io::Async inside the closure where the executor is active.
     let listener = std::os::unix::net::UnixListener::bind(&socket_path)?;
+    std::fs::set_permissions(&socket_path, Permissions::from_mode(0o600))?;
     // async_io::Async::new() requires non-blocking mode.
     listener.set_nonblocking(true)?;
     log::info!("Daemon bound to {}", socket_path.display());

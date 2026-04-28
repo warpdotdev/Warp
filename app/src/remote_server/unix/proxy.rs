@@ -10,6 +10,8 @@
 //! 4. Connect to `server.sock` and bridge stdin/stdout to the socket using
 //!    the existing 4-byte length-prefixed frame format.
 
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -31,6 +33,13 @@ pub(super) fn pid_path(identity_key: &str) -> PathBuf {
     PathBuf::from(expanded).join("server.pid")
 }
 
+/// Ensures the daemon directory exists with owner-only permissions.
+pub(super) fn ensure_private_daemon_dir(path: &std::path::Path) -> anyhow::Result<()> {
+    std::fs::create_dir_all(path)?;
+    std::fs::set_permissions(path, Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
 /// Entry point for `remote-server-proxy`.
 ///
 /// Ensures the daemon is running, then bridges stdin/stdout to the daemon's
@@ -41,7 +50,7 @@ pub fn run(identity_key: &str) -> anyhow::Result<()> {
 
     // Ensure the parent directory exists.
     if let Some(parent) = socket_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        ensure_private_daemon_dir(parent)?;
     }
 
     // ---- Acquire exclusive flock on the PID file --------------------------------

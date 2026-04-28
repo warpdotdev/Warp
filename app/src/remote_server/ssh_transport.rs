@@ -13,7 +13,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use warpui::r#async::executor;
 
-use remote_server::auth::AuthProvider;
+use remote_server::auth::RemoteServerAuthContext;
 use remote_server::client::RemoteServerClient;
 use remote_server::setup::{
     self, remote_server_daemon_dir, RemotePlatform, CHECK_TIMEOUT, INSTALL_TIMEOUT,
@@ -30,7 +30,7 @@ use remote_server::transport::{Connection, RemoteTransport};
 #[derive(Clone)]
 pub struct SshTransport {
     socket_path: PathBuf,
-    auth_provider: Arc<dyn AuthProvider>,
+    auth_context: Arc<RemoteServerAuthContext>,
 }
 
 impl fmt::Debug for SshTransport {
@@ -42,10 +42,10 @@ impl fmt::Debug for SshTransport {
 }
 
 impl SshTransport {
-    pub fn new(socket_path: PathBuf, auth_provider: Arc<dyn AuthProvider>) -> Self {
+    pub fn new(socket_path: PathBuf, auth_context: Arc<RemoteServerAuthContext>) -> Self {
         Self {
             socket_path,
-            auth_provider,
+            auth_context,
         }
     }
 
@@ -56,20 +56,20 @@ impl SshTransport {
     pub fn remote_daemon_socket_path(&self) -> String {
         format!(
             "{}/server.sock",
-            remote_server_daemon_dir(&self.auth_provider.remote_server_identity_key())
+            remote_server_daemon_dir(&self.auth_context.remote_server_identity_key())
         )
     }
 
     pub fn remote_daemon_pid_path(&self) -> String {
         format!(
             "{}/server.pid",
-            remote_server_daemon_dir(&self.auth_provider.remote_server_identity_key())
+            remote_server_daemon_dir(&self.auth_context.remote_server_identity_key())
         )
     }
 
     fn remote_proxy_command(&self) -> String {
         let binary = remote_server::setup::remote_server_binary();
-        let identity_key = self.auth_provider.remote_server_identity_key();
+        let identity_key = self.auth_context.remote_server_identity_key();
         let quoted_identity_key = shell_words::quote(&identity_key);
         format!("{binary} remote-server-proxy --identity-key {quoted_identity_key}")
     }
@@ -189,24 +189,18 @@ impl RemoteTransport for SshTransport {
 mod tests {
     use super::*;
     use warpui::r#async::BoxFuture;
-
-    struct StaticAuthProvider;
-
-    impl AuthProvider for StaticAuthProvider {
-        fn get_auth_token(&self) -> BoxFuture<'static, Option<String>> {
-            Box::pin(async { None })
-        }
-
-        fn remote_server_identity_key(&self) -> String {
-            "user id/with spaces".to_string()
-        }
+    fn static_auth_context() -> Arc<RemoteServerAuthContext> {
+        Arc::new(RemoteServerAuthContext::new(
+            || -> BoxFuture<'static, Option<String>> { Box::pin(async { None }) },
+            || "user id/with spaces".to_string(),
+        ))
     }
 
     #[test]
     fn remote_proxy_command_quotes_identity_key() {
         let transport = SshTransport::new(
             PathBuf::from("/tmp/control-master.sock"),
-            Arc::new(StaticAuthProvider),
+            static_auth_context(),
         );
 
         let command = transport.remote_proxy_command();

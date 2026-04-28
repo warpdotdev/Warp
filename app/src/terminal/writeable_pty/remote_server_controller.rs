@@ -1,7 +1,7 @@
 use crate::auth::auth_state::AuthStateProvider;
-use crate::remote_server::auth_provider::ServerApiAuthProvider;
+use crate::remote_server::auth_context::server_api_auth_context;
 use instant::Instant;
-use remote_server::auth::AuthProvider;
+use remote_server::auth::RemoteServerAuthContext;
 use settings::Setting;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -65,7 +65,7 @@ enum SshInitState {
 pub struct RemoteServerController<T: EventLoopSender> {
     pty_controller: WeakModelHandle<PtyController<T>>,
     model_event_dispatcher: ModelHandle<ModelEventDispatcher>,
-    auth_provider: Arc<dyn AuthProvider>,
+    auth_context: Arc<RemoteServerAuthContext>,
     state: SshInitState,
     /// Whether the binary was installed during this setup flow.
     did_install: bool,
@@ -83,7 +83,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         model_event_dispatcher: ModelHandle<ModelEventDispatcher>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        let auth_provider: Arc<dyn AuthProvider> = Arc::new(ServerApiAuthProvider::new(
+        let auth_context = Arc::new(server_api_auth_context(
             AuthStateProvider::as_ref(ctx).get().clone(),
             ServerApiProvider::as_ref(ctx).get_auth_client(),
         ));
@@ -133,7 +133,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         Self {
             pty_controller,
             model_event_dispatcher,
-            auth_provider,
+            auth_context,
             state: SshInitState::Idle,
             did_install: false,
             remote_platform: None,
@@ -181,7 +181,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 self.flush_stashed_bootstrap(old_info, ctx);
             }
         }
-        let transport = SshTransport::new(socket_path, self.auth_provider.clone());
+        let transport = SshTransport::new(socket_path, self.auth_context.clone());
         self.did_install = false;
         self.remote_platform = None;
         self.state = SshInitState::AwaitingCheck {
@@ -446,10 +446,10 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         socket_path: PathBuf,
         ctx: &mut ModelContext<Self>,
     ) {
-        let transport = SshTransport::new(socket_path, self.auth_provider.clone());
-        let auth_provider = self.auth_provider.clone();
+        let transport = SshTransport::new(socket_path, self.auth_context.clone());
+        let auth_context = self.auth_context.clone();
         RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-            mgr.connect_session(session_id, transport, auth_provider, ctx);
+            mgr.connect_session(session_id, transport, auth_context, ctx);
         });
     }
 }

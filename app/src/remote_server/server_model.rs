@@ -530,9 +530,11 @@ impl ServerModel {
     /// Handles `Authenticate` by replacing the daemon-wide credential.
     /// This is a notification — no response is sent.
     fn handle_authenticate(&mut self, msg: Authenticate) {
-        if !msg.auth_token.is_empty() {
-            self.auth_token = Some(msg.auth_token);
+        if msg.auth_token.is_empty() {
+            log::warn!("Received Authenticate notification with empty auth token; ignoring");
+            return;
         }
+        self.auth_token = Some(msg.auth_token);
     }
 
     #[cfg(test)]

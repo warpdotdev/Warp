@@ -5,7 +5,7 @@ use std::sync::Arc;
 #[cfg(not(target_family = "wasm"))]
 use std::time::Duration;
 
-use crate::auth::AuthProvider;
+use crate::auth::RemoteServerAuthContext;
 #[cfg(not(target_family = "wasm"))]
 use crate::client::ClientEvent;
 use crate::client::RemoteServerClient;
@@ -34,7 +34,7 @@ struct ReconnectParams {
     host_id: HostId,
     exit_status: Option<RemoteServerExitStatus>,
     transport: Arc<dyn RemoteTransport>,
-    auth_provider: Arc<dyn AuthProvider>,
+    auth_context: Arc<RemoteServerAuthContext>,
     control_path: Option<PathBuf>,
 }
 
@@ -337,9 +337,9 @@ pub struct RemoteServerManager {
     /// remote server daemon on every (re)connect. Persists until
     /// `deregister_session`.
     session_bootstrap_info: HashMap<SessionId, SessionBootstrapInfo>,
-    /// Auth context used for connection-time `Initialize` and future
-    /// reconnect handshakes for the session.
-    auth_providers: HashMap<SessionId, Arc<dyn AuthProvider>>,
+    /// App auth context used for connection-time `Initialize` and future
+    /// reconnect handshakes.
+    auth_context: Option<Arc<RemoteServerAuthContext>>,
     /// Detected remote platform per session, populated during the binary check
     /// phase via `detect_platform()`. Used for telemetry.
     session_platforms: HashMap<SessionId, RemotePlatform>,
@@ -359,7 +359,7 @@ impl RemoteServerManager {
             spawner: ctx.spawner(),
             last_navigated_path: HashMap::new(),
             session_bootstrap_info: HashMap::new(),
-            auth_providers: HashMap::new(),
+            auth_context: None,
             session_platforms: HashMap::new(),
         }
     }
@@ -489,7 +489,7 @@ impl RemoteServerManager {
         &mut self,
         session_id: SessionId,
         transport: T,
-        auth_provider: Arc<dyn AuthProvider>,
+        auth_context: Arc<RemoteServerAuthContext>,
         ctx: &mut ModelContext<Self>,
     ) where
         T: RemoteTransport + 'static,
@@ -511,24 +511,22 @@ impl RemoteServerManager {
 
             self.sessions
                 .insert(session_id, RemoteSessionState::Connecting);
-            self.auth_providers
-                .insert(session_id, Arc::clone(&auth_provider));
+            self.auth_context = Some(Arc::clone(&auth_context));
             ctx.emit(RemoteServerManagerEvent::SessionConnecting { session_id });
 
             let spawner = self.spawner.clone();
             let executor = ctx.background_executor().clone();
             // Wrap the transport in an Arc so it can be stored on `Connected`
-            // for reconnection after a spontaneous disconnect or an auth
-            // identity change.
+            // for reconnection after a spontaneous disconnect.
             let transport: Arc<dyn RemoteTransport> = Arc::new(transport);
-            let auth_provider_for_task = Arc::clone(&auth_provider);
+            let auth_context_for_task = Arc::clone(&auth_context);
 
             ctx.background_executor()
                 .spawn(async move {
                     match Self::run_connect_and_handshake(
                         session_id,
                         &*transport,
-                        &*auth_provider_for_task,
+                        &auth_context_for_task,
                         &spawner,
                         &executor,
                     )
@@ -581,7 +579,7 @@ impl RemoteServerManager {
     async fn run_connect_and_handshake(
         session_id: SessionId,
         transport: &dyn RemoteTransport,
-        auth_provider: &dyn AuthProvider,
+        auth_context: &RemoteServerAuthContext,
         spawner: &ModelSpawner<Self>,
         executor: &Arc<warpui::r#async::executor::Background>,
     ) -> Result<HostId, ConnectAndHandshakeError> {
@@ -637,7 +635,7 @@ impl RemoteServerManager {
         }
 
         // Phase 2: Initialize handshake.
-        let auth_token = auth_provider.get_auth_token().await;
+        let auth_token = auth_context.get_auth_token().await;
         let resp = client
             .initialize(auth_token.as_deref())
             .await
@@ -685,7 +683,6 @@ impl RemoteServerManager {
     pub fn deregister_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
         self.last_navigated_path.remove(&session_id);
         self.session_bootstrap_info.remove(&session_id);
-        self.auth_providers.remove(&session_id);
         self.session_platforms.remove(&session_id);
 
         // Remove the session entry. Dropping the `RemoteSessionState`
@@ -1110,10 +1107,10 @@ impl RemoteServerManager {
             let exit_status = Self::capture_exit_status(&mut _child, session_id);
             // Drop the old child process explicitly before reconnecting.
             drop(_child);
-            let Some(auth_provider) = self.auth_providers.get(&session_id).cloned() else {
+            let Some(auth_context) = self.auth_context.clone() else {
                 log::warn!(
                     "Spontaneous disconnect for session {session_id:?}, \
-                     but no auth provider is available for reconnect"
+                     but no auth context is available for reconnect"
                 );
                 self.sessions
                     .insert(session_id, RemoteSessionState::Disconnected);
@@ -1155,7 +1152,7 @@ impl RemoteServerManager {
                     host_id,
                     exit_status,
                     transport,
-                    auth_provider,
+                    auth_context,
                     control_path,
                 },
                 ctx,
@@ -1181,7 +1178,7 @@ impl RemoteServerManager {
             host_id,
             exit_status,
             transport,
-            auth_provider,
+            auth_context,
             control_path,
         } = params;
 
@@ -1202,7 +1199,7 @@ impl RemoteServerManager {
         let spawner = self.spawner.clone();
         let executor = ctx.background_executor().clone();
         let transport_clone = Arc::clone(&transport);
-        let auth_provider_for_task = Arc::clone(&auth_provider);
+        let auth_context_for_task = Arc::clone(&auth_context);
 
         ctx.background_executor()
             .spawn(async move {
@@ -1222,7 +1219,7 @@ impl RemoteServerManager {
                 match Self::run_connect_and_handshake(
                     session_id,
                     &*transport_clone,
-                    &*auth_provider_for_task,
+                    &auth_context_for_task,
                     &spawner,
                     &executor,
                 )
@@ -1280,7 +1277,7 @@ impl RemoteServerManager {
                                         host_id,
                                         exit_status,
                                         transport,
-                                        auth_provider,
+                                        auth_context,
                                         control_path,
                                     },
                                     ctx,
