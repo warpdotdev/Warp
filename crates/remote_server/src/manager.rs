@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 #[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(not(target_family = "wasm"))]
 use std::time::Duration;
 
 #[cfg(not(target_family = "wasm"))]
