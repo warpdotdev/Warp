@@ -1,6 +1,7 @@
 # PRODUCT.md — JSON / YAML structured-data block viewer
 
 Issue: https://github.com/warpdotdev/warp/issues/9138
+Relates to: #9138
 Figma: none provided
 
 ## Summary
