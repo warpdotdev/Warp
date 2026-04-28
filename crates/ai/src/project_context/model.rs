@@ -949,6 +949,12 @@ impl ProjectContextModel {
         })
     }
 
+    /// Absolute paths of every indexed global rule file (e.g. `~/.agents/AGENTS.md`).
+    /// Iteration order is sorted by path because `global_rules` is a `BTreeMap`.
+    pub fn global_rule_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
+        self.global_rules.keys().cloned()
+    }
+
     /// Returns the rule file paths associated with a specific workspace root path.
     pub fn rules_for_workspace(&self, workspace_path: &Path) -> Vec<PathBuf> {
         self.path_to_rules
