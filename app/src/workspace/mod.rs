@@ -596,10 +596,8 @@ pub fn init(app: &mut AppContext) {
         .with_custom_action(CustomAction::ActivateNextPane),
         EditableBinding::new(
             "pane_group:rename",
-            BindingDescription::new("Rename the current pane").with_custom_description(
-                bindings::MAC_MENUS_CONTEXT,
-                "Rename Pane",
-            ),
+            BindingDescription::new("Rename the current pane")
+                .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Rename Pane"),
             WorkspaceAction::RenameActivePane,
         )
         .with_context_predicate(id!("Workspace"))
