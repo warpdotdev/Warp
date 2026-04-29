@@ -846,6 +846,23 @@ impl RemoteServerManager {
         self.sessions.get(&session_id)
     }
 
+    /// Returns `true` when the session exists and is in a state where the
+    /// remote server might still deliver data (`Connecting`, `Initializing`,
+    /// `Connected`, or `Reconnecting`). Returns `false` for `Disconnected`
+    /// sessions and sessions not tracked by the manager.
+    pub fn is_session_potentially_active(&self, session_id: SessionId) -> bool {
+        match self.sessions.get(&session_id) {
+            Some(RemoteSessionState::Disconnected) | None => false,
+            Some(
+                RemoteSessionState::Connecting
+                | RemoteSessionState::Initializing { .. }
+                | RemoteSessionState::Connected { .. },
+            ) => true,
+            #[cfg(not(target_family = "wasm"))]
+            Some(RemoteSessionState::Reconnecting { .. }) => true,
+        }
+    }
+
     /// Returns the detected remote platform for this session, if available.
     pub fn platform_for_session(&self, session_id: SessionId) -> Option<&RemotePlatform> {
         self.session_platforms.get(&session_id)
