@@ -55,6 +55,7 @@ use warp_core::{
     channel::ChannelState, context_flag::ContextFlag, features::FeatureFlag,
     settings::ToggleableSetting as _, ui::theme::color::internal_colors,
 };
+use warp_i18n::{t, Key as I18nKey};
 use warp_editor::editor::NavigationKey;
 use warpify_page::{WarpifyPageAction, WarpifyPageView};
 use warpui::Element;
@@ -229,23 +230,34 @@ use std::fmt::{self, Display};
 
 impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SettingsSection::BillingAndUsage => write!(f, "Billing and usage"),
-            SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
-            SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
-            SettingsSection::MCPServers => write!(f, "MCP Servers"),
-            SettingsSection::WarpDrive => write!(f, "Warp Drive"),
-            SettingsSection::WarpAgent => write!(f, "Warp Agent"),
-            SettingsSection::AgentProfiles => write!(f, "Profiles"),
-            SettingsSection::AgentMCPServers => write!(f, "MCP servers"),
-            SettingsSection::Knowledge => write!(f, "Knowledge"),
-            SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
-            SettingsSection::CodeIndexing => write!(f, "Indexing and projects"),
-            SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
-            SettingsSection::CloudEnvironments => write!(f, "Environments"),
-            SettingsSection::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
-            _ => write!(f, "{self:?}"),
-        }
+        let label = match self {
+            SettingsSection::About => t(I18nKey::SettingsAbout),
+            SettingsSection::Account => t(I18nKey::SettingsAccount),
+            SettingsSection::MCPServers | SettingsSection::AgentMCPServers => {
+                t(I18nKey::SettingsMcpServers)
+            }
+            SettingsSection::BillingAndUsage => t(I18nKey::SettingsBillingAndUsage),
+            SettingsSection::Appearance => t(I18nKey::SettingsAppearance),
+            SettingsSection::Features => t(I18nKey::SettingsFeatures),
+            SettingsSection::Keybindings => t(I18nKey::SettingsKeybindings),
+            SettingsSection::Privacy => t(I18nKey::SettingsPrivacy),
+            SettingsSection::Referrals => t(I18nKey::SettingsReferrals),
+            SettingsSection::SharedBlocks => t(I18nKey::SettingsSharedBlocks),
+            SettingsSection::Teams => t(I18nKey::SettingsTeams),
+            SettingsSection::WarpDrive => t(I18nKey::SettingsWarpDrive),
+            SettingsSection::Warpify => t(I18nKey::SettingsWarpify),
+            SettingsSection::AI => t(I18nKey::SettingsAgents),
+            SettingsSection::WarpAgent => t(I18nKey::SettingsWarpAgent),
+            SettingsSection::AgentProfiles => t(I18nKey::SettingsProfiles),
+            SettingsSection::Knowledge => t(I18nKey::SettingsKnowledge),
+            SettingsSection::ThirdPartyCLIAgents => t(I18nKey::SettingsThirdPartyCliAgents),
+            SettingsSection::Code => t(I18nKey::SettingsCode),
+            SettingsSection::CodeIndexing => t(I18nKey::SettingsCodeIndexing),
+            SettingsSection::EditorAndCodeReview => t(I18nKey::SettingsEditorAndCodeReview),
+            SettingsSection::CloudEnvironments => t(I18nKey::SettingsCloudEnvironments),
+            SettingsSection::OzCloudAPIKeys => t(I18nKey::SettingsOzCloudApiKeys),
+        };
+        write!(f, "{label}")
     }
 }
 
@@ -1185,19 +1197,19 @@ impl SettingsView {
         let mut nav_items = vec![
             SettingsNavItem::Page(SettingsSection::Account),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Agents",
+                t(I18nKey::SettingsAgents).into_owned(),
                 SettingsSection::ai_subpages().to_vec(),
             )),
             SettingsNavItem::Page(SettingsSection::BillingAndUsage),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Code",
+                t(I18nKey::SettingsCode).into_owned(),
                 vec![
                     SettingsSection::CodeIndexing,
                     SettingsSection::EditorAndCodeReview,
                 ],
             )),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Cloud platform",
+                t(I18nKey::SettingsCloudPlatform).into_owned(),
                 vec![
                     SettingsSection::CloudEnvironments,
                     SettingsSection::OzCloudAPIKeys,

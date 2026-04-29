@@ -1,4 +1,5 @@
 use warp_core::ui::theme::color::internal_colors;
+use warp_i18n::{t, Key as I18nKey};
 use warpui::elements::new_scrollable::{ScrollableAppearance, SingleAxisConfig};
 use warpui::elements::{
     Border, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius,
@@ -120,7 +121,7 @@ impl NotificationMailboxView {
             ActionButton::new("", NakedTheme)
                 .with_icon(Icon::X)
                 .with_size(ButtonSize::XSmall)
-                .with_tooltip("Close")
+                .with_tooltip(t(I18nKey::CommonClose).into_owned())
                 .with_tooltip_sublabel("Esc")
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(NotificationMailboxViewAction::Dismiss);
@@ -128,7 +129,7 @@ impl NotificationMailboxView {
         });
 
         let mark_all_read_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Mark all as read", NakedTheme)
+            ActionButton::new(t(I18nKey::NotificationsMarkAllAsRead), NakedTheme)
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(NotificationMailboxViewAction::MarkAllRead);
@@ -409,7 +410,7 @@ impl NotificationMailboxView {
 
         let label = appearance
             .ui_builder()
-            .wrappable_text("Notifications".to_string(), false)
+            .wrappable_text(t(I18nKey::Notifications), false)
             .with_style(UiComponentStyles {
                 font_size: Some(14.),
                 font_color: Some(theme.main_text_color(theme.surface_2()).into()),
@@ -459,10 +460,11 @@ impl NotificationMailboxView {
 
             let is_active = self.active_filter == filter;
             let count = notifications.filtered_count(filter);
+            let filter_label = filter.label();
             let label = if count == 0 {
-                filter.label().to_string()
+                filter_label
             } else {
-                format!("{} ({count})", filter.label())
+                format!("{filter_label} ({count})")
             };
             let text_color = if is_active {
                 theme.main_text_color(theme.surface_2())
@@ -546,7 +548,7 @@ impl NotificationMailboxView {
         Container::new(
             appearance
                 .ui_builder()
-                .wrappable_text("No notifications".to_string(), false)
+                .wrappable_text(t(I18nKey::NotificationsNoNotifications), false)
                 .with_style(UiComponentStyles {
                     font_size: Some(14.),
                     font_color: Some(theme.sub_text_color(theme.surface_2()).into()),

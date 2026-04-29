@@ -501,6 +501,7 @@ fn apply_scroll_multiplier(event: &mut Event, app: &AppContext) {
 pub fn run() -> Result<()> {
     // Perform any necessary platform-specific initialization.
     platform::init();
+    warp_i18n::init_from_env();
 
     // Ensure feature flags are initialized before parsing command-line arguments.
     init_feature_flags();

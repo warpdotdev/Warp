@@ -1,6 +1,7 @@
 //! Action buttons row for conversation details panel.
 
 use warp_core::ui::theme::AnsiColorIdentifier;
+use warp_i18n::{t, Key as I18nKey};
 use warpui::elements::{ChildView, CrossAxisAlignment, Empty, Flex, ParentElement};
 use warpui::{AppContext, Element, Entity, TypedActionView, View, ViewContext, ViewHandle};
 
@@ -116,7 +117,7 @@ impl ConversationActionButtonsRow {
         let open_button = ctx.add_typed_action_view(|_| {
             Self::make_action_button(
                 Icon::LinkExternal,
-                "Open conversation",
+                t(I18nKey::ConversationActionOpenConversation).into_owned(),
                 None,
                 AgentDetailsAction::Open,
             )
@@ -125,7 +126,7 @@ impl ConversationActionButtonsRow {
         let cancel_task_button = ctx.add_typed_action_view(|_| {
             Self::make_action_button(
                 Icon::StopFilled,
-                "Cancel task",
+                t(I18nKey::ConversationActionCancelTask).into_owned(),
                 Some(AnsiColorIdentifier::Red),
                 AgentDetailsAction::CancelTask,
             )
@@ -134,7 +135,7 @@ impl ConversationActionButtonsRow {
         let fork_conversation_button = ctx.add_typed_action_view(|_| {
             Self::make_action_button(
                 Icon::ArrowSplit,
-                "Fork conversation",
+                t(I18nKey::ConversationActionForkConversation).into_owned(),
                 None,
                 AgentDetailsAction::ForkConversation,
             )
@@ -143,7 +144,7 @@ impl ConversationActionButtonsRow {
         let view_details_button = ctx.add_typed_action_view(|_| {
             Self::make_action_button(
                 Icon::Info,
-                "View details",
+                t(I18nKey::ConversationActionViewDetails).into_owned(),
                 None,
                 AgentDetailsAction::ViewDetails,
             )
@@ -152,7 +153,7 @@ impl ConversationActionButtonsRow {
         let copy_link_button = ctx.add_typed_action_view(|_| {
             Self::make_action_button(
                 Icon::Link,
-                "Copy link to run",
+                t(I18nKey::ConversationActionCopyLinkToRun).into_owned(),
                 None,
                 AgentDetailsAction::CopyLink,
             )
@@ -181,7 +182,7 @@ impl ConversationActionButtonsRow {
 
     fn make_action_button(
         icon: Icon,
-        tooltip: &str,
+        tooltip: String,
         icon_color: Option<AnsiColorIdentifier>,
         action: AgentDetailsAction,
     ) -> ActionButton {

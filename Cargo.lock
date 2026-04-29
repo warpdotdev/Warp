@@ -14385,6 +14385,7 @@ dependencies = [
  "warp_editor",
  "warp_files",
  "warp_graphql",
+ "warp_i18n",
  "warp_isolation_platform",
  "warp_js",
  "warp_logging",
@@ -14688,6 +14689,10 @@ dependencies = [
  "cynic",
  "cynic-codegen",
 ]
+
+[[package]]
+name = "warp_i18n"
+version = "0.1.0"
 
 [[package]]
 name = "warp_isolation_platform"

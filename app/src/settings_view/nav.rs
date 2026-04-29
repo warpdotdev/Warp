@@ -22,7 +22,7 @@ const SUBPAGE_LEFT_MARGIN: f32 = NAV_ITEM_LEFT_MARGIN + 12.;
 
 /// A collapsible group of settings subpages in the sidebar.
 pub struct SettingsUmbrella {
-    pub label: &'static str,
+    pub label: String,
     pub subpages: Vec<SettingsSection>,
     pub expanded: bool,
     /// Saved expanded state from before search began, restored when search is cleared.
@@ -32,10 +32,10 @@ pub struct SettingsUmbrella {
 }
 
 impl SettingsUmbrella {
-    pub fn new(label: &'static str, subpages: Vec<SettingsSection>) -> Self {
+    pub fn new(label: impl Into<String>, subpages: Vec<SettingsSection>) -> Self {
         let subpage_count = subpages.len();
         Self {
-            label,
+            label: label.into(),
             subpages,
             expanded: false,
             pre_search_expanded: None,
