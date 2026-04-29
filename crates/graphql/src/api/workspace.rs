@@ -44,6 +44,14 @@ pub struct RoutingHostConfig {
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]
+pub struct LlmContextWindow {
+    pub is_configurable: bool,
+    pub min: crate::scalars::Uint32,
+    pub max: crate::scalars::Uint32,
+    pub default: crate::scalars::Uint32,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone)]
 pub struct LlmInfo {
     pub display_name: String,
     pub base_model_name: String,
@@ -57,6 +65,7 @@ pub struct LlmInfo {
     pub provider: LlmProvider,
     pub host_configs: Vec<RoutingHostConfig>,
     pub pricing: LlmPricing,
+    pub context_window: LlmContextWindow,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]

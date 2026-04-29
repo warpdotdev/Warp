@@ -49,8 +49,6 @@ pub struct AgentProgress {
 /// Status of the ambient agent run.
 #[derive(Debug, Clone)]
 pub enum Status {
-    /// Not in an ambient agent session.
-    NotAmbientAgent,
     /// First-time environment setup for cloud agents.
     Setup,
     /// The user is composing their ambient agent prompt.
@@ -84,11 +82,6 @@ pub struct AmbientAgentViewModel {
     /// The terminal view this model is part of.
     terminal_view_id: EntityId,
 
-    /// Whether this ambient agent view has a parent terminal view to return to.
-    /// `false` for standalone views (e.g., from "New Cloud Conversation").
-    /// `true` for nested views (pushed onto an existing terminal's pane stack).
-    has_parent_terminal: bool,
-
     /// Selected cloud environment to launch the ambient agent with.
     environment_id: Option<SyncId>,
 
@@ -120,11 +113,7 @@ pub struct AmbientAgentViewModel {
 }
 
 impl AmbientAgentViewModel {
-    pub fn new(
-        terminal_view_id: EntityId,
-        has_parent_terminal: bool,
-        ctx: &mut ModelContext<Self>,
-    ) -> Self {
+    pub fn new(terminal_view_id: EntityId, ctx: &mut ModelContext<Self>) -> Self {
         ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
             me.handle_cloud_model_event(event, ctx);
         });
@@ -140,10 +129,9 @@ impl AmbientAgentViewModel {
         let ui_state = AmbientAgentProgressUIState::new(ctx);
 
         Self {
-            status: Status::NotAmbientAgent,
+            status: Status::Composing,
             request: None,
             terminal_view_id,
-            has_parent_terminal,
             environment_id: None,
             progress_timer_handle: None,
             ui_state,
@@ -297,7 +285,7 @@ impl AmbientAgentViewModel {
 
     /// Whether or not this terminal session is for an ambient agent.
     pub fn is_ambient_agent(&self) -> bool {
-        !matches!(self.status, Status::NotAmbientAgent)
+        true
     }
 
     /// Returns the task ID for the current cloud agent task, if one has been spawned.
@@ -311,17 +299,6 @@ impl AmbientAgentViewModel {
 
     pub fn set_has_inserted_cloud_mode_user_query_block(&mut self, has_inserted: bool) {
         self.has_inserted_cloud_mode_user_query_block = has_inserted;
-    }
-
-    /// Returns whether this ambient agent view has a parent terminal to return to.
-    pub fn has_parent_terminal(&self) -> bool {
-        self.has_parent_terminal
-    }
-
-    /// Sets whether this ambient agent view has a parent terminal to return to.
-    /// This should be called when pushing the view onto an existing pane stack.
-    pub fn set_has_parent_terminal(&mut self, has_parent: bool) {
-        self.has_parent_terminal = has_parent;
     }
 
     /// Whether or not this terminal session is in the setup state (first-time environment creation).
@@ -420,9 +397,7 @@ impl AmbientAgentViewModel {
         // Store the task ID for later use
         self.task_id = Some(task_id);
 
-        if matches!(self.status, Status::NotAmbientAgent) {
-            self.status = Status::AgentRunning;
-        }
+        self.status = Status::AgentRunning;
 
         // Fetch the task so we can set the correct environment (instead of defaulting to the most
         // recently-used one) and the correct harness (so non-oz viewers know to use the
@@ -456,9 +431,9 @@ impl AmbientAgentViewModel {
         &self.status
     }
 
-    /// Reset the status back to NotAmbientAgent.
-    pub fn reset_status(&mut self, ctx: &mut ModelContext<Self>) {
-        self.status = Status::NotAmbientAgent;
+    /// Reset cloud-specific prompt state so a retained cloud view can compose a new task.
+    pub fn reset_for_new_cloud_prompt(&mut self, ctx: &mut ModelContext<Self>) {
+        self.status = Status::Composing;
         self.environment_id = None;
         self.task_id = None;
         self.conversation_id = None;
@@ -801,7 +776,7 @@ impl AmbientAgentViewModel {
 
         // Extract or create progress tracking.
         let progress = if let Status::WaitingForSession { mut progress } =
-            std::mem::replace(&mut self.status, Status::NotAmbientAgent)
+            std::mem::replace(&mut self.status, Status::Composing)
         {
             progress.stopped_at = Some(now);
             progress
@@ -835,7 +810,7 @@ impl AmbientAgentViewModel {
 
         // Extract or create progress tracking.
         let progress = if let Status::WaitingForSession { mut progress } =
-            std::mem::replace(&mut self.status, Status::NotAmbientAgent)
+            std::mem::replace(&mut self.status, Status::Composing)
         {
             progress.stopped_at = Some(now);
             progress
@@ -866,7 +841,7 @@ impl AmbientAgentViewModel {
 
         // Extract or create progress tracking.
         let progress = if let Status::WaitingForSession { mut progress } =
-            std::mem::replace(&mut self.status, Status::NotAmbientAgent)
+            std::mem::replace(&mut self.status, Status::Composing)
         {
             progress.stopped_at = Some(now);
             progress

@@ -2492,6 +2492,9 @@ pub enum TelemetryEvent {
         model_type: String,
         model_value: String,
     },
+    AIExecutionProfileContextWindowSelected {
+        tokens: Option<u32>,
+    },
     /// The AI input was not sent because there was already an in-flight request.
     AIInputNotSent {
         entrypoint: Option<EntrypointType>,
@@ -4223,6 +4226,9 @@ impl TelemetryEvent {
                 "model_type": model_type,
                 "model_value": model_value,
             })),
+            TelemetryEvent::AIExecutionProfileContextWindowSelected { tokens } => Some(json!({
+                "tokens": tokens,
+            })),
             TelemetryEvent::AIInputNotSent {
                 entrypoint,
                 inputs,
@@ -4917,6 +4923,7 @@ impl TelemetryEvent {
             | TelemetryEvent::AIExecutionProfileRemovedFromAllowlist { .. }
             | TelemetryEvent::AIExecutionProfileRemovedFromDenylist { .. }
             | TelemetryEvent::AIExecutionProfileModelSelected { .. }
+            | TelemetryEvent::AIExecutionProfileContextWindowSelected { .. }
             | TelemetryEvent::OpenSlashMenu { .. }
             | TelemetryEvent::SlashCommandAccepted { .. }
             | TelemetryEvent::AgentModeSetupBannerAccepted
@@ -5476,7 +5483,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::AIExecutionProfileAddedToDenylist { .. }
             | Self::AIExecutionProfileRemovedFromAllowlist { .. }
             | Self::AIExecutionProfileRemovedFromDenylist { .. }
-            | Self::AIExecutionProfileModelSelected { .. } => {
+            | Self::AIExecutionProfileModelSelected { .. }
+            | Self::AIExecutionProfileContextWindowSelected { .. } => {
                 EnablementState::Flag(FeatureFlag::MultiProfile)
             }
             Self::AIInputNotSent { .. } => EnablementState::Always,
@@ -6028,6 +6036,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "AI Execution Profile: Removed From Denylist"
             }
             Self::AIExecutionProfileModelSelected { .. } => "AI Execution Profile: Model Selected",
+            Self::AIExecutionProfileContextWindowSelected { .. } => {
+                "AI Execution Profile: Context Window Selected"
+            }
             Self::AIInputNotSent { .. } => "AI Input Not Sent",
             Self::OpenSlashMenu { .. } => "Open Slash Menu",
             Self::SlashCommandAccepted { .. } => "Slash Command Accepted",
@@ -6103,6 +6114,9 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
 
     fn description(&self) -> &'static str {
         match self {
+            Self::AIExecutionProfileContextWindowSelected => {
+                "Selected a context window limit for an execution profile's base model"
+            }
             Self::AISuggestedAgentModeWorkflowAdded => {
                 "User created an AI suggested Agent Mode workflow"
             }

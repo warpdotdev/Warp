@@ -3423,7 +3423,7 @@ impl AppContext {
                 return;
             }
 
-            // TODO(PLAT-747): Ideally the the font cache itself is a model and can
+            // TODO(PLAT-747): Ideally the font cache itself is a model and can
             // handle emitting these events.
             FallbackFontModel::handle(self).update(self, |model, ctx| {
                 model.loaded_fallback_font(ctx);

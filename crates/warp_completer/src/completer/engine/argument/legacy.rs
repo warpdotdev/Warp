@@ -154,7 +154,7 @@ async fn suggestions_for_parse_error(
                     missing_arg_index,
                 },
         } => {
-            // If there was trailing whitespace in the line, respect the error and try to to complete based
+            // If there was trailing whitespace in the line, respect the error and try to complete based
             // on the missing argument. If there wasn't any trailing whitespace, the user is trying
             // to complete an argument before the one that's missing (such as `git push ori<tab>`) so we
             // treat this as successful parse so that we can parse out the argument correctly.
@@ -213,7 +213,7 @@ async fn suggestions_for_parse_error(
                     positional_index,
                 },
         } => {
-            // If there was ending whitespace in the line respect the error and try to to complete based
+            // If there was ending whitespace in the line respect the error and try to complete based
             // on the missing positional. If there was not an ending whitespace, the user is try trying
             // to complete a positional before the one that's missing such as `git push ori<tab>` so we
             // treat this as successful parse so that we can parse out the positional correctly.
@@ -303,7 +303,7 @@ async fn suggestions_for_last_argument(
         add_extra_positional(shell_command, cursor);
     }
 
-    // Find the last positional and named value within the the command that the user entered.
+    // Find the last positional and named value within the command that the user entered.
     // Whichever ends last is the value we're trying to complete on.
     let last_positional = shell_command.last_positional();
     let last_named_value = shell_command.last_named_argument();

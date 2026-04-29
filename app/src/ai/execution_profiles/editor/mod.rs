@@ -4,12 +4,14 @@ use crate::ai::execution_profiles::{
     profiles::{AIExecutionProfilesModel, AIExecutionProfilesModelEvent, ClientProfileId},
     AIExecutionProfile, ActionPermission, WriteToPtyPermission,
 };
-use crate::ai::llms::{DisableReason, LLMId, LLMInfo, LLMPreferences, LLMPreferencesEvent};
+use crate::ai::llms::{
+    DisableReason, LLMContextWindow, LLMId, LLMInfo, LLMPreferences, LLMPreferencesEvent,
+};
 use crate::ai::paths::host_native_absolute_path;
 use crate::editor::InteractionState;
-use crate::editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions};
+use crate::editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions, TextOptions};
 use crate::pane_group::focus_state::PaneFocusHandle;
-use crate::settings::{AISettings, AgentModeCommandExecutionPredicate};
+use crate::settings::{AISettings, AISettingsChangedEvent, AgentModeCommandExecutionPredicate};
 use crate::ui_components::icons::Icon;
 use crate::view_components::{
     action_button::{ActionButton, DangerSecondaryTheme},
@@ -29,6 +31,7 @@ use regex::Regex;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::fonts::Properties;
 use warpui::platform::Cursor;
+use warpui::ui_components::slider::SliderStateHandle;
 use warpui::ui_components::switch::SwitchStateHandle;
 
 use std::path::{Path, PathBuf};
@@ -145,6 +148,15 @@ pub enum ExecutionProfileEditorViewAction {
     SetBaseModel {
         id: LLMId,
     },
+    /// Fired continuously while the user drags the context window slider.
+    ContextWindowSliderDragged {
+        value: u32,
+    },
+    /// Fired when the user commits a new context window value (slider drop,
+    /// track click, or input box commit).
+    SetContextWindowSize {
+        value: u32,
+    },
     SetCodingModel {
         id: LLMId,
     },
@@ -222,6 +234,9 @@ pub struct ExecutionProfileEditorView {
     focus_handle: Option<PaneFocusHandle>,
     clipped_scroll_state: ClippedScrollStateHandle,
     base_model_dropdown: ViewHandle<FilterableDropdown<ExecutionProfileEditorViewAction>>,
+    context_window_slider_state: SliderStateHandle,
+    context_window_editor: ViewHandle<EditorView>,
+    last_synced_context_window_editor_value: Option<u32>,
     coding_model_dropdown: ViewHandle<Dropdown<ExecutionProfileEditorViewAction>>,
     full_terminal_use_model_dropdown:
         ViewHandle<FilterableDropdown<ExecutionProfileEditorViewAction>>,
@@ -483,6 +498,27 @@ impl ExecutionProfileEditorView {
             dropdown.set_menu_width(MODEL_MENU_WIDTH, ctx);
             dropdown
         });
+
+        // Initialize the context window editor buffer with the profile's
+        // persisted limit (or the active model's max as a sensible default).
+        // The slider's current position is derived from the profile on each
+        // render, so no local Cell is needed.
+        let initial_context_window_value = initial_context_window_display_value(&profile_data, ctx);
+        let context_window_slider_state = SliderStateHandle::default();
+        let context_window_editor = ctx.add_typed_action_view(|ctx| {
+            let options = SingleLineEditorOptions {
+                text: TextOptions {
+                    font_size_override: Some(Appearance::as_ref(ctx).ui_font_size()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_buffer_text(&initial_context_window_value.to_string(), ctx);
+            editor
+        });
+        let last_synced_context_window_editor_value = Some(initial_context_window_value);
+
         let coding_model_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
             dropdown.set_menu_width(MODEL_MENU_WIDTH, ctx);
@@ -574,6 +610,9 @@ impl ExecutionProfileEditorView {
             focus_handle: None,
             clipped_scroll_state: Default::default(),
             base_model_dropdown,
+            context_window_slider_state,
+            context_window_editor,
+            last_synced_context_window_editor_value,
             coding_model_dropdown,
             full_terminal_use_model_dropdown,
             computer_use_model_dropdown,
@@ -606,6 +645,10 @@ impl ExecutionProfileEditorView {
             if let EditorEvent::Edited(_) = event {
                 view.save_profile_name_if_valid(ctx);
             }
+        });
+
+        ctx.subscribe_to_view(&view.context_window_editor, |view, _, event, ctx| {
+            view.handle_context_window_editor_event(event, ctx);
         });
 
         ctx.subscribe_to_view(&view.command_allowlist_editor, |view, _, event, ctx| {
@@ -696,6 +739,7 @@ impl ExecutionProfileEditorView {
                         &me.upgrade_footer_mouse_state,
                         ctx,
                     );
+                    me.sync_context_window_editor(ctx, false);
                 }
                 LLMPreferencesEvent::UpdatedActiveAgentModeLLM => {
                     Self::refresh_filterable_model_dropdown(
@@ -707,6 +751,7 @@ impl ExecutionProfileEditorView {
                         &me.upgrade_footer_mouse_state,
                         ctx,
                     );
+                    me.sync_context_window_editor(ctx, false);
                 }
                 LLMPreferencesEvent::UpdatedActiveCodingLLM => {
                     Self::refresh_coding_model_dropdown(
@@ -739,6 +784,7 @@ impl ExecutionProfileEditorView {
                     current_permissions.coding_model.clone(),
                     ctx,
                 );
+                me.sync_context_window_editor(ctx, false);
                 ctx.notify();
             },
         );
@@ -757,6 +803,14 @@ impl ExecutionProfileEditorView {
         ctx.subscribe_to_model(&workspace, |me, workspace, event, ctx| {
             if let UserWorkspacesEvent::TeamsChanged = event {
                 Self::update_all_editor_interaction_states(me, workspace, ctx);
+                ctx.notify();
+            }
+        });
+        ctx.subscribe_to_model(&AISettings::handle(ctx), |me, _, event, ctx| {
+            if let AISettingsChangedEvent::IsAnyAIEnabled { .. } = event {
+                let workspace = UserWorkspaces::handle(ctx);
+                Self::update_all_editor_interaction_states(me, workspace, ctx);
+                me.sync_context_window_editor(ctx, true);
                 ctx.notify();
             }
         });
@@ -915,6 +969,7 @@ impl ExecutionProfileEditorView {
         );
 
         Self::update_profile_name_editor(&self.profile_name_editor, &current_permissions, ctx);
+        self.sync_context_window_editor(ctx, false);
     }
 
     fn refresh_execution_profile_dropdown_menu(
@@ -1252,9 +1307,110 @@ impl ExecutionProfileEditorView {
             }
         });
     }
+
+    fn configurable_context_window(&self, app: &AppContext) -> Option<LLMContextWindow> {
+        let profile =
+            BlocklistAIPermissions::as_ref(app).permissions_profile_for_id(app, self.profile_id);
+        profile.configurable_context_window(app)
+    }
+
+    fn current_context_window_display_value(&self, app: &AppContext) -> Option<u32> {
+        let profile =
+            BlocklistAIPermissions::as_ref(app).permissions_profile_for_id(app, self.profile_id);
+        profile.context_window_display_value(app)
+    }
+
+    fn handle_context_window_editor_event(
+        &mut self,
+        event: &EditorEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            EditorEvent::Blurred | EditorEvent::Enter => {
+                if !AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+                    self.sync_context_window_editor(ctx, true);
+                    return;
+                }
+                let Some(cw) = self.configurable_context_window(ctx) else {
+                    return;
+                };
+                let buffer_text = self.context_window_editor.as_ref(ctx).buffer_text(ctx);
+                let cleaned: String = buffer_text
+                    .chars()
+                    .filter(|c| !c.is_whitespace() && *c != ',')
+                    .collect();
+                if let Ok(parsed) = cleaned.parse::<u32>() {
+                    let clamped = parsed.clamp(cw.min, cw.max);
+                    if Some(clamped) != self.current_context_window_display_value(ctx) {
+                        AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
+                            profiles_model.set_context_window_limit(
+                                self.profile_id,
+                                Some(clamped),
+                                ctx,
+                            );
+                        });
+                    }
+                }
+                self.sync_context_window_editor(ctx, true);
+                ctx.notify();
+            }
+            _ => {}
+        }
+    }
+
+    fn sync_context_window_editor(&mut self, ctx: &mut ViewContext<Self>, force: bool) {
+        let Some(value) = self.current_context_window_display_value(ctx) else {
+            self.last_synced_context_window_editor_value = None;
+            self.context_window_slider_state.reset_offset();
+            ctx.notify();
+            return;
+        };
+
+        let formatted = value.to_string();
+        let should_update = if force {
+            true
+        } else {
+            match self.last_synced_context_window_editor_value {
+                Some(last_value) => {
+                    self.context_window_editor.as_ref(ctx).buffer_text(ctx)
+                        == last_value.to_string()
+                }
+                None => true,
+            }
+        };
+
+        if should_update {
+            self.context_window_editor.update(ctx, |editor, ctx| {
+                if editor.buffer_text(ctx) != formatted {
+                    editor.system_reset_buffer_text(&formatted, ctx);
+                }
+            });
+            self.last_synced_context_window_editor_value = Some(value);
+            self.context_window_slider_state.reset_offset();
+            ctx.notify();
+        }
+    }
+}
+
+fn initial_context_window_display_value(
+    profile_data: &AIExecutionProfile,
+    app: &AppContext,
+) -> u32 {
+    profile_data
+        .context_window_display_value(app)
+        .unwrap_or_else(|| {
+            LLMPreferences::as_ref(app)
+                .get_default_base_model()
+                .context_window
+                .default_max
+        })
 }
 
 mod ui_helpers;
+
+#[cfg(test)]
+#[path = "mod_test.rs"]
+mod tests;
 
 impl View for ExecutionProfileEditorView {
     fn ui_name() -> &'static str {
@@ -1274,7 +1430,7 @@ impl View for ExecutionProfileEditorView {
                 &self.profile_name_editor,
                 profile_data.is_default_profile,
             ))
-            .with_child(render_models_section(appearance, self))
+            .with_child(render_models_section(appearance, self, app))
             .with_child(render_permissions_section(
                 appearance,
                 self,
@@ -1319,9 +1475,46 @@ impl TypedActionView for ExecutionProfileEditorView {
                 ctx.emit(ExecutionProfileEditorViewEvent::Pane(PaneEvent::Close));
             }
             ExecutionProfileEditorViewAction::SetBaseModel { id } => {
+                // Changing the base model resets any persisted context window
+                // override — the new model may have a different range (or not
+                // be configurable at all). The user can pick a new value for
+                // the new model if they want one.
                 AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
                     profiles_model.set_base_model(self.profile_id, Some(id.clone()), ctx);
+                    profiles_model.set_context_window_limit(self.profile_id, None, ctx);
                 });
+                self.sync_context_window_editor(ctx, true);
+                ctx.notify();
+            }
+            ExecutionProfileEditorViewAction::ContextWindowSliderDragged { value } => {
+                if !AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+                    self.sync_context_window_editor(ctx, true);
+                    return;
+                }
+                // Transient drag update: reflect the current slider position
+                // in the input box without persisting to the profile yet.
+                // Persistence happens on SetContextWindowSize (drop / commit).
+                if self.configurable_context_window(ctx).is_some() {
+                    let formatted = value.to_string();
+                    self.context_window_editor.update(ctx, |editor, ctx| {
+                        editor.system_reset_buffer_text(&formatted, ctx);
+                    });
+                    ctx.notify();
+                }
+            }
+            ExecutionProfileEditorViewAction::SetContextWindowSize { value } => {
+                if !AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+                    self.sync_context_window_editor(ctx, true);
+                    return;
+                }
+                let Some(cw) = self.configurable_context_window(ctx) else {
+                    return;
+                };
+                let clamped = (*value).clamp(cw.min, cw.max);
+                AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
+                    profiles_model.set_context_window_limit(self.profile_id, Some(clamped), ctx);
+                });
+                self.sync_context_window_editor(ctx, true);
                 ctx.notify();
             }
             ExecutionProfileEditorViewAction::SetCodingModel { id } => {

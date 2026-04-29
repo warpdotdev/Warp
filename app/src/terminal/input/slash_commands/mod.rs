@@ -9,6 +9,7 @@ use ai::skills::SkillReference;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::appearance::Appearance;
+use warp_core::ui::theme::AnsiColorIdentifier;
 use warpui::clipboard::ClipboardContent;
 use warpui::{SingletonEntity, ViewContext};
 
@@ -24,6 +25,7 @@ use crate::search::slash_command_menu::{SlashCommandId, StaticCommand};
 use crate::server::ids::SyncId;
 use crate::server::telemetry::SlashCommandAcceptedDetails;
 use crate::settings::AISettings;
+use crate::tab::SelectedTabColor;
 use crate::terminal::input::decorations::InputBackgroundJobOptions;
 use crate::terminal::input::inline_menu::{InlineMenuAction, InlineMenuType};
 use crate::terminal::input::message_bar::Message;
@@ -34,6 +36,7 @@ use crate::terminal::input::{
     CompletionsTrigger, Event, Input, InputSuggestionsMode, UserQueryMenuAction,
 };
 use crate::terminal::view::TerminalAction;
+use crate::ui_components::color_dot;
 use crate::view_components::DismissibleToast;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
@@ -419,6 +422,54 @@ impl Input {
                 };
 
                 ctx.dispatch_typed_action(&WorkspaceAction::SetActiveTabName(name.to_owned()));
+            }
+            set_tab_color if command.name == commands::SET_TAB_COLOR.name => {
+                let supported_options = || {
+                    color_dot::TAB_COLOR_OPTIONS
+                        .iter()
+                        .map(|c| c.to_string().to_ascii_lowercase())
+                        .chain(std::iter::once("none".to_owned()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+
+                let Some(arg) = argument
+                    .map(|name| name.trim())
+                    .filter(|name| !name.is_empty())
+                else {
+                    show_error_toast(
+                        format!(
+                            "Please provide a color after /set-tab-color ({})",
+                            supported_options()
+                        ),
+                        ctx,
+                    );
+                    return true;
+                };
+
+                let color = if arg.eq_ignore_ascii_case("none") {
+                    SelectedTabColor::Cleared
+                } else {
+                    let parsed = arg
+                        .parse::<AnsiColorIdentifier>()
+                        .ok()
+                        .filter(|c| color_dot::TAB_COLOR_OPTIONS.contains(c));
+                    match parsed {
+                        Some(c) => SelectedTabColor::Color(c),
+                        None => {
+                            show_error_toast(
+                                format!(
+                                    "Unknown tab color '{arg}'. Use one of: {}.",
+                                    supported_options()
+                                ),
+                                ctx,
+                            );
+                            return true;
+                        }
+                    }
+                };
+
+                ctx.dispatch_typed_action(&WorkspaceAction::SetActiveTabColor(color));
             }
             create_env if command.name == commands::CREATE_ENVIRONMENT.name => {
                 // If the user included args after the slash command, treat them as repo paths/URLs.
