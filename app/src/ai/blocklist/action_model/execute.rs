@@ -31,7 +31,7 @@ use fetch_conversation::FetchConversationExecutor;
 use file_glob::FileGlobExecutor;
 use futures::{future::BoxFuture, FutureExt};
 use grep::GrepExecutor;
-pub use orchestrate::{OrchestrateDecision, OrchestrateExecutor};
+pub use orchestrate::{OrchestrateDecision, OrchestrateExecutor, OrchestrateExecutorEvent};
 use parking_lot::FairMutex;
 use read_documents::ReadDocumentsExecutor;
 pub(super) use read_files::ReadFilesExecutor;
@@ -329,7 +329,7 @@ impl BlocklistAIActionExecutor {
         let send_message_executor = ctx.add_model(|_| SendMessageToAgentExecutor::new());
         let ask_user_question_executor =
             ctx.add_model(|_| AskUserQuestionExecutor::new(terminal_view_id));
-        let orchestrate_executor = ctx.add_model(|_| OrchestrateExecutor::new());
+        let orchestrate_executor = ctx.add_model(OrchestrateExecutor::new);
         Self {
             shell_command_executor,
             read_files_executor,

@@ -217,10 +217,11 @@ use crate::ai::{
         BlocklistAIControllerEvent, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
         BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
         LegacyPassiveSuggestionsEvent, LegacyPassiveSuggestionsModel, MaaPassiveSuggestionsEvent,
-        MaaPassiveSuggestionsModel, PassiveSuggestionsModels, PendingQueryState,
-        RequestFileEditsFormatKind, ShellCommandExecutor, ShellCommandExecutorEvent,
-        StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
-        ATTACH_AS_AGENT_MODE_CONTEXT_TEXT, PRE_REWIND_PREFIX,
+        MaaPassiveSuggestionsModel, OrchestrateExecutor, OrchestrateExecutorEvent,
+        PassiveSuggestionsModels, PendingQueryState, RequestFileEditsFormatKind,
+        ShellCommandExecutor, ShellCommandExecutorEvent, StartAgentExecutor,
+        StartAgentExecutorEvent, StartAgentRequest, ATTACH_AS_AGENT_MODE_CONTEXT_TEXT,
+        PRE_REWIND_PREFIX,
     },
     execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId},
     get_relevant_files::controller::GetRelevantFilesController,
@@ -3651,6 +3652,10 @@ impl TerminalView {
             &ai_action_model.as_ref(ctx).start_agent_executor(ctx),
             Self::handle_start_agent_executor_event,
         );
+        ctx.subscribe_to_model(
+            &ai_action_model.as_ref(ctx).orchestrate_executor(ctx),
+            Self::handle_orchestrate_executor_event,
+        );
         let find_bar = ctx.add_typed_action_view(|ctx| Find::new(find_model.clone(), ctx));
         ctx.subscribe_to_view(&find_bar, move |me, _, event, ctx| {
             me.handle_find_event(event, ctx);
@@ -6307,6 +6312,30 @@ impl TerminalView {
         match event {
             StartAgentExecutorEvent::CreateAgent(request) => {
                 ctx.emit(Event::StartAgentConversation(request.clone()));
+            }
+        }
+    }
+
+    /// Forwards each [`StartAgentRequest`] in an
+    /// [`OrchestrateExecutorEvent::CreateAgentBatch`] as an individual
+    /// [`Event::StartAgentConversation`], reusing the existing per-agent
+    /// `CreateAgentTask` plumbing that [`StartAgentExecutor`] uses. The
+    /// outer order is preserved here so the upper layer dispatches in
+    /// `agent_run_configs[]` input order; per-agent outcomes are still
+    /// collected back into input order by the OrchestrateExecutor
+    /// regardless of which `CreateAgentTask` returns first.
+    fn handle_orchestrate_executor_event(
+        &mut self,
+        _: ModelHandle<OrchestrateExecutor>,
+        event: &OrchestrateExecutorEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            OrchestrateExecutorEvent::CreateAgentBatch(requests) => {
+                for request in requests {
+                    let request: StartAgentRequest = request.clone();
+                    ctx.emit(Event::StartAgentConversation(request));
+                }
             }
         }
     }

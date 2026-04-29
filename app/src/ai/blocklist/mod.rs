@@ -30,8 +30,9 @@ pub(super) mod view_util;
 #[cfg_attr(target_family = "wasm", allow(unused_imports))]
 pub(crate) use action_model::{
     apply_edits, read_local_file_context, BlocklistAIActionEvent, BlocklistAIActionModel,
-    FileReadResult, ReadFileContextResult, RequestFileEditsFormatKind, ShellCommandExecutor,
-    ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
+    FileReadResult, OrchestrateExecutor, OrchestrateExecutorEvent, ReadFileContextResult,
+    RequestFileEditsFormatKind, ShellCommandExecutor, ShellCommandExecutorEvent,
+    StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
 };
 
 #[cfg(any(test, feature = "integration_tests"))]
