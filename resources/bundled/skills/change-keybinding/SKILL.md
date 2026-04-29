@@ -9,19 +9,13 @@ Use this skill when the user wants to remap, rebind, or remove a Warp keyboard s
 
 ## Keybindings file
 
-User customizations live in a YAML file at:
+User customizations live at:
 
 ```
-~/.warp/keybindings.yaml
+{{keybindings_file_path}}
 ```
 
-Non-stable Warp builds use a channel-specific variant (`~/.warp-dev/`, `~/.warp-preview/`, `~/.warp-oss/`, etc.). To find the right one, list available Warp data directories:
-
-```sh
-ls -d ~/.warp*/
-```
-
-If multiple match and the active channel is unclear, ask the user. Create the file if it does not exist.
+This is the exact path Warp reads at launch — it is platform- and channel-specific (e.g. under `~/.warp*/` on macOS, under XDG config dirs like `~/.config/warp-terminal/` on Linux, and under `%LocalAppData%` on Windows). Use this path verbatim — do not infer a different one from the user's home directory layout. Create the file (and any missing parent directories) if it does not exist.
 
 ## File format
 
@@ -49,24 +43,23 @@ Translate user phrasing into this form: `Ctrl+S` → `ctrl-s`, `Cmd+Shift+P` →
 
 ## Identifying the action
 
-Defaults are compiled into Warp and are **not** discoverable from any file on disk. Only previously-customized bindings appear in `keybindings.yaml`. Pick the right strategy based on how the user described the change:
+Defaults are compiled into Warp and are **not** discoverable from the keybindings file on disk. Only previously-customized bindings appear there. Pick the right strategy based on how the user described the change:
 
 1. **By current key combo** ("change ctrl+space to ctrl+s"):
-   - Read `keybindings.yaml` and look for an entry whose value contains the current trigger (e.g. `grep ctrl-space ~/.warp*/keybindings.yaml`).
+   - Read the keybindings file and look for an entry whose value contains the current trigger (e.g. `grep ctrl-space {{keybindings_file_path}}`).
    - If found, that's the action — rewrite its value to the new trigger.
-   - If not found, the binding is a default and you cannot introspect it from disk. **Do not invent an action name from generic intuition.** Confirm with the user before writing — either via `ask_user_question` (you may propose a candidate as the recommended option only if you have a concrete documented source for it, e.g. an explicit example in this skill or in Warp's published docs), or by directing them to Settings → Keybindings (default `cmd-k`, action `workspace:toggle_keybindings_page`) to copy the canonical `namespace:action_name`.
+   - If not found, the binding is a default and you cannot introspect it from disk. **Do not invent an action name from generic intuition.** Confirm with the user before writing — via `ask_user_question` (you may propose a candidate as the recommended option only if you have a concrete documented source for it), or by directing them to the **keybindings editor** (action `workspace:show_keybinding_settings`, default `cmd-ctrl-k` on macOS; on other platforms open it from the **Settings → Keyboard Shortcuts** menu), where they can search by description and either edit the binding directly or copy the canonical `namespace:action_name` for you.
 
 2. **By action name** ("set workspace:toggle_command_palette to cmd-p"): the user already gave you the name — write it directly.
 
-3. **By description** ("rebind the command palette to cmd-p"): if you don't already know the exact action name, do not guess. Direct the user to Settings → Keybindings (`cmd-k`), where they can search by description and copy the canonical `namespace:action_name`.
+3. **By description** ("rebind the command palette to cmd-p"): if you don't already know the exact action name, do not guess. Direct the user to the **keybindings editor** (`workspace:show_keybinding_settings`, default `cmd-ctrl-k` on macOS; **Settings → Keyboard Shortcuts** on other platforms) — they can search by description there and either edit the shortcut in place or share the canonical `namespace:action_name` so you can write it.
 
 ## Workflow
 
 1. Determine which action to remap and the new trigger (see "Identifying the action").
-2. Find the right `~/.warp*/` directory with `ls -d ~/.warp*/`. Ask the user if ambiguous.
-3. Read the existing `keybindings.yaml` if present. **Preserve every existing entry** — only add or update the one you're changing.
-4. Write the file. Make sure the action key is quoted and the value is normalized (see encoding rules).
-5. Tell the user that **Warp must be restarted** for the change to take effect — `keybindings.yaml` is loaded only at app launch, unlike `settings.toml` which hot-reloads. They can quit with `cmd-Q` and reopen Warp.
+2. Read the existing keybindings file at `{{keybindings_file_path}}` if present. **Preserve every existing entry** — only add or update the one you're changing.
+3. Write the file (creating parent directories if necessary). Make sure the action key is quoted and the value is normalized (see encoding rules).
+4. Tell the user that **Warp must be restarted** for the change to take effect — the keybindings file is loaded only at app launch, unlike `settings.toml` which hot-reloads. They can quit with `cmd-Q` (macOS) or the equivalent on their platform and reopen Warp.
 
 ## Examples
 
