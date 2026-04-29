@@ -126,6 +126,12 @@
 # Grep tool call UI
 /app/src/ai/blocklist/action_model/execute/grep.rs @vkodithala
 
+# Languages/Tree Sitter
+/crates/languages/ @kevinyang372 @bnavetta
+
+# LSP support
+/crates/lsp/ @kevinyang372 @moirahuang
+
 ###########################################################################
 # Team: Platform
 ###########################################################################
