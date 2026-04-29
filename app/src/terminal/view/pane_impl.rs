@@ -391,34 +391,35 @@ impl TerminalView {
 
         let mut icon_button_count: u32 = 0;
 
-        if FeatureFlag::CloudMode.is_enabled() {
-            let is_waiting_for_session = self
+        // Cloud-mode-only ambient agent cancel button is shown while we're waiting
+        // for the session to be ready.
+        let is_waiting_for_session = FeatureFlag::CloudMode.is_enabled()
+            && self
                 .ambient_agent_view_model
                 .as_ref()
                 .is_some_and(|model| model.as_ref(app).is_waiting_for_session());
-            let button_element = if is_waiting_for_session {
-                Some(self.render_ambient_agent_cancel_button(app))
-            } else if self.can_show_cloud_mode_details_ui(app) {
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    Some(self.render_cloud_mode_details_toggle_button(app))
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    None
-                }
-            } else {
+        let button_element = if is_waiting_for_session {
+            Some(self.render_ambient_agent_cancel_button(app))
+        } else if self.can_show_conversation_details_ui(app) {
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                Some(self.render_cloud_mode_details_toggle_button(app))
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
                 None
-            };
+            }
+        } else {
+            None
+        };
 
-            if let Some(button) = button_element {
-                icon_button_count += 1;
-                if let Some(existing) = left_of_overflow {
-                    left_of_overflow =
-                        Some(Flex::row().with_child(existing).with_child(button).finish());
-                } else {
-                    left_of_overflow = Some(button);
-                }
+        if let Some(button) = button_element {
+            icon_button_count += 1;
+            if let Some(existing) = left_of_overflow {
+                left_of_overflow =
+                    Some(Flex::row().with_child(existing).with_child(button).finish());
+            } else {
+                left_of_overflow = Some(button);
             }
         }
 

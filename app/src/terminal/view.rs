@@ -3485,15 +3485,13 @@ impl TerminalView {
 
         ctx.subscribe_to_model(&ai_controller, |me, handle, event, ctx| {
             me.handle_ai_controller_event(handle, event, ctx);
-            // Refresh cloud mode details panel when agent output completes (may include new artifacts)
+            // Refresh the conversation details panel when agent output completes
+            // (may include new artifacts, run time, credits). This applies to both
+            // cloud-task-backed and local AI conversations as long as the panel is open.
             if matches!(
                 event,
                 BlocklistAIControllerEvent::FinishedReceivingOutput { .. }
             ) && me.is_cloud_mode_details_panel_open
-                && me
-                    .ambient_agent_view_model
-                    .as_ref()
-                    .is_some_and(|model| model.as_ref(ctx).is_ambient_agent())
             {
                 me.fetch_and_update_cloud_mode_details_panel(ctx);
             }
@@ -5075,6 +5073,25 @@ impl TerminalView {
             .is_some_and(|id| id != self.view_id)
         {
             return;
+        }
+        // If the conversation details panel is open and showing an active local
+        // AI conversation in this terminal view, refresh its data when status,
+        // artifacts, exchanges, or metadata change. Mirrors the WASM transcript
+        // panel refresh logic in `Workspace::handle_history_model_event` for
+        // APP-3595.
+        if self.is_cloud_mode_details_panel_open
+            && matches!(
+                event,
+                BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
+                    | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
+                    | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
+                    | BlocklistAIHistoryEvent::UpdatedStreamingExchange { .. }
+                    | BlocklistAIHistoryEvent::AppendedExchange { .. }
+                    | BlocklistAIHistoryEvent::SetActiveConversation { .. }
+                    | BlocklistAIHistoryEvent::RestoredConversations { .. }
+            )
+        {
+            self.fetch_and_update_cloud_mode_details_panel(ctx);
         }
         match event {
             BlocklistAIHistoryEvent::AppendedExchange {
@@ -6669,10 +6686,24 @@ impl TerminalView {
         FeatureFlag::CloudMode.is_enabled() && task_id.is_some()
     }
 
-    fn can_show_cloud_mode_details_ui(&self, app: &AppContext) -> bool {
+    /// Whether this terminal pane has an active local AI conversation that the
+    /// conversation details panel could populate from. Used to broaden the
+    /// panel beyond cloud Oz runs to all conversations.
+    fn has_active_local_ai_conversation(&self, app: &AppContext) -> bool {
+        AISettings::as_ref(app).is_any_ai_enabled(app)
+            && BlocklistAIHistoryModel::as_ref(app)
+                .active_conversation(self.view_id)
+                .is_some()
+    }
+
+    /// Whether the conversation details side panel should be available in the
+    /// pane header / pane layout for this terminal view. True for cloud Oz runs
+    /// (existing behavior) and for any terminal view with an active local AI
+    /// conversation.
+    fn can_show_conversation_details_ui(&self, app: &AppContext) -> bool {
         Self::can_show_cloud_mode_details_ui_for_task_id(
             self.ambient_agent_task_id_for_details_panel(app),
-        )
+        ) || self.has_active_local_ai_conversation(app)
     }
 
     fn maybe_insert_tombstone_for_non_running_shared_ambient_task(
@@ -26007,13 +26038,15 @@ impl View for TerminalView {
             element
         };
 
-        // Wrap with cloud mode details panel on the right if open
-        // On WASM, the panel is rendered in the wasm_view instead
+        // Wrap with conversation details panel on the right if open.
+        // On WASM, the panel is rendered in the wasm_view instead.
+        // Available for cloud Oz runs (existing behavior) and for any
+        // active local AI conversation in this terminal view (APP-3595).
         let should_show_panel = !cfg!(target_family = "wasm")
             && self.is_cloud_mode_details_panel_open
-            && Self::can_show_cloud_mode_details_ui_for_task_id(
+            && (Self::can_show_cloud_mode_details_ui_for_task_id(
                 ambient_agent_task_id_for_details_panel,
-            );
+            ) || self.has_active_local_ai_conversation(app));
 
         if should_show_panel {
             // Wrap panel with agent view background for visual consistency
