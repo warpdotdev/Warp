@@ -11,7 +11,7 @@ const LUMINANCE_OFFSET_FOR_CONTRAST_RATIO: f32 = 0.05;
 
 /// Returns a new foreground color that when rendered against `background_color` would have a
 /// contrast of at least `minimum_allowed_contrast`. NOTE the `background_color` must be fully
-/// opaque in in order to perform proper contrast checking.
+/// opaque in order to perform proper contrast checking.
 ///
 /// If `foreground_color` already meets the minimum contrast, it is returned unchanged.
 ///
