@@ -10,7 +10,7 @@ use crate::ai::agent::api::ServerConversationToken;
 use crate::drive::OpenWarpDriveObjectSettings;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::linear::{LinearAction, LinearIssueWork};
-use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
+use crate::root_view::{open_new_window_get_handles, workspace_for_window, OpenLaunchConfigArg};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
@@ -21,7 +21,7 @@ use crate::{features::FeatureFlag, workspace::active_terminal_in_window};
 
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
 use crate::settings_view::{OpenTeamsSettingsModalArgs, SettingsSection};
-use crate::user_config::load_launch_configs;
+use crate::user_config::{load_launch_configs, load_tab_configs, tab_configs_dir};
 use crate::{
     quake_mode_window_id, quake_mode_window_is_open, safe_info, send_telemetry_from_app_ctx,
     ChannelState, OpenPath,
@@ -78,6 +78,8 @@ pub enum UriHost {
     Codex,
     /// Actions triggered from Linear integrations (e.g. work on issue).
     Linear,
+    /// Opens a saved tab config in an existing window or a new one.
+    TabConfig,
 }
 
 impl FromStr for UriHost {
@@ -99,6 +101,7 @@ impl FromStr for UriHost {
             "mcp" => Ok(Self::Mcp),
             "codex" => Ok(Self::Codex),
             "linear" => Ok(Self::Linear),
+            "tabconfig" if FeatureFlag::TabConfigs.is_enabled() => Ok(Self::TabConfig),
             _ => Err(anyhow!("Received url with unexpected host: {}", s)),
         }
     }
@@ -183,6 +186,9 @@ impl UriHost {
                 } else {
                     log::warn!("couldn't turn launch link '{}' into path", url.path());
                 }
+            }
+            UriHost::TabConfig => {
+                handle_tab_config_uri(primary_window_id, url, ctx);
             }
             UriHost::SharedSession => {
                 // We expect the uri to have the ID of the session to join as the last segment.
@@ -472,6 +478,8 @@ impl UriHost {
             Self::Codex => W::default(),
             // Linear deeplink opens a new tab with agent view
             Self::Linear => W::default(),
+            // Tab config deeplink prefers existing window unless ?new_window=true.
+            Self::TabConfig => W::default(),
         }
     }
 }
@@ -655,6 +663,84 @@ fn find_matching_config_name<'a>(
     configs
         .iter()
         .find(|&config| config.name.to_lowercase() == target_name_lower)
+}
+
+/// Handles `warp://tabconfig/<name>` deeplinks.
+///
+/// Resolution rules:
+/// - `<name>` is matched case-insensitively against each tab config's `name`
+///   field, then against the file stem as a fallback.
+/// - When `?new_window=true` (or no Warp window is open) the tab config opens
+///   in a brand-new window. Otherwise it opens as a new tab in the active
+///   window.
+fn handle_tab_config_uri(primary_window_id: Option<WindowId>, url: &Url, ctx: &mut AppContext) {
+    let Some(desired) = get_launch_config_path(url.path()) else {
+        log::warn!("couldn't turn tab config link '{}' into name", url.path());
+        return;
+    };
+
+    let (configs, _errors) = load_tab_configs(&tab_configs_dir());
+    let Some(config) = find_matching_tab_config(desired.as_str(), &configs) else {
+        log::warn!("couldn't find a tab config matching '{}'", desired);
+        return;
+    };
+    let config = config.clone();
+
+    let force_new_window = url
+        .query_pairs()
+        .any(|(k, v)| k == "new_window" && matches!(v.as_ref(), "1" | "true"));
+
+    let target_window_id = if force_new_window {
+        None
+    } else {
+        primary_window_id.filter(|id| workspace_for_window(*id, ctx).is_some())
+    };
+
+    let workspace = match target_window_id {
+        Some(window_id) => workspace_for_window(window_id, ctx),
+        None => {
+            let new_window_id = open_new_window_get_handles(None, ctx).0;
+            workspace_for_window(new_window_id, ctx)
+        }
+    };
+
+    let Some(workspace) = workspace else {
+        log::warn!(
+            "no workspace available to open tab config '{}'",
+            config.name
+        );
+        return;
+    };
+
+    workspace.update(ctx, |workspace, ctx| {
+        workspace.open_tab_config(config, ctx);
+    });
+}
+
+/// Case-insensitive lookup that matches the tab config's `name` first, then
+/// the file stem (so both `warp://tabconfig/My%20Tab` and
+/// `warp://tabconfig/my_tab.toml` work).
+fn find_matching_tab_config<'a>(
+    target: &str,
+    configs: &'a [crate::tab_configs::TabConfig],
+) -> Option<&'a crate::tab_configs::TabConfig> {
+    let target_lower = target.to_lowercase();
+    if let Some(matched) = configs
+        .iter()
+        .find(|c| c.name.to_lowercase() == target_lower)
+    {
+        return Some(matched);
+    }
+
+    let stem = remove_extension(target).unwrap_or(target).to_lowercase();
+    configs.iter().find(|c| {
+        c.source_path
+            .as_ref()
+            .and_then(|p| p.file_stem())
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase() == stem)
+            .unwrap_or(false)
+    })
 }
 
 /// Extract the `path` query parameter, expanding a leading `~` to the
@@ -1306,7 +1392,8 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
         | UriHost::Settings
         | UriHost::Mcp
         | UriHost::Codex
-        | UriHost::Linear => true,
+        | UriHost::Linear
+        | UriHost::TabConfig => true,
         // Auth and Home only allow the desktop redirect path
         UriHost::Auth | UriHost::Home => false,
     };
