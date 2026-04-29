@@ -6721,8 +6721,9 @@ impl CodeReviewView {
                 // `has_upstream` controls the label/icon on the push-chained
                 // intent (Commit and push vs Commit and publish).
                 let diff_state = self.diff_state_model.as_ref(ctx);
-                let allow_create_pr =
-                    diff_state.pr_info().is_none() && !diff_state.is_on_main_branch();
+                let allow_create_pr = diff_state.pr_info().is_none()
+                    && !diff_state.pr_info_stale()
+                    && !diff_state.is_on_main_branch();
                 let has_upstream = diff_state.upstream_ref().is_some();
                 ctx.add_typed_action_view(|ctx| {
                     GitDialog::new_for_commit(
@@ -6771,6 +6772,7 @@ impl CodeReviewView {
         let has_uncommitted_changes = self.has_uncommitted_changes(app);
         let has_upstream = diff_state.upstream_ref().is_some();
         let has_local_commits = !diff_state.unpushed_commits().is_empty();
+        let pr_info_stale = diff_state.pr_info_stale();
         // False when upstream == main (e.g. after `git checkout -b feature origin/master`),
         // which means the branch hasn't been pushed to its own remote ref yet.
         let upstream_differs_from_main = diff_state.upstream_differs_from_main();
@@ -6783,7 +6785,11 @@ impl CodeReviewView {
             PrimaryGitActionMode::Push
         } else if diff_state.pr_info().is_some() {
             PrimaryGitActionMode::ViewPr
-        } else if has_upstream && !diff_state.is_on_main_branch() && upstream_differs_from_main {
+        } else if !pr_info_stale
+            && has_upstream
+            && !diff_state.is_on_main_branch()
+            && upstream_differs_from_main
+        {
             PrimaryGitActionMode::CreatePr
         } else {
             // Nothing actionable — show Commit disabled.
@@ -6923,11 +6929,14 @@ impl CodeReviewView {
         } else {
             let is_on_main = diff_state.is_on_main_branch();
             let has_upstream = diff_state.upstream_ref().is_some();
+            let pr_info_stale = diff_state.pr_info_stale();
             let upstream_differs_from_main = diff_state.upstream_differs_from_main();
             MenuItemFields::new("Create PR")
                 .with_icon(Icon::Github)
                 .with_on_select_action(CodeReviewAction::OpenCreatePrDialog)
-                .with_disabled(is_on_main || !has_upstream || !upstream_differs_from_main)
+                .with_disabled(
+                    pr_info_stale || is_on_main || !has_upstream || !upstream_differs_from_main,
+                )
                 .into_item()
         }
     }

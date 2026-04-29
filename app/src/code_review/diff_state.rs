@@ -587,6 +587,14 @@ impl DiffStateModel {
             .and_then(|metadata| metadata.pr_info.as_ref())
     }
 
+    /// Whether PR info for the current branch is still being refreshed.
+    pub fn pr_info_stale(&self) -> bool {
+        self.metadata
+            .as_ref()
+            .map(|metadata| metadata.pr_info_stale)
+            .unwrap_or(true)
+    }
+
     /// Checks if git operations like stash or reset would be blocked due to repository state.
     /// This performs quick file existence checks to detect if git is in the middle of an operation.
     #[cfg(feature = "local_fs")]
