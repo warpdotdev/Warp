@@ -6009,7 +6009,7 @@ impl Workspace {
     /// Builds the unified new-session menu items
     /// tab bar chevron and the vertical tab bar `+` button.
     ///
-    /// Order: Agent → Terminal (sidecar) → Cloud Oz → [tab configs] → separator → New worktree config (sidecar) → New tab config.
+    /// Order: Agent → Terminal (sidecar) → Cloud Oz → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
     fn unified_new_session_menu_items(
         &self,
         ctx: &mut ViewContext<Self>,
@@ -6021,6 +6021,8 @@ impl Workspace {
         let effective_default = ai_settings.default_session_mode(ctx);
         let default_tab_config_path = ai_settings.default_tab_config_path().to_string();
         let shortcut_label = keybinding_name_to_display_string(NEW_TAB_BINDING_NAME, ctx);
+        let reopen_closed_session_shortcut_label =
+            keybinding_name_to_display_string("app:reopen_closed_session", ctx);
 
         // 1. Agent (if AI enabled)
         if is_any_ai_enabled {
@@ -6180,6 +6182,15 @@ impl Workspace {
                     .into_item(),
             );
         }
+
+        menu_items.push(MenuItem::Separator);
+        menu_items.push(
+            MenuItemFields::new("Reopen closed session")
+                .with_on_select_action(WorkspaceAction::ReopenClosedSession)
+                .with_key_shortcut_label(reopen_closed_session_shortcut_label)
+                .with_disabled(UndoCloseStack::handle(ctx).as_ref(ctx).is_empty())
+                .into_item(),
+        );
 
         menu_items
     }
