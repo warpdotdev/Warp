@@ -1041,15 +1041,24 @@ impl CurrentPrompt {
                 }
                 RefreshConfig::Periodically { .. } => {
                     if self.is_updated_externally(chip_kind) {
-                        let initial_gen = chip_kind.initial_value_generator();
-                        let generator = initial_gen.as_ref().unwrap_or(chip.generator());
-                        self.fetch_chip_value_once(
-                            chip_kind,
-                            generator,
-                            chip.on_click_generator().cloned(),
-                            true,
-                            ctx,
-                        );
+                        // The chip is being kept up to date by an external source (e.g. the
+                        // filesystem-watching `GitRepoStatusModel`). Only run an initial fetch
+                        // here when the chip provides a contextual `initial_value_generator`
+                        // — those compute their value from `PromptContext` and can't disagree
+                        // with the external source. Falling back to `chip.generator()` would
+                        // run the chip's shell command (e.g. `git diff --shortstat HEAD` for
+                        // `GitDiffStats`), which can produce a different value than the
+                        // external source and cause a brief flicker before the next external
+                        // update overwrites it (see issue #9228).
+                        if let Some(initial_gen) = chip_kind.initial_value_generator() {
+                            self.fetch_chip_value_once(
+                                chip_kind,
+                                &initial_gen,
+                                chip.on_click_generator().cloned(),
+                                true,
+                                ctx,
+                            );
+                        }
                     } else {
                         self.fetch_chip_value_at_interval(
                             chip_kind,
