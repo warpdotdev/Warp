@@ -267,6 +267,8 @@ pub enum CodeReviewTelemetryEvent {
         operation: GitOperationKind,
         /// Whether the underlying git operation succeeded.
         success: bool,
+        /// Raw error string when the operation failed, `None` on success.
+        error: Option<String>,
     },
 }
 
@@ -360,9 +362,14 @@ impl TelemetryEvent for CodeReviewTelemetryEvent {
             CodeReviewTelemetryEvent::GitButtonTriggered { button } => {
                 Some(json!({ "button": button }))
             }
-            CodeReviewTelemetryEvent::GitDialogCompleted { operation, success } => Some(json!({
+            CodeReviewTelemetryEvent::GitDialogCompleted {
+                operation,
+                success,
+                error,
+            } => Some(json!({
                 "operation": operation,
                 "success": success,
+                "error": error,
             })),
         }
     }

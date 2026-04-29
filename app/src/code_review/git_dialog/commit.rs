@@ -438,12 +438,16 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
             anyhow::Ok(outcome)
         },
         move |_me, result, ctx| {
-            let success = result.is_ok();
             let operation = match intent {
                 CommitIntent::CommitOnly => GitOperationKind::CommitOnly,
                 CommitIntent::CommitAndPush => GitOperationKind::CommitAndPush,
                 CommitIntent::CommitAndCreatePr => GitOperationKind::CommitAndCreatePr,
             };
+            let error = match &result {
+                Ok(_) => None,
+                Err(err) => Some(err.to_string()),
+            };
+            let success = result.is_ok();
             match result {
                 Ok(CommitOutcome::Committed) => {
                     show_toast("Changes successfully committed.", ctx);
@@ -460,7 +464,11 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                 }
             }
             send_telemetry_from_ctx!(
-                CodeReviewTelemetryEvent::GitDialogCompleted { operation, success },
+                CodeReviewTelemetryEvent::GitDialogCompleted {
+                    operation,
+                    success,
+                    error,
+                },
                 ctx
             );
             // Success or failure, the dialog is done and the parent should

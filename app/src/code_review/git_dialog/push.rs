@@ -153,6 +153,10 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
             crate::util::git::run_push(&repo_path, &branch, path_env.as_deref()).await
         },
         move |me, result, ctx| {
+            let error = match &result {
+                Ok(_) => None,
+                Err(err) => Some(err.to_string()),
+            };
             let success = result.is_ok();
             match result {
                 Ok(_) => {
@@ -176,6 +180,7 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                         GitOperationKind::Push
                     },
                     success,
+                    error,
                 },
                 ctx
             );

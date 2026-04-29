@@ -152,6 +152,10 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
             }
         },
         move |_me, result, ctx| {
+            let error = match &result {
+                Ok(_) => None,
+                Err(err) => Some(err.to_string()),
+            };
             let success = result.is_ok();
             match result {
                 Ok(pr_info) => {
@@ -166,6 +170,7 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                 CodeReviewTelemetryEvent::GitDialogCompleted {
                     operation: GitOperationKind::CreatePr,
                     success,
+                    error,
                 },
                 ctx
             );
