@@ -715,6 +715,11 @@ pub enum FeatureFlag {
     /// real time.
     OrchestrationV2,
 
+    /// Renders a horizontal pill bar in the agent view pane header showing the
+    /// orchestrator agent and all of its child agents, with click-to-switch
+    /// behavior between siblings.
+    OrchestrationPillBar,
+
     /// Shows a pending user query indicator during summarization when a follow-up
     /// prompt is queued via `/fork-and-compact` or `/compact-and`.
     PendingUserQueryIndicator,

@@ -2815,6 +2815,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::Orchestration,
         #[cfg(feature = "orchestration_v2")]
         FeatureFlag::OrchestrationV2,
+        #[cfg(feature = "orchestration_pill_bar")]
+        FeatureFlag::OrchestrationPillBar,
         #[cfg(feature = "pending_user_query_indicator")]
         FeatureFlag::PendingUserQueryIndicator,
         #[cfg(feature = "queue_slash_command")]
