@@ -43,7 +43,7 @@ Nushell users currently cannot use Warp as their daily terminal because Warp's s
 
 8. Warp discovers Nushell metadata that is useful to existing terminal features: shell version, home directory, PATH, history file when Nushell uses plaintext history, aliases, custom commands, built-ins, keywords, environment-variable names, editor, OS category, Linux distribution, WSL distro name, and shell path.
 
-9. Warp reads the normal Nushell history and configuration locations when presenting shell metadata or file references. This includes `~/.config/nushell/history.txt`, `~/.local/share/nushell/history.txt`, `~/.config/nushell/env.nu`, `~/.config/nushell/config.nu`, and `~/.config/nushell/login.nu` where applicable.
+9. Warp reads Nushell history and configuration locations from Nushell's platform-derived runtime paths rather than assuming Unix-only defaults. This includes `$nu.history-path`, `$nu.env-path`, `$nu.config-path`, and `$nu.loginshell-path` when Nushell provides them, with conventional platform defaults used only as a fallback. Windows `nu.exe`, macOS, Linux, WSL, and MSYS2 local sessions should all use the paths reported by the running Nushell instance when available.
 
 10. Warp's prompt-mode toggles work in Nushell: the user can switch between Warp-managed prompt integration and honoring the user's Nushell prompt where Warp exposes those controls. Existing Nushell prompt configuration, hooks, and keybindings should continue to run unless they directly conflict with Warp's integration.
 

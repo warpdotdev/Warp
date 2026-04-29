@@ -36,6 +36,8 @@ Before this change, Nushell could only be represented as the broad POSIX `ShellF
    - Startup ordering is part of the contract: Nushell loads the user's normal startup files first (`env.nu`, then `config.nu`, and `login.nu` for login shells), then Warp's `--execute` init script runs. Warp does not skip user config for the main interactive session.
    - If a user startup file throws an error before `--execute` runs, Nushell reports that error and Warp treats the shell like any other shell that failed to bootstrap; Warp does not mask or rewrite user config failures.
    - Support WSL and MSYS2 spawning when the detected shell basename maps to `ShellType::Nu`.
+   - WSL validation must cover both spawn arguments and fallback behavior: `/usr/bin/nu` should produce a `wsl --distribution <distro> --shell-type standard --exec /usr/bin/nu --login --execute <warp init script>`-style launch, while unsupported basenames should return the existing unsupported-shell fallback instead of being treated as Nushell.
+   - MSYS2 validation must cover Nushell-specific spawn args (`--login`) and verify PowerShell remains unsupported for MSYS2 as before.
    - Use basename parsing for WSL detection to avoid substring false positives.
 
 3. Add Nushell bootstrap assets.
@@ -75,26 +77,27 @@ Before this change, Nushell could only be represented as the broad POSIX `ShellF
 
 Behavior 8 is satisfied by the `Bootstrapped` hook payload sent from `nu_body.nu`. The contract is concrete and testable:
 
-| Payload field | Nushell source command/expression | Format sent to Warp | Test expectation |
-| --- | --- | --- | --- |
-| `shell` | literal `"nu"` | string | equals `nu` |
-| `shell_version` | `version | get version` | string | parses as the running `nu` version |
-| `histfile` | `$env.config.history.file_format?` and `$nu.history-path` | string path only when history format is `plaintext`; otherwise empty string | plaintext config reports the history path; non-plaintext config reports empty |
-| `home_dir` | `$nu.home-path?` with `$env.HOME?` fallback | string path | non-empty when Nushell exposes a home path |
-| `path` | `$env.PATH` normalized by `warp_path_string` | platform path string joined with `(char esep)` when `$env.PATH` is a list; raw string otherwise | list and string PATH inputs both produce a path string |
-| `editor` | `$env.EDITOR? | default ""` | string | reflects EDITOR or empty |
-| `aliases` | `scope aliases | each {|alias| $"($alias.name)\t($alias.expansion? | default "")" } | str join (char nl)` | newline-separated rows; each row is tab-separated `name<TAB>expansion` | parser accepts tab rows and preserves expansion text |
-| `function_names` | `scope commands | where type == "custom" | get name | uniq | str join (char nl)` | newline-separated names | custom commands appear once |
-| `builtins` | `scope commands | where type == "built-in" | get name | uniq | str join (char nl)` | newline-separated names | known built-ins appear |
-| `keywords` | `scope commands | where type == "keyword" | get name | uniq | str join (char nl)` | newline-separated names | known keywords appear |
-| `env_var_names` | `$env | columns | str join (char nl)` | newline-separated names | includes test env vars without values |
-| `os_category` | `$nu.os-info.name?` mapped to `MacOS`, `Linux`, `Windows`, or empty | string enum | matches host category or empty for unknown |
-| `linux_distribution` | parsed `NAME=` from `/etc/os-release` or `/usr/lib/os-release` on Linux | string | non-empty on standard Linux images when os-release exists |
-| `wsl_name` | `$env.WSL_DISTRO_NAME? | default ""` | string | reflects WSL env var or empty |
-| `shell_path` | `$nu.current-exe` | string path | equals the running Nushell executable path |
-| `vi_mode_enabled` | `$env.config.edit_mode? == "vi"` | `"1"` or empty string | vi config maps to `"1"`; other modes map empty |
+- `shell`: literal `"nu"`; sent as a string equal to `nu`.
+- `shell_version`: source is `version | get version`; sent as a string that parses as the running Nushell version.
+- `histfile`: source is `$env.config.history.file_format?` plus `$nu.history-path`; sent as a string path only when history format is `plaintext`, otherwise an empty string. Tests should assert the plaintext case reports Nushell's platform-derived history path.
+- `config_path`: source is `$nu.config-path? | default ""`; sent as a string path equal to Nushell's platform-derived `config.nu` path when available.
+- `env_path`: source is `$nu.env-path? | default ""`; sent as a string path equal to Nushell's platform-derived `env.nu` path when available.
+- `loginshell_path`: source is `$nu.loginshell-path? | default ""`; sent as a string path equal to Nushell's platform-derived `login.nu` path when available.
+- `home_dir`: source is `$nu.home-path?` with `$env.HOME?` fallback; sent as a non-empty string path when Nushell exposes a home path.
+- `path`: source is `$env.PATH` normalized by `warp_path_string`; sent as a platform path string joined with `(char esep)` when `$env.PATH` is a list, or the raw string when it is already a string.
+- `editor`: source is `$env.EDITOR? | default ""`; sent as the editor string or empty.
+- `aliases`: source is `scope aliases | each {|alias| { name: $alias.name, expansion: ($alias.expansion? | default "") } } | to json -r`; sent as a JSON array of `{ name, expansion }` objects. The parser must preserve expansions containing tabs, newlines, quotes, or semicolons.
+- `function_names`: source is `scope commands | where type == "custom" | get name | uniq | str join (char nl)`; sent as newline-separated unique custom command names.
+- `builtins`: source is `scope commands | where type == "built-in" | get name | uniq | str join (char nl)`; sent as newline-separated unique built-in command names.
+- `keywords`: source is `scope commands | where type == "keyword" | get name | uniq | str join (char nl)`; sent as newline-separated unique keyword names.
+- `env_var_names`: source is `$env | columns | str join (char nl)`; sent as newline-separated environment-variable names without values.
+- `os_category`: source is `$nu.os-info.name?` mapped to `MacOS`, `Linux`, `Windows`, or empty; tests should assert it matches the host category or empty for unknown OS names.
+- `linux_distribution`: source is parsed `NAME=` from `/etc/os-release` or `/usr/lib/os-release` on Linux; sent as a string and expected to be non-empty on standard Linux images when os-release exists.
+- `wsl_name`: source is `$env.WSL_DISTRO_NAME? | default ""`; sent as the WSL distro name or empty.
+- `shell_path`: source is `$nu.current-exe`; sent as a string path equal to the running Nushell executable.
+- `vi_mode_enabled`: source is `$env.config.edit_mode? == "vi"`; sent as `"1"` for vi mode or empty otherwise.
 
-Automated metadata tests should run a rendered bootstrap script under a controlled Nushell environment that defines at least one alias, one custom command, one test environment variable, and deterministic PATH/EDITOR values. The test should capture the `Bootstrapped` JSON payload, decode it, and assert the field formats above.
+Automated metadata tests should run a rendered bootstrap script under a controlled Nushell environment that defines at least one alias, one alias whose expansion contains a tab/newline, one custom command, one test environment variable, and deterministic PATH/EDITOR values. The test should capture the `Bootstrapped` JSON payload, decode it, and assert the field formats above, including platform-derived `$nu.*-path` values when available.
 
 ## Compatibility and reproducible Nushell provisioning
 
@@ -113,9 +116,9 @@ For reproducible CI/reviewer validation, tests must not rely on an author-local 
 
 Product behavior coverage:
 
-- Behavior 1, 2, and 5: unit tests in `crates/warp_terminal/src/shell/mod_tests.rs` and `app/src/terminal/local_tty/shell_tests.rs` verify `nu`, `-nu`, `/usr/bin/nu`, Windows `nu.exe`, and false positives such as `menu.exe`/`/usr/bin/menu.exe`.
+- Behavior 1, 2, and 5: unit tests in `crates/warp_terminal/src/shell/mod_tests.rs` and `app/src/terminal/local_tty/shell_tests.rs` verify `nu`, `-nu`, `/usr/bin/nu`, Windows `nu.exe`, WSL `nu` basename parsing, WSL Nushell launch arguments, MSYS2 Nushell launch arguments, and false positives such as `menu.exe`/`/usr/bin/menu.exe`.
 - Behavior 3 and 14: existing shell-discovery tests are extended so Nushell appears with the known shell types without regressing other shells.
-- Behavior 4, 6, 7, 8, 9, and 10: bootstrap unit coverage verifies Nushell asset selection; rendered-script smoke tests verify that the init/body scripts parse and run under the supported local `nu` binary after build placeholders are replaced; metadata payload tests should cover alias rows, newline-separated command-name lists for custom/built-in/keyword commands, newline-separated environment-variable names, normalized PATH, and `$nu.current-exe` shell path.
+- Behavior 4, 6, 7, 8, 9, and 10: bootstrap unit coverage verifies Nushell asset selection; rendered-script smoke tests verify that the init/body scripts parse and run under the supported local `nu` binary after build placeholders are replaced; metadata payload tests should cover structured alias rows, delimiter-containing alias expansions, newline-separated command-name lists for custom/built-in/keyword commands, newline-separated environment-variable names, normalized PATH, `$nu.current-exe` shell path, and platform-derived `$nu.history-path`/`$nu.config-path`/`$nu.env-path`/`$nu.loginshell-path` values.
 - Behavior 11 and 12: `app/src/env_vars/mod.rs` tests verify Nushell initialization/export syntax, command substitution, and quoted environment-variable names; Drive export tests cover the `ShellType` API change.
 - Behavior 13: `app/src/autoupdate/linux_test.rs` verifies the Nushell update command gates `warp_finish_update` behind the package-manager command sequence, emits the expected outer `try { ... } catch { ... }` shape, preserves best-effort dist-upgrade handling for Apt, and does not emit POSIX `&&`.
 - Behavior 15: unsupported child/subshell paths intentionally keep using existing unsupported-shell behavior for Nushell.
@@ -152,8 +155,9 @@ Interactive lifecycle acceptance validation:
 4. Run `pwd`, `cd`, `echo`, `false`, and a command after `false`; verify block boundaries, working directory reporting, prompt redraw, and non-zero exit-code reporting.
 5. Toggle between Warp prompt mode and honoring the user prompt; verify the original prompt is restored in honor-user-prompt mode and Warp block markers continue to work.
 6. Verify custom user `pre_execution`/`pre_prompt` hooks and keybindings still run after Warp prepends/appends its integration entries.
-7. Export/copy a Warp Drive environment-variable collection while the active session is Nushell and verify the generated text is valid Nushell `$env` assignment syntax.
-8. On Linux package builds, inspect the generated update command and verify `warp_finish_update` is not emitted after a failing package-manager command.
+7. On Windows, validate WSL Nushell launch arguments and unsupported-shell fallback behavior with a WSL distro whose `$SHELL` is `nu`; validate MSYS2 Nushell launch arguments when MSYS2 is available.
+8. Export/copy a Warp Drive environment-variable collection while the active session is Nushell and verify the generated text is valid Nushell `$env` assignment syntax.
+9. On Linux package builds, inspect the generated update command and verify `warp_finish_update` is not emitted after a failing package-manager command.
 
 ## Risks and mitigations
 
