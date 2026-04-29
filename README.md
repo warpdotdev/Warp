@@ -1,3 +1,115 @@
+# twarp
+
+**Tidier Warp** — a community fork of [Warp](https://github.com/warpdotdev/warp) for people who want a fast, modern terminal without the AI overlay, plus a few quality-of-life additions for keyboard-driven workflows and git review.
+
+> **Status:** planning / pre-alpha. Forked from `warpdotdev/warp@d0f045c0` on 2026-04-29. None of the differences below are implemented yet — this README is the roadmap.
+
+## Why fork?
+
+Warp is an excellent terminal. twarp aims to be a leaner, AI-free distribution of it with a few focused additions. If you want an agent in your terminal, run one yourself (e.g., `claude`) — but the terminal itself shouldn't be an AI.
+
+## What's different from Warp
+
+### 1. No AI tools
+
+twarp removes Warp's AI features — the agentic mode, cloud-agent surfaces, in-line AI suggestions, AI command help, anything that calls out to an LLM from inside the terminal. The terminal is the terminal.
+
+In practice this means ripping out (or feature-gating off by default) the agent UI, the cloud-mode codepaths, the AI command palette, and any LLM-backed completion. Telemetry that exists solely to support those features goes with them.
+
+### 2. Tab color shortcuts
+
+A keyboard shortcut to assign a color to the active tab — useful for visually distinguishing workflows at a glance ("red tab is prod, green tab is local").
+
+Tentative defaults (configurable):
+
+| Shortcut | Color |
+|---|---|
+| `⌘⌥1` | Red |
+| `⌘⌥2` | Orange |
+| `⌘⌥3` | Yellow |
+| `⌘⌥4` | Green |
+| `⌘⌥5` | Blue |
+| `⌘⌥6` | Purple |
+| `⌘⌥7` | Pink |
+| `⌘⌥8` | Gray |
+| `⌘⌥0` | Reset |
+
+Upstream is already exploring per-tab color indication on `oz-agent/APP-4321-active-tab-color-indication` — twarp will likely build on top of that work rather than re-invent it.
+
+### 3. Custom command shortcuts
+
+A declarative way to bind a keyboard shortcut to a sequence of terminal actions: open a new tab, type text, press keys, wait, type more. Lets you turn frequent multi-step workflows into one keystroke.
+
+Two driving examples:
+
+- **`⌘⇧D`** — open a new tab and auto-type `claude` (with enter).
+- **`⌘⇧A`** — open a new tab, type `claude` and enter, wait a couple of seconds, then type `/address-code-review-comments ultrathink` and enter.
+
+Sketch of the config format (final shape TBD):
+
+```yaml
+shortcuts:
+  - keys: cmd+shift+d
+    actions:
+      - new_tab
+      - type: "claude"
+      - press: enter
+
+  - keys: cmd+shift+a
+    actions:
+      - new_tab
+      - type: "claude"
+      - press: enter
+      - wait: 2s
+      - type: "/address-code-review-comments ultrathink"
+      - press: enter
+```
+
+The intent is for the shortcut system to be powerful enough that "open Claude in a fresh tab and feed it a slash command" is one keystroke, and small enough that the config stays readable.
+
+### 4. Open Changes panel (VS Code-style git review)
+
+A built-in side panel for reviewing the current repo's changes — modeled directly on **VS Code's Source Control view**, behavior-for-behavior where it makes sense.
+
+Goals:
+
+- See **working-tree changes and staged changes separately**, with file counts at each level.
+- Click a file to view the diff inline.
+- Stage / unstage / discard at file or hunk level.
+- Show the **git Timeline** (file history) for the focused file.
+- Commit message input + commit / push / pull from the same panel.
+
+The aim is parity with VS Code's panel for the operations a terminal user already does dozens of times a day, so you don't need to switch out of the terminal to review changes before committing.
+
+## Tracking upstream Warp
+
+twarp keeps `warpdotdev/warp` as `upstream` and **cherry-picks selectively** rather than bulk-merging. We deliberately don't run `git merge upstream/master`, because that re-fights the AI-deletion every cycle.
+
+Workflow:
+
+1. `git fetch upstream` periodically.
+2. `git log upstream/master ^HEAD --oneline` to see what's new.
+3. `git cherry-pick <sha>` for individual commits worth taking — perf, rendering, fixes, non-AI features. Skip AI-related commits.
+4. Record integrated commits in `UPSTREAM_CHANGELOG.md` so we don't re-pick them.
+
+Baseline (the state we forked from): `warpdotdev/warp@d0f045c0` (2026-04-28).
+
+## Building twarp
+
+Build process is unchanged from upstream Warp. See the original Warp README below for `./script/bootstrap`, `./script/run`, and `./script/presubmit`, and [WARP.md](WARP.md) for the full engineering guide.
+
+## Acknowledgements
+
+twarp is a fork of [Warp](https://github.com/warpdotdev/warp), open-sourced by Warp Inc. on 2026-04-28. All upstream credit goes to the Warp team — twarp's modifications are limited to the four areas above.
+
+## Licensing
+
+twarp inherits Warp's licensing unchanged: the `warpui_core` and `warpui` crates are MIT, the rest of the tree is AGPL v3. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-AGPL](LICENSE-AGPL).
+
+---
+
+> The section below is the **original Warp README, preserved unchanged** as part of the fork. Statements about Warp AI, OpenAI sponsorship, and GPT-powered agents describe upstream Warp, not twarp.
+
 <a href="https://www.warp.dev">
     <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://github.com/user-attachments/assets/9976b2da-2edd-4604-a36c-8fd53719c6d4" />
 </a>
