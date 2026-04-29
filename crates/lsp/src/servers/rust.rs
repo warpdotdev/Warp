@@ -26,11 +26,11 @@ fn asset_name() -> &'static str {
     {
         "rust-analyzer-x86_64-apple-darwin.gz"
     }
-    #[cfg(all(any(target_os = "linux", target_os = "freebsd"), target_arch = "x86_64"))]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         "rust-analyzer-x86_64-unknown-linux-gnu.gz"
     }
-    #[cfg(all(any(target_os = "linux", target_os = "freebsd"), target_arch = "aarch64"))]
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
     {
         "rust-analyzer-aarch64-unknown-linux-gnu.gz"
     }
@@ -45,8 +45,8 @@ fn asset_name() -> &'static str {
     #[cfg(not(any(
         all(target_os = "macos", target_arch = "aarch64"),
         all(target_os = "macos", target_arch = "x86_64"),
-        all(any(target_os = "linux", target_os = "freebsd"), target_arch = "x86_64"),
-        all(any(target_os = "linux", target_os = "freebsd"), target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "aarch64"),
         all(target_os = "windows", target_arch = "x86_64"),
         all(target_os = "windows", target_arch = "aarch64"),
     )))]
@@ -136,21 +136,45 @@ impl LanguageServerCandidate for RustAnalyzerCandidate {
         metadata: LanguageServerMetadata,
         _executor: &CommandBuilder,
     ) -> anyhow::Result<()> {
-        let asset_kind = AssetKind::from_filename(asset_name()).ok_or_else(|| {
-            anyhow::anyhow!("Unsupported archive format for asset: {}", asset_name())
-        })?;
-        install_from_github(&self.client, &metadata, SERVER_NAME, asset_kind, None).await?;
-        Ok(())
+        #[cfg(target_os = "freebsd")]
+        {
+            let _ = (&metadata, &self.client);
+            anyhow::bail!(
+                "rust-analyzer is not auto-installable on FreeBSD: upstream \
+                 GitHub releases publish no FreeBSD asset. Install it via \
+                 `rustup component add rust-analyzer` or `pkg install \
+                 rust-analyzer` and warp will pick it up off PATH."
+            );
+        }
+        #[cfg(not(target_os = "freebsd"))]
+        {
+            let asset_kind = AssetKind::from_filename(asset_name()).ok_or_else(|| {
+                anyhow::anyhow!("Unsupported archive format for asset: {}", asset_name())
+            })?;
+            install_from_github(&self.client, &metadata, SERVER_NAME, asset_kind, None).await?;
+            Ok(())
+        }
     }
 
     async fn fetch_latest_server_metadata(&self) -> anyhow::Result<LanguageServerMetadata> {
-        fetch_latest_metadata_from_github(
-            &self.client,
-            "rust-lang",
-            "rust-analyzer",
-            Some(asset_name()),
-        )
-        .await
+        #[cfg(target_os = "freebsd")]
+        {
+            let _ = &self.client;
+            anyhow::bail!(
+                "rust-analyzer release metadata is unavailable on FreeBSD: \
+                 upstream GitHub releases publish no FreeBSD asset."
+            );
+        }
+        #[cfg(not(target_os = "freebsd"))]
+        {
+            fetch_latest_metadata_from_github(
+                &self.client,
+                "rust-lang",
+                "rust-analyzer",
+                Some(asset_name()),
+            )
+            .await
+        }
     }
 }
 
