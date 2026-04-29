@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use lsp_types::Uri;
 
-use crate::config::{lsp_uri_to_path, path_to_lsp_uri};
+use crate::config::{lsp_uri_to_path, path_to_lsp_uri, LanguageId};
 
 // Unix-specific tests use Unix paths
 #[cfg(not(windows))]
@@ -215,4 +215,39 @@ fn test_path_to_lsp_uri_rejects_relative_path() {
     let result = path_to_lsp_uri(&path);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("must be absolute"));
+}
+
+// LanguageId tests
+#[test]
+fn test_language_id_from_yaml_file() {
+    let path = PathBuf::from("/path/to/config.yaml");
+    let lang = LanguageId::from_path(&path);
+    assert_eq!(lang, Some(LanguageId::Yaml));
+}
+
+#[test]
+fn test_language_id_from_yml_file() {
+    let path = PathBuf::from("/path/to/config.yml");
+    let lang = LanguageId::from_path(&path);
+    assert_eq!(lang, Some(LanguageId::Yaml));
+}
+
+#[test]
+fn test_language_id_yaml_lsp_identifier() {
+    let lang = LanguageId::Yaml;
+    assert_eq!(lang.lsp_language_identifier(), "yaml");
+}
+
+#[test]
+fn test_language_id_from_rust_file() {
+    let path = PathBuf::from("/path/to/main.rs");
+    let lang = LanguageId::from_path(&path);
+    assert_eq!(lang, Some(LanguageId::Rust));
+}
+
+#[test]
+fn test_language_id_from_unsupported_file() {
+    let path = PathBuf::from("/path/to/file.txt");
+    let lang = LanguageId::from_path(&path);
+    assert_eq!(lang, None);
 }
