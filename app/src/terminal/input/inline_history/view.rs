@@ -162,14 +162,20 @@ pub struct InlineHistoryMenuView {
     buffer_model: ModelHandle<InputBufferModel>,
     pending_tab_switch_selection: Option<HistoryItemIdentity>,
     caller_supplied_tabs: bool,
-    /// One-shot flag: when the menu opens we run an initial query against the (possibly
-    /// stale) `InputBufferModel`. The model usually catches up to the editor on the next
-    /// effect-flush cycle and then fires `InputBufferUpdateEvent`; the buffer subscription
-    /// uses this flag to re-query with the freshly synced value exactly once. Subsequent
-    /// buffer changes (e.g. arrow-navigation previews that write the highlighted command
-    /// into the editor) are ignored, otherwise the menu would narrow to just the previewed
-    /// row. The flag is re-armed every time the menu transitions back into
-    /// `InlineHistoryMenu` mode.
+    /// One-shot flag: when set, the buffer subscription will re-run the query the first
+    /// time `InputBufferModel` updates after the menu opens, and then auto-disarm. This
+    /// is needed only on the V2 `/conversations` path, where we explicitly clear the
+    /// editor buffer immediately before opening the menu, but the `InputBufferModel`
+    /// lags behind that clear by an effect-flush cycle (the `EditorView → EditorModel →
+    /// InputBufferModel` chain). Without this re-query, the initial query runs against
+    /// the stale `"/conversations"` buffer text and the menu shows no rows.
+    ///
+    /// The flag is *not* armed on the normal up-arrow open path: there the buffer is
+    /// already in sync with the editor when the menu opens, and arming the flag would
+    /// cause the auto-selected first item's preview write (the menu writes the
+    /// highlighted item's text back into the editor) to immediately re-narrow the menu
+    /// to that row. Callers that need the V2 behavior call `arm_initial_buffer_sync`
+    /// explicitly before transitioning the suggestions mode into `InlineHistoryMenu`.
     pending_initial_buffer_sync: bool,
 }
 
@@ -316,9 +322,6 @@ impl InlineHistoryMenuView {
         ctx.subscribe_to_model(input_suggestions_model, |me, model, event, ctx| {
             let InputSuggestionsModeEvent::ModeChanged { .. } = event;
             if model.as_ref(ctx).is_inline_history_menu() {
-                // Arm the one-shot buffer-sync re-query so we'll pick up the freshly synced
-                // buffer the first time `InputBufferModel` updates after this open.
-                me.pending_initial_buffer_sync = true;
                 me.open_with_current_buffer(ctx);
             }
         });
@@ -509,6 +512,19 @@ impl InlineHistoryMenuView {
     pub fn accept_selected_item(&self, ctx: &mut ViewContext<Self>) {
         self.menu_view
             .update(ctx, |v, ctx| v.accept_selected_item(false, ctx));
+    }
+
+    /// Arms the one-shot buffer-sync re-query. The next `InputBufferUpdateEvent` while the
+    /// menu is in `InlineHistoryMenu` mode will trigger a re-query with the synced buffer
+    /// text, and the flag will then auto-disarm.
+    ///
+    /// This is only needed when the caller has just changed the editor buffer (e.g. cleared
+    /// it) right before opening the menu and wants the menu's initial query to reflect the
+    /// post-clear value rather than the stale buffer-model value. The normal up-arrow open
+    /// path must not call this, otherwise the auto-selected first item's preview write
+    /// would immediately re-run the query and narrow results to that previewed row.
+    pub fn arm_initial_buffer_sync(&mut self) {
+        self.pending_initial_buffer_sync = true;
     }
 
     fn open_with_current_buffer(&mut self, ctx: &mut ViewContext<Self>) {

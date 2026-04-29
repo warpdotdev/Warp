@@ -1128,6 +1128,10 @@ pub enum InputAction {
     /// Opens the inline history menu for cycling through past commands and conversations.
     OpenInlineHistoryMenu,
 
+    /// Closes the V2 cloud-mode slash command menu if it is currently open. Used by the
+    /// surrounding cloud-mode V2 input area to dismiss the menu on click-outside.
+    DismissCloudModeV2SlashCommandsMenu,
+
     /// Opens the model selector menu.
     OpenModelSelector,
 
@@ -14172,6 +14176,13 @@ impl TypedActionView for Input {
             }
             InputAction::OpenInlineHistoryMenu => {
                 self.open_inline_history_menu(ctx);
+            }
+            InputAction::DismissCloudModeV2SlashCommandsMenu => {
+                if self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
+                    self.slash_command_model
+                        .update(ctx, |model, ctx| model.disable(ctx));
+                    self.close_slash_commands_menu(ctx);
+                }
             }
             InputAction::OpenModelSelector => {
                 self.open_model_selector(ctx);

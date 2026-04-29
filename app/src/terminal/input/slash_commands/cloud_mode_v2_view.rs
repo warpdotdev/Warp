@@ -258,6 +258,9 @@ impl CloudModeV2SlashCommandView {
                     mixer.reset_results(ctx);
                 });
                 me.menu_state = MenuState::empty();
+                // Reset the section filter so reopening the menu starts with all sections
+                // visible rather than narrowed to whatever the user last viewed.
+                me.section_filter = None;
                 return;
             }
             if me.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
@@ -628,7 +631,13 @@ fn browsing_rows_filtered(
 
     for (idx, rendered) in non_empty_sections.iter().enumerate() {
         rows.push(NoSearchActiveRow::SectionHeader(rendered.section));
-        let visible_count = if expanded_sections.contains(&rendered.section) {
+        // When a section filter narrows the menu to a single section, always show every
+        // item in that section and suppress the "Show XX more" affordance — the user has
+        // already drilled into that section, so the collapse is no longer useful.
+        let is_filtered_section = filter == Some(rendered.section);
+        let visible_count = if is_filtered_section
+            || expanded_sections.contains(&rendered.section)
+        {
             rendered.items.len()
         } else {
             rendered.items.len().min(ITEMS_PER_SECTION_COLLAPSED)
@@ -640,7 +649,7 @@ fn browsing_rows_filtered(
             });
         }
         let hidden_count = rendered.items.len().saturating_sub(visible_count);
-        if hidden_count > 0 {
+        if hidden_count > 0 && !is_filtered_section {
             rows.push(NoSearchActiveRow::ShowMore {
                 section: rendered.section,
                 hidden_count,
@@ -1008,7 +1017,7 @@ impl View for CloudModeV2SlashCommandView {
         .with_overlayed_scrollbar()
         .finish();
 
-        Container::new(
+        let menu = Container::new(
             ConstrainedBox::new(scrollable)
                 .with_max_height(MENU_MAX_HEIGHT)
                 .with_max_width(MENU_WIDTH)
@@ -1020,7 +1029,15 @@ impl View for CloudModeV2SlashCommandView {
         .with_padding_top(MENU_VERTICAL_PADDING)
         .with_padding_bottom(MENU_VERTICAL_PADDING)
         .with_drop_shadow(DropShadow::default())
-        .finish()
+        .finish();
+
+        // Stop mouse-down/up propagation on the menu container so clicks anywhere inside
+        // the menu (including padding and the area between rows) don't bubble up to the
+        // surrounding cloud-mode V2 input handler that dismisses the menu on click-outside.
+        EventHandler::new(menu)
+            .on_left_mouse_down(|_, _, _| DispatchEventResult::StopPropagation)
+            .on_left_mouse_up(|_, _, _| DispatchEventResult::StopPropagation)
+            .finish()
     }
 }
 

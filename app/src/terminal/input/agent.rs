@@ -364,6 +364,10 @@ impl Input {
                 .on_left_mouse_down(|ctx, _, _| {
                     ctx.dispatch_typed_action(TerminalAction::ClearSelectionsWhenShellMode);
                     ctx.dispatch_typed_action(InputAction::FocusInputBox);
+                    // Click-outside dismissal for the V2 slash command menu. Clicks inside
+                    // the menu stop propagation in `CloudModeV2SlashCommandView::render`,
+                    // so this handler only fires for clicks outside the menu's bounds.
+                    ctx.dispatch_typed_action(InputAction::DismissCloudModeV2SlashCommandsMenu);
                     DispatchEventResult::StopPropagation
                 })
                 .finish()

@@ -419,6 +419,15 @@ impl Input {
                         model.set_mode(InputSuggestionsMode::Closed, ctx);
                     });
                     self.clear_buffer_and_reset_undo_stack(ctx);
+                    // Arm the one-shot buffer-sync re-query on the V2 history menu only.
+                    // The normal up-arrow open path leaves this disarmed so that the
+                    // auto-selected first item's preview write does not re-run the query
+                    // and narrow the results to just that row.
+                    if let Some(view) = self.cloud_mode_v2_history_menu_view.clone() {
+                        view.update(ctx, |v, ctx| {
+                            v.arm_initial_buffer_sync(ctx);
+                        });
+                    }
                     ctx.dispatch_typed_action_deferred(InputAction::OpenInlineHistoryMenu);
                     return true;
                 } else if FeatureFlag::AgentView.is_enabled() {
