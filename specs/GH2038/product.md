@@ -57,4 +57,4 @@ Nushell users currently cannot use Warp as their daily terminal because Warp's s
 
 15. When a feature is not yet supported for Nushell, Warp fails gracefully or uses the existing unsupported-shell path rather than silently running Bash/POSIX syntax in a Nushell session.
 
-16. The first supported Nushell compatibility line is `0.109.x`. Older Nushell versions are best-effort and should fail through the normal shell startup/bootstrap failure path rather than falling back to Bash syntax.
+16. The minimum supported Nushell version is `0.109.0`. Older Nushell versions are best-effort and should fail through the normal shell startup/bootstrap failure path rather than falling back to Bash syntax.
