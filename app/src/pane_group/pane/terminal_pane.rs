@@ -663,6 +663,7 @@ fn handle_terminal_view_event(
                 if let Some(terminal_pane) = group.terminal_session_by_id(pane_id) {
                     terminal_pane.delete_blocks(ctx);
                 }
+                group.clear_title(ctx);
             }
             Event::ShareModalOpened(block_id) => {
                 group.terminal_with_open_share_block_modal = Some(terminal_pane_id);

@@ -408,3 +408,55 @@ fn session_start_without_plugin_version_leaves_none() {
     session.apply_event(&event);
     assert_eq!(session.plugin_version, None);
 }
+
+#[test]
+fn idle_prompt_clears_title_context() {
+    let mut session = CLIAgentSession {
+        agent: CLIAgent::Claude,
+        status: CLIAgentSessionStatus::Success,
+        session_context: CLIAgentSessionContext {
+            query: Some("fix the bug".to_string()),
+            response: Some("done".to_string()),
+            summary: Some("Fixing bug".to_string()),
+            tool_name: Some("Bash".to_string()),
+            tool_input_preview: Some("cargo build".to_string()),
+            cwd: Some("/tmp".to_string()),
+            project: Some("proj".to_string()),
+            session_id: Some("abc".to_string()),
+        },
+        input_state: CLIAgentInputState::Closed,
+        should_auto_toggle_input: false,
+        listener: None,
+        plugin_version: None,
+        draft_text: None,
+        remote_host: None,
+        custom_command_prefix: None,
+    };
+
+    let event = CLIAgentEvent {
+        v: 1,
+        agent: CLIAgent::Claude,
+        event: CLIAgentEventType::IdlePrompt,
+        session_id: None,
+        cwd: None,
+        project: None,
+        payload: CLIAgentEventPayload::default(),
+    };
+
+    let result = session.apply_event(&event);
+
+    // Status must not change (would override Success after a Stop)
+    assert_eq!(session.status, CLIAgentSessionStatus::Success);
+    assert!(result.is_none());
+
+    // Title-contributing fields cleared
+    assert!(session.session_context.query.is_none());
+    assert!(session.session_context.response.is_none());
+    assert!(session.session_context.summary.is_none());
+    assert!(session.session_context.tool_name.is_none());
+    assert!(session.session_context.tool_input_preview.is_none());
+
+    // Non-title fields preserved
+    assert_eq!(session.session_context.cwd.as_deref(), Some("/tmp"));
+    assert_eq!(session.session_context.project.as_deref(), Some("proj"));
+}

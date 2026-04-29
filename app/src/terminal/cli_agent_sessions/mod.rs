@@ -201,7 +201,15 @@ impl CLIAgentSession {
             }
             // IdlePrompt means the agent is sitting at its prompt waiting for input.
             // This should not affect status — otherwise it would override Success after a Stop event.
-            CLIAgentEventType::IdlePrompt => return None,
+            // Clear title-contributing fields so the tab name resets (e.g. after /clear).
+            CLIAgentEventType::IdlePrompt => {
+                self.session_context.query = None;
+                self.session_context.response = None;
+                self.session_context.summary = None;
+                self.session_context.tool_name = None;
+                self.session_context.tool_input_preview = None;
+                return None;
+            }
             CLIAgentEventType::SessionStart => {
                 self.plugin_version = event.payload.plugin_version.clone();
                 return None;
@@ -405,6 +413,7 @@ impl CLIAgentSessionsModel {
             CLIAgentEventType::SessionStart
                 | CLIAgentEventType::PromptSubmit
                 | CLIAgentEventType::ToolComplete
+                | CLIAgentEventType::IdlePrompt
         ) {
             ctx.emit(CLIAgentSessionsModelEvent::SessionUpdated {
                 terminal_view_id,
