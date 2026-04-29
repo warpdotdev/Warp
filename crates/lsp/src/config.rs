@@ -33,6 +33,8 @@ pub enum LanguageId {
     C,
     Cpp,
     Elixir,
+    Eex,
+    PhoenixHeex,
 }
 
 impl LanguageId {
@@ -58,7 +60,9 @@ impl LanguageId {
             // compile_commands.json is present, clangd will use the correct language
             // regardless of the languageId we send.
             "h" | "H" | "hh" | "hpp" | "hxx" => Some(Self::Cpp),
-            "ex" | "exs" | "eex" | "heex" | "leex" | "neex" => Some(Self::Elixir),
+            "ex" | "exs" => Some(Self::Elixir),
+            "eex" | "leex" => Some(Self::Eex),
+            "heex" => Some(Self::PhoenixHeex),
             _ => None,
         }
     }
@@ -77,6 +81,8 @@ impl LanguageId {
             LanguageId::C => "c",
             LanguageId::Cpp => "cpp",
             LanguageId::Elixir => "elixir",
+            LanguageId::Eex => "eex",
+            LanguageId::PhoenixHeex => "phoenix-heex",
         }
     }
 
@@ -91,7 +97,9 @@ impl LanguageId {
             | LanguageId::JavaScript
             | LanguageId::JavaScriptReact => LSPServerType::TypeScriptLanguageServer,
             LanguageId::C | LanguageId::Cpp => LSPServerType::Clangd,
-            LanguageId::Elixir => LSPServerType::Expert,
+            LanguageId::Elixir | LanguageId::Eex | LanguageId::PhoenixHeex => {
+                LSPServerType::Expert
+            }
         }
     }
 }

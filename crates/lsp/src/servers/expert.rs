@@ -33,8 +33,8 @@ impl LanguageServerCandidate for ExpertCandidate {
 
     async fn is_installed_on_path(&self, executor: &CommandBuilder) -> bool {
         executor
-            .command("start_expert")
-            .arg("--help")
+            .command("expert")
+            .arg("--version")
             .output()
             .await
             .map(|o| o.status.success())
@@ -47,7 +47,7 @@ impl LanguageServerCandidate for ExpertCandidate {
         _executor: &CommandBuilder,
     ) -> anyhow::Result<()> {
         anyhow::bail!(
-            "Install Expert manually: download from https://github.com/expert-lsp/expert/releases and place `start_expert` on your PATH"
+            "Install Expert manually: download the binary for your platform (e.g. `expert_darwin_arm64`) from https://github.com/expert-lsp/expert/releases, rename it to `expert`, and place it on your PATH"
         )
     }
 

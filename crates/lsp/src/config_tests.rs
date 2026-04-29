@@ -221,7 +221,7 @@ fn test_path_to_lsp_uri_rejects_relative_path() {
 
 #[test]
 fn test_elixir_language_id_from_extension() {
-    for ext in ["ex", "exs", "eex", "heex", "leex", "neex"] {
+    for ext in ["ex", "exs"] {
         let path = PathBuf::from(format!("foo.{ext}"));
         assert_eq!(
             LanguageId::from_path(&path),
@@ -229,6 +229,24 @@ fn test_elixir_language_id_from_extension() {
             "extension .{ext} should map to Elixir"
         );
     }
+}
+
+#[test]
+fn test_eex_language_id_from_extension() {
+    for ext in ["eex", "leex"] {
+        let path = PathBuf::from(format!("foo.{ext}"));
+        assert_eq!(
+            LanguageId::from_path(&path),
+            Some(LanguageId::Eex),
+            "extension .{ext} should map to Eex"
+        );
+    }
+}
+
+#[test]
+fn test_phoenix_heex_language_id_from_extension() {
+    let path = PathBuf::from("foo.heex");
+    assert_eq!(LanguageId::from_path(&path), Some(LanguageId::PhoenixHeex));
 }
 
 #[test]
@@ -244,13 +262,28 @@ fn test_elixir_language_id_from_filename() {
 }
 
 #[test]
-fn test_elixir_server_type() {
+fn test_elixir_family_server_type() {
     assert_eq!(LanguageId::Elixir.server_type(), LSPServerType::Expert);
+    assert_eq!(LanguageId::Eex.server_type(), LSPServerType::Expert);
+    assert_eq!(
+        LanguageId::PhoenixHeex.server_type(),
+        LSPServerType::Expert
+    );
+}
+
+#[test]
+fn test_elixir_family_lsp_identifiers() {
+    assert_eq!(LanguageId::Elixir.lsp_language_identifier(), "elixir");
+    assert_eq!(LanguageId::Eex.lsp_language_identifier(), "eex");
+    assert_eq!(
+        LanguageId::PhoenixHeex.lsp_language_identifier(),
+        "phoenix-heex"
+    );
 }
 
 #[test]
 fn test_expert_binary_name() {
-    assert_eq!(LSPServerType::Expert.binary_name(), "start_expert");
+    assert_eq!(LSPServerType::Expert.binary_name(), "expert");
 }
 
 #[test]

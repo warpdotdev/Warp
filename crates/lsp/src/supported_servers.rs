@@ -135,7 +135,7 @@ impl LSPServerType {
             LSPServerType::Pyright => "pyright-langserver",
             LSPServerType::TypeScriptLanguageServer => "typescript-language-server",
             LSPServerType::Clangd => "clangd",
-            LSPServerType::Expert => "start_expert",
+            LSPServerType::Expert => "expert",
         }
     }
 
@@ -179,7 +179,11 @@ impl LSPServerType {
                 ]
             }
             LSPServerType::Clangd => vec![LanguageId::C, LanguageId::Cpp],
-            LSPServerType::Expert => vec![LanguageId::Elixir],
+            LSPServerType::Expert => vec![
+                LanguageId::Elixir,
+                LanguageId::Eex,
+                LanguageId::PhoenixHeex,
+            ],
         }
     }
 
@@ -188,6 +192,7 @@ impl LSPServerType {
     pub fn language_name(&self) -> String {
         match self {
             LSPServerType::TypeScriptLanguageServer => "TypeScript/JavaScript".to_string(),
+            LSPServerType::Expert => "Elixir".to_string(),
             _ => self
                 .languages()
                 .iter()
