@@ -1157,6 +1157,7 @@ impl View for BlocklistAIStatusBar {
                         is_cloud_agent_pre_first_exchange(
                             Some(ambient_agent_view_model),
                             &self.agent_view_controller,
+                            &self.terminal_model,
                             app,
                         )
                     })

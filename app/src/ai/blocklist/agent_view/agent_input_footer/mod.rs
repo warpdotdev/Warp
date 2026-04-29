@@ -1978,7 +1978,7 @@ impl AgentInputFooter {
                 // Render the chip when the native/local handoff surface is available.
                 // Per-conversation eligibility (synced server token, non-empty
                 // history) is enforced by `Workspace::start_local_to_cloud_handoff`,
-                // which falls through to splitting a fresh cloud-mode pane when
+                // which surfaces an error toast and does not open a pane when
                 // the active conversation isn't handoff-able.
                 Some(ChildView::new(&self.handoff_to_cloud_button).finish())
             }

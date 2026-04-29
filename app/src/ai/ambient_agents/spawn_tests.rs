@@ -341,7 +341,7 @@ async fn poll_stops_on_terminal_failure_like_state() {
         parent_run_id: None,
         runtime_skills: vec![],
         referenced_attachments: vec![],
-        fork_from_conversation_id: None,
+        conversation_id: None,
         initial_snapshot_token: None,
     };
 
@@ -485,7 +485,7 @@ async fn poll_for_session_join_info_waits_until_link_is_available() {
         parent_run_id: None,
         runtime_skills: vec![],
         referenced_attachments: vec![],
-        fork_from_conversation_id: None,
+        conversation_id: None,
         initial_snapshot_token: None,
     };
 

@@ -322,15 +322,11 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::PendingHandoffChanged => {
-                // REMOTE-1486: re-render so the handoff banner picks up the new
-                // touched-workspace data, submission state, or pending-handoff
-                // teardown.
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::HandoffSubmissionFailed { .. } => {
-                // Restoration of the editor buffer + the user-visible toast are
-                // handled by `Input`'s subscription to the same event; nothing
-                // for the terminal view to do here beyond the implicit re-render.
+            AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. } => {
+                // The toast is surfaced by `Input`'s subscription; this just
+                // triggers a re-render of pane chrome.
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => (),
@@ -399,6 +395,7 @@ impl TerminalView {
                     group_id,
                     ambient_agent_view_model.clone(),
                     self.agent_view_controller.clone(),
+                    self.model.clone(),
                     ctx,
                 )
             });

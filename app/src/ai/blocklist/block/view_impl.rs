@@ -989,6 +989,14 @@ impl View for AIBlock {
         let is_conversation_transcript_viewer = terminal_model.is_conversation_transcript_viewer();
         drop(terminal_model);
 
+        let is_cloud_agent_pre_first_exchange =
+            crate::terminal::view::ambient_agent::is_cloud_agent_pre_first_exchange(
+                self.ambient_agent_view_model.as_ref(),
+                &self.agent_view_controller,
+                &self.terminal_model,
+                app,
+            );
+
         contents.add_child(output::render(
             output::Props {
                 model: self.model.as_ref(),
@@ -1056,6 +1064,7 @@ impl View for AIBlock {
                     .is_latest_non_passive_exchange_in_root_task(app)
                     && self.has_imported_comments_in_current_thread(app),
                 ask_user_question_view: self.ask_user_question_view.as_ref(),
+                is_cloud_agent_pre_first_exchange,
             },
             app,
         ));

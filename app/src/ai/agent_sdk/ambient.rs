@@ -489,7 +489,7 @@ impl AmbientAgentRunner {
                 parent_run_id: None,
                 runtime_skills: vec![],
                 referenced_attachments: vec![],
-                fork_from_conversation_id: None,
+                conversation_id: None,
                 initial_snapshot_token: None,
             };
 

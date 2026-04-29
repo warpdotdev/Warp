@@ -958,6 +958,7 @@ impl TerminalView {
             || is_cloud_agent_pre_first_exchange(
                 self.ambient_agent_view_model.as_ref(),
                 &self.agent_view_controller,
+                &self.model,
                 ctx,
             )
     }
