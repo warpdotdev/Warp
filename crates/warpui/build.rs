@@ -71,6 +71,16 @@ fn compile_metal_shaders() {
     let metal_path = "src/platform/mac/rendering/metal/shaders/shaders.metal";
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
 
+    // When WARP_SKIP_METAL=1, create a dummy metallib so cargo check/test work
+    // in environments without the Metal Toolchain (e.g. CI, Command Line Tools only).
+    // The resulting binary will not render correctly — for development use only.
+    if env::var("WARP_SKIP_METAL").is_ok() {
+        println!("cargo:rerun-if-changed={header_path}");
+        println!("cargo:rerun-if-changed={metal_path}");
+        std::fs::write(out_path.join("shaders.metallib"), []).unwrap();
+        return;
+    }
+
     let air_path = out_path.join("shaders.air");
     let air_path = air_path.to_str().unwrap();
 

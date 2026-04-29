@@ -336,6 +336,7 @@ use crate::workflows::WorkflowSelectionSource;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{CommandSearchOptions, OneTimeModalModel, ToastStack, WorkspaceAction};
 use crate::workspace::{ForkAIConversationParams, ForkFromExchange, ForkedConversationDestination};
+use crate::workspace::Workspace;
 use crate::workspaces::{user_workspaces::UserWorkspaces, workspace::CustomerType};
 use crate::AIRequestUsageModel;
 use crate::ActiveSession as WindowActiveSession;
@@ -11759,8 +11760,8 @@ impl TerminalView {
             }
         }
 
-        // Desktop notifications — only when navigated away and not in-progress.
-        if !self.is_navigated_away_from_window(ctx)
+        // Desktop notifications — only when not visible and not in-progress.
+        if !self.is_cli_agent_terminal_not_visible(ctx)
             || matches!(status, CLIAgentSessionStatus::InProgress)
         {
             return;
@@ -19568,6 +19569,38 @@ impl TerminalView {
     fn is_navigated_away_from_window(&self, ctx: &mut ViewContext<Self>) -> bool {
         let active_window = ctx.windows().active_window();
         Some(ctx.window_id()) != active_window
+    }
+
+    /// Returns `true` when this terminal view is NOT currently visible to the user, meaning
+    /// a desktop notification should be sent for important status changes. Returns `false`
+    /// when the user can see this terminal (same OS window, same active tab).
+    ///
+    /// Notification should fire when:
+    /// - Warp is not the active OS window (user is in another app), OR
+    /// - Warp is active but the user is on a different tab within the same window.
+    fn is_cli_agent_terminal_not_visible(&self, ctx: &ViewContext<Self>) -> bool {
+        let active_window = ctx.windows().active_window();
+        // Case 1: this Warp window is not the active OS window.
+        if Some(ctx.window_id()) != active_window {
+            return true;
+        }
+        // Case 2: Warp IS the active OS window — check whether this terminal is in the active tab.
+        let Some(active_window_id) = active_window else {
+            // No active window reported (e.g. in tests) — treat as navigated away so notifications fire.
+            return true;
+        };
+        let Some(workspace) = ctx
+            .views_of_type::<Workspace>(active_window_id)
+            .and_then(|views| views.first().cloned())
+        else {
+            // Cannot resolve workspace — default to notifying rather than silently dropping it.
+            return true;
+        };
+        !workspace
+            .as_ref(ctx)
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .contains_terminal_view(self.view_id, ctx)
     }
 
     fn is_block_active_and_running(&self, model: &TerminalModel, block_index: BlockIndex) -> bool {

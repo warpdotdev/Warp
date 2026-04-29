@@ -4605,3 +4605,159 @@ fn linear_deeplink_via_default_entrypoint_does_not_auto_submit_in_fullscreen() {
         });
     })
 }
+
+/// When a CLI agent session transitions to `Blocked` and the terminal is not in the
+/// active tab (simulated here by the test platform returning `None` for the active
+/// OS window), a `SendNotification` event should be emitted.
+#[test]
+fn cli_agent_blocked_sends_desktop_notification() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        // Enable desktop notifications with "needs attention" type.
+        SessionSettings::handle(&app).update(&mut app, |settings, ctx| {
+            let _ = settings.notifications.set_value(
+                NotificationsSettings {
+                    mode: NotificationsMode::Enabled,
+                    is_needs_attention_enabled: true,
+                    ..Default::default()
+                },
+                ctx,
+            );
+        });
+
+        let (tx, rx) = async_channel::bounded::<BlockNotification>(1);
+        app.update(|ctx| {
+            ctx.subscribe_to_view(&terminal, move |_, event, _| {
+                if let Event::SendNotification(notification) = event {
+                    tx.try_send(notification.clone()).ok();
+                }
+            });
+        });
+
+        // Register a Blocked session via a PermissionRequest event.
+        terminal.update(&mut app, |view, ctx| {
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::Claude,
+                        status: CLIAgentSessionStatus::InProgress,
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: false,
+                        listener: None,
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+                sessions.update_from_event(
+                    view.view_id,
+                    &CLIAgentEvent {
+                        v: 1,
+                        agent: CLIAgent::Claude,
+                        event: CLIAgentEventType::PermissionRequest,
+                        session_id: None,
+                        cwd: None,
+                        project: None,
+                        payload: CLIAgentEventPayload {
+                            summary: Some("Needs your approval".to_owned()),
+                            ..Default::default()
+                        },
+                    },
+                    ctx,
+                );
+            });
+        });
+
+        use futures_lite::StreamExt;
+        let notification = pin!(rx).next().await;
+        assert!(
+            notification.is_some(),
+            "Expected a SendNotification event when CLI agent is Blocked and terminal is not visible"
+        );
+    })
+}
+
+/// When a CLI agent session transitions to `InProgress` (e.g. user replied to a
+/// permission request), no desktop notification should be emitted.
+#[test]
+fn cli_agent_in_progress_does_not_send_desktop_notification() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        SessionSettings::handle(&app).update(&mut app, |settings, ctx| {
+            let _ = settings.notifications.set_value(
+                NotificationsSettings {
+                    mode: NotificationsMode::Enabled,
+                    is_needs_attention_enabled: true,
+                    ..Default::default()
+                },
+                ctx,
+            );
+        });
+
+        let notification_count = Rc::new(RefCell::new(0usize));
+        let count = notification_count.clone();
+        app.update(|ctx| {
+            ctx.subscribe_to_view(&terminal, move |_, event, _| {
+                if matches!(event, Event::SendNotification(_)) {
+                    *count.borrow_mut() += 1;
+                }
+            });
+        });
+
+        // Pre-set session as Blocked, then transition to InProgress via ToolComplete.
+        terminal.update(&mut app, |view, ctx| {
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::Claude,
+                        status: CLIAgentSessionStatus::Blocked {
+                            message: Some("Waiting".to_owned()),
+                        },
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: false,
+                        listener: None,
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+                // Transition to InProgress — should NOT send a notification.
+                sessions.update_from_event(
+                    view.view_id,
+                    &CLIAgentEvent {
+                        v: 1,
+                        agent: CLIAgent::Claude,
+                        event: CLIAgentEventType::ToolComplete,
+                        session_id: None,
+                        cwd: None,
+                        project: None,
+                        payload: CLIAgentEventPayload::default(),
+                    },
+                    ctx,
+                );
+            });
+        });
+
+        assert_eq!(
+            *notification_count.borrow(),
+            0,
+            "No notification should fire for InProgress status"
+        );
+    })
+}
