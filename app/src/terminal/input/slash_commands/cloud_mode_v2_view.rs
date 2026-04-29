@@ -17,11 +17,11 @@ use warpui::{
 use crate::search::data_source::QueryFilter;
 use crate::search::mixer::{AddAsyncSourceOptions, SearchMixer, SearchMixerEvent};
 use crate::search::result_renderer::{QueryResultRenderer, QueryResultRendererStyles};
+use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
 use crate::terminal::input::inline_menu::styles as inline_styles;
 use crate::terminal::input::slash_command_model::{SlashCommandEntryState, SlashCommandModel};
 use crate::terminal::input::slash_commands::view::{slash_command_query, CloseReason};
-use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
 use crate::terminal::input::slash_commands::{
     saved_prompts_data_source, AcceptSlashCommandOrSavedPrompt, SlashCommandDataSource,
     SlashCommandsEvent, UpdatedActiveCommands, ZeroStateDataSource,
@@ -273,11 +273,7 @@ impl CloudModeV2SlashCommandView {
         }
     }
 
-    pub fn set_section_filter(
-        &mut self,
-        filter: Option<Section>,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    pub fn set_section_filter(&mut self, filter: Option<Section>, ctx: &mut ViewContext<Self>) {
         let previous = self.section_filter;
         self.section_filter = filter;
         if let MenuState::NoSearchActive {
@@ -618,8 +614,7 @@ fn browsing_rows_filtered(
     for (idx, rendered) in non_empty_sections.iter().enumerate() {
         rows.push(NoSearchActiveRow::SectionHeader(rendered.section));
         let is_filtered_section = filter == Some(rendered.section);
-        let visible_count = if is_filtered_section
-            || expanded_sections.contains(&rendered.section)
+        let visible_count = if is_filtered_section || expanded_sections.contains(&rendered.section)
         {
             rendered.items.len()
         } else {
