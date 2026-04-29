@@ -828,6 +828,11 @@ pub enum FeatureFlag {
     /// for command execution.
     SshRemoteServer,
 
+    /// Set by the SSH remote server experiment control arm to override the
+    /// default install mode to `NeverInstall` for users who haven't explicitly
+    /// changed the setting. Only set via `ServerExperiment::on_added_to`.
+    SshRemoteServerDefaultNeverInstall,
+
     /// Redux of the setup/initial user query UI for cloud mode.
     CloudModeSetupV2,
 
@@ -930,9 +935,6 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::BlocklistMarkdownImages,
     FeatureFlag::MarkdownTables,
     FeatureFlag::OzIdentityFederation,
-    // Remote server binary is not yet supported on Windows.
-    #[cfg(not(windows))]
-    FeatureFlag::SshRemoteServer,
     FeatureFlag::GitOperationsInCodeReview,
 ];
 
@@ -946,6 +948,9 @@ pub const RELEASE_FLAGS: &[FeatureFlag] = &[
     // Marked text is currently only supported on MacOS.
     #[cfg(target_os = "macos")]
     FeatureFlag::ImeMarkedText,
+    // Remote server binary is not yet supported on Windows.
+    #[cfg(not(windows))]
+    FeatureFlag::SshRemoteServer,
 ];
 
 /// Flags that we want to allow to switch at runtime (assuming RuntimeFeatureFlags is set)

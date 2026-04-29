@@ -50,6 +50,8 @@ pub enum ServerExperiment {
     FreeUserNoAiExperiment,
     OzMultiHarnessControl,
     OzMultiHarnessExperiment,
+    SshRemoteServerControl,
+    SshRemoteServerExperiment,
     /// A test-only experiment.
     /// Does not correspond to a real server-side experiment.
     #[cfg(test)]
@@ -148,6 +150,13 @@ impl ServerExperiment {
             }
             Self::OzMultiHarnessExperiment => {
                 FeatureFlag::AgentHarness.set_enabled(true);
+            }
+            Self::SshRemoteServerControl => {
+                FeatureFlag::SshRemoteServer.set_enabled(true);
+                FeatureFlag::SshRemoteServerDefaultNeverInstall.set_enabled(true);
+            }
+            Self::SshRemoteServerExperiment => {
+                FeatureFlag::SshRemoteServer.set_enabled(true);
             }
             #[cfg(test)]
             Self::TestExperiment => {

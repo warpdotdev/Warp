@@ -8,6 +8,7 @@ use std::sync::Arc;
 use warp_core::SessionId;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 
+use crate::features::FeatureFlag;
 use crate::terminal::warpify::settings::SshExtensionInstallMode;
 
 use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
@@ -230,10 +231,20 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 self.connect_session_for_current_identity(session_id, socket_path, ctx);
             }
             Ok(false) => {
-                let install_mode = *WarpifySettings::as_ref(ctx)
-                    .ssh_extension_install_mode
-                    .value();
-                match install_mode {
+                let settings = WarpifySettings::as_ref(ctx);
+                let install_mode = *settings.ssh_extension_install_mode.value();
+                // If the user hasn't explicitly changed the install mode and the
+                // server-side experiment assigned them to the control arm, treat
+                // the default `AlwaysAsk` as `NeverInstall`.
+                let effective_mode = if install_mode == SshExtensionInstallMode::AlwaysAsk
+                    && !settings.ssh_extension_install_mode.is_value_explicitly_set()
+                    && FeatureFlag::SshRemoteServerDefaultNeverInstall.is_enabled()
+                {
+                    SshExtensionInstallMode::NeverInstall
+                } else {
+                    install_mode
+                };
+                match effective_mode {
                     SshExtensionInstallMode::AlwaysAsk => {
                         self.state = SshInitState::AwaitingUserChoice {
                             session_info,
