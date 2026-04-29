@@ -27,7 +27,7 @@ use crate::{
             show_toast, user_facing_git_error, GitDialog, GitDialogAction, GitDialogEvent,
             GitDialogMode,
         },
-        telemetry_event::{CodeReviewTelemetryEvent, GitOperationKind},
+        telemetry_event::{CodeReviewTelemetryEvent, GitDialogStatus, GitOperationKind},
     },
     editor::{
         EditorOptions, EditorView, Event as EditorEvent, InteractionState,
@@ -81,7 +81,7 @@ const FALLBACK_PLACEHOLDER_TEXT: &str = "Type a commit message";
 const LOADING_LABEL: &str = "Committing\u{2026}";
 
 pub struct CommitState {
-    intent: CommitIntent,
+    pub(super) intent: CommitIntent,
     include_unstaged: bool,
     file_changes: Vec<FileChangeEntry>,
     changes_expanded: bool,
@@ -443,11 +443,10 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                 CommitIntent::CommitAndPush => GitOperationKind::CommitAndPush,
                 CommitIntent::CommitAndCreatePr => GitOperationKind::CommitAndCreatePr,
             };
-            let error = match &result {
-                Ok(_) => None,
-                Err(err) => Some(err.to_string()),
+            let (status, error) = match &result {
+                Ok(_) => (GitDialogStatus::Succeeded, None),
+                Err(err) => (GitDialogStatus::Failed, Some(err.to_string())),
             };
-            let success = result.is_ok();
             match result {
                 Ok(CommitOutcome::Committed) => {
                     show_toast("Changes successfully committed.", ctx);
@@ -466,7 +465,7 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
             send_telemetry_from_ctx!(
                 CodeReviewTelemetryEvent::GitDialogCompleted {
                     operation,
-                    success,
+                    status,
                     error,
                 },
                 ctx

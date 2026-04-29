@@ -50,6 +50,22 @@ pub enum GitOperationKind {
     CreatePr,
 }
 
+/// Terminal status of a `GitDialog`. Captures both async-op outcomes and
+/// pre-confirmation user cancels in a single enum.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub enum GitDialogStatus {
+    /// User confirmed the dialog and the underlying git operation succeeded.
+    #[serde(rename = "succeeded")]
+    Succeeded,
+    /// User confirmed the dialog and the underlying git operation failed.
+    #[serde(rename = "failed")]
+    Failed,
+    /// User cancelled the dialog (ESC / close button / cancel button) before
+    /// the async op ran.
+    #[serde(rename = "cancelled")]
+    Cancelled,
+}
+
 /// Entry points for opening the code review pane.
 #[derive(Clone, Copy, Debug, SerializeDisplay, Default)]
 pub enum CodeReviewPaneEntrypoint {
@@ -260,14 +276,15 @@ pub enum CodeReviewTelemetryEvent {
     /// Emitted when a user clicks a git operation button in the code review
     /// header (primary button or dropdown item).
     GitButtonTriggered { button: GitButtonKind },
-    /// Emitted when a git dialog finishes its async operation (success or failure).
+    /// Emitted when a git dialog reaches a terminal state — either the async
+    /// op succeeded / failed, or the user cancelled before confirming.
     GitDialogCompleted {
-        /// The git operation that actually ran (e.g. `commit_and_push` for
-        /// the commit dialog with that chained intent).
+        /// The git operation that ran or would have run (e.g. `commit_and_push`
+        /// for the commit dialog with that chained intent).
         operation: GitOperationKind,
-        /// Whether the underlying git operation succeeded.
-        success: bool,
-        /// Raw error string when the operation failed, `None` on success.
+        /// Whether the dialog succeeded, failed, or was cancelled.
+        status: GitDialogStatus,
+        /// Raw error string when `status == Failed`, `None` otherwise.
         error: Option<String>,
     },
 }
@@ -364,11 +381,11 @@ impl TelemetryEvent for CodeReviewTelemetryEvent {
             }
             CodeReviewTelemetryEvent::GitDialogCompleted {
                 operation,
-                success,
+                status,
                 error,
             } => Some(json!({
                 "operation": operation,
-                "success": success,
+                "status": status,
                 "error": error,
             })),
         }
@@ -458,7 +475,7 @@ impl TelemetryEventDesc for CodeReviewTelemetryEventDiscriminants {
             Self::GitButtonTriggered => {
                 "User clicked a git operation button in the code review header"
             }
-            Self::GitDialogCompleted => "Git operation dialog finished its async operation",
+            Self::GitDialogCompleted => "Git operation dialog reached a terminal state (succeeded, failed, or cancelled)",
         }
     }
 

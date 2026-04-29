@@ -20,7 +20,7 @@ use crate::{
             should_send_git_ops_ai_request, show_toast, user_facing_git_error, GitDialog,
             GitDialogAction, GitDialogEvent, GitDialogMode,
         },
-        telemetry_event::{CodeReviewTelemetryEvent, GitOperationKind},
+        telemetry_event::{CodeReviewTelemetryEvent, GitDialogStatus, GitOperationKind},
     },
     server::server_api::{ai::AIClient, ServerApiProvider},
     ui_components::icons::Icon,
@@ -152,11 +152,10 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
             }
         },
         move |_me, result, ctx| {
-            let error = match &result {
-                Ok(_) => None,
-                Err(err) => Some(err.to_string()),
+            let (status, error) = match &result {
+                Ok(_) => (GitDialogStatus::Succeeded, None),
+                Err(err) => (GitDialogStatus::Failed, Some(err.to_string())),
             };
-            let success = result.is_ok();
             match result {
                 Ok(pr_info) => {
                     show_pr_created_toast(&pr_info, ctx);
@@ -169,7 +168,7 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
             send_telemetry_from_ctx!(
                 CodeReviewTelemetryEvent::GitDialogCompleted {
                     operation: GitOperationKind::CreatePr,
-                    success,
+                    status,
                     error,
                 },
                 ctx
