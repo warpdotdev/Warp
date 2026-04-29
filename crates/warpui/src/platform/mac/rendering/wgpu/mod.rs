@@ -61,7 +61,7 @@ impl Device {
 /// guaranteed that the underlying window won't become invalid while the `WindowHandle` is alive.
 /// In the case of Warp this _should_ be safe because we ultimately deallocate the native window
 /// when [`crate::platform::mac::Window`] is deallocated (once a `Window` is deallocated, there
-/// are no pointers to the native window anymore, which cause it to to be deallocated via the
+/// are no pointers to the native window anymore, which cause it to be deallocated via the
 /// `warp_dealloc_window` callback).
 /// See <https://github.com/rust-windowing/raw-window-handle/pull/73> for more information on the
 /// safety requirements of implementing the [`HasRawWindowHandle`] trait.

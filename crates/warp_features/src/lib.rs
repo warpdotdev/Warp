@@ -710,14 +710,10 @@ pub enum FeatureFlag {
     Orchestration,
 
     /// Enables server-side durable messaging for orchestration (v2).
-    /// When enabled, messages and events are stored in Postgres and discovered
-    /// via server polling instead of client-local conversation history.
+    /// When enabled, messages and events are stored in Postgres and the client
+    /// opens a persistent SSE connection to the server to receive events in
+    /// real time.
     OrchestrationV2,
-
-    /// Enables SSE-based event push for orchestration instead of polling.
-    /// When enabled the client opens a persistent SSE connection to the server
-    /// and receives events in real time instead of short-polling.
-    OrchestrationEventPush,
 
     /// Shows a pending user query indicator during summarization when a follow-up
     /// prompt is queued via `/fork-and-compact` or `/compact-and`.
@@ -906,7 +902,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::RememberFastForwardState,
     FeatureFlag::HOANotifications,
     FeatureFlag::OrchestrationV2,
-    FeatureFlag::OrchestrationEventPush,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,

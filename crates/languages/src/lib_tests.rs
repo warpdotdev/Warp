@@ -40,3 +40,13 @@ fn html_extensions_resolve_to_html() {
         );
     }
 }
+
+#[test]
+fn cpp_header_extensions_resolve_to_cpp_language() {
+    for filename in ["header.hpp", "header.hxx", "header.H"] {
+        let language = language_by_filename(Path::new(filename))
+            .unwrap_or_else(|| panic!("expected {filename} to resolve to C++"));
+
+        assert_eq!(language.display_name(), "C++");
+    }
+}
