@@ -27,9 +27,9 @@ Nushell users currently cannot use Warp as their daily terminal because Warp's s
 
 ## Behavior
 
-1. Warp recognizes Nushell executables named `nu`, login-shell aliases named `-nu`, Unix paths ending in `/nu`, and Windows executable basenames exactly equal to `nu.exe`.
+1. Warp recognizes Nushell executables named `nu`, login-shell aliases named `-nu`, Unix paths ending in `/nu`, and Windows executable basenames case-insensitively equal to `nu.exe`.
 
-2. Warp must not misclassify unrelated executables as Nushell merely because their path or name contains the substring `nu`. For example, `menu.exe` and `/usr/bin/menu.exe` are not Nushell.
+2. Warp must not misclassify unrelated executables as Nushell merely because their path or name contains the substring `nu`. For example, `menu.exe`, `NuGet.exe`, and `/usr/bin/menu.exe` are not Nushell.
 
 3. When the user has Nushell installed in a discoverable location, Warp lists it as a selectable shell named "Nushell" in the same shell-selection surfaces used for Bash, Zsh, Fish, and PowerShell.
 
