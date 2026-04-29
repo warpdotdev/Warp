@@ -31,9 +31,13 @@
 
 You can [download Warp](https://www.warp.dev/download) and [read our docs](https://docs.warp.dev/) for platform-specific instructions.
 
-## Build Status
+## Warp Contributions Overview Dashboard
 
-You can track the latest CI results and build health at [build.warp.dev](https://build.warp.dev).
+Explore [build.warp.dev](https://build.warp.dev) to:
+- Watch thousands of Oz agents triage issues, write specs, implement changes, and review PRs
+- View top contributors and in-flight features
+- Track your own issues with GitHub sign-in
+- Click into active agent sessions in a web-compiled Warp terminal
 
 ## Licensing
 
