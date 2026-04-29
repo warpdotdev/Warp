@@ -7510,14 +7510,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "managed_secrets_wasm"
-version = "0.1.0"
-dependencies = [
- "warp_managed_secrets",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "mappings"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
