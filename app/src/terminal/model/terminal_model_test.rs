@@ -702,6 +702,7 @@ fn test_unexpected_in_band_command_output_end_exits_alt_screen_without_finishing
 
     terminal.simulate_long_running_block("opencode", "");
     terminal.enter_alt_screen(true);
+    while event_rx.try_recv().is_ok() {}
 
     terminal.end_in_band_command_output(true);
 
@@ -724,6 +725,7 @@ fn test_unexpected_in_band_command_output_end_unsets_bracketed_paste_without_fin
 
     terminal.simulate_long_running_block("opencode", "");
     terminal.set_mode(Mode::BracketedPaste);
+    while event_rx.try_recv().is_ok() {}
 
     terminal.end_in_band_command_output(true);
 
@@ -760,6 +762,7 @@ fn test_unexpected_in_band_command_output_end_does_not_emit_redundant_unset_brac
     let mut terminal = TerminalModel::mock(None, Some(event_proxy));
 
     terminal.simulate_long_running_block("opencode", "");
+    while event_rx.try_recv().is_ok() {}
 
     terminal.end_in_band_command_output(true);
 
