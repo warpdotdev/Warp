@@ -282,6 +282,7 @@ impl OrchestrateExecutor {
     /// Validates the run-wide Launch config and either dispatches per-agent
     /// `CreateAgentTask`s (success path) or resolves the action with
     /// [`OrchestrateActionResult::Failure`] (pre-dispatch failure path).
+    #[allow(clippy::too_many_arguments)]
     fn dispatch_launch(
         &mut self,
         action_id: AIAgentActionId,

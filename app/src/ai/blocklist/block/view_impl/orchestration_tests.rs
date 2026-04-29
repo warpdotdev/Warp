@@ -7,10 +7,10 @@ use warpui::elements::MouseStateHandle;
 use warpui::{App, EntityId};
 
 use super::{
-    agent_display_name_from_id, child_conversation_card_data_for_result,
-    render_conversation_navigation_card_row, start_agent_cancelled_prefix,
-    start_agent_error_prefix, start_agent_in_progress_prefix, start_agent_success_suffix,
-    ChildConversationCardData,
+    agent_display_name_from_id, child_conversation_card_data_for_result, compute_validation_errors,
+    display_label_for_option, render_conversation_navigation_card_row,
+    start_agent_cancelled_prefix, start_agent_error_prefix, start_agent_in_progress_prefix,
+    start_agent_success_suffix, ChildConversationCardData, HARNESS_OPTIONS, MODEL_OPTIONS,
 };
 
 #[test]
@@ -211,6 +211,80 @@ fn agent_display_name_from_id_returns_unknown_fallback() {
             app.read(|ctx| agent_display_name_from_id("missing-agent-id", Some("other-id"), ctx));
         assert_eq!(actual, "Unknown agent");
     });
+}
+
+#[test]
+fn compute_validation_errors_passes_for_valid_local_config() {
+    // Local mode: no validation errors regardless of harness or env_id.
+    assert!(compute_validation_errors("oz", false, "").is_empty());
+    assert!(compute_validation_errors("opencode", false, "").is_empty());
+    assert!(compute_validation_errors("claude", false, "some-env").is_empty());
+}
+
+#[test]
+fn compute_validation_errors_passes_for_valid_remote_config() {
+    // Remote with non-OpenCode harness and a non-empty env_id is valid.
+    assert!(compute_validation_errors("oz", true, "env-123").is_empty());
+    assert!(compute_validation_errors("claude", true, "env-123").is_empty());
+    assert!(compute_validation_errors("gemini", true, "env-123").is_empty());
+}
+
+#[test]
+fn compute_validation_errors_flags_remote_without_environment() {
+    // PRODUCT.md §configuration-block: "If execution mode is Remote and the
+    // Environment dropdown is unset after the rules above, Launch is
+    // disabled with an inline error: 'Choose an environment before launching.'"
+    let errors = compute_validation_errors("oz", true, "");
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("Choose an environment"));
+}
+
+#[test]
+fn compute_validation_errors_flags_opencode_with_remote() {
+    // PRODUCT.md §editing-across-mode-changes / TECH.md §6: "OpenCode is
+    // not supported in remote mode." Disables Launch.
+    let errors = compute_validation_errors("opencode", true, "env-123");
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("OpenCode"));
+    assert!(errors[0].contains("remote"));
+}
+
+#[test]
+fn compute_validation_errors_reports_both_when_remote_opencode_and_no_env() {
+    // Both errors fire simultaneously when the user lands on Remote +
+    // OpenCode + no env. Each is rendered as its own inline row.
+    let errors = compute_validation_errors("opencode", true, "");
+    assert_eq!(errors.len(), 2);
+}
+
+#[test]
+fn display_label_for_option_returns_label_for_known_value() {
+    // The dropdown header shows the human-readable label rather than the
+    // canonical value.
+    assert_eq!(display_label_for_option("auto", MODEL_OPTIONS), "auto");
+    assert_eq!(
+        display_label_for_option("oz", HARNESS_OPTIONS),
+        "Oz (Warp Agent)"
+    );
+    assert_eq!(
+        display_label_for_option("opencode", HARNESS_OPTIONS),
+        "OpenCode (local-only)"
+    );
+}
+
+#[test]
+fn display_label_for_option_falls_back_to_value_for_unknown_input() {
+    // If the LLM proposes a model_id not in the static list, the dropdown
+    // header still surfaces it (so the user can see what was requested) and
+    // they can pick a known option to override.
+    assert_eq!(
+        display_label_for_option("some-future-model", MODEL_OPTIONS),
+        "some-future-model"
+    );
+    assert_eq!(
+        display_label_for_option("unknown-harness", HARNESS_OPTIONS),
+        "unknown-harness"
+    );
 }
 
 #[test]
