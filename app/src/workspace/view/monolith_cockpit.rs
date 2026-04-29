@@ -1,6 +1,6 @@
 use crate::{
     appearance::Appearance, root_view::SubshellCommandArg, settings::MonolithSettings,
-    terminal::shell::ShellType,
+    terminal::shell::ShellType, workspace::WorkspaceAction,
 };
 use serde::Deserialize;
 use settings::Setting as _;
@@ -60,8 +60,20 @@ struct CockpitProfile {
 #[derive(Clone, Debug)]
 pub enum MonolithCockpitAction {
     OpenCommand { command: String },
+    StartTenantChat { prompt: String },
+    ShowTenantFilter { filter: TenantFilter },
+    ExpandAllTenants { tenant_names: Vec<String> },
+    CollapseAllTenants,
     ToggleTenant { tenant_name: String },
     SwitchEnvironment { environment: String },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TenantFilter {
+    All,
+    Active,
+    Offboarded,
+    WithVms,
 }
 
 pub struct MonolithCockpitView {
@@ -71,6 +83,7 @@ pub struct MonolithCockpitView {
     cloud_mouse_states: Vec<MouseStateHandle>,
     scroll_state: ClippedScrollStateHandle,
     expanded_tenants: HashSet<String>,
+    tenant_filter: TenantFilter,
 }
 
 impl MonolithCockpitView {
@@ -79,9 +92,10 @@ impl MonolithCockpitView {
             button_mouse_states: (0..512).map(|_| MouseStateHandle::default()).collect(),
             tenant_mouse_states: (0..128).map(|_| MouseStateHandle::default()).collect(),
             environment_mouse_states: (0..2).map(|_| MouseStateHandle::default()).collect(),
-            cloud_mouse_states: (0..3).map(|_| MouseStateHandle::default()).collect(),
+            cloud_mouse_states: (0..8).map(|_| MouseStateHandle::default()).collect(),
             scroll_state: ClippedScrollStateHandle::default(),
             expanded_tenants: HashSet::new(),
+            tenant_filter: TenantFilter::All,
         }
     }
 
@@ -136,6 +150,134 @@ impl MonolithCockpitView {
             "{} --command {}",
             Self::gcloud_ssh_prefix(host),
             Self::shell_escape(command)
+        )
+    }
+
+    fn tenant_status_label(tenant: &TenantProfile) -> &'static str {
+        if tenant.environment.contains("offboarded") {
+            "offboarded"
+        } else if tenant.environment.contains("active") {
+            "active"
+        } else {
+            "unknown"
+        }
+    }
+
+    fn tenant_environment_label(tenant: &TenantProfile) -> &'static str {
+        if tenant.environment.contains("prod") {
+            "prod"
+        } else if tenant.environment.contains("staging") {
+            "staging"
+        } else {
+            "env"
+        }
+    }
+
+    fn runtime_count(tenant: &TenantProfile) -> usize {
+        tenant
+            .hosts
+            .iter()
+            .map(|host| host.runtimes.len())
+            .sum::<usize>()
+    }
+
+    fn running_runtime_count(tenant: &TenantProfile) -> usize {
+        tenant
+            .hosts
+            .iter()
+            .flat_map(|host| &host.runtimes)
+            .filter(|runtime| runtime.status.contains("running"))
+            .count()
+    }
+
+    fn tenant_matches_filter(tenant: &TenantProfile, filter: TenantFilter) -> bool {
+        match filter {
+            TenantFilter::All => true,
+            TenantFilter::Active => Self::tenant_status_label(tenant) == "active",
+            TenantFilter::Offboarded => Self::tenant_status_label(tenant) == "offboarded",
+            TenantFilter::WithVms => !tenant.hosts.is_empty(),
+        }
+    }
+
+    fn tenant_filter_label(filter: TenantFilter) -> &'static str {
+        match filter {
+            TenantFilter::All => "all",
+            TenantFilter::Active => "active",
+            TenantFilter::Offboarded => "offboarded",
+            TenantFilter::WithVms => "with vms",
+        }
+    }
+
+    fn cockpit_summary(profile: &CockpitProfile) -> (usize, usize, usize, usize, usize) {
+        let tenants = profile.tenants.len();
+        let active = profile
+            .tenants
+            .iter()
+            .filter(|tenant| tenant.environment.contains("active"))
+            .count();
+        let offboarded = profile
+            .tenants
+            .iter()
+            .filter(|tenant| tenant.environment.contains("offboarded"))
+            .count();
+        let vms = profile
+            .tenants
+            .iter()
+            .map(|tenant| tenant.hosts.len())
+            .sum::<usize>();
+        let runtimes = profile
+            .tenants
+            .iter()
+            .map(Self::runtime_count)
+            .sum::<usize>();
+
+        (tenants, active, offboarded, vms, runtimes)
+    }
+
+    fn tenant_chat_prompt(
+        tenant: &TenantProfile,
+        active_environment: &str,
+        api_url: &str,
+    ) -> String {
+        let host_lines = if tenant.hosts.is_empty() {
+            "- no VMs listed in the current cockpit profile".to_string()
+        } else {
+            tenant
+                .hosts
+                .iter()
+                .map(|host| {
+                    let runtime_names = if host.runtimes.is_empty() {
+                        "no runtimes".to_string()
+                    } else {
+                        host.runtimes
+                            .iter()
+                            .map(|runtime| {
+                                format!("{}:{}:{}", runtime.name, runtime.status, runtime.workdir)
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    format!(
+                        "- {} zone={} status={} runtimes=[{}]",
+                        host.name, host.zone, host.status, runtime_names
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        format!(
+            "/agent You are managing one Monolith tenant from the Warp cockpit.\n\
+Tenant: {}\n\
+Tenant environment/status: {}\n\
+Active cockpit environment: {}\n\
+Fleet API: {}\n\
+GCP project: {}\n\
+VMs and runtimes:\n{}\n\n\
+Operate only within this tenant by default. Start read-only: summarize health, risk, and the safest next actions. \
+Before any write, show the exact command, target tenant, target VM/runtime, environment, and ask for explicit confirmation. \
+Production writes require explicit elevated workflow confirmation.",
+            tenant.name, tenant.environment, active_environment, api_url, GCP_PROJECT, host_lines
         )
     }
 
@@ -212,6 +354,80 @@ impl MonolithCockpitView {
                 });
             })
             .finish()
+    }
+
+    fn typed_button(
+        label: &str,
+        action: MonolithCockpitAction,
+        mouse_state: MouseStateHandle,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let button = Container::new(
+            Text::new(label.to_string(), appearance.ui_font_family(), 11.)
+                .with_color(theme.active_ui_text_color().into_solid())
+                .finish(),
+        )
+        .with_padding(Padding::uniform(4.).with_left(8.).with_right(8.))
+        .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .finish();
+
+        Hoverable::new(mouse_state, |_| button)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(action.clone());
+            })
+            .finish()
+    }
+
+    fn tenant_filter_button(
+        label: &str,
+        filter: TenantFilter,
+        is_active: bool,
+        mouse_state: MouseStateHandle,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let mut button = Container::new(
+            Text::new(label.to_string(), appearance.ui_font_family(), 11.)
+                .with_color(theme.active_ui_text_color().into_solid())
+                .finish(),
+        )
+        .with_padding(Padding::uniform(4.).with_left(8.).with_right(8.))
+        .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+
+        if is_active {
+            button = button.with_background(theme.surface_3());
+        }
+
+        Hoverable::new(mouse_state, |_| button.finish())
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(MonolithCockpitAction::ShowTenantFilter { filter });
+            })
+            .finish()
+    }
+
+    fn status_chip(label: &str, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        Container::new(
+            Text::new(label.to_string(), appearance.ui_font_family(), 10.)
+                .with_color(theme.nonactive_ui_text_color().into_solid())
+                .finish(),
+        )
+        .with_padding(Padding::uniform(3.).with_left(6.).with_right(6.))
+        .with_background(theme.surface_2())
+        .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .finish()
     }
 
     fn environment_button(
@@ -351,6 +567,55 @@ impl MonolithCockpitView {
                     .finish(),
             )
             .finish()
+    }
+
+    fn render_cockpit_summary(
+        &self,
+        profile: &CockpitProfile,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let settings = MonolithSettings::as_ref(app);
+        let active_environment = settings.cockpit_environment.value();
+        let is_prod = active_environment == "prod";
+        let write_mode = if is_prod {
+            "prod locked"
+        } else {
+            "staging guarded"
+        };
+        let (tenants, active, offboarded, vms, runtimes) = Self::cockpit_summary(profile);
+
+        Container::new(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_spacing(8.)
+                .with_child(Self::section_label("OPERATOR STATUS", app))
+                .with_child(
+                    Flex::row()
+                        .with_spacing(6.)
+                        .with_child(Self::status_chip(&format!("tenants {tenants}"), app))
+                        .with_child(Self::status_chip(&format!("active {active}"), app))
+                        .with_child(Self::status_chip(&format!("offboarded {offboarded}"), app))
+                        .with_child(Self::status_chip(&format!("vms {vms}"), app))
+                        .with_child(Self::status_chip(&format!("runtimes {runtimes}"), app))
+                        .finish(),
+                )
+                .with_child(
+                    Text::new(
+                        format!("write mode: {write_mode}"),
+                        appearance.ui_font_family(),
+                        11.,
+                    )
+                    .with_color(theme.disabled_ui_text_color().into_solid())
+                    .finish(),
+                )
+                .finish(),
+        )
+        .with_padding(Padding::uniform(10.))
+        .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+        .finish()
     }
 
     fn runtime_card(
@@ -622,6 +887,8 @@ impl MonolithCockpitView {
         tenant_mouse_state: MouseStateHandle,
         mouse_states: &[MouseStateHandle],
         button_index: &mut usize,
+        active_environment: &str,
+        api_url: &str,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
@@ -647,15 +914,33 @@ impl MonolithCockpitView {
         };
 
         let tenant_name = tenant.name.clone();
+        let prompt = Self::tenant_chat_prompt(tenant, active_environment, api_url);
+        let chat_button = Self::typed_button(
+            "chat",
+            MonolithCockpitAction::StartTenantChat { prompt },
+            Self::next_mouse_state(mouse_states, button_index),
+            app,
+        );
+
         let header = Hoverable::new(tenant_mouse_state, |_| {
             Container::new(
                 Flex::row()
                     .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_child(
-                        Text::new(tenant.name.clone(), appearance.ui_font_family(), 14.)
-                            .with_color(theme.active_ui_text_color().into_solid())
-                            .with_style(Properties::default().weight(Weight::Bold))
+                        Flex::row()
+                            .with_spacing(6.)
+                            .with_child(
+                                Text::new(tenant.name.clone(), appearance.ui_font_family(), 14.)
+                                    .with_color(theme.active_ui_text_color().into_solid())
+                                    .with_style(Properties::default().weight(Weight::Bold))
+                                    .finish(),
+                            )
+                            .with_child(Self::status_chip(
+                                Self::tenant_environment_label(tenant),
+                                app,
+                            ))
+                            .with_child(Self::status_chip(Self::tenant_status_label(tenant), app))
                             .finish(),
                     )
                     .with_child(
@@ -690,7 +975,17 @@ impl MonolithCockpitView {
                 "vms",
                 &tenant.hosts.len().to_string(),
                 app,
-            ));
+            ))
+            .with_child(Self::value_line(
+                "runtimes",
+                &format!(
+                    "{} / {} running",
+                    Self::running_runtime_count(tenant),
+                    Self::runtime_count(tenant)
+                ),
+                app,
+            ))
+            .with_child(chat_button);
 
         if is_expanded {
             content.add_child(hosts.finish());
@@ -724,6 +1019,25 @@ impl TypedActionView for MonolithCockpitView {
                     shell_type: ShellType::from_name("bash"),
                 },
             ),
+            MonolithCockpitAction::StartTenantChat { prompt } => {
+                ctx.dispatch_typed_action(&WorkspaceAction::InsertInInput {
+                    content: prompt.clone(),
+                    replace_buffer: true,
+                    ensure_agent_mode: true,
+                });
+            }
+            MonolithCockpitAction::ShowTenantFilter { filter } => {
+                self.tenant_filter = *filter;
+                ctx.notify();
+            }
+            MonolithCockpitAction::ExpandAllTenants { tenant_names } => {
+                self.expanded_tenants = tenant_names.iter().cloned().collect();
+                ctx.notify();
+            }
+            MonolithCockpitAction::CollapseAllTenants => {
+                self.expanded_tenants.clear();
+                ctx.notify();
+            }
             MonolithCockpitAction::ToggleTenant { tenant_name } => {
                 if !self.expanded_tenants.insert(tenant_name.clone()) {
                     self.expanded_tenants.remove(tenant_name);
@@ -758,12 +1072,20 @@ impl View for MonolithCockpitView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let (profile, profile_status) = Self::load_profile(app);
+        let settings = MonolithSettings::as_ref(app);
+        let active_environment = settings.cockpit_environment.value().clone();
+        let api_url = settings.api_url.value().clone();
+        let filtered_tenants = profile
+            .tenants
+            .iter()
+            .filter(|tenant| Self::tenant_matches_filter(tenant, self.tenant_filter))
+            .collect::<Vec<_>>();
 
         let mut tenants = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_spacing(12.);
         let mut button_index = 0;
-        for (tenant_index, tenant) in profile.tenants.iter().enumerate() {
+        for (tenant_index, tenant) in filtered_tenants.iter().enumerate() {
             let tenant_mouse_state = self
                 .tenant_mouse_states
                 .get(tenant_index)
@@ -775,6 +1097,8 @@ impl View for MonolithCockpitView {
                 tenant_mouse_state,
                 &self.button_mouse_states,
                 &mut button_index,
+                &active_environment,
+                &api_url,
                 app,
             ));
         }
@@ -791,6 +1115,7 @@ impl View for MonolithCockpitView {
             )
             .with_child(self.render_environment_switcher(app))
             .with_child(self.render_cloud_toolbar(app))
+            .with_child(self.render_cockpit_summary(&profile, app))
             .with_child(Self::section_label("TENANT > VM > AGENT RUNTIME", app))
             .with_child(
                 Text::new(
@@ -810,10 +1135,74 @@ impl View for MonolithCockpitView {
             );
         }
 
+        let tenant_names = filtered_tenants
+            .iter()
+            .map(|tenant| tenant.name.clone())
+            .collect::<Vec<_>>();
+        let mut header_button_index = 0;
+        body.add_child(
+            Flex::row()
+                .with_spacing(6.)
+                .with_child(Self::tenant_filter_button(
+                    "all",
+                    TenantFilter::All,
+                    self.tenant_filter == TenantFilter::All,
+                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    app,
+                ))
+                .with_child(Self::tenant_filter_button(
+                    "active",
+                    TenantFilter::Active,
+                    self.tenant_filter == TenantFilter::Active,
+                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    app,
+                ))
+                .with_child(Self::tenant_filter_button(
+                    "offboarded",
+                    TenantFilter::Offboarded,
+                    self.tenant_filter == TenantFilter::Offboarded,
+                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    app,
+                ))
+                .with_child(Self::tenant_filter_button(
+                    "with vms",
+                    TenantFilter::WithVms,
+                    self.tenant_filter == TenantFilter::WithVms,
+                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    app,
+                ))
+                .with_child(Self::typed_button(
+                    "expand all",
+                    MonolithCockpitAction::ExpandAllTenants { tenant_names },
+                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    app,
+                ))
+                .with_child(Self::typed_button(
+                    "collapse all",
+                    MonolithCockpitAction::CollapseAllTenants,
+                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    app,
+                ))
+                .finish(),
+        );
+
         if profile.tenants.is_empty() {
             body.add_child(
                 Text::new(
                     "No live Monolith cockpit profile is configured.".to_string(),
+                    appearance.ui_font_family(),
+                    12.,
+                )
+                .with_color(theme.disabled_ui_text_color().into_solid())
+                .finish(),
+            );
+        } else if filtered_tenants.is_empty() {
+            body.add_child(
+                Text::new(
+                    format!(
+                        "No tenants match filter: {}",
+                        Self::tenant_filter_label(self.tenant_filter)
+                    ),
                     appearance.ui_font_family(),
                     12.,
                 )
