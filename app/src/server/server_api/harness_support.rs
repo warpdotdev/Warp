@@ -171,7 +171,7 @@ pub trait HarnessSupportClient: 'static + Send + Sync {
 }
 
 impl ServerApi {
-    async fn get_public_api_response_for_task(
+    pub(crate) async fn get_public_api_response_for_task(
         &self,
         task_id: &AmbientAgentTaskId,
         path: &str,

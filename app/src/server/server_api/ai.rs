@@ -210,6 +210,11 @@ pub struct SpawnAgentRequest {
 // --- Orchestrations V2 messaging types ---
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct RunFollowupRequest {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SendAgentMessageRequest {
     pub to: Vec<String>,
     pub subject: String,
@@ -905,6 +910,12 @@ pub trait AIClient: 'static + Send + Sync {
 
     // --- Orchestrations V2 messaging ---
 
+    async fn submit_run_followup(
+        &self,
+        run_id: &AmbientAgentTaskId,
+        request: RunFollowupRequest,
+    ) -> anyhow::Result<(), anyhow::Error>;
+
     async fn send_agent_message(
         &self,
         request: SendAgentMessageRequest,
@@ -989,6 +1000,28 @@ impl ServerApi {
             .post_public_api_response_for_task(task_id, "agent/messages", &request)
             .await?;
         let response = response.json::<SendAgentMessageResponse>().await?;
+        Ok(response)
+    }
+
+    pub(crate) async fn list_agent_messages_for_task(
+        &self,
+        task_id: &AmbientAgentTaskId,
+        run_id: &str,
+        request: ListAgentMessagesRequest,
+    ) -> anyhow::Result<Vec<AgentMessageHeader>, anyhow::Error> {
+        let mut params = vec![format!("limit={}", request.limit)];
+        if request.unread_only {
+            params.push("unread=true".to_string());
+        }
+        if let Some(since) = request.since {
+            params.push(format!("since={}", urlencoding::encode(&since)));
+        }
+
+        let path = format!("agent/messages/{run_id}?{}", params.join("&"));
+        let response = self
+            .get_public_api_response_for_task(task_id, &path)
+            .await?;
+        let response = response.json::<Vec<AgentMessageHeader>>().await?;
         Ok(response)
     }
 
@@ -1895,6 +1928,15 @@ impl AIClient for ServerApi {
     }
 
     // --- Orchestrations V2 messaging ---
+
+    async fn submit_run_followup(
+        &self,
+        run_id: &AmbientAgentTaskId,
+        request: RunFollowupRequest,
+    ) -> anyhow::Result<(), anyhow::Error> {
+        self.post_public_api_unit(&format!("agent/runs/{run_id}/followups"), &request)
+            .await
+    }
 
     async fn send_agent_message(
         &self,

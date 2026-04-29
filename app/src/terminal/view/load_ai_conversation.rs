@@ -986,6 +986,7 @@ impl TerminalView {
             parent_agent_id: None,
             agent_name: None,
             parent_conversation_id: None,
+            is_remote_child: false,
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,

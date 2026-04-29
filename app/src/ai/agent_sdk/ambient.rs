@@ -1,4 +1,5 @@
 //! Commands to interact with ambient agents on Warp's platform.
+use std::future::Future;
 use std::io::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,7 +9,7 @@ use crate::ai::ambient_agents::spawn::{
 };
 use crate::ai::ambient_agents::task::HarnessConfig;
 use crate::ai::ambient_agents::AmbientAgentTaskState;
-use crate::ai::ambient_agents::{AgentConfigSnapshot, AmbientAgentTask};
+use crate::ai::ambient_agents::{AgentConfigSnapshot, AmbientAgentTask, AmbientAgentTaskId};
 use crate::ai::artifacts::Artifact;
 use crate::auth::AuthStateProvider;
 use crate::server::server_api::ai::{
@@ -39,7 +40,7 @@ use warp_cli::{
 };
 use warp_core::channel::ChannelState;
 use warp_core::features::FeatureFlag;
-use warpui::r#async::Timer;
+use warpui::r#async::{FutureExt as _, Timer};
 use warpui::{
     platform::TerminationMode, r#async::Spawnable, AppContext, ModelContext, SingletonEntity,
 };
@@ -50,10 +51,11 @@ use crate::ai::agent_sdk::driver::attachments::{
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::server::ids::{ServerId, SyncId};
 
-use super::common::{EnvironmentChoice, ResolveConfigurationError};
+use super::common::{parse_ambient_task_id, EnvironmentChoice, ResolveConfigurationError};
 
 const MAX_LINE_WIDTH: usize = 90;
 const STREAM_RETRY_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
+const SEND_AGENT_MESSAGE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Singleton model that runs async work for ambient agent CLI commands.
 struct AmbientAgentRunner;
@@ -640,17 +642,35 @@ impl AmbientAgentRunner {
         output_format: OutputFormat,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<()> {
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+        let provider = ServerApiProvider::as_ref(ctx);
+        let ai_client = provider.get_ai_client();
+        let server_api = provider.get();
+        let scoped_task_id = task_id_for_message_send(&args.sender_run_id)?;
 
         let future = async move {
-            let response = ai_client
-                .send_agent_message(SendAgentMessageRequest {
-                    to: args.to,
-                    subject: args.subject,
-                    body: args.body,
-                    sender_run_id: args.sender_run_id,
-                })
-                .await?;
+            let request = SendAgentMessageRequest {
+                to: args.to,
+                subject: args.subject,
+                body: args.body,
+                sender_run_id: args.sender_run_id,
+            };
+            let log_context = SendAgentMessageLogContext::new(&request, scoped_task_id.as_ref());
+            let send_message = async move {
+                match scoped_task_id {
+                    Some(task_id) => {
+                        server_api
+                            .send_agent_message_for_task(&task_id, request)
+                            .await
+                    }
+                    None => ai_client.send_agent_message(request).await,
+                }
+            };
+            let response = send_agent_message_result_with_timeout(
+                send_message,
+                &log_context,
+                SEND_AGENT_MESSAGE_TIMEOUT,
+            )
+            .await?;
             print_send_message_response(&response, output_format)?;
             Ok(())
         };
@@ -658,25 +678,31 @@ impl AmbientAgentRunner {
 
         Ok(())
     }
+
     fn list_messages(
         &self,
         args: MessageListArgs,
         output_format: OutputFormat,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<()> {
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+        let provider = ServerApiProvider::as_ref(ctx);
+        let ai_client = provider.get_ai_client();
+        let server_api = provider.get();
 
         let future = async move {
-            let messages = ai_client
-                .list_agent_messages(
-                    &args.run_id,
-                    ListAgentMessagesRequest {
-                        unread_only: args.unread,
-                        since: args.since,
-                        limit: args.limit,
-                    },
-                )
-                .await?;
+            let request = ListAgentMessagesRequest {
+                unread_only: args.unread,
+                since: args.since,
+                limit: args.limit,
+            };
+            let messages = match task_id_from_run_id(&args.run_id) {
+                Some(task_id) => {
+                    server_api
+                        .list_agent_messages_for_task(&task_id, &args.run_id, request)
+                        .await?
+                }
+                None => ai_client.list_agent_messages(&args.run_id, request).await?,
+            };
             super::output::print_list(messages, output_format);
             Ok(())
         };
@@ -708,10 +734,20 @@ impl AmbientAgentRunner {
         output_format: OutputFormat,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<()> {
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+        let provider = ServerApiProvider::as_ref(ctx);
+        let ai_client = provider.get_ai_client();
+        let server_api = provider.get();
+        let scoped_task_id = task_id_from_oz_run_id_env()?;
 
         let future = async move {
-            let message = ai_client.read_agent_message(&args.message_id).await?;
+            let message = match scoped_task_id {
+                Some(task_id) => {
+                    server_api
+                        .read_agent_message_for_task(&task_id, &args.message_id)
+                        .await?
+                }
+                None => ai_client.read_agent_message(&args.message_id).await?,
+            };
             print_read_message_response(&message, output_format)?;
             Ok(())
         };
@@ -726,10 +762,20 @@ impl AmbientAgentRunner {
         output_format: OutputFormat,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<()> {
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+        let provider = ServerApiProvider::as_ref(ctx);
+        let ai_client = provider.get_ai_client();
+        let server_api = provider.get();
+        let scoped_task_id = task_id_from_oz_run_id_env()?;
 
         let future = async move {
-            ai_client.mark_message_delivered(&args.message_id).await?;
+            match scoped_task_id {
+                Some(task_id) => {
+                    server_api
+                        .mark_message_delivered_for_task(&task_id, &args.message_id)
+                        .await?
+                }
+                None => ai_client.mark_message_delivered(&args.message_id).await?,
+            }
             print_mark_message_delivered_result(&args.message_id, output_format)?;
             Ok(())
         };
@@ -933,6 +979,121 @@ fn write_stream_record<T: Serialize>(record: &T) -> anyhow::Result<()> {
     stdout.flush().context("unable to flush stdout")?;
     Ok(())
 }
+
+fn task_id_from_run_id(run_id: &str) -> Option<AmbientAgentTaskId> {
+    run_id.parse().ok()
+}
+
+fn task_id_from_oz_run_id_env() -> anyhow::Result<Option<AmbientAgentTaskId>> {
+    match std::env::var(warp_cli::OZ_RUN_ID_ENV) {
+        Ok(run_id) => parse_ambient_task_id(&run_id, "Invalid OZ_RUN_ID").map(Some),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(anyhow!(
+            "{} is set but is not valid Unicode",
+            warp_cli::OZ_RUN_ID_ENV
+        )),
+    }
+}
+
+fn task_id_for_message_send(sender_run_id: &str) -> anyhow::Result<Option<AmbientAgentTaskId>> {
+    match task_id_from_run_id(sender_run_id) {
+        Some(task_id) => Ok(Some(task_id)),
+        None => task_id_from_oz_run_id_env(),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SendAgentMessageLogContext {
+    sender_run_id: String,
+    task_id: Option<String>,
+    target_agent_ids: Vec<String>,
+    subject: String,
+    body_len: usize,
+}
+
+impl SendAgentMessageLogContext {
+    fn new(request: &SendAgentMessageRequest, task_id: Option<&AmbientAgentTaskId>) -> Self {
+        Self {
+            sender_run_id: request.sender_run_id.clone(),
+            task_id: task_id.map(|task_id| task_id.to_string()),
+            target_agent_ids: request.to.clone(),
+            subject: request.subject.clone(),
+            body_len: request.body.chars().count(),
+        }
+    }
+
+    fn error_context(&self) -> String {
+        format!(
+            "Failed to send agent message (sender_run_id={:?}, task_id={:?}, target_agent_ids={:?})",
+            self.sender_run_id, self.task_id, self.target_agent_ids
+        )
+    }
+}
+
+async fn send_agent_message_result_with_timeout<F>(
+    send_message: F,
+    log_context: &SendAgentMessageLogContext,
+    timeout: Duration,
+) -> anyhow::Result<SendAgentMessageResponse>
+where
+    F: Future<Output = anyhow::Result<SendAgentMessageResponse>>,
+{
+    log::info!(
+        "Sending ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={}",
+        log_context.sender_run_id,
+        log_context.task_id,
+        log_context.target_agent_ids,
+        log_context.subject,
+        log_context.body_len
+    );
+
+    match send_message.with_timeout(timeout).await {
+        Ok(Ok(response)) => {
+            log::info!(
+                "Sent ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={} message_ids={:?}",
+                log_context.sender_run_id,
+                log_context.task_id,
+                log_context.target_agent_ids,
+                log_context.subject,
+                log_context.body_len,
+                response.message_ids
+            );
+            Ok(response)
+        }
+        Ok(Err(err)) => {
+            let err = err.context(log_context.error_context());
+            log::warn!(
+                "Failed to send ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={} error={err:#}",
+                log_context.sender_run_id,
+                log_context.task_id,
+                log_context.target_agent_ids,
+                log_context.subject,
+                log_context.body_len
+            );
+            eprintln!("{err:#}");
+            Err(err)
+        }
+        Err(_) => {
+            let err = anyhow!(
+                "Timed out sending agent message after {timeout:?} (sender_run_id={:?}, task_id={:?}, target_agent_ids={:?})",
+                log_context.sender_run_id,
+                log_context.task_id,
+                log_context.target_agent_ids
+            );
+            log::warn!(
+                "Timed out sending ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={} timeout={timeout:?}",
+                log_context.sender_run_id,
+                log_context.task_id,
+                log_context.target_agent_ids,
+                log_context.subject,
+                log_context.body_len
+            );
+            eprintln!("{err:#}");
+            Err(err)
+        }
+    }
+}
+
 async fn watch_messages_forever(
     server_api: Arc<ServerApi>,
     ai_client: Arc<dyn AIClient>,
@@ -940,15 +1101,25 @@ async fn watch_messages_forever(
 ) -> anyhow::Result<()> {
     let run_id = args.run_id;
     let watched_run_ids = vec![run_id.clone()];
+    let scoped_task_id = task_id_from_run_id(&run_id);
     let mut last_seen_sequence = args.since_sequence;
     let mut initial_connect = true;
     let mut failures = 0usize;
 
     loop {
-        let mut stream = match server_api
-            .stream_agent_events(&watched_run_ids, last_seen_sequence)
-            .await
-        {
+        let stream_result = match scoped_task_id.as_ref() {
+            Some(task_id) => {
+                server_api
+                    .stream_agent_events_for_task(task_id, &watched_run_ids, last_seen_sequence)
+                    .await
+            }
+            None => {
+                server_api
+                    .stream_agent_events(&watched_run_ids, last_seen_sequence)
+                    .await
+            }
+        };
+        let mut stream = match stream_result {
             Ok(stream) => {
                 if !initial_connect {
                     eprintln!(
@@ -1004,8 +1175,15 @@ async fn watch_messages_forever(
                         last_seen_sequence = event.sequence;
                         continue;
                     };
-
-                    let message = match ai_client.read_agent_message(&message_id).await {
+                    let message_result = match scoped_task_id.as_ref() {
+                        Some(task_id) => {
+                            server_api
+                                .read_agent_message_for_task(task_id, &message_id)
+                                .await
+                        }
+                        None => ai_client.read_agent_message(&message_id).await,
+                    };
+                    let message = match message_result {
                         Ok(message) => message,
                         Err(err) => {
                             failures += 1;

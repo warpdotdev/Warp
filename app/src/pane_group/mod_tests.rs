@@ -277,6 +277,25 @@ fn request_ambient_agent_task_id_for_hidden_child(
     })
 }
 
+fn ambient_child_session_state(
+    panes: &PaneGroup,
+    child_pane_id: PaneId,
+    ctx: &mut ViewContext<PaneGroup>,
+) -> (Option<AmbientAgentTaskId>, bool, Option<AIConversationId>) {
+    let terminal_view = panes
+        .terminal_view_from_pane_id(child_pane_id, ctx)
+        .expect("child pane should have a terminal view");
+    let terminal_view_ref = terminal_view.as_ref(ctx);
+    let active_conversation_id = terminal_view_ref.active_conversation_id(ctx);
+    let ambient_model = terminal_view_ref.ambient_agent_view_model().as_ref(ctx);
+
+    (
+        ambient_model.task_id(),
+        ambient_model.is_agent_running(),
+        active_conversation_id,
+    )
+}
+
 struct PreAttachReturnsFalsePane {
     pane_id: PaneId,
     pane_configuration: ModelHandle<PaneConfiguration>,
@@ -512,6 +531,46 @@ fn test_restored_hidden_child_pane_reapplies_ambient_task_id_to_controller() {
                 ),
                 Some(task_id)
             );
+        });
+    });
+}
+
+#[test]
+fn test_restored_remote_hidden_child_pane_enters_existing_ambient_session() {
+    let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let pane_group = mock_pane_group(&mut app, Default::default());
+
+        pane_group.update(&mut app, |panes, ctx| {
+            let parent_pane_id = get_newly_created_pane_id(panes, &[]);
+            let parent_conversation_id = start_parent_conversation(panes, parent_pane_id, ctx);
+            let task_id = new_ambient_agent_task_id();
+
+            let mut child_conversation = AIConversation::new(false);
+            child_conversation.set_parent_conversation_id(parent_conversation_id);
+            child_conversation.set_task_id(task_id);
+            child_conversation.mark_as_remote_child();
+            let child_conversation_id = child_conversation.id();
+
+            panes.create_hidden_child_agent_pane(child_conversation, parent_pane_id, ctx);
+
+            let child_pane_id = panes
+                .child_agent_panes
+                .get(&child_conversation_id)
+                .copied()
+                .expect("restored remote hidden child pane should be tracked");
+
+            let (ambient_task_id, is_agent_running, active_conversation_id) =
+                ambient_child_session_state(panes, child_pane_id, ctx);
+
+            assert_eq!(ambient_task_id, Some(task_id));
+            assert!(
+                is_agent_running,
+                "remote child restore should view the existing ambient session"
+            );
+            assert_eq!(active_conversation_id, Some(child_conversation_id));
         });
     });
 }

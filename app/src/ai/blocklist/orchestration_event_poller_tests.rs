@@ -142,6 +142,7 @@ fn restored_conversation(
             parent_agent_id: None,
             agent_name: None,
             parent_conversation_id: None,
+            is_remote_child: false,
             run_id: Some(run_id),
             autoexecute_override: None,
             last_event_sequence,

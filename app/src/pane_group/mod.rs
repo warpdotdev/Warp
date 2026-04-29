@@ -3084,6 +3084,45 @@ impl PaneGroup {
         ctx: &mut ViewContext<Self>,
     ) {
         let child_id = child_conversation.id();
+        if child_conversation.is_remote_child() {
+            let Some(task_id) = child_conversation.task_id() else {
+                log::warn!(
+                    "Cannot restore remote child conversation {child_id:?} without a task ID"
+                );
+                return;
+            };
+
+            let new_pane_id =
+                self.insert_ambient_agent_pane_hidden_for_child_agent(parent_pane_id, ctx);
+
+            if let Some(new_terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
+                new_terminal_view.update(ctx, |terminal_view, ctx| {
+                    terminal_view.restore_conversation_after_view_creation(
+                        RestoredAIConversation::new(child_conversation),
+                        true,
+                        ctx,
+                    );
+                    terminal_view.enter_agent_view(
+                        None,
+                        Some(child_id),
+                        AgentViewEntryOrigin::CloudAgent,
+                        ctx,
+                    );
+                    terminal_view
+                        .ambient_agent_view_model()
+                        .update(ctx, |model, ctx| {
+                            model.set_conversation_id(Some(child_id));
+                            model.enter_viewing_existing_session(task_id, ctx);
+                        });
+                });
+
+                self.child_agent_panes.insert(child_id, new_pane_id.into());
+            } else {
+                log::error!("Failed to get terminal view for remote child agent pane {child_id:?}");
+                self.discard_pane(new_pane_id.into(), ctx);
+            }
+            return;
+        }
         let child_task_context =
             child_conversation
                 .task_id()
