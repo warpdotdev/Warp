@@ -30,7 +30,7 @@ Figma: https://www.figma.com/design/AsF5uAM6L5tUmc11vm9YSi (nodes `4073-19833`, 
 
 3. The pill bar is hidden when the orchestrator has zero children. It only appears once at least one child agent has been spawned.
 
-4. Pill ordering is stable: the orchestrator is always the leftmost pill, followed by child pills sorted by the start time of their first exchange. Pills do **not** reshuffle as their statuses update.
+4. Pill ordering is stable: the orchestrator is always the leftmost pill, followed by child pills in the order the orchestrator registered them (i.e. the order in which they were spawned). Sorting by the first exchange's start time is intentionally avoided because a child whose first exchange has not started yet would otherwise sort to the front and pop into a different position once it began streaming, reshuffling the bar. Pills do **not** reshuffle as their statuses update.
 
 5. Each pill is a horizontal stadium-shaped chip containing:
    - A circular avatar (16×16) on the left.
