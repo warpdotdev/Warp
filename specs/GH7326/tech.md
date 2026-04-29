@@ -150,11 +150,14 @@ User selects ACP agent + sends prompt
 
 ## Tradeoffs
 
-- **Per-agent command vs. shared variant:** Storing the command inside
-  `CLIAgent::Acp(String)` is a departure from the hardcoded variants pattern.
-  This makes serialization slightly more complex but avoids adding a new enum
-  variant for every ACP agent. If a specific ACP agent later warrants a custom
-  harness (e.g. for session resumption), it can graduate to its own variant.
+- **ACP agent config storage:** `CLIAgent::Acp(String)` conflicts with 
+  `CLIAgent`'s current `&'static str` return and `Copy` constraints. 
+  The preferred approach is likely storing ACP agent configuration 
+  (name, command, args) in a dedicated settings model (e.g. 
+  `AcpAgentConfig` struct in the AI settings) and keeping `CLIAgent` 
+  as a simple fieldless `Acp` variant. The harness selector would then 
+  read from that settings model. **Open question for Warp team: what is 
+  the preferred home for per-agent ACP config?**
 - **Stdio-only in v1:** Excludes ACP agents that communicate over HTTP. This
   covers the majority of current ACP agents (opencode, Kimi, Gemini, Codex all
   support stdio) and avoids auth complexity for v1.

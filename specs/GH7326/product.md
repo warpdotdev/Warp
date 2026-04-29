@@ -63,7 +63,7 @@ ACP-native agents inside Warp's UI, and must fall back to raw TUI output.
    - Text responses appear as agent message blocks.
    - File edits surface in Warp's diff view for review.
    - Tool calls (if passed via MCP) render as tool call blocks.
-4. The session persists in conversation history and is resumable.
+4. The session persists. Session resumption might be out of scope for v1.
 
 ### Edge cases
 
@@ -92,9 +92,8 @@ ACP-native agents inside Warp's UI, and must fall back to raw TUI output.
 
 ## Open questions
 
-1. Should ACP agents support session resumption in v1, or is that a follow-up?
-2. How should Warp handle ACP agents that advertise capabilities Warp doesn't
+1. How should Warp handle ACP agents that advertise capabilities Warp doesn't
    yet render (e.g. multi-file context beyond diff view)?
-3. Should there be a curated list of known ACP agents with pre-filled commands
+2. Should there be a curated list of known ACP agents with pre-filled commands
    and install URLs (similar to how Codex and Gemini are pre-configured)?
 
