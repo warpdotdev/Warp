@@ -183,7 +183,7 @@ impl CloudModeV2SlashCommandView {
         );
 
         let zero_state_source =
-            ctx.add_model(|_| ZeroStateDataSource::for_cloud_mode_v2(&slash_commands_source));
+            ctx.add_model(|_| ZeroStateDataSource::new(&slash_commands_source, true));
         let saved_prompts_source = saved_prompts_data_source();
 
         let mixer = ctx.add_model(|ctx| {
