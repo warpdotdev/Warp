@@ -30,7 +30,7 @@ use crate::{
     app_state::{AmbientAgentPaneSnapshot, LeafContents, TerminalPaneSnapshot},
     pane_group::child_agent::{
         create_error_child_agent_conversation, create_hidden_child_agent_conversation,
-        HiddenChildAgentConversation, HiddenChildAgentTaskContext,
+        HiddenChildAgentConversation,
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
@@ -55,6 +55,8 @@ use crate::{
 
 #[cfg(feature = "local_fs")]
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
+#[cfg(not(target_family = "wasm"))]
+use crate::pane_group::child_agent::HiddenChildAgentTaskContext;
 #[cfg(not(target_family = "wasm"))]
 use crate::server::server_api::ServerApiProvider;
 

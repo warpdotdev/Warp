@@ -1003,6 +1003,7 @@ impl ServerApi {
         Ok(response)
     }
 
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub(crate) async fn list_agent_messages_for_task(
         &self,
         task_id: &AmbientAgentTaskId,

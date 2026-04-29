@@ -1,9 +1,10 @@
-use std::time::Duration;
-
+#[cfg(not(target_family = "wasm"))]
 use anyhow::anyhow;
 #[cfg(not(target_family = "wasm"))]
 use futures::future::Either;
 use futures::{future::BoxFuture, FutureExt};
+#[cfg(not(target_family = "wasm"))]
+use std::time::Duration;
 #[cfg(not(target_family = "wasm"))]
 use warpui::r#async::Timer;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
@@ -27,6 +28,7 @@ use warp_core::send_telemetry_from_ctx;
 
 use super::{ActionExecution, AnyActionExecution, ExecuteActionInput, PreprocessActionInput};
 
+#[cfg(not(target_family = "wasm"))]
 const SEND_AGENT_MESSAGE_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub struct SendMessageToAgentExecutor {

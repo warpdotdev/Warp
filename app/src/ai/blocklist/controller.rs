@@ -334,6 +334,7 @@ pub struct BlocklistAIController {
     /// These should be cancelled when a new request is sent for the same conversation.
     pending_auto_resume_handles: HashMap<AIConversationId, SpawnedFutureHandle>,
     /// Pending dormant Claude wake preparations for success-idle child conversations.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pending_local_claude_wakes: HashMap<AIConversationId, SpawnedFutureHandle>,
     /// Pending remote child wake follow-up submissions.
     pending_remote_child_wakes: HashMap<AIConversationId, SpawnedFutureHandle>,

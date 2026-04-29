@@ -56,11 +56,13 @@ impl LifecycleEventDetailStage {
 #[derive(Debug, Clone)]
 pub enum PendingEventDetail {
     Message {
+        #[cfg_attr(target_family = "wasm", allow(dead_code))]
         sequence: i64,
         message_id: String,
         addresses: Vec<String>,
         subject: String,
         message_body: String,
+        #[cfg_attr(target_family = "wasm", allow(dead_code))]
         occurred_at: String,
     },
     Lifecycle {
@@ -935,6 +937,7 @@ impl OrchestrationEventService {
         removed
     }
 
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub fn prepend_pending_events(
         &mut self,
         conversation_id: AIConversationId,
