@@ -127,7 +127,11 @@ impl CodeReviewHeader {
             );
         }
 
-        Some(Container::new(stack.finish()).with_margin_right(4.).finish())
+        Some(
+            Container::new(stack.finish())
+                .with_margin_right(4.)
+                .finish(),
+        )
     }
 
     /// Like `render_header_dropdown_button` but without `margin_left(4.)`,
