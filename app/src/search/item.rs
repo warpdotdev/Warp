@@ -1,10 +1,29 @@
 use ordered_float::OrderedFloat;
 use warp_core::ui::theme::Fill;
+use warpui::fonts::FamilyId;
 use warpui::{Action, AppContext, Element};
 
 use crate::appearance::Appearance;
 
 use super::result_renderer::ItemHighlightState;
+
+/// Compact, type-erased metadata used by detail/sidecar views (e.g. the
+/// V2 cloud-mode slash command menu sidecar) to render an expanded preview
+/// of a search item without re-running the row layout. Items that don't
+/// have a meaningful title/description pair (e.g. action shortcuts, static
+/// separators) should return `None` from `SearchItem::detail_data`.
+#[derive(Clone)]
+pub struct SearchItemDetail {
+    /// Display title shown at the top of the sidecar.
+    pub title: String,
+    /// Optional description body shown beneath the title. `None` for items
+    /// like saved prompts that only have a title.
+    pub description: Option<String>,
+    /// Font family used to render the title. Typically matches the row's
+    /// title font (monospace for slash commands and skills, UI font for
+    /// saved prompts).
+    pub title_font_family: FamilyId,
+}
 
 /// Location where icon should be rendered relative to the [`SearchItem`].
 pub enum IconLocation {
@@ -107,6 +126,14 @@ pub trait SearchItem: Send + Sync {
 
     /// Returns an optional tooltip string to display when hovering over this item.
     fn tooltip(&self) -> Option<String> {
+        None
+    }
+
+    /// Optional structured metadata used by detail/sidecar views to render a
+    /// richer preview of this item. Default returns `None`; items that
+    /// participate in sidecar rendering (currently only the V2 cloud-mode
+    /// slash command menu) override this.
+    fn detail_data(&self) -> Option<SearchItemDetail> {
         None
     }
 }
