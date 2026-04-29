@@ -92,6 +92,11 @@
 /crates/input_classifier/ @harryalbert
 /crates/natural_language_detection/ @harryalbert
 
+# Notifications
+/app/src/notification.rs @harryalbert
+/app/src/ai/agent_management/notifications/ @harryalbert
+/app/src/terminal/view/inline_banner/ @harryalbert
+
 # Blocklist UX / modality and cloud mode UI / shell compatibility / completions and bootstrap / warpifying
 /app/src/ai/blocklist/ @zachbai
 /app/src/root_view.rs @zachbai
@@ -115,6 +120,10 @@
 /app/src/ai/blocklist/passive_suggestions/ @Advait-M
 /app/src/voice/ @Advait-M
 /crates/voice_input/ @Advait-M
+
+# Rich input
+/app/src/terminal/view/use_agent_footer/ @Advait-M
+/app/src/terminal/input/cli_agent.rs @Advait-M
 
 # UI framework
 /crates/warpui/ @vorporeal
