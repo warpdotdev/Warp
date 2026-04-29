@@ -5,6 +5,7 @@ use uuid::Uuid;
 use warp_core::features::FeatureFlag;
 
 use crate::search::slash_command_menu::{static_commands::Argument, StaticCommand};
+use crate::ui_components::color_dot;
 
 use super::Availability;
 
@@ -135,23 +136,23 @@ pub static RENAME_TAB: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand 
     argument: Some(Argument::required().with_hint_text("<tab name>")),
 });
 
-pub static SET_TAB_COLOR: LazyLock<StaticCommand> = LazyLock::new(|| {
+static SET_TAB_COLOR_HINT: LazyLock<String> = LazyLock::new(|| {
     let mut hint = String::from("<");
-    for color in crate::ui_components::color_dot::TAB_COLOR_OPTIONS {
+    for color in color_dot::TAB_COLOR_OPTIONS {
         hint.push_str(&color.to_string().to_ascii_lowercase());
         hint.push('|');
     }
     hint.push_str("none>");
-    let hint_text: &'static str = Box::leak(hint.into_boxed_str());
+    hint
+});
 
-    StaticCommand {
-        name: "/set-tab-color",
-        description: "Set the color of the current tab",
-        icon_path: "bundled/svg/ellipse.svg",
-        availability: Availability::ALWAYS,
-        auto_enter_ai_mode: false,
-        argument: Some(Argument::required().with_hint_text(hint_text)),
-    }
+pub static SET_TAB_COLOR: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
+    name: "/set-tab-color",
+    description: "Set the color of the current tab",
+    icon_path: "bundled/svg/ellipse.svg",
+    availability: Availability::ALWAYS,
+    auto_enter_ai_mode: false,
+    argument: Some(Argument::required().with_hint_text(SET_TAB_COLOR_HINT.as_str())),
 });
 
 pub static FORK: LazyLock<StaticCommand> = LazyLock::new(|| {
@@ -686,7 +687,7 @@ mod tests {
         let hint = argument
             .hint_text
             .expect("/set-tab-color hint text is set dynamically");
-        for color in crate::ui_components::color_dot::TAB_COLOR_OPTIONS {
+        for color in color_dot::TAB_COLOR_OPTIONS {
             let lower = color.to_string().to_ascii_lowercase();
             assert!(hint.contains(&lower), "hint should mention `{lower}`");
         }

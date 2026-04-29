@@ -36,6 +36,7 @@ use crate::terminal::input::{
     CompletionsTrigger, Event, Input, InputSuggestionsMode, UserQueryMenuAction,
 };
 use crate::terminal::view::TerminalAction;
+use crate::ui_components::color_dot;
 use crate::view_components::DismissibleToast;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
@@ -424,7 +425,7 @@ impl Input {
             }
             set_tab_color if command.name == commands::SET_TAB_COLOR.name => {
                 let supported_options = || {
-                    crate::ui_components::color_dot::TAB_COLOR_OPTIONS
+                    color_dot::TAB_COLOR_OPTIONS
                         .iter()
                         .map(|c| c.to_string().to_ascii_lowercase())
                         .chain(std::iter::once("none".to_owned()))
@@ -452,7 +453,7 @@ impl Input {
                     let parsed = arg
                         .parse::<AnsiColorIdentifier>()
                         .ok()
-                        .filter(|c| crate::ui_components::color_dot::TAB_COLOR_OPTIONS.contains(c));
+                        .filter(|c| color_dot::TAB_COLOR_OPTIONS.contains(c));
                     match parsed {
                         Some(c) => SelectedTabColor::Color(c),
                         None => {
