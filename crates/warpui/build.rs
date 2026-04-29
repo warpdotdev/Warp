@@ -80,7 +80,7 @@ fn compile_metal_shaders() {
     println!("cargo:rerun-if-changed={header_path}");
     println!("cargo:rerun-if-changed={metal_path}");
 
-    let mut compile_args = vec!["-sdk", "macosx", "metal", "-c", metal_path, "-o", air_path];
+    let mut compile_args = vec!["metal", "-c", metal_path, "-o", air_path];
     if cfg!(feature = "enable-metal-frame-capture") {
         compile_args.push("-frecord-sources");
         compile_args.push("-gline-tables-only");
@@ -96,7 +96,7 @@ fn compile_metal_shaders() {
     );
 
     let result = Command::new("xcrun")
-        .args(["-sdk", "macosx", "metallib", air_path, "-o", lib_path])
+        .args(["metallib", air_path, "-o", lib_path])
         .output()
         .expect("error compiling metal shaders to .metallib");
     assert!(

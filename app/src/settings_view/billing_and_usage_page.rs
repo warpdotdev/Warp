@@ -81,43 +81,6 @@ use super::{
 };
 
 const HEADER_FONT_SIZE: f32 = 16.;
-const OVERAGE_USAGE_LINK_TEXT: &str = "View details on overage usage";
-const OVERAGE_TOGGLE_ADMIN_HEADER: &str = "Enable premium model usage overages";
-const OVERAGE_TOGGLE_USER_HEADER_ENABLED: &str = "Premium model usage overages are enabled";
-const OVERAGE_TOGGLE_USER_HEADER_DISABLED: &str = "Premium model usage overages are not enabled";
-const OVERAGE_TOGGLE_DESCRIPTION: &str = "Continue using premium models beyond your plan's limits. Usage is charged in $20 increments up to your spending limit, with any remaining balance charged on your scheduled billing date.";
-const OVERAGE_TOGGLE_USER_DESCRIPTION: &str =
-    "Ask a team admin to enable overages for more AI usage.";
-
-const SORT_MENU_ITEM_DISPLAY_NAME_A_Z_LABEL: &str = "A to Z";
-const SORT_MENU_ITEM_DISPLAY_NAME_Z_A_LABEL: &str = "Z to A";
-const SORT_MENU_ITEM_REQUEST_USAGE_ASCENDING_LABEL: &str = "Usage ascending";
-const SORT_MENU_ITEM_REQUEST_USAGE_DESCENDING_LABEL: &str = "Usage descending";
-
-const AUTO_RELOAD_EXCEED_LIMIT_WARNING_STRING: &str =
-    "Auto reload is disabled, as the next reload would exceed your monthly spend limit. Increase your limit to use auto reload.";
-const AUTO_RELOAD_DELINQUENT_WARNING_STRING: &str =
-    "Restricted due to billing issue. Update your payment method to purchase add-on credits.";
-const RESTRICTED_BILLING_USAGE_WARNING_STRING: &str =
-    "Auto reload is disabled due to recent failed reload. Please update your payment method and try again.";
-
-const OVERVIEW_TAB_TEXT: &str = "Overview";
-const USAGE_HISTORY_TAB_TEXT: &str = "Usage History";
-
-const ENTERPRISE_USAGE_CALLOUT_HEADER: &str = "Usage reporting is currently limited";
-const ENTERPRISE_USAGE_CALLOUT_BODY_ADMIN_PREFIX: &str =
-    "Enterprise credit usage isn't fully available in this view yet. For the most accurate spend tracking, ";
-const ENTERPRISE_USAGE_CALLOUT_BODY_ADMIN_LINK: &str = "visit the admin panel";
-const ENTERPRISE_USAGE_CALLOUT_BODY_ADMIN_SUFFIX: &str = ".";
-const ENTERPRISE_USAGE_CALLOUT_BODY_NON_ADMIN: &str =
-    "Enterprise credit usage isn't fully available in this view yet. Contact a team admin for detailed usage reporting.";
-
-const ADDON_CREDITS_DESCRIPTION: &str = "Add-on credits are purchased in prepaid packages that roll over each billing cycle and expire after one year. The more you purchase, the better the per-credit rate. Once your base plan credits are used, add-on credits will be consumed.";
-const ADDITIONAL_ADDON_CREDITS_DESCRIPTION_FOR_TEAM: &str =
-    "Purchased add-on credits are shared across your team.";
-
-// Cloud agent trial widget constants.
-const AMBIENT_AGENT_TRIAL_TITLE: &str = "Cloud agent trial";
 /// The threshold below which we only show the "Buy more" button (not "New agent").
 use crate::ai::request_usage_model::AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD;
 
@@ -148,16 +111,16 @@ pub enum BillingUsageTab {
 impl BillingUsageTab {
     pub fn get_tab_from_label(label: &str) -> Self {
         match label {
-            OVERVIEW_TAB_TEXT => BillingUsageTab::Overview,
-            USAGE_HISTORY_TAB_TEXT => BillingUsageTab::UsageHistory,
+            _ if label == i18n::t("settings.billing.tab.overview") => BillingUsageTab::Overview,
+            _ if label == i18n::t("settings.billing.tab.usage_history") => BillingUsageTab::UsageHistory,
             _ => BillingUsageTab::Overview,
         }
     }
 
-    pub fn label(&self) -> &str {
+    pub fn label(&self) -> &'static str {
         match self {
-            BillingUsageTab::Overview => OVERVIEW_TAB_TEXT,
-            BillingUsageTab::UsageHistory => USAGE_HISTORY_TAB_TEXT,
+            BillingUsageTab::Overview => i18n::t("settings.billing.tab.overview"),
+            BillingUsageTab::UsageHistory => i18n::t("settings.billing.tab.usage_history"),
         }
     }
 }
@@ -278,7 +241,7 @@ impl BillingAndUsagePageView {
 
         let overage_limit_modal_view = ctx.add_typed_action_view(|ctx| {
             Modal::new(
-                Some("Overage spending limit".to_string()),
+                Some(i18n::t("settings.billing.overage.modal_title").to_string()),
                 overage_limit_modal,
                 ctx,
             )
@@ -302,7 +265,7 @@ impl BillingAndUsagePageView {
 
         let addon_credit_modal_view = ctx.add_typed_action_view(|ctx| {
             Modal::new(
-                Some("Monthly spending limit".to_string()),
+                Some(i18n::t("settings.billing.addon.modal_title").to_string()),
                 addon_credit_modal,
                 ctx,
             )
@@ -330,7 +293,7 @@ impl BillingAndUsagePageView {
         });
 
         let load_more_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Load more", SecondaryTheme).on_click(|ctx| {
+            ActionButton::new(i18n::t("settings.billing.usage_history.load_more"), SecondaryTheme).on_click(|ctx| {
                 ctx.dispatch_typed_action(BillingAndUsagePageAction::RenderMoreUsageEntries);
             })
         });
@@ -366,7 +329,7 @@ impl BillingAndUsagePageView {
 
     fn build_page() -> PageType<Self> {
         let categories = vec![Category::new(
-            "Billing and usage",
+            i18n::t("nav.billing_and_usage"),
             vec![
                 Box::new(PlanWidget::default()),
                 Box::new(UsageWidget::default()),
@@ -426,7 +389,7 @@ impl BillingAndUsagePageView {
             }
             UserWorkspacesEvent::UpdateWorkspaceSettingsRejected(_err) => {
                 self.show_toast(
-                    "Failed to update workspace settings",
+                    i18n::t("settings.billing.toast.update_settings_failed"),
                     ToastFlavor::Error,
                     ctx,
                 );
@@ -439,7 +402,7 @@ impl BillingAndUsagePageView {
             UserWorkspacesEvent::PurchaseAddonCreditsSuccess => {
                 self.purchase_addon_credits_loading = false;
                 self.show_toast(
-                    "Successfully purchased add-on credits",
+                    i18n::t("settings.billing.toast.purchase_success"),
                     ToastFlavor::Success,
                     ctx,
                 );
@@ -1135,18 +1098,16 @@ impl UsageWidget {
         let fg = theme.foreground().into_solid();
         let bg = theme.background().into_solid();
 
-        let title = Text::new_inline(AMBIENT_AGENT_TRIAL_TITLE, appearance.ui_font_family(), 14.)
+        let title = Text::new_inline(i18n::t("settings.billing.ambient_trial.title"), appearance.ui_font_family(), 14.)
             .with_color(theme.active_ui_text_color().into())
             .with_style(Properties::default().weight(Weight::Semibold))
             .finish();
 
         let credits_text = if credits_remaining == 1 {
-            "1 credit remaining".to_string()
+            i18n::t("settings.billing.ambient_trial.one_credit_remaining").to_string()
         } else {
-            format!(
-                "{} credits remaining",
-                credits_remaining.separate_with_commas()
-            )
+            i18n::t("settings.billing.ambient_trial.credits_remaining")
+                .replace("{count}", &credits_remaining.separate_with_commas())
         };
         let credits_label = Text::new_inline(credits_text, appearance.ui_font_family(), 12.)
             .with_color(blended_colors::text_sub(theme, theme.surface_1()))
@@ -1167,7 +1128,7 @@ impl UsageWidget {
                     ButtonVariant::Secondary,
                     self.ambient_trial_new_agent_button.clone(),
                 )
-                .with_text_label("New agent".to_string())
+                .with_text_label(i18n::t("settings.billing.ambient_trial.new_agent").to_string())
                 .with_style(UiComponentStyles {
                     font_color: Some(bg),
                     background: Some(fg.into()),
@@ -1204,7 +1165,7 @@ impl UsageWidget {
                     ButtonVariant::Secondary,
                     self.ambient_trial_buy_more_button.clone(),
                 )
-                .with_text_label("Buy more".to_string())
+                .with_text_label(i18n::t("settings.billing.ambient_trial.buy_more").to_string())
                 .with_style(UiComponentStyles {
                     background: Some(bg.into()),
                     font_size: Some(14.),
@@ -1290,16 +1251,16 @@ impl UsageWidget {
         let enabled_and_not_delinquent = enabled && !is_delinquent;
 
         let (header_text, description_text) = if has_admin_permissions {
-            (OVERAGE_TOGGLE_ADMIN_HEADER, OVERAGE_TOGGLE_DESCRIPTION)
+            (i18n::t("settings.billing.overage.admin_header"), i18n::t("settings.billing.overage.description"))
         } else if enabled {
             (
-                OVERAGE_TOGGLE_USER_HEADER_ENABLED,
-                OVERAGE_TOGGLE_DESCRIPTION,
+                i18n::t("settings.billing.overage.user_header_enabled"),
+                i18n::t("settings.billing.overage.description"),
             )
         } else {
             (
-                OVERAGE_TOGGLE_USER_HEADER_DISABLED,
-                OVERAGE_TOGGLE_USER_DESCRIPTION,
+                i18n::t("settings.billing.overage.user_header_disabled"),
+                i18n::t("settings.billing.overage.user_description"),
             )
         };
 
@@ -1396,7 +1357,7 @@ impl UsageWidget {
         let spend_limit_text = if let Some(cents) = usage_settings.max_monthly_spend_cents {
             format!("${:.2}", cents as f64 / 100.0)
         } else {
-            "Not set".to_string()
+            i18n::t("settings.billing.overage.not_set").to_string()
         };
 
         let info_icon = render_info_icon(
@@ -1406,13 +1367,13 @@ impl UsageWidget {
                 on_click_action: None,
                 secondary_text: None,
                 tooltip_override_text: Some(
-                    "Sets the monthly overage spending limit beyond the plan amount".to_string(),
+                    i18n::t("settings.billing.overage.monthly_spending_limit.tooltip").to_string(),
                 ),
             },
         );
 
         let label = Text::new_inline(
-            "Monthly overage spending limit",
+            i18n::t("settings.billing.overage.monthly_spending_limit"),
             appearance.ui_font_family(),
             12.,
         )
@@ -1481,7 +1442,7 @@ impl UsageWidget {
                 appearance
                     .ui_builder()
                     .link(
-                        OVERAGE_USAGE_LINK_TEXT.to_string(),
+                        i18n::t("settings.billing.overage.link_text").to_string(),
                         None,
                         Some(Box::new(move |ctx| {
                             ctx.dispatch_typed_action(
@@ -1641,7 +1602,7 @@ impl UsageWidget {
         let ui_builder = appearance.ui_builder();
         let theme = appearance.theme();
 
-        let header = Text::new_inline("Add-on credits", appearance.ui_font_family(), 16.)
+        let header = Text::new_inline(i18n::t("settings.billing.addon.title"), appearance.ui_font_family(), 16.)
             .with_color(fg.into())
             .with_style(Properties::default().weight(Weight::Bold))
             .finish();

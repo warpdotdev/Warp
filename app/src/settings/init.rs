@@ -34,6 +34,7 @@ use warp_core::semantic_selection::SemanticSelection;
 use super::{
     app_icon::AppIconSettings, app_installation_detection::UserAppInstallDetectionSettings,
     cloud_preferences::CloudPreferencesSettings, initializer::SettingsInitializer,
+    language::LanguageSettings, language::LanguageSettingsChangedEvent,
     native_preference::NativePreferenceSettings, AISettings, AccessibilitySettings,
     AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings, ChangelogSettings,
     CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent,
@@ -87,6 +88,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     AppIconSettings::register(ctx);
     AppEditorSettings::register(ctx);
     InputSettings::register(ctx);
+    LanguageSettings::register(ctx);
     WarpifySettings::register(ctx);
     AltScreenReporting::register(ctx);
     UndoCloseSettings::register(ctx);
@@ -118,6 +120,27 @@ pub fn init(
     ctx.add_singleton_model(|_| SettingsInitializer::new());
 
     register_all_settings(ctx);
+
+    LanguageSettings::handle(ctx).update(ctx, |settings, ctx| {
+        if !settings.language.is_value_explicitly_set() {
+            let detected = i18n::Language::from_system_locale();
+            if detected != i18n::Language::English {
+                log::debug!("Setting default language to {detected} from system locale");
+                report_if_error!(settings.language.set_value(detected, ctx));
+            }
+        }
+    });
+
+    let lang = LanguageSettings::as_ref(ctx).current_language();
+    i18n::set_language(lang);
+
+    // Keep the i18n runtime in sync whenever the language setting changes
+    // (e.g. via settings hot-reload or cloud sync).
+    ctx.subscribe_to_model(&LanguageSettings::handle(ctx), |settings, event, ctx| {
+        if matches!(event, LanguageSettingsChangedEvent::LanguageState { .. }) {
+            i18n::set_language(settings.as_ref(ctx).current_language());
+        }
+    });
 
     // One-time migration: copy public settings from the platform-native store
     // into the TOML file so existing users don't lose their customizations

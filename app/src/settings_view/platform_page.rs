@@ -127,7 +127,7 @@ impl PlatformPageView {
 
         // Create the modal wrapper
         let create_api_key_modal_view = ctx.add_typed_action_view(|ctx| {
-            Modal::new(Some("New API key".to_string()), create_api_key_body, ctx)
+            Modal::new(Some(i18n::t("settings.platform.new_api_key").to_string()), create_api_key_body, ctx)
                 .with_modal_style(UiComponentStyles {
                     width: Some(MODAL_WIDTH),
                     height: Some(MODAL_HEIGHT),
@@ -175,7 +175,7 @@ impl PlatformPageView {
     fn show_create_api_key_modal(&mut self, ctx: &mut ViewContext<Self>) {
         // Ensure header reads "New API key" when opening the form
         self.create_api_key_modal_state
-            .set_title(Some("New API key".to_string()), ctx);
+            .set_title(Some(i18n::t("settings.platform.new_api_key").to_string()), ctx);
         self.create_api_key_modal_state.open(ctx);
         ctx.emit(PlatformPageViewEvent::ShowCreateApiKeyModal);
     }
@@ -205,7 +205,7 @@ impl PlatformPageView {
             CreateApiKeyModalEvent::Created { api_key } => {
                 // Switch modal header off for success screen
                 self.create_api_key_modal_state
-                    .set_title(Some("Save your key".to_string()), ctx);
+                    .set_title(Some(i18n::t("settings.platform.save_your_key").to_string()), ctx);
                 // Append to list locally
                 // Ensure the per-key expire button exists
                 let uid = api_key.uid.clone().into_inner();
@@ -259,7 +259,7 @@ impl PlatformPageView {
                 let window_id = ctx.window_id();
                 crate::ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast = crate::view_components::DismissibleToast::success(
-                        "API key deleted".to_string(),
+                        i18n::t("settings.platform.api_key_deleted").to_string(),
                     );
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
@@ -378,8 +378,8 @@ impl PlatformPageWidget {
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let text = vec![
-            FormattedTextFragment::plain_text("Create and manage API keys to allow other Oz cloud agents to access your Warp account.\nFor more information, visit the "),
-            FormattedTextFragment::hyperlink("Documentation.", API_KEY_DOCS_URL),
+            FormattedTextFragment::plain_text(i18n::t("settings.platform.description")),
+            FormattedTextFragment::hyperlink(i18n::t("settings.platform.documentation"), API_KEY_DOCS_URL),
         ];
 
         let text_element = FormattedTextElement::new(
@@ -413,7 +413,7 @@ impl PlatformPageWidget {
             Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(
-                    Text::new_inline("Oz Cloud API Keys", appearance.ui_font_family(), 16.)
+                    Text::new_inline(i18n::t("settings.platform.oz_cloud_api_keys"), appearance.ui_font_family(), 16.)
                         .with_style(Properties::default().weight(Weight::Bold))
                         .with_color(appearance.theme().active_ui_text_color().into())
                         .finish(),
@@ -425,7 +425,7 @@ impl PlatformPageWidget {
                             ButtonVariant::Outlined,
                             self.create_api_key_button_mouse_state.clone(),
                         )
-                        .with_text_label("+ Create API Key".to_string())
+                        .with_text_label(i18n::t("settings.platform.create_api_key").to_string())
                         .build()
                         .on_click(|ctx, _, _| {
                             ctx.dispatch_typed_action(PlatformPageAction::ShowCreateApiKeyModal);
@@ -460,21 +460,21 @@ impl PlatformPageWidget {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max);
         header_row
-            .add_child(Expanded::new(1., self.render_header_cell(appearance, "Name")).finish());
+            .add_child(Expanded::new(1., self.render_header_cell(appearance, i18n::t("settings.platform.header.name"))).finish());
         header_row
-            .add_child(Expanded::new(1., self.render_header_cell(appearance, "Key")).finish());
+            .add_child(Expanded::new(1., self.render_header_cell(appearance, i18n::t("settings.platform.header.key"))).finish());
         if FeatureFlag::TeamApiKeys.is_enabled() {
             header_row.add_child(
-                Expanded::new(1., self.render_header_cell(appearance, "Scope")).finish(),
+                Expanded::new(1., self.render_header_cell(appearance, i18n::t("settings.platform.header.scope"))).finish(),
             );
         }
         header_row
-            .add_child(Expanded::new(1., self.render_header_cell(appearance, "Created")).finish());
+            .add_child(Expanded::new(1., self.render_header_cell(appearance, i18n::t("settings.platform.header.created"))).finish());
         header_row.add_child(
-            Expanded::new(1., self.render_header_cell(appearance, "Last used")).finish(),
+            Expanded::new(1., self.render_header_cell(appearance, i18n::t("settings.platform.header.last_used"))).finish(),
         );
         header_row.add_child(
-            Expanded::new(1., self.render_header_cell(appearance, "Expires at")).finish(),
+            Expanded::new(1., self.render_header_cell(appearance, i18n::t("settings.platform.header.expires_at"))).finish(),
         );
         header_row.add_child(Expanded::new(0.5, self.render_header_cell(appearance, "")).finish());
 
@@ -522,11 +522,11 @@ impl PlatformPageWidget {
         let last_used = key
             .last_used_at
             .map(format_approx_duration_from_now_utc)
-            .unwrap_or_else(|| "Never".to_owned());
+            .unwrap_or_else(|| i18n::t("settings.platform.never").to_string());
         let expires_at = key
             .expires_at
             .map(|dt| format!("{}", dt.format("%b %-d, %Y")))
-            .unwrap_or_else(|| "Never".to_owned());
+            .unwrap_or_else(|| i18n::t("settings.platform.never").to_string());
 
         // Truncate long names to keep columns aligned
         let name_display = truncate_from_end(&key.name, 21);
@@ -566,8 +566,8 @@ impl PlatformPageWidget {
         );
         if FeatureFlag::TeamApiKeys.is_enabled() {
             let scope_display = match key.scope {
-                ApiKeyScope::Personal => "Personal",
-                ApiKeyScope::Team => "Team",
+                ApiKeyScope::Personal => i18n::t("settings.platform.scope.personal"),
+                ApiKeyScope::Team => i18n::t("settings.platform.scope.team"),
             };
             row.add_child(
                 Expanded::new(
@@ -655,7 +655,7 @@ impl PlatformPageWidget {
                     .with_child(
                         Container::new(
                             Text::new(
-                                "No API Keys",
+                                i18n::t("settings.platform.no_api_keys"),
                                 appearance.ui_font_family(),
                                 SUBHEADER_FONT_SIZE,
                             )
@@ -669,7 +669,7 @@ impl PlatformPageWidget {
                     .with_child(
                         Container::new(
                             Text::new(
-                                "Create a key to manage external access to Warp",
+                                i18n::t("settings.platform.no_api_keys_description"),
                                 appearance.ui_font_family(),
                                 CONTENT_FONT_SIZE,
                             )
