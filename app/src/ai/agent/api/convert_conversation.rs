@@ -1540,6 +1540,11 @@ pub(crate) fn convert_tool_call_result_to_input(
                 context,
             })
         }
+        // OrchestrateResult is consumed via a dedicated `OrchestrateAction` flow
+        // and does not feed back into the legacy AIAgentInput::ActionResult path.
+        // Replay/restore for orchestrate cards is implemented in a follow-up
+        // commit alongside the OrchestrateConfigCard plumbing (QUALITY-569).
+        Some(ToolCallResultType::OrchestrateResult(_)) => None,
         // Deprecated/unused result types or absent result.
         Some(ToolCallResultType::SuggestCreatePlan(..))
         | Some(ToolCallResultType::SuggestPlan(..))
@@ -1674,6 +1679,12 @@ fn create_cancelled_result_for_tool_call(
         ToolType::SendMessageToAgent(_) => {
             AIAgentActionResultType::SendMessageToAgent(SendMessageToAgentResult::Cancelled)
         }
+        // OrchestrateAction is rendered via its own card; the cancellation path is
+        // handled by the dedicated orchestrate flow rather than the generic
+        // tool-call cancellation conversion. Returning None here matches the
+        // Subagent / Server pattern above so the legacy code path does not
+        // attempt to synthesize an AIAgentActionResult for it.
+        ToolType::Orchestrate(_) => return None,
         // These tools are deprecated.
         ToolType::SuggestCreatePlan(_) | ToolType::SuggestPlan(_) => return None,
     };

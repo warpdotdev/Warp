@@ -98,6 +98,7 @@ pub async fn generate_multi_agent_output(
             supports_bundled_skills: FeatureFlag::BundledSkills.is_enabled(),
             supports_research_agent: params.research_agent_enabled,
             supports_orchestration_v2: FeatureFlag::OrchestrationV2.is_enabled(),
+            supports_orchestrate: FeatureFlag::OrchestrateTool.is_enabled(),
         }),
         metadata: Some(api::request::Metadata {
             logging: logging_metadata,
@@ -206,11 +207,18 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
     }
 
     if params.orchestration_enabled {
-        supported_tools.push(if FeatureFlag::OrchestrationV2.is_enabled() {
-            api::ToolType::StartAgentV2
+        // When `OrchestrateTool` is enabled the lead agent receives only
+        // `orchestrate` (gated server-side by `orchestrate_tool_enabled`).
+        // The two tool families never coexist in a conversation.
+        if FeatureFlag::OrchestrateTool.is_enabled() {
+            supported_tools.push(api::ToolType::Orchestrate);
         } else {
-            api::ToolType::StartAgent
-        });
+            supported_tools.push(if FeatureFlag::OrchestrationV2.is_enabled() {
+                api::ToolType::StartAgentV2
+            } else {
+                api::ToolType::StartAgent
+            });
+        }
         supported_tools.push(api::ToolType::SendMessageToAgent);
     }
 

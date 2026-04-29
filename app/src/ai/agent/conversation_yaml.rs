@@ -507,6 +507,22 @@ fn write_tool_call_args(out: &mut String, tool: &Tool) {
                 out.push_str(&format!("  - deleted: {}\n", df.file_path));
             }
         }
+        Tool::Orchestrate(orch) => {
+            out.push_str(&format!(
+                "summary: \"{}\"\n",
+                escape_yaml_string(&orch.summary)
+            ));
+            out.push_str(&format!("agent_count: {}\n", orch.agent_run_configs.len()));
+            if !orch.agent_run_configs.is_empty() {
+                out.push_str("agents:\n");
+                for agent in &orch.agent_run_configs {
+                    out.push_str(&format!(
+                        "  - name: \"{}\"\n",
+                        escape_yaml_string(&agent.name)
+                    ));
+                }
+            }
+        }
         // No additional args worth serializing.
         Tool::ReadShellCommandOutput(_)
         | Tool::UseComputer(_)
@@ -1024,6 +1040,53 @@ fn write_tool_call_result_content(out: &mut String, result: &ToolCallResultType)
         }
         ToolCallResultType::Cancel(_) => {
             out.push_str("status: cancelled\n");
+        }
+        ToolCallResultType::OrchestrateResult(r) => {
+            use api::orchestrate_result::Outcome;
+            match &r.outcome {
+                Some(Outcome::Launched(launched)) => {
+                    out.push_str("status: launched\n");
+                    if !launched.model_id.is_empty() {
+                        out.push_str(&format!("model_id: {}\n", launched.model_id));
+                    }
+                    if let Some(harness) = &launched.harness {
+                        out.push_str(&format!("harness: {}\n", harness.r#type));
+                    }
+                    out.push_str(&format!("agent_count: {}\n", launched.agents.len()));
+                    if !launched.agents.is_empty() {
+                        out.push_str("agents:\n");
+                        for outcome in &launched.agents {
+                            out.push_str(&format!(
+                                "  - name: \"{}\"\n",
+                                escape_yaml_string(&outcome.name)
+                            ));
+                            use api::orchestrate_result::agent_outcome::Result as AgentResult;
+                            match &outcome.result {
+                                Some(AgentResult::Launched(l)) => {
+                                    out.push_str(&format!("    agent_id: {}\n", l.agent_id));
+                                }
+                                Some(AgentResult::Failed(f)) => {
+                                    out.push_str(&format!(
+                                        "    error: \"{}\"\n",
+                                        escape_yaml_string(&f.error)
+                                    ));
+                                }
+                                None => {}
+                            }
+                        }
+                    }
+                }
+                Some(Outcome::LaunchDenied(_)) => {
+                    out.push_str("status: launch_denied\n");
+                }
+                Some(Outcome::Failure(f)) => {
+                    out.push_str(&format!(
+                        "status: failure\nerror: \"{}\"\n",
+                        escape_yaml_string(&f.error)
+                    ));
+                }
+                None => {}
+            }
         }
         // No structured content worth serializing.
         ToolCallResultType::Server(_)

@@ -714,6 +714,13 @@ pub enum FeatureFlag {
     /// via server polling instead of client-local conversation history.
     OrchestrationV2,
 
+    /// Enables the `orchestrate` tool, which lets the lead agent batch
+    /// per-child agent configs into one tool call rendered by the
+    /// `OrchestrateConfigCard`. When enabled (alongside the server-side
+    /// `orchestrate_tool_enabled` flag), the lead agent receives `orchestrate`
+    /// instead of `start_agent` / `start_agent_v2`.
+    OrchestrateTool,
+
     /// Enables SSE-based event push for orchestration instead of polling.
     /// When enabled the client opens a persistent SSE connection to the server
     /// and receives events in real time instead of short-polling.
@@ -906,6 +913,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::RememberFastForwardState,
     FeatureFlag::HOANotifications,
     FeatureFlag::OrchestrationV2,
+    FeatureFlag::OrchestrateTool,
     FeatureFlag::OrchestrationEventPush,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
