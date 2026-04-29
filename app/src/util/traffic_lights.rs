@@ -73,7 +73,9 @@ pub fn traffic_light_data(ctx: &AppContext, window_id: WindowId) -> Option<Traff
             side: TrafficLightSide::Left,
             scales_with_zoom: false,
         })
-    } else if cfg!(any(target_os = "linux", target_os = "freebsd")) && !ctx.windows().is_tiling_window_manager() {
+    } else if cfg!(any(target_os = "linux", target_os = "freebsd"))
+        && !ctx.windows().is_tiling_window_manager()
+    {
         Some(TrafficLightData {
             width: 116.,
             side: TrafficLightSide::Right,
@@ -442,7 +444,10 @@ impl TrafficLightData {
         })
     }
 
-    #[cfg(all(not(any(target_os = "linux", target_os = "freebsd")), not(target_os = "windows")))]
+    #[cfg(all(
+        not(any(target_os = "linux", target_os = "freebsd")),
+        not(target_os = "windows")
+    ))]
     pub fn render(
         &self,
         _fullscreen_state: FullscreenState,

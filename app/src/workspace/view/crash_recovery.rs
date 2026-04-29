@@ -42,7 +42,13 @@ pub fn banner_metadata(ctx: &AppContext) -> Option<WorkspaceBannerFields> {
     }
 }
 
-#[cfg_attr(all(enable_crash_recovery, not(any(target_os = "linux", target_os = "freebsd"))), allow(unused))]
+#[cfg_attr(
+    all(
+        enable_crash_recovery,
+        not(any(target_os = "linux", target_os = "freebsd"))
+    ),
+    allow(unused)
+)]
 pub fn dismiss_workspace_banner(ctx: &mut ViewContext<Workspace>) {
     CrashRecovery::handle(ctx).update(ctx, |crash_recovery, ctx| {
         crash_recovery.handle_user_acknowledged_crash(ctx);

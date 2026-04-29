@@ -100,7 +100,11 @@ impl<'a> WindowCallbackDispatcher<'a> {
 // support application menus, so these never get called.
 // TODO(CORE-2691): implement native Windows OS app menus
 #[cfg_attr(
-    any(any(target_os = "linux", target_os = "freebsd"), target_os = "windows", target_family = "wasm"),
+    any(
+        any(target_os = "linux", target_os = "freebsd"),
+        target_os = "windows",
+        target_family = "wasm"
+    ),
     allow(dead_code)
 )]
 impl WindowCallbackDispatcher<'_> {

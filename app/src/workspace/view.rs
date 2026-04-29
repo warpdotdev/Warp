@@ -22904,7 +22904,10 @@ impl View for Workspace {
             stack.finish()
         };
 
-        #[cfg_attr(not(any(windows, any(target_os = "linux", target_os = "freebsd"))), allow(unused_mut))]
+        #[cfg_attr(
+            not(any(windows, any(target_os = "linux", target_os = "freebsd"))),
+            allow(unused_mut)
+        )]
         let mut event_handler = EventHandler::new(stack);
 
         #[cfg(any(windows, any(target_os = "linux", target_os = "freebsd")))]

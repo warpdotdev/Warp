@@ -734,12 +734,18 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     // Collect errors that occur in run_internal() before the Sentry client is initialized,
     // so they can be replayed to Sentry once it's ready.
     #[cfg_attr(
-        not(all(feature = "release_bundle", any(windows, any(target_os = "linux", target_os = "freebsd")))),
+        not(all(
+            feature = "release_bundle",
+            any(windows, any(target_os = "linux", target_os = "freebsd"))
+        )),
         expect(unused_mut)
     )]
     let mut pre_sentry_errors: Vec<anyhow::Error> = Vec::new();
 
-    #[cfg(all(feature = "release_bundle", any(target_os = "linux", target_os = "freebsd")))]
+    #[cfg(all(
+        feature = "release_bundle",
+        any(target_os = "linux", target_os = "freebsd")
+    ))]
     if let LaunchMode::App { .. } = launch_mode {
         match app_services::linux::pass_startup_args_to_existing_instance(
             launch_mode.args().as_ref(),
@@ -805,7 +811,10 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     // When the SettingsFile feature flag is enabled, public settings live in
     // the TOML-backed store. When disabled, they live in the platform-native
     // store (same backend as private). Use the correct one for pre-app reads.
-    #[cfg_attr(not(any(enable_crash_recovery, any(target_os = "linux", target_os = "freebsd"))), expect(unused))]
+    #[cfg_attr(
+        not(any(enable_crash_recovery, any(target_os = "linux", target_os = "freebsd"))),
+        expect(unused)
+    )]
     let prefs_for_public_settings: &dyn warpui_extras::user_preferences::UserPreferences =
         if FeatureFlag::SettingsFile.is_enabled() {
             public_preferences.as_ref()
@@ -1915,8 +1924,10 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             let general_settings = GeneralSettings::as_ref(ctx);
             // On Linux or Windows, if we're about to close the final window, we should quit the app instead.
             // On Mac, we do this conditionally based on a user setting.
-            let quit_on_last_window_closed = cfg!(any(any(target_os = "linux", target_os = "freebsd"), windows))
-                || *general_settings.quit_on_last_window_closed;
+            let quit_on_last_window_closed = cfg!(any(
+                any(target_os = "linux", target_os = "freebsd"),
+                windows
+            )) || *general_settings.quit_on_last_window_closed;
             if ctx.window_ids().count() == 1 && quit_on_last_window_closed {
                 log::info!("No windows left, terminating app");
                 ctx.terminate_app(TerminationMode::Cancellable, None);
