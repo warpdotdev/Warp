@@ -20,10 +20,11 @@ impl ExpertCandidate {
 #[async_trait]
 #[cfg(feature = "local_fs")]
 impl LanguageServerCandidate for ExpertCandidate {
-    async fn should_suggest_for_repo(&self, path: &Path, _executor: &CommandBuilder) -> bool {
-        path.join("mix.exs").exists()
+    async fn should_suggest_for_repo(&self, path: &Path, executor: &CommandBuilder) -> bool {
+        (path.join("mix.exs").exists()
             || path.join("mix.lock").exists()
-            || path.join(".formatter.exs").exists()
+            || path.join(".formatter.exs").exists())
+            && self.is_installed_on_path(executor).await
     }
 
     async fn is_installed_in_data_dir(&self, _executor: &CommandBuilder) -> bool {
