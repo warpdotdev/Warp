@@ -254,9 +254,8 @@ impl RemoteTransport for SshTransport {
             if output.status.success() {
                 Ok(())
             } else {
-                let code = output.status.code().unwrap_or(-1);
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(anyhow::anyhow!("rm -f failed (exit {code}): {stderr}"))
+                Err(anyhow::anyhow!("Failed to remove binary: {stderr}"))
             }
         })
     }

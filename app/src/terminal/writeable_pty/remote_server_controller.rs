@@ -42,29 +42,21 @@ enum SshInitState {
         setup_start: Instant,
     },
     /// Stash held, `install_binary` in flight.
+    /// `for_update` is `true` when reinstalling over an existing install
+    /// (auto-update path) and `false` for a fresh install.
     AwaitingInstall {
         session_id: SessionId,
         session_info: SessionInfo,
         transport: SshTransport,
         setup_start: Instant,
+        #[allow(dead_code)]
+        for_update: bool,
     },
     /// Stash held, `connect_session` in flight. Bootstrap is flushed only
     /// once `SessionConnected` arrives (or on connection failure).
     AwaitingConnect {
         session_id: SessionId,
         session_info: SessionInfo,
-        setup_start: Instant,
-    },
-    /// Auto-update twin of [`SshInitState::AwaitingInstall`]. Entered
-    /// when the binary check missed but the install directory exists,
-    /// so we skip the modal and reinstall in place. Same lifecycle as
-    /// `AwaitingInstall`: bootstrap stays stashed through
-    /// `BinaryInstallComplete` and rides into `AwaitingConnect` on
-    /// success (or is flushed on failure).
-    Updating {
-        session_id: SessionId,
-        session_info: SessionInfo,
-        transport: SshTransport,
         setup_start: Instant,
     },
 }
@@ -190,10 +182,6 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             | SshInitState::AwaitingConnect {
                 session_info: old_info,
                 ..
-            }
-            | SshInitState::Updating {
-                session_info: old_info,
-                ..
             } => {
                 self.flush_stashed_bootstrap(old_info, ctx);
             }
@@ -249,22 +237,14 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             }
             Ok(false) if has_old_binary => {
                 // Auto-update: a prior install exists, so skip the modal
-                // and reinstall. Path semantics are decided by
-                // `setup::remote_server_binary` / `setup::install_script`:
-                // `Channel::Local` and `Channel::Oss` write back to
-                // the unversioned path used by
-                // `script/deploy_remote_server`; every other channel
-                // writes to a versioned path. A versioned-channel build
-                // without `GIT_RELEASE_TAG` will fall back to
-                // `CARGO_PKG_VERSION`, fail at install time on the
-                // `/download/cli` 404, and surface the failed banner via
-                // `BinaryInstallComplete::Err(_)`.
+                // and reinstall.
                 self.did_install = true;
-                self.state = SshInitState::Updating {
+                self.state = SshInitState::AwaitingInstall {
                     session_id,
                     session_info,
                     transport: transport.clone(),
                     setup_start,
+                    for_update: true,
                 };
                 RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
                     mgr.install_binary(session_id, transport, true, ctx);
@@ -292,6 +272,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                             session_info,
                             transport: transport.clone(),
                             setup_start,
+                            for_update: false,
                         };
                         RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
                             mgr.install_binary(session_id, transport, false, ctx);
@@ -338,6 +319,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             session_info,
             transport: transport.clone(),
             setup_start,
+            for_update: false,
         };
         RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
             mgr.install_binary(session_id, transport, false, ctx);
@@ -448,15 +430,8 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         result: Result<(), String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        // Both `AwaitingInstall` (fresh install) and `Updating`
-        // (auto-update over an existing install) are awaiting the same
-        // `BinaryInstallComplete` event, and both transition into
-        // `connect_session` on success — the only user-facing difference
-        // was already applied upstream when the manager emitted
-        // `Installing` vs `Updating`.
         let expected = match &self.state {
-            SshInitState::AwaitingInstall { session_id, .. }
-            | SshInitState::Updating { session_id, .. } => *session_id,
+            SshInitState::AwaitingInstall { session_id, .. } => *session_id,
             _ => return,
         };
         if expected != session_id {
@@ -470,14 +445,8 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                     transport,
                     setup_start,
                     ..
-                }
-                | SshInitState::Updating {
-                    session_info,
-                    transport,
-                    setup_start,
-                    ..
                 } => (session_info, transport, setup_start),
-                _ => unreachable!("just matched AwaitingInstall/Updating above"),
+                _ => unreachable!("just matched AwaitingInstall above"),
             };
         match result {
             Ok(()) => {

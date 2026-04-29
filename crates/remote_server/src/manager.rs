@@ -769,24 +769,20 @@ impl RemoteServerManager {
                  client={client_version:?}, server={:?}. Removing stale binary.",
                 resp.server_version
             );
+
             const REMOVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-            match transport
+
+            if let Err(e) = transport
                 .remove_remote_server_binary()
                 .with_timeout(REMOVAL_TIMEOUT)
                 .await
+                .unwrap_or_else(|_| {
+                    Err(anyhow::anyhow!("timed out after {REMOVAL_TIMEOUT:?}"))
+                })
             {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => {
-                    log::warn!(
-                        "Failed to remove stale remote binary for session {session_id:?}: {e}"
-                    );
-                }
-                Err(_) => {
-                    log::warn!(
-                        "Timed out removing stale remote binary for session \
-                         {session_id:?} (timeout={REMOVAL_TIMEOUT:?})"
-                    );
-                }
+                log::warn!(
+                    "Failed to remove stale remote binary for session {session_id:?}: {e}"
+                );
             }
             return Err(ConnectAndHandshakeError::Initialize(anyhow::anyhow!(
                 "remote server version mismatch (client: {client_version:?}, \
