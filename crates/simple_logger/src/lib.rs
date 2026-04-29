@@ -12,6 +12,7 @@ pub mod manager;
 
 const MAX_LOG_FILE_SIZE: u64 = 50 * 1024 * 1024;
 const MAX_ROTATED_FILES: usize = 5;
+const MAX_LOG_LINE_BYTES: usize = 1024 * 1024;
 
 fn rotated_path(path: &PathBuf, index: usize) -> PathBuf {
     let mut s = path.as_os_str().to_owned();
@@ -67,7 +68,7 @@ impl SimpleLogger {
                             log_line
                         );
                         let line_bytes = line.len() as u64;
-                        if bytes_written > 0 && bytes_written + line_bytes > MAX_LOG_FILE_SIZE {
+                        if bytes_written + line_bytes > MAX_LOG_FILE_SIZE {
                             let _ = log_file.flush().await;
                             drop(log_file);
                             let largest = MAX_ROTATED_FILES.saturating_sub(1);
@@ -96,9 +97,16 @@ impl SimpleLogger {
                             };
                             bytes_written = 0;
                         }
-                        let _ = log_file.write_all(line.as_bytes()).await;
-                        let _ = log_file.flush().await;
-                        bytes_written += line_bytes;
+                        if line_bytes > MAX_LOG_LINE_BYTES as u64 {
+                            let _ = log_file.write_all(&line.as_bytes()[..MAX_LOG_LINE_BYTES]).await;
+                            let _ = log_file.write_all(b"... [truncated]\n").await;
+                            let _ = log_file.flush().await;
+                            bytes_written += MAX_LOG_LINE_BYTES as u64 + 16;
+                        } else {
+                            let _ = log_file.write_all(line.as_bytes()).await;
+                            let _ = log_file.flush().await;
+                            bytes_written += line_bytes;
+                        }
                     }
                     Err(e) => {
                         log::warn!("SimpleLogger: channel closed: {e}");
