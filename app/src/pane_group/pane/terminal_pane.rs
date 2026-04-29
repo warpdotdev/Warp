@@ -693,6 +693,9 @@ fn handle_terminal_view_event(
                     pane_id: Some(pane_id),
                 })
             }
+            Event::SetTabColor(color) => {
+                ctx.emit(pane_group::Event::SetTabColor(*color));
+            }
             Event::AppStateChanged => {
                 ctx.emit(pane_group::Event::AppStateChanged);
             }

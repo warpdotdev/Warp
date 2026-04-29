@@ -9,6 +9,7 @@ use instant::Instant;
 
 use crate::server::ids::SyncId;
 use crate::server::telemetry::ImageProtocol;
+use crate::tab::SelectedTabColor;
 use crate::terminal::model::block::BlockMetadata;
 use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::completions::ShellCompletion;
@@ -149,6 +150,10 @@ pub enum Event {
         title: Option<String>,
         body: String,
     },
+    /// Emitted when the PTY processed an `OSC 1337 ; SetTabColor=<value> ST`
+    /// sequence. The workspace updates the manual tab color of the tab that
+    /// owns the emitting PTY (which may not be the active tab).
+    SetTabColor(SelectedTabColor),
 }
 
 #[derive(Debug, Clone)]
@@ -487,6 +492,7 @@ impl Debug for Event {
             Event::ExitShell { session_id } => {
                 write!(f, "ExitShell(session: {session_id:?})")
             }
+            Event::SetTabColor(color) => write!(f, "SetTabColor({color:?})"),
         }
     }
 }

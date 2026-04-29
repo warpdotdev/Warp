@@ -99,6 +99,23 @@ impl SelectedTabColor {
             SelectedTabColor::Unset => default,
         }
     }
+
+    /// Parses the user-facing color argument shared by `/set-tab-color` and the
+    /// OSC 1337 `SetTabColor=` escape sequence. Whitespace is trimmed and
+    /// matching is case-insensitive. Returns `None` for unknown values.
+    pub fn from_arg(arg: &str) -> Option<Self> {
+        match arg.trim().to_ascii_lowercase().as_str() {
+            "red" => Some(Self::Color(AnsiColorIdentifier::Red)),
+            "green" => Some(Self::Color(AnsiColorIdentifier::Green)),
+            "yellow" => Some(Self::Color(AnsiColorIdentifier::Yellow)),
+            "blue" => Some(Self::Color(AnsiColorIdentifier::Blue)),
+            "magenta" => Some(Self::Color(AnsiColorIdentifier::Magenta)),
+            "cyan" => Some(Self::Color(AnsiColorIdentifier::Cyan)),
+            "none" | "clear" => Some(Self::Cleared),
+            "default" | "reset" => Some(Self::Unset),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1691,5 +1708,88 @@ impl UiComponent for TabComponent<'_> {
             styles: self.styles.merge(style),
             ..self
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_arg_parses_named_colors_case_insensitively() {
+        assert_eq!(
+            SelectedTabColor::from_arg("red"),
+            Some(SelectedTabColor::Color(AnsiColorIdentifier::Red))
+        );
+        assert_eq!(
+            SelectedTabColor::from_arg("BLUE"),
+            Some(SelectedTabColor::Color(AnsiColorIdentifier::Blue))
+        );
+        assert_eq!(
+            SelectedTabColor::from_arg("MaGenTa"),
+            Some(SelectedTabColor::Color(AnsiColorIdentifier::Magenta))
+        );
+    }
+
+    #[test]
+    fn from_arg_supports_all_named_colors() {
+        for (input, expected) in [
+            ("red", AnsiColorIdentifier::Red),
+            ("green", AnsiColorIdentifier::Green),
+            ("yellow", AnsiColorIdentifier::Yellow),
+            ("blue", AnsiColorIdentifier::Blue),
+            ("magenta", AnsiColorIdentifier::Magenta),
+            ("cyan", AnsiColorIdentifier::Cyan),
+        ] {
+            assert_eq!(
+                SelectedTabColor::from_arg(input),
+                Some(SelectedTabColor::Color(expected)),
+                "input: {input}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_arg_trims_whitespace() {
+        assert_eq!(
+            SelectedTabColor::from_arg("  cyan  "),
+            Some(SelectedTabColor::Color(AnsiColorIdentifier::Cyan))
+        );
+        assert_eq!(
+            SelectedTabColor::from_arg("\tred\n"),
+            Some(SelectedTabColor::Color(AnsiColorIdentifier::Red))
+        );
+    }
+
+    #[test]
+    fn from_arg_maps_clear_aliases_to_cleared() {
+        assert_eq!(
+            SelectedTabColor::from_arg("none"),
+            Some(SelectedTabColor::Cleared)
+        );
+        assert_eq!(
+            SelectedTabColor::from_arg("CLEAR"),
+            Some(SelectedTabColor::Cleared)
+        );
+    }
+
+    #[test]
+    fn from_arg_maps_default_aliases_to_unset() {
+        assert_eq!(
+            SelectedTabColor::from_arg("default"),
+            Some(SelectedTabColor::Unset)
+        );
+        assert_eq!(
+            SelectedTabColor::from_arg("RESET"),
+            Some(SelectedTabColor::Unset)
+        );
+    }
+
+    #[test]
+    fn from_arg_returns_none_for_unknown_or_empty() {
+        assert_eq!(SelectedTabColor::from_arg(""), None);
+        assert_eq!(SelectedTabColor::from_arg("   "), None);
+        assert_eq!(SelectedTabColor::from_arg("purple"), None);
+        assert_eq!(SelectedTabColor::from_arg("rgb(1,2,3)"), None);
     }
 }

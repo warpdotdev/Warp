@@ -22,6 +22,7 @@ pub use warp_terminal::model::ansi::control_sequence_parameters::*;
 use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 
 use crate::features::FeatureFlag;
+use crate::tab::SelectedTabColor;
 use crate::terminal::model::completions::{
     ShellCompletion, ShellCompletionUpdate, ShellData as CompletionsShellData,
 };
@@ -1042,6 +1043,24 @@ where
 
             // iTerm inline image protocol.
             b"1337" => {
+                // Warp extension: programmatic tab color via
+                // OSC 1337 ; SetTabColor=<value> ST. Recognized before the
+                // image parser so unknown values silently no-op rather than
+                // falling through to image handling.
+                if let Some(value) = params[1].strip_prefix(b"SetTabColor=") {
+                    let value = match str::from_utf8(value) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            debug!("OSC 1337 SetTabColor: non-UTF-8 value");
+                            return;
+                        }
+                    };
+                    match SelectedTabColor::from_arg(value) {
+                        Some(color) => self.handler.set_tab_color(color),
+                        None => debug!("OSC 1337 SetTabColor: unknown value {value:?}"),
+                    }
+                    return;
+                }
                 if params[1].starts_with(b"File=") {
                     let metadata = parse_iterm_image_metadata(params);
 

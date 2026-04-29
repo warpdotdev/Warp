@@ -959,6 +959,70 @@ fn test_set_active_tab_color() {
 }
 
 #[test]
+fn test_set_tab_color_targets_specific_tab() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+
+            // Activate tab 0; the OSC path must color tab 1 even though it is
+            // not active.
+            workspace.handle_action(&WorkspaceAction::ActivateTab(0), ctx);
+            let active_before = workspace.active_tab_index;
+            assert_eq!(active_before, 0);
+
+            let tab1_pane_group_id = workspace.tabs[1].pane_group.id();
+
+            workspace.handle_action(
+                &WorkspaceAction::SetTabColor {
+                    pane_group_id: tab1_pane_group_id,
+                    color: SelectedTabColor::Color(AnsiColorIdentifier::Magenta),
+                },
+                ctx,
+            );
+
+            assert_eq!(
+                workspace.tabs[1].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Magenta),
+                "tab 1 (the targeted tab) should be magenta",
+            );
+            assert_eq!(
+                workspace.tabs[0].selected_color,
+                SelectedTabColor::Unset,
+                "tab 0 (the active tab) must not be touched",
+            );
+            assert_eq!(
+                workspace.active_tab_index, active_before,
+                "active tab must not change",
+            );
+
+            // `Cleared` round-trips on the targeted tab.
+            workspace.handle_action(
+                &WorkspaceAction::SetTabColor {
+                    pane_group_id: tab1_pane_group_id,
+                    color: SelectedTabColor::Cleared,
+                },
+                ctx,
+            );
+            assert_eq!(workspace.tabs[1].selected_color, SelectedTabColor::Cleared,);
+
+            // `Unset` round-trips on the targeted tab.
+            workspace.handle_action(
+                &WorkspaceAction::SetTabColor {
+                    pane_group_id: tab1_pane_group_id,
+                    color: SelectedTabColor::Unset,
+                },
+                ctx,
+            );
+            assert_eq!(workspace.tabs[1].selected_color, SelectedTabColor::Unset,);
+        });
+    });
+}
+
+#[test]
 fn test_workspace_sessions_retrieves_tabs() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);

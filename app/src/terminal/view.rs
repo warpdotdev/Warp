@@ -64,6 +64,7 @@ use crate::ai::predict::prompt_suggestions::{
     is_accept_prompt_suggestion_bound_to_ctrl_enter,
 };
 use crate::search::slash_command_menu::static_commands::commands;
+use crate::tab::SelectedTabColor;
 use crate::terminal::input::inline_menu::InlineMenuPositioner;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 pub use crate::terminal::view::rich_content::{
@@ -1969,6 +1970,9 @@ pub enum Event {
         title: Option<String>,
         body: String,
     },
+    /// Programmatic tab color change requested by `OSC 1337 ; SetTabColor=...`.
+    /// Targets the tab that owns the emitting terminal.
+    SetTabColor(SelectedTabColor),
     /// Emitted when cloud mode runs should display the cloud-agent capacity/credits modal.
     ShowCloudAgentCapacityModal {
         variant: CloudAgentCapacityModalVariant,
@@ -11314,6 +11318,9 @@ impl TerminalView {
                     LongRunningCommandAgentInteractionState::NotInteracting
                 };
                 ctx.emit(Event::LongRunningCommandAgentInteractionStateChanged { state });
+            }
+            ModelEvent::SetTabColor(color) => {
+                ctx.emit(Event::SetTabColor(*color));
             }
             ModelEvent::PluggableNotification { title, body } => {
                 // Intercept structured CLI agent notifications (e.g. from Claude Code plugin).

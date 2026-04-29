@@ -484,6 +484,10 @@ pub enum Event {
         notification: BlockNotification,
         pane_id: PaneId,
     },
+    /// Programmatic tab color change requested by `OSC 1337 ; SetTabColor=...`
+    /// from a terminal in this pane group. The workspace updates the tab that
+    /// owns this pane group (which may not be the active tab).
+    SetTabColor(crate::tab::SelectedTabColor),
     OpenSettings(SettingsSection),
     OpenAutoReloadModal {
         purchased_credits: i32,
