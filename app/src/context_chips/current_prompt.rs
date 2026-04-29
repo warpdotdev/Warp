@@ -20,7 +20,7 @@ use crate::{
         view::{ContextMenuAction, PromptPart, PromptPosition, TerminalAction},
     },
 };
-use futures::{pin_mut, FutureExt as _};
+use futures::{FutureExt as _, pin_mut};
 use itertools::Itertools;
 use settings::Setting as _;
 use warp_completer::completer::{CommandExitStatus, CommandOutput};
@@ -28,7 +28,7 @@ use warp_core::user_preferences::GetUserPreferences;
 
 use super::ChipResult;
 use super::{
-    chips_to_string,
+    ChipValue, ContextChipKind, chips_to_string,
     context_chip::{
         ChipAvailability, ChipDisabledReason, ChipFingerprintInput, ChipRuntimeCapabilities,
         ContextChip, Environment, ExternalCommandsAvailability, GeneratorContext, PromptGenerator,
@@ -36,7 +36,6 @@ use super::{
     },
     logging::{ChipCommandLogEntry, PromptChipExecutionPhase, PromptChipLogger},
     prompt::Prompt,
-    ChipValue, ContextChipKind,
 };
 #[cfg(feature = "local_fs")]
 use crate::code_review::git_status_update::{
@@ -51,8 +50,8 @@ use std::time::Duration;
 #[cfg(feature = "local_fs")]
 use warpui::WeakModelHandle;
 use warpui::{
-    r#async::{SpawnedFutureHandle, Timer},
     AppContext, ViewHandle,
+    r#async::{SpawnedFutureHandle, Timer},
 };
 use warpui::{Entity, ModelAsRef, ModelContext, ModelHandle, SingletonEntity};
 
@@ -949,26 +948,130 @@ impl CurrentPrompt {
 
     #[cfg(feature = "local_fs")]
     fn latest_git_status_metadata(&self, ctx: &AppContext) -> Option<GitStatusMetadata> {
-        let active_working_directory = self
-            .latest_context
-            .as_ref()?
+        let latest_context = self.latest_context.as_ref()?;
+        let active_working_directory = latest_context
             .active_block_metadata
             .current_working_directory()?;
+
+        // The shell-reported cwd can be in a different path encoding than the
+        // OS-native repo path that `DetectedRepositories` produced. The most
+        // common case is MSYS2 / Git Bash on Windows reporting paths like
+        // `/c/Users/foo/proj` while `repo_path` is `C:\Users\foo\proj`. WSL
+        // does the same with `/mnt/c/...`. Run the cwd through the session's
+        // `ShellLaunchData` so the ancestor check sees the same encoding the
+        // repo path is stored in. When no conversion is available (or it
+        // fails) we fall back to comparing the raw string, which matches the
+        // pre-existing behavior for native shells.
+        let active_session = latest_context
+            .active_block_metadata
+            .session_id()
+            .and_then(|session_id| self.sessions.as_ref(ctx).get(session_id));
+        let native_working_directory = active_session
+            .as_ref()
+            .and_then(|session| session.launch_data())
+            .and_then(|launch_data| {
+                launch_data.maybe_convert_absolute_path(active_working_directory)
+            });
 
         self.git_repo_status
             .as_ref()
             .and_then(|w| w.upgrade(ctx))
             .and_then(|h| {
                 let status_model = h.as_ref(ctx);
-                let active_working_directory = std::path::Path::new(active_working_directory);
-
-                if !active_working_directory.starts_with(status_model.repo_path()) {
+                if !Self::working_directory_belongs_to_repo(
+                    active_working_directory,
+                    native_working_directory.as_deref(),
+                    status_model.repo_path(),
+                ) {
                     return None;
                 }
 
                 status_model.metadata().cloned()
             })
     }
+    /// Whether the cwd is inside `repo_path`. Prefers the
+    /// `ShellLaunchData`-converted form when available so MSYS2 / WSL paths
+    /// like `/c/Users/foo/proj` correctly match the native `C:\Users\foo\proj`
+    /// repo root. Falls back to the raw shell-reported string when no
+    /// conversion is available, preserving the pre-existing behavior on
+    /// native shells.
+    #[cfg(feature = "local_fs")]
+    fn working_directory_belongs_to_repo(
+        raw_working_directory: &str,
+        native_working_directory: Option<&std::path::Path>,
+        repo_path: &std::path::Path,
+    ) -> bool {
+        let cwd: &std::path::Path =
+            native_working_directory.unwrap_or_else(|| std::path::Path::new(raw_working_directory));
+        cwd.starts_with(repo_path)
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn update_chip_value_from_git_status_metadata(
+        &mut self,
+        chip_kind: &ContextChipKind,
+        metadata: &GitStatusMetadata,
+    ) {
+        match chip_kind {
+            ContextChipKind::ShellGitBranch => {
+                self.update_chip_value(
+                    chip_kind,
+                    Some(ChipValue::Text(metadata.current_branch_name.clone())),
+                );
+            }
+            ContextChipKind::GitDiffStats => {
+                self.update_chip_value(
+                    chip_kind,
+                    Some(ChipValue::GitDiffStats(GitLineChanges::from_diff_stats(
+                        &metadata.stats_against_head,
+                    ))),
+                );
+            }
+            ContextChipKind::WorkingDirectory
+            | ContextChipKind::Username
+            | ContextChipKind::Hostname
+            | ContextChipKind::Date
+            | ContextChipKind::Time12
+            | ContextChipKind::Time24
+            | ContextChipKind::VirtualEnvironment
+            | ContextChipKind::CondaEnvironment
+            | ContextChipKind::NodeVersion
+            | ContextChipKind::Custom { .. }
+            | ContextChipKind::GithubPullRequest
+            | ContextChipKind::KubernetesContext
+            | ContextChipKind::SvnBranch
+            | ContextChipKind::SvnDirtyItems
+            | ContextChipKind::Ssh
+            | ContextChipKind::Subshell
+            | ContextChipKind::AgentPlanAndTodoList => {}
+        }
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn update_git_chip_value_from_repo_status(
+        &mut self,
+        chip_kind: &ContextChipKind,
+        ctx: &AppContext,
+    ) {
+        if let Some(metadata) = self.latest_git_status_metadata(ctx) {
+            self.update_chip_value_from_git_status_metadata(chip_kind, &metadata);
+        } else {
+            self.update_chip_value(chip_kind, None);
+        }
+    }
+
+    #[cfg(feature = "local_fs")]
+    fn clear_git_chip_generators(&mut self) {
+        for chip_kind in [
+            ContextChipKind::ShellGitBranch,
+            ContextChipKind::GitDiffStats,
+        ] {
+            if let Some(state) = self.states.get_mut(&chip_kind) {
+                state.clear_abort_handlers();
+            }
+        }
+    }
+
     fn fetch_chip_value_at_interval(
         &mut self,
         chip_kind: &ContextChipKind,
@@ -1070,6 +1173,9 @@ impl CurrentPrompt {
                                 true,
                                 ctx,
                             );
+                        } else {
+                            #[cfg(feature = "local_fs")]
+                            self.update_git_chip_value_from_repo_status(chip_kind, ctx);
                         }
                     } else {
                         self.fetch_chip_value_at_interval(
@@ -1446,6 +1552,7 @@ impl CurrentPrompt {
         if let Some(weak) = handle {
             if let Some(strong) = weak.upgrade(ctx) {
                 self.git_repo_status = Some(weak);
+                self.clear_git_chip_generators();
                 ctx.subscribe_to_model(&strong, |me, event, ctx| match event {
                     GitRepoStatusEvent::MetadataChanged => {
                         me.apply_git_repo_metadata(ctx);
@@ -1569,9 +1676,11 @@ impl CurrentPrompt {
         let current = *SessionSettings::as_ref(ctx).github_pr_chip_default_validation;
         if current != GithubPrPromptChipDefaultValidation::Suppressed {
             SessionSettings::handle(ctx).update(ctx, |settings, ctx| {
-                report_if_error!(settings
-                    .github_pr_chip_default_validation
-                    .set_value(GithubPrPromptChipDefaultValidation::Suppressed, ctx));
+                report_if_error!(
+                    settings
+                        .github_pr_chip_default_validation
+                        .set_value(GithubPrPromptChipDefaultValidation::Suppressed, ctx)
+                );
             });
         }
     }
@@ -1597,9 +1706,11 @@ impl CurrentPrompt {
             .unwrap_or(false);
         if gh_on_path {
             SessionSettings::handle(ctx).update(ctx, |settings, ctx| {
-                report_if_error!(settings
-                    .github_pr_chip_default_validation
-                    .set_value(GithubPrPromptChipDefaultValidation::Unvalidated, ctx));
+                report_if_error!(
+                    settings
+                        .github_pr_chip_default_validation
+                        .set_value(GithubPrPromptChipDefaultValidation::Unvalidated, ctx)
+                );
             });
         }
     }
@@ -1608,9 +1719,11 @@ impl CurrentPrompt {
         let current = *SessionSettings::as_ref(ctx).github_pr_chip_default_validation;
         if current == GithubPrPromptChipDefaultValidation::Unvalidated {
             SessionSettings::handle(ctx).update(ctx, |settings, ctx| {
-                report_if_error!(settings
-                    .github_pr_chip_default_validation
-                    .set_value(GithubPrPromptChipDefaultValidation::Validated, ctx));
+                report_if_error!(
+                    settings
+                        .github_pr_chip_default_validation
+                        .set_value(GithubPrPromptChipDefaultValidation::Validated, ctx)
+                );
             });
         }
     }

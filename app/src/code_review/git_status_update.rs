@@ -11,16 +11,16 @@ use {
     crate::util::git::{detect_current_branch_display, detect_main_branch},
     async_channel::Sender,
     repo_metadata::{
+        Repository, RepositoryUpdate,
         repositories::DetectedRepositories,
         repository::{RepositorySubscriber, SubscriberId},
-        Repository, RepositoryUpdate,
     },
     std::{collections::HashMap, time::Duration},
-    warpui::{r#async::SpawnedFutureHandle, ModelHandle, WeakModelHandle},
+    warpui::{ModelHandle, WeakModelHandle, r#async::SpawnedFutureHandle},
 };
 
 #[cfg(feature = "local_fs")]
-use super::diff_state::{diff_metadata_against_head, DiffStats};
+use super::diff_state::{DiffStats, diff_metadata_against_head};
 
 /// Public metadata exposed to consumers — the subset of diff metadata
 /// that the git chip (prompt display, agent view footer) needs.
