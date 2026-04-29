@@ -3390,17 +3390,6 @@ impl Workspace {
     ) {
         match event {
             TabSettingsChangedEvent::WorkspaceDecorationVisibility { .. } => {
-                // Vertical tabs render in the Tabs panel (`vertical_tabs_panel_open`), not the horizontal tab strip
-                // "Always show workspace decorations" must keep that panel open
-                if FeatureFlag::VerticalTabs.is_enabled()
-                    && *TabSettings::as_ref(ctx).use_vertical_tabs
-                    && TabSettings::as_ref(ctx)
-                        .workspace_decoration_visibility
-                        .value()
-                        == &WorkspaceDecorationVisibility::AlwaysShow
-                {
-                    self.vertical_tabs_panel_open = true;
-                }
                 self.sync_window_button_visibility(ctx);
                 ctx.notify();
             }
@@ -3435,6 +3424,15 @@ impl Workspace {
                 }
                 self.sync_panel_positions_from_config(ctx);
                 self.sync_window_button_visibility(ctx);
+                ctx.notify();
+            }
+            TabSettingsChangedEvent::ShowVerticalTabPanelInRestoredWindows { .. } => {
+                if FeatureFlag::VerticalTabs.is_enabled()
+                    && *TabSettings::as_ref(ctx).use_vertical_tabs
+                    && *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
+                {
+                    self.vertical_tabs_panel_open = true;
+                }
                 ctx.notify();
             }
             TabSettingsChangedEvent::ShowCodeReviewButton { .. } => {
@@ -3731,10 +3729,7 @@ impl Workspace {
                 window_snapshot, ..
             } => {
                 if should_default_open
-                    && TabSettings::as_ref(ctx)
-                        .workspace_decoration_visibility
-                        .value()
-                        == &WorkspaceDecorationVisibility::AlwaysShow
+                    && *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
                 {
                     true
                 } else {
