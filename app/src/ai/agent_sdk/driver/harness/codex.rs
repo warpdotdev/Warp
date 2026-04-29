@@ -6,6 +6,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
 use warp_cli::agent::Harness;
 use warp_managed_secrets::ManagedSecretValue;
@@ -20,6 +22,7 @@ use crate::terminal::CLIAgent;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
+use super::json_utils::{read_json_file_or_default, write_json_file};
 use super::{write_temp_file, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness};
 
 pub(crate) struct CodexHarness;
@@ -46,11 +49,11 @@ impl ThirdPartyHarness for CodexHarness {
 
     fn prepare_environment_config(
         &self,
-        _working_dir: &Path,
+        working_dir: &Path,
         system_prompt: Option<&str>,
-        _secrets: &HashMap<String, ManagedSecretValue>,
+        secrets: &HashMap<String, ManagedSecretValue>,
     ) -> Result<(), AgentDriverError> {
-        prepare_codex_environment_config(system_prompt).map_err(|error| {
+        prepare_codex_environment_config(working_dir, system_prompt, secrets).map_err(|error| {
             AgentDriverError::HarnessConfigSetupFailed {
                 harness: self.cli_agent().command_prefix().to_owned(),
                 error,
@@ -213,14 +216,41 @@ impl HarnessRunner for CodexHarnessRunner {
 
 const CODEX_CONFIG_DIR: &str = ".codex";
 const CODEX_AGENTS_OVERRIDE_FILE_NAME: &str = "AGENTS.override.md";
+const CODEX_AUTH_FILE_NAME: &str = "auth.json";
+const CODEX_CONFIG_TOML_FILE_NAME: &str = "config.toml";
+const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
+const CODEX_AUTH_MODE_API_KEY: &str = "apikey";
+/// Lowercase string Codex's `TrustLevel` enum serializes to (codex
+/// `protocol/src/config_types.rs::TrustLevel`).
+const CODEX_TRUST_LEVEL_TRUSTED: &str = "trusted";
+/// Top-level config key codex reads to override the built-in `openai` provider's base URL
+/// (codex `core/src/config/mod.rs`).
+const CODEX_OPENAI_BASE_URL_KEY: &str = "openai_base_url";
+/// US data-residency endpoint. Our OpenAI keys are issued under a US-residency project,
+/// which rejects requests to the global host with `401 incorrect_hostname`.
+/// TODO(REMOTE-1509): plumb a region-tagged auth secret instead of hardcoding the URL.
+const CODEX_OPENAI_BASE_URL: &str = "https://us.api.openai.com/v1";
 
-fn prepare_codex_environment_config(system_prompt: Option<&str>) -> Result<()> {
-    let Some(prompt) = system_prompt else {
-        return Ok(());
-    };
+fn prepare_codex_environment_config(
+    working_dir: &Path,
+    system_prompt: Option<&str>,
+    secrets: &HashMap<String, ManagedSecretValue>,
+) -> Result<()> {
     let home_dir =
         dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
-    write_codex_agents_override(&home_dir.join(CODEX_CONFIG_DIR), prompt)
+    let codex_dir = home_dir.join(CODEX_CONFIG_DIR);
+
+    if let Some(prompt) = system_prompt {
+        write_codex_agents_override(&codex_dir, prompt)?;
+    }
+
+    match resolve_openai_api_key(secrets) {
+        Some(api_key) => prepare_codex_auth(&codex_dir.join(CODEX_AUTH_FILE_NAME), &api_key)?,
+        None => log::info!("No OPENAI_API_KEY available; skipping Codex auth.json seed"),
+    }
+
+    prepare_codex_config_toml(&codex_dir.join(CODEX_CONFIG_TOML_FILE_NAME), working_dir)?;
+    Ok(())
 }
 
 fn write_codex_agents_override(codex_dir: &Path, system_prompt: &str) -> Result<()> {
@@ -241,3 +271,149 @@ fn write_codex_agents_override(codex_dir: &Path, system_prompt: &str) -> Result<
         )
     })
 }
+
+/// Mirrors the subset of Codex's `AuthDotJson` (codex `login/src/auth/storage.rs`) that we
+/// need to seed. Unknown fields (`tokens`, `last_refresh`, `agent_identity`, ...) are
+/// preserved via `extra` so we don't clobber an existing login.
+#[derive(Default, Deserialize, Serialize, Debug)]
+struct CodexAuthDotJson {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auth_mode: Option<String>,
+    #[serde(
+        rename = "OPENAI_API_KEY",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    openai_api_key: Option<String>,
+    #[serde(flatten)]
+    extra: Map<String, Value>,
+}
+
+fn prepare_codex_auth(auth_path: &Path, api_key: &str) -> Result<()> {
+    let mut auth: CodexAuthDotJson = read_json_file_or_default(auth_path)?;
+    auth.openai_api_key = Some(api_key.to_owned());
+    if auth.auth_mode.is_none() {
+        auth.auth_mode = Some(CODEX_AUTH_MODE_API_KEY.to_owned());
+    }
+    write_json_file(auth_path, &auth, "Failed to serialize Codex auth.json")
+}
+
+/// Returns the OpenAI API key for Codex auth, preferring a `RawValue` secret keyed under
+/// `OPENAI_API_KEY`, falling back to the `OPENAI_API_KEY` env var. Returns `None` if
+/// neither is set or both are empty.
+fn resolve_openai_api_key(secrets: &HashMap<String, ManagedSecretValue>) -> Option<String> {
+    if let Some(ManagedSecretValue::RawValue { value }) = secrets.get(OPENAI_API_KEY_ENV) {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_owned());
+        }
+    }
+    std::env::var(OPENAI_API_KEY_ENV)
+        .ok()
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty())
+}
+
+/// Edit `~/.codex/config.toml` via `toml_edit` to seed the harness defaults
+/// while preserving anything that might already exist there. We handle:
+/// - project trust: for a working dir and all of its git repo subdirectories,
+///   set the projects to `trusted`.
+/// - base URL: set `openai_base_url = "<US data-residency endpoint>"` so we
+///   hit the regional host our API keys require.
+fn prepare_codex_config_toml(config_toml_path: &Path, working_dir: &Path) -> Result<()> {
+    let existing = match fs::read_to_string(config_toml_path) {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            return Err(anyhow::Error::from(e).context(format!(
+                "Failed to read Codex config.toml at {}",
+                config_toml_path.display()
+            )));
+        }
+    };
+    let mut doc: toml_edit::DocumentMut = existing.parse().with_context(|| {
+        format!(
+            "Failed to parse Codex config.toml at {}",
+            config_toml_path.display()
+        )
+    })?;
+
+    set_codex_openai_base_url(&mut doc, CODEX_OPENAI_BASE_URL);
+
+    let canonical = working_dir.canonicalize().with_context(|| {
+        format!(
+            "Failed to canonicalize Codex working dir at {}",
+            working_dir.display()
+        )
+    })?;
+    let project_key = canonical.to_string_lossy().into_owned();
+    set_codex_project_trust_level(&mut doc, &project_key, CODEX_TRUST_LEVEL_TRUSTED);
+
+    // Codex's trust check is not recursive (see openai/codex#19426) -- since we
+    // clone the git repos into workspace/ for cloud agents, we usually have git
+    // repo children that we also want to trust.
+    for child_repo in find_child_git_repos(&canonical) {
+        let key = child_repo.to_string_lossy().into_owned();
+        set_codex_project_trust_level(&mut doc, &key, CODEX_TRUST_LEVEL_TRUSTED);
+    }
+
+    if let Some(parent) = config_toml_path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!("Failed to create Codex config dir at {}", parent.display())
+        })?;
+    }
+    fs::write(config_toml_path, doc.to_string()).with_context(|| {
+        format!(
+            "Failed to write Codex config.toml at {}",
+            config_toml_path.display()
+        )
+    })
+}
+
+/// Set the top-level `openai_base_url` key, overwriting any existing value.
+fn set_codex_openai_base_url(doc: &mut toml_edit::DocumentMut, base_url: &str) {
+    doc[CODEX_OPENAI_BASE_URL_KEY] = toml_edit::value(base_url);
+}
+
+/// Return immediate subdirectories of `dir` that contain a `.git`.
+fn find_child_git_repos(dir: &Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            (path.is_dir() && path.join(".git").exists()).then_some(path)
+        })
+        .collect()
+}
+
+/// Insert/update `[projects."<project_key>"] trust_level = <trust_level>`.
+///
+/// Codex itself always writes `projects` as an explicit table, so we don't
+/// handle the inline-table form here.
+fn set_codex_project_trust_level(
+    doc: &mut toml_edit::DocumentMut,
+    project_key: &str,
+    trust_level: &str,
+) {
+    if !doc.contains_table("projects") {
+        let mut projects_tbl = toml_edit::Table::new();
+        projects_tbl.set_implicit(true);
+        doc.insert("projects", toml_edit::Item::Table(projects_tbl));
+    }
+    let proj_tbl = doc["projects"]
+        .as_table_mut()
+        .expect("projects table inserted above")
+        .entry(project_key)
+        .or_insert_with(toml_edit::table)
+        .as_table_mut()
+        .expect("project entry is a table");
+    proj_tbl.set_implicit(false);
+    proj_tbl["trust_level"] = toml_edit::value(trust_level);
+}
+
+#[cfg(test)]
+#[path = "codex_tests.rs"]
+mod tests;
