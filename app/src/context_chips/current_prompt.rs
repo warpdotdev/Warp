@@ -968,25 +968,63 @@ impl CurrentPrompt {
 
     #[cfg(feature = "local_fs")]
     fn latest_git_status_metadata(&self, ctx: &AppContext) -> Option<GitStatusMetadata> {
-        let active_working_directory = self
-            .latest_context
-            .as_ref()?
+        let latest_context = self.latest_context.as_ref()?;
+        let active_working_directory = latest_context
             .active_block_metadata
             .current_working_directory()?;
+
+        // The shell-reported cwd can be in a different path encoding than the
+        // OS-native repo path that `DetectedRepositories` produced. The most
+        // common case is MSYS2 / Git Bash on Windows reporting paths like
+        // `/c/Users/foo/proj` while `repo_path` is `C:\Users\foo\proj`. WSL
+        // does the same with `/mnt/c/...`. Run the cwd through the session's
+        // `ShellLaunchData` so the ancestor check sees the same encoding the
+        // repo path is stored in. When no conversion is available (or it
+        // fails) we fall back to comparing the raw string, which matches the
+        // pre-existing behavior for native shells.
+        let active_session = latest_context
+            .active_block_metadata
+            .session_id()
+            .and_then(|session_id| self.sessions.as_ref(ctx).get(session_id));
+        let native_working_directory = active_session
+            .as_ref()
+            .and_then(|session| session.launch_data())
+            .and_then(|launch_data| {
+                launch_data.maybe_convert_absolute_path(active_working_directory)
+            });
 
         self.git_repo_status
             .as_ref()
             .and_then(|w| w.upgrade(ctx))
             .and_then(|h| {
                 let status_model = h.as_ref(ctx);
-                let active_working_directory = std::path::Path::new(active_working_directory);
-
-                if !active_working_directory.starts_with(status_model.repo_path()) {
+                if !Self::working_directory_belongs_to_repo(
+                    active_working_directory,
+                    native_working_directory.as_deref(),
+                    status_model.repo_path(),
+                ) {
                     return None;
                 }
 
                 status_model.metadata().cloned()
             })
+    }
+
+    /// Whether the cwd is inside `repo_path`. Prefers the
+    /// `ShellLaunchData`-converted form when available so MSYS2 / WSL paths
+    /// like `/c/Users/foo/proj` correctly match the native `C:\Users\foo\proj`
+    /// repo root. Falls back to the raw shell-reported string when no
+    /// conversion is available, preserving the pre-existing behavior on
+    /// native shells.
+    #[cfg(feature = "local_fs")]
+    fn working_directory_belongs_to_repo(
+        raw_working_directory: &str,
+        native_working_directory: Option<&std::path::Path>,
+        repo_path: &std::path::Path,
+    ) -> bool {
+        let cwd: &std::path::Path = native_working_directory
+            .unwrap_or_else(|| std::path::Path::new(raw_working_directory));
+        cwd.starts_with(repo_path)
     }
 
     #[cfg(feature = "local_fs")]

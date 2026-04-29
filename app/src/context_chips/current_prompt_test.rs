@@ -1600,6 +1600,63 @@ fn test_git_diff_stats_clears_when_repo_status_is_stale_for_working_directory() 
     });
 }
 
+/// Regression coverage for the `working_directory_belongs_to_repo` helper.
+///
+/// On MSYS2 / WSL the shell-reported cwd (e.g. `/c/Users/foo/proj` or
+/// `/mnt/c/Users/foo/proj`) does not lexically `starts_with` the OS-native
+/// `repo_path` (`C:\Users\foo\proj`) detected by `DetectedRepositories`.
+/// `latest_git_status_metadata` runs the cwd through
+/// `ShellLaunchData::maybe_convert_absolute_path` first; this helper then
+/// prefers the converted form when available and falls back to the raw string
+/// only when no conversion is provided.
+#[cfg(feature = "local_fs")]
+mod working_directory_belongs_to_repo_tests {
+    use std::path::Path;
+
+    use super::CurrentPrompt;
+
+    #[test]
+    fn falls_back_to_raw_cwd_when_no_conversion_is_provided() {
+        assert!(CurrentPrompt::working_directory_belongs_to_repo(
+            "/tmp/repo/src",
+            None,
+            Path::new("/tmp/repo"),
+        ));
+        assert!(!CurrentPrompt::working_directory_belongs_to_repo(
+            "/tmp/different",
+            None,
+            Path::new("/tmp/repo"),
+        ));
+    }
+
+    #[test]
+    fn prefers_converted_cwd_over_raw_string_for_msys2_style_paths() {
+        // Round 2 regression: shell reports `/c/Users/foo/proj/sub`, the
+        // launch-data conversion produces the OS-native `C:\Users\foo\proj\sub`,
+        // and the detected repo path is `C:\Users\foo\proj`. The lexical
+        // `starts_with` against the raw string would fail, so the helper must
+        // consult the converted path.
+        let converted = Path::new("/canonical/repo/sub");
+        assert!(CurrentPrompt::working_directory_belongs_to_repo(
+            "/c/canonical/repo/sub",
+            Some(converted),
+            Path::new("/canonical/repo"),
+        ));
+    }
+
+    #[test]
+    fn rejects_when_converted_cwd_is_outside_repo_even_if_raw_matches() {
+        // The converted form is the source of truth: if the launch-data path
+        // resolves outside the repo, raw-string accidents must not let the
+        // metadata leak through.
+        assert!(!CurrentPrompt::working_directory_belongs_to_repo(
+            "/canonical/repo/sub",
+            Some(Path::new("/elsewhere/sub")),
+            Path::new("/canonical/repo"),
+        ));
+    }
+}
+
 #[cfg(feature = "local_fs")]
 #[test]
 fn test_git_status_change_updates_chip_value() {
