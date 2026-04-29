@@ -380,14 +380,14 @@ input AiPermissionsSettingsInput {
 
 type AmbientAgentSettings {
   defaultHostSlug: String
-  enableWarpAttribution: Boolean!
+  enableWarpAttribution: AdminEnablementSetting!
   instanceShape: InstanceShape
   warpHostedAgentsEnabled: Boolean!
 }
 
 input AmbientAgentSettingsInput {
   defaultHostSlug: String
-  enableWarpAttribution: Boolean
+  enableWarpAttribution: AdminEnablementSetting
   instanceShape: InstanceShapeInput
   warpHostedAgentsEnabled: Boolean
 }
@@ -3586,6 +3586,7 @@ type UpdateOnboardingSurveyStatusOutput implements Response {
 union UpdateOnboardingSurveyStatusResult = UpdateOnboardingSurveyStatusOutput | UserFacingError
 
 input UpdateUserSettingsInput {
+  agentAttributionEnabled: Boolean
   cloudConversationStorageEnabled: Boolean
   crashReportingEnabled: Boolean
   telemetryEnabled: Boolean
@@ -3868,6 +3869,7 @@ Workspace specific settings like telemetry enablement override these user settin
 UserSettings types and mutations are the v2 equivalent of the v1 user_settings.graphqls file.
 """
 type UserSettings {
+  isAgentAttributionEnabled: Boolean!
   isCloudConversationStorageEnabled: Boolean!
   isCrashReportingEnabled: Boolean!
   isTelemetryEnabled: Boolean!

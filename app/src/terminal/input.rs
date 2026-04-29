@@ -3429,6 +3429,12 @@ impl Input {
         if let Some(ai_context_menu) = self.editor.as_ref(app).render_ai_context_menu() {
             let position = position_id_for_cursor(self.editor.id());
 
+            let y_anchor = if self.is_cloud_mode_input_v2_composing(app) {
+                AnchorPair::new(YAxisAnchor::Bottom, YAxisAnchor::Top)
+            } else {
+                menu_positioning.completion_suggestions_y_anchor()
+            };
+
             stack.add_positioned_overlay_child(
                 ai_context_menu,
                 OffsetPositioning::from_axes(
@@ -3442,7 +3448,7 @@ impl Input {
                         &position,
                         PositionedElementOffsetBounds::Unbounded,
                         OffsetType::Pixel(0.),
-                        menu_positioning.completion_suggestions_y_anchor(),
+                        y_anchor,
                     ),
                 ),
             );

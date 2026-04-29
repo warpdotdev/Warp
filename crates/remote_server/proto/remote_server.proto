@@ -22,6 +22,7 @@ message ClientMessage {
     DeleteFile delete_file = 8;
     RunCommandRequest run_command = 9;
     ReadFileContextRequest read_file_context = 10;
+    Authenticate authenticate = 11;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -46,7 +47,21 @@ message ServerMessage {
 // ── Initialize handshake
 
 // Sent by the client immediately after connecting to negotiate the protocol.
-message Initialize {}
+message Initialize {
+  // Optional bearer token used by the daemon for Warp-server requests.
+  // Empty means no credential was available and does not clear an existing
+  // daemon credential.
+  string auth_token = 1;
+}
+
+// Sent by the client when its bearer credential rotates after initialization.
+// This is a notification (fire-and-forget) — the server does not send a response.
+message Authenticate {
+  // Optional bearer token used by the daemon for Warp-server requests.
+  // Empty means no credential was available and does not clear an existing
+  // daemon credential.
+  string auth_token = 1;
+}
 
 // Sent by the client to cancel an in-progress request.
 // This is a notification (fire-and-forget) — the server does not send a response.

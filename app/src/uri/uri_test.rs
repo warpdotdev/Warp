@@ -533,3 +533,43 @@ fn validate_custom_uri_errors_do_not_leak_query_string() {
     assert!(!msg.contains("refresh_token"), "{msg}");
     assert!(!msg.contains("LEAKED"), "{msg}");
 }
+
+#[test]
+fn test_parse_tab_path_expands_tilde() {
+    let url = Url::parse("warp://action/new_tab?path=~/Projects").unwrap();
+    let home = dirs::home_dir().expect("HOME must be set for this test");
+    assert_eq!(parse_tab_path(&url), Some(home.join("Projects")));
+}
+
+#[test]
+fn test_parse_tab_path_expands_url_encoded_tilde() {
+    // `%7E` and `%2F` are URL-encoded `~` and `/`.
+    let url = Url::parse("warp://action/new_tab?path=%7E%2FProjects").unwrap();
+    let home = dirs::home_dir().expect("HOME must be set for this test");
+    assert_eq!(parse_tab_path(&url), Some(home.join("Projects")));
+}
+
+#[test]
+fn test_parse_tab_path_absolute_path_unchanged() {
+    let url = Url::parse("warp://action/new_tab?path=/tmp/foo").unwrap();
+    assert_eq!(parse_tab_path(&url), Some(PathBuf::from("/tmp/foo")));
+}
+
+#[test]
+fn test_parse_tab_path_relative_path_unchanged() {
+    let url = Url::parse("warp://action/new_tab?path=relative/dir").unwrap();
+    assert_eq!(parse_tab_path(&url), Some(PathBuf::from("relative/dir")));
+}
+
+#[test]
+fn test_parse_tab_path_missing_returns_none() {
+    let url = Url::parse("warp://action/new_tab").unwrap();
+    assert_eq!(parse_tab_path(&url), None);
+}
+
+#[test]
+fn test_parse_tab_path_bare_tilde() {
+    let url = Url::parse("warp://action/new_tab?path=~").unwrap();
+    let home = dirs::home_dir().expect("HOME must be set for this test");
+    assert_eq!(parse_tab_path(&url), Some(home));
+}

@@ -333,7 +333,7 @@ impl Input {
         let menu_positioning = self.menu_positioning(app);
         let model = self.model.lock();
 
-        let mut stack = Stack::new().with_constrain_absolute_children();
+        let mut stack = Stack::new();
 
         // Apply the V2 gutter symmetrically (left + right) so the floating
         // input keeps equal breathing room on both sides as the pane shrinks.
