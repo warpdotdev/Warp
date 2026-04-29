@@ -59,7 +59,11 @@ pub struct SlashCommandDataSource {
     terminal_view_id: EntityId,
     active_commands_by_id: HashMap<SlashCommandId, StaticCommand>,
     active_repo_root: Option<PathBuf>,
-    compact_layout: bool,
+    /// `true` when this data source serves the V2 cloud-agent composing surface
+    /// (constructed via [`Self::for_cloud_mode_v2`]). Drives both the compact row
+    /// rendering and the `Availability::NOT_CLOUD_AGENT` session-context gate that
+    /// hides commands which don't make sense for a cloud agent run.
+    is_cloud_mode_v2: bool,
 }
 
 impl SlashCommandDataSource {
@@ -71,7 +75,7 @@ impl SlashCommandDataSource {
         Self::build(args, true, ctx)
     }
 
-    fn build(args: DataSourceArgs, compact_layout: bool, ctx: &mut ModelContext<Self>) -> Self {
+    fn build(args: DataSourceArgs, is_cloud_mode_v2: bool, ctx: &mut ModelContext<Self>) -> Self {
         let DataSourceArgs {
             active_session,
             agent_view_controller,
@@ -142,7 +146,7 @@ impl SlashCommandDataSource {
             terminal_view_id,
             active_commands_by_id: Default::default(),
             active_repo_root: None,
-            compact_layout,
+            is_cloud_mode_v2,
         };
         me.recompute_active_commands(ctx);
         me
@@ -209,6 +213,12 @@ impl SlashCommandDataSource {
 
         if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
             session_context |= Availability::AI_ENABLED;
+        }
+
+        // Set the NOT_CLOUD_AGENT bit when we're *not* the V2 cloud-agent composing
+        // source, so commands that add this requirement are hidden in the V2 input.
+        if !self.is_cloud_mode_v2 {
+            session_context |= Availability::NOT_CLOUD_AGENT;
         }
 
         let is_orchestration_enabled = AISettings::as_ref(ctx).is_orchestration_enabled(ctx);
@@ -327,7 +337,7 @@ impl SyncDataSource for SlashCommandDataSource {
                     InlineItem::from_slash_command(id, command, app)
                         .with_name_match_result(fuzzy_result.name_match_result)
                         .with_description_match_result(fuzzy_result.description_match_result)
-                        .with_compact_layout(self.compact_layout)
+                        .with_compact_layout(self.is_cloud_mode_v2)
                         .with_score(
                             OrderedFloat(score) * SCORE_MULTIPLIER
                                 + OrderedFloat(prefix_boost) * SCORE_MULTIPLIER
@@ -381,7 +391,7 @@ impl SyncDataSource for SlashCommandDataSource {
                         InlineItem::from_skill(&skill, app)
                             .with_name_match_result(fuzzy_result.name_match_result)
                             .with_description_match_result(fuzzy_result.description_match_result)
-                            .with_compact_layout(self.compact_layout)
+                            .with_compact_layout(self.is_cloud_mode_v2)
                             .with_score(
                                 OrderedFloat(score) * SCORE_MULTIPLIER
                                     + OrderedFloat(prefix_boost) * SCORE_MULTIPLIER
