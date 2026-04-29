@@ -4441,8 +4441,7 @@ impl Element for BlockListElement {
             && matches!(
                 event.raw_event(),
                 Event::LeftMouseDragged { .. } | Event::LeftMouseUp { .. }
-            )
-        {
+            ) {
             event.raw_event()
         } else {
             let Some(e) = event.at_z_index(z_index, ctx) else {
