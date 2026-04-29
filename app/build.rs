@@ -18,7 +18,7 @@ use warp_util::path::app_target_dir;
 
 fn main() -> Result<()> {
     cfg_aliases! {
-        linux_or_windows: { any(target_os = "linux", windows) },
+        linux_or_windows: { any(any(target_os = "linux", target_os = "freebsd"), windows) },
         enable_crash_recovery: { linux_or_windows },
     }
 

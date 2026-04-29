@@ -401,7 +401,7 @@ fn spawn_command_in_pty(
     }
 
     // Detect isolation platform outside pre_exec, since detect() is not async-signal-safe.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     let is_isolated = warp_isolation_platform::detect().is_some();
 
     unsafe {
@@ -468,7 +468,7 @@ fn spawn_command_in_pty(
                 }
             }
 
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             if is_isolated {
                 // If running in a sandbox on Linux, adjust the OOM score
                 // to make the child process more likely to be killed than the parent process

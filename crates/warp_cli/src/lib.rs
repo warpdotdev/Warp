@@ -599,7 +599,7 @@ pub struct TerminalServerArgs {
 
 #[derive(Debug, Copy, Clone, clap::ValueEnum)]
 pub enum RecoveryMechanism {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     #[value(name = "force-x11")]
     X11,
     #[value(name = "force-dedicated-gpu")]

@@ -306,7 +306,7 @@ impl MinidumpGuard {
         .context("Failed to attach crash signal handler")?;
 
         // Ensure that the crash server process can ptrace Warp.
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         crash_handler.set_ptracer(Some(child.id()));
 
         let guard = MinidumpGuard {
@@ -341,9 +341,9 @@ impl MinidumpGuard {
 
     /// Simulate a crash.
     pub fn crash(&self) {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         self.crash_handler.simulate_signal(libc::SIGSEGV as _);
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
         self.crash_handler.simulate_exception(None);
     }
 }
@@ -424,7 +424,7 @@ enum MinidumpCommand {
 /// already be in the minidump, but it's useful to surface prominently in Sentry.
 fn format_crash_details(crash_context: &CrashContext) -> Option<String> {
     cfg_if::cfg_if! {
-        if #[cfg(target_os = "linux")] {
+        if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             Some(format!("Killed by signal {} / {}", crash_context.siginfo.ssi_signo, crash_context.siginfo.ssi_code))
         } else if #[cfg(target_os = "windows")] {
             Some(format!("Exception {}", crash_context.exception_code))

@@ -295,7 +295,7 @@ fn choose_crash_recovery_mechanism(
         return None;
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     {
         let force_x11 = settings::ForceX11::read_from_preferences(user_preferences);
         // Prioritize X11 crash recovery first. If the user has actively
@@ -441,7 +441,7 @@ fn handle_parent_crash(
     warp_logging::on_parent_process_crash();
 
     match recovery_mechanism {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         RecoveryMechanism::X11 => {
             let force_x11 = settings::ForceX11::read_from_preferences(user_preferences);
             if force_x11 != Some(true) {
