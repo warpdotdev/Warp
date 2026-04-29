@@ -348,6 +348,7 @@ struct DiffMetadata {
     unpushed_commits: Vec<Commit>,
     upstream_ref: Option<String>,
     pr_info: Option<PrInfo>,
+    pr_info_stale: bool,
 }
 
 #[derive(Default, Debug)]
@@ -1420,6 +1421,7 @@ impl DiffStateModel {
             unpushed_commits,
             upstream_ref,
             pr_info: None,
+            pr_info_stale: true,
         })
     }
 
@@ -1497,10 +1499,22 @@ impl DiffStateModel {
             .metadata
             .as_ref()
             .and_then(|metadata| metadata.pr_info.clone());
+        let previous_pr_info_stale = self
+            .metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.pr_info_stale);
 
         match metadata {
             Ok(mut metadata) => {
+                // Carry forward cached PR info so the button doesn't flash
+                // "Create PR" between branch switch and `refresh_pr_info`.
                 metadata.pr_info = previous_pr_info;
+                // Inherit staleness only on same-branch refreshes; branch
+                // change leaves it at the default (stale) so the retry can
+                // re-fire.
+                if previous_branch.as_deref() == Some(metadata.current_branch_name.as_str()) {
+                    metadata.pr_info_stale = previous_pr_info_stale;
+                }
                 self.metadata = Some(metadata);
             }
             Err(e) => {
@@ -1526,9 +1540,12 @@ impl DiffStateModel {
             if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
                 self.refresh_pr_info(ctx);
             }
-        } else if FeatureFlag::GitOperationsInCodeReview.is_enabled() && self.pr_info().is_none() {
-            // No cached PR info yet — check once so the button updates
-            // after an external push or PR creation.
+        } else if FeatureFlag::GitOperationsInCodeReview.is_enabled()
+            && self
+                .metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.pr_info_stale)
+        {
             self.refresh_pr_info(ctx);
         }
 
@@ -2914,6 +2931,7 @@ impl DiffStateModel {
             |me, pr_info, ctx| {
                 if let Some(metadata) = &mut me.metadata {
                     metadata.pr_info = pr_info;
+                    metadata.pr_info_stale = false;
                     ctx.emit(DiffStateModelEvent::DiffMetadataChanged(
                         InvalidationBehavior::PromptRefresh,
                     ));
