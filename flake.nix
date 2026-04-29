@@ -171,6 +171,7 @@
             postInstall =
               let
                 installDir = "$out/opt/warpdotdev/warp-terminal";
+                resourcesDir = "${installDir}/resources";
                 libraryPath = lib.makeLibraryPath runtimeLibraries;
                 executablePath = lib.makeBinPath (with pkgs; [ xdg-utils ]);
               in
@@ -178,13 +179,21 @@
                 install -Dm755 "$out/bin/warp-oss" "${installDir}/warp-oss"
                 rm -f "$out/bin/warp-oss"
 
-                mkdir -p "${installDir}/resources"
-                cp -R resources/bundled "${installDir}/resources/bundled"
+                patchShebangs ./script
+
+                SKIP_SETTINGS_SCHEMA=1 ./script/prepare_bundled_resources \
+                  "${resourcesDir}" \
+                  dev \
+                  release
 
                 "$out/bin/generate_settings_schema" \
                   --channel dev \
-                  "${installDir}/resources/settings_schema.json"
+                  "${resourcesDir}/settings_schema.json"
                 rm -f "$out/bin/generate_settings_schema"
+
+                install -Dm644 \
+                  "${resourcesDir}/THIRD_PARTY_LICENSES.txt" \
+                  "$out/share/licenses/warp-terminal/THIRD_PARTY_LICENSES.txt"
 
                 install -Dm644 LICENSE-AGPL "$out/share/licenses/warp-terminal/LICENSE-AGPL"
                 install -Dm644 LICENSE-MIT "$out/share/licenses/warp-terminal/LICENSE-MIT"
