@@ -7806,6 +7806,11 @@ impl Input {
             // Handle AI context menu escape specifically to ensure proper state reset
             self.close_ai_context_menu(ctx);
         } else if self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
+            // In V2 cloud-mode composing, an active section filter (set by `/prompts` or
+            // `/skills`) is cleared on first Esc rather than closing the entire menu.
+            if self.maybe_clear_v2_slash_section_filter(ctx) {
+                return;
+            }
             self.slash_command_model
                 .update(ctx, |model, ctx| model.disable(ctx));
             self.suggestions_mode_model.update(ctx, |model, ctx| {

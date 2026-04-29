@@ -15,7 +15,7 @@ use crate::search::data_source::{Query, QueryFilter};
 use crate::search::mixer::{SearchMixer, SearchMixerEvent};
 use crate::settings_view::SettingsSection;
 use crate::terminal::history::LinkedWorkflowData;
-use crate::terminal::input::buffer_model::InputBufferModel;
+use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
 use crate::terminal::input::inline_history::data_source::{
     AcceptHistoryItem, InlineHistoryMenuDataSource,
 };
@@ -162,6 +162,15 @@ pub struct InlineHistoryMenuView {
     buffer_model: ModelHandle<InputBufferModel>,
     pending_tab_switch_selection: Option<HistoryItemIdentity>,
     caller_supplied_tabs: bool,
+    /// One-shot flag: when the menu opens we run an initial query against the (possibly
+    /// stale) `InputBufferModel`. The model usually catches up to the editor on the next
+    /// effect-flush cycle and then fires `InputBufferUpdateEvent`; the buffer subscription
+    /// uses this flag to re-query with the freshly synced value exactly once. Subsequent
+    /// buffer changes (e.g. arrow-navigation previews that write the highlighted command
+    /// into the editor) are ignored, otherwise the menu would narrow to just the previewed
+    /// row. The flag is re-armed every time the menu transitions back into
+    /// `InlineHistoryMenu` mode.
+    pending_initial_buffer_sync: bool,
 }
 
 impl InlineHistoryMenuView {
@@ -307,9 +316,38 @@ impl InlineHistoryMenuView {
         ctx.subscribe_to_model(input_suggestions_model, |me, model, event, ctx| {
             let InputSuggestionsModeEvent::ModeChanged { .. } = event;
             if model.as_ref(ctx).is_inline_history_menu() {
+                // Arm the one-shot buffer-sync re-query so we'll pick up the freshly synced
+                // buffer the first time `InputBufferModel` updates after this open.
+                me.pending_initial_buffer_sync = true;
                 me.open_with_current_buffer(ctx);
             }
         });
+
+        // One-shot: re-run the query the first time `InputBufferModel` updates after the menu
+        // opens. This fixes a timing bug where the buffer model lags behind the editor across
+        // the multi-hop event chain `EditorModel → EditorView → InputBufferModel`, so the
+        // `open_with_current_buffer` call from the `ModeChanged` subscription seeds the query
+        // from the stale buffer (e.g. `"/conversations"` in V2 cloud-mode composing's
+        // clear-then-open path). After the first sync we ignore further buffer changes —
+        // arrow-key navigation through the menu writes the highlighted item's text back into
+        // the editor as a preview, which would otherwise narrow the menu to just that row.
+        let suggestions_mode_model_for_buffer = input_suggestions_model.clone();
+        ctx.subscribe_to_model(
+            &buffer_model,
+            move |me, _, _: &InputBufferUpdateEvent, ctx| {
+                if !suggestions_mode_model_for_buffer
+                    .as_ref(ctx)
+                    .is_inline_history_menu()
+                {
+                    return;
+                }
+                if !me.pending_initial_buffer_sync {
+                    return;
+                }
+                me.pending_initial_buffer_sync = false;
+                me.open_with_current_buffer(ctx);
+            },
+        );
 
         let suggestions_mode_model = input_suggestions_model.clone();
         ctx.subscribe_to_model(
@@ -425,6 +463,7 @@ impl InlineHistoryMenuView {
             buffer_model,
             pending_tab_switch_selection: None,
             caller_supplied_tabs,
+            pending_initial_buffer_sync: false,
         }
     }
 

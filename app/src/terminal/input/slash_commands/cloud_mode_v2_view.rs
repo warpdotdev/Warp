@@ -21,6 +21,7 @@ use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEv
 use crate::terminal::input::inline_menu::styles as inline_styles;
 use crate::terminal::input::slash_command_model::{SlashCommandEntryState, SlashCommandModel};
 use crate::terminal::input::slash_commands::view::{slash_command_query, CloseReason};
+use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
 use crate::terminal::input::slash_commands::{
     saved_prompts_data_source, AcceptSlashCommandOrSavedPrompt, SlashCommandDataSource,
     SlashCommandsEvent, UpdatedActiveCommands, ZeroStateDataSource,
@@ -163,6 +164,10 @@ pub struct CloudModeV2SlashCommandView {
     input_buffer_model: ModelHandle<InputBufferModel>,
     scroll_state: ClippedScrollStateHandle,
     menu_state: MenuState,
+    /// When `Some`, only items in the matching section are shown in `MenuState::NoSearchActive`.
+    /// Set by selecting `/prompts` or `/skills`; cleared by pressing Esc (which also re-selects
+    /// the originating command in the unfiltered list).
+    section_filter: Option<Section>,
 }
 
 impl CloudModeV2SlashCommandView {
@@ -266,7 +271,43 @@ impl CloudModeV2SlashCommandView {
             input_buffer_model,
             scroll_state: Default::default(),
             menu_state: MenuState::empty(),
+            section_filter: None,
         }
+    }
+
+    /// Narrow the V2 menu to only show items from `section`. Pass `None` to clear.
+    /// When clearing, the selected row is repositioned onto the original section's matching
+    /// `Commands` row (e.g. `/prompts` or `/skills`) so the user lands back where they were.
+    pub fn set_section_filter(
+        &mut self,
+        filter: Option<Section>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let previous = self.section_filter;
+        self.section_filter = filter;
+        if let MenuState::NoSearchActive {
+            sections,
+            expanded_sections,
+            selected_idx,
+            ..
+        } = &mut self.menu_state
+        {
+            let rows = browsing_rows_filtered(sections, expanded_sections, self.section_filter);
+            *selected_idx = match (filter, previous) {
+                // Clearing a filter: try to land on the `/prompts` or `/skills` row in Commands.
+                (None, Some(prev)) => rows
+                    .iter()
+                    .position(|r| matches_originating_command(r, sections, prev))
+                    .or_else(|| rows.iter().position(|r| r.is_selectable())),
+                _ => rows.iter().position(|r| r.is_selectable()),
+            };
+        }
+        ctx.notify();
+    }
+
+    /// Returns `true` if a section filter is currently applied to the menu.
+    pub fn has_section_filter(&self) -> bool {
+        self.section_filter.is_some()
     }
 
     pub fn select_up(&mut self, ctx: &mut ViewContext<Self>) {
@@ -295,7 +336,7 @@ impl CloudModeV2SlashCommandView {
                 let Some(selected_idx) = *selected_idx else {
                     return;
                 };
-                let rows = browsing_rows(sections, expanded_sections);
+                let rows = browsing_rows_filtered(sections, expanded_sections, self.section_filter);
                 let Some(row) = rows.get(selected_idx) else {
                     return;
                 };
@@ -339,6 +380,12 @@ impl CloudModeV2SlashCommandView {
     }
 
     pub fn dismiss(&mut self, ctx: &mut ViewContext<Self>) {
+        // If a section filter is active, Esc clears it (and re-selects the originating row)
+        // instead of closing the menu. A second Esc with no filter then closes the menu.
+        if self.section_filter.is_some() {
+            self.set_section_filter(None, ctx);
+            return;
+        }
         ctx.emit(SlashCommandsEvent::Close(CloseReason::ManualDismissal));
     }
 
@@ -437,6 +484,9 @@ impl CloudModeV2SlashCommandView {
             initialize_browsing_selection(&mut state);
             state
         } else {
+            // Once the user starts typing, clear any active section filter so search results
+            // are not constrained to the previously selected section.
+            self.section_filter = None;
             let mut state = MenuState::SearchActive {
                 results: renderers,
                 selected_idx: None,
@@ -485,6 +535,7 @@ impl CloudModeV2SlashCommandView {
     }
 
     fn move_selection(&mut self, direction: SelectionDirection, ctx: &mut ViewContext<Self>) {
+        let section_filter = self.section_filter;
         let next_idx: Option<usize> = match &mut self.menu_state {
             MenuState::NoSearchActive {
                 sections,
@@ -492,7 +543,7 @@ impl CloudModeV2SlashCommandView {
                 selected_idx,
                 ..
             } => {
-                let rows = browsing_rows(sections, expanded_sections);
+                let rows = browsing_rows_filtered(sections, expanded_sections, section_filter);
                 if rows.is_empty() {
                     return;
                 }
@@ -523,6 +574,7 @@ impl CloudModeV2SlashCommandView {
     }
 
     fn set_browsing_selection(&mut self, idx: usize, ctx: &mut ViewContext<Self>) {
+        let section_filter = self.section_filter;
         if let MenuState::NoSearchActive {
             sections,
             expanded_sections,
@@ -530,7 +582,7 @@ impl CloudModeV2SlashCommandView {
             ..
         } = &mut self.menu_state
         {
-            let rows = browsing_rows(sections, expanded_sections);
+            let rows = browsing_rows_filtered(sections, expanded_sections, section_filter);
             if rows.get(idx).is_some_and(|r| r.is_selectable()) {
                 *selected_idx = Some(idx);
                 self.scroll_selected_into_view(idx);
@@ -562,13 +614,17 @@ enum SelectionDirection {
     Down,
 }
 
-fn browsing_rows(
+fn browsing_rows_filtered(
     sections: &[RenderedSection],
     expanded_sections: &HashSet<Section>,
+    filter: Option<Section>,
 ) -> Vec<NoSearchActiveRow> {
     let mut rows = Vec::new();
-    let non_empty_sections: Vec<&RenderedSection> =
-        sections.iter().filter(|s| !s.items.is_empty()).collect();
+    let non_empty_sections: Vec<&RenderedSection> = sections
+        .iter()
+        .filter(|s| !s.items.is_empty())
+        .filter(|s| filter.is_none_or(|f| f == s.section))
+        .collect();
 
     for (idx, rendered) in non_empty_sections.iter().enumerate() {
         rows.push(NoSearchActiveRow::SectionHeader(rendered.section));
@@ -598,6 +654,13 @@ fn browsing_rows(
     rows
 }
 
+fn browsing_rows(
+    sections: &[RenderedSection],
+    expanded_sections: &HashSet<Section>,
+) -> Vec<NoSearchActiveRow> {
+    browsing_rows_filtered(sections, expanded_sections, None)
+}
+
 fn initialize_browsing_selection(state: &mut MenuState) {
     if let MenuState::NoSearchActive {
         sections,
@@ -609,6 +672,42 @@ fn initialize_browsing_selection(state: &mut MenuState) {
         let rows = browsing_rows(sections, expanded_sections);
         *selected_idx = rows.iter().position(|r| r.is_selectable());
     }
+}
+
+/// Returns `true` when `row` is the `Item` row in the `Commands` section whose action targets
+/// the static slash command corresponding to `previous_filter` (`/prompts` for Prompts,
+/// `/skills` for Skills). Used to reposition the selected row when the user presses Esc to clear
+/// a section filter so they land back on the originating command.
+fn matches_originating_command(
+    row: &NoSearchActiveRow,
+    sections: &[RenderedSection],
+    previous_filter: Section,
+) -> bool {
+    let target_name = match previous_filter {
+        Section::Prompts => "/prompts",
+        Section::Skills => "/skills",
+        Section::Commands => return false,
+    };
+    let NoSearchActiveRow::Item { section, item_idx } = *row else {
+        return false;
+    };
+    if section != Section::Commands {
+        return false;
+    }
+    let Some(item) = sections
+        .iter()
+        .find(|s| s.section == Section::Commands)
+        .and_then(|s| s.items.get(item_idx))
+    else {
+        return false;
+    };
+    let AcceptSlashCommandOrSavedPrompt::SlashCommand { id } = item.search_result.accept_result()
+    else {
+        return false;
+    };
+    COMMAND_REGISTRY
+        .get_command(&id)
+        .is_some_and(|cmd| cmd.name == target_name)
 }
 
 fn initialize_search_selection(state: &mut MenuState) {
@@ -706,7 +805,7 @@ impl CloudModeV2SlashCommandView {
         show_more_mouse_states: &HashMap<Section, MouseStateHandle>,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let rows = browsing_rows(sections, expanded_sections);
+        let rows = browsing_rows_filtered(sections, expanded_sections, self.section_filter);
         let mut column = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_main_axis_size(MainAxisSize::Min);
