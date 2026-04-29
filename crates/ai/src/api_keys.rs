@@ -147,10 +147,8 @@ impl ApiKeyManager {
             .then(|| self.keys.open_router.clone())
             .flatten()
             .unwrap_or_default();
-        let ollama_url = include_byo_keys
-            .then(|| self.keys.ollama_url.clone())
-            .flatten()
-            .unwrap_or_default();
+        // NOTE: ollama_url is NOT included here because it's a local endpoint
+        // and should never be sent through remote request settings.
         // Also include credentials when running with OIDC-managed Bedrock inference, regardless
         // of the per-user setting flag (which only applies to the local credential chain path).
         let include_aws = include_aws_bedrock_credentials
@@ -171,7 +169,6 @@ impl ApiKeyManager {
             && openai.is_empty()
             && google.is_empty()
             && open_router.is_empty()
-            && ollama_url.is_empty()
             && aws_credentials.is_none()
         {
             None
@@ -181,7 +178,6 @@ impl ApiKeyManager {
                 openai,
                 google,
                 open_router,
-                ollama_url,
                 allow_use_of_warp_credits: false,
                 aws_credentials,
             })

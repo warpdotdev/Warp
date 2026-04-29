@@ -5,7 +5,6 @@
 //!
 //! API Reference: https://github.com/ollama/ollama/blob/main/docs/api.md
 
-use anyhow::{Context, Result};
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -47,15 +46,13 @@ pub struct ChatResponse {
 
 /// A streaming chunk from Ollama's chat API.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "done")]
+#[serde(from = "StreamChunkHelper")]
 pub enum StreamChunk {
-    #[serde(rename = "false")]
     Partial {
         model: String,
         message: ChatMessage,
         done: bool,
     },
-    #[serde(rename = "true")]
     Complete {
         model: String,
         message: ChatMessage,
@@ -75,6 +72,52 @@ pub enum StreamChunk {
         #[serde(default)]
         prompt_eval_duration: Option<u64>,
     },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct StreamChunkHelper {
+    done: bool,
+    model: String,
+    message: ChatMessage,
+    #[serde(default)]
+    done_reason: Option<String>,
+    #[serde(default)]
+    total_duration: Option<u64>,
+    #[serde(default)]
+    eval_count: Option<u64>,
+    #[serde(default)]
+    eval_duration: Option<u64>,
+    #[serde(default)]
+    load_duration: Option<u64>,
+    #[serde(default)]
+    prompt_eval_count: Option<u64>,
+    #[serde(default)]
+    prompt_eval_duration: Option<u64>,
+}
+
+impl From<StreamChunkHelper> for StreamChunk {
+    fn from(h: StreamChunkHelper) -> Self {
+        if h.done {
+            StreamChunk::Complete {
+                model: h.model,
+                message: h.message,
+                done: h.done,
+                done_reason: h.done_reason,
+                total_duration: h.total_duration,
+                eval_count: h.eval_count,
+                eval_duration: h.eval_duration,
+                load_duration: h.load_duration,
+                prompt_eval_count: h.prompt_eval_count,
+                prompt_eval_duration: h.prompt_eval_duration,
+            }
+        } else {
+            StreamChunk::Partial {
+                model: h.model,
+                message: h.message,
+                done: h.done,
+            }
+        }
+    }
 }
 
 /// Model info returned by Ollama's /api/tags endpoint.
@@ -167,8 +210,7 @@ impl OllamaClient {
             .http_client
             .get(format!("{}/api/tags", self.base_url))
             .send()
-            .await
-            .context("Failed to send request to Ollama")?;
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -206,8 +248,7 @@ impl OllamaClient {
             .post(format!("{}/api/chat", self.base_url))
             .json(&request)
             .send()
-            .await
-            .context("Failed to send chat request to Ollama")?;
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -240,8 +281,7 @@ impl OllamaClient {
             .post(format!("{}/api/chat", self.base_url))
             .json(&request)
             .send()
-            .await
-            .context("Failed to send streaming chat request to Ollama")?;
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -257,11 +297,27 @@ impl OllamaClient {
                 .map_err(OllamaError::ConnectionError)
                 .and_then(|bytes| {
                     let text = String::from_utf8_lossy(&bytes);
-                    // Ollama sends newline-delimited JSON
-                    for line in text.lines() {
-                        if line.trim().is_empty() {
-                            continue;
+                    // Ollama sends newline-delimited JSON - each line is a separate JSON object
+                    let mut accumulated = String::new();
+                    for ch in text.chars() {
+                        if ch == '\n' {
+                            let line = accumulated.trim();
+                            if !line.is_empty() {
+                                match serde_json::from_str::<StreamChunk>(line) {
+                                    Ok(chunk) => return Ok(chunk),
+                                    Err(e) => {
+                                        log::debug!("Failed to parse Ollama stream chunk: {}", e);
+                                    }
+                                }
+                            }
+                            accumulated.clear();
+                        } else {
+                            accumulated.push(ch);
                         }
+                    }
+                    // Handle any remaining data without trailing newline
+                    let line = accumulated.trim();
+                    if !line.is_empty() {
                         match serde_json::from_str::<StreamChunk>(line) {
                             Ok(chunk) => return Ok(chunk),
                             Err(e) => {
