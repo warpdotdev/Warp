@@ -18190,7 +18190,7 @@ impl Workspace {
         let mut main_content = Flex::row();
 
         // In horizontal tabs mode, config-driven panels render inside this row
-        // so they share the same background/corner-radius wrapper from render_main_panel.
+        // alongside the terminal area.
         // In vertical tabs mode, panels are rendered in render_panels instead.
         if !vertical_tabs_active {
             let config = TabSettings::as_ref(app)
@@ -18755,21 +18755,14 @@ impl Workspace {
         container.finish()
     }
 
-    fn render_main_panel(
-        &self,
-        app: &AppContext,
-        terminal_view: Box<dyn Element>,
-    ) -> Box<dyn Element> {
-        if FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(app).use_vertical_tabs {
-            Shrinkable::new(1.0, terminal_view).finish()
-        } else {
-            let main_content = Container::new(terminal_view)
-                .with_background(util::get_terminal_background_fill(self.window_id, app))
-                .with_corner_radius(*PANEL_CORNER_RADIUS)
-                .finish();
-
-            Shrinkable::new(1.0, main_content).finish()
-        }
+    fn render_main_panel(&self, terminal_view: Box<dyn Element>) -> Box<dyn Element> {
+        // The terminal background fill is already painted by the outer workspace
+        // container in `render`, so we must not paint it again here.
+        // Otherwise the (semi-transparent) overlay alpha compounds and makes the
+        // terminal pane look darker than the rest of the workspace, which is
+        // particularly visible when the active theme has a background image or
+        // a custom window opacity. See APP-4328.
+        Shrinkable::new(1.0, terminal_view).finish()
     }
 
     fn render_panel_separator(app: &AppContext) -> Box<dyn Element> {
@@ -18815,8 +18808,7 @@ impl Workspace {
             && *TabSettings::as_ref(app).use_vertical_tabs;
 
         // In vertical tabs mode, config-driven panels are rendered here.
-        // In horizontal tabs mode, they're rendered inside render_banner_and_active_tab
-        // so they share the same background/corner-radius wrapper.
+        // In horizontal tabs mode, they're rendered inside render_banner_and_active_tab.
         if vertical_tabs_active {
             let config = TabSettings::as_ref(app)
                 .header_toolbar_chip_selection
@@ -18852,7 +18844,7 @@ impl Workspace {
         if prev_panel_added {
             panels_view.add_child(Self::render_panel_separator(app));
         }
-        panels_view = panels_view.with_child(self.render_main_panel(app, terminal_view));
+        panels_view = panels_view.with_child(self.render_main_panel(terminal_view));
         prev_panel_added = true;
 
         if vertical_tabs_active {
