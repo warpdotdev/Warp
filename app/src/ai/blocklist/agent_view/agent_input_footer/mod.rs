@@ -231,7 +231,7 @@ pub struct AgentInputFooter {
     // "Hand off to cloud" chip. Visibility is gated only on the
     // `OzHandoff && HandoffLocalCloud` feature flags. Per-conversation
     // eligibility is enforced by `Workspace::start_local_to_cloud_handoff`,
-    // which falls through to splitting a fresh cloud-mode pane when the
+    // which surfaces an error toast and does not open a pane when the
     // active conversation isn't handoff-able.
     handoff_to_cloud_button: ViewHandle<ActionButton>,
 
@@ -359,8 +359,8 @@ impl AgentInputFooter {
         // "Hand off to cloud" chip. On click dispatches the workspace action that
         // splits a new cloud-mode pane next to the local pane; that pane handles
         // the rest of the handoff flow. The chip is always visible when the feature
-        // flags are on; per-conversation eligibility falls through to splitting a
-        // fresh cloud-mode pane in `Workspace::start_local_to_cloud_handoff`.
+        // flags are on; per-conversation eligibility surfaces an error toast and
+        // does not open a pane in `Workspace::start_local_to_cloud_handoff`.
         let handoff_to_cloud_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("", AgentInputButtonTheme)
                 .with_icon(Icon::UploadCloud)
@@ -1984,7 +1984,7 @@ impl AgentInputFooter {
                 // Always render the chip when the feature flags are on.
                 // Per-conversation eligibility (synced server token, non-empty
                 // history) is enforced by `Workspace::start_local_to_cloud_handoff`,
-                // which falls through to splitting a fresh cloud-mode pane when
+                // which surfaces an error toast and does not open a pane when
                 // the active conversation isn't handoff-able.
                 Some(ChildView::new(&self.handoff_to_cloud_button).finish())
             }

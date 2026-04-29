@@ -31,9 +31,7 @@ use super::loading_screen::{
     render_cloud_mode_cancelled_screen, render_cloud_mode_error_screen,
     render_cloud_mode_github_auth_required_screen, render_cloud_mode_loading_screen,
 };
-use super::{
-    is_cloud_agent_pre_first_exchange, AmbientAgentEntryBlock, AmbientAgentViewModelEvent,
-};
+use super::{AmbientAgentEntryBlock, AmbientAgentViewModelEvent};
 use crate::terminal::view::Event as TerminalViewEvent;
 const CHILD_AGENT_GITHUB_AUTH_REQUIRED_BLOCKED_ACTION: &str =
     "GitHub authentication required before starting the child agent.";
@@ -144,14 +142,11 @@ impl TerminalView {
                 }
                 if FeatureFlag::CloudModeSetupV2.is_enabled() {
                     let view_model = ambient_agent_view_model.as_ref(ctx);
-                    let use_queued_prompt = view_model.is_third_party_harness()
-                        || view_model.is_local_to_cloud_handoff();
+                    let use_queued_prompt = view_model.is_third_party_harness();
                     if use_queued_prompt {
-                        // Non-oz runs and local-to-cloud handoff (REMOTE-1486) runs:
-                        // render the submitted prompt via the queued-prompt UI on top of
-                        // the conversation-history scaffold. The block is removed later
-                        // by `HarnessCommandStarted` (non-oz) / first `AppendedExchange`
-                        // (oz handoff) / failure / cancel / auth handlers.
+                        // Non-oz runs render the submitted prompt via the queued-prompt UI on
+                        // top of the conversation-history scaffold. The block is removed later
+                        // by `HarnessCommandStarted` / failure / cancel / auth handlers.
                         //
                         // `request.prompt` is stored stripped of any `/plan` / `/orchestrate`
                         // prefix; rebuild the display form from `request.mode` so the user sees
@@ -179,7 +174,6 @@ impl TerminalView {
                             ctx,
                         );
                         ambient_agent_view_model.update(ctx, |model, _| {
-                            model.set_has_inserted_cloud_mode_user_query_block(true);
                             if let Some(prompt) =
                                 model.request().map(|request| request.prompt.clone())
                             {
@@ -368,15 +362,11 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::PendingHandoffChanged => {
-                // REMOTE-1486: re-render so the handoff banner picks up the new
-                // touched-workspace data, submission state, or pending-handoff
-                // teardown.
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::HandoffSubmissionFailed { .. } => {
-                // Restoration of the editor buffer + the user-visible toast are
-                // handled by `Input`'s subscription to the same event; nothing
-                // for the terminal view to do here beyond the implicit re-render.
+            AmbientAgentViewModelEvent::HandoffPrepFailed { .. } => {
+                // The toast is surfaced by `Input`'s subscription; this just
+                // triggers a re-render of pane chrome.
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => (),
@@ -396,11 +386,7 @@ impl TerminalView {
             return;
         };
 
-        if !is_cloud_agent_pre_first_exchange(
-            self.ambient_agent_view_model.as_ref(),
-            &self.agent_view_controller,
-            ctx,
-        ) {
+        if !self.is_cloud_agent_pre_first_exchange(ctx) {
             return;
         }
 
@@ -439,6 +425,7 @@ impl TerminalView {
                 super::CloudModeSetupTextBlock::new(
                     ambient_agent_view_model.clone(),
                     self.agent_view_controller.clone(),
+                    self.model.clone(),
                     ctx,
                 )
             });

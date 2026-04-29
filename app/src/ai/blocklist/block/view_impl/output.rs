@@ -208,6 +208,12 @@ pub(crate) struct Props<'a> {
     pub(super) thinking_display_mode: crate::settings::ThinkingDisplayMode,
     pub(super) conversation_has_imported_comments: bool,
     pub(super) ask_user_question_view: Option<&'a ViewHandle<AskUserQuestionView>>,
+    /// `true` when this block belongs to a cloud agent pane that is still in its setup
+    /// phase (running environment startup commands before the first agent turn). Used to
+    /// hide the response footer (thumbs up/down, credit usage, fork) until the agent has
+    /// produced real output — otherwise the footer renders awkwardly above the still-
+    /// pending optimistic user prompt.
+    pub(super) is_cloud_agent_pre_first_exchange: bool,
 }
 
 pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
@@ -252,6 +258,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                         && !is_output_for_static_prompt_suggestions
                         && !is_conversation_in_progress
                         && request_type.is_active()
+                        && !props.is_cloud_agent_pre_first_exchange
                         && !status
                             .error()
                             .map(|e| e.is_invalid_api_key())

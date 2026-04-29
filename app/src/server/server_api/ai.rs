@@ -227,10 +227,11 @@ pub struct SpawnAgentRequest {
     /// Base64-encoded `warp.multi_agent.v1.Attachment` payloads to restore as referenced attachments.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub referenced_attachments: Vec<String>,
-    /// When set, instructs the server to fork the named conversation and use the resulting
-    /// fork id as `task.AgentConversationID`. Used by the local-to-cloud handoff flow.
+    /// Server-side conversation id to resume against (sets `task.AgentConversationID`).
+    /// For local-to-cloud handoff this is the forked conversation id returned by
+    /// `POST /agent/handoff/prepare-fork` at chip-click time.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fork_from_conversation_id: Option<String>,
+    pub conversation_id: Option<String>,
     /// References a batch of files previously uploaded to handoff_prep/{handoff_prep_token}/
     /// via `POST /agent/handoff/upload-snapshot`. The server stores the token on the new run's
     /// queued execution input and resolves the prefix in place at rehydration time — no
@@ -277,6 +278,22 @@ pub struct UploadLocalHandoffSnapshotResponse {
     pub handoff_prep_token: HandoffPrepToken,
     pub expires_at: String,
     pub uploads: Vec<UploadTarget>,
+}
+
+/// Request body for `POST /agent/handoff/prepare-fork`. Used by the local-to-cloud
+/// handoff flow (REMOTE-1519) to materialize a server-side fork of the source
+/// conversation at chip-click time so the client can pre-populate the new pane.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PrepareHandoffForkRequest {
+    pub source_conversation_id: String,
+}
+
+/// Response body for `POST /agent/handoff/prepare-fork`. The returned id is sent on
+/// the subsequent `POST /agent/runs` request under `conversation_id` (resume
+/// semantics) so the new task picks up the fork directly.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct PrepareHandoffForkResponse {
+    pub forked_conversation_id: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -888,6 +905,14 @@ pub trait AIClient: 'static + Send + Sync {
         &self,
         request: UploadLocalHandoffSnapshotRequest,
     ) -> anyhow::Result<UploadLocalHandoffSnapshotResponse, anyhow::Error>;
+
+    /// Materialize a server-side fork of the source conversation for a local-to-cloud handoff.
+    /// Called at chip-click time (REMOTE-1519) so the client can pre-populate the new pane
+    /// with the forked conversation before any task exists.
+    async fn prepare_handoff_fork(
+        &self,
+        request: PrepareHandoffForkRequest,
+    ) -> anyhow::Result<PrepareHandoffForkResponse, anyhow::Error>;
 
     async fn list_ambient_agent_tasks(
         &self,
@@ -1581,6 +1606,16 @@ impl AIClient for ServerApi {
     ) -> anyhow::Result<UploadLocalHandoffSnapshotResponse, anyhow::Error> {
         let response: UploadLocalHandoffSnapshotResponse = self
             .post_public_api("agent/handoff/upload-snapshot", &request)
+            .await?;
+        Ok(response)
+    }
+
+    async fn prepare_handoff_fork(
+        &self,
+        request: PrepareHandoffForkRequest,
+    ) -> anyhow::Result<PrepareHandoffForkResponse, anyhow::Error> {
+        let response: PrepareHandoffForkResponse = self
+            .post_public_api("agent/handoff/prepare-fork", &request)
             .await?;
         Ok(response)
     }

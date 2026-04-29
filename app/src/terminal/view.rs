@@ -2880,6 +2880,17 @@ impl TerminalView {
             .is_some_and(|index| index > 0)
     }
 
+    /// True when this pane's cloud agent is in any pre-first-exchange phase.
+    /// Thin wrapper over the free function that threads `self`'s handles.
+    fn is_cloud_agent_pre_first_exchange(&self, app: &AppContext) -> bool {
+        is_cloud_agent_pre_first_exchange(
+            self.ambient_agent_view_model.as_ref(),
+            &self.agent_view_controller,
+            &self.model,
+            app,
+        )
+    }
+
     pub fn create_sync_event_based_on_terminal_state(&self, app_ctx: &AppContext) -> SyncEvent {
         if !matches!(
             self.model.lock().terminal_input_state(),
@@ -5142,19 +5153,6 @@ impl TerminalView {
                         .set_is_executing_oz_environment_startup_commands(false);
                 }
 
-                // REMOTE-1486: clear the queued-prompt block on the cloud agent's first
-                // exchange for an Oz local-to-cloud handoff. Mirrors the third-party-harness
-                // path's `HarnessCommandStarted` cleanup, but for the Oz harness the first
-                // `AppendedExchange` is the analogous transition. Idempotent when no block
-                // is currently inserted.
-                if self
-                    .ambient_agent_view_model
-                    .as_ref()
-                    .is_some_and(|model| model.as_ref(ctx).is_local_to_cloud_handoff())
-                {
-                    self.remove_pending_user_query_block(ctx);
-                }
-
                 let should_add_ai_block = history_model
                     .as_ref(ctx)
                     .conversation(conversation_id)
@@ -6902,11 +6900,7 @@ impl TerminalView {
         // agent exchange arrives, we hide the interactive input view. A non-interactive footer is
         // rendered instead (see `TerminalView::render`).
         if !FeatureFlag::CloudModeSetupV2.is_enabled()
-            && is_cloud_agent_pre_first_exchange(
-                self.ambient_agent_view_model.as_ref(),
-                &self.agent_view_controller,
-                app,
-            )
+            && self.is_cloud_agent_pre_first_exchange(app)
         {
             return false;
         }
@@ -23240,7 +23234,12 @@ impl TerminalView {
         // Save a backup of the conversation before truncating, so users can restore it later.
         BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
             if let Some(conversation) = history_model.conversation(&conversation_id).cloned() {
-                if let Err(e) = history_model.fork_conversation(&conversation, PRE_REWIND_PREFIX, ctx) {
+                if let Err(e) = history_model.fork_conversation(
+                    &conversation,
+                    PRE_REWIND_PREFIX,
+                    false, /* preserve_task_ids */
+                    ctx,
+                ) {
                     log::warn!("Failed to save pre-rewind backup of conversation {conversation_id}: {e}");
                 }
             } else {
@@ -25801,13 +25800,7 @@ impl View for TerminalView {
 
                     if self.is_input_box_visible(&model, app) {
                         column.add_child(self.render_input());
-                    } else if !model.is_read_only()
-                        && is_cloud_agent_pre_first_exchange(
-                            self.ambient_agent_view_model.as_ref(),
-                            &self.agent_view_controller,
-                            app,
-                        )
-                    {
+                    } else if !model.is_read_only() && self.is_cloud_agent_pre_first_exchange(app) {
                         column.add_child(ambient_agent::render_loading_footer(appearance));
                     } else if self.show_remote_server_loading_footer(&model, app) {
                         column.add_child(

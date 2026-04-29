@@ -1,3 +1,5 @@
+use parking_lot::FairMutex;
+use std::sync::Arc;
 use warp_core::ui::{appearance::Appearance, Icon};
 use warpui::{
     elements::ParentElement,
@@ -14,8 +16,11 @@ use crate::{
         inline_action::inline_action_icons,
         BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
     },
-    terminal::view::ambient_agent::{
-        is_cloud_agent_pre_first_exchange, AmbientAgentViewModel, AmbientAgentViewModelEvent,
+    terminal::{
+        view::ambient_agent::{
+            is_cloud_agent_pre_first_exchange, AmbientAgentViewModel, AmbientAgentViewModelEvent,
+        },
+        TerminalModel,
     },
 };
 
@@ -55,6 +60,7 @@ impl SetupCommandState {
 pub struct CloudModeSetupTextBlock {
     ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
     agent_view_controller: ModelHandle<AgentViewController>,
+    terminal_model: Arc<FairMutex<TerminalModel>>,
     mouse_state: MouseStateHandle,
 }
 
@@ -62,6 +68,7 @@ impl CloudModeSetupTextBlock {
     pub fn new(
         ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
         agent_view_controller: ModelHandle<AgentViewController>,
+        terminal_model: Arc<FairMutex<TerminalModel>>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         if let Some(conversation_id) = agent_view_controller
@@ -104,6 +111,7 @@ impl CloudModeSetupTextBlock {
         Self {
             ambient_agent_view_model,
             agent_view_controller,
+            terminal_model,
             mouse_state: Default::default(),
         }
     }
@@ -148,6 +156,7 @@ impl View for CloudModeSetupTextBlock {
                         if is_cloud_agent_pre_first_exchange(
                             Some(&self.ambient_agent_view_model),
                             &self.agent_view_controller,
+                            &self.terminal_model,
                             app,
                         ) {
                             "Running setup commands..."
