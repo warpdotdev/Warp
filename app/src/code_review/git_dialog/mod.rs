@@ -674,6 +674,20 @@ impl GitDialog {
         }
     }
 
+    fn header_icon(&self) -> Icon {
+        match &self.mode {
+            GitDialogMode::Commit(_) => Icon::GitCommit,
+            GitDialogMode::Push(state) => {
+                if state.publish {
+                    Icon::UploadCloud
+                } else {
+                    Icon::ArrowUp
+                }
+            }
+            GitDialogMode::CreatePr(_) => Icon::Github,
+        }
+    }
+
     fn render_body(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         match &self.mode {
@@ -687,6 +701,7 @@ impl GitDialog {
     /// it in centered overlay chrome with a blurred background.
     fn render_dialog(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
 
         let close = ChildView::new(&self.close_button).finish();
         let cancel = ChildView::new(&self.cancel_button).finish();
@@ -695,6 +710,25 @@ impl GitDialog {
             .finish();
 
         let body = self.render_body(app);
+
+        let surface2 = theme.surface_2();
+        let icon_color = theme.main_text_color(surface2).into_solid();
+        let header_icon = Container::new(
+            ConstrainedBox::new(
+                IconElement::new(
+                    <Icon as Into<&'static str>>::into(self.header_icon()),
+                    icon_color,
+                )
+                .finish(),
+            )
+            .with_width(16.)
+            .with_height(16.)
+            .finish(),
+        )
+        .with_uniform_padding(8.)
+        .with_background(surface2)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+        .finish();
 
         let dialog = Dialog::new(
             self.title().to_string(),
@@ -705,6 +739,7 @@ impl GitDialog {
                 ..dialog_styles(appearance)
             },
         )
+        .with_header_icon(header_icon)
         .with_close_button(close)
         .with_child(body)
         .with_separator()
