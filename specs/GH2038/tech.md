@@ -25,9 +25,9 @@ Before this change, Nushell could only be represented as the broad POSIX `ShellF
 1. Add `ShellType::Nu` as a first-class shell type.
    - Detect `nu`, `-nu`, Unix paths ending in `/nu`, and Windows basenames exactly equal to `nu.exe`.
    - Parse markdown language specs `nu` and `nushell` as Nushell.
-   - Keep `ShellFamily::from(ShellType::Nu)` as `Posix` only for legacy family-level behavior, but avoid converting that family back to Bash in Nushell-specific export paths.
+   - Keep `ShellFamily::from(ShellType::Nu)` as `Posix` only for legacy family-level behavior; every `ShellFamily::Posix` path reachable from `ShellType::Nu` must be inventoried below as safe, Nushell-gated, or unsupported before implementation.
    - Add Nushell history and rcfile locations.
-   - Parse Nushell aliases from tab-separated bootstrap output.
+   - Parse Nushell aliases from the structured JSON payload emitted by the bootstrap metadata hook; JSON is the only alias wire format for Nushell.
 
 2. Add local shell discovery and spawn support.
    - Include `nu`/`nu.exe` in shell discovery and display it as "Nushell".
@@ -44,10 +44,14 @@ Before this change, Nushell could only be represented as the broad POSIX `ShellF
    - `nu_init_shell.nu` sends the initial `InitShell` hook and establishes `WARP_SESSION_ID`.
    - `nu_body.nu` installs Nushell functions/hooks for `Preexec`, `Precmd`, `CommandFinished`, `Bootstrapped`, `Clear`, `InputBuffer`, `FinishUpdate`, prompt-mode toggles, PATH append, and initial working directory handling.
    - `nu.nu` includes the body script through the existing bundled asset mechanism.
+   - Split startup/bootstrap delivery deliberately:
+     1. User startup files run first as part of the login Nushell process.
+     2. The early Warp init script is `nu_init_shell.nu`. Direct Unix/macOS sessions and WSL sessions pass it through `nu --login --execute <nu_init_shell.nu>`, so Nushell remains interactive after the init snippet runs. If a platform-specific launcher cannot carry `--execute` safely, the implementation must source a temp file whose first statement is the same init script before it sources the body script.
+     3. The larger Warp body bootstrap is not embedded in the `--execute` argument. Warp writes the rendered `nu.nu`/`nu_body.nu` body to the same temp-file source bootstrap path used for shells that should not receive large bootstrap payloads directly through the PTY, then asks Nushell to `source` that file after the process is running. If temp-file bootstrap setup fails, Warp may fall back to the existing bracketed-paste/bootstrap writer, but it must preserve the same ordering.
+   - Do not modify the user's `env.nu`, `config.nu`, or `login.nu`; the temp source file is owned by the Warp session and cleaned up like other RC-file bootstrap artifacts.
    - Bootstrap must merge with user configuration rather than replacing it: prepend Warp's `pre_execution` and `pre_prompt` hooks ahead of existing hook lists, append Warp keybindings to existing keybindings, and store the user's original prompt closures/strings before changing prompt indicators.
    - Warp-managed prompt mode sets Nushell prompt indicators to empty strings and emits Warp prompt escape sequences. Honor-user-prompt mode restores the stored user prompt indicators and calls the stored `PROMPT_COMMAND`/`PROMPT_COMMAND_RIGHT` values when they are closures or strings.
    - Disable Nushell's built-in OSC 133/633 shell integration flags in `$env.config.shell_integration` while Warp's integration is active to avoid duplicate prompt markers.
-   - Use rc-file bootstrap for local Nushell where Warp already uses that method for shells that should not receive large bootstrap payloads through the PTY.
 
 4. Add Nushell command-execution behavior.
    - Use Nushell's `--no-config-file` flag where command executors need isolated command execution that should not re-run user config.
@@ -59,6 +63,8 @@ Before this change, Nushell could only be represented as the broad POSIX `ShellF
    - Bare environment names are allowed only when they match `[A-Za-z_][A-Za-z0-9_]*`. Any other name serializes through the same JSON string-literal escaping and is emitted as `$env."NAME"`/`$env.<quoted-name>`.
    - Command-backed values are intentionally executable Nushell expressions emitted as `(<command>)`. These commands come from Warp's environment-variable command model and are not escaped as data; callers must treat them as trusted command snippets.
    - Secret-backed values are intentionally executable command substitutions around the external secret-manager retrieval command. The secret reference/manager configuration is the trust boundary, and the command output becomes the environment value.
+   - Command-backed and secret-backed values may be serialized only after an explicit user action such as applying, copying, or exporting an environment-variable collection, and only for content the current user owns or has explicitly chosen to trust. Actual command execution happens only when the user applies the collection to the active shell or runs the generated text. Drive sync, preview, import, shared collection browsing, and metadata rendering must treat those snippets as inert data and must not evaluate them.
+   - Shared or imported Drive environment-variable collections that contain command-backed values must keep using the existing permission/confirmation boundary before execution. If the implementation cannot prove ownership/trust or explicit user intent for a path, that path must render the command text for review or route to unsupported handling instead of executing it automatically.
    - Warp Drive export and copy paths carry `ShellType` from the active terminal session so Nushell sessions emit Nushell syntax.
 
 6. Add Nushell-safe update command construction.
@@ -72,6 +78,25 @@ Before this change, Nushell could only be represented as the broad POSIX `ShellF
 7. Scope remote/subshell follow-up work explicitly.
    - Remote SSH/session warpification and Nushell subshell bootstrap remain unsupported in this first iteration.
    - Future work can add those paths once the local shell contract is stable.
+
+## `ShellFamily::Posix` and generated-command inventory
+
+Nushell remains in `ShellFamily::Posix` only where the existing family-level API represents broad platform/path behavior. It is not permission to emit Bash/POSIX shell syntax for a Nushell session. Before the implementation PR lands, every `ShellFamily::Posix` path that can be reached by `ShellType::Nu` must be classified and tested as one of the following:
+
+| Area | Contract for Nushell |
+| --- | --- |
+| Path escaping and editor/completion/path display (`warp_util::path::ShellFamily`; editor/input/completer, terminal view, URI, CLI install, slash command, MCP settings, and "open in Warp" call sites) | Safe only for data escaping/unescaping of paths and text. These paths must not append command separators, control flow, exports, or command substitutions. Regression tests should include Nushell path strings with spaces, quotes, and backslashes. |
+| Environment-variable serialization (`app/src/env_vars/mod.rs`) | Nushell-gated. Dispatch on `ShellType::Nu` before falling back to `ShellFamily::Posix`; constants use JSON string literals, command/secret values use explicit Nushell command substitutions, and non-identifier names are quoted as Nushell environment keys. |
+| Warp Drive environment-variable export/copy (`app/src/drive/export.rs`, `app/src/drive/index.rs`) | Nushell-gated. Carry the active terminal `ShellType` rather than reducing to `ShellFamily`; if only a family is available, Nushell export/copy is unsupported instead of defaulting to Bash syntax. |
+| External secret command snippets used by env vars (`ExternalSecret::get_secret_extraction_command` and callers) | Nushell-gated and security-sensitive. Do not add POSIX-only prefixes such as Bash's leading backslash for Nushell, and do not execute snippets outside the explicit user-action trust boundary above. |
+| Local shell startup/bootstrap (`app/src/terminal/local_tty/shell.rs`, `app/src/terminal/bootstrap.rs`) | Nushell-gated. Direct/WSL/MSYS2 launch arguments, temp-file bootstrap sourcing, and fallback behavior must be asserted for `ShellType::Nu`; unsupported local child/subshell flows route through the existing unsupported-shell handling. |
+| Command executors (`app/src/terminal/model/session/command_executor/*`) | Nushell-gated. Use Nushell flags such as `--no-config-file` and Nushell quoting where isolated execution is needed; otherwise mark the executor path unsupported for Nushell rather than running Bash through `ShellFamily::Posix`. |
+| Linux updater command construction (`app/src/autoupdate/linux.rs`) | Nushell-gated. The implementation must not use generic POSIX `&&` for Nushell. Package-manager sequences use the Nushell `try { ...; warp_finish_update ... } catch { ... }` contract below. |
+
+Generated success-gated command inventory:
+
+- The current implementation has one `ShellType::and_combiner()` consumer: `app/src/autoupdate/linux.rs`. The Nushell implementation must branch before that generic combiner is used and must assert the generated update command contains no POSIX `&&`.
+- `ShellType::and_combiner()` may keep its existing Bash/Zsh/Fish/PowerShell behavior for non-Nushell shells. If a future implementation adds a new generated-command call site that is reachable from `ShellType::Nu`, that call site must add a Nushell-specific branch and tests, or explicitly route Nushell to unsupported-shell handling.
 
 ## Nushell metadata collection contract
 
@@ -119,9 +144,10 @@ Product behavior coverage:
 - Behavior 1, 2, and 5: unit tests in `crates/warp_terminal/src/shell/mod_tests.rs` and `app/src/terminal/local_tty/shell_tests.rs` verify `nu`, `-nu`, `/usr/bin/nu`, Windows `nu.exe`, WSL `nu` basename parsing, WSL Nushell launch arguments, MSYS2 Nushell launch arguments, and false positives such as `menu.exe`/`/usr/bin/menu.exe`.
 - Behavior 3 and 14: existing shell-discovery tests are extended so Nushell appears with the known shell types without regressing other shells.
 - Behavior 4, 6, 7, 8, 9, and 10: bootstrap unit coverage verifies Nushell asset selection; rendered-script smoke tests verify that the init/body scripts parse and run under the supported local `nu` binary after build placeholders are replaced; metadata payload tests should cover structured alias rows, delimiter-containing alias expansions, newline-separated command-name lists for custom/built-in/keyword commands, newline-separated environment-variable names, normalized PATH, `$nu.current-exe` shell path, and platform-derived `$nu.history-path`/`$nu.config-path`/`$nu.env-path`/`$nu.loginshell-path` values.
-- Behavior 11 and 12: `app/src/env_vars/mod.rs` tests verify Nushell initialization/export syntax, command substitution, and quoted environment-variable names; Drive export tests cover the `ShellType` API change.
+- Behavior 11 and 12: `app/src/env_vars/mod.rs` tests verify Nushell initialization/export syntax, command substitution, and quoted environment-variable names; Drive export tests cover the `ShellType` API change; Drive/shared/imported collection tests verify command-backed and secret-backed values are inert during sync, preview, import, and browsing, and require explicit user action before generated command text can be applied to the active shell.
 - Behavior 13: `app/src/autoupdate/linux_test.rs` verifies the Nushell update command gates `warp_finish_update` behind the package-manager command sequence, emits the expected outer `try { ... } catch { ... }` shape, preserves best-effort dist-upgrade handling for Apt, and does not emit POSIX `&&`.
 - Behavior 15: unsupported child/subshell paths intentionally keep using existing unsupported-shell behavior for Nushell.
+- POSIX-family inventory: add regression coverage or an explicit unsupported-shell assertion for every Nushell-reachable entry in the `ShellFamily::Posix` and generated-command inventory above. The implementation PR should update this inventory if `rg 'ShellFamily::from|shell_family\\(|ShellFamily::Posix|and_combiner\\(' app crates` finds a new concrete syntax path reachable from `ShellType::Nu`.
 
 Planned repo-root validation commands for the implementation PR:
 
