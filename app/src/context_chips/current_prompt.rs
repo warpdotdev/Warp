@@ -968,10 +968,25 @@ impl CurrentPrompt {
 
     #[cfg(feature = "local_fs")]
     fn latest_git_status_metadata(&self, ctx: &AppContext) -> Option<GitStatusMetadata> {
+        let active_working_directory = self
+            .latest_context
+            .as_ref()?
+            .active_block_metadata
+            .current_working_directory()?;
+
         self.git_repo_status
             .as_ref()
             .and_then(|w| w.upgrade(ctx))
-            .and_then(|h| h.as_ref(ctx).metadata().cloned())
+            .and_then(|h| {
+                let status_model = h.as_ref(ctx);
+                let active_working_directory = std::path::Path::new(active_working_directory);
+
+                if !active_working_directory.starts_with(status_model.repo_path()) {
+                    return None;
+                }
+
+                status_model.metadata().cloned()
+            })
     }
 
     #[cfg(feature = "local_fs")]
@@ -1023,6 +1038,8 @@ impl CurrentPrompt {
     ) {
         if let Some(metadata) = self.latest_git_status_metadata(ctx) {
             self.update_chip_value_from_git_status_metadata(chip_kind, &metadata);
+        } else {
+            self.update_chip_value(chip_kind, None);
         }
     }
 
@@ -1037,6 +1054,9 @@ impl CurrentPrompt {
                 &ContextChipKind::GitDiffStats,
                 &metadata,
             );
+        } else {
+            self.update_chip_value(&ContextChipKind::ShellGitBranch, None);
+            self.update_chip_value(&ContextChipKind::GitDiffStats, None);
         }
     }
 

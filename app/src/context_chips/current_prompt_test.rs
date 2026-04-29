@@ -1178,8 +1178,9 @@ fn test_externally_driven_chip_skips_periodic_timer() {
                 )
                 .unwrap()
         });
+        let repo_path = temp_dir.path().to_path_buf();
         let git_status =
-            app.add_model(move |_| GitRepoStatusModel::new_for_test(repo_handle, None));
+            app.add_model(move |_| GitRepoStatusModel::new_for_test(repo_handle, repo_path, None));
 
         let sessions = app.add_model(|_| Sessions::new_for_test());
         let current_prompt = app.add_model(move |ctx| CurrentPrompt::new(sessions, ctx));
@@ -1261,8 +1262,9 @@ fn test_externally_driven_git_diff_stats_uses_repo_status_without_shell_fallback
                 total_deletions: 0,
             },
         };
+        let repo_path = temp_dir.path().to_path_buf();
         let git_status = app.add_model(move |_| {
-            GitRepoStatusModel::new_for_test(repo_handle, Some(initial_metadata))
+            GitRepoStatusModel::new_for_test(repo_handle, repo_path, Some(initial_metadata))
         });
 
         let executor = Arc::new(RecordingCommandExecutor::default());
@@ -1372,8 +1374,9 @@ fn test_git_diff_stats_clears_shell_timer_when_repo_status_attaches_late() {
                 total_deletions: 2,
             },
         };
+        let repo_path = temp_dir.path().to_path_buf();
         let git_status = app.add_model(move |_| {
-            GitRepoStatusModel::new_for_test(repo_handle, Some(initial_metadata))
+            GitRepoStatusModel::new_for_test(repo_handle, repo_path, Some(initial_metadata))
         });
 
         let executor = Arc::new(RecordingCommandExecutor::default());
@@ -1456,6 +1459,149 @@ fn test_git_diff_stats_clears_shell_timer_when_repo_status_attaches_late() {
 
 #[cfg(feature = "local_fs")]
 #[test]
+fn test_git_diff_stats_clears_when_repo_status_is_stale_for_working_directory() {
+    App::test((), |mut app| async move {
+        let session_id = SessionId::from(904);
+        app.add_singleton_model(|_| {
+            Prompt::mock_with(
+                [ContextChipKind::GitDiffStats],
+                false,
+                WarpPromptSeparator::None,
+            )
+        });
+        app.add_singleton_model(SessionSettings::new_with_defaults);
+        app.add_singleton_model(|_| History::new(vec![]));
+        app.add_singleton_model(|_ctx| {
+            settings::PublicPreferences::new(
+                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
+            )
+        });
+        app.add_singleton_model(|_| {
+            settings::PrivatePreferences::new(
+                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
+            )
+        });
+        app.add_singleton_model(|_| ServerApiProvider::new_for_test());
+        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
+        app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
+        app.add_singleton_model(AuthManager::new_for_test);
+        app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
+        crate::settings::InputSettings::register(&mut app);
+        app.update(crate::settings::AISettings::register_and_subscribe_to_events);
+        app.add_singleton_model(crate::workspaces::user_workspaces::UserWorkspaces::default_mock);
+        #[cfg(windows)]
+        app.add_singleton_model(SystemInfo::new);
+
+        let repo_dir = tempfile::TempDir::new().unwrap();
+        let other_dir = tempfile::TempDir::new().unwrap();
+        let watcher_handle = app.add_singleton_model(DirectoryWatcher::new_for_testing);
+        let repo_handle = watcher_handle.update(&mut app, |watcher, ctx| {
+            watcher
+                .add_directory(
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                        repo_dir.path(),
+                    )
+                    .unwrap(),
+                    ctx,
+                )
+                .unwrap()
+        });
+
+        let initial_metadata = GitStatusMetadata {
+            current_branch_name: "main".to_string(),
+            main_branch_name: "main".to_string(),
+            stats_against_head: DiffStats {
+                files_changed: 2,
+                total_additions: 8,
+                total_deletions: 0,
+            },
+        };
+        let repo_path = repo_dir.path().to_path_buf();
+        let git_status = app.add_model(move |_| {
+            GitRepoStatusModel::new_for_test(repo_handle, repo_path, Some(initial_metadata))
+        });
+
+        let executor = Arc::new(RecordingCommandExecutor::default());
+        let sessions = app.add_model(|ctx| {
+            let mut sessions = Sessions::new_for_test().with_command_executor(executor.clone());
+            sessions.initialize_bootstrapped_session(
+                SessionInfo::new_for_test().with_id(session_id),
+                "test command".to_string(),
+                vec![],
+                None,
+                ctx,
+            );
+            sessions
+        });
+        let current_prompt = app.add_model(move |ctx| CurrentPrompt::new(sessions, ctx));
+
+        current_prompt.update(&mut app, |cp, ctx| {
+            cp.latest_context = Some(PromptContext {
+                active_block_metadata: BlockMetadata::new(
+                    Some(session_id),
+                    Some(repo_dir.path().display().to_string()),
+                ),
+                environment: Environment::default(),
+            });
+            cp.set_git_repo_status(Some(git_status.downgrade()), ctx);
+            cp.update_states_with_new_context(ctx);
+        });
+
+        app.read(|ctx| {
+            let value = current_prompt
+                .as_ref(ctx)
+                .latest_chip_value(&ContextChipKind::GitDiffStats)
+                .and_then(|value| value.as_git_diff_stats())
+                .cloned();
+            assert_eq!(
+                value,
+                Some(crate::context_chips::display_chip::GitLineChanges {
+                    files_changed: 2,
+                    lines_added: 8,
+                    lines_removed: 0,
+                })
+            );
+        });
+
+        current_prompt.update(&mut app, |cp, _ctx| {
+            cp.latest_context = Some(PromptContext {
+                active_block_metadata: BlockMetadata::new(
+                    Some(session_id),
+                    Some(other_dir.path().display().to_string()),
+                ),
+                environment: Environment::default(),
+            });
+        });
+
+        git_status.update(&mut app, |model, ctx| {
+            model.set_metadata_for_test(
+                Some(GitStatusMetadata {
+                    current_branch_name: "stale-branch".to_string(),
+                    main_branch_name: "main".to_string(),
+                    stats_against_head: DiffStats {
+                        files_changed: 9,
+                        total_additions: 99,
+                        total_deletions: 9,
+                    },
+                }),
+                ctx,
+            );
+        });
+
+        app.read(|ctx| {
+            let value = current_prompt
+                .as_ref(ctx)
+                .latest_chip_value(&ContextChipKind::GitDiffStats);
+            assert_eq!(
+                value, None,
+                "Stale repo-status metadata should be cleared instead of applied"
+            );
+        });
+    });
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
 fn test_git_status_change_updates_chip_value() {
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| {
@@ -1496,8 +1642,9 @@ fn test_git_status_change_updates_chip_value() {
             main_branch_name: "main".to_string(),
             stats_against_head: DiffStats::default(),
         };
+        let repo_path = temp_dir.path().to_path_buf();
         let git_status = app.add_model(move |_| {
-            GitRepoStatusModel::new_for_test(repo_handle, Some(initial_metadata))
+            GitRepoStatusModel::new_for_test(repo_handle, repo_path, Some(initial_metadata))
         });
 
         let sessions = app.add_model(|_| Sessions::new_for_test());
@@ -1505,6 +1652,13 @@ fn test_git_status_change_updates_chip_value() {
 
         // Subscribe to the git status model and run chips.
         current_prompt.update(&mut app, |cp, ctx| {
+            cp.latest_context = Some(PromptContext {
+                active_block_metadata: BlockMetadata::new(
+                    None,
+                    Some(temp_dir.path().display().to_string()),
+                ),
+                environment: Environment::default(),
+            });
             cp.set_git_repo_status(Some(git_status.downgrade()), ctx);
             cp.update_states_with_new_context(ctx);
         });
