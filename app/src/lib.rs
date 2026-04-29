@@ -635,25 +635,14 @@ pub fn run() -> Result<()> {
                 }
             }
             #[cfg(not(target_family = "wasm"))]
-<<<<<<< HEAD
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerProxy(args)) => {
-                init_common(&LaunchMode::Proxy, None)?;
+                init_common(&LaunchMode::RemoteServerProxy, None)?;
                 return crate::remote_server::run_proxy(args.identity_key.clone());
             }
             #[cfg(not(target_family = "wasm"))]
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerDaemon(args)) => {
-                init_common(&LaunchMode::Daemon, None)?;
-                return crate::remote_server::run_daemon(args.identity_key.clone());
-=======
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerProxy) => {
-                init_common(&LaunchMode::RemoteServerProxy, None)?;
-                return crate::remote_server::run_proxy();
-            }
-            #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerDaemon) => {
                 init_common(&LaunchMode::RemoteServerDaemon, None)?;
-                return crate::remote_server::run_daemon();
->>>>>>> f8ebef6 (comments)
+                return crate::remote_server::run_daemon(args.identity_key.clone());
             }
             #[cfg(not(target_family = "wasm"))]
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RipgrepSearch {
