@@ -448,7 +448,9 @@ impl TelemetryEventDesc for CodeReviewTelemetryEventDiscriminants {
                 "Agent insert_code_review_comments tool call received and processed"
             }
             Self::CommentsAttached => "Newly-imported comments relocated against editor lines",
-            Self::GitButtonTriggered => "User clicked a git operation button in the code review header",
+            Self::GitButtonTriggered => {
+                "User clicked a git operation button in the code review header"
+            }
             Self::GitDialogCompleted => "Git operation dialog finished its async operation",
         }
     }
