@@ -15,6 +15,7 @@ use warp_core::ui::appearance::Appearance;
 use warpui::fonts::FamilyId;
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
+use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentConversationsModelEvent};
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::skills::{SkillDescriptor, SkillManager};
 use crate::search::data_source::{Query, QueryResult};
@@ -25,6 +26,8 @@ use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
 use crate::terminal::model::session::SessionType;
+#[cfg(not(target_family = "wasm"))]
+use warp_cli::agent::Harness;
 use warp_core::ui::Icon as WarpIcon;
 
 use super::AcceptSlashCommandOrSavedPrompt;
@@ -32,6 +35,7 @@ use crate::{
     ai::blocklist::{
         agent_view::{AgentViewController, AgentViewControllerEvent},
         block::cli_controller::{CLISubagentController, CLISubagentEvent},
+        BlocklistAIHistoryEvent,
     },
     search::{
         slash_command_menu::{
@@ -125,6 +129,28 @@ impl SlashCommandDataSource {
                 }
             },
         );
+        // Recompute when the active conversation switches so commands gated on the active
+        // conversation's task (e.g. /continue-locally) update on navigation.
+        ctx.subscribe_to_model(&BlocklistAIHistoryModel::handle(ctx), |me, event, ctx| {
+            if matches!(
+                event,
+                BlocklistAIHistoryEvent::SetActiveConversation { .. }
+                    | BlocklistAIHistoryEvent::ClearedActiveConversation { .. }
+            ) {
+                me.recompute_active_commands(ctx);
+            }
+        });
+        // Recompute when task data is updated so commands gated on a conversation's task
+        // harness (e.g. /continue-locally) appear once the task fetch resolves.
+        ctx.subscribe_to_model(&AgentConversationsModel::handle(ctx), |me, event, ctx| {
+            if matches!(
+                event,
+                AgentConversationsModelEvent::TasksUpdated
+                    | AgentConversationsModelEvent::NewTasksReceived
+            ) {
+                me.recompute_active_commands(ctx);
+            }
+        });
 
         let mut me = Self {
             active_session,
@@ -203,6 +229,9 @@ impl SlashCommandDataSource {
 
         let is_orchestration_enabled = AISettings::as_ref(ctx).is_orchestration_enabled(ctx);
 
+        #[cfg(not(target_family = "wasm"))]
+        let active_conversation_is_cloud_oz = self.active_conversation_is_cloud_oz(ctx);
+
         let old_active_command_count = self.active_commands_by_id.len();
         self.active_commands_by_id = HashMap::from_iter(
             COMMAND_REGISTRY
@@ -217,6 +246,21 @@ impl SlashCommandDataSource {
                 .filter(|(_, command)| {
                     command.name != commands::FEEDBACK.name
                         || !crate::workspace::is_feedback_skill_available(ctx)
+                })
+                // /continue-locally only applies to cloud Oz conversations. Local conversations
+                // and non-Oz cloud runs (Claude, Gemini) are filtered out so the slash menu
+                // doesn't surface a no-op command.
+                .filter(|(_, command)| {
+                    #[cfg(not(target_family = "wasm"))]
+                    {
+                        command.name != commands::CONTINUE_LOCALLY.name
+                            || active_conversation_is_cloud_oz
+                    }
+                    #[cfg(target_family = "wasm")]
+                    {
+                        let _ = command;
+                        true
+                    }
                 })
                 // When CLI agent input is open, restrict to the explicit allowlist.
                 .filter(|(_, command)| {
@@ -270,6 +314,53 @@ impl SlashCommandDataSource {
             .session(self.terminal_view_id)
             .filter(|s| matches!(s.input_state, CLIAgentInputState::Open { .. }))
             .map(|s| s.agent.supported_skill_providers())
+    }
+
+    /// Returns true when the active conversation is associated with a cloud Oz
+    /// `AmbientAgentTask`. Used to gate `/continue-locally` to runs that can
+    /// actually be forked into a local Warp conversation.
+    ///
+    /// Permissive when the harness is not yet known: we consider an absent task or
+    /// missing `agent_config_snapshot.harness` to be Oz, matching the existing
+    /// tombstone gate (`conversation_ended_tombstone_view::render_action_buttons`).
+    /// Only an explicit non-Oz harness (Claude, Gemini, OpenCode, Unknown) hides the
+    /// command. Conversations without a `task_id` are local and never qualify.
+    #[cfg(not(target_family = "wasm"))]
+    fn active_conversation_is_cloud_oz(&self, ctx: &AppContext) -> bool {
+        let agent_view_state = self.agent_view_controller.as_ref(ctx).agent_view_state();
+        let conversation_id = match agent_view_state.active_conversation_id() {
+            Some(id) => id,
+            None => match BlocklistAIHistoryModel::as_ref(ctx)
+                .active_conversation(self.terminal_view_id)
+            {
+                Some(conv) => conv.id(),
+                None => return false,
+            },
+        };
+
+        let history = BlocklistAIHistoryModel::as_ref(ctx);
+        let Some(conversation) = history.conversation(&conversation_id) else {
+            return false;
+        };
+        let Some(task_id) = conversation.task_id() else {
+            return false;
+        };
+
+        let Some(task) = AgentConversationsModel::as_ref(ctx).get_task_data(&task_id) else {
+            // Task data not yet fetched. Permissive default: assume Oz so the command
+            // is reachable while the fetch is in flight; once the fetch resolves,
+            // `TasksUpdated` triggers a recompute and a non-Oz task hides the command.
+            return true;
+        };
+
+        match task
+            .agent_config_snapshot
+            .as_ref()
+            .and_then(|s| s.harness.as_ref())
+        {
+            Some(config) => config.harness_type == Harness::Oz,
+            None => true,
+        }
     }
 }
 

@@ -12,6 +12,12 @@ use warp_core::ui::appearance::Appearance;
 use warpui::clipboard::ClipboardContent;
 use warpui::{SingletonEntity, ViewContext};
 
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent::conversation::AIConversationId;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent_conversations_model::AgentConversationsModel;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent_management::telemetry::AgentManagementTelemetryEvent;
 use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
@@ -38,6 +44,10 @@ use crate::view_components::DismissibleToast;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
 use crate::TelemetryEvent;
+#[cfg(not(target_family = "wasm"))]
+use warp_cli::agent::Harness;
+#[cfg(not(target_family = "wasm"))]
+use warpui::AppContext;
 
 #[derive(Debug, Clone)]
 pub enum AcceptSlashCommandOrSavedPrompt {
@@ -744,6 +754,48 @@ impl Input {
                 self.open_user_query_menu(UserQueryMenuAction::ForkFrom, ctx);
                 return true;
             }
+            #[cfg(not(target_family = "wasm"))]
+            continue_locally if command.name == commands::CONTINUE_LOCALLY.name => {
+                let Some(conversation_id) = self
+                    .ai_context_model
+                    .as_ref(ctx)
+                    .selected_conversation_id(ctx)
+                else {
+                    show_error_toast(
+                        "/continue-locally requires an active conversation".to_owned(),
+                        ctx,
+                    );
+                    return true;
+                };
+
+                if !conversation_is_cloud_oz_for_slash_command(conversation_id, ctx) {
+                    show_error_toast(
+                        "/continue-locally is only available for cloud Oz conversations".to_owned(),
+                        ctx,
+                    );
+                    return true;
+                }
+
+                let destination = if trigger.is_cmd_or_ctrl_enter() {
+                    ForkedConversationDestination::NewTab
+                } else {
+                    ForkedConversationDestination::SplitPane
+                };
+
+                send_telemetry_from_ctx!(
+                    AgentManagementTelemetryEvent::SlashCommandContinueLocally,
+                    ctx
+                );
+
+                ctx.dispatch_typed_action(&WorkspaceAction::ForkAIConversation {
+                    conversation_id,
+                    fork_from_exchange: None,
+                    summarize_after_fork: false,
+                    summarization_prompt: None,
+                    initial_prompt: argument.cloned(),
+                    destination,
+                });
+            }
             fork_and_compact if command.name == commands::FORK_AND_COMPACT.name => {
                 let Some(conversation_id) = self
                     .ai_context_model
@@ -977,5 +1029,38 @@ impl Input {
             | SlashCommandEntryState::Composing { .. }
             | SlashCommandEntryState::DisabledUntilEmptyBuffer => false,
         }
+    }
+}
+
+/// Returns true when the conversation with `conversation_id` is associated with a cloud Oz
+/// `AmbientAgentTask`. Used as the defensive runtime gate for `/continue-locally` so a
+/// keybinding-triggered execution can't fall through onto a non-cloud-Oz conversation after
+/// the menu has been recomputed. Mirrors `SlashCommandDataSource::active_conversation_is_cloud_oz`.
+#[cfg(not(target_family = "wasm"))]
+fn conversation_is_cloud_oz_for_slash_command(
+    conversation_id: AIConversationId,
+    ctx: &AppContext,
+) -> bool {
+    let history = BlocklistAIHistoryModel::as_ref(ctx);
+    let Some(conversation) = history.conversation(&conversation_id) else {
+        return false;
+    };
+    let Some(task_id) = conversation.task_id() else {
+        return false;
+    };
+
+    let Some(task) = AgentConversationsModel::as_ref(ctx).get_task_data(&task_id) else {
+        // Permissive: not yet fetched. Matches the data-source default so the command isn't
+        // wrongly blocked while the task fetch is in flight.
+        return true;
+    };
+
+    match task
+        .agent_config_snapshot
+        .as_ref()
+        .and_then(|s| s.harness.as_ref())
+    {
+        Some(config) => config.harness_type == Harness::Oz,
+        None => true,
     }
 }
