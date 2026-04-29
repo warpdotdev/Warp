@@ -1,6 +1,6 @@
 mod changelog;
 mod channel_versions;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub mod linux;
 #[cfg(target_os = "macos")]
 mod mac;
@@ -789,7 +789,7 @@ async fn download_update(
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
             mac::download_update_and_cleanup(&version_info, &update_id, last_successful_update_id.as_deref(), server_api.http_client()).await
-        } else if #[cfg(target_os = "linux")] {
+        } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             linux::download_update_and_cleanup(&version_info, &update_id, server_api.http_client()).await
         } else if #[cfg(windows)] {
             windows::download_update_and_cleanup(&version_info, &update_id, server_api.http_client()).await
@@ -819,7 +819,7 @@ pub fn apply_update(
             // macOS applies the update during the download step. Windows does it during
             // `spawn_child_if_necessary`. In either case, simply continue relaunching the app.
             Ok(ReadyForRelaunch::Yes)
-        } else if #[cfg(target_os = "linux")] {
+        } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             let AutoupdateStage::UpdateReady { update_id, .. } = &AutoupdateState::handle(_ctx).as_ref(_ctx).stage else {
                 anyhow::bail!("Trying to apply an update without AutoupdateState being UpdateReady!");
             };
@@ -996,7 +996,7 @@ pub fn spawn_child_if_necessary(app: &mut AppContext) {
         cfg_if::cfg_if! {
             if #[cfg(target_os = "macos")] {
                 let relaunch_status = mac::relaunch();
-            } else if #[cfg(target_os = "linux")] {
+            } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
                 let relaunch_status = linux::relaunch();
             } else if #[cfg(windows)] {
                 let relaunch_status = windows::relaunch();
@@ -1047,7 +1047,7 @@ pub fn remove_old_executable() -> Result<()> {
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
             mac::remove_old_executable()
-        } else if #[cfg(any(target_os = "linux", windows))] {
+        } else if #[cfg(any(any(target_os = "linux", target_os = "freebsd"), windows))] {
             // Nothing to do on Linux or Windows; we don't leave anything behind to clean up after
             // a relaunch.
             Ok(())

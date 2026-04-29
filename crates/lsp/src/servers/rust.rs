@@ -26,11 +26,11 @@ fn asset_name() -> &'static str {
     {
         "rust-analyzer-x86_64-apple-darwin.gz"
     }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[cfg(all(any(target_os = "linux", target_os = "freebsd"), target_arch = "x86_64"))]
     {
         "rust-analyzer-x86_64-unknown-linux-gnu.gz"
     }
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    #[cfg(all(any(target_os = "linux", target_os = "freebsd"), target_arch = "aarch64"))]
     {
         "rust-analyzer-aarch64-unknown-linux-gnu.gz"
     }
@@ -45,8 +45,8 @@ fn asset_name() -> &'static str {
     #[cfg(not(any(
         all(target_os = "macos", target_arch = "aarch64"),
         all(target_os = "macos", target_arch = "x86_64"),
-        all(target_os = "linux", target_arch = "x86_64"),
-        all(target_os = "linux", target_arch = "aarch64"),
+        all(any(target_os = "linux", target_os = "freebsd"), target_arch = "x86_64"),
+        all(any(target_os = "linux", target_os = "freebsd"), target_arch = "aarch64"),
         all(target_os = "windows", target_arch = "x86_64"),
         all(target_os = "windows", target_arch = "aarch64"),
     )))]

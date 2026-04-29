@@ -97,7 +97,7 @@ mod platform {
 // Linux
 // ---------------------------------------------------------------------------
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 mod platform {
     /// Reads `/proc/self/status` and sums `VmRSS` + `VmSwap` to approximate
     /// the full memory footprint (resident + swapped).
