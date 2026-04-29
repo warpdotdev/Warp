@@ -47,18 +47,6 @@ const HISTORY_ENTRY_MATCH_CUTOFF: f32 = 0.9;
 /// Duration to temporarily disable autodetection during operations like history selection.
 const AUTODETECTION_DISABLE_DURATION_MS: u64 = 250;
 
-/// Returns `true` if entering agent view via this origin must force-lock the input to AI mode,
-/// bypassing NLD entirely.
-///
-/// Origins listed here are interaction patterns where the user's intent is unambiguously "talk to
-/// the agent" and a misclassification would be visibly wrong (e.g. dropping the buffer back into
-/// shell mode after pasting an image).
-///
-/// Pattern C (RefineDiff) will be added here in a follow-up commit.
-fn origin_requires_locked_ai(origin: &AgentViewEntryOrigin) -> bool {
-    matches!(origin, AgentViewEntryOrigin::ImageAdded)
-}
-
 /// Configuration for the terminal pane's input.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InputConfig {
@@ -286,7 +274,7 @@ impl BlocklistAIInputModel {
                             },
                             ctx,
                         );
-                    } else if origin_requires_locked_ai(origin) || me.has_locking_attachment(ctx) {
+                    } else if me.has_locking_attachment(ctx) {
                         // Interaction patterns that should fully bypass NLD on
                         // entry: image / file attachment in progress / attached, or block
                         // already in pending context. Force-lock to AI regardless of the
