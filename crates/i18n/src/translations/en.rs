@@ -1150,6 +1150,153 @@ lazy_static::lazy_static! {
         m.insert("settings.teams.toast.invite_sent", "Your invite is on the way!");
         m.insert("settings.teams.toast.invites_sent", "Your {count} invites are on the way!");
 
+        // MCP servers - list page
+        m.insert("settings.mcp.description", "MCP (Model Context Protocol) servers allow you to extend Warp with additional tools and capabilities. Add servers to give your AI agents access to databases, APIs, file systems, and more.");
+        m.insert("settings.mcp.empty_state", "Once you add a MCP server, it will be shown here.");
+        m.insert("settings.mcp.no_results", "No search results found");
+        m.insert("settings.mcp.add", "Add");
+        m.insert("settings.mcp.search_placeholder", "Search MCP Servers");
+        m.insert("settings.mcp.available_to_install", "Available to install");
+        m.insert("settings.mcp.updated", "MCP server updated");
+        m.insert("settings.mcp.auto_spawn_label", "Auto-spawn servers from third-party agents");
+        m.insert("settings.mcp.auto_spawn_description", "Automatically detect and spawn MCP servers from globally-scoped third-party AI agent configuration files.");
+        m.insert("settings.mcp.see_providers", "See supported providers.");
+        m.insert("settings.mcp.learn_more", "Learn more.");
+        m.insert("settings.mcp.my_mcps", "My MCPs");
+        m.insert("settings.mcp.shared_by_warp_and_name", "Shared by Warp and {name}");
+        m.insert("settings.mcp.shared_by_warp_and_other", "Shared by Warp and from other devices");
+        m.insert("settings.mcp.shared_from_warp", "Shared from Warp");
+        m.insert("settings.mcp.detected_from", "Detected from {source}");
+        m.insert("settings.mcp.global", "global");
+        m.insert("settings.mcp.detected_from_config", "Detected from config file");
+        m.insert("settings.mcp.shared_by_creator", "Shared by: {creator}");
+        m.insert("settings.mcp.shared_by_team_member", "Shared by a team member");
+        m.insert("settings.mcp.from_another_device", "From another device");
+        m.insert("settings.mcp.shared_from_team", "Shared from team");
+
+        // MCP servers - edit page
+        m.insert("settings.mcp.save", "Save");
+        m.insert("settings.mcp.edit_variables", "Edit Variables");
+        m.insert("settings.mcp.delete_mcp", "Delete MCP");
+        m.insert("settings.mcp.remove_from_team", "Remove from team");
+        m.insert("settings.mcp.admin_only_edit", "Only team admins and the creator of the MCP server can edit the MCP server.");
+        m.insert("settings.mcp.add_new_server", "Add New MCP Server");
+        m.insert("settings.mcp.edit_server_named", "Edit {name} MCP Server");
+        m.insert("settings.mcp.edit_server", "Edit MCP Server");
+        m.insert("settings.mcp.log_out", "Log out");
+        m.insert("settings.mcp.json_tab", "JSON");
+        m.insert("settings.mcp.secrets_warning", "This MCP server contains secrets. Visit Settings > Privacy to modify your secret redaction settings.");
+        m.insert("settings.mcp.no_server_specified", "No MCP Server specified.");
+        m.insert("settings.mcp.cannot_add_multiple", "Cannot add multiple MCP servers while editing a single server.");
+
+        // MCP servers - server card
+        m.insert("settings.mcp.offline", "Offline");
+        m.insert("settings.mcp.starting", "Starting server...");
+        m.insert("settings.mcp.authenticating", "Authenticating...");
+        m.insert("settings.mcp.shutting_down", "Shutting down...");
+        m.insert("settings.mcp.no_tools", "No tools available");
+        m.insert("settings.mcp.tools_count", "{count} tools available");
+        m.insert("settings.mcp.show_logs", "Show logs");
+        m.insert("settings.mcp.share_server", "Share server");
+        m.insert("settings.mcp.edit_tooltip", "Edit");
+        m.insert("settings.mcp.view_logs", "View logs");
+        m.insert("settings.mcp.edit_config", "Edit config");
+        m.insert("settings.mcp.set_up", "Set up");
+        m.insert("settings.mcp.update_available", "Server update available");
+
+        // MCP servers - installation modal
+        m.insert("settings.mcp.install_named", "Install {name}");
+        m.insert("settings.mcp.esc_hint", "ESC");
+        m.insert("settings.mcp.cancel", "Cancel");
+        m.insert("settings.mcp.install", "Install");
+        m.insert("settings.mcp.no_server_selected", "No MCP server selected");
+
+        // MCP servers - update modal
+        m.insert("settings.mcp.server_fallback", "Server");
+        m.insert("settings.mcp.update_named", "Update {name}");
+        m.insert("settings.mcp.updates_available", "This server has {count} updates available, which would you like to proceed with?");
+        m.insert("settings.mcp.another_device", "another device");
+        m.insert("settings.mcp.a_team_member", "a team member");
+        m.insert("settings.mcp.update_from", "Update from {publisher}");
+        m.insert("settings.mcp.version", "Version {version}");
+        m.insert("settings.mcp.update", "Update");
+        m.insert("settings.mcp.no_updates", "No updates available");
+
+        // MCP servers - destructive confirmation
+        m.insert("settings.mcp.delete_server_title", "Delete MCP server?");
+        m.insert("settings.mcp.delete_server_description", "This will uninstall and remove this MCP server from all your devices.");
+        m.insert("settings.mcp.delete_shared_title", "Delete shared MCP server?");
+        m.insert("settings.mcp.delete_shared_description", "This will not only delete this MCP server for yourself, but also uninstall and remove this MCP server from Warp and across all of your teammates' devices.");
+        m.insert("settings.mcp.remove_shared_title", "Remove shared MCP server from team?");
+        m.insert("settings.mcp.remove_shared_description", "This will uninstall and remove this MCP server from Warp and across all of your teammates' devices.");
+
+        // Platform - create API key modal
+        m.insert("settings.platform.api_key_personal_desc", "This API key is tied to your user and can make requests against your Warp account.");
+        m.insert("settings.platform.api_key_team_desc", "This API key is tied to your team and can make requests on behalf of your team.");
+        m.insert("settings.platform.expiry_1_day", "1 day");
+        m.insert("settings.platform.expiry_30_days", "30 days");
+        m.insert("settings.platform.expiry_90_days", "90 days");
+        m.insert("settings.platform.expiry_never", "Never");
+        m.insert("settings.platform.api_key_placeholder", "Warp API Key");
+        m.insert("settings.platform.type_personal", "Personal");
+        m.insert("settings.platform.type_team", "Team");
+        m.insert("settings.platform.no_team_error", "Unable to create a team API key because there is no current team.");
+        m.insert("settings.platform.create_failed", "Failed to create API key. Please try again.");
+        m.insert("settings.platform.secret_warning", "This secret key is shown only once. Copy and store it securely.");
+        m.insert("settings.platform.copied", "Copied");
+        m.insert("settings.platform.copy", "Copy");
+        m.insert("settings.platform.done", "Done");
+        m.insert("settings.platform.name_label", "Name");
+        m.insert("settings.platform.cancel", "Cancel");
+        m.insert("settings.platform.creating", "Creating...");
+        m.insert("settings.platform.create_key", "Create key");
+        m.insert("settings.platform.type_label", "Type");
+        m.insert("settings.platform.expiration_label", "Expiration");
+        m.insert("settings.platform.secret_copied", "Secret key copied.");
+        m.insert("settings.platform.delete_failed", "Failed to delete API key. Please try again.");
+
+        // Privacy - add regex modal
+        m.insert("settings.privacy.regex_placeholder", "e.g. \"Google API Key\"");
+        m.insert("settings.privacy.name_optional", "Name (optional)");
+        m.insert("settings.privacy.regex_pattern", "Regex pattern");
+        m.insert("settings.privacy.add_regex", "Add regex");
+        m.insert("settings.privacy.invalid_regex", "Invalid regex");
+        m.insert("settings.privacy.cancel", "Cancel");
+
+        // Billing - overage limit modal
+        m.insert("settings.billing.overage.invalid_amount", "Please enter a valid currency amount");
+        m.insert("settings.billing.overage.price_range", "Please enter a price between $0.01 and $10,000,000");
+        m.insert("settings.billing.overage.limit_description", "Warp will prevent use of premium models when this dollar limit is reached. Resets on a monthly basis.");
+        m.insert("settings.billing.overage.limit_note", "Note that AI credits made near your chosen limit may exceed it by a few dollars.");
+        m.insert("settings.billing.overage.update", "Update");
+
+        // Settings page - shared
+        m.insert("settings.shared.learn_more_tooltip", "Click to learn more in docs");
+        m.insert("settings.shared.not_synced", "This setting is not synced to your other devices");
+        m.insert("settings.shared.reset_default", "Reset to default");
+
+        // Features - working directory
+        m.insert("settings.features.new_window", "New window");
+        m.insert("settings.features.new_tab", "New tab");
+        m.insert("settings.features.split_pane", "Split pane");
+        m.insert("settings.features.advanced", "Advanced");
+        m.insert("settings.features.directory_path", "Directory path");
+
+        // Features - startup shell
+        m.insert("settings.features.executable_path", "Executable path");
+        m.insert("settings.features.default", "Default");
+        m.insert("settings.features.custom", "Custom");
+
+        // Features - undo close
+        m.insert("settings.features.grace_period", "Grace period (seconds)");
+        m.insert("settings.features.enable_reopen", "Enable reopening of closed sessions");
+
+        // Environments
+        m.insert("settings.environments.new_environment", "New environment");
+
+        // About page
+        m.insert("settings.about.copyright", "Copyright 2026 Warp");
+
         m
     };
 }

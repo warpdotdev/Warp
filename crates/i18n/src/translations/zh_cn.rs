@@ -1069,6 +1069,137 @@ lazy_static::lazy_static! {
         m.insert("settings.billing.upgrade.for_more_ai_usage_generic", "\u{4EE5}\u{83B7}\u{5F97}\u{66F4}\u{591A}AI\u{7528}\u{91CF}\u{3002}");
         m.insert("settings.billing.upgrade.for_more_credits_models", "\u{4EE5}\u{83B7}\u{5F97}\u{66F4}\u{591A}\u{79EF}\u{5206}\u{548C}\u{66F4}\u{591A}\u{6A21}\u{578B}\u{3002}");
 
+        // About
+        m.insert("settings.about.copyright", "Copyright 2026 Warp");
+
+        // Billing overage
+        m.insert("settings.billing.overage.invalid_amount", "\u{8BF7}\u{8F93}\u{5165}\u{6709}\u{6548}\u{7684}\u{8D27}\u{5E01}\u{91D1}\u{989D}");
+        m.insert("settings.billing.overage.limit_description", "\u{5F53}\u{8FBE}\u{5230}\u{6B64}\u{7F8E}\u{5143}\u{9650}\u{989D}\u{65F6}\u{FF0C}Warp \u{5C06}\u{963B}\u{6B62}\u{4F7F}\u{7528}\u{9AD8}\u{7EA7}\u{6A21}\u{578B}\u{3002}\u{6BCF}\u{6708}\u{91CD}\u{7F6E}\u{3002}");
+        m.insert("settings.billing.overage.limit_note", "\u{8BF7}\u{6CE8}\u{610F}\u{FF0C}\u{63A5}\u{8FD1}\u{60A8}\u{9009}\u{62E9}\u{7684}\u{9650}\u{989D}\u{65F6}\u{FF0C}AI \u{79EF}\u{5206}\u{53EF}\u{80FD}\u{4F1A}\u{8D85}\u{51FA}\u{51E0}\u{7F8E}\u{5143}\u{3002}");
+        m.insert("settings.billing.overage.price_range", "\u{8BF7}\u{8F93}\u{5165}\u{5728} $0.01 \u{5230} $10,000,000 \u{4E4B}\u{95F4}\u{7684}\u{4EF7}\u{683C}");
+        m.insert("settings.billing.overage.update", "\u{66F4}\u{65B0}");
+
+        // Environments
+        m.insert("settings.environments.new_environment", "\u{65B0}\u{5EFA}\u{73AF}\u{5883}");
+
+        // Features
+        m.insert("settings.features.advanced", "\u{9AD8}\u{7EA7}");
+        m.insert("settings.features.custom", "\u{81EA}\u{5B9A}\u{4E49}");
+        m.insert("settings.features.directory_path", "\u{76EE}\u{5F55}\u{8DEF}\u{5F84}");
+        m.insert("settings.features.enable_reopen", "\u{542F}\u{7528}\u{91CD}\u{65B0}\u{6253}\u{5F00}\u{5DF2}\u{5173}\u{95ED}\u{7684}\u{4F1A}\u{8BDD}");
+        m.insert("settings.features.executable_path", "\u{53EF}\u{6267}\u{884C}\u{6587}\u{4EF6}\u{8DEF}\u{5F84}");
+        m.insert("settings.features.grace_period", "\u{5BBD}\u{9650}\u{671F}\u{FF08}\u{79D2}\u{FF09}");
+        m.insert("settings.features.new_tab", "\u{65B0}\u{6807}\u{7B7E}\u{9875}");
+        m.insert("settings.features.new_window", "\u{65B0}\u{7A97}\u{53E3}");
+        m.insert("settings.features.split_pane", "\u{62C6}\u{5206}\u{7A97}\u{683C}");
+
+        // MCP
+        m.insert("settings.mcp.a_team_member", "\u{56E2}\u{961F}\u{6210}\u{5458}");
+        m.insert("settings.mcp.add", "\u{6DFB}\u{52A0}");
+        m.insert("settings.mcp.add_new_server", "\u{6DFB}\u{52A0}\u{65B0} MCP \u{670D}\u{52A1}\u{5668}");
+        m.insert("settings.mcp.admin_only_edit", "\u{4EC5}\u{56E2}\u{961F}\u{7BA1}\u{7406}\u{5458}\u{548C} MCP \u{670D}\u{52A1}\u{5668}\u{521B}\u{5EFA}\u{8005}\u{53EF}\u{4EE5}\u{7F16}\u{8F91}\u{3002}");
+        m.insert("settings.mcp.another_device", "\u{53E6}\u{4E00}\u{4E2A}\u{8BBE}\u{5907}");
+        m.insert("settings.mcp.authenticating", "\u{6B63}\u{5728}\u{8BA4}\u{8BC1}\u{2026}");
+        m.insert("settings.mcp.auto_spawn_description", "\u{81EA}\u{52A8}\u{68C0}\u{6D4B}\u{5E76}\u{4ECE}\u{5168}\u{5C40}\u{8303}\u{56F4}\u{7684}\u{7B2C}\u{4E09}\u{65B9} AI \u{4EE3}\u{7406}\u{914D}\u{7F6E}\u{6587}\u{4EF6}\u{4E2D}\u{751F}\u{6210} MCP \u{670D}\u{52A1}\u{5668}\u{3002}");
+        m.insert("settings.mcp.auto_spawn_label", "\u{4ECE}\u{7B2C}\u{4E09}\u{65B9}\u{4EE3}\u{7406}\u{81EA}\u{52A8}\u{751F}\u{6210}\u{670D}\u{52A1}\u{5668}");
+        m.insert("settings.mcp.available_to_install", "\u{53EF}\u{5B89}\u{88C5}");
+        m.insert("settings.mcp.cancel", "\u{53D6}\u{6D88}");
+        m.insert("settings.mcp.cannot_add_multiple", "\u{7F16}\u{8F91}\u{5355}\u{4E2A}\u{670D}\u{52A1}\u{5668}\u{65F6}\u{65E0}\u{6CD5}\u{6DFB}\u{52A0}\u{591A}\u{4E2A} MCP \u{670D}\u{52A1}\u{5668}\u{3002}");
+        m.insert("settings.mcp.delete_mcp", "\u{5220}\u{9664} MCP");
+        m.insert("settings.mcp.delete_server_description", "\u{8FD9}\u{5C06}\u{4ECE}\u{60A8}\u{7684}\u{6240}\u{6709}\u{8BBE}\u{5907}\u{4E2D}\u{5378}\u{8F7D}\u{5E76}\u{79FB}\u{9664}\u{6B64} MCP \u{670D}\u{52A1}\u{5668}\u{3002}");
+        m.insert("settings.mcp.delete_server_title", "\u{5220}\u{9664} MCP \u{670D}\u{52A1}\u{5668}\u{FF1F}");
+        m.insert("settings.mcp.delete_shared_description", "\u{8FD9}\u{4E0D}\u{4EC5}\u{4F1A}\u{4E3A}\u{60A8}\u{5220}\u{9664}\u{6B64} MCP \u{670D}\u{52A1}\u{5668}\u{FF0C}\u{8FD8}\u{4F1A}\u{4ECE} Warp \u{548C}\u{60A8}\u{6240}\u{6709}\u{56E2}\u{961F}\u{6210}\u{5458}\u{7684}\u{8BBE}\u{5907}\u{4E2D}\u{5378}\u{8F7D}\u{5E76}\u{79FB}\u{9664}\u{3002}");
+        m.insert("settings.mcp.delete_shared_title", "\u{5220}\u{9664}\u{5171}\u{6709} MCP \u{670D}\u{52A1}\u{5668}\u{FF1F}");
+        m.insert("settings.mcp.description", "MCP\u{FF08}\u{6A21}\u{578B}\u{4E0A}\u{4E0B}\u{6587}\u{534F}\u{8BAE}\u{FF09}\u{670D}\u{52A1}\u{5668}\u{5141}\u{8BB8}\u{60A8}\u{7528}\u{989D}\u{5916}\u{7684}\u{5DE5}\u{5177}\u{548C}\u{529F}\u{80FD}\u{6269}\u{5C55} Warp\u{3002}\u{6DFB}\u{52A0}\u{670D}\u{52A1}\u{5668}\u{4EE5}\u{4E3A}\u{60A8}\u{7684} AI \u{4EE3}\u{7406}\u{63D0}\u{4F9B}\u{6570}\u{636E}\u{5E93}\u{3001}API\u{3001}\u{6587}\u{4EF6}\u{7CFB}\u{7EDF}\u{7B49}\u{8BBF}\u{95EE}\u{6743}\u{9650}\u{3002}");
+        m.insert("settings.mcp.detected_from", "\u{68C0}\u{6D4B}\u{81EA} {source}");
+        m.insert("settings.mcp.detected_from_config", "\u{4ECE}\u{914D}\u{7F6E}\u{6587}\u{4EF6}\u{68C0}\u{6D4B}");
+        m.insert("settings.mcp.edit_config", "\u{7F16}\u{8F91}\u{914D}\u{7F6E}");
+        m.insert("settings.mcp.edit_server", "\u{7F16}\u{8F91} MCP \u{670D}\u{52A1}\u{5668}");
+        m.insert("settings.mcp.edit_server_named", "\u{7F16}\u{8F91} {name} MCP \u{670D}\u{52A1}\u{5668}");
+        m.insert("settings.mcp.edit_tooltip", "\u{7F16}\u{8F91}");
+        m.insert("settings.mcp.edit_variables", "\u{7F16}\u{8F91}\u{53D8}\u{91CF}");
+        m.insert("settings.mcp.empty_state", "\u{6DFB}\u{52A0} MCP \u{670D}\u{52A1}\u{5668}\u{540E}\u{FF0C}\u{5C06}\u{5728}\u{6B64}\u{5904}\u{663E}\u{793A}\u{3002}");
+        m.insert("settings.mcp.esc_hint", "ESC");
+        m.insert("settings.mcp.from_another_device", "\u{6765}\u{81EA}\u{53E6}\u{4E00}\u{4E2A}\u{8BBE}\u{5907}");
+        m.insert("settings.mcp.global", "\u{5168}\u{5C40}");
+        m.insert("settings.mcp.install", "\u{5B89}\u{88C5}");
+        m.insert("settings.mcp.install_named", "\u{5B89}\u{88C5} {name}");
+        m.insert("settings.mcp.json_tab", "JSON");
+        m.insert("settings.mcp.learn_more", "\u{4E86}\u{89E3}\u{66F4}\u{591A}\u{3002}");
+        m.insert("settings.mcp.log_out", "\u{9000}\u{51FA}\u{767B}\u{5F55}");
+        m.insert("settings.mcp.my_mcps", "\u{6211}\u{7684} MCP");
+        m.insert("settings.mcp.no_results", "\u{672A}\u{627E}\u{5230}\u{641C}\u{7D22}\u{7ED3}\u{679C}");
+        m.insert("settings.mcp.no_server_selected", "\u{672A}\u{9009}\u{62E9} MCP \u{670D}\u{52A1}\u{5668}");
+        m.insert("settings.mcp.no_server_specified", "\u{672A}\u{6307}\u{5B9A} MCP \u{670D}\u{52A1}\u{5668}\u{3002}");
+        m.insert("settings.mcp.no_tools", "\u{65E0}\u{53EF}\u{7528}\u{5DE5}\u{5177}");
+        m.insert("settings.mcp.no_updates", "\u{65E0}\u{53EF}\u{7528}\u{66F4}\u{65B0}");
+        m.insert("settings.mcp.offline", "\u{79BB}\u{7EBF}");
+        m.insert("settings.mcp.remove_from_team", "\u{4ECE}\u{56E2}\u{961F}\u{4E2D}\u{79FB}\u{9664}");
+        m.insert("settings.mcp.remove_shared_description", "\u{8FD9}\u{5C06}\u{4ECE} Warp \u{548C}\u{60A8}\u{6240}\u{6709}\u{56E2}\u{961F}\u{6210}\u{5458}\u{7684}\u{8BBE}\u{5907}\u{4E2D}\u{5378}\u{8F7D}\u{5E76}\u{79FB}\u{9664}\u{6B64} MCP \u{670D}\u{52A1}\u{5668}\u{3002}");
+        m.insert("settings.mcp.remove_shared_title", "\u{4ECE}\u{56E2}\u{961F}\u{4E2D}\u{79FB}\u{9664}\u{5171}\u{6709} MCP \u{670D}\u{52A1}\u{5668}\u{FF1F}");
+        m.insert("settings.mcp.save", "\u{4FDD}\u{5B58}");
+        m.insert("settings.mcp.search_placeholder", "\u{641C}\u{7D22} MCP \u{670D}\u{52A1}\u{5668}");
+        m.insert("settings.mcp.secrets_warning", "\u{6B64} MCP \u{670D}\u{52A1}\u{5668}\u{5305}\u{542B}\u{5BC6}\u{94A5}\u{3002}\u{8BF7}\u{8BBF}\u{95EE}\u{8BBE}\u{7F6E} > \u{9690}\u{79C1}\u{4EE5}\u{4FEE}\u{6539}\u{5BC6}\u{94A5}\u{7F16}\u{8F91}\u{8BBE}\u{7F6E}\u{3002}");
+        m.insert("settings.mcp.see_providers", "\u{67E5}\u{770B}\u{652F}\u{6301}\u{7684}\u{63D0}\u{4F9B}\u{5546}\u{3002}");
+        m.insert("settings.mcp.server_fallback", "\u{670D}\u{52A1}\u{5668}");
+        m.insert("settings.mcp.set_up", "\u{8BBE}\u{7F6E}");
+        m.insert("settings.mcp.share_server", "\u{5171}\u{6709}\u{670D}\u{52A1}\u{5668}");
+        m.insert("settings.mcp.shared_by_creator", "\u{5171}\u{6709}\u{8005}: {creator}");
+        m.insert("settings.mcp.shared_by_team_member", "\u{7531}\u{56E2}\u{961F}\u{6210}\u{5458}\u{5171}\u{6709}");
+        m.insert("settings.mcp.shared_by_warp_and_name", "\u{7531} Warp \u{548C} {name} \u{5171}\u{6709}");
+        m.insert("settings.mcp.shared_by_warp_and_other", "\u{7531} Warp \u{548C}\u{5176}\u{4ED6}\u{8BBE}\u{5907}\u{5171}\u{6709}");
+        m.insert("settings.mcp.shared_from_team", "\u{4ECE}\u{56E2}\u{961F}\u{5171}\u{6709}");
+        m.insert("settings.mcp.shared_from_warp", "\u{4ECE} Warp \u{5171}\u{6709}");
+        m.insert("settings.mcp.show_logs", "\u{663E}\u{793A}\u{65E5}\u{5FD7}");
+        m.insert("settings.mcp.shutting_down", "\u{6B63}\u{5728}\u{5173}\u{95ED}\u{2026}");
+        m.insert("settings.mcp.starting", "\u{6B63}\u{5728}\u{542F}\u{52A8}\u{670D}\u{52A1}\u{5668}\u{2026}");
+        m.insert("settings.mcp.tools_count", "{count} \u{4E2A}\u{53EF}\u{7528}\u{5DE5}\u{5177}");
+        m.insert("settings.mcp.update", "\u{66F4}\u{65B0}");
+        m.insert("settings.mcp.update_available", "\u{670D}\u{52A1}\u{5668}\u{66F4}\u{65B0}\u{53EF}\u{7528}");
+        m.insert("settings.mcp.update_from", "\u{4ECE} {publisher} \u{66F4}\u{65B0}");
+        m.insert("settings.mcp.update_named", "\u{66F4}\u{65B0} {name}");
+        m.insert("settings.mcp.updated", "MCP \u{670D}\u{52A1}\u{5668}\u{5DF2}\u{66F4}\u{65B0}");
+        m.insert("settings.mcp.updates_available", "\u{6B64}\u{670D}\u{52A1}\u{5668}\u{6709} {count} \u{4E2A}\u{53EF}\u{7528}\u{66F4}\u{65B0}\u{FF0C}\u{60A8}\u{60F3}\u{8981}\u{8FDB}\u{884C}\u{54EA}\u{4E2A}\u{FF1F}");
+        m.insert("settings.mcp.version", "\u{7248}\u{672C} {version}");
+        m.insert("settings.mcp.view_logs", "\u{67E5}\u{770B}\u{65E5}\u{5FD7}");
+
+        // Platform API keys
+        m.insert("settings.platform.api_key_personal_desc", "\u{6B64} API \u{5BC6}\u{94A5}\u{4E0E}\u{60A8}\u{7684}\u{7528}\u{6237}\u{5173}\u{8054}\u{FF0C}\u{53EF}\u{4EE5}\u{5BF9}\u{60A8}\u{7684} Warp \u{8D26}\u{6237}\u{53D1}\u{8D77}\u{8BF7}\u{6C42}\u{3002}");
+        m.insert("settings.platform.api_key_placeholder", "Warp API \u{5BC6}\u{94A5}");
+        m.insert("settings.platform.api_key_team_desc", "\u{6B64} API \u{5BC6}\u{94A5}\u{4E0E}\u{60A8}\u{7684}\u{56E2}\u{961F}\u{5173}\u{8054}\u{FF0C}\u{53EF}\u{4EE5}\u{4EE3}\u{8868}\u{60A8}\u{7684}\u{56E2}\u{961F}\u{53D1}\u{8D77}\u{8BF7}\u{6C42}\u{3002}");
+        m.insert("settings.platform.cancel", "\u{53D6}\u{6D88}");
+        m.insert("settings.platform.copied", "\u{5DF2}\u{590D}\u{5236}");
+        m.insert("settings.platform.copy", "\u{590D}\u{5236}");
+        m.insert("settings.platform.create_failed", "\u{521B}\u{5EFA} API \u{5BC6}\u{94A5}\u{5931}\u{8D25}\u{3002}\u{8BF7}\u{91CD}\u{8BD5}\u{3002}");
+        m.insert("settings.platform.create_key", "\u{521B}\u{5EFA}\u{5BC6}\u{94A5}");
+        m.insert("settings.platform.creating", "\u{521B}\u{5EFA}\u{4E2D}\u{2026}");
+        m.insert("settings.platform.delete_failed", "\u{5220}\u{9664} API \u{5BC6}\u{94A5}\u{5931}\u{8D25}\u{3002}\u{8BF7}\u{91CD}\u{8BD5}\u{3002}");
+        m.insert("settings.platform.done", "\u{5B8C}\u{6210}");
+        m.insert("settings.platform.expiration_label", "\u{8FC7}\u{671F}");
+        m.insert("settings.platform.expiry_1_day", "1 \u{5929}");
+        m.insert("settings.platform.expiry_30_days", "30 \u{5929}");
+        m.insert("settings.platform.expiry_90_days", "90 \u{5929}");
+        m.insert("settings.platform.expiry_never", "\u{6C38}\u{4E0D}");
+        m.insert("settings.platform.name_label", "\u{540D}\u{79F0}");
+        m.insert("settings.platform.no_team_error", "\u{65E0}\u{6CD5}\u{521B}\u{5EFA}\u{56E2}\u{961F} API \u{5BC6}\u{94A5}\u{FF0C}\u{56E0}\u{4E3A}\u{5F53}\u{524D}\u{6CA1}\u{6709}\u{56E2}\u{961F}\u{3002}");
+        m.insert("settings.platform.secret_copied", "\u{5BC6}\u{94A5}\u{5DF2}\u{590D}\u{5236}\u{3002}");
+        m.insert("settings.platform.secret_warning", "\u{6B64}\u{5BC6}\u{94A5}\u{4EC5}\u{663E}\u{793A}\u{4E00}\u{6B21}\u{3002}\u{8BF7}\u{590D}\u{5236}\u{5E76}\u{5B89}\u{5168}\u{5B58}\u{50A8}\u{3002}");
+        m.insert("settings.platform.type_label", "\u{7C7B}\u{578B}");
+        m.insert("settings.platform.type_personal", "\u{4E2A}\u{4EBA}");
+        m.insert("settings.platform.type_team", "\u{56E2}\u{961F}");
+
+        // Privacy
+        m.insert("settings.privacy.cancel", "\u{53D6}\u{6D88}");
+        m.insert("settings.privacy.invalid_regex", "\u{65E0}\u{6548}\u{7684}\u{6B63}\u{5219}\u{8868}\u{8FBE}\u{5F0F}");
+        m.insert("settings.privacy.name_optional", "\u{540D}\u{79F0}\u{FF08}\u{53EF}\u{9009}\u{FF09}");
+        m.insert("settings.privacy.regex_pattern", "\u{6B63}\u{5219}\u{8868}\u{8FBE}\u{5F0F}\u{6A21}\u{5F0F}");
+        m.insert("settings.privacy.regex_placeholder", "\u{4F8B}\u{5982} \"Google API Key\"");
+
+        // Shared
+        m.insert("settings.shared.learn_more_tooltip", "\u{70B9}\u{51FB}\u{5728}\u{6587}\u{6863}\u{4E2D}\u{4E86}\u{89E3}\u{66F4}\u{591A}");
+        m.insert("settings.shared.not_synced", "\u{6B64}\u{8BBE}\u{7F6E}\u{4E0D}\u{4F1A}\u{540C}\u{6B65}\u{5230}\u{5176}\u{4ED6}\u{8BBE}\u{5907}");
+        m.insert("settings.shared.reset_default", "\u{6062}\u{590D}\u{9ED8}\u{8BA4}");
+
         m
     };
 }

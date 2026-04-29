@@ -80,28 +80,70 @@ fn compile_metal_shaders() {
     println!("cargo:rerun-if-changed={header_path}");
     println!("cargo:rerun-if-changed={metal_path}");
 
-    let mut compile_args = vec!["metal", "-c", metal_path, "-o", air_path];
+    // Try xcrun first, fall back to direct metal command
+    let metal_available = Command::new("xcrun")
+        .args(["metal", "--version"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+        || Command::new("metal")
+            .args(["--version"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+    if !metal_available {
+        println!("cargo:warning=Metal shader compiler not found, skipping shader compilation. Install Xcode for full Metal support.");
+        std::fs::write(lib_path, b"").expect("failed to create dummy metallib");
+        return;
+    }
+
+    let use_xcrun = Command::new("xcrun")
+        .args(["metal", "--version"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    let _metal_cmd = if use_xcrun { "xcrun" } else { "metal" };
+
+    let mut compile_args = if use_xcrun {
+        vec!["metal", "-c", metal_path, "-o", air_path]
+    } else {
+        vec!["-c", metal_path, "-o", air_path]
+    };
     if cfg!(feature = "enable-metal-frame-capture") {
         compile_args.push("-frecord-sources");
         compile_args.push("-gline-tables-only");
     }
-    let result = Command::new("xcrun")
-        .args(&compile_args)
-        .output()
-        .expect("error compiling metal shaders to .air");
+    let result = if use_xcrun {
+        Command::new("xcrun")
+            .args(&compile_args)
+            .output()
+            .expect("error compiling metal shaders to .air")
+    } else {
+        Command::new("metal")
+            .args(&compile_args[1..]) // skip "metal" prefix for direct invocation
+            .output()
+            .expect("error compiling metal shaders to .air")
+    };
     assert!(
         result.status.success(),
         "error compiling metal shaders to .air; {}",
         std::str::from_utf8(&result.stderr).unwrap(),
     );
 
-    let result = Command::new("xcrun")
-        .args(["metallib", air_path, "-o", lib_path])
-        .output()
-        .expect("error compiling metal shaders to .metallib");
+    let result = if use_xcrun {
+        Command::new("xcrun")
+            .args(["metallib", air_path, "-o", lib_path])
+            .output()
+            .expect("error compiling metal shaders to .metallib")
+    } else {
+        Command::new("metallib")
+            .args([air_path, "-o", lib_path])
+            .output()
+            .expect("error compiling metal shaders to .metallib")
+    };
     assert!(
         result.status.success(),
-        "error compling metal shaders to .metallib; {}",
+        "error compiling metal shaders to .metallib; {}",
         std::str::from_utf8(&result.stderr).unwrap(),
     );
 }

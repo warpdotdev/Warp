@@ -387,7 +387,7 @@ impl UpdateEnvironmentForm {
             form.update_editor_text_colors(ctx);
         });
         // Create editors
-        let name_editor = Self::create_single_line_editor("Environment name", ctx);
+        let name_editor = Self::create_single_line_editor(i18n::t("settings.env_form.name_placeholder"), ctx);
         let description_editor = Self::create_description_editor(ctx);
         let docker_image_editor =
             Self::create_single_line_editor("e.g. python:3.11, node:20-alpine", ctx);
@@ -441,7 +441,7 @@ impl UpdateEnvironmentForm {
 
         // Create buttons
         let submit_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Create", PrimaryTheme)
+            ActionButton::new(i18n::t("settings.env_form.create"), PrimaryTheme)
                 .with_icon(Icon::Check)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(UpdateEnvironmentFormAction::Submit);
@@ -449,7 +449,7 @@ impl UpdateEnvironmentForm {
         });
 
         let delete_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Delete environment", DangerSecondaryTheme)
+            ActionButton::new(i18n::t("settings.env_form.delete_env"), DangerSecondaryTheme)
                 .with_icon(Icon::Trash)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(UpdateEnvironmentFormAction::Delete);
@@ -704,8 +704,8 @@ impl UpdateEnvironmentForm {
         // Update button text based on mode when header is hidden
         if !show_header {
             let button_text = match &self.mode {
-                EnvironmentFormMode::Create => "Create environment",
-                EnvironmentFormMode::Edit { .. } => "Save environment",
+                EnvironmentFormMode::Create => i18n::t("settings.env_form.create_env"),
+                EnvironmentFormMode::Edit { .. } => i18n::t("settings.env_form.save_env"),
             };
             self.submit_button.update(ctx, |button, ctx| {
                 button.set_label(button_text, ctx);
@@ -759,7 +759,7 @@ impl UpdateEnvironmentForm {
                 self.remove_setup_command_mouse_states.clear();
                 // Update button text for Create mode
                 self.submit_button.update(ctx, |button, ctx| {
-                    button.set_label("Create", ctx);
+                    button.set_label(i18n::t("settings.env_form.create"), ctx);
                 });
             }
             EnvironmentFormInitArgs::Edit {
@@ -800,7 +800,7 @@ impl UpdateEnvironmentForm {
                     .collect();
                 // Update button text for Edit mode
                 self.submit_button.update(ctx, |button, ctx| {
-                    button.set_label("Save", ctx);
+                    button.set_label(i18n::t("settings.env_form.save"), ctx);
                 });
             }
         }
@@ -809,7 +809,7 @@ impl UpdateEnvironmentForm {
         //
         // Note: We intentionally do not set `suggest_image_last_attempt_key` here.
         // That field tracks the last *attempted* suggest-image key, and is used to enforce
-        // “repos must change to retry”. Edit-mode gating is handled via `edit_repos_modified`.
+        // "repos must change to retry". Edit-mode gating is handled via `edit_repos_modified`.
         self.suggest_image_state = SuggestImageState::Idle;
         self.suggest_image_last_attempt_key = None;
         self.suggest_image_request_seq = 0;
@@ -1532,7 +1532,7 @@ impl UpdateEnvironmentForm {
                         theme.active_ui_text_color()
                     };
 
-                    Text::new_inline("Share with team", font_family, font_size)
+                    Text::new_inline(i18n::t("settings.env_form.share_with_team"), font_family, font_size)
                         .with_color(color.into())
                         .finish()
                 },
@@ -1569,7 +1569,7 @@ impl UpdateEnvironmentForm {
 
         Some(render_warning_box(
             WarningBoxConfig::new(
-                "Personal environments cannot be used with external integrations or team API keys. For the best experience, use shared environments.",
+                i18n::t("settings.env_form.share_warning"),
             )
             .with_width(DROPDOWN_MAX_WIDTH),
             appearance,
@@ -1578,7 +1578,7 @@ impl UpdateEnvironmentForm {
 
     fn render_back_button_and_title(
         &self,
-        title: &str,
+        title: String,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
@@ -1614,8 +1614,8 @@ impl UpdateEnvironmentForm {
 
     fn render_header(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         let (title, button_handle) = match &self.mode {
-            EnvironmentFormMode::Create => ("Create environment", &self.submit_button),
-            EnvironmentFormMode::Edit { .. } => ("Edit environment", &self.submit_button),
+            EnvironmentFormMode::Create => (i18n::t("settings.env_form.create_env").to_string(), &self.submit_button),
+            EnvironmentFormMode::Edit { .. } => (i18n::t("settings.env_form.edit_env").to_string(), &self.submit_button),
         };
 
         let submit_actions = || self.render_submit_actions(appearance, app, button_handle);
@@ -1624,7 +1624,7 @@ impl UpdateEnvironmentForm {
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(self.render_back_button_and_title(title, appearance))
+            .with_child(self.render_back_button_and_title(title.clone(), appearance))
             .with_child(submit_actions())
             .finish();
 
@@ -1646,7 +1646,7 @@ impl UpdateEnvironmentForm {
     }
 
     fn render_form_label(
-        label: &'static str,
+        label: String,
         required: bool,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
@@ -1679,9 +1679,9 @@ impl UpdateEnvironmentForm {
     }
 
     fn render_form_field(
-        label: &'static str,
+        label: String,
         required: bool,
-        helper_text: Option<&'static str>,
+        helper_text: Option<String>,
         editor: &ViewHandle<EditorView>,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
@@ -1741,7 +1741,7 @@ impl UpdateEnvironmentForm {
             .with_spacing(FORM_LABEL_SPACING);
 
         field.add_child(Self::render_form_label(
-            "Setup command(s)",
+            "Setup command(s)".to_string(),
             false,
             appearance,
         ));
@@ -1810,7 +1810,7 @@ impl UpdateEnvironmentForm {
 
         field.add_child(
             Text::new(
-                "Description",
+                i18n::t("settings.env_form.description_label"),
                 appearance.ui_font_family(),
                 appearance.ui_font_size(),
             )
@@ -1842,7 +1842,9 @@ impl UpdateEnvironmentForm {
             .buffer_text(app)
             .chars()
             .count();
-        let count_text = format!("{} / {} characters", char_count, DESCRIPTION_MAX_CHARS);
+        let count_text = i18n::t("settings.env_form.char_count")
+            .replace("{count}", &char_count.to_string())
+            .replace("{max}", &DESCRIPTION_MAX_CHARS.to_string());
         field.add_child(
             Text::new(
                 count_text,
@@ -1872,7 +1874,7 @@ impl UpdateEnvironmentForm {
     fn render_repos_field_label(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         Text::new(
-            "Repo(s)",
+            i18n::t("settings.env_form.repos_label"),
             appearance.ui_font_family(),
             appearance.ui_font_size(),
         )
@@ -1904,7 +1906,7 @@ impl UpdateEnvironmentForm {
                     .with_child(
                         Container::new(
                             Text::new(
-                                "Loading...",
+                                i18n::t("settings.environments.empty.loading"),
                                 appearance.ui_font_family(),
                                 appearance.ui_font_size(),
                             )
@@ -1996,7 +1998,7 @@ impl UpdateEnvironmentForm {
                         )
                         .with_child(
                             Text::new(
-                                "Auth with GitHub",
+                                i18n::t("settings.env_form.auth_github"),
                                 appearance.ui_font_family(),
                                 appearance.ui_font_size(),
                             )
@@ -2113,7 +2115,7 @@ impl UpdateEnvironmentForm {
                             )
                             .with_child(
                                 Text::new(
-                                    "Retry",
+                                    i18n::t("settings.env_form.retry"),
                                     appearance.ui_font_family(),
                                     appearance.ui_font_size(),
                                 )
@@ -2389,7 +2391,7 @@ impl UpdateEnvironmentForm {
                         theme.accent()
                     };
                     Text::new(
-                        "Configure access on GitHub",
+                        i18n::t("settings.env_form.configure_github"),
                         appearance.ui_font_family(),
                         appearance.ui_font_size() * 0.85,
                     )
@@ -2558,7 +2560,7 @@ impl UpdateEnvironmentForm {
             content.add_child(
                 Container::new(
                     Text::new(
-                        "No repositories found",
+                        i18n::t("settings.env_form.no_repos_found"),
                         appearance.ui_font_family(),
                         appearance.ui_font_size(),
                     )
@@ -2961,7 +2963,7 @@ impl UpdateEnvironmentForm {
 
         // Label (without suggest button)
         field.add_child(Self::render_form_label(
-            "Docker image reference",
+            i18n::t("settings.env_form.docker_image_label").to_string(),
             true,
             appearance,
         ));
@@ -3035,7 +3037,7 @@ impl UpdateEnvironmentForm {
             return false;
         }
 
-        // Enforce “repos must change to retry” after a suggest-image attempt.
+        // Enforce "repos must change to retry" after a suggest-image attempt.
         let repos_unchanged = self
             .selected_repos_key()
             .and_then(|key| {
@@ -3058,9 +3060,9 @@ impl UpdateEnvironmentForm {
         let is_disabled = !self.can_suggest_image_for_current_repos();
 
         let button_text = if is_loading {
-            "Generating…"
+            "Generating…".to_string()
         } else {
-            "Suggest image"
+            i18n::t("settings.env_form.suggest_image").to_string()
         };
 
         let tooltip_text = "Warp will suggest a Docker image based on your selected repositories.";
@@ -3182,7 +3184,7 @@ impl UpdateEnvironmentForm {
                 let auth_url_with_next = self.auth_url_with_next(auth_url);
                 let action = UpdateEnvironmentFormAction::OpenUrl(auth_url_with_next);
                 let button = WarningBoxButtonConfig::new(
-                    "Authenticate",
+                    i18n::t("settings.env_form.authenticate"),
                     self.suggest_image_auth_button_mouse_state.clone(),
                     move |ctx| {
                         ctx.dispatch_typed_action(action.clone());
@@ -3190,7 +3192,7 @@ impl UpdateEnvironmentForm {
                 );
                 Some(render_warning_box(
                     WarningBoxConfig::new(
-                        "You need to grant access to your GitHub repos to suggest a Docker image",
+                        i18n::t("settings.env_form.grant_access_hint"),
                     )
                     .with_width(DROPDOWN_MAX_WIDTH)
                     .with_button(button),
@@ -3216,7 +3218,7 @@ impl UpdateEnvironmentForm {
     ) -> Box<dyn Element> {
         let action = UpdateEnvironmentFormAction::LaunchAgentForSelectedRepos;
         let button = WarningBoxButtonConfig::new(
-            "Launch agent",
+            i18n::t("settings.env_form.launch_agent"),
             self.suggest_image_launch_agent_button_mouse_state.clone(),
             move |ctx| {
                 ctx.dispatch_typed_action(action.clone());
@@ -3490,7 +3492,7 @@ impl View for UpdateEnvironmentForm {
 
         // Form fields
         page.add_child(Self::render_form_field(
-            "Name",
+            i18n::t("settings.env_form.name_placeholder").to_string(),
             true,
             None,
             &self.name_editor,

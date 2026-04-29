@@ -59,22 +59,22 @@ impl From<&DestructiveMCPConfirmationDialogVariant>
     fn from(variant: &DestructiveMCPConfirmationDialogVariant) -> Self {
         match *variant {
             DestructiveMCPConfirmationDialogVariant::DeleteLocal => DestructiveMCPConfirmationDialogDisplayOptions::new(
-                "Delete MCP server?".to_string(),
-                "This will uninstall and remove this MCP server from all your devices.".to_string(),
-                "Delete MCP".to_string(),
-                "Cancel".to_string(),
+                i18n::t("settings.mcp.delete_server_title").to_string(),
+                i18n::t("settings.mcp.delete_server_description").to_string(),
+                i18n::t("settings.mcp.delete_mcp").to_string(),
+                i18n::t("settings.mcp.cancel").to_string(),
             ),
             DestructiveMCPConfirmationDialogVariant::DeleteShared => DestructiveMCPConfirmationDialogDisplayOptions::new(
-                "Delete shared MCP server?".to_string(),
-                "This will not only delete this MCP server for yourself, but also uninstall and remove this MCP server from Warp and across all of your teammates' devices.".to_string(),
-                "Delete MCP".to_string(),
-                "Cancel".to_string(),
+                i18n::t("settings.mcp.delete_shared_title").to_string(),
+                i18n::t("settings.mcp.delete_shared_description").to_string(),
+                i18n::t("settings.mcp.delete_mcp").to_string(),
+                i18n::t("settings.mcp.cancel").to_string(),
             ),
             DestructiveMCPConfirmationDialogVariant::Unshare => DestructiveMCPConfirmationDialogDisplayOptions::new(
-                "Remove shared MCP server from team?".to_string(),
-                "This will uninstall and remove this MCP server from Warp and across all of your teammates' devices.".to_string(),
-                "Remove from team".to_string(),
-                "Cancel".to_string(),
+                i18n::t("settings.mcp.remove_shared_title").to_string(),
+                i18n::t("settings.mcp.remove_shared_description").to_string(),
+                i18n::t("settings.mcp.remove_from_team").to_string(),
+                i18n::t("settings.mcp.cancel").to_string(),
             ),
         }
     }

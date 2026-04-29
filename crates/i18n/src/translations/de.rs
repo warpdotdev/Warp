@@ -806,6 +806,363 @@ lazy_static::lazy_static! {
         m.insert("settings.billing.upgrade.for_more_ai_usage_generic", " f\u{FC}r mehr AI-Nutzung.");
         m.insert("settings.billing.upgrade.for_more_credits_models", " f\u{FC}r mehr Guthaben und mehr Modelle.");
 
+        // settings.teams.*
+        m.insert("settings.teams.header", "Teams");
+        m.insert("settings.teams.create.title", "Team erstellen");
+        m.insert("settings.teams.create.description", "Wenn Sie ein Team erstellen, k\u{F6}nnen Sie an KI-gesteuerter Entwicklung zusammenarbeiten, indem Sie Cloud-Agent-L\u{E4}ufe, Umgebungen, Automatisierungen und Artefakte teilen. Sie k\u{F6}nnen auch einen gemeinsamen Wissensspeicher f\u{FC}r Teammitglieder und Agenten erstellen.");
+        m.insert("settings.teams.create.team_name_placeholder", "Teamname");
+        m.insert("settings.teams.create.button", "Erstellen");
+        m.insert("settings.teams.create.discoverable_checkbox_domain", "Erlauben Sie Warp-Nutzern mit einer @{domain}-E-Mail, das Team zu finden und beizutreten.");
+        m.insert("settings.teams.create.discoverable_checkbox_generic", "Erlauben Sie Warp-Nutzern mit derselben E-Mail-Dom\u{E4}ne wie Sie, das Team zu finden und beizutreten.");
+        m.insert("settings.teams.create.join_existing", "Oder treten Sie einem bestehenden Team in Ihrem Unternehmen bei");
+        m.insert("settings.teams.manage.leave_team", "Team verlassen");
+        m.insert("settings.teams.manage.delete_team", "Team l\u{F6}schen");
+        m.insert("settings.teams.manage.rename_placeholder", "Ihr neuer Teamname");
+        m.insert("settings.teams.manage.transfer_ownership_title", "Team-Besitz \u{FC}bertragen?");
+        m.insert("settings.teams.manage.contact_support", "Support kontaktieren");
+        m.insert("settings.teams.manage.manage_billing", "Abrechnung verwalten");
+        m.insert("settings.teams.manage.open_admin_panel", "Admin-Panel \u{F6}ffnen");
+        m.insert("settings.teams.manage.manage_plan", "Plan verwalten");
+        m.insert("settings.teams.invite.by_link", "Per Link einladen");
+        m.insert("settings.teams.invite.link_toggle_instructions", "Als Admin k\u{F6}nnen Sie w\u{E4}hlen, ob Teammitglieder andere per Einladungslink einladen d\u{FC}rfen.");
+        m.insert("settings.teams.invite.reset_links", "Links zur\u{FC}cksetzen");
+        m.insert("settings.teams.invite.restrict_by_domain", "Nach Dom\u{E4}ne einschr\u{E4}nken");
+        m.insert("settings.teams.invite.domain_restrictions_instructions", "Nur Nutzern mit E-Mails bestimmter Dom\u{E4}nen erlauben, \u{FC}ber den Einladungslink Ihrem Team beizutreten.");
+        m.insert("settings.teams.invite.domains_placeholder", "Dom\u{E4}nen, kommagetrennt");
+        m.insert("settings.teams.invite.set_button", "Festlegen");
+        m.insert("settings.teams.invite.invalid_domains", "Einige der angegebenen Dom\u{E4}nen sind ung\u{FC}ltig oder wurden bereits hinzugef\u{FC}gt.");
+        m.insert("settings.teams.invite.failed_load_link", "Einladungslink konnte nicht geladen werden.");
+        m.insert("settings.teams.invite.by_email", "Per E-Mail einladen");
+        m.insert("settings.teams.invite.email_expiry_instructions", "E-Mail-Einladungen sind 7 Tage g\u{FC}ltig.");
+        m.insert("settings.teams.invite.emails_placeholder", "E-Mails, kommagetrennt");
+        m.insert("settings.teams.invite.invite_button", "Einladen");
+        m.insert("settings.teams.invite.invalid_emails", "Einige der angegebenen E-Mail-Adressen sind ung\u{FC}ltig, bereits eingeladen oder Teammitglieder.");
+        m.insert("settings.teams.members.header", "Teammitglieder");
+        m.insert("settings.teams.members.cancel_invite", "Einladung stornieren");
+        m.insert("settings.teams.members.transfer_ownership", "Besitz \u{FC}bertragen");
+        m.insert("settings.teams.members.demote_from_admin", "Als Admin entfernen");
+        m.insert("settings.teams.members.promote_to_admin", "Zum Admin bef\u{F6}rdern");
+        m.insert("settings.teams.members.remove_from_team", "Aus Team entfernen");
+        m.insert("settings.teams.members.remove_domain", "Dom\u{E4}ne entfernen");
+        m.insert("settings.teams.badge.expired", "ABGELAUFEN");
+        m.insert("settings.teams.badge.pending", "AUSSTEHEND");
+        m.insert("settings.teams.badge.owner", "BESITZER");
+        m.insert("settings.teams.badge.admin", "ADMIN");
+        m.insert("settings.teams.badge.past_due", "ZAHLLAST");
+        m.insert("settings.teams.badge.unpaid", "UNBEZAHLT");
+        m.insert("settings.teams.plan.free_usage_limits", "Nutzungslimits des kostenlosen Plans");
+        m.insert("settings.teams.plan.usage_limits", "Plan-Nutzungslimits");
+        m.insert("settings.teams.plan.shared_notebooks", "Geteilte Notizb\u{FC}cher");
+        m.insert("settings.teams.plan.shared_workflows", "Geteilte Workflows");
+        m.insert("settings.teams.limit.admin", "Sie haben das Teammitglieder-Limit Ihres Plans erreicht. Upgraden Sie, um weitere Teammitglieder hinzuzuf\u{FC}gen.");
+        m.insert("settings.teams.limit.admin_not_upgradeable", "Sie haben das Teammitglieder-Limit Ihres Plans erreicht. Kontaktieren Sie support@warp.dev, um weitere Teammitglieder hinzuzuf\u{FC}gen.");
+        m.insert("settings.teams.limit.non_admin", "Sie haben das Teammitglieder-Limit Ihres Plans erreicht. Kontaktieren Sie einen Team-Admin, um weitere Teammitglieder hinzuzuf\u{FC}gen.");
+        m.insert("settings.teams.limit_exceeded.admin_upgradeable", "Sie haben das Teammitglieder-Limit Ihres Plans \u{FC}berschritten. Upgraden Sie, um weitere Teammitglieder hinzuzuf\u{FC}gen.");
+        m.insert("settings.teams.limit_exceeded.admin_not_upgradeable", "Sie haben das Teammitglieder-Limit Ihres Plans \u{FC}berschritten. Bitte kontaktieren Sie support@warp.dev, um Ihr Team upzugraden.");
+        m.insert("settings.teams.limit_exceeded.non_admin", "Sie haben das Teammitglieder-Limit Ihres Plans \u{FC}berschritten. Kontaktieren Sie einen Team-Admin, um Ihr Team upzugraden.");
+        m.insert("settings.teams.delinquent.admin_non_self_serve", "Team-Einladungen wurden wegen eines Zahlungsproblems eingeschr\u{E4}nkt. Bitte kontaktieren Sie support@warp.dev, um den Zugang wiederherzustellen.");
+        m.insert("settings.teams.delinquent.non_admin", "Team-Einladungen wurden wegen eines Zahlungsproblems eingeschr\u{E4}nkt. Bitte kontaktieren Sie einen Team-Admin, um den Zugang wiederherzustellen.");
+        m.insert("settings.teams.delinquent.admin_self_serve_line1", "Team-Einladungen wurden wegen eines Abonnement-Zahlungsproblems eingeschr\u{E4}nkt.");
+        m.insert("settings.teams.delinquent.admin_self_serve_line2_prefix", "Bitte ");
+        m.insert("settings.teams.delinquent.admin_self_serve_line2_link", "aktualisieren Sie Ihre Zahlungsinformationen");
+        m.insert("settings.teams.delinquent.admin_self_serve_line2_suffix", ", um den Zugang wiederherzustellen.");
+        m.insert("settings.teams.discoverable.header", "Team auffindbar machen");
+        m.insert("settings.teams.discoverable.allow_domain", "Erlauben Sie Warp-Nutzern mit einer @{domain}-E-Mail, das Team zu finden und beizutreten.");
+        m.insert("settings.teams.discoverable.allow_same_domain", "Erlauben Sie Warp-Nutzern mit derselben E-Mail-Dom\u{E4}ne wie Sie, das Team zu finden und beizutreten.");
+        m.insert("settings.teams.discovery.one_teammate", "1 Teammitglied");
+        m.insert("settings.teams.discovery.multiple_teammates", "{count} Teammitglieder");
+        m.insert("settings.teams.discovery.join_description", "Treten Sie diesem Team bei und beginnen Sie mit der Zusammenarbeit an Workflows, Notizb\u{FC}chern und mehr.");
+        m.insert("settings.teams.discovery.join_button", "Beitreten");
+        m.insert("settings.teams.discovery.contact_admin", "Admin kontaktieren, um Zugang anzufordern");
+        m.insert("settings.teams.pricing.team_members", "Teammitglieder");
+        m.insert("settings.teams.pricing.prorated_admin", "Ihnen wird ein anteiliger Betrag f\u{FC}r die Warp-Nutzung des Teammitglieds berechnet.");
+        m.insert("settings.teams.pricing.prorated_member", "Ihrem Admin wird ein anteiliger Betrag f\u{FC}r die Warp-Nutzung des Teammitglieds berechnet.");
+        m.insert("settings.teams.pricing.additional_members_with_cost", "Zus\u{E4}tzliche Mitglieder werden zum Pro-Kopf-Tarif Ihres Plans abgerechnet: ${monthly_cost}/Monat oder ${yearly_cost}/Jahr, je nach Abrechnungsintervall. {prorated_message}");
+        m.insert("settings.teams.pricing.additional_members_no_cost", "Zus\u{E4}tzliche Mitglieder werden zum Pro-Kopf-Tarif Ihres Plans abgerechnet. {prorated_message}");
+        m.insert("settings.teams.upgrade.to_build", "Auf Build upgraden");
+        m.insert("settings.teams.upgrade.to_turbo", "Auf Turbo-Plan upgraden");
+        m.insert("settings.teams.upgrade.to_lightspeed", "Auf Lightspeed-Plan upgraden");
+        m.insert("settings.teams.upgrade.compare_plans", "Pl\u{E4}ne vergleichen");
+        m.insert("settings.teams.tab.link", "Link");
+        m.insert("settings.teams.tab.email", "E-Mail");
+        m.insert("settings.teams.offline", "Sie sind offline.");
+        m.insert("settings.teams.toast.failed_send_invite", "Einladung konnte nicht gesendet werden");
+        m.insert("settings.teams.toast.joined_team", "Erfolgreich dem Team beigetreten");
+        m.insert("settings.teams.toast.joined_team_named", "Erfolgreich {team_name} beigetreten");
+        m.insert("settings.teams.toast.invite_sent", "Ihre Einladung ist unterwegs!");
+        m.insert("settings.teams.toast.invites_sent", "Ihre {count} Einladungen sind unterwegs!");
+        m.insert("settings.teams.toast.deleted_invite", "Einladung gel\u{F6}scht");
+        m.insert("settings.teams.toast.invalid_domain_count", "Ung\u{FC}ltige Dom\u{E4}nen: {count}");
+        m.insert("settings.teams.toast.domains_added", "Dom\u{E4}nenbeschr\u{E4}nkungen hinzugef\u{FC}gt: {count}");
+        m.insert("settings.teams.toast.invalid_email_count", "Ung\u{FC}ltige E-Mails: {count}");
+        m.insert("settings.teams.toast.failed_join_team", "Teambeitritt fehlgeschlagen");
+        m.insert("settings.teams.toast.left_team", "Team erfolgreich verlassen");
+        m.insert("settings.teams.toast.error_leaving_team", "Fehler beim Verlassen des Teams");
+        m.insert("settings.teams.toast.renamed_team", "Team erfolgreich umbenannt");
+        m.insert("settings.teams.toast.failed_rename_team", "Teamumbenennung fehlgeschlagen");
+        m.insert("settings.teams.toast.link_copied", "Link in die Zwischenablage kopiert!");
+        m.insert("settings.teams.toast.failed_delete_invite", "Einladung konnte nicht gel\u{F6}scht werden");
+        m.insert("settings.teams.toast.failed_reset_invite_links", "Einladungslinks konnten nicht zur\u{FC}ckgesetzt werden");
+        m.insert("settings.teams.toast.reset_invite_links", "Einladungslinks zur\u{FC}cksetzen");
+        m.insert("settings.teams.toast.toggled_discoverability", "Team-Auffindbarkeit umgeschaltet");
+        m.insert("settings.teams.toast.failed_toggle_discoverability", "Team-Auffindbarkeit konnte nicht umgeschaltet werden");
+        m.insert("settings.teams.toast.toggled_invite_links", "Einladungslinks umgeschaltet");
+        m.insert("settings.teams.toast.failed_toggle_invite_links", "Einladungslinks konnten nicht umgeschaltet werden");
+        m.insert("settings.teams.toast.failed_transfer_ownership", "Team-Besitz\u{FC}bertragung fehlgeschlagen");
+        m.insert("settings.teams.toast.transferred_ownership", "Team-Besitz erfolgreich \u{FC}bertragen");
+        m.insert("settings.teams.toast.failed_update_member_role", "Teammitglieder-Rolle konnte nicht aktualisiert werden");
+        m.insert("settings.teams.toast.updated_member_role", "Teammitglieder-Rolle erfolgreich aktualisiert");
+        m.insert("settings.teams.toast.failed_add_domain", "Dom\u{E4}nenbeschr\u{E4}nkung konnte nicht hinzugef\u{FC}gt werden");
+        m.insert("settings.teams.toast.failed_delete_domain", "Dom\u{E4}nenbeschr\u{E4}nkung konnte nicht gel\u{F6}scht werden");
+        m.insert("settings.teams.toast.failed_billing_link", "Abrechnungslink konnte nicht generiert werden. Bitte kontaktieren Sie uns unter feedback@warp.dev");
+        m.insert("settings.teams.toast.failed_upgrade_link", "Upgrade-Link konnte nicht generiert werden. Bitte kontaktieren Sie uns unter feedback@warp.dev");
+
+        // settings.delete_env.*
+        m.insert("settings.delete_env.title", "Umgebung l\u{F6}schen?");
+        m.insert("settings.delete_env.description", "Sind Sie sicher, dass Sie die Umgebung {env_name} entfernen m\u{F6}chten?");
+        m.insert("settings.delete_env.confirm", "Umgebung l\u{F6}schen");
+
+        // settings.dir_color.*
+        m.insert("settings.dir_color.add_button", "Verzeichnisfarbe hinzuf\u{FC}gen");
+        m.insert("settings.dir_color.add_directory", "+ Verzeichnis hinzuf\u{FC}gen\u{2026}");
+
+        // settings.env_form.*
+        m.insert("settings.env_form.create_env", "Umgebung erstellen");
+        m.insert("settings.env_form.edit_env", "Umgebung bearbeiten");
+        m.insert("settings.env_form.save_env", "Umgebung speichern");
+        m.insert("settings.env_form.delete_env", "Umgebung l\u{F6}schen");
+        m.insert("settings.env_form.name_placeholder", "Umgebungsname");
+        m.insert("settings.env_form.description_label", "Beschreibung");
+        m.insert("settings.env_form.docker_image_label", "Docker-Image-Referenz");
+        m.insert("settings.env_form.repos_label", "Repo(s)");
+        m.insert("settings.env_form.no_repos_found", "Keine Repositories gefunden");
+        m.insert("settings.env_form.create", "Erstellen");
+        m.insert("settings.env_form.save", "Speichern");
+        m.insert("settings.env_form.retry", "Erneut versuchen");
+        m.insert("settings.env_form.authenticate", "Authentifizieren");
+        m.insert("settings.env_form.auth_github", "Mit GitHub authentifizieren");
+        m.insert("settings.env_form.configure_github", "Zugriff auf GitHub konfigurieren");
+        m.insert("settings.env_form.char_count", "{count} / {max} Zeichen");
+        m.insert("settings.env_form.grant_access_hint", "Sie m\u{FC}ssen Ihren GitHub-Repos Zugriff gew\u{E4}hren, um ein Docker-Image vorzuschlagen");
+        m.insert("settings.env_form.launch_agent", "Agent starten");
+        m.insert("settings.env_form.share_with_team", "Mit Team teilen");
+        m.insert("settings.env_form.share_warning", "Pers\u{F6}nliche Umgebungen k\u{F6}nnen nicht mit externen Integrationen oder Team-API-Schl\u{FC}sseln verwendet werden. F\u{FC}r die beste Erfahrung verwenden Sie geteilte Umgebungen.");
+        m.insert("settings.env_form.suggest_image", "Image vorschlagen");
+
+        // FOOTER
+        m.insert("settings.footer.open_file", "Datei \u{F6}ffnen");
+        m.insert("settings.footer.open_settings_file", "Einstellungsdatei \u{F6}ffnen");
+        m.insert("settings.footer.fix_with_oz", "Mit Oz beheben");
+
+        // settings.execution_profile.*
+        m.insert("settings.execution_profile.permissions", "BERECHTIGUNGEN");
+        m.insert("settings.execution_profile.models", "MODELLE");
+        m.insert("settings.execution_profile.edit", "Bearbeiten");
+        m.insert("settings.execution_profile.base_model", "Basis-Modell:");
+        m.insert("settings.execution_profile.always_allow", "Immer erlauben");
+        m.insert("settings.execution_profile.always_ask", "Immer fragen");
+        m.insert("settings.execution_profile.ask_unless_auto_approve", "Fragen, au\u{DF}er automatisch genehmigen");
+        m.insert("settings.execution_profile.never_ask", "Nie fragen");
+        m.insert("settings.execution_profile.agent_decides", "Agent entscheidet");
+        m.insert("settings.execution_profile.execute_commands", "Befehle ausf\u{FC}hren:");
+        m.insert("settings.execution_profile.apply_code_diffs", "Code-\u{C4}nderungen anwenden:");
+        m.insert("settings.execution_profile.read_files", "Dateien lesen:");
+        m.insert("settings.execution_profile.interact_running", "Mit laufenden Befehlen interagieren:");
+        m.insert("settings.execution_profile.full_terminal_use", "Vollst\u{E4}ndige Terminal-Nutzung:");
+        m.insert("settings.execution_profile.computer_use", "Computernutzung:");
+        m.insert("settings.execution_profile.ask_questions", "Fragen stellen:");
+        m.insert("settings.execution_profile.call_mcp_servers", "MCP-Server aufrufen:");
+        m.insert("settings.execution_profile.call_web_tools", "Web-Tools aufrufen:");
+        m.insert("settings.execution_profile.auto_sync_plans", "Pl\u{E4}ne automatisch mit Warp Drive synchronisieren:");
+        m.insert("settings.execution_profile.on", "Ein");
+        m.insert("settings.execution_profile.off", "Aus");
+        m.insert("settings.execution_profile.never", "Nie");
+        m.insert("settings.execution_profile.none", "Keine");
+        m.insert("settings.execution_profile.unknown", "Unbekannt");
+        m.insert("settings.execution_profile.command_allowlist", "Befehls-Erlaubnisliste:");
+        m.insert("settings.execution_profile.command_denylist", "Befehls-Verbotsliste:");
+        m.insert("settings.execution_profile.directory_allowlist", "Verzeichnis-Erlaubnisliste:");
+        m.insert("settings.execution_profile.mcp_allowlist", "MCP-Erlaubnisliste:");
+        m.insert("settings.execution_profile.mcp_denylist", "MCP-Verbotsliste:");
+        m.insert("settings.execution_profile.ask_on_first_write", "Beim ersten Schreiben fragen:");
+
+        // settings.main.*
+        m.insert("settings.main.version", "Version");
+        m.insert("settings.main.check_updates", "Nach Updates suchen");
+        m.insert("settings.main.checking_update", "Suche nach Updates...");
+        m.insert("settings.main.update_available", "Update verf\u{FC}gbar");
+        m.insert("settings.main.downloading_update", "Update wird heruntergeladen...");
+        m.insert("settings.main.updating", "Wird aktualisiert...");
+        m.insert("settings.main.installed_update", "Update installiert");
+        m.insert("settings.main.up_to_date", "Auf dem neuesten Stand");
+        m.insert("settings.main.update_unavailable", "Eine neue Version von Warp ist verf\u{FC}gbar, kann aber nicht installiert werden");
+        m.insert("settings.main.update_launch_error", "Eine neue Version von Warp ist installiert, kann aber nicht gestartet werden.");
+        m.insert("settings.main.update_manually", "Warp manuell aktualisieren");
+        m.insert("settings.main.relaunch_warp", "Warp neu starten");
+        m.insert("settings.main.log_out", "Abmelden");
+        m.insert("settings.main.manage_billing", "Abrechnung verwalten");
+        m.insert("settings.main.compare_plans", "Pl\u{E4}ne vergleichen");
+        m.insert("settings.main.upgrade_turbo", "Auf Turbo-Plan upgraden");
+        m.insert("settings.main.upgrade_lightspeed", "Auf Lightspeed-Plan upgraden");
+        m.insert("settings.main.free_plan", "Kostenlos");
+        m.insert("settings.main.refer_friend", "Freund einladen");
+        m.insert("settings.main.referral_cta", "Verdienen Sie Pr\u{E4}mien, indem Sie Warp mit Freunden und Kollegen teilen");
+        m.insert("settings.main.settings_sync", "Einstellungen synchronisieren");
+        m.insert("settings.main.contact_support", "Support kontaktieren");
+
+        // settings.show_blocks.*
+        m.insert("settings.show_blocks.copy_link", "Link kopieren");
+        m.insert("settings.show_blocks.deleting", "Wird gel\u{F6}scht...");
+        m.insert("settings.show_blocks.executed_on", "Ausgef\u{FC}hrt am: {timestamp}");
+        m.insert("settings.show_blocks.getting_blocks", "Bl\u{F6}cke werden geladen...");
+        m.insert("settings.show_blocks.link_copied", "Link kopiert.");
+        m.insert("settings.show_blocks.load_failed", "Bl\u{F6}cke konnten nicht geladen werden. Bitte versuchen Sie es erneut.");
+        m.insert("settings.show_blocks.no_shared_blocks", "Sie haben noch keine geteilten Bl\u{F6}cke.");
+        m.insert("settings.show_blocks.unshare_title", "Block-Teilung aufheben");
+        m.insert("settings.show_blocks.unshare_confirm", "Sind Sie sicher, dass Sie die Teilung dieses Blocks aufheben m\u{F6}chten?\n\nEr ist nicht mehr \u{FC}ber den Link zug\u{E4}nglich und wird dauerhaft von Warp-Servern gel\u{F6}scht.");
+        m.insert("settings.show_blocks.unshare_success", "Block-Teilung wurde erfolgreich aufgehoben.");
+        m.insert("settings.show_blocks.unshare_failed", "Block-Teilung konnte nicht aufgehoben werden. Bitte versuchen Sie es erneut.");
+
+        // settings.transfer.*
+        m.insert("settings.transfer.button", "\u{DC}bertragen");
+        m.insert("settings.transfer.confirm_message", "Sind Sie sicher, dass Sie den Team-Besitz an {email} \u{FC}bertragen m\u{F6}chten? Diese Aktion kann nicht r\u{FC}ckg\u{E4}ngig gemacht werden. Sie verlieren Ihre Admin-Rechte.");
+
+        // settings.warp_drive.*
+        m.insert("settings.warp_drive.title", "Warp Drive");
+        m.insert("settings.warp_drive.description", "Warp Drive ist ein Workspace in Ihrem Terminal, in dem Sie Workflows, Notizb\u{FC}cher, Prompts und Umgebungsvariablen f\u{FC}r den pers\u{F6}nlichen Gebrauch oder zur Teambenutzung speichern k\u{F6}nnen.");
+        m.insert("settings.warp_drive.create_account_prompt", "Um Warp Drive zu verwenden, erstellen Sie bitte ein Konto.");
+
+        // About page
+        m.insert("settings.about.copyright", "Copyright 2026 Warp");
+
+        // Billing - overage limit modal
+        m.insert("settings.billing.overage.invalid_amount", "Bitte geben Sie einen g\u{FC}ltigen Betrag ein");
+        m.insert("settings.billing.overage.limit_description", "Warp verhindert die Nutzung von Premium-Modellen, wenn dieses Dollar-Limit erreicht wird. Wird monatlich zur\u{FC}ckgesetzt.");
+        m.insert("settings.billing.overage.limit_note", "Bitte beachten Sie, dass AI-Guthaben, die nahe Ihrem gew\u{E4}hlten Limit liegen, dieses um einige Dollar \u{FC}berschreiten k\u{F6}nnen.");
+        m.insert("settings.billing.overage.price_range", "Bitte geben Sie einen Preis zwischen $0,01 und $10.000.000 ein");
+        m.insert("settings.billing.overage.update", "Aktualisieren");
+
+        // Environments
+        m.insert("settings.environments.new_environment", "Neue Umgebung");
+
+        // Features
+        m.insert("settings.features.advanced", "Erweitert");
+        m.insert("settings.features.custom", "Benutzerdefiniert");
+        m.insert("settings.features.directory_path", "Verzeichnispfad");
+        m.insert("settings.features.enable_reopen", "Wieder\u{F6}ffnen geschlossener Sitzungen aktivieren");
+        m.insert("settings.features.executable_path", "Ausf\u{FC}hrbare Datei Pfad");
+        m.insert("settings.features.grace_period", "Karenzzeit (Sekunden)");
+        m.insert("settings.features.new_tab", "Neuer Tab");
+        m.insert("settings.features.new_window", "Neues Fenster");
+        m.insert("settings.features.split_pane", "Bereich teilen");
+
+        // MCP servers
+        m.insert("settings.mcp.a_team_member", "ein Teammitglied");
+        m.insert("settings.mcp.add", "Hinzuf\u{FC}gen");
+        m.insert("settings.mcp.add_new_server", "Neuen MCP-Server hinzuf\u{FC}gen");
+        m.insert("settings.mcp.admin_only_edit", "Nur Team-Administratoren und der Ersteller des MCP-Servers k\u{F6}nnen den MCP-Server bearbeiten.");
+        m.insert("settings.mcp.another_device", "ein anderes Ger\u{E4}t");
+        m.insert("settings.mcp.authenticating", "Authentifizierung...");
+        m.insert("settings.mcp.auto_spawn_description", "Automatisches Erkennen und Starten von MCP-Servern aus globalen Konfigurationsdateien von Drittanbieter-AI-Agenten.");
+        m.insert("settings.mcp.auto_spawn_label", "Server automatisch von Drittanbieter-Agenten starten");
+        m.insert("settings.mcp.available_to_install", "Zur Installation verf\u{FC}gbar");
+        m.insert("settings.mcp.cancel", "Abbrechen");
+        m.insert("settings.mcp.cannot_add_multiple", "Beim Bearbeiten eines einzelnen Servers k\u{F6}nnen nicht mehrere MCP-Server hinzugef\u{FC}gt werden.");
+        m.insert("settings.mcp.delete_mcp", "MCP l\u{F6}schen");
+        m.insert("settings.mcp.delete_server_description", "Dies wird den MCP-Server auf all Ihren Ger\u{E4}ten deinstallieren und entfernen.");
+        m.insert("settings.mcp.delete_server_title", "MCP-Server l\u{F6}schen?");
+        m.insert("settings.mcp.delete_shared_description", "Dies wird diesen MCP-Server nicht nur f\u{FC}r Sie l\u{F6}schen, sondern auch von Warp und allen Ger\u{E4}ten Ihrer Teammitglieder deinstallieren und entfernen.");
+        m.insert("settings.mcp.delete_shared_title", "Geteilten MCP-Server l\u{F6}schen?");
+        m.insert("settings.mcp.description", "MCP-Server (Model Context Protocol) erm\u{F6}glichen es Ihnen, Warp mit zus\u{E4}tzlichen Tools und Funktionen zu erweitern. F\u{FC}gen Sie Server hinzu, um Ihren AI-Agenten Zugriff auf Datenbanken, APIs, Dateisysteme und mehr zu geben.");
+        m.insert("settings.mcp.detected_from", "Erkannt von {source}");
+        m.insert("settings.mcp.detected_from_config", "Aus Konfigurationsdatei erkannt");
+        m.insert("settings.mcp.edit_config", "Konfiguration bearbeiten");
+        m.insert("settings.mcp.edit_server", "MCP-Server bearbeiten");
+        m.insert("settings.mcp.edit_server_named", "{name} MCP-Server bearbeiten");
+        m.insert("settings.mcp.edit_tooltip", "Bearbeiten");
+        m.insert("settings.mcp.edit_variables", "Variablen bearbeiten");
+        m.insert("settings.mcp.empty_state", "Sobald Sie einen MCP-Server hinzuf\u{FC}gen, wird er hier angezeigt.");
+        m.insert("settings.mcp.esc_hint", "ESC");
+        m.insert("settings.mcp.from_another_device", "Von einem anderen Ger\u{E4}t");
+        m.insert("settings.mcp.global", "Global");
+        m.insert("settings.mcp.install", "Installieren");
+        m.insert("settings.mcp.install_named", "{name} installieren");
+        m.insert("settings.mcp.json_tab", "JSON");
+        m.insert("settings.mcp.learn_more", "Mehr erfahren.");
+        m.insert("settings.mcp.log_out", "Abmelden");
+        m.insert("settings.mcp.my_mcps", "Meine MCPs");
+        m.insert("settings.mcp.no_results", "Keine Suchergebnisse gefunden");
+        m.insert("settings.mcp.no_server_selected", "Kein MCP-Server ausgew\u{E4}hlt");
+        m.insert("settings.mcp.no_server_specified", "Kein MCP-Server angegeben.");
+        m.insert("settings.mcp.no_tools", "Keine Tools verf\u{FC}gbar");
+        m.insert("settings.mcp.no_updates", "Keine Updates verf\u{FC}gbar");
+        m.insert("settings.mcp.offline", "Offline");
+        m.insert("settings.mcp.remove_from_team", "Aus Team entfernen");
+        m.insert("settings.mcp.remove_shared_description", "Dies wird den MCP-Server von Warp und allen Ger\u{E4}ten Ihrer Teammitglieder deinstallieren und entfernen.");
+        m.insert("settings.mcp.remove_shared_title", "Geteilten MCP-Server aus dem Team entfernen?");
+        m.insert("settings.mcp.save", "Speichern");
+        m.insert("settings.mcp.search_placeholder", "MCP-Server suchen");
+        m.insert("settings.mcp.secrets_warning", "Dieser MCP-Server enth\u{E4}lt Geheimnisse. Besuchen Sie Einstellungen > Datenschutz, um Ihre Geheimnis-Redaktionseinstellungen zu \u{E4}ndern.");
+        m.insert("settings.mcp.see_providers", "Unterst\u{FC}tzte Anbieter anzeigen.");
+        m.insert("settings.mcp.server_fallback", "Server");
+        m.insert("settings.mcp.set_up", "Einrichten");
+        m.insert("settings.mcp.share_server", "Server teilen");
+        m.insert("settings.mcp.shared_by_creator", "Geteilt von: {creator}");
+        m.insert("settings.mcp.shared_by_team_member", "Von einem Teammitglied geteilt");
+        m.insert("settings.mcp.shared_by_warp_and_name", "Von Warp und {name} geteilt");
+        m.insert("settings.mcp.shared_by_warp_and_other", "Von Warp und anderen Ger\u{E4}ten geteilt");
+        m.insert("settings.mcp.shared_from_team", "Aus dem Team geteilt");
+        m.insert("settings.mcp.shared_from_warp", "Von Warp geteilt");
+        m.insert("settings.mcp.show_logs", "Protokolle anzeigen");
+        m.insert("settings.mcp.shutting_down", "Wird heruntergefahren...");
+        m.insert("settings.mcp.starting", "Server wird gestartet...");
+        m.insert("settings.mcp.tools_count", "{count} Tools verf\u{FC}gbar");
+        m.insert("settings.mcp.update", "Aktualisieren");
+        m.insert("settings.mcp.update_available", "Server-Update verf\u{FC}gbar");
+        m.insert("settings.mcp.update_from", "Aktualisierung von {publisher}");
+        m.insert("settings.mcp.update_named", "{name} aktualisieren");
+        m.insert("settings.mcp.updated", "MCP-Server aktualisiert");
+        m.insert("settings.mcp.updates_available", "Dieser Server hat {count} verf\u{FC}gbare Updates. Welche m\u{F6}chten Sie durchf\u{FC}hren?");
+        m.insert("settings.mcp.version", "Version {version}");
+        m.insert("settings.mcp.view_logs", "Protokolle anzeigen");
+
+        // Platform API keys
+        m.insert("settings.platform.api_key_personal_desc", "Dieser API-Schl\u{FC}ssel ist mit Ihrem Benutzer verkn\u{FC}pft und kann Anfragen gegen Ihr Warp-Konto stellen.");
+        m.insert("settings.platform.api_key_placeholder", "Warp API-Schl\u{FC}ssel");
+        m.insert("settings.platform.api_key_team_desc", "Dieser API-Schl\u{FC}ssel ist mit Ihrem Team verkn\u{FC}pft und kann Anfragen im Namen Ihres Teams stellen.");
+        m.insert("settings.platform.cancel", "Abbrechen");
+        m.insert("settings.platform.copied", "Kopiert");
+        m.insert("settings.platform.copy", "Kopieren");
+        m.insert("settings.platform.create_failed", "API-Schl\u{FC}ssel konnte nicht erstellt werden. Bitte versuchen Sie es erneut.");
+        m.insert("settings.platform.create_key", "Schl\u{FC}ssel erstellen");
+        m.insert("settings.platform.creating", "Wird erstellt...");
+        m.insert("settings.platform.delete_failed", "API-Schl\u{FC}ssel konnte nicht gel\u{F6}scht werden. Bitte versuchen Sie es erneut.");
+        m.insert("settings.platform.done", "Fertig");
+        m.insert("settings.platform.expiration_label", "Ablauf");
+        m.insert("settings.platform.expiry_1_day", "1 Tag");
+        m.insert("settings.platform.expiry_30_days", "30 Tage");
+        m.insert("settings.platform.expiry_90_days", "90 Tage");
+        m.insert("settings.platform.expiry_never", "Nie");
+        m.insert("settings.platform.name_label", "Name");
+        m.insert("settings.platform.no_team_error", "Ein Team-API-Schl\u{FC}ssel kann nicht erstellt werden, da kein aktuelles Team vorhanden ist.");
+        m.insert("settings.platform.secret_copied", "Geheimer Schl\u{FC}ssel kopiert.");
+        m.insert("settings.platform.secret_warning", "Dieser geheime Schl\u{FC}ssel wird nur einmal angezeigt. Kopieren und speichern Sie ihn sicher.");
+        m.insert("settings.platform.type_label", "Typ");
+        m.insert("settings.platform.type_personal", "Pers\u{F6}nlich");
+        m.insert("settings.platform.type_team", "Team");
+
+        // Privacy - regex modal
+        m.insert("settings.privacy.cancel", "Abbrechen");
+        m.insert("settings.privacy.invalid_regex", "Ung\u{FC}ltiger regul\u{E4}rer Ausdruck");
+        m.insert("settings.privacy.name_optional", "Name (optional)");
+        m.insert("settings.privacy.regex_pattern", "Regul\u{E4}rer Ausdruck");
+        m.insert("settings.privacy.regex_placeholder", "z.B. \"Google API Key\"");
+
+        // Shared settings
+        m.insert("settings.shared.learn_more_tooltip", "Klicken Sie hier, um mehr in der Dokumentation zu erfahren");
+        m.insert("settings.shared.not_synced", "Diese Einstellung wird nicht mit Ihren anderen Ger\u{E4}ten synchronisiert");
+        m.insert("settings.shared.reset_default", "Auf Standard zur\u{FC}cksetzen");
+
         m
     };
 }
