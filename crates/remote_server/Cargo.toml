@@ -24,6 +24,7 @@ warp_util.workspace = true
 warpui.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
+async-io.workspace = true
 async-process.workspace = true
 
 [target.'cfg(target_family = "wasm")'.dependencies]

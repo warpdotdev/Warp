@@ -36,6 +36,9 @@ use crate::server::telemetry::{BootstrappingInfo, TelemetryEvent};
 use crate::terminal::event::ExecutedExecutorCommandEvent;
 use crate::terminal::ShellHost;
 use crate::terminal::ShellLaunchData;
+#[cfg(feature = "local_tty")]
+use command_executor::remote_server_executor::RemoteServerCommandExecutor;
+use parking_lot::{Mutex, RwLock};
 
 use crate::terminal::shell::{Shell, ShellType};
 use crate::terminal::warpify::SubshellSource;
@@ -142,7 +145,7 @@ impl Sessions {
         #[cfg(feature = "local_tty")]
         if FeatureFlag::SshRemoteServer.is_enabled() {
             let mgr = RemoteServerManager::handle(ctx);
-            ctx.subscribe_to_model(&mgr, |sessions, event, _ctx| match event {
+            ctx.subscribe_to_model(&mgr, |sessions, event, ctx| match event {
                 RemoteServerManagerEvent::SessionConnected {
                     session_id: sid,
                     host_id,
@@ -158,6 +161,10 @@ impl Sessions {
                         session.set_remote_host_id(None);
                     }
                 }
+                RemoteServerManagerEvent::SetupStateChanged { session_id, state } => {
+                    sessions.set_remote_server_setup_state(*session_id, state.clone());
+                    ctx.notify();
+                }
                 RemoteServerManagerEvent::SessionConnecting { .. }
                 | RemoteServerManagerEvent::SessionDeregistered { .. }
                 | RemoteServerManagerEvent::SessionConnectionFailed { .. }
@@ -167,11 +174,22 @@ impl Sessions {
                 | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
                 | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
                 | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
-                | RemoteServerManagerEvent::SetupStateChanged { .. }
                 | RemoteServerManagerEvent::BinaryCheckComplete { .. }
                 | RemoteServerManagerEvent::BinaryInstallComplete { .. }
                 | RemoteServerManagerEvent::ClientRequestFailed { .. }
                 | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
+                RemoteServerManagerEvent::SessionReconnected {
+                    session_id: sid,
+                    client,
+                    ..
+                } => {
+                    if let Some(session) = sessions.sessions.get(sid) {
+                        let new_executor =
+                            Arc::new(RemoteServerCommandExecutor::new(*sid, client.clone()));
+                        session.set_command_executor(new_executor);
+                        log::info!("Swapped command executor for session {sid:?} after reconnect");
+                    }
+                }
             });
         }
         #[cfg(not(feature = "local_tty"))]
@@ -419,6 +437,14 @@ impl Sessions {
     /// they are pending or fully bootstrapped.
     pub fn has_pending_or_bootstrapped_session(&self) -> bool {
         !self.pending_session_start_times.is_empty() || !self.sessions.is_empty()
+    }
+
+    /// Returns whether the given `session_id` is tracked by this [`Sessions`]
+    /// model, either as a pending session (registered via [`Self::register_pending_session`])
+    /// or a fully bootstrapped one.
+    pub fn tracks_session(&self, session_id: SessionId) -> bool {
+        self.sessions.contains_key(&session_id)
+            || self.pending_session_start_times.contains_key(&session_id)
     }
 
     /// Returns a map of the spawning commands for all subshell sessions, keyed the session's `SessionId`.
@@ -847,14 +873,16 @@ impl From<BootstrapSessionType> for SessionType {
 pub struct Session {
     info: SessionInfo,
     external_commands: Arc<OnceCell<HashSet<SmolStr>>>,
-    command_executor: Arc<dyn CommandExecutor>,
+    /// The command executor for this session. Behind a `RwLock` so it can be
+    /// swapped after a remote server reconnect (via `set_command_executor`).
+    command_executor: RwLock<Arc<dyn CommandExecutor>>,
     load_external_commands_future: OnceCell<Shared<BoxFuture<'static, ()>>>,
     command_case_sensitivity: TopLevelCommandCaseSensitivity,
     /// The authoritative session type, initially derived from the
     /// [`BootstrapSessionType`] in `SessionInfo` and updated by [`Sessions`]
     /// when `RemoteServerManager` reports a connected session (to fill in the
     /// `host_id`). Interior mutability allows updating through `Arc<Session>`.
-    session_type: parking_lot::Mutex<SessionType>,
+    session_type: Mutex<SessionType>,
 }
 
 impl Session {
@@ -873,10 +901,10 @@ impl Session {
         Self {
             info: session_info,
             external_commands: Arc::new(OnceCell::new()),
-            command_executor,
+            command_executor: RwLock::new(command_executor),
             load_external_commands_future: Default::default(),
             command_case_sensitivity,
-            session_type: parking_lot::Mutex::new(session_type),
+            session_type: Mutex::new(session_type),
         }
     }
 
@@ -1025,9 +1053,17 @@ impl Session {
         &self.info.subshell_info
     }
 
+    /// Replaces the command executor for this session. Used after a remote
+    /// server reconnect to swap in a new `RemoteServerCommandExecutor`
+    /// backed by the reconnected client.
+    pub fn set_command_executor(&self, executor: Arc<dyn CommandExecutor>) {
+        *self.command_executor.write() = executor;
+    }
+
     /// Returns true if the session is employing in-band command execution to run generators.
     pub fn is_using_in_band_command_execution(&self) -> bool {
         self.command_executor
+            .read()
             .as_ref()
             .as_any()
             .downcast_ref::<InBandCommandExecutor>()
@@ -1089,8 +1125,8 @@ impl Session {
                     .path
                     .as_deref()
                     .map(|path| HashMap::from_iter([("PATH".to_string(), path.to_string())]));
-                let windows_results = self
-                    .command_executor
+                let executor = self.command_executor.read().clone();
+                let windows_results = executor
                     .execute_command(
                         ShellType::PowerShell.shell_command_to_get_executables(),
                         &Shell::new(ShellType::PowerShell, None, None, Default::default(), None),
@@ -1381,7 +1417,10 @@ impl Session {
         environment_variables: Option<HashMap<String, String>>,
         execute_command_options: ExecuteCommandOptions,
     ) -> Result<CommandOutput> {
-        self.command_executor
+        // Clone the Arc out of the lock so we don't hold the read guard
+        // across the await point.
+        let executor = self.command_executor.read().clone();
+        executor
             .execute_command(
                 command,
                 &self.info.shell,
@@ -1394,11 +1433,13 @@ impl Session {
 
     /// Whether the backing executor for the session supports execution of commands in parallel.
     pub fn supports_parallel_command_execution(&self) -> bool {
-        self.command_executor.supports_parallel_command_execution()
+        self.command_executor
+            .read()
+            .supports_parallel_command_execution()
     }
 
     pub fn cancel_active_commands(&self) {
-        self.command_executor.cancel_active_commands();
+        self.command_executor.read().cancel_active_commands();
     }
 
     pub async fn git_branches_for_command_corrections(&self, working_dir: &str) -> Vec<String> {
@@ -1644,10 +1685,10 @@ pub mod testing {
             Self {
                 info,
                 external_commands: Default::default(),
-                command_executor: Arc::new(TestCommandExecutor::default()),
+                command_executor: RwLock::new(Arc::new(TestCommandExecutor::default())),
                 load_external_commands_future: Default::default(),
                 command_case_sensitivity: TopLevelCommandCaseSensitivity::CaseSensitive,
-                session_type: parking_lot::Mutex::new(session_type),
+                session_type: Mutex::new(session_type),
             }
         }
 
@@ -1659,10 +1700,10 @@ pub mod testing {
             Self {
                 info,
                 external_commands: Default::default(),
-                command_executor: Arc::new(TestCommandExecutor::default()),
+                command_executor: RwLock::new(Arc::new(TestCommandExecutor::default())),
                 load_external_commands_future: Default::default(),
                 command_case_sensitivity: TopLevelCommandCaseSensitivity::CaseSensitive,
-                session_type: parking_lot::Mutex::new(session_type),
+                session_type: Mutex::new(session_type),
             }
         }
 

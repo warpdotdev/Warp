@@ -42,8 +42,8 @@ use crate::{
 use crate::{
     ai::{
         llms::{
-            AvailableLLMs, DisableReason, LLMInfo, LLMModelHost, LLMProvider, LLMSpec,
-            LLMUsageMetadata, ModelsByFeature, RoutingHostConfig,
+            AvailableLLMs, DisableReason, LLMContextWindow, LLMInfo, LLMModelHost, LLMProvider,
+            LLMSpec, LLMUsageMetadata, ModelsByFeature, RoutingHostConfig,
         },
         RequestUsageInfo,
     },
@@ -915,13 +915,6 @@ pub trait AIClient: 'static + Send + Sync {
         run_id: &str,
         request: ListAgentMessagesRequest,
     ) -> anyhow::Result<Vec<AgentMessageHeader>, anyhow::Error>;
-
-    async fn poll_agent_events(
-        &self,
-        run_ids: &[String],
-        since_sequence: i64,
-        limit: i32,
-    ) -> anyhow::Result<Vec<AgentRunEvent>, anyhow::Error>;
 
     /// Persists the latest observed event sequence number for a run on the
     /// server. Used to keep the server-side cursor in sync with the client so
@@ -1879,22 +1872,6 @@ impl AIClient for ServerApi {
         Ok(response)
     }
 
-    async fn poll_agent_events(
-        &self,
-        run_ids: &[String],
-        since_sequence: i64,
-        limit: i32,
-    ) -> anyhow::Result<Vec<AgentRunEvent>, anyhow::Error> {
-        let run_ids_param: String = run_ids
-            .iter()
-            .map(|id| format!("run_ids={}", urlencoding::encode(id)))
-            .collect::<Vec<_>>()
-            .join("&");
-        let url = format!("agent/events?{run_ids_param}&since={since_sequence}&limit={limit}");
-        let events: Vec<AgentRunEvent> = self.get_public_api(&url).await?;
-        Ok(events)
-    }
-
     async fn update_event_sequence_on_server(
         &self,
         run_id: &str,
@@ -2066,6 +2043,12 @@ impl From<warp_graphql::queries::get_feature_model_choices::LlmInfo> for LLMInfo
             provider: value.provider.into(),
             host_configs,
             discount_percentage: value.pricing.discount_percentage.map(|v| v as f32),
+            context_window: LLMContextWindow {
+                is_configurable: value.context_window.is_configurable,
+                min: value.context_window.min.into(),
+                max: value.context_window.max.into(),
+                default_max: value.context_window.default.into(),
+            },
         }
     }
 }
@@ -2099,6 +2082,12 @@ impl From<warp_graphql::workspace::LlmInfo> for LLMInfo {
             provider: value.provider.into(),
             host_configs,
             discount_percentage: value.pricing.discount_percentage.map(|v| v as f32),
+            context_window: LLMContextWindow {
+                is_configurable: value.context_window.is_configurable,
+                min: value.context_window.min.into(),
+                max: value.context_window.max.into(),
+                default_max: value.context_window.default.into(),
+            },
         }
     }
 }

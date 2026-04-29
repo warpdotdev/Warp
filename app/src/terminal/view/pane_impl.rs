@@ -193,7 +193,7 @@ impl TerminalView {
         // In cloud mode, we want to preserve the shared session sharing dialog even after the shared session has ended.
         // We need this to be able to view and change permissions on a cloud mode shared session that failed before
         // any conversation started, to view cloud mode sessions that failed during setup.
-        let is_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_ambient_agent = self.is_ambient_agent_session(ctx);
         if !is_ambient_agent {
             let shareable_object = self.agent_view_shareable_object(ctx);
             self.pane_configuration.update(ctx, |pane_config, ctx| {
@@ -238,11 +238,10 @@ impl TerminalView {
             .and_then(|h| h.upgrade(app))
             .is_some_and(|stack| stack.as_ref(app).depth() > 1);
 
-        let ambient_agent_view = self.ambient_agent_view_model.as_ref(app);
         let is_transcript_viewer = self.model.lock().is_conversation_transcript_viewer();
-        let has_parent_terminal = (ambient_agent_view.is_ambient_agent()
-            && ambient_agent_view.has_parent_terminal())
-            || (!ambient_agent_view.is_ambient_agent() && !is_transcript_viewer);
+        let is_ambient_agent = self.is_ambient_agent_session(app);
+        let has_parent_terminal = (is_ambient_agent && self.is_nested_cloud_mode(app))
+            || (!is_ambient_agent && !is_transcript_viewer);
         let is_fullscreen_agent_view = self.agent_view_controller.as_ref(app).is_fullscreen();
 
         if in_nav_stack || (is_fullscreen_agent_view && has_parent_terminal) {
@@ -393,10 +392,11 @@ impl TerminalView {
         let mut icon_button_count: u32 = 0;
 
         if FeatureFlag::CloudMode.is_enabled() {
-            let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
-            let button_element = if ambient_agent_model.is_ambient_agent()
-                && ambient_agent_model.is_waiting_for_session()
-            {
+            let is_waiting_for_session = self
+                .ambient_agent_view_model
+                .as_ref()
+                .is_some_and(|model| model.as_ref(app).is_waiting_for_session());
+            let button_element = if is_waiting_for_session {
                 Some(self.render_ambient_agent_cancel_button(app))
             } else if self.can_show_cloud_mode_details_ui(app) {
                 #[cfg(not(target_arch = "wasm32"))]
@@ -586,8 +586,7 @@ impl BackingView for TerminalView {
 
         // Shared-session related items.
         let shared_session_status = model.shared_session_status();
-        let is_ambient_agent = FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_ambient_agent = self.is_ambient_agent_session(ctx);
         if shared_session_status.is_sharer_or_viewer() {
             if !is_ambient_agent {
                 items.push(
@@ -779,8 +778,7 @@ impl TerminalView {
         let theme = appearance.theme();
 
         // Check if we're configuring or waiting on an ambient agent
-        let is_ambient_agent = FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(app).is_ambient_agent();
+        let is_ambient_agent = self.is_ambient_agent_session(app);
 
         // When a long-running command is active, show InProgress
         // instead of the conversation's actual status.
@@ -940,7 +938,10 @@ impl TerminalView {
 
     pub fn is_ambient_agent_session(&self, ctx: &AppContext) -> bool {
         FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+            && self
+                .ambient_agent_view_model
+                .as_ref()
+                .is_some_and(|model| model.as_ref(ctx).is_ambient_agent())
     }
 
     fn selected_conversation_for_user_facing_chrome<'a>(

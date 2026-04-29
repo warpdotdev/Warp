@@ -11,51 +11,32 @@
 //! All platform-specific code is contained here so that the parent `mod.rs`
 //! is a thin dispatcher with no Unix assumptions.
 
-mod proxy;
+pub(super) mod proxy;
 
 use super::server_model::{ConnectionId, ServerModel};
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
 use warpui::r#async::executor;
-
-/// Run the `remote-server-proxy` subcommand.
-///
-/// Ensures the daemon is running (starting it if necessary), then bridges
-/// this process's stdin/stdout to the daemon's Unix socket for the lifetime
-/// of the SSH session.
-pub fn run_proxy() -> anyhow::Result<()> {
-    env_logger::Builder::from_default_env()
-        .target(env_logger::Target::Stderr)
-        .init();
-    proxy::run()
-}
 
 /// Run the `remote-server-daemon` subcommand.
 ///
 /// Binds a Unix domain socket and writes a PID file, then delegates the
 /// WarpUI app startup to [`super::run_daemon_app`] with the Unix-specific
 /// `ServerModel` constructor.
-pub fn run_daemon() -> anyhow::Result<()> {
-    // Log to a rotating file so daemon output is preserved across invocations.
-    // The file is written to the same directory as client logs (~/Library/Logs
-    // on macOS, ~/.local/share/warp-terminal on Linux). Since the daemon runs
-    // on the remote host, there is no conflict with client-side log files.
-    warp_logging::init(warp_logging::LogConfig {
-        is_cli: true,
-        log_destination: Some(warp_logging::LogDestination::File),
-    })?;
-
-    // socket_path: ~/.warp[-channel]/remote-server/server.sock
+pub fn run_daemon(identity_key: String) -> anyhow::Result<()> {
+    // socket_path: ~/.warp[-channel]/remote-server/{identity_key}/server.sock
     //   The Unix domain socket the daemon binds on.  Proxy processes connect
     //   to it and bridge their SSH stdio channel through it.
     //
-    // pid_path:    ~/.warp[-channel]/remote-server/server.pid
+    // pid_path:    ~/.warp[-channel]/remote-server/{identity_key}/server.pid
     //   Contains the daemon's PID.  Proxy processes read it and use
     //   kill(pid, 0) to detect whether the daemon is still alive before
     //   deciding whether to start a new one.
-    let socket_path = proxy::socket_path();
-    let pid_path = proxy::pid_path();
+    let socket_path = proxy::socket_path(&identity_key);
+    let pid_path = proxy::pid_path(&identity_key);
 
     if let Some(parent) = socket_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        proxy::ensure_private_daemon_dir(parent)?;
     }
     if socket_path.exists() {
         std::fs::remove_file(&socket_path)?;
@@ -64,6 +45,7 @@ pub fn run_daemon() -> anyhow::Result<()> {
     // Bind with std (no async runtime needed yet); converted to
     // async_io::Async inside the closure where the executor is active.
     let listener = std::os::unix::net::UnixListener::bind(&socket_path)?;
+    std::fs::set_permissions(&socket_path, Permissions::from_mode(0o600))?;
     // async_io::Async::new() requires non-blocking mode.
     listener.set_nonblocking(true)?;
     log::info!("Daemon bound to {}", socket_path.display());

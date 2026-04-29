@@ -37,10 +37,6 @@ impl RemoteServerSetupState {
             Self::Checking | Self::Installing { .. } | Self::Initializing
         )
     }
-
-    pub fn is_connecting(&self) -> bool {
-        matches!(self, Self::Installing { .. } | Self::Initializing)
-    }
 }
 
 /// Detected remote platform from `uname -sm` output.
@@ -135,6 +131,38 @@ pub fn remote_server_dir() -> String {
         }
     };
     format!("~/{warp_dir}/remote-server")
+}
+
+/// Returns a filesystem-safe directory name for a remote-server identity key.
+///
+/// The identity key is not secret, but it can contain bytes that are unsafe or
+/// ambiguous in paths. Keep ASCII alphanumeric characters plus `-` and `_`;
+/// percent-encode all other UTF-8 bytes.
+pub fn remote_server_identity_dir_name(identity_key: &str) -> String {
+    if identity_key.is_empty() {
+        return "empty".to_string();
+    }
+
+    let mut encoded = String::with_capacity(identity_key.len());
+    for byte in identity_key.bytes() {
+        match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' => {
+                encoded.push(byte as char);
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+/// Returns the identity-scoped remote directory used for the daemon socket
+/// and PID file.
+pub fn remote_server_daemon_dir(identity_key: &str) -> String {
+    format!(
+        "{}/{}",
+        remote_server_dir(),
+        remote_server_identity_dir_name(identity_key)
+    )
 }
 
 /// Returns the binary name, keyed by channel.
