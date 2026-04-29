@@ -32,10 +32,16 @@ pub enum LanguageId {
     JavaScriptReact,
     C,
     Cpp,
+    Elixir,
 }
 
 impl LanguageId {
     pub fn from_path(path: &Path) -> Option<Self> {
+        if let Some("mix.exs" | "mix.lock" | ".formatter.exs") =
+            path.file_name().and_then(|n| n.to_str())
+        {
+            return Some(Self::Elixir);
+        }
         let extn = path.extension()?;
         match extn.to_str()? {
             "rs" => Some(Self::Rust),
@@ -52,6 +58,7 @@ impl LanguageId {
             // compile_commands.json is present, clangd will use the correct language
             // regardless of the languageId we send.
             "h" | "H" | "hh" | "hpp" | "hxx" => Some(Self::Cpp),
+            "ex" | "exs" | "eex" | "heex" | "leex" | "neex" => Some(Self::Elixir),
             _ => None,
         }
     }
@@ -69,6 +76,7 @@ impl LanguageId {
             LanguageId::JavaScriptReact => "javascriptreact",
             LanguageId::C => "c",
             LanguageId::Cpp => "cpp",
+            LanguageId::Elixir => "elixir",
         }
     }
 
@@ -83,6 +91,7 @@ impl LanguageId {
             | LanguageId::JavaScript
             | LanguageId::JavaScriptReact => LSPServerType::TypeScriptLanguageServer,
             LanguageId::C | LanguageId::Cpp => LSPServerType::Clangd,
+            LanguageId::Elixir => LSPServerType::Expert,
         }
     }
 }
