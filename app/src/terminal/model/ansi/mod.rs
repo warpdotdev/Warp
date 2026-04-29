@@ -916,7 +916,12 @@ where
             // Reference: https://wezterm.org/shell-integration.html#osc-7-escape-sequence-to-set-the-working-directory
             b"7" => {
                 if params.len() >= 2 {
-                    if let Some(path) = parse_osc_7_cwd(params[1]) {
+                    // OSC parameters are split on `;`, but URI paths can
+                    // contain unescaped semicolons. Rejoin params[1..] before
+                    // decoding so we don't silently truncate the payload
+                    // (matching the OSC 2 title handler above).
+                    let payload: Vec<u8> = params[1..].join(&b';');
+                    if let Some(path) = parse_osc_7_cwd(&payload) {
                         self.handler.set_current_working_directory(path);
                         return;
                     }

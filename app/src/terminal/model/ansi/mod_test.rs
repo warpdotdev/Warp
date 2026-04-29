@@ -886,6 +886,19 @@ fn parse_osc7_percent_encoded() {
 }
 
 #[test]
+fn parse_osc7_path_with_unescaped_semicolons_preserved() {
+    // OSC parameters split on `;`, so a URI path with a literal semicolon
+    // arrives as multiple params. Rejoining preserves the full path instead
+    // of truncating at the first semicolon.
+    let local = crate::terminal::model::session::get_local_hostname()
+        .expect("test requires a real local hostname");
+    let payload = format!("\x1b]7;file://{local}/Users/foo;bar/baz\x07");
+    let (_, handler) = parse_bytes(payload.as_bytes());
+
+    assert_eq!(handler.cwd_updates, vec!["/Users/foo;bar/baz".to_string()]);
+}
+
+#[test]
 fn parse_osc7_empty_host_ignored() {
     // Hostless payload (`file:///path`) is terminal-controlled and a remote
     // shell over legacy SSH can emit it just as easily as a local one; reject.
