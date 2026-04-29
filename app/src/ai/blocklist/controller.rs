@@ -30,7 +30,11 @@ use crate::ai::agent::{
     PassiveSuggestionTriggerType, RunningCommand,
 };
 use crate::ai::agent::{DocumentContentAttachmentSource, FileContext};
-use crate::ai::ambient_agents::{AmbientAgentTaskId, AmbientAgentTaskState};
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent_sdk::{ClaudeHarness, ClaudeWakeMessage, ClaudeWakeRemoteContext};
+use crate::ai::ambient_agents::AmbientAgentTaskId;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::ambient_agents::AmbientAgentTaskState;
 use crate::ai::document::ai_document_model::{
     AIDocumentId, AIDocumentModel, AIDocumentUserEditStatus,
 };
@@ -42,7 +46,6 @@ use crate::ai::{
         FinishedAIAgentOutput, RenderableAIError, RequestCost, RequestMetadata, StaticQueryType,
         UserQueryMode,
     },
-    agent_sdk::{ClaudeHarness, ClaudeWakeMessage, ClaudeWakeRemoteContext},
     llms::LLMPreferences,
     AIRequestUsageModel,
 };
@@ -75,18 +78,21 @@ use parking_lot::FairMutex;
 use pending_response_streams::PendingResponseStreams;
 use session_sharing_protocol::common::ParticipantId;
 use std::collections::{HashMap, HashSet};
+#[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+#[cfg(not(target_family = "wasm"))]
 use warp_cli::agent::Harness;
 use warp_core::assertions::safe_assert;
+#[cfg(not(target_family = "wasm"))]
 use warp_graphql::ai::AgentTaskState;
 use warp_multi_agent_api::{message, Task, ToolType};
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 
-use super::orchestration_events::{
-    OrchestrationEventService, OrchestrationEventServiceEvent, PendingEvent, PendingEventDetail,
-};
+use super::orchestration_events::{OrchestrationEventService, OrchestrationEventServiceEvent};
+#[cfg(not(target_family = "wasm"))]
+use super::orchestration_events::{PendingEvent, PendingEventDetail};
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 const REMOTE_CHILD_WAKE_FOLLOWUP_TIMEOUT: Duration = Duration::from_secs(15);
@@ -1520,6 +1526,16 @@ impl BlocklistAIController {
         true
     }
 
+    #[cfg(target_family = "wasm")]
+    fn maybe_prepare_local_claude_wake(
+        &mut self,
+        _conversation_id: AIConversationId,
+        _ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        false
+    }
+
+    #[cfg(not(target_family = "wasm"))]
     fn local_claude_wake_candidate(
         &self,
         conversation_id: AIConversationId,
@@ -1692,6 +1708,7 @@ impl BlocklistAIController {
         true
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn pending_event_to_claude_wake_message(event: &PendingEvent) -> Option<ClaudeWakeMessage> {
         let PendingEventDetail::Message {
             sequence,
@@ -1770,6 +1787,7 @@ impl BlocklistAIController {
         }
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn maybe_prepare_local_claude_wake(
         &mut self,
         conversation_id: AIConversationId,
@@ -1966,7 +1984,7 @@ impl BlocklistAIController {
                                         );
                                         Ok::<_, anyhow::Error>(command)
                                     },
-                                    move |me, result, ctx| {
+                                    move |me, result, ctx: &mut ModelContext<Self>| {
                                         me.pending_local_claude_wakes.remove(&conversation_id);
                                         match result {
                                             Ok(command) => {
