@@ -15,7 +15,7 @@ bitflags! {
     ///   A command should *not* set both flags to be available in both modes - this results in requirements that cannot be satisfied.
     /// * Most `/fork`-like slash commands require [`Self::NO_LRC_CONTROL`] and [`Self::ACTIVE_CONVERSATION`]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Availability: u8 {
+    pub struct Availability: u16 {
         /// No requirements — always available.
         const ALWAYS = 0;
         /// Requires the agent view.
@@ -34,6 +34,7 @@ bitflags! {
         const CODEBASE_CONTEXT = 1 << 6;
         /// Requires AI to be globally enabled.
         const AI_ENABLED = 1 << 7;
+        const NOT_CLOUD_AGENT = 1 << 8;
     }
 }
 

@@ -1,9 +1,11 @@
+mod cloud_mode_v2_view;
 mod data_source;
 mod search_item;
-mod view;
+pub(super) mod view;
 
+pub use cloud_mode_v2_view::{CloudModeV2SlashCommandView, Section as CloudModeV2Section};
 pub use data_source::*;
-pub use view::*;
+pub use view::{CloseReason, InlineSlashCommandView, SlashCommandsEvent};
 
 use ai::skills::SkillReference;
 use warp_core::features::FeatureFlag;
@@ -39,7 +41,7 @@ use crate::terminal::input::slash_command_model::{
     SlashCommandEntryState, UpdatedSlashCommandModel,
 };
 use crate::terminal::input::{
-    CompletionsTrigger, Event, Input, InputSuggestionsMode, UserQueryMenuAction,
+    CompletionsTrigger, Event, Input, InputAction, InputSuggestionsMode, UserQueryMenuAction,
 };
 use crate::terminal::view::TerminalAction;
 use crate::ui_components::color_dot;
@@ -413,7 +415,19 @@ impl Input {
                 ctx.emit(Event::CreateDockerSandbox);
             }
             conversations if command.name == commands::CONVERSATIONS.name => {
-                if FeatureFlag::AgentView.is_enabled() {
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    self.suggestions_mode_model.update(ctx, |model, ctx| {
+                        model.set_mode(InputSuggestionsMode::Closed, ctx);
+                    });
+                    self.clear_buffer_and_reset_undo_stack(ctx);
+                    if let Some(view) = self.cloud_mode_v2_history_menu_view.clone() {
+                        view.update(ctx, |v, ctx| {
+                            v.arm_initial_buffer_sync(ctx);
+                        });
+                    }
+                    ctx.dispatch_typed_action_deferred(InputAction::OpenInlineHistoryMenu);
+                    return true;
+                } else if FeatureFlag::AgentView.is_enabled() {
                     self.open_conversation_menu(ctx);
                 } else {
                     ctx.dispatch_typed_action(&TerminalAction::OpenConversationsPalette);
@@ -688,11 +702,26 @@ impl Input {
                 if !FeatureFlag::ListSkills.is_enabled() {
                     return false;
                 }
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    self.apply_v2_slash_section_filter(CloudModeV2Section::Skills, ctx);
+                    return true;
+                }
                 // Open the skill selector menu for invocation - skill command will be inserted into buffer
                 self.open_invoke_skill_selector(ctx);
             }
             models if command.name == commands::MODEL.name => {
-                self.open_model_selector(ctx);
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    self.suggestions_mode_model.update(ctx, |model, ctx| {
+                        model.set_mode(InputSuggestionsMode::Closed, ctx);
+                    });
+                    self.clear_buffer_and_reset_undo_stack(ctx);
+                    self.agent_input_footer.update(ctx, |footer, ctx| {
+                        footer.open_v2_model_selector(ctx);
+                    });
+                    return true;
+                } else {
+                    self.open_model_selector(ctx);
+                }
             }
             profiles if command.name == commands::PROFILE.name => {
                 if !FeatureFlag::InlineProfileSelector.is_enabled() {
@@ -702,6 +731,10 @@ impl Input {
                 self.open_profile_selector(ctx);
             }
             prompts if command.name == commands::PROMPTS.name => {
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    self.apply_v2_slash_section_filter(CloudModeV2Section::Prompts, ctx);
+                    return true;
+                }
                 if FeatureFlag::AgentView.is_enabled() {
                     self.open_prompts_menu(ctx);
                 } else {
@@ -1000,9 +1033,17 @@ impl Input {
             self.suggestions_mode_model.as_ref(ctx).mode(),
             InputSuggestionsMode::SlashCommands
         ) {
-            self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                view.accept_selected_item(true, ctx);
-            });
+            if self.is_cloud_mode_input_v2_composing(ctx) {
+                if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                    view.update(ctx, |view, ctx| {
+                        view.accept_selected_item(true, ctx);
+                    });
+                }
+            } else {
+                self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                    view.accept_selected_item(true, ctx);
+                });
+            }
             return true;
         }
 
@@ -1019,6 +1060,11 @@ impl Input {
                     ctx,
                 )
             }
+            SlashCommandEntryState::SkillCommand(_)
+                if self.is_cloud_mode_input_v2_composing(ctx) =>
+            {
+                false
+            }
             SlashCommandEntryState::SkillCommand(detected_skill) => {
                 let reference = detected_skill.reference.clone();
                 let user_query = detected_skill.argument.clone();
@@ -1030,6 +1076,41 @@ impl Input {
             | SlashCommandEntryState::Composing { .. }
             | SlashCommandEntryState::DisabledUntilEmptyBuffer => false,
         }
+    }
+
+    fn apply_v2_slash_section_filter(
+        &mut self,
+        section: CloudModeV2Section,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text("/", ctx);
+        });
+        if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+            view.update(ctx, |v, ctx| {
+                v.set_section_filter(Some(section), ctx);
+            });
+        }
+    }
+
+    pub(super) fn maybe_clear_v2_slash_section_filter(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        if !self.is_cloud_mode_input_v2_composing(ctx) {
+            return false;
+        }
+        let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() else {
+            return false;
+        };
+        let has_filter = view.as_ref(ctx).has_section_filter();
+        if !has_filter {
+            return false;
+        }
+        view.update(ctx, |v, ctx| {
+            v.set_section_filter(None, ctx);
+        });
+        true
     }
 
     /// Executes a slash command on `enter` keypress.
@@ -1051,9 +1132,17 @@ impl Input {
             self.suggestions_mode_model.as_ref(ctx).mode(),
             InputSuggestionsMode::SlashCommands
         ) {
-            self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                view.accept_selected_item(false, ctx);
-            });
+            if self.is_cloud_mode_input_v2_composing(ctx) {
+                if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                    view.update(ctx, |view, ctx| {
+                        view.accept_selected_item(false, ctx);
+                    });
+                }
+            } else {
+                self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                    view.accept_selected_item(false, ctx);
+                });
+            }
             return true;
         }
 
@@ -1068,6 +1157,11 @@ impl Input {
                     /*is_queued_prompt*/ false,
                     ctx,
                 )
+            }
+            SlashCommandEntryState::SkillCommand(_)
+                if self.is_cloud_mode_input_v2_composing(ctx) =>
+            {
+                false
             }
             SlashCommandEntryState::SkillCommand(detected_skill) => {
                 let reference = detected_skill.reference.clone();

@@ -63,10 +63,19 @@ pub struct SlashCommandDataSource {
     terminal_view_id: EntityId,
     active_commands_by_id: HashMap<SlashCommandId, StaticCommand>,
     active_repo_root: Option<PathBuf>,
+    is_cloud_mode_v2: bool,
 }
 
 impl SlashCommandDataSource {
     pub fn new(args: DataSourceArgs, ctx: &mut ModelContext<Self>) -> Self {
+        Self::build(args, false, ctx)
+    }
+
+    pub fn for_cloud_mode_v2(args: DataSourceArgs, ctx: &mut ModelContext<Self>) -> Self {
+        Self::build(args, true, ctx)
+    }
+
+    fn build(args: DataSourceArgs, is_cloud_mode_v2: bool, ctx: &mut ModelContext<Self>) -> Self {
         let DataSourceArgs {
             active_session,
             agent_view_controller,
@@ -159,6 +168,7 @@ impl SlashCommandDataSource {
             terminal_view_id,
             active_commands_by_id: Default::default(),
             active_repo_root: None,
+            is_cloud_mode_v2,
         };
         me.recompute_active_commands(ctx);
         me
@@ -225,6 +235,10 @@ impl SlashCommandDataSource {
 
         if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
             session_context |= Availability::AI_ENABLED;
+        }
+
+        if !self.is_cloud_mode_v2 {
+            session_context |= Availability::NOT_CLOUD_AGENT;
         }
 
         let is_orchestration_enabled = AISettings::as_ref(ctx).is_orchestration_enabled(ctx);
@@ -297,6 +311,10 @@ impl SlashCommandDataSource {
 
     pub fn is_agent_view_active(&self, ctx: &AppContext) -> bool {
         self.agent_view_controller.as_ref(ctx).is_active()
+    }
+
+    pub fn active_session_for_v2_zero_state(&self) -> &ModelHandle<ActiveSession> {
+        &self.active_session
     }
 
     /// Returns `true` if the CLI agent rich input is currently open for this terminal.
@@ -404,6 +422,7 @@ impl SyncDataSource for SlashCommandDataSource {
                     InlineItem::from_slash_command(id, command, app)
                         .with_name_match_result(fuzzy_result.name_match_result)
                         .with_description_match_result(fuzzy_result.description_match_result)
+                        .with_compact_layout(self.is_cloud_mode_v2)
                         .with_score(
                             OrderedFloat(score) * SCORE_MULTIPLIER
                                 + OrderedFloat(prefix_boost) * SCORE_MULTIPLIER
@@ -457,6 +476,7 @@ impl SyncDataSource for SlashCommandDataSource {
                         InlineItem::from_skill(&skill, app)
                             .with_name_match_result(fuzzy_result.name_match_result)
                             .with_description_match_result(fuzzy_result.description_match_result)
+                            .with_compact_layout(self.is_cloud_mode_v2)
                             .with_score(
                                 OrderedFloat(score) * SCORE_MULTIPLIER
                                     + OrderedFloat(prefix_boost) * SCORE_MULTIPLIER
@@ -507,6 +527,7 @@ pub struct InlineItem {
     pub name_match_result: Option<FuzzyMatchResult>,
     pub description_match_result: Option<FuzzyMatchResult>,
     pub score: OrderedFloat<f64>,
+    pub compact_layout: bool,
 }
 
 impl InlineItem {
@@ -525,6 +546,27 @@ impl InlineItem {
             name_match_result: None,
             description_match_result: None,
             score: OrderedFloat(f64::MIN),
+            compact_layout: false,
+        }
+    }
+
+    pub(crate) fn from_saved_prompt(
+        saved_prompt: &crate::workflows::CloudWorkflow,
+        app: &AppContext,
+    ) -> Self {
+        let appearance = Appearance::as_ref(app);
+        Self {
+            action: AcceptSlashCommandOrSavedPrompt::SavedPrompt {
+                id: saved_prompt.id,
+            },
+            icon_path: "bundled/svg/prompt.svg",
+            name: saved_prompt.model().data.name().to_owned(),
+            description: None,
+            font_family: appearance.ui_font_family(),
+            name_match_result: None,
+            description_match_result: None,
+            score: OrderedFloat(f64::MIN),
+            compact_layout: false,
         }
     }
 
@@ -557,6 +599,7 @@ impl InlineItem {
             name_match_result: None,
             description_match_result: None,
             score: OrderedFloat(f64::MIN),
+            compact_layout: false,
         }
     }
 
@@ -572,6 +615,11 @@ impl InlineItem {
 
     fn with_score(mut self, score: OrderedFloat<f64>) -> Self {
         self.score = score;
+        self
+    }
+
+    pub(crate) fn with_compact_layout(mut self, compact: bool) -> Self {
+        self.compact_layout = compact;
         self
     }
 }
