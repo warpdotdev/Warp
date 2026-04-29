@@ -1489,24 +1489,11 @@ impl TerminalManager {
                     let terminal_view_id = terminal_view.id();
                     let session_id_for_link = *session_id;
 
-                    // Resolve the task id from two sources, in order:
-                    // 1) `BlocklistAIController.ambient_agent_task_id` — set by the CLI agent
-                    //    driver (`warp agent run`) immediately after the task is created on the
-                    //    server, before any conversation has streamed.
-                    // 2) The active conversation's `task_id` — set when the first response
-                    //    stream's `StreamInit` arrives (parses `init_event.run_id`). This is the
-                    //    only source available for in-app interactive runs.
-                    let controller_task_id = terminal_view
-                        .as_ref(ctx)
-                        .ai_controller()
-                        .as_ref(ctx)
-                        .ambient_agent_task_id();
                     let history = BlocklistAIHistoryModel::handle(ctx);
-                    let conversation_task_id = history
+                    let task_id = history
                         .as_ref(ctx)
                         .active_conversation(terminal_view_id)
                         .and_then(|c| c.task_id());
-                    let task_id = controller_task_id.or(conversation_task_id);
 
                     if let Some(task_id) = task_id {
                         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
