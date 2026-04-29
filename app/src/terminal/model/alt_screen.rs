@@ -98,7 +98,7 @@ impl AltScreen {
         self.smart_select_override = None;
     }
 
-    pub(crate) fn grid_storage(&self) -> &GridStorage {
+    pub(super) fn grid_storage(&self) -> &GridStorage {
         self.grid_handler.grid_storage()
     }
 

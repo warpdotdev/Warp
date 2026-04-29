@@ -351,12 +351,10 @@ impl GridHandler {
         obfuscate_secrets: ObfuscateSecrets,
         perform_reset_grid_checks: PerformResetGridChecks,
     ) -> Self {
-        // We set the maximum scrollback for grid storage to zero, as the
-        // scrollback is stored in flat storage _instead_.  `GridHandler`
-        // is responsible for moving lines from grid storage to flat storage
-        // when they are about to be scrolled up out of the active region of
-        // the grid.
-        let grid_max_scroll_limit = 0;
+        // Non-alt grids store scrollback in flat storage. Alt-screen grids do
+        // not push rows into flat storage, so they keep their bounded
+        // scrollback in GridStorage itself.
+        let grid_max_scroll_limit = if is_alt_screen { max_scroll_limit } else { 0 };
 
         let grid = GridStorage::new(
             size_info.rows(),
@@ -375,7 +373,11 @@ impl GridHandler {
 
         GridHandler {
             grid,
-            flat_storage: FlatStorage::new(size_info.columns(), Some(max_scroll_limit), None),
+            flat_storage: FlatStorage::new(
+                size_info.columns(),
+                Some(if is_alt_screen { 0 } else { max_scroll_limit }),
+                None,
+            ),
             finished: false,
             ansi_handler_state,
             displayed_output: None,
@@ -1608,7 +1610,7 @@ impl GridHandler {
     /// The number of lines that have been truncated due to exceeding the
     /// grid's maximum scrollback limit.
     pub fn num_lines_truncated(&self) -> u64 {
-        self.flat_storage.num_truncated_rows()
+        self.flat_storage.num_truncated_rows() + self.grid.num_lines_truncated
     }
 
     /// Finishes the grid.
@@ -2626,7 +2628,7 @@ impl Iterator for RegexIter<'_> {
 impl Dimensions for GridHandler {
     #[inline]
     fn total_rows(&self) -> usize {
-        self.visible_rows() + self.history_size()
+        self.flat_storage.total_rows() + self.grid.total_rows()
     }
 
     #[inline]
@@ -2636,7 +2638,7 @@ impl Dimensions for GridHandler {
 
     #[inline]
     fn history_size(&self) -> usize {
-        self.flat_storage.total_rows()
+        self.flat_storage.total_rows() + self.grid.history_size()
     }
 
     #[inline]
