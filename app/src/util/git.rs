@@ -891,7 +891,7 @@ pub async fn create_pr(
 ) -> Result<PrInfo> {
     let base = detect_main_branch(repo_path).await?;
     let base = base.trim();
-    let base = base.strip_prefix("origin/").unwrap_or(&base);
+    let base = base.strip_prefix("origin/").unwrap_or(base);
     let sanitized_title;
     let args: Vec<&str> = match (title, body) {
         (Some(t), Some(b)) => {
