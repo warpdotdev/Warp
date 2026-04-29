@@ -686,6 +686,15 @@ fn new_session_menu_label(item: &MenuItem<WorkspaceAction>) -> String {
     }
 }
 
+fn reopen_closed_session_menu_item(
+    menu_items: &[MenuItem<WorkspaceAction>],
+) -> &MenuItemFields<WorkspaceAction> {
+    match menu_items.last() {
+        Some(MenuItem::Item(fields)) if fields.label() == "Reopen closed session" => fields,
+        _ => panic!("expected Reopen closed session to be the last new-session menu item"),
+    }
+}
+
 #[test]
 fn test_reward_modal_no_overlap() {
     App::test((), |mut app| async move {
@@ -861,6 +870,89 @@ fn test_set_active_tab_name_clears_active_rename_editor_state() {
                     .as_ref(ctx)
                     .display_title(ctx),
                 "new title"
+            );
+        });
+    });
+}
+
+#[test]
+fn test_set_active_tab_color() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+            let active = workspace.active_tab_index;
+
+            // Setting a color stores it as the manual selection and resolves to it.
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Color(
+                    AnsiColorIdentifier::Magenta,
+                )),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Magenta),
+            );
+            assert_eq!(
+                workspace.tabs[active].color(),
+                Some(AnsiColorIdentifier::Magenta),
+            );
+
+            // Replacing with a different color overwrites the previous selection.
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Color(
+                    AnsiColorIdentifier::Green,
+                )),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Green),
+            );
+
+            // `Cleared` explicitly suppresses any color (including a directory default).
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Cleared),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Cleared,
+            );
+            assert_eq!(workspace.tabs[active].color(), None);
+
+            // `Unset` removes the manual override so a directory default could apply.
+            // With no directory default configured, the resolved color is still `None`.
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Unset),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Unset,
+            );
+            assert_eq!(workspace.tabs[active].color(), None);
+
+            // Action targets the active tab — switching to tab 0 leaves the second tab
+            // unaffected.
+            workspace.handle_action(&WorkspaceAction::ActivateTab(0), ctx);
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Color(
+                    AnsiColorIdentifier::Blue,
+                )),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[0].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Blue),
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Unset,
             );
         });
     });
@@ -2272,6 +2364,35 @@ fn test_vertical_tabs_panel_visibility_restores_from_window_snapshot() {
 }
 
 #[test]
+fn test_vertical_tabs_panel_restored_open_when_show_in_restored_windows_enabled() {
+    let _vertical_tabs_guard = FeatureFlag::VerticalTabs.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        app.update(|ctx| {
+            TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.use_vertical_tabs.set_value(true, ctx));
+                report_if_error!(settings
+                    .show_vertical_tab_panel_in_restored_windows
+                    .set_value(true, ctx));
+            });
+        });
+
+        let workspace = mock_workspace(&mut app);
+
+        let closed_snapshot = workspace.update(&mut app, |workspace, ctx| {
+            workspace.vertical_tabs_panel_open = false;
+            workspace.snapshot(ctx.window_id(), false, ctx)
+        });
+
+        let restored = restored_workspace(&mut app, closed_snapshot);
+        restored.read(&app, |workspace, _| {
+            assert!(workspace.vertical_tabs_panel_open);
+        });
+    });
+}
+
+#[test]
 fn test_vertical_tabs_panel_defaults_open_for_new_window_when_vertical_tabs_enabled() {
     let _vertical_tabs_guard = FeatureFlag::VerticalTabs.override_enabled(true);
 
@@ -2571,6 +2692,37 @@ fn test_unified_new_session_menu_uses_new_worktree_config_label_and_order() {
                 labels.get(separator_index + 2),
                 Some(&"New tab config".to_string())
             );
+        });
+    });
+}
+
+#[test]
+fn test_unified_new_session_menu_includes_reopen_closed_session() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            let menu_items = workspace.unified_new_session_menu_items(ctx);
+            assert!(matches!(
+                menu_items.get(menu_items.len() - 2),
+                Some(MenuItem::Separator)
+            ));
+
+            let reopen_item = reopen_closed_session_menu_item(&menu_items);
+            assert!(reopen_item.is_disabled());
+            assert!(matches!(
+                reopen_item.on_select_action(),
+                Some(action) if matches!(action, WorkspaceAction::ReopenClosedSession)
+            ));
+
+            workspace.add_terminal_tab(false, ctx);
+            workspace.remove_tab(workspace.active_tab_index(), true, true, ctx);
+
+            let menu_items = workspace.unified_new_session_menu_items(ctx);
+            let reopen_item = reopen_closed_session_menu_item(&menu_items);
+            assert!(!reopen_item.is_disabled());
         });
     });
 }

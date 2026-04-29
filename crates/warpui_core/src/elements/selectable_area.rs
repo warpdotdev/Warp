@@ -706,7 +706,7 @@ impl Element for SelectableArea {
 
                 // Materialize and cache the selected text if SelectableArea is about to go off-screen.
                 // Since origin isn't available when SelectableArea is off-screen, we aren't able to
-                // materialize the selection on mouse up if that that's the case. As a workaround,
+                // materialize the selection on mouse up if that's the case. As a workaround,
                 // we cache it here ahead of time.
                 if origin.y() < 0.
                     || origin.y() + size.y() > app.windows().active_display_bounds().height()

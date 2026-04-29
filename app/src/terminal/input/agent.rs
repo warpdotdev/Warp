@@ -28,8 +28,8 @@ use warpui::elements::Expanded;
 use warpui::{
     elements::{
         Align, AnchorPair, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-        DispatchEventResult, DropTarget, Element, EventHandler, Flex, Hoverable, MainAxisSize,
-        OffsetPositioning, OffsetType, ParentElement, PositionedElementOffsetBounds,
+        DispatchEventResult, DropTarget, Element, Empty, EventHandler, Flex, Hoverable,
+        MainAxisSize, OffsetPositioning, OffsetType, ParentElement, PositionedElementOffsetBounds,
         PositioningAxis, Radius, SavePosition, Stack, XAxisAnchor, YAxisAnchor,
     },
     presenter::ChildView,
@@ -67,9 +67,8 @@ impl Input {
         FeatureFlag::CloudModeInputV2.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
             && self
-                .ambient_agent_view_model
-                .as_ref(app)
-                .is_configuring_ambient_agent()
+                .ambient_agent_view_model()
+                .is_some_and(|model| model.as_ref(app).is_configuring_ambient_agent())
     }
 
     /// Renders the input when there is an active `AgentView`.
@@ -120,22 +119,27 @@ impl Input {
         let show_harness_row = FeatureFlag::CloudMode.is_enabled()
             && FeatureFlag::AgentHarness.is_enabled()
             && self
-                .ambient_agent_view_model
-                .as_ref(app)
-                .is_configuring_ambient_agent();
+                .ambient_agent_view_model()
+                .is_some_and(|ambient_agent_model| {
+                    ambient_agent_model
+                        .as_ref(app)
+                        .is_configuring_ambient_agent()
+                });
         if show_harness_row {
-            // Temporarily render the harness selector in the cloud mode UDI until we fully
-            // implement the new designs.
-            let harness_row = Flex::row()
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_child(ChildView::new(&self.harness_selector).finish())
-                .finish();
-            column.add_child(
-                Container::new(harness_row)
-                    .with_padding_top(spacing::UDI_CHIP_MARGIN)
-                    .with_padding_bottom(4.)
-                    .finish(),
-            );
+            if let Some(harness_selector) = self.harness_selector() {
+                // Temporarily render the harness selector in the cloud mode UDI until we fully
+                // implement the new designs.
+                let harness_row = Flex::row()
+                    .with_main_axis_size(MainAxisSize::Min)
+                    .with_child(ChildView::new(harness_selector).finish())
+                    .finish();
+                column.add_child(
+                    Container::new(harness_row)
+                        .with_padding_top(spacing::UDI_CHIP_MARGIN)
+                        .with_padding_bottom(4.)
+                        .finish(),
+                );
+            }
         }
 
         let terminal_spacing = TerminalSettings::as_ref(app)
@@ -484,10 +488,12 @@ impl Input {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(CLOUD_MODE_V2_TOP_ROW_INNER_GAP);
 
-        if let Some(host) = self.host_selector.as_ref() {
+        if let Some(host) = self.host_selector() {
             row.add_child(ChildView::new(host).finish());
         }
-        row.add_child(ChildView::new(&self.harness_selector).finish());
+        if let Some(harness_selector) = self.harness_selector() {
+            row.add_child(ChildView::new(harness_selector).finish());
+        }
 
         row.finish()
     }
@@ -559,7 +565,10 @@ impl Input {
     }
 
     pub(super) fn render_ambient_agent_status_footer(&self, app: &AppContext) -> Box<dyn Element> {
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
+        let Some(ambient_agent_model) = self.ambient_agent_view_model() else {
+            return Empty::new().finish();
+        };
+        let ambient_agent_model = ambient_agent_model.as_ref(app);
         let mut stack = Stack::new().with_constrain_absolute_children();
 
         // Don't render status bar when agent has failed or is waiting for session

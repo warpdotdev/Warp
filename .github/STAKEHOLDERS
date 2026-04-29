@@ -33,7 +33,8 @@
 /crates/ai/src/index/ @kevinyang372
 /crates/ai/src/project_context/ @kevinyang372
 /crates/editor/ @kevinyang372 @bnavetta
-/crates/lsp/ @kevinyang372
+/crates/languages/ @kevinyang372 @bnavetta
+/crates/lsp/ @kevinyang372 @moirahuang
 /crates/repo_metadata/ @kevinyang372
 
 # Settings and keybindings
