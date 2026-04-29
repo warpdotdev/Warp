@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use warp_util::path::user_friendly_path;
 use warpui::{
     elements::{Border, ChildView, Container, Hoverable, MouseStateHandle, Text},
     platform::Cursor,
@@ -18,6 +19,12 @@ const DEFAULT_DROPDOWN_WIDTH: f32 = 380.;
 
 /// Label for the sticky "Add new repo..." footer at the bottom of the picker.
 const ADD_NEW_REPO_LABEL: &str = "+ Add new repo...";
+
+/// Maximum number of lines a single repo row may render before being clipped.
+/// Two lines is enough to fit any realistic absolute path on a 412-pixel-wide
+/// dropdown without giving up the trailing repo name to a mid-string ellipsis,
+/// while keeping rows compact.
+const REPO_ROW_MAX_LINES: usize = 2;
 
 /// A filterable dropdown listing known repos (from `PersistedWorkspace`), with a
 /// sticky "+ Add new repo..." footer that is always visible even when scrolling.
@@ -147,24 +154,53 @@ impl RepoPicker {
         // workspaces() already returns entries sorted by most-recently-touched.
         // "+ Add new repo..." is a sticky footer (not a list item) so it is
         // not included here.
+        //
+        // Display labels abbreviate the user's home directory to `~` so deeply
+        // nested paths under shared parents (e.g. iCloud / Google Drive) stay
+        // distinguishable in a fixed-width dropdown. The action and the cached
+        // `self.selected` continue to carry the raw absolute path so the launched
+        // session resolves the directory correctly. The original full path is
+        // exposed on hover via the tooltip, and rows soft-wrap to two lines so
+        // the trailing repo name is preserved instead of being elided.
+        let home_dir = dirs::home_dir();
+        let home_dir_str = home_dir.as_ref().and_then(|h| h.to_str());
         let items: Vec<DropdownItem<RepoPickerAction>> = PersistedWorkspace::as_ref(ctx)
             .workspaces()
             .filter(|ws| ws.path.exists())
             .map(|ws| {
-                let path_str = ws.path.to_string_lossy().into_owned();
-                DropdownItem::new(path_str.clone(), RepoPickerAction::Select(path_str))
+                let raw_path = ws.path.to_string_lossy().into_owned();
+                let display = user_friendly_path(&raw_path, home_dir_str).into_owned();
+                DropdownItem::new(display, RepoPickerAction::Select(raw_path.clone()))
+                    .with_tooltip(raw_path)
+                    .with_max_lines(REPO_ROW_MAX_LINES)
             })
             .collect();
 
         let path_to_select = select_path
             .or(self.selected.as_deref())
             .map(|s| s.to_owned());
+        // The dropdown looks up the prior selection by display label, so the
+        // lookup key has to use the same `~`-substituted form the rows now
+        // render with. Otherwise a default value pointing at a path under
+        // $HOME would never match its own row.
+        let display_to_select = path_to_select
+            .as_deref()
+            .map(|p| user_friendly_path(p, home_dir_str).into_owned());
         self.dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_items(items, ctx);
-            if let Some(ref path) = path_to_select {
-                dropdown.set_selected_by_name(path.as_str(), ctx);
+            if let Some(ref display) = display_to_select {
+                dropdown.set_selected_by_name(display.as_str(), ctx);
             }
         });
+
+        // Mirror the raw path into `self.selected` so the `selected_value()`
+        // fallback (which reads the dropdown's selected_item_label) never
+        // returns the `~`-substituted display form to callers that intend to
+        // pass it to the shell or to a `cd`. The substituted form is purely
+        // for display.
+        if let Some(path) = path_to_select {
+            self.selected = Some(path);
+        }
 
         ctx.notify();
     }
