@@ -767,6 +767,33 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                             ));
                         }
                         AIAgentOutputMessageType::Action(AIAgentAction {
+                            action:
+                                AIAgentActionType::Orchestrate {
+                                    summary,
+                                    model_id,
+                                    harness,
+                                    execution_mode,
+                                    agents,
+                                    ..
+                                },
+                            id,
+                            ..
+                        }) if FeatureFlag::OrchestrateTool.is_enabled() => {
+                            should_render_footer = false;
+                            should_render_suggestions = false;
+                            output_items.add_child(orchestration::render_orchestrate_config_card(
+                                props,
+                                id,
+                                summary,
+                                model_id,
+                                harness,
+                                execution_mode,
+                                agents,
+                                &output_message.id,
+                                app,
+                            ));
+                        }
+                        AIAgentOutputMessageType::Action(AIAgentAction {
                             action: AIAgentActionType::InsertCodeReviewComments { repo_path, .. },
                             id,
                             ..

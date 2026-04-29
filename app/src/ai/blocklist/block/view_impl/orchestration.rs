@@ -13,8 +13,9 @@ use warpui::elements::FormattedTextElement;
 
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 use crate::ai::agent::{
-    AIAgentActionId, AIAgentActionResultType, MessageId, ReceivedMessageDisplay,
-    SendMessageToAgentResult, StartAgentExecutionMode, StartAgentResult,
+    AIAgentActionId, AIAgentActionResultType, MessageId, OrchestrateActionResult,
+    OrchestrateAgentOutcome, OrchestrateAgentRunConfig, OrchestrateExecutionMode,
+    ReceivedMessageDisplay, SendMessageToAgentResult, StartAgentExecutionMode, StartAgentResult,
 };
 use crate::ai::blocklist::action_model::AIActionStatus;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::{
@@ -710,6 +711,225 @@ fn render_formatted_text_element(
         Default::default(),
     )
     .set_selectable(true)
+}
+
+/// Renders the `OrchestrateConfigCard` for an `orchestrate` tool call.
+///
+/// Phase B skeleton: routes the action through the same status-row visual
+/// language as `render_start_agent` and surfaces the resolved run-wide
+/// configuration (summary, model, harness, execution mode, agent count) plus
+/// a list of agent names. After the user clicks a terminal button the card
+/// transitions to one of the six post-action states defined in PRODUCT.md
+/// (Launching N / Started N / Started M of N / Failed to start orchestration /
+/// Launch denied / Cancelled).
+///
+/// TODO(QUALITY-569 phase B follow-up): replace this skeleton with the full
+/// interactive card mocked in Figma:
+/// <https://www.figma.com/design/AsF5uAM6L5tUmc11vm9YSi/Agent-orchestration?node-id=4190-36899&m=dev>.
+/// The follow-up adds the Model / Harness / Execution mode / Environment
+/// dropdowns, inline validation messages ("Choose an environment before
+/// launching", "OpenCode is not supported in remote mode"), and the three
+/// terminal buttons (Launch / Launch without orchestration / Reject) wired to
+/// the parallel `CreateAgentTask` flow in Phase C.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn render_orchestrate_config_card(
+    props: Props,
+    action_id: &AIAgentActionId,
+    summary: &str,
+    model_id: &str,
+    harness: &str,
+    execution_mode: &OrchestrateExecutionMode,
+    agents: &[OrchestrateAgentRunConfig],
+    message_id: &MessageId,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let status = props.action_model.as_ref(app).get_action_status(action_id);
+
+    let mode_label = match execution_mode {
+        OrchestrateExecutionMode::Local => "Local".to_string(),
+        OrchestrateExecutionMode::Remote { environment_id } if environment_id.is_empty() => {
+            "Remote (no environment)".to_string()
+        }
+        OrchestrateExecutionMode::Remote { environment_id } => {
+            format!("Remote ({environment_id})")
+        }
+    };
+    let model_display = if model_id.is_empty() {
+        "auto".to_string()
+    } else {
+        model_id.to_string()
+    };
+    let harness_display = if harness.is_empty() {
+        "oz".to_string()
+    } else {
+        harness.to_string()
+    };
+
+    // Compute the heading and status icon, branching on the post-action state.
+    let (heading, status_icon) = match &status {
+        Some(AIActionStatus::Finished(result)) => {
+            let AIAgentActionResultType::Orchestrate(orchestrate_result) = &result.result else {
+                log::error!(
+                    "Unexpected action result type for orchestrate action: {:?}",
+                    result.result
+                );
+                return Empty::new().finish();
+            };
+            match orchestrate_result {
+                OrchestrateActionResult::Launched {
+                    agents: outcomes, ..
+                } => {
+                    let succeeded = outcomes
+                        .iter()
+                        .filter(|entry| {
+                            matches!(entry.outcome, OrchestrateAgentOutcome::Launched { .. })
+                        })
+                        .count();
+                    let total = outcomes.len();
+                    if succeeded == total {
+                        (
+                            format!("Started {total} agent(s)"),
+                            inline_action_icons::green_check_icon(appearance).finish(),
+                        )
+                    } else {
+                        // The M=0 case (every per-agent dispatch failed) renders
+                        // here per spec — not under "Failed to start
+                        // orchestration" — because the run-wide configuration
+                        // was resolved and the Launched result still carries it,
+                        // just with all `failed` outcomes.
+                        (
+                            format!("Started {succeeded} of {total} agent(s)"),
+                            inline_action_icons::red_x_icon(appearance).finish(),
+                        )
+                    }
+                }
+                OrchestrateActionResult::LaunchDenied => (
+                    "Launch denied".to_string(),
+                    inline_action_icons::cancelled_icon(appearance).finish(),
+                ),
+                OrchestrateActionResult::Failure { error } => (
+                    format!("Failed to start orchestration: {error}"),
+                    inline_action_icons::red_x_icon(appearance).finish(),
+                ),
+                OrchestrateActionResult::Cancelled => (
+                    "Cancelled".to_string(),
+                    inline_action_icons::cancelled_icon(appearance).finish(),
+                ),
+            }
+        }
+        _ => {
+            // Pre-terminal state: the LLM has emitted the orchestrate call and
+            // the user has not yet clicked a terminal button. The full
+            // implementation will render the dropdowns + buttons here; the
+            // skeleton just surfaces the proposed configuration and agent
+            // count so the routing is observable end-to-end.
+            (
+                format!("Launching {} agent(s)", agents.len()),
+                action_icon(action_id, props.action_model, props.model, app).finish(),
+            )
+        }
+    };
+
+    // Header row: summary text, status icon, expand chevron.
+    let header_text = render_formatted_text_element(
+        vec![
+            FormattedTextFragment::bold(heading),
+            FormattedTextFragment::plain_text(if summary.is_empty() {
+                String::new()
+            } else {
+                format!(" — {summary}")
+            }),
+        ],
+        app,
+    );
+    let chevron = render_collapse_chevron(message_id, props, app);
+
+    let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+    column.add_child(render_requested_action_row(
+        header_text.into(),
+        Some(status_icon),
+        chevron,
+        false,
+        false,
+        app,
+    ));
+
+    // Body: resolved run-wide config + agent name list. This is the part of
+    // the card the follow-up will replace with interactive dropdowns and
+    // buttons.
+    let mut body_column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+    let dimmed_text_color = blended_colors::text_disabled(theme, theme.surface_2());
+    let value_color: ColorU = theme.main_text_color(theme.background()).into();
+    let font_family = appearance.ui_font_family();
+    let font_size = appearance.monospace_font_size();
+
+    let config_fields = [
+        ("Model: ", model_display.as_str()),
+        ("Harness: ", harness_display.as_str()),
+        ("Execution mode: ", mode_label.as_str()),
+    ];
+    for (label, value) in config_fields {
+        let line = Flex::row()
+            .with_child(
+                Text::new(label.to_string(), font_family, font_size)
+                    .with_color(dimmed_text_color)
+                    .finish(),
+            )
+            .with_child(
+                Text::new(value.to_string(), font_family, font_size)
+                    .with_color(value_color)
+                    .finish(),
+            )
+            .finish();
+        body_column.add_child(line);
+    }
+
+    if !agents.is_empty() {
+        body_column.add_child(
+            Container::new(
+                Text::new("Agents:".to_string(), font_family, font_size)
+                    .with_color(dimmed_text_color)
+                    .finish(),
+            )
+            .with_margin_top(4.)
+            .finish(),
+        );
+        for agent in agents {
+            body_column.add_child(
+                Container::new(
+                    Text::new(format!("  • {}", agent.name), font_family, font_size)
+                        .with_color(value_color)
+                        .finish(),
+                )
+                .finish(),
+            );
+        }
+    }
+
+    let body = Container::new(body_column.finish())
+        .with_margin_top(4.)
+        .with_margin_left(INLINE_ACTION_HORIZONTAL_PADDING + icon_size(app) + ICON_MARGIN)
+        .with_margin_right(INLINE_ACTION_HORIZONTAL_PADDING)
+        .with_margin_bottom(INLINE_ACTION_HEADER_VERTICAL_PADDING)
+        .finish();
+
+    if let Some(rendered_body) = render_collapsible_body(
+        message_id,
+        body,
+        props.model.status(app).is_streaming(),
+        props,
+    ) {
+        column.add_child(rendered_body);
+    }
+
+    column
+        .finish()
+        .with_agent_output_item_spacing(app)
+        .with_background_color(blended_colors::neutral_2(theme))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+        .finish()
 }
 
 fn render_conversation_navigation_card_row(
