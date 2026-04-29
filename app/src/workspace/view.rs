@@ -21,8 +21,8 @@ mod wasm_view;
 
 use self::vertical_tabs::telemetry::{VerticalTabsDisplayOption, VerticalTabsTelemetryEvent};
 use self::vertical_tabs::{
-    render_detail_sidecar, render_settings_popup, VerticalTabsPanelState,
-    VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
+    render_detail_sidecar, render_settings_popup, resolve_vertical_tabs_mode,
+    VerticalTabsPanelState, VerticalTabsResolvedMode, VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
 };
 pub(crate) use onboarding::OnboardingTutorial;
 
@@ -5243,18 +5243,22 @@ impl Workspace {
     }
 
     pub fn rename_active_pane(&mut self, ctx: &mut ViewContext<Self>) {
-        // The inline pane-rename editor only renders when Vertical Tabs is on AND
-        // the display granularity is Panes — the Tabs granularity (FocusedSession
-        // and Summary view modes) skips the pane-row loop entirely, so focusing
-        // `pane_rename_editor` from those modes leaves the user in an invisible
-        // edit state. Use slash-command prefill as the universal fallback.
+        // The inline pane-rename editor is rendered whenever the vertical-tabs
+        // panel enters its pane-row loop — i.e. in every resolved mode EXCEPT
+        // Summary. In Summary mode the panel emits a single
+        // `render_summary_tab_item` row with `pane_rename_editor: None`, so
+        // focusing the editor would leave the user in an invisible edit state.
+        // Both Panes and FocusedSession resolve into the row loop and thread
+        // the editor through `PaneProps::new` → `render_title_override`, so the
+        // inline path is correct there. (`resolve_vertical_tabs_mode` also
+        // collapses Summary to FocusedSession when the
+        // `VerticalTabsSummaryMode` feature flag is off, keeping the gate
+        // consistent with the renderer.)
         let inline_editor_visible = FeatureFlag::VerticalTabs.is_enabled()
             && *TabSettings::as_ref(ctx).use_vertical_tabs
-            && matches!(
-                *TabSettings::as_ref(ctx)
-                    .vertical_tabs_display_granularity
-                    .value(),
-                VerticalTabsDisplayGranularity::Panes,
+            && !matches!(
+                resolve_vertical_tabs_mode(ctx),
+                VerticalTabsResolvedMode::Summary,
             );
 
         if inline_editor_visible {
