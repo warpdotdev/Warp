@@ -1500,12 +1500,7 @@ impl DiffStateModel {
 
         match metadata {
             Ok(mut metadata) => {
-                // Preserve cached PR info across same-branch metadata refreshes.
-                // `load_metadata_for_repo` always initialises pr_info: None, but
-                // re-fetching it on every file-system tick would be too expensive.
-                if previous_branch.as_deref() == Some(metadata.current_branch_name.as_str()) {
-                    metadata.pr_info = previous_pr_info;
-                }
+                metadata.pr_info = previous_pr_info;
                 self.metadata = Some(metadata);
             }
             Err(e) => {
