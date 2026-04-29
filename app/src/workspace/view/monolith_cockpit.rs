@@ -6,6 +6,7 @@ use serde::Deserialize;
 use settings::Setting as _;
 use std::{collections::HashSet, path::Path};
 use warp_core::ui::Icon;
+use warpui::clipboard::ClipboardContent;
 use warpui::elements::{
     Border, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, Element, Fill, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
@@ -59,13 +60,30 @@ struct CockpitProfile {
 
 #[derive(Clone, Debug)]
 pub enum MonolithCockpitAction {
-    OpenCommand { command: String },
-    StartTenantChat { prompt: String },
-    ShowTenantFilter { filter: TenantFilter },
-    ExpandAllTenants { tenant_names: Vec<String> },
+    OpenCommand {
+        command: String,
+    },
+    StartTenantChat {
+        tenant_name: String,
+        prompt: String,
+    },
+    CopyTenantContext {
+        tenant_name: String,
+        context: String,
+    },
+    ShowTenantFilter {
+        filter: TenantFilter,
+    },
+    ExpandAllTenants {
+        tenant_names: Vec<String>,
+    },
     CollapseAllTenants,
-    ToggleTenant { tenant_name: String },
-    SwitchEnvironment { environment: String },
+    ToggleTenant {
+        tenant_name: String,
+    },
+    SwitchEnvironment {
+        environment: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -84,6 +102,7 @@ pub struct MonolithCockpitView {
     scroll_state: ClippedScrollStateHandle,
     expanded_tenants: HashSet<String>,
     tenant_filter: TenantFilter,
+    selected_tenant: Option<String>,
 }
 
 impl MonolithCockpitView {
@@ -96,6 +115,7 @@ impl MonolithCockpitView {
             scroll_state: ClippedScrollStateHandle::default(),
             expanded_tenants: HashSet::new(),
             tenant_filter: TenantFilter::All,
+            selected_tenant: None,
         }
     }
 
@@ -239,6 +259,16 @@ impl MonolithCockpitView {
         active_environment: &str,
         api_url: &str,
     ) -> String {
+        format!(
+            "/agent You are managing one Monolith tenant from the Warp cockpit.\n{}\n\n\
+Operate only within this tenant by default. Start read-only: summarize health, risk, and the safest next actions. \
+Before any write, show the exact command, target tenant, target VM/runtime, environment, and ask for explicit confirmation. \
+Production writes require explicit elevated workflow confirmation.",
+            Self::tenant_context(tenant, active_environment, api_url)
+        )
+    }
+
+    fn tenant_context(tenant: &TenantProfile, active_environment: &str, api_url: &str) -> String {
         let host_lines = if tenant.hosts.is_empty() {
             "- no VMs listed in the current cockpit profile".to_string()
         } else {
@@ -267,16 +297,12 @@ impl MonolithCockpitView {
         };
 
         format!(
-            "/agent You are managing one Monolith tenant from the Warp cockpit.\n\
-Tenant: {}\n\
+            "Tenant: {}\n\
 Tenant environment/status: {}\n\
 Active cockpit environment: {}\n\
 Fleet API: {}\n\
 GCP project: {}\n\
-VMs and runtimes:\n{}\n\n\
-Operate only within this tenant by default. Start read-only: summarize health, risk, and the safest next actions. \
-Before any write, show the exact command, target tenant, target VM/runtime, environment, and ask for explicit confirmation. \
-Production writes require explicit elevated workflow confirmation.",
+VMs and runtimes:\n{}",
             tenant.name, tenant.environment, active_environment, api_url, GCP_PROJECT, host_lines
         )
     }
@@ -556,6 +582,7 @@ Production writes require explicit elevated workflow confirmation.",
     fn render_cloud_toolbar(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
+        let active_environment = MonolithSettings::as_ref(app).cockpit_environment.value();
 
         let setup_command = format!(
             "gcloud auth login && printf '\\nMonolith cockpit passes --project {} explicitly; it does not mutate global gcloud project or ADC credentials.\\n'",
@@ -569,6 +596,14 @@ Production writes require explicit elevated workflow confirmation.",
         let project_command = format!(
             "printf 'cockpit project: {}\\n'; printf 'global gcloud project: '; gcloud config get-value project",
             Self::shell_escape(GCP_PROJECT),
+        );
+        let access_check_command = format!(
+            "printf 'gcloud account: '; gcloud auth list --filter=status:ACTIVE --format='value(account)'; printf 'cockpit project: {}\\n'; gcloud compute instances list --project {} --filter={} --format='value(name)' >/dev/null && printf 'gcloud vm inventory: ok\\n'; if [ -f ~/.monolith/platform-admin-keys.env ]; then . ~/.monolith/platform-admin-keys.env; if [ {} = prod ]; then api_key=\"$MONOLITH_PROD_PLATFORM_ADMIN_KEY\"; api_url=\"$MONOLITH_PROD_API_URL\"; else api_key=\"$MONOLITH_STAGING_PLATFORM_ADMIN_KEY\"; api_url=\"$MONOLITH_STAGING_API_URL\"; fi; if [ -n \"$api_key\" ]; then curl -fsS -H \"Authorization: Bearer $api_key\" \"$api_url/health\" >/dev/null && printf 'fleet api auth/health: ok\\n' || printf 'fleet api auth/health: failed\\n'; else printf 'fleet api key: missing for {}\\n'; fi; else printf 'local key file: missing ~/.monolith/platform-admin-keys.env\\n'; fi",
+            Self::shell_escape(GCP_PROJECT),
+            Self::shell_escape(GCP_PROJECT),
+            Self::shell_escape("labels.raava-managed=true"),
+            Self::shell_escape(active_environment),
+            Self::shell_escape(active_environment),
         );
 
         Flex::column()
@@ -604,9 +639,79 @@ Production writes require explicit elevated workflow confirmation.",
                         self.cloud_mouse_states.get(2).cloned().unwrap_or_default(),
                         app,
                     ))
+                    .with_child(Self::action_button(
+                        "check access",
+                        access_check_command,
+                        self.cloud_mouse_states.get(3).cloned().unwrap_or_default(),
+                        app,
+                    ))
                     .finish(),
             )
             .finish()
+    }
+
+    fn render_selected_tenant_context(
+        &self,
+        profile: &CockpitProfile,
+        active_environment: &str,
+        api_url: &str,
+        app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        let tenant_name = self.selected_tenant.as_ref()?;
+        let tenant = profile
+            .tenants
+            .iter()
+            .find(|tenant| &tenant.name == tenant_name)?;
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+        let context = Self::tenant_context(tenant, active_environment, api_url);
+
+        Some(
+            Container::new(
+                Flex::column()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .with_spacing(8.)
+                    .with_child(Self::section_label("CURRENT TENANT", app))
+                    .with_child(
+                        Text::new(tenant.name.clone(), appearance.ui_font_family(), 14.)
+                            .with_color(theme.active_ui_text_color().into_solid())
+                            .with_style(Properties::default().weight(Weight::Bold))
+                            .finish(),
+                    )
+                    .with_child(
+                        Flex::row()
+                            .with_spacing(6.)
+                            .with_child(Self::status_chip(&tenant.environment, app))
+                            .with_child(Self::status_chip(
+                                &format!("vms {}", tenant.hosts.len()),
+                                app,
+                            ))
+                            .with_child(Self::status_chip(
+                                &format!(
+                                    "runtimes {} / {} running",
+                                    Self::running_runtime_count(tenant),
+                                    Self::runtime_count(tenant)
+                                ),
+                                app,
+                            ))
+                            .finish(),
+                    )
+                    .with_child(Self::typed_button(
+                        "copy context",
+                        MonolithCockpitAction::CopyTenantContext {
+                            tenant_name: tenant.name.clone(),
+                            context,
+                        },
+                        self.cloud_mouse_states.get(4).cloned().unwrap_or_default(),
+                        app,
+                    ))
+                    .finish(),
+            )
+            .with_padding(Padding::uniform(10.))
+            .with_border(Border::all(1.).with_border_fill(theme.active_ui_detail()))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+            .finish(),
+        )
     }
 
     fn render_cockpit_summary(
@@ -967,9 +1072,22 @@ Production writes require explicit elevated workflow confirmation.",
 
         let tenant_name = tenant.name.clone();
         let prompt = Self::tenant_chat_prompt(tenant, active_environment, api_url);
+        let context = Self::tenant_context(tenant, active_environment, api_url);
         let chat_button = Self::primary_typed_button(
             "manage tenant in chat",
-            MonolithCockpitAction::StartTenantChat { prompt },
+            MonolithCockpitAction::StartTenantChat {
+                tenant_name: tenant.name.clone(),
+                prompt,
+            },
+            Self::next_mouse_state(mouse_states, button_index),
+            app,
+        );
+        let copy_context_button = Self::typed_button(
+            "copy context",
+            MonolithCockpitAction::CopyTenantContext {
+                tenant_name: tenant.name.clone(),
+                context,
+            },
             Self::next_mouse_state(mouse_states, button_index),
             app,
         );
@@ -1037,7 +1155,13 @@ Production writes require explicit elevated workflow confirmation.",
                 ),
                 app,
             ))
-            .with_child(chat_button);
+            .with_child(
+                Flex::row()
+                    .with_spacing(6.)
+                    .with_child(chat_button)
+                    .with_child(copy_context_button)
+                    .finish(),
+            );
 
         if is_expanded {
             content.add_child(hosts.finish());
@@ -1071,12 +1195,26 @@ impl TypedActionView for MonolithCockpitView {
                     shell_type: ShellType::from_name("bash"),
                 },
             ),
-            MonolithCockpitAction::StartTenantChat { prompt } => {
+            MonolithCockpitAction::StartTenantChat {
+                tenant_name,
+                prompt,
+            } => {
+                self.selected_tenant = Some(tenant_name.clone());
                 ctx.dispatch_typed_action(&WorkspaceAction::InsertInInput {
                     content: prompt.clone(),
                     replace_buffer: true,
                     ensure_agent_mode: true,
                 });
+                ctx.notify();
+            }
+            MonolithCockpitAction::CopyTenantContext {
+                tenant_name,
+                context,
+            } => {
+                self.selected_tenant = Some(tenant_name.clone());
+                ctx.clipboard()
+                    .write(ClipboardContent::plain_text(context.clone()));
+                ctx.notify();
             }
             MonolithCockpitAction::ShowTenantFilter { filter } => {
                 self.tenant_filter = *filter;
@@ -1167,17 +1305,24 @@ impl View for MonolithCockpitView {
             )
             .with_child(self.render_environment_switcher(app))
             .with_child(self.render_cloud_toolbar(app))
-            .with_child(self.render_cockpit_summary(&profile, app))
-            .with_child(Self::section_label("TENANT > VM > AGENT RUNTIME", app))
-            .with_child(
-                Text::new(
-                    "Select a tenant runtime, open VM shells through gcloud, inspect logs and Git, then run guarded lifecycle commands in Warp.",
-                    appearance.ui_font_family(),
-                    12.,
-                )
-                .with_color(theme.nonactive_ui_text_color().into_solid())
-                .finish(),
-            );
+            .with_child(self.render_cockpit_summary(&profile, app));
+
+        if let Some(selected_context) =
+            self.render_selected_tenant_context(&profile, &active_environment, &api_url, app)
+        {
+            body.add_child(selected_context);
+        }
+
+        body.add_child(Self::section_label("TENANT > VM > AGENT RUNTIME", app));
+        body.add_child(
+            Text::new(
+                "Select a tenant runtime, open VM shells through gcloud, inspect logs and Git, then run guarded lifecycle commands in Warp.",
+                appearance.ui_font_family(),
+                12.,
+            )
+            .with_color(theme.nonactive_ui_text_color().into_solid())
+            .finish(),
+        );
 
         if let Some(status) = profile_status {
             body.add_child(
