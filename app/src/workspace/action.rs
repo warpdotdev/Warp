@@ -112,7 +112,9 @@ pub enum WorkspaceAction {
     RenamePane(PaneViewLocator),
     ResetPaneName(PaneViewLocator),
     RenameActiveTab,
+    RenameActivePane,
     SetActiveTabName(String),
+    SetActivePaneName(String),
     ToggleTabRightClickMenu {
         tab_index: usize,
         anchor: TabContextMenuAnchor,
@@ -720,7 +722,9 @@ impl WorkspaceAction {
             | RenamePane(_)
             | ResetPaneName(_)
             | RenameActiveTab
+            | RenameActivePane
             | SetActiveTabName(_)
+            | SetActivePaneName(_)
             | CloseTab(_)
             | CloseActiveTab
             | CloseOtherTabs(_)

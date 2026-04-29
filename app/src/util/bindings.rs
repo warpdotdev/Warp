@@ -67,6 +67,7 @@ pub enum CustomAction {
     DecreaseZoom,
     ResetZoom,
     RenameTab,
+    RenamePane,
     SplitPaneRight,
     SplitPaneLeft,
     SplitPaneUp,
@@ -441,6 +442,7 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::SplitPaneUp
         | CustomAction::ConfigureKeybindings
         | CustomAction::RenameTab
+        | CustomAction::RenamePane
         | CustomAction::CloseTab
         | CustomAction::CloseOtherTabs
         | CustomAction::CloseTabsRight

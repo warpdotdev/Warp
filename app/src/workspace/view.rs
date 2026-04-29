@@ -5242,6 +5242,39 @@ impl Workspace {
         ctx.notify();
     }
 
+    pub fn rename_active_pane(&mut self, ctx: &mut ViewContext<Self>) {
+        let active_pane_group = self.active_tab_pane_group().clone();
+        let pane_group_id = active_pane_group.id();
+        let pane_id = active_pane_group.as_ref(ctx).focused_pane_id(ctx);
+        self.rename_pane(
+            PaneViewLocator {
+                pane_group_id,
+                pane_id,
+            },
+            ctx,
+        );
+    }
+
+    fn set_active_pane_name(&mut self, name: &str, ctx: &mut ViewContext<Self>) {
+        let active_pane_group = self.active_tab_pane_group().clone();
+        let pane_group_id = active_pane_group.id();
+        let pane_id = active_pane_group.as_ref(ctx).focused_pane_id(ctx);
+        let title = name.trim();
+        if title.is_empty() {
+            ctx.notify();
+            return;
+        }
+        self.set_custom_pane_name(
+            PaneViewLocator {
+                pane_group_id,
+                pane_id,
+            },
+            title.to_owned(),
+            ctx,
+        );
+        ctx.notify();
+    }
+
     pub fn list_tab_pane_groups(&self, app: &AppContext) -> Vec<TabPaneGroupIdentifiers> {
         self.tabs
             .iter()
@@ -19676,7 +19709,9 @@ impl TypedActionView for Workspace {
             RenamePane(locator) => self.rename_pane(*locator, ctx),
             ResetPaneName(locator) => self.clear_pane_name(*locator, ctx),
             RenameActiveTab => self.rename_tab(self.active_tab_index, ctx),
+            RenameActivePane => self.rename_active_pane(ctx),
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
+            SetActivePaneName(name) => self.set_active_pane_name(name, ctx),
             ToggleTabRightClickMenu { tab_index, anchor } => {
                 self.toggle_tab_right_click_menu(*tab_index, *anchor, ctx)
             }

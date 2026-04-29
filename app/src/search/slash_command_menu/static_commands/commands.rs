@@ -135,6 +135,15 @@ pub static RENAME_TAB: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand 
     argument: Some(Argument::required().with_hint_text("<tab name>")),
 });
 
+pub static RENAME_PANE: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
+    name: "/rename-pane",
+    description: "Rename the current pane",
+    icon_path: "bundled/svg/pencil-line.svg",
+    availability: Availability::ALWAYS,
+    auto_enter_ai_mode: false,
+    argument: Some(Argument::required().with_hint_text("<pane name>")),
+});
+
 pub static FORK: LazyLock<StaticCommand> = LazyLock::new(|| {
     let hint_text = "<optional prompt to send in forked conversation>";
     StaticCommand {
@@ -526,6 +535,7 @@ fn all_commands() -> Vec<StaticCommand> {
         NEW.clone(),
         PLAN.clone(),
         RENAME_TAB.clone(),
+        RENAME_PANE.clone(),
         USAGE,
         CONVERSATIONS,
         EXPORT_TO_CLIPBOARD,
