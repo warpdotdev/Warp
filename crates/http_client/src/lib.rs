@@ -49,6 +49,20 @@ pub mod headers {
 /// list of `Name:Value` pairs, where each pair is split on the first colon.
 const EXTRA_HTTP_HEADERS_ENV_VAR: &str = "WARP_EXTRA_HTTP_HEADERS";
 
+/// Returns true if the URL host is a Warp-backend domain we want to neuter
+/// (so this fork makes no traffic to Warp's servers). All other hosts are
+/// allowed through normally.
+fn is_blocked_host(url: &reqwest::Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let host = host.to_ascii_lowercase();
+    host == "warp.dev"
+        || host == "warpdotdev.com"
+        || host.ends_with(".warp.dev")
+        || host.ends_with(".warpdotdev.com")
+}
+
 /// A wrapper around a `reqwest::Client` to execute requests. Returns a custom `RequestBuilder` type
 /// that ensures any call to the underlying `reqwest::Client` are properly adapted so that they can
 /// run outside of a Tokio context.
@@ -331,6 +345,18 @@ impl Client {
             serialized_payload,
             prevent_sleep_reason,
         } = request;
+
+        if is_blocked_host(request.url()) {
+            log::debug!(
+                "http_client: blocking request to warp backend host: {}",
+                request.url()
+            );
+            let blocked = http::Response::builder()
+                .status(http::StatusCode::SERVICE_UNAVAILABLE)
+                .body(Vec::<u8>::new())
+                .expect("blocked-response builder cannot fail with valid status + empty body");
+            return Ok(Response(reqwest::Response::from(blocked)));
+        }
 
         if let Some(before_response_send_fn) = &self.before_request_sent {
             before_response_send_fn(&request, &serialized_payload);
@@ -691,5 +717,44 @@ impl<'c> oauth2::AsyncHttpClient<'c> for Client {
                 .body(response_body)
                 .map_err(oauth2::HttpClientError::Http)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_blocked_host;
+    use reqwest::Url;
+
+    fn check(url: &str, expected: bool) {
+        let url = Url::parse(url).unwrap();
+        assert_eq!(
+            is_blocked_host(&url),
+            expected,
+            "is_blocked_host({url}) should be {expected}"
+        );
+    }
+
+    #[test]
+    fn blocks_warp_dev_and_subdomains() {
+        check("https://warp.dev/", true);
+        check("https://www.warp.dev/", true);
+        check("https://app.warp.dev/api/foo", true);
+        check("https://api.warp.dev/v1/x", true);
+        check("https://staging.warp.dev/anything", true);
+        check("http://app.warp.dev:8080/", true);
+        check("https://APP.WARP.DEV/", true);
+        check("https://warpdotdev.com/", true);
+        check("https://x.warpdotdev.com/", true);
+    }
+
+    #[test]
+    fn allows_other_hosts() {
+        check("https://github.com/foo", false);
+        check("https://anthropic.com/", false);
+        check("https://localhost:8080/", false);
+        check("http://127.0.0.1/", false);
+        check("https://example.com/api.warp.dev/path", false);
+        // A host that merely contains "warp.dev" but does not end with it.
+        check("https://notwarp.dev.example.com/", false);
     }
 }
