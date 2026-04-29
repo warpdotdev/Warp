@@ -52,7 +52,7 @@ use crate::{
         hidden_lines::calculate_hidden_lines,
         telemetry_event::{
             AddToContextOrigin, CodeReviewContextDestination, CodeReviewTelemetryEvent,
-            PaneStateChange,
+            GitButtonKind, PaneStateChange,
         },
     },
 };
@@ -7660,18 +7660,48 @@ impl TypedActionView for CodeReviewView {
                 }
             }
             CodeReviewAction::OpenCommitDialog => {
+                send_telemetry_from_ctx!(
+                    CodeReviewTelemetryEvent::GitButtonTriggered {
+                        button: GitButtonKind::Commit,
+                    },
+                    ctx
+                );
                 self.open_git_dialog(GitDialogKind::Commit, ctx);
             }
             CodeReviewAction::PublishBranch => {
+                send_telemetry_from_ctx!(
+                    CodeReviewTelemetryEvent::GitButtonTriggered {
+                        button: GitButtonKind::Publish,
+                    },
+                    ctx
+                );
                 self.open_git_dialog(GitDialogKind::Push { publish: true }, ctx);
             }
             CodeReviewAction::OpenPushDialog => {
+                send_telemetry_from_ctx!(
+                    CodeReviewTelemetryEvent::GitButtonTriggered {
+                        button: GitButtonKind::Push,
+                    },
+                    ctx
+                );
                 self.open_git_dialog(GitDialogKind::Push { publish: false }, ctx);
             }
             CodeReviewAction::OpenCreatePrDialog => {
+                send_telemetry_from_ctx!(
+                    CodeReviewTelemetryEvent::GitButtonTriggered {
+                        button: GitButtonKind::CreatePr,
+                    },
+                    ctx
+                );
                 self.open_git_dialog(GitDialogKind::CreatePr, ctx);
             }
             CodeReviewAction::ViewPr(url) => {
+                send_telemetry_from_ctx!(
+                    CodeReviewTelemetryEvent::GitButtonTriggered {
+                        button: GitButtonKind::ViewPr,
+                    },
+                    ctx
+                );
                 ctx.open_url(url);
             }
             CodeReviewAction::ToggleGitOperationsMenu => {

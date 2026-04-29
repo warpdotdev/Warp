@@ -32,6 +32,7 @@ use warpui::{
 use crate::terminal::local_shell::LocalShellState;
 use crate::{
     code::editor::{add_color, remove_color},
+    code_review::telemetry_event::{CodeReviewTelemetryEvent, GitDialogStatus, GitOperationKind},
     settings::AISettings,
     ui_components::{
         dialog::{dialog_styles, Dialog},
@@ -45,12 +46,13 @@ use crate::{
     workspace::ToastStack,
     workspaces::user_workspaces::UserWorkspaces,
 };
+use warp_core::send_telemetry_from_ctx;
 
 pub(crate) mod commit;
 pub(crate) mod pr;
 pub(crate) mod push;
 
-pub use commit::{CommitState, CommitSubAction};
+pub use commit::{CommitIntent, CommitState, CommitSubAction};
 pub use pr::{PrState, PrSubAction};
 pub use push::{PushState, PushSubAction};
 
@@ -768,6 +770,29 @@ impl TypedActionView for GitDialog {
         match action {
             GitDialogAction::Cancel => {
                 if !self.loading {
+                    let operation = match &self.mode {
+                        GitDialogMode::Commit(state) => match state.intent {
+                            CommitIntent::CommitOnly => GitOperationKind::CommitOnly,
+                            CommitIntent::CommitAndPush => GitOperationKind::CommitAndPush,
+                            CommitIntent::CommitAndCreatePr => GitOperationKind::CommitAndCreatePr,
+                        },
+                        GitDialogMode::Push(state) => {
+                            if state.publish {
+                                GitOperationKind::Publish
+                            } else {
+                                GitOperationKind::Push
+                            }
+                        }
+                        GitDialogMode::CreatePr(_) => GitOperationKind::CreatePr,
+                    };
+                    send_telemetry_from_ctx!(
+                        CodeReviewTelemetryEvent::GitDialogCompleted {
+                            operation,
+                            status: GitDialogStatus::Cancelled,
+                            error: None,
+                        },
+                        ctx
+                    );
                     ctx.emit(GitDialogEvent::Cancelled);
                 }
             }
