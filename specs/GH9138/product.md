@@ -17,8 +17,10 @@ and AI context regardless of the current view mode.
 ## Goals / Non-goals
 
 In scope:
-- JSON detection and tree rendering for completed blocks.
-- YAML detection and tree rendering for completed blocks.
+- JSON detection and tree rendering for newly completed blocks in the current
+  session.
+- YAML detection and tree rendering for newly completed blocks in the current
+  session.
 - Toggle between tree view and raw text per block.
 - Collapse / expand of individual nodes in the tree.
 - Keyboard navigation inside the tree.
@@ -34,6 +36,9 @@ Out of scope for this spec (tracked separately in #9138):
 - Editable / writable tree view.
 - Streaming JSON rendering while the command is still running (the tree renders
   only after the block completes).
+- Re-detecting JSON/YAML in restored sessions or shared blocks — restored and
+  shared blocks always render as raw text on first load. A follow-up can add
+  detection at restore/share time once the in-session path is stable.
 
 ## Behavior
 
@@ -52,17 +57,27 @@ Out of scope for this spec (tracked separately in #9138):
    successfully as a YAML mapping or sequence (bare scalars like `42` or `true`
    that happen to be valid YAML are not treated as YAML blocks).
 
-3. Detection runs entirely in the background after block completion. While
-   detection is in progress (sub-millisecond for typical outputs; bounded at 50 ms
-   for very large outputs) the block renders normally as raw text. If detection
-   succeeds within the time budget, the block transitions to tree view without
-   user action.
+3. Detection runs in a background task after block completion. While detection
+   is in progress the block renders normally as raw text. If detection succeeds,
+   the block transitions to tree view without user action. Detection is not
+   time-bounded by a cancellation mechanism; the input size cap (Behavior #4)
+   and the structured-data limits (Behavior #4a) are the primary safeguards
+   against excessive CPU use.
 
 4. If the block's output exceeds 5 MB of raw text, detection is skipped and the
    block renders as raw text. No error or indicator is shown in this case.
 
-5. If `WARP_RICH_OUTPUT=0` is present in the environment at the time the command
-   runs, detection is skipped for that block regardless of settings.
+4a. Even within the 5 MB cap, detection is abandoned and the block renders as
+    raw text if the parsed structure would exceed 10,000 total nodes or 50 levels
+    of nesting. These limits prevent pathological inputs (e.g., a deeply nested
+    1 MB JSON) from producing a tree that is impractical to render or navigate.
+
+5. If `WARP_RICH_OUTPUT=0` is present in the command's environment at the time
+   the block completes, detection is skipped for that block regardless of
+   settings. The mechanism for reading this value at block-completion time is
+   an implementation detail; if the current block model does not expose
+   per-command environment snapshots, detection falls back to reading
+   `WARP_RICH_OUTPUT` from the process environment at detection time instead.
 
 6. Detection is not retried after failing. If the output is not valid JSON or
    YAML, the block remains raw text.
@@ -109,8 +124,9 @@ Out of scope for this spec (tracked separately in #9138):
     when the block is in raw-text mode, switching back to tree view when clicked.
 
 15. The toggle state is per-block and in-session only. Restoring a session or
-    reopening Warp resets all blocks to their default rendering (tree view for
-    JSON/YAML blocks, raw text otherwise).
+    reopening Warp always renders all blocks as raw text on first load (including
+    blocks that were in tree view before the session ended). The tree view is
+    available only for blocks detected in the current session.
 
 16. The toggle is visible only on hover of the block, consistent with existing
     block toolbar behavior.
@@ -148,10 +164,11 @@ Out of scope for this spec (tracked separately in #9138):
     - All blocks currently in tree view revert to raw-text rendering immediately,
       without requiring a restart or session reload. This reversion is a pure
       display switch; the parsed value and the canonical text are retained in
-      memory so toggling back on restores tree view instantly for blocks that
-      were already detected.
-    When toggled back on, already-completed blocks that were never detected are
-    not retroactively re-detected; detection only runs at block completion time.
+      memory for the lifetime of the session so toggling back on restores tree
+      view instantly for blocks that were already detected in this session.
+    When toggled back on, only blocks detected earlier in the same session
+    reappear as tree view. Blocks that completed while the setting was off are
+    not retroactively re-detected.
 
 21. The setting applies globally across all sessions, terminals, and panes.
 
@@ -171,9 +188,9 @@ Out of scope for this spec (tracked separately in #9138):
     detection.
 
 25. A block shared via Warp Drive or a share link retains the raw text as the
-    canonical form. Recipients who have "Render rich output in blocks" enabled
-    will see the tree view; recipients who have it disabled will see raw text.
-    The shared form never bakes in the tree rendering.
+    canonical form. Shared and restored blocks always render as raw text on
+    first load (see Behavior #15). The shared form never bakes in the tree
+    rendering.
 
 26. When the block is in tree view and the terminal window is resized, the tree
     reflows to the new width. Node labels that no longer fit truncate with
