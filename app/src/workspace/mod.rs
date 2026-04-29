@@ -927,7 +927,7 @@ pub fn init(app: &mut AppContext) {
                 .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Close Window"),
             WorkspaceAction::CloseWindow,
         )
-        .with_mac_key_binding("cmd-shift-W")
+        .with_mac_key_binding("cmd-w")
         .with_context_predicate(id!("Workspace"))
         .with_group(bindings::BindingGroup::Close.as_str())
         .with_custom_action(CustomAction::CloseWindow)

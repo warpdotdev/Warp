@@ -1962,6 +1962,9 @@ impl RootView {
 
     fn close_window(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
         if ContextFlag::CloseWindow.is_enabled() {
+            #[cfg(target_os = "macos")]
+            ctx.windows().hide_window(ctx.window_id());
+            #[cfg(not(target_os = "macos"))]
             ctx.close_window();
         }
         true

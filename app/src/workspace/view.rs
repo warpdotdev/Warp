@@ -20779,6 +20779,9 @@ impl TypedActionView for Workspace {
             }
             CloseWindow => {
                 if ContextFlag::CloseWindow.is_enabled() {
+                    #[cfg(target_os = "macos")]
+                    ctx.windows().hide_window(ctx.window_id());
+                    #[cfg(not(target_os = "macos"))]
                     ctx.close_window();
                 }
             }
