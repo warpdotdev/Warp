@@ -133,6 +133,7 @@
 
 # Conversation rewind / CLI agent UI / macOS/Linux platform issues / performance issues
 /app/src/terminal/cli_agent.rs @zachbai @harryalbert
+/app/src/terminal/cli_agent_tests.rs @zachbai @harryalbert
 /app/src/terminal/cli_agent_sessions/ @zachbai @harryalbert
 /app/src/terminal/input/rewind/ @alokedesai
 /app/src/workspace/rewind_confirmation_dialog.rs @alokedesai
