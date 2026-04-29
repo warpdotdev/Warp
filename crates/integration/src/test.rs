@@ -3381,7 +3381,7 @@ pub fn test_custom_ps1_expansion_bash() -> Builder {
         )
 }
 
-/// Default auto title. We test that Warp's auto title is used and verify that that
+/// Default auto title. We test that Warp's auto title is used and verify that
 /// DISABLE_AUTO_TITLE is set correctly.
 pub fn test_auto_title() -> Builder {
     new_builder()
@@ -3934,7 +3934,7 @@ pub fn test_command_xray_hover() -> Builder {
         )
         .with_step(
             new_step_with_default_assertions("Hover past buffer text")
-                // Add post step pause so that the the async assert in the next
+                // Add post step pause so that the async assert in the next
                 // step doesn't succeed right away just because we didn't give enough
                 // time for the xray to trigger.
                 .set_post_step_pause(Duration::from_secs(1))
@@ -3996,7 +3996,7 @@ pub fn test_command_xray_for_partial_command() -> Builder {
         )
         .with_step(
             new_step_with_default_assertions("Hover over st")
-                // Add post step pause so that the the async assert in the next
+                // Add post step pause so that the async assert in the next
                 // step doesn't succeed right away just because we didn't give enough
                 // time for the xray to trigger.
                 .set_post_step_pause(Duration::from_secs(1))
