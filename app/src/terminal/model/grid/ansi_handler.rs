@@ -1095,8 +1095,14 @@ impl ansi::Handler for GridHandler {
     }
 
     fn set_scrolling_region(&mut self, top: usize, bottom: Option<usize>) {
-        // Fallback to the last line as default.
-        let bottom = bottom.unwrap_or_else(|| self.visible_rows());
+        // DECSTBM parameters are 1-based, with 0 treated like an omitted
+        // parameter. Fallback to the first and last lines as defaults.
+        let visible_rows = self.visible_rows();
+        let top = top.max(1).min(visible_rows);
+        let bottom = bottom
+            .filter(|&bottom| bottom != 0)
+            .unwrap_or(visible_rows)
+            .min(visible_rows);
 
         if top >= bottom {
             log::debug!("Invalid scrolling region: ({top};{bottom})");
@@ -1111,9 +1117,8 @@ impl ansi::Handler for GridHandler {
         let end = VisibleRow(bottom);
 
         log::trace!("Setting scrolling region: ({start};{end})");
-
-        self.ansi_handler_state.scroll_region.start = min(start, VisibleRow(self.visible_rows()));
-        self.ansi_handler_state.scroll_region.end = min(end, VisibleRow(self.visible_rows()));
+        self.ansi_handler_state.scroll_region.start = start;
+        self.ansi_handler_state.scroll_region.end = end;
         self.goto(VisibleRow(0), 0);
     }
 

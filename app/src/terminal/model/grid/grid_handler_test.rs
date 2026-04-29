@@ -1260,6 +1260,42 @@ fn test_split_block_grid() {
     );
 }
 
+#[test]
+fn set_scrolling_region_treats_zero_top_as_default() {
+    let mut grid = GridHandler::new_for_test(5, 1);
+    grid.grid_storage_mut()
+        .populate_from_array(&[&['a'], &['b'], &['c'], &['d'], &['e']]);
+
+    grid.set_scrolling_region(0, Some(4));
+    grid.goto(VisibleRow(3), 0);
+    grid.linefeed();
+
+    let grid_storage = grid.grid_storage();
+    assert_eq!(grid_storage[VisibleRow(0)][0].c, 'b');
+    assert_eq!(grid_storage[VisibleRow(1)][0].c, 'c');
+    assert_eq!(grid_storage[VisibleRow(2)][0].c, 'd');
+    assert_eq!(grid_storage[VisibleRow(3)][0].c, '\0');
+    assert_eq!(grid_storage[VisibleRow(4)][0].c, 'e');
+}
+
+#[test]
+fn set_scrolling_region_treats_zero_bottom_as_default() {
+    let mut grid = GridHandler::new_for_test(5, 1);
+    grid.grid_storage_mut()
+        .populate_from_array(&[&['a'], &['b'], &['c'], &['d'], &['e']]);
+
+    grid.set_scrolling_region(2, Some(0));
+    grid.goto(VisibleRow(4), 0);
+    grid.linefeed();
+
+    let grid_storage = grid.grid_storage();
+    assert_eq!(grid_storage[VisibleRow(0)][0].c, 'a');
+    assert_eq!(grid_storage[VisibleRow(1)][0].c, 'c');
+    assert_eq!(grid_storage[VisibleRow(2)][0].c, 'd');
+    assert_eq!(grid_storage[VisibleRow(3)][0].c, 'e');
+    assert_eq!(grid_storage[VisibleRow(4)][0].c, '\0');
+}
+
 /// Tests whether we correctly handle emoji variation selectors (to turn 1-width character
 /// into a 2-width character).
 #[test]
