@@ -2370,7 +2370,8 @@ impl<A: Action + Clone> SubMenu<A> {
             )),
             HoverSubmenuLeafNode { .. }
             | UnhoverSubmenuParent(_)
-            | HoverSubmenuWithChildren(_, _) => ActionAccessibilityContent::Empty,
+            | HoverSubmenuWithChildren(_, _)
+            | ClearHover(_) => ActionAccessibilityContent::Empty,
         }
     }
 
