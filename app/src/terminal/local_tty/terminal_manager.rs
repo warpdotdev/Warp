@@ -120,6 +120,7 @@ use {
     crate::terminal::model::terminal_model::BlockIndex,
     crate::terminal::session_settings::NotificationsMode, nix::sys::termios::LocalFlags,
 };
+use crate::server::server_api::ServerApiProvider;
 
 type PtyController = writeable_pty::PtyController<mio_channel::Sender<Message>>;
 type RemoteServerController =
@@ -1482,6 +1483,35 @@ impl TerminalManager {
                 // Stream historical agent conversations so viewers have conversation and task context.
                 if FeatureFlag::AgentSharedSessions.is_enabled() {
                     Self::stream_historical_agent_conversations(&terminal_view, &model, ctx);
+                }
+
+                if FeatureFlag::LinkSharedSessionToLocalOzRun.is_enabled() {
+                    let history = BlocklistAIHistoryModel::handle(ctx);
+                    let task_id = history
+                        .as_ref(ctx)
+                        .active_conversation(terminal_view.id())
+                        .and_then(|c| c.task_id());
+
+                    if let Some(task_id) = task_id {
+                        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+                        let session_id = *session_id;
+                        ctx.spawn(
+                            async move {
+                                ai_client.update_agent_task(
+                                    task_id,
+                                    None,
+                                    Some(session_id),
+                                    None,
+                                    None
+                                ).await
+                            },
+                            |_network, result, _ctx| {
+                                if let Err(e) = result {
+                                    log::warn!("Failed to link shared session to local Oz run: {e}");
+                                }
+                            },
+                        );
+                    }
                 }
             }
             NetworkEvent::FailedToCreateSharedSession {
