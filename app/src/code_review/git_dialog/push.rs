@@ -20,14 +20,18 @@ use warpui::{
 
 use crate::{
     code::editor::{add_color, remove_color},
-    code_review::git_dialog::{
-        interactive_path_future, render_branch_section, render_chevron_icon, render_file_list,
-        show_toast, user_facing_git_error, GitDialog, GitDialogAction, GitDialogEvent,
-        GitDialogMode,
+    code_review::{
+        git_dialog::{
+            interactive_path_future, render_branch_section, render_chevron_icon, render_file_list,
+            show_toast, user_facing_git_error, GitDialog, GitDialogAction, GitDialogEvent,
+            GitDialogMode,
+        },
+        telemetry_event::{CodeReviewTelemetryEvent, GitOperationKind},
     },
     ui_components::icons::Icon,
     util::git::{Commit, FileChangeEntry},
 };
+use warp_core::send_telemetry_from_ctx;
 
 /// Push-specific sub-actions, dispatched wrapped in `GitDialogAction::Push`.
 #[derive(Clone, Debug, PartialEq)]
@@ -149,6 +153,7 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
             crate::util::git::run_push(&repo_path, &branch, path_env.as_deref()).await
         },
         move |me, result, ctx| {
+            let success = result.is_ok();
             match result {
                 Ok(_) => {
                     let toast_msg = if publish {
@@ -163,6 +168,17 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                     show_toast(user_facing_git_error(&e.to_string()), ctx);
                 }
             }
+            send_telemetry_from_ctx!(
+                CodeReviewTelemetryEvent::GitDialogCompleted {
+                    operation: if publish {
+                        GitOperationKind::Publish
+                    } else {
+                        GitOperationKind::Push
+                    },
+                    success,
+                },
+                ctx
+            );
             let _ = me;
             ctx.emit(GitDialogEvent::Completed);
         },

@@ -8,6 +8,48 @@ use std::fmt::Display;
 use strum_macros::{EnumDiscriminants, EnumIter};
 use warp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
 
+/// Identifies which git button the user clicked in the code review header.
+/// Each variant maps to one of the primary action button / dropdown items.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub enum GitButtonKind {
+    #[serde(rename = "commit")]
+    Commit,
+    #[serde(rename = "push")]
+    Push,
+    #[serde(rename = "publish")]
+    Publish,
+    #[serde(rename = "create_pr")]
+    CreatePr,
+    #[serde(rename = "view_pr")]
+    ViewPr,
+}
+
+/// Identifies which git operation actually ran when a `GitDialog` completed.
+/// Distinguishes commit-dialog chained intents (e.g. commit-and-push) from
+/// standalone push/publish/create-PR dialogs so analytics can tell the user
+/// flows apart.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub enum GitOperationKind {
+    /// Commit dialog with the commit-only intent.
+    #[serde(rename = "commit_only")]
+    CommitOnly,
+    /// Commit dialog with the commit-and-push intent.
+    #[serde(rename = "commit_and_push")]
+    CommitAndPush,
+    /// Commit dialog with the commit-and-create-PR intent.
+    #[serde(rename = "commit_and_create_pr")]
+    CommitAndCreatePr,
+    /// Standalone push dialog.
+    #[serde(rename = "push")]
+    Push,
+    /// Standalone publish dialog (push that also sets upstream).
+    #[serde(rename = "publish")]
+    Publish,
+    /// Standalone create-PR dialog.
+    #[serde(rename = "create_pr")]
+    CreatePr,
+}
+
 /// Entry points for opening the code review pane.
 #[derive(Clone, Copy, Debug, SerializeDisplay, Default)]
 pub enum CodeReviewPaneEntrypoint {
@@ -215,6 +257,17 @@ pub enum CodeReviewTelemetryEvent {
         /// Number of outdated imported comments after relocation.
         outdated_count: usize,
     },
+    /// Emitted when a user clicks a git operation button in the code review
+    /// header (primary button or dropdown item).
+    GitButtonTriggered { button: GitButtonKind },
+    /// Emitted when a git dialog finishes its async operation (success or failure).
+    GitDialogCompleted {
+        /// The git operation that actually ran (e.g. `commit_and_push` for
+        /// the commit dialog with that chained intent).
+        operation: GitOperationKind,
+        /// Whether the underlying git operation succeeded.
+        success: bool,
+    },
 }
 
 impl TelemetryEvent for CodeReviewTelemetryEvent {
@@ -304,6 +357,13 @@ impl TelemetryEvent for CodeReviewTelemetryEvent {
                 "active_count": active_count,
                 "outdated_count": outdated_count,
             })),
+            CodeReviewTelemetryEvent::GitButtonTriggered { button } => {
+                Some(json!({ "button": button }))
+            }
+            CodeReviewTelemetryEvent::GitDialogCompleted { operation, success } => Some(json!({
+                "operation": operation,
+                "success": success,
+            })),
         }
     }
 
@@ -355,6 +415,8 @@ impl TelemetryEventDesc for CodeReviewTelemetryEventDiscriminants {
             Self::CommentResolved => "CodeReview.CommentResolved",
             Self::CommentsReceived => "CodeReview.CommentsReceived",
             Self::CommentsAttached => "CodeReview.CommentsAttached",
+            Self::GitButtonTriggered => "CodeReview.GitButtonTriggered",
+            Self::GitDialogCompleted => "CodeReview.GitDialogCompleted",
         }
     }
 
@@ -386,6 +448,8 @@ impl TelemetryEventDesc for CodeReviewTelemetryEventDiscriminants {
                 "Agent insert_code_review_comments tool call received and processed"
             }
             Self::CommentsAttached => "Newly-imported comments relocated against editor lines",
+            Self::GitButtonTriggered => "User clicked a git operation button in the code review header",
+            Self::GitDialogCompleted => "Git operation dialog finished its async operation",
         }
     }
 
@@ -393,6 +457,9 @@ impl TelemetryEventDesc for CodeReviewTelemetryEventDiscriminants {
         match self {
             Self::CommentsReceived | Self::CommentsAttached => {
                 EnablementState::Flag(FeatureFlag::PRCommentsV2)
+            }
+            Self::GitButtonTriggered | Self::GitDialogCompleted => {
+                EnablementState::Flag(FeatureFlag::GitOperationsInCodeReview)
             }
             _ => EnablementState::Always,
         }
