@@ -319,6 +319,9 @@ impl From<&AIAgentActionType> for PersistedAIAgentActionType {
             },
             AIAgentActionType::StartAgent { .. } => Self::NotPersisted,
             AIAgentActionType::SendMessageToAgent { .. } => Self::NotPersisted,
+            // Orchestrate is restored from the conversation's ToolCall
+            // message (which carries the full proto), same as StartAgent.
+            AIAgentActionType::Orchestrate { .. } => Self::NotPersisted,
         }
     }
 }

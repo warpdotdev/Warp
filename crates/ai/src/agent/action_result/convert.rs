@@ -1191,6 +1191,94 @@ impl From<StartAgentResult> for api::request::input::tool_call_result::Result {
     }
 }
 
+impl TryFrom<OrchestrateActionResult> for api::request::input::tool_call_result::Result {
+    type Error = ConvertToAPITypeError;
+
+    fn try_from(result: OrchestrateActionResult) -> Result<Self, Self::Error> {
+        use api::request::input::tool_call_result::Result as ApiResult;
+        match result {
+            OrchestrateActionResult::Launched {
+                model_id,
+                harness,
+                execution_mode,
+                agents,
+            } => {
+                let api_execution_mode = match execution_mode {
+                    OrchestrateExecutionMode::Local => {
+                        Some(api::orchestrate_result::launched::ExecutionMode::Local(
+                            api::orchestrate::Local {},
+                        ))
+                    }
+                    OrchestrateExecutionMode::Remote { environment_id } => {
+                        Some(api::orchestrate_result::launched::ExecutionMode::Remote(
+                            api::orchestrate::Remote { environment_id },
+                        ))
+                    }
+                };
+                let api_harness = (!harness.is_empty())
+                    .then_some(api::start_agent_v2::execution_mode::Harness { r#type: harness });
+                let api_agents = agents
+                    .into_iter()
+                    .map(|entry| {
+                        let result = match entry.outcome {
+                            OrchestrateAgentOutcome::Launched { agent_id } => {
+                                Some(api::orchestrate_result::agent_outcome::Result::Launched(
+                                    api::orchestrate_result::LaunchedAgent { agent_id },
+                                ))
+                            }
+                            OrchestrateAgentOutcome::Failed { error } => {
+                                Some(api::orchestrate_result::agent_outcome::Result::Failed(
+                                    api::orchestrate_result::FailedAgent { error },
+                                ))
+                            }
+                        };
+                        api::orchestrate_result::AgentOutcome {
+                            name: entry.name,
+                            result,
+                        }
+                    })
+                    .collect();
+                Ok(ApiResult::OrchestrateResult(api::OrchestrateResult {
+                    outcome: Some(api::orchestrate_result::Outcome::Launched(
+                        api::orchestrate_result::Launched {
+                            model_id,
+                            harness: api_harness,
+                            execution_mode: api_execution_mode,
+                            agents: api_agents,
+                        },
+                    )),
+                }))
+            }
+            OrchestrateActionResult::LaunchDenied => {
+                Ok(ApiResult::OrchestrateResult(api::OrchestrateResult {
+                    outcome: Some(api::orchestrate_result::Outcome::LaunchDenied(
+                        api::orchestrate_result::LaunchDenied {},
+                    )),
+                }))
+            }
+            OrchestrateActionResult::Failure { error } => {
+                Ok(ApiResult::OrchestrateResult(api::OrchestrateResult {
+                    outcome: Some(api::orchestrate_result::Outcome::Failure(
+                        api::orchestrate_result::Failure { error },
+                    )),
+                }))
+            }
+            // Reject does NOT emit a result on the wire. The orchestrate tool
+            // call stays incomplete on the server until the next user input,
+            // at which point the input interceptor's
+            // `cancelledResultsForIncompleteToolCallsInLastResponse` path
+            // synthesizes the generic `Message_ToolCallResult.Cancel = &emptypb.Empty{}`
+            // marker. The client only updates its local card state to the
+            // Cancelled post-action variant; nothing is transmitted.
+            // Returning `Ignore` here matches the existing pattern other
+            // tools use for their `Cancelled` variants (e.g. ReadFilesResult,
+            // GrepResult) and causes the request-input layer to drop the
+            // result silently.
+            OrchestrateActionResult::Cancelled => Err(ConvertToAPITypeError::Ignore),
+        }
+    }
+}
+
 impl From<SendMessageToAgentResult> for api::request::input::tool_call_result::Result {
     fn from(result: SendMessageToAgentResult) -> Self {
         api::request::input::tool_call_result::Result::SendMessageToAgent(

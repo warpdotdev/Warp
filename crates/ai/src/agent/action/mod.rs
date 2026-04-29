@@ -13,10 +13,11 @@ use crate::{
         action_result::{
             AIAgentActionResultType, AskUserQuestionResult, CallMCPToolResult,
             CreateDocumentsResult, EditDocumentsResult, FetchConversationResult, FileGlobResult,
-            FileGlobV2Result, GrepResult, InsertReviewCommentsResult, ReadDocumentsResult,
-            ReadFilesResult, ReadMCPResourceResult, ReadShellCommandOutputResult, ReadSkillResult,
-            RequestCommandOutputResult, RequestComputerUseResult, RequestFileEditsResult,
-            SearchCodebaseResult, SendMessageToAgentResult, StartAgentResult, StartAgentVersion,
+            FileGlobV2Result, GrepResult, InsertReviewCommentsResult, OrchestrateActionResult,
+            ReadDocumentsResult, ReadFilesResult, ReadMCPResourceResult,
+            ReadShellCommandOutputResult, ReadSkillResult, RequestCommandOutputResult,
+            RequestComputerUseResult, RequestFileEditsResult, SearchCodebaseResult,
+            SendMessageToAgentResult, StartAgentResult, StartAgentVersion,
             SuggestNewConversationResult, SuggestPromptResult,
             TransferShellCommandControlToUserResult, UploadArtifactResult, UseComputerResult,
             WriteToLongRunningShellCommandResult,
@@ -167,6 +168,50 @@ pub enum AIAgentActionType {
     AskUserQuestion {
         questions: Vec<AskUserQuestionItem>,
     },
+
+    /// A batched orchestration of one or more child agents requested by the
+    /// lead agent via the `orchestrate` tool. The user picks shared run-wide
+    /// settings on a configuration card and chooses one of three terminal
+    /// actions (Launch / Launch without orchestration / Reject); the resulting
+    /// `OrchestrateActionResult` is reported back to the server. Each agent in
+    /// the batch is dispatched via its own per-agent task creation; this
+    /// variant carries the resolved (post-server-validation) values, and the
+    /// per-agent `prompt` is the full per-child prompt the server has already
+    /// concatenated from `base_prompt + "\n\n" + agent.prompt`.
+    Orchestrate {
+        tool_call_id: String,
+        summary: String,
+        model_id: String,
+        /// Resolved harness identifier (e.g. "oz", "claude", "opencode"); empty when
+        /// the LLM did not specify one and the orchestrator's harness was also
+        /// unset (uncommon — defaults are populated server-side).
+        harness: String,
+        execution_mode: OrchestrateExecutionMode,
+        skills: Vec<SkillReference>,
+        agents: Vec<OrchestrateAgentRunConfig>,
+    },
+}
+
+/// Resolved execution mode for an orchestrate batch. Mirrors the
+/// `Orchestrate.execution_mode` oneof in the proto.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum OrchestrateExecutionMode {
+    Local,
+    Remote {
+        /// May be empty when the orchestrator is itself local and the LLM did
+        /// not provide an environment; the client must surface the
+        /// "Choose an environment before launching" gate in that case.
+        environment_id: String,
+    },
+}
+
+/// Per-child entry in an orchestrate batch. The `prompt` is the resolved full
+/// per-child prompt as concatenated server-side from `base_prompt` and the
+/// LLM-supplied per-agent prompt.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct OrchestrateAgentRunConfig {
+    pub name: String,
+    pub prompt: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -317,6 +362,9 @@ impl AIAgentActionType {
             Self::AskUserQuestion { .. } => {
                 AIAgentActionResultType::AskUserQuestion(AskUserQuestionResult::Cancelled)
             }
+            Self::Orchestrate { .. } => {
+                AIAgentActionResultType::Orchestrate(OrchestrateActionResult::Cancelled)
+            }
         }
     }
 
@@ -361,6 +409,9 @@ impl AIAgentActionType {
             }
             Self::AskUserQuestion { questions } => {
                 format!("Ask user {} question(s)", questions.len())
+            }
+            Self::Orchestrate { agents, .. } => {
+                format!("Orchestrate {} agent(s)", agents.len())
             }
         }
     }
@@ -533,6 +584,26 @@ impl Display for AIAgentActionType {
             }
             AIAgentActionType::AskUserQuestion { questions } => {
                 write!(f, "AskUserQuestion: {} question(s)", questions.len())
+            }
+            AIAgentActionType::Orchestrate {
+                summary,
+                model_id,
+                harness,
+                execution_mode,
+                agents,
+                ..
+            } => {
+                let mode = match execution_mode {
+                    OrchestrateExecutionMode::Local => "local".to_string(),
+                    OrchestrateExecutionMode::Remote { environment_id } => {
+                        format!("remote(env={environment_id})")
+                    }
+                };
+                write!(
+                    f,
+                    "Orchestrate: '{summary}' [{n} agents] (model={model_id}, harness={harness}, mode={mode})",
+                    n = agents.len(),
+                )
             }
         }
     }

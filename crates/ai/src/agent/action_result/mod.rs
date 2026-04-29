@@ -95,6 +95,10 @@ pub enum AIAgentActionResultType {
     TransferShellCommandControlToUser(TransferShellCommandControlToUserResult),
     /// The result of asking the user a question.
     AskUserQuestion(AskUserQuestionResult),
+
+    /// The result of an `orchestrate` tool call (Launch / Launch without
+    /// orchestration / Failure / generic Cancel via Reject).
+    Orchestrate(OrchestrateActionResult),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -161,6 +165,7 @@ impl Display for AIAgentActionResultType {
             AIAgentActionResultType::SendMessageToAgent(result) => result.fmt(f),
             AIAgentActionResultType::TransferShellCommandControlToUser(result) => result.fmt(f),
             AIAgentActionResultType::AskUserQuestion(result) => result.fmt(f),
+            AIAgentActionResultType::Orchestrate(result) => result.fmt(f),
             AIAgentActionResultType::OpenCodeReview | AIAgentActionResultType::InitProject => {
                 Ok(())
             }
@@ -753,6 +758,9 @@ impl AIAgentActionResultType {
             AIAgentActionResultType::AskUserQuestion(_) => {
                 "The user's answers to clarifying questions"
             }
+            AIAgentActionResultType::Orchestrate(_) => {
+                "The result of orchestrating a batch of child agents"
+            }
         }
     }
 
@@ -1331,6 +1339,91 @@ pub enum AskUserQuestionResult {
     SkippedByAutoApprove {
         question_ids: Vec<String>,
     },
+}
+
+/// Resolved execution mode reported back inside `OrchestrateActionResult::Launched`.
+///
+/// Re-exported from [`crate::agent::action::OrchestrateExecutionMode`] so that
+/// the action-result types and the action types stay in sync without two
+/// independent definitions colliding under the app's glob re-exports.
+pub use super::action::OrchestrateExecutionMode;
+
+/// Outcome of a single per-agent `CreateAgentTask` dispatch under an
+/// `orchestrate` Launch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OrchestrateAgentOutcome {
+    /// The child agent was created successfully.
+    Launched { agent_id: String },
+    /// The per-agent dispatch failed; the lead agent receives the error so it
+    /// can decide whether to retry.
+    Failed { error: String },
+}
+
+/// One entry in the per-agent outcome list returned by
+/// `OrchestrateActionResult::Launched`. The order MUST match the input
+/// `agent_run_configs[]` order regardless of which `CreateAgentTask` returned
+/// first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrchestrateAgentOutcomeEntry {
+    pub name: String,
+    pub outcome: OrchestrateAgentOutcome,
+}
+
+/// Result of an `orchestrate` tool call.
+///
+/// `Launched` is emitted whenever the user clicked Launch — even if every
+/// per-agent dispatch failed (the M=0 case). `Failure` is reserved for the
+/// strictly no-children-launched case where the client could not begin the
+/// launch sequence at all (e.g. transient network failure before any
+/// `CreateAgentTask` was issued). `Cancelled` is used both when the user
+/// clicks Reject and when the action is cancelled implicitly (navigated away,
+/// etc.); both cases convert to the generic `ToolCallResult.Cancel` marker on
+/// the wire — there is no orchestrate-specific cancellation variant in the
+/// proto.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OrchestrateActionResult {
+    Launched {
+        model_id: String,
+        /// Resolved harness identifier (e.g. "oz", "claude"); the empty
+        /// string is preserved when the user committed to whatever default
+        /// the orchestrator was using.
+        harness: String,
+        execution_mode: OrchestrateExecutionMode,
+        agents: Vec<OrchestrateAgentOutcomeEntry>,
+    },
+    LaunchDenied,
+    Failure {
+        error: String,
+    },
+    Cancelled,
+}
+
+impl Display for OrchestrateActionResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrchestrateActionResult::Launched { agents, .. } => {
+                let succeeded = agents
+                    .iter()
+                    .filter(|entry| {
+                        matches!(entry.outcome, OrchestrateAgentOutcome::Launched { .. })
+                    })
+                    .count();
+                write!(
+                    f,
+                    "Orchestrate launched {} of {} agent(s)",
+                    succeeded,
+                    agents.len()
+                )
+            }
+            OrchestrateActionResult::LaunchDenied => {
+                write!(f, "Orchestrate launch denied (continuing without team)")
+            }
+            OrchestrateActionResult::Failure { error } => {
+                write!(f, "Orchestrate failed to start: {error}")
+            }
+            OrchestrateActionResult::Cancelled => write!(f, "Orchestrate cancelled"),
+        }
+    }
 }
 
 impl Display for AskUserQuestionResult {

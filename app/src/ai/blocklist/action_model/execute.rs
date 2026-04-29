@@ -514,6 +514,11 @@ impl BlocklistAIActionExecutor {
             AIAgentActionType::AskUserQuestion { .. } => self
                 .ask_user_question_executor
                 .update(ctx, |executor, ctx| executor.preprocess_action(input, ctx)),
+            // Orchestrate has no preprocessing; the OrchestrateConfigCard
+            // handles all per-agent dispatch directly via CreateAgentTask
+            // when the user clicks Launch (Phase C). The action itself is a
+            // UI-driven configuration step.
+            AIAgentActionType::Orchestrate { .. } => futures::future::ready(()).boxed(),
         }
     }
 
@@ -692,6 +697,18 @@ impl BlocklistAIActionExecutor {
                 .start_agent_executor
                 .update(ctx, |executor, ctx| executor.execute(input, ctx))
                 .into(),
+            // Orchestrate is driven by the OrchestrateConfigCard UI; the
+            // generic execute path should not run for it. Return a Cancelled
+            // result so the action is consumed without producing wire
+            // traffic (the convert layer maps OrchestrateActionResult::Cancelled
+            // to Ignore). Phase B will wire the card up to short-circuit
+            // before this match is reached.
+            AIAgentActionType::Orchestrate { .. } => {
+                ActionExecution::<()>::Sync(AIAgentActionResultType::Orchestrate(
+                    ai::agent::action_result::OrchestrateActionResult::Cancelled,
+                ))
+                .into()
+            }
             AIAgentActionType::SendMessageToAgent { .. } => self
                 .send_message_executor
                 .update(ctx, |executor, ctx| executor.execute(input, ctx)),
@@ -899,6 +916,10 @@ impl BlocklistAIActionExecutor {
             AIAgentActionType::AskUserQuestion { .. } => self
                 .ask_user_question_executor
                 .update(ctx, |executor, ctx| executor.should_autoexecute(input, ctx)),
+            // Orchestrate always requires explicit user confirmation (the
+            // user must click Launch / Launch without orchestration / Reject
+            // on the OrchestrateConfigCard). It never auto-executes.
+            AIAgentActionType::Orchestrate { .. } => false,
         }
     }
 

@@ -11,8 +11,8 @@ use crate::ai::agent::todos::AIAgentTodoList;
 use crate::ai::agent::{
     util::parse_markdown_into_text_and_code_sections, AIAgentAction, AIAgentActionType,
     AIAgentCitation, AIAgentInput, AIAgentOutputMessage, AIAgentText, AIAgentTodo,
-    ArtifactCreatedData, MessageId, StartAgentExecutionMode, SuggestedAgentModeWorkflow,
-    SuggestedRule, Suggestions, TodoOperation,
+    ArtifactCreatedData, MessageId, OrchestrateAgentRunConfig, StartAgentExecutionMode,
+    SuggestedAgentModeWorkflow, SuggestedRule, Suggestions, TodoOperation,
 };
 use crate::ai::agent::{
     CloneRepositoryURL, SubagentCall, SubagentType, SummarizationType, WebFetchStatus,
@@ -21,6 +21,7 @@ use crate::ai::agent::{
 use crate::ai::artifact_download::sanitized_basename;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use ai::agent::action::LifecycleEventType as StartAgentLifecycleEventType;
+use ai::agent::action::OrchestrateExecutionMode;
 use ai::agent::action_result::StartAgentVersion;
 use ai::agent::convert::ToolToAIAgentActionError;
 use ai::agent::UnknownCitationTypeError;
@@ -783,6 +784,68 @@ impl ConvertAPIToolCallToAIAgentAction for api::message::ToolCall {
                     .filter_map(convert_api_question)
                     .collect();
                 create_standard_action(AIAgentActionType::AskUserQuestion { questions })
+            }
+            api::message::tool_call::Tool::Orchestrate(orchestrate) => {
+                let api::Orchestrate {
+                    summary,
+                    base_prompt,
+                    skills,
+                    model_id,
+                    harness,
+                    execution_mode,
+                    agent_run_configs,
+                } = orchestrate;
+                let execution_mode = match execution_mode {
+                    Some(api::orchestrate::ExecutionMode::Local(_)) | None => {
+                        OrchestrateExecutionMode::Local
+                    }
+                    Some(api::orchestrate::ExecutionMode::Remote(remote)) => {
+                        OrchestrateExecutionMode::Remote {
+                            environment_id: remote.environment_id,
+                        }
+                    }
+                };
+                let skills = skills
+                    .into_iter()
+                    .filter_map(convert_skill_reference)
+                    .collect();
+                let agents = agent_run_configs
+                    .into_iter()
+                    .map(|cfg| {
+                        // The server-resolved per-child prompt is
+                        // base_prompt + "\n\n" + cfg.prompt when both are
+                        // non-empty, or whichever is non-empty otherwise. The
+                        // server-emitted `OrchestrateAction` carries the
+                        // already-concatenated prompt, but the raw `Tool`
+                        // shape (used during conversation replay) holds the
+                        // unconcatenated values, so we reconstruct here.
+                        let prompt = match (base_prompt.is_empty(), cfg.prompt.is_empty()) {
+                            (false, false) => format!("{}\n\n{}", base_prompt, cfg.prompt),
+                            (false, true) => base_prompt.clone(),
+                            (true, false) => cfg.prompt,
+                            (true, true) => String::new(),
+                        };
+                        OrchestrateAgentRunConfig {
+                            name: cfg.name,
+                            prompt,
+                        }
+                    })
+                    .collect();
+                let harness = convert_start_agent_v2_harness_type(harness).unwrap_or_default();
+                create_standard_action(AIAgentActionType::Orchestrate {
+                    // The Tool::Orchestrate path is exercised during
+                    // conversation replay where the originating tool call ID
+                    // is carried by the surrounding ToolCall message; the
+                    // caller above wires it onto the AIAgentAction. Leave
+                    // empty here so the Tool decoder stays self-contained.
+                    tool_call_id: String::new(),
+                    summary,
+                    model_id,
+                    harness,
+                    execution_mode,
+                    skills,
+                    agents,
+                })
             }
             // Clients do not need to know how to parse server tool-calls but receiving
             // them is not an error.

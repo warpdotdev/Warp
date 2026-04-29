@@ -303,6 +303,10 @@ pub mod text {
                 // SendMessageToAgent is a client-side orchestration action, not used in SDK
                 AIAgentActionResultType::SendMessageToAgent(_) => Ok(()),
                 AIAgentActionResultType::AskUserQuestion(_) => Ok(()),
+                // Orchestrate is rendered by the desktop client's
+                // OrchestrateConfigCard, not surfaced via the SDK driver. The
+                // result body is the per-batch summary; nothing to print.
+                AIAgentActionResultType::Orchestrate(_) => Ok(()),
             },
         }
     }
@@ -413,6 +417,11 @@ pub mod text {
                     }
                     AIAgentActionType::FetchConversation { conversation_id } => {
                         writeln!(w, "Fetching conversation {conversation_id}")?;
+                    }
+                    AIAgentActionType::Orchestrate {
+                        summary, agents, ..
+                    } => {
+                        writeln!(w, "Orchestrating {} agent(s): {summary}", agents.len())?;
                     }
                     AIAgentActionType::StartAgent { name, .. } => {
                         writeln!(w, "Starting agent: {name}")?;
@@ -1108,6 +1117,9 @@ pub mod json {
                     | AIAgentActionType::SendMessageToAgent { .. }
                     | AIAgentActionType::TransferShellCommandControlToUser { .. } => None,
                     AIAgentActionType::AskUserQuestion { .. } => None,
+                    // Orchestrate is rendered by the desktop client; SDK
+                    // doesn't surface it as a JSON tool call.
+                    AIAgentActionType::Orchestrate { .. } => None,
                 },
                 AIAgentOutputMessageType::TodoOperation(operation) => match operation {
                     TodoOperation::UpdateTodos { todos } => Some(JsonMessage::UpdateTodos {

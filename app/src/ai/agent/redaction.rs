@@ -209,7 +209,11 @@ pub(crate) fn redact_inputs(inputs: &mut [AIAgentInput]) {
                     // These are effectively flow control and don't contain secrets
                     AIAgentActionResultType::SuggestNewConversation { .. }
                     | AIAgentActionResultType::OpenCodeReview
-                    | AIAgentActionResultType::InitProject => {}
+                    | AIAgentActionResultType::InitProject
+                    // Orchestrate result fields are server-resolved configuration
+                    // (model_id, harness, environment_id) and per-agent IDs/error
+                    // strings; no user-provided text needs redaction.
+                    | AIAgentActionResultType::Orchestrate(_) => {}
 
                     // Contains only file path/line number information
                     AIAgentActionResultType::Grep(_)
