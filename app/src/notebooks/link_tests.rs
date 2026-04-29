@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use tempfile::tempdir;
 use url::Url;
 use warp_util::path::LineAndColumnArg;
-use warpui::{App, ModelHandle, WindowId};
+use warpui::{App, ModelHandle, SingletonEntity, WindowId};
 
 use crate::{
     notebooks::{file::is_markdown_file, link::LinkEvent},
