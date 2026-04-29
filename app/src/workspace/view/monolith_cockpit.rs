@@ -383,6 +383,35 @@ Production writes require explicit elevated workflow confirmation.",
             .finish()
     }
 
+    fn primary_typed_button(
+        label: &str,
+        action: MonolithCockpitAction,
+        mouse_state: MouseStateHandle,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        let button = Container::new(
+            Text::new(label.to_string(), appearance.ui_font_family(), 12.)
+                .with_color(theme.active_ui_text_color().into_solid())
+                .with_style(Properties::default().weight(Weight::Semibold))
+                .finish(),
+        )
+        .with_padding(Padding::uniform(7.).with_left(10.).with_right(10.))
+        .with_background(theme.surface_3())
+        .with_border(Border::all(1.).with_border_fill(theme.active_ui_detail()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .finish();
+
+        Hoverable::new(mouse_state, |_| button)
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(action.clone());
+            })
+            .finish()
+    }
+
     fn tenant_filter_button(
         label: &str,
         filter: TenantFilter,
@@ -393,12 +422,23 @@ Production writes require explicit elevated workflow confirmation.",
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
+        let display_label = if is_active {
+            format!("selected: {label}")
+        } else {
+            label.to_string()
+        };
+
         let mut button = Container::new(
-            Text::new(label.to_string(), appearance.ui_font_family(), 11.)
+            Text::new(display_label, appearance.ui_font_family(), 11.)
                 .with_color(theme.active_ui_text_color().into_solid())
+                .with_style(Properties::default().weight(if is_active {
+                    Weight::Semibold
+                } else {
+                    Weight::Normal
+                }))
                 .finish(),
         )
-        .with_padding(Padding::uniform(4.).with_left(8.).with_right(8.))
+        .with_padding(Padding::uniform(5.).with_left(9.).with_right(9.))
         .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
 
@@ -579,10 +619,15 @@ Production writes require explicit elevated workflow confirmation.",
         let settings = MonolithSettings::as_ref(app);
         let active_environment = settings.cockpit_environment.value();
         let is_prod = active_environment == "prod";
-        let write_mode = if is_prod {
-            "prod locked"
+        let environment_label = if is_prod {
+            "PRODUCTION COCKPIT"
         } else {
-            "staging guarded"
+            "STAGING COCKPIT"
+        };
+        let write_mode = if is_prod {
+            "production writes locked behind explicit confirmation"
+        } else {
+            "staging writes guarded"
         };
         let (tenants, active, offboarded, vms, runtimes) = Self::cockpit_summary(profile);
 
@@ -590,7 +635,14 @@ Production writes require explicit elevated workflow confirmation.",
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_spacing(8.)
-                .with_child(Self::section_label("OPERATOR STATUS", app))
+                .with_child(
+                    Flex::row()
+                        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_child(Self::section_label(environment_label, app))
+                        .with_child(Self::status_chip(&format!("api {active_environment}"), app))
+                        .finish(),
+                )
                 .with_child(
                     Flex::row()
                         .with_spacing(6.)
@@ -603,7 +655,7 @@ Production writes require explicit elevated workflow confirmation.",
                 )
                 .with_child(
                     Text::new(
-                        format!("write mode: {write_mode}"),
+                        format!("operator mode: {write_mode}"),
                         appearance.ui_font_family(),
                         11.,
                     )
@@ -915,8 +967,8 @@ Production writes require explicit elevated workflow confirmation.",
 
         let tenant_name = tenant.name.clone();
         let prompt = Self::tenant_chat_prompt(tenant, active_environment, api_url);
-        let chat_button = Self::typed_button(
-            "chat",
+        let chat_button = Self::primary_typed_button(
+            "manage tenant in chat",
             MonolithCockpitAction::StartTenantChat { prompt },
             Self::next_mouse_state(mouse_states, button_index),
             app,
@@ -1135,6 +1187,7 @@ impl View for MonolithCockpitView {
             );
         }
 
+        body.add_child(Self::section_label("FLEET CONTROLS", app));
         let tenant_names = filtered_tenants
             .iter()
             .map(|tenant| tenant.name.clone())
