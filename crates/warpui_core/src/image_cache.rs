@@ -28,15 +28,76 @@ use resvg::{
 };
 
 const MIN_REFRESH_DELAY_MS: u32 = 50;
+const SVG_SANS_SERIF_FAMILY: &str = "Roboto";
+const SVG_MONOSPACE_FAMILY: &str = "Hack";
 
-static SVG_FONT_DB: LazyLock<Arc<usvg::fontdb::Database>> = LazyLock::new(|| {
-    let mut fontdb = usvg::fontdb::Database::new();
-    fontdb.load_system_fonts();
-    Arc::new(fontdb)
-});
+static SVG_FONT_DB: LazyLock<Arc<usvg::fontdb::Database>> =
+    LazyLock::new(|| Arc::new(svg_font_db(true)));
 
 pub fn prewarm_svg_font_db() {
     LazyLock::force(&SVG_FONT_DB);
+}
+
+fn svg_font_db(load_system_fonts: bool) -> usvg::fontdb::Database {
+    let mut fontdb = usvg::fontdb::Database::new();
+    if load_system_fonts {
+        fontdb.load_system_fonts();
+    }
+
+    load_bundled_svg_fonts(&mut fontdb);
+    fontdb.set_serif_family(SVG_SANS_SERIF_FAMILY);
+    fontdb.set_sans_serif_family(SVG_SANS_SERIF_FAMILY);
+    fontdb.set_cursive_family(SVG_SANS_SERIF_FAMILY);
+    fontdb.set_fantasy_family(SVG_SANS_SERIF_FAMILY);
+    fontdb.set_monospace_family(SVG_MONOSPACE_FAMILY);
+    fontdb
+}
+
+fn load_bundled_svg_fonts(fontdb: &mut usvg::fontdb::Database) {
+    for font_data in [
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../app/assets/bundled/fonts/roboto/Roboto-Regular.ttf"
+        ))
+        .as_slice(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../app/assets/bundled/fonts/roboto/Roboto-Bold.ttf"
+        ))
+        .as_slice(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../app/assets/bundled/fonts/roboto/Roboto-Italic.ttf"
+        ))
+        .as_slice(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../app/assets/bundled/fonts/roboto/Roboto-BoldItalic.ttf"
+        ))
+        .as_slice(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../app/assets/bundled/fonts/hack/Hack-Regular.ttf"
+        ))
+        .as_slice(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../app/assets/bundled/fonts/hack/Hack-Bold.ttf"
+        ))
+        .as_slice(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../app/assets/bundled/fonts/hack/Hack-Italic.ttf"
+        ))
+        .as_slice(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../app/assets/bundled/fonts/hack/Hack-BoldItalic.ttf"
+        ))
+        .as_slice(),
+    ] {
+        fontdb.load_font_data(font_data.to_vec());
+    }
 }
 
 #[derive(EnumIter, Debug)]
