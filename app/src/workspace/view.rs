@@ -18755,16 +18755,6 @@ impl Workspace {
         container.finish()
     }
 
-    fn render_main_panel(&self, terminal_view: Box<dyn Element>) -> Box<dyn Element> {
-        // The terminal background fill is already painted by the outer workspace
-        // container in `render`, so we must not paint it again here.
-        // Otherwise the (semi-transparent) overlay alpha compounds and makes the
-        // terminal pane look darker than the rest of the workspace, which is
-        // particularly visible when the active theme has a background image or
-        // a custom window opacity. See APP-4328.
-        Shrinkable::new(1.0, terminal_view).finish()
-    }
-
     fn render_panel_separator(app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         ConstrainedBox::new(
@@ -18844,7 +18834,9 @@ impl Workspace {
         if prev_panel_added {
             panels_view.add_child(Self::render_panel_separator(app));
         }
-        panels_view = panels_view.with_child(self.render_main_panel(terminal_view));
+        // The outer workspace container in `render` already paints the terminal
+        // background fill, so don't paint it again here (see APP-4328).
+        panels_view = panels_view.with_child(Shrinkable::new(1.0, terminal_view).finish());
         prev_panel_added = true;
 
         if vertical_tabs_active {
