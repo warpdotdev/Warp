@@ -151,8 +151,8 @@ impl UiComponent for Dialog {
                 )
             };
 
-        let mut main_content = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        let mut main_content =
+            Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
         if let Some(header_icon) = self.header_icon {
             // Icon + close button in the top row, title on its own row below.
