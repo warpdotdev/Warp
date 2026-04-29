@@ -172,8 +172,8 @@ pub fn warpify_ssh_session_command(
             bundled_asset!("ssh/bash_zsh/warpify_ssh_session.sh")
         }
         (_, ShellType::Fish) => bundled_asset!("ssh/fish/warpify_ssh_session.sh"),
-        // PowerShell is not supported yet.
-        (_, ShellType::PowerShell) => return None,
+        // PowerShell and Nushell are not supported yet for SSH warpify.
+        (_, ShellType::PowerShell | ShellType::Nu) => return None,
     };
 
     // Todo(Jack): look into avoiding an allocation here.

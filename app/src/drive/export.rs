@@ -300,7 +300,7 @@ impl ExportManager {
 
                     let exported_variables = env_var_collection_model
                         .string_model
-                        .export_variables("\n", shell_family)
+                        .export_variables("\n", shell_family.into())
                         .into_bytes();
 
                     (

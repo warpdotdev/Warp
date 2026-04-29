@@ -81,34 +81,71 @@ impl EnvVar {
 
     pub fn get_initialization_string(&self, shell_type: ShellType) -> String {
         let shell_family = ShellFamily::from(shell_type);
-        let name = shell_family.escape(&self.name);
-        let value = get_init_command_for_env_var(&self.value, shell_family);
+        let value = get_init_command_for_env_var(&self.value, shell_type, shell_family);
 
         match shell_type {
             ShellType::Bash | ShellType::Zsh => {
+                let name = shell_family.escape(&self.name);
                 format!("export {name}={value};")
             }
             ShellType::Fish => {
+                let name = shell_family.escape(&self.name);
                 format!("set -x {name} {value};")
             }
+            ShellType::Nu => {
+                let name = format_nu_env_var_name(&self.name);
+                format!("$env.{name} = {value};")
+            }
             ShellType::PowerShell => {
+                let name = shell_family.escape(&self.name);
                 format!("$env:{name} = {value};")
             }
         }
     }
 }
 
-fn get_init_command_for_env_var(value: &EnvVarValue, shell_family: ShellFamily) -> String {
-    match value {
-        EnvVarValue::Constant(val) => match shell_family {
+fn get_init_command_for_env_var(
+    value: &EnvVarValue,
+    shell_type: ShellType,
+    shell_family: ShellFamily,
+) -> String {
+    match (shell_type, value) {
+        (ShellType::Nu, EnvVarValue::Constant(val)) => {
+            serde_json::to_string(val).expect("string serialization should never fail")
+        }
+        (ShellType::Nu, EnvVarValue::Command(cmd)) => format!("({})", cmd.command),
+        (ShellType::Nu, EnvVarValue::Secret(secret)) => format!(
+            "({})",
+            secret.get_secret_extraction_command(ShellFamily::PowerShell)
+        ),
+        (_, EnvVarValue::Constant(val)) => match shell_family {
             ShellFamily::Posix => shell_family.escape(val).into_owned(),
             ShellFamily::PowerShell => format!("'{}'", val.replace("'", "''")),
         },
-        EnvVarValue::Command(cmd) => format!("$({})", cmd.command),
-        EnvVarValue::Secret(secret) => {
+        (_, EnvVarValue::Command(cmd)) => format!("$({})", cmd.command),
+        (_, EnvVarValue::Secret(secret)) => {
             format!("$({})", secret.get_secret_extraction_command(shell_family))
         }
     }
+}
+
+fn format_nu_env_var_name(name: &str) -> String {
+    if is_valid_nu_identifier(name) {
+        name.to_owned()
+    } else {
+        serde_json::to_string(name).expect("string serialization should never fail")
+    }
+}
+
+fn is_valid_nu_identifier(name: &str) -> bool {
+    let Some(first_char) = name.chars().next() else {
+        return false;
+    };
+
+    (first_char.is_ascii_alphabetic() || first_char == '_')
+        && name
+            .chars()
+            .all(|char| char.is_ascii_alphanumeric() || char == '_')
 }
 
 /// Defines the data model for a cloud synced collection of environment variables.
@@ -136,8 +173,20 @@ impl EnvVarCollection {
         self.vars.iter().map(|var| (var.name.as_str(), &var.value))
     }
 
-    pub fn export_variables(&self, delimeter: &str, shell_family: ShellFamily) -> String {
-        serialize_variables_internal(self.key_value_iter(), "", "=", "", delimeter, shell_family)
+    pub fn export_variables(&self, delimeter: &str, shell_type: ShellType) -> String {
+        if shell_type == ShellType::Nu {
+            return serialize_nu_variables_internal(self.key_value_iter(), delimeter);
+        }
+
+        serialize_variables_internal(
+            self.key_value_iter(),
+            "",
+            "=",
+            "",
+            delimeter,
+            shell_type,
+            ShellFamily::from(shell_type),
+        )
     }
 
     pub fn export_variables_for_shell(&self, shell_type: ShellType) -> String {
@@ -249,16 +298,44 @@ pub fn serialize_variables_for_shell<'s, I: IntoIterator<Item = (&'s str, &'s En
 ) -> String {
     match shell_type {
         // Warp doesn't support newlines in fish so we can't use env syntax
-        ShellType::Fish => {
-            serialize_variables_internal(pairs, "set -x ", " ", ";", " ", shell_type.into())
-        }
+        ShellType::Fish => serialize_variables_internal(
+            pairs,
+            "set -x ",
+            " ",
+            ";",
+            " ",
+            shell_type,
+            shell_type.into(),
+        ),
         ShellType::Bash | ShellType::Zsh => {
-            serialize_variables_internal(pairs, "", "=", "", " ", shell_type.into())
+            serialize_variables_internal(pairs, "", "=", "", " ", shell_type, shell_type.into())
         }
-        ShellType::PowerShell => {
-            serialize_variables_internal(pairs, "$env:", " = ", ";", " ", shell_type.into())
-        }
+        ShellType::Nu => serialize_nu_variables_internal(pairs, " "),
+        ShellType::PowerShell => serialize_variables_internal(
+            pairs,
+            "$env:",
+            " = ",
+            ";",
+            " ",
+            shell_type,
+            shell_type.into(),
+        ),
     }
+}
+
+fn serialize_nu_variables_internal<'s, I: IntoIterator<Item = (&'s str, &'s EnvVarValue)>>(
+    pairs: I,
+    delimeter: &str,
+) -> String {
+    pairs
+        .into_iter()
+        .map(|(name, value)| {
+            let name = format_nu_env_var_name(name);
+            let value = get_init_command_for_env_var(value, ShellType::Nu, ShellFamily::PowerShell);
+            format!("$env.{name} = {value};")
+        })
+        .collect_vec()
+        .join(delimeter)
 }
 
 // Prefix — what's prepended to each variable
@@ -275,6 +352,7 @@ fn serialize_variables_internal<'s, I: IntoIterator<Item = (&'s str, &'s EnvVarV
     separator: &str,
     postfix: &str,
     delimeter: &str,
+    shell_type: ShellType,
     shell_family: ShellFamily,
 ) -> String {
     pairs
@@ -285,10 +363,72 @@ fn serialize_variables_internal<'s, I: IntoIterator<Item = (&'s str, &'s EnvVarV
                 prefix,
                 shell_family.escape(name),
                 separator,
-                get_init_command_for_env_var(value, shell_family),
+                get_init_command_for_env_var(value, shell_type, shell_family),
                 postfix
             )
         })
         .collect_vec()
         .join(delimeter)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env_vars::view::command_dialog::EnvVarSecretCommand;
+
+    #[test]
+    fn nu_initialization_uses_nushell_env_syntax() {
+        let var = EnvVar {
+            name: "FOO-BAR".to_string(),
+            value: EnvVarValue::Constant("hello world".to_string()),
+            description: None,
+        };
+
+        assert_eq!(
+            var.get_initialization_string(ShellType::Nu),
+            "$env.\"FOO-BAR\" = \"hello world\";"
+        );
+    }
+
+    #[test]
+    fn nu_initialization_uses_command_substitution() {
+        let var = EnvVar {
+            name: "FOO".to_string(),
+            value: EnvVarValue::Command(EnvVarSecretCommand {
+                name: "echo".to_string(),
+                command: "echo hi".to_string(),
+            }),
+            description: None,
+        };
+
+        assert_eq!(
+            var.get_initialization_string(ShellType::Nu),
+            "$env.FOO = (echo hi);"
+        );
+    }
+
+    #[test]
+    fn nu_collection_export_uses_nushell_env_syntax() {
+        let collection = EnvVarCollection {
+            title: None,
+            description: None,
+            vars: vec![
+                EnvVar {
+                    name: "FOO".to_string(),
+                    value: EnvVarValue::Constant("hello".to_string()),
+                    description: None,
+                },
+                EnvVar {
+                    name: "FOO-BAR".to_string(),
+                    value: EnvVarValue::Constant("hello world".to_string()),
+                    description: None,
+                },
+            ],
+        };
+
+        assert_eq!(
+            collection.export_variables("\n", ShellType::Nu),
+            "$env.FOO = \"hello\";\n$env.\"FOO-BAR\" = \"hello world\";"
+        );
+    }
 }

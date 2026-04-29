@@ -6714,7 +6714,7 @@ impl Input {
             // Add newlines at the end to separate the vars from the comment/command
             Some(format!(
                 "# Environment variables\n{}\n\n",
-                env_vars.export_variables(" ", shell_type.into())
+                env_vars.export_variables(" ", shell_type)
             ))
         }
     }

@@ -3014,6 +3014,14 @@ impl ansi::Handler for TerminalModel {
                     shell_type,
                     uname: data.uname,
                 })),
+            Some(ShellType::Nu) => {
+                self.event_proxy
+                    .send_terminal_event(Event::RemoteWarpificationIsUnavailable(
+                        WarpificationUnavailableReason::UnsupportedShell {
+                            shell_name: data.shell,
+                        },
+                    ))
+            }
             _ => self
                 .event_proxy
                 .send_terminal_event(Event::RemoteWarpificationIsUnavailable(

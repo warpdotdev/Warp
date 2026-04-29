@@ -199,6 +199,9 @@ impl ShellCommandExecutor {
             // Fish doesn't have grouping characters. We need to use begin; and end; to ensure the command
             // gets evaluated first.
             Some(ShellType::Fish) => format!("begin; {command} ;end | command cat"),
+            // Nushell does not have an equivalent `command cat` pager bypass; group the command
+            // so it still runs as a single expression.
+            Some(ShellType::Nu) => format!("({command})"),
             // For powershell, we use Out-Host to send paged output to the
             // console. Add a backslash to avoid executing an alias.
             Some(ShellType::PowerShell) => format!("({command}) | \\Out-Host"),

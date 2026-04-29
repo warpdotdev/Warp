@@ -5318,7 +5318,7 @@ impl TypedActionView for DriveIndex {
                                 let vars = env_var_collection
                                     .model()
                                     .string_model
-                                    .export_variables(" ", shell_family);
+                                    .export_variables(" ", shell_family.into());
                                 ctx.clipboard().write(ClipboardContent::plain_text(vars));
                             }
                         }

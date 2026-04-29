@@ -20,9 +20,16 @@ where
     S: AsRef<str>,
 {
     let mut builder = tempfile::Builder::new();
-    // PowerShell will only source a file with the "ps1" extension.
-    if shell_type == ShellType::PowerShell {
-        builder.suffix(".ps1");
+    // PowerShell will only source a file with the "ps1" extension. Nushell can source extensionless
+    // files, but a ".nu" suffix keeps temporary bootstrap files recognizable while debugging.
+    match shell_type {
+        ShellType::PowerShell => {
+            builder.suffix(".ps1");
+        }
+        ShellType::Nu => {
+            builder.suffix(".nu");
+        }
+        _ => {}
     }
 
     match TempBootstrapFile::new(

@@ -23590,10 +23590,16 @@ impl TerminalView {
         let env_var_collection = cloud_env_var_collection.model().string_model.clone();
 
         let (shell_path_string, shell_type) = shell_session_info;
-        if shell_type == ShellType::PowerShell {
+        if matches!(shell_type, ShellType::PowerShell | ShellType::Nu) {
             ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                let toast =
-                    DismissibleToast::error("PowerShell subshells not supported".to_owned());
+                let toast = DismissibleToast::error(format!(
+                    "{} subshells not supported",
+                    if shell_type == ShellType::PowerShell {
+                        "PowerShell"
+                    } else {
+                        "Nushell"
+                    }
+                ));
                 toast_stack.add_ephemeral_toast(toast, window_id, ctx);
             });
             return;

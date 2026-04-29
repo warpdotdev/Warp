@@ -7,6 +7,7 @@ impl AssetProvider for TestAssetProvider {
         let content = match path {
             "bundled/bootstrap/bash.sh" => "#include hello_world",
             "bundled/bootstrap/fish.sh" => "# this is a comment\nthis_is_a_command",
+            "bundled/bootstrap/nu.nu" => "# this is a comment\nnu_command",
             "bundled/bootstrap/zsh.sh" => {
                 "asdf\n#include whitespace\n    prepended whitespace\n\n\n"
             }
@@ -40,6 +41,10 @@ fn test_trims_comments() {
     assert_eq!(
         decode_script(&script_for_shell(ShellType::Fish, &TestAssetProvider)),
         "this_is_a_command\n"
+    );
+    assert_eq!(
+        decode_script(&script_for_shell(ShellType::Nu, &TestAssetProvider)),
+        "nu_command\n"
     );
 }
 

@@ -107,6 +107,11 @@ fn test_from_name() {
         Some(ShellType::Fish),
         ShellType::from_name("/usr/local/bin/fish")
     );
+    assert_eq!(Some(ShellType::Nu), ShellType::from_name("nu"));
+    assert_eq!(Some(ShellType::Nu), ShellType::from_name("-nu"));
+    assert_eq!(Some(ShellType::Nu), ShellType::from_name("/usr/bin/nu"));
+    assert_eq!(Some(ShellType::Nu), ShellType::from_name("nu.exe"));
+    assert_eq!(None, ShellType::from_name("nush"));
     assert_eq!(
         Some(ShellType::PowerShell),
         ShellType::from_name("pwsh.exe")
@@ -154,6 +159,14 @@ fn test_from_markdown_language_spec() {
         Some(ShellType::PowerShell),
         ShellType::from_markdown_language_spec("pwsh")
     );
+    assert_eq!(
+        Some(ShellType::Nu),
+        ShellType::from_markdown_language_spec("nu")
+    );
+    assert_eq!(
+        Some(ShellType::Nu),
+        ShellType::from_markdown_language_spec("nushell")
+    );
 
     // Non-shell languages and invalid inputs
     assert_eq!(None, ShellType::from_markdown_language_spec("python"));
@@ -190,6 +203,16 @@ alias ehw 'echo \"Hello, world\"'";
     assert_eq!(aliases.get("g").unwrap(), "git");
     assert_eq!(aliases.get("rmi").unwrap(), "rm -i");
     assert_eq!(aliases.get("ehw").unwrap(), r#"echo "Hello, world""#);
+}
+
+#[test]
+fn test_nu_parse_aliases() {
+    let raw_aliases = "g\tgit status\nll\tls -la";
+    let aliases = ShellType::Nu.aliases(raw_aliases);
+
+    assert_eq!(aliases.len(), 2);
+    assert_eq!(aliases.get("g").unwrap(), "git status");
+    assert_eq!(aliases.get("ll").unwrap(), "ls -la");
 }
 
 #[test]

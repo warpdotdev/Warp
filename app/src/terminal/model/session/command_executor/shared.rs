@@ -34,6 +34,7 @@ pub fn shell_escape_single_quotes(command: &str, shell_type: ShellType) -> Strin
             // In powershell we escape single quotes using two single quotes ''
             command.replace('\'', "''")
         }
+        ShellType::Nu => command.replace('\'', "''"),
         _ => {
             // For Bash and Zsh, replace each single quote with a '"'"' sequence.
             // The first single quote completes the single quoted string to the left,

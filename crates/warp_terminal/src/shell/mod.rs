@@ -153,6 +153,7 @@ impl Shell {
                 .is_some_and(|map| map.contains("autocd")),
             // autocd is always enabled in Fish, see https://fishshell.com/docs/current/cmds/cd.html.
             ShellType::Fish => true,
+            ShellType::Nu => false,
             ShellType::PowerShell => false,
         }
     }
@@ -167,7 +168,9 @@ impl Shell {
     pub fn input_reporting_sequence(&self) -> Option<[u8; 2]> {
         match self.shell_type {
             ShellType::PowerShell => Some([escape_sequences::C0::ESC, b'1']),
-            ShellType::Fish | ShellType::Zsh => Some([escape_sequences::C0::ESC, b'i']),
+            ShellType::Fish | ShellType::Nu | ShellType::Zsh => {
+                Some([escape_sequences::C0::ESC, b'i'])
+            }
             ShellType::Bash => self
                 .version
                 .as_ref()
@@ -251,6 +254,7 @@ pub enum ShellType {
     Zsh,
     Bash,
     Fish,
+    Nu,
     PowerShell,
 }
 
@@ -260,6 +264,10 @@ impl From<ShellType> for command_corrections::Shell {
             ShellType::Bash => command_corrections::Shell::Bash,
             ShellType::Zsh => command_corrections::Shell::Zsh,
             ShellType::Fish => command_corrections::Shell::Fish,
+            // The command-corrections crate does not have a Nushell dialect yet. Use Bash as a
+            // conservative fallback so correction requests can still be made instead of failing at
+            // the type-conversion boundary.
+            ShellType::Nu => command_corrections::Shell::Bash,
             ShellType::PowerShell => command_corrections::Shell::PowerShell,
         }
     }
@@ -268,8 +276,17 @@ impl From<ShellType> for command_corrections::Shell {
 impl From<ShellType> for warp_util::path::ShellFamily {
     fn from(value: ShellType) -> Self {
         match value {
-            ShellType::Zsh | ShellType::Bash | ShellType::Fish => Self::Posix,
+            ShellType::Zsh | ShellType::Bash | ShellType::Fish | ShellType::Nu => Self::Posix,
             ShellType::PowerShell => Self::PowerShell,
+        }
+    }
+}
+
+impl From<warp_util::path::ShellFamily> for ShellType {
+    fn from(value: warp_util::path::ShellFamily) -> Self {
+        match value {
+            warp_util::path::ShellFamily::Posix => ShellType::Bash,
+            warp_util::path::ShellFamily::PowerShell => ShellType::PowerShell,
         }
     }
 }
@@ -288,6 +305,9 @@ impl ShellType {
             Some(ShellType::Zsh)
         } else if name == "fish" || name == "-fish" || name.ends_with("/fish") {
             Some(ShellType::Fish)
+        } else if name == "nu" || name == "-nu" || name.ends_with("/nu") || name.ends_with("nu.exe")
+        {
+            Some(ShellType::Nu)
         } else if name == "pwsh"
             || name.ends_with("/pwsh")
             || name.ends_with("pwsh.exe")
@@ -307,6 +327,7 @@ impl ShellType {
             "bash" | "shell" | "sh" => Some(ShellType::Bash),
             "zsh" => Some(ShellType::Zsh),
             "fish" => Some(ShellType::Fish),
+            "nu" | "nushell" => Some(ShellType::Nu),
             "powershell" | "pwsh" => Some(ShellType::PowerShell),
             _ => None,
         }
@@ -318,6 +339,10 @@ impl ShellType {
             ShellType::Zsh => vec!["~/.zsh_history".to_string(), "~/.zhistory".to_string()],
             ShellType::Bash => vec!["~/.bash_history".to_string()],
             ShellType::Fish => vec!["~/.local/share/fish/fish_history".to_string()],
+            ShellType::Nu => vec![
+                "~/.config/nushell/history.txt".to_string(),
+                "~/.local/share/nushell/history.txt".to_string(),
+            ],
             #[cfg(not(windows))]
             ShellType::PowerShell => {
                 vec!["~/.local/share/powershell/PSReadLine/ConsoleHost_history.txt".to_string()]
@@ -354,6 +379,11 @@ impl ShellType {
             (ShellType::Bash, _) => vec![Path::new(".bashrc")],
             (ShellType::Zsh, _) => vec![Path::new(".zshrc")],
             (ShellType::Fish, _) => vec![Path::new(".config/fish/config.fish")],
+            (ShellType::Nu, _) => vec![
+                Path::new(".config/nushell/env.nu"),
+                Path::new(".config/nushell/config.nu"),
+                Path::new(".config/nushell/login.nu"),
+            ],
         };
         relative_paths
             .iter()
@@ -369,6 +399,10 @@ impl ShellType {
         match self {
             ShellType::Bash | ShellType::Zsh | ShellType::PowerShell => " && ",
             ShellType::Fish => "; and ",
+            // Nushell does not support POSIX `&&`. There is no direct command separator with the
+            // same status-gated semantics, so use a plain separator as the least surprising
+            // fallback for command construction sites that are not Nushell-specific.
+            ShellType::Nu => "; ",
         }
     }
 
@@ -382,6 +416,7 @@ impl ShellType {
         match self {
             ShellType::Bash | ShellType::Zsh | ShellType::PowerShell => " ; ",
             ShellType::Fish => "; or ",
+            ShellType::Nu => "; ",
         }
     }
 
@@ -428,6 +463,13 @@ impl ShellType {
                     })
                     .collect()
             }
+            ShellType::Nu => alias_output
+                .lines()
+                .filter_map(|line| {
+                    let (key, value) = line.split_once('\t')?;
+                    Some((key.into(), value.to_string()))
+                })
+                .collect(),
             ShellType::PowerShell => alias_output
                 .lines()
                 .filter_map(|line| {
@@ -536,6 +578,15 @@ impl ShellType {
                     .map(|s| s.to_owned())
                     .collect()
             }
+
+            ShellType::Nu => {
+                let history_file_contents = String::from_utf8_lossy(history_file_bytes);
+                history_lines = history_file_contents
+                    .lines()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_owned())
+                    .collect()
+            }
         }
 
         history_lines
@@ -554,14 +605,16 @@ impl ShellType {
         const OTHER_BINDING: [u8; 1] = [escape_sequences::C0::DLE];
         match self {
             ShellType::PowerShell => POWERSHELL_BINDING.as_slice(),
-            ShellType::Zsh | ShellType::Bash | ShellType::Fish => OTHER_BINDING.as_slice(),
+            ShellType::Zsh | ShellType::Bash | ShellType::Fish | ShellType::Nu => {
+                OTHER_BINDING.as_slice()
+            }
         }
     }
 
     /// Bytes used to execute a command, once the command text is sent
     pub fn execute_command_bytes(self) -> &'static [u8] {
         match self {
-            ShellType::Bash | ShellType::Zsh => &b"\n"[..],
+            ShellType::Bash | ShellType::Zsh | ShellType::Nu => &b"\n"[..],
             ShellType::PowerShell => &b"\r"[..],
             // For Fish, we send an extra space, immediately followed by backspace, and then
             // the newline character. The backspace ensures that any autosuggestions are
@@ -577,6 +630,7 @@ impl ShellType {
             ShellType::Zsh => "zsh",
             ShellType::Bash => "bash",
             ShellType::Fish => "fish",
+            ShellType::Nu => "nu",
             ShellType::PowerShell => "pwsh",
         }
     }
@@ -585,7 +639,7 @@ impl ShellType {
     pub fn is_fully_supported_remotely(&self) -> bool {
         match self {
             ShellType::Zsh | ShellType::Bash => true,
-            ShellType::Fish | ShellType::PowerShell => false,
+            ShellType::Fish | ShellType::Nu | ShellType::PowerShell => false,
         }
     }
 
@@ -621,6 +675,9 @@ impl ShellType {
                 // per line, we explicitly join the results with a newline.
                 "Get-Command -CommandType Application | Select-Object -ExpandProperty Name"
             }
+            ShellType::Nu => {
+                "$env.PATH | each { |dir| try { ls $dir | where type in [file symlink] | get name | path basename } catch { [] } } | flatten | uniq | str join (char nl)"
+            }
         }
     }
 
@@ -638,7 +695,7 @@ impl ShellType {
                     return Vec::new();
                 };
                 match self {
-                    ShellType::Bash | ShellType::Zsh => {
+                    ShellType::Bash | ShellType::Zsh | ShellType::Nu => {
                         // For bash and zsh, we wrote the command such that the output is just
                         // a list of executable files.
                         if !is_msys2 {

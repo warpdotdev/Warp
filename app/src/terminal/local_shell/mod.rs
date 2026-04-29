@@ -106,6 +106,7 @@ impl LocalShellState {
         let command = match shell_type {
             ShellType::Bash | ShellType::Zsh => "echo $PATH",
             ShellType::Fish => "env | grep PATH",
+            ShellType::Nu => "$env.PATH | str join (char esep)",
             ShellType::PowerShell => "echo $Env:PATH",
         };
 
@@ -248,6 +249,7 @@ async fn capture_interactive_shell_env(
     let command_str = match shell_type {
         ShellType::Bash | ShellType::Zsh => "echo $PATH",
         ShellType::Fish => "string join : $PATH",
+        ShellType::Nu => "$env.PATH | str join (char esep)",
         ShellType::PowerShell => "echo $Env:PATH",
     };
 
@@ -274,6 +276,9 @@ async fn capture_interactive_shell_env(
             command.args(["-i", "-l", "-c", command_str]);
         }
         ShellType::Fish => {
+            command.args(["-i", "-l", "-c", command_str]);
+        }
+        ShellType::Nu => {
             command.args(["-i", "-l", "-c", command_str]);
         }
         ShellType::PowerShell => {

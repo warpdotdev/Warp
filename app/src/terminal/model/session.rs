@@ -726,7 +726,7 @@ impl SessionInfo {
             // a separate line.
             let split = match &self.shell.shell_type() {
                 ShellType::Zsh | ShellType::PowerShell => names.split(' '),
-                ShellType::Bash | ShellType::Fish => names.split('\n'),
+                ShellType::Bash | ShellType::Fish | ShellType::Nu => names.split('\n'),
             };
             split.map(Into::into).collect::<HashSet<_>>()
         });
@@ -936,7 +936,9 @@ impl Session {
 
     pub fn path_separators(&self) -> PathSeparators {
         match self.shell().shell_type() {
-            ShellType::Zsh | ShellType::Bash | ShellType::Fish => PathSeparators::for_unix(),
+            ShellType::Zsh | ShellType::Bash | ShellType::Fish | ShellType::Nu => {
+                PathSeparators::for_unix()
+            }
             ShellType::PowerShell => PathSeparators::for_os(),
         }
     }

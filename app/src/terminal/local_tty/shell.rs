@@ -27,6 +27,7 @@ use crate::util::windows::{powershell_5_path, powershell_7_path, wsl_path};
 pub const ZSH_SHELL_PATH: &str = "/bin/zsh";
 pub const BASH_SHELL_PATH: &str = "/bin/bash";
 pub const FISH_SHELL_PATH: &str = "/bin/fish";
+pub const NU_SHELL_PATH: &str = "/bin/nu";
 
 /// Returns an iterator of additional PATH entries to append to the shell's PATH.
 /// * On macOS, this includes `$APP_PATH/Contents/Resources/bin`, in which we put a wrapper around the Warp CLI.
@@ -49,7 +50,7 @@ pub fn extra_path_entries() -> impl Iterator<Item = PathBuf> {
 }
 
 /// Returns `true` if the given `path_or_command` is a valid, executable command or path to a
-/// executable binary for one of Warp's supported shell types (bash, fish, zsh).
+/// executable binary for one of Warp's supported shell types (bash, fish, nu, zsh).
 pub fn is_valid_path_or_command_for_supported_shell(path_or_command: &str) -> bool {
     supported_shell_path_and_type(path_or_command).is_some()
 }
@@ -208,8 +209,10 @@ impl ShellStarter {
                     shell_path_and_type
                 } else if let Some(shell_path_and_type) = supported_shell_path_and_type(FISH_SHELL_PATH) {
                     shell_path_and_type
+                } else if let Some(shell_path_and_type) = supported_shell_path_and_type(NU_SHELL_PATH) {
+                    shell_path_and_type
                 } else {
-                    log::warn!("Did not find valid binaries when attempting to load fallback shell (not bash, fish, or zsh).");
+                    log::warn!("Did not find valid binaries when attempting to load fallback shell (not bash, fish, nu, or zsh).");
                     return None;
                 };
 
@@ -477,6 +480,8 @@ impl WslShellStarter {
             ShellType::Zsh
         } else if shell_path.contains("fish") {
             ShellType::Fish
+        } else if shell_path.contains("nu") {
+            ShellType::Nu
         } else {
             log::warn!("The shell {shell_path:#} is not yet supported in WSL");
             return None;
@@ -636,6 +641,11 @@ fn arguments_for_session_spawning_command(
                 .into(),
             ]
         }
+        ShellType::Nu => vec![
+            "--login".to_owned().into(),
+            "--execute".to_owned().into(),
+            init_shell_script_for_shell(ShellType::Nu, &crate::ASSETS).into(),
+        ],
         ShellType::PowerShell => vec![
             // When PowerShell starts a session, it writes "PowerShell <version>" to the PTY. This
             // option suppresses that message.
@@ -670,7 +680,7 @@ fn wsl_arguments_for_session_spawning_command(
     // Note we typically go through bash so that we can launch the user's shell
     // with a leading '-', making it a login shell.
     match shell_type {
-        ShellType::Bash | ShellType::Zsh | ShellType::Fish => {
+        ShellType::Bash | ShellType::Zsh | ShellType::Fish | ShellType::Nu => {
             args.extend(arguments_for_session_spawning_command(
                 shell_path, shell_type,
             ));
@@ -697,6 +707,7 @@ fn msys2_arguments_for_session_spawning_command(shell_type: ShellType) -> Vec<Os
                 "--no-config".to_string().into(),
             ]
         }
+        ShellType::Nu => vec!["--login".to_string().into()],
         ShellType::PowerShell => panic!("MSYS2 not supported for PowerShell"),
     }
 }
