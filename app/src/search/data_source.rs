@@ -53,6 +53,10 @@ lazy_static! {
         primary_text: "sessions:",
         aliases: vec![]
     };
+    static ref TABS_FILTER_ATOM: FilterAtom = FilterAtom {
+        primary_text: "tabs:",
+        aliases: vec![]
+    };
     static ref CONVERSATIONS_FILTER_ATOM: FilterAtom = FilterAtom {
         primary_text: "conversations:",
         aliases: vec![]
@@ -167,6 +171,9 @@ pub enum QueryFilter {
     /// Filter results for open sessions.
     Sessions,
 
+    /// Filter results for open tabs.
+    Tabs,
+
     /// Filter results for all conversations.
     Conversations,
 
@@ -239,6 +246,7 @@ impl QueryFilter {
             QueryFilter::NaturalLanguage => "e.g. replace string in file",
             QueryFilter::Actions => "Search actions",
             QueryFilter::Sessions => "Search sessions",
+            QueryFilter::Tabs => "Search tabs",
             QueryFilter::Conversations => "Search conversations",
             QueryFilter::HistoricalConversations => "Search historical conversations",
             QueryFilter::LaunchConfigurations => "Search launch configurations",
@@ -273,6 +281,7 @@ impl QueryFilter {
             QueryFilter::NaturalLanguage => &NATURAL_LANGUAGE_FILTER_ATOM,
             QueryFilter::Actions => &ACTIONS_FILTER_ATOM,
             QueryFilter::Sessions => &SESSIONS_FILTER_ATOM,
+            QueryFilter::Tabs => &TABS_FILTER_ATOM,
             QueryFilter::Conversations => &CONVERSATIONS_FILTER_ATOM,
             QueryFilter::LaunchConfigurations => &LAUNCH_CONFIG_FILTER_ATOM,
             QueryFilter::Drive => &DRIVE_FILTER_ATOM,
@@ -305,6 +314,7 @@ impl QueryFilter {
             QueryFilter::NaturalLanguage => "AI command suggestions",
             QueryFilter::Actions => "actions",
             QueryFilter::Sessions => "sessions",
+            QueryFilter::Tabs => "tabs",
             QueryFilter::Conversations => "conversations",
             QueryFilter::LaunchConfigurations => "launch configurations",
             QueryFilter::Drive => "Warp Drive",
@@ -342,6 +352,7 @@ impl QueryFilter {
             }
             QueryFilter::Actions => None,
             QueryFilter::Sessions => Some("bundled/svg/terminal-input.svg"),
+            QueryFilter::Tabs => Some("bundled/svg/terminal-input.svg"),
             QueryFilter::Conversations | QueryFilter::HistoricalConversations => {
                 Some("bundled/svg/conversation.svg")
             }

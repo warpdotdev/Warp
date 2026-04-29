@@ -234,3 +234,12 @@ pub fn num_shared_sessions(ctx: &AppContext) -> usize {
     }
     num_shared_sessions
 }
+
+/// Metadata for a single tab, used by the Ctrl+Tab MRU switcher.
+#[derive(Clone)]
+pub struct TabNavigationData {
+    pub pane_group_id: EntityId,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub window_id: WindowId,
+}

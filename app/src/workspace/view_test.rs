@@ -3015,3 +3015,28 @@ fn test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempot
         });
     });
 }
+
+#[test]
+fn test_tab_mru_order() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+            workspace.add_terminal_tab(false, ctx);
+
+            let id_a = workspace.tabs[0].pane_group.id();
+            let id_b = workspace.tabs[1].pane_group.id();
+            let id_c = workspace.tabs[2].pane_group.id();
+
+            workspace.handle_action(&WorkspaceAction::ActivateTab(0), ctx);
+            workspace.handle_action(&WorkspaceAction::ActivateTab(1), ctx);
+            workspace.handle_action(&WorkspaceAction::ActivateTab(2), ctx);
+            workspace.handle_action(&WorkspaceAction::ActivateTab(0), ctx);
+
+            assert_eq!(workspace.tab_mru_order(), &[id_a, id_c, id_b]);
+        });
+    });
+}

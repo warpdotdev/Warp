@@ -812,6 +812,20 @@ impl View {
 
                 send_telemetry_from_ctx!(TelemetryEvent::SelectNavigationPaletteItem, ctx);
             }
+            CommandPaletteItemAction::NavigateToTab {
+                pane_group_id,
+                window_id,
+            } => {
+                if let Some(root_view_id) = ctx.root_view_id(window_id) {
+                    ctx.dispatch_action_for_view(
+                        window_id,
+                        root_view_id,
+                        "root_view:activate_tab_by_pane_group_id",
+                        &pane_group_id,
+                    );
+                }
+                send_telemetry_from_ctx!(TelemetryEvent::SelectNavigationPaletteItem, ctx);
+            }
             CommandPaletteItemAction::NavigateToConversation {
                 pane_view_locator,
                 window_id,

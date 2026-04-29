@@ -9,17 +9,20 @@ use crate::search::command_palette::launch_config;
 use crate::search::command_palette::mixer::{CommandPaletteItemAction, ItemSummary};
 use crate::search::command_palette::new_session::NewSessionDataSource;
 use crate::search::command_palette::repos::RepoDataSource;
-use crate::search::command_palette::{navigation, CommandPaletteMixer};
+use crate::search::command_palette::{navigation, tabs, CommandPaletteMixer};
 use crate::search::data_source::QueryResult;
 use crate::search::files::model::FileSearchModel;
 use crate::search::mixer::AddAsyncSourceOptions;
 use crate::search::QueryFilter;
 use crate::session_management::SessionSource;
 use crate::settings::AISettings;
+use crate::workspace::Workspace;
 use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
 use warpui::keymap::BindingId;
-use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
+use warpui::{
+    AppContext, Entity, ModelContext, ModelHandle, SingletonEntity, WeakViewHandle, WindowId,
+};
 
 use super::conversations;
 use super::warp_drive;
@@ -34,6 +37,7 @@ pub struct DataSourceStore {
     historical_conversation_data_source: ModelHandle<conversations::DataSource>,
     all_conversation_data_source: ModelHandle<conversations::DataSource>,
     repo_data_source: ModelHandle<RepoDataSource>,
+    tabs_data_source: Option<ModelHandle<tabs::DataSource>>,
 }
 
 impl DataSourceStore {
@@ -73,6 +77,7 @@ impl DataSourceStore {
             historical_conversation_data_source,
             all_conversation_data_source,
             repo_data_source,
+            tabs_data_source: None,
         }
     }
 
@@ -168,6 +173,32 @@ impl DataSourceStore {
 
             ctx.notify();
         });
+    }
+
+    /// Resets the [`CommandPaletteMixer`] to the set of data sources relevant for the Ctrl+Tab
+    /// palette, which shows tabs sorted by MRU order.
+    pub fn reset_ctrl_tab_mixer(
+        &mut self,
+        mixer: ModelHandle<CommandPaletteMixer>,
+        workspace: WeakViewHandle<Workspace>,
+        window_id: WindowId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.tabs_data_source.is_none() {
+            self.tabs_data_source =
+                Some(ctx.add_model(|_| tabs::DataSource::new(workspace, window_id)));
+        }
+
+        if let Some(tabs_data_source) = &self.tabs_data_source {
+            mixer.update(ctx, |mixer, ctx| {
+                mixer.reset(ctx);
+                mixer.add_sync_source(
+                    tabs_data_source.clone(),
+                    HashSet::from([QueryFilter::Tabs]),
+                );
+                ctx.notify();
+            });
+        }
     }
 
     /// Returns a [`QueryResult`] from the data sources identified by the `summary`. `None` if none
@@ -270,6 +301,11 @@ impl DataSourceStore {
 
             ItemSummary::NoOp => {
                 // No-op action (used for non-interactable separator items that don't do anything on click).
+                None
+            }
+
+            ItemSummary::Tab { .. } => {
+                // Tabs are only shown in the ctrl_tab palette, not in recent commands.
                 None
             }
         }
