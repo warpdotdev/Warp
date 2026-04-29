@@ -488,6 +488,7 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
 fn make_new_tab_menu(ctx: &AppContext) -> Menu {
     let items = vec![
         updateable_custom_item_without_checkmark(CustomAction::RenameTab, ctx),
+        updateable_custom_item_without_checkmark(CustomAction::RenamePane, ctx),
         MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::SplitPaneRight, ctx),
         updateable_custom_item_without_checkmark(CustomAction::SplitPaneLeft, ctx),

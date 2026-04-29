@@ -96,6 +96,7 @@ pub const TERMINAL_KEYBINDINGS: &[&str] = &[
     "pane_group:navigate_left",
     "pane_group:navigate_next",
     "pane_group:navigate_prev",
+    "pane_group:rename",
     "pane_group:navigate_right",
     "pane_group:navigate_up",
     "pane_group:resize_down",

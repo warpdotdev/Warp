@@ -112,7 +112,9 @@ pub enum WorkspaceAction {
     RenamePane(PaneViewLocator),
     ResetPaneName(PaneViewLocator),
     RenameActiveTab,
+    RenameActivePane,
     SetActiveTabName(String),
+    SetActivePaneName(String),
     /// Sets the manual color override for the active tab.
     ///
     /// - `Color(_)` — apply that color.
@@ -726,7 +728,9 @@ impl WorkspaceAction {
             | RenamePane(_)
             | ResetPaneName(_)
             | RenameActiveTab
+            | RenameActivePane
             | SetActiveTabName(_)
+            | SetActivePaneName(_)
             | SetActiveTabColor(_)
             | CloseTab(_)
             | CloseActiveTab

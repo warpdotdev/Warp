@@ -180,7 +180,7 @@ fn ai_enabled_requirement_not_satisfied_when_ai_off() {
 
 #[test]
 fn commands_without_ai_enabled_remain_available_when_ai_off() {
-    // Commands like `/open-file`, `/rename-tab`, `/changelog` only set session-context bits.
+    // Commands like `/open-file`, `/rename-tab`, `/rename-pane`, `/changelog` only set session-context bits.
     // With AI off, `session_context` has no `AI_ENABLED` bit, but these should still match.
     let command_local = Availability::LOCAL;
     let command_always = Availability::ALWAYS;

@@ -108,6 +108,49 @@ fn test_parse_rename_tab_slash_command_arguments() {
 }
 
 #[test]
+fn test_parse_rename_pane_slash_command_arguments() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let terminal = add_window_with_bootstrapped_terminal(
+            &mut app, None, /* history_file_commands */
+            None,
+        )
+        .await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+        let slash_command_data_source =
+            input.read(&app, |input, _| input.slash_command_data_source.clone());
+
+        slash_command_data_source.read(&app, |data_source, _| {
+            assert!(
+                data_source
+                    .parse_slash_command(commands::RENAME_PANE.name)
+                    .is_none(),
+                "expected /rename-pane without an argument not to parse"
+            );
+
+            let detected_with_argument = data_source
+                .parse_slash_command("/rename-pane Backend")
+                .expect("expected /rename-pane to parse with an argument");
+            assert_eq!(detected_with_argument.argument.as_deref(), Some("Backend"));
+
+            let detected_with_multi_word_argument = data_source
+                .parse_slash_command("/rename-pane Backend API")
+                .expect("expected /rename-pane to preserve the rest of the line as one argument");
+            assert_eq!(
+                detected_with_multi_word_argument.argument.as_deref(),
+                Some("Backend API")
+            );
+
+            let detected_with_empty_argument = data_source
+                .parse_slash_command("/rename-pane ")
+                .expect("expected /rename-pane to parse once the required argument is started");
+            assert_eq!(detected_with_empty_argument.argument.as_deref(), Some(""));
+        });
+    });
+}
+
+#[test]
 fn test_non_ai_commands_remain_active_when_ai_is_disabled() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
@@ -138,6 +181,10 @@ fn test_non_ai_commands_remain_active_when_ai_is_disabled() {
             assert!(
                 active_command_names.contains(&commands::RENAME_TAB.name),
                 "/rename-tab should remain active when AI is off, got: {active_command_names:?}"
+            );
+            assert!(
+                active_command_names.contains(&commands::RENAME_PANE.name),
+                "/rename-pane should remain active when AI is off, got: {active_command_names:?}"
             );
 
             // Commands that require AI should be filtered out.

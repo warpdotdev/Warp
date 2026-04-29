@@ -137,6 +137,8 @@ pub enum CustomAction {
     GoToLine,
     ToggleGlobalSearch,
     ToggleConversationListView,
+    /// Rename the focused pane (same as vertical-tabs context menu).
+    RenamePane,
 }
 
 lazy_static! {
@@ -441,6 +443,7 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::SplitPaneUp
         | CustomAction::ConfigureKeybindings
         | CustomAction::RenameTab
+        | CustomAction::RenamePane
         | CustomAction::CloseTab
         | CustomAction::CloseOtherTabs
         | CustomAction::CloseTabsRight

@@ -5065,6 +5065,37 @@ impl Workspace {
         ctx.notify();
     }
 
+    pub fn rename_active_pane(&mut self, ctx: &mut ViewContext<Self>) {
+        let pane_group = self.active_tab_pane_group();
+        let locator = PaneViewLocator {
+            pane_group_id: pane_group.id(),
+            pane_id: pane_group.as_ref(ctx).focused_pane_id(ctx),
+        };
+        self.rename_pane(locator, ctx);
+    }
+
+    fn set_active_pane_name(&mut self, title: &str, ctx: &mut ViewContext<Self>) {
+        if self.current_workspace_state.is_any_pane_being_renamed() {
+            self.current_workspace_state.clear_pane_being_renamed();
+            self.clear_pane_name_editor(ctx);
+        }
+
+        let title = title.trim();
+        if title.is_empty() {
+            ctx.notify();
+            return;
+        }
+
+        let pane_group = self.active_tab_pane_group();
+        let locator = PaneViewLocator {
+            pane_group_id: pane_group.id(),
+            pane_id: pane_group.as_ref(ctx).focused_pane_id(ctx),
+        };
+        self.set_custom_pane_name(locator, title.to_owned(), ctx);
+        ctx.dispatch_global_action("workspace:save_app", ());
+        ctx.notify();
+    }
+
     /// Programmatically sets the manual color override for a tab.
     ///
     /// - `Color(_)` applies that color.
@@ -19698,7 +19729,9 @@ impl TypedActionView for Workspace {
             RenamePane(locator) => self.rename_pane(*locator, ctx),
             ResetPaneName(locator) => self.clear_pane_name(*locator, ctx),
             RenameActiveTab => self.rename_tab(self.active_tab_index, ctx),
+            RenameActivePane => self.rename_active_pane(ctx),
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
+            SetActivePaneName(name) => self.set_active_pane_name(name, ctx),
             SetActiveTabColor(color) => self.set_tab_color(self.active_tab_index, *color, ctx),
             ToggleTabRightClickMenu { tab_index, anchor } => {
                 self.toggle_tab_right_click_menu(*tab_index, *anchor, ctx)
