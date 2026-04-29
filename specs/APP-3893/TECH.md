@@ -34,7 +34,10 @@ The bulk of the implementation lives in two files. Relevant code:
   2. Subscribes to `HomeDirectoryWatcher` to react to creation/deletion of the subdir at runtime.
   3. If the subdir exists, registers a `repo_metadata::DirectoryWatcher` on it and starts a `GlobalRulesRepositorySubscriber` that funnels per-file events back through the channel.
 - `find_applicable_rules` is extended to layer global rules on top of project rules in the returned `ProjectRulesResult.active_rules`. Globals iterate via `BTreeMap` order (deterministic). The `pending_context()` consumer in `BlocklistAIContextModel` is unchanged.
-- A new event variant `ProjectContextModelEvent::GlobalRulesChanged(GlobalRulesDelta)` is emitted whenever the set of indexed global rules changes (initial read, FS update, or subdir deletion).
+- A separate `find_applicable_project_rules(path)` accessor returns *only* indexed project rules — globals are deliberately not layered in. This is the signal callers should use when they want to know "does this repo itself have rules indexed?" rather than "what rules apply to this path?". Two such callers exist today (PRODUCT.md invariant 13): `app/src/terminal/view/init_project/model.rs:189-202` (`should_have_available_steps`) and `app/src/code_review/code_review_view.rs:4505-4534` ("Repo is initialized with a {file_name} file." hint). Both were migrated as part of this change so a stray `~/.agents/AGENTS.md` does not flip every repo into the "already initialized" state. `find_applicable_rules` continues to be the right entry point for the agent-context packing path in `BlocklistAIContextModel::pending_context`.
+- `spawn_global_rule_read` reacts to a failed re-read by removing any previously cached entry for that path and emitting a `GlobalRulesChanged` deletion delta. This covers cases where the FS event arrives but the read fails (file deleted between event and read, perms revoked, replaced with a non-regular file) — silently keeping stale rule text active would surprise users who had thought they removed it. PRODUCT.md invariant 4 is the user-visible promise this enforces.
+- The `safe_warn!` calls in `register_global_source_watcher` keep the underlying error in the `full:` (dogfood) branch only; the `safe:` branch never includes the error or the path because both can embed the user's home directory.
+- A new event variant `ProjectContextModelEvent::GlobalRulesChanged(GlobalRulesDelta)` is emitted whenever the set of indexed global rules changes (initial read, FS update, subdir deletion, or a previously-known file becoming unreadable).
 - A `pub fn global_rule_paths(&self)` accessor is added for the settings view to read without exposing the full `ProjectRule` content.
 
 The implementation deliberately does **not** persist global rule paths to SQLite. The locations are well-known constants, so we re-scan on every launch.
@@ -70,8 +73,10 @@ Located in `crates/ai/src/project_context/model_tests.rs`. They populate `Projec
 - No rules anywhere → `None`. Covers invariant 10.
 - Global-only → `root_path` falls back to the parent of the global file.
 - Multiple global sources both contribute (uses set-based assertions because `BTreeMap` orders by path).
+- `find_applicable_project_rules` ignores globals: with only a global indexed, project-only is `None` while layered `find_applicable_rules` is `Some`. Covers invariant 13.
+- `find_applicable_project_rules` returns the project rule (only) when a project rule and a global are both indexed. Covers invariant 13.
 
-The 17-test suite passes via `cargo nextest run -p ai --features local_fs project_context`.
+The project-context tests pass via `cargo nextest run -p ai --features local_fs project_context`.
 
 ### Manual end-to-end
 Maps directly to the PRODUCT.md behavior section:

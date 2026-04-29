@@ -152,7 +152,7 @@ impl RuleRow {
 
 pub struct RuleView {
     owner: Option<Owner>,
-    global_rules: Vec<CloudRuleRow>,
+    cloud_global_rules: Vec<CloudRuleRow>,
     /// File-based global rules (e.g. `~/.agents/AGENTS.md`). Surfaced in the
     /// Global tab alongside cloud rules. Sourced from
     /// `ProjectContextModel::global_rule_paths()`.
@@ -234,6 +234,7 @@ impl RuleView {
         ctx.subscribe_to_model(
             &project_context,
             |me, context_model, event, ctx| match event {
+                // Upon indexing a new path, update project rules.
                 ProjectContextModelEvent::PathIndexed => {
                     me.project_rules = context_model
                         .as_ref(ctx)
@@ -245,6 +246,7 @@ impl RuleView {
                         .collect();
                     ctx.notify();
                 }
+                // On detecting a change to global rule files, update file-backed global rules.
                 ProjectContextModelEvent::GlobalRulesChanged(_) => {
                     me.file_backed_global_rules = context_model
                         .as_ref(ctx)
@@ -256,6 +258,8 @@ impl RuleView {
                         .collect();
                     ctx.notify();
                 }
+                // No action needed for other ProjectContextModelEvent variants.
+                // PathIndexed is emitted last and indicates it's time to refresh the UI.
                 ProjectContextModelEvent::KnownRulesChanged(_) => {}
             },
         );
@@ -305,7 +309,7 @@ impl RuleView {
 
         Self {
             owner,
-            global_rules: ai_rules,
+            cloud_global_rules: ai_rules,
             file_backed_global_rules,
             project_rules,
             search_editor,
@@ -355,7 +359,7 @@ impl RuleView {
                 .cloned()
                 .collect()
         };
-        self.global_rules = ai_rules
+        self.cloud_global_rules = ai_rules
             .into_iter()
             .map(|ai_fact| CloudRuleRow {
                 fact: ai_fact,
@@ -373,7 +377,7 @@ impl RuleView {
     fn get_filtered_rules(&self) -> Vec<RuleRow> {
         match self.current_scope {
             RuleScope::Global => self
-                .global_rules
+                .cloud_global_rules
                 .iter()
                 .cloned()
                 .map(|rule| RuleRow::Global(Box::new(rule)))
@@ -887,10 +891,6 @@ impl RuleView {
             RuleScope::ProjectBased => ZERO_STATE_TEXT_PROJECT,
         };
 
-        // Use `FormattedTextElement::from_str` rather than `wrappable_text` so we
-        // can apply `TextAlignment::Center` — `wrappable_text` builds a `Text`
-        // element that always left-aligns within its bounds, even when the
-        // surrounding column centers the *block*.
         let text_color = appearance
             .theme()
             .sub_text_color(appearance.theme().background())
@@ -924,6 +924,7 @@ impl RuleView {
             .with_height(style::ZERO_STATE_HEIGHT)
             .finish(),
         )
+        .with_horizontal_padding(style::ROW_HORIZONTAL_PADDING)
         .with_border(
             Border::all(1.).with_border_color(internal_colors::neutral_2(appearance.theme())),
         )

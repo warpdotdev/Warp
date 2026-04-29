@@ -25,8 +25,6 @@ cfg_if::cfg_if! {
 }
 
 /// A well-known location under `$HOME` that may contain a global rule file.
-/// Adding a new variant (plus its match arm in each accessor) is the only
-/// change required to support a new well-known rules location.
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GlobalRuleSource {
@@ -36,8 +34,7 @@ enum GlobalRuleSource {
 
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 impl GlobalRuleSource {
-    /// Iterates every known global rule source. Replaces the previous
-    /// `GLOBAL_RULE_SOURCES` slice.
+    /// Iterates every known global rule source.
     fn iter() -> impl Iterator<Item = Self> {
         [Self::Agents].into_iter()
     }
@@ -510,19 +507,16 @@ impl ProjectContextModel {
         ctx.spawn(
             async move {
                 // `read_to_string` returning `Err` (e.g. NotFound, permission
-                // denied) is treated as "no rule at this path" rather than an
-                // error; the watcher will rediscover the file on creation.
+                // denied, file replaced with a non-regular file) is converted
+                // to `None`; the callback below decides whether that means
+                // "insert/refresh" or "drop a previously-known entry."
                 let content = async_fs::read_to_string(&file_path).await.ok();
                 (file_path, content)
             },
-            move |me, (file_path, content_opt), ctx| {
-                // File is present: insert/replace the rule and notify subscribers.
-                // File is absent: do nothing here — the home-subdir watcher
-                // will fire `GlobalRulesChanged` deletion events separately
-                // when a previously-known file disappears, so missing reads
-                // here just mean "file never existed," which is the steady
-                // state for unconfigured sources.
-                if let Some(content) = content_opt {
+            move |me, (file_path, content_opt), ctx| match content_opt {
+                Some(content) => {
+                    // Read succeeded: insert (or replace) the rule and notify
+                    // subscribers.
                     me.global_rules.insert(
                         file_path.clone(),
                         ProjectRule {
@@ -536,6 +530,25 @@ impl ProjectContextModel {
                             deleted_rules: vec![],
                         },
                     ));
+                }
+                None => {
+                    // Read failed. If we previously had content cached for
+                    // this path we MUST drop it — silently keeping stale
+                    // rule text active after the file becomes unreadable
+                    // (deleted between the FS event and the read, perms
+                    // revoked, replaced with a directory, …) would leave
+                    // the user's prompts decorated with instructions they
+                    // thought were gone. If we had nothing to begin with,
+                    // this is the steady "file never existed" state and we
+                    // do nothing.
+                    if me.global_rules.remove(&file_path).is_some() {
+                        ctx.emit(ProjectContextModelEvent::GlobalRulesChanged(
+                            GlobalRulesDelta {
+                                discovered_rules: vec![],
+                                deleted_rules: vec![file_path],
+                            },
+                        ));
+                    }
                 }
             },
         );
@@ -560,6 +573,7 @@ impl ProjectContextModel {
         subdir_path: &Path,
         ctx: &mut ModelContext<Self>,
     ) {
+        // If the subdir is already being watched, return early.
         if self.global_source_watchers.contains_key(subdir_path) {
             return;
         }
@@ -583,8 +597,15 @@ impl ProjectContextModel {
             Err(err) => {
                 // `safe_warn!` because the path contains the user's home dir,
                 // which is PII; we only want the full path on dogfood builds.
+                // The error itself can also embed the canonicalized path
+                // (e.g. `RepoMetadataError::RepoNotFound(...)`), so we keep
+                // it out of the safe branch as well — only the source name
+                // is safe to send to Sentry.
                 safe_warn!(
-                    safe: ("Failed to register {} for global rules watching: {err}", source.name()),
+                    safe: (
+                        "Failed to register {} for global rules watching",
+                        source.name()
+                    ),
                     full: (
                         "Failed to register {} for global rules watching: {err}",
                         subdir_path.display()
@@ -612,8 +633,14 @@ impl ProjectContextModel {
         let subdir_for_log = subdir_path_owned;
         ctx.spawn(start.registration_future, move |me, res, ctx| {
             if let Err(err) = res {
+                // Same PII shape as the registration error above: the path
+                // and the error can both contain the user's home dir, so
+                // both stay in the `full` branch only.
                 safe_warn!(
-                    safe: ("Failed to start watching {} for global rules: {err}", source.name()),
+                    safe: (
+                        "Failed to start watching {} for global rules",
+                        source.name()
+                    ),
                     full: (
                         "Failed to start watching {} for global rules: {err}",
                         subdir_for_log.display()
@@ -709,6 +736,44 @@ impl ProjectContextModel {
         }
     }
 
+    /// Project-only rule lookup. Returns `Some` only when an indexed project
+    /// root above `path` actually contributes a rule — globals are
+    /// deliberately ignored.
+    ///
+    /// Use this for callers that read "do we have rules for this repo?" as a
+    /// project-initialization signal (for example the `/init` flow's
+    /// `should_have_available_steps` check, or the code-review empty
+    /// state's "Repo is initialized with a WARP.md file" hint). Mixing
+    /// global fallbacks into that signal would make every repo look
+    /// initialized as soon as the user drops a single `~/.agents/AGENTS.md`,
+    /// which is the wrong product behavior.
+    pub fn find_applicable_project_rules(&self, path: &Path) -> Option<ProjectRulesResult> {
+        let mut current_path = path.to_owned();
+
+        // Walk upwards from `path` toward the filesystem root, stopping at the
+        // first directory we have indexed project rules for. `path_to_rules`
+        // is keyed by indexed project root, so popping the path produces
+        // every ancestor directory until we hit a known root or `pop()`
+        // returns false (we've reached the top of the path).
+        loop {
+            if let Some(rules) = self.path_to_rules.get(&current_path) {
+                let result = rules.find_active_or_applicable_rules(path);
+                if result.active_rules.is_empty() && result.available_rule_paths.is_empty() {
+                    return None;
+                }
+                return Some(ProjectRulesResult {
+                    root_path: current_path,
+                    active_rules: result.active_rules,
+                    additional_rule_paths: result.available_rule_paths,
+                });
+            }
+
+            if !current_path.pop() {
+                return None;
+            }
+        }
+    }
+
     /// Returns the rules applicable to `path`, layering global rules on top of
     /// any project rules discovered up the directory tree.
     ///
@@ -716,39 +781,28 @@ impl ProjectContextModel {
     /// are always included (when present) regardless of project state; the
     /// existing in-directory `WARP.md > AGENTS.md` shadow inside
     /// [`RuleAtPath::respected_rule`] still applies to project rules.
+    ///
+    /// This is the entry point used by `BlocklistAIContextModel` when packing
+    /// `AIAgentContext::ProjectRules` for an agent query. Callers that need
+    /// a project-only signal should use
+    /// [`Self::find_applicable_project_rules`] instead.
     pub fn find_applicable_rules(&self, path: &Path) -> Option<ProjectRulesResult> {
-        let mut current_path = path.to_owned();
-        let mut project_active_rules: Vec<ProjectRule> = Vec::new();
-        let mut available_rule_paths: Vec<String> = Vec::new();
-        let mut project_root: Option<PathBuf> = None;
-
-        // Walk upwards from `path` toward the filesystem root, stopping at the
-        // first directory we have indexed project rules for. `path_to_rules` is
-        // keyed by indexed project root, so popping the path produces every
-        // ancestor directory until we hit a known root or `pop()` returns
-        // false (we've reached the top of the path).
-        loop {
-            if let Some(rules) = self.path_to_rules.get(&current_path) {
-                let result = rules.find_active_or_applicable_rules(path);
-                project_active_rules = result.active_rules;
-                available_rule_paths = result.available_rule_paths;
-                project_root = Some(current_path.clone());
-                break;
-            }
-
-            if !current_path.pop() {
-                break;
-            }
-        }
+        let project_result = self.find_applicable_project_rules(path);
 
         // Layered precedence: global rules are always included alongside
         // project rules. `global_rules` is a `BTreeMap`, so iteration is
-        // sorted by path — deterministic without needing a separate ordering
-        // pass.
+        // sorted by path — deterministic without needing a separate
+        // ordering pass.
         let mut active_rules: Vec<ProjectRule> = self.global_rules.values().cloned().collect();
-        active_rules.extend(project_active_rules);
+        let (project_root, additional_rule_paths) = match project_result {
+            Some(project) => {
+                active_rules.extend(project.active_rules);
+                (Some(project.root_path), project.additional_rule_paths)
+            }
+            None => (None, Vec::new()),
+        };
 
-        if active_rules.is_empty() && available_rule_paths.is_empty() {
+        if active_rules.is_empty() && additional_rule_paths.is_empty() {
             return None;
         }
 
@@ -765,7 +819,7 @@ impl ProjectContextModel {
         Some(ProjectRulesResult {
             root_path,
             active_rules,
-            additional_rule_paths: available_rule_paths,
+            additional_rule_paths,
         })
     }
 
