@@ -474,15 +474,7 @@ impl WslShellStarter {
 
         // We don't need to check the validity of the path or the existence of the binary since
         // we get this information directly from a spun-up shell in WSL.
-        let shell_type = if shell_path.contains("bash") {
-            ShellType::Bash
-        } else if shell_path.contains("zsh") {
-            ShellType::Zsh
-        } else if shell_path.contains("fish") {
-            ShellType::Fish
-        } else if shell_path.contains("nu") {
-            ShellType::Nu
-        } else {
+        let Some(shell_type) = wsl_shell_type_from_path(&shell_path) else {
             log::warn!("The shell {shell_path:#} is not yet supported in WSL");
             return None;
         };
@@ -538,6 +530,11 @@ impl WslShellStarter {
         .inspect_err(|err| log::error!("error convertion WSL home dir for host: {err:#}"))
         .ok()
     }
+}
+
+fn wsl_shell_type_from_path(shell_path: &str) -> Option<ShellType> {
+    let shell_name = shell_path.rsplit('/').next().unwrap_or(shell_path);
+    ShellType::from_name(shell_name)
 }
 
 /// If the given `path_or_command` resolves to a supported shell binary, returns a tuple

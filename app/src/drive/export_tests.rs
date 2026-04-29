@@ -8,7 +8,6 @@ use std::{
 use futures::channel::oneshot;
 use parking_lot::Mutex;
 use tempfile::TempDir;
-use warp_util::path::ShellFamily;
 use warpui::{AddSingletonModel, App, SingletonEntity, WindowId};
 
 use crate::{
@@ -19,6 +18,7 @@ use crate::{
     drive::CloudObjectTypeAndId,
     notebooks::{CloudNotebook, CloudNotebookModel, NotebookId},
     server::ids::SyncId,
+    terminal::shell::ShellType,
     workflows::{workflow::Workflow, CloudWorkflow, CloudWorkflowModel, WorkflowId},
     workspace::ToastStack,
     workspaces::user_workspaces::UserWorkspaces,
@@ -81,7 +81,7 @@ impl ExportTest {
                     .to_str()
                     .expect("Path must be UTF-8")
                     .to_owned()]),
-                ShellFamily::Posix,
+                ShellType::Bash,
                 ctx,
             );
             id
@@ -477,7 +477,7 @@ fn test_export_multiple_objects() {
                     .to_str()
                     .expect("Path must be UTF-8")
                     .to_owned()]),
-                ShellFamily::Posix,
+                ShellType::Bash,
                 ctx,
             );
         });

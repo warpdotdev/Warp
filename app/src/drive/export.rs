@@ -14,7 +14,6 @@ use aho_corasick::{AhoCorasick, MatchKind};
 use anyhow::{anyhow, Context};
 #[cfg(feature = "local_fs")]
 use futures::AsyncWriteExt;
-use warp_util::path::ShellFamily;
 use warpui::{
     platform::{file_picker::FilePickerError, FilePickerConfiguration, OperatingSystem},
     r#async::SpawnedFutureHandle,
@@ -24,6 +23,7 @@ use warpui::{
 use crate::{
     cloud_object::{model::persistence::CloudModel, Space},
     safe_warn,
+    terminal::shell::ShellType,
     view_components::DismissibleToast,
     workspace::{active_terminal_in_window, ToastStack},
 };
@@ -100,9 +100,11 @@ impl ExportManager {
         objects: &[CloudObjectTypeAndId],
         ctx: &mut ModelContext<Self>,
     ) {
-        let shell_family =
-            active_terminal_in_window(window_id, ctx, |terminal, ctx| terminal.shell_family(ctx))
-                .unwrap_or_else(|| OperatingSystem::get().default_shell_family());
+        let shell_type = active_terminal_in_window(window_id, ctx, |terminal, ctx| {
+            terminal.active_session_shell_type(ctx)
+        })
+        .flatten()
+        .unwrap_or_else(|| OperatingSystem::get().default_shell_family().into());
         let is_bulk = objects.len() > 1;
         let mut ids = Vec::new();
         for object in objects {
@@ -128,7 +130,7 @@ impl ExportManager {
         ctx.open_file_picker(
             move |result, app| {
                 Self::handle(app).update(app, |me, ctx| {
-                    me.handle_files_picked(ids, result, shell_family, ctx);
+                    me.handle_files_picked(ids, result, shell_type, ctx);
                 });
             },
             FilePickerConfiguration::new().folders_only(),
@@ -140,7 +142,7 @@ impl ExportManager {
         &mut self,
         ids: Vec<ExportId>,
         result: Result<Vec<String>, FilePickerError>,
-        shell_family: ShellFamily,
+        shell_type: ShellType,
         ctx: &mut ModelContext<Self>,
     ) {
         match result {
@@ -149,7 +151,7 @@ impl ExportManager {
                     Some(path) => {
                         let path = PathBuf::from(path);
                         for id in ids {
-                            self.run_export(id, &path, shell_family, ctx);
+                            self.run_export(id, &path, shell_type, ctx);
                         }
                     }
                     None => {
@@ -180,15 +182,14 @@ impl ExportManager {
         &mut self,
         id: ExportId,
         path: &Path,
-        shell_family: ShellFamily,
+        shell_type: ShellType,
         ctx: &mut ModelContext<Self>,
     ) {
         match self.exports.entry(id) {
             Entry::Occupied(mut export) => match export.get().state {
                 State::ChoosingLocation => {
                     log::debug!("Exporting {id:?} to {}", path.display());
-                    match Self::export_one(id, export.get().is_bulk, path, id.0, shell_family, ctx)
-                    {
+                    match Self::export_one(id, export.get().is_bulk, path, id.0, shell_type, ctx) {
                         Ok(handle) => {
                             export.get_mut().state = State::Exporting(handle);
                         }
@@ -266,7 +267,7 @@ impl ExportManager {
         is_bulk: bool,
         parent_path: &Path,
         object: CloudObjectTypeAndId,
-        shell_family: ShellFamily,
+        shell_type: ShellType,
         ctx: &mut ModelContext<Self>,
     ) -> anyhow::Result<SpawnedFutureHandle> {
         let cloud_model = CloudModel::as_ref(ctx);
@@ -300,7 +301,7 @@ impl ExportManager {
 
                     let exported_variables = env_var_collection_model
                         .string_model
-                        .export_variables("\n", shell_family.into())
+                        .export_variables("\n", shell_type)
                         .into_bytes();
 
                     (

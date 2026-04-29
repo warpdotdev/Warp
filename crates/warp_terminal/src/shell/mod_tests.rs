@@ -111,6 +111,11 @@ fn test_from_name() {
     assert_eq!(Some(ShellType::Nu), ShellType::from_name("-nu"));
     assert_eq!(Some(ShellType::Nu), ShellType::from_name("/usr/bin/nu"));
     assert_eq!(Some(ShellType::Nu), ShellType::from_name("nu.exe"));
+    assert_eq!(
+        Some(ShellType::Nu),
+        ShellType::from_name("C:\\Users\\user\\scoop\\apps\\nu\\current\\nu.exe")
+    );
+    assert_eq!(None, ShellType::from_name("menu.exe"));
     assert_eq!(None, ShellType::from_name("nush"));
     assert_eq!(
         Some(ShellType::PowerShell),

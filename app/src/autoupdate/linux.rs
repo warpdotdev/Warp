@@ -352,6 +352,10 @@ pub enum PackageManager {
 
 impl PackageManager {
     pub fn update_command(&self, shell_type: ShellType, update_id: &str) -> String {
+        if shell_type == ShellType::Nu {
+            return self.nu_update_command(update_id);
+        }
+
         let package_name = Self::package_name();
         let repo_name = Self::repo_name();
         let and = shell_type.and_combiner();
@@ -420,6 +424,57 @@ impl PackageManager {
             ShellType::PowerShell => "Warp-Finish-Update",
         };
         format!("{base_command}{and}{finish_update_fn} {update_id}")
+    }
+
+    fn nu_update_command(&self, update_id: &str) -> String {
+        let package_name = Self::package_name();
+        let repo_name = Self::repo_name();
+
+        let base_command = match self {
+            PackageManager::Apt {
+                distribution_update_disabled_repository,
+            } => {
+                let dist_upgrade_prefix = if *distribution_update_disabled_repository {
+                    format!("try {{ warp_handle_dist_upgrade {repo_name} }} catch {{ null }}; ")
+                } else {
+                    String::new()
+                };
+                format!("{dist_upgrade_prefix}sudo apt update; sudo apt install {package_name}")
+            }
+            PackageManager::Yum => {
+                format!("sudo yum --refresh --repo {repo_name} upgrade {package_name}")
+            }
+            PackageManager::Dnf => {
+                format!("sudo dnf --refresh --repo {repo_name} upgrade {package_name}")
+            }
+            PackageManager::Zypper => {
+                format!("sudo zypper update {package_name}")
+            }
+            PackageManager::Pacman {
+                is_repo_configured,
+                is_signing_key_configured,
+            } => {
+                let repo_prefix = if !is_repo_configured {
+                    let cache_dir = warp_core::paths::cache_dir();
+                    let cache_dir_str = cache_dir.display();
+                    // Back up the existing pacman.conf file just in case anything goes wrong, then
+                    // add the repository config.
+                    format!("^mkdir -p {cache_dir_str}; ^cp /etc/pacman.conf {cache_dir_str}; sudo sh -c \"echo '\n[{repo_name}]\nServer = https://releases.warp.dev/linux/pacman/\\$repo/\\$arch' >> /etc/pacman.conf\"; ")
+                } else {
+                    String::new()
+                };
+                let key_prefix = if !is_signing_key_configured {
+                    // Retrieve our key from keys.openpgp.org and locally sign it before retrieving
+                    // the package repository and installing the updated package.
+                    "sudo pacman-key -r \"linux-maintainers@warp.dev\" --keyserver hkp://keys.openpgp.org:80; sudo pacman-key --lsign-key \"linux-maintainers@warp.dev\"; ".to_string()
+                } else {
+                    String::new()
+                };
+                format!("{key_prefix}{repo_prefix}sudo pacman -Sy {package_name}")
+            }
+        };
+
+        format!("try {{ {base_command}; warp_finish_update {update_id} }} catch {{ print $in }}")
     }
 
     fn package_name() -> &'static str {

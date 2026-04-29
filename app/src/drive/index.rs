@@ -5292,11 +5292,12 @@ impl TypedActionView for DriveIndex {
                     ctx
                 );
 
-                let shell_family =
+                let shell_type =
                     active_terminal_in_window(ctx.window_id(), ctx, |terminal, ctx| {
-                        terminal.shell_family(ctx)
+                        terminal.active_session_shell_type(ctx)
                     })
-                    .unwrap_or_else(|| OperatingSystem::get().default_shell_family());
+                    .flatten()
+                    .unwrap_or_else(|| OperatingSystem::get().default_shell_family().into());
 
                 let cloud_model = CloudModel::as_ref(ctx);
                 let object = cloud_model.get_by_uid(&cloud_object_type_and_id.uid());
@@ -5318,7 +5319,7 @@ impl TypedActionView for DriveIndex {
                                 let vars = env_var_collection
                                     .model()
                                     .string_model
-                                    .export_variables(" ", shell_family.into());
+                                    .export_variables(" ", shell_type);
                                 ctx.clipboard().write(ClipboardContent::plain_text(vars));
                             }
                         }

@@ -21,6 +21,33 @@ fn test_program_unknown_shell() {
 }
 
 #[test]
+fn test_program_nu_shell() {
+    assert!(matches!(
+        parse_shell_type_from_path(Path::new("/usr/bin/nu")),
+        Some((_, ShellType::Nu))
+    ));
+}
+
+#[test]
+fn test_program_nu_exe_shell() {
+    assert!(matches!(
+        parse_shell_type_from_path(Path::new(
+            "C:\\Users\\user\\scoop\\apps\\nu\\current\\nu.exe"
+        )),
+        Some((_, ShellType::Nu))
+    ));
+    assert!(
+        parse_shell_type_from_path(Path::new("C:\\Users\\user\\scoop\\apps\\menu.exe")).is_none()
+    );
+}
+
+#[test]
+fn test_wsl_shell_type_from_path_matches_basename() {
+    assert_eq!(wsl_shell_type_from_path("/usr/bin/nu"), Some(ShellType::Nu));
+    assert_eq!(wsl_shell_type_from_path("/usr/bin/menu.exe"), None);
+}
+
+#[test]
 fn test_trim_wsl_err_from_output() {
     assert_eq!(
         take_until_utf16_crlf(b"/bin/bash\n".to_vec()),

@@ -294,6 +294,7 @@ impl From<warp_util::path::ShellFamily> for ShellType {
 impl ShellType {
     // Returns a shell type from a shell executable name
     pub fn from_name(name: &str) -> Option<Self> {
+        let executable_name = name.rsplit(['/', '\\']).next().unwrap_or(name);
         // Support (/usr/bin/zsh /bin/zsh -zsh or zsh)
         if name == "bash"
             || name == "-bash"
@@ -305,7 +306,10 @@ impl ShellType {
             Some(ShellType::Zsh)
         } else if name == "fish" || name == "-fish" || name.ends_with("/fish") {
             Some(ShellType::Fish)
-        } else if name == "nu" || name == "-nu" || name.ends_with("/nu") || name.ends_with("nu.exe")
+        } else if name == "nu"
+            || name == "-nu"
+            || name.ends_with("/nu")
+            || executable_name == "nu.exe"
         {
             Some(ShellType::Nu)
         } else if name == "pwsh"
