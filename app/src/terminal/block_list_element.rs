@@ -4438,7 +4438,10 @@ impl Element for BlockListElement {
         // This matches the pattern used by SelectableArea, Draggable, Resizable,
         // and both Scrollable variants, which all use `raw_event()` for drags.
         let event_at_z_index = if self.is_terminal_selecting
-            && matches!(event.raw_event(), Event::LeftMouseDragged { .. })
+            && matches!(
+                event.raw_event(),
+                Event::LeftMouseDragged { .. } | Event::LeftMouseUp { .. }
+            )
         {
             event.raw_event()
         } else {
