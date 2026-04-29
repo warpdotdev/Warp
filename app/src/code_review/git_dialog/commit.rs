@@ -35,7 +35,10 @@ use crate::{
     },
     server::server_api::ServerApiProvider,
     ui_components::icons::Icon,
-    util::git::{FileChangeEntry, PrInfo},
+    util::git::{
+        create_pr, get_diff_for_commit_message, get_file_change_entries, run_commit, run_push,
+        FileChangeEntry, PrInfo,
+    },
     view_components::action_button::{ActionButton, ButtonSize, SecondaryTheme},
 };
 use warp_core::send_telemetry_from_ctx;
@@ -191,9 +194,7 @@ pub(super) fn new_state(
     let include_unstaged = true;
     let repo_path_for_load = repo_path.to_path_buf();
     ctx.spawn(
-        async move {
-            crate::util::git::get_file_change_entries(&repo_path_for_load, include_unstaged).await
-        },
+        async move { get_file_change_entries(&repo_path_for_load, include_unstaged).await },
         move |me, result, ctx| {
             let GitDialogMode::Commit(state) = &mut me.mode else {
                 return;
@@ -273,8 +274,7 @@ fn generate_commit_message(
 
     ctx.spawn(
         async move {
-            let diff =
-                crate::util::git::get_diff_for_commit_message(&repo_path, include_unstaged).await?;
+            let diff = get_diff_for_commit_message(&repo_path, include_unstaged).await?;
             let generated = code_review_ai
                 .generate_code_review_content(GenerateCodeReviewContentRequest {
                     output_type: OutputType::CommitMessage,
@@ -374,7 +374,6 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
     let message_editor = state.message_editor.clone();
     let repo_path = me.repo_path().clone();
     let branch_name = me.branch_name().to_string();
-    let parent_branch = me.parent_branch_name.clone();
 
     me.set_loading(LOADING_LABEL, ctx);
 
@@ -394,16 +393,15 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
         async move {
             let path_env = path_future.await;
             let path_env_ref = path_env.as_deref();
-            crate::util::git::run_commit(&repo_path, &message, include_unstaged, path_env_ref)
-                .await?;
+            run_commit(&repo_path, &message, include_unstaged, path_env_ref).await?;
             let outcome = match intent {
                 CommitIntent::CommitOnly => CommitOutcome::Committed,
                 CommitIntent::CommitAndPush => {
-                    crate::util::git::run_push(&repo_path, &branch_name, path_env_ref).await?;
+                    run_push(&repo_path, &branch_name, path_env_ref).await?;
                     CommitOutcome::Pushed
                 }
                 CommitIntent::CommitAndCreatePr => {
-                    crate::util::git::run_push(&repo_path, &branch_name, path_env_ref).await?;
+                    run_push(&repo_path, &branch_name, path_env_ref).await?;
                     let pr = match code_review_ai {
                         Some(ai) => {
                             // Reuse pr.rs's AI-title/body-with-fallback helper so
@@ -412,7 +410,6 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                             create_pr_with_ai_content(
                                 &repo_path,
                                 &branch_name,
-                                parent_branch.as_deref(),
                                 ai.as_ref(),
                                 path_env_ref,
                             )
@@ -422,14 +419,7 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                             // AI autogen disabled (global toggle, per-feature
                             // toggle, or enterprise) — skip AI entirely and use
                             // `gh pr create --fill`
-                            crate::util::git::create_pr(
-                                &repo_path,
-                                None,
-                                None,
-                                parent_branch.as_deref(),
-                                path_env_ref,
-                            )
-                            .await?
+                            create_pr(&repo_path, None, None, path_env_ref).await?
                         }
                     };
                     CommitOutcome::PrCreated(pr)
@@ -513,7 +503,7 @@ fn reload_file_changes(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>) {
         _ => return,
     };
     ctx.spawn(
-        async move { crate::util::git::get_file_change_entries(&repo_path, include_unstaged).await },
+        async move { get_file_change_entries(&repo_path, include_unstaged).await },
         |me, result, ctx| {
             if let GitDialogMode::Commit(state) = &mut me.mode {
                 match result {

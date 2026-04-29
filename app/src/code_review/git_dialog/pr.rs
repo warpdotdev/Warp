@@ -4,6 +4,8 @@
 //! with expandable per-file stats. On confirm, spawns `create_pr` and shows
 //! a toast with a clickable "Open PR" link.
 
+use std::path::Path;
+
 use warp_core::ui::appearance::Appearance;
 use warpui::{
     elements::{
@@ -40,6 +42,7 @@ pub enum PrSubAction {
 }
 
 pub struct PrState {
+    base_branch_name: Option<String>,
     file_changes: Vec<FileChangeEntry>,
     changes_expanded: bool,
     summary_mouse_state: MouseStateHandle,
@@ -65,14 +68,13 @@ pub(super) fn is_ready_to_confirm(_state: &PrState) -> bool {
 }
 
 pub(super) fn new_state(
-    repo_path: &std::path::Path,
-    parent_branch: Option<&str>,
+    repo_path: &Path,
+    base_branch_name: Option<String>,
     ctx: &mut ViewContext<GitDialog>,
 ) -> PrState {
     let diff_repo_path = repo_path.to_path_buf();
-    let parent_branch = parent_branch.map(|s| s.to_string());
     ctx.spawn(
-        async move { get_branch_diff_entries(&diff_repo_path, parent_branch.as_deref()).await },
+        async move { get_branch_diff_entries(&diff_repo_path).await },
         |me, result, ctx| {
             if let GitDialogMode::CreatePr(state) = &mut me.mode {
                 match result {
@@ -89,6 +91,10 @@ pub(super) fn new_state(
     );
 
     PrState {
+        base_branch_name: base_branch_name.map(|name| {
+            let name = name.trim();
+            name.strip_prefix("origin/").unwrap_or(name).to_string()
+        }),
         file_changes: Vec::new(),
         changes_expanded: false,
         summary_mouse_state: MouseStateHandle::default(),
@@ -117,7 +123,6 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
     };
     let repo_path = me.repo_path().clone();
     let branch_name = me.branch_name().to_string();
-    let parent_branch = me.parent_branch_name.clone();
 
     me.set_loading(loading_label_for(), ctx);
 
@@ -135,20 +140,12 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                 create_pr_with_ai_content(
                     &repo_path,
                     &branch_name,
-                    parent_branch.as_deref(),
                     code_review_ai.as_ref(),
                     path_env.as_deref(),
                 )
                 .await
             } else {
-                create_pr(
-                    &repo_path,
-                    None,
-                    None,
-                    parent_branch.as_deref(),
-                    path_env.as_deref(),
-                )
-                .await
+                create_pr(&repo_path, None, None, path_env.as_deref()).await
             }
         },
         move |_me, result, ctx| {
@@ -182,14 +179,13 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
 /// Falls back to `gh pr create --fill` if AI generation fails or returns
 /// empty content.
 pub(super) async fn create_pr_with_ai_content(
-    repo_path: &std::path::Path,
+    repo_path: &Path,
     branch_name: &str,
-    parent_branch: Option<&str>,
     code_review_ai: &dyn AIClient,
     path_env: Option<&str>,
 ) -> anyhow::Result<PrInfo> {
-    let diff = get_diff_for_pr(repo_path, parent_branch).await?;
-    let commit_messages = get_branch_commit_messages(repo_path, parent_branch)
+    let diff = get_diff_for_pr(repo_path).await?;
+    let commit_messages = get_branch_commit_messages(repo_path)
         .await
         .unwrap_or_default();
 
@@ -217,7 +213,6 @@ pub(super) async fn create_pr_with_ai_content(
                 repo_path,
                 Some(&title_resp.content),
                 Some(&body_resp.content),
-                parent_branch,
                 path_env,
             )
             .await
@@ -227,11 +222,11 @@ pub(super) async fn create_pr_with_ai_content(
             log::warn!(
                 "AI PR content generation returned empty title/body, falling back to --fill"
             );
-            crate::util::git::create_pr(repo_path, None, None, parent_branch, path_env).await
+            create_pr(repo_path, None, None, path_env).await
         }
         Err(err) => {
             log::warn!("AI PR content generation failed, falling back to --fill: {err}");
-            crate::util::git::create_pr(repo_path, None, None, parent_branch, path_env).await
+            create_pr(repo_path, None, None, path_env).await
         }
     }
 }
@@ -253,6 +248,11 @@ pub(super) fn render_body(
     branch_name: &str,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
+    let base_branch = state
+        .base_branch_name
+        .as_deref()
+        .unwrap_or("default branch");
+    let branch_name = format!("{branch_name} \u{2192} {base_branch}");
     Flex::column()
         .with_child(
             Container::new(render_branch_section(branch_name, appearance))
