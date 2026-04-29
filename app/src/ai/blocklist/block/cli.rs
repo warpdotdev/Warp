@@ -96,7 +96,9 @@ use crate::{
 
 use crate::ai::agent::AIAgentInput;
 use crate::ai::blocklist::block::TextLocation;
-use crate::util::link_detection::{detect_links, DetectedLinksState};
+use crate::util::link_detection::{
+    collect_output_data_for_link_detection, detect_all_links, detect_links, DetectedLinksState,
+};
 
 use crate::ai::agent::icons::yellow_stop_icon;
 use crate::ai::blocklist::inline_action::inline_action_icons::icon_size;
@@ -221,6 +223,7 @@ pub struct CLISubagentView {
 
     secret_redaction_state: SecretRedactionState,
     link_detection_state: DetectedLinksState,
+    link_detection_handle: Option<SpawnedFutureHandle>,
     selected_text: Arc<RwLock<Option<String>>>,
 
     allow_button: CompactibleSplitActionButton,
@@ -473,6 +476,7 @@ impl CLISubagentView {
             conversation_id,
             terminal_view_id: ctx.view_id(),
             link_detection_state: Default::default(),
+            link_detection_handle: None,
             code_editor_views: Default::default(),
             code_editor_buttons: Default::default(),
             table_section_handles: Default::default(),
@@ -666,25 +670,83 @@ impl CLISubagentView {
         match self.model.status(ctx) {
             AIBlockOutputStatus::Pending => {
                 self.secret_redaction_state.reset();
+                self.spawn_link_detection(None, ctx);
             }
             AIBlockOutputStatus::PartiallyReceived { output } => {
                 let output = output.get();
+                self.spawn_link_detection(Some(&output), ctx);
                 self.handle_updated_output(&output, ctx);
             }
             AIBlockOutputStatus::Complete { output } => {
                 let output = output.get();
+                self.spawn_link_detection(Some(&output), ctx);
                 self.handle_updated_output(&output, ctx);
                 self.handle_complete_output(&output, ctx);
             }
             AIBlockOutputStatus::Cancelled { partial_output, .. } => {
                 if let Some(output) = partial_output.as_ref() {
                     let output = output.get();
+                    self.spawn_link_detection(Some(&output), ctx);
                     self.handle_updated_output(&output, ctx);
+                } else {
+                    self.spawn_link_detection(None, ctx);
                 }
             }
-            AIBlockOutputStatus::Failed { .. } => (),
+            AIBlockOutputStatus::Failed { .. } => self.spawn_link_detection(None, ctx),
         }
         ctx.notify();
+    }
+
+    fn spawn_link_detection(
+        &mut self,
+        output: Option<&AIAgentOutput>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if let Some(handle) = self.link_detection_handle.take() {
+            handle.abort();
+        }
+
+        let (mut texts, hyperlinks) = match output {
+            Some(output) => collect_output_data_for_link_detection(
+                output,
+                self.current_working_directory.as_ref(),
+                self.shell_launch_data.as_ref(),
+            ),
+            None => (Vec::new(), Vec::new()),
+        };
+
+        for (input_index, input) in self.model.inputs_to_render(ctx).iter().enumerate() {
+            if let AIAgentInput::UserQuery { query, .. } = input {
+                texts.push((query.clone(), TextLocation::Query { input_index }));
+            }
+        }
+
+        #[cfg(feature = "local_fs")]
+        {
+            let cwd = self.current_working_directory.clone();
+            let shell_data = self.shell_launch_data.clone();
+            self.link_detection_handle = Some(ctx.spawn(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        detect_all_links(&texts, hyperlinks, cwd.as_ref(), shell_data.as_ref())
+                    })
+                    .await
+                },
+                |me, result, ctx| {
+                    if let Ok(all_links) = result {
+                        me.link_detection_state.replace_all_links(all_links);
+                        ctx.notify();
+                    }
+                    me.link_detection_handle = None;
+                },
+            ));
+        }
+
+        #[cfg(not(feature = "local_fs"))]
+        {
+            let all_links = detect_all_links(&texts, hyperlinks, None, None);
+            self.link_detection_state.replace_all_links(all_links);
+        }
     }
 
     fn handle_updated_output(&mut self, output: &AIAgentOutput, ctx: &mut ViewContext<Self>) {

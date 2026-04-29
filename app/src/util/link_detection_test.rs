@@ -79,9 +79,9 @@ fn test_detect_wrapped_urls_across_lines_registers_full_url_per_line_segment() {
     let lines = vec![
         (
             0,
-            "See https://example.com/some/very/long/path?param1=value1&param2=va".to_string(),
+            "See https://example.com/some/very/long/path?param1=value1&param2=va\n".to_string(),
         ),
-        (1, "lue2&param3=value3 for details".to_string()),
+        (1, "lue2&param3=value3 for details\n".to_string()),
     ];
 
     let mut wrapped = detect_wrapped_urls_across_lines(section_index, &lines);
@@ -102,7 +102,7 @@ fn test_detect_wrapped_urls_across_lines_registers_full_url_per_line_segment() {
                 section_index,
                 line_index: 0,
             },
-            vec![(4..71, expected_url.to_string())]
+            vec![(4..67, expected_url.to_string())]
         )
     );
 
@@ -122,11 +122,29 @@ fn test_detect_wrapped_urls_across_lines_registers_full_url_per_line_segment() {
 fn test_detect_wrapped_urls_across_lines_ignores_single_line_urls() {
     let section_index = 1;
     let lines = vec![
-        (0, "Visit https://example.com/foo".to_string()),
-        (1, "next line".to_string()),
+        (0, "Visit https://example.com/foo\n".to_string()),
+        (1, "next line\n".to_string()),
     ];
 
     let wrapped = detect_wrapped_urls_across_lines(section_index, &lines);
     assert!(wrapped.is_empty());
 }
 
+#[test]
+fn test_detect_wrapped_urls_across_lines_allows_query_value_continuation() {
+    let section_index = 1;
+    let lines = vec![
+        (0, "Visit https://example.com/foo?token=abc\n".to_string()),
+        (1, "def for details\n".to_string()),
+    ];
+
+    let wrapped = detect_wrapped_urls_across_lines(section_index, &lines);
+
+    assert_eq!(wrapped.len(), 2);
+    for (_, entries) in wrapped {
+        assert_eq!(
+            entries[0].1,
+            "https://example.com/foo?token=abcdef".to_string()
+        );
+    }
+}

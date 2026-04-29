@@ -208,6 +208,23 @@ fn detect_urls(text: &str) -> Vec<Range<usize>> {
     url_ranges
 }
 
+fn strip_trailing_line_ending(text: &str) -> &str {
+    text.strip_suffix("\r\n")
+        .or_else(|| text.strip_suffix('\n'))
+        .unwrap_or(text)
+}
+
+fn looks_like_wrapped_url_continuation(preceding_url_text: &str, continuation_text: &str) -> bool {
+    continuation_text.chars().any(|c| {
+        matches!(
+            c,
+            '/' | '?' | '&' | '=' | '%' | '#' | '.' | '-' | '_' | '~' | ':' | '@'
+        )
+    }) || preceding_url_text.contains('?')
+        || preceding_url_text.contains('&')
+        || preceding_url_text.ends_with('=')
+}
+
 /// Detects URLs that wrap across consecutive lines within a single text section and
 /// returns per-line hyperlink entries (range-on-line + full URL string).
 ///
@@ -234,10 +251,14 @@ fn detect_wrapped_urls_across_lines(
     // is detected as a single URL. Track each line's char-offset start into the joined
     // buffer so we can remap detected URL ranges back to per-line char ranges.
     let mut joined = String::new();
+    let line_texts = lines
+        .iter()
+        .map(|(_, raw_text)| strip_trailing_line_ending(raw_text))
+        .collect::<Vec<_>>();
     let mut line_char_starts: Vec<usize> = Vec::with_capacity(lines.len());
-    for (_, raw_text) in lines {
+    for line_text in &line_texts {
         line_char_starts.push(joined.chars().count());
-        joined.push_str(raw_text);
+        joined.push_str(line_text);
     }
     let total_chars = joined.chars().count();
 
@@ -257,8 +278,9 @@ fn detect_wrapped_urls_across_lines(
 
         // For each line, compute the overlap with the URL range (in char offsets into
         // the joined buffer) and remap it to a per-line range.
-        let mut covered_lines: Vec<(usize, Range<usize>)> = Vec::new();
-        for (idx, (line_index, raw_text)) in lines.iter().enumerate() {
+        let mut covered_lines: Vec<(usize, usize, Range<usize>)> = Vec::new();
+        for (idx, (line_index, _)) in lines.iter().enumerate() {
+            let line_text = line_texts[idx];
             let line_start = line_char_starts[idx];
             let line_end = line_char_starts
                 .get(idx + 1)
@@ -270,13 +292,13 @@ fn detect_wrapped_urls_across_lines(
                 continue;
             }
             // Clamp to the actual line char count in case of empty trailing lines.
-            let line_char_len = raw_text.chars().count();
+            let line_char_len = line_text.chars().count();
             let local_start = overlap_start - line_start;
             let local_end = (overlap_end - line_start).min(line_char_len);
             if local_start >= local_end {
                 continue;
             }
-            covered_lines.push((*line_index, local_start..local_end));
+            covered_lines.push((idx, *line_index, local_start..local_end));
         }
 
         // Only register wrapped URLs (URLs that span 2+ lines). Single-line URLs are
@@ -284,7 +306,35 @@ fn detect_wrapped_urls_across_lines(
         if covered_lines.len() < 2 {
             continue;
         }
-        for (line_index, range) in covered_lines {
+
+        // Avoid synthesizing wrapped URLs for a complete URL at the end of one line
+        // followed by ordinary prose on the next line (e.g. `https://example.com/foo`
+        // + `next step`). Continuation segments with URL syntax, or continuations
+        // inside a query string, are treated as likely hard-wrapped URLs.
+        let mut should_register_url = true;
+        for adjacent_lines in covered_lines.windows(2) {
+            let (prev_idx, _, prev_range) = &adjacent_lines[0];
+            let (next_idx, _, next_range) = &adjacent_lines[1];
+            let preceding_url_text =
+                char_slice(line_texts[*prev_idx], prev_range.start, prev_range.end);
+            let continuation_text =
+                char_slice(line_texts[*next_idx], next_range.start, next_range.end);
+            let Some((preceding_url_text, continuation_text)) =
+                preceding_url_text.zip(continuation_text)
+            else {
+                should_register_url = false;
+                break;
+            };
+            if !looks_like_wrapped_url_continuation(preceding_url_text, continuation_text) {
+                should_register_url = false;
+                break;
+            }
+        }
+        if !should_register_url {
+            continue;
+        }
+
+        for (_, line_index, range) in covered_lines {
             per_line
                 .entry(line_index)
                 .or_default()
