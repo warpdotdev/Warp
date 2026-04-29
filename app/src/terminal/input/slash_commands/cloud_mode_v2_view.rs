@@ -12,7 +12,6 @@ use warpui::elements::{
 use warpui::platform::Cursor;
 use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-    WeakViewHandle,
 };
 
 use crate::search::data_source::QueryFilter;
@@ -162,7 +161,6 @@ pub struct CloudModeV2SlashCommandView {
     mixer: ModelHandle<SearchMixer<AcceptSlashCommandOrSavedPrompt>>,
     suggestions_mode_model: ModelHandle<InputSuggestionsModeModel>,
     input_buffer_model: ModelHandle<InputBufferModel>,
-    weak_handle: WeakViewHandle<Self>,
     scroll_state: ClippedScrollStateHandle,
     menu_state: MenuState,
 }
@@ -266,7 +264,6 @@ impl CloudModeV2SlashCommandView {
             mixer,
             suggestions_mode_model,
             input_buffer_model,
-            weak_handle: ctx.handle(),
             scroll_state: Default::default(),
             menu_state: MenuState::empty(),
         }
@@ -369,15 +366,13 @@ impl CloudModeV2SlashCommandView {
     }
 
     fn rebuild_from_results(&mut self, ctx: &mut ViewContext<Self>) {
-        let weak_handle = self.weak_handle.clone();
-        let on_click_fn = move |_idx: usize,
-                                item: AcceptSlashCommandOrSavedPrompt,
-                                evt_ctx: &mut warpui::EventContext| {
+        let on_click_fn = |_idx: usize,
+                           item: AcceptSlashCommandOrSavedPrompt,
+                           evt_ctx: &mut warpui::EventContext| {
             evt_ctx.dispatch_typed_action(CloudModeV2SlashCommandAction::Accept {
                 item,
                 cmd_or_ctrl_enter: false,
             });
-            let _ = weak_handle;
         };
 
         let renderers: Vec<QueryResultRenderer<AcceptSlashCommandOrSavedPrompt>> = self

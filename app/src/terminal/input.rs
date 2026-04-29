@@ -2966,12 +2966,20 @@ impl Input {
                 cli_subagent_controller: cli_subagent_controller.clone(),
                 terminal_view_id,
             };
-            if FeatureFlag::CloudModeInputV2.is_enabled() {
-                SlashCommandDataSource::for_cloud_mode_v2(args, ctx)
-            } else {
-                SlashCommandDataSource::new(args, ctx)
-            }
+            SlashCommandDataSource::new(args, ctx)
         });
+
+        let v2_slash_command_data_source = if FeatureFlag::CloudModeInputV2.is_enabled() {
+            let args = slash_commands::DataSourceArgs {
+                active_session: active_session.clone(),
+                agent_view_controller: agent_view_controller.clone(),
+                cli_subagent_controller: cli_subagent_controller.clone(),
+                terminal_view_id,
+            };
+            Some(ctx.add_model(|ctx| SlashCommandDataSource::for_cloud_mode_v2(args, ctx)))
+        } else {
+            None
+        };
         let slash_command_model = ctx.add_model(|ctx| {
             SlashCommandModel::new(
                 &buffer_model,
@@ -3133,23 +3141,24 @@ impl Input {
             me.handle_slash_commands_menu_event(event, ctx);
         });
 
-        let cloud_mode_v2_slash_commands_view = if FeatureFlag::CloudModeInputV2.is_enabled() {
-            let view = ctx.add_typed_action_view(|ctx| {
-                CloudModeV2SlashCommandView::new(
-                    &slash_command_model,
-                    slash_command_data_source.clone(),
-                    suggestions_mode_model.clone(),
-                    buffer_model.clone(),
-                    ctx,
-                )
-            });
-            ctx.subscribe_to_view(&view, |me, _, event, ctx| {
-                me.handle_slash_commands_menu_event(event, ctx);
-            });
-            Some(view)
-        } else {
-            None
-        };
+        let cloud_mode_v2_slash_commands_view =
+            if let Some(v2_data_source) = v2_slash_command_data_source {
+                let view = ctx.add_typed_action_view(|ctx| {
+                    CloudModeV2SlashCommandView::new(
+                        &slash_command_model,
+                        v2_data_source,
+                        suggestions_mode_model.clone(),
+                        buffer_model.clone(),
+                        ctx,
+                    )
+                });
+                ctx.subscribe_to_view(&view, |me, _, event, ctx| {
+                    me.handle_slash_commands_menu_event(event, ctx);
+                });
+                Some(view)
+            } else {
+                None
+            };
 
         ctx.subscribe_to_model(&ai_input_model, move |me, _, event, ctx| {
             match event {
