@@ -6,6 +6,7 @@ app/frameworks/**/*.xcframework
 /app/target
 /warp.xcworkspace
 .idea/
+.vscode/
 .DS_Store
 *.icloud
 app/src/server/graphql/schema/generated
