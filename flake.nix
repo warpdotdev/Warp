@@ -172,6 +172,7 @@
               let
                 installDir = "$out/opt/warpdotdev/warp-terminal";
                 resourcesDir = "${installDir}/resources";
+                releaseChannel = "stable";
                 libraryPath = lib.makeLibraryPath runtimeLibraries;
                 executablePath = lib.makeBinPath (with pkgs; [ xdg-utils ]);
               in
@@ -183,11 +184,11 @@
 
                 SKIP_SETTINGS_SCHEMA=1 ./script/prepare_bundled_resources \
                   "${resourcesDir}" \
-                  dev \
+                  "${releaseChannel}" \
                   release
 
                 "$out/bin/generate_settings_schema" \
-                  --channel dev \
+                  --channel "${releaseChannel}" \
                   "${resourcesDir}/settings_schema.json"
                 rm -f "$out/bin/generate_settings_schema"
 
