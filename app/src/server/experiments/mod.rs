@@ -28,6 +28,7 @@ mod model;
 pub use model::{Event as ServerExperimentsEvent, ServerExperiments};
 
 /// The known server-side experiments.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ServerExperiment {
     SessionSharingExperiment,
@@ -174,8 +175,21 @@ impl ServerExperiment {
                 });
             }
             Self::SshRemoteServerExperiment => {
-                // SshRemoteServer is already in RELEASE_FLAGS; nothing extra
-                // needed for the experiment arm.
+                // SshRemoteServer is already in RELEASE_FLAGS. Restore the
+                // default install mode in case the user was previously in the
+                // control arm (which overrides it to NeverInstall).
+                WarpifySettings::handle(_ctx).update(_ctx, |settings, ctx| {
+                    if !settings
+                        .ssh_extension_install_mode
+                        .is_value_explicitly_set()
+                    {
+                        let _ = settings.ssh_extension_install_mode.load_value(
+                            SshExtensionInstallMode::default(),
+                            false,
+                            ctx,
+                        );
+                    }
+                });
             }
             #[cfg(test)]
             Self::TestExperiment => {
