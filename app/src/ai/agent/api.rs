@@ -30,6 +30,7 @@ use crate::{
 
 use super::{AIAgentInput, MCPContext, MCPServer, RequestMetadata, Suggestions};
 use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput};
+use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerInfo;
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::settings::AISettings;
@@ -109,6 +110,7 @@ pub struct RequestParams {
     pub computer_use_model: LLMId,
     pub is_memory_enabled: bool,
     pub warp_drive_context_enabled: bool,
+    pub context_window_limit: Option<u32>,
     pub mcp_context: Option<MCPContext>,
     pub planning_enabled: bool,
     should_redact_secrets: bool,
@@ -279,6 +281,26 @@ impl RequestParams {
                 .as_ref()
                 .is_none_or(|t| matches!(t, crate::terminal::model::session::SessionType::Local));
 
+        // Reconcile the persisted override against the active base model's
+        // current `LLMContextWindow` instead of trusting whatever was stored
+        // last. If the active model isn't configurable or has been removed
+        // server-side, drop the override; otherwise clamp it to the model's
+        // current `[min, max]` range. This closes the window between an
+        // in-flight model metadata refresh and the next request.
+        let context_window_limit = {
+            let profile_data = AIExecutionProfilesModel::as_ref(app)
+                .active_profile(terminal_view_id, app)
+                .data()
+                .clone();
+            profile_data
+                .configurable_context_window(app)
+                .and_then(|cw| {
+                    profile_data
+                        .context_window_limit
+                        .map(|v| v.clamp(cw.min, cw.max))
+                })
+        };
+
         Self {
             input: request_input.all_inputs().cloned().collect(),
             conversation_token: conversation.server_conversation_token,
@@ -286,6 +308,7 @@ impl RequestParams {
             ambient_agent_task_id: conversation.ambient_agent_task_id,
             tasks: conversation.tasks,
             existing_suggestions: conversation.existing_suggestions,
+            context_window_limit,
             metadata,
             session_context,
             model: request_input.model_id.clone(),

@@ -867,6 +867,89 @@ fn test_set_active_tab_name_clears_active_rename_editor_state() {
 }
 
 #[test]
+fn test_set_active_tab_color() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+            let active = workspace.active_tab_index;
+
+            // Setting a color stores it as the manual selection and resolves to it.
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Color(
+                    AnsiColorIdentifier::Magenta,
+                )),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Magenta),
+            );
+            assert_eq!(
+                workspace.tabs[active].color(),
+                Some(AnsiColorIdentifier::Magenta),
+            );
+
+            // Replacing with a different color overwrites the previous selection.
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Color(
+                    AnsiColorIdentifier::Green,
+                )),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Green),
+            );
+
+            // `Cleared` explicitly suppresses any color (including a directory default).
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Cleared),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Cleared,
+            );
+            assert_eq!(workspace.tabs[active].color(), None);
+
+            // `Unset` removes the manual override so a directory default could apply.
+            // With no directory default configured, the resolved color is still `None`.
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Unset),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Unset,
+            );
+            assert_eq!(workspace.tabs[active].color(), None);
+
+            // Action targets the active tab — switching to tab 0 leaves the second tab
+            // unaffected.
+            workspace.handle_action(&WorkspaceAction::ActivateTab(0), ctx);
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor(SelectedTabColor::Color(
+                    AnsiColorIdentifier::Blue,
+                )),
+                ctx,
+            );
+            assert_eq!(
+                workspace.tabs[0].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Blue),
+            );
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Unset,
+            );
+        });
+    });
+}
+
+#[test]
 fn test_workspace_sessions_retrieves_tabs() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);

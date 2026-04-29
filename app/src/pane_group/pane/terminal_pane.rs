@@ -414,8 +414,8 @@ impl PaneContent for TerminalPane {
         if view.model.lock().shared_session_status().is_viewer() {
             // We save and restore ambient agent sessions
             // (restoring the shared session if it's still open and the conversation transcript otherwise).
-            let ambient_model = view.ambient_agent_view_model().as_ref(app);
-            if ambient_model.is_ambient_agent() {
+            if let Some(ambient_model) = view.ambient_agent_view_model() {
+                let ambient_model = ambient_model.as_ref(app);
                 let task_id = ambient_model.task_id();
 
                 return LeafContents::AmbientAgent(AmbientAgentPaneSnapshot {
@@ -1396,13 +1396,18 @@ fn handle_terminal_view_event(
                                     AgentViewEntryOrigin::CloudAgent,
                                     ctx,
                                 );
-                                terminal_view.ambient_agent_view_model().update(
-                                    ctx,
-                                    |model, ctx| {
+                                if let Some(ambient_agent_view_model) =
+                                    terminal_view.ambient_agent_view_model()
+                                {
+                                    ambient_agent_view_model.update(ctx, |model, ctx| {
                                         model.set_conversation_id(Some(conversation_id));
                                         model.spawn_agent_with_request(spawn_request, ctx);
-                                    },
-                                );
+                                    });
+                                } else {
+                                    log::error!(
+                                        "Remote StartAgent child pane missing ambient agent view model"
+                                    );
+                                }
                             });
 
                             group
