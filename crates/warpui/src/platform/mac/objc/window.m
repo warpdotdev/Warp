@@ -1001,6 +1001,10 @@ void hide_window(WarpWindow<WarpWindowProtocol> *window) {
     [window orderOut:nil];
 }
 
+BOOL is_window_visible(WarpWindow<WarpWindowProtocol> *window) {
+    return [window isVisible];
+}
+
 void set_window_title(id window, NSString *title) {
     if ([window isKindOfClass:[WarpPanel class]] && [window isVisible]) {
         // For the hotkey window (which is an NSPanel), we need to explicitly

@@ -90,6 +90,10 @@ impl WindowManager {
         self.platform.hide_window(window_id)
     }
 
+    pub fn is_window_visible(&self, window_id: WindowId) -> Option<bool> {
+        self.platform.is_window_visible(window_id)
+    }
+
     pub fn set_window_bounds(&self, window_id: WindowId, bound: RectF) {
         self.platform.set_window_bounds(window_id, bound)
     }

@@ -146,6 +146,10 @@ impl platform::WindowManager for WindowManager {
         Window::hide_window(window_id)
     }
 
+    fn is_window_visible(&self, window_id: WindowId) -> Option<bool> {
+        Window::is_window_visible(window_id)
+    }
+
     fn set_window_bounds(&self, window_id: WindowId, bound: RectF) {
         Window::set_window_bounds(window_id, bound)
     }
@@ -323,6 +327,10 @@ impl platform::WindowManager for IntegrationTestWindowManager {
         self.window_manager.hide_window(window_id)
     }
 
+    fn is_window_visible(&self, window_id: WindowId) -> Option<bool> {
+        self.window_manager.is_window_visible(window_id)
+    }
+
     fn set_window_bounds(&self, window_id: WindowId, bound: RectF) {
         self.window_manager.set_window_bounds(window_id, bound)
     }
@@ -448,6 +456,7 @@ extern "C" {
     fn activate_app();
     fn show_window_and_focus_app(window: id, bringToFront: BOOL);
     fn hide_window(window: id);
+    fn is_window_visible(window: id) -> BOOL;
     fn position_and_order_front(window: id);
     fn position_at_given_location(window: id, origin: NSPoint);
     fn order_front_without_focus(window: id, origin: NSPoint);
@@ -842,6 +851,12 @@ impl Window {
             if let Some(window) = Self::find_window_with_id(window_id) {
                 hide_window(window)
             }
+        }
+    }
+
+    pub fn is_window_visible(window_id: WindowId) -> Option<bool> {
+        unsafe {
+            Self::find_window_with_id(window_id).map(|window| is_window_visible(window) == YES)
         }
     }
 

@@ -197,6 +197,7 @@ impl<'a> RunningSessionSummary<'a> {
             .collect()
     }
 
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn processes_in_window(&self, window_id: &WindowId) -> Vec<&SessionNavigationData> {
         self.long_running_cmds
             .iter()

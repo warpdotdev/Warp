@@ -238,6 +238,12 @@ impl platform::WindowManager for WindowManager {
         }
     }
 
+    fn is_window_visible(&self, window_id: WindowId) -> Option<bool> {
+        self.windows
+            .get(&window_id)
+            .map(|window| window.is_visible())
+    }
+
     fn set_window_bounds(&self, window_id: WindowId, bound: RectF) {
         if let Some(window) = self.windows.get(&window_id) {
             window.set_bounds(bound);
@@ -521,6 +527,10 @@ impl platform::WindowManager for IntegrationTestWindowManager {
             .lock()
             .window_id_stack
             .retain(|id| *id != window_id);
+    }
+
+    fn is_window_visible(&self, window_id: WindowId) -> Option<bool> {
+        self.window_manager.is_window_visible(window_id)
     }
 
     fn set_window_bounds(&self, window_id: WindowId, bound: RectF) {

@@ -4,7 +4,13 @@ use warpui::{
     App,
 };
 
-use crate::{util::bindings::keybinding_name_to_display_string, workspace::WorkspaceAction};
+use crate::{
+    util::bindings::{
+        custom_tag_to_keystroke, keybinding_name_to_display_string, trigger_to_keystroke,
+        CustomAction,
+    },
+    workspace::WorkspaceAction,
+};
 
 #[test]
 fn test_keybinding_name_to_display_string() {
@@ -71,4 +77,29 @@ fn test_keybinding_name_to_display_string() {
             );
         });
     });
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn test_cmd_w_defaults_to_close_window_on_macos() {
+    use warpui::actions::StandardAction;
+
+    assert_eq!(
+        Some("cmd-w"),
+        custom_tag_to_keystroke(CustomAction::CloseWindow.into())
+            .as_ref()
+            .map(|keystroke| keystroke.normalized())
+            .as_deref()
+    );
+    assert_eq!(
+        None,
+        custom_tag_to_keystroke(CustomAction::CloseCurrentSession.into())
+    );
+    assert_eq!(
+        Some("cmd-w"),
+        trigger_to_keystroke(&Trigger::Standard(StandardAction::Close))
+            .as_ref()
+            .map(|keystroke| keystroke.normalized())
+            .as_deref()
+    );
 }
