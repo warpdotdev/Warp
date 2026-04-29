@@ -1570,7 +1570,7 @@ fn initialize_app(
     ctx.add_singleton_model(ai::blocklist::task_status_sync_model::TaskStatusSyncModel::new);
     if warp_core::features::FeatureFlag::OrchestrationV2.is_enabled() {
         ctx.add_singleton_model(
-            ai::blocklist::orchestration_event_poller::OrchestrationEventPoller::new,
+            ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer::new,
         );
     }
 
@@ -2726,8 +2726,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::Orchestration,
         #[cfg(feature = "orchestration_v2")]
         FeatureFlag::OrchestrationV2,
-        #[cfg(feature = "orchestration_event_push")]
-        FeatureFlag::OrchestrationEventPush,
         #[cfg(feature = "pending_user_query_indicator")]
         FeatureFlag::PendingUserQueryIndicator,
         #[cfg(feature = "queue_slash_command")]
