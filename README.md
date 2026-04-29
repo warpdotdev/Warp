@@ -15,7 +15,7 @@
   ·
   <a href="https://docs.warp.dev">Docs</a>
   ·
-  <a href="https://www.warp.dev/blog/how-warp-works">How Warp Works</a>
+  <a href="https://www.warp.dev/blog/block-model-behind-warps-agentic-development-environment">How Warp Works</a>
 </p>
 
 > [!NOTE]
