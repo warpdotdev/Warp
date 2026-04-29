@@ -964,6 +964,10 @@ impl Input {
             return true;
         }
 
+        if self.is_cloud_mode_input_v2_composing(ctx) {
+            return false;
+        }
+
         // If no menu but slash command detected in buffer, execute with cmd_or_ctrl_enter=true
         match self.slash_command_model.as_ref(ctx).state() {
             SlashCommandEntryState::SlashCommand(detected_command) => {
@@ -1021,6 +1025,10 @@ impl Input {
                 });
             }
             return true;
+        }
+
+        if self.is_cloud_mode_input_v2_composing(ctx) {
+            return false;
         }
 
         match self.slash_command_model.as_ref(ctx).state() {
