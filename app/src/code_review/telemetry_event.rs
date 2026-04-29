@@ -475,7 +475,9 @@ impl TelemetryEventDesc for CodeReviewTelemetryEventDiscriminants {
             Self::GitButtonTriggered => {
                 "User clicked a git operation button in the code review header"
             }
-            Self::GitDialogCompleted => "Git operation dialog reached a terminal state (succeeded, failed, or cancelled)",
+            Self::GitDialogCompleted => {
+                "Git operation dialog reached a terminal state (succeeded, failed, or cancelled)"
+            }
         }
     }
 

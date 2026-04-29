@@ -774,9 +774,7 @@ impl TypedActionView for GitDialog {
                         GitDialogMode::Commit(state) => match state.intent {
                             CommitIntent::CommitOnly => GitOperationKind::CommitOnly,
                             CommitIntent::CommitAndPush => GitOperationKind::CommitAndPush,
-                            CommitIntent::CommitAndCreatePr => {
-                                GitOperationKind::CommitAndCreatePr
-                            }
+                            CommitIntent::CommitAndCreatePr => GitOperationKind::CommitAndCreatePr,
                         },
                         GitDialogMode::Push(state) => {
                             if state.publish {
