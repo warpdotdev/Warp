@@ -1943,7 +1943,9 @@ async fn spawn_server(
     let server_info = service.peer_info();
     logger.log(format!("[info] MCP: Connected to server: {server_info:#?}"));
 
-    let resources = if server_info.is_some_and(|info| info.capabilities.resources.is_some()) {
+    let capabilities = server_info.map(|info| &info.capabilities);
+
+    let resources = if should_query_resources(capabilities) {
         match service.list_all_resources().await {
             Ok(result) => result,
             Err(err) => {
@@ -1954,16 +1956,16 @@ async fn spawn_server(
     } else {
         vec![]
     };
-    let tools = match service.list_all_tools().await {
-        Ok(result) => result,
-        Err(rmcp::ServiceError::McpError(rmcp::model::ErrorData { code, .. }))
-            if code == rmcp::model::ErrorCode::METHOD_NOT_FOUND =>
-        {
-            vec![]
+    let tools = if should_query_tools(capabilities) {
+        match service.list_all_tools().await {
+            Ok(result) => result,
+            Err(err) => {
+                log::warn!("Failed to list tools for MCP server '{server_name}': {err}");
+                vec![]
+            }
         }
-        Err(err) => {
-            return Err(err.into());
-        }
+    } else {
+        vec![]
     };
 
     Ok(TemplatableMCPServerInfo {
@@ -2154,5 +2156,69 @@ impl<T: rmcp::transport::Transport<R>, R: rmcp::service::ServiceRole> rmcp::tran
 
     fn close(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send {
         self.transport.close()
+    }
+}
+
+/// Whether to query `resources/list` for a server with the given capabilities.
+///
+/// Per the MCP spec, the client should only invoke a list method when the server
+/// has advertised the corresponding capability during initialization.
+fn should_query_resources(capabilities: Option<&rmcp::model::ServerCapabilities>) -> bool {
+    capabilities.is_some_and(|c| c.resources.is_some())
+}
+
+/// Whether to query `tools/list` for a server with the given capabilities.
+///
+/// Per the MCP spec, the client should only invoke a list method when the server
+/// has advertised the corresponding capability during initialization.
+fn should_query_tools(capabilities: Option<&rmcp::model::ServerCapabilities>) -> bool {
+    capabilities.is_some_and(|c| c.tools.is_some())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{should_query_resources, should_query_tools};
+    use rmcp::model::ServerCapabilities;
+
+    /// Regression test for warpdotdev/warp#6798: each capability is queried
+    /// independently. Previously, asymmetric handling could cause `tools/list`
+    /// to be skipped when a server advertised both `tools` and `resources`,
+    /// resulting in "No tools available" even though the server had tools.
+    #[test]
+    fn each_capability_is_queried_independently() {
+        let both = ServerCapabilities {
+            tools: Some(Default::default()),
+            resources: Some(Default::default()),
+            ..Default::default()
+        };
+        assert!(should_query_tools(Some(&both)));
+        assert!(should_query_resources(Some(&both)));
+
+        let tools_only = ServerCapabilities {
+            tools: Some(Default::default()),
+            resources: None,
+            ..Default::default()
+        };
+        assert!(should_query_tools(Some(&tools_only)));
+        assert!(!should_query_resources(Some(&tools_only)));
+
+        let resources_only = ServerCapabilities {
+            tools: None,
+            resources: Some(Default::default()),
+            ..Default::default()
+        };
+        assert!(!should_query_tools(Some(&resources_only)));
+        assert!(should_query_resources(Some(&resources_only)));
+
+        let neither = ServerCapabilities {
+            tools: None,
+            resources: None,
+            ..Default::default()
+        };
+        assert!(!should_query_tools(Some(&neither)));
+        assert!(!should_query_resources(Some(&neither)));
+
+        assert!(!should_query_tools(None));
+        assert!(!should_query_resources(None));
     }
 }
