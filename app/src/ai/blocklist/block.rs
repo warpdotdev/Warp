@@ -373,6 +373,52 @@ pub(super) struct OrchestrateButtonHandles {
     pub reject: MouseStateHandle,
 }
 
+/// Identifies which interactive dropdown on an `OrchestrateConfigCard` is
+/// currently expanded (at most one at a time).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OrchestrateConfigDropdown {
+    Model,
+    Harness,
+    ExecutionMode,
+    Environment,
+}
+
+/// Per-dropdown mouse state handles for an `OrchestrateConfigCard`. Each
+/// dropdown row needs a stable hover state across renders.
+#[derive(Clone, Default)]
+pub(super) struct OrchestrateDropdownHandles {
+    pub model: MouseStateHandle,
+    pub harness: MouseStateHandle,
+    pub execution_mode: MouseStateHandle,
+    pub environment: MouseStateHandle,
+    pub dismiss_opencode_notice: MouseStateHandle,
+}
+
+/// User-editable selections for the dropdowns on an `OrchestrateConfigCard`.
+///
+/// Initialized from the LLM-proposed `OrchestrateAction` values when the
+/// action is first observed; subsequent dropdown selections by the user
+/// mutate this in place. The Launch button reads from this to construct the
+/// `OrchestrateDecision::Launch` payload, so the resolved (post-UI) values
+/// flow back to the server.
+#[derive(Clone, Debug)]
+pub(super) struct OrchestrateConfigSelections {
+    /// Resolved model ID (e.g. "auto", "claude-4-6-opus-high").
+    pub model_id: String,
+    /// Resolved harness CLI string (e.g. "oz", "claude", "gemini", "opencode").
+    pub harness: String,
+    /// Whether the resolved execution mode is Local or Remote.
+    pub is_remote: bool,
+    /// Last-known environment ID, retained across Remote→Local→Remote toggles
+    /// per PRODUCT.md §editing-across-mode-changes.
+    pub environment_id: String,
+    /// Which dropdown is currently expanded, if any.
+    pub open_dropdown: Option<OrchestrateConfigDropdown>,
+    /// True if the most recent Local→Remote toggle auto-reset harness from
+    /// `opencode` to `oz`, so the card should render the inline notice.
+    pub did_auto_reset_opencode: bool,
+}
+
 #[derive(Default)]
 pub(super) struct AIBlockStateHandles {
     normal_response_code_snippet_buttons: Vec<CodeSnippetButtonHandles>,
@@ -413,6 +459,16 @@ pub(super) struct AIBlockStateHandles {
     /// / Reject). Created when an `Orchestrate` tool call is first observed in
     /// `handle_updated_output` and accessed at render time via `Props`.
     pub(super) orchestrate_button_handles: HashMap<AIAgentActionId, OrchestrateButtonHandles>,
+
+    /// Per-action user-editable dropdown selections rendered on an
+    /// `OrchestrateConfigCard`. Seeded from the LLM-proposed values the first
+    /// time the action is observed; updated by `OrchestrateSelect*` /
+    /// `OrchestrateToggleDropdown` actions thereafter.
+    pub(super) orchestrate_config_selections: HashMap<AIAgentActionId, OrchestrateConfigSelections>,
+
+    /// Per-dropdown mouse state handles per action, used so each dropdown
+    /// header / option row has a stable hover state across renders.
+    pub(super) orchestrate_dropdown_handles: HashMap<AIAgentActionId, OrchestrateDropdownHandles>,
 
     references_section_collapsible_handle: MouseStateHandle,
 
@@ -1864,11 +1920,52 @@ impl AIBlock {
                     .or_default();
             }
 
-            if matches!(&action.action, AIAgentActionType::Orchestrate { .. }) {
+            if let AIAgentActionType::Orchestrate {
+                model_id,
+                harness,
+                execution_mode,
+                ..
+            } = &action.action
+            {
                 self.state_handles
                     .orchestrate_button_handles
                     .entry(action.id.clone())
                     .or_default();
+                self.state_handles
+                    .orchestrate_dropdown_handles
+                    .entry(action.id.clone())
+                    .or_default();
+                self.state_handles
+                    .orchestrate_config_selections
+                    .entry(action.id.clone())
+                    .or_insert_with(|| {
+                        let model_id = if model_id.is_empty() {
+                            "auto".to_string()
+                        } else {
+                            model_id.clone()
+                        };
+                        let harness = if harness.is_empty() {
+                            "oz".to_string()
+                        } else {
+                            harness.clone()
+                        };
+                        let (is_remote, environment_id) = match execution_mode {
+                            crate::ai::agent::OrchestrateExecutionMode::Local => {
+                                (false, String::new())
+                            }
+                            crate::ai::agent::OrchestrateExecutionMode::Remote {
+                                environment_id,
+                            } => (true, environment_id.clone()),
+                        };
+                        OrchestrateConfigSelections {
+                            model_id,
+                            harness,
+                            is_remote,
+                            environment_id,
+                            open_dropdown: None,
+                            did_auto_reset_opencode: false,
+                        }
+                    });
             }
 
             // Ensure a button component exists for UseComputer actions.
@@ -5756,6 +5853,60 @@ pub enum AIBlockAction {
         action_id: AIAgentActionId,
         decision: crate::ai::blocklist::action_model::OrchestrateDecision,
     },
+
+    /// Toggles the open/closed state of one of the dropdowns on an
+    /// `OrchestrateConfigCard`. At most one dropdown can be open at a time;
+    /// opening a different dropdown closes any other.
+    OrchestrateToggleDropdown {
+        action_id: AIAgentActionId,
+        dropdown: OrchestrateConfigDropdown,
+    },
+
+    /// User chose a model from the Model dropdown on the `OrchestrateConfigCard`.
+    OrchestrateSelectModel {
+        action_id: AIAgentActionId,
+        model_id: String,
+    },
+
+    /// User chose a harness from the Harness dropdown on the
+    /// `OrchestrateConfigCard`.
+    OrchestrateSelectHarness {
+        action_id: AIAgentActionId,
+        harness: String,
+    },
+
+    /// User toggled the Execution mode dropdown on the
+    /// `OrchestrateConfigCard`. When toggling Local→Remote with harness =
+    /// `opencode`, the handler also auto-resets harness to `oz` per
+    /// PRODUCT.md §editing-across-mode-changes and sets the auto-reset notice
+    /// flag.
+    OrchestrateSelectExecutionMode {
+        action_id: AIAgentActionId,
+        is_remote: bool,
+    },
+
+    /// User chose an environment from the Environment dropdown on the
+    /// `OrchestrateConfigCard` (only valid when execution mode is Remote).
+    OrchestrateSelectEnvironment {
+        action_id: AIAgentActionId,
+        environment_id: String,
+    },
+
+    /// User dismissed the OpenCode→Oz auto-reset notice on the
+    /// `OrchestrateConfigCard` by clicking the inline X.
+    OrchestrateDismissOpenCodeNotice {
+        action_id: AIAgentActionId,
+    },
+
+    /// User clicked the Launch button on the `OrchestrateConfigCard`. The
+    /// handler reads the user's resolved selections from
+    /// `state_handles.orchestrate_config_selections` and forwards them to the
+    /// `OrchestrateExecutor` as a `Launch` decision. This indirection (vs.
+    /// dispatching `OrchestrateActionDecision::Launch` directly) is required
+    /// because the click closure cannot read `state_handles`.
+    OrchestrateLaunchClicked {
+        action_id: AIAgentActionId,
+    },
 }
 
 impl TypedActionView for AIBlock {
@@ -6099,6 +6250,155 @@ impl TypedActionView for AIBlock {
                         .orchestrate_executor(ctx)
                         .update(ctx, |executor, ctx| {
                             executor.submit_decision(&action_id, decision, ctx);
+                        });
+                });
+            }
+            AIBlockAction::OrchestrateToggleDropdown {
+                action_id,
+                dropdown,
+            } => {
+                if let Some(selections) = self
+                    .state_handles
+                    .orchestrate_config_selections
+                    .get_mut(action_id)
+                {
+                    selections.open_dropdown = if selections.open_dropdown == Some(*dropdown) {
+                        None
+                    } else {
+                        Some(*dropdown)
+                    };
+                    ctx.notify();
+                }
+            }
+            AIBlockAction::OrchestrateSelectModel {
+                action_id,
+                model_id,
+            } => {
+                if let Some(selections) = self
+                    .state_handles
+                    .orchestrate_config_selections
+                    .get_mut(action_id)
+                {
+                    selections.model_id = model_id.clone();
+                    selections.open_dropdown = None;
+                    ctx.notify();
+                }
+            }
+            AIBlockAction::OrchestrateSelectHarness { action_id, harness } => {
+                if let Some(selections) = self
+                    .state_handles
+                    .orchestrate_config_selections
+                    .get_mut(action_id)
+                {
+                    selections.harness = harness.clone();
+                    selections.open_dropdown = None;
+                    // Choosing the harness explicitly clears the auto-reset
+                    // notice; the user has acknowledged the harness choice.
+                    selections.did_auto_reset_opencode = false;
+                    ctx.notify();
+                }
+            }
+            AIBlockAction::OrchestrateSelectExecutionMode {
+                action_id,
+                is_remote,
+            } => {
+                if let Some(selections) = self
+                    .state_handles
+                    .orchestrate_config_selections
+                    .get_mut(action_id)
+                {
+                    let was_remote = selections.is_remote;
+                    selections.is_remote = *is_remote;
+                    selections.open_dropdown = None;
+                    // PRODUCT.md §editing-across-mode-changes: when toggling
+                    // Local→Remote, OpenCode harness must auto-reset to Oz
+                    // since OpenCode is local-only. Surface a notice so the
+                    // user understands why their selection changed.
+                    if !was_remote && *is_remote && selections.harness == "opencode" {
+                        selections.harness = "oz".to_string();
+                        selections.did_auto_reset_opencode = true;
+                    } else if was_remote && !*is_remote {
+                        // Remote→Local clears the auto-reset notice (no longer
+                        // relevant) and retains the previously-selected
+                        // environment_id for round-trip.
+                        selections.did_auto_reset_opencode = false;
+                    }
+                    ctx.notify();
+                }
+            }
+            AIBlockAction::OrchestrateSelectEnvironment {
+                action_id,
+                environment_id,
+            } => {
+                if let Some(selections) = self
+                    .state_handles
+                    .orchestrate_config_selections
+                    .get_mut(action_id)
+                {
+                    selections.environment_id = environment_id.clone();
+                    selections.open_dropdown = None;
+                    ctx.notify();
+                }
+            }
+            AIBlockAction::OrchestrateDismissOpenCodeNotice { action_id } => {
+                if let Some(selections) = self
+                    .state_handles
+                    .orchestrate_config_selections
+                    .get_mut(action_id)
+                {
+                    selections.did_auto_reset_opencode = false;
+                    ctx.notify();
+                }
+            }
+            AIBlockAction::OrchestrateLaunchClicked { action_id } => {
+                let Some(selections) = self
+                    .state_handles
+                    .orchestrate_config_selections
+                    .get(action_id)
+                    .cloned()
+                else {
+                    return;
+                };
+                let action_id_clone = action_id.clone();
+                let execution_mode = if selections.is_remote {
+                    crate::ai::agent::OrchestrateExecutionMode::Remote {
+                        environment_id: selections.environment_id.clone(),
+                    }
+                } else {
+                    crate::ai::agent::OrchestrateExecutionMode::Local
+                };
+                // Reuse the existing OrchestrateActionDecision::Launch payload
+                // shape so the executor's submit_decision path is unchanged.
+                // The agents vec is rebuilt from the original action since
+                // they are not user-editable in this iteration.
+                let agents = self
+                    .model
+                    .status(ctx)
+                    .output_to_render()
+                    .and_then(|output| {
+                        output.get().actions().find_map(|action| {
+                            if action.id != *action_id {
+                                return None;
+                            }
+                            if let AIAgentActionType::Orchestrate { agents, .. } = &action.action {
+                                Some(agents.clone())
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .unwrap_or_default();
+                let decision = crate::ai::blocklist::action_model::OrchestrateDecision::Launch {
+                    model_id: selections.model_id.clone(),
+                    harness: selections.harness.clone(),
+                    execution_mode,
+                    agents,
+                };
+                self.action_model.update(ctx, |action_model, ctx| {
+                    action_model
+                        .orchestrate_executor(ctx)
+                        .update(ctx, |executor, ctx| {
+                            executor.submit_decision(&action_id_clone, decision, ctx);
                         });
                 });
             }

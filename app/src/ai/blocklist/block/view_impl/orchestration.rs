@@ -24,7 +24,7 @@ use crate::ai::blocklist::agent_view::orchestration_conversation_links::{
 };
 use crate::ai::blocklist::block::model::AIBlockModelHelper;
 use crate::ai::blocklist::block::{
-    AIBlockAction, CollapsibleExpansionState, OrchestrateButtonHandles,
+    AIBlockAction, CollapsibleExpansionState, OrchestrateButtonHandles, OrchestrateConfigDropdown,
 };
 use crate::ai::blocklist::inline_action::inline_action_header::{
     ICON_MARGIN, INLINE_ACTION_HEADER_VERTICAL_PADDING, INLINE_ACTION_HORIZONTAL_PADDING,
@@ -34,10 +34,13 @@ use crate::ai::blocklist::inline_action::requested_action::{
     render_requested_action_row, render_requested_action_row_for_text,
 };
 use crate::ai::blocklist::BlocklistAIHistoryModel;
+use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::appearance::Appearance;
+use crate::cloud_object::model::generic_string_model::StringModel;
 use crate::terminal::view::TerminalAction;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
+use warp_core::ui::theme::Fill;
 
 use super::common::render_scrollable_collapsible_content;
 use super::output::{action_icon, Props};
@@ -716,24 +719,47 @@ fn render_formatted_text_element(
     .set_selectable(true)
 }
 
+/// Client-facing model IDs offered in the Model dropdown on the
+/// `OrchestrateConfigCard`. Per PRODUCT.md §configuration-block, the dropdown
+/// surfaces the same client-facing IDs the rest of the product uses, with
+/// `auto` as the always-available option. The list is intentionally
+/// concise; if the LLM proposes a model not in this list, it is still kept
+/// as the active selection (rendered in the dropdown header) and the user
+/// can pick one of these as a replacement.
+const MODEL_OPTIONS: &[(&str, &str)] = &[
+    ("auto", "auto"),
+    ("claude-4-6-opus-high", "Claude 4.6 Opus (high)"),
+    ("claude-4-6-opus-max", "Claude 4.6 Opus (max)"),
+    ("gpt-5-4-high", "GPT-5.4 (high)"),
+    ("gpt-5-4-xhigh", "GPT-5.4 (xhigh)"),
+];
+
+/// Harness options exposed in the Harness dropdown. OpenCode is included
+/// because it is selectable in Local mode; the `OrchestrateSelectExecutionMode`
+/// handler auto-resets it to `oz` when the user toggles to Remote.
+const HARNESS_OPTIONS: &[(&str, &str)] = &[
+    ("oz", "Oz (Warp Agent)"),
+    ("claude", "Claude Code"),
+    ("gemini", "Gemini CLI"),
+    ("opencode", "OpenCode (local-only)"),
+];
+
 /// Renders the `OrchestrateConfigCard` for an `orchestrate` tool call.
 ///
-/// Phase B skeleton: routes the action through the same status-row visual
-/// language as `render_start_agent` and surfaces the resolved run-wide
-/// configuration (summary, model, harness, execution mode, agent count) plus
-/// a list of agent names. After the user clicks a terminal button the card
-/// transitions to one of the six post-action states defined in PRODUCT.md
-/// (Launching N / Started N / Started M of N / Failed to start orchestration /
-/// Launch denied / Cancelled).
+/// The card has three logical states keyed off the action's status:
 ///
-/// TODO(QUALITY-569 phase B follow-up): replace this skeleton with the full
-/// interactive card mocked in Figma:
-/// <https://www.figma.com/design/AsF5uAM6L5tUmc11vm9YSi/Agent-orchestration?node-id=4190-36899&m=dev>.
-/// The follow-up adds the Model / Harness / Execution mode / Environment
-/// dropdowns, inline validation messages ("Choose an environment before
-/// launching", "OpenCode is not supported in remote mode"), and the three
-/// terminal buttons (Launch / Launch without orchestration / Reject) wired to
-/// the parallel `CreateAgentTask` flow in Phase C.
+/// 1. **Pre-terminal (Pending/Blocked/Queued)**: render interactive
+///    Model/Harness/Execution-mode/Environment dropdowns, inline validation
+///    messages, the OpenCode→Oz auto-reset notice, and the three terminal
+///    buttons (Reject / Launch without orchestration / Launch).
+/// 2. **In-flight (RunningAsync)**: the user has clicked Launch and the
+///    parallel `CreateAgentTask` flow in `OrchestrateExecutor` is dispatching.
+///    Render "Launching N agents" with a spinner per PRODUCT.md
+///    §post-action; dropdowns are read-only and buttons are removed.
+/// 3. **Finished**: render one of the six terminal post-action states
+///    (Started N / Started M of N / Failed / Launch denied / Cancelled).
+///    The card stays in conversation history per PRODUCT.md §configuration-
+///    block.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_orchestrate_config_card(
     props: Props,
@@ -750,27 +776,50 @@ pub(super) fn render_orchestrate_config_card(
     let theme = appearance.theme();
     let status = props.action_model.as_ref(app).get_action_status(action_id);
 
-    let mode_label = match execution_mode {
-        OrchestrateExecutionMode::Local => "Local".to_string(),
-        OrchestrateExecutionMode::Remote { environment_id } if environment_id.is_empty() => {
-            "Remote (no environment)".to_string()
-        }
-        OrchestrateExecutionMode::Remote { environment_id } => {
-            format!("Remote ({environment_id})")
-        }
-    };
-    let model_display = if model_id.is_empty() {
-        "auto".to_string()
-    } else {
-        model_id.to_string()
-    };
-    let harness_display = if harness.is_empty() {
-        "oz".to_string()
-    } else {
-        harness.to_string()
-    };
+    // Read user-edited selections (model/harness/execution-mode/environment).
+    // Falls back to the LLM-proposed action values when not present (e.g.
+    // for restored conversations where `handle_updated_output` has not yet
+    // run for this action). In that fallback, the dropdowns will not be
+    // interactive (no handles) but the static display still works.
+    let selections = props
+        .state_handles
+        .orchestrate_config_selections
+        .get(action_id);
+    let dropdown_handles = props
+        .state_handles
+        .orchestrate_dropdown_handles
+        .get(action_id);
 
-    // Compute the heading and status icon, branching on the post-action state.
+    // Resolve the values to render. User selections always win over the
+    // LLM-proposed values once the action has been observed.
+    let resolved_model_id = selections.map(|s| s.model_id.clone()).unwrap_or_else(|| {
+        if model_id.is_empty() {
+            "auto".to_string()
+        } else {
+            model_id.to_string()
+        }
+    });
+    let resolved_harness = selections.map(|s| s.harness.clone()).unwrap_or_else(|| {
+        if harness.is_empty() {
+            "oz".to_string()
+        } else {
+            harness.to_string()
+        }
+    });
+    let (resolved_is_remote, resolved_environment_id) = match selections {
+        Some(s) => (s.is_remote, s.environment_id.clone()),
+        None => match execution_mode {
+            OrchestrateExecutionMode::Local => (false, String::new()),
+            OrchestrateExecutionMode::Remote { environment_id } => (true, environment_id.clone()),
+        },
+    };
+    // Determine the card phase: Pre-terminal (Pending/Blocked/Queued/
+    // Preprocessing), In-flight (RunningAsync after Launch click), or
+    // Finished. We compute the heading and status icon up front so the
+    // header is uniform across phases.
+    let is_finished = matches!(&status, Some(AIActionStatus::Finished(_)));
+    let is_in_flight = matches!(&status, Some(AIActionStatus::RunningAsync));
+
     let (heading, status_icon) = match &status {
         Some(AIActionStatus::Finished(result)) => {
             let AIAgentActionResultType::Orchestrate(orchestrate_result) = &result.result else {
@@ -822,20 +871,15 @@ pub(super) fn render_orchestrate_config_card(
                 ),
             }
         }
-        _ => {
-            // Pre-terminal state: the LLM has emitted the orchestrate call and
-            // the user has not yet clicked a terminal button. The full
-            // implementation will render the dropdowns + buttons here; the
-            // skeleton just surfaces the proposed configuration and agent
-            // count so the routing is observable end-to-end.
-            (
-                format!("Launching {} agent(s)", agents.len()),
-                action_icon(action_id, props.action_model, props.model, app).finish(),
-            )
-        }
+        _ => (
+            // Pre-terminal and in-flight share the "Launching N" heading
+            // per PRODUCT.md §post-action; the in-flight state simply locks
+            // the dropdowns and removes the buttons.
+            format!("Launching {} agent(s)", agents.len()),
+            action_icon(action_id, props.action_model, props.model, app).finish(),
+        ),
     };
 
-    // Header row: summary text, status icon, expand chevron.
     let header_text = render_formatted_text_element(
         vec![
             FormattedTextFragment::bold(heading),
@@ -859,34 +903,177 @@ pub(super) fn render_orchestrate_config_card(
         app,
     ));
 
-    // Body: resolved run-wide config + agent name list. This is the part of
-    // the card the follow-up will replace with interactive dropdowns and
-    // buttons.
     let mut body_column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
     let dimmed_text_color = blended_colors::text_disabled(theme, theme.surface_2());
     let value_color: ColorU = theme.main_text_color(theme.background()).into();
     let font_family = appearance.ui_font_family();
     let font_size = appearance.monospace_font_size();
 
-    let config_fields = [
-        ("Model: ", model_display.as_str()),
-        ("Harness: ", harness_display.as_str()),
-        ("Execution mode: ", mode_label.as_str()),
-    ];
-    for (label, value) in config_fields {
-        let line = Flex::row()
-            .with_child(
-                Text::new(label.to_string(), font_family, font_size)
-                    .with_color(dimmed_text_color)
-                    .finish(),
-            )
-            .with_child(
-                Text::new(value.to_string(), font_family, font_size)
-                    .with_color(value_color)
-                    .finish(),
-            )
-            .finish();
-        body_column.add_child(line);
+    // Pre-terminal state: render interactive dropdowns. In-flight and
+    // Finished states render the dropdowns as read-only static rows.
+    let is_interactive = !is_finished && !is_in_flight && dropdown_handles.is_some();
+
+    if is_interactive {
+        let handles = dropdown_handles.expect("checked above");
+        let open_dropdown = selections.and_then(|s| s.open_dropdown);
+
+        body_column.add_child(render_dropdown_row(
+            "Model",
+            &display_label_for_option(&resolved_model_id, MODEL_OPTIONS),
+            handles.model.clone(),
+            open_dropdown == Some(OrchestrateConfigDropdown::Model),
+            AIBlockAction::OrchestrateToggleDropdown {
+                action_id: action_id.clone(),
+                dropdown: OrchestrateConfigDropdown::Model,
+            },
+            MODEL_OPTIONS
+                .iter()
+                .map(|(value, label)| {
+                    let action = AIBlockAction::OrchestrateSelectModel {
+                        action_id: action_id.clone(),
+                        model_id: (*value).to_string(),
+                    };
+                    (label.to_string(), action)
+                })
+                .collect(),
+            app,
+        ));
+
+        body_column.add_child(render_dropdown_row(
+            "Harness",
+            &display_label_for_option(&resolved_harness, HARNESS_OPTIONS),
+            handles.harness.clone(),
+            open_dropdown == Some(OrchestrateConfigDropdown::Harness),
+            AIBlockAction::OrchestrateToggleDropdown {
+                action_id: action_id.clone(),
+                dropdown: OrchestrateConfigDropdown::Harness,
+            },
+            HARNESS_OPTIONS
+                .iter()
+                .map(|(value, label)| {
+                    let action = AIBlockAction::OrchestrateSelectHarness {
+                        action_id: action_id.clone(),
+                        harness: (*value).to_string(),
+                    };
+                    (label.to_string(), action)
+                })
+                .collect(),
+            app,
+        ));
+
+        body_column.add_child(render_dropdown_row(
+            "Execution mode",
+            if resolved_is_remote {
+                "Remote"
+            } else {
+                "Local"
+            },
+            handles.execution_mode.clone(),
+            open_dropdown == Some(OrchestrateConfigDropdown::ExecutionMode),
+            AIBlockAction::OrchestrateToggleDropdown {
+                action_id: action_id.clone(),
+                dropdown: OrchestrateConfigDropdown::ExecutionMode,
+            },
+            vec![
+                (
+                    "Local".to_string(),
+                    AIBlockAction::OrchestrateSelectExecutionMode {
+                        action_id: action_id.clone(),
+                        is_remote: false,
+                    },
+                ),
+                (
+                    "Remote".to_string(),
+                    AIBlockAction::OrchestrateSelectExecutionMode {
+                        action_id: action_id.clone(),
+                        is_remote: true,
+                    },
+                ),
+            ],
+            app,
+        ));
+
+        if resolved_is_remote {
+            // PRODUCT.md §configuration-block: the Environment dropdown is
+            // visible only when execution mode is Remote.
+            let environments = CloudAmbientAgentEnvironment::get_all(app);
+            let environment_options: Vec<(String, AIBlockAction)> = environments
+                .iter()
+                .map(|env| {
+                    let env_id = env.id.to_string();
+                    let label = env.model().string_model.display_name();
+                    let action = AIBlockAction::OrchestrateSelectEnvironment {
+                        action_id: action_id.clone(),
+                        environment_id: env_id,
+                    };
+                    (label, action)
+                })
+                .collect();
+            let env_label = if resolved_environment_id.is_empty() {
+                "Choose environment…".to_string()
+            } else {
+                environments
+                    .iter()
+                    .find(|e| e.id.to_string() == resolved_environment_id)
+                    .map(|e| e.model().string_model.display_name())
+                    .unwrap_or(resolved_environment_id.clone())
+            };
+            body_column.add_child(render_dropdown_row(
+                "Environment",
+                &env_label,
+                handles.environment.clone(),
+                open_dropdown == Some(OrchestrateConfigDropdown::Environment),
+                AIBlockAction::OrchestrateToggleDropdown {
+                    action_id: action_id.clone(),
+                    dropdown: OrchestrateConfigDropdown::Environment,
+                },
+                environment_options,
+                app,
+            ));
+        }
+
+        // Render the OpenCode→Oz auto-reset notice if it's currently active.
+        if selections
+            .map(|s| s.did_auto_reset_opencode)
+            .unwrap_or(false)
+        {
+            body_column.add_child(render_opencode_reset_notice(
+                action_id,
+                handles.dismiss_opencode_notice.clone(),
+                app,
+            ));
+        }
+    } else {
+        // Read-only summary for in-flight and Finished states.
+        let mode_label = if resolved_is_remote {
+            if resolved_environment_id.is_empty() {
+                "Remote (no environment)".to_string()
+            } else {
+                format!("Remote ({resolved_environment_id})")
+            }
+        } else {
+            "Local".to_string()
+        };
+        let config_fields = [
+            ("Model: ", resolved_model_id.as_str()),
+            ("Harness: ", resolved_harness.as_str()),
+            ("Execution mode: ", mode_label.as_str()),
+        ];
+        for (label, value) in config_fields {
+            let line = Flex::row()
+                .with_child(
+                    Text::new(label.to_string(), font_family, font_size)
+                        .with_color(dimmed_text_color)
+                        .finish(),
+                )
+                .with_child(
+                    Text::new(value.to_string(), font_family, font_size)
+                        .with_color(value_color)
+                        .finish(),
+                )
+                .finish();
+            body_column.add_child(line);
+        }
     }
 
     if !agents.is_empty() {
@@ -911,27 +1098,64 @@ pub(super) fn render_orchestrate_config_card(
         }
     }
 
-    // Render the three terminal buttons (Reject / Launch without orchestration
-    // / Launch) only while the action has not yet reached a terminal state.
-    // Once Finished, the card transitions to the post-action state and the
-    // buttons are no longer interactive.
-    let is_pre_terminal = !matches!(&status, Some(AIActionStatus::Finished(_)));
-    if is_pre_terminal {
+    if is_interactive {
+        // Inline validation messages (TECH.md §6):
+        //   * "Choose an environment before launching" when Remote and the
+        //     environment_id is empty.
+        //   * "OpenCode is not supported in remote mode" when the LLM
+        //     directly proposes the OpenCode + Remote combination. Note that
+        //     toggling Local→Remote auto-resets OpenCode→Oz, so this only
+        //     fires when the action arrived in the OpenCode+Remote state
+        //     and the user hasn't picked a different harness yet.
+        let validation_errors = compute_validation_errors(
+            &resolved_harness,
+            resolved_is_remote,
+            &resolved_environment_id,
+        );
+        if !validation_errors.is_empty() {
+            let error_color = blended_colors::text_main(theme, theme.background());
+            for error in &validation_errors {
+                body_column.add_child(
+                    Container::new(
+                        Text::new(error.to_string(), font_family, font_size)
+                            .with_color(error_color)
+                            .finish(),
+                    )
+                    .with_margin_top(6.)
+                    .finish(),
+                );
+            }
+        }
+
         if let Some(handles) = props
             .state_handles
             .orchestrate_button_handles
             .get(action_id)
         {
+            let launch_disabled = !validation_errors.is_empty();
             body_column.add_child(render_orchestrate_buttons(
                 action_id,
-                model_id,
-                harness,
-                execution_mode,
-                agents,
                 handles,
+                launch_disabled,
                 app,
             ));
         }
+    } else if is_in_flight {
+        // PRODUCT.md §post-action: in-flight state shows a simple status
+        // line indicating the parallel CreateAgentTask flow is dispatching.
+        body_column.add_child(
+            Container::new(
+                Text::new(
+                    format!("Launching {} agent(s)…", agents.len()),
+                    font_family,
+                    font_size,
+                )
+                .with_color(dimmed_text_color)
+                .finish(),
+            )
+            .with_margin_top(8.)
+            .finish(),
+        );
     }
 
     let body = Container::new(body_column.finish())
@@ -950,6 +1174,12 @@ pub(super) fn render_orchestrate_config_card(
         column.add_child(rendered_body);
     }
 
+    // Suppress an unused-variable warning when the only remaining use of
+    // `model_id` / `harness` / `execution_mode` is the read-only static
+    // summary path. They remain part of the function signature because
+    // restored conversations may not have selections yet.
+    let _ = (model_id, harness, execution_mode);
+
     column
         .finish()
         .with_agent_output_item_spacing(app)
@@ -958,18 +1188,227 @@ pub(super) fn render_orchestrate_config_card(
         .finish()
 }
 
+/// Returns the human-readable label for an option whose canonical value is
+/// `value`, falling back to the value itself when no matching option exists
+/// (e.g. when the LLM proposes a custom model_id not in the static list).
+fn display_label_for_option(value: &str, options: &[(&str, &str)]) -> String {
+    options
+        .iter()
+        .find_map(|(v, label)| (*v == value).then(|| label.to_string()))
+        .unwrap_or_else(|| value.to_string())
+}
+
+/// Computes the inline validation errors for the current resolved
+/// configuration. Empty vec means Launch is enabled.
+fn compute_validation_errors(
+    harness: &str,
+    is_remote: bool,
+    environment_id: &str,
+) -> Vec<&'static str> {
+    let mut errors = Vec::new();
+    if is_remote && environment_id.is_empty() {
+        errors.push("Choose an environment before launching.");
+    }
+    if is_remote && harness == "opencode" {
+        errors.push("OpenCode is not supported in remote mode.");
+    }
+    errors
+}
+
+/// Renders one interactive dropdown row on the `OrchestrateConfigCard`. The
+/// row is a label + clickable header showing the current selection; when
+/// `is_open` is true, the option list is rendered inline below the header.
+fn render_dropdown_row(
+    label: &str,
+    selected_label: &str,
+    header_mouse_state: MouseStateHandle,
+    is_open: bool,
+    toggle_action: AIBlockAction,
+    options: Vec<(String, AIBlockAction)>,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let font_family = appearance.ui_font_family();
+    let font_size = appearance.monospace_font_size();
+    let label_color = blended_colors::text_disabled(theme, theme.surface_2());
+    let value_color: ColorU = theme.main_text_color(theme.background()).into();
+    let header_bg: ColorU = blended_colors::neutral_3(theme);
+    let option_bg: ColorU = blended_colors::neutral_2(theme);
+    let option_hover_bg: ColorU = blended_colors::neutral_4(theme);
+
+    let label_owned = label.to_string();
+    let selected_owned = selected_label.to_string();
+    let chevron = if is_open {
+        Icon::ChevronDown
+    } else {
+        Icon::ChevronRight
+    };
+
+    let header = Hoverable::new(header_mouse_state, move |_| {
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Text::new(selected_owned.clone(), font_family, font_size)
+                    .with_color(value_color)
+                    .finish(),
+            )
+            .with_child(
+                Container::new(
+                    ConstrainedBox::new(chevron.to_warpui_icon(Fill::Solid(value_color)).finish())
+                        .with_width(font_size)
+                        .with_height(font_size)
+                        .finish(),
+                )
+                .with_margin_left(6.)
+                .finish(),
+            )
+            .finish();
+        Container::new(row)
+            .with_horizontal_padding(8.)
+            .with_vertical_padding(4.)
+            .with_background_color(header_bg)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+            .finish()
+    })
+    .with_cursor(Cursor::PointingHand)
+    .on_click(move |ctx, _, _| {
+        ctx.dispatch_typed_action(toggle_action.clone());
+    })
+    .finish();
+
+    let row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(
+            ConstrainedBox::new(
+                Text::new(format!("{label_owned}: "), font_family, font_size)
+                    .with_color(label_color)
+                    .finish(),
+            )
+            .with_width(140.)
+            .finish(),
+        )
+        .with_child(header);
+
+    let header_row_element = row.finish();
+
+    if !is_open {
+        return header_row_element;
+    }
+
+    // Render the option list inline below the header when the dropdown is
+    // expanded. Each option is a clickable row that dispatches the matching
+    // selection action.
+    let mut option_column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+    for (option_label, option_action) in options {
+        let option_label_owned = option_label.clone();
+        let option_handle = MouseStateHandle::default();
+        let element = Hoverable::new(option_handle, move |state| {
+            let bg = if state.is_hovered() {
+                option_hover_bg
+            } else {
+                option_bg
+            };
+            Container::new(
+                Text::new(option_label_owned.clone(), font_family, font_size)
+                    .with_color(value_color)
+                    .finish(),
+            )
+            .with_horizontal_padding(8.)
+            .with_vertical_padding(4.)
+            .with_background_color(bg)
+            .finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(option_action.clone());
+        })
+        .finish();
+        option_column.add_child(element);
+    }
+
+    let mut wrapper = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+    wrapper.add_child(header_row_element);
+    wrapper.add_child(
+        Container::new(option_column.finish())
+            .with_margin_top(2.)
+            .with_margin_left(140.)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+            .finish(),
+    );
+    wrapper.finish()
+}
+
+/// Renders the inline notice that the Harness was auto-reset from OpenCode
+/// to Oz when the user toggled the execution mode from Local to Remote
+/// (TECH.md Risks mitigation: "client resets harness to Oz when toggling to
+/// Remote with a notice"). The user dismisses it by clicking the inline X.
+fn render_opencode_reset_notice(
+    action_id: &AIAgentActionId,
+    dismiss_handle: MouseStateHandle,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let font_family = appearance.ui_font_family();
+    let font_size = appearance.monospace_font_size();
+    let text_color: ColorU = theme.main_text_color(theme.background()).into();
+    let bg: ColorU = blended_colors::neutral_3(theme);
+    let icon_sz = icon_size(app);
+
+    let action_id_clone = action_id.clone();
+    let dismiss = Hoverable::new(dismiss_handle, move |_| {
+        ConstrainedBox::new(Icon::X.to_warpui_icon(Fill::Solid(text_color)).finish())
+            .with_width(icon_sz)
+            .with_height(icon_sz)
+            .finish()
+    })
+    .with_cursor(Cursor::PointingHand)
+    .on_click(move |ctx, _, _| {
+        ctx.dispatch_typed_action(AIBlockAction::OrchestrateDismissOpenCodeNotice {
+            action_id: action_id_clone.clone(),
+        });
+    })
+    .finish();
+
+    let row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_child(
+            Text::new(
+                "Harness reset to Oz: OpenCode is not supported in remote mode.".to_string(),
+                font_family,
+                font_size,
+            )
+            .with_color(text_color)
+            .finish(),
+        )
+        .with_child(Container::new(dismiss).with_margin_left(8.).finish())
+        .finish();
+
+    Container::new(row)
+        .with_margin_top(6.)
+        .with_horizontal_padding(8.)
+        .with_vertical_padding(4.)
+        .with_background_color(bg)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .finish()
+}
+
 /// Renders the row of three terminal buttons on an `OrchestrateConfigCard`:
 /// Reject (secondary, leftmost), Launch without orchestration (secondary), and
-/// Launch (primary). Each button dispatches an
-/// [`AIBlockAction::OrchestrateActionDecision`] which the `AIBlock` forwards
-/// to [`crate::ai::blocklist::action_model::execute::OrchestrateExecutor::submit_decision`].
+/// Launch (primary). The Launch button is rendered in a disabled visual
+/// treatment when `launch_disabled` is true (e.g. validation errors are
+/// active).
+///
+/// Reject and Launch-without-orchestration dispatch
+/// `AIBlockAction::OrchestrateActionDecision` directly. Launch dispatches
+/// `AIBlockAction::OrchestrateLaunchClicked` so the click handler can read
+/// the user's resolved selections from `state_handles.orchestrate_config_
+/// selections` (the closure cannot read state at render time).
 fn render_orchestrate_buttons(
     action_id: &AIAgentActionId,
-    model_id: &str,
-    harness: &str,
-    execution_mode: &OrchestrateExecutionMode,
-    agents: &[OrchestrateAgentRunConfig],
     handles: &OrchestrateButtonHandles,
+    launch_disabled: bool,
     app: &AppContext,
 ) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
@@ -980,15 +1419,22 @@ fn render_orchestrate_buttons(
     let secondary_text_color: ColorU = theme.main_text_color(theme.surface_2()).into_solid();
     let primary_bg: ColorU = theme.accent().into_solid();
     let secondary_bg: ColorU = blended_colors::neutral_3(theme);
+    let disabled_bg: ColorU = blended_colors::neutral_2(theme);
+    let disabled_text_color = blended_colors::text_disabled(theme, theme.surface_2());
 
     let make_button = |label: &str,
                        mouse_state: MouseStateHandle,
                        background: ColorU,
                        text_color: ColorU,
-                       on_click_action: AIBlockAction|
+                       on_click_action: Option<AIBlockAction>|
      -> Box<dyn Element> {
         let label_owned = label.to_string();
-        Hoverable::new(mouse_state, move |_| {
+        let cursor = if on_click_action.is_some() {
+            Cursor::PointingHand
+        } else {
+            Cursor::Arrow
+        };
+        let mut hoverable = Hoverable::new(mouse_state, move |_| {
             Container::new(
                 Text::new(label_owned.clone(), font_family, font_size)
                     .with_color(text_color)
@@ -1000,11 +1446,13 @@ fn render_orchestrate_buttons(
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
             .finish()
         })
-        .with_cursor(Cursor::PointingHand)
-        .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(on_click_action.clone());
-        })
-        .finish()
+        .with_cursor(cursor);
+        if let Some(action) = on_click_action {
+            hoverable = hoverable.on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(action.clone());
+            });
+        }
+        hoverable.finish()
     };
 
     let reject_button = make_button(
@@ -1012,35 +1460,38 @@ fn render_orchestrate_buttons(
         handles.reject.clone(),
         secondary_bg,
         secondary_text_color,
-        AIBlockAction::OrchestrateActionDecision {
+        Some(AIBlockAction::OrchestrateActionDecision {
             action_id: action_id.clone(),
             decision: OrchestrateDecision::Reject,
-        },
+        }),
     );
     let launch_without_button = make_button(
         "Launch without orchestration",
         handles.launch_without_orchestration.clone(),
         secondary_bg,
         secondary_text_color,
-        AIBlockAction::OrchestrateActionDecision {
+        Some(AIBlockAction::OrchestrateActionDecision {
             action_id: action_id.clone(),
             decision: OrchestrateDecision::LaunchWithoutOrchestration,
-        },
+        }),
     );
+    let (launch_bg, launch_text, launch_action) = if launch_disabled {
+        (disabled_bg, disabled_text_color, None)
+    } else {
+        (
+            primary_bg,
+            primary_text_color,
+            Some(AIBlockAction::OrchestrateLaunchClicked {
+                action_id: action_id.clone(),
+            }),
+        )
+    };
     let launch_button = make_button(
         "Launch",
         handles.launch.clone(),
-        primary_bg,
-        primary_text_color,
-        AIBlockAction::OrchestrateActionDecision {
-            action_id: action_id.clone(),
-            decision: OrchestrateDecision::Launch {
-                model_id: model_id.to_string(),
-                harness: harness.to_string(),
-                execution_mode: execution_mode.clone(),
-                agents: agents.to_vec(),
-            },
-        },
+        launch_bg,
+        launch_text,
+        launch_action,
     );
 
     Container::new(
