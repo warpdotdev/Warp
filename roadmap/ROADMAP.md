@@ -8,7 +8,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 
 | # | Feature | Phase | Spec PR | Impl PR(s) |
 |---|---------|-------|---------|-----------|
-| 01 | [Tab color shortcuts](01-tab-colors/STATUS.md) | not-started | — | — |
+| 01 | [Tab color shortcuts](01-tab-colors/STATUS.md) | spec-pending | — | — |
 | 02 | [AI removal](02-ai-removal/STATUS.md) | not-started | — | — |
 | 03 | [Custom command shortcuts](03-command-shortcuts/STATUS.md) | not-started | — | — |
 | 04 | [Open Changes panel](04-open-changes/STATUS.md) | not-started | — | — |

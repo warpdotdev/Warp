@@ -1,6 +1,6 @@
 # 01 — Tab color shortcuts
 
-**Phase:** not-started
+**Phase:** spec-pending
 **Spec PR:** —
 **Impl PR:** —
 

@@ -7,7 +7,7 @@ description: Drive twarp's roadmap one step at a time. Reads roadmap/ROADMAP.md,
 
 Single entry point for twarp side-project work. The user runs this when they come back to the project; the skill figures out the right next action without further prompting.
 
-The user's expected loop is **review and approve, nothing else**. Anything that needs human judgment becomes a PR; everything else is automated.
+The user's expected loop is **review and approve, nothing else**. Anything that needs human judgment becomes a PR; everything else is automated. **Invoking `/twarp-next` is itself the user's confirmation to proceed** — never pause to ask "shall I start?" or "ready to begin?". The only stopping points are `*-in-review` phases, where the user is reviewing a real PR.
 
 ## Workflow
 
@@ -21,7 +21,7 @@ The user's expected loop is **review and approve, nothing else**. Anything that 
 
 | Phase | Action |
 |-------|--------|
-| `not-started` | Briefly confirm scope with the user (one-line summary from STATUS.md). On confirmation, set phase to `spec-pending` and proceed. |
+| `not-started` | Set phase to `spec-pending` and recurse once. Invoking `/twarp-next` is the confirmation — do not ask. |
 | `spec-pending` | Use `write-product-spec` to fill `roadmap/<feature>/PRODUCT.md` (must include a smoke-test checklist — see "Smoke-test checklist" below). Then `write-tech-spec` to fill `roadmap/<feature>/TECH.md`. Open a spec PR via `create-pr`, title `[twarp NN] specs: <feature>`. Set phase to `spec-in-review`. |
 | `spec-in-review` | Status report only. **Do not modify code.** Tell the user what they're waiting on. |
 | `impl-pending` | Implement the next unchecked sub-phase using `implement-specs`, scoped only to that sub-phase. Run `./script/presubmit`; if it fails, use `diagnose-ci-failures` / `fix-errors` and iterate until green. Open an impl PR via `create-pr`, title `[twarp NN<sub>] <feature>: <sub-phase summary>`. Tick the sub-phase checkbox in STATUS.md. Set phase to `impl-in-review`. |
