@@ -25419,7 +25419,7 @@ impl TypedActionView for TerminalView {
             SwitchAgentViewToConversation { conversation_id } => {
                 self.enter_agent_view_for_conversation(
                     None,
-                    AgentViewEntryOrigin::ConversationListView,
+                    AgentViewEntryOrigin::OrchestrationPillBar,
                     *conversation_id,
                     ctx,
                 );

@@ -1129,6 +1129,7 @@ pub enum TelemetryAgentViewEntryOrigin {
     ChildAgent,
     LinearDeepLink,
     ThirdPartyCloudAgent,
+    OrchestrationPillBar,
 }
 
 impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
@@ -1178,6 +1179,7 @@ impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
             AgentViewEntryOrigin::DefaultSessionMode => Self::DefaultSessionMode,
             AgentViewEntryOrigin::ChildAgent => Self::ChildAgent,
             AgentViewEntryOrigin::LinearDeepLink => Self::LinearDeepLink,
+            AgentViewEntryOrigin::OrchestrationPillBar => Self::OrchestrationPillBar,
         }
     }
 }
