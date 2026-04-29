@@ -1,13 +1,17 @@
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fs::DirEntry;
+use std::sync::Arc;
 
+use async_trait::async_trait;
 use itertools::{iproduct, Itertools};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use typed_path::{TypedPath, TypedPathBuf};
 use warp_command_signatures::{IconType, PathSuggestionType};
-use warp_util::path::HOME_DIR_ENV_VAR_PREFIX;
+use warp_util::path::{ShellFamily, HOME_DIR_ENV_VAR_PREFIX};
 
+use crate::completer::context::PathSeparators;
 use crate::completer::suggest::Priority;
 use crate::completer::{
     context::PathCompletionContext,
@@ -134,6 +138,90 @@ pub(crate) async fn sorted_directories_relative_to(
                 .cmp_by_display(&suggestion_b.suggestion)
         })
         .collect()
+}
+
+/// Like `sorted_directories_relative_to` but also surfaces directories from
+/// the shell's `$CDPATH` so `cd <Tab>` matches the resolution `cd` itself does.
+pub(crate) async fn sorted_cd_directories(
+    path: &ParsedToken,
+    matcher: MatchStrategy,
+    ctx: &dyn PathCompletionContext,
+) -> Vec<MatchedSuggestion> {
+    let mut results = sorted_directories_relative_to(path, matcher, ctx).await;
+
+    if !is_cdpath_eligible_token(path.as_str()) {
+        return results;
+    }
+
+    let Some(cdpath) = ctx.cdpath() else {
+        return results;
+    };
+
+    let mut seen: HashSet<String> = results
+        .iter()
+        .map(|s| s.suggestion.display.to_string())
+        .collect();
+
+    // `.` is already handled by the pwd-relative pass above; empty entries are
+    // shell-equivalent to `.` so skip those too.
+    for entry in cdpath.split(':').filter(|e| !e.is_empty() && *e != ".") {
+        let override_ctx = CdpathOverrideContext {
+            inner: ctx,
+            cdpath_pwd: TypedPathBuf::from(entry),
+        };
+        let extra = sorted_directories_relative_to(path, matcher, &override_ctx).await;
+        for suggestion in extra {
+            if seen.insert(suggestion.suggestion.display.to_string()) {
+                results.push(suggestion);
+            }
+        }
+    }
+
+    results
+}
+
+fn is_cdpath_eligible_token(token: &str) -> bool {
+    !(token.starts_with('/')
+        || token.starts_with('~')
+        || token.starts_with("./")
+        || token.starts_with("../")
+        || token == "."
+        || token == "..")
+}
+
+/// Wraps a `PathCompletionContext` and overrides only `pwd()` so we can reuse
+/// the existing engine to list directories under a `$CDPATH` entry.
+struct CdpathOverrideContext<'a> {
+    inner: &'a dyn PathCompletionContext,
+    cdpath_pwd: TypedPathBuf,
+}
+
+#[async_trait]
+impl<'a> PathCompletionContext for CdpathOverrideContext<'a> {
+    async fn list_directory_entries(&self, directory: TypedPathBuf) -> Arc<Vec<EngineDirEntry>> {
+        self.inner.list_directory_entries(directory).await
+    }
+
+    fn home_directory(&self) -> Option<&str> {
+        self.inner.home_directory()
+    }
+
+    fn cdpath(&self) -> Option<&str> {
+        // Avoid recursing — the outer call already iterates entries.
+        None
+    }
+
+    fn shell_family(&self) -> ShellFamily {
+        self.inner.shell_family()
+    }
+
+    fn pwd(&self) -> TypedPath<'_> {
+        self.cdpath_pwd.to_path()
+    }
+
+    fn path_separators(&self) -> PathSeparators {
+        self.inner.path_separators()
+    }
 }
 
 pub async fn sorted_paths_relative_to(

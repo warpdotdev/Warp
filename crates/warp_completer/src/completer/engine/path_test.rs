@@ -472,3 +472,94 @@ pub fn test_path_completions_home_env_var_special_characters() {
         .with_file_type(EngineFileType::Directory),]
     );
 }
+
+#[cfg(unix)]
+#[test]
+pub fn test_sorted_cd_directories_no_cdpath_matches_existing_behavior() {
+    let ctx = MockPathCompletionContext::default()
+        .with_entries_in_pwd([dir_entry("local-only"), dir_entry("shared")]);
+
+    let from_cd = warpui::r#async::block_on(sorted_cd_directories(
+        &ParsedToken::empty(),
+        MatchStrategy::CaseInsensitive,
+        &ctx,
+    ));
+    let from_default = warpui::r#async::block_on(sorted_directories_relative_to(
+        &ParsedToken::empty(),
+        MatchStrategy::CaseInsensitive,
+        &ctx,
+    ));
+    assert_eq!(from_cd, from_default);
+}
+
+#[cfg(unix)]
+#[test]
+pub fn test_sorted_cd_directories_includes_cdpath_entries() {
+    let ctx = MockPathCompletionContext::default()
+        .with_entries_in_pwd([dir_entry("local-only"), dir_entry("shared")])
+        .with_entries(
+            TypedPathBuf::from("/srv/projects"),
+            [
+                dir_entry("shared"),
+                dir_entry("extra-dir"),
+                file_entry("a-file"),
+            ],
+        )
+        .with_cdpath("/srv/projects".to_owned());
+
+    let displays: Vec<String> = warpui::r#async::block_on(sorted_cd_directories(
+        &ParsedToken::empty(),
+        MatchStrategy::CaseInsensitive,
+        &ctx,
+    ))
+    .into_iter()
+    .map(|m| m.suggestion.display.to_string())
+    .collect();
+
+    assert_eq!(displays, vec!["local-only/", "shared/", "extra-dir/"]);
+}
+
+#[cfg(unix)]
+#[test]
+pub fn test_sorted_cd_directories_ignores_cdpath_for_absolute_token() {
+    let ctx = MockPathCompletionContext::default()
+        .with_entries_in_pwd([dir_entry("local-only")])
+        .with_entries(
+            TypedPathBuf::from("/srv/projects"),
+            [dir_entry("extra-dir")],
+        )
+        .with_entries(TypedPathBuf::from("/abs"), [dir_entry("absdir")])
+        .with_cdpath("/srv/projects".to_owned());
+
+    let displays: Vec<String> = warpui::r#async::block_on(sorted_cd_directories(
+        &ParsedToken::new("/abs/"),
+        MatchStrategy::CaseInsensitive,
+        &ctx,
+    ))
+    .into_iter()
+    .map(|m| m.suggestion.display.to_string())
+    .collect();
+
+    assert!(displays.iter().all(|d| d != "extra-dir/"));
+    assert!(displays.contains(&"absdir/".to_owned()));
+}
+
+#[cfg(unix)]
+#[test]
+pub fn test_sorted_cd_directories_skips_dot_entry_in_cdpath() {
+    // `.` in CDPATH is handled by the pwd-relative pass; skip it on overlay
+    // to avoid double-listing pwd contents.
+    let ctx = MockPathCompletionContext::default()
+        .with_entries_in_pwd([dir_entry("local-only")])
+        .with_cdpath(".".to_owned());
+
+    let displays: Vec<String> = warpui::r#async::block_on(sorted_cd_directories(
+        &ParsedToken::empty(),
+        MatchStrategy::CaseInsensitive,
+        &ctx,
+    ))
+    .into_iter()
+    .map(|m| m.suggestion.display.to_string())
+    .collect();
+    assert_eq!(displays, vec!["local-only/"]);
+}
