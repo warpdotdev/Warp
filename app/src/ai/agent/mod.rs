@@ -717,13 +717,19 @@ impl ProgrammingLanguage {
     #[cfg_attr(target_family = "wasm", allow(unused))]
     pub fn to_extension(&self) -> Option<&str> {
         match self {
+            // The arms below cover both canonical language names emitted by the agent (e.g.
+            // "rust", "kotlin") and common markdown code-fence aliases (e.g. "rs", "kt") to keep
+            // syntax highlighting working when the model uses either. The set of recognized
+            // languages here is kept in sync with `SUPPORTED_LANGUAGES` in the `languages` crate.
             Self::Other(language) => match language.to_lowercase().as_str() {
-                "rust" => Some("rs"),
-                "go" => Some("go"),
-                "python" => Some("py"),
-                "javascript" => Some("js"),
-                "typescript" => Some("ts"),
-                "yaml" => Some("yaml"),
+                "rust" | "rs" => Some("rs"),
+                "go" | "golang" => Some("go"),
+                "python" | "py" => Some("py"),
+                "javascript" | "js" => Some("js"),
+                "typescript" | "ts" => Some("ts"),
+                "jsx" => Some("jsx"),
+                "tsx" => Some("tsx"),
+                "yaml" | "yml" => Some("yaml"),
                 "cpp" | "c++" => Some("cpp"),
                 "java" => Some("java"),
                 "groovy" => Some("java"),
@@ -733,17 +739,22 @@ impl ProgrammingLanguage {
                 "css" => Some("css"),
                 "c" => Some("c"),
                 "json" => Some("json"),
-                "hcl" => Some("hcl"),
+                "hcl" | "terraform" | "tf" => Some("hcl"),
                 "lua" => Some("lua"),
-                "ruby" => Some("rb"),
+                "ruby" | "rb" => Some("rb"),
                 "php" => Some("php"),
                 "toml" => Some("toml"),
                 "swift" => Some("swift"),
-                "kotlin" => Some("kt"),
+                "kotlin" | "kt" => Some("kt"),
                 "powershell" => Some("ps1"),
                 "elixir" => Some("exs"),
                 "scala" => Some("scala"),
                 "sql" => Some("sql"),
+                "objective-c" | "objc" => Some("m"),
+                "starlark" => Some("bzl"),
+                "xml" => Some("xml"),
+                "vue" => Some("vue"),
+                "dockerfile" | "docker" | "containerfile" => Some("dockerfile"),
                 _ => None,
             },
             Self::Shell(ShellType::PowerShell) => Some("ps1"),
