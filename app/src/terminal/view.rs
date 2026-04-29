@@ -54,7 +54,8 @@ use crate::ai::blocklist::agent_view::{
     agent_view_bg_fill, AgentViewController, AgentViewControllerEvent, AgentViewDisplayMode,
     AgentViewEntryBlockParams, AgentViewEntryOrigin, AgentViewHeaderDisabledTheme,
     AgentViewHeaderTheme, AgentViewZeroStateBlock, AgentViewZeroStateEvent, EphemeralMessageModel,
-    ExitConfirmationTrigger, InlineAgentViewHeader, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
+    ExitAgentViewError, ExitConfirmationTrigger, InlineAgentViewHeader,
+    ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
 use crate::ai::conversation_utils;
 use crate::ai::predict::prompt_suggestions::{
@@ -4490,6 +4491,24 @@ impl TerminalView {
         }
 
         callback(self, ctx);
+    }
+
+    fn can_exit_agent_view_for_terminal_view(
+        &self,
+        ctx: &AppContext,
+    ) -> Result<(), ExitAgentViewError> {
+        match self.agent_view_controller.as_ref(ctx).can_exit_agent_view() {
+            Err(ExitAgentViewError::LongRunningCommand)
+                if self.can_pop_nested_cloud_agent_view(ctx) =>
+            {
+                Ok(())
+            }
+            result => result,
+        }
+    }
+
+    fn can_pop_nested_cloud_agent_view(&self, ctx: &AppContext) -> bool {
+        self.is_ambient_agent_session(ctx) && self.is_nested_cloud_mode(ctx)
     }
 
     /// Exits the active agent, either:
@@ -10067,9 +10086,7 @@ impl TerminalView {
     /// the user can exit agent mode, and shows a tooltip explaining when exiting is blocked.
     fn update_agent_view_back_button_state(&mut self, ctx: &mut ViewContext<Self>) {
         let disabled_reason = self
-            .agent_view_controller
-            .as_ref(ctx)
-            .can_exit_agent_view()
+            .can_exit_agent_view_for_terminal_view(ctx)
             .err()
             .map(|e| e.to_string());
 
@@ -19889,22 +19906,19 @@ impl TerminalView {
                     && self.agent_view_controller.as_ref(ctx).is_active()
                 {
                     // Disable escape completely for ambient agents without a parent terminal.
-                    if self
-                        .agent_view_controller
-                        .as_ref(ctx)
-                        .can_exit_agent_view()
-                        .is_err()
-                    {
+                    if self.can_exit_agent_view_for_terminal_view(ctx).is_err() {
                         return;
                     }
 
-                    if !self
+                    let is_long_running = self
                         .model
                         .lock()
                         .block_list()
                         .active_block()
-                        .is_active_and_long_running()
-                    {
+                        .is_active_and_long_running();
+                    if is_long_running && self.can_pop_nested_cloud_agent_view(ctx) {
+                        self.exit_agent_view(ctx);
+                    } else if !is_long_running {
                         // During first-time setup, always exit directly without confirmation
                         // since the setup overlay would obscure any confirmation dialog.
                         let is_in_setup = self
@@ -25420,8 +25434,10 @@ impl TypedActionView for TerminalView {
                 ctx.notify();
             }
             ExitAgentView => {
-                self.exit_agent_view(ctx);
-                ctx.notify();
+                if self.can_exit_agent_view_for_terminal_view(ctx).is_ok() {
+                    self.exit_agent_view(ctx);
+                    ctx.notify();
+                }
             }
             EnterCloudAgentView => {
                 let mut draft_text = self.input.as_ref(ctx).buffer_text(ctx);

@@ -1470,7 +1470,7 @@ impl TerminalModel {
         // The scrollback contains the prompt for the active block, and the terminal view needs to be notified to render it.
         self.event_proxy.send_wakeup_event();
     }
-    
+
     pub fn append_followup_shared_session_scrollback(&mut self, scrollback: &[SerializedBlock]) {
         debug_assert!(self.shared_session_status().is_viewer());
 
