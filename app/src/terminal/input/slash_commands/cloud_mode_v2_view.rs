@@ -48,10 +48,6 @@ const MENU_CORNER_RADIUS: f32 = 6.;
 
 const ROW_VERTICAL_PADDING: f32 = 4.;
 
-const ICON_SIZE: f32 = 16.;
-
-const ICON_TO_TEXT_GAP: f32 = 8.;
-
 const DIVIDER_HEIGHT: f32 = 1.;
 
 const DIVIDER_VERTICAL_PADDING: f32 = 0.;
@@ -532,7 +528,8 @@ impl CloudModeV2SlashCommandView {
                 if rows.is_empty() {
                     return;
                 }
-                let next = next_selectable_browsing_idx(&rows, *selected_idx, direction);
+                let next =
+                    next_selectable_idx(&rows, *selected_idx, direction, |r| r.is_selectable());
                 if let Some(next) = next {
                     *selected_idx = Some(next);
                 }
@@ -545,7 +542,9 @@ impl CloudModeV2SlashCommandView {
                 if results.is_empty() {
                     return;
                 }
-                let next = next_selectable_search_idx(results, *selected_idx, direction);
+                let next = next_selectable_idx(results, *selected_idx, direction, |r| {
+                    !r.search_result.is_disabled()
+                });
                 if let Some(next) = next {
                     *selected_idx = Some(next);
                 }
@@ -721,15 +720,16 @@ fn clamp_browsing_selection(state: &mut MenuState) {
     }
 }
 
-fn next_selectable_browsing_idx(
-    rows: &[NoSearchActiveRow],
+fn next_selectable_idx<T>(
+    items: &[T],
     current: Option<usize>,
     direction: SelectionDirection,
+    is_selectable: impl Fn(&T) -> bool,
 ) -> Option<usize> {
-    if rows.is_empty() {
+    if items.is_empty() {
         return None;
     }
-    let count = rows.len();
+    let count = items.len();
     let start = match (current, direction) {
         (Some(idx), SelectionDirection::Down) if idx + 1 < count => idx + 1,
         (Some(_), SelectionDirection::Down) => 0,
@@ -743,36 +743,7 @@ fn next_selectable_browsing_idx(
             SelectionDirection::Down => (start + offset) % count,
             SelectionDirection::Up => (start + count - offset) % count,
         };
-        if rows[candidate].is_selectable() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn next_selectable_search_idx(
-    results: &[QueryResultRenderer<AcceptSlashCommandOrSavedPrompt>],
-    current: Option<usize>,
-    direction: SelectionDirection,
-) -> Option<usize> {
-    if results.is_empty() {
-        return None;
-    }
-    let count = results.len();
-    let start = match (current, direction) {
-        (Some(idx), SelectionDirection::Down) if idx + 1 < count => idx + 1,
-        (Some(_), SelectionDirection::Down) => 0,
-        (Some(idx), SelectionDirection::Up) if idx > 0 => idx - 1,
-        (Some(_), SelectionDirection::Up) => count - 1,
-        (None, SelectionDirection::Down) => 0,
-        (None, SelectionDirection::Up) => count - 1,
-    };
-    for offset in 0..count {
-        let candidate = match direction {
-            SelectionDirection::Down => (start + offset) % count,
-            SelectionDirection::Up => (start + count - offset) % count,
-        };
-        if !results[candidate].search_result.is_disabled() {
+        if is_selectable(&items[candidate]) {
             return Some(candidate);
         }
     }
@@ -1091,14 +1062,4 @@ fn render_divider(app: &AppContext) -> Box<dyn Element> {
     )
     .with_vertical_padding(DIVIDER_VERTICAL_PADDING)
     .finish()
-}
-
-#[allow(dead_code)]
-fn _icon_size() -> f32 {
-    ICON_SIZE
-}
-
-#[allow(dead_code)]
-fn _icon_to_text_gap() -> f32 {
-    ICON_TO_TEXT_GAP
 }
