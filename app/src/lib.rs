@@ -311,7 +311,13 @@ use warpui::{AppContext, SingletonEntity, WindowId};
 #[folder = "assets"]
 #[include = "bundled/**"] // Should be kept in sync with BUNDLED_ASSETS_DIR.
 #[include = "async/**"] // Should be kept in sync with ASYNC_ASSETS_DIR.
-#[cfg_attr(target_family = "wasm", exclude = "async/**")] // Excludes take precedence.
+#[cfg_attr(target_family = "wasm", exclude = "async/**")]
+// Excludes take precedence.
+// Standalone CLI builds (the `oz` tarball) are headless and never render the
+// onboarding/theme imagery in `async/`, so we exclude those bytes from the
+// embedded asset set to keep the CLI binary small — mirroring the carve-out
+// already applied for the WASM target above.
+#[cfg_attr(feature = "standalone", exclude = "async/**")]
 pub struct Assets;
 
 pub static ASSETS: Assets = Assets;
@@ -559,12 +565,12 @@ pub fn run() -> Result<()> {
                 }
             }
             #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerProxy) => {
-                return crate::remote_server::run_proxy();
+            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerProxy(args)) => {
+                return crate::remote_server::run_proxy(args.identity_key.clone());
             }
             #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerDaemon) => {
-                return crate::remote_server::run_daemon();
+            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerDaemon(args)) => {
+                return crate::remote_server::run_daemon(args.identity_key.clone());
             }
             #[cfg(not(target_family = "wasm"))]
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RipgrepSearch {
@@ -1247,6 +1253,8 @@ fn initialize_app(
     ctx.add_singleton_model(|_ctx| SyncedInputState::new());
 
     ctx.add_singleton_model(remote_server::manager::RemoteServerManager::new);
+    #[cfg(not(target_family = "wasm"))]
+    remote_server::wire_auth_token_rotation(ctx);
 
     log::info!(
         "Starting warp with channel state {} and version {:?}",
@@ -1562,7 +1570,7 @@ fn initialize_app(
     ctx.add_singleton_model(ai::blocklist::task_status_sync_model::TaskStatusSyncModel::new);
     if warp_core::features::FeatureFlag::OrchestrationV2.is_enabled() {
         ctx.add_singleton_model(
-            ai::blocklist::orchestration_event_poller::OrchestrationEventPoller::new,
+            ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer::new,
         );
     }
 
@@ -2718,8 +2726,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::Orchestration,
         #[cfg(feature = "orchestration_v2")]
         FeatureFlag::OrchestrationV2,
-        #[cfg(feature = "orchestration_event_push")]
-        FeatureFlag::OrchestrationEventPush,
         #[cfg(feature = "pending_user_query_indicator")]
         FeatureFlag::PendingUserQueryIndicator,
         #[cfg(feature = "queue_slash_command")]

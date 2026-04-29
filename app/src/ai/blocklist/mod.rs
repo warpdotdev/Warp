@@ -5,7 +5,7 @@ pub mod block;
 pub mod code_block;
 mod context_model;
 mod controller;
-pub(crate) mod orchestration_event_poller;
+pub(crate) mod orchestration_event_streamer;
 pub(crate) mod orchestration_events;
 mod passive_suggestions;
 pub(crate) mod task_status_sync_model;

@@ -1456,6 +1456,16 @@ impl UserWorkspaces {
         }
     }
 
+    /// Returns the team-level agent attribution setting.
+    ///
+    /// Use this to decide whether the user's attribution toggle should be locked
+    /// (`Enable`/`Disable`) or editable (`RespectUserSetting`).
+    pub fn get_agent_attribution_setting(&self) -> AdminEnablementSetting {
+        self.current_team()
+            .map(|team| team.organization_settings.enable_warp_attribution.clone())
+            .unwrap_or_default()
+    }
+
     /// Returns only the organization-specific codebase context enablement setting.
     /// Do not use this function to determine whether codebase context is generally enabled --
     /// use `is_codebase_context_enabled` instead.
