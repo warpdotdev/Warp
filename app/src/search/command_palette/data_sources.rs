@@ -98,21 +98,8 @@ impl DataSourceStore {
                 HashSet::from([QueryFilter::Sessions]),
             );
 
-            if WarpDriveSettings::is_warp_drive_enabled(ctx) {
-                let mut warp_drive_filters = HashSet::from([
-                    QueryFilter::Notebooks,
-                    QueryFilter::Plans,
-                    QueryFilter::Drive,
-                    QueryFilter::Workflows,
-                ]);
-
-                warp_drive_filters.insert(QueryFilter::EnvironmentVariables);
-
-                if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
-                    warp_drive_filters.insert(QueryFilter::AgentModeWorkflows);
-                }
-                mixer.add_sync_source(self.warp_drive_data_source.clone(), warp_drive_filters);
-            }
+            // neuter: no Warp Drive entries in the command palette.
+            let _ = WarpDriveSettings::is_warp_drive_enabled;
 
             mixer.add_sync_source(
                 self.actions_data_source.clone(),
@@ -148,18 +135,8 @@ impl DataSourceStore {
                 );
             }
 
-            // Add conversation search if AI is enabled
-            if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
-                mixer.add_sync_source(
-                    self.all_conversation_data_source.clone(),
-                    HashSet::from([QueryFilter::Conversations]),
-                );
-
-                mixer.add_sync_source(
-                    self.historical_conversation_data_source.clone(),
-                    HashSet::from([QueryFilter::HistoricalConversations]),
-                );
-            }
+            // neuter: no AI conversation entries in the command palette.
+            let _ = AISettings::as_ref;
 
             mixer.add_sync_source(
                 self.repo_data_source.clone(),
