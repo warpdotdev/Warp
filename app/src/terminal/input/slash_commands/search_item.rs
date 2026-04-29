@@ -180,8 +180,6 @@ impl SearchItem for InlineItem {
     }
 
     fn detail_data(&self) -> Option<SearchItemDetail> {
-        // Mirrors the row's title/description split so the V2 sidecar can
-        // re-render the same fields without going through `render_item`.
         Some(SearchItemDetail {
             title: self.name.clone(),
             description: self.description.clone(),

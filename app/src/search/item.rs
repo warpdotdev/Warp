@@ -7,21 +7,10 @@ use crate::appearance::Appearance;
 
 use super::result_renderer::ItemHighlightState;
 
-/// Compact, type-erased metadata used by detail/sidecar views (e.g. the
-/// V2 cloud-mode slash command menu sidecar) to render an expanded preview
-/// of a search item without re-running the row layout. Items that don't
-/// have a meaningful title/description pair (e.g. action shortcuts, static
-/// separators) should return `None` from `SearchItem::detail_data`.
 #[derive(Clone)]
 pub struct SearchItemDetail {
-    /// Display title shown at the top of the sidecar.
     pub title: String,
-    /// Optional description body shown beneath the title. `None` for items
-    /// like saved prompts that only have a title.
     pub description: Option<String>,
-    /// Font family used to render the title. Typically matches the row's
-    /// title font (monospace for slash commands and skills, UI font for
-    /// saved prompts).
     pub title_font_family: FamilyId,
 }
 
@@ -129,10 +118,6 @@ pub trait SearchItem: Send + Sync {
         None
     }
 
-    /// Optional structured metadata used by detail/sidecar views to render a
-    /// richer preview of this item. Default returns `None`; items that
-    /// participate in sidecar rendering (currently only the V2 cloud-mode
-    /// slash command menu) override this.
     fn detail_data(&self) -> Option<SearchItemDetail> {
         None
     }

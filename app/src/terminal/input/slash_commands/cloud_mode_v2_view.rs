@@ -55,53 +55,28 @@ const DIVIDER_HEIGHT: f32 = 1.;
 
 const DIVIDER_VERTICAL_PADDING: f32 = 0.;
 
-/// Width of the detail sidecar panel that appears to the right of the menu
-/// when the selected row's content is truncated. Matches the menu's width
-/// so the two panels share a visual rhythm.
 const SIDECAR_WIDTH: f32 = MENU_WIDTH;
 
-/// Maximum height of the sidecar panel. Description text wraps within the
-/// panel up to this height; longer descriptions are clipped at the bottom.
-/// Keeps the sidecar visually balanced even for very verbose items.
 const SIDECAR_MAX_HEIGHT: f32 = 240.;
 
-/// Horizontal gap between the menu's right edge and the sidecar's left edge.
 const SIDECAR_GAP: f32 = 2.;
 
-/// Description font size inside the sidecar. Intentionally smaller than the
-/// 14px row description to match the Figma frame and pack more text into
-/// the panel.
 const SIDECAR_DESCRIPTION_FONT_SIZE: f32 = 12.;
 
-/// Vertical gap between the sidecar's title and its description body.
 const SIDECAR_TITLE_TO_DESCRIPTION_GAP: f32 = 4.;
 
-/// Horizontal gap between a row's name and description in the compact V2
-/// layout. Mirrors the `Container::with_margin_right(8.)` in
-/// `search_item.rs` and is used by `item_is_truncated_in_row` to estimate
-/// the row's available width.
 const NAME_DESCRIPTION_GAP_PX: f32 = 8.;
 
 fn row_position_id(visible_idx: usize) -> String {
     format!("cloud_mode_v2_slash_row_{visible_idx}")
 }
 
-/// Returns `true` if rendering `detail` in a single menu row would cause
-/// the row content to be truncated by `…`. For items with a description
-/// (commands/skills) this measures `name + 8 + description`; for items
-/// without a description (saved prompts) this measures `name` alone, since
-/// the row collapses to just the title in that case.
-///
-/// Estimation pattern mirrors `search_item::inline_width_for_name_column`:
-/// font em-width × character count. Coarse but good enough to gate sidecar
-/// rendering — short rows that fit don't get a sidecar, long rows do.
 fn item_is_truncated_in_row(detail: &SearchItemDetail, app: &AppContext) -> bool {
     let appearance = Appearance::as_ref(app);
     let font_size = inline_styles::font_size(appearance);
     let font_cache = app.font_cache();
     let name_em = font_cache.em_width(detail.title_font_family, font_size);
     let name_px = name_em * detail.title.chars().count() as f32;
-    // 16px horizontal padding on each side + icon (16) + icon margin (8).
     let row_chrome_px = MENU_HORIZONTAL_PADDING * 2. + ICON_SIZE + inline_styles::ICON_MARGIN;
     let available = MENU_WIDTH - row_chrome_px;
     match &detail.description {
@@ -934,9 +909,6 @@ impl CloudModeV2SlashCommandView {
         .finish()
     }
 
-    /// Returns the `SearchItemDetail` for the currently selected row, if
-    /// the row is selectable and its underlying `SearchItem` provides
-    /// detail data. Used to drive sidecar rendering.
     fn selected_detail_data(&self) -> Option<SearchItemDetail> {
         match &self.menu_state {
             MenuState::NoSearchActive {
@@ -946,7 +918,9 @@ impl CloudModeV2SlashCommandView {
                 ..
             } => {
                 let idx = (*selected_idx)?;
-                let row = browsing_rows(sections, expanded_sections).get(idx).copied()?;
+                let row = browsing_rows(sections, expanded_sections)
+                    .get(idx)
+                    .copied()?;
                 match row {
                     NoSearchActiveRow::Item { section, item_idx } => {
                         let rendered = sections.iter().find(|s| s.section == section)?;
@@ -967,9 +941,6 @@ impl CloudModeV2SlashCommandView {
         }
     }
 
-    /// Returns the visible-row index of the currently selected row, used
-    /// as the position id key for `SavePosition`-anchored sidecar
-    /// positioning. `None` if nothing is selected.
     fn selected_visible_idx(&self) -> Option<usize> {
         match &self.menu_state {
             MenuState::NoSearchActive { selected_idx, .. } => *selected_idx,
@@ -977,35 +948,29 @@ impl CloudModeV2SlashCommandView {
         }
     }
 
-    /// Builds the optional sidecar element together with the
-    /// `SavePosition` id of the row it should anchor to. Returns `None`
-    /// if no row is selected, the selected row's `SearchItem` doesn't
-    /// expose detail data, or its content fits within the menu row.
-    fn render_sidecar_if_eligible(
-        &self,
-        app: &AppContext,
-    ) -> Option<(String, Box<dyn Element>)> {
+    fn render_sidecar_if_eligible(&self, app: &AppContext) -> Option<(String, Box<dyn Element>)> {
         let detail = self.selected_detail_data()?;
         if !item_is_truncated_in_row(&detail, app) {
             return None;
         }
         let visible_idx = self.selected_visible_idx()?;
-        Some((row_position_id(visible_idx), self.render_sidecar_panel(&detail, app)))
+        Some((
+            row_position_id(visible_idx),
+            self.render_sidecar_panel(&detail, app),
+        ))
     }
 
-    /// Renders the sidecar panel chrome (border, background, drop shadow,
-    /// padding) wrapping the title + optional description. The panel is
-    /// styled to match the menu so the two visually rhyme.
-    fn render_sidecar_panel(&self, detail: &SearchItemDetail, app: &AppContext) -> Box<dyn Element> {
+    fn render_sidecar_panel(
+        &self,
+        detail: &SearchItemDetail,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let menu_bg = inline_styles::menu_background_color(app);
         let primary = inline_styles::primary_text_color(theme, menu_bg.into());
         let secondary = inline_styles::secondary_text_color(theme, menu_bg.into());
 
-        // Title uses the same family as the source row (monospace for
-        // commands/skills, UI font for saved prompts) so the sidecar
-        // visually echoes the row that triggered it.
         let title = Text::new_inline(
             detail.title.clone(),
             detail.title_font_family,
@@ -1019,8 +984,6 @@ impl CloudModeV2SlashCommandView {
             .with_main_axis_size(MainAxisSize::Min)
             .with_child(title);
 
-        // Saved prompts have no description; only commands and skills
-        // append a description block beneath the title.
         if let Some(description_text) = detail.description.clone() {
             let description = Text::new(
                 description_text,
@@ -1036,10 +999,6 @@ impl CloudModeV2SlashCommandView {
             );
         }
 
-        // `Clipped` ensures wrapped description text that exceeds
-        // `SIDECAR_MAX_HEIGHT` is cut off at the panel boundary instead of
-        // bleeding through the rounded border. The outer ConstrainedBox
-        // sets the max width and the max height of the entire panel.
         Container::new(
             ConstrainedBox::new(
                 Clipped::new(
@@ -1063,9 +1022,6 @@ impl CloudModeV2SlashCommandView {
         .finish()
     }
 
-    /// Wraps the menu's `ClippedScrollable` content in the menu's chrome
-    /// (border, background, corner radius, padding, drop shadow). Pulled
-    /// out so `View::render` can compose it next to the sidecar.
     fn render_menu_panel(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
@@ -1177,13 +1133,6 @@ impl View for CloudModeV2SlashCommandView {
         let Some((row_position_id, sidecar)) = self.render_sidecar_if_eligible(app) else {
             return menu_panel;
         };
-        // Anchor the sidecar's bottom-left to the selected row's
-        // bottom-right via the row's `SavePosition` id, mirroring the
-        // Figma frame. Using `Stack` + a positioned overlay child means
-        // the sidecar's vertical alignment falls out of the row's
-        // painted bounds in the position cache — no need for analytical
-        // row-height math, and scrolling the menu naturally moves the
-        // sidecar with the row.
         let mut stack = Stack::new();
         stack.add_child(menu_panel);
         stack.add_positioned_overlay_child(
