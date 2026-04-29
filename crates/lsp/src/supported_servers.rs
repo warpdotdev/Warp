@@ -215,7 +215,7 @@ impl LSPServerType {
                 Box::new(TypeScriptLanguageServerCandidate::new(client))
             }
             LSPServerType::Clangd => Box::new(ClangdCandidate::new(client)),
-            LSPServerType::Yaml => Box::new(YamlLanguageServerCandidate::new(client)),
+            LSPServerType::Yaml => Box::new(YamlLanguageServerCandidate::new()),
         }
     }
 
