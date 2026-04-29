@@ -3426,6 +3426,15 @@ impl Workspace {
                 self.sync_window_button_visibility(ctx);
                 ctx.notify();
             }
+            TabSettingsChangedEvent::ShowVerticalTabPanelInRestoredWindows { .. } => {
+                if FeatureFlag::VerticalTabs.is_enabled()
+                    && *TabSettings::as_ref(ctx).use_vertical_tabs
+                    && *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
+                {
+                    self.vertical_tabs_panel_open = true;
+                }
+                ctx.notify();
+            }
             TabSettingsChangedEvent::ShowCodeReviewButton { .. } => {
                 // Close the right panel if it's open and the setting was just disabled.
                 if !*TabSettings::as_ref(ctx).show_code_review_button {
@@ -3718,7 +3727,15 @@ impl Workspace {
         match workspace_setting {
             NewWorkspaceSource::Restored {
                 window_snapshot, ..
-            } => window_snapshot.vertical_tabs_panel_open,
+            } => {
+                if should_default_open
+                    && *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
+                {
+                    true
+                } else {
+                    window_snapshot.vertical_tabs_panel_open
+                }
+            }
             NewWorkspaceSource::TransferredTab {
                 vertical_tabs_panel_open,
                 ..
