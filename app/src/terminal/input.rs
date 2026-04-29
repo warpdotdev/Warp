@@ -5894,6 +5894,36 @@ impl Input {
             })
     }
 
+    /// Returns `true` when the user is composing the first query for a cloud agent run
+    /// but the input is currently in shell mode (i.e. would execute as a shell command
+    /// instead of being sent to the agent as an AI prompt).
+    ///
+    /// Cloud agent conversations require an AI prompt as the first query — the prompt is
+    /// what gets dispatched to the cloud sandbox via `spawn_agent`. Submitting a shell
+    /// command here would either silently fall through to a deferred PTY (V1 cloud mode)
+    /// or be misinterpreted by the spawn flow, neither of which gives the user clear
+    /// feedback. We use this to short-circuit submission and surface a warning toast.
+    fn should_warn_cloud_mode_first_query_must_be_ai(&self, app: &AppContext) -> bool {
+        if !FeatureFlag::CloudMode.is_enabled() {
+            return false;
+        }
+
+        // Only warn on shell-mode submission. The AI / cloud-mode-input-v2 paths already
+        // route the buffer to `spawn_agent` correctly.
+        if self.ai_input_model.as_ref(app).is_ai_input_enabled()
+            || self.is_cloud_mode_input_v2_composing(app)
+        {
+            return false;
+        }
+
+        self.ambient_agent_view_model()
+            .is_some_and(|ambient_agent_model| {
+                ambient_agent_model
+                    .as_ref(app)
+                    .is_configuring_ambient_agent()
+            })
+    }
+
     /// Try to execute a command in the local session that was
     /// requested by a shared session participant (sharer or viewer).
     ///
@@ -11799,6 +11829,26 @@ impl Input {
                 suggestions.confirm(ctx);
             });
         } else if self.should_block_cloud_mode_setup_submission(ctx) {
+            return;
+        } else if self.should_warn_cloud_mode_first_query_must_be_ai(ctx) {
+            // The user is composing the first query for a cloud agent run but the
+            // input is currently in shell mode. Cloud agent conversations require
+            // the first query to be an AI prompt (it is what gets dispatched to the
+            // sandbox). Surface a clear warning instead of silently falling through
+            // to the shell-execution path, which would have nowhere to run on the
+            // deferred cloud-mode terminal anyway.
+            let window_id = ctx.window_id();
+            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                toast_stack.add_ephemeral_toast(
+                    DismissibleToast::error(
+                        "Cloud agent conversations need an AI prompt as the first query. \
+                         Switch to AI input or rephrase as a prompt before submitting."
+                            .to_string(),
+                    ),
+                    window_id,
+                    ctx,
+                );
+            });
             return;
         } else if FeatureFlag::AgentMode.is_enabled()
             && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)

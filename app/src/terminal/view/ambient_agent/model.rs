@@ -451,6 +451,39 @@ impl AmbientAgentViewModel {
         ctx.notify();
     }
 
+    /// Reset the run back to the composing state after a pre-first-exchange terminal state
+    /// (`Cancelled`, `Failed`, `NeedsGithubAuth`).
+    ///
+    /// Unlike [`Self::reset_for_new_cloud_prompt`], this preserves the user's previous
+    /// environment and harness selections so that re-entering a cancelled/failed cloud
+    /// conversation via the parent terminal's blocklist entry block lands the user back on a
+    /// usable composer with their previous configuration intact, ready to dispatch a new run.
+    ///
+    /// Returns `true` if the model was actually reset (i.e. it was previously in one of those
+    /// terminal states).
+    pub fn reset_to_composing_after_terminal_state(
+        &mut self,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        let should_reset = matches!(
+            self.status,
+            Status::Cancelled { .. } | Status::Failed { .. } | Status::NeedsGithubAuth { .. }
+        );
+        if !should_reset {
+            return false;
+        }
+        self.stop_progress_timer();
+        self.status = Status::Composing;
+        self.task_id = None;
+        self.conversation_id = None;
+        self.has_inserted_cloud_mode_user_query_block = false;
+        self.harness_command_started = false;
+        self.request = None;
+        ctx.emit(AmbientAgentViewModelEvent::EnteredComposingState);
+        ctx.notify();
+        true
+    }
+
     /// Sets the local conversation ID associated with this cloud agent run.
     pub fn set_conversation_id(&mut self, id: Option<AIConversationId>) {
         self.conversation_id = id;
