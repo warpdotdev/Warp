@@ -3,7 +3,7 @@ use std::{result::Result as StdResult, sync::Arc};
 use anyhow::{anyhow, bail, Context as _, Result};
 use async_trait::async_trait;
 use cynic::{MutationBuilder, QueryBuilder};
-use firebase::{FetchAccessTokenResponse, FirebaseError};
+use crate::auth::firebase_types::{FetchAccessTokenResponse, FirebaseError};
 use futures::FutureExt;
 use instant::Duration;
 #[cfg(test)]

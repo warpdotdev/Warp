@@ -3,6 +3,7 @@ pub mod auth_manager;
 mod auth_override_warning_body;
 pub mod auth_override_warning_modal;
 pub mod auth_state;
+pub(crate) mod firebase_types;
 mod auth_view_body;
 pub mod auth_view_modal;
 mod auth_view_shared_helpers;

@@ -24,7 +24,7 @@ use crate::server::sync_queue::{CreationFailureReason, QueueItemId, SyncQueueEve
 use crate::{NetworkStatus, QueueItem, SyncQueue};
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, Utc};
-use firebase::FirebaseError;
+use crate::auth::firebase_types::FirebaseError;
 use itertools::Itertools;
 use std::sync::Arc;
 use warp_server_client::cloud_object::ServerPermissions;
