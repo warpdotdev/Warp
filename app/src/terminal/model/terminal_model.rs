@@ -2811,6 +2811,14 @@ impl ansi::Handler for TerminalModel {
     }
 
     fn set_current_working_directory(&mut self, path: String) {
+        // OSC 7 is honor-system: the parser only accepts payloads whose host
+        // matches our local hostname, but a legacy SSH session streams the
+        // remote shell's bytes through this same Performer, so a remote box
+        // with a coincident hostname could still slip through. Drop the
+        // update entirely while we know we're inside an SSH-launching block.
+        if self.is_ssh_block() || self.is_warpified_ssh() {
+            return;
+        }
         delegate!(self.set_current_working_directory(path));
     }
 

@@ -159,10 +159,12 @@ fn parse_legacy_color(color: &[u8]) -> Option<ColorU> {
 
 /// Parse the payload of an OSC 7 sequence (`file://<host>/<percent-encoded-path>`).
 ///
-/// Returns the decoded absolute path if the host portion is empty, "localhost",
-/// or matches the local machine's hostname. Returns `None` for any other host
-/// to avoid hijacking the local CWD display when remote sessions emit OSC 7
-/// over an unrelated tunnel.
+/// Returns the decoded absolute path only when the host portion explicitly
+/// matches the local machine's hostname. Empty and `localhost` hosts are
+/// rejected because OSC 7 is terminal-controlled — a remote shell streamed
+/// through a legacy SSH session can emit either form, and we cannot
+/// distinguish that from a real local shell. Shells that want OSC 7 honored
+/// must include the hostname (the de-facto convention; see wezterm/iTerm2).
 fn parse_osc_7_cwd(payload: &[u8]) -> Option<String> {
     let raw = str::from_utf8(payload).ok()?;
     let after_scheme = raw.strip_prefix("file://")?;
@@ -180,11 +182,11 @@ fn parse_osc_7_cwd(payload: &[u8]) -> Option<String> {
 
 fn osc_7_host_is_local(host: &str) -> bool {
     if host.is_empty() || host.eq_ignore_ascii_case("localhost") {
-        return true;
+        return false;
     }
-    gethostname::gethostname()
-        .to_string_lossy()
-        .eq_ignore_ascii_case(host)
+    crate::terminal::model::session::get_local_hostname()
+        .map(|local| local.eq_ignore_ascii_case(host))
+        .unwrap_or(false)
 }
 
 /// Percent-decode an ASCII URI path segment into a UTF-8 String. Returns `None`

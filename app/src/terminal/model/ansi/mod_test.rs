@@ -852,25 +852,32 @@ fn parse_osc777_missing_parts_ignored() {
 }
 
 #[test]
-fn parse_osc7_simple_path() {
-    let bytes: &[u8] = b"\x1b]7;file:///Users/foo/bar\x07";
-    let (_, handler) = parse_bytes(bytes);
+fn parse_osc7_local_hostname() {
+    // Happy path: payload host matches the running machine's hostname.
+    let local = crate::terminal::model::session::get_local_hostname()
+        .expect("test requires a real local hostname");
+    let payload = format!("\x1b]7;file://{local}/Users/foo/bar\x07");
+    let (_, handler) = parse_bytes(payload.as_bytes());
 
     assert_eq!(handler.cwd_updates, vec!["/Users/foo/bar".to_string()]);
 }
 
 #[test]
 fn parse_osc7_with_st_terminator() {
-    let bytes: &[u8] = b"\x1b]7;file:///Users/foo/bar\x1b\\";
-    let (_, handler) = parse_bytes(bytes);
+    let local = crate::terminal::model::session::get_local_hostname()
+        .expect("test requires a real local hostname");
+    let payload = format!("\x1b]7;file://{local}/Users/foo/bar\x1b\\");
+    let (_, handler) = parse_bytes(payload.as_bytes());
 
     assert_eq!(handler.cwd_updates, vec!["/Users/foo/bar".to_string()]);
 }
 
 #[test]
 fn parse_osc7_percent_encoded() {
-    let bytes: &[u8] = b"\x1b]7;file:///Users/foo%20bar/baz%2Fqux\x07";
-    let (_, handler) = parse_bytes(bytes);
+    let local = crate::terminal::model::session::get_local_hostname()
+        .expect("test requires a real local hostname");
+    let payload = format!("\x1b]7;file://{local}/Users/foo%20bar/baz%2Fqux\x07");
+    let (_, handler) = parse_bytes(payload.as_bytes());
 
     assert_eq!(
         handler.cwd_updates,
@@ -879,19 +886,30 @@ fn parse_osc7_percent_encoded() {
 }
 
 #[test]
-fn parse_osc7_localhost_host() {
-    let bytes: &[u8] = b"\x1b]7;file://localhost/Users/foo\x07";
+fn parse_osc7_empty_host_ignored() {
+    // Hostless payload (`file:///path`) is terminal-controlled and a remote
+    // shell over legacy SSH can emit it just as easily as a local one; reject.
+    let bytes: &[u8] = b"\x1b]7;file:///Users/foo/bar\x07";
     let (_, handler) = parse_bytes(bytes);
 
-    assert_eq!(handler.cwd_updates, vec!["/Users/foo".to_string()]);
+    assert!(handler.cwd_updates.is_empty());
 }
 
 #[test]
-fn parse_osc7_uppercase_localhost_host() {
+fn parse_osc7_localhost_host_ignored() {
+    // `localhost` is also untrustworthy from a remote shell — reject.
+    let bytes: &[u8] = b"\x1b]7;file://localhost/Users/foo\x07";
+    let (_, handler) = parse_bytes(bytes);
+
+    assert!(handler.cwd_updates.is_empty());
+}
+
+#[test]
+fn parse_osc7_uppercase_localhost_host_ignored() {
     let bytes: &[u8] = b"\x1b]7;file://LOCALHOST/Users/foo\x07";
     let (_, handler) = parse_bytes(bytes);
 
-    assert_eq!(handler.cwd_updates, vec!["/Users/foo".to_string()]);
+    assert!(handler.cwd_updates.is_empty());
 }
 
 #[test]

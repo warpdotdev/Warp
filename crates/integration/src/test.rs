@@ -3525,7 +3525,10 @@ pub fn test_osc7_updates_current_working_directory() -> Builder {
         .with_step(clear_blocklist_to_remove_bootstrapped_blocks())
         .with_step(execute_command_for_single_terminal_in_tab(
             0, /*tab_idx*/
-            r"printf '\033]7;file:///tmp/osc7-test\a'".to_string(),
+            // OSC 7 is only honored when the host portion matches the local
+            // hostname; substitute it dynamically so the test works on any
+            // machine.
+            r#"printf "\033]7;file://$(hostname)/tmp/osc7-test\a""#.to_string(),
             ExpectedExitStatus::Success,
             (),
         ))
