@@ -6,7 +6,7 @@
 //! switch. Hover popover, pin / unpin, and the 3-dot menu (Open in new pane /
 //! Open in new tab / Stop agent / Kill agent) are tracked as follow-ups.
 
-use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 use pathfinder_color::ColorU;
@@ -163,10 +163,20 @@ impl OrchestrationPillBar {
             return;
         };
         let orchestrator_id = parent_conversation_id(active_conversation, ctx).unwrap_or(active_id);
-        self.mouse_states.entry(orchestrator_id).or_default();
+        // Build the set of conversation ids that should still have hover state
+        // tracked, then insert any missing entries and drop the rest. Without
+        // the retain step, switching between orchestrators within the same
+        // view would leak `MouseStateHandle`s for old orchestrators / their
+        // children indefinitely.
+        let mut alive: HashSet<AIConversationId> = HashSet::new();
+        alive.insert(orchestrator_id);
         for child in history.child_conversations_of(orchestrator_id) {
-            self.mouse_states.entry(child.id()).or_default();
+            alive.insert(child.id());
         }
+        for id in &alive {
+            self.mouse_states.entry(*id).or_default();
+        }
+        self.mouse_states.retain(|id, _| alive.contains(id));
     }
 
     /// Builds the ordered list of pills to render. Returns `None` when the
@@ -179,18 +189,25 @@ impl OrchestrationPillBar {
             .active_conversation_id()?;
         let history = BlocklistAIHistoryModel::as_ref(app);
         let active_conversation = history.conversation(&active_id)?;
-        let orchestrator_id = parent_conversation_id(active_conversation, app).unwrap_or(active_id);
-        let orchestrator = history.conversation(&orchestrator_id)?;
-
-        let mut children = history.child_conversations_of(orchestrator_id);
-        // Stable sort so pills don't reshuffle as statuses update.
-        children.sort_by_key(|c| c.first_exchange().map(|e| e.start_time));
 
         // The pill bar only shows on the orchestrator view. When a child
         // agent is active, breadcrumbs in the pane header title take over.
+        // Bail out before any further work (sorting, theme lookup, etc.).
         if parent_conversation_id(active_conversation, app).is_some() {
             return None;
         }
+
+        let orchestrator_id = parent_conversation_id(active_conversation, app).unwrap_or(active_id);
+        let orchestrator = history.conversation(&orchestrator_id)?;
+
+        // `child_conversations_of` returns children in registration order
+        // (i.e. the order they were spawned by the orchestrator), which is
+        // the stable ordering we want for the pills. Don't re-sort by
+        // `first_exchange().start_time`: children whose first exchange
+        // hasn't started yet would otherwise sort to the front (because
+        // `Option::None < Option::Some`) and pop into their time-based
+        // position once they begin streaming, reshuffling the bar.
+        let children = history.child_conversations_of(orchestrator_id);
 
         // Nothing to show if the orchestrator has no children yet.
         if children.is_empty() {
@@ -290,13 +307,16 @@ fn render_pill(
     let conversation_id = spec.conversation_id;
     let kind = spec.kind;
     let is_selected = spec.is_selected;
-    let label = spec.label.clone();
-
+    // `spec` is owned by value, so we can move `label` directly into the
+    // build closure below without cloning.
+    let label = spec.label;
     let avatar_color = spec.avatar_color;
     let avatar_glyph = spec.avatar_glyph;
 
-    // `Hoverable::new`'s build closure is `FnOnce`. We rebuild the inner pill
-    // (background + content) from the captured `spec` data each invocation.
+    // `Hoverable::new`'s build closure is `FnOnce` (see
+    // `crates/warpui_core/src/elements/hoverable.rs`). We can therefore move
+    // `label` into the closure by value rather than cloning it on every
+    // build.
     Hoverable::new(mouse_state, move |hover_state| {
         let (background, text_color) = if is_selected {
             (
@@ -316,7 +336,7 @@ fn render_pill(
         };
 
         let label_text = Text::new(
-            label.clone(),
+            label,
             appearance.ui_font_family(),
             appearance.monospace_font_size() - 1.,
         )
@@ -417,12 +437,12 @@ fn render_avatar_disc(
             ..Default::default()
         })
         .finish(),
-        AvatarGlyph::Icon(icon) => ConstrainedBox::new(
-            icon.to_warpui_icon(theme.background()).finish(),
-        )
-        .with_width(10.)
-        .with_height(10.)
-        .finish(),
+        AvatarGlyph::Icon(icon) => {
+            ConstrainedBox::new(icon.to_warpui_icon(theme.background()).finish())
+                .with_width(10.)
+                .with_height(10.)
+                .finish()
+        }
     };
 
     // Center the glyph on top of the disc both horizontally and vertically by
@@ -488,6 +508,12 @@ pub fn render_orchestration_breadcrumbs(
     parent_crumb_mouse_state: MouseStateHandle,
     app: &AppContext,
 ) -> Option<Box<dyn Element>> {
+    // Mirror the gating used by `maybe_add_parent_navigation_card` in
+    // `pane_impl.rs` so the breadcrumb path can't accidentally render in a
+    // non-AgentView build / state.
+    if !FeatureFlag::AgentView.is_enabled() {
+        return None;
+    }
     if !FeatureFlag::OrchestrationPillBar.is_enabled() {
         return None;
     }
@@ -514,11 +540,16 @@ pub fn render_orchestration_breadcrumbs(
         .or_else(|| parent.agent_name().map(str::to_string))
         .unwrap_or_else(|| "Orchestrator".to_string());
 
-    let child_label = active
+    // Treat empty `agent_name` as missing so the label, avatar color, and
+    // initial all consistently fall back to "Agent". Without the
+    // `.filter(|n| !n.is_empty())` on `child_name`, an unnamed agent would
+    // show "Agent" as the label but be hashed/initialed against the empty
+    // string, producing a different color/letter from a real "Agent".
+    let child_name = active
         .agent_name()
         .filter(|n| !n.is_empty())
-        .unwrap_or("Agent")
-        .to_string();
+        .unwrap_or("Agent");
+    let child_label = child_name.to_string();
 
     // Parent crumb uses the Oz glyph on a neutral disc to match the
     // orchestrator pill in the pill bar.
@@ -532,7 +563,6 @@ pub fn render_orchestration_breadcrumbs(
 
     // Child crumb uses the same deterministic colored disc + initial letter
     // we render in the pill bar.
-    let child_name = active.agent_name().unwrap_or("Agent");
     let child_spec = CrumbSpec {
         conversation_id: active_id,
         label: child_label,
@@ -575,7 +605,7 @@ fn render_crumb(
 ) -> Box<dyn Element> {
     let conversation_id = spec.conversation_id;
     let is_active = spec.is_active;
-    let label = spec.label.clone();
+    let label = spec.label;
     let avatar_color = spec.avatar_color;
     let avatar_glyph = spec.avatar_glyph;
 
@@ -591,14 +621,18 @@ fn render_crumb(
             theme,
             appearance,
         );
-        return ConstrainedBox::new(inner).with_height(CRUMB_HEIGHT).finish();
+        return ConstrainedBox::new(inner)
+            .with_height(CRUMB_HEIGHT)
+            .finish();
     }
 
-    // Interactive (parent) crumb: hover highlight + click handler.
+    // Interactive (parent) crumb: hover highlight + click handler. The
+    // `Hoverable::new` build closure is `FnOnce`, so `label` can move into
+    // the closure by value instead of cloning on every build.
     let mouse_state = mouse_state.unwrap_or_default();
     Hoverable::new(mouse_state, move |hover_state| {
         let inner = build_crumb_inner(
-            label.clone(),
+            label,
             avatar_color,
             avatar_glyph,
             false, /* is_active */
@@ -606,7 +640,9 @@ fn render_crumb(
             theme,
             appearance,
         );
-        ConstrainedBox::new(inner).with_height(CRUMB_HEIGHT).finish()
+        ConstrainedBox::new(inner)
+            .with_height(CRUMB_HEIGHT)
+            .finish()
     })
     .with_cursor(Cursor::PointingHand)
     .on_click(move |ctx, _, _| {
