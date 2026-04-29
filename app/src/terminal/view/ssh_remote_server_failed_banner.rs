@@ -38,7 +38,7 @@ pub enum SshRemoteServerFailureKind {
 impl SshRemoteServerFailureKind {
     fn title(self) -> &'static str {
         match self {
-            Self::BinaryCheck => "SSH extension couldn't be found",
+            Self::BinaryCheck => "SSH extension couldn't be verified",
             Self::BinaryInstall => "SSH extension couldn't be installed",
             Self::Launch => "SSH extension couldn't be started",
         }
@@ -46,7 +46,9 @@ impl SshRemoteServerFailureKind {
 
     fn description(self) -> &'static str {
         match self {
-            Self::BinaryCheck => "The SSH extension binary could not be found on the remote host.",
+            Self::BinaryCheck => {
+                "The SSH extension binary could not be verified on the remote host."
+            }
             Self::BinaryInstall => {
                 "The binary could not be written or executed on the remote host."
             }
