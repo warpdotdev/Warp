@@ -46,7 +46,7 @@ Translate user phrasing into this form: `Ctrl+S` → `ctrl-s`, `Cmd+Shift+P` →
 Defaults are compiled into Warp and are **not** discoverable from the keybindings file on disk. Only previously-customized bindings appear there. Pick the right strategy based on how the user described the change:
 
 1. **By current key combo** ("change ctrl+space to ctrl+s"):
-   - Read the keybindings file and look for an entry whose value contains the current trigger (e.g. `grep ctrl-space {{keybindings_file_path}}`).
+   - Read the keybindings file with your filesystem read tool and scan for an entry whose value matches the current trigger (e.g. a line like `"some:action": ctrl-space`). Prefer this over shelling out — the templated path can contain spaces or shell metacharacters depending on the user's platform/config dir, so a raw `grep ctrl-space {{keybindings_file_path}}` is unsafe. If you must use a shell, single-quote the path: `grep ctrl-space '{{keybindings_file_path}}'`.
    - If found, that's the action — rewrite its value to the new trigger.
    - If not found, the binding is a default and you cannot introspect it from disk. **Do not invent an action name from generic intuition.** Confirm with the user before writing — via `ask_user_question` (you may propose a candidate as the recommended option only if you have a concrete documented source for it), or by directing them to the **keybindings editor** (action `workspace:show_keybinding_settings`, default `cmd-ctrl-k` on macOS; on other platforms open it from the **Settings → Keyboard Shortcuts** menu), where they can search by description and either edit the binding directly or copy the canonical `namespace:action_name` for you.
 
