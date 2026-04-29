@@ -72,12 +72,12 @@ Out of scope for this spec (tracked separately in #9138):
     of nesting. These limits prevent pathological inputs (e.g., a deeply nested
     1 MB JSON) from producing a tree that is impractical to render or navigate.
 
-5. If `WARP_RICH_OUTPUT=0` is present in the command's environment at the time
-   the block completes, detection is skipped for that block regardless of
-   settings. The mechanism for reading this value at block-completion time is
-   an implementation detail; if the current block model does not expose
-   per-command environment snapshots, detection falls back to reading
-   `WARP_RICH_OUTPUT` from the process environment at detection time instead.
+5. If `WARP_RICH_OUTPUT=0` is set in the **process environment** (e.g., exported
+   in the shell profile or set before launching Warp), detection is skipped for
+   all blocks in that session regardless of settings. This is a process-level
+   escape hatch, not a per-command override; inline usage such as
+   `WARP_RICH_OUTPUT=0 my-command` is not guaranteed to suppress detection for
+   that single command and is out of scope for this spec.
 
 6. Detection is not retried after failing. If the output is not valid JSON or
    YAML, the block remains raw text.

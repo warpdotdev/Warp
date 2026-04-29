@@ -90,8 +90,11 @@ pub fn detect(canonical_text: &str) -> Option<StructuredOutputKind>
 ```
 
 **Limits:**
-- `MAX_DETECT_BYTES = 5 * 1024 * 1024` — input size cap (Behavior #4). Checked
-  before any parsing.
+- `MAX_DETECT_BYTES = 5 * 1024 * 1024` — input size cap for JSON (Behavior #4).
+  Checked before any parsing.
+- `MAX_YAML_BYTES = 1 * 1024 * 1024` — separate, stricter cap for YAML (1 MB).
+  Checked before calling `serde_yaml::from_str`. This is the primary pre-parse
+  defense against YAML anchor/alias amplification (see Security below).
 - `MAX_NODES = 10_000` — total node count across the parsed tree (Behavior #4a).
   Counted with a post-parse walk; if exceeded, return `None`.
 - `MAX_DEPTH = 50` — maximum nesting level (Behavior #4a). Checked during the
@@ -105,21 +108,34 @@ input and the user-visible "raw" text are always identical.
 
 **CPU boundedness:** `serde_json::from_str` and `serde_yaml::from_str` are
 synchronous and cannot be externally cancelled once started. CPU work is bounded
-by the `MAX_DETECT_BYTES` check before parse and the `MAX_NODES` / `MAX_DEPTH`
-walk after parse. There is no `tokio::time::timeout` wrapper because it would
-not interrupt a synchronous parse already running on a thread. If CI benchmarks
-show worst-case parse time is unacceptable, reduce `MAX_DETECT_BYTES` or add a
-YAML-specific lower cap rather than adding a cancellation mechanism.
+by the size checks before each parser call. There is no `tokio::time::timeout`
+wrapper because it would not interrupt a synchronous parse already running on a
+thread.
+
+**Security — YAML anchor/alias amplification:** `serde_yaml` 0.8 does not
+expose a built-in option to disable aliases. The `MAX_YAML_BYTES = 1 MB` pre-parse
+cap is the primary mitigation: even a maximally-amplified YAML document expands
+from at most 1 MB of source, which bounds the parse-time work. The `MAX_NODES`
+post-parse walk provides a secondary check that catches any parsed result that
+exceeds the safe rendering threshold regardless of how it was produced.
 
 **YAML bare-scalar guard (Behavior #2):** after `serde_yaml::from_str`
 succeeds, check that the root value is `Mapping` or `Sequence`; reject
 `Value::String`, `Value::Number`, `Value::Bool`, `Value::Null`.
 
-### 4. RichContentType variant
+### 4. RichContentType variant and BlockId association
 
 Add `StructuredDataBlock` to `RichContentType` in
-`app/src/terminal/model/rich_content.rs`. No metadata struct needed initially;
-the parsed value is owned by the view model (see §5).
+`app/src/terminal/model/rich_content.rs`.
+
+To support toggling, hiding, and enumerating structured-data views by their
+source block, add a `source_block_id: Option<BlockId>` field to
+`RichContentMetadata` in `app/src/terminal/view/rich_content.rs`. When
+inserting a `StructuredDataBlock` `RichContent`, set this field to
+`Some(block_id)`. This lets the settings-reversion handler (§2) enumerate all
+structured-data `RichContent` items by their associated block and lets the
+toggle handler (§7) identify which `RichContent` to show or hide for a given
+`BlockId`.
 
 ### 5. Tree view
 
@@ -151,50 +167,70 @@ Rendering:
 
 ### 6. Hook into block completion
 
-In `TerminalView::on_user_block_completed` (`app/src/terminal/view.rs`, line
-~9724), after the existing post-completion logic:
+Detection is triggered at two sites: user block completion and agent block
+completion.
+
+**User blocks:** In `TerminalView::on_user_block_completed`
+(`app/src/terminal/view.rs`, line ~9724), after the existing post-completion
+logic:
 
 ```
 if FeatureFlag::JsonYamlBlockViewer.is_enabled()
     && settings.render_rich_block_output
-    && !warp_rich_output_suppressed(block)
+    && std::env::var("WARP_RICH_OUTPUT").as_deref() != Ok("0")
 {
     let raw = block.contents_to_string(…);
     // Spawn background task (warpui executor::Background) to run detect().
-    // On Some(_), dispatch an action that inserts a StructuredDataBlock
-    // RichContent at the block's position in the blocklist and adds the
-    // BlockId to block_structured_view_active.
+    // On Some(_), dispatch an action that:
+    //   1. Inserts a StructuredDataBlock RichContent with source_block_id set.
+    //   2. Adds the BlockId to block_structured_view_active.
+    //   3. Adds the BlockId to hidden_grid_blocks (see §7).
 }
 ```
 
-Use the existing `warpui::async::executor::Background` pattern so detection
-does not block the UI thread.
+**Agent blocks:** Apply the same detection logic at the agent block completion
+site in `app/src/terminal/view.rs` (the handler that fires when an agent
+exchange completes and its output block is finalized). The exact function name
+should be confirmed by reading the agent block completion path in the file;
+the detection call and `RichContent` insertion are identical to the user-block
+path.
 
-The `RichContent` is inserted with `RichContentInsertionPosition::BeforeBlockIndex`
-at the index just after the completed block, so it visually replaces the block's
-grid in the list. The raw grid is still present and rendered when the user
-toggles to raw view (§7).
+Use `warpui::async::executor::Background` at both sites so detection does not
+block the UI thread.
 
-**`WARP_RICH_OUTPUT` check (`warp_rich_output_suppressed`):** The helper reads
-`WARP_RICH_OUTPUT` from the completed block's captured environment if the block
-model exposes a per-block environment snapshot. If no such API exists in the
-current model, fall back to reading the variable from the current process
-environment at detection time (i.e., whatever the shell exported at session
-start). This fallback is acceptable for a first implementation; a follow-up can
-wire up per-block env snapshots if the fallback proves insufficient.
+**`WARP_RICH_OUTPUT`:** Read via `std::env::var("WARP_RICH_OUTPUT")` at
+detection time. This reads the process environment (Behavior #5), not a
+per-command snapshot. Per-command `WARP_RICH_OUTPUT=0 cmd` is explicitly out of
+scope (product spec Behavior #5).
+
+**Grid suppression:** The raw block grid and the `StructuredDataBlock`
+`RichContent` are separate items in the blocklist. To avoid rendering both
+simultaneously, `TerminalView` maintains a `hidden_grid_blocks: HashSet<BlockId>`
+field. The grid-rendering path in `block_list_element.rs` checks this set: if
+the block's `BlockId` is present, it renders a zero-height container instead of
+the grid. When the block is added to `block_structured_view_active`, its `BlockId`
+is also added to `hidden_grid_blocks`; toggling back to raw removes it from both
+sets, restoring the grid.
 
 ### 7. Toggle button
 
 Add a `ToggleStructuredView(BlockId)` action to the terminal action enum.
-Handle it in `TerminalView` by toggling a
-`block_structured_view_active: HashSet<BlockId>` field on the view. When the
-block is in the set, the `StructuredDataBlock` `RichContent` is visible; when
-not, the block's normal grid element is shown and the `RichContent` is hidden
-(not removed, so toggling back is instant without re-parsing).
+Handle it in `TerminalView`:
+- If `block_id ∈ block_structured_view_active`: remove from both
+  `block_structured_view_active` and `hidden_grid_blocks` → grid renders,
+  `RichContent` is hidden.
+- If `block_id ∉ block_structured_view_active`: add to both sets → grid is
+  suppressed, `RichContent` renders.
+
+The `StructuredDataBlock` `RichContent` is never removed from the blocklist;
+show/hide is purely a rendering decision made at paint time by checking the two
+sets. Toggling is therefore instant and requires no re-parsing.
 
 The toggle button is rendered in the block hover toolbar by extending the
 existing hover-toolbar rendering in `app/src/terminal/block_list_element.rs`,
-following the pattern of the existing Copy / Share buttons.
+following the pattern of the existing Copy / Share buttons. The button is shown
+only for blocks whose `BlockId` has an associated `StructuredDataBlock`
+`RichContent` (i.e., detection succeeded for that block).
 
 ## Testing and validation
 
