@@ -39,7 +39,9 @@ use super::{
     ChipValue, ContextChipKind,
 };
 #[cfg(feature = "local_fs")]
-use crate::code_review::git_status_update::{GitRepoStatusEvent, GitRepoStatusModel};
+use crate::code_review::git_status_update::{
+    GitRepoStatusEvent, GitRepoStatusModel, GitStatusMetadata,
+};
 #[cfg(feature = "local_fs")]
 use crate::context_chips::display_chip::GitLineChanges;
 use std::collections::{HashMap, HashSet};
@@ -945,6 +947,28 @@ impl CurrentPrompt {
         state.on_click_generator_handle = Some(handle);
     }
 
+    #[cfg(feature = "local_fs")]
+    fn latest_git_status_metadata(&self, ctx: &AppContext) -> Option<GitStatusMetadata> {
+        let active_working_directory = self
+            .latest_context
+            .as_ref()?
+            .active_block_metadata
+            .current_working_directory()?;
+
+        self.git_repo_status
+            .as_ref()
+            .and_then(|w| w.upgrade(ctx))
+            .and_then(|h| {
+                let status_model = h.as_ref(ctx);
+                let active_working_directory = std::path::Path::new(active_working_directory);
+
+                if !active_working_directory.starts_with(status_model.repo_path()) {
+                    return None;
+                }
+
+                status_model.metadata().cloned()
+            })
+    }
     fn fetch_chip_value_at_interval(
         &mut self,
         chip_kind: &ContextChipKind,
@@ -1444,13 +1468,9 @@ impl CurrentPrompt {
     /// `ShellGitBranch` and `GitDiffStats` chip states.
     #[cfg(feature = "local_fs")]
     fn apply_git_repo_metadata(&mut self, ctx: &mut ModelContext<Self>) {
-        let metadata = self
-            .git_repo_status
-            .as_ref()
-            .and_then(|w| w.upgrade(ctx))
-            .and_then(|h| h.as_ref(ctx).metadata().cloned());
-
-        let Some(metadata) = metadata else {
+        let Some(metadata) = self.latest_git_status_metadata(ctx) else {
+            self.update_chip_value(&ContextChipKind::ShellGitBranch, None);
+            self.update_chip_value(&ContextChipKind::GitDiffStats, None);
             return;
         };
 
