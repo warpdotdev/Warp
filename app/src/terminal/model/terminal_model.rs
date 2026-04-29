@@ -2087,6 +2087,11 @@ impl TerminalModel {
             .send_terminal_event(Event::TerminalModeSwapped(TerminalMode::BlockList));
     }
 
+    fn recover_presentation_after_unexpected_in_band_command_output_end(&mut self) {
+        self.unset_mode(Mode::BracketedPaste);
+        self.exit_alt_screen(true);
+    }
+
     #[cfg(test)]
     pub fn set_altscreen_active(&mut self) {
         self.alt_screen_active = true;
@@ -3092,6 +3097,7 @@ impl ansi::Handler for TerminalModel {
             }
             IsReceivingInBandCommandOutput::No => {
                 log::warn!("Received 'end_in_band_command_output' while not expecting to read in-band command output.");
+                self.recover_presentation_after_unexpected_in_band_command_output_end();
             }
         }
 

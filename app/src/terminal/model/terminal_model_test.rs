@@ -693,6 +693,39 @@ fn test_unset_bracketed_paste_mode_on_command_finished() {
 }
 
 #[test]
+fn test_unexpected_in_band_output_end_recovers_presentation_without_finishing_command() {
+    let (event_tx, event_rx) = async_channel::unbounded();
+    let event_proxy = ChannelEventListener::builder_for_test()
+        .with_terminal_events_tx(event_tx)
+        .build();
+    let mut terminal = TerminalModel::mock(None, Some(event_proxy));
+
+    while event_rx.try_recv().is_ok() {}
+
+    terminal.enter_alt_screen(true);
+    terminal.set_mode(Mode::BracketedPaste);
+    assert!(terminal.is_alt_screen_active());
+    assert!(terminal.is_term_mode_set(TermMode::BRACKETED_PASTE));
+
+    while event_rx.try_recv().is_ok() {}
+
+    terminal.end_in_band_command_output(true);
+
+    assert!(!terminal.is_alt_screen_active());
+    assert!(!terminal.is_term_mode_set(TermMode::BRACKETED_PASTE));
+
+    let events: Vec<_> = std::iter::from_fn(|| event_rx.try_recv().ok()).collect();
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, Event::TerminalModeSwapped(TerminalMode::BlockList))));
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, Event::Handler(HandlerEvent::CommandFinished { .. }))));
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, Event::ExecutedInBandCommand(_))));
+}
+#[test]
 fn test_alt_screen_selection_tracks_scroll() {
     let mut terminal: TerminalModel = TerminalModel::mock(None, None);
     terminal.enter_alt_screen(true);
