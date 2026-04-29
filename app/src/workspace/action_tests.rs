@@ -74,4 +74,6 @@ fn pane_name_actions_save_workspace_state() {
 
     assert!(WorkspaceAction::RenamePane(locator).should_save_app_state_on_action());
     assert!(WorkspaceAction::ResetPaneName(locator).should_save_app_state_on_action());
+    assert!(WorkspaceAction::RenameActivePane.should_save_app_state_on_action());
+    assert!(WorkspaceAction::SetActivePaneName("custom".into()).should_save_app_state_on_action());
 }

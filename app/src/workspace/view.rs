@@ -5264,6 +5264,34 @@ impl Workspace {
         ctx.notify();
     }
 
+    fn active_pane_locator(&self, ctx: &AppContext) -> Option<PaneViewLocator> {
+        let pane_group = self.tabs.get(self.active_tab_index)?.pane_group.clone();
+        let pane_group_ref = pane_group.as_ref(ctx);
+        Some(PaneViewLocator {
+            pane_group_id: pane_group.id(),
+            pane_id: pane_group_ref.focused_pane_id(ctx),
+        })
+    }
+
+    pub fn rename_active_pane(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(locator) = self.active_pane_locator(ctx) else {
+            log::warn!("Tried to rename active pane without an active tab");
+            return;
+        };
+
+        self.rename_pane(locator, ctx);
+    }
+
+    fn set_active_pane_name(&mut self, title: String, ctx: &mut ViewContext<Self>) {
+        let Some(locator) = self.active_pane_locator(ctx) else {
+            log::warn!("Tried to set active pane name without an active tab");
+            return;
+        };
+
+        self.set_custom_pane_name(locator, title, ctx);
+        ctx.notify();
+    }
+
     pub fn list_tab_pane_groups(&self, app: &AppContext) -> Vec<TabPaneGroupIdentifiers> {
         self.tabs
             .iter()
@@ -19698,7 +19726,9 @@ impl TypedActionView for Workspace {
             RenamePane(locator) => self.rename_pane(*locator, ctx),
             ResetPaneName(locator) => self.clear_pane_name(*locator, ctx),
             RenameActiveTab => self.rename_tab(self.active_tab_index, ctx),
+            RenameActivePane => self.rename_active_pane(ctx),
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
+            SetActivePaneName(name) => self.set_active_pane_name(name.clone(), ctx),
             SetActiveTabColor(color) => self.set_tab_color(self.active_tab_index, *color, ctx),
             ToggleTabRightClickMenu { tab_index, anchor } => {
                 self.toggle_tab_right_click_menu(*tab_index, *anchor, ctx)

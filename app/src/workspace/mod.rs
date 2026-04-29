@@ -911,6 +911,14 @@ pub fn init(app: &mut AppContext) {
     .with_group(bindings::BindingGroup::Settings.as_str())
     .with_custom_action(CustomAction::RenameTab)
     .with_context_predicate(id!("Workspace"))]);
+    app.register_editable_bindings([EditableBinding::new(
+        "workspace:rename_active_pane",
+        "Rename the active pane",
+        WorkspaceAction::RenameActivePane,
+    )
+    .with_group(bindings::BindingGroup::Settings.as_str())
+    .with_custom_action(CustomAction::RenamePane)
+    .with_context_predicate(id!("Workspace") & !id!("Workspace_PaneDragging"))]);
 
     app.register_editable_bindings([
         EditableBinding::new(
