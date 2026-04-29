@@ -1150,7 +1150,7 @@ impl AIExecutionProfilesModel {
     /// `edit_profile_internal` edits an AIExecutionProfile and upserts the changed profile to the cloud
     /// Parameters:
     /// * `profile_id`: The id of the profile to edit
-    /// * `edit_fn`: a closure that safely modifies the AIExecutionProfile. It should return `true` if the profile was changed, `false` otherwise. When `true`, it syncs the changes to the cloud, and otherwise exits early to prevent excessive cloud operations if no changes occured.
+    /// * `edit_fn`: a closure that safely modifies the AIExecutionProfile. It should return `true` if the profile was changed, `false` otherwise. When `true`, it syncs the changes to the cloud, and otherwise exits early to prevent excessive cloud operations if no changes occurred.
     /// * `ctx`: The model context
     fn edit_profile_internal(
         &mut self,
