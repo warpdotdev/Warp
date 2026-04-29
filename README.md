@@ -14,7 +14,9 @@ Warp is an excellent terminal. twarp aims to be a leaner, AI-free distribution o
 
 twarp removes Warp's AI features — the agentic mode, cloud-agent surfaces, in-line AI suggestions, AI command help, anything that calls out to an LLM from inside the terminal. The terminal is the terminal.
 
-In practice this means ripping out (or feature-gating off by default) the agent UI, the cloud-mode codepaths, the AI command palette, and any LLM-backed completion. Telemetry that exists solely to support those features goes with them.
+In practice this means ripping out the agent UI, the cloud-mode codepaths, the AI command palette, and any LLM-backed completion. Telemetry that exists solely to support those features goes with them.
+
+Build progress for all four sections below is tracked in [`roadmap/ROADMAP.md`](roadmap/ROADMAP.md).
 
 ### 2. Tab color shortcuts
 
