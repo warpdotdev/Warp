@@ -4,6 +4,8 @@
 //! with expandable per-file stats. On confirm, spawns `create_pr` and shows
 //! a toast with a clickable "Open PR" link.
 
+use std::path::Path;
+
 use warp_core::ui::appearance::Appearance;
 use warpui::{
     elements::{
@@ -62,7 +64,7 @@ pub(super) fn is_ready_to_confirm(_state: &PrState) -> bool {
 }
 
 pub(super) fn new_state(
-    repo_path: &std::path::Path,
+    repo_path: &Path,
     base_branch_name: Option<String>,
     ctx: &mut ViewContext<GitDialog>,
 ) -> PrState {
@@ -161,7 +163,7 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
 /// Falls back to `gh pr create --fill` if AI generation fails or returns
 /// empty content.
 pub(super) async fn create_pr_with_ai_content(
-    repo_path: &std::path::Path,
+    repo_path: &Path,
     branch_name: &str,
     code_review_ai: &dyn AIClient,
     path_env: Option<&str>,
@@ -204,11 +206,11 @@ pub(super) async fn create_pr_with_ai_content(
             log::warn!(
                 "AI PR content generation returned empty title/body, falling back to --fill"
             );
-            crate::util::git::create_pr(repo_path, None, None, path_env).await
+            create_pr(repo_path, None, None, path_env).await
         }
         Err(err) => {
             log::warn!("AI PR content generation failed, falling back to --fill: {err}");
-            crate::util::git::create_pr(repo_path, None, None, path_env).await
+            create_pr(repo_path, None, None, path_env).await
         }
     }
 }

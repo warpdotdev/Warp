@@ -199,7 +199,6 @@ pub async fn detect_main_branch(repo_path: &Path) -> Result<String> {
 pub async fn detect_fork_point(
     _repo_path: &Path,
     _current_branch_name: Option<&str>,
-    _upstream_ref: Option<&str>,
 ) -> Result<Option<String>> {
     Err(anyhow!("Not supported without local_fs"))
 }
@@ -209,29 +208,20 @@ pub async fn detect_fork_point(
 pub async fn detect_fork_point(
     repo_path: &Path,
     current_branch_name: Option<&str>,
-    upstream_ref: Option<&str>,
 ) -> Result<Option<String>> {
-    // Exclude `<current>`, `origin/<current>`, and the resolved `@{u}` so
-    // the branch isn't subtracted from itself.
+    // Exclude `<current>` and `origin/<current>` so the branch isn't
+    // subtracted from itself.
     let current = current_branch_name
         .map(str::trim)
         .filter(|branch| !branch.is_empty() && *branch != "HEAD");
-    let upstream = upstream_ref
-        .map(str::trim)
-        .filter(|branch| !branch.is_empty());
 
     let branch_exclude = current.map(|c| format!("--exclude={c}"));
     let remote_exclude = current.map(|c| format!("--exclude=origin/{c}"));
-    // `@{u}` may be local or remote, and `--exclude` applies only to the
-    // next `--branches`/`--remotes`, so we extend it before both.
-    let upstream_exclude = upstream.map(|u| format!("--exclude={u}"));
 
     let mut args: Vec<&str> = vec!["rev-list", "HEAD", "--not"];
     args.extend(branch_exclude.as_deref());
-    args.extend(upstream_exclude.as_deref());
     args.push("--branches");
     args.extend(remote_exclude.as_deref());
-    args.extend(upstream_exclude.as_deref());
     args.push("--remotes");
 
     let unique = match run_git_command(repo_path, &args).await {
@@ -413,7 +403,7 @@ pub async fn get_unpushed_commits(
     } else {
         // No upstream — fall back to the fork-point commit so we show
         // exactly the commits unique to this branch
-        let fork_point = detect_fork_point(repo_path, current_branch_name, upstream_ref)
+        let fork_point = detect_fork_point(repo_path, current_branch_name)
             .await
             .ok()
             .flatten();
