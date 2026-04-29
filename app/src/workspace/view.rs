@@ -679,7 +679,7 @@ pub enum WorkspaceBanner {
     AnonymousUserAuth,
     /// to display when recovering from a crash that may have been due to use
     /// of Wayland
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    #[cfg(target_os = "linux")]
     WaylandCrashRecovery,
     /// to display when settings.toml has errors (parse failure or invalid values)
     InvalidSettings,
@@ -696,7 +696,7 @@ impl WorkspaceBanner {
             Self::VersionDeprecated => false,
             Self::AnonymousUserAuth => false,
             Self::Reauth => true,
-            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            #[cfg(target_os = "linux")]
             Self::WaylandCrashRecovery => true,
             Self::InvalidSettings => true,
         }
@@ -10336,7 +10336,7 @@ impl Workspace {
                     return false;
                 } else if cfg!(all(
                     not(target_family = "wasm"),
-                    any(any(target_os = "linux", target_os = "freebsd"), windows)
+                    any(target_os = "linux", windows)
                 )) {
                     self.show_native_modal(dialog, ctx);
                     return false;
@@ -18745,7 +18745,7 @@ impl Workspace {
             WorkspaceBanner::Reauth => {
                 self.reauth_banner_dismissed = true;
             }
-            #[cfg(all(enable_crash_recovery, any(target_os = "linux", target_os = "freebsd")))]
+            #[cfg(all(enable_crash_recovery, target_os = "linux"))]
             WorkspaceBanner::WaylandCrashRecovery => {
                 crash_recovery::dismiss_workspace_banner(ctx);
             }
@@ -19337,7 +19337,7 @@ impl Workspace {
                 .insert(flags::AUTOSUGGESTION_KEYBINDING_HINT_FLAG);
         }
 
-        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        #[cfg(target_os = "linux")]
         {
             let force_x11 = *crate::settings::LinuxAppConfiguration::as_ref(app)
                 .force_x11
@@ -20909,7 +20909,7 @@ impl TypedActionView for Workspace {
                     )
                 });
             }
-            #[cfg(all(enable_crash_recovery, any(target_os = "linux", target_os = "freebsd")))]
+            #[cfg(all(enable_crash_recovery, target_os = "linux"))]
             DismissWaylandCrashRecoveryBannerAndOpenLink => {
                 self.dismiss_workspace_banner(ctx, &WorkspaceBanner::WaylandCrashRecovery);
                 ctx.open_url("https://docs.warp.dev/terminal/more-features/linux#native-wayland");
@@ -22981,10 +22981,10 @@ impl View for Workspace {
             stack.finish()
         };
 
-        #[cfg_attr(not(any(windows, any(target_os = "linux", target_os = "freebsd"))), allow(unused_mut))]
+        #[cfg_attr(not(any(windows, target_os = "linux")), allow(unused_mut))]
         let mut event_handler = EventHandler::new(stack);
 
-        #[cfg(any(windows, any(target_os = "linux", target_os = "freebsd")))]
+        #[cfg(any(windows, target_os = "linux"))]
         {
             event_handler =
                 event_handler.on_scroll_wheel(move |ctx, _app, delta, modifiers_state| {

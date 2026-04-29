@@ -3,7 +3,7 @@ mod mac;
 #[cfg(linux_or_windows)]
 mod sentry_minidump;
 
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[cfg(target_os = "linux")]
 mod linux;
 
 use std::borrow::Cow;
@@ -262,7 +262,7 @@ fn get_environment() -> Cow<'static, str> {
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
             let operating_system = "mac";
-        } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
+        } else if #[cfg(target_os = "linux")] {
             let operating_system = "linux";
         }
         else if #[cfg(target_os = "windows")] {
@@ -547,7 +547,7 @@ impl VirtualEnvironment {
     /// Detects the current virtual environment, if any.
     fn detect() -> Option<Self> {
         cfg_if::cfg_if! {
-            if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
+            if #[cfg(target_os = "linux")] {
                 linux::get_virtualized_environment()
             } else {
                 None
