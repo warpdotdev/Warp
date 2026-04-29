@@ -835,6 +835,8 @@ pub enum FeatureFlag {
     VerticalTabsSummaryMode,
 
     CloudModeInputV2,
+
+    LinkSharedSessionToLocalOzRun,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -911,6 +913,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
+    FeatureFlag::LinkSharedSessionToLocalOzRun,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
