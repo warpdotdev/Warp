@@ -5,7 +5,11 @@ This guide gives contributors a quick map of the Warp repository so they can fin
 ## Top-level directories
 
 - `.agents/` — Agent-readable skills and workflow guidance used by Oz and other coding agents.
+- `.cargo/` — Cargo configuration shared by local development and repository tooling.
+- `.claude/` — Claude Code settings, skills, and helper scripts for contributors who use Claude-based agents.
+- `.config/` — Repository-local configuration for developer tools such as Nextest.
 - `.github/` — GitHub issue, pull request, and automation configuration.
+- `.vscode/` — Recommended Visual Studio Code settings, tasks, launch profiles, and extensions.
 - `.warp/` — Warp-specific repository metadata and local workflow assets.
 - `app/` — The main Warp application crate, including platform entry points and product features.
 - `command-signatures-v2/` — Command signature data and supporting tooling.
@@ -32,6 +36,7 @@ This guide gives contributors a quick map of the Warp repository so they can fin
 - Keep assets close to the code that owns them when they are feature-specific. Use `resources/` for assets that are packaged or shared across the repository.
 - Add developer automation under `script/` when it is repository-wide; add crate-local helpers next to the crate when they are specific to one crate.
 - Add specs under `specs/<ticket-id>/` using the ticket identifier as the directory name.
+- Avoid creating broad language- or type-based buckets such as `assets/python/` for source code; prefer the owning feature, crate, or tool directory.
 - Prefer updating this guide and the existing owning directory over creating a broad catch-all directory.
 
 ## Finding code by area
