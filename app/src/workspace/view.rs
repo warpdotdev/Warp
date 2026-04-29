@@ -21913,7 +21913,9 @@ impl View for Workspace {
             // Hide the vertical tab rail for simplified WASM views (notebooks, shared sessions, etc.)
             let panels_row = self.render_panels(app, Shrinkable::new(1.0, content).finish(), true);
             outer_column.add_child(Shrinkable::new(1.0, panels_row).finish());
-            outer_column.finish()
+            Container::new(outer_column.finish())
+                .with_background(util::get_terminal_background_fill(self.window_id, app))
+                .finish()
         } else {
             let mut outer_column = Flex::column();
             if tab_bar_mode == ShowTabBar::Stacked {
