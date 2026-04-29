@@ -1523,6 +1523,9 @@ pub enum MenuAction {
     CloseSubmenu(usize),
     Close(bool),
     Enter,
+    /// Clears the hovered row index, used when hovering over a pinned footer/header
+    /// to prevent repo list items from showing hover state.
+    ClearHover(usize),
 }
 
 pub fn init(app: &mut AppContext) {
@@ -2428,6 +2431,13 @@ impl<A: Action + Clone> SubMenu<A> {
                         via_select_item: true,
                     });
                 }
+            }
+            MenuAction::ClearHover(depth) => {
+                if *depth != self.depth {
+                    return;
+                }
+                self.hovered_row_index = None;
+                ctx.emit(Event::ItemHovered);
             }
         }
     }
