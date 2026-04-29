@@ -503,16 +503,21 @@ impl AltScreenElement {
     fn coord_to_point(&self, coord: Vector2F) -> Point {
         let model = self.model.lock();
         let grid = model.alt_screen().grid_handler();
-        let total_height = grid.total_rows();
         let size = self.grid_render_params.size_info;
 
         let column = ((coord.x() - size.padding_x_px.as_f32()) / size.cell_width_px().as_f32())
             .max(0.)
             .min(grid.columns() as f32 - 1.) as usize;
 
-        let row = (coord.y() / size.cell_height_px().as_f32())
-            .max(0.)
-            .min(total_height as f32 - 1.) as usize;
+        let history_offset = grid.total_rows().saturating_sub(grid.visible_rows());
+        let visible_height = self
+            .visible_lines
+            .expect("should be set after layout")
+            .as_f64() as usize;
+        let row = history_offset
+            + (coord.y() / size.cell_height_px().as_f32())
+                .max(0.)
+                .min(visible_height.saturating_sub(1) as f32) as usize;
         Point::new(row, column)
     }
 
@@ -733,15 +738,19 @@ impl Element for AltScreenElement {
         }
         sampler.reset();
 
-        // Render grid cells. Since the alt screen has no scrollback we can always start at index 0.
+        // Render grid cells. The alt screen preserves scrollback for apps that
+        // rely on cursor-up overshoot and full-buffer redraws (e.g. Claude Code).
+        // Start rendering from the history offset so visible content anchors to
+        // the bottom of the buffer rather than the top.
         record_trace_event!("alt_screen_element:paint:preparing_to_render_grid");
-        let start_row = self.scroll_top.as_f64();
+        let history_offset = (grid.total_rows().saturating_sub(grid.visible_rows())) as f64;
+        let start_row = history_offset + self.scroll_top.as_f64();
         let end_row = (start_row
             + self
                 .visible_lines
                 .expect("should be set after layout")
                 .as_f64())
-        .min(grid.visible_rows() as f64);
+        .min(grid.total_rows() as f64);
         let adjusted_grid_origin = origin - self.vertical_scroll_pixels();
         let cursor_visible = model.alt_screen().is_mode_set(TermMode::SHOW_CURSOR);
         grid_renderer::render_grid(

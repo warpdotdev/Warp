@@ -1107,7 +1107,9 @@ impl TerminalModel {
     ) -> Self {
         let alt_screen = AltScreen::new(
             sizes.size,
-            0, /* max_scroll_limit */
+            1000, /* max_scroll_limit — preserve alt-screen scrollback to prevent content loss
+                   * during heavy streaming from apps like Claude Code that rely on cursor-up
+                   * overshoot and full-buffer redraws (see warpdotdev/Warp#7200, #8089) */
             event_proxy.clone(),
             obfuscate_secrets,
         );
