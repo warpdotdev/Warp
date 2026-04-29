@@ -423,39 +423,48 @@ impl Input {
                 ctx.dispatch_typed_action(&WorkspaceAction::SetActiveTabName(name.to_owned()));
             }
             set_tab_color if command.name == commands::SET_TAB_COLOR.name => {
+                let supported_options = || {
+                    crate::ui_components::color_dot::TAB_COLOR_OPTIONS
+                        .iter()
+                        .map(|c| c.to_string().to_ascii_lowercase())
+                        .chain(std::iter::once("none".to_owned()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+
                 let Some(arg) = argument
                     .map(|name| name.trim())
                     .filter(|name| !name.is_empty())
                 else {
                     show_error_toast(
-                        "Please provide a color after /set-tab-color (red, green, yellow, blue, magenta, cyan, none, or default)"
-                            .to_owned(),
+                        format!(
+                            "Please provide a color after /set-tab-color ({})",
+                            supported_options()
+                        ),
                         ctx,
                     );
                     return true;
                 };
 
-                // `none`/`clear` explicitly clear the color (suppressing any
-                // directory default); `default`/`reset` remove the manual override
-                // so the directory default can apply when `DirectoryTabColors`
-                // is enabled.
-                let color = match arg.to_ascii_lowercase().as_str() {
-                    "red" => SelectedTabColor::Color(AnsiColorIdentifier::Red),
-                    "green" => SelectedTabColor::Color(AnsiColorIdentifier::Green),
-                    "yellow" => SelectedTabColor::Color(AnsiColorIdentifier::Yellow),
-                    "blue" => SelectedTabColor::Color(AnsiColorIdentifier::Blue),
-                    "magenta" => SelectedTabColor::Color(AnsiColorIdentifier::Magenta),
-                    "cyan" => SelectedTabColor::Color(AnsiColorIdentifier::Cyan),
-                    "none" | "clear" => SelectedTabColor::Cleared,
-                    "default" | "reset" => SelectedTabColor::Unset,
-                    other => {
-                        show_error_toast(
-                            format!(
-                                "Unknown tab color '{other}'. Use one of: red, green, yellow, blue, magenta, cyan, none, or default."
-                            ),
-                            ctx,
-                        );
-                        return true;
+                let color = if arg.eq_ignore_ascii_case("none") {
+                    SelectedTabColor::Cleared
+                } else {
+                    let parsed = arg
+                        .parse::<AnsiColorIdentifier>()
+                        .ok()
+                        .filter(|c| crate::ui_components::color_dot::TAB_COLOR_OPTIONS.contains(c));
+                    match parsed {
+                        Some(c) => SelectedTabColor::Color(c),
+                        None => {
+                            show_error_toast(
+                                format!(
+                                    "Unknown tab color '{arg}'. Use one of: {}.",
+                                    supported_options()
+                                ),
+                                ctx,
+                            );
+                            return true;
+                        }
                     }
                 };
 

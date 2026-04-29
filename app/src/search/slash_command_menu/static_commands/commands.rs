@@ -135,15 +135,23 @@ pub static RENAME_TAB: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand 
     argument: Some(Argument::required().with_hint_text("<tab name>")),
 });
 
-pub static SET_TAB_COLOR: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
-    name: "/set-tab-color",
-    description: "Set the color of the current tab",
-    icon_path: "bundled/svg/ellipse.svg",
-    availability: Availability::ALWAYS,
-    auto_enter_ai_mode: false,
-    argument: Some(
-        Argument::required().with_hint_text("<red|green|yellow|blue|magenta|cyan|none|default>"),
-    ),
+pub static SET_TAB_COLOR: LazyLock<StaticCommand> = LazyLock::new(|| {
+    let mut hint = String::from("<");
+    for color in crate::ui_components::color_dot::TAB_COLOR_OPTIONS {
+        hint.push_str(&color.to_string().to_ascii_lowercase());
+        hint.push('|');
+    }
+    hint.push_str("none>");
+    let hint_text: &'static str = Box::leak(hint.into_boxed_str());
+
+    StaticCommand {
+        name: "/set-tab-color",
+        description: "Set the color of the current tab",
+        icon_path: "bundled/svg/ellipse.svg",
+        availability: Availability::ALWAYS,
+        auto_enter_ai_mode: false,
+        argument: Some(Argument::required().with_hint_text(hint_text)),
+    }
 });
 
 pub static FORK: LazyLock<StaticCommand> = LazyLock::new(|| {
@@ -674,10 +682,15 @@ mod tests {
 
         assert!(!argument.is_optional);
         assert!(!argument.should_execute_on_selection);
-        assert_eq!(
-            argument.hint_text,
-            Some("<red|green|yellow|blue|magenta|cyan|none|default>")
-        );
+
+        let hint = argument
+            .hint_text
+            .expect("/set-tab-color hint text is set dynamically");
+        for color in crate::ui_components::color_dot::TAB_COLOR_OPTIONS {
+            let lower = color.to_string().to_ascii_lowercase();
+            assert!(hint.contains(&lower), "hint should mention `{lower}`");
+        }
+        assert!(hint.contains("none"), "hint should mention `none`");
     }
 
     #[test]

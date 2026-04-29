@@ -5113,29 +5113,16 @@ impl Workspace {
             );
             return;
         }
-        let is_same = self.tabs[index].color() == Some(color);
-        self.tabs[index].selected_color = if is_same {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::TabOperations {
-                    action: TabTelemetryAction::ResetColor,
-                },
-                ctx
-            );
+        let next = if self.tabs[index].color() == Some(color) {
             if FeatureFlag::DirectoryTabColors.is_enabled() {
                 SelectedTabColor::Cleared
             } else {
                 SelectedTabColor::Unset
             }
         } else {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::TabOperations {
-                    action: TabTelemetryAction::SetColor,
-                },
-                ctx
-            );
             SelectedTabColor::Color(color)
         };
-        ctx.notify();
+        self.set_tab_color(index, next, ctx);
     }
 
     /// Syncs the tab color for the given tab based on the active terminal's CWD.
