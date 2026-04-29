@@ -1915,6 +1915,16 @@ impl TerminalModel {
         self.set_title(None);
     }
 
+    /// Restores terminal modes that can otherwise leave the UI visually stuck after a TUI exits.
+    ///
+    /// This intentionally does not complete the active command. It is safe to call from recovery
+    /// paths where Warp has evidence that terminal presentation is corrupted, but not enough
+    /// evidence to mark the foreground command as finished.
+    fn recover_terminal_modes_without_completing_command(&mut self) {
+        self.unset_mode(Mode::BracketedPaste);
+        self.exit_alt_screen(true);
+    }
+
     pub fn get_pending_session_info(&self) -> &Option<SessionInfo> {
         &self.pending_session_info
     }
@@ -2778,13 +2788,12 @@ impl ansi::Handler for TerminalModel {
         // of bracketed paste being enabled, but the local shell doesn't know
         // how to turn it off (and will never do so).  We forcibly unset the
         // mode to avoid getting stuck in this state.
-        self.unset_mode(Mode::BracketedPaste);
-
-        // Similar to bracketed paste, above, make sure we quit out of the
-        // alt screen if we're currently in it.  This prevents issues where we
-        // remain in the alt screen after disconnect when we should return to
-        // the blocklist (for the local shell).
-        self.exit_alt_screen(true);
+        //
+        // Similar to bracketed paste, make sure we quit out of the alt screen
+        // if we're currently in it. This prevents issues where we remain in
+        // the alt screen after disconnect when we should return to the
+        // blocklist (for the local shell).
+        self.recover_terminal_modes_without_completing_command();
 
         let block_id = data.next_block_id.to_string();
         let is_for_in_band_command = self.block_list().active_block().is_in_band_command_block();
@@ -3092,6 +3101,7 @@ impl ansi::Handler for TerminalModel {
             }
             IsReceivingInBandCommandOutput::No => {
                 log::warn!("Received 'end_in_band_command_output' while not expecting to read in-band command output.");
+                self.recover_terminal_modes_without_completing_command();
             }
         }
 
