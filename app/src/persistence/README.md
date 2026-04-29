@@ -55,6 +55,6 @@ changes on top of the auto-generated `schema.rs` file produced by `diesel_cli`.
 To create the `schema.patch` file, we:
 1. Run the diesel migrations
 1. Manually edit `schema.rs`
-1. Run `git diff -U6 > app/src/persistence/schema.patch`.
+1. Run `git diff -U6 > crates/persistence/schema.patch`.
 
 You can read more about this patch file in the official [Diesel documentation](https://diesel.rs/guides/configuring-diesel-cli.html#the-patch_file-field).
