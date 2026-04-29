@@ -37,13 +37,13 @@ impl Channel {
     /// Whether this channel honors the `--server-root-url` / `--ws-server-url` /
     /// `--session-sharing-server-url` flags (and their `WARP_*` env-var equivalents).
     ///
-    /// Release channels (`Stable`, `Preview`, `Oss`) ignore these overrides so shipped
-    /// builds can't be redirected away from their baked-in server URLs. Internal-only channels
-    /// (`Dev`, `Local`, `Integration`) continue to honor them for local development and testing.
+    /// First-party release channels (`Stable`, `Preview`) ignore these overrides so shipped
+    /// builds can't be redirected away from their baked-in server URLs. OSS and internal-only
+    /// channels (`Oss`, `Dev`, `Local`, `Integration`) honor them for local routing and testing.
     pub fn allows_server_url_overrides(&self) -> bool {
         match self {
-            Channel::Dev | Channel::Local | Channel::Integration => true,
-            Channel::Stable | Channel::Preview | Channel::Oss => false,
+            Channel::Dev | Channel::Local | Channel::Oss | Channel::Integration => true,
+            Channel::Stable | Channel::Preview => false,
         }
     }
 
@@ -59,6 +59,10 @@ impl Channel {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;
 
 impl fmt::Display for Channel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

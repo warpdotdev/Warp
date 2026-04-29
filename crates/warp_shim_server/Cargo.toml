@@ -1,0 +1,40 @@
+[package]
+name = "warp_shim_server"
+edition = "2024"
+authors.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "warp-shim-server"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+async-stream.workspace = true
+axum.workspace = true
+base64.workspace = true
+bytes.workspace = true
+clap.workspace = true
+dirs.workspace = true
+futures.workspace = true
+futures-util.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+reqwest.workspace = true
+reqwest-eventsource.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+uuid.workspace = true
+warp_multi_agent_api.workspace = true
+
+[dev-dependencies]
+cynic.workspace = true
+tower = { workspace = true, features = ["util"] }
+warp_graphql.workspace = true

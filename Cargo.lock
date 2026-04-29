@@ -14823,6 +14823,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "warp_shim_server"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "clap",
+ "cynic",
+ "dirs 6.0.0",
+ "futures",
+ "futures-util",
+ "prost 0.14.3",
+ "prost-types",
+ "reqwest",
+ "reqwest-eventsource",
+ "rustls 0.23.39",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.9.6",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "warp_graphql",
+ "warp_multi_agent_api",
+]
+
+[[package]]
 name = "warp_terminal"
 version = "0.0.0"
 dependencies = [

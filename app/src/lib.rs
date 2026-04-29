@@ -1004,7 +1004,9 @@ fn initialize_app(
     // Extract API key from command line options, if applicable.
     let api_key = match launch_mode {
         LaunchMode::CommandLine { global_options, .. } => global_options.api_key.clone(),
-        LaunchMode::App { api_key, .. } if ChannelState::channel().is_dogfood() => api_key.clone(),
+        LaunchMode::App { api_key, .. }
+            if ChannelState::channel().is_dogfood()
+                || ChannelState::channel() == warp_core::channel::Channel::Oss => api_key.clone(),
         _ => None,
     };
     let api_key = if FeatureFlag::APIKeyAuthentication.is_enabled() {
