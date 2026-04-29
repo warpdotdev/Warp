@@ -1422,6 +1422,11 @@ fn create_window(
         }
     }
 
+    #[cfg(target_os = "linux")]
+    if let Ok(window) = created_window.as_ref() {
+        window.set_ime_allowed(true);
+    }
+
     created_window
 }
 
