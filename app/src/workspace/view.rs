@@ -5251,7 +5251,9 @@ impl Workspace {
         let inline_editor_visible = FeatureFlag::VerticalTabs.is_enabled()
             && *TabSettings::as_ref(ctx).use_vertical_tabs
             && matches!(
-                *TabSettings::as_ref(ctx).vertical_tabs_display_granularity,
+                *TabSettings::as_ref(ctx)
+                    .vertical_tabs_display_granularity
+                    .value(),
                 VerticalTabsDisplayGranularity::Panes,
             );
 
