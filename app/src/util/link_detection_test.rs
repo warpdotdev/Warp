@@ -73,3 +73,60 @@ fn test_possible_file_paths_in_word_multibyte() {
         ]
     );
 }
+#[test]
+fn test_detect_wrapped_urls_across_lines_registers_full_url_per_line_segment() {
+    let section_index = 7;
+    let lines = vec![
+        (
+            0,
+            "See https://example.com/some/very/long/path?param1=value1&param2=va".to_string(),
+        ),
+        (1, "lue2&param3=value3 for details".to_string()),
+    ];
+
+    let mut wrapped = detect_wrapped_urls_across_lines(section_index, &lines);
+    wrapped.sort_by_key(|(location, _)| match location {
+        TextLocation::Output { line_index, .. } => *line_index,
+        _ => usize::MAX,
+    });
+
+    assert_eq!(wrapped.len(), 2);
+
+    let expected_url =
+        "https://example.com/some/very/long/path?param1=value1&param2=value2&param3=value3";
+
+    assert_eq!(
+        wrapped[0],
+        (
+            TextLocation::Output {
+                section_index,
+                line_index: 0,
+            },
+            vec![(4..71, expected_url.to_string())]
+        )
+    );
+
+    assert_eq!(
+        wrapped[1],
+        (
+            TextLocation::Output {
+                section_index,
+                line_index: 1,
+            },
+            vec![(0..18, expected_url.to_string())]
+        )
+    );
+}
+
+#[test]
+fn test_detect_wrapped_urls_across_lines_ignores_single_line_urls() {
+    let section_index = 1;
+    let lines = vec![
+        (0, "Visit https://example.com/foo".to_string()),
+        (1, "next line".to_string()),
+    ];
+
+    let wrapped = detect_wrapped_urls_across_lines(section_index, &lines);
+    assert!(wrapped.is_empty());
+}
+

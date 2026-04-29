@@ -208,6 +208,104 @@ fn detect_urls(text: &str) -> Vec<Range<usize>> {
     url_ranges
 }
 
+/// Detects URLs that wrap across consecutive lines within a single text section and
+/// returns per-line hyperlink entries (range-on-line + full URL string).
+///
+/// Some CLI agents (e.g. Claude Code) hard-wrap long URLs with real `\n` characters in
+/// their TUI output instead of using OSC 8 hyperlinks or terminal soft wraps. Running URL
+/// detection per-line means the URL gets broken into fragments and Cmd+click only opens
+/// the first fragment. This helper reconstructs URLs that span multiple lines by
+/// concatenating raw line texts (with no separator) before running URL detection, then
+/// maps the detected URL ranges back to per-line char ranges pointing to the full URL.
+///
+/// Single-line URLs are intentionally skipped — they are already detected by the
+/// per-line URL detection path in `detect_all_links`.
+///
+/// `lines` is a slice of `(line_index, raw_text)` tuples for the section, in line order.
+fn detect_wrapped_urls_across_lines(
+    section_index: usize,
+    lines: &[(usize, String)],
+) -> Vec<(TextLocation, Vec<(Range<usize>, String)>)> {
+    if lines.len() < 2 {
+        return Vec::new();
+    }
+
+    // Build a joined buffer with no separator so a URL hard-wrapped at a line boundary
+    // is detected as a single URL. Track each line's char-offset start into the joined
+    // buffer so we can remap detected URL ranges back to per-line char ranges.
+    let mut joined = String::new();
+    let mut line_char_starts: Vec<usize> = Vec::with_capacity(lines.len());
+    for (_, raw_text) in lines {
+        line_char_starts.push(joined.chars().count());
+        joined.push_str(raw_text);
+    }
+    let total_chars = joined.chars().count();
+
+    let url_ranges = detect_urls(&joined);
+    if url_ranges.is_empty() {
+        return Vec::new();
+    }
+
+    // For each URL range, determine which lines it covers. Skip single-line URLs since
+    // they are already detected by the per-line pass.
+    let mut per_line: HashMap<usize, Vec<(Range<usize>, String)>> = HashMap::new();
+    for url_range in url_ranges {
+        let Some(url_text) = char_slice(&joined, url_range.start, url_range.end) else {
+            continue;
+        };
+        let url_string = url_text.to_owned();
+
+        // For each line, compute the overlap with the URL range (in char offsets into
+        // the joined buffer) and remap it to a per-line range.
+        let mut covered_lines: Vec<(usize, Range<usize>)> = Vec::new();
+        for (idx, (line_index, raw_text)) in lines.iter().enumerate() {
+            let line_start = line_char_starts[idx];
+            let line_end = line_char_starts
+                .get(idx + 1)
+                .copied()
+                .unwrap_or(total_chars);
+            let overlap_start = url_range.start.max(line_start);
+            let overlap_end = url_range.end.min(line_end);
+            if overlap_start >= overlap_end {
+                continue;
+            }
+            // Clamp to the actual line char count in case of empty trailing lines.
+            let line_char_len = raw_text.chars().count();
+            let local_start = overlap_start - line_start;
+            let local_end = (overlap_end - line_start).min(line_char_len);
+            if local_start >= local_end {
+                continue;
+            }
+            covered_lines.push((*line_index, local_start..local_end));
+        }
+
+        // Only register wrapped URLs (URLs that span 2+ lines). Single-line URLs are
+        // handled by the existing per-line detection.
+        if covered_lines.len() < 2 {
+            continue;
+        }
+        for (line_index, range) in covered_lines {
+            per_line
+                .entry(line_index)
+                .or_default()
+                .push((range, url_string.clone()));
+        }
+    }
+
+    per_line
+        .into_iter()
+        .map(|(line_index, entries)| {
+            (
+                TextLocation::Output {
+                    section_index,
+                    line_index,
+                },
+                entries,
+            )
+        })
+        .collect()
+}
+
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 fn addr_of(s: &str) -> usize {
     s.as_ptr() as usize
@@ -547,17 +645,33 @@ pub(crate) fn collect_output_data_for_link_detection(
         match section {
             AIAgentTextSection::PlainText { text } => match &text.formatted_lines {
                 Some(formatted_lines) => {
+                    // First, collect per-line raw text (for URL / file path detection) and
+                    // markdown hyperlinks (e.g. `[text](url)`).
+                    let mut section_lines: Vec<(usize, String)> = Vec::new();
                     for (line_index, line) in formatted_lines.lines().iter().enumerate() {
                         let location = TextLocation::Output {
                             section_index,
                             line_index,
                         };
-                        texts.push((line.raw_text().to_owned(), location));
+                        let raw_text = line.raw_text().to_owned();
+                        section_lines.push((line_index, raw_text.clone()));
+                        texts.push((raw_text, location));
 
                         let url_hyperlinks = line.hyperlinks();
                         if !url_hyperlinks.is_empty() {
                             hyperlinks.push((location, url_hyperlinks));
                         }
+                    }
+
+                    // Detect URLs that wrap across consecutive lines (e.g. CLI agents such as
+                    // Claude Code hard-wrap long URLs with real `\n` rather than OSC 8 hyperlinks
+                    // or terminal soft wraps). For each detected wrapped URL, register per-line
+                    // synthetic hyperlinks pointing to the full URL so Cmd+clicking any segment
+                    // opens the reconstructed URL.
+                    let wrapped_url_hyperlinks =
+                        detect_wrapped_urls_across_lines(section_index, &section_lines);
+                    for (location, entries) in wrapped_url_hyperlinks {
+                        hyperlinks.push((location, entries));
                     }
                 }
                 _ => {
