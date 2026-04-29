@@ -24,7 +24,7 @@ Today, rules that should apply to every project must be copied into a `WARP.md`/
 
 3. If the file does not exist at startup, Warp watches the parent directory (`~/.agents`) so the rule is picked up when the file is created later in the session. No restart is required.
 
-4. If the user deletes the file, Warp drops it from memory within the directory-watcher's debounce window (~500 ms). Subsequent agent queries no longer include the deleted rule.
+4. If the user deletes the file, Warp drops it from memory within the directory-watcher's debounce window (~500 ms). Subsequent agent queries no longer include the deleted rule. The same applies if the file becomes unreadable for any other reason between FS events (e.g. the user revokes read permission, or replaces the file with a directory) — Warp must not keep stale rule contents active once the source goes away.
 
 5. If the user edits the file, Warp re-reads its contents on the next directory-watcher tick. The next agent query reflects the new contents.
 
@@ -44,20 +44,22 @@ Today, rules that should apply to every project must be copied into a `WARP.md`/
 
 12. The very first query immediately after launch may fire before the global rule has finished loading (the read is backgrounded). The next query will include the rule. This is the same race the existing project-rules indexing accepts.
 
+13. "Is this project initialized?" surfaces — the `/init` flow's pending-rules step and the code-review empty state's "Repo is initialized with a {file_name} file." hint — answer based on **project-level** rule files only. Dropping a `~/.agents/AGENTS.md` does not by itself mark every repo as initialized; those surfaces still want to set up `WARP.md` / `AGENTS.md` *inside* the repo. Globals are still applied to agent queries; they just do not impersonate per-project initialization.
+
 ### Settings → Rules surface
 
-13. In Settings → AI → Rules → **Global** tab, every detected file-based global rule appears as its own row alongside cloud rules. The row shows the absolute file path and an "Open file" button.
+14. In Settings → AI → Rules → **Global** tab, every detected file-based global rule appears as its own row alongside cloud rules. The row shows the absolute file path and an "Open file" button.
 
-14. Clicking "Open file" opens the file in the configured editor. Warp never writes to the file from this surface.
+15. Clicking "Open file" opens the file in the configured editor. Warp never writes to the file from this surface.
 
-15. When the file is created, edited, or deleted, the row appears, persists, or disappears in the Global tab live — without restarting Warp or re-opening Settings.
+16. When the file is created, edited, or deleted, the row appears, persists, or disappears in the Global tab live — without restarting Warp or re-opening Settings.
 
-16. The Global tab's search bar matches both cloud-rule names/contents and file-based global paths. Search results from both sources are mixed in the result list.
+17. The Global tab's search bar matches both cloud-rule names/contents and file-based global paths. Search results from both sources are mixed in the result list.
 
-17. The Global tab's "Add" button continues to create a cloud rule. There is no separate "Add" affordance for file-based globals; the user creates the file directly.
+18. The Global tab's "Add" button continues to create a cloud rule. There is no separate "Add" affordance for file-based globals; the user creates the file directly.
 
-18. When neither cloud rules nor file-based globals exist, the Global tab's zero-state copy mentions both ways to add a rule, including dropping a file at `~/.agents/AGENTS.md`.
+19. When neither cloud rules nor file-based globals exist, the Global tab's zero-state copy mentions both ways to add a rule, including dropping a file at `~/.agents/AGENTS.md`.
 
-19. The "rules disabled" banner — shown when `Settings → AI → Memory` is off — continues to render on the Global tab. **Open question:** that toggle today only governs cloud rules; file-based rules currently bypass it. We accept the asymmetry for now and may revisit in a follow-up.
+20. The "rules disabled" banner — shown when `Settings → AI → Memory` is off — continues to render on the Global tab. **Open question:** that toggle today only governs cloud rules; file-based rules currently bypass it. We accept the asymmetry for now and may revisit in a follow-up.
 
-20. The Project-based tab is unchanged.
+21. The Project-based tab is unchanged.

@@ -187,7 +187,7 @@ impl InitProjectModel {
             && !*CodeSettings::as_ref(ctx).auto_indexing_enabled;
 
         let has_pending_project_scoped_rules = ProjectContextModel::as_ref(ctx)
-            .find_applicable_rules(path)
+            .find_applicable_project_rules(path)
             .is_none();
 
         has_pending_codebase_context || has_pending_project_scoped_rules
