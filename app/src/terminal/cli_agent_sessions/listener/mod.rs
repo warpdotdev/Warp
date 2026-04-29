@@ -46,6 +46,7 @@ pub fn is_agent_supported(agent: &CLIAgent) -> bool {
             | CLIAgent::Codex
             | CLIAgent::Gemini
             | CLIAgent::Auggie
+            | CLIAgent::Hermes
     )
 }
 
@@ -56,7 +57,7 @@ fn create_handler(agent: &CLIAgent) -> Option<Box<dyn CLIAgentSessionHandler>> {
         // (https://github.com/augmentmoogi/auggie-warp), which emits the same
         // structured OSC 777 events as the first-party Claude/OpenCode/Gemini
         // plugins. We don't ship an install flow for it — we just listen.
-        CLIAgent::Claude | CLIAgent::OpenCode | CLIAgent::Gemini | CLIAgent::Auggie => {
+        CLIAgent::Claude | CLIAgent::OpenCode | CLIAgent::Gemini | CLIAgent::Auggie | CLIAgent::Hermes => {
             Some(Box::new(DefaultSessionListener))
         }
         CLIAgent::Codex => Some(Box::new(CodexSessionHandler)),

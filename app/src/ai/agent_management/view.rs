@@ -679,7 +679,7 @@ impl AgentManagementView {
             )),
         )];
 
-        for harness in [Harness::Oz, Harness::Claude, Harness::Gemini] {
+        for harness in [Harness::Oz, Harness::Claude, Harness::Gemini, Harness::Hermes] {
             let mut fields = MenuItemFields::new(harness_display::display_name(harness))
                 .with_icon(harness_display::icon_for(harness))
                 .with_on_select_action(DropdownAction::SelectActionAndClose(
