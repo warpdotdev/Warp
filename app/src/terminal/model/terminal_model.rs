@@ -1921,7 +1921,9 @@ impl TerminalModel {
     /// paths where Warp has evidence that terminal presentation is corrupted, but not enough
     /// evidence to mark the foreground command as finished.
     fn recover_terminal_modes_without_completing_command(&mut self) {
-        self.unset_mode(Mode::BracketedPaste);
+        if self.is_term_mode_set(TermMode::BRACKETED_PASTE) {
+            self.unset_mode(Mode::BracketedPaste);
+        }
         self.exit_alt_screen(true);
     }
 
@@ -3101,7 +3103,9 @@ impl ansi::Handler for TerminalModel {
             }
             IsReceivingInBandCommandOutput::No => {
                 log::warn!("Received 'end_in_band_command_output' while not expecting to read in-band command output.");
-                self.recover_terminal_modes_without_completing_command();
+                if from_osc_sequence {
+                    self.recover_terminal_modes_without_completing_command();
+                }
             }
         }
 
