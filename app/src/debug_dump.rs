@@ -17,7 +17,7 @@ pub(crate) fn run() -> anyhow::Result<()> {
         println!("uname(1) output: {}", uname.trim_end());
     }
 
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    #[cfg(target_os = "linux")]
     println!(
         "Package type: {:?}",
         crate::autoupdate::linux::UpdateMethod::detect()
