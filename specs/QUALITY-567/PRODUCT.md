@@ -45,6 +45,8 @@ Figma: https://www.figma.com/design/AsF5uAM6L5tUmc11vm9YSi (nodes `4073-19833`, 
    - The first letter of the agent's name (uppercase), in bold, on top of the disc.
    - The agent's name as the label, falling back to `"Agent"` if unset.
 
+Note this is temporary - we'll update this further later.
+
 8. Pill states:
    - **Selected** (the pill matches the active conversation): solid foreground background + inverted text color, label rendered in semibold. Cursor is the default arrow. Clicks are no-ops.
    - **Hover / active click** (any non-selected pill): a slightly brighter neutral background; cursor becomes the pointing hand.

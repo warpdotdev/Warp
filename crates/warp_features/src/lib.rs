@@ -912,7 +912,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::HOANotifications,
     FeatureFlag::OrchestrationV2,
     FeatureFlag::OrchestrationEventPush,
-    FeatureFlag::OrchestrationPillBar,
     FeatureFlag::GeminiNotifications,
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
