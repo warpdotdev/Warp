@@ -50,6 +50,8 @@ pub enum ServerExperiment {
     FreeUserNoAiExperiment,
     OzMultiHarnessControl,
     OzMultiHarnessExperiment,
+    DemoLaunchBannerControl,
+    DemoLaunchBannerExperiment,
     /// A test-only experiment.
     /// Does not correspond to a real server-side experiment.
     #[cfg(test)]
@@ -148,6 +150,12 @@ impl ServerExperiment {
             }
             Self::OzMultiHarnessExperiment => {
                 FeatureFlag::AgentHarness.set_enabled(true);
+            }
+            Self::DemoLaunchBannerControl => {
+                FeatureFlag::DemoLaunchBanner.set_enabled(false);
+            }
+            Self::DemoLaunchBannerExperiment => {
+                FeatureFlag::DemoLaunchBanner.set_enabled(true);
             }
             #[cfg(test)]
             Self::TestExperiment => {
