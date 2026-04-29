@@ -927,6 +927,7 @@ hoa_remote_control = []
 codex_notifications = []
 cloud_mode_setup_v2 = ["cloud_mode"]
 cloud_mode_input_v2 = ["cloud_mode"]
+configurable_context_window = []
 
 [package.metadata.bundle.bin.warp-oss]
 category = "public.app-category.developer-tools"

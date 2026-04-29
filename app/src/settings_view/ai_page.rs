@@ -8,8 +8,8 @@ use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
 use crate::ai::execution_profiles::profiles::{
     AIExecutionProfilesModel, AIExecutionProfilesModelEvent, ClientProfileId,
 };
-use crate::ai::execution_profiles::{ActionPermission, WriteToPtyPermission};
-use crate::ai::llms::{LLMId, LLMPreferences, LLMPreferencesEvent};
+use crate::ai::execution_profiles::{AIExecutionProfile, ActionPermission, WriteToPtyPermission};
+use crate::ai::llms::{LLMContextWindow, LLMId, LLMPreferences, LLMPreferencesEvent};
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::ai::paths::host_native_absolute_path;
 use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};
@@ -53,12 +53,13 @@ use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    Border, ChildView, ConstrainedBox, CornerRadius, CrossAxisAlignment, Expanded, Fill,
+    Border, ChildView, ConstrainedBox, CornerRadius, CrossAxisAlignment, Dismiss, Expanded, Fill,
     HyperlinkLens, MainAxisAlignment, MainAxisSize, MouseStateHandle, Radius, Shrinkable, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::id;
 use warpui::keymap::ContextPredicate;
+use warpui::ui_components::slider::SliderStateHandle;
 use warpui::{
     elements::{
         Container, Flex, FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, ParentElement,
@@ -146,6 +147,9 @@ const PRIMARY_HEADER_FONT_SIZE: f32 = 24.;
 
 const AI_SETTINGS_DROPDOWN_WIDTH: f32 = 250.;
 const AI_SETTINGS_DROPDOWN_MAX_HEIGHT: f32 = 250.;
+const CONTEXT_WINDOW_SLIDER_WIDTH: f32 = 220.;
+const CONTEXT_WINDOW_INPUT_BOX_WIDTH: f32 = 120.;
+
 const NEXT_COMMAND_DESCRIPTION: &str = "Let AI suggest the next command to run based on your command history, outputs, and common workflows.";
 const PROMPT_SUGGESTIONS_DESCRIPTION: &str = "Let AI suggest natural language prompts, as inline banners in the input, based on recent commands and their outputs.";
 const SUGGESTED_CODE_BANNERS_DESCRIPTION: &str =
@@ -440,6 +444,10 @@ pub struct AISettingsPageView {
     base_model_dropdown: ViewHandle<Dropdown<AISettingsPageAction>>,
     coding_model_dropdown: ViewHandle<Dropdown<AISettingsPageAction>>,
 
+    context_window_slider_state: SliderStateHandle,
+    context_window_editor: ViewHandle<EditorView>,
+    last_synced_context_window_editor_value: Option<u32>,
+
     thinking_display_mode_dropdown: ViewHandle<Dropdown<AISettingsPageAction>>,
     #[cfg(feature = "local_fs")]
     conversation_layout_dropdown: ViewHandle<Dropdown<AISettingsPageAction>>,
@@ -542,6 +550,29 @@ impl AISettingsPageView {
             dropdown
         });
         Self::refresh_base_model_menu(&base_model_dropdown, ctx);
+
+        let initial_context_window_value = Self::initial_context_window_value(ctx);
+        let clamped_initial = Self::configurable_context_window(ctx)
+            .map(|cw| initial_context_window_value.clamp(cw.min, cw.max))
+            .unwrap_or(initial_context_window_value);
+        let context_window_slider_state = SliderStateHandle::default();
+
+        let context_window_editor = ctx.add_typed_action_view(|ctx| {
+            let options = SingleLineEditorOptions {
+                text: TextOptions {
+                    font_size_override: Some(Appearance::as_ref(ctx).ui_font_size()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_buffer_text(&clamped_initial.to_string(), ctx);
+            editor
+        });
+        ctx.subscribe_to_view(&context_window_editor, |me, _, event, ctx| {
+            me.handle_context_window_editor_event(event, ctx);
+        });
+        let last_synced_context_window_editor_value = Some(clamped_initial);
 
         let thinking_display_mode_dropdown =
             OtherAIWidget::create_thinking_display_mode_dropdown(ctx);
@@ -751,6 +782,7 @@ impl AISettingsPageView {
                     AIExecutionProfilesModelEvent::ProfileUpdated(_) => {
                         me.refresh_all_execution_profile_ui(ctx);
                         me.reset_execution_profile_mouse_state_handles(ctx);
+                        me.sync_context_window_editor(ctx, false);
                     }
                     AIExecutionProfilesModelEvent::UpdatedActiveProfile { .. } => (),
                 }
@@ -789,9 +821,11 @@ impl AISettingsPageView {
                 LLMPreferencesEvent::UpdatedAvailableLLMs => {
                     Self::refresh_base_model_menu(&me.base_model_dropdown, ctx);
                     Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
+                    me.sync_context_window_editor(ctx, false);
                 }
                 LLMPreferencesEvent::UpdatedActiveAgentModeLLM => {
                     Self::refresh_base_model_menu(&me.base_model_dropdown, ctx);
+                    me.sync_context_window_editor(ctx, false);
                 }
                 LLMPreferencesEvent::UpdatedActiveCodingLLM => {
                     Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
@@ -803,6 +837,7 @@ impl AISettingsPageView {
         ctx.subscribe_to_model(&ApiKeyManager::handle(ctx), |me, _model, _event, ctx| {
             Self::refresh_base_model_menu(&me.base_model_dropdown, ctx);
             Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
+            me.sync_context_window_editor(ctx, false);
             ctx.notify();
         });
 
@@ -881,6 +916,7 @@ impl AISettingsPageView {
                     Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
                     Self::refresh_mcp_allowlist_dropdown(&me.mcp_allowlist_dropdown, ctx);
                     Self::refresh_mcp_denylist_dropdown(&me.mcp_denylist_dropdown, ctx);
+                    me.sync_context_window_editor(ctx, true);
                 }
                 AISettingsChangedEvent::VoiceInputEnabled { .. } => {
                     me.update_voice_input_dropdown_enablement(ctx);
@@ -1368,6 +1404,9 @@ impl AISettingsPageView {
             cli_agent_toolbar_inline_editor,
             base_model_dropdown,
             coding_model_dropdown,
+            context_window_slider_state,
+            context_window_editor,
+            last_synced_context_window_editor_value,
             autonomy_dropdown_menu,
             code_read_allowlist_editor,
             code_read_autonomy_dropdown_menu,
@@ -1534,6 +1573,108 @@ impl AISettingsPageView {
         // so we don't pass a page-level title to PageType.
         let title: Option<&str> = None;
         PageType::new_uncategorized(widgets, title)
+    }
+
+    fn handle_context_window_editor_event(
+        &mut self,
+        event: &EditorEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            EditorEvent::Blurred | EditorEvent::Enter => {
+                if !AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+                    self.sync_context_window_editor(ctx, true);
+                    return;
+                }
+                if let Some(cw) = Self::configurable_context_window(ctx) {
+                    let buffer_text = self.context_window_editor.as_ref(ctx).buffer_text(ctx);
+                    let cleaned: String = buffer_text
+                        .chars()
+                        .filter(|c| !c.is_whitespace() && *c != ',')
+                        .collect();
+                    if let Ok(parsed) = cleaned.parse::<u32>() {
+                        let clamped = parsed.clamp(cw.min, cw.max);
+                        if Some(clamped) != Self::current_context_window_display_value(ctx) {
+                            AIExecutionProfilesModel::handle(ctx).update(
+                                ctx,
+                                |profiles_model, ctx| {
+                                    let profile_id = *profiles_model.active_profile(None, ctx).id();
+                                    profiles_model.set_context_window_limit(
+                                        profile_id,
+                                        Some(clamped),
+                                        ctx,
+                                    );
+                                },
+                            );
+                        }
+                    }
+                }
+                self.sync_context_window_editor(ctx, true);
+                if let EditorEvent::Enter = event {
+                    ctx.emit(AISettingsPageEvent::FocusModal);
+                }
+                ctx.notify();
+            }
+            EditorEvent::Escape => ctx.emit(AISettingsPageEvent::FocusModal),
+            _ => {}
+        }
+    }
+
+    fn active_profile_data(app: &AppContext) -> AIExecutionProfile {
+        AIExecutionProfilesModel::as_ref(app)
+            .active_profile(None, app)
+            .data()
+            .clone()
+    }
+
+    fn configurable_context_window(app: &AppContext) -> Option<LLMContextWindow> {
+        Self::active_profile_data(app).configurable_context_window(app)
+    }
+
+    fn current_context_window_display_value(app: &AppContext) -> Option<u32> {
+        Self::active_profile_data(app).context_window_display_value(app)
+    }
+
+    fn initial_context_window_value(app: &AppContext) -> u32 {
+        Self::current_context_window_display_value(app).unwrap_or_else(|| {
+            LLMPreferences::as_ref(app)
+                .get_active_base_model(app, None)
+                .context_window
+                .default_max
+        })
+    }
+
+    fn sync_context_window_editor(&mut self, ctx: &mut ViewContext<Self>, force: bool) {
+        let Some(value) = Self::current_context_window_display_value(ctx) else {
+            self.last_synced_context_window_editor_value = None;
+            self.context_window_slider_state.reset_offset();
+            ctx.notify();
+            return;
+        };
+
+        let formatted = value.to_string();
+        let should_update = if force {
+            true
+        } else {
+            match self.last_synced_context_window_editor_value {
+                Some(last_value) => {
+                    self.context_window_editor.as_ref(ctx).buffer_text(ctx)
+                        == last_value.to_string()
+                }
+                None => true,
+            }
+        };
+
+        if should_update {
+            self.context_window_editor.update(ctx, |editor, ctx| {
+                if editor.buffer_text(ctx) != formatted {
+                    editor.system_reset_buffer_text(&formatted, ctx);
+                }
+            });
+            self.last_synced_context_window_editor_value = Some(value);
+            self.context_window_slider_state.reset_offset();
+            ctx.notify();
+        }
     }
 
     fn handle_detection_denylist_editor_event(
@@ -2084,6 +2225,11 @@ pub enum AISettingsPageAction {
     OpenExecutionProfileEditor(ClientProfileId),
     SetBaseModel(LLMId),
     SetCodingModel(LLMId),
+    /// Called while the user is actively dragging the context window slider.
+    ContextWindowSliderDragged(u32),
+    /// Called when the user commits a new context window value (slider drop or
+    /// input box commit).
+    SetContextWindowSize(u32),
     SetAutonomyReadonlyCommandsSetting,
     SetAutonomySupervisedSetting,
     SetCodingPermission(AgentModeCodingPermissionsType),
@@ -2548,15 +2694,46 @@ impl TypedActionView for AISettingsPageView {
             }
             AISettingsPageAction::SetBaseModel(id) => {
                 AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
-                    let profile = profiles_model.default_profile(ctx);
-                    profiles_model.set_base_model(*profile.id(), Some(id.clone()), ctx);
+                    let profile_id = *profiles_model.active_profile(None, ctx).id();
+                    profiles_model.set_base_model(profile_id, Some(id.clone()), ctx);
+                    profiles_model.set_context_window_limit(profile_id, None, ctx);
                 });
+                self.sync_context_window_editor(ctx, true);
                 ctx.notify();
             }
             AISettingsPageAction::SetCodingModel(id) => {
                 LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
                     prefs.update_preferred_coding_llm(id, None, ctx);
                 });
+            }
+            AISettingsPageAction::ContextWindowSliderDragged(value) => {
+                if !AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+                    self.sync_context_window_editor(ctx, true);
+                    return;
+                }
+                if Self::configurable_context_window(ctx).is_some() {
+                    let formatted = value.to_string();
+                    self.context_window_editor.update(ctx, |editor, ctx| {
+                        editor.system_reset_buffer_text(&formatted, ctx);
+                    });
+                    ctx.notify();
+                }
+            }
+            AISettingsPageAction::SetContextWindowSize(value) => {
+                if !AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+                    self.sync_context_window_editor(ctx, true);
+                    return;
+                }
+                let Some(cw) = Self::configurable_context_window(ctx) else {
+                    return;
+                };
+                let clamped = (*value).clamp(cw.min, cw.max);
+                AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
+                    let profile_id = *profiles_model.active_profile(None, ctx).id();
+                    profiles_model.set_context_window_limit(profile_id, Some(clamped), ctx);
+                });
+                self.sync_context_window_editor(ctx, true);
+                ctx.notify();
             }
             AISettingsPageAction::SetAutonomyReadonlyCommandsSetting
             | AISettingsPageAction::SetAutonomySupervisedSetting => {
@@ -3933,9 +4110,139 @@ impl AgentsWidget {
                 .with_margin_bottom(8.0)
                 .finish();
 
-        Flex::column()
-            .with_children([model_subheader, base_model_setting])
-            .finish()
+        let mut children = vec![model_subheader, base_model_setting];
+        if let Some(context_window_setting) =
+            self.render_context_window_setting(view, ai_settings, appearance, app)
+        {
+            children.push(
+                Container::new(context_window_setting)
+                    .with_margin_bottom(8.0)
+                    .finish(),
+            );
+        }
+
+        Flex::column().with_children(children).finish()
+    }
+
+    /// Renders the context window slider + numeric input row shown below the
+    /// base model dropdown. Returns `None` if the active base model does not
+    /// advertise a configurable context window, global AI is disabled, or the
+    /// [`FeatureFlag::ConfigurableContextWindow`] flag is disabled.
+    fn render_context_window_setting(
+        &self,
+        view: &AISettingsPageView,
+        ai_settings: &AISettings,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        if !FeatureFlag::ConfigurableContextWindow.is_enabled() {
+            return None;
+        }
+        if !ai_settings.is_any_ai_enabled(app) {
+            return None;
+        }
+        let cw = AISettingsPageView::configurable_context_window(app)?;
+        let min = cw.min;
+        let max = cw.max;
+
+        let label = Container::new(render_body_item_label::<AISettingsPageAction>(
+            "Context window (tokens)".to_string(),
+            None,
+            None,
+            LocalOnlyIconState::Hidden,
+            ToggleState::Enabled,
+            appearance,
+        ))
+        .with_margin_bottom(4.0)
+        .finish();
+
+        let min_label = appearance
+            .ui_builder()
+            .span(format!("{min}"))
+            .with_style(UiComponentStyles {
+                font_size: Some(CONTENT_FONT_SIZE),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        let max_label = appearance
+            .ui_builder()
+            .span(format!("{max}"))
+            .with_style(UiComponentStyles {
+                font_size: Some(CONTENT_FONT_SIZE),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        let current_value = AISettingsPageView::current_context_window_display_value(app)
+            .unwrap_or(cw.default_max)
+            .clamp(min, max);
+        let slider = appearance
+            .ui_builder()
+            .slider(view.context_window_slider_state.clone())
+            .with_range(min as f32..max as f32)
+            .with_default_value(current_value as f32)
+            .with_style(UiComponentStyles {
+                width: Some(CONTEXT_WINDOW_SLIDER_WIDTH),
+                margin: Some(Coords::default().left(8.).right(8.)),
+                ..Default::default()
+            })
+            .on_drag(|ctx, _, val| {
+                ctx.dispatch_typed_action(AISettingsPageAction::ContextWindowSliderDragged(
+                    val.round() as u32,
+                ));
+            })
+            .on_change(|ctx, _, val| {
+                ctx.dispatch_typed_action(AISettingsPageAction::SetContextWindowSize(
+                    val.round() as u32
+                ));
+            })
+            .build()
+            .finish();
+
+        let context_window_editor = view.context_window_editor.clone();
+        let input_box = Dismiss::new(
+            appearance
+                .ui_builder()
+                .text_input(view.context_window_editor.clone())
+                .with_style(UiComponentStyles {
+                    width: Some(CONTEXT_WINDOW_INPUT_BOX_WIDTH),
+                    padding: Some(Coords {
+                        top: 6.,
+                        bottom: 6.,
+                        left: 10.,
+                        right: 10.,
+                    }),
+                    margin: Some(Coords::default().left(12.)),
+                    background: Some(appearance.theme().surface_2().into()),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        )
+        .on_dismiss(move |ctx, app| {
+            let buffer_text = context_window_editor.as_ref(app).buffer_text(app);
+            let cleaned: String = buffer_text
+                .chars()
+                .filter(|c| !c.is_whitespace() && *c != ',')
+                .collect();
+            if let Ok(parsed) = cleaned.parse::<u32>() {
+                ctx.dispatch_typed_action(AISettingsPageAction::SetContextWindowSize(parsed));
+            }
+        })
+        .finish();
+
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(min_label)
+            .with_child(slider)
+            .with_child(max_label)
+            .with_child(input_box)
+            .finish();
+
+        Some(Flex::column().with_child(label).with_child(row).finish())
     }
 
     fn render_permissions_section(

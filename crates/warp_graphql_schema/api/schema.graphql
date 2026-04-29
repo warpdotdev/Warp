@@ -1783,6 +1783,32 @@ type ListedSimpleIntegrationConfig {
   workerHost: String
 }
 
+type LlmContextWindow {
+  """
+  Default context window size used when the client
+  does not send an explicit base_model_context_window_limit. For non-configurable
+  models this equals max.
+  """
+  default: Uint!
+
+  """
+  When true, the client can pick a context window size in the range [min, max].
+  """
+  isConfigurable: Boolean!
+
+  """
+  Maximum context window size. The upper bound for any user override
+  and the effective ceiling the server enforces on the request.
+  """
+  max: Uint!
+
+  """
+  Minimum context window size the user may select. For non-configurable
+  models this equals max.
+  """
+  min: Uint!
+}
+
 type LlmHostSettings {
   enabled: Boolean!
   enablementSetting: HostEnablementSetting
@@ -1810,6 +1836,9 @@ input LlmHostSettingsInputEntry {
 
 type LlmInfo {
   baseModelName: String!
+
+  """The model's context window configuration. Always non-null."""
+  contextWindow: LlmContextWindow!
   description: String
   disableReason: DisableReason
   displayName: String!
@@ -3399,6 +3428,12 @@ type UgcDataCollectionPolicy {
   defaultSetting: UgcCollectionEnablementSetting!
   toggleable: Boolean!
 }
+
+"""
+scalar Uint is an unsigned integer. Maps to uint/uint32/uint64 on the Go
+side and a non-negative number on the client side.
+"""
+scalar Uint
 
 enum UniquePer {
   User

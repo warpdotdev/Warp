@@ -2772,6 +2772,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::CloudModeSetupV2,
         #[cfg(feature = "cloud_mode_input_v2")]
         FeatureFlag::CloudModeInputV2,
+        #[cfg(feature = "configurable_context_window")]
+        FeatureFlag::ConfigurableContextWindow,
     ]);
 
     flags

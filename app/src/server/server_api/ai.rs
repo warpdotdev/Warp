@@ -42,8 +42,8 @@ use crate::{
 use crate::{
     ai::{
         llms::{
-            AvailableLLMs, DisableReason, LLMInfo, LLMModelHost, LLMProvider, LLMSpec,
-            LLMUsageMetadata, ModelsByFeature, RoutingHostConfig,
+            AvailableLLMs, DisableReason, LLMContextWindow, LLMInfo, LLMModelHost, LLMProvider,
+            LLMSpec, LLMUsageMetadata, ModelsByFeature, RoutingHostConfig,
         },
         RequestUsageInfo,
     },
@@ -2066,6 +2066,12 @@ impl From<warp_graphql::queries::get_feature_model_choices::LlmInfo> for LLMInfo
             provider: value.provider.into(),
             host_configs,
             discount_percentage: value.pricing.discount_percentage.map(|v| v as f32),
+            context_window: LLMContextWindow {
+                is_configurable: value.context_window.is_configurable,
+                min: value.context_window.min.into(),
+                max: value.context_window.max.into(),
+                default_max: value.context_window.default.into(),
+            },
         }
     }
 }
@@ -2099,6 +2105,12 @@ impl From<warp_graphql::workspace::LlmInfo> for LLMInfo {
             provider: value.provider.into(),
             host_configs,
             discount_percentage: value.pricing.discount_percentage.map(|v| v as f32),
+            context_window: LLMContextWindow {
+                is_configurable: value.context_window.is_configurable,
+                min: value.context_window.min.into(),
+                max: value.context_window.max.into(),
+                default_max: value.context_window.default.into(),
+            },
         }
     }
 }

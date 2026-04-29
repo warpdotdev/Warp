@@ -835,6 +835,12 @@ pub enum FeatureFlag {
     VerticalTabsSummaryMode,
 
     CloudModeInputV2,
+
+    /// Gates the user-configurable context window slider in AI settings and
+    /// the execution profile editor. When disabled, the slider is hidden and
+    /// `base_model_context_window_limit` is not sent on outbound requests, so
+    /// the server falls back to its default.
+    ConfigurableContextWindow,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -911,6 +917,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
+    FeatureFlag::ConfigurableContextWindow,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
