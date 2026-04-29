@@ -2,10 +2,10 @@ use std::ops::Range;
 
 use crate::platform::keyboard::KeyCode;
 use crate::{
+    EventContext,
     elements::{Point, ZIndex},
     keymap::Keystroke,
     zoom::{Scale, ZoomFactor},
-    EventContext,
 };
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 
@@ -23,7 +23,6 @@ impl DispatchedEvent {
             Event::ScrollWheel { position, .. }
             | Event::LeftMouseDown { position, .. }
             | Event::LeftMouseUp { position, .. }
-            | Event::LeftMouseDragged { position, .. }
             | Event::MiddleMouseDown { position, .. }
             | Event::RightMouseDown { position, .. }
             | Event::BackMouseDown { position, .. }
@@ -34,6 +33,12 @@ impl DispatchedEvent {
                     None
                 }
             }
+            // Drag events bypass z-index coverage checks so that an active drag
+            // continues to receive events even when the cursor moves over
+            // higher-z-index UI (e.g. the input/footer area). This is critical
+            // for text selection auto-scrolling when the drag exits the scroll
+            // container downward.
+            Event::LeftMouseDragged { .. } => Some(&self.event),
             Event::MouseMoved { .. } => Some(&self.event),
             Event::ModifierStateChanged { .. } => Some(&self.event),
             Event::ModifierKeyChanged { .. } => Some(&self.event),
