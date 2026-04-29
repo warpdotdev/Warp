@@ -1,8 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use lsp_types::Uri;
 
 use crate::config::{lsp_uri_to_path, path_to_lsp_uri};
+use crate::supported_servers::LSPServerType;
+use crate::LanguageId;
 
 // Unix-specific tests use Unix paths
 #[cfg(not(windows))]
@@ -215,4 +217,43 @@ fn test_path_to_lsp_uri_rejects_relative_path() {
     let result = path_to_lsp_uri(&path);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("must be absolute"));
+}
+
+#[test]
+fn test_ruby_language_id_from_extension() {
+    for ext in ["rb", "rbw", "rake", "gemspec", "ru"] {
+        let path = PathBuf::from(format!("foo.{ext}"));
+        assert_eq!(
+            LanguageId::from_path(&path),
+            Some(LanguageId::Ruby),
+            "extension .{ext} should map to Ruby"
+        );
+    }
+}
+
+#[test]
+fn test_ruby_language_id_from_filename() {
+    for name in ["Gemfile", "Rakefile", "Guardfile", "Capfile"] {
+        let path = Path::new(name);
+        assert_eq!(
+            LanguageId::from_path(path),
+            Some(LanguageId::Ruby),
+            "filename {name} should map to Ruby"
+        );
+    }
+}
+
+#[test]
+fn test_ruby_server_type() {
+    assert_eq!(LanguageId::Ruby.server_type(), LSPServerType::RubyLsp);
+}
+
+#[test]
+fn test_ruby_lsp_binary_name() {
+    assert_eq!(LSPServerType::RubyLsp.binary_name(), "ruby-lsp");
+}
+
+#[test]
+fn test_ruby_lsp_language_name() {
+    assert_eq!(LSPServerType::RubyLsp.language_name(), "Ruby");
 }

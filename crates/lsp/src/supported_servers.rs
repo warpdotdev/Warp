@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::servers::clangd::ClangdCandidate;
 use crate::servers::go::GoPlsCandidate;
 use crate::servers::pyright::PyrightCandidate;
+use crate::servers::ruby_lsp::RubyLspCandidate;
 use crate::servers::rust::RustAnalyzerCandidate;
 use crate::servers::typescript_language_server::TypeScriptLanguageServerCandidate;
 #[cfg(not(target_arch = "wasm32"))]
@@ -42,6 +43,7 @@ pub enum LSPServerType {
     Pyright,
     TypeScriptLanguageServer,
     Clangd,
+    RubyLsp,
 }
 
 /// Provides server-specific configuration for each LSP server type.
@@ -109,6 +111,7 @@ impl LSPServerType {
                     binary_path: path,
                     prepend_args: vec![],
                 }),
+            LSPServerType::RubyLsp => None,
         }
     }
 
@@ -132,6 +135,7 @@ impl LSPServerType {
             LSPServerType::Pyright => "pyright-langserver",
             LSPServerType::TypeScriptLanguageServer => "typescript-language-server",
             LSPServerType::Clangd => "clangd",
+            LSPServerType::RubyLsp => "ruby-lsp",
         }
     }
 
@@ -139,7 +143,10 @@ impl LSPServerType {
     #[cfg(not(target_arch = "wasm32"))]
     fn args(&self) -> Vec<&'static str> {
         match self {
-            LSPServerType::RustAnalyzer | LSPServerType::GoPls | LSPServerType::Clangd => vec![],
+            LSPServerType::RustAnalyzer
+            | LSPServerType::GoPls
+            | LSPServerType::Clangd
+            | LSPServerType::RubyLsp => vec![],
             LSPServerType::Pyright | LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
         }
     }
@@ -154,6 +161,7 @@ impl LSPServerType {
             LSPServerType::Pyright => vec!["--stdio"],
             LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
             LSPServerType::Clangd => vec![],
+            LSPServerType::RubyLsp => vec![],
         }
     }
 
@@ -172,6 +180,7 @@ impl LSPServerType {
                 ]
             }
             LSPServerType::Clangd => vec![LanguageId::C, LanguageId::Cpp],
+            LSPServerType::RubyLsp => vec![LanguageId::Ruby],
         }
     }
 
@@ -205,6 +214,7 @@ impl LSPServerType {
                 Box::new(TypeScriptLanguageServerCandidate::new(client))
             }
             LSPServerType::Clangd => Box::new(ClangdCandidate::new(client)),
+            LSPServerType::RubyLsp => Box::new(RubyLspCandidate::new(client)),
         }
     }
 

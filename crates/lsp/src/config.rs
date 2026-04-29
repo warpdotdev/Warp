@@ -32,10 +32,16 @@ pub enum LanguageId {
     JavaScriptReact,
     C,
     Cpp,
+    Ruby,
 }
 
 impl LanguageId {
     pub fn from_path(path: &Path) -> Option<Self> {
+        if let Some("Gemfile" | "Rakefile" | "Guardfile" | "Capfile") =
+            path.file_name().and_then(|n| n.to_str())
+        {
+            return Some(Self::Ruby);
+        }
         let extn = path.extension()?;
         match extn.to_str()? {
             "rs" => Some(Self::Rust),
@@ -52,6 +58,7 @@ impl LanguageId {
             // compile_commands.json is present, clangd will use the correct language
             // regardless of the languageId we send.
             "h" | "H" | "hh" | "hpp" | "hxx" => Some(Self::Cpp),
+            "rb" | "rbw" | "rake" | "gemspec" | "ru" => Some(Self::Ruby),
             _ => None,
         }
     }
@@ -69,6 +76,7 @@ impl LanguageId {
             LanguageId::JavaScriptReact => "javascriptreact",
             LanguageId::C => "c",
             LanguageId::Cpp => "cpp",
+            LanguageId::Ruby => "ruby",
         }
     }
 
@@ -83,6 +91,7 @@ impl LanguageId {
             | LanguageId::JavaScript
             | LanguageId::JavaScriptReact => LSPServerType::TypeScriptLanguageServer,
             LanguageId::C | LanguageId::Cpp => LSPServerType::Clangd,
+            LanguageId::Ruby => LSPServerType::RubyLsp,
         }
     }
 }
