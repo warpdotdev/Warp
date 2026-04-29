@@ -92,6 +92,8 @@ pub enum TenantFilter {
     Active,
     Offboarded,
     WithVms,
+    RunningAgents,
+    DownAgents,
 }
 
 pub struct MonolithCockpitView {
@@ -111,7 +113,7 @@ impl MonolithCockpitView {
             button_mouse_states: (0..512).map(|_| MouseStateHandle::default()).collect(),
             tenant_mouse_states: (0..128).map(|_| MouseStateHandle::default()).collect(),
             environment_mouse_states: (0..2).map(|_| MouseStateHandle::default()).collect(),
-            cloud_mouse_states: (0..8).map(|_| MouseStateHandle::default()).collect(),
+            cloud_mouse_states: (0..16).map(|_| MouseStateHandle::default()).collect(),
             scroll_state: ClippedScrollStateHandle::default(),
             expanded_tenants: HashSet::new(),
             tenant_filter: TenantFilter::All,
@@ -216,6 +218,16 @@ impl MonolithCockpitView {
             TenantFilter::Active => Self::tenant_status_label(tenant) == "active",
             TenantFilter::Offboarded => Self::tenant_status_label(tenant) == "offboarded",
             TenantFilter::WithVms => !tenant.hosts.is_empty(),
+            TenantFilter::RunningAgents => tenant.hosts.iter().any(|host| {
+                host.runtimes
+                    .iter()
+                    .any(|runtime| Self::runtime_matches_filter(runtime, filter))
+            }),
+            TenantFilter::DownAgents => tenant.hosts.iter().any(|host| {
+                host.runtimes
+                    .iter()
+                    .any(|runtime| Self::runtime_matches_filter(runtime, filter))
+            }),
         }
     }
 
@@ -225,6 +237,55 @@ impl MonolithCockpitView {
             TenantFilter::Active => "active",
             TenantFilter::Offboarded => "offboarded",
             TenantFilter::WithVms => "with vms",
+            TenantFilter::RunningAgents => "running agents",
+            TenantFilter::DownAgents => "down agents",
+        }
+    }
+
+    fn runtime_matches_filter(runtime: &RuntimeProfile, filter: TenantFilter) -> bool {
+        match filter {
+            TenantFilter::RunningAgents => runtime.status.contains("running"),
+            TenantFilter::DownAgents => !runtime.status.contains("running"),
+            _ => true,
+        }
+    }
+
+    fn host_matches_filter(host: &HostProfile, filter: TenantFilter) -> bool {
+        match filter {
+            TenantFilter::RunningAgents | TenantFilter::DownAgents => host
+                .runtimes
+                .iter()
+                .any(|runtime| Self::runtime_matches_filter(runtime, filter)),
+            _ => true,
+        }
+    }
+
+    fn visible_runtime_count(tenant: &TenantProfile, filter: TenantFilter) -> usize {
+        tenant
+            .hosts
+            .iter()
+            .flat_map(|host| &host.runtimes)
+            .filter(|runtime| Self::runtime_matches_filter(runtime, filter))
+            .count()
+    }
+
+    fn filter_count(profile: &CockpitProfile, filter: TenantFilter) -> usize {
+        match filter {
+            TenantFilter::RunningAgents => profile
+                .tenants
+                .iter()
+                .map(Self::running_runtime_count)
+                .sum::<usize>(),
+            TenantFilter::DownAgents => profile
+                .tenants
+                .iter()
+                .map(|tenant| Self::runtime_count(tenant) - Self::running_runtime_count(tenant))
+                .sum::<usize>(),
+            _ => profile
+                .tenants
+                .iter()
+                .filter(|tenant| Self::tenant_matches_filter(tenant, filter))
+                .count(),
         }
     }
 
@@ -448,14 +509,8 @@ VMs and runtimes:\n{}",
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
-        let display_label = if is_active {
-            format!("selected: {label}")
-        } else {
-            label.to_string()
-        };
-
         let mut button = Container::new(
-            Text::new(display_label, appearance.ui_font_family(), 11.)
+            Text::new(label.to_string(), appearance.ui_font_family(), 11.)
                 .with_color(theme.active_ui_text_color().into_solid())
                 .with_style(Properties::default().weight(if is_active {
                     Weight::Semibold
@@ -469,7 +524,9 @@ VMs and runtimes:\n{}",
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
 
         if is_active {
-            button = button.with_background(theme.surface_3());
+            button = button
+                .with_background(theme.surface_3())
+                .with_border(Border::all(1.).with_border_fill(theme.active_ui_detail()));
         }
 
         Hoverable::new(mouse_state, |_| button.finish())
@@ -977,6 +1034,7 @@ VMs and runtimes:\n{}",
     fn host_card(
         host: &HostProfile,
         tenant: &TenantProfile,
+        filter: TenantFilter,
         mouse_states: &[MouseStateHandle],
         button_index: &mut usize,
         app: &AppContext,
@@ -988,7 +1046,11 @@ VMs and runtimes:\n{}",
         let mut runtimes = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_spacing(8.);
-        for runtime in &host.runtimes {
+        for runtime in host
+            .runtimes
+            .iter()
+            .filter(|runtime| Self::runtime_matches_filter(runtime, filter))
+        {
             runtimes.add_child(Self::runtime_card(
                 tenant,
                 host,
@@ -1008,9 +1070,20 @@ VMs and runtimes:\n{}",
                         .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)
                         .with_child(
-                            Text::new(host.name.clone(), appearance.ui_font_family(), 13.)
-                                .with_color(theme.active_ui_text_color().into_solid())
-                                .with_style(Properties::default().weight(Weight::Semibold))
+                            Flex::row()
+                                .with_spacing(6.)
+                                .with_child(
+                                    Text::new("VM", appearance.ui_font_family(), 10.)
+                                        .with_color(theme.disabled_ui_text_color().into_solid())
+                                        .with_style(Properties::default().weight(Weight::Semibold))
+                                        .finish(),
+                                )
+                                .with_child(
+                                    Text::new(host.name.clone(), appearance.ui_font_family(), 13.)
+                                        .with_color(theme.active_ui_text_color().into_solid())
+                                        .with_style(Properties::default().weight(Weight::Semibold))
+                                        .finish(),
+                                )
                                 .finish(),
                         )
                         .with_child(Self::action_button(
@@ -1025,14 +1098,20 @@ VMs and runtimes:\n{}",
                 .with_child(Self::value_line("status", &host.status, app))
                 .with_child(Self::value_line(
                     "runtimes",
-                    &host.runtimes.len().to_string(),
+                    &format!(
+                        "{} / {} visible",
+                        host.runtimes
+                            .iter()
+                            .filter(|runtime| Self::runtime_matches_filter(runtime, filter))
+                            .count(),
+                        host.runtimes.len()
+                    ),
                     app,
                 ))
                 .with_child(runtimes.finish())
                 .finish(),
         )
-        .with_padding(Padding::uniform(12.))
-        .with_background(theme.surface_2())
+        .with_padding(Padding::uniform(8.).with_left(12.))
         .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
         .finish()
@@ -1046,6 +1125,8 @@ VMs and runtimes:\n{}",
         button_index: &mut usize,
         active_environment: &str,
         api_url: &str,
+        filter: TenantFilter,
+        is_selected: bool,
         app: &AppContext,
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
@@ -1054,10 +1135,15 @@ VMs and runtimes:\n{}",
         let mut hosts = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_spacing(10.);
-        for host in &tenant.hosts {
+        for host in tenant
+            .hosts
+            .iter()
+            .filter(|host| Self::host_matches_filter(host, filter))
+        {
             hosts.add_child(Self::host_card(
                 host,
                 tenant,
+                filter,
                 mouse_states,
                 button_index,
                 app,
@@ -1138,40 +1224,50 @@ VMs and runtimes:\n{}",
 
         let mut content = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_spacing(10.)
-            .with_child(header)
-            .with_child(Self::value_line("environment", &tenant.environment, app))
-            .with_child(Self::value_line(
-                "vms",
-                &tenant.hosts.len().to_string(),
-                app,
-            ))
-            .with_child(Self::value_line(
-                "runtimes",
-                &format!(
-                    "{} / {} running",
-                    Self::running_runtime_count(tenant),
-                    Self::runtime_count(tenant)
-                ),
-                app,
-            ))
-            .with_child(
+            .with_spacing(8.)
+            .with_child(header);
+
+        if is_expanded {
+            content.add_child(
+                Flex::row()
+                    .with_spacing(6.)
+                    .with_child(Self::status_chip(&tenant.environment, app))
+                    .with_child(Self::status_chip(
+                        &format!("vms {}", tenant.hosts.len()),
+                        app,
+                    ))
+                    .with_child(Self::status_chip(
+                        &format!(
+                            "runtimes {} / {} visible",
+                            Self::visible_runtime_count(tenant, filter),
+                            Self::runtime_count(tenant)
+                        ),
+                        app,
+                    ))
+                    .finish(),
+            );
+            content.add_child(
                 Flex::row()
                     .with_spacing(6.)
                     .with_child(chat_button)
                     .with_child(copy_context_button)
                     .finish(),
             );
-
-        if is_expanded {
             content.add_child(hosts.finish());
         }
 
-        Container::new(content.finish())
-            .with_padding(Padding::uniform(12.))
+        let mut container = Container::new(content.finish())
+            .with_padding(Padding::uniform(8.).with_left(10.).with_right(10.))
             .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-            .finish()
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+
+        if is_selected {
+            container = container
+                .with_background(theme.surface_2())
+                .with_border(Border::all(1.).with_border_fill(theme.active_ui_detail()));
+        }
+
+        container.finish()
     }
 
     fn tenant_is_expanded(&self, tenant: &TenantProfile) -> bool {
@@ -1229,9 +1325,11 @@ impl TypedActionView for MonolithCockpitView {
                 ctx.notify();
             }
             MonolithCockpitAction::ToggleTenant { tenant_name } => {
+                self.selected_tenant = Some(tenant_name.clone());
                 if !self.expanded_tenants.insert(tenant_name.clone()) {
                     self.expanded_tenants.remove(tenant_name);
                 }
+                ctx.notify();
             }
             MonolithCockpitAction::SwitchEnvironment { environment } => {
                 MonolithSettings::handle(ctx).update(ctx, |settings, ctx| {
@@ -1289,6 +1387,10 @@ impl View for MonolithCockpitView {
                 &mut button_index,
                 &active_environment,
                 &api_url,
+                self.tenant_filter,
+                self.selected_tenant
+                    .as_ref()
+                    .is_some_and(|selected| selected == &tenant.name),
                 app,
             ));
         }
@@ -1342,33 +1444,68 @@ impl View for MonolithCockpitView {
             Flex::row()
                 .with_spacing(6.)
                 .with_child(Self::tenant_filter_button(
-                    "all",
+                    &format!("all {}", Self::filter_count(&profile, TenantFilter::All)),
                     TenantFilter::All,
                     self.tenant_filter == TenantFilter::All,
                     Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
                     app,
                 ))
                 .with_child(Self::tenant_filter_button(
-                    "active",
+                    &format!(
+                        "active {}",
+                        Self::filter_count(&profile, TenantFilter::Active)
+                    ),
                     TenantFilter::Active,
                     self.tenant_filter == TenantFilter::Active,
                     Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
                     app,
                 ))
                 .with_child(Self::tenant_filter_button(
-                    "offboarded",
+                    &format!(
+                        "offboarded {}",
+                        Self::filter_count(&profile, TenantFilter::Offboarded)
+                    ),
                     TenantFilter::Offboarded,
                     self.tenant_filter == TenantFilter::Offboarded,
                     Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
                     app,
                 ))
                 .with_child(Self::tenant_filter_button(
-                    "with vms",
+                    &format!(
+                        "with vms {}",
+                        Self::filter_count(&profile, TenantFilter::WithVms)
+                    ),
                     TenantFilter::WithVms,
                     self.tenant_filter == TenantFilter::WithVms,
                     Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
                     app,
                 ))
+                .with_child(Self::tenant_filter_button(
+                    &format!(
+                        "running {}",
+                        Self::filter_count(&profile, TenantFilter::RunningAgents)
+                    ),
+                    TenantFilter::RunningAgents,
+                    self.tenant_filter == TenantFilter::RunningAgents,
+                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    app,
+                ))
+                .with_child(Self::tenant_filter_button(
+                    &format!(
+                        "down {}",
+                        Self::filter_count(&profile, TenantFilter::DownAgents)
+                    ),
+                    TenantFilter::DownAgents,
+                    self.tenant_filter == TenantFilter::DownAgents,
+                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    app,
+                ))
+                .finish(),
+        );
+
+        body.add_child(
+            Flex::row()
+                .with_spacing(6.)
                 .with_child(Self::typed_button(
                     "expand all",
                     MonolithCockpitAction::ExpandAllTenants { tenant_names },
