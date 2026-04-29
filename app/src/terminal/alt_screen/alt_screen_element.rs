@@ -503,21 +503,25 @@ impl AltScreenElement {
     fn coord_to_point(&self, coord: Vector2F) -> Point {
         let model = self.model.lock();
         let grid = model.alt_screen().grid_handler();
+        let grid_storage = model.alt_screen().grid_storage();
         let size = self.grid_render_params.size_info;
 
         let column = ((coord.x() - size.padding_x_px.as_f32()) / size.cell_width_px().as_f32())
             .max(0.)
             .min(grid.columns() as f32 - 1.) as usize;
 
-        let history_offset = grid.total_rows().saturating_sub(grid.visible_rows());
+        let history_offset = grid_storage.total_rows().saturating_sub(grid_storage.visible_rows());
         let visible_height = self
             .visible_lines
             .expect("should be set after layout")
             .as_f64() as usize;
+        // coord.y already includes scroll_top via to_local(), so the clamp
+        // upper bound must account for it.
+        let max_row = (self.scroll_top.as_f64() as usize) + visible_height.saturating_sub(1);
         let row = history_offset
             + (coord.y() / size.cell_height_px().as_f32())
                 .max(0.)
-                .min(visible_height.saturating_sub(1) as f32) as usize;
+                .min(max_row as f32) as usize;
         Point::new(row, column)
     }
 
@@ -704,6 +708,14 @@ impl Element for AltScreenElement {
 
         let grid = model.alt_screen().grid_handler();
 
+        // Read scrollback size from GridStorage directly, not GridHandler.
+        // GridHandler::history_size() derives from flat_storage (always 0
+        // for alt-screen), but the grid stores scrollback rows internally
+        // via GridStorage::increase_scroll_limit when max_scroll_limit > 0.
+        let grid_storage = model.alt_screen().grid_storage();
+        let history_offset =
+            grid_storage.total_rows().saturating_sub(grid_storage.visible_rows());
+
         let cell_size = Vector2F::new(
             self.grid_render_params.size_info.cell_width_px().as_f32(),
             self.grid_render_params.size_info.cell_height_px().as_f32(),
@@ -743,15 +755,18 @@ impl Element for AltScreenElement {
         // Start rendering from the history offset so visible content anchors to
         // the bottom of the buffer rather than the top.
         record_trace_event!("alt_screen_element:paint:preparing_to_render_grid");
-        let history_offset = (grid.total_rows().saturating_sub(grid.visible_rows())) as f64;
-        let start_row = history_offset + self.scroll_top.as_f64();
+        let start_row = history_offset as f64 + self.scroll_top.as_f64();
         let end_row = (start_row
             + self
                 .visible_lines
                 .expect("should be set after layout")
                 .as_f64())
-        .min(grid.total_rows() as f64);
-        let adjusted_grid_origin = origin - self.vertical_scroll_pixels();
+        .min(grid_storage.total_rows() as f64);
+        // Offset the paint origin upward by the scrollback height so that
+        // render_grid's absolute offset_row positioning maps cells to the
+        // correct screen positions (the first visible row lands at origin.y).
+        let adjusted_grid_origin =
+            origin - self.vertical_scroll_pixels() - vec2f(0., history_offset as f32 * cell_size.y());
         let cursor_visible = model.alt_screen().is_mode_set(TermMode::SHOW_CURSOR);
         grid_renderer::render_grid(
             grid,
