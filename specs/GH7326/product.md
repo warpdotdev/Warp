@@ -26,8 +26,7 @@ ACP-native agents inside Warp's UI, and must fall back to raw TUI output.
   agent UI (conversation blocks, diff view, file tree, tool call rendering).
 - Users can configure ACP agents the same way they configure existing harnesses
   (via the settings UI and/or the Warp config file).
-- Warp passes its MCP servers to the ACP agent session so existing tool context
-  is available.
+- Users can opt in to passing Warp's MCP servers to an ACP agent session. This is off by default per agent.
 - The ACP harness validates that the target agent CLI is installed before launch
   and surfaces a helpful install link if not.
 
@@ -87,7 +86,7 @@ ACP-native agents inside Warp's UI, and must fall back to raw TUI output.
 4. If the ACP handshake times out, Warp surfaces a descriptive error.
 5. Configured ACP agents appear in the harness selector alongside Claude Code,
    Codex, and Gemini.
-6. MCP servers configured in Warp are passed to the ACP agent session.
+6. Users can opt in to passing Warp's configured MCP servers to an ACP agent session; passthrough is off by default.
 7. Conversation history for ACP sessions persists and is viewable.
 
 ## Open questions
@@ -96,4 +95,3 @@ ACP-native agents inside Warp's UI, and must fall back to raw TUI output.
    yet render (e.g. multi-file context beyond diff view)?
 2. Should there be a curated list of known ACP agents with pre-filled commands
    and install URLs (similar to how Codex and Gemini are pre-configured)?
-

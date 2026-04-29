@@ -81,9 +81,14 @@ Key `ThirdPartyHarness` method implementations:
 - `harness()` → `Harness::Acp`
 - `cli_agent()` → `CLIAgent::Acp(self.command.clone())`
 - `validate()` → call `validate_cli_installed(&self.command, self.install_docs_url())`
+- **Execution model:** The command is executed directly via argv (not 
+  shell interpolation) to prevent injection. PATH resolution follows 
+  the same rules as existing harnesses. Synced config that causes 
+  command execution on another machine should require explicit user 
+  confirmation before first run.
 - `install_docs_url()` → `None` (unknown for arbitrary agents; follow-up can add a registry)
 - `prepare_environment_config()` → write ACP session config if needed; for v1 this may be a no-op or minimal JSON config file with MCP server list
-- `build_command()` → spawn `self.command` with `self.args`, plus the stdio transport flags required by ACP (`--acp` or similar, depending on agent)
+- `build_command()` → spawn `self.command` with `self.args`. No additional ACP-specific launch flags are injected by Warp — ACP-compatible agents communicate over stdio by default. Any required flags are user-supplied via the Args field.
 
 The ACP protocol handshake (JSON-RPC `initialize` / `initialized` exchange over
 stdio) is handled in a new `run_acp_session()` function within this file, called
@@ -107,9 +112,11 @@ Warp then reads the `InitializeResult` from the agent's stdout, sends
 **Timeout:** If no `InitializeResult` arrives within 10 seconds, `run()` returns
 `AgentDriverError::HarnessConfigSetupFailed` with a descriptive message.
 
-**MCP passthrough:** After initialization, if Warp has configured MCP servers,
-they are passed to the agent via the ACP session configuration per the protocol
-spec before the first prompt is sent.
+**MCP passthrough:** After initialization, Warp offers to pass its 
+configured MCP servers to the ACP agent session. The user must 
+explicitly enable MCP passthrough per agent in settings — it is off 
+by default. Only MCP servers the user has already authorized in Warp 
+are eligible for passthrough.
 
 ### 4. `app/src/ai/agent_sdk/driver/harness/mod.rs`
 
