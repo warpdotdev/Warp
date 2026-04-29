@@ -11545,6 +11545,14 @@ impl Workspace {
             }
         });
 
+        // True when the fork is paired with a follow-up that fires immediately after restore
+        // (a prompt to send, or a `/summarize` triggered by `summarize_after_fork`).
+        // Used to suppress the `couldn't find original conversation directory` ephemeral hint
+        // for cloud-to-local forks, which would otherwise mask the warping indicator while the
+        // agent processes the follow-up. See `BlocklistAIStatusBar::render`'s
+        // `ephemeral_message_model.current_message().is_none()` gate.
+        let has_initial_query = summarize_after_fork || initial_prompt.is_some();
+
         // Load the conversation data asynchronously
         let future = history_model
             .as_ref(ctx)
@@ -11637,6 +11645,7 @@ impl Workspace {
                     None,
                     Some(ConversationRestorationInNewPaneType::Forked {
                         conversation: forked_conversation,
+                        has_initial_query,
                     }),
                     false,
                     ctx,
@@ -11683,6 +11692,7 @@ impl Workspace {
                     None, /* chosen_shell */
                     Some(ConversationRestorationInNewPaneType::Forked {
                         conversation: forked_conversation.clone(),
+                        has_initial_query,
                     }),
                     ctx,
                 );
