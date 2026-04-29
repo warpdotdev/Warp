@@ -3013,3 +3013,19 @@ fn test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempot
         });
     });
 }
+
+#[test]
+fn test_vertical_tabs_dropdown_anchors_match_panel_side() {
+    // Regression for #9485: when the tabs panel is on the right side, the
+    // new-session "+" dropdown must anchor to the button's right edge so the
+    // menu expands inward (to the left) and stays inside the window. The
+    // left-side case is the original layout and should be unaffected.
+    assert!(matches!(
+        Workspace::vertical_tabs_dropdown_anchors(PanelPosition::Left),
+        (PositionedElementAnchor::BottomLeft, ChildAnchor::TopLeft),
+    ));
+    assert!(matches!(
+        Workspace::vertical_tabs_dropdown_anchors(PanelPosition::Right),
+        (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight),
+    ));
+}
