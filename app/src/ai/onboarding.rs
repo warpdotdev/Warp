@@ -12,8 +12,9 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use super::llms::{DisableReason, LLMInfo, LLMPreferences};
 
-/// mirrors server-side auto open model id
+/// mirrors server-side model ids
 const AUTO_OPEN_LLM_ID: &str = "auto-open";
+const AUTO_COST_EFFICIENT_LLM_ID: &str = "auto-efficient";
 
 impl From<&LLMInfo> for OnboardingModelInfo {
     fn from(llm: &LLMInfo) -> Self {
@@ -45,6 +46,11 @@ pub fn apply_free_tier_default_model_override(
     server_default_id: LLMId,
     ctx: &mut AppContext,
 ) -> LLMId {
+    // server only gives back cost-efficient as a default if you're on a free or no plan
+    // if you ARE on some sort of plan... we should respect what the server says
+    if server_default_id != LLMId::from(AUTO_COST_EFFICIENT_LLM_ID) {
+        return server_default_id;
+    }
     let auto_open_id = LLMId::from(AUTO_OPEN_LLM_ID);
     let auto_open_available = models.iter().any(|m| m.id == auto_open_id);
     if !auto_open_available || !FreeTierDefaultModel::should_default_to_auto_open(ctx) {

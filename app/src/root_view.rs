@@ -2091,19 +2091,6 @@ impl RootView {
                                 view.set_free_user_no_ai_experiment(new_locked, ctx);
                             });
                         }
-
-                        // Billing data changed (e.g. free → paid upgrade), so
-                        // re-evaluate the FreeTierDefaultModel override.
-                        let (mut models, default_model_id) =
-                            build_onboarding_models(LLMPreferences::as_ref(ctx));
-                        let default_model_id = apply_free_tier_default_model_override(
-                            &mut models,
-                            default_model_id,
-                            ctx,
-                        );
-                        onboarding_view_for_workspaces.update(ctx, |view, ctx| {
-                            view.set_onboarding_models(models, default_model_id, ctx);
-                        });
                     }
                     _ => {}
                 }
