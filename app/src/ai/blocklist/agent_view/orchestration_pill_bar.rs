@@ -6,6 +6,7 @@
 //! switch. Hover popover, pin / unpin, and the 3-dot menu (Open in new pane /
 //! Open in new tab / Stop agent / Kill agent) are tracked as follow-ups.
 
+use std::cell::RefCell;
 use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
@@ -98,8 +99,14 @@ enum AvatarGlyph {
 pub struct OrchestrationPillBar {
     agent_view_controller: ModelHandle<AgentViewController>,
     /// Hover state per conversation id, persisted across renders so hover
-    /// effects work correctly.
-    mouse_states: HashMap<AIConversationId, MouseStateHandle>,
+    /// effects work correctly. Wrapped in a `RefCell` so `render` (which only
+    /// has `&self`) can lazily insert handles for ids that aren't yet
+    /// populated by `ensure_mouse_states`. Synthesizing a fresh
+    /// `MouseStateHandle::default()` in the render hot path is *not*
+    /// equivalent: the next render after a mouse-down would produce yet
+    /// another fresh handle, losing the down-state before mouse-up arrives
+    /// and silently swallowing the click (per the WarpUI mouse-state rule).
+    mouse_states: RefCell<HashMap<AIConversationId, MouseStateHandle>>,
 }
 
 impl Entity for OrchestrationPillBar {
@@ -126,7 +133,7 @@ impl OrchestrationPillBar {
             | BlocklistAIHistoryEvent::DeletedConversation {
                 conversation_id, ..
             } => {
-                this.mouse_states.remove(conversation_id);
+                this.mouse_states.borrow_mut().remove(conversation_id);
                 ctx.notify();
             }
             _ => {}
@@ -137,7 +144,7 @@ impl OrchestrationPillBar {
                 AgentViewControllerEvent::EnteredAgentView { .. }
                     | AgentViewControllerEvent::ExitedAgentView { .. }
             ) {
-                this.mouse_states.clear();
+                this.mouse_states.borrow_mut().clear();
             }
             this.ensure_mouse_states(ctx);
             ctx.notify();
@@ -145,7 +152,7 @@ impl OrchestrationPillBar {
 
         Self {
             agent_view_controller,
-            mouse_states: HashMap::new(),
+            mouse_states: RefCell::new(HashMap::new()),
         }
     }
 
@@ -170,13 +177,20 @@ impl OrchestrationPillBar {
         // children indefinitely.
         let mut alive: HashSet<AIConversationId> = HashSet::new();
         alive.insert(orchestrator_id);
+        // Include the parent id when the active conversation is a child, so
+        // the breadcrumb's parent crumb has a stable handle even before the
+        // parent `AIConversation` is loaded into history.
+        if let Some(parent_id) = parent_conversation_id(active_conversation, ctx) {
+            alive.insert(parent_id);
+        }
         for child in history.child_conversations_of(orchestrator_id) {
             alive.insert(child.id());
         }
+        let mut mouse_states = self.mouse_states.borrow_mut();
         for id in &alive {
-            self.mouse_states.entry(*id).or_default();
+            mouse_states.entry(*id).or_default();
         }
-        self.mouse_states.retain(|id, _| alive.contains(id));
+        mouse_states.retain(|id, _| alive.contains(id));
     }
 
     /// Builds the ordered list of pills to render. Returns `None` when the
@@ -275,14 +289,23 @@ impl View for OrchestrationPillBar {
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(PILL_GAP);
 
+        // Resolve a persistent `MouseStateHandle` for each pill. If `ensure_mouse_states`
+        // has not yet seen this id (e.g. mid-event-propagation race), insert a
+        // freshly defaulted handle into our `mouse_states` map and reuse it on
+        // subsequent renders. Falling back to a transient
+        // `MouseStateHandle::default()` here would silently break clicks: the
+        // mouse-down notify would re-enter `render` with yet another fresh
+        // handle, and mouse-up would land on a different handle than
+        // mouse-down.
+        let mut mouse_states = self.mouse_states.borrow_mut();
         for spec in specs {
-            let mouse_state = self
-                .mouse_states
-                .get(&spec.conversation_id)
-                .cloned()
-                .unwrap_or_default();
+            let mouse_state = mouse_states
+                .entry(spec.conversation_id)
+                .or_default()
+                .clone();
             row.add_child(render_pill(spec, mouse_state, app));
         }
+        drop(mouse_states);
 
         // Wrap in a container with a touch of horizontal padding so the bar
         // doesn't sit flush against the pane edges, and with the same overlay
@@ -526,18 +549,30 @@ pub fn render_orchestration_breadcrumbs(
     let history = BlocklistAIHistoryModel::as_ref(app);
     let active = history.conversation(&active_id)?;
     let parent_id = parent_conversation_id(active, app)?;
-    let parent = history.conversation(&parent_id)?;
+    // The parent's `AIConversation` may not yet be loaded into
+    // `conversations_by_id` (e.g. a child agent restored on startup whose
+    // parent is only known via the `children_by_parent` index — see
+    // `pane_group/mod.rs`'s `TODO(QUALITY-378)`). In that case we still want
+    // to render a clickable parent crumb so the user can navigate back to
+    // the orchestrator: `SwitchAgentViewToConversation` will load the parent
+    // through the normal `enter_agent_view_for_conversation` path. Bailing
+    // out here would otherwise leave the user with no "back to parent"
+    // affordance, since the new flag also suppresses the legacy parent card.
+    let parent = history.conversation(&parent_id);
 
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
 
     // Prefer the parent's user-visible title; fall back to its agent name,
     // and finally to a generic "Orchestrator" label so the breadcrumb is
-    // always meaningful even before titles have been generated.
+    // always meaningful even before titles have been generated (or before
+    // the parent conversation itself has been loaded).
     let parent_label = parent
-        .title()
-        .filter(|t| !t.is_empty())
-        .or_else(|| parent.agent_name().map(str::to_string))
+        .and_then(|p| {
+            p.title()
+                .filter(|t| !t.is_empty())
+                .or_else(|| p.agent_name().map(str::to_string))
+        })
         .unwrap_or_else(|| "Orchestrator".to_string());
 
     // Treat empty `agent_name` as missing so the label, avatar color, and
