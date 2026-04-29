@@ -14,7 +14,7 @@ use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::util::openable_file_type::{
-    is_file_openable_in_warp, is_markdown_file, is_runnable_shell_script,
+    is_file_openable_in_warp, is_markdown_file, is_runnable_shell_script, starts_with_shebang,
 };
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{cloud_object::ObjectType, workspace::ToastStack};
@@ -1024,9 +1024,17 @@ fn classify_open_file_action(path: &Path) -> OpenFileAction {
     if is_markdown_file(path) {
         return OpenFileAction::Notebook;
     }
-    if path.is_file() && is_file_openable_in_warp(path).is_some() && !is_runnable_shell_script(path)
-    {
-        return OpenFileAction::Editor;
+    if path.is_file() {
+        if is_runnable_shell_script(path) {
+            return OpenFileAction::ExecuteInSession;
+        }
+        // Anything we can show in the editor opens there. The second branch catches
+        // shebang scripts that `is_file_openable_in_warp` rejects on extension alone
+        // (e.g. an extensionless `#!/bin/sh` file without the user-execute bit) so
+        // they don't fall through to the executor and produce a `permission denied`.
+        if is_file_openable_in_warp(path).is_some() || starts_with_shebang(path) {
+            return OpenFileAction::Editor;
+        }
     }
     OpenFileAction::ExecuteInSession
 }

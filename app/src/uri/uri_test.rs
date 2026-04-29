@@ -645,3 +645,17 @@ fn test_open_file_directory_routes_to_session() {
         OpenFileAction::ExecuteInSession
     );
 }
+
+#[test]
+#[cfg(unix)]
+fn test_open_file_non_runnable_shebang_routes_to_editor() {
+    // Extensionless `#!/bin/sh` file without the user-execute bit. Without the
+    // shebang fall-through this would hit `ExecuteInSession` and the shell would
+    // refuse to run it; the editor is the right place to view it.
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("noext");
+    std::fs::write(&p, b"#!/bin/sh\necho hi\n").unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
+}

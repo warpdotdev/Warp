@@ -90,9 +90,20 @@ pub fn is_supported_image_file(path: impl AsRef<Path>) -> bool {
 ///
 /// Narrow on purpose: this only affects the URI entry point, not "Open in New Tab" from
 /// other UI surfaces, which still want shell scripts viewable in the editor.
+/// Returns true if `path` exists and starts with a `#!` shebang. Reads only the
+/// first two bytes — the URI entry point is reached from a `file://` URL, so the
+/// file is attacker-controlled in size and `std::fs::read` would risk an OOM.
+pub(crate) fn starts_with_shebang(path: &Path) -> bool {
+    use std::io::Read;
+    let mut prefix = [0u8; 2];
+    match std::fs::File::open(path) {
+        Ok(mut file) => file.read_exact(&mut prefix).is_ok() && prefix == [b'#', b'!'],
+        Err(_) => false,
+    }
+}
+
 #[cfg(unix)]
 pub fn is_runnable_shell_script(path: &Path) -> bool {
-    use std::io::Read;
     use std::os::unix::fs::PermissionsExt;
 
     // Match the documented routing policy: only the owner's execute bit counts.
@@ -110,14 +121,7 @@ pub fn is_runnable_shell_script(path: &Path) -> bool {
     if let Some(ext) = ext.as_deref() {
         return matches!(ext, "sh" | "bash" | "zsh" | "fish" | "ksh");
     }
-    // No extension: accept if file starts with a `#!` shebang. Read only the first
-    // two bytes — this path is reached from a `file://` URL, so the file is
-    // attacker-controlled in size; `std::fs::read` would risk an OOM.
-    let mut prefix = [0u8; 2];
-    if let Ok(mut file) = std::fs::File::open(path) {
-        return file.read_exact(&mut prefix).is_ok() && prefix == [b'#', b'!'];
-    }
-    false
+    starts_with_shebang(path)
 }
 
 #[cfg(windows)]
@@ -493,5 +497,37 @@ mod tests {
         let link = dir.path().join("link.sh");
         std::os::unix::fs::symlink(&target, &link).unwrap();
         assert!(is_runnable_shell_script(&link));
+    }
+
+    #[test]
+    fn test_starts_with_shebang_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("script");
+        std::fs::write(&p, b"#!/bin/sh\necho hi\n").unwrap();
+        assert!(starts_with_shebang(&p));
+    }
+
+    #[test]
+    fn test_starts_with_shebang_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("plain");
+        std::fs::write(&p, b"echo hi\n").unwrap();
+        assert!(!starts_with_shebang(&p));
+    }
+
+    #[test]
+    fn test_starts_with_shebang_one_byte_file() {
+        // `read_exact(&mut [0u8; 2])` must short-read on a single-byte file.
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("tiny");
+        std::fs::write(&p, b"#").unwrap();
+        assert!(!starts_with_shebang(&p));
+    }
+
+    #[test]
+    fn test_starts_with_shebang_missing_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("nope");
+        assert!(!starts_with_shebang(&p));
     }
 }
