@@ -859,10 +859,6 @@ pub struct AgentConversationsModel {
     active_data_consumers_per_window: HashMap<WindowId, HashSet<EntityId>>,
     /// Whether we have finished the initial task load
     has_finished_initial_load: bool,
-    /// Task IDs that have been manually opened from the management page.
-    /// These will appear in the conversation list even if their source is not user-initiated
-    /// (and even after they have been closed).
-    manually_opened_task_ids: HashSet<AmbientAgentTaskId>,
     /// Per-task fetch state for `get_or_async_fetch_task_data`. See [`TaskFetchState`] for
     /// the meaning of each variant. Tasks that have been successfully fetched live in `tasks`
     /// and are absent from this map.
@@ -880,8 +876,6 @@ pub enum AgentConversationsModelEvent {
     ConversationUpdated,
     /// Conversation artifacts were updated (plans, PRs, etc.)
     ConversationArtifactsUpdated { conversation_id: AIConversationId },
-    /// A task was manually opened from the management page.
-    TaskManuallyOpened,
 }
 
 impl Entity for AgentConversationsModel {
@@ -901,7 +895,6 @@ impl AgentConversationsModel {
                 next_poll_abort_handle: None,
                 active_data_consumers_per_window: HashMap::new(),
                 has_finished_initial_load: true,
-                manually_opened_task_ids: HashSet::new(),
                 task_fetch_state: HashMap::new(),
             };
         }
@@ -939,7 +932,6 @@ impl AgentConversationsModel {
             next_poll_abort_handle: None,
             active_data_consumers_per_window: HashMap::new(),
             has_finished_initial_load: false,
-            manually_opened_task_ids: HashSet::new(),
             task_fetch_state: HashMap::new(),
         };
 
@@ -1728,20 +1720,6 @@ impl AgentConversationsModel {
         envs
     }
 
-    pub fn mark_task_as_manually_opened(
-        &mut self,
-        task_id: AmbientAgentTaskId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if self.manually_opened_task_ids.insert(task_id) {
-            ctx.emit(AgentConversationsModelEvent::TaskManuallyOpened);
-        }
-    }
-
-    pub fn is_task_manually_opened(&self, task_id: &AmbientAgentTaskId) -> bool {
-        self.manually_opened_task_ids.contains(task_id)
-    }
-
     /// Converts AgentManagementFilters to TaskListFilter for server API calls.
     pub fn build_task_list_filter(
         &self,
@@ -1896,7 +1874,6 @@ impl AgentConversationsModel {
         self.conversations.clear();
         self.abort_existing_poll();
         self.active_data_consumers_per_window.clear();
-        self.manually_opened_task_ids.clear();
         self.task_fetch_state.clear();
         // Reset the initial load flag so that we can retry the initial sync with the new logged in user
         self.has_finished_initial_load = false;

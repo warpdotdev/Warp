@@ -10,7 +10,6 @@ use warpui::{Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::ambient_agents::spawn::{spawn_task, AmbientAgentEvent};
 use crate::ai::ambient_agents::task::HarnessConfig;
 use crate::ai::ambient_agents::telemetry::CloudAgentTelemetryEvent;
@@ -591,12 +590,6 @@ impl AmbientAgentViewModel {
                                 },
                             );
                         }
-
-                        // Mark the task as manually opened so it appears in the conversation list
-                        // even though its server-side source may not be user-initiated.
-                        AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                            model.mark_task_as_manually_opened(task_id, ctx);
-                        });
 
                         // Mark this task as active immediately so it renders under the Active section
                         // (and doesn't briefly appear under Past before the shared session join completes).
