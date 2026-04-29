@@ -113,6 +113,7 @@ use super::recorder;
 use super::shell::ShellStarter;
 use super::{event_loop::EventLoop, shell::ShellStarterSource};
 
+use crate::server::server_api::ServerApiProvider;
 #[cfg(unix)]
 use {
     super::terminal_attributes::TerminalAttributesPoller,
@@ -120,7 +121,6 @@ use {
     crate::terminal::model::terminal_model::BlockIndex,
     crate::terminal::session_settings::NotificationsMode, nix::sys::termios::LocalFlags,
 };
-use crate::server::server_api::ServerApiProvider;
 
 type PtyController = writeable_pty::PtyController<mio_channel::Sender<Message>>;
 type RemoteServerController =
@@ -1495,22 +1495,24 @@ impl TerminalManager {
                     if let Some(task_id) = task_id {
                         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
                         let session_id = *session_id;
-                        ctx.spawn(
-                            async move {
-                                ai_client.update_agent_task(
-                                    task_id,
-                                    None,
-                                    Some(session_id),
-                                    None,
-                                    None
-                                ).await
-                            },
-                            |_network, result, _ctx| {
-                                if let Err(e) = result {
-                                    log::warn!("Failed to link shared session to local Oz run: {e}");
-                                }
-                            },
-                        );
+                        terminal_view.update(ctx, |_view, ctx| {
+                            ctx.spawn(
+                                async move {
+                                    ai_client.update_agent_task(
+                                        task_id,
+                                        None,
+                                        Some(session_id),
+                                        None,
+                                        None
+                                    ).await
+                                },
+                                |_view, result, _ctx| {
+                                    if let Err(e) = result {
+                                        log::warn!("Failed to link shared session to local Oz run: {e}");
+                                    }
+                                },
+                            );
+                        });
                     }
                 }
             }
