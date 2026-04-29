@@ -46,7 +46,7 @@
 /app/src/terminal/input/ @vkodithala
 /app/src/pane_group/ @vkodithala
 /app/src/tab.rs @vkodithala
-/crates/warp_ripgrep/ @vkodithala @moirahuang @szgupta
+/crates/warp_ripgrep/ @moirahuang @szgupta
 
 # Command palette
 /app/src/command_palette.rs @acarl005
@@ -62,6 +62,11 @@
 /app/src/terminal/input/slash_commands/ @moirahuang
 /app/src/code/file_tree/ @moirahuang
 /app/src/workspace/view/global_search/ @moirahuang
+
+# Tab configs and worktrees
+/app/src/tab_configs/ @moirahuang
+/app/resources/tab_configs/ @moirahuang
+/crates/warp_util/src/worktree_names.rs @moirahuang
 
 # Onboarding / code review and git diff
 /app/src/ai/onboarding.rs @kevinchevalier
@@ -98,6 +103,10 @@
 
 # Agent mode
 /app/src/ai/agent/ @zachbai
+
+# Vertical tabs
+/app/src/workspace/view/vertical_tabs.rs @zachbai
+/app/src/workspace/view/vertical_tabs/ @zachbai
 
 # Image attachment, voice input, and passive suggestions
 /app/src/ai/attachment_utils.rs @Advait-M
