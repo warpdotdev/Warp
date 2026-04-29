@@ -335,7 +335,7 @@ pub struct Block {
     /// determine if commands in a restored session should be included in
     /// History::session_commands. This is optional b/c just like session_id, pwd, git_branch, etc.
     /// which are determined at precmd time, it is unset at block creation. It is also to
-    /// accomodate the case where determining the ShellHost fails during session restoration, e.g.
+    /// accommodate the case where determining the ShellHost fails during session restoration, e.g.
     /// if the values in sqlite are NULL or invalid.
     shell_host: Option<ShellHost>,
 

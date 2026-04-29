@@ -307,7 +307,7 @@ impl EventLoop {
                     {
                         // Role is set to the presence manager's role to stay as up-to-date as possible.
                         // This avoids a race condition if a viewer gets a new role before catching up,
-                        // by ensuring we're not overwritting the new role.
+                        // by ensuring we're not overwriting the new role.
                         if let Some(role) = presence_manager.as_ref(ctx).role() {
                             self.terminal_model.lock().set_shared_session_status(
                                 SharedSessionStatus::ActiveViewer { role },
