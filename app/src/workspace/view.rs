@@ -5243,6 +5243,17 @@ impl Workspace {
     }
 
     pub fn rename_active_pane(&mut self, ctx: &mut ViewContext<Self>) {
+        let use_vertical_tabs =
+            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
+        if !use_vertical_tabs {
+            let message =
+                "Pane renaming via shortcut requires Vertical Tabs. Use `/rename-pane <name>` instead, or enable Vertical Tabs in Settings."
+                    .to_string();
+            self.toast_stack.update(ctx, |view, ctx| {
+                view.add_ephemeral_toast(DismissibleToast::default(message), ctx);
+            });
+            return;
+        }
         if !self.vertical_tabs_panel_open {
             self.vertical_tabs_panel_open = true;
         }

@@ -67,7 +67,6 @@ pub enum CustomAction {
     DecreaseZoom,
     ResetZoom,
     RenameTab,
-    RenamePane,
     SplitPaneRight,
     SplitPaneLeft,
     SplitPaneUp,
@@ -138,6 +137,7 @@ pub enum CustomAction {
     GoToLine,
     ToggleGlobalSearch,
     ToggleConversationListView,
+    RenamePane,
 }
 
 lazy_static! {
