@@ -28,8 +28,8 @@ impl FileType {
     pub fn extensions(&self) -> &[&str] {
         match self {
             FileType::Image => &["png", "jpg", "jpeg"],
-            FileType::Yaml => &["yaml"],
-            FileType::Markdown => &["md"],
+            FileType::Yaml => &["yaml", "yml"],
+            FileType::Markdown => &["md", "markdown"],
         }
     }
 
@@ -144,5 +144,20 @@ impl SaveFilePickerConfiguration {
     pub fn with_default_directory(mut self, directory: PathBuf) -> Self {
         self.default_directory = Some(directory);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn yaml_file_type_accepts_both_yaml_and_yml() {
+        assert_eq!(FileType::Yaml.extensions(), &["yaml", "yml"]);
+    }
+
+    #[test]
+    fn markdown_file_type_accepts_md_and_markdown() {
+        assert_eq!(FileType::Markdown.extensions(), &["md", "markdown"]);
     }
 }
