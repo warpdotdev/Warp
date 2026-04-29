@@ -363,6 +363,16 @@ pub(super) struct TableSectionHandles {
     pub state_handle: TableStateHandle,
 }
 
+/// Mouse state handles for the three terminal buttons on an
+/// `OrchestrateConfigCard`: Launch (primary), Launch without orchestration
+/// (secondary), and Reject (secondary).
+#[derive(Clone, Default)]
+pub(super) struct OrchestrateButtonHandles {
+    pub launch: MouseStateHandle,
+    pub launch_without_orchestration: MouseStateHandle,
+    pub reject: MouseStateHandle,
+}
+
 #[derive(Default)]
 pub(super) struct AIBlockStateHandles {
     normal_response_code_snippet_buttons: Vec<CodeSnippetButtonHandles>,
@@ -397,6 +407,12 @@ pub(super) struct AIBlockStateHandles {
     /// A given citation should only appear once per block.
     footer_citation_chip_handles: HashMap<AIAgentCitation, MouseStateHandle>,
     orchestration_navigation_card_handles: HashMap<AIAgentActionId, MouseStateHandle>,
+
+    /// Per-action mouse state handles for the three terminal buttons rendered
+    /// inside an `OrchestrateConfigCard` (Launch / Launch without orchestration
+    /// / Reject). Created when an `Orchestrate` tool call is first observed in
+    /// `handle_updated_output` and accessed at render time via `Props`.
+    pub(super) orchestrate_button_handles: HashMap<AIAgentActionId, OrchestrateButtonHandles>,
 
     references_section_collapsible_handle: MouseStateHandle,
 
@@ -1844,6 +1860,13 @@ impl AIBlock {
             if matches!(&action.action, AIAgentActionType::StartAgent { .. }) {
                 self.state_handles
                     .orchestration_navigation_card_handles
+                    .entry(action.id.clone())
+                    .or_default();
+            }
+
+            if matches!(&action.action, AIAgentActionType::Orchestrate { .. }) {
+                self.state_handles
+                    .orchestrate_button_handles
                     .entry(action.id.clone())
                     .or_default();
             }
@@ -5724,6 +5747,15 @@ pub enum AIBlockAction {
     OpenCommentInGitHub {
         url: String,
     },
+    /// Emitted when the user clicks one of the three terminal buttons on an
+    /// `OrchestrateConfigCard` (Launch / Launch without orchestration /
+    /// Reject). The `AIBlock` forwards the decision to
+    /// `OrchestrateExecutor::submit_decision`, which resolves the pending
+    /// orchestrate action.
+    OrchestrateActionDecision {
+        action_id: AIAgentActionId,
+        decision: crate::ai::blocklist::action_model::OrchestrateDecision,
+    },
 }
 
 impl TypedActionView for AIBlock {
@@ -6054,6 +6086,20 @@ impl TypedActionView for AIBlock {
                         },
                     );
                     action_model.execute_action(action_id, self.client_ids.conversation_id, ctx);
+                });
+            }
+            AIBlockAction::OrchestrateActionDecision {
+                action_id,
+                decision,
+            } => {
+                let action_id = action_id.clone();
+                let decision = decision.clone();
+                self.action_model.update(ctx, |action_model, ctx| {
+                    action_model
+                        .orchestrate_executor(ctx)
+                        .update(ctx, |executor, ctx| {
+                            executor.submit_decision(&action_id, decision, ctx);
+                        });
                 });
             }
             AIBlockAction::Rated { is_positive } => {

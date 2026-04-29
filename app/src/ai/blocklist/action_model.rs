@@ -31,10 +31,10 @@ pub(crate) use execute::FileReadResult;
 pub(crate) use execute::MalformedFinalLineProxyEvent;
 pub use execute::{
     read_local_file_context, EditAcceptAndContinueClickedEvent, EditAcceptClickedEvent,
-    EditResolvedEvent, EditStats, NewConversationDecision, PromptSuggestionExecutor,
-    ReadFileContextResult, RequestFileEditsExecutor, RequestFileEditsFormatKind,
-    RequestFileEditsTelemetryEvent, ShellCommandExecutor, ShellCommandExecutorEvent,
-    StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
+    EditResolvedEvent, EditStats, NewConversationDecision, OrchestrateDecision,
+    OrchestrateExecutor, PromptSuggestionExecutor, ReadFileContextResult, RequestFileEditsExecutor,
+    RequestFileEditsFormatKind, RequestFileEditsTelemetryEvent, ShellCommandExecutor,
+    ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
 };
 
 use futures::future::{join_all, BoxFuture};
@@ -408,6 +408,13 @@ impl BlocklistAIActionModel {
             .as_ref(app)
             .ask_user_question_executor()
             .clone()
+    }
+
+    pub fn orchestrate_executor(
+        &self,
+        app: &AppContext,
+    ) -> ModelHandle<crate::ai::blocklist::action_model::execute::OrchestrateExecutor> {
+        self.executor.as_ref(app).orchestrate_executor().clone()
     }
 
     pub fn set_ambient_agent_task_id(

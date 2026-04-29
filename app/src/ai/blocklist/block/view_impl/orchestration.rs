@@ -18,11 +18,14 @@ use crate::ai::agent::{
     ReceivedMessageDisplay, SendMessageToAgentResult, StartAgentExecutionMode, StartAgentResult,
 };
 use crate::ai::blocklist::action_model::AIActionStatus;
+use crate::ai::blocklist::action_model::OrchestrateDecision;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::{
     conversation_id_for_agent_id, conversation_navigation_card_with_icon,
 };
 use crate::ai::blocklist::block::model::AIBlockModelHelper;
-use crate::ai::blocklist::block::{AIBlockAction, CollapsibleExpansionState};
+use crate::ai::blocklist::block::{
+    AIBlockAction, CollapsibleExpansionState, OrchestrateButtonHandles,
+};
 use crate::ai::blocklist::inline_action::inline_action_header::{
     ICON_MARGIN, INLINE_ACTION_HEADER_VERTICAL_PADDING, INLINE_ACTION_HORIZONTAL_PADDING,
 };
@@ -908,6 +911,29 @@ pub(super) fn render_orchestrate_config_card(
         }
     }
 
+    // Render the three terminal buttons (Reject / Launch without orchestration
+    // / Launch) only while the action has not yet reached a terminal state.
+    // Once Finished, the card transitions to the post-action state and the
+    // buttons are no longer interactive.
+    let is_pre_terminal = !matches!(&status, Some(AIActionStatus::Finished(_)));
+    if is_pre_terminal {
+        if let Some(handles) = props
+            .state_handles
+            .orchestrate_button_handles
+            .get(action_id)
+        {
+            body_column.add_child(render_orchestrate_buttons(
+                action_id,
+                model_id,
+                harness,
+                execution_mode,
+                agents,
+                handles,
+                app,
+            ));
+        }
+    }
+
     let body = Container::new(body_column.finish())
         .with_margin_top(4.)
         .with_margin_left(INLINE_ACTION_HORIZONTAL_PADDING + icon_size(app) + ICON_MARGIN)
@@ -930,6 +956,107 @@ pub(super) fn render_orchestrate_config_card(
         .with_background_color(blended_colors::neutral_2(theme))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
         .finish()
+}
+
+/// Renders the row of three terminal buttons on an `OrchestrateConfigCard`:
+/// Reject (secondary, leftmost), Launch without orchestration (secondary), and
+/// Launch (primary). Each button dispatches an
+/// [`AIBlockAction::OrchestrateActionDecision`] which the `AIBlock` forwards
+/// to [`crate::ai::blocklist::action_model::execute::OrchestrateExecutor::submit_decision`].
+fn render_orchestrate_buttons(
+    action_id: &AIAgentActionId,
+    model_id: &str,
+    harness: &str,
+    execution_mode: &OrchestrateExecutionMode,
+    agents: &[OrchestrateAgentRunConfig],
+    handles: &OrchestrateButtonHandles,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let font_family = appearance.ui_font_family();
+    let font_size = appearance.monospace_font_size();
+    let primary_text_color: ColorU = theme.main_text_color(theme.accent()).into_solid();
+    let secondary_text_color: ColorU = theme.main_text_color(theme.surface_2()).into_solid();
+    let primary_bg: ColorU = theme.accent().into_solid();
+    let secondary_bg: ColorU = blended_colors::neutral_3(theme);
+
+    let make_button = |label: &str,
+                       mouse_state: MouseStateHandle,
+                       background: ColorU,
+                       text_color: ColorU,
+                       on_click_action: AIBlockAction|
+     -> Box<dyn Element> {
+        let label_owned = label.to_string();
+        Hoverable::new(mouse_state, move |_| {
+            Container::new(
+                Text::new(label_owned.clone(), font_family, font_size)
+                    .with_color(text_color)
+                    .finish(),
+            )
+            .with_horizontal_padding(10.)
+            .with_vertical_padding(6.)
+            .with_background_color(background)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+            .finish()
+        })
+        .with_cursor(Cursor::PointingHand)
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(on_click_action.clone());
+        })
+        .finish()
+    };
+
+    let reject_button = make_button(
+        "Reject",
+        handles.reject.clone(),
+        secondary_bg,
+        secondary_text_color,
+        AIBlockAction::OrchestrateActionDecision {
+            action_id: action_id.clone(),
+            decision: OrchestrateDecision::Reject,
+        },
+    );
+    let launch_without_button = make_button(
+        "Launch without orchestration",
+        handles.launch_without_orchestration.clone(),
+        secondary_bg,
+        secondary_text_color,
+        AIBlockAction::OrchestrateActionDecision {
+            action_id: action_id.clone(),
+            decision: OrchestrateDecision::LaunchWithoutOrchestration,
+        },
+    );
+    let launch_button = make_button(
+        "Launch",
+        handles.launch.clone(),
+        primary_bg,
+        primary_text_color,
+        AIBlockAction::OrchestrateActionDecision {
+            action_id: action_id.clone(),
+            decision: OrchestrateDecision::Launch {
+                model_id: model_id.to_string(),
+                harness: harness.to_string(),
+                execution_mode: execution_mode.clone(),
+                agents: agents.to_vec(),
+            },
+        },
+    );
+
+    Container::new(
+        Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(Container::new(reject_button).with_margin_right(8.).finish())
+            .with_child(
+                Container::new(launch_without_button)
+                    .with_margin_right(8.)
+                    .finish(),
+            )
+            .with_child(launch_button)
+            .finish(),
+    )
+    .with_margin_top(8.)
+    .finish()
 }
 
 fn render_conversation_navigation_card_row(

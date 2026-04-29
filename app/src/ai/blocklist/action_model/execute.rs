@@ -5,6 +5,7 @@ pub(super) mod edit_documents;
 pub(super) mod fetch_conversation;
 pub(super) mod file_glob;
 pub(super) mod grep;
+pub(super) mod orchestrate;
 pub(super) mod read_documents;
 pub(super) mod read_files;
 pub(super) mod read_mcp_resource;
@@ -30,6 +31,7 @@ use fetch_conversation::FetchConversationExecutor;
 use file_glob::FileGlobExecutor;
 use futures::{future::BoxFuture, FutureExt};
 use grep::GrepExecutor;
+pub use orchestrate::{OrchestrateDecision, OrchestrateExecutor};
 use parking_lot::FairMutex;
 use read_documents::ReadDocumentsExecutor;
 pub(super) use read_files::ReadFilesExecutor;
@@ -260,6 +262,7 @@ pub struct BlocklistAIActionExecutor {
     start_agent_executor: ModelHandle<StartAgentExecutor>,
     send_message_executor: ModelHandle<SendMessageToAgentExecutor>,
     ask_user_question_executor: ModelHandle<AskUserQuestionExecutor>,
+    orchestrate_executor: ModelHandle<OrchestrateExecutor>,
     /// The actions currently executing asynchronously, keyed by action ID.
     /// We track them per action rather than as a single slot so multiple actions from the same
     /// parallel phase can complete independently.
@@ -326,6 +329,7 @@ impl BlocklistAIActionExecutor {
         let send_message_executor = ctx.add_model(|_| SendMessageToAgentExecutor::new());
         let ask_user_question_executor =
             ctx.add_model(|_| AskUserQuestionExecutor::new(terminal_view_id));
+        let orchestrate_executor = ctx.add_model(|_| OrchestrateExecutor::new());
         Self {
             shell_command_executor,
             read_files_executor,
@@ -350,6 +354,7 @@ impl BlocklistAIActionExecutor {
             start_agent_executor,
             send_message_executor,
             ask_user_question_executor,
+            orchestrate_executor,
         }
     }
 
@@ -411,6 +416,10 @@ impl BlocklistAIActionExecutor {
 
     pub fn ask_user_question_executor(&self) -> &ModelHandle<AskUserQuestionExecutor> {
         &self.ask_user_question_executor
+    }
+
+    pub fn orchestrate_executor(&self) -> &ModelHandle<OrchestrateExecutor> {
+        &self.orchestrate_executor
     }
 
     pub fn set_ambient_agent_task_id(
@@ -515,10 +524,10 @@ impl BlocklistAIActionExecutor {
                 .ask_user_question_executor
                 .update(ctx, |executor, ctx| executor.preprocess_action(input, ctx)),
             // Orchestrate has no preprocessing; the OrchestrateConfigCard
-            // handles all per-agent dispatch directly via CreateAgentTask
-            // when the user clicks Launch (Phase C). The action itself is a
-            // UI-driven configuration step.
-            AIAgentActionType::Orchestrate { .. } => futures::future::ready(()).boxed(),
+            // owns all of the user-interaction state machine.
+            AIAgentActionType::Orchestrate { .. } => self
+                .orchestrate_executor
+                .update(ctx, |executor, ctx| executor.preprocess_action(input, ctx)),
         }
     }
 
@@ -697,18 +706,16 @@ impl BlocklistAIActionExecutor {
                 .start_agent_executor
                 .update(ctx, |executor, ctx| executor.execute(input, ctx))
                 .into(),
-            // Orchestrate is driven by the OrchestrateConfigCard UI; the
-            // generic execute path should not run for it. Return a Cancelled
-            // result so the action is consumed without producing wire
-            // traffic (the convert layer maps OrchestrateActionResult::Cancelled
-            // to Ignore). Phase B will wire the card up to short-circuit
-            // before this match is reached.
-            AIAgentActionType::Orchestrate { .. } => {
-                ActionExecution::<()>::Sync(AIAgentActionResultType::Orchestrate(
-                    ai::agent::action_result::OrchestrateActionResult::Cancelled,
-                ))
-                .into()
-            }
+            // Orchestrate parks the action in an async-pending state until
+            // the user clicks one of the three terminal buttons on the
+            // OrchestrateConfigCard. The button click dispatches an
+            // AIBlockAction::OrchestrateActionDecision, which the AIBlock
+            // forwards to OrchestrateExecutor::submit_decision to resolve
+            // the future.
+            AIAgentActionType::Orchestrate { .. } => self
+                .orchestrate_executor
+                .update(ctx, |executor, ctx| executor.execute(input, ctx))
+                .into(),
             AIAgentActionType::SendMessageToAgent { .. } => self
                 .send_message_executor
                 .update(ctx, |executor, ctx| executor.execute(input, ctx)),
@@ -919,7 +926,9 @@ impl BlocklistAIActionExecutor {
             // Orchestrate always requires explicit user confirmation (the
             // user must click Launch / Launch without orchestration / Reject
             // on the OrchestrateConfigCard). It never auto-executes.
-            AIAgentActionType::Orchestrate { .. } => false,
+            AIAgentActionType::Orchestrate { .. } => self
+                .orchestrate_executor
+                .update(ctx, |executor, ctx| executor.should_autoexecute(input, ctx)),
         }
     }
 
