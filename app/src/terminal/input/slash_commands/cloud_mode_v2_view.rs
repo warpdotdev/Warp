@@ -164,9 +164,6 @@ pub struct CloudModeV2SlashCommandView {
     input_buffer_model: ModelHandle<InputBufferModel>,
     scroll_state: ClippedScrollStateHandle,
     menu_state: MenuState,
-    /// When `Some`, only items in the matching section are shown in `MenuState::NoSearchActive`.
-    /// Set by selecting `/prompts` or `/skills`; cleared by pressing Esc (which also re-selects
-    /// the originating command in the unfiltered list).
     section_filter: Option<Section>,
 }
 
@@ -258,8 +255,6 @@ impl CloudModeV2SlashCommandView {
                     mixer.reset_results(ctx);
                 });
                 me.menu_state = MenuState::empty();
-                // Reset the section filter so reopening the menu starts with all sections
-                // visible rather than narrowed to whatever the user last viewed.
                 me.section_filter = None;
                 return;
             }
@@ -278,9 +273,6 @@ impl CloudModeV2SlashCommandView {
         }
     }
 
-    /// Narrow the V2 menu to only show items from `section`. Pass `None` to clear.
-    /// When clearing, the selected row is repositioned onto the original section's matching
-    /// `Commands` row (e.g. `/prompts` or `/skills`) so the user lands back where they were.
     pub fn set_section_filter(
         &mut self,
         filter: Option<Section>,
@@ -297,7 +289,6 @@ impl CloudModeV2SlashCommandView {
         {
             let rows = browsing_rows_filtered(sections, expanded_sections, self.section_filter);
             *selected_idx = match (filter, previous) {
-                // Clearing a filter: try to land on the `/prompts` or `/skills` row in Commands.
                 (None, Some(prev)) => rows
                     .iter()
                     .position(|r| matches_originating_command(r, sections, prev))
@@ -308,7 +299,6 @@ impl CloudModeV2SlashCommandView {
         ctx.notify();
     }
 
-    /// Returns `true` if a section filter is currently applied to the menu.
     pub fn has_section_filter(&self) -> bool {
         self.section_filter.is_some()
     }
@@ -383,8 +373,6 @@ impl CloudModeV2SlashCommandView {
     }
 
     pub fn dismiss(&mut self, ctx: &mut ViewContext<Self>) {
-        // If a section filter is active, Esc clears it (and re-selects the originating row)
-        // instead of closing the menu. A second Esc with no filter then closes the menu.
         if self.section_filter.is_some() {
             self.set_section_filter(None, ctx);
             return;
@@ -487,8 +475,6 @@ impl CloudModeV2SlashCommandView {
             initialize_browsing_selection(&mut state);
             state
         } else {
-            // Once the user starts typing, clear any active section filter so search results
-            // are not constrained to the previously selected section.
             self.section_filter = None;
             let mut state = MenuState::SearchActive {
                 results: renderers,
@@ -631,9 +617,6 @@ fn browsing_rows_filtered(
 
     for (idx, rendered) in non_empty_sections.iter().enumerate() {
         rows.push(NoSearchActiveRow::SectionHeader(rendered.section));
-        // When a section filter narrows the menu to a single section, always show every
-        // item in that section and suppress the "Show XX more" affordance — the user has
-        // already drilled into that section, so the collapse is no longer useful.
         let is_filtered_section = filter == Some(rendered.section);
         let visible_count = if is_filtered_section
             || expanded_sections.contains(&rendered.section)
@@ -683,10 +666,6 @@ fn initialize_browsing_selection(state: &mut MenuState) {
     }
 }
 
-/// Returns `true` when `row` is the `Item` row in the `Commands` section whose action targets
-/// the static slash command corresponding to `previous_filter` (`/prompts` for Prompts,
-/// `/skills` for Skills). Used to reposition the selected row when the user presses Esc to clear
-/// a section filter so they land back on the originating command.
 fn matches_originating_command(
     row: &NoSearchActiveRow,
     sections: &[RenderedSection],
@@ -1031,9 +1010,6 @@ impl View for CloudModeV2SlashCommandView {
         .with_drop_shadow(DropShadow::default())
         .finish();
 
-        // Stop mouse-down/up propagation on the menu container so clicks anywhere inside
-        // the menu (including padding and the area between rows) don't bubble up to the
-        // surrounding cloud-mode V2 input handler that dismisses the menu on click-outside.
         EventHandler::new(menu)
             .on_left_mouse_down(|_, _, _| DispatchEventResult::StopPropagation)
             .on_left_mouse_up(|_, _, _| DispatchEventResult::StopPropagation)

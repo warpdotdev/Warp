@@ -169,7 +169,6 @@ impl ModelSelector {
         self.is_menu_open
     }
 
-    /// Programmatically open the model selector popover. No-op if already open.
     pub fn open_menu(&mut self, ctx: &mut ViewContext<Self>) {
         self.set_menu_visibility(true, ctx);
     }

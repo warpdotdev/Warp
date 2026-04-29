@@ -34,10 +34,6 @@ bitflags! {
         const CODEBASE_CONTEXT = 1 << 6;
         /// Requires AI to be globally enabled.
         const AI_ENABLED = 1 << 7;
-        /// Requires that the input is *not* the V2 cloud-agent composing surface.
-        /// The session sets this everywhere except when the slash command data source
-        /// was constructed via `SlashCommandDataSource::for_cloud_mode_v2`, so commands
-        /// that add this requirement are hidden in the V2 cloud-agent input.
         const NOT_CLOUD_AGENT = 1 << 8;
     }
 }

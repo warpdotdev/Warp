@@ -406,23 +406,10 @@ impl Input {
             }
             conversations if command.name == commands::CONVERSATIONS.name => {
                 if self.is_cloud_mode_input_v2_composing(ctx) {
-                    // V2 cloud-mode composing routes /conversations to the inline history
-                    // menu. We close the slash menu and clear the buffer here, then defer the
-                    // menu open via `dispatch_typed_action_deferred`. The deferred dispatch
-                    // runs after pending effects flush, so by the time the menu opens, the
-                    // editor's `Edited` event chain has had a chance to start propagating to
-                    // `InputBufferModel`. The inline history menu also has a one-shot
-                    // `InputBufferUpdateEvent` subscription that re-runs its query when the
-                    // buffer model finally catches up, so even if the deferred open still
-                    // sees a stale buffer, the next sync corrects it.
                     self.suggestions_mode_model.update(ctx, |model, ctx| {
                         model.set_mode(InputSuggestionsMode::Closed, ctx);
                     });
                     self.clear_buffer_and_reset_undo_stack(ctx);
-                    // Arm the one-shot buffer-sync re-query on the V2 history menu only.
-                    // The normal up-arrow open path leaves this disarmed so that the
-                    // auto-selected first item's preview write does not re-run the query
-                    // and narrow the results to just that row.
                     if let Some(view) = self.cloud_mode_v2_history_menu_view.clone() {
                         view.update(ctx, |v, ctx| {
                             v.arm_initial_buffer_sync(ctx);
@@ -706,8 +693,6 @@ impl Input {
                     return false;
                 }
                 if self.is_cloud_mode_input_v2_composing(ctx) {
-                    // V2 cloud-mode composing keeps the slash command menu open and narrows it
-                    // to the Skills section instead of opening the dedicated skill selector menu.
                     self.apply_v2_slash_section_filter(CloudModeV2Section::Skills, ctx);
                     return true;
                 }
@@ -716,9 +701,6 @@ impl Input {
             }
             models if command.name == commands::MODEL.name => {
                 if self.is_cloud_mode_input_v2_composing(ctx) {
-                    // Mirror the close → clear → open sequence so that subscribers fire between
-                    // each step. The V2 model selector popover doesn't read from the buffer, but
-                    // closing the slash menu cleanly first keeps state transitions explicit.
                     self.suggestions_mode_model.update(ctx, |model, ctx| {
                         model.set_mode(InputSuggestionsMode::Closed, ctx);
                     });
@@ -740,8 +722,6 @@ impl Input {
             }
             prompts if command.name == commands::PROMPTS.name => {
                 if self.is_cloud_mode_input_v2_composing(ctx) {
-                    // V2 cloud-mode composing keeps the slash command menu open and narrows it
-                    // to the Prompts section instead of opening the dedicated prompts menu.
                     self.apply_v2_slash_section_filter(CloudModeV2Section::Prompts, ctx);
                     return true;
                 }
@@ -1015,10 +995,7 @@ impl Input {
             return true;
         }
 
-        // If no menu but slash command detected in buffer, execute with cmd_or_ctrl_enter=true.
-        // Static slash commands always run locally, even in V2 cloud-mode composing, so app-level
-        // commands like `/rename-tab` work there too. Skills in V2 fall through to the ambient
-        // agent submit path so the cloud agent receives the full `/skill <prompt>` buffer.
+        // If no menu but slash command detected in buffer, execute with cmd_or_ctrl_enter=true
         match self.slash_command_model.as_ref(ctx).state() {
             SlashCommandEntryState::SlashCommand(detected_command) => {
                 let command = detected_command.command.clone();
@@ -1049,19 +1026,11 @@ impl Input {
         }
     }
 
-    /// Narrows the V2 cloud-mode slash command menu to a specific section (e.g. `Skills` or
-    /// `Prompts`) without closing it. The buffer is replaced with `"/"` so the slash command
-    /// model stays in `Composing` state and the menu remains visible while the V2 view applies
-    /// the section filter.
     fn apply_v2_slash_section_filter(
         &mut self,
         section: CloudModeV2Section,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Replace the buffer with just "/" so the slash command model transitions to
-        // `Composing` (not `None`) and `handle_slash_command_model_event` does not auto-close
-        // the menu. The V2 view's mixer query becomes empty after stripping the leading slash,
-        // putting the menu in `NoSearchActive` mode where the section filter applies.
         self.editor.update(ctx, |editor, ctx| {
             editor.set_buffer_text("/", ctx);
         });
@@ -1072,9 +1041,6 @@ impl Input {
         }
     }
 
-    /// Returns `true` and clears the active section filter on the V2 cloud-mode slash command
-    /// view if one is set. Used by `editor_escape` so the first Esc clears the filter (and
-    /// keeps the menu open) before a subsequent Esc closes the menu.
     pub(super) fn maybe_clear_v2_slash_section_filter(
         &mut self,
         ctx: &mut ViewContext<Self>,
@@ -1128,9 +1094,6 @@ impl Input {
             return true;
         }
 
-        // Static slash commands always run locally, even in V2 cloud-mode composing, so app-level
-        // commands like `/rename-tab` work there too. Skills in V2 fall through to the ambient
-        // agent submit path so the cloud agent receives the full `/skill <prompt>` buffer.
         match self.slash_command_model.as_ref(ctx).state() {
             SlashCommandEntryState::SlashCommand(detected_command) => {
                 let command = detected_command.command.clone();

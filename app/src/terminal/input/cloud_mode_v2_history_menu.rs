@@ -81,8 +81,6 @@ impl CloudModeV2HistoryMenuView {
         self.inner.update(ctx, |v, ctx| v.select_up(ctx));
     }
 
-    /// Arms the inner inline history menu's one-shot buffer-sync re-query. See
-    /// `InlineHistoryMenuView::arm_initial_buffer_sync` for details.
     pub fn arm_initial_buffer_sync(&self, ctx: &mut ViewContext<Self>) {
         self.inner
             .update(ctx, |v, _| v.arm_initial_buffer_sync());

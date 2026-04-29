@@ -364,9 +364,6 @@ impl Input {
                 .on_left_mouse_down(|ctx, _, _| {
                     ctx.dispatch_typed_action(TerminalAction::ClearSelectionsWhenShellMode);
                     ctx.dispatch_typed_action(InputAction::FocusInputBox);
-                    // Click-outside dismissal for the V2 slash command menu. Clicks inside
-                    // the menu stop propagation in `CloudModeV2SlashCommandView::render`,
-                    // so this handler only fires for clicks outside the menu's bounds.
                     ctx.dispatch_typed_action(InputAction::DismissCloudModeV2SlashCommandsMenu);
                     DispatchEventResult::StopPropagation
                 })
@@ -426,11 +423,6 @@ impl Input {
         if let Some(selected_workflow_state) = self.workflows_state.selected_workflow_state.as_ref()
         {
             if selected_workflow_state.should_show_more_info_view {
-                // V2-only positioning: anchor the card's bottom-left to the top-left of the
-                // input editor area (the editor + footer column wrapped by
-                // `prompt_save_position_id`). The classic `add_workflow_info_overlay` helper
-                // anchors `relative_to_parent`, which in V2 resolves to the much taller
-                // floating composer stack and pushes the card way above the input.
                 let prompt_position = self.prompt_save_position_id();
                 let workflows_info_view = Container::new(
                     ChildView::new(&selected_workflow_state.more_info_view).finish(),

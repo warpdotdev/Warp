@@ -59,10 +59,6 @@ pub struct SlashCommandDataSource {
     terminal_view_id: EntityId,
     active_commands_by_id: HashMap<SlashCommandId, StaticCommand>,
     active_repo_root: Option<PathBuf>,
-    /// `true` when this data source serves the V2 cloud-agent composing surface
-    /// (constructed via [`Self::for_cloud_mode_v2`]). Drives both the compact row
-    /// rendering and the `Availability::NOT_CLOUD_AGENT` session-context gate that
-    /// hides commands which don't make sense for a cloud agent run.
     is_cloud_mode_v2: bool,
 }
 
@@ -215,8 +211,6 @@ impl SlashCommandDataSource {
             session_context |= Availability::AI_ENABLED;
         }
 
-        // Set the NOT_CLOUD_AGENT bit when we're *not* the V2 cloud-agent composing
-        // source, so commands that add this requirement are hidden in the V2 input.
         if !self.is_cloud_mode_v2 {
             session_context |= Availability::NOT_CLOUD_AGENT;
         }

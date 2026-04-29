@@ -1128,8 +1128,6 @@ pub enum InputAction {
     /// Opens the inline history menu for cycling through past commands and conversations.
     OpenInlineHistoryMenu,
 
-    /// Closes the V2 cloud-mode slash command menu if it is currently open. Used by the
-    /// surrounding cloud-mode V2 input area to dismiss the menu on click-outside.
     DismissCloudModeV2SlashCommandsMenu,
 
     /// Opens the model selector menu.
@@ -7810,8 +7808,6 @@ impl Input {
             // Handle AI context menu escape specifically to ensure proper state reset
             self.close_ai_context_menu(ctx);
         } else if self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
-            // In V2 cloud-mode composing, an active section filter (set by `/prompts` or
-            // `/skills`) is cleared on first Esc rather than closing the entire menu.
             if self.maybe_clear_v2_slash_section_filter(ctx) {
                 return;
             }
