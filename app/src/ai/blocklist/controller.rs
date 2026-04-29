@@ -69,6 +69,7 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{send_telemetry_from_ctx, server::telemetry::TelemetryEvent};
 use anyhow::anyhow;
 use chrono::{DateTime, Local};
+use futures::future::Either;
 use itertools::Itertools;
 use parking_lot::FairMutex;
 use pending_response_streams::PendingResponseStreams;
@@ -87,6 +88,8 @@ use super::orchestration_events::{
     OrchestrationEventService, OrchestrationEventServiceEvent, PendingEvent, PendingEventDetail,
 };
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
+
+const REMOTE_CHILD_WAKE_FOLLOWUP_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone)]
 pub struct SessionContext {
@@ -1641,9 +1644,16 @@ impl BlocklistAIController {
                 log::info!(
                     "Submitting remote child wake follow-up: conversation_id={conversation_id:?} task_id={task_id} pending_message_count={pending_message_count}"
                 );
-                server_api
-                    .submit_run_followup(&task_id, RunFollowupRequest { message })
-                    .await
+                let submit = Box::pin(
+                    server_api.submit_run_followup(&task_id, RunFollowupRequest { message }),
+                );
+                let timeout = Box::pin(Timer::after(REMOTE_CHILD_WAKE_FOLLOWUP_TIMEOUT));
+                match futures::future::select(submit, timeout).await {
+                    Either::Left((result, _)) => result,
+                    Either::Right((_, _)) => Err(anyhow!(
+                        "Timed out submitting remote child wake follow-up for task {task_id}"
+                    )),
+                }
             },
             move |me, result, ctx| {
                 me.pending_remote_child_wakes.remove(&conversation_id);
@@ -1910,26 +1920,6 @@ impl BlocklistAIController {
                             wake_messages,
                         )
                         .await?;
-                        log::info!(
-                            "Reopening dormant Claude task before wake command: conversation_id={conversation_id:?} task_id={task_id}"
-                        );
-                        server_api
-                            .update_agent_task(
-                                task_id,
-                                Some(AgentTaskState::InProgress),
-                                None,
-                                None,
-                                None,
-                            )
-                            .await
-                            .map_err(|err| {
-                                anyhow!(
-                                    "Failed to reopen dormant Claude task {task_id} before wake: {err:#}"
-                                )
-                            })?;
-                        log::info!(
-                            "Reopened dormant Claude task before wake command: conversation_id={conversation_id:?} task_id={task_id}"
-                        );
                         Ok::<_, anyhow::Error>(command)
                     },
                     move |me, result, ctx| {
@@ -1950,23 +1940,72 @@ impl BlocklistAIController {
                                     return;
                                 }
 
-                                log::info!(
-                                    "Executing dormant Claude wake command: conversation_id={conversation_id:?} task_id={task_id}"
-                                );
-                                BlocklistAIHistoryModel::handle(ctx).update(
-                                    ctx,
-                                    |history_model, ctx| {
-                                        history_model.update_conversation_status(
-                                            me.terminal_view_id,
-                                            conversation_id,
-                                            ConversationStatus::InProgress,
-                                            ctx,
+                                let server_api = ServerApiProvider::as_ref(ctx).get();
+                                let removed_events_for_retry = removed_events_for_retry.clone();
+                                let handle = ctx.spawn(
+                                    async move {
+                                        log::info!(
+                                            "Reopening dormant Claude task before wake command: conversation_id={conversation_id:?} task_id={task_id}"
                                         );
+                                        server_api
+                                            .update_agent_task(
+                                                task_id,
+                                                Some(AgentTaskState::InProgress),
+                                                None,
+                                                None,
+                                                None,
+                                            )
+                                            .await
+                                            .map_err(|err| {
+                                                anyhow!(
+                                                    "Failed to reopen dormant Claude task {task_id} before wake: {err:#}"
+                                                )
+                                            })?;
+                                        log::info!(
+                                            "Reopened dormant Claude task before wake command: conversation_id={conversation_id:?} task_id={task_id}"
+                                        );
+                                        Ok::<_, anyhow::Error>(command)
+                                    },
+                                    move |me, result, ctx| {
+                                        me.pending_local_claude_wakes.remove(&conversation_id);
+                                        match result {
+                                            Ok(command) => {
+                                                log::info!(
+                                                    "Executing dormant Claude wake command: conversation_id={conversation_id:?} task_id={task_id}"
+                                                );
+                                                BlocklistAIHistoryModel::handle(ctx).update(
+                                                    ctx,
+                                                    |history_model, ctx| {
+                                                        history_model.update_conversation_status(
+                                                            me.terminal_view_id,
+                                                            conversation_id,
+                                                            ConversationStatus::InProgress,
+                                                            ctx,
+                                                        );
+                                                    },
+                                                );
+                                                ctx.emit(
+                                                    BlocklistAIControllerEvent::ExecuteLocalHarnessCommand {
+                                                        command,
+                                                    },
+                                                );
+                                            }
+                                            Err(err) => {
+                                                log::warn!(
+                                                    "Failed to reopen dormant Claude task for {conversation_id:?} task_id={task_id}: {err:#}"
+                                                );
+                                                OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                                                    svc.prepend_pending_events(
+                                                        conversation_id,
+                                                        removed_events_for_retry.clone(),
+                                                        ctx,
+                                                    );
+                                                });
+                                            }
+                                        }
                                     },
                                 );
-                                ctx.emit(BlocklistAIControllerEvent::ExecuteLocalHarnessCommand {
-                                    command,
-                                });
+                                me.pending_local_claude_wakes.insert(conversation_id, handle);
                             }
                             Err(err) => {
                                 log::warn!(

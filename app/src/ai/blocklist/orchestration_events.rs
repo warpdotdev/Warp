@@ -359,6 +359,7 @@ impl OrchestrationEventService {
             } => {
                 for conversation_id in conversation_ids {
                     self.sync_conversation_status(*conversation_id, ctx);
+                    self.restore_v1_lifecycle_subscription(*conversation_id, ctx);
                 }
             }
             BlocklistAIHistoryEvent::RemoveConversation {
@@ -415,6 +416,36 @@ impl OrchestrationEventService {
         };
         self.conversation_statuses
             .insert(conversation_id, conversation.status().clone());
+    }
+
+    fn restore_v1_lifecycle_subscription(
+        &mut self,
+        source_conversation_id: AIConversationId,
+        ctx: &ModelContext<Self>,
+    ) {
+        if FeatureFlag::OrchestrationV2.is_enabled() {
+            return;
+        }
+
+        let target_agent_id = {
+            let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+            let Some(conversation) = history_model.conversation(&source_conversation_id) else {
+                return;
+            };
+            if !conversation.is_child_agent_conversation() {
+                return;
+            }
+
+            conversation
+                .parent_conversation_id()
+                .and_then(|parent_id| history_model.conversation(&parent_id))
+                .and_then(|parent| parent.orchestration_agent_id())
+                .or_else(|| conversation.parent_agent_id().map(str::to_string))
+        };
+
+        if let Some(target_agent_id) = target_agent_id {
+            self.register_lifecycle_subscription(source_conversation_id, target_agent_id, None);
+        }
     }
 
     fn on_conversation_status_updated(

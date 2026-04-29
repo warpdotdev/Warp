@@ -274,6 +274,9 @@ impl OrchestrationEventPoller {
         conversation_ids: &[AIConversationId],
         ctx: &mut ModelContext<Self>,
     ) {
+        if !FeatureFlag::OrchestrationV2.is_enabled() {
+            return;
+        }
         for conversation_id in conversation_ids {
             let Some(conversation) =
                 BlocklistAIHistoryModel::as_ref(ctx).conversation(conversation_id)

@@ -1402,8 +1402,8 @@ fn agent_run_cloud_accepts_snapshot_flags() {
 }
 
 #[test]
-fn agent_run_rejects_task_id_with_conversation() {
-    let err = Args::try_parse_from([
+fn agent_run_accepts_task_id_with_conversation_for_worker_followups() {
+    let args = Args::try_parse_from([
         "warp",
         "agent",
         "run",
@@ -1412,11 +1412,17 @@ fn agent_run_rejects_task_id_with_conversation() {
         "--conversation",
         "conv-123",
     ])
-    .unwrap_err()
-    .to_string();
+    .unwrap();
 
-    assert!(err.contains("--task-id"));
-    assert!(err.contains("--conversation"));
+    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
+        panic!("Expected `warp agent run` command");
+    };
+    let CliCommand::Agent(AgentCommand::Run(run_args)) = boxed_cmd.as_ref() else {
+        panic!("Expected `warp agent run` command");
+    };
+
+    assert_eq!(run_args.task_id.as_deref(), Some("task-123"));
+    assert_eq!(run_args.conversation.as_deref(), Some("conv-123"));
 }
 
 #[test]

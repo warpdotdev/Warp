@@ -14,6 +14,7 @@ use chrono::Utc;
 use http::StatusCode;
 use std::collections::HashSet;
 use std::sync::Arc;
+use warp_core::features::FeatureFlag;
 use warp_multi_agent_api as api;
 use warpui::{App, EntityId};
 
@@ -180,6 +181,43 @@ fn ambient_agent_task(
     }
 }
 
+#[test]
+fn restored_conversations_skip_v2_polling_when_orchestration_v2_disabled() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(false);
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+        let conversation_id = AIConversationId::new();
+        let run_id = uuid::Uuid::new_v4().to_string();
+
+        history_model.update(&mut app, |history_model, ctx| {
+            history_model.restore_conversations(
+                terminal_view_id,
+                vec![restored_conversation(
+                    conversation_id,
+                    run_id.clone(),
+                    Some(17),
+                )],
+                ctx,
+            );
+        });
+
+        let server_api = ServerApiProvider::new_for_test().get();
+        let poller = app.add_singleton_model(move |_| {
+            OrchestrationEventPoller::new_with_clients_for_test(
+                Arc::new(MockAIClient::new()),
+                server_api,
+            )
+        });
+
+        poller.update(&mut app, |poller, ctx| {
+            poller.on_restored_conversations(&[conversation_id], ctx);
+            assert!(poller.watched_run_ids.is_empty());
+            assert!(poller.event_cursor.is_empty());
+            assert!(poller.restore_fetch_failures.is_empty());
+        });
+    });
+}
 #[test]
 fn finish_restore_fetch_merges_server_cursor_and_child_runs() {
     App::test((), |mut app| async move {

@@ -1,7 +1,10 @@
 #![allow(deprecated)]
 use super::*;
+use crate::ai::blocklist::BlocklistAIHistoryModel;
 use std::collections::HashSet;
+use warp_core::features::FeatureFlag;
 use warp_multi_agent_api as api;
+use warpui::{App, EntityId};
 // Helper for constructing lifecycle pending events with minimal boilerplate.
 // Tests use this to focus on queue/coalescing behavior rather than payload setup.
 
@@ -412,4 +415,53 @@ fn test_pending_message_helpers_peek_and_take_only_selected_messages() {
         remaining[1].detail,
         PendingEventDetail::Lifecycle { .. }
     ));
+}
+
+#[test]
+fn test_restored_v1_child_reregisters_lifecycle_subscription() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(false);
+        let terminal_view_id = EntityId::new();
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let service = app.add_model(|_| OrchestrationEventService::new_without_subscriptions());
+
+        let (_parent_conversation_id, child_conversation_id) =
+            history_model.update(&mut app, |history_model, ctx| {
+                let parent_conversation_id =
+                    history_model.start_new_conversation(terminal_view_id, false, false, ctx);
+                history_model.set_server_conversation_token_for_conversation(
+                    parent_conversation_id,
+                    "parent-token".to_string(),
+                );
+                let child_conversation_id = history_model.start_new_child_conversation(
+                    terminal_view_id,
+                    "child".to_string(),
+                    parent_conversation_id,
+                    ctx,
+                );
+                history_model.set_server_conversation_token_for_conversation(
+                    child_conversation_id,
+                    "child-token".to_string(),
+                );
+                (parent_conversation_id, child_conversation_id)
+            });
+
+        service.update(&mut app, |service, ctx| {
+            service.handle_history_event(
+                &BlocklistAIHistoryEvent::RestoredConversations {
+                    terminal_view_id,
+                    conversation_ids: vec![child_conversation_id],
+                },
+                ctx,
+            );
+
+            let routes = service
+                .lifecycle_subscription_routes
+                .get(&child_conversation_id)
+                .expect("restored V1 child should have a lifecycle subscription");
+            assert_eq!(routes.len(), 1);
+            assert_eq!(routes[0].target_agent_id, "parent-token");
+            assert_eq!(routes[0].subscribed_event_types, None);
+        });
+    });
 }
