@@ -10,10 +10,10 @@ use futures::io::{AsyncRead, AsyncWrite};
 use warpui::r#async::{executor, FutureExt as _};
 
 use crate::proto::{
-    client_message, server_message, Abort, ClientMessage, DeleteFile, ErrorCode, Initialize,
-    InitializeResponse, LoadRepoMetadataDirectoryResponse, NavigatedToDirectoryResponse,
-    ReadFileContextRequest, ReadFileContextResponse, RunCommandRequest, RunCommandResponse,
-    ServerMessage, SessionBootstrapped, WriteFile,
+    client_message, server_message, Abort, Authenticate, ClientMessage, DeleteFile, ErrorCode,
+    Initialize, InitializeResponse, LoadRepoMetadataDirectoryResponse,
+    NavigatedToDirectoryResponse, ReadFileContextRequest, ReadFileContextResponse,
+    RunCommandRequest, RunCommandResponse, ServerMessage, SessionBootstrapped, WriteFile,
 };
 
 use crate::protocol::{self, ProtocolError, RequestId};
@@ -182,11 +182,16 @@ impl RemoteServerClient {
     }
 
     /// Sends an `Initialize` request and awaits the `InitializeResponse`.
-    pub async fn initialize(&self) -> Result<InitializeResponse, ClientError> {
+    pub async fn initialize(
+        &self,
+        auth_token: Option<&str>,
+    ) -> Result<InitializeResponse, ClientError> {
         let request_id = RequestId::new();
         let msg = ClientMessage {
             request_id: request_id.to_string(),
-            message: Some(client_message::Message::Initialize(Initialize {})),
+            message: Some(client_message::Message::Initialize(Initialize {
+                auth_token: auth_token.unwrap_or_default().to_owned(),
+            })),
         };
 
         let response = self.send_request(request_id, msg).await?;
@@ -198,6 +203,18 @@ impl RemoteServerClient {
                 Err(ClientError::UnexpectedResponse)
             }
         }
+    }
+
+    /// Sends an `Authenticate` notification to rotate the daemon-wide
+    /// credential after initialization.
+    pub fn authenticate(&self, auth_token: &str) {
+        let msg = ClientMessage {
+            request_id: String::new(),
+            message: Some(client_message::Message::Authenticate(Authenticate {
+                auth_token: auth_token.to_owned(),
+            })),
+        };
+        self.send_notification(msg);
     }
 
     /// Sends a `SessionBootstrapped` notification (fire-and-forget) so the
