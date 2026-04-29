@@ -371,16 +371,16 @@ impl BlocklistAIContextModel {
     }
 
     /// Returns `true` if the next AI query has any context that should force the input to be
-    /// locked in AI mode (skipping NLD): a pending image, a pending block, pending selected text,
+    /// locked in AI mode (skipping NLD): a pending image or file attachment, a pending block,
     /// or an in-progress image-attachment pipeline.
+    ///
+    /// Pending selected text is intentionally excluded because users can select shell command
+    /// text (e.g. to copy a previously-run command), and that should not lock the input to AI
+    /// mode.
     pub fn has_locking_attachment(&self) -> bool {
         self.pending_image_attachments_in_progress > 0
             || !self.pending_context_block_ids.is_empty()
-            || self.pending_context_selected_text.is_some()
-            || self
-                .pending_attachments
-                .iter()
-                .any(|attachment| matches!(attachment, PendingAttachment::Image(_)))
+            || !self.pending_attachments.is_empty()
     }
 
     /// Marks the start of an asynchronous image-attachment pipeline. Must be paired with a call

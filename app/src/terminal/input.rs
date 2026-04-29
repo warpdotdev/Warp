@@ -12858,8 +12858,9 @@ impl Input {
         // buffer should unlock (re-enable autodetection) - semantically like clearing the "!".
         //
         // QUALITY-544: but if there is a pending image attachment (or other locking context such
-        // as block / selected text), do NOT unlock. The user's intent is unambiguously "talk to
-        // the agent"; letting the classifier flip the input back to shell mode would be a bug.
+        // as a file attachment or block), do NOT unlock. The user's intent is unambiguously
+        // "talk to the agent"; letting the classifier flip the input back to shell mode would
+        // be a bug.
         let has_locking_attachment = self.ai_context_model.as_ref(ctx).has_locking_attachment();
         let should_unlock = FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen()

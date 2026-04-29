@@ -109,7 +109,11 @@ fn has_locking_attachment_is_true_with_pending_block_id() {
 }
 
 #[test]
-fn has_locking_attachment_is_true_with_pending_selected_text() {
+fn has_locking_attachment_is_false_with_only_pending_selected_text() {
+    // Selected text alone is *not* a locking attachment: the user could be selecting shell
+    // command text (e.g. to copy a previously-run command), and forcing the input into AI
+    // mode in that case would be wrong. Only images, files, blocks, or in-progress
+    // image-attach pipelines should force the lock.
     App::test((), |mut app| async move {
         let model = build_test_context_model(&mut app);
 
@@ -117,7 +121,7 @@ fn has_locking_attachment_is_true_with_pending_selected_text() {
             m.set_pending_selected_text_for_test(Some("hello".to_owned()));
         });
 
-        model.read(&app, |m, _| assert!(m.has_locking_attachment()));
+        model.read(&app, |m, _| assert!(!m.has_locking_attachment()));
     });
 }
 
@@ -135,9 +139,9 @@ fn has_locking_attachment_is_true_with_pending_image_attachment() {
 }
 
 #[test]
-fn has_locking_attachment_is_false_with_only_file_attachments() {
-    // Files are explicitly *not* locking attachments — only images, blocks, selected text, or an
-    // in-progress image-attach pipeline force the input into AI mode.
+fn has_locking_attachment_is_true_with_only_file_attachments() {
+    // File attachments are locking attachments — the user has explicitly attached a file as
+    // context, which is unambiguously a signal that the next query is intended for the agent.
     App::test((), |mut app| async move {
         let model = build_test_context_model(&mut app);
 
@@ -148,12 +152,12 @@ fn has_locking_attachment_is_false_with_only_file_attachments() {
             ]);
         });
 
-        model.read(&app, |m, _| assert!(!m.has_locking_attachment()));
+        model.read(&app, |m, _| assert!(m.has_locking_attachment()));
     });
 }
 
 #[test]
-fn has_locking_attachment_ignores_non_image_attachments_when_image_present() {
+fn has_locking_attachment_is_true_with_mixed_image_and_file_attachments() {
     App::test((), |mut app| async move {
         let model = build_test_context_model(&mut app);
 

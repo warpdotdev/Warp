@@ -163,8 +163,8 @@ pub struct BlocklistAIInputModel {
 
     /// Handle to the per-pane context model. Wired up via [`Self::set_ai_context_model`]
     /// after both models are constructed in `TerminalView::new`. Used to read pending
-    /// attachments / blocks / selected text when deciding whether to force-lock the input
-    /// to AI mode (see [`BlocklistAIContextModel::has_locking_attachment`]).
+    /// attachments / blocks when deciding whether to force-lock the input to AI mode
+    /// (see [`BlocklistAIContextModel::has_locking_attachment`]).
     ai_context_model: Option<ModelHandle<BlocklistAIContextModel>>,
 
     terminal_view_id: EntityId,
@@ -288,8 +288,8 @@ impl BlocklistAIInputModel {
                         );
                     } else if origin_requires_locked_ai(origin) || me.has_locking_attachment(ctx) {
                         // Interaction patterns that should fully bypass NLD on
-                        // entry: image attachment in progress / attached, or block / selected
-                        // text already in pending context. Force-lock to AI regardless of the
+                        // entry: image / file attachment in progress / attached, or block
+                        // already in pending context. Force-lock to AI regardless of the
                         // user's NLD setting so the classifier never gets a chance to drop
                         // the buffer back to shell.
                         me.set_input_config_internal(

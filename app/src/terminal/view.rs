@@ -3313,7 +3313,7 @@ impl TerminalView {
         });
         // Now that the context model exists, wire its handle into the input model so the input
         // model can consult `has_locking_attachment` for force-locking decisions (image attached,
-        // block context, selected text, etc.). The input model is constructed first because it
+        // file attached, block context, etc.). The input model is constructed first because it
         // owns lock state that the context model never reads.
         ai_input_model.update(ctx, |ai_input_model, _| {
             ai_input_model.set_ai_context_model(ai_context_model.clone());
