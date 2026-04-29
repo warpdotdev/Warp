@@ -345,7 +345,9 @@ use super::{
 use crate::ai::blocklist::agent_view::{
     AgentInputFooter, AgentInputFooterEvent, AgentViewController,
 };
-use crate::terminal::view::ambient_agent::{HarnessSelector, HostSelector, NakedHeaderButtonTheme};
+use crate::terminal::view::ambient_agent::{
+    HarnessSelector, HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
+};
 use async_channel::Sender;
 use futures::stream::AbortHandle;
 use parking_lot::FairMutex;
@@ -2201,12 +2203,35 @@ impl Input {
                                 selector.set_button_theme(NakedHeaderButtonTheme, ctx);
                             });
                         }
+                        // Mirror the V2 model selector / host selector refocus path: when the
+                        // harness selector menu closes (item picked or dismissed via Esc /
+                        // click-outside), restore focus to the input editor so typing resumes
+                        // immediately. This powers the "input is focused after the harness
+                        // selector closes" UX for the `/harness` slash command.
+                        ctx.subscribe_to_view(&harness_selector, |me, _, event, ctx| {
+                            let HarnessSelectorEvent::MenuVisibilityChanged { open } = event;
+                            if !*open {
+                                me.focus_input_box(ctx);
+                            }
+                        });
                         harness_selector
                     },
                     host_selector: if FeatureFlag::CloudModeInputV2.is_enabled() {
-                        Some(ctx.add_typed_action_view(|ctx| {
+                        let view = ctx.add_typed_action_view(|ctx| {
                             HostSelector::new(menu_positioning_provider.clone(), ctx)
-                        }))
+                        });
+                        // Mirror the V2 model selector's `ModelSelectorClosed` -> refocus path:
+                        // when the host selector menu closes (item picked or dismissed via Esc /
+                        // click-outside), restore focus to the input editor so typing resumes
+                        // immediately. This is what powers the "input is focused after the host
+                        // selector closes" UX for the `/harness` slash command.
+                        ctx.subscribe_to_view(&view, |me, _, event, ctx| {
+                            let HostSelectorEvent::MenuVisibilityChanged { open } = event;
+                            if !*open {
+                                me.focus_input_box(ctx);
+                            }
+                        });
+                        Some(view)
                     } else {
                         None
                     },
@@ -2248,8 +2273,8 @@ impl Input {
                 AgentInputFooterEvent::ModelSelectorOpened => {
                     me.close_overlays(false, ctx);
                 }
-                AgentInputFooterEvent::ModelSelectorClosed => {
-                    // When the model selector menu closes (model was selected), focus the input field
+                AgentInputFooterEvent::ModelSelectorClosed
+                | AgentInputFooterEvent::EnvironmentSelectorClosed => {
                     me.focus_input_box(ctx);
                 }
                 AgentInputFooterEvent::ToggleInlineModelSelector { initial_tab } => {
@@ -3408,6 +3433,32 @@ impl Input {
         self.ambient_agent_view_state
             .as_ref()
             .and_then(|state| state.host_selector.as_ref())
+    }
+
+    /// Opens the V2 cloud-mode host selector popover, if the feature is enabled and the
+    /// selector is constructed. No-op otherwise. Used by the `/host` slash command to
+    /// programmatically open the same popover that the V2 footer's host button toggles.
+    pub(super) fn open_v2_host_selector(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(host_selector) = self.host_selector().cloned() else {
+            return;
+        };
+        host_selector.update(ctx, |selector, ctx| selector.open_menu(ctx));
+    }
+
+    /// Opens the V2 cloud-mode harness selector popover, if the feature is enabled and the
+    /// selector is constructed. No-op otherwise. Used by the `/harness` slash command to
+    /// programmatically open the same popover that the V2 footer's harness button toggles.
+    pub(super) fn open_v2_harness_selector(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(harness_selector) = self.harness_selector().cloned() else {
+            return;
+        };
+        harness_selector.update(ctx, |selector, ctx| selector.open_menu(ctx));
+    }
+
+    pub(super) fn open_v2_environment_selector(&mut self, ctx: &mut ViewContext<Self>) {
+        self.agent_input_footer
+            .clone()
+            .update(ctx, |footer, ctx| footer.open_v2_environment_selector(ctx));
     }
 
     /// Update the at button's disabled state based on whether AI context menu should render
@@ -14313,9 +14364,22 @@ impl View for Input {
             .agent_input_footer
             .as_ref(app)
             .is_v2_model_selector_open(app);
+        let is_v2_host_selector_open = self
+            .host_selector()
+            .is_some_and(|view| view.as_ref(app).is_menu_open());
+        let is_v2_harness_selector_open = self
+            .harness_selector()
+            .is_some_and(|view| view.as_ref(app).is_menu_open());
+        let is_v2_environment_selector_open = self
+            .agent_input_footer
+            .as_ref(app)
+            .is_v2_environment_selector_open(app);
         if is_profile_model_selector_open
             || is_agent_footer_model_selector_open
             || is_v2_model_selector_open
+            || is_v2_host_selector_open
+            || is_v2_harness_selector_open
+            || is_v2_environment_selector_open
         {
             ctx.set.insert("ProfileModelSelectorOpen");
         }

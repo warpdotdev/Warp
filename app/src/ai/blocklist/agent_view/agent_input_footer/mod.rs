@@ -613,6 +613,9 @@ impl AgentInputFooter {
             ctx.subscribe_to_view(environment_selector, |_, _, event, ctx| match event {
                 EnvironmentSelectorEvent::MenuVisibilityChanged { open } => {
                     ctx.emit(AgentInputFooterEvent::ToggledChipMenu { open: *open });
+                    if !*open {
+                        ctx.emit(AgentInputFooterEvent::EnvironmentSelectorClosed);
+                    }
                 }
                 EnvironmentSelectorEvent::OpenEnvironmentManagementPane => {
                     ctx.emit(AgentInputFooterEvent::OpenEnvironmentManagementPane);
@@ -806,6 +809,18 @@ impl AgentInputFooter {
 
     pub fn open_v2_model_selector(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(selector) = self.v2_model_selector.clone() {
+            selector.update(ctx, |s, ctx| s.open_menu(ctx));
+        }
+    }
+
+    pub fn is_v2_environment_selector_open(&self, app: &AppContext) -> bool {
+        self.environment_selector
+            .as_ref()
+            .is_some_and(|s| s.as_ref(app).is_menu_open())
+    }
+
+    pub fn open_v2_environment_selector(&mut self, ctx: &mut ViewContext<Self>) {
+        if let Some(selector) = self.environment_selector.clone() {
             selector.update(ctx, |s, ctx| s.open_menu(ctx));
         }
     }
@@ -2421,6 +2436,7 @@ pub enum AgentInputFooterEvent {
     PromptAlert(PromptAlertEvent),
     ModelSelectorOpened,
     ModelSelectorClosed,
+    EnvironmentSelectorClosed,
     ToggleInlineModelSelector {
         initial_tab: InlineModelSelectorTab,
     },

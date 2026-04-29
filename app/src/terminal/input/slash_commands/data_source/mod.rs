@@ -237,6 +237,9 @@ impl SlashCommandDataSource {
             session_context |= Availability::AI_ENABLED;
         }
 
+        if self.is_cloud_mode_v2 && FeatureFlag::CloudModeInputV2.is_enabled() {
+            session_context |= Availability::CLOUD_AGENT_V2;
+        }
         if !self.is_cloud_mode_v2 {
             session_context |= Availability::NOT_CLOUD_AGENT;
         }
