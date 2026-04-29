@@ -1228,8 +1228,7 @@ fn find_cloud_mode_terminal_in_workspace(
                     terminal_view
                         .as_ref(ctx)
                         .ambient_agent_view_model()
-                        .as_ref(ctx)
-                        .is_ambient_agent()
+                        .is_some()
                         .then_some(terminal_view.id())
                 });
 

@@ -2736,7 +2736,7 @@ pub struct TerminalView {
     agent_view_back_button: ViewHandle<ActionButton>,
     is_using_conversation_for_pane_header_title: bool,
 
-    ambient_agent_view_model: ModelHandle<ambient_agent::AmbientAgentViewModel>,
+    ambient_agent_view_model: Option<ModelHandle<ambient_agent::AmbientAgentViewModel>>,
 
     /// Cloud mode conversation details panel (side panel showing task metadata).
     cloud_mode_details_panel:
@@ -2849,6 +2849,27 @@ impl TerminalView {
     /// the state of this terminal. If this terminal view has an active input
     /// editor, other terminals should match those contents.
     /// Otherwise, they should just start syncing.
+    fn is_nested_cloud_mode(&self, app: &AppContext) -> bool {
+        if !self.is_ambient_agent_session(app) {
+            return false;
+        }
+
+        let Some(pane_stack) = self
+            .pane_stack
+            .as_ref()
+            .and_then(|handle| handle.upgrade(app))
+        else {
+            return false;
+        };
+
+        pane_stack
+            .as_ref(app)
+            .entries()
+            .iter()
+            .position(|(_, view)| view.id() == self.view_id)
+            .is_some_and(|index| index > 0)
+    }
+
     pub fn create_sync_event_based_on_terminal_state(&self, app_ctx: &AppContext) -> SyncEvent {
         if !matches!(
             self.model.lock().terminal_input_state(),
@@ -2949,35 +2970,25 @@ impl TerminalView {
         initial_input_config: Option<InputConfig>,
         conversation_restoration: Option<ConversationRestorationInNewPaneType>,
         inactive_pty_reads_rx: Option<async_broadcast::InactiveReceiver<Arc<Vec<u8>>>>,
+        is_cloud_mode: bool,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let terminal_view_id = ctx.view_id();
         let active_session = ctx.add_model(|ctx| {
             ActiveSession::new(sessions.clone(), model_events_handle.clone(), ctx)
         });
-
-        let ambient_agent_view_model = ctx.add_model(|ctx| {
-            ambient_agent::AmbientAgentViewModel::new(
-                terminal_view_id,
-                false, // New terminal views don't have parent by default
-                ctx,
-            )
+        let ambient_agent_view_model = is_cloud_mode.then(|| {
+            ctx.add_model(|ctx| ambient_agent::AmbientAgentViewModel::new(terminal_view_id, ctx))
         });
 
         let ephemeral_message_model = ctx.add_model(|_| EphemeralMessageModel::new());
 
-        let agent_view_controller = ctx.add_model(|ctx| {
+        let agent_view_controller = ctx.add_model(|_| {
             AgentViewController::new(
                 model.clone(),
                 terminal_view_id,
-                ambient_agent_view_model.clone(),
                 ephemeral_message_model.clone(),
-                ctx,
             )
-        });
-
-        ctx.subscribe_to_model(&ambient_agent_view_model, |me, _, event, ctx| {
-            me.handle_ambient_agent_event(event, ctx);
         });
 
         ctx.subscribe_to_model(&agent_view_controller, |me, _, event, ctx| {
@@ -3044,7 +3055,7 @@ impl TerminalView {
                                         *origin,
                                         me.agent_view_controller.clone(),
                                         &me.sessions,
-                                        &me.ambient_agent_view_model,
+                                        me.ambient_agent_view_model.as_ref(),
                                         me.model.clone(),
                                         &me.model_events_handle,
                                         should_show_init_callout,
@@ -3476,7 +3487,10 @@ impl TerminalView {
                 event,
                 BlocklistAIControllerEvent::FinishedReceivingOutput { .. }
             ) && me.is_cloud_mode_details_panel_open
-                && me.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                && me
+                    .ambient_agent_view_model
+                    .as_ref()
+                    .is_some_and(|model| model.as_ref(ctx).is_ambient_agent())
             {
                 me.fetch_and_update_cloud_mode_details_panel(ctx);
             }
@@ -3504,7 +3518,10 @@ impl TerminalView {
                 // Only refresh panel if it's currently open (avoids unnecessary work)
                 if should_refresh_details_panel
                     && me.is_cloud_mode_details_panel_open
-                    && me.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                    && me
+                        .ambient_agent_view_model
+                        .as_ref()
+                        .is_some_and(|model| model.as_ref(ctx).is_ambient_agent())
                 {
                     me.fetch_and_update_cloud_mode_details_panel(ctx);
                     ctx.notify();
@@ -3601,6 +3618,11 @@ impl TerminalView {
             }
             BlocklistAIStatusBarEvent::Stop => me.ctrl_c(ctx),
         });
+        if let Some(ambient_agent_view_model) = ambient_agent_view_model.as_ref() {
+            ctx.subscribe_to_model(ambient_agent_view_model, |me, _, event, ctx| {
+                me.handle_ambient_agent_event(event, ctx);
+            });
+        }
 
         let ai_render_context = Rc::new(RefCell::new(BlocklistAIRenderContext {
             block_ids: HashMap::from_iter([
@@ -4451,7 +4473,7 @@ impl TerminalView {
         // For ambient agent sessions (cloud mode), always pop from pane stack.
         // These sessions are pushed onto a nav stack and have no underlying terminal
         // to return to via the normal agent view exit path.
-        if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
+        if self.is_ambient_agent_session(ctx) {
             if let Some(pane_stack) = self.pane_stack.as_ref().and_then(|h| h.upgrade(ctx)) {
                 pane_stack.update(ctx, |stack, ctx| {
                     stack.pop(ctx);
@@ -5041,7 +5063,7 @@ impl TerminalView {
                     }
                 }
 
-                if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                if self.is_ambient_agent_session(ctx)
                     && self
                         .model
                         .lock()
@@ -5273,7 +5295,7 @@ impl TerminalView {
 
                 // Show AI credits modal for cloud-mode out-of-credits failures.
                 if FeatureFlag::CloudMode.is_enabled()
-                    && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                    && self.is_ambient_agent_session(ctx)
                     && !self.model.lock().is_shared_ambient_agent_session()
                 {
                     if let Some(conversation) =
@@ -6572,8 +6594,10 @@ impl TerminalView {
             .active_conversation_id()
     }
 
-    pub fn ambient_agent_view_model(&self) -> &ModelHandle<ambient_agent::AmbientAgentViewModel> {
-        &self.ambient_agent_view_model
+    pub fn ambient_agent_view_model(
+        &self,
+    ) -> Option<&ModelHandle<ambient_agent::AmbientAgentViewModel>> {
+        self.ambient_agent_view_model.as_ref()
     }
 
     fn ambient_agent_task_id_for_details_panel_from_model(
@@ -6582,8 +6606,8 @@ impl TerminalView {
         app: &AppContext,
     ) -> Option<AmbientAgentTaskId> {
         self.ambient_agent_view_model
-            .as_ref(app)
-            .task_id()
+            .as_ref()
+            .and_then(|model| model.as_ref(app).task_id())
             .or_else(|| model.ambient_agent_task_id())
     }
     pub fn ambient_agent_task_id_for_details_panel(
@@ -6775,9 +6799,7 @@ impl TerminalView {
             return false;
         }
 
-        if model.shared_session_status().is_view_pending()
-            && !self.ambient_agent_view_model.as_ref(app).is_ambient_agent()
-        {
+        if model.shared_session_status().is_view_pending() && !self.is_ambient_agent_session(app) {
             return false;
         }
 
@@ -6786,7 +6808,7 @@ impl TerminalView {
         // rendered instead (see `TerminalView::render`).
         if !FeatureFlag::CloudModeSetupV2.is_enabled()
             && is_cloud_agent_pre_first_exchange(
-                &self.ambient_agent_view_model,
+                self.ambient_agent_view_model.as_ref(),
                 &self.agent_view_controller,
                 app,
             )
@@ -7173,7 +7195,7 @@ impl TerminalView {
         if self
             .agent_view_controller
             .as_ref(app)
-            .can_exit_agent_view(app)
+            .can_exit_agent_view()
             .is_err()
         {
             return false;
@@ -10021,7 +10043,7 @@ impl TerminalView {
         let disabled_reason = self
             .agent_view_controller
             .as_ref(ctx)
-            .can_exit_agent_view(ctx)
+            .can_exit_agent_view()
             .err()
             .map(|e| e.to_string());
 
@@ -12628,7 +12650,7 @@ impl TerminalView {
         // directly to the environment management pane
         if FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_active()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+            && self.is_ambient_agent_session(ctx)
         {
             self.open_environment_management_pane(ctx);
             return;
@@ -14846,13 +14868,13 @@ impl TerminalView {
         // Then check if there's selected text in the cloud mode error screen
         let error_selected_text = self
             .ambient_agent_view_model
-            .as_ref(ctx)
-            .ui_state
-            .error_selected_text
-            .clone();
-        if let Some(text) = error_selected_text.read().clone().filter(|t| !t.is_empty()) {
-            ctx.clipboard().write(ClipboardContent::plain_text(text));
-            return;
+            .as_ref()
+            .map(|model| model.as_ref(ctx).ui_state.error_selected_text.clone());
+        if let Some(error_selected_text) = error_selected_text {
+            if let Some(text) = error_selected_text.read().clone().filter(|t| !t.is_empty()) {
+                ctx.clipboard().write(ClipboardContent::plain_text(text));
+                return;
+            }
         }
 
         let semantic_selection = SemanticSelection::as_ref(ctx);
@@ -17424,7 +17446,7 @@ impl TerminalView {
     fn clear_buffer(&mut self, ctx: &mut ViewContext<Self>) {
         let agent_view_state = self.agent_view_controller.as_ref(ctx).agent_view_state();
         let is_fullscreen_agent_view = agent_view_state.is_fullscreen();
-        let is_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_ambient_agent = self.is_ambient_agent_session(ctx);
 
         // When in the modal agent view, "clear buffer" has special semantics.
         // Try to clear it specially, but if it wasn't successful, then clear normally.
@@ -19830,7 +19852,7 @@ impl TerminalView {
                     if self
                         .agent_view_controller
                         .as_ref(ctx)
-                        .can_exit_agent_view(ctx)
+                        .can_exit_agent_view()
                         .is_err()
                     {
                         return;
@@ -19845,9 +19867,10 @@ impl TerminalView {
                     {
                         // During first-time setup, always exit directly without confirmation
                         // since the setup overlay would obscure any confirmation dialog.
-                        let ambient_agent_view = self.ambient_agent_view_model.as_ref(ctx);
-                        let is_in_setup = ambient_agent_view.is_ambient_agent()
-                            && ambient_agent_view.is_in_setup();
+                        let is_in_setup = self
+                            .ambient_agent_view_model
+                            .as_ref()
+                            .is_some_and(|model| model.as_ref(ctx).is_in_setup());
                         if !is_in_setup && !self.input.as_ref(ctx).buffer_text(ctx).is_empty() {
                             self.agent_view_controller.update(ctx, |session, ctx| {
                                 session.exit_agent_view_with_required_confirmation(
@@ -25399,9 +25422,11 @@ impl TypedActionView for TerminalView {
                 ctx.notify();
             }
             CancelAmbientAgentTask => {
-                self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                    model.cancel_task(ctx);
-                });
+                if let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() {
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        model.cancel_task(ctx);
+                    });
+                }
                 ctx.notify();
             }
             ToggleUsageFooter => {
@@ -25497,7 +25522,7 @@ impl View for TerminalView {
                         .with_child(column.finish())
                 } else {
                     let output_area = if (model.shared_session_status().is_view_pending()
-                        && !self.ambient_agent_view_model.as_ref(app).is_ambient_agent())
+                        && !self.is_ambient_agent_session(app))
                         || model.is_loading_conversation_transcript()
                     {
                         self.render_viewer_loading(app)
@@ -25527,7 +25552,7 @@ impl View for TerminalView {
                         column.add_child(self.render_input());
                     } else if !model.is_read_only()
                         && is_cloud_agent_pre_first_exchange(
-                            &self.ambient_agent_view_model,
+                            self.ambient_agent_view_model.as_ref(),
                             &self.agent_view_controller,
                             app,
                         )
@@ -25559,9 +25584,8 @@ impl View for TerminalView {
             // Show progress steps while waiting for an ambient agent to start.
             if self
                 .ambient_agent_view_model
-                .as_ref(app)
-                .agent_progress()
-                .is_some()
+                .as_ref()
+                .is_some_and(|model| model.as_ref(app).agent_progress().is_some())
             {
                 stack.add_child(self.render_ambient_agent_progress(appearance, app));
             }
@@ -25885,7 +25909,11 @@ impl View for TerminalView {
         }
 
         // Render first-time cloud agent setup view when in Setup status
-        if self.ambient_agent_view_model.as_ref(app).is_in_setup() {
+        if self
+            .ambient_agent_view_model
+            .as_ref()
+            .is_some_and(|model| model.as_ref(app).is_in_setup())
+        {
             stack.add_child(ChildView::new(&self.first_time_cloud_agent_setup_view).finish());
         }
 
@@ -26059,10 +26087,7 @@ impl View for TerminalView {
             }
         }
 
-        let ambient_agent_view_model = self.ambient_agent_view_model.as_ref(app);
-        if ambient_agent_view_model.is_ambient_agent()
-            && !ambient_agent_view_model.has_parent_terminal()
-        {
+        if self.is_ambient_agent_session(app) && !self.is_nested_cloud_mode(app) {
             context.set.insert(init::ROOT_CLOUD_MODE_PANE_KEY);
         }
 
