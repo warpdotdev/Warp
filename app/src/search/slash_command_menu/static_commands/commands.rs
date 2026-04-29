@@ -661,6 +661,21 @@ mod tests {
     }
 
     #[test]
+    fn rename_pane_command_requires_argument() {
+        let command = COMMAND_REGISTRY
+            .get_command_with_name(RENAME_PANE.name)
+            .expect("expected /rename-pane to be registered");
+        let argument = command
+            .argument
+            .as_ref()
+            .expect("expected /rename-pane to require an argument");
+
+        assert!(!argument.is_optional);
+        assert!(!argument.should_execute_on_selection);
+        assert_eq!(argument.hint_text, Some("<pane name>"));
+    }
+
+    #[test]
     fn strip_command_prefix_matches_orchestrate() {
         let result = strip_command_prefix("/orchestrate deploy services", "/orchestrate");
         assert_eq!(result, Some("deploy services".to_string()));

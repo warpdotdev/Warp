@@ -5243,6 +5243,9 @@ impl Workspace {
     }
 
     pub fn rename_active_pane(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.vertical_tabs_panel_open {
+            self.vertical_tabs_panel_open = true;
+        }
         let active_pane_group = self.active_tab_pane_group().clone();
         let pane_group_id = active_pane_group.id();
         let pane_id = active_pane_group.as_ref(ctx).focused_pane_id(ctx);
@@ -5259,6 +5262,12 @@ impl Workspace {
         let active_pane_group = self.active_tab_pane_group().clone();
         let pane_group_id = active_pane_group.id();
         let pane_id = active_pane_group.as_ref(ctx).focused_pane_id(ctx);
+
+        if self.current_workspace_state.is_any_pane_being_renamed() {
+            self.current_workspace_state.clear_pane_being_renamed();
+            self.clear_pane_name_editor(ctx);
+        }
+
         let title = name.trim();
         if title.is_empty() {
             ctx.notify();
@@ -5272,6 +5281,7 @@ impl Workspace {
             title.to_owned(),
             ctx,
         );
+        ctx.dispatch_global_action("workspace:save_app", ());
         ctx.notify();
     }
 
