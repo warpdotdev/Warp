@@ -51,6 +51,8 @@ const MENU_CORNER_RADIUS: f32 = 6.;
 
 const ROW_VERTICAL_PADDING: f32 = 4.;
 
+const ICON_SIZE: f32 = 16.;
+
 const DIVIDER_HEIGHT: f32 = 1.;
 
 const DIVIDER_VERTICAL_PADDING: f32 = 0.;
@@ -1140,7 +1142,7 @@ impl View for CloudModeV2SlashCommandView {
             OffsetPositioning::offset_from_save_position_element(
                 row_position_id,
                 vec2f(SIDECAR_GAP, 0.),
-                PositionedElementOffsetBounds::Unbounded,
+                PositionedElementOffsetBounds::WindowByPosition,
                 PositionedElementAnchor::BottomRight,
                 ChildAnchor::BottomLeft,
             ),
