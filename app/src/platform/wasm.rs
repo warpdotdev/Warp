@@ -2,7 +2,21 @@ use js_sys::ReferenceError;
 use thiserror::Error;
 use wasm_bindgen::{JsCast, JsValue};
 
-pub use warp_web_event_bus::{emit_event, WarpEvent};
+// strip(tier-1): warp_web_event_bus existed to push events from a
+// wasm-embedded warp into the host JavaScript page. This fork doesn't
+// run as a web app, so the bus is gone. Local stubs keep the wasm
+// build green if anyone ever does target wasm; on a native build this
+// whole module isn't compiled.
+#[derive(Debug, Clone)]
+pub enum WarpEvent {
+    LoggedOut,
+    SessionJoined,
+    ErrorLogged { error: String },
+    OpenOnNative { url: String },
+    ThemeBackgroundChanged { color: String },
+}
+
+pub fn emit_event(_event: WarpEvent) {}
 
 /// This function should be called early in application initialization to ensure that
 /// static variables are initialized.

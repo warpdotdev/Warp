@@ -169,10 +169,10 @@ impl Log for WasmLogger {
                             .line()
                             .map_or_else(|| "[Unknown]".to_string(), |line| line.to_string()),
                     );
-                    // Send error logs to Sentry.
-                    warp_web_event_bus::emit_event(warp_web_event_bus::WarpEvent::ErrorLogged {
-                        error,
-                    });
+                    // strip(tier-1): warp_web_event_bus removed. The error
+                    // log still goes to the browser console below; we just
+                    // don't push it to the host JS page anymore.
+                    let _ = error;
 
                     console::error_4(
                         &s,

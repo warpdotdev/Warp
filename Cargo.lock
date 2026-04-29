@@ -14188,7 +14188,6 @@ dependencies = [
  "warp_server_client",
  "warp_terminal",
  "warp_util",
- "warp_web_event_bus",
  "warpui",
  "warpui_extras",
  "wasm-bindgen",
@@ -14526,7 +14525,6 @@ dependencies = [
  "sentry",
  "sentry-log",
  "warp_core",
- "warp_web_event_bus",
  "wasm-bindgen",
  "web-sys",
  "zip 2.4.2",
@@ -14674,17 +14672,6 @@ dependencies = [
  "typed-path 0.10.0",
  "warpui",
  "windows 0.62.2",
-]
-
-[[package]]
-name = "warp_web_event_bus"
-version = "0.0.0"
-dependencies = [
- "js-sys",
- "log",
- "serde",
- "serde-wasm-bindgen",
- "wasm-bindgen",
 ]
 
 [[package]]
