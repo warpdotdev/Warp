@@ -5243,30 +5243,46 @@ impl Workspace {
     }
 
     pub fn rename_active_pane(&mut self, ctx: &mut ViewContext<Self>) {
-        let use_vertical_tabs =
-            FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs;
-        if !use_vertical_tabs {
-            let message =
-                "Pane renaming via shortcut requires Vertical Tabs. Use `/rename-pane <name>` instead, or enable Vertical Tabs in Settings."
-                    .to_string();
+        // The inline pane-rename editor only renders when Vertical Tabs is on AND
+        // the display granularity is Panes — the Tabs granularity (FocusedSession
+        // and Summary view modes) skips the pane-row loop entirely, so focusing
+        // `pane_rename_editor` from those modes leaves the user in an invisible
+        // edit state. Use slash-command prefill as the universal fallback.
+        let inline_editor_visible = FeatureFlag::VerticalTabs.is_enabled()
+            && *TabSettings::as_ref(ctx).use_vertical_tabs
+            && matches!(
+                *TabSettings::as_ref(ctx).vertical_tabs_display_granularity,
+                VerticalTabsDisplayGranularity::Panes,
+            );
+
+        if inline_editor_visible {
+            if !self.vertical_tabs_panel_open {
+                self.vertical_tabs_panel_open = true;
+            }
+            let active_pane_group = self.active_tab_pane_group().clone();
+            let pane_group_id = active_pane_group.id();
+            let pane_id = active_pane_group.as_ref(ctx).focused_pane_id(ctx);
+            self.rename_pane(
+                PaneViewLocator {
+                    pane_group_id,
+                    pane_id,
+                },
+                ctx,
+            );
+            return;
+        }
+
+        if let Some(input_handle) = self.get_active_input_view_handle(ctx) {
+            input_handle.update(ctx, |input, input_ctx| {
+                input.replace_buffer_content("/rename-pane ", input_ctx);
+                input.focus_input_box(input_ctx);
+            });
+        } else {
+            let message = "Open a terminal to rename a pane.".to_string();
             self.toast_stack.update(ctx, |view, ctx| {
                 view.add_ephemeral_toast(DismissibleToast::default(message), ctx);
             });
-            return;
         }
-        if !self.vertical_tabs_panel_open {
-            self.vertical_tabs_panel_open = true;
-        }
-        let active_pane_group = self.active_tab_pane_group().clone();
-        let pane_group_id = active_pane_group.id();
-        let pane_id = active_pane_group.as_ref(ctx).focused_pane_id(ctx);
-        self.rename_pane(
-            PaneViewLocator {
-                pane_group_id,
-                pane_id,
-            },
-            ctx,
-        );
     }
 
     fn set_active_pane_name(&mut self, name: &str, ctx: &mut ViewContext<Self>) {
