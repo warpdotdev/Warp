@@ -156,6 +156,35 @@ impl AmbientAgentViewModel {
         }
     }
 
+    /// Test-only constructor that skips the [`CloudModel`] subscription and the
+    /// [`UpdateManager`]-driven environment validation. Lets sibling tests stand up an
+    /// `AmbientAgentViewModel` handle (only used to satisfy `AgentViewController`'s field
+    /// type) without registering the `CloudModel`/`UpdateManager` singletons.
+    #[cfg(test)]
+    pub fn new_for_test(
+        terminal_view_id: EntityId,
+        has_parent_terminal: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        let ui_state = AmbientAgentProgressUIState::new(ctx);
+
+        Self {
+            status: Status::NotAmbientAgent,
+            request: None,
+            terminal_view_id,
+            has_parent_terminal,
+            environment_id: None,
+            progress_timer_handle: None,
+            ui_state,
+            setup_commands_state: Default::default(),
+            task_id: None,
+            conversation_id: None,
+            harness: Harness::default(),
+            has_inserted_cloud_mode_user_query_block: false,
+            harness_command_started: false,
+        }
+    }
+
     pub fn request(&self) -> Option<&SpawnAgentRequest> {
         self.request.as_ref()
     }
