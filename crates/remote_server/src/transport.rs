@@ -6,8 +6,8 @@
 //! in-process for tests) implement the same trait without touching the
 //! manager.
 //!
-//! Methods are async. The trait is object-safe (uses boxed futures) so the
-//! manager can store `Arc<dyn RemoteTransport>` for reconnection support.
+//! Returns boxed futures for object safety — the manager stores
+//! `Arc<dyn RemoteTransport>` for reconnection.
 //!
 //! [`RemoteServerManager`]: crate::manager::RemoteServerManager
 #[cfg(not(target_family = "wasm"))]

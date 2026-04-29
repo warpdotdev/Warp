@@ -20,6 +20,7 @@ use serde::Serialize;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
 use warp_core::SessionId;
+use warpui::r#async::FutureExt as _;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
 
 /// Maximum number of reconnection attempts after a spontaneous disconnect.
@@ -763,15 +764,29 @@ impl RemoteServerManager {
         // the next reconnect (or explicit reconnect by the user) will reinstall.
         let client_version = ChannelState::app_version();
         if !version_is_compatible(client_version, &resp.server_version) {
-            log::error!(
+            log::warn!(
                 "Remote server version mismatch for session {session_id:?}: \
                  client={client_version:?}, server={:?}. Removing stale binary.",
                 resp.server_version
             );
-            if let Err(e) = transport.remove_remote_server_binary().await {
-                log::warn!(
-                    "Failed to remove stale remote binary for session {session_id:?}: {e}"
-                );
+            const REMOVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+            match transport
+                .remove_remote_server_binary()
+                .with_timeout(REMOVAL_TIMEOUT)
+                .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    log::warn!(
+                        "Failed to remove stale remote binary for session {session_id:?}: {e}"
+                    );
+                }
+                Err(_) => {
+                    log::warn!(
+                        "Timed out removing stale remote binary for session \
+                         {session_id:?} (timeout={REMOVAL_TIMEOUT:?})"
+                    );
+                }
             }
             return Err(ConnectAndHandshakeError::Initialize(anyhow::anyhow!(
                 "remote server version mismatch (client: {client_version:?}, \

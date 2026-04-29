@@ -4,6 +4,7 @@
 //! the remote server binary and to launch the `remote-server-proxy` process
 //! whose stdin/stdout become the protocol channel.
 use std::fmt;
+use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use warpui::r#async::executor;
 
 use remote_server::auth::RemoteServerAuthContext;
 use remote_server::client::RemoteServerClient;
-use remote_server::setup::{remote_server_daemon_dir, RemotePlatform};
+use remote_server::setup::{parse_uname_output, remote_server_daemon_dir, RemotePlatform};
 use remote_server::transport::{Connection, RemoteTransport};
 
 /// SSH transport: connects via a ControlMaster socket.
@@ -73,7 +74,7 @@ impl SshTransport {
 impl RemoteTransport for SshTransport {
     fn detect_platform(
         &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<RemotePlatform, String>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<RemotePlatform, String>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             match remote_server::ssh::run_ssh_command(
@@ -85,7 +86,7 @@ impl RemoteTransport for SshTransport {
             {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout);
-                    remote_server::setup::parse_uname_output(&stdout).map_err(|e| format!("{e:#}"))
+                    parse_uname_output(&stdout).map_err(|e| format!("{e:#}"))
                 }
                 Ok(output) => {
                     let code = output.status.code().unwrap_or(-1);
@@ -99,7 +100,7 @@ impl RemoteTransport for SshTransport {
 
     fn check_binary(
         &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<bool, String>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             let bin_path = remote_server::setup::remote_server_binary();
@@ -129,7 +130,7 @@ impl RemoteTransport for SshTransport {
 
     fn check_has_old_binary(
         &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<bool>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<bool>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             // Treat the existence of the remote-server install directory
@@ -164,7 +165,7 @@ impl RemoteTransport for SshTransport {
 
     fn install_binary(
         &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             let script = remote_server::setup::install_script();
@@ -193,7 +194,7 @@ impl RemoteTransport for SshTransport {
     fn connect(
         &self,
         executor: Arc<executor::Background>,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<Connection>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Connection>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             let binary = remote_server::setup::remote_server_binary();
@@ -205,14 +206,6 @@ impl RemoteTransport for SshTransport {
             // [`RemoteServerManager`] holds the `Child` on its per-session
             // state, and dropping that state (on explicit teardown or
             // spontaneous disconnect) sends SIGKILL to this ssh process.
-            // Without this the ssh child is orphaned and keeps a channel
-            // open on the ControlMaster socket, blocking the master from
-            // exiting cleanly when the user logs out.
-            //
-            // Note that the child's lifetime is decoupled from any
-            // `Arc<RemoteServerClient>` clones: other owners (e.g. the
-            // per-session command executor) can keep the client alive for
-            // their own purposes without pinning the subprocess.
             let mut child = command::r#async::Command::new("ssh")
                 .args(&args)
                 .stdin(std::process::Stdio::piped())
@@ -247,7 +240,7 @@ impl RemoteTransport for SshTransport {
 
     fn remove_remote_server_binary(
         &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             let cmd = format!("rm -f {}", remote_server::setup::remote_server_binary());
