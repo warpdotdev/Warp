@@ -15,19 +15,8 @@ use crate::terminal::input::slash_commands::{
 
 pub struct ZeroStateDataSource {
     slash_command_data_source: ModelHandle<SlashCommandDataSource>,
-    /// When true, surface skills (in addition to slash commands) when the query
-    /// is empty. Used by the cloud-mode V2 menu, which renders skills in their
-    /// own section. The legacy inline menu keeps this disabled.
     include_skills: bool,
-    /// When true, surface saved prompts (in addition to slash commands) when
-    /// the query is empty. Used by the cloud-mode V2 menu, which renders
-    /// prompts in their own section. The legacy inline menu keeps this
-    /// disabled.
     include_saved_prompts: bool,
-    /// When true, items emitted carry `compact_layout = true` so the V2
-    /// menu renders them with a tight `name → 8px → description` layout.
-    /// Tracked separately from `include_*` so the layout decision is
-    /// explicit rather than coupled to which sections are surfaced.
     compact_layout: bool,
 }
 
@@ -41,10 +30,6 @@ impl ZeroStateDataSource {
         }
     }
 
-    /// Constructor for the cloud-mode V2 slash command menu. Surfaces skills
-    /// and saved prompts in zero state alongside slash commands so the V2
-    /// menu can render all three sections (Commands / Skills / Prompts) before
-    /// the user types a query.
     pub fn for_cloud_mode_v2(
         slash_command_data_source: &ModelHandle<SlashCommandDataSource>,
     ) -> Self {
@@ -126,10 +111,6 @@ impl SyncDataSource for ZeroStateDataSource {
             }
         }
 
-        // Skills are gated by the `ListSkills` feature flag and the global AI
-        // setting (matching `SlashCommandDataSource::run_query` for non-empty
-        // queries). Items are emitted in name-descending order so the mixer's
-        // ascending priority sort lands on alphabetical order.
         if self.include_skills
             && FeatureFlag::ListSkills.is_enabled()
             && AISettings::as_ref(app).is_any_ai_enabled(app)
@@ -149,8 +130,6 @@ impl SyncDataSource for ZeroStateDataSource {
                 .into_iter()
                 .sorted_by(|a, b| b.name.to_lowercase().cmp(&a.name.to_lowercase()))
             {
-                // Mirror the CLI-agent provider filtering applied to fuzzy search
-                // so zero state and search state stay consistent.
                 if let Some(providers) = &cli_agent_providers {
                     if !skill_manager.skill_exists_for_any_provider(&skill, providers) {
                         continue;
@@ -165,9 +144,6 @@ impl SyncDataSource for ZeroStateDataSource {
             }
         }
 
-        // Saved prompts are agent-mode workflows; only surface them when AI is
-        // globally enabled. Items are emitted in name-descending order so the
-        // mixer's ascending priority sort lands on alphabetical order.
         if self.include_saved_prompts && AISettings::as_ref(app).is_any_ai_enabled(app) {
             let saved_prompts: Vec<_> = CloudModel::as_ref(app)
                 .get_all_active_workflows()

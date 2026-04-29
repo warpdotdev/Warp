@@ -255,8 +255,6 @@ impl Input {
         } else if self.suggestions_mode_model.as_ref(app).is_slash_commands()
             && !self.is_cloud_mode_input_v2_composing(app)
         {
-            // V2 composing renders its own cursor-anchored menu; the legacy
-            // inline-above-input slash menu must not also appear.
             column.add_child(ChildView::new(&self.inline_slash_commands_view).finish());
         } else if self.suggestions_mode_model.as_ref(app).is_prompts_menu() {
             column.add_child(ChildView::new(&self.inline_prompts_menu_view).finish());
@@ -398,11 +396,6 @@ impl Input {
             );
         }
 
-        // Cursor-anchored slash command menu for V2 composing. Mirrors the
-        // overlay pattern used by `render_ai_context_menu`. The legacy menu is
-        // gated out of the V1 column path above when V2 is composing, so the
-        // two cannot render simultaneously. Anchor parent's bottom-left to the
-        // child's top-left so the menu drops *below* the cursor.
         if self.suggestions_mode_model.as_ref(app).is_slash_commands() {
             if let Some(view) = self.cloud_mode_v2_slash_commands_view.as_ref() {
                 let cursor_position = position_id_for_cursor(self.editor.id());

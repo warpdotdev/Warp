@@ -1608,9 +1608,6 @@ pub struct Input {
     prompt_suggestions_view: ViewHandle<PromptSuggestionsView>,
 
     inline_slash_commands_view: ViewHandle<InlineSlashCommandView>,
-    /// V2 cloud-mode slash command menu, lazily constructed only when
-    /// `FeatureFlag::CloudModeInputV2` is on. Sibling of
-    /// `inline_slash_commands_view`; the legacy view is unaffected.
     cloud_mode_v2_slash_commands_view: Option<ViewHandle<CloudModeV2SlashCommandView>>,
     slash_command_data_source: ModelHandle<SlashCommandDataSource>,
 
@@ -2969,10 +2966,6 @@ impl Input {
                 cli_subagent_controller: cli_subagent_controller.clone(),
                 terminal_view_id,
             };
-            // The V2 menu renders in a narrow 320px floating panel where the
-            // legacy fixed-width name column would push descriptions
-            // offscreen. When V2 is active we use the compact layout for
-            // every emitted item; legacy menus keep the column rendering.
             if FeatureFlag::CloudModeInputV2.is_enabled() {
                 SlashCommandDataSource::for_cloud_mode_v2(args, ctx)
             } else {
@@ -3140,9 +3133,6 @@ impl Input {
             me.handle_slash_commands_menu_event(event, ctx);
         });
 
-        // The V2 menu shares `SlashCommandsEvent` with the legacy view so
-        // `handle_slash_commands_menu_event` handles both. Only constructed
-        // when V2 is enabled at runtime.
         let cloud_mode_v2_slash_commands_view = if FeatureFlag::CloudModeInputV2.is_enabled() {
             let view = ctx.add_typed_action_view(|ctx| {
                 CloudModeV2SlashCommandView::new(

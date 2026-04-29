@@ -1,13 +1,3 @@
-//! Cloud-mode V2 slash command menu.
-//!
-//! A floating, cursor-anchored alternative to `InlineSlashCommandView` that is
-//! gated behind `FeatureFlag::CloudModeInputV2`. The legacy view is left
-//! untouched everywhere else.
-//!
-//! Rendering is driven by a single `MenuState` enum so that the two visible
-//! shapes (`NoSearchActive` sectioned, `SearchActive` flat) are mutually
-//! exclusive and never coexist.
-
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
@@ -42,13 +32,8 @@ use crate::terminal::input::suggestions_mode_model::{
 
 const MENU_WIDTH: f32 = 320.;
 
-/// Figma frame is 380px tall; 400px leaves a few pixels of breathing room and
-/// the `Scrollable` clamps to whatever vertical space the parent grants when
-/// the window is narrow.
 const MENU_MAX_HEIGHT: f32 = 400.;
 
-/// Number of items shown per section in the `NoSearchActive` state before the
-/// "Show N more" affordance appears.
 const ITEMS_PER_SECTION_COLLAPSED: usize = 3;
 
 const SECTION_HEADER_FONT_SIZE: f32 = 12.;
@@ -69,23 +54,12 @@ const ICON_TO_TEXT_GAP: f32 = 8.;
 
 const DIVIDER_HEIGHT: f32 = 1.;
 
-/// No vertical padding on the divider itself: the show-more row above and the
-/// section header below already contribute their own `ROW_VERTICAL_PADDING`,
-/// so adding more here produced a visible gap below the "Show N more"
-/// highlight before the next section.
 const DIVIDER_VERTICAL_PADDING: f32 = 0.;
 
-/// Stable position id for the selectable row at `visible_idx`. Wrapping each
-/// row in a `SavePosition` with this id lets `ClippedScrollStateHandle::
-/// scroll_to_position` find the row's painted bounds and scroll the viewport
-/// just enough to bring it fully into view when keyboard selection moves.
 fn row_position_id(visible_idx: usize) -> String {
     format!("cloud_mode_v2_slash_row_{visible_idx}")
 }
 
-/// Shared renderer styles for the V2 menu rows. Mirrors the subset of
-/// `InlineMenuView::QUERY_RESULT_RENDERER_STYLES` we need; we don't reuse that
-/// constant because it is private to `inline_menu::view`.
 static QUERY_RESULT_RENDERER_STYLES: LazyLock<QueryResultRendererStyles> =
     LazyLock::new(|| QueryResultRendererStyles {
         result_item_height_fn: |appearance| appearance.monospace_font_size() + 8.,
@@ -94,8 +68,6 @@ static QUERY_RESULT_RENDERER_STYLES: LazyLock<QueryResultRendererStyles> =
         ..Default::default()
     });
 
-/// Section identifier. The mapping from `AcceptSlashCommandOrSavedPrompt`
-/// variant to section is deterministic; see `Section::for_action`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Section {
     Commands,
@@ -104,7 +76,6 @@ pub enum Section {
 }
 
 impl Section {
-    /// Order in which sections render in the `NoSearchActive` state.
     const RENDER_ORDER: [Self; 3] = [Self::Commands, Self::Skills, Self::Prompts];
 
     fn header(self) -> &'static str {
@@ -124,16 +95,11 @@ impl Section {
     }
 }
 
-/// Result renderers grouped under a section. Items keep score order within the
-/// section (mixer returns ascending priority).
 struct RenderedSection {
     section: Section,
     items: Vec<QueryResultRenderer<AcceptSlashCommandOrSavedPrompt>>,
 }
 
-/// Visible-row representation used only by the `NoSearchActive` state.
-/// Computed on demand from `(sections, expanded_sections)` for both rendering
-/// and keyboard navigation; not stored on the struct.
 #[derive(Clone, Copy)]
 enum NoSearchActiveRow {
     SectionHeader(Section),
@@ -141,8 +107,6 @@ enum NoSearchActiveRow {
         section: Section,
         item_idx: usize,
     },
-    /// Show the remaining items in `section`. `hidden_count` is the number of
-    /// items currently hidden behind the truncation; used in the row label.
     ShowMore {
         section: Section,
         hidden_count: usize,
@@ -159,28 +123,15 @@ impl NoSearchActiveRow {
     }
 }
 
-/// Top-level state for the V2 menu. Exactly one variant is live at a time.
 enum MenuState {
-    /// User has not entered a query (just typed `/`). Results are grouped into
-    /// the three sections, each truncated to `ITEMS_PER_SECTION_COLLAPSED`
-    /// until the user activates the section's `Show N more` row.
     NoSearchActive {
         sections: Vec<RenderedSection>,
         expanded_sections: HashSet<Section>,
-        /// Index into the visible-row sequence (`browsing_rows`). Headers and
-        /// dividers are skipped during navigation; items and `ShowMore` rows
-        /// are selectable.
         selected_idx: Option<usize>,
-        /// Mouse-state handles for `ShowMore` rows, keyed by section.
         show_more_mouse_states: HashMap<Section, MouseStateHandle>,
     },
-    /// User has typed a query. Results are pulled from across all sections
-    /// into a single flat list sorted by match score, with fuzzy match indices
-    /// highlighted.
     SearchActive {
         results: Vec<QueryResultRenderer<AcceptSlashCommandOrSavedPrompt>>,
-        /// Index directly into `results`. Disabled items are skipped during
-        /// navigation.
         selected_idx: Option<usize>,
     },
 }
@@ -196,19 +147,14 @@ impl MenuState {
     }
 }
 
-/// Internal action used to wire mouse hover/click events back into the view.
 #[derive(Debug, Clone)]
 pub enum CloudModeV2SlashCommandAction {
-    /// Accept the given item (Enter or click).
     Accept {
         item: AcceptSlashCommandOrSavedPrompt,
         cmd_or_ctrl_enter: bool,
     },
-    /// Move the keyboard selection to the result at `idx` (mouse hover).
     HoverIdx(usize),
-    /// Toggle expansion for `section` (Show N more clicked).
     ToggleSection(Section),
-    /// User dismissed the menu (clicked outside, escape).
     Dismiss,
 }
 
@@ -218,11 +164,6 @@ pub struct CloudModeV2SlashCommandView {
     input_buffer_model: ModelHandle<InputBufferModel>,
     weak_handle: WeakViewHandle<Self>,
     scroll_state: ClippedScrollStateHandle,
-    /// Mutually exclusive: at any moment the menu is either `NoSearchActive`
-    /// (no query, sectioned with expand controls) or `SearchActive` (query,
-    /// flat ranked list). Replacing the previous `sections` + `flat_rows`
-    /// field pair with this enum means we never carry a stale empty copy of
-    /// the unused shape.
     menu_state: MenuState,
 }
 
@@ -234,8 +175,6 @@ impl CloudModeV2SlashCommandView {
         input_buffer_model: ModelHandle<InputBufferModel>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        // Re-run the active query whenever the set of active commands changes
-        // (e.g. CWD update, AI toggle). Mirrors `InlineSlashCommandView::new`.
         ctx.subscribe_to_model(
             &slash_commands_source,
             |me, _, _: &UpdatedActiveCommands, ctx| {
@@ -257,10 +196,6 @@ impl CloudModeV2SlashCommandView {
                 slash_commands_source.clone(),
                 [QueryFilter::StaticSlashCommands],
             );
-            // V2 keeps the saved-prompts async source but configures it
-            // identically to the legacy view; saved prompts in zero state are
-            // sourced from the V2 zero-state extension instead so the legacy
-            // mixer config doesn't need to change.
             mixer.add_async_source(
                 saved_prompts_source,
                 [QueryFilter::StaticSlashCommands],
@@ -282,8 +217,6 @@ impl CloudModeV2SlashCommandView {
         ctx.subscribe_to_model(&mixer, |me, _, event, ctx| match event {
             SearchMixerEvent::ResultsChanged => {
                 if me.mixer.as_ref(ctx).is_loading() {
-                    // Keep stale results visible while async sources are
-                    // pending to avoid flicker. Mirrors `InlineMenuView`.
                     return;
                 }
                 me.rebuild_from_results(ctx);
@@ -291,10 +224,6 @@ impl CloudModeV2SlashCommandView {
             }
         });
 
-        // Re-run query when the slash command model state changes (the user
-        // typed after the leading `/`). Same gating as the legacy view: only
-        // re-run while the menu is open so we don't burn cycles on saved
-        // prompt searches after the menu has been closed.
         ctx.subscribe_to_model(slash_command_model, |me, model, _, ctx| {
             if !me.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
                 return;
@@ -309,9 +238,6 @@ impl CloudModeV2SlashCommandView {
             }
         });
 
-        // Buffer subscription so we transition between `NoSearchActive` and
-        // `SearchActive` immediately as the user adds/removes characters
-        // after the `/`, even if the slash command model didn't move state.
         ctx.subscribe_to_model(
             &input_buffer_model,
             |me, _, _: &InputBufferUpdateEvent, ctx| {
@@ -331,8 +257,6 @@ impl CloudModeV2SlashCommandView {
                 me.menu_state = MenuState::empty();
                 return;
             }
-            // If the menu reopened with a slash query already in the buffer,
-            // re-run the query so we don't show stale results.
             if me.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
                 me.run_query_for_current_slash_filter(ctx);
             }
@@ -356,9 +280,6 @@ impl CloudModeV2SlashCommandView {
         self.move_selection(SelectionDirection::Down, ctx);
     }
 
-    /// Asks the outer `ClippedScrollable` to scroll the row at `visible_idx`
-    /// fully into view. Each row is wrapped in `SavePosition` with the
-    /// matching id so the position cache resolves it at paint time.
     fn scroll_selected_into_view(&self, visible_idx: usize) {
         self.scroll_state.scroll_to_position(ScrollTarget {
             position_id: row_position_id(visible_idx),
@@ -424,8 +345,6 @@ impl CloudModeV2SlashCommandView {
         ctx.emit(SlashCommandsEvent::Close(CloseReason::ManualDismissal));
     }
 
-    /// Returns the number of currently visible result items (for callers that
-    /// gate on the count, e.g. `Input::handle_slash_command_model_event`).
     pub fn result_count(&self, app: &AppContext) -> usize {
         self.mixer.as_ref(app).results().len()
     }
@@ -454,20 +373,13 @@ impl CloudModeV2SlashCommandView {
         let on_click_fn = move |_idx: usize,
                                 item: AcceptSlashCommandOrSavedPrompt,
                                 evt_ctx: &mut warpui::EventContext| {
-            // Forward clicks through the typed action so the view receives
-            // them in `handle_action` regardless of which row dispatched.
             evt_ctx.dispatch_typed_action(CloudModeV2SlashCommandAction::Accept {
                 item,
                 cmd_or_ctrl_enter: false,
             });
-            let _ = weak_handle; // keep the closure self-contained.
+            let _ = weak_handle;
         };
 
-        // The mixer sorts results ascending by `(priority_tier, score,
-        // source_order)`, so the highest-priority item is at the *end* of
-        // the vec. Our menu renders top-to-bottom, so we reverse here to put
-        // the best match (or, for zero state, the alphabetically-first item
-        // since data sources emit in name-descending order) at the top.
         let renderers: Vec<QueryResultRenderer<AcceptSlashCommandOrSavedPrompt>> = self
             .mixer
             .as_ref(ctx)
@@ -501,8 +413,6 @@ impl CloudModeV2SlashCommandView {
                 })
                 .collect();
 
-            // Carry expansion across rebuilds while staying in
-            // `NoSearchActive`; reset on transition from `SearchActive`.
             let expanded_sections = match &self.menu_state {
                 MenuState::NoSearchActive {
                     expanded_sections, ..
@@ -510,8 +420,6 @@ impl CloudModeV2SlashCommandView {
                 MenuState::SearchActive { .. } => HashSet::new(),
             };
 
-            // Allocate a stable mouse-state handle per section's `Show More`
-            // row so hover state survives rebuilds.
             let mut show_more_mouse_states = match &self.menu_state {
                 MenuState::NoSearchActive {
                     show_more_mouse_states,
@@ -552,7 +460,6 @@ impl CloudModeV2SlashCommandView {
                 expanded_sections.remove(&section);
             }
         }
-        // Selection may now point past the end of the new visible row list.
         clamp_browsing_selection(&mut self.menu_state);
         ctx.notify();
     }
@@ -631,9 +538,6 @@ impl CloudModeV2SlashCommandView {
             let rows = browsing_rows(sections, expanded_sections);
             if rows.get(idx).is_some_and(|r| r.is_selectable()) {
                 *selected_idx = Some(idx);
-                // Mouse-driven hover updates also benefit from re-anchoring
-                // the scroll position so keyboard navigation continues from
-                // a row that's actually visible.
                 self.scroll_selected_into_view(idx);
                 ctx.notify();
             }
@@ -663,7 +567,6 @@ enum SelectionDirection {
     Down,
 }
 
-/// Builds the visible-row sequence for the `NoSearchActive` state.
 fn browsing_rows(
     sections: &[RenderedSection],
     expanded_sections: &HashSet<Section>,
@@ -829,11 +732,8 @@ impl CloudModeV2SlashCommandView {
                     let row_element = self.wrap_with_hover(
                         renderer.render_inline(visible_idx, is_selected, app),
                         visible_idx,
-                        /*is_browsing=*/ true,
+                        true,
                     );
-                    // Cache the row's painted bounds so the scrollable can
-                    // scroll it into view when keyboard navigation lands on
-                    // a row outside the viewport.
                     column.add_child(
                         SavePosition::new(row_element, &row_position_id(visible_idx)).finish(),
                     );
@@ -878,21 +778,13 @@ impl CloudModeV2SlashCommandView {
             .with_main_axis_size(MainAxisSize::Min);
         for (idx, renderer) in results.iter().enumerate() {
             let is_selected = selected_idx == Some(idx);
-            let row_element = self.wrap_with_hover(
-                renderer.render_inline(idx, is_selected, app),
-                idx,
-                /*is_browsing=*/ false,
-            );
-            // Cache row bounds for `scroll_to_position` keyboard
-            // navigation; `idx` here is the same index `selected_idx`
-            // tracks in `MenuState::SearchActive`.
+            let row_element =
+                self.wrap_with_hover(renderer.render_inline(idx, is_selected, app), idx, false);
             column.add_child(SavePosition::new(row_element, &row_position_id(idx)).finish());
         }
         column.finish()
     }
 
-    /// Wraps an item-row element with a `MouseInBehavior` so hover updates the
-    /// keyboard selection — same UX as `InlineMenuView` rows.
     fn wrap_with_hover(
         &self,
         element: Box<dyn Element>,
@@ -1033,8 +925,6 @@ impl View for CloudModeV2SlashCommandView {
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(MENU_CORNER_RADIUS)))
         .with_padding_top(MENU_VERTICAL_PADDING)
         .with_padding_bottom(MENU_VERTICAL_PADDING)
-        // Match the inline model/profile selector menus, which use the
-        // shared default shadow from `DropShadow::default()`.
         .with_drop_shadow(DropShadow::default())
         .finish()
     }
@@ -1108,10 +998,6 @@ fn render_show_more_row(
 fn render_divider(app: &AppContext) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
-    // Paint the 1px constrained box itself; the outer container only
-    // contributes transparent vertical spacing. Putting the background
-    // on the outer container would also color its padding, producing a
-    // band of `padding + height + padding` pixels instead of 1px.
     Container::new(
         ConstrainedBox::new(
             Container::new(warpui::elements::Empty::new().finish())
@@ -1125,9 +1011,6 @@ fn render_divider(app: &AppContext) -> Box<dyn Element> {
     .finish()
 }
 
-// ICON_SIZE / ICON_TO_TEXT_GAP are referenced from the design specs; surface
-// them via small helpers so the constants don't appear unused if the per-row
-// element layout shifts.
 #[allow(dead_code)]
 fn _icon_size() -> f32 {
     ICON_SIZE

@@ -112,12 +112,6 @@ impl SearchItem for InlineItem {
                     .with_margin_left(4.)
                     .finish(),
                 );
-            // The trailing `Shrinkable` is filler that pushes the keystroke
-            // chip flush-left inside the legacy fixed-width name column.
-            // The compact V2 layout sizes the row to its content (no
-            // fixed-width parent), so adding a flexible child here would
-            // be measured against an infinite main-axis constraint and
-            // panic the flex layout.
             if !self.compact_layout {
                 row = row.with_child(Shrinkable::new(1., Empty::new().finish()).finish());
             }
@@ -128,12 +122,8 @@ impl SearchItem for InlineItem {
 
         row.add_child(if self.description.is_some() {
             if self.compact_layout {
-                // V2 narrow menu: tight 8px gap so descriptions stay
-                // onscreen in the 320px floating panel.
                 Container::new(name_element).with_margin_right(8.).finish()
             } else {
-                // Legacy menu: align descriptions in a fixed column for
-                // visual continuity across rows.
                 ConstrainedBox::new(name_element)
                     .with_width(inline_width_for_name_column(app))
                     .finish()

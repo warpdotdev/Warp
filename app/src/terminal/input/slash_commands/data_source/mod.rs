@@ -59,11 +59,6 @@ pub struct SlashCommandDataSource {
     terminal_view_id: EntityId,
     active_commands_by_id: HashMap<SlashCommandId, StaticCommand>,
     active_repo_root: Option<PathBuf>,
-    /// When true, items emitted from this source carry `compact_layout =
-    /// true` so the V2 cloud-mode menu renders them with a tight
-    /// `name → 8px → description` layout instead of the legacy fixed-width
-    /// name column. The legacy menu sets this to false to preserve column
-    /// alignment across rows.
     compact_layout: bool,
 }
 
@@ -72,10 +67,6 @@ impl SlashCommandDataSource {
         Self::build(args, false, ctx)
     }
 
-    /// Constructor used when the V2 cloud-mode menu is active. Items
-    /// emitted by `run_query` carry `compact_layout = true` so the narrow
-    /// floating menu (320px) renders descriptions close to the name
-    /// instead of pushing them offscreen behind a fixed name column.
     pub fn for_cloud_mode_v2(args: DataSourceArgs, ctx: &mut ModelContext<Self>) -> Self {
         Self::build(args, true, ctx)
     }
@@ -274,9 +265,6 @@ impl SlashCommandDataSource {
         self.agent_view_controller.as_ref(ctx).is_active()
     }
 
-    /// Accessor used by `ZeroStateDataSource::for_cloud_mode_v2` so it can
-    /// resolve the current working directory for skill scoping without
-    /// duplicating the active-session model on the new data source.
     pub fn active_session_for_v2_zero_state(&self) -> &ModelHandle<ActiveSession> {
         &self.active_session
     }
@@ -444,10 +432,6 @@ pub struct InlineItem {
     pub name_match_result: Option<FuzzyMatchResult>,
     pub description_match_result: Option<FuzzyMatchResult>,
     pub score: OrderedFloat<f64>,
-    /// When true, render with a tight `name → 8px → description` layout
-    /// instead of the legacy fixed-width name column. Set by V2 data
-    /// sources where the menu is narrow (320px) and a fixed name column
-    /// would push descriptions offscreen.
     pub compact_layout: bool,
 }
 
@@ -471,9 +455,6 @@ impl InlineItem {
         }
     }
 
-    /// Builds an inline item for a saved prompt (cloud workflow). Used by the
-    /// V2 zero-state path; the legacy menu reaches saved prompts through the
-    /// async `saved_prompts_data_source` instead.
     pub(crate) fn from_saved_prompt(
         saved_prompt: &crate::workflows::CloudWorkflow,
         app: &AppContext,
@@ -483,11 +464,9 @@ impl InlineItem {
             action: AcceptSlashCommandOrSavedPrompt::SavedPrompt {
                 id: saved_prompt.id,
             },
-            // Matches the icon used by the legacy async `saved_prompts.rs` path.
             icon_path: "bundled/svg/prompt.svg",
             name: saved_prompt.model().data.name().to_owned(),
             description: None,
-            // Saved prompts use the UI font family (matching the legacy async path).
             font_family: appearance.ui_font_family(),
             name_match_result: None,
             description_match_result: None,
@@ -544,9 +523,6 @@ impl InlineItem {
         self
     }
 
-    /// Toggles the compact layout flag used by `SearchItem::render_item`
-    /// to choose between the legacy fixed-width name column and the V2
-    /// tight `name → 8px → description` layout.
     pub(crate) fn with_compact_layout(mut self, compact: bool) -> Self {
         self.compact_layout = compact;
         self
