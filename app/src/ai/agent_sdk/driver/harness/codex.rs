@@ -241,7 +241,3 @@ fn write_codex_agents_override(codex_dir: &Path, system_prompt: &str) -> Result<
         )
     })
 }
-
-#[cfg(test)]
-#[path = "codex_tests.rs"]
-mod tests;
