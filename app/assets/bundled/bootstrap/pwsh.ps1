@@ -243,7 +243,7 @@ $null = New-Module -Name Warp-Module -ScriptBlock {
         }
 
         # Clean up any completed warp jobs so they do not show up on the user's 'get-job'
-        # comands
+        # commands
         Warp-Clean-CompletedThread
 
         # Remove any instance of the 'Warp-Run-GeneratorCommand' call from the user's history

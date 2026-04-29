@@ -668,7 +668,7 @@ fn test_relative_positioning_bound_to_window_by_position() {
             .scene()
             .expect("Presenter should have rendered a scene after the view was updated.");
 
-        // The expected bounds should have a modified position to accomodate the size of the
+        // The expected bounds should have a modified position to accommodate the size of the
         // positioned child (it should be moved back to (0,0) from it's 'default' (75, 75).
         //
         // Note the usage of `RectF::from_points`, which specifies top-left

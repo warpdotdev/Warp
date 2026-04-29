@@ -1660,7 +1660,7 @@ pub enum Event {
     Pane(PaneEvent),
     OpenSettings(SettingsSection),
     AskAIAssistant(AskAIType),
-    /// Event propogates terminal inputs up to the workspace,
+    /// Event propagates terminal inputs up to the workspace,
     /// to be processed on the way back down through the view hierarchy.
     SyncInput(SyncEvent),
     /// Event used to propagate a state change for one of the terminal views
@@ -1996,7 +1996,7 @@ pub struct SyncEvent {
     pub data: SyncInputType,
 }
 
-/// Event used to propogate the keyboard events from one terminal to others.
+/// Event used to propagate the keyboard events from one terminal to others.
 #[derive(Clone)]
 pub enum SyncInputType {
     /// Event for when the input editor's buffer contents changed.
@@ -3887,7 +3887,7 @@ impl TerminalView {
             });
         }
 
-        // Here we intialize the block list mouse states for block zero.
+        // Here we initialize the block list mouse states for block zero.
         // Afterwards, we initialize all block list mouse states for a block when the
         // previous block sends a `BlockCompleted` event.
         let mut block_list_mouse_states = BlockListMouseStates::default();

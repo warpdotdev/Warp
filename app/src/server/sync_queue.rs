@@ -620,7 +620,7 @@ impl SyncQueue {
                         workflow_id.uid(),
                         *item_id,
                         // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
-                        // It can be changed to propogate initiated_by value from the queue object in the future if desired.
+                        // It can be changed to propagate initiated_by value from the queue object in the future if desired.
                         InitiatedBy::User,
                         ctx,
                     );

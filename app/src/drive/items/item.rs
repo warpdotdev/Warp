@@ -134,7 +134,7 @@ pub struct WarpDriveRow<'a> {
     space: Space,
     item_states: ItemStates,
     overflow_button: Box<dyn Element>,
-    /// how many levels into a folder hierachy the row is.
+    /// how many levels into a folder hierarchy the row is.
     /// 0 means the object is in the root directory.
     folder_depth: usize,
     sync_icon: Option<Box<dyn Element>>,

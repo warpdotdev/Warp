@@ -459,9 +459,9 @@ impl ResourceCenterMainView {
 /// we should send the actions from the resouce center features. When the resource center is opened,
 /// we cache the current active window ID as well as the input ID of the active
 /// tab/pane. By sending all the actions to the input view, we ensure that
-/// they propgate correctly. This propogation assumes that each feature action
-/// must be in the reponder chain. If an action is not in the responder chain
-/// (such as a block navigation action) then it won't propogate correctly.
+/// they propagate correctly. This propagation assumes that each feature action
+/// must be in the responder chain. If an action is not in the responder chain
+/// (such as a block navigation action) then it won't propagate correctly.
 pub enum ActionTarget {
     None,
     View {

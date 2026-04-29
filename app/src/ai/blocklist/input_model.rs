@@ -40,7 +40,7 @@ use crate::{
 
 use super::telemetry_banner::should_collect_ai_ugc_telemetry;
 
-/// Cutoff score for deciding an user input matches a history command entry.
+/// Cutoff score for deciding a user input matches a history command entry.
 const HISTORY_ENTRY_MATCH_CUTOFF: f32 = 0.9;
 
 /// Duration to temporarily disable autodetection during operations like history selection.
