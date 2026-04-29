@@ -7,9 +7,13 @@ use warp_core::ui::icons::Icon;
 use warpui::{AppContext, SingletonEntity};
 
 use crate::auth::AuthStateProvider;
+use crate::experiments::FreeTierDefaultModel;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use super::llms::{DisableReason, LLMInfo, LLMPreferences};
+
+/// mirrors server-side auto open model id
+const AUTO_OPEN_LLM_ID: &str = "auto-open";
 
 impl From<&LLMInfo> for OnboardingModelInfo {
     fn from(llm: &LLMInfo) -> Self {
@@ -34,6 +38,22 @@ pub fn build_onboarding_models(prefs: &LLMPreferences) -> (Vec<OnboardingModelIn
         })
         .collect();
     (models, default_id)
+}
+
+pub fn apply_free_tier_default_model_override(
+    models: &mut [OnboardingModelInfo],
+    server_default_id: LLMId,
+    ctx: &mut AppContext,
+) -> LLMId {
+    let auto_open_id = LLMId::from(AUTO_OPEN_LLM_ID);
+    let auto_open_available = models.iter().any(|m| m.id == auto_open_id);
+    if !auto_open_available || !FreeTierDefaultModel::should_default_to_auto_open(ctx) {
+        return server_default_id;
+    }
+    for m in models.iter_mut() {
+        m.is_default = m.id == auto_open_id;
+    }
+    auto_open_id
 }
 
 pub fn current_onboarding_auth_state(ctx: &AppContext) -> OnboardingAuthState {
