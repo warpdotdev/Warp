@@ -149,6 +149,16 @@ pub struct BlocklistAIContextModel {
     /// instead of sending it immediately.
     /// Persists across exchanges in the same conversation (like fast-forward).
     queue_next_prompt_enabled: bool,
+
+    /// Number of image-attachment flows currently in progress.
+    ///
+    /// Image attachment is asynchronous (file reads + resize/encode happen on a spawned task), so
+    /// at the moment a paste / drag-and-drop fires there are no entries in `pending_attachments`
+    /// yet. This counter is incremented synchronously when an image-attach pipeline starts and
+    /// decremented when it completes (or fails). It contributes to `has_locking_attachment` so the
+    /// input can be force-locked to AI mode for the entire duration of the attach, not only after
+    /// the actual `ImageContext` is appended.
+    pending_image_attachments_in_progress: usize,
 }
 
 pub fn block_context_from_terminal_model(
@@ -315,6 +325,7 @@ impl BlocklistAIContextModel {
             pending_document_id: None,
             auto_attached_agent_view_user_block_ids: Vec::new(),
             queue_next_prompt_enabled: false,
+            pending_image_attachments_in_progress: 0,
         }
     }
 
@@ -327,6 +338,43 @@ impl BlocklistAIContextModel {
         self.clear_diff_hunk_attachments();
         self.set_pending_document(None, ctx);
         self.auto_attached_agent_view_user_block_ids.clear();
+        self.pending_image_attachments_in_progress = 0;
+    }
+
+    /// Returns `true` if the next AI query has any context that should force the input to be
+    /// locked in AI mode (skipping NLD): a pending image, a pending block, pending selected text,
+    /// or an in-progress image-attachment pipeline.
+    pub fn has_locking_attachment(&self) -> bool {
+        self.pending_image_attachments_in_progress > 0
+            || !self.pending_context_block_ids.is_empty()
+            || self.pending_context_selected_text.is_some()
+            || self
+                .pending_attachments
+                .iter()
+                .any(|attachment| matches!(attachment, PendingAttachment::Image(_)))
+    }
+
+    /// Marks the start of an asynchronous image-attachment pipeline. Must be paired with a call
+    /// to [`Self::note_image_attachment_completed`] when the pipeline finishes (or fails).
+    pub fn note_image_attachment_started(&mut self, ctx: &mut ModelContext<Self>) {
+        self.pending_image_attachments_in_progress += 1;
+        ctx.emit(BlocklistAIContextEvent::UpdatedPendingContext {
+            previous_block_ids: self.pending_context_block_ids.clone(),
+            requires_block_resync: false,
+            requires_text_resync: false,
+        });
+    }
+
+    /// Marks an asynchronous image-attachment pipeline as complete. Saturating-decrement so a
+    /// stray double-completion doesn't underflow the counter.
+    pub fn note_image_attachment_completed(&mut self, ctx: &mut ModelContext<Self>) {
+        self.pending_image_attachments_in_progress =
+            self.pending_image_attachments_in_progress.saturating_sub(1);
+        ctx.emit(BlocklistAIContextEvent::UpdatedPendingContext {
+            previous_block_ids: self.pending_context_block_ids.clone(),
+            requires_block_resync: false,
+            requires_text_resync: false,
+        });
     }
 
     /// Returns the set `BlockId`s corresponding to blocks to be included as context with the next

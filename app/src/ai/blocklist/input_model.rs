@@ -20,6 +20,7 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonE
 pub use input_classifier::InputType;
 
 use super::agent_view::{AgentViewController, AgentViewControllerEvent, AgentViewEntryOrigin};
+use super::context_model::BlocklistAIContextModel;
 use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
@@ -45,6 +46,18 @@ const HISTORY_ENTRY_MATCH_CUTOFF: f32 = 0.9;
 
 /// Duration to temporarily disable autodetection during operations like history selection.
 const AUTODETECTION_DISABLE_DURATION_MS: u64 = 250;
+
+/// Returns `true` if entering agent view via this origin must force-lock the input to AI mode,
+/// bypassing NLD entirely.
+///
+/// Origins listed here are interaction patterns where the user's intent is unambiguously "talk to
+/// the agent" and a misclassification would be visibly wrong (e.g. dropping the buffer back into
+/// shell mode after pasting an image).
+///
+/// Pattern C (RefineDiff) will be added here in a follow-up commit.
+fn origin_requires_locked_ai(origin: &AgentViewEntryOrigin) -> bool {
+    matches!(origin, AgentViewEntryOrigin::ImageAdded)
+}
 
 /// Configuration for the terminal pane's input.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,6 +160,12 @@ pub struct BlocklistAIInputModel {
     was_lock_set_with_empty_buffer: bool,
 
     agent_view_controller: ModelHandle<AgentViewController>,
+
+    /// Handle to the per-pane context model. Wired up via [`Self::set_ai_context_model`]
+    /// after both models are constructed in `TerminalView::new`. Used to read pending
+    /// attachments / blocks / selected text when deciding whether to force-lock the input
+    /// to AI mode (see [`BlocklistAIContextModel::has_locking_attachment`]).
+    ai_context_model: Option<ModelHandle<BlocklistAIContextModel>>,
 
     terminal_view_id: EntityId,
 
@@ -267,6 +286,19 @@ impl BlocklistAIInputModel {
                             },
                             ctx,
                         );
+                    } else if origin_requires_locked_ai(origin) || me.has_locking_attachment(ctx) {
+                        // Interaction patterns that should fully bypass NLD on
+                        // entry: image attachment in progress / attached, or block / selected
+                        // text already in pending context. Force-lock to AI regardless of the
+                        // user's NLD setting so the classifier never gets a chance to drop
+                        // the buffer back to shell.
+                        me.set_input_config_internal(
+                            InputConfig {
+                                input_type: InputType::AI,
+                                is_locked: true,
+                            },
+                            ctx,
+                        );
                     } else {
                         let is_autodetection_enabled =
                             AISettings::as_ref(ctx).is_ai_autodetection_enabled(ctx);
@@ -320,6 +352,7 @@ impl BlocklistAIInputModel {
                 is_locked: !is_autodetection_enabled,
             },
             agent_view_controller,
+            ai_context_model: None,
             terminal_view_id,
             last_ai_autodetection_ts: None,
             last_explicit_input_type_set_at: None,
@@ -327,6 +360,22 @@ impl BlocklistAIInputModel {
             autodetect_abort_handle: None,
             model,
         }
+    }
+
+    /// Wire up the per-pane [`BlocklistAIContextModel`] handle. Must be called once after both
+    /// models are constructed (see `TerminalView::new`). The handle is `Option` because the
+    /// context model is constructed *after* the input model.
+    pub fn set_ai_context_model(&mut self, handle: ModelHandle<BlocklistAIContextModel>) {
+        self.ai_context_model = Some(handle);
+    }
+
+    /// Convenience wrapper around `BlocklistAIContextModel::has_locking_attachment` that no-ops
+    /// when the handle has not been wired up yet.
+    fn has_locking_attachment(&self, app: &AppContext) -> bool {
+        self.ai_context_model
+            .as_ref()
+            .map(|handle| handle.as_ref(app).has_locking_attachment())
+            .unwrap_or(false)
     }
 
     /// Returns the InputType enum which specifies how we will handle the terminal input.
@@ -485,6 +534,15 @@ impl BlocklistAIInputModel {
             .active_block()
             .is_agent_in_control_or_tagged_in()
         {
+            return false;
+        }
+
+        // Defense in depth: while there is a pending image (or other
+        // locking context), the classifier must never have a chance to flip the input
+        // back to shell mode, even per-keystroke. The `EnteredAgentView` subscriber
+        // and `set_input_mode_agent` already lock at entry; this guard protects the
+        // window if any future caller forgets.
+        if self.has_locking_attachment(app) {
             return false;
         }
 
