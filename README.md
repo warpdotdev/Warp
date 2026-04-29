@@ -64,6 +64,7 @@ To build and run Warp from source:
 ./script/run         # build and run Warp
 ./script/presubmit   # fmt, clippy, and tests
 ```
+On macOS, `./script/bootstrap` asks for acknowledgement before making system-level changes or installing dependencies. Pass `--yes` only when you intentionally want to skip the prompt, such as in automation.
 
 See [WARP.md](WARP.md) for the full engineering guide, including coding style, testing, and platform-specific notes.
 

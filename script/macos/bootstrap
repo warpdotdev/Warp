@@ -1,14 +1,76 @@
-#!/bin/sh
+#!/usr/bin/env bash
 #
 # Run this script once to prepare your machine to develop Warp. This script is
 # a work in progress, and may be incomplete.
 
 set -e
+ASSUME_YES=false
+
+usage() {
+    cat <<'EOF'
+Usage: ./script/bootstrap [--yes]
+
+Prepare this Mac to develop Warp.
+
+Options:
+  -y, --yes    Skip the acknowledgement prompt.
+  -h, --help   Show this help message.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -y|--yes)
+            ASSUME_YES=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+confirm_system_changes() {
+    if [[ "$ASSUME_YES" == true || "${WARP_BOOTSTRAP_ASSUME_YES:-}" == "1" ]]; then
+        return
+    fi
+
+    cat <<'EOF'
+Warp's macOS bootstrap script prepares your machine for local development by making system-level changes, including:
+
+- Running sudo xcode-select to switch the active Xcode developer directory.
+- Running Xcode first-launch setup.
+- Installing Homebrew and Rust if they are missing.
+- Installing Cargo-managed development tools.
+- Installing Homebrew packages and casks, including Docker and the Google Cloud SDK if needed.
+- Installing the PSScriptAnalyzer PowerShell module for the current user.
+
+Pass --yes or set WARP_BOOTSTRAP_ASSUME_YES=1 to skip this prompt in automation.
+EOF
+
+    printf "Continue with these changes? [y/N] "
+    read -r acknowledgement
+    case "$acknowledgement" in
+        y|Y|yes|YES|Yes)
+            ;;
+        *)
+            echo "Bootstrap cancelled."
+            exit 1
+            ;;
+    esac
+}
 
 if ! [ -d "/Applications/Xcode.app" ]; then
     echo "Please install Xcode from the App Store before continuing."
     exit 1
 fi
+confirm_system_changes
 
 sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 # Mimic actually launching XCode, which performs some necessary set-up of the
