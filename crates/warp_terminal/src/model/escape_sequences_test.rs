@@ -469,6 +469,24 @@ fn test_meta_keystroke_to_escape_sequence() {
     validate_keystroke_test_cases(test_cases, &terminal_model_mock);
 }
 
+/// On macOS, Option+Enter must encode as ESC+CR even when the user has not
+/// enabled Option-as-Meta. Without this, the bare `\r` falls through to the
+/// PTY and TUIs like claude/vim/fish treat it as plain Enter (submit) rather
+/// than the Alt+Enter sequence they expect for inserting a newline.
+#[test]
+fn test_alt_enter_on_mac_yields_esc_cr_without_option_as_meta() {
+    if !OperatingSystem::get().is_mac() {
+        return;
+    }
+    let test_cases: &[(Keystroke, Vec<u8>)] = &[(
+        Keystroke::parse("alt-enter").unwrap(),
+        vec![C0::ESC, b'\r'],
+    )];
+
+    let terminal_model_mock = TerminalModelMock::new();
+    validate_keystroke_test_cases(test_cases, &terminal_model_mock);
+}
+
 #[test]
 fn test_unmatched_keystroke_does_not_yield_escape_sequence() {
     let test_cases: &[Keystroke] = &[
