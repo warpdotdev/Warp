@@ -52,7 +52,10 @@ use warpui::{
 };
 
 use crate::{
-    ai::blocklist::{agent_view::agent_view_bg_fill, block::cli_controller::CLISubagentEvent},
+    ai::blocklist::{
+        agent_view::agent_view_bg_fill, block::cli_controller::CLISubagentEvent,
+        BlocklistAIHistoryModel,
+    },
     cmd_or_ctrl_shift,
     server::telemetry::{CLIAgentType, CLISubagentControlState, TelemetryEvent},
     settings::{
@@ -634,9 +637,10 @@ impl TerminalView {
         }
 
         let prompt_length = text.chars().count();
-        let cli_agent: Option<CLIAgentType> = CLIAgentSessionsModel::as_ref(ctx)
+        let agent = CLIAgentSessionsModel::as_ref(ctx)
             .session(self.view_id)
-            .map(|s| s.agent.into());
+            .map(|s| s.agent);
+        let cli_agent: Option<CLIAgentType> = agent.map(Into::into);
         if let Some(cli_agent) = cli_agent {
             send_telemetry_from_ctx!(
                 TelemetryEvent::CLIAgentRichInputSubmitted {
@@ -647,8 +651,18 @@ impl TerminalView {
             );
         }
 
-        // Clear any saved draft so submitted text isn't restored on the next open.
+        // Record the prompt in the AI history so it surfaces in the up-arrow inline history menu.
+        // Prompts written via the rich input go straight to the CLI agent's PTY and never become
+        // exchanges in an AI conversation, so this is the only place they get tracked for history.
         let view_id = self.view_id;
+        if let Some(agent) = agent {
+            let text_for_history = text.clone();
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, move |history, _| {
+                history.record_cli_agent_prompt(view_id, agent, text_for_history, None);
+            });
+        }
+
+        // Clear any saved draft so submitted text isn't restored on the next open.
         CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions_model, _| {
             sessions_model.clear_draft(view_id);
         });

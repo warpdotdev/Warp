@@ -35,6 +35,7 @@ use crate::persistence::ModelEvent;
 use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::view::blocklist_filter;
+use crate::terminal::CLIAgent;
 use crate::GlobalResourceHandlesProvider;
 use crate::{
     ai::agent::{
@@ -248,6 +249,17 @@ pub struct BlocklistAIHistoryModel {
     /// Populated at startup from the local DB and kept in sync at runtime
     /// via `set_parent_for_conversation` and `restore_conversations`.
     children_by_parent: HashMap<AIConversationId, Vec<AIConversationId>>,
+
+    /// Prompts the user submitted via the CLI agent (Full Terminal Use) rich input,
+    /// keyed by the originating [`crate::terminal::TerminalView`] [`EntityId`].
+    ///
+    /// These prompts are written directly to the CLI agent's PTY rather than being
+    /// part of an AI conversation, so they don't end up in any
+    /// [`AIConversation::root_task_exchanges`]. They are tracked here so they can
+    /// be surfaced in the up-arrow inline history menu.
+    ///
+    /// In-memory only for now; persistence across restarts is a follow-up.
+    cli_agent_prompts_for_terminal_view: HashMap<EntityId, Vec<CLIAgentPromptHistory>>,
 
     #[cfg(feature = "local_fs")]
     db_connection: Option<Arc<Mutex<SqliteConnection>>>,
@@ -1646,6 +1658,71 @@ impl BlocklistAIHistoryModel {
             .contains(&terminal_view_id)
     }
 
+    /// Records a prompt the user submitted via the CLI agent (Full Terminal Use) rich input
+    /// composer.
+    ///
+    /// These prompts are written directly to the CLI agent's PTY rather than being part of an
+    /// AI conversation, so this is the only place they get tracked for up-arrow history.
+    /// Empty/whitespace-only prompts are ignored. Identical, consecutive prompts are coalesced
+    /// to a single entry to avoid spamming the history.
+    pub fn record_cli_agent_prompt(
+        &mut self,
+        terminal_view_id: EntityId,
+        agent: CLIAgent,
+        query_text: String,
+        working_directory: Option<String>,
+    ) {
+        let trimmed = query_text.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+
+        let entries = self
+            .cli_agent_prompts_for_terminal_view
+            .entry(terminal_view_id)
+            .or_default();
+
+        if entries
+            .last()
+            .is_some_and(|last| last.query_text == trimmed)
+        {
+            return;
+        }
+
+        entries.push(CLIAgentPromptHistory {
+            query_text: trimmed.to_owned(),
+            start_time: Local::now(),
+            output_status: AIQueryHistoryOutputStatus::Completed,
+            working_directory,
+            history_order: HistoryOrder::CurrentSession,
+            agent,
+        });
+    }
+
+    /// Returns CLI agent (Full Terminal Use) prompts as [`AIQueryHistory`] entries with the
+    /// appropriate [`HistoryOrder`] for the calling terminal view.
+    pub(crate) fn all_cli_agent_prompts(
+        &self,
+        terminal_view_id: Option<EntityId>,
+    ) -> impl Iterator<Item = AIQueryHistory> + '_ {
+        self.cli_agent_prompts_for_terminal_view
+            .iter()
+            .flat_map(move |(tv_id, prompts)| {
+                let history_order = if terminal_view_id.is_some_and(|id| id == *tv_id) {
+                    HistoryOrder::CurrentSession
+                } else {
+                    HistoryOrder::DifferentSession
+                };
+                prompts.iter().map(move |prompt| AIQueryHistory {
+                    query_text: prompt.query_text.clone(),
+                    start_time: prompt.start_time,
+                    output_status: prompt.output_status.clone(),
+                    working_directory: prompt.working_directory.clone(),
+                    history_order,
+                })
+            })
+    }
+
     /// Returns [`AIQueryHistory`]s from all sources: live conversations, cleared conversations,
     /// and persisted queries from conversations not loaded in memory.
     ///
@@ -2030,6 +2107,7 @@ impl BlocklistAIHistoryModel {
         self.all_conversations_metadata.clear();
         self.agent_id_to_conversation_id.clear();
         self.server_token_to_conversation_id.clear();
+        self.cli_agent_prompts_for_terminal_view.clear();
     }
 }
 
@@ -2280,6 +2358,29 @@ impl AIQueryHistory {
             history_order,
         }
     }
+}
+
+/// History entry for a prompt the user submitted to a CLI agent (Full Terminal Use)
+/// via the rich input composer.
+///
+/// Distinct from [`AIQueryHistory`] only in that it carries the originating [`CLIAgent`],
+/// which lets us tab-separate Base agent prompts from FTU prompts in the inline history menu
+/// in a follow-up.
+#[derive(Debug, Clone)]
+pub struct CLIAgentPromptHistory {
+    pub query_text: String,
+    pub start_time: DateTime<Local>,
+    pub output_status: AIQueryHistoryOutputStatus,
+    pub working_directory: Option<String>,
+    /// Used by callers that need to know whether the prompt belongs to the current session.
+    /// Currently set to [`HistoryOrder::CurrentSession`] at insertion time and overridden by
+    /// `all_cli_agent_prompts` based on the requested terminal view.
+    #[allow(dead_code)]
+    pub history_order: HistoryOrder,
+    /// The CLI agent the prompt was sent to. Will be used to tab-separate Base agent prompts
+    /// from FTU prompts in the inline history menu in a follow-up.
+    #[allow(dead_code)]
+    pub agent: CLIAgent,
 }
 
 fn ai_exchange_to_query_history(

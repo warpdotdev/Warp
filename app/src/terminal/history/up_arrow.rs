@@ -111,19 +111,28 @@ impl History {
             );
         }
 
-        let ai_queries = BlocklistAIHistoryModel::handle(app)
-            .as_ref(app)
+        let history_model = BlocklistAIHistoryModel::handle(app).as_ref(app);
+        let ai_queries = history_model
             .all_ai_queries(Some(terminal_view_id))
             .filter(|query| {
                 !ignored_suggestions.is_ignored(&query.query_text, SuggestionType::AIQuery)
             })
             .map(|entry| HistoryInputSuggestion::AIQuery { entry });
 
+        let cli_agent_prompts = history_model
+            .all_cli_agent_prompts(Some(terminal_view_id))
+            .filter(|query| {
+                !ignored_suggestions.is_ignored(&query.query_text, SuggestionType::AIQuery)
+            })
+            .map(|entry| HistoryInputSuggestion::AIQuery { entry });
+
+        let prompts = ai_queries.chain(cli_agent_prompts);
+
         let suggestions: Vec<HistoryInputSuggestion<'a>> =
             match (config.include_commands, config.include_prompts) {
-                (true, true) => commands.chain(ai_queries).collect(),
+                (true, true) => commands.chain(prompts).collect(),
                 (true, false) => commands.collect(),
-                (false, true) => ai_queries.collect(),
+                (false, true) => prompts.collect(),
                 (false, false) => vec![],
             };
 
