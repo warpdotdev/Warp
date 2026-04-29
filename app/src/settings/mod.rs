@@ -22,6 +22,7 @@ mod input_mode;
 mod linux;
 pub mod macros;
 pub mod manager;
+mod monolith;
 pub mod native_preference;
 mod onboarding;
 mod pane;
@@ -54,6 +55,7 @@ pub use input::*;
 pub use input_mode::*;
 #[cfg(target_os = "linux")]
 pub use linux::*;
+pub use monolith::*;
 pub use native_preference::*;
 pub use onboarding::*;
 pub use pane::*;

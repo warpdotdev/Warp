@@ -39,6 +39,7 @@ use crate::workspace::view::conversation_list::view::{
 use crate::workspace::view::global_search::view::{
     Event as GlobalSearchViewEvent, GlobalSearchEntryFocus, GlobalSearchView,
 };
+use crate::workspace::view::monolith_cockpit::MonolithCockpitView;
 use crate::workspace::view::{
     LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME, LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME,
     LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME, LEFT_PANEL_WARP_DRIVE_BINDING_NAME,
@@ -67,6 +68,7 @@ struct MouseStateHandles {
     global_search_button: MouseStateHandle,
     warp_drive_button: MouseStateHandle,
     conversation_list_view_button: MouseStateHandle,
+    monolith_cockpit_button: MouseStateHandle,
 }
 
 #[derive(Clone, Debug)]
@@ -75,6 +77,7 @@ pub enum LeftPanelAction {
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     WarpDrive,
     ConversationListView,
+    MonolithCockpit,
 }
 
 pub enum LeftPanelEvent {
@@ -101,6 +104,7 @@ pub enum ToolPanelView {
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
     WarpDrive,
     ConversationListView,
+    MonolithCockpit,
 }
 
 /// Encapsulates the active view state to enforce that all mutations go through
@@ -167,6 +171,7 @@ pub struct LeftPanelView {
     close_button_mouse_state: MouseStateHandle,
     warp_drive_view: ViewHandle<DrivePanel>,
     conversation_list_view: ViewHandle<ConversationListView>,
+    monolith_cockpit_view: ViewHandle<MonolithCockpitView>,
     active_view: active_view_state::ActiveViewState,
     toolbelt_buttons: Vec<ToolbeltButtonConfig>,
     active_pane_group: Option<WeakViewHandle<PaneGroup>>,
@@ -211,6 +216,7 @@ impl LeftPanelView {
         };
         let warp_drive_view = ctx.add_typed_action_view(DrivePanel::new);
         let conversation_list_view = ctx.add_typed_action_view(ConversationListView::new);
+        let monolith_cockpit_view = ctx.add_typed_action_view(MonolithCockpitView::new);
 
         ctx.subscribe_to_view(&warp_drive_view, |_me, _, event, ctx| {
             ctx.emit(LeftPanelEvent::WarpDrive(event.clone()));
@@ -308,6 +314,7 @@ impl LeftPanelView {
             close_button_mouse_state: Default::default(),
             warp_drive_view,
             conversation_list_view,
+            monolith_cockpit_view,
             active_view: active_view_state::new(active_view),
             toolbelt_buttons,
             active_pane_group: None,
@@ -437,6 +444,19 @@ impl LeftPanelView {
                     action: LeftPanelAction::ConversationListView,
                     render_with_active_state: false,
                     tooltip_keybinding: toolbelt_tooltip_keybinding(&tooltip_keybinding_names, ctx),
+                    tooltip_keybinding_names,
+                }
+            }
+            ToolPanelView::MonolithCockpit => {
+                let tooltip_keybinding_names = vec![];
+
+                ToolbeltButtonConfig {
+                    icon: Icon::Dataflow,
+                    active_icon: Some(Icon::Dataflow),
+                    tooltip_text: "Monolith cockpit".to_string(),
+                    action: LeftPanelAction::MonolithCockpit,
+                    render_with_active_state: false,
+                    tooltip_keybinding: None,
                     tooltip_keybinding_names,
                 }
             }
@@ -682,6 +702,9 @@ impl LeftPanelView {
                     view.on_left_panel_focused(ctx);
                 });
             }
+            ToolPanelView::MonolithCockpit => {
+                ctx.focus(&self.monolith_cockpit_view);
+            }
         }
     }
 
@@ -834,6 +857,9 @@ impl LeftPanelView {
                 LeftPanelAction::ConversationListView => {
                     self.active_view.get() == ToolPanelView::ConversationListView
                 }
+                LeftPanelAction::MonolithCockpit => {
+                    self.active_view.get() == ToolPanelView::MonolithCockpit
+                }
             };
         }
     }
@@ -975,6 +1001,9 @@ impl LeftPanelView {
                 active_view_state::set(self, ToolPanelView::ConversationListView, ctx);
                 send_telemetry_from_ctx!(TelemetryEvent::ConversationListViewOpened, ctx);
             }
+            LeftPanelAction::MonolithCockpit => {
+                active_view_state::set(self, ToolPanelView::MonolithCockpit, ctx);
+            }
         }
     }
 
@@ -1074,6 +1103,7 @@ impl View for LeftPanelView {
                 }
                 ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
                 ToolPanelView::ConversationListView => ctx.focus(&self.conversation_list_view),
+                ToolPanelView::MonolithCockpit => ctx.focus(&self.monolith_cockpit_view),
             }
         }
     }
@@ -1088,6 +1118,7 @@ impl View for LeftPanelView {
             self.mouse_state_handles
                 .conversation_list_view_button
                 .clone(),
+            self.mouse_state_handles.monolith_cockpit_button.clone(),
         ];
 
         // If there is only one button in the toolbelt row,
@@ -1145,6 +1176,9 @@ impl View for LeftPanelView {
             .finish(),
             ToolPanelView::ConversationListView => {
                 Shrinkable::new(1.0, ChildView::new(&self.conversation_list_view).finish()).finish()
+            }
+            ToolPanelView::MonolithCockpit => {
+                Shrinkable::new(1.0, ChildView::new(&self.monolith_cockpit_view).finish()).finish()
             }
         };
 

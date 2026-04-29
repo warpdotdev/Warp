@@ -1,0 +1,32 @@
+{
+  "tenants": [
+    {
+      "name": "acme-health",
+      "environment": "staging",
+      "hosts": [
+        {
+          "name": "agent-vm-acme-staging-01",
+          "zone": "us-central1-a",
+          "project": "monolith-staging",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "jarvis",
+              "status": "running",
+              "workdir": "/srv/monolith/agents/jarvis",
+              "git_ref": "main",
+              "service_name": "monolith-agent-jarvis"
+            },
+            {
+              "name": "support-triage",
+              "status": "paused",
+              "workdir": "/srv/monolith/agents/support-triage",
+              "git_ref": "release/2026-04",
+              "service_name": "monolith-agent-support-triage"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

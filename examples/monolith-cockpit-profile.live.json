@@ -1,0 +1,185 @@
+{
+  "tenants": [
+    {
+      "name": "acme-corp",
+      "environment": "staging / active",
+      "hosts": []
+    },
+    {
+      "name": "fit-roofing-co",
+      "environment": "staging / offboarded",
+      "hosts": [
+        {
+          "name": "raava-fit-gcp-hermes-direct",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "terminated",
+          "runtimes": [
+            {
+              "name": "gcp-hermes-direct",
+              "status": "stopped",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        },
+        {
+          "name": "raava-fit-gcp-hermes-direct-c",
+          "zone": "us-east1-c",
+          "project": "raava-481318",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "gcp-hermes-direct",
+              "status": "running",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "harness-eval-20260429",
+      "environment": "staging / active",
+      "hosts": []
+    },
+    {
+      "name": "healing-with-strength",
+      "environment": "staging / offboarded",
+      "hosts": [
+        {
+          "name": "raava-acme-corp-jarvis-gce",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "terminated",
+          "runtimes": [
+            {
+              "name": "jarvis-gce",
+              "status": "stopped",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        },
+        {
+          "name": "raava-healing-with-strength-hws-coo-ea",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "hws-coo-ea",
+              "status": "running",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ijt-capital",
+      "environment": "staging / offboarded",
+      "hosts": [
+        {
+          "name": "raava-ijt-capital-aurum",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "aurum",
+              "status": "running",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "raava",
+      "environment": "staging / offboarded",
+      "hosts": [
+        {
+          "name": "raava-raava-fleet-commander",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "fleet-commander",
+              "status": "running",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "schwarz-group",
+      "environment": "staging / gcp-only",
+      "hosts": [
+        {
+          "name": "schwarz-group-jschwarz-ea",
+          "zone": "us-east1-d",
+          "project": "raava-481318",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "jschwarz-ea",
+              "status": "running",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "staging-validator",
+      "environment": "staging / active",
+      "hosts": [
+        {
+          "name": "raava-staging-staging-validator-discord-add-later-1-gce",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "terminated",
+          "runtimes": [
+            {
+              "name": "discord-add-later-1-gce",
+              "status": "stopped",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        },
+        {
+          "name": "raava-staging-staging-validator-discord-launch-truth-1-gce",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "terminated",
+          "runtimes": [
+            {
+              "name": "discord-launch-truth-1-gce",
+              "status": "stopped",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
