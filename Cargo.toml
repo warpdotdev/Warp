@@ -378,12 +378,15 @@ derivative = "2.2.0"
 parquet = { version = "55.0.0", features = ["arrow"] }
 rmcp = { git = "https://github.com/warpdotdev/rmcp.git", rev = "c0f65dc441af7d714b9c453ac5e7ef641451abe3" }
 
-# Comment this to disable building with debug symbols
-# Building with debug symbols generates a dsym which we can use to get
-# better stack traces in sentry. But there is a cost of about 20% binary size
-# increase.
 [profile.release]
-debug = true
+# Use line-tables-only (debug = 1) rather than full debuginfo (debug = 2 /
+# `true`). Line tables are enough to symbolicate panics and Sentry stack
+# traces with file/line info, but they omit the per-variable/type DWARF that
+# dominates DWARF size. Dropping the type info significantly reduces rustc's
+# peak memory during ThinLTO + codegen (which was OOM-killing release builds
+# on CI), at the cost of not being able to inspect locals/types when
+# attaching a debugger to a release binary.
+debug = 1
 # Force the rust compiler to create a dSYM. Starting in 1.53 the default on MacOS is "unpacked".
 split-debuginfo = "packed"
 
