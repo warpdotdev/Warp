@@ -68,9 +68,11 @@ impl FromStr for FreeTierDefaultModel {
 
 impl FreeTierDefaultModel {
     pub fn should_default_to_auto_open(ctx: &mut AppContext) -> bool {
-        match current_onboarding_auth_state(ctx) {
-            OnboardingAuthState::FreeUser | OnboardingAuthState::LoggedOut => {}
-            OnboardingAuthState::PayingUser => return false,
+        if !matches!(
+            current_onboarding_auth_state(ctx),
+            OnboardingAuthState::FreeUser | OnboardingAuthState::LoggedOut
+        ) {
+            return false;
         }
         matches!(Self::get_group(ctx), Some(Self::AutoOpen))
     }
