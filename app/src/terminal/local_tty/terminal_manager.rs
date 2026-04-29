@@ -1486,33 +1486,61 @@ impl TerminalManager {
                 }
 
                 if FeatureFlag::LinkSharedSessionToLocalOzRun.is_enabled() {
-                    let history = BlocklistAIHistoryModel::handle(ctx);
-                    let task_id = history
-                        .as_ref(ctx)
-                        .active_conversation(terminal_view.id())
-                        .and_then(|c| c.task_id());
+                    let terminal_view_id = terminal_view.id();
+                    let session_id_for_link = *session_id;
+                    log::info!(
+                        "LinkSharedSessionToLocalOzRun: shared session {session_id_for_link} created for terminal view {terminal_view_id:?}; looking up local Oz task id"
+                    );
 
-                    if let Some(task_id) = task_id {
-                        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-                        let session_id = *session_id;
-                        terminal_view.update(ctx, |_view, ctx| {
-                            ctx.spawn(
-                                async move {
-                                    ai_client.update_agent_task(
-                                        task_id,
-                                        None,
-                                        Some(session_id),
-                                        None,
-                                        None
-                                    ).await
-                                },
-                                |_view, result, _ctx| {
-                                    if let Err(e) = result {
-                                        log::warn!("Failed to link shared session to local Oz run: {e}");
-                                    }
-                                },
+                    // Read the task id from the AI controller, which the agent driver sets as soon
+                    // as the ambient agent task is created on the server (well before any
+                    // conversation has streamed a response). Reading from `conversation.task_id()`
+                    // would miss the share-before-first-response case.
+                    let task_id = terminal_view
+                        .as_ref(ctx)
+                        .ai_controller()
+                        .as_ref(ctx)
+                        .ambient_agent_task_id();
+
+                    match task_id {
+                        None => {
+                            log::warn!(
+                                "LinkSharedSessionToLocalOzRun: AI controller for terminal view {terminal_view_id:?} has no ambient_agent_task_id; not linking shared session {session_id_for_link} to a task"
                             );
-                        });
+                        }
+                        Some(task_id) => {
+                            log::info!(
+                                "LinkSharedSessionToLocalOzRun: linking shared session {session_id_for_link} to task {task_id} (terminal view {terminal_view_id:?})"
+                            );
+                            let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+                            terminal_view.update(ctx, |_view, ctx| {
+                                ctx.spawn(
+                                    async move {
+                                        ai_client
+                                            .update_agent_task(
+                                                task_id,
+                                                None,
+                                                Some(session_id_for_link),
+                                                None,
+                                                None,
+                                            )
+                                            .await
+                                    },
+                                    move |_view, result, _ctx| match result {
+                                        Ok(()) => {
+                                            log::info!(
+                                                "LinkSharedSessionToLocalOzRun: successfully linked shared session {session_id_for_link} to task {task_id}"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "LinkSharedSessionToLocalOzRun: failed to link shared session {session_id_for_link} to task {task_id}: {e}"
+                                            );
+                                        }
+                                    },
+                                );
+                            });
+                        }
                     }
                 }
             }

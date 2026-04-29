@@ -1822,6 +1822,13 @@ impl BlocklistAIController {
         });
     }
 
+    /// The ID of the ambient agent task which owns this controller and its backing session, if
+    /// any. Set by the agent driver as soon as the task is created on the server, so this is
+    /// available before any conversation has streamed a response.
+    pub fn ambient_agent_task_id(&self) -> Option<AmbientAgentTaskId> {
+        self.ambient_agent_task_id
+    }
+
     /// Set the per-session directory for downloading file attachments.
     pub fn set_attachments_download_dir(&mut self, dir: std::path::PathBuf) {
         self.attachments_download_dir = Some(dir);
