@@ -457,6 +457,10 @@ creating_shared_sessions = []
 cross_repo_context = []
 codebase_index_persistence = ["full_source_code_embedding"]
 default = [
+    # neuter: skip the login flow and treat the user as signed-in with a
+    # local Test identity. Combined with the http_client warp.dev block,
+    # this keeps the app from ever round-tripping to Warp's backend.
+    "skip_login",
     "agent_mode",
     "viewing_shared_sessions",
     "render_continuous_block_selections_with_single_border",
