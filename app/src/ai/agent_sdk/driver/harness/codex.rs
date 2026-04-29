@@ -22,7 +22,7 @@ use crate::terminal::CLIAgent;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
-use super::json_utils::{read_json_file_or_default, write_json_file};
+use super::json_utils::read_json_file_or_default;
 use super::{write_temp_file, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness};
 
 pub(crate) struct CodexHarness;
@@ -295,23 +295,58 @@ fn prepare_codex_auth(auth_path: &Path, api_key: &str) -> Result<()> {
     if auth.auth_mode.is_none() {
         auth.auth_mode = Some(CODEX_AUTH_MODE_API_KEY.to_owned());
     }
-    write_json_file(auth_path, &auth, "Failed to serialize Codex auth.json")
+    write_codex_auth_json(auth_path, &auth)
 }
 
-/// Returns the OpenAI API key for Codex auth, preferring a `RawValue` secret keyed under
-/// `OPENAI_API_KEY`, falling back to the `OPENAI_API_KEY` env var. Returns `None` if
-/// neither is set or both are empty.
+/// Write Codex's `auth.json` with restrictive (0o600) permissions, mirroring how
+/// codex sets up this file itself.
+fn write_codex_auth_json(path: &Path, auth: &CodexAuthDotJson) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create {}", parent.display()))?;
+    }
+    let bytes =
+        serde_json::to_vec_pretty(auth).context("Failed to serialize Codex auth.json")?;
+
+    #[cfg(unix)]
+    {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .with_context(|| format!("Failed to open {} for writing", path.display()))?;
+        file.write_all(&bytes)
+            .with_context(|| format!("Failed to write {}", path.display()))?;
+    }
+    #[cfg(not(unix))]
+    fs::write(path, &bytes)
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+
+    Ok(())
+}
+
+/// Returns the OpenAI API key for Codex auth, preferring the `OPENAI_API_KEY` env
+/// var so the seeded `auth.json` matches the credential the launched Codex process
+/// will see. [`AgentDriver::new`] skips a managed `OPENAI_API_KEY` secret when the
+/// env var is already set, so we mirror that precedence here. 
 fn resolve_openai_api_key(secrets: &HashMap<String, ManagedSecretValue>) -> Option<String> {
+    if let Ok(value) = std::env::var(OPENAI_API_KEY_ENV) {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_owned());
+        }
+    }
     if let Some(ManagedSecretValue::RawValue { value }) = secrets.get(OPENAI_API_KEY_ENV) {
         let trimmed = value.trim();
         if !trimmed.is_empty() {
             return Some(trimmed.to_owned());
         }
     }
-    std::env::var(OPENAI_API_KEY_ENV)
-        .ok()
-        .map(|v| v.trim().to_owned())
-        .filter(|v| !v.is_empty())
+    None
 }
 
 /// Edit `~/.codex/config.toml` via `toml_edit` to seed the harness defaults

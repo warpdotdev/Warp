@@ -66,6 +66,19 @@ fn prepare_codex_auth_overwrites_stale_openai_api_key() {
     assert_eq!(auth["OPENAI_API_KEY"], "sk-new");
 }
 
+#[cfg(unix)]
+#[test]
+fn prepare_codex_auth_writes_with_0600_perms() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = TempDir::new().unwrap();
+    let auth_path = tmp.path().join(".codex/auth.json");
+
+    prepare_codex_auth(&auth_path, "sk-test-key").unwrap();
+
+    let mode = fs::metadata(&auth_path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+}
+
 #[test]
 fn resolve_openai_api_key_returns_value_from_raw_value_secret() {
     let secrets = HashMap::from([(
@@ -109,9 +122,30 @@ fn resolve_openai_api_key_returns_none_when_secrets_and_env_empty() {
 
 #[test]
 #[serial_test::serial]
-fn resolve_openai_api_key_prefers_secret_over_env() {
+fn resolve_openai_api_key_prefers_env_over_secret() {
+    // Mirrors `AgentDriver::new`'s precedence: an existing `OPENAI_API_KEY` env var
+    // wins over a managed secret so `auth.json` matches the launched process's env.
     let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
     std::env::set_var(OPENAI_API_KEY_ENV, "sk-from-env");
+    let secrets = HashMap::from([(
+        "OPENAI_API_KEY".to_string(),
+        ManagedSecretValue::raw_value("sk-from-secret"),
+    )]);
+
+    let result = resolve_openai_api_key(&secrets);
+
+    match prev {
+        Some(v) => std::env::set_var(OPENAI_API_KEY_ENV, v),
+        None => std::env::remove_var(OPENAI_API_KEY_ENV),
+    }
+    assert_eq!(result.as_deref(), Some("sk-from-env"));
+}
+
+#[test]
+#[serial_test::serial]
+fn resolve_openai_api_key_uses_secret_when_env_empty() {
+    let prev = std::env::var(OPENAI_API_KEY_ENV).ok();
+    std::env::set_var(OPENAI_API_KEY_ENV, "   ");
     let secrets = HashMap::from([(
         "OPENAI_API_KEY".to_string(),
         ManagedSecretValue::raw_value("sk-from-secret"),
