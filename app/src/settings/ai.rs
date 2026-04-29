@@ -1497,14 +1497,12 @@ impl AISettings {
     }
 
     pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {
-        // Disable AI for anonymous and logged-out users.
-        let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out();
-
-        *self.is_any_ai_enabled
-            && !is_anonymous_or_logged_out
-            && !self.is_ai_disabled_due_to_remote_session_org_policy(app)
+        // neuter: this fork has no AI/agent integration. Returning false
+        // here hides every AI-gated UI element (inline block buttons,
+        // command palette entries, agent footers, etc.) without us having
+        // to chase each call site individually.
+        let _ = app;
+        false
     }
 
     pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {

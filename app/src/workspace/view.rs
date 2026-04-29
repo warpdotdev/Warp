@@ -4444,8 +4444,10 @@ impl Workspace {
     }
 
     fn has_right_region(&self, app: &AppContext) -> bool {
-        let group = self.active_tab_pane_group().as_ref(app);
-        group.right_panel_open || self.current_workspace_state.is_right_panel_open()
+        // neuter: right panel houses the agent / code-review UI which we
+        // never want shown. Force-hide regardless of persisted state.
+        let _ = app;
+        false
     }
 
     fn focus_next_pane_in_group(&mut self, ctx: &mut ViewContext<Self>) -> bool {

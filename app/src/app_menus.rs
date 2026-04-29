@@ -61,6 +61,11 @@ const MAX_RECENT_REPOS_IN_MENU: usize = 10;
 
 /// Creates the root app menu bar
 pub fn menu_bar(ctx: &mut AppContext) -> MenuBar {
+    // neuter: AI and Drive menus removed from the menu bar. The helper
+    // functions still exist to avoid touching their many call sites and
+    // to keep upstream merges easy; they're now dead code.
+    let _ = make_new_ai_menu;
+    let _ = make_new_drive_menu;
     MenuBar::new(vec![
         make_new_app_menu(ctx),
         make_new_file_menu(ctx),
@@ -68,8 +73,6 @@ pub fn menu_bar(ctx: &mut AppContext) -> MenuBar {
         make_new_view_menu(ctx),
         make_new_tab_menu(ctx),
         make_new_blocks_menu(ctx),
-        make_new_ai_menu(ctx),
-        make_new_drive_menu(ctx),
         make_new_window_menu(),
         make_new_help_menu(),
     ])

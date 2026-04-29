@@ -1,89 +1,78 @@
-<a href="https://www.warp.dev">
-    <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://github.com/user-attachments/assets/9976b2da-2edd-4604-a36c-8fd53719c6d4" />
-</a>
+# Warp (personal fork)
 
-<p align="center">
-  <a href="https://www.warp.dev">Website</a>
-  ·
-  <a href="https://www.warp.dev/code">Code</a>
-  ·
-  <a href="https://www.warp.dev/agents">Agents</a>
-  ·
-  <a href="https://www.warp.dev/terminal">Terminal</a>
-  ·
-  <a href="https://www.warp.dev/drive">Drive</a>
-  ·
-  <a href="https://docs.warp.dev">Docs</a>
-  ·
-  <a href="https://www.warp.dev/blog/how-warp-works">How Warp Works</a>
-</p>
+A personal fork of [warpdotdev/warp](https://github.com/warpdotdev/warp) — Warp's terminal, with the agent, cloud sync, auth, and telemetry stripped out at runtime so the binary makes **zero outbound network calls to Warp's servers** and boots straight to a shell with no login.
 
-> [!NOTE]
-> OpenAI is the founding sponsor of the new, open-source Warp repository, and the new agentic management workflows are powered by GPT models.
+You still get everything that makes Warp's terminal interesting: blocks, themes, splits, command palette, completions, GPU-accelerated rendering, vim mode, syntax highlighting. You don't get the AI agent, cloud-synced workspaces, "share to Drive," or any of the cloud features — they're hidden in the UI and short-circuited at the network layer.
 
-<h1></h1>
+This is for personal use. It's not affiliated with Warp / Denver Technologies, Inc.
 
-## About
+---
 
-[Warp](https://www.warp.dev) is an agentic development environment, born out of the terminal. Use Warp's built-in coding agent, or bring your own CLI agent (Claude Code, Codex, Gemini CLI, and others).
+## What's different from upstream
 
-## Installation
+This fork is a **neuter, not a strip**. The agent and cloud code is still in the binary — it's just unreachable. The trade-off: the fork is small (~80 lines of changes across ~6 files), easy to merge with upstream when they update, and every commit `cargo check`s clean. Bigger binary, but no half-deleted code paths.
 
-You can [download Warp](https://www.warp.dev/download) and [read our docs](https://docs.warp.dev/) for platform-specific instructions.
+The full set of changes:
+
+- **`http_client::Client::execute`** short-circuits any request to `warp.dev`, `*.warp.dev`, `warpdotdev.com`, or `*.warpdotdev.com` with a fake 503 response. All other hosts (GitHub, package indexes, MCP servers you configure, etc.) pass through normally.
+- **`skip_login` is a default feature.** Auth treats you as signed-in with a local Test user, so the login modal never appears.
+- **Onboarding tutorial is bypassed** because the test user has `is_onboarded: true`.
+- **Telemetry sender** (`send_batch_messages_to_rudder`) returns `Ok(())` immediately. No events constructed, no payload sent.
+- **`autoupdate` and `crash_reporting` features are off by default,** so Sentry and the auto-updater don't initialize. Even if you re-enabled them, the http_client block stops the actual traffic.
+- **AI / Drive menus** removed from the menu bar.
+- **Settings sidebar** trimmed to: Account, Code, Appearance, Features, Keybindings, Warpify, Privacy, About. Agent/Teams/Cloud/Drive/Billing entries removed.
+- **`is_any_ai_enabled()`** returns `false` unconditionally. This single change gates ~265 call sites across the app: inline block AI buttons, agent footers, conversation features, palette entries, etc.
+- **Right panel** (the agent / code-review side panel) hidden via `has_right_region() = false`.
+- **Command palette filters out** the `WarpAi` binding group, plus the Warp Drive and Conversation data sources.
+
+See [`CHANGELOG.md`](CHANGELOG.md) for the full diff history.
+
+---
+
+## Build & run
+
+```bash
+./script/bootstrap   # one-time setup; installs Xcode tools, brew deps, etc.
+cargo run --bin warp-oss
+```
+
+First build takes 5-10 minutes (full debug compile + Metal shader compilation). Subsequent runs are ~30 seconds.
+
+The binary is `warp-oss`, with bundle ID `dev.warp.WarpOss`. It runs **side-by-side** with the official Warp app — different bundle ID, different data directory, different keychain namespace. Your installed Warp's settings, history, and credentials are completely untouched.
+
+Data lives at: `~/Library/Application Support/dev.warp.WarpOss/`
+
+For an optimized binary:
+
+```bash
+cargo build --release --bin warp-oss
+./target/release/warp-oss
+```
+
+Engineering details (testing, presubmit, platform-specific notes) are in [`WARP.md`](WARP.md).
+
+---
 
 ## Licensing
 
-Warp's UI framework (the `warpui_core` and `warpui` crates) are licensed under the [MIT license](LICENSE-MIT).
+This fork inherits the upstream license setup unchanged:
 
-The rest of the code in this repository is licensed under the [AGPL v3](LICENSE-AGPL).
+- **`warpui` and `warpui_core` crates** — [MIT](LICENSE-MIT)
+- **Everything else** — [AGPL-3.0](LICENSE-AGPL)
 
-## Open Source & Contributing
+What this means in practice:
 
-Warp's client codebase is open source and lives in this repository. We welcome community contributions and have designed a lightweight workflow to help new contributors get started. For the full contribution flow, read our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
+- **Personal use:** AGPL imposes no obligations. You can run this on your own machine forever without sharing source.
+- **Distribution:** if you fork this further and share modified binaries, AGPL §5 requires you to make the source available and preserve the copyright headers.
+- **Network service:** AGPL §13 only kicks in if you offer the software as a network service. A terminal you run on your own laptop doesn't trigger it.
 
-### Issue to PR
+Source-file copyright headers (`Copyright (C) Denver Technologies, Inc.`) are preserved everywhere, as required.
 
-Before filing, [search existing issues](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc) for your bug or feature request. If nothing exists, [file an issue](https://github.com/warpdotdev/warp/issues/new/choose) using our templates. Security vulnerabilities should be reported privately as described in [CONTRIBUTING.md](CONTRIBUTING.md#reporting-security-issues).
+---
 
-Once filed, a Warp maintainer reviews the issue and may apply a readiness label: [`ready-to-spec`](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+label%3Aready-to-spec) signals the design is open for contributors to spec out, and [`ready-to-implement`](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+label%3Aready-to-implement) signals the design is settled and code PRs are welcome. Anyone can pick up a labeled issue — mention **@oss-maintainers** on an issue if you'd like it considered for a readiness label.
+## Credits
 
-### Building the Repo Locally
+- **Upstream:** [github.com/warpdotdev/warp](https://github.com/warpdotdev/warp) — Warp / Denver Technologies, Inc.
+- All the heavy lifting (blocks, GPU rendering, terminal protocol, command palette, themes) is theirs. This fork is a small set of runtime stubs and UI hides on top of their work.
 
-To build and run Warp from source:
-
-```bash
-./script/bootstrap   # platform-specific setup
-./script/run         # build and run Warp
-./script/presubmit   # fmt, clippy, and tests
-```
-
-See [WARP.md](WARP.md) for the full engineering guide, including coding style, testing, and platform-specific notes.
-
-## Joining the Team
-
-Interested in joining the team? See our [open roles](https://www.warp.dev/careers).
-
-## Support and Questions
-
-1. See our [docs](https://docs.warp.dev/) for a comprehensive guide to Warp's features.
-2. Join our [Slack Community](https://go.warp.dev/join-preview) to connect with other users and get help from the Warp team.
-3. Try our [Preview build](https://www.warp.dev/download-preview) to test the latest experimental features.
-4. Mention **@oss-maintainers** on any issue to escalate to the team — for example, if you encounter problems with the automated agents.
-
-## Code of Conduct
-
-We ask everyone to be respectful and empathetic. Warp follows the [Code of Conduct](CODE_OF_CONDUCT.md). To report violations, email warp-coc at warp.dev.
-
-## Open Source Dependencies
-
-We'd like to call out a few of the [open source dependencies](https://docs.warp.dev/help/licenses) that have helped Warp to get off the ground:
-
-* [Tokio](https://github.com/tokio-rs/tokio)
-* [NuShell](https://github.com/nushell/nushell)
-* [Fig Completion Specs](https://github.com/withfig/autocomplete)
-* [Warp Server Framework](https://github.com/seanmonstar/warp)
-* [Alacritty](https://github.com/alacritty/alacritty)
-* [Hyper HTTP library](https://github.com/hyperium/hyper)
-* [FontKit](https://github.com/servo/font-kit)
-* [Core-foundation](https://github.com/servo/core-foundation-rs)
-* [Smol](https://github.com/smol-rs/smol)
+See [`NOTICE.md`](NOTICE.md) for the modification notice required by AGPL §5.

@@ -299,11 +299,22 @@ impl TelemetryApi {
     /// 1. It only supports a blocking HTTP client instead of an async one
     /// 2. We want to use our own HTTP client which has before/after request logging hooks
     #[cfg_attr(target_family = "wasm", allow(clippy::question_mark))]
+    #[allow(unreachable_code, unused_variables)]
     async fn send_batch_messages_to_rudder(
         &self,
         messages: Vec<RudderBatchMessageWithMetadata>,
         settings_snapshot: PrivacySettingsSnapshot,
     ) -> Result<()> {
+        // neuter: never POST telemetry to RudderStack from this fork.
+        // We accept the events and drop them on the floor so callers see
+        // success and don't queue retries. Original body is left below
+        // for easier merges with upstream.
+        log::debug!(
+            "Dropping {} RudderStack telemetry message(s); telemetry sender is neutered",
+            messages.len()
+        );
+        return Ok(());
+
         if messages.is_empty() {
             log::debug!("Dropping empty RudderStack telemetry batch");
             return Ok(());

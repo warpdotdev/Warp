@@ -84,6 +84,11 @@ impl CommandBindingDataSource {
             .into_iter()
             .filter_map(|lens| CommandBinding::from_lens(lens, ctx))
             .filter(|binding| binding_filter_fn.as_ref().is_none_or(|f| f(binding)))
+            // neuter: drop the WarpAi binding group so agent commands no
+            // longer surface in the command palette.
+            .filter(|binding| {
+                !matches!(binding.group, Some(crate::util::bindings::BindingGroup::WarpAi))
+            })
             .map(Arc::new)
             .map(|binding| (binding.id, binding))
             .collect();
