@@ -2,12 +2,17 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{ai::agent::redaction, terminal::model::session::SessionType};
 use futures_util::StreamExt;
+use sha2::{Digest as _, Sha256};
 use warp_core::features::FeatureFlag;
 use warp_multi_agent_api as api;
 
 use crate::server::server_api::ServerApi;
 
 use super::{convert_to::convert_input, ConvertToAPITypeError, RequestParams, ResponseStream};
+
+const MAX_EXTERNAL_TOOL_CALL_ID_LEN: usize = 64;
+const NORMALIZED_TOOL_CALL_ID_PREFIX: &str = "tc_";
+const NORMALIZED_TOOL_CALL_ID_HASH_HEX_LEN: usize = 60;
 
 pub async fn generate_multi_agent_output(
     server_api: Arc<ServerApi>,
@@ -19,6 +24,27 @@ pub async fn generate_multi_agent_output(
         .take()
         .unwrap_or_else(|| get_supported_tools(&params));
     let supported_cli_agent_tools = get_supported_cli_agent_tools(&params);
+    let request = build_request(params, supported_tools, supported_cli_agent_tools)?;
+
+    let response_stream = server_api.generate_multi_agent_output(&request).await;
+    match response_stream {
+        Ok(stream) => {
+            let output_stream = stream.take_until(cancellation_rx);
+            Ok(Box::pin(output_stream))
+        }
+        Err(e) => {
+            let (tx, rx) = async_channel::unbounded();
+            let _ = tx.send(Err(e)).await;
+            Ok(Box::pin(rx))
+        }
+    }
+}
+
+fn build_request(
+    mut params: RequestParams,
+    supported_tools: Vec<api::ToolType>,
+    supported_cli_agent_tools: Vec<api::ToolType>,
+) -> Result<api::Request, ConvertToAPITypeError> {
     let mut logging_metadata = HashMap::new();
     if let Some(metadata) = params.metadata {
         logging_metadata.insert(
@@ -56,7 +82,7 @@ pub async fn generate_multi_agent_output(
         api_keys.allow_use_of_warp_credits = params.allow_use_of_warp_credits_with_byok;
     }
 
-    let request = api::Request {
+    let mut request = api::Request {
         task_context: Some(api::request::TaskContext {
             tasks: params.tasks,
         }),
@@ -129,18 +155,82 @@ pub async fn generate_multi_agent_output(
         mcp_context: params.mcp_context.map(Into::into),
     };
 
-    let response_stream = server_api.generate_multi_agent_output(&request).await;
-    match response_stream {
-        Ok(stream) => {
-            let output_stream = stream.take_until(cancellation_rx);
-            Ok(Box::pin(output_stream))
-        }
-        Err(e) => {
-            let (tx, rx) = async_channel::unbounded();
-            let _ = tx.send(Err(e)).await;
-            Ok(Box::pin(rx))
+    normalize_external_tool_call_ids(&mut request);
+    Ok(request)
+}
+
+// Some providers emit opaque tool call IDs that exceed downstream API limits.
+// We normalize those IDs on the fully assembled outbound request so every
+// provider-facing reference stays in sync without mutating internal client state.
+fn normalize_external_tool_call_ids(request: &mut api::Request) {
+    if let Some(task_context) = &mut request.task_context {
+        for task in &mut task_context.tasks {
+            for message in &mut task.messages {
+                match &mut message.message {
+                    Some(api::message::Message::ToolCall(tool_call)) => {
+                        normalize_external_tool_call_id_in_place(&mut tool_call.tool_call_id);
+                    }
+                    Some(api::message::Message::ToolCallResult(tool_call_result)) => {
+                        normalize_external_tool_call_id_in_place(
+                            &mut tool_call_result.tool_call_id,
+                        );
+                    }
+                    _ => {}
+                }
+            }
         }
     }
+
+    if let Some(input) = &mut request.input {
+        normalize_external_tool_call_ids_in_input(input);
+    }
+}
+
+fn normalize_external_tool_call_ids_in_input(input: &mut api::request::Input) {
+    let Some(api::request::input::Type::UserInputs(user_inputs)) = input.r#type.as_mut() else {
+        return;
+    };
+
+    for user_input in &mut user_inputs.inputs {
+        match user_input.input.as_mut() {
+            Some(api::request::input::user_inputs::user_input::Input::ToolCallResult(
+                tool_call_result,
+            )) => {
+                normalize_external_tool_call_id_in_place(&mut tool_call_result.tool_call_id);
+            }
+            Some(api::request::input::user_inputs::user_input::Input::CliAgentUserQuery(
+                cli_agent_user_query,
+            )) => {
+                normalize_external_tool_call_id_in_place(
+                    &mut cli_agent_user_query.run_shell_command_tool_call_id,
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+fn normalize_external_tool_call_id_in_place(tool_call_id: &mut String) {
+    if tool_call_id.len() > MAX_EXTERNAL_TOOL_CALL_ID_LEN {
+        *tool_call_id = normalize_external_tool_call_id(tool_call_id);
+    }
+}
+
+fn normalize_external_tool_call_id(tool_call_id: &str) -> String {
+    if tool_call_id.len() <= MAX_EXTERNAL_TOOL_CALL_ID_LEN {
+        return tool_call_id.to_owned();
+    }
+
+    debug_assert!(
+        NORMALIZED_TOOL_CALL_ID_PREFIX.len() + NORMALIZED_TOOL_CALL_ID_HASH_HEX_LEN
+            <= MAX_EXTERNAL_TOOL_CALL_ID_LEN
+    );
+
+    let hash = hex::encode(Sha256::digest(tool_call_id.as_bytes()));
+    format!(
+        "{NORMALIZED_TOOL_CALL_ID_PREFIX}{}",
+        &hash[..NORMALIZED_TOOL_CALL_ID_HASH_HEX_LEN]
+    )
 }
 
 fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
