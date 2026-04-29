@@ -32,7 +32,9 @@ Before this change, Nushell could only be represented as the broad POSIX `ShellF
 2. Add local shell discovery and spawn support.
    - Include `nu`/`nu.exe` in shell discovery and display it as "Nushell".
    - Add `/bin/nu` fallback on Unix-like systems.
-   - Start direct Nushell sessions with login/execute arguments that run the Warp init script and then enter the interactive shell.
+   - For direct local sessions, invoke Nushell as `nu --login --execute <warp init script>`. The `--login` flag preserves normal login-shell startup, and `--execute` runs Warp's init snippet before leaving the process in an interactive shell.
+   - Startup ordering is part of the contract: Nushell loads the user's normal startup files first (`env.nu`, then `config.nu`, and `login.nu` for login shells), then Warp's `--execute` init script runs. Warp does not skip user config for the main interactive session.
+   - If a user startup file throws an error before `--execute` runs, Nushell reports that error and Warp treats the shell like any other shell that failed to bootstrap; Warp does not mask or rewrite user config failures.
    - Support WSL and MSYS2 spawning when the detected shell basename maps to `ShellType::Nu`.
    - Use basename parsing for WSL detection to avoid substring false positives.
 
@@ -40,17 +42,21 @@ Before this change, Nushell could only be represented as the broad POSIX `ShellF
    - `nu_init_shell.nu` sends the initial `InitShell` hook and establishes `WARP_SESSION_ID`.
    - `nu_body.nu` installs Nushell functions/hooks for `Preexec`, `Precmd`, `CommandFinished`, `Bootstrapped`, `Clear`, `InputBuffer`, `FinishUpdate`, prompt-mode toggles, PATH append, and initial working directory handling.
    - `nu.nu` includes the body script through the existing bundled asset mechanism.
+   - Bootstrap must merge with user configuration rather than replacing it: prepend Warp's `pre_execution` and `pre_prompt` hooks ahead of existing hook lists, append Warp keybindings to existing keybindings, and store the user's original prompt closures/strings before changing prompt indicators.
+   - Warp-managed prompt mode sets Nushell prompt indicators to empty strings and emits Warp prompt escape sequences. Honor-user-prompt mode restores the stored user prompt indicators and calls the stored `PROMPT_COMMAND`/`PROMPT_COMMAND_RIGHT` values when they are closures or strings.
+   - Disable Nushell's built-in OSC 133/633 shell integration flags in `$env.config.shell_integration` while Warp's integration is active to avoid duplicate prompt markers.
    - Use rc-file bootstrap for local Nushell where Warp already uses that method for shells that should not receive large bootstrap payloads through the PTY.
 
 4. Add Nushell command-execution behavior.
-   - Use Nushell's no-config flag where command executors need isolated command execution.
+   - Use Nushell's `--no-config-file` flag where command executors need isolated command execution that should not re-run user config.
    - Preserve command escaping rules separately from Bash/Zsh/Fish where needed.
    - Route unsupported local child/subshell flows through the existing unsupported-shell handling instead of pretending Nushell is Bash.
 
 5. Add Nushell environment-variable serialization.
-   - Constants serialize as Nushell literals assigned to `$env`.
-   - Command-backed values serialize as Nushell command substitutions.
-   - Non-identifier environment names use quoted `$env."NAME"` syntax.
+   - Constants serialize as JSON string literals assigned to `$env`, using `serde_json::to_string`. This makes quotes, backslashes, newlines, `$()`, semicolons, and other shell-significant characters data rather than executable Nushell syntax.
+   - Bare environment names are allowed only when they match `[A-Za-z_][A-Za-z0-9_]*`. Any other name serializes through the same JSON string-literal escaping and is emitted as `$env."NAME"`/`$env.<quoted-name>`.
+   - Command-backed values are intentionally executable Nushell expressions emitted as `(<command>)`. These commands come from Warp's environment-variable command model and are not escaped as data; callers must treat them as trusted command snippets.
+   - Secret-backed values are intentionally executable command substitutions around the external secret-manager retrieval command. The secret reference/manager configuration is the trust boundary, and the command output becomes the environment value.
    - Warp Drive export and copy paths carry `ShellType` from the active terminal session so Nushell sessions emit Nushell syntax.
 
 6. Add Nushell-safe update command construction.
@@ -62,13 +68,24 @@ Before this change, Nushell could only be represented as the broad POSIX `ShellF
    - Remote SSH/session warpification and Nushell subshell bootstrap remain unsupported in this first iteration.
    - Future work can add those paths once the local shell contract is stable.
 
+## Compatibility
+
+The first supported Nushell line is `0.109.x`. The bootstrap and tests rely on the following Nushell behavior available in that line:
+
+- `nu --login --execute <commands>` starts a login shell, runs the command string after user startup files, and remains interactive.
+- `$env.config.hooks.pre_execution`, `$env.config.hooks.pre_prompt`, prompt closures, and keybinding records can be updated with `upsert`.
+- `scope commands`, `scope aliases`, `to json -r`, `encode hex`, `hide-env`, and `commandline` host commands are available with the syntax used by the bootstrap.
+- External command failures inside `try { ... } catch { ... }` prevent later statements in that `try` block from running.
+
+Older Nushell versions are best-effort. If an older installed `nu` lacks required flags, hooks, or syntax, Warp should surface the normal shell bootstrap/startup failure rather than falling back to Bash syntax. Future compatibility expansion should add version-specific smoke tests before lowering the minimum.
+
 ## Testing and validation
 
 Product behavior coverage:
 
 - Behavior 1, 2, and 5: unit tests in `crates/warp_terminal/src/shell/mod_tests.rs` and `app/src/terminal/local_tty/shell_tests.rs` verify `nu`, `-nu`, `/usr/bin/nu`, Windows `nu.exe`, and false positives such as `menu.exe`/`/usr/bin/menu.exe`.
 - Behavior 3 and 14: existing shell-discovery tests are extended so Nushell appears with the known shell types without regressing other shells.
-- Behavior 4, 6, 7, 8, 9, and 10: bootstrap unit coverage verifies Nushell asset selection and local smoke testing runs the rendered Nushell init/body scripts with `nu`.
+- Behavior 4, 6, 7, 8, 9, and 10: bootstrap unit coverage verifies Nushell asset selection; rendered-script smoke tests verify that the init/body scripts parse and run under the supported local `nu` binary after build placeholders are replaced.
 - Behavior 11 and 12: `app/src/env_vars/mod.rs` tests verify Nushell initialization/export syntax, command substitution, and quoted environment-variable names; Drive export tests cover the `ShellType` API change.
 - Behavior 13: `app/src/autoupdate/linux_test.rs` verifies the Nushell update command gates `warp_finish_update` behind the package-manager command sequence and does not emit POSIX `&&`.
 - Behavior 15: unsupported child/subshell paths intentionally keep using existing unsupported-shell behavior for Nushell.
@@ -85,14 +102,25 @@ nix develop /home/vitalyr/projects/dev/ai/warp#default -c bash -lc 'cd /home/vit
 nix develop /home/vitalyr/projects/dev/ai/warp#default -c bash -lc 'cd /home/vitalyr/projects/dev/ai/warp-dev && cargo clippy -p warp -p warp_terminal --all-targets --tests -- -D warnings'
 ```
 
-Manual smoke validation:
+Rendered-script smoke validation:
 
 ```bash
 nu -n --no-std-lib rendered-nu_init_shell.nu
 WARP_BOOTSTRAPPED= WARP_SESSION_ID=12345 WARP_INITIAL_WORKING_DIR="$PWD" nu -n --no-std-lib rendered-nu_body.nu
 ```
 
-Both smoke commands should exit successfully after replacing build placeholders such as `@@USING_CON_PTY_BOOLEAN@@` with a concrete boolean.
+Both smoke commands should exit successfully after replacing build placeholders such as `@@USING_CON_PTY_BOOLEAN@@` with a concrete boolean. These smoke checks prove script syntax and basic runtime evaluation, but they do not prove the interactive PTY lifecycle by themselves.
+
+Interactive lifecycle acceptance validation:
+
+1. Build/run Warp from the local checkout with the shared `../warp` flake development environment.
+2. Select Nushell or set the default shell path to the local `nu` binary.
+3. Open a new session and verify it remains interactive after the Warp init script runs.
+4. Run `pwd`, `cd`, `echo`, `false`, and a command after `false`; verify block boundaries, working directory reporting, prompt redraw, and non-zero exit-code reporting.
+5. Toggle between Warp prompt mode and honoring the user prompt; verify the original prompt is restored in honor-user-prompt mode and Warp block markers continue to work.
+6. Verify custom user `pre_execution`/`pre_prompt` hooks and keybindings still run after Warp prepends/appends its integration entries.
+7. Export/copy a Warp Drive environment-variable collection while the active session is Nushell and verify the generated text is valid Nushell `$env` assignment syntax.
+8. On Linux package builds, inspect the generated update command and verify `warp_finish_update` is not emitted after a failing package-manager command.
 
 ## Risks and mitigations
 

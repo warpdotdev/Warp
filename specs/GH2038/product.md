@@ -33,7 +33,7 @@ Nushell users currently cannot use Warp as their daily terminal because Warp's s
 
 3. When the user has Nushell installed in a discoverable location, Warp lists it as a selectable shell named "Nushell" in the same shell-selection surfaces used for Bash, Zsh, Fish, and PowerShell.
 
-4. If Nushell is the selected/default shell, opening a new local Warp session starts an interactive login Nushell session and automatically runs Warp's Nushell bootstrap without requiring the user to edit `config.nu` or `env.nu`.
+4. If Nushell is the selected/default shell, opening a new local Warp session starts an interactive login Nushell session and automatically runs Warp's Nushell bootstrap without requiring the user to edit `config.nu` or `env.nu`. The user's normal Nushell startup files still run before Warp's bootstrap.
 
 5. WSL default-shell detection treats a WSL default shell whose basename is `nu` as Nushell. Paths that merely contain `nu` in a parent directory or unrelated executable name do not count.
 
@@ -45,7 +45,7 @@ Nushell users currently cannot use Warp as their daily terminal because Warp's s
 
 9. Warp reads the normal Nushell history and configuration locations when presenting shell metadata or file references. This includes `~/.config/nushell/history.txt`, `~/.local/share/nushell/history.txt`, `~/.config/nushell/env.nu`, `~/.config/nushell/config.nu`, and `~/.config/nushell/login.nu` where applicable.
 
-10. Warp's prompt-mode toggles work in Nushell: the user can switch between Warp-managed prompt integration and honoring the user's Nushell prompt where Warp exposes those controls.
+10. Warp's prompt-mode toggles work in Nushell: the user can switch between Warp-managed prompt integration and honoring the user's Nushell prompt where Warp exposes those controls. Existing Nushell prompt configuration, hooks, and keybindings should continue to run unless they directly conflict with Warp's integration.
 
 11. Warp's environment-variable initialization and export features emit valid Nushell syntax. Constant values are assigned with `$env.NAME = ...`, command-backed values use Nushell command substitution, and variable names that are not valid bare Nushell identifiers are quoted safely.
 
@@ -56,3 +56,5 @@ Nushell users currently cannot use Warp as their daily terminal because Warp's s
 14. The existing Bash, Zsh, Fish, and PowerShell behaviors remain unchanged except for shared UI or metadata surfaces that now include Nushell as another supported shell.
 
 15. When a feature is not yet supported for Nushell, Warp fails gracefully or uses the existing unsupported-shell path rather than silently running Bash/POSIX syntax in a Nushell session.
+
+16. The first supported Nushell compatibility line is `0.109.x`. Older Nushell versions are best-effort and should fail through the normal shell startup/bootstrap failure path rather than falling back to Bash syntax.
