@@ -12,8 +12,10 @@
 //! for a full guide on the server-side experiment framework.
 
 use crate::features::FeatureFlag;
+use crate::terminal::warpify::settings::{SshExtensionInstallMode, WarpifySettings};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::workspaces::workspace::CustomerType;
+use settings::Setting;
 use warpui::AppContext;
 #[cfg(not(test))]
 use warpui::SingletonEntity as _;
@@ -152,11 +154,28 @@ impl ServerExperiment {
                 FeatureFlag::AgentHarness.set_enabled(true);
             }
             Self::SshRemoteServerControl => {
-                FeatureFlag::SshRemoteServer.set_enabled(true);
-                FeatureFlag::SshRemoteServerDefaultNeverInstall.set_enabled(true);
+                // SshRemoteServer is already in RELEASE_FLAGS so no need to
+                // enable it here.  Override the default install mode to
+                // NeverInstall for users who haven't explicitly changed it.
+                // `load_value` sets the in-memory value without persisting,
+                // so the override is re-applied from the experiment cache on
+                // every launch and disappears if the user leaves the experiment.
+                WarpifySettings::handle(_ctx).update(_ctx, |settings, ctx| {
+                    if !settings
+                        .ssh_extension_install_mode
+                        .is_value_explicitly_set()
+                    {
+                        let _ = settings.ssh_extension_install_mode.load_value(
+                            SshExtensionInstallMode::NeverInstall,
+                            false,
+                            ctx,
+                        );
+                    }
+                });
             }
             Self::SshRemoteServerExperiment => {
-                FeatureFlag::SshRemoteServer.set_enabled(true);
+                // SshRemoteServer is already in RELEASE_FLAGS; nothing extra
+                // needed for the experiment arm.
             }
             #[cfg(test)]
             Self::TestExperiment => {

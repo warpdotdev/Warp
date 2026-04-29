@@ -828,11 +828,6 @@ pub enum FeatureFlag {
     /// for command execution.
     SshRemoteServer,
 
-    /// Set by the SSH remote server experiment control arm to override the
-    /// default install mode to `NeverInstall` for users who haven't explicitly
-    /// changed the setting. Only set via `ServerExperiment::on_added_to`.
-    SshRemoteServerDefaultNeverInstall,
-
     /// Redux of the setup/initial user query UI for cloud mode.
     CloudModeSetupV2,
 

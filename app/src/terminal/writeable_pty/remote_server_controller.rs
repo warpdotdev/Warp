@@ -2,21 +2,20 @@ use crate::auth::auth_state::AuthStateProvider;
 use crate::remote_server::auth_context::server_api_auth_context;
 use instant::Instant;
 use remote_server::auth::RemoteServerAuthContext;
-use settings::Setting;
 use std::path::PathBuf;
 use std::sync::Arc;
 use warp_core::SessionId;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 
-use crate::features::FeatureFlag;
-use crate::terminal::warpify::settings::SshExtensionInstallMode;
+use settings::Setting;
+
+use crate::terminal::warpify::settings::{SshExtensionInstallMode, WarpifySettings};
 
 use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
 use crate::remote_server::ssh_transport::SshTransport;
 use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::session::{IsLegacySSHSession, SessionInfo};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::terminal::warpify::settings::WarpifySettings;
 use crate::{send_telemetry_from_ctx, TelemetryEvent};
 use remote_server::setup::RemotePlatform;
 
@@ -231,20 +230,10 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 self.connect_session_for_current_identity(session_id, socket_path, ctx);
             }
             Ok(false) => {
-                let settings = WarpifySettings::as_ref(ctx);
-                let install_mode = *settings.ssh_extension_install_mode.value();
-                // If the user hasn't explicitly changed the install mode and the
-                // server-side experiment assigned them to the control arm, treat
-                // the default `AlwaysAsk` as `NeverInstall`.
-                let effective_mode = if install_mode == SshExtensionInstallMode::AlwaysAsk
-                    && !settings.ssh_extension_install_mode.is_value_explicitly_set()
-                    && FeatureFlag::SshRemoteServerDefaultNeverInstall.is_enabled()
-                {
-                    SshExtensionInstallMode::NeverInstall
-                } else {
-                    install_mode
-                };
-                match effective_mode {
+                let install_mode = *WarpifySettings::as_ref(ctx)
+                    .ssh_extension_install_mode
+                    .value();
+                match install_mode {
                     SshExtensionInstallMode::AlwaysAsk => {
                         self.state = SshInitState::AwaitingUserChoice {
                             session_info,
