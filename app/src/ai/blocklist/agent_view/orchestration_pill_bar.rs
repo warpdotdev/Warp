@@ -245,7 +245,10 @@ impl OrchestrationPillBar {
 
         // Then a pill per child agent.
         for child in children {
-            let name = child.agent_name().unwrap_or("Agent");
+            let name = child
+                .agent_name()
+                .filter(|n| !n.is_empty())
+                .unwrap_or("Agent");
             specs.push(PillSpec {
                 conversation_id: child.id(),
                 label: name.to_string(),
