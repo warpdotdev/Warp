@@ -17,13 +17,13 @@ Relevant existing code:
 - `app/src/terminal/view.rs:25419` — existing handler stub for `TerminalAction::SwitchAgentViewToConversation`, calling `enter_agent_view_for_conversation` to navigate the same pane.
 - `crates/warp_features/src/lib.rs` — `FeatureFlag` enum and `DOGFOOD_FLAGS`.
 
-The feature is gated by a new `FeatureFlag::OrchestrationPillBar`, default-on for dogfood. Existing `Orchestration` and `AgentView` flag behavior is preserved when the new flag is off.
+The feature is gated by a new `FeatureFlag::OrchestrationPillBar`. Existing `Orchestration` and `AgentView` flag behavior is preserved when the new flag is off.
 
 ## Proposed changes
 
 ### 1. Feature flag
 
-Add `OrchestrationPillBar` to `FeatureFlag` in `crates/warp_features/src/lib.rs:725` and to `DOGFOOD_FLAGS` (`crates/warp_features/src/lib.rs:915`). All new code paths gate on `FeatureFlag::OrchestrationPillBar.is_enabled()`.
+Add `OrchestrationPillBar` to `FeatureFlag` in `crates/warp_features/src/lib.rs:725`. All new code paths gate on `FeatureFlag::OrchestrationPillBar.is_enabled()`.
 
 ### 2. New view: `OrchestrationPillBar`
 
@@ -97,7 +97,7 @@ The breadcrumb's parent crumb needs a persistent `MouseStateHandle`. We reuse `T
 
 ### Manual / dogfood verification
 
-The flag is in `DOGFOOD_FLAGS`, so a dogfood build picks this up automatically. To verify in a dogfood build, run an orchestrator (e.g. via `/orchestrate`) that spawns at least two child agents and walk through the invariants from `PRODUCT.md`:
+To verify in a local build, run an orchestrator (e.g. via `/orchestrate`) that spawns at least two child agents and walk through the invariants from `PRODUCT.md`:
 
 - (1)–(3): Confirm the pill bar appears only on the orchestrator's view in fullscreen agent mode and disappears when there are zero children or when not in fullscreen.
 - (4): Cause status changes on multiple children (commands finishing, in-progress flips). Pill order must not reshuffle.
@@ -122,8 +122,6 @@ Add a unit test next to `OrchestrationPillBar` that lays out the view in a `warp
 ## Risks and mitigations
 
 - **Regression: title vertical centering.** The `Flex::column` wrap introduced by this feature inadvertently broke the title's centering until the header was pinned to `PANE_HEADER_HEIGHT`. The pinning is the only reason centering still works — any future refactor of `maybe_add_parent_navigation_card` that loses the `ConstrainedBox::with_height(PANE_HEADER_HEIGHT)` will regress. Add an inline comment at the call site (already done) and the layout-regression test above.
-- **Regression: legacy parent-conversation card.** When `OrchestrationPillBar` is off but `Orchestration` is on, the existing parent-card branch still wraps the header in its own `Flex::column`. That branch had the same latent issue but was less visible because the parent card was small. We do not change that branch in V1; if title centering is reported as off there, apply the same `ConstrainedBox::with_height(PANE_HEADER_HEIGHT)` fix.
-- **Action routing.** Pill / crumb clicks must be wrapped in `PaneHeaderAction::CustomAction` because the pill bar renders inside the pane header chrome. Forgetting the wrapper makes clicks silent no-ops. Mirrors `agent_view_back_button`.
 - **Mouse state lifetime.** Constructing `MouseStateHandle::default()` inline at render time silently zeros out hover state every frame. Per-pill state lives in the view's `mouse_states` map; the parent crumb's state is sourced from `TerminalViewMouseStates`. This pattern is enforced by the existing WARP.md guidance.
 
 ## Follow-ups
