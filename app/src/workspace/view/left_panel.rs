@@ -27,6 +27,7 @@ use crate::pane_group::{PaneGroup, WorkingDirectoriesEvent, WorkingDirectoriesMo
 #[cfg(feature = "local_fs")]
 use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
 use crate::server::telemetry::{FileTreeSource, WarpDriveSource};
+use crate::settings::CodeSettings;
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
@@ -67,6 +68,7 @@ struct MouseStateHandles {
     global_search_button: MouseStateHandle,
     warp_drive_button: MouseStateHandle,
     conversation_list_view_button: MouseStateHandle,
+    hidden_files_toggle: MouseStateHandle,
 }
 
 #[derive(Clone, Debug)]
@@ -1157,6 +1159,47 @@ impl View for LeftPanelView {
                 Flex::row().finish()
             };
 
+            let header_right = {
+                let mut row = Flex::row()
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_spacing(4.0);
+
+                // Show hidden files toggle when Project Explorer is active
+                if self.active_view() == ToolPanelView::ProjectExplorer {
+                    let is_active = *CodeSettings::as_ref(app).show_hidden_files;
+                    let icon_color = if is_active {
+                        appearance.theme().foreground()
+                    } else {
+                        appearance
+                            .theme()
+                            .sub_text_color(appearance.theme().background())
+                    };
+                    let tooltip = appearance
+                        .ui_builder()
+                        .tool_tip("Toggle hidden files".to_string())
+                        .build()
+                        .finish();
+                    row = row.with_child(
+                        icon_button_with_color(
+                            appearance,
+                            icons::Icon::Eye,
+                            is_active,
+                            self.mouse_state_handles.hidden_files_toggle.clone(),
+                            icon_color,
+                        )
+                        .with_tooltip(move || tooltip)
+                        .build()
+                        .on_click(move |ctx, _, _| {
+                            ctx.dispatch_typed_action(WorkspaceAction::ToggleHiddenFiles);
+                        })
+                        .with_cursor(Cursor::PointingHand)
+                        .finish(),
+                    );
+                }
+
+                row.with_child(self.close_button(appearance, app)).finish()
+            };
+
             let header_row = Container::new(
                 ConstrainedBox::new(
                     Flex::row()
@@ -1164,7 +1207,7 @@ impl View for LeftPanelView {
                         .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                         .with_cross_axis_alignment(CrossAxisAlignment::Center)
                         .with_child(Shrinkable::new(1.0, header_left).finish())
-                        .with_child(self.close_button(appearance, app))
+                        .with_child(header_right)
                         .finish(),
                 )
                 .with_height(PANE_HEADER_HEIGHT)

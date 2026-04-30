@@ -46,6 +46,7 @@ use crate::coding_panel_enablement_state::CodingPanelEnablementState;
 use crate::editor::{EditorOptions, EditorView, TextOptions};
 #[cfg(feature = "local_fs")]
 use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
+use crate::settings::{CodeSettings, CodeSettingsChangedEvent};
 use crate::terminal::input::InputDropTargetData;
 use crate::terminal::view::{TerminalDropTargetData, TerminalView};
 use crate::ui_components::item_highlight::{ImageOrIcon, ItemHighlightState};
@@ -294,6 +295,8 @@ pub struct FileTreeView {
     /// the target is selected by the user or when the target root stops
     /// being displayed.
     pending_focus_target: Option<PendingFocusTarget>,
+    /// Whether to show hidden files (dotfiles) in the file tree.
+    show_hidden_files: bool,
 }
 
 /// Directory the file tree wants to focus once its entry becomes available.
@@ -355,6 +358,7 @@ impl FileTreeView {
         if is_active {
             self.subscribe_to_repository_metadata(ctx);
             self.subscribe_to_active_file_model(ctx);
+            self.subscribe_to_code_settings(ctx);
 
             // Catch up on any repository/file changes that happened while inactive.
             // Skip remote-backed roots — their data comes from server pushes,
@@ -388,6 +392,7 @@ impl FileTreeView {
         } else {
             ctx.unsubscribe_to_model(&self.repository_metadata_model);
             self.unsubscribe_from_active_file_model(ctx);
+            self.unsubscribe_from_code_settings(ctx);
             let repository_metadata_model = self.repository_metadata_model.clone();
             let paths: Vec<_> = self.registered_lazy_loaded_paths.drain().collect();
             repository_metadata_model.update(ctx, move |model: &mut RepoMetadataModel, ctx| {
@@ -640,6 +645,20 @@ impl FileTreeView {
         ctx.unsubscribe_to_model(active_file_model);
     }
 
+    fn subscribe_to_code_settings(&self, ctx: &mut ViewContext<Self>) {
+        ctx.subscribe_to_model(&CodeSettings::handle(ctx), |me, _, event, ctx| {
+            if let CodeSettingsChangedEvent::ShowHiddenFiles { .. } = event {
+                me.show_hidden_files = *CodeSettings::as_ref(ctx).show_hidden_files;
+                me.rebuild_flattened_items();
+                ctx.notify();
+            }
+        });
+    }
+
+    fn unsubscribe_from_code_settings(&self, ctx: &mut ViewContext<Self>) {
+        ctx.unsubscribe_to_model(&CodeSettings::handle(ctx));
+    }
+
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let context_menu = ctx.add_typed_action_view(|_| {
             Menu::new()
@@ -701,6 +720,7 @@ impl FileTreeView {
             #[cfg(feature = "local_fs")]
             registered_lazy_loaded_paths: HashSet::new(),
             pending_focus_target: None,
+            show_hidden_files: *CodeSettings::as_ref(ctx).show_hidden_files,
         };
 
         picker
@@ -1667,6 +1687,15 @@ impl FileTreeView {
 
         if path_of_removed_item == Some(current_path) {
             return (None, true);
+        }
+
+        // Filter hidden files/directories when show_hidden_files is disabled.
+        if !self.show_hidden_files {
+            if let Some(name) = current_path.file_name() {
+                if name.starts_with('.') {
+                    return (selected_item_index, removed_item);
+                }
+            }
         }
 
         if path_of_selected_item == Some(current_path) {
