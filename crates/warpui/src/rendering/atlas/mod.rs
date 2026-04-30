@@ -24,7 +24,7 @@ use thiserror::Error;
 ///
 /// Atlases of different kinds never share textures: an allocated rectangle
 /// is meaningful only within its kind's manager.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum AtlasTextureKind {
     Generic,
     Subpixel,

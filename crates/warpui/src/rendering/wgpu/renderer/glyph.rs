@@ -33,6 +33,11 @@ use super::util::create_buffer_init;
 pub(super) struct Pipeline {
     glyph_cache: GlyphCache<TextureWithBindGroup>,
     render_pipeline: RenderPipeline,
+    /// Render pipeline that composites LCD subpixel glyphs through dual-source
+    /// blending. Created only when the device exposes the corresponding
+    /// feature; otherwise the renderer silently falls back to the mono
+    /// pipeline for any glyphs that were classified as Subpixel.
+    subpixel_render_pipeline: Option<RenderPipeline>,
     texture_bind_group_layout: BindGroupLayout,
     sampler: Sampler,
 }
@@ -117,7 +122,7 @@ impl Pipeline {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(color_target)],
+                targets: &[Some(color_target.clone())],
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
@@ -128,6 +133,82 @@ impl Pipeline {
             // so we are unlikely to get much value out of this for the platforms Warp supports.
             cache: None,
         });
+
+        // Build the subpixel pipeline only on hardware that exposes
+        // dual-source blending. We compile a separate WGSL module that
+        // concatenates glyph_shader.wgsl with glyph_subpixel_shader.wgsl
+        // and prepends the `enable dual_source_blending;` directive that
+        // WGSL requires when a shader uses @blend_src attributes. Both
+        // pipelines share the vertex stage (vs_main) and bind group layout;
+        // only the fragment stage and blend state differ.
+        let subpixel_render_pipeline = if device
+            .features()
+            .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
+        {
+            const SUBPIXEL_SHADER_PRELUDE: &str = "enable dual_source_blending;\n";
+            let combined_source = format!(
+                "{SUBPIXEL_SHADER_PRELUDE}{}\n{}",
+                include_str!("../shaders/glyph_shader.wgsl"),
+                include_str!("../shaders/glyph_subpixel_shader.wgsl"),
+            );
+            let subpixel_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Glyph Subpixel Shader"),
+                source: wgpu::ShaderSource::Wgsl(Cow::Owned(combined_source)),
+            });
+
+            // Dual-source blend equation. Each LCD subpixel of the destination
+            // is multiplied by its own coverage from the index-1 fragment
+            // output; the index-0 output supplies the unmodulated text colour.
+            // ColorWrites::COLOR keeps the framebuffer alpha unchanged so the
+            // window's compositing alpha is not corrupted by the per-channel
+            // coverage values.
+            let subpixel_blend = wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::Src1,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrc1,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+            };
+            let subpixel_target = wgpu::ColorTargetState {
+                format: color_target.format,
+                blend: Some(subpixel_blend),
+                write_mask: wgpu::ColorWrites::COLOR,
+            };
+
+            Some(
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Glyph Subpixel Render pipeline"),
+                    layout: Some(&glyph_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &subpixel_shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[
+                            shader_types::Vertex::desc(),
+                            shaders::GlyphInstanceData::desc(),
+                        ],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &subpixel_shader,
+                        entry_point: Some("fs_subpixel_main"),
+                        targets: &[Some(subpixel_target)],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview_mask: None,
+                    cache: None,
+                }),
+            )
+        } else {
+            None
+        };
 
         // Nearest sampling is required for glyph atlas textures. The glyph rasterizer
         // bakes sub-pixel X offsets into each cached bitmap (SubpixelAlignment), and the
@@ -145,6 +226,7 @@ impl Pipeline {
         Self {
             glyph_cache: GlyphCache::new(glyph_config),
             render_pipeline,
+            subpixel_render_pipeline,
             texture_bind_group_layout,
             sampler,
         }
@@ -250,8 +332,19 @@ impl Pipeline {
             return None;
         }
 
+        // Sort by atlas kind so draw() can issue one set_pipeline per kind
+        // run instead of one per state. The HashMap iteration order is
+        // non-deterministic, so without this sort runs of identical-kind
+        // batches could end up interleaved and force redundant pipeline
+        // switches. Within a kind, keeping insertion order via the
+        // texture_id is enough to keep the instance buffer offsets
+        // monotonically increasing.
+        let mut entries: Vec<((AtlasTextureKind, TextureId), Vec<shaders::GlyphInstanceData>)> =
+            texture_to_glyph.into_iter().collect();
+        entries.sort_by_key(|((kind, _), _)| *kind);
+
         let mut start_offset = per_frame_state.glyph_data.len();
-        let per_texture_data = texture_to_glyph
+        let per_texture_data = entries
             .into_iter()
             .map(|((kind, texture_id), mut glyph_instance_data)| {
                 let len = glyph_instance_data.len();
@@ -300,10 +393,21 @@ impl Pipeline {
             return;
         };
 
-        render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(1, buffer.slice(..));
 
+        // Track the last pipeline we bound so we only re-issue set_pipeline
+        // on transitions. Glyph batches are typically dominated by one kind
+        // (a paragraph of mono text or a row of subpixel text), so this
+        // collapses runs of the same kind into a single state change.
+        let mut active_kind: Option<AtlasTextureKind> = None;
+
         for per_texture_state in &layer_state.textures {
+            if active_kind != Some(per_texture_state.kind) {
+                let pipeline = self.pipeline_for_kind(per_texture_state.kind);
+                render_pass.set_pipeline(pipeline);
+                active_kind = Some(per_texture_state.kind);
+            }
+
             let texture_with_view = self
                 .glyph_cache
                 .texture(per_texture_state.kind, &per_texture_state.texture_id)
@@ -316,6 +420,22 @@ impl Pipeline {
                 0,
                 per_texture_state.start_offset as u32..end_offset as u32,
             );
+        }
+    }
+
+    /// Picks the render pipeline that matches the atlas kind. The Subpixel
+    /// kind requires the dual-source-blend pipeline; if that pipeline was
+    /// never built (the GPU does not expose dual-source blending) the
+    /// renderer falls back to the mono pipeline. Scene-time classification
+    /// should not produce Subpixel glyphs in that case, but the fallback
+    /// keeps us from panicking if it ever does.
+    fn pipeline_for_kind(&self, kind: AtlasTextureKind) -> &RenderPipeline {
+        match kind {
+            AtlasTextureKind::Generic => &self.render_pipeline,
+            AtlasTextureKind::Subpixel => self
+                .subpixel_render_pipeline
+                .as_ref()
+                .unwrap_or(&self.render_pipeline),
         }
     }
 }
