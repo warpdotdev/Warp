@@ -61,16 +61,6 @@ ARM_ARCH="aarch64"
 ARM_TARGET="$ARM_ARCH-apple-darwin"
 DEFAULT_ARCH="$(rustc --print cfg | grep target_arch)"
 
-# The Rust target triple corresponding to the build host. Used below to
-# decide whether to forward --target to `cargo run` for the settings schema
-# generator: that step needs to execute its compiled binary, so we can only
-# pass a target that's runnable on the host.
-if [[ "$DEFAULT_ARCH" == *"$INTEL_ARCH"* ]]; then
-    HOST_TARGET="$INTEL_TARGET"
-elif [[ "$DEFAULT_ARCH" == *"$ARM_ARCH"* ]]; then
-    HOST_TARGET="$ARM_TARGET"
-fi
-
 # Function to clean up temporary DMG files
 cleanup_dmg_files() {
     local target_dir="$1"
@@ -526,15 +516,7 @@ if [[ "$ARTIFACT" == "app" ]]; then
 
   BUNDLED_RESOURCES_DIR="$BUNDLE_DIR/$WARP_APP_NAME.app/Contents/Resources"
   echo "Preparing bundled resources..."
-  # Only forward --target to the schema generator when the build target is
-  # runnable on the host; otherwise `cargo run` would try to execute a
-  # cross-compiled binary and fail.
-  if [[ "$DEFAULT_TARGET" == "$HOST_TARGET" ]]; then
-    SCHEMA_CARGO_TARGET="$DEFAULT_TARGET"
-  else
-    SCHEMA_CARGO_TARGET=""
-  fi
-  "$WORKSPACE_ROOT_DIR/script/prepare_bundled_resources" "$BUNDLED_RESOURCES_DIR" "$RELEASE_CHANNEL" "$CARGO_PROFILE" "$FEATURES" "$SCHEMA_CARGO_TARGET"
+  "$WORKSPACE_ROOT_DIR/script/prepare_bundled_resources" "$BUNDLED_RESOURCES_DIR" "$RELEASE_CHANNEL" "$CARGO_PROFILE"
 
   "$WORKSPACE_ROOT_DIR/script/compile_icon" "$RELEASE_CHANNEL" "$BUNDLE_DIR/$WARP_APP_NAME.app"
 
@@ -606,15 +588,7 @@ elif [[ "$ARTIFACT" == "cli" ]]; then
 
   echo "Preparing CLI resources directory"
   BUNDLED_RESOURCES_DIR="$OUT_DIR/resources"
-  # Only forward --target to the schema generator when the build target is
-  # runnable on the host; otherwise `cargo run` would try to execute a
-  # cross-compiled binary and fail.
-  if [[ "$DEFAULT_TARGET" == "$HOST_TARGET" ]]; then
-    SCHEMA_CARGO_TARGET="$DEFAULT_TARGET"
-  else
-    SCHEMA_CARGO_TARGET=""
-  fi
-  "$WORKSPACE_ROOT_DIR/script/prepare_bundled_resources" "$BUNDLED_RESOURCES_DIR" "$RELEASE_CHANNEL" "$CARGO_PROFILE" "$FEATURES" "$SCHEMA_CARGO_TARGET"
+  "$WORKSPACE_ROOT_DIR/script/prepare_bundled_resources" "$BUNDLED_RESOURCES_DIR" "$RELEASE_CHANNEL" "$CARGO_PROFILE"
 
 
   # Set the primary binary path to output.
