@@ -70,7 +70,7 @@ Users who connect to the same SSH hosts many times per day currently need to typ
 
 15. Profiles can use jump hosts by selecting from the user's other saved profiles. The add/edit dialog's jump-host dropdown excludes the profile being edited and excludes already selected profiles. Selected jump hosts render as removable chips.
 
-16. Jump-host profile selection preserves both the selected source profile id and a structured metadata snapshot from the selected profile, including host, username, port, and identity file. Connecting a profile with jump hosts chains through the selected profiles in order using the saved snapshot.
+16. Jump-host profile selection preserves both the selected source profile id and a structured metadata snapshot from the selected profile, including host, username, port, and identity file. In the first version, selecting a jump profile includes only that profile's direct host metadata, not that profile's own jump-host chain. If a user wants multiple hops, they select each hop explicitly in order. Connecting a profile with jump hosts chains through the selected direct-hop snapshots in order.
 
 17. If a selected jump profile is deleted later, any profiles that referenced its source profile id remove that stale jump-host reference rather than retaining an unreachable hidden dependency.
 

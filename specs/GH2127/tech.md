@@ -27,14 +27,14 @@ The proposed feature should add a new profile surface without changing the behav
 Add `SshHostProfile` and `SshJumpHost` to `app/src/terminal/ssh/util.rs` or a sibling `profile.rs` under `terminal/ssh`. The model should include:
 
 - `SshHostProfile { id: Uuid, name, host, user, port, identity_file, jump_hosts, tags }`
-- `SshJumpHost { source_profile_id: Uuid, host, user, port, identity_file }`
+- `SshJumpHost { source_profile_id: Option<Uuid>, host, user, port, identity_file }`
 
 The profile id is immutable after creation and is the key for local password storage. Use serde defaults to migrate profiles created before ids or ports existed:
 
 - missing/nil/duplicate ids get a new UUID
 - zero/missing ports normalize to 22
 - jump-host ports normalize the same way
-- jump-host entries created before `source_profile_id` existed are treated as legacy snapshots: preserve them for connection rendering, but do not rely on metadata matching for future deletion pruning
+- jump-host entries created before `source_profile_id` existed deserialize with `source_profile_id: None`; preserve them for connection rendering as legacy snapshots, but do not prune them by mutable host metadata when another profile is deleted
 
 Add `saved_ssh_host_profiles: Vec<SshHostProfile>` to `SshSettings` in `app/src/settings/ssh.rs` with:
 
@@ -64,7 +64,7 @@ The renderer should:
 - treat OpenSSH `%` expansion as a separate context from shell quoting: only renderer-owned tokens such as `%h:%p` may remain unescaped, and user-controlled values that can enter a ProxyCommand must either reject `%` tokens or escape them according to OpenSSH's `%%` literal rules before the outer argument is quoted
 
 ### 3. Toolbar and panel integration
-Add an SSH Profiles item to `HeaderToolbarItemKind` with a globe/server-style icon and a label of "SSH Profiles". Mark it as a panel item and include it in the default left toolbar only if product/review agrees it should be shown by default; otherwise make it configurable but not default.
+Add an SSH Profiles item to `HeaderToolbarItemKind` with a globe/server-style icon and a label of "SSH Profiles". Mark it as a panel item and include it in the default left toolbar for new/default toolbar configurations. Users with configurable toolbar support can still remove or reposition it through the existing toolbar customization path.
 
 In `Workspace`, add:
 
@@ -107,7 +107,8 @@ Jump-host dropdown behavior:
 - candidates come from other saved profiles
 - exclude the current profile and already selected targets
 - render selected hosts as removable chips
-- when saving, snapshot the selected profile's `id` as `source_profile_id` plus its host/user/port/identity metadata into `SshJumpHost`
+- when saving a newly selected jump profile, snapshot the selected profile's `id` as `source_profile_id: Some(id)` plus its direct host/user/port/identity metadata into `SshJumpHost`
+- do not recursively copy the selected profile's own `jump_hosts` in v1; multi-hop chains are represented by selecting each hop explicitly
 
 ### 5. Profile save/delete and secure storage
 On submit, update `SshSettings::saved_ssh_host_profiles` and separately handle `PasswordIntent`:
@@ -120,7 +121,7 @@ On profile removal:
 
 - remove the profile metadata
 - remove its secure-storage password key, ignoring `NotFound`
-- remove jump-host references from remaining profiles by matching `SshJumpHost::source_profile_id`, not by comparing mutable host metadata
+- remove jump-host references from remaining profiles by matching `SshJumpHost::source_profile_id == Some(removed_profile_id)`, not by comparing mutable host metadata; legacy `None` snapshots remain until the user edits/removes them
 
 Store credential metadata separately from the secret value. At minimum, the secure-storage key/value path must distinguish host account passwords from private-key passphrases, for example by including a credential kind in the key or by storing a small typed secure-storage payload. Auto-entry must check the prompt type before reading or writing the secret: host account passwords are used only for strict OpenSSH account password prompts, and key passphrases only for prompts that identify the matching profile identity file.
 
@@ -140,7 +141,7 @@ Use `Zeroizing<String>` for password values that pass through Rust-owned applica
 
 Do not use a direct "run command now" path that can silently fail before bootstrap.
 
-When `enable_ssh_warpification` is false, the bypass command should avoid matching Warp's SSH detection wrappers and should suppress remote bootstrap hooks only for the profile command until that command finishes. This prevents a plain SSH profile connection from displaying as Warpified when the setting is off.
+When `enable_ssh_warpification` is false, use a scoped suppression state rather than relying only on command-string mangling. The terminal view should arm an `SshProfileConnectionState` containing the rendered command, the target profile id, the target block id once known, and `warpification_enabled_at_arm = false`. When the matching profile command is observed for that block, call a terminal-model method equivalent to `ignore_bootstrapping_messages_until_command_finished()` so remote bootstrap hooks from that SSH session are ignored only until the next command-finished event. The suppression state expires after the same short TTL used for profile connection state and is cleared when the target block changes, the command no longer matches, or the SSH login flow completes. This prevents a plain SSH profile connection from displaying as Warpified when the setting is off without breaking password-state matching or normal SSH login tracking for unrelated commands.
 
 When `enable_ssh_warpification` is true, the profile connection should use the same existing `evaluate_warpify_ssh_host` and SSH login completion flow as manual SSH.
 
@@ -194,6 +195,7 @@ Map product invariants to tests:
   - `ProxyCommand` percent-token escaping or validation for user-controlled values
   - password key includes stable UUID
   - normalization migrates missing/duplicate ids and zero ports
+  - legacy jump-host snapshots deserialize with `source_profile_id: None`
   - strict prompt detection classifies OpenSSH account-password prompts separately from key-passphrase prompts and rejects sudo/generic prompts
 
 - Auto-inject unit tests in `app/src/terminal/ssh/auto_inject.rs`:
@@ -210,6 +212,10 @@ Map product invariants to tests:
   - invalid form disables Save
   - jump-host candidates exclude self and selected profiles
   - removing a profile prunes stale jump references by `source_profile_id`
+  - secure-storage write failure saves metadata only, shows a warning, and clears the password buffer
+  - unavailable secure storage leaves the profile connectable without password auto-entry
+  - deleting a profile ignores a missing secure-storage secret without blocking metadata deletion
+  - saved settings never contain password material after add, edit, clear, or delete
 
 - Integration tests under `crates/integration`:
   - add a profile, save it, reopen panel, and see it listed
