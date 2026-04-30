@@ -95,16 +95,26 @@ impl LanguageServerCandidate for IntelephenseCandidate {
     }
 
     async fn is_installed_on_path(&self, executor: &CommandBuilder) -> bool {
-        // Intelephense's CLI surface is only LSP transport flags (`--stdio`,
-        // `--node-ipc`, `--socket=N`, `--pipe=X`); `--version` is not
-        // documented and `--help` enters connection-transport setup, so any
-        // spawn-based probe is unreliable — exit codes don't distinguish a
-        // healthy install from a broken one. Use a pure filesystem PATH
-        // search instead: locate an executable named `intelephense` in any
-        // PATH entry. If it isn't there we fall through to the data_dir
-        // install path (which we control), so a broken global install
-        // never prevents Warp from using a known-good copy.
-        binary_in_path("intelephense", executor.path_env_var())
+        // First narrow the PATH search to a healthy-looking, executable
+        // file (skips dangling symlinks, regular text files, etc.). This
+        // alone is not sufficient — a stale npm shim or missing Node
+        // would still pass — so we then probe-spawn the server with the
+        // documented `--stdio` transport and stdin redirected to /dev/null.
+        // intelephense's connection layer reads zero bytes, sees EOF, and
+        // exits cleanly when the install is healthy. We require both the
+        // file to be present *and* the spawn to exit with success status,
+        // so a broken global shim never displaces Warp's data_dir copy.
+        if !binary_in_path("intelephense", executor.path_env_var()) {
+            return false;
+        }
+        executor
+            .command("intelephense")
+            .arg("--stdio")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .await
+            .map(|output| output.status.success())
+            .unwrap_or(false)
     }
 
     async fn install(
@@ -287,15 +297,51 @@ fn is_executable_file(path: &std::path::Path) -> bool {
 #[cfg(feature = "local_fs")]
 mod tests {
     use super::binary_in_path;
+    use std::ffi::OsString;
     use std::fs::{self, File};
+    use std::path::Path;
 
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt as _;
 
-    /// Creates a fake executable file at `dir/name`. On Unix it gets the
-    /// executable bit; on Windows the suffix decides resolution.
-    fn touch_exe(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
-        let path = dir.join(name);
+    /// Joins multiple path components into a single PATH-formatted string
+    /// using the platform separator (`:` on Unix, `;` on Windows). Wraps
+    /// `std::env::join_paths` so the new tests work cross-platform with
+    /// the matching split logic in `binary_in_path`.
+    fn make_path_var<I, P>(parts: I) -> String
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<Path>,
+    {
+        let owned: Vec<OsString> = parts
+            .into_iter()
+            .map(|p| p.as_ref().as_os_str().to_owned())
+            .collect();
+        std::env::join_paths(owned)
+            .expect("failed to join PATH")
+            .into_string()
+            .expect("PATH contained non-UTF-8 component")
+    }
+
+    /// On Windows, `binary_in_path` expects an executable to end in
+    /// `.exe`/`.cmd`/`.bat`. The `intelephense` npm shim is a `.cmd` so
+    /// use that as the test artefact when running on Windows.
+    fn binary_filename(stem: &str) -> String {
+        #[cfg(windows)]
+        {
+            format!("{stem}.cmd")
+        }
+        #[cfg(not(windows))]
+        {
+            stem.to_string()
+        }
+    }
+
+    /// Creates a fake executable at `dir/<name><ext>`. On Unix it gets
+    /// the executable bit; on Windows the `.cmd`/`.exe`/`.bat` suffix is
+    /// what makes it count as runnable.
+    fn touch_exe(dir: &Path, stem: &str) -> std::path::PathBuf {
+        let path = dir.join(binary_filename(stem));
         File::create(&path).expect("create test binary");
         #[cfg(unix)]
         {
@@ -310,23 +356,28 @@ mod tests {
     fn finds_binary_in_first_path_entry() {
         let tmp = tempfile::tempdir().expect("tempdir");
         touch_exe(tmp.path(), "intelephense");
-        let path_var = format!("{}:{}", tmp.path().display(), "/nonexistent/dir");
+        // Use platform-appropriate separator via `std::env::join_paths`
+        // so this test passes both on Unix (`:`) and Windows (`;`).
+        let path_var = make_path_var([tmp.path(), Path::new("/nonexistent/dir")]);
         assert!(binary_in_path("intelephense", Some(&path_var)));
     }
 
     #[test]
     fn rejects_when_binary_absent() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let path_var = tmp.path().display().to_string();
+        let path_var = make_path_var([tmp.path()]);
         assert!(!binary_in_path("intelephense", Some(&path_var)));
     }
 
     #[test]
     fn skips_empty_path_segments() {
+        // Empty PATH segments arise from `:::` (Unix) or `;;` (Windows).
+        // `std::env::join_paths` rejects empty components, so build the
+        // string manually but use the right separator per platform.
         let tmp = tempfile::tempdir().expect("tempdir");
         touch_exe(tmp.path(), "intelephense");
-        // Leading empty segment must not blow up or short-circuit.
-        let path_var = format!(":{}", tmp.path().display());
+        let separator = if cfg!(windows) { ';' } else { ':' };
+        let path_var = format!("{separator}{}", tmp.path().display());
         assert!(binary_in_path("intelephense", Some(&path_var)));
     }
 
@@ -347,7 +398,7 @@ mod tests {
             0,
             "test setup failed: file unexpectedly executable",
         );
-        let path_var = tmp.path().display().to_string();
+        let path_var = make_path_var([tmp.path()]);
         assert!(!binary_in_path("intelephense", Some(&path_var)));
     }
 }
