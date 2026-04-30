@@ -926,7 +926,6 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     // Remote server binary is not yet supported on Windows.
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
-    FeatureFlag::GitOperationsInCodeReview,
 ];
 
 /// Features enabled for all release builds (i.e.: everything but WarpLocal).
