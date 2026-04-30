@@ -46,9 +46,12 @@ use crate::coding_panel_enablement_state::CodingPanelEnablementState;
 use crate::editor::{EditorOptions, EditorView, TextOptions};
 #[cfg(feature = "local_fs")]
 use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
+use crate::settings::{CodeSettings, CodeSettingsChangedEvent};
 use crate::terminal::input::InputDropTargetData;
 use crate::terminal::view::{TerminalDropTargetData, TerminalView};
+use crate::ui_components::buttons::icon_button;
 use crate::ui_components::item_highlight::{ImageOrIcon, ItemHighlightState};
+use settings::{Setting as _, ToggleableSetting as _};
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
 use crate::util::openable_file_type::{is_file_content_binary, EditorLayout, FileTarget};
@@ -145,6 +148,8 @@ pub enum FileTreeAction {
         id: FileTreeIdentifier,
         terminal_view: WeakViewHandle<TerminalView>,
     },
+    /// Toggle whether hidden files (names starting with `.`) are shown in the project explorer.
+    ToggleShowHiddenFiles,
 }
 
 pub fn init(app: &mut AppContext) {
@@ -294,6 +299,12 @@ pub struct FileTreeView {
     /// the target is selected by the user or when the target root stops
     /// being displayed.
     pending_focus_target: Option<PendingFocusTarget>,
+    /// Whether hidden files (names starting with `.`) are shown.
+    /// Mirrors `CodeSettings.show_hidden_files`; kept on the view so the
+    /// flatten step can read it without an `AppContext`.
+    show_hidden_files: bool,
+    /// Mouse state for the show-hidden-files toggle button in the file tree header.
+    show_hidden_files_button_mouse_state: MouseStateHandle,
 }
 
 /// Directory the file tree wants to focus once its entry becomes available.
@@ -677,6 +688,19 @@ impl FileTreeView {
         #[cfg(feature = "local_fs")]
         let repository_metadata_model = RepoMetadataModel::handle(ctx);
 
+        let show_hidden_files = *CodeSettings::as_ref(ctx).show_hidden_files.value();
+
+        ctx.subscribe_to_model(&CodeSettings::handle(ctx), |me, _, event, ctx| {
+            if let CodeSettingsChangedEvent::ShowHiddenFiles { .. } = event {
+                let new_value = *CodeSettings::as_ref(ctx).show_hidden_files.value();
+                if me.show_hidden_files != new_value {
+                    me.show_hidden_files = new_value;
+                    me.rebuild_flattened_items();
+                    ctx.notify();
+                }
+            }
+        });
+
         let picker = Self {
             root_directories: HashMap::new(),
             displayed_directories: Vec::new(),
@@ -701,9 +725,22 @@ impl FileTreeView {
             #[cfg(feature = "local_fs")]
             registered_lazy_loaded_paths: HashSet::new(),
             pending_focus_target: None,
+            show_hidden_files,
+            show_hidden_files_button_mouse_state: MouseStateHandle::default(),
         };
 
         picker
+    }
+
+    /// Returns true if `path` represents a hidden file or directory
+    /// (file name starts with `.`). Excludes the root path itself.
+    fn is_hidden_path(root: &StandardizedPath, path: &StandardizedPath) -> bool {
+        if path == root {
+            return false;
+        }
+        path.file_name()
+            .map(|name| name.starts_with('.'))
+            .unwrap_or(false)
     }
 
     /// Sets [`ActiveFileModel`] for the [`FileTreeView`] to track
@@ -1720,10 +1757,14 @@ impl FileTreeView {
 
                 // Add children if expanded
                 if is_expanded {
+                    let show_hidden = self.show_hidden_files;
                     for child in entry_map
                         .child_paths(&dir.path)
                         .sorted_by(|a, b| sort_entries_for_file_tree(a, b, entry_map))
                     {
+                        if !show_hidden && Self::is_hidden_path(root_path, child) {
+                            continue;
+                        }
                         let (child_selected_index, child_removed) = self.flatten_entry_for_root(
                             root_path,
                             child,
@@ -2626,8 +2667,10 @@ impl FileTreeView {
             },
         )
         .finish_scrollable();
+        let header = self.render_header(appearance);
         let content_column = Flex::column()
             .with_main_axis_size(MainAxisSize::Max)
+            .with_child(header)
             .with_child(
                 Shrinkable::new(
                     1.,
@@ -2670,6 +2713,47 @@ impl FileTreeView {
         }
 
         stack.finish()
+    }
+
+    /// Renders the toolbar above the file tree. Currently hosts the
+    /// "show hidden files" toggle button.
+    fn render_header(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let active = self.show_hidden_files;
+        let tooltip_text = if active {
+            "Hide hidden files".to_string()
+        } else {
+            "Show hidden files".to_string()
+        };
+        let tooltip = appearance
+            .ui_builder()
+            .tool_tip(tooltip_text)
+            .build()
+            .finish();
+
+        let toggle_button = icon_button(
+            appearance,
+            Icon::Eye,
+            active,
+            self.show_hidden_files_button_mouse_state.clone(),
+        )
+        .with_tooltip(move || tooltip)
+        .build()
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(FileTreeAction::ToggleShowHiddenFiles);
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish();
+
+        let header_row = Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::End)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(toggle_button)
+            .finish();
+
+        Container::new(header_row)
+            .with_padding_bottom(4.)
+            .finish()
     }
 
     fn render_error_state(&self, text: String, app: &AppContext) -> Box<dyn Element> {
@@ -3101,6 +3185,13 @@ impl TypedActionView for FileTreeView {
                 let file_path = relative_path.to_string_lossy();
                 input_view.update(ctx, |input_view, ctx| {
                     input_view.append_to_buffer(&file_path, ctx);
+                });
+            }
+            FileTreeAction::ToggleShowHiddenFiles => {
+                CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    if let Err(err) = settings.show_hidden_files.toggle_and_save_value(ctx) {
+                        log::warn!("Failed to toggle show_hidden_files setting: {err}");
+                    }
                 });
             }
             FileTreeAction::ItemDroppedOnTerminal { id, terminal_view } => {
