@@ -38,7 +38,7 @@ Environment variables:
 
 ### Prerequisites
 - **Node.js 18.14.1+** — Required by the `command-signatures-v2` crate, which compiles a TypeScript helper at build time using yarn.
-- **yarn** — Required by the `command-signatures-v2` build script. Enable via `corepack enable` after installing Node.js.
+- **Yarn 4+ via Corepack** — Required by the `command-signatures-v2` build script. Enable via `corepack enable` after installing Node.js; avoid Yarn 1.x from package managers such as Homebrew.
 
 ### Platform Setup
 - `./script/bootstrap` - Platform-specific setup (calls platform-specific bootstrap scripts)

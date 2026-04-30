@@ -74,7 +74,12 @@ fi
 # Verify yarn version is 4.x (Corepack-managed), not 1.x (Homebrew).
 # Check from the js crate directory where Corepack reads packageManager.
 JS_CRATE_DIR="$PWD/crates/command-signatures-v2/js"
-YARN_VERSION="$(cd "$JS_CRATE_DIR" && yarn --version 2>/dev/null)"
+if ! YARN_VERSION="$(cd "$JS_CRATE_DIR" && yarn --version 2>/dev/null)"; then
+    echo "Error: Could not determine yarn version from $JS_CRATE_DIR."
+    echo "Ensure yarn is installed and Corepack is enabled:"
+    echo "  corepack enable"
+    exit 1
+fi
 YARN_MAJOR="$(echo "$YARN_VERSION" | cut -d. -f1)"
 if [ "$YARN_MAJOR" -lt 4 ] 2>/dev/null; then
     echo "Error: yarn $YARN_VERSION detected, but Yarn 4+ is required."
