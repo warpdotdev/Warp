@@ -876,8 +876,6 @@ impl AISettingsPageView {
                         is_enabled,
                         ctx,
                     );
-                    // Denylist editor is always enabled when AI is on,
-                    // regardless of org override.
                     Self::update_editor_interaction_state(
                         me.code_read_allowlist_editor.as_ref(ctx).editor().clone(),
                         is_enabled,
