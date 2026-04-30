@@ -1,9 +1,9 @@
 use super::default_themes::*;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::iter::FromIterator;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use warp_core::ui::color::pick_foreground_color;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::{
@@ -161,14 +161,37 @@ impl ThemeKind {
     PartialOrd,
     Ord,
     schemars::JsonSchema,
-    settings_value::SettingsValue,
 )]
 #[schemars(description = "A user-provided custom theme.")]
 pub struct CustomTheme {
     #[schemars(description = "The display name of the custom theme.")]
     name: String,
+    #[serde(
+        deserialize_with = "deserialize_tilde_path",
+        serialize_with = "serialize_tilde_path"
+    )]
     #[schemars(description = "The file path to the custom theme definition.")]
     path: PathBuf,
+}
+
+// The SettingsValue derive bypasses serde, so use the serde passthrough instead.
+// This ensures the #[serde(deserialize_with/serialize_with)] annotations on
+// the path field are respected when reading/writing settings.toml.
+impl settings_value::SettingsValue for CustomTheme {}
+
+fn deserialize_tilde_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let path = PathBuf::deserialize(deserializer)?;
+    Ok(expand_tilde(path))
+}
+
+fn serialize_tilde_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    contract_tilde(path.to_path_buf()).serialize(serializer)
 }
 
 impl CustomTheme {
