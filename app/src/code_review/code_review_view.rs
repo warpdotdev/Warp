@@ -1272,6 +1272,7 @@ impl CodeReviewView {
             Menu::new()
                 .prevent_interaction_with_other_elements()
                 .with_drop_shadow()
+                .with_width(140.)
         });
         ctx.subscribe_to_view(&git_operations_menu, |me, _, event, ctx| match event {
             MenuEvent::ItemSelected | MenuEvent::Close { .. } => {
