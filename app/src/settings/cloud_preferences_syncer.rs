@@ -182,7 +182,7 @@ impl CloudPreferencesSyncer {
     // Only enabled for users in the warp drive preferences experiment.
     const RETRY_POLL: Duration = Duration::from_secs(60 * 5);
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "warp_hosted"))]
     pub fn new_for_test(
         ctx: &mut ModelContext<Self>,
         client_id_provider: Arc<dyn ClientIdProvider>,
@@ -448,11 +448,21 @@ impl CloudPreferencesSyncer {
     ///    This is the behavior we want when a user is enabling settings sync manually in the UI -
     ///    we should disregard any potentially stale cloud values and overwrite them with the current
     ///    local settings.
+    /// PDX-33: When `warp_hosted` is disabled, the offline build does not sync
+    /// privacy/cloud preferences to Warp's server. Local settings are the
+    /// source of truth; the syncer becomes a no-op at the network boundary.
+    #[cfg_attr(
+        not(feature = "warp_hosted"),
+        allow(unused_variables, unreachable_code)
+    )]
     pub fn sync(
         &self,
         force_cloud_to_match_local: ForceCloudToMatchLocal,
         ctx: &mut ModelContext<Self>,
     ) {
+        #[cfg(not(feature = "warp_hosted"))]
+        return;
+
         let update_manager = UpdateManager::as_ref(ctx);
 
         // We wait for the cloud objects to load because we need to know if there are any cloud preferences
@@ -468,6 +478,7 @@ impl CloudPreferencesSyncer {
     }
 
     /// Fixes https://linear.app/warpdotdev/issue/CLD-2629/duplicate-prefs-for-users
+    #[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
     fn ensure_no_duplicate_cloud_prefs(&mut self, ctx: &mut ModelContext<Self>) {
         log::info!("Ensuring no duplicate cloud prefs");
         let ids_to_delete = CloudModel::handle(ctx).update(ctx, |cloud_model, ctx| {
@@ -543,6 +554,7 @@ impl CloudPreferencesSyncer {
         }
     }
 
+    #[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
     fn handle_initial_load(
         &mut self,
         force_cloud_to_match_local: ForceCloudToMatchLocal,
@@ -641,11 +653,21 @@ impl CloudPreferencesSyncer {
     /// Syncs the local preferences with the given storage keys to the cloud.
     /// For each storage key, if there is an existing cloud preference for that key, it updates it.
     /// Otherwise, it creates a new one. All creations happen in a single bulk request.
+    ///
+    /// PDX-33: when the `warp_hosted` feature is off this is a no-op; the
+    /// offline build never pushes preference values to Warp's server.
+    #[cfg_attr(
+        not(feature = "warp_hosted"),
+        allow(unused_variables, unreachable_code)
+    )]
     pub(crate) fn maybe_sync_local_prefs_to_cloud(
         &mut self,
         keys_to_sync: Vec<String>,
         ctx: &mut ModelContext<Self>,
     ) {
+        #[cfg(not(feature = "warp_hosted"))]
+        return;
+
         if !AppExecutionMode::as_ref(ctx).can_sync_preferences() {
             // Early exit if the app can't sync preferences.
             return;
@@ -964,6 +986,10 @@ impl Entity for CloudPreferencesSyncer {
 /// Mark CloudPreferencesSyncer as global application state.
 impl SingletonEntity for CloudPreferencesSyncer {}
 
-#[cfg(test)]
+// PDX-33: Cloud-preferences sync tests exercise the warp.dev backend sync
+// path which only exists when the `warp_hosted` feature is enabled. With it
+// off the syncer is a no-op and these tests would deadlock waiting for cloud
+// state, so they are gated to match.
+#[cfg(all(test, feature = "warp_hosted"))]
 #[path = "cloud_preferences_syncer_tests.rs"]
 mod tests;
