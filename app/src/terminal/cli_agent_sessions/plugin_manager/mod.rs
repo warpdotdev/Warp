@@ -263,6 +263,7 @@ pub(crate) fn plugin_manager_for_with_shell(
         | CLIAgent::Pi
         | CLIAgent::Auggie
         | CLIAgent::CursorCli
+        | CLIAgent::Goose
         | CLIAgent::Unknown => None,
     }
 }

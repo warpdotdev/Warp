@@ -1539,6 +1539,19 @@ fn harness_parse_local_child_harness_rejects_oz() {
 }
 
 #[test]
+fn harness_parse_orchestration_harness_accepts_codex() {
+    assert_eq!(
+        Harness::parse_orchestration_harness("codex"),
+        Some(Harness::Codex)
+    );
+}
+
+#[test]
+fn harness_parse_local_child_harness_rejects_codex() {
+    assert_eq!(Harness::parse_local_child_harness("codex"), None);
+}
+
+#[test]
 fn agent_run_cloud_accepts_claude_auth_secret_with_harness() {
     let args = Args::try_parse_from([
         "warp",

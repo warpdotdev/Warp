@@ -29,3 +29,30 @@ fn use_latest_user_prompt_as_conversation_title_in_tab_names_uses_vertical_tabs_
         "use_latest_prompt_as_title"
     );
 }
+
+#[test]
+fn show_vertical_tab_panel_in_restored_windows_defaults_to_false() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        TabSettings::handle(&app).read(&app, |settings, _ctx| {
+            assert!(!*settings.show_vertical_tab_panel_in_restored_windows);
+        });
+    });
+}
+
+#[test]
+fn show_vertical_tab_panel_in_restored_windows_uses_vertical_tabs_path() {
+    assert_eq!(
+        ShowVerticalTabPanelInRestoredWindows::toml_path(),
+        Some("appearance.vertical_tabs.show_panel_in_restored_windows")
+    );
+    assert_eq!(
+        ShowVerticalTabPanelInRestoredWindows::hierarchy(),
+        Some("appearance.vertical_tabs")
+    );
+    assert_eq!(
+        ShowVerticalTabPanelInRestoredWindows::toml_key(),
+        "show_panel_in_restored_windows"
+    );
+}

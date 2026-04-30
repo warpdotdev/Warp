@@ -550,6 +550,9 @@ fn cursor_movement_keystroke_to_escape_sequence(
 /// further than a HashMap.
 fn map_special_key_to_bytes(key: &str) -> Option<&[u8]> {
     match key {
+        "enter" | "numpadenter" => Some("\r".as_bytes()),
+        "tab" => Some("\t".as_bytes()),
+        "escape" => Some("\x1b".as_bytes()),
         "backspace" => Some("\x7f".as_bytes()),
         "insert" => Some("\x1b[2~".as_bytes()),
         "delete" => Some("\x1b[3~".as_bytes()),

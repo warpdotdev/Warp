@@ -1518,6 +1518,12 @@ impl BlocklistAIHistoryModel {
             .conversations_by_id
             .get(&conversation_id)
             .and_then(|c| c.title().map(|t| t.to_string()));
+        // Capture the run_id BEFORE the in-memory record is dropped so it
+        // can be forwarded on the DeletedConversation event.
+        let run_id = self
+            .conversations_by_id
+            .get(&conversation_id)
+            .and_then(|c| c.run_id());
 
         self.remove_conversation_from_memory(conversation_id, terminal_view_id, ctx);
 
@@ -1552,6 +1558,7 @@ impl BlocklistAIHistoryModel {
                 terminal_view_id,
                 conversation_id,
                 conversation_title,
+                run_id,
             });
         }
     }
@@ -1563,6 +1570,14 @@ impl BlocklistAIHistoryModel {
         terminal_view_id: Option<EntityId>,
         ctx: &mut ModelContext<Self>,
     ) {
+        // Capture the run_id BEFORE the in-memory record is dropped so the
+        // RemoveConversation event can carry it (event subscribers can no
+        // longer look it up via `conversation()` after this function returns).
+        let run_id = self
+            .conversations_by_id
+            .get(&conversation_id)
+            .and_then(|c| c.run_id());
+
         // Clean up reverse indices before removing the conversation. Guard
         // token-index removals with an equality check: the live conversation's
         // token and the metadata's token can diverge after a rebind, and we
@@ -1614,6 +1629,7 @@ impl BlocklistAIHistoryModel {
             ctx.emit(BlocklistAIHistoryEvent::RemoveConversation {
                 terminal_view_id,
                 conversation_id,
+                run_id,
             });
         }
     }
@@ -1952,7 +1968,7 @@ impl BlocklistAIHistoryModel {
             return;
         }
 
-        // There's a slight concern here that the conversations we're preserving might not have persisted succesfully
+        // There's a slight concern here that the conversations we're preserving might not have persisted successfully
         // because of some unexpected error. Attempting to then restore these conversations would lead to unexpected behavior.
         // In the future it might be worthwhile to check that these conversations exist in the database before marking them as historical,
         // but for now this is an edge case that we don't need to worry about too much.
@@ -2129,16 +2145,23 @@ pub enum BlocklistAIHistoryEvent {
 
     /// This is emitted when an ephemeral/abandoned conversation is cleaned up
     /// (e.g. empty conversations the user never used, rejected passive code suggestions).
+    /// `run_id` carries the conversation's last known server run identifier
+    /// (captured before the in-memory record was dropped) so subscribers can
+    /// still act on it without a history-model lookup.
     RemoveConversation {
         terminal_view_id: EntityId,
         conversation_id: AIConversationId,
+        run_id: Option<String>,
     },
 
     /// This is emitted when a user explicitly deletes an existing conversation.
+    /// `run_id` is captured before the in-memory record was dropped — see
+    /// the note on [`Self::RemoveConversation`].
     DeletedConversation {
         terminal_view_id: EntityId,
         conversation_id: AIConversationId,
         conversation_title: Option<String>,
+        run_id: Option<String>,
     },
 
     /// Emitted when conversations are restored in a terminal view.

@@ -812,6 +812,14 @@ impl AIConversation {
         self.parent_conversation_id.is_some()
     }
 
+    /// True iff this conversation knows about a parent agent — either via a
+    /// local parent placeholder (`parent_conversation_id`, set in the GUI
+    /// parent) or via the parent's server-side run identifier
+    /// (`parent_agent_id`, stamped in driver-hosted processes).
+    pub fn has_parent_agent(&self) -> bool {
+        self.parent_conversation_id.is_some() || self.parent_agent_id.is_some()
+    }
+
     /// Returns true if this is a placeholder for a child agent executing on a
     /// remote worker. The parent's client should not report task status for
     /// these — the remote worker handles it.
@@ -3516,6 +3524,7 @@ pub enum AIAgentHarness {
     Oz,
     ClaudeCode,
     Gemini,
+    Codex,
     Unknown,
 }
 

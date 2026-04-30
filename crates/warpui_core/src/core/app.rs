@@ -2441,7 +2441,7 @@ impl AppContext {
                 // window fullscreen state changes, so instead we're using a
                 // resize event as a signal that the fullscreen state _may_ have
                 // changed.
-                #[cfg(any(target_os = "linux", windows))]
+                #[cfg(any(target_os = "linux", target_os = "freebsd", windows))]
                 crate::windowing::WindowManager::handle(ctx).update(ctx, |manager, ctx| {
                     manager.update_is_active_window_fullscreen(ctx);
                 });
@@ -3423,7 +3423,7 @@ impl AppContext {
                 return;
             }
 
-            // TODO(PLAT-747): Ideally the the font cache itself is a model and can
+            // TODO(PLAT-747): Ideally the font cache itself is a model and can
             // handle emitting these events.
             FallbackFontModel::handle(self).update(self, |model, ctx| {
                 model.loaded_fallback_font(ctx);

@@ -14,9 +14,7 @@ use crate::terminal::input::message_bar::{Message, MessageItem};
 use crate::terminal::input::slash_commands::SlashCommandTrigger;
 use crate::util::bindings::keybinding_name_to_keystroke;
 use crate::{
-    ai::agent::conversation::AIConversationId,
-    terminal::{view::ambient_agent::AmbientAgentViewModel, TerminalModel},
-    BlocklistAIHistoryModel,
+    ai::agent::conversation::AIConversationId, terminal::TerminalModel, BlocklistAIHistoryModel,
 };
 
 use super::{DismissalStrategy, EphemeralMessage, EphemeralMessageModel};
@@ -168,6 +166,11 @@ pub enum AgentViewEntryOrigin {
 
     /// Entered agent view because a parent agent started this child agent via StartAgent.
     ChildAgent,
+
+    /// Entered agent view by clicking a pill / breadcrumb in the orchestration
+    /// pill bar (or breadcrumb row) to navigate the current pane to a sibling
+    /// or parent conversation in the same orchestration tree.
+    OrchestrationPillBar,
 
     /// Entered agent view after opening project from OS directory picker.
     ProjectEntry,
@@ -343,7 +346,6 @@ pub struct AgentViewController {
     /// Set during terminal pane attach; used for pane-group-scoped visibility checks.
     pane_group_id: Option<EntityId>,
     agent_view_state: AgentViewState,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
     ephemeral_message_model: ModelHandle<EphemeralMessageModel>,
     pending_confirmation: Option<PendingConfirmation>,
     pending_confirmation_abort_handle: Option<SpawnedFutureHandle>,
@@ -368,16 +370,13 @@ impl AgentViewController {
     pub fn new(
         terminal_model: Arc<FairMutex<TerminalModel>>,
         terminal_view_id: EntityId,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
         ephemeral_message_model: ModelHandle<EphemeralMessageModel>,
-        _ctx: &mut ModelContext<Self>,
     ) -> Self {
         Self {
             terminal_model,
             terminal_view_id,
             pane_group_id: None,
             agent_view_state: AgentViewState::Inactive,
-            ambient_agent_view_model,
             ephemeral_message_model,
             pending_confirmation: None,
             pending_confirmation_abort_handle: None,
@@ -411,29 +410,14 @@ impl AgentViewController {
     /// Returns whether the user is allowed to exit agent view.
     /// This is used to determine both whether the escape key should work
     /// and whether the escape keybinding should be displayed.
-    pub fn can_exit_agent_view(
-        &self,
-        ctx: &impl warpui::ModelAsRef,
-    ) -> Result<(), ExitAgentViewError> {
+    pub fn can_exit_agent_view(&self) -> Result<(), ExitAgentViewError> {
         let model = self.terminal_model.lock();
 
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(ctx);
         let is_fullscreen_with_long_running = self.agent_view_state.is_fullscreen()
             && model
                 .block_list()
                 .active_block()
                 .is_active_and_long_running();
-
-        // Ambient agent sessions should not allow exiting agent view if it's not backed by a terminal session because there's nothing to escape to.
-        if ambient_agent_model.is_ambient_agent() {
-            if !ambient_agent_model.has_parent_terminal() {
-                return Err(ExitAgentViewError::AmbientAgent);
-            }
-            // But if there is a terminal backing and we're in a LRC, we should be able to escape
-            else if is_fullscreen_with_long_running {
-                return Ok(());
-            }
-        }
 
         // In a non-ambient agent case, users cannot exit the fullscreen agent view with an active long running command.
         if is_fullscreen_with_long_running {
@@ -802,21 +786,6 @@ impl AgentViewController {
             .block_list_mut()
             .set_agent_view_state(self.agent_view_state.clone());
 
-        if origin == AgentViewEntryOrigin::CloudAgent {
-            // Only enter setup state if there are no existing environments.
-            // If environments exist, the user should go directly to composing.
-            let has_environments =
-                !crate::ai::cloud_environments::CloudAmbientAgentEnvironment::get_all(ctx)
-                    .is_empty();
-            self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                if has_environments {
-                    model.enter_composing_from_setup(ctx);
-                } else {
-                    model.enter_setup(ctx);
-                }
-            });
-        }
-
         ctx.emit(AgentViewControllerEvent::EnteredAgentView {
             conversation_id,
             is_new: exchange_count == 0,
@@ -882,7 +851,7 @@ impl AgentViewController {
     ) {
         self.clear_new_conversation_keybinding_confirmation(ctx);
         // Check if exiting agent view is allowed.
-        if self.can_exit_agent_view(ctx).is_err() {
+        if self.can_exit_agent_view().is_err() {
             return;
         }
 
@@ -942,16 +911,6 @@ impl AgentViewController {
             .block_list_mut()
             .set_agent_view_state(self.agent_view_state.clone());
 
-        // Capture ambient agent status before resetting it
-        let was_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
-
-        // Reset ambient agent status when exiting agent view
-        if was_ambient_agent {
-            self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                model.reset_status(ctx);
-            });
-        }
-
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         let final_exchange_count = history_model
             .as_ref(ctx)
@@ -965,7 +924,7 @@ impl AgentViewController {
             display_mode,
             original_exchange_count: original_conversation_length,
             final_exchange_count,
-            was_ambient_agent,
+            was_ambient_agent: origin == AgentViewEntryOrigin::CloudAgent,
             is_exit_before_new_entrance,
         });
     }

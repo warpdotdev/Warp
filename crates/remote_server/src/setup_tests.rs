@@ -101,8 +101,9 @@ fn state_is_terminal() {
     .is_terminal());
     assert!(!RemoteServerSetupState::Checking.is_terminal());
     assert!(!RemoteServerSetupState::Installing {
-        progress_percent: None
+        progress_percent: None,
     }
     .is_terminal());
+    assert!(!RemoteServerSetupState::Updating.is_terminal());
     assert!(!RemoteServerSetupState::Initializing.is_terminal());
 }

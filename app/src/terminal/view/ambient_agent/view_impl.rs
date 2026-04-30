@@ -6,6 +6,7 @@ use warp_cli::agent::Harness;
 use warp_terminal::model::BlockId;
 
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
+use crate::ai::agent::display_user_query_with_mode;
 use crate::ai::AIRequestUsageModel;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
@@ -97,6 +98,10 @@ impl TerminalView {
         event: &AmbientAgentViewModelEvent,
         ctx: &mut ViewContext<Self>,
     ) {
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.clone() else {
+            return;
+        };
+
         // Tear down the non-oz cloud-mode queued-prompt block on terminal / transition
         // events that replace it. `Failed`, `NeedsGithubAuth`, and `Cancelled` hand off
         // to the existing error / auth / cancelled UI; `HarnessCommandStarted` hands
@@ -135,29 +140,30 @@ impl TerminalView {
                     return;
                 }
                 if FeatureFlag::CloudModeSetupV2.is_enabled() {
-                    if self
-                        .ambient_agent_view_model
+                    if ambient_agent_view_model
                         .as_ref(ctx)
                         .is_third_party_harness()
                     {
                         // Non-oz runs: render the submitted prompt via the queued-prompt UI.
                         // The block is removed later by `HarnessCommandStarted` / failure /
                         // cancel / auth handlers.
-                        let prompt = self
-                            .ambient_agent_view_model
+                        //
+                        // `request.prompt` is stored stripped of any `/plan` / `/orchestrate`
+                        // prefix; rebuild the display form from `request.mode` so the user sees
+                        // exactly what they typed.
+                        let prompt = ambient_agent_view_model
                             .as_ref(ctx)
                             .request()
-                            .map(|request| request.prompt.clone())
+                            .map(|request| {
+                                display_user_query_with_mode(request.mode, &request.prompt)
+                            })
                             .unwrap_or_default();
                         if !prompt.is_empty() {
                             self.insert_cloud_mode_queued_user_query_block(prompt, ctx);
                         }
                     } else {
                         let initial_user_query = ctx.add_view(|ctx| {
-                            CloudModeInitialUserQuery::new(
-                                self.ambient_agent_view_model.clone(),
-                                ctx,
-                            )
+                            CloudModeInitialUserQuery::new(ambient_agent_view_model.clone(), ctx)
                         });
                         self.insert_rich_content(
                             None,
@@ -168,14 +174,13 @@ impl TerminalView {
                             },
                             ctx,
                         );
-                        self.ambient_agent_view_model.update(ctx, |model, _| {
+                        ambient_agent_view_model.update(ctx, |model, _| {
                             model.set_has_inserted_cloud_mode_user_query_block(true);
                         });
                     }
                 } else {
                     // Reset tip cooldown so the first tip shows for 60 seconds
-                    let tip_model = self
-                        .ambient_agent_view_model
+                    let tip_model = ambient_agent_view_model
                         .as_ref(ctx)
                         .ui_state
                         .tip_model
@@ -187,7 +192,8 @@ impl TerminalView {
                 // Re-render to show loading state.
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::SessionReady { .. } => {
+            AmbientAgentViewModelEvent::SessionReady { .. }
+            | AmbientAgentViewModelEvent::FollowupSessionReady { .. } => {
                 // Auto-open details panel for local cloud mode once the session is ready.
                 self.maybe_auto_open_cloud_mode_details_panel(ctx);
                 // Re-render to hide the loading screen now that the session is ready.
@@ -196,8 +202,7 @@ impl TerminalView {
             AmbientAgentViewModelEvent::EnvironmentSelected => {}
             AmbientAgentViewModelEvent::ProgressUpdated => {
                 // Refresh the tip (respects 60s cooldown internally)
-                let tip_model = self
-                    .ambient_agent_view_model
+                let tip_model = ambient_agent_view_model
                     .as_ref(ctx)
                     .ui_state
                     .tip_model
@@ -224,7 +229,7 @@ impl TerminalView {
             }
             AmbientAgentViewModelEvent::ShowCloudAgentCapacityModal => {
                 if FeatureFlag::CloudMode.is_enabled()
-                    && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                    && ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
                     && !self.model.lock().is_shared_ambient_agent_session()
                 {
                     ctx.emit(crate::terminal::view::Event::ShowCloudAgentCapacityModal {
@@ -236,7 +241,7 @@ impl TerminalView {
             }
             AmbientAgentViewModelEvent::ShowAICreditModal => {
                 if FeatureFlag::CloudMode.is_enabled()
-                    && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                    && ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
                     && !self.model.lock().is_shared_ambient_agent_session()
                 {
                     self.show_out_of_credits_modal(ctx);
@@ -292,7 +297,7 @@ impl TerminalView {
                     }
                 }
                 // Collapse the setup-commands summary, matching the oz first-exchange behavior.
-                self.ambient_agent_view_model.update(ctx, |model, ctx| {
+                ambient_agent_view_model.update(ctx, |model, ctx| {
                     model.set_setup_command_visibility(false, ctx);
                 });
                 // Force a fresh viewer size report to the sharer so the harness CLI (e.g.
@@ -314,8 +319,12 @@ impl TerminalView {
             return;
         }
 
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.clone() else {
+            return;
+        };
+
         if !is_cloud_agent_pre_first_exchange(
-            &self.ambient_agent_view_model,
+            self.ambient_agent_view_model.as_ref(),
             &self.agent_view_controller,
             ctx,
         ) {
@@ -327,13 +336,12 @@ impl TerminalView {
         // and should NOT be classified as a setup command; the `HarnessCommandStarted`
         // handler flips the block-list flag so the block renders like a normal CLI-agent
         // session.
-        if self
-            .ambient_agent_view_model
+        if ambient_agent_view_model
             .as_ref(ctx)
             .is_third_party_harness()
             && self.active_block_matches_run_harness(ctx)
         {
-            self.ambient_agent_view_model.update(ctx, |model, ctx| {
+            ambient_agent_view_model.update(ctx, |model, ctx| {
                 model.mark_harness_command_started(ctx);
             });
             return;
@@ -343,13 +351,12 @@ impl TerminalView {
             return;
         };
 
-        if !self
-            .ambient_agent_view_model
+        if !ambient_agent_view_model
             .as_ref(ctx)
             .setup_command_state()
             .did_execute_a_setup_command()
         {
-            self.ambient_agent_view_model.update(ctx, |model, _| {
+            ambient_agent_view_model.update(ctx, |model, _| {
                 model
                     .setup_command_state_mut()
                     .set_did_execute_a_setup_command(true);
@@ -357,7 +364,7 @@ impl TerminalView {
 
             let setup_command_text = ctx.add_typed_action_view(|ctx| {
                 super::CloudModeSetupTextBlock::new(
-                    self.ambient_agent_view_model.clone(),
+                    ambient_agent_view_model.clone(),
                     self.agent_view_controller.clone(),
                     ctx,
                 )
@@ -374,7 +381,7 @@ impl TerminalView {
         let setup_command_block = ctx.add_typed_action_view(|ctx| {
             super::CloudModeSetupCommandBlock::new(
                 block_id.clone(),
-                self.ambient_agent_view_model.clone(),
+                ambient_agent_view_model.clone(),
                 &self.model_events_handle,
                 self.model.clone(),
                 ctx,
@@ -420,8 +427,10 @@ impl TerminalView {
         {
             return;
         }
-        if !self
-            .ambient_agent_view_model
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
+            return;
+        };
+        if !ambient_agent_view_model
             .as_ref(ctx)
             .is_third_party_harness()
         {
@@ -483,11 +492,15 @@ impl TerminalView {
         let Some(cli_agent) = CLIAgent::detect(&command, None, None, ctx) else {
             return false;
         };
-        match self.ambient_agent_view_model.as_ref(ctx).selected_harness() {
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
+            return false;
+        };
+        match ambient_agent_view_model.as_ref(ctx).selected_harness() {
             Harness::Oz => false,
             Harness::Claude => matches!(cli_agent, CLIAgent::Claude),
             Harness::OpenCode => matches!(cli_agent, CLIAgent::OpenCode),
             Harness::Gemini => matches!(cli_agent, CLIAgent::Gemini),
+            Harness::Codex => matches!(cli_agent, CLIAgent::Codex),
             Harness::Unknown => false,
         }
     }
@@ -503,15 +516,15 @@ impl TerminalView {
         initial_prompt: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let ambient_agent_view = self.ambient_agent_view_model.as_ref(ctx);
-        let is_nested_cloud_mode =
-            ambient_agent_view.is_ambient_agent() && ambient_agent_view.has_parent_terminal();
+        let is_nested_cloud_mode = self.is_nested_cloud_mode(ctx);
 
         // (1) If we're currently in an empty cloud mode session (setup/composing; no
         // dispatched query yet), do not allow creating a new cloud mode session.
         if is_nested_cloud_mode
-            && (ambient_agent_view.is_in_setup()
-                || ambient_agent_view.is_configuring_ambient_agent())
+            && self.ambient_agent_view_model.as_ref().is_some_and(|model| {
+                let model = model.as_ref(ctx);
+                model.is_in_setup() || model.is_configuring_ambient_agent()
+            })
         {
             return;
         }
@@ -616,7 +629,14 @@ impl TerminalView {
         // Only insert an ambient agent entry block once the agent is actually dispatched.
         // This avoids persisting an empty "New cloud agent" entry when the user enters cloud mode
         // but exits without sending anything.
-        let ambient_agent_view_model = terminal_view.as_ref(ctx).ambient_agent_view_model().clone();
+        let Some(ambient_agent_view_model) = terminal_view
+            .as_ref(ctx)
+            .ambient_agent_view_model()
+            .cloned()
+        else {
+            log::warn!("Cloud mode view was created without an ambient agent view model");
+            return;
+        };
         let terminal_view_weak = terminal_view.downgrade();
         let terminal_manager_weak = terminal_manager.downgrade();
         let pane_stack = self.pane_stack.clone();
@@ -669,13 +689,9 @@ impl TerminalView {
         });
 
         let pane_config = self.pane_configuration.clone();
+        let ambient_agent_view_model_for_update = ambient_agent_view_model.clone();
         terminal_view.update(ctx, |view, ctx| {
             view.set_pane_configuration(pane_config);
-
-            // Mark as having a parent since it's pushed onto an existing pane stack
-            view.ambient_agent_view_model.update(ctx, |model, _ctx| {
-                model.set_has_parent_terminal(true);
-            });
 
             if let Some(request) = spawn_request {
                 // Spawn the agent immediately with the provided request.
@@ -684,7 +700,7 @@ impl TerminalView {
                     AgentViewEntryOrigin::CloudAgent,
                     ctx,
                 );
-                view.ambient_agent_view_model.update(ctx, |model, ctx| {
+                ambient_agent_view_model_for_update.update(ctx, |model, ctx| {
                     model.spawn_agent_with_request(request, ctx);
                 });
             } else {
@@ -719,7 +735,10 @@ impl TerminalView {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() else {
+            return Empty::new().finish();
+        };
+        let ambient_agent_model = ambient_agent_view_model.as_ref(app);
         let Some(progress) = ambient_agent_model.agent_progress() else {
             return Empty::new().finish();
         };
@@ -782,10 +801,12 @@ impl TerminalView {
             }
             super::FirstTimeCloudAgentSetupViewEvent::EnvironmentCreated => {
                 // Set the environment on the ambient agent view model
-                self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                    // Transition from Setup to Composing
-                    model.enter_composing_from_setup(ctx);
-                });
+                if let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() {
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        // Transition from Setup to Composing
+                        model.enter_composing_from_setup(ctx);
+                    });
+                }
 
                 // Focus the input box so user can start typing
                 self.focus_input_box(ctx);

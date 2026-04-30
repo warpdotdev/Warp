@@ -439,6 +439,14 @@ impl Sessions {
         !self.pending_session_start_times.is_empty() || !self.sessions.is_empty()
     }
 
+    /// Returns whether the given `session_id` is tracked by this [`Sessions`]
+    /// model, either as a pending session (registered via [`Self::register_pending_session`])
+    /// or a fully bootstrapped one.
+    pub fn tracks_session(&self, session_id: SessionId) -> bool {
+        self.sessions.contains_key(&session_id)
+            || self.pending_session_start_times.contains_key(&session_id)
+    }
+
     /// Returns a map of the spawning commands for all subshell sessions, keyed the session's `SessionId`.
     pub fn spawning_command_for_subshell_sessions(&self) -> HashMap<SessionId, SubshellSource> {
         self.sessions

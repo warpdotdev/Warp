@@ -4,9 +4,12 @@ use std::sync::{
 };
 
 use chrono::Utc;
+use session_sharing_protocol::common::SessionId;
 
+use crate::ai::agent::UserQueryMode;
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::server::server_api::ai::{MockAIClient, SpawnAgentResponse};
+use crate::terminal::shared_session;
 
 use super::{spawn_task, AmbientAgentEvent, SessionJoinInfo};
 
@@ -60,6 +63,7 @@ async fn poll_stops_on_terminal_failure_like_state() {
     let ai_client = Arc::new(mock);
     let request = crate::server::server_api::ai::SpawnAgentRequest {
         prompt: "test".to_string(),
+        mode: UserQueryMode::Normal,
         config: None,
         title: None,
         team: None,
@@ -109,6 +113,35 @@ fn session_join_info_prefers_session_link_and_tolerates_missing_session_id() {
     assert!(join_info.session_id.is_none());
 }
 
+#[test]
+fn session_join_info_falls_back_to_session_id() {
+    let session_id = SessionId::new();
+    let task = task_with(
+        AmbientAgentTaskState::InProgress,
+        Some(session_id.to_string()),
+        None,
+    );
+
+    let join_info = SessionJoinInfo::from_task(&task).expect("expected join info");
+
+    assert_eq!(join_info.session_id, Some(session_id));
+    assert_eq!(
+        join_info.session_link,
+        shared_session::join_link(&session_id)
+    );
+}
+
+#[test]
+fn session_join_info_ignores_empty_link_and_invalid_session_id() {
+    let task = task_with(
+        AmbientAgentTaskState::InProgress,
+        Some("not-a-session-id".to_string()),
+        Some(String::new()),
+    );
+
+    assert_eq!(SessionJoinInfo::from_task(&task), None);
+}
+
 #[tokio::test]
 async fn poll_for_session_join_info_waits_until_link_is_available() {
     use futures::StreamExt;
@@ -146,6 +179,7 @@ async fn poll_for_session_join_info_waits_until_link_is_available() {
     let ai_client = Arc::new(mock);
     let request = crate::server::server_api::ai::SpawnAgentRequest {
         prompt: "test".to_string(),
+        mode: UserQueryMode::Normal,
         config: None,
         title: None,
         team: None,
