@@ -8,26 +8,26 @@ use super::{
         HomeSkillSubscriber, ProjectSkillSubscriber, SkillRepositoryMessage, SymlinkSkillSubscriber,
     },
     utils::{
-        find_skill_directories_in_tree, is_home_provider_path, is_home_skill_directory,
-        is_skill_file, read_skills_from_directories,
+        find_skill_directories_in_tree, find_skill_directories_on_fs, is_home_provider_path,
+        is_home_skill_directory, is_skill_file, read_skills_from_directories,
     },
 };
 use watcher::{BulkFilesystemWatcherEvent, HomeDirectoryWatcher, HomeDirectoryWatcherEvent};
 
 use crate::server::datetime_ext::DateTimeExt;
 use crate::warp_managed_paths_watcher::{
-    filter_repository_update_by_prefix, warp_managed_skill_dirs, WarpManagedPathsWatcher,
-    WarpManagedPathsWatcherEvent,
+    WarpManagedPathsWatcher, WarpManagedPathsWatcherEvent, filter_repository_update_by_prefix,
+    warp_managed_skill_dirs,
 };
 use ai::skills::{
-    home_skills_path, parse_skill, ParsedSkill, SkillProvider, SKILL_PROVIDER_DEFINITIONS,
+    ParsedSkill, SKILL_PROVIDER_DEFINITIONS, SkillProvider, home_skills_path, parse_skill,
 };
 use async_channel::Sender;
 use chrono::{DateTime, Duration, Utc};
 use repo_metadata::{
+    DirectoryWatcher, RepoMetadataModel, RepositoryUpdate,
     repositories::{DetectedRepositories, RepoDetectionSource},
     repository::{Repository, SubscriberId},
-    DirectoryWatcher, RepoMetadataModel, RepositoryUpdate,
 };
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
@@ -169,8 +169,8 @@ impl SkillWatcher {
         //
         // The order of these events doesn't matter - both are idempotent and serve different purposes.
         ctx.subscribe_to_model(&RepoMetadataModel::handle(ctx), |me, event, ctx| {
-            use repo_metadata::wrapper_model::RepoMetadataEvent;
             use repo_metadata::RepositoryIdentifier;
+            use repo_metadata::wrapper_model::RepoMetadataEvent;
             match event {
                 RepoMetadataEvent::RepositoryUpdated {
                     id: RepositoryIdentifier::Local(path),
@@ -258,12 +258,30 @@ impl SkillWatcher {
     fn scan_repository_for_skills(&mut self, repo_path: &Path, ctx: &mut ModelContext<Self>) {
         let repo_metadata = RepoMetadataModel::as_ref(ctx);
 
-        // Find all skill directories in the tree
-        let skill_dirs = find_skill_directories_in_tree(repo_path, repo_metadata, ctx);
-        if skill_dirs.is_empty() {
-            return;
+        // Primary scan: query the in-memory file tree (fast, synchronous).
+        let tree_skill_dirs = find_skill_directories_in_tree(repo_path, repo_metadata, ctx);
+        if !tree_skill_dirs.is_empty() {
+            Self::spawn_read_skills_from_directories(tree_skill_dirs.iter().cloned(), ctx);
         }
-        Self::spawn_read_skills_from_directories(skill_dirs, ctx);
+
+        // Supplemental scan: walk the filesystem directly to catch skill directories
+        // inside gitignored or lazy-loaded subtrees that are absent from the indexed tree.
+        // Skills found by both passes are de-duplicated in SkillManager::handle_skills_added.
+        let tree_dirs_set: HashSet<PathBuf> = tree_skill_dirs.into_iter().collect();
+        let repo_path_owned = repo_path.to_path_buf();
+        ctx.spawn(
+            async move {
+                find_skill_directories_on_fs(&repo_path_owned)
+                    .into_iter()
+                    .filter(|dir| !tree_dirs_set.contains(dir))
+                    .collect::<Vec<_>>()
+            },
+            |_me, additional_dirs, ctx| {
+                if !additional_dirs.is_empty() {
+                    Self::spawn_read_skills_from_directories(additional_dirs, ctx);
+                }
+            },
+        );
     }
 
     fn spawn_read_skills_from_directories(

@@ -1,15 +1,17 @@
 use std::{
     collections::HashSet,
+    ffi::OsStr,
     path::{Path, PathBuf},
     sync::LazyLock,
 };
 
 use ai::skills::{
-    home_skills_path, read_skills, ParsedSkill, SkillProvider, SKILL_PROVIDER_DEFINITIONS,
+    ParsedSkill, SKILL_PROVIDER_DEFINITIONS, SkillProvider, home_skills_path, read_skills,
 };
 use anyhow::Error;
 use regex::Regex;
-use repo_metadata::{local_model::GetContentsArgs, RepoContent, RepoMetadataModel};
+use repo_metadata::{RepoContent, RepoMetadataModel, local_model::GetContentsArgs};
+use walkdir::WalkDir;
 use warpui::AppContext;
 
 use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
@@ -53,6 +55,53 @@ pub fn find_skill_directories_in_tree(
             RepoContent::File(f) => f.path.to_local_path_lossy(),
         })
         .collect()
+}
+
+/// Finds skill directories by walking the filesystem directly, bypassing the indexed file tree.
+///
+/// This is used as a supplement to [`find_skill_directories_in_tree`] to catch skill directories
+/// inside gitignored or lazy-loaded subtrees that are absent from the in-memory tree.
+///
+/// The walk skips `.git` directories and stops recursing once a skill directory is found
+/// (no skills-within-skills nesting is supported).
+pub fn find_skill_directories_on_fs(repo_path: &Path) -> Vec<PathBuf> {
+    let skill_path_suffixes: Vec<PathBuf> = SKILL_PROVIDER_DEFINITIONS
+        .iter()
+        .map(|p| p.skills_path.clone())
+        .collect();
+
+    let mut result = Vec::new();
+    let mut iter = WalkDir::new(repo_path).follow_links(false).into_iter();
+
+    loop {
+        let entry = match iter.next() {
+            None => break,
+            Some(Err(_)) => continue,
+            Some(Ok(e)) => e,
+        };
+
+        if !entry.file_type().is_dir() {
+            continue;
+        }
+
+        let path = entry.path();
+
+        if entry.file_name() == OsStr::new(".git") {
+            iter.skip_current_dir();
+            continue;
+        }
+
+        let is_skill_dir = skill_path_suffixes
+            .iter()
+            .any(|suffix| path.ends_with(suffix));
+
+        if is_skill_dir {
+            result.push(path.to_path_buf());
+            iter.skip_current_dir();
+        }
+    }
+
+    result
 }
 
 /// Reads all skills from the given skill directories.

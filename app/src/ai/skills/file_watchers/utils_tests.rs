@@ -1,15 +1,15 @@
 use repo_metadata::{
+    DirectoryWatcher, RepoMetadataModel,
     entry::{DirectoryEntry, Entry, FileMetadata},
     file_tree_store::FileTreeState,
     repositories::DetectedRepositories,
-    DirectoryWatcher, RepoMetadataModel,
 };
 use virtual_fs::{Stub, VirtualFS};
 use warpui::App;
 
 use super::{
-    extract_skill_parent_directory, find_skill_directories_in_tree, is_home_provider_path,
-    is_home_skill_directory, is_skill_file, read_skills_from_directories,
+    extract_skill_parent_directory, find_skill_directories_in_tree, find_skill_directories_on_fs,
+    is_home_provider_path, is_home_skill_directory, is_skill_file, read_skills_from_directories,
 };
 
 // ============================================================================
@@ -722,5 +722,97 @@ fn find_skill_directories_in_tree_empty_repo() {
                 assert!(skill_dirs.is_empty());
             });
         });
+    });
+}
+
+// ============================================================================
+// Tests for find_skill_directories_on_fs
+// ============================================================================
+
+#[test]
+fn find_skill_directories_on_fs_finds_root_skills() {
+    VirtualFS::test("find_on_fs_root", |dirs, mut vfs| {
+        let repo = dirs.tests().join("repo");
+
+        vfs.mkdir("repo/.agents/skills/root-skill")
+            .mkdir("repo/.claude/skills/claude-skill")
+            .with_files(vec![
+                Stub::FileWithContent(
+                    "repo/.agents/skills/root-skill/SKILL.md",
+                    "---\nname: root-skill\ndescription: test\n---\n# root-skill",
+                ),
+                Stub::FileWithContent(
+                    "repo/.claude/skills/claude-skill/SKILL.md",
+                    "---\nname: claude-skill\ndescription: test\n---\n# claude-skill",
+                ),
+            ]);
+
+        let skill_dirs = find_skill_directories_on_fs(&repo);
+        assert_eq!(skill_dirs.len(), 2);
+        assert!(skill_dirs.contains(&repo.join(".agents/skills")));
+        assert!(skill_dirs.contains(&repo.join(".claude/skills")));
+    });
+}
+
+/// Regression test for warpdotdev/warp#9486:
+/// Skills in a subdirectory's `.agents/skills/` were not discovered when the
+/// subdirectory (or its `.agents/` folder) was gitignored and therefore absent
+/// from the indexed file tree. `find_skill_directories_on_fs` must find them
+/// regardless of gitignore status.
+#[test]
+fn find_skill_directories_on_fs_finds_subdirectory_skills() {
+    VirtualFS::test("find_on_fs_subdir", |dirs, mut vfs| {
+        let repo = dirs.tests().join("repo");
+
+        vfs.mkdir("repo/.agents/skills/root-skill")
+            .mkdir("repo/sub-project/.agents/skills/sub-skill")
+            .with_files(vec![
+                Stub::FileWithContent(
+                    "repo/.agents/skills/root-skill/SKILL.md",
+                    "---\nname: root-skill\ndescription: test\n---\n# root-skill",
+                ),
+                Stub::FileWithContent(
+                    "repo/sub-project/.agents/skills/sub-skill/SKILL.md",
+                    "---\nname: sub-skill\ndescription: test\n---\n# sub-skill",
+                ),
+            ]);
+
+        let skill_dirs = find_skill_directories_on_fs(&repo);
+        assert_eq!(skill_dirs.len(), 2);
+        assert!(skill_dirs.contains(&repo.join(".agents/skills")));
+        assert!(skill_dirs.contains(&repo.join("sub-project/.agents/skills")));
+
+        // Verify skills can be read from the discovered directories.
+        let skills = read_skills_from_directories(skill_dirs);
+        assert_eq!(skills.len(), 2);
+        let names: Vec<&str> = skills.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"root-skill"));
+        assert!(names.contains(&"sub-skill"));
+    });
+}
+
+#[test]
+fn find_skill_directories_on_fs_skips_git_internals() {
+    VirtualFS::test("find_on_fs_git", |dirs, mut vfs| {
+        let repo = dirs.tests().join("repo");
+
+        // Create a real skill dir and a fake one inside .git (should be skipped).
+        vfs.mkdir("repo/.agents/skills/real-skill")
+            .mkdir("repo/.git/.agents/skills/fake-skill")
+            .with_files(vec![
+                Stub::FileWithContent(
+                    "repo/.agents/skills/real-skill/SKILL.md",
+                    "---\nname: real-skill\ndescription: test\n---\n# real-skill",
+                ),
+                Stub::FileWithContent(
+                    "repo/.git/.agents/skills/fake-skill/SKILL.md",
+                    "---\nname: fake-skill\ndescription: test\n---\n# fake-skill",
+                ),
+            ]);
+
+        let skill_dirs = find_skill_directories_on_fs(&repo);
+        assert_eq!(skill_dirs.len(), 1);
+        assert!(skill_dirs.contains(&repo.join(".agents/skills")));
+        assert!(!skill_dirs.contains(&repo.join(".git/.agents/skills")));
     });
 }

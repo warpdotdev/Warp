@@ -6,8 +6,8 @@ use std::{
 use crate::ai::skills::skill_manager::SkillWatcherEvent;
 use ai::skills::{ParsedSkill, SkillProvider, SkillScope};
 use repo_metadata::{
-    repositories::DetectedRepositories, DirectoryWatcher, RepoMetadataModel, RepositoryUpdate,
-    TargetFile,
+    DirectoryWatcher, RepoMetadataModel, RepositoryUpdate, TargetFile,
+    repositories::DetectedRepositories,
 };
 use tempfile::TempDir;
 use warp_util::standardized_path::StandardizedPath;
