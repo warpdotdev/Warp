@@ -31,8 +31,6 @@ pub struct DataSourceStore {
     warp_drive_data_source: ModelHandle<warp_drive::DataSource>,
     launch_config_data_source: ModelHandle<launch_config::DataSource>,
     new_session_data_source: Option<ModelHandle<NewSessionDataSource>>,
-    historical_conversation_data_source: ModelHandle<conversations::DataSource>,
-    all_conversation_data_source: ModelHandle<conversations::DataSource>,
     repo_data_source: ModelHandle<RepoDataSource>,
 }
 
@@ -56,12 +54,6 @@ impl DataSourceStore {
             && cfg!(feature = "local_tty"))
         .then_some(ctx.add_model(|ctx| NewSessionDataSource::new(binding_source, ctx)));
 
-        let historical_conversation_data_source: ModelHandle<conversations::DataSource> =
-            ctx.add_model(|_| conversations::DataSource::historical());
-
-        let all_conversation_data_source: ModelHandle<conversations::DataSource> =
-            ctx.add_model(|_| conversations::DataSource::new());
-
         let repo_data_source = ctx.add_model(|_| RepoDataSource::new());
 
         Self {
@@ -70,8 +62,6 @@ impl DataSourceStore {
             warp_drive_data_source,
             launch_config_data_source,
             new_session_data_source,
-            historical_conversation_data_source,
-            all_conversation_data_source,
             repo_data_source,
         }
     }

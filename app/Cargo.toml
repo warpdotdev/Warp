@@ -758,6 +758,12 @@ skip_login = []
 # This feature should only be enabled when building a self-contained binary with the bundle script.
 standalone = []
 prompt_suggestions_via_maa = []
+# strip(neuter): voice_input crate is deleted, but ~100 #[cfg(feature = "voice_input")]
+# blocks remain in source as permanently-inactive dead code. Declaring the feature
+# (without the dep:voice_input that used to live here) silences cfg warnings without
+# us having to touch every block. The feature is never enabled, so the gated code
+# never compiles. A future tier-4 cleanup can rip the blocks out.
+voice_input = []
 system_theme = []
 tab_close_button_on_left = []
 team_features_override = []
