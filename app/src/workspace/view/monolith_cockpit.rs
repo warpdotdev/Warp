@@ -392,23 +392,21 @@ VMs and runtimes:\n{}",
             .finish()
     }
 
-    fn value_line(label: &str, value: &str, app: &AppContext) -> Box<dyn Element> {
+    fn muted_text(value: impl Into<String>, size: f32, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
-        Flex::row()
-            .with_main_axis_size(MainAxisSize::Min)
-            .with_spacing(6.)
-            .with_child(
-                Text::new(label.to_string(), appearance.ui_font_family(), 12.)
-                    .with_color(theme.disabled_ui_text_color().into_solid())
-                    .finish(),
-            )
-            .with_child(
-                Text::new(value.to_string(), appearance.ui_font_family(), 12.)
-                    .with_color(theme.main_text_color(theme.background()).into_solid())
-                    .finish(),
-            )
+        Text::new(value.into(), appearance.ui_font_family(), size)
+            .with_color(theme.disabled_ui_text_color().into_solid())
+            .finish()
+    }
+
+    fn meta_text(value: impl Into<String>, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
+
+        Text::new(value.into(), appearance.ui_font_family(), 12.)
+            .with_color(theme.nonactive_ui_text_color().into_solid())
             .finish()
     }
 
@@ -1001,11 +999,15 @@ VMs and runtimes:\n{}",
         Container::new(
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_spacing(8.)
+                .with_spacing(7.)
                 .with_child(header)
-                .with_child(Self::value_line("workdir", &runtime.workdir, app))
-                .with_child(Self::value_line("git", &runtime.git_ref, app))
-                .with_child(Self::value_line("service", &service_name, app))
+                .with_child(Self::meta_text(
+                    format!(
+                        "{} · git {} · {}",
+                        runtime.workdir, runtime.git_ref, service_name
+                    ),
+                    app,
+                ))
                 .with_child(
                     Flex::row()
                         .with_spacing(6.)
@@ -1027,11 +1029,6 @@ VMs and runtimes:\n{}",
                             Self::next_mouse_state(mouse_states, button_index),
                             app,
                         ))
-                        .finish(),
-                )
-                .with_child(
-                    Flex::row()
-                        .with_spacing(6.)
                         .with_child(Self::action_button(
                             "deploy",
                             deploy,
@@ -1060,7 +1057,7 @@ VMs and runtimes:\n{}",
                 )
                 .finish(),
         )
-        .with_padding(Padding::uniform(10.))
+        .with_padding(Padding::uniform(8.).with_left(10.).with_right(10.))
         .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
         .finish()
@@ -1099,7 +1096,7 @@ VMs and runtimes:\n{}",
         Container::new(
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .with_spacing(8.)
+                .with_spacing(7.)
                 .with_child(
                     Flex::row()
                         .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
@@ -1129,12 +1126,11 @@ VMs and runtimes:\n{}",
                         ))
                         .finish(),
                 )
-                .with_child(Self::value_line("zone", &host.zone, app))
-                .with_child(Self::value_line("status", &host.status, app))
-                .with_child(Self::value_line(
-                    "runtimes",
-                    &format!(
-                        "{} / {} visible",
+                .with_child(Self::meta_text(
+                    format!(
+                        "{} · {} · {} / {} runtimes visible",
+                        host.zone,
+                        host.status,
                         host.runtimes
                             .iter()
                             .filter(|runtime| Self::runtime_matches_filter(runtime, filter))
@@ -1146,7 +1142,7 @@ VMs and runtimes:\n{}",
                 .with_child(runtimes.finish())
                 .finish(),
         )
-        .with_padding(Padding::uniform(8.).with_left(12.))
+        .with_padding(Padding::uniform(8.).with_left(10.).with_right(10.))
         .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
         .finish()
@@ -1195,7 +1191,7 @@ VMs and runtimes:\n{}",
         let prompt = Self::tenant_chat_prompt(tenant, active_environment, api_url);
         let context = Self::tenant_context(tenant, active_environment, api_url);
         let chat_button = Self::primary_typed_button(
-            "manage tenant in chat",
+            "chat",
             MonolithCockpitAction::StartTenantChat {
                 tenant_name: tenant.name.clone(),
                 prompt,
@@ -1263,24 +1259,17 @@ VMs and runtimes:\n{}",
             .with_child(header);
 
         if is_expanded {
-            content.add_child(
-                Flex::row()
-                    .with_spacing(6.)
-                    .with_child(Self::status_chip(&tenant.environment, app))
-                    .with_child(Self::status_chip(
-                        &format!("vms {}", tenant.hosts.len()),
-                        app,
-                    ))
-                    .with_child(Self::status_chip(
-                        &format!(
-                            "runtimes {} / {} visible",
-                            Self::visible_runtime_count(tenant, filter),
-                            Self::runtime_count(tenant)
-                        ),
-                        app,
-                    ))
-                    .finish(),
-            );
+            content.add_child(Self::muted_text(
+                format!(
+                    "{} · {} vms · {} / {} runtimes visible",
+                    tenant.environment,
+                    tenant.hosts.len(),
+                    Self::visible_runtime_count(tenant, filter),
+                    Self::runtime_count(tenant)
+                ),
+                12.,
+                app,
+            ));
             content.add_child(
                 Flex::row()
                     .with_spacing(6.)
