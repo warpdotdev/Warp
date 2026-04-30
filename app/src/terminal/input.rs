@@ -10001,16 +10001,6 @@ impl Input {
             return 0;
         }
 
-        let paths_to_process: Vec<String> = image_filepaths
-            .into_iter()
-            .take(num_images_to_attach)
-            .collect();
-        let num_paths = paths_to_process.len();
-
-        self.editor.update(ctx, |editor, ctx| {
-            editor.read_and_process_images_async(num_paths, paths_to_process, ctx);
-        });
-
         let is_buffer_empty = self.buffer_text(ctx).is_empty();
         let in_active_agent_view = self.agent_view_controller.as_ref(ctx).is_active();
         if is_buffer_empty || in_active_agent_view {
@@ -10018,6 +10008,15 @@ impl Input {
             self.update_image_context_options(ctx);
         }
 
+        let paths_to_process: Vec<String> = image_filepaths
+            .into_iter()
+            .take(num_images_to_attach)
+            .collect();
+
+        let num_paths = paths_to_process.len();
+        self.editor.update(ctx, |editor, ctx| {
+            editor.read_and_process_images_async(num_paths, paths_to_process, ctx);
+        });
         num_paths
     }
 
@@ -10028,6 +10027,12 @@ impl Input {
         ctx: &mut ViewContext<Self>,
     ) {
         self.maybe_enter_agent_view_for_image_add(ctx);
+
+        // Switch to AI mode with block-level lock, unless already AI-mode-locked
+        if !self.is_locked_in_ai_mode(ctx) {
+            self.set_input_mode_agent(true, ctx);
+            self.update_image_context_options(ctx);
+        }
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -10058,12 +10063,6 @@ impl Input {
         self.editor.update(ctx, |editor, ctx| {
             editor.process_and_attach_images_as_ai_context(1, vec![attached_image], ctx);
         });
-
-        // Switch to AI mode with block-level lock, unless already AI-mode-locked
-        if !self.is_locked_in_ai_mode(ctx) {
-            self.set_input_mode_agent(true, ctx);
-            self.update_image_context_options(ctx);
-        }
     }
 
     /// Enters agent view when adding images, unless the CLI agent rich input is
