@@ -14,6 +14,7 @@ use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
+use crate::workspace::util::PaneViewLocator;
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{cloud_object::ObjectType, workspace::ToastStack};
 use crate::{drive::OpenWarpDriveObjectArgs, view_components::DismissibleToast};
@@ -78,6 +79,8 @@ pub enum UriHost {
     Codex,
     /// Actions triggered from Linear integrations (e.g. work on issue).
     Linear,
+    /// Focuses a specific terminal pane by its persistent UUID.
+    Pane,
 }
 
 impl FromStr for UriHost {
@@ -99,6 +102,7 @@ impl FromStr for UriHost {
             "mcp" => Ok(Self::Mcp),
             "codex" => Ok(Self::Codex),
             "linear" => Ok(Self::Linear),
+            "pane" => Ok(Self::Pane),
             _ => Err(anyhow!("Received url with unexpected host: {}", s)),
         }
     }
@@ -450,6 +454,62 @@ impl UriHost {
                     log::warn!("{err}");
                 }
             },
+            UriHost::Pane => {
+                let uuid_hex = url
+                    .path_segments()
+                    .into_iter()
+                    .flatten()
+                    .last()
+                    .unwrap_or("");
+
+                let uuid_bytes: Option<Vec<u8>> = if uuid_hex.len() == 32 {
+                    (0..16)
+                        .map(|i| u8::from_str_radix(&uuid_hex[i * 2..i * 2 + 2], 16).ok())
+                        .collect()
+                } else {
+                    None
+                };
+
+                let Some(uuid_bytes) = uuid_bytes else {
+                    log::warn!(
+                        "warposs://pane/ received invalid UUID hex (safe: len={})",
+                        uuid_hex.len()
+                    );
+                    return;
+                };
+
+                let result = WorkspaceRegistry::as_ref(ctx)
+                    .all_workspaces(ctx)
+                    .iter()
+                    .find_map(|(win_id, workspace)| {
+                        workspace.as_ref(ctx).tab_views().find_map(|pane_group| {
+                            let pane_id = pane_group
+                                .as_ref(ctx)
+                                .find_pane_by_session_uuid(&uuid_bytes)?;
+                            Some((
+                                *win_id,
+                                PaneViewLocator {
+                                    pane_group_id: pane_group.id(),
+                                    pane_id,
+                                },
+                            ))
+                        })
+                    });
+
+                if let Some((window_id, locator)) = result {
+                    ctx.windows().show_window_and_focus_app(window_id);
+                    if let Some(root_view_id) = ctx.root_view_id(window_id) {
+                        ctx.dispatch_action_for_view(
+                            window_id,
+                            root_view_id,
+                            "root_view:handle_pane_navigation_event",
+                            &locator,
+                        );
+                    }
+                } else {
+                    log::warn!("warposs://pane/ could not find pane with given UUID");
+                }
+            }
         }
     }
 
@@ -472,6 +532,7 @@ impl UriHost {
             Self::Codex => W::default(),
             // Linear deeplink opens a new tab with agent view
             Self::Linear => W::default(),
+            Self::Pane => W::Nothing,
         }
     }
 }
@@ -1305,7 +1366,8 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
         | UriHost::Settings
         | UriHost::Mcp
         | UriHost::Codex
-        | UriHost::Linear => true,
+        | UriHost::Linear
+        | UriHost::Pane => true,
         // Auth and Home only allow the desktop redirect path
         UriHost::Auth | UriHost::Home => false,
     };
