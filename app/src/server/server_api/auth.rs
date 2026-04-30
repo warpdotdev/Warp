@@ -25,6 +25,7 @@ use warp_graphql::queries::get_conversation_usage::{
 use warp_graphql::mutations::set_user_is_onboarded::{
     SetUserIsOnboarded, SetUserIsOnboardedResult, SetUserIsOnboardedVariables,
 };
+#[cfg(feature = "warp_hosted")]
 use warp_graphql::mutations::update_user_settings::{
     UpdateUserSettings, UpdateUserSettingsInput, UpdateUserSettingsResult,
     UpdateUserSettingsVariables,
@@ -433,105 +434,147 @@ impl AuthClient for ServerApi {
         }
     }
 
+    // PDX-33: privacy-settings server sync is gated on `warp_hosted`. With the
+    // feature off these mutations no-op locally rather than calling the Warp
+    // GraphQL backend. Note: `set_is_crash_reporting_enabled` is the *server-side
+    // preference toggle*, not the local crash reporter — actual Sentry
+    // integration is gated by the separate `crash_reporting` feature and is
+    // unaffected by this change (see PDX-78 for crash-reporting work).
+    #[cfg_attr(not(feature = "warp_hosted"), allow(unused_variables))]
     async fn set_is_telemetry_enabled(&self, value: bool) -> Result<()> {
-        let variables = UpdateUserSettingsVariables {
-            input: UpdateUserSettingsInput {
-                telemetry_enabled: Some(value),
-                ..Default::default()
-            },
-            request_context: get_request_context(),
-        };
+        #[cfg(not(feature = "warp_hosted"))]
+        {
+            return Ok(());
+        }
+        #[cfg(feature = "warp_hosted")]
+        {
+            let variables = UpdateUserSettingsVariables {
+                input: UpdateUserSettingsInput {
+                    telemetry_enabled: Some(value),
+                    ..Default::default()
+                },
+                request_context: get_request_context(),
+            };
 
-        let operation = UpdateUserSettings::build(variables);
-        let result = self
-            .send_graphql_request(operation, None)
-            .await?
-            .update_user_settings;
+            let operation = UpdateUserSettings::build(variables);
+            let result = self
+                .send_graphql_request(operation, None)
+                .await?
+                .update_user_settings;
 
-        match result {
-            UpdateUserSettingsResult::UpdateUserSettingsOutput(_) => Ok(()),
-            UpdateUserSettingsResult::UserFacingError(user_facing_error) => {
-                Err(anyhow!(get_user_facing_error_message(user_facing_error)))
+            match result {
+                UpdateUserSettingsResult::UpdateUserSettingsOutput(_) => Ok(()),
+                UpdateUserSettingsResult::UserFacingError(user_facing_error) => {
+                    Err(anyhow!(get_user_facing_error_message(user_facing_error)))
+                }
+                UpdateUserSettingsResult::Unknown => {
+                    Err(anyhow!("failed to set telemetry enabled"))
+                }
             }
-            UpdateUserSettingsResult::Unknown => Err(anyhow!("failed to set telemetry enabled")),
         }
     }
 
+    #[cfg_attr(not(feature = "warp_hosted"), allow(unused_variables))]
     async fn set_is_crash_reporting_enabled(&self, value: bool) -> Result<()> {
-        let variables = UpdateUserSettingsVariables {
-            input: UpdateUserSettingsInput {
-                crash_reporting_enabled: Some(value),
-                ..Default::default()
-            },
-            request_context: get_request_context(),
-        };
+        #[cfg(not(feature = "warp_hosted"))]
+        {
+            return Ok(());
+        }
+        #[cfg(feature = "warp_hosted")]
+        {
+            let variables = UpdateUserSettingsVariables {
+                input: UpdateUserSettingsInput {
+                    crash_reporting_enabled: Some(value),
+                    ..Default::default()
+                },
+                request_context: get_request_context(),
+            };
 
-        let operation = UpdateUserSettings::build(variables);
-        let result = self
-            .send_graphql_request(operation, None)
-            .await?
-            .update_user_settings;
+            let operation = UpdateUserSettings::build(variables);
+            let result = self
+                .send_graphql_request(operation, None)
+                .await?
+                .update_user_settings;
 
-        match result {
-            UpdateUserSettingsResult::UpdateUserSettingsOutput(_) => Ok(()),
-            UpdateUserSettingsResult::UserFacingError(user_facing_error) => {
-                Err(anyhow!(get_user_facing_error_message(user_facing_error)))
-            }
-            UpdateUserSettingsResult::Unknown => {
-                Err(anyhow!("failed to set crash reporting enabled"))
+            match result {
+                UpdateUserSettingsResult::UpdateUserSettingsOutput(_) => Ok(()),
+                UpdateUserSettingsResult::UserFacingError(user_facing_error) => {
+                    Err(anyhow!(get_user_facing_error_message(user_facing_error)))
+                }
+                UpdateUserSettingsResult::Unknown => {
+                    Err(anyhow!("failed to set crash reporting enabled"))
+                }
             }
         }
     }
 
+    #[cfg_attr(not(feature = "warp_hosted"), allow(unused_variables))]
     async fn set_is_cloud_conversation_storage_enabled(&self, value: bool) -> Result<()> {
-        let variables = UpdateUserSettingsVariables {
-            input: UpdateUserSettingsInput {
-                cloud_conversation_storage_enabled: Some(value),
-                ..Default::default()
-            },
-            request_context: get_request_context(),
-        };
+        #[cfg(not(feature = "warp_hosted"))]
+        {
+            return Ok(());
+        }
+        #[cfg(feature = "warp_hosted")]
+        {
+            let variables = UpdateUserSettingsVariables {
+                input: UpdateUserSettingsInput {
+                    cloud_conversation_storage_enabled: Some(value),
+                    ..Default::default()
+                },
+                request_context: get_request_context(),
+            };
 
-        let operation = UpdateUserSettings::build(variables);
-        let result = self
-            .send_graphql_request(operation, None)
-            .await?
-            .update_user_settings;
+            let operation = UpdateUserSettings::build(variables);
+            let result = self
+                .send_graphql_request(operation, None)
+                .await?
+                .update_user_settings;
 
-        match result {
-            UpdateUserSettingsResult::UpdateUserSettingsOutput(_) => Ok(()),
-            UpdateUserSettingsResult::UserFacingError(user_facing_error) => {
-                Err(anyhow!(get_user_facing_error_message(user_facing_error)))
-            }
-            UpdateUserSettingsResult::Unknown => {
-                Err(anyhow!("failed to set cloud conversation storage enabled"))
+            match result {
+                UpdateUserSettingsResult::UpdateUserSettingsOutput(_) => Ok(()),
+                UpdateUserSettingsResult::UserFacingError(user_facing_error) => {
+                    Err(anyhow!(get_user_facing_error_message(user_facing_error)))
+                }
+                UpdateUserSettingsResult::Unknown => {
+                    Err(anyhow!("failed to set cloud conversation storage enabled"))
+                }
             }
         }
     }
 
+    #[cfg_attr(not(feature = "warp_hosted"), allow(unused_variables))]
     async fn update_user_settings(&self, settings_snapshot: PrivacySettingsSnapshot) -> Result<()> {
-        let variables = UpdateUserSettingsVariables {
-            input: UpdateUserSettingsInput {
-                telemetry_enabled: Some(settings_snapshot.is_telemetry_enabled()),
-                crash_reporting_enabled: Some(settings_snapshot.is_crash_reporting_enabled()),
-                cloud_conversation_storage_enabled: settings_snapshot
-                    .cloud_conversation_storage_enabled(),
-            },
-            request_context: get_request_context(),
-        };
+        #[cfg(not(feature = "warp_hosted"))]
+        {
+            return Ok(());
+        }
+        #[cfg(feature = "warp_hosted")]
+        {
+            let variables = UpdateUserSettingsVariables {
+                input: UpdateUserSettingsInput {
+                    telemetry_enabled: Some(settings_snapshot.is_telemetry_enabled()),
+                    crash_reporting_enabled: Some(settings_snapshot.is_crash_reporting_enabled()),
+                    cloud_conversation_storage_enabled: settings_snapshot
+                        .cloud_conversation_storage_enabled(),
+                },
+                request_context: get_request_context(),
+            };
 
-        let operation = UpdateUserSettings::build(variables);
-        let result = self
-            .send_graphql_request(operation, None)
-            .await?
-            .update_user_settings;
+            let operation = UpdateUserSettings::build(variables);
+            let result = self
+                .send_graphql_request(operation, None)
+                .await?
+                .update_user_settings;
 
-        match result {
-            UpdateUserSettingsResult::UpdateUserSettingsOutput(_) => Ok(()),
-            UpdateUserSettingsResult::UserFacingError(user_facing_error) => {
-                Err(anyhow!(get_user_facing_error_message(user_facing_error)))
+            match result {
+                UpdateUserSettingsResult::UpdateUserSettingsOutput(_) => Ok(()),
+                UpdateUserSettingsResult::UserFacingError(user_facing_error) => {
+                    Err(anyhow!(get_user_facing_error_message(user_facing_error)))
+                }
+                UpdateUserSettingsResult::Unknown => {
+                    Err(anyhow!("failed to update user settings"))
+                }
             }
-            UpdateUserSettingsResult::Unknown => Err(anyhow!("failed to update user settings")),
         }
     }
 
