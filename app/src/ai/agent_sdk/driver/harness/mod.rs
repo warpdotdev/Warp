@@ -37,6 +37,7 @@ use super::{
 mod claude_code;
 pub(crate) mod claude_transcript;
 mod codex;
+pub(crate) mod codex_transcript;
 mod gemini;
 mod json_utils;
 

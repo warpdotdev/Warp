@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -9,19 +9,26 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
+use uuid::Uuid;
 use warp_cli::agent::Harness;
 use warp_managed_secrets::ManagedSecretValue;
-use warpui::{ModelHandle, ModelSpawner};
+use warpui::{ModelHandle, ModelSpawner, SingletonEntity};
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::server::server_api::harness_support::HarnessSupportClient;
+use crate::server::server_api::harness_support::{upload_to_target, HarnessSupportClient};
 use crate::server::server_api::ServerApi;
+use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::CLIAgent;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
+use super::claude_transcript::read_jsonl;
+use super::codex_transcript::{
+    codex_sessions_root, find_session_file, parse_session_meta, CodexSessionMetadata,
+    CodexTranscriptEnvelope,
+};
 use super::json_utils::read_json_file_or_default;
 use super::{write_temp_file, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness};
 
@@ -108,6 +115,16 @@ struct CodexHarnessRunner {
     client: Arc<dyn HarnessSupportClient>,
     terminal_driver: ModelHandle<TerminalDriver>,
     state: Mutex<CodexRunnerState>,
+    /// Codex session UUID. Populated lazily by [`HarnessRunner::handle_session_update`]
+    /// once the codex hooks emit `SessionStart`. Set once (using `OnceLock`).
+    session_id: OnceLock<Uuid>,
+    /// Path to the codex session rollout JSONL file. Populated by the first
+    /// successful [`find_session_file`] walk so that subsequent saves skip the YYYY/MM/DD
+    /// directory walk and read the JSONL file directly.
+    transcript_path: OnceLock<PathBuf>,
+    /// Cached parse of the rollout's `SessionMeta` line. Codex writes this once at session
+    /// start, so subsequent saves reuse it instead of reparsing the first JSONL entry.
+    session_metadata: OnceLock<CodexSessionMetadata>,
 }
 
 impl CodexHarnessRunner {
@@ -128,7 +145,29 @@ impl CodexHarnessRunner {
             client,
             terminal_driver,
             state: Mutex::new(CodexRunnerState::Preexec),
+            session_id: OnceLock::new(),
+            transcript_path: OnceLock::new(),
+            session_metadata: OnceLock::new(),
         })
+    }
+
+    /// Return the filepath for the session transcript, walking the codex sessions tree to find it on the
+    /// first save call.
+    async fn resolve_transcript_path(&self) -> Option<PathBuf> {
+        if let Some(cached) = self.transcript_path.get() {
+            return Some(cached.clone());
+        }
+        let session_id = self.session_id.get().copied()?;
+        let resolved = tokio::task::spawn_blocking(move || -> Result<Option<PathBuf>> {
+            let root = codex_sessions_root().context("Failed to resolve codex sessions root")?;
+            find_session_file(&root, session_id)
+        })
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .flatten()?;
+        let _ = self.transcript_path.set(resolved.clone());
+        Some(resolved)
     }
 }
 
@@ -179,6 +218,38 @@ impl HarnessRunner for CodexHarnessRunner {
             .map_err(|_| anyhow::anyhow!("Agent driver dropped while sending /exit"))
     }
 
+    /// Capture the codex session ID from the `SessionStart` event picked up by the `CLIAgentSessionsModel`.
+    ///
+    /// Relies on codex hooks being set up to emit this event correctly.
+    async fn handle_session_update(&self, foreground: &ModelSpawner<AgentDriver>) -> Result<()> {
+        if self.session_id.get().is_some() {
+            return Ok(());
+        }
+        let terminal_driver = self.terminal_driver.clone();
+        let session_id_str = foreground
+            .spawn(move |_, ctx| {
+                let terminal_view_id = terminal_driver.as_ref(ctx).terminal_view().id();
+                CLIAgentSessionsModel::handle(ctx)
+                    .as_ref(ctx)
+                    .session(terminal_view_id)
+                    .and_then(|s| s.session_context.session_id.clone())
+            })
+            .await
+            .ok()
+            .flatten();
+        let Some(session_id_str) = session_id_str else {
+            return Ok(());
+        };
+        match Uuid::parse_str(&session_id_str) {
+            Ok(uuid) => {
+                log::info!("Captured codex session id {uuid}");
+                let _ = self.session_id.set(uuid);
+            }
+            Err(e) => log::warn!("Failed to parse codex session id '{session_id_str}': {e}"),
+        }
+        Ok(())
+    }
+
     async fn save_conversation(
         &self,
         save_point: SavePoint,
@@ -202,16 +273,81 @@ impl HarnessRunner for CodexHarnessRunner {
             } => (*conversation_id, block_id.clone()),
         };
 
-        // TODO(REMOTE-1504) Also save the conversation transcript.
-        super::upload_current_block_snapshot(
-            foreground,
-            &self.terminal_driver,
-            self.client.as_ref(),
-            conversation_id,
-            block_id,
-        )
-        .await
+        let session_id = self.session_id.get().copied();
+        let rollout_path = self.resolve_transcript_path().await;
+        let cached_metadata = self.session_metadata.get().cloned();
+        let client = self.client.as_ref();
+
+        let (_, parsed_metadata) = futures::try_join!(
+            super::upload_current_block_snapshot(
+                foreground,
+                &self.terminal_driver,
+                client,
+                conversation_id,
+                block_id,
+            ),
+            upload_transcript(
+                client,
+                conversation_id,
+                session_id,
+                rollout_path,
+                cached_metadata,
+            ),
+        )?;
+        if let Some(meta) = parsed_metadata {
+            let _ = self.session_metadata.set(meta);
+        }
+        Ok(())
     }
+}
+
+/// Upload the codex session transcript to the server. No-ops if the session UUID hasn't
+/// been captured yet or no rollout file is on disk yet.
+///
+/// `cached_metadata` is the previously-parsed `SessionMeta` if any, which is read from the first
+///  line of the transcript.
+async fn upload_transcript(
+    client: &dyn HarnessSupportClient,
+    conversation_id: AIConversationId,
+    session_id: Option<Uuid>,
+    transcript_path: Option<PathBuf>,
+    cached_metadata: Option<CodexSessionMetadata>,
+) -> Result<Option<CodexSessionMetadata>> {
+    let Some(session_id) = session_id else {
+        log::debug!("Codex session id not yet known; skipping transcript upload");
+        return Ok(None);
+    };
+    let Some(transcript_path) = transcript_path else {
+        log::debug!("No codex rollout file yet for session {session_id}");
+        return Ok(None);
+    };
+    log::info!("Uploading codex transcript to conversation {conversation_id}");
+
+    let (body, parsed_metadata) =
+        tokio::task::spawn_blocking(move || -> Result<(Vec<u8>, Option<CodexSessionMetadata>)> {
+            let entries = read_jsonl(&transcript_path)?;
+            // If we have cached metadata, use it, otherwise parse the transcript for it.
+            let (metadata, metadata_to_save) = match cached_metadata {
+                Some(m) => (m, None),
+                None => {
+                    let parsed = parse_session_meta(entries.first());
+                    (parsed.clone().unwrap_or_default(), parsed)
+                }
+            };
+            let envelope = CodexTranscriptEnvelope::new(session_id, metadata, entries);
+            let body =
+                serde_json::to_vec(&envelope).context("Failed to serialize codex transcript")?;
+            Ok((body, metadata_to_save))
+        })
+        .await
+        .context("read_envelope task panicked")??;
+
+    let target = client
+        .get_transcript_upload_target(&conversation_id)
+        .await
+        .with_context(|| format!("Failed to get transcript upload target for {conversation_id}"))?;
+    upload_to_target(client.http_client(), &target, body).await?;
+    Ok(parsed_metadata)
 }
 
 const CODEX_CONFIG_DIR: &str = ".codex";
