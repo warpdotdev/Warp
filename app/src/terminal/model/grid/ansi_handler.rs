@@ -56,6 +56,14 @@ pub(super) struct State {
     /// Information about cell dimensions.
     pub cell_width: usize,
     pub cell_height: usize,
+    /// Pre-truncation logical cell dimensions kept alongside the integer
+    /// fields above. The integer values are what most call sites in this
+    /// module expect (cell-count math, image sizing in cells); the
+    /// `_px` variants preserve the fractional input so CSI 14t / 16t
+    /// can multiply by `scale_factor` before rounding and report the
+    /// correct physical-pixel cell size on fractional-DPI displays.
+    pub cell_width_px: warpui_core::units::Pixels,
+    pub cell_height_px: warpui_core::units::Pixels,
     pub scale_factor: f32,
 
     /// Mode flags.
@@ -129,6 +137,8 @@ impl State {
         Self {
             cell_width: size_info.cell_width_px.as_f32() as usize,
             cell_height: size_info.cell_height_px.as_f32() as usize,
+            cell_width_px: size_info.cell_width_px,
+            cell_height_px: size_info.cell_height_px,
             scale_factor: size_info.scale_factor,
             mode: Default::default(),
             tabs,
@@ -1205,8 +1215,11 @@ impl ansi::Handler for GridHandler {
 
     fn text_area_size_pixels<W: std::io::Write>(&mut self, writer: &mut W) {
         let sf = self.ansi_handler_state.scale_factor;
-        let cell_w_phys = ((self.ansi_handler_state.cell_width as f32) * sf).round() as usize;
-        let cell_h_phys = ((self.ansi_handler_state.cell_height as f32) * sf).round() as usize;
+        // Use the pre-truncation `_px` fields so a 9.6-px logical cell at
+        // 1.25× scale reports as 12 (round of 9.6 * 1.25), not 11 (round
+        // of trunc(9.6) * 1.25).
+        let cell_w_phys = (self.ansi_handler_state.cell_width_px.as_f32() * sf).round() as usize;
+        let cell_h_phys = (self.ansi_handler_state.cell_height_px.as_f32() * sf).round() as usize;
         let width = cell_w_phys * self.columns();
         let height = cell_h_phys * self.visible_rows();
         let _ = write!(writer, "\x1b[4;{height};{width}t");
@@ -1214,8 +1227,8 @@ impl ansi::Handler for GridHandler {
 
     fn cell_pixel_size<W: std::io::Write>(&mut self, writer: &mut W) {
         let sf = self.ansi_handler_state.scale_factor;
-        let cell_w_phys = ((self.ansi_handler_state.cell_width as f32) * sf).round() as usize;
-        let cell_h_phys = ((self.ansi_handler_state.cell_height as f32) * sf).round() as usize;
+        let cell_w_phys = (self.ansi_handler_state.cell_width_px.as_f32() * sf).round() as usize;
+        let cell_h_phys = (self.ansi_handler_state.cell_height_px.as_f32() * sf).round() as usize;
         let _ = write!(writer, "\x1b[6;{cell_h_phys};{cell_w_phys}t");
     }
 
