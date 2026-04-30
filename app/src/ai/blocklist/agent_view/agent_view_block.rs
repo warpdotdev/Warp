@@ -378,7 +378,9 @@ impl View for AgentViewEntryBlock {
                 .with_margin_right(8.)
                 .finish(),
         );
-        row.add_child(fork_button);
+        if !cfg!(target_family = "wasm") {
+            row.add_child(fork_button);
+        }
         let conversation_id = self.conversation_id;
         row.add_child(
             ConstrainedBox::new(render_agent_view_block_button(
