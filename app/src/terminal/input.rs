@@ -2220,16 +2220,42 @@ impl Input {
                         let view = ctx.add_typed_action_view(|ctx| {
                             HostSelector::new(menu_positioning_provider.clone(), ctx)
                         });
+                        // Env var takes priority over workspace setting for developer testing.
+                        let effective_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
+                            .ok()
+                            .filter(|s| !s.is_empty())
+                            .or_else(|| {
+                                UserWorkspaces::as_ref(ctx)
+                                    .default_host_slug()
+                                    .map(String::from)
+                            });
+                        if let Some(slug) = &effective_host {
+                            view.update(ctx, |selector, ctx| {
+                                selector.set_default_host(slug.clone(), ctx);
+                            });
+                        }
+                        if let Some(slug) = effective_host {
+                            view_model.update(ctx, |model, _ctx| {
+                                model.set_worker_host(Some(slug));
+                            });
+                        }
                         // Mirror the V2 model selector's `ModelSelectorClosed` -> refocus path:
                         // when the host selector menu closes (item picked or dismissed via Esc /
                         // click-outside), restore focus to the input editor so typing resumes
-                        // immediately. This is what powers the "input is focused after the host
-                        // selector closes" UX for the `/harness` slash command.
+                        // immediately.
                         ctx.subscribe_to_view(&view, |me, _, event, ctx| {
                             let HostSelectorEvent::MenuVisibilityChanged { open } = event;
                             if !*open {
                                 me.focus_input_box(ctx);
                             }
+                        });
+                        // Propagate host selection changes to the view model.
+                        let vm_for_host = view_model.clone();
+                        ctx.subscribe_to_view(&view, move |_me, handle, _event, ctx| {
+                            let selected = handle.as_ref(ctx).selected().clone();
+                            vm_for_host.update(ctx, |model, _ctx| {
+                                model.set_worker_host(selected.worker_host_value());
+                            });
                         });
                         Some(view)
                     } else {
