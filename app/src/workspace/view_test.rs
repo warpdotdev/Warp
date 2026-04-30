@@ -1022,6 +1022,80 @@ fn test_set_tab_color_targets_specific_tab() {
     });
 }
 
+/// Regression test for the OSC 1337 `SetTabColor` runtime path.
+///
+/// `pane_group::Event::SetTabColor` is the event the terminal pane raises
+/// when the PTY processes `OSC 1337 ; SetTabColor=<value> ST`. It used to be
+/// handled by re-dispatching `WorkspaceAction::SetTabColor` via
+/// `ctx.dispatch_typed_action`, but that traverses the responder chain by
+/// removing each view from the window's view map. Because the workspace's
+/// own update had already checked Workspace's view out of the map, the
+/// dispatcher silently skipped its handler and the tab color was never
+/// applied. The bug was invisible to `test_set_tab_color_targets_specific_tab`
+/// because that test calls `handle_action` directly.
+///
+/// This test exercises the full event path from `pane_group::Event` so the
+/// regression resurfaces as a failed assertion.
+#[test]
+fn test_set_tab_color_via_pane_group_event_targets_owning_tab() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let workspace = mock_workspace(&mut app);
+
+        let tab1_pane_group = workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+            // Activate tab 0 so tab 1 stands in for a background tab whose
+            // PTY emits the OSC sequence.
+            workspace.handle_action(&WorkspaceAction::ActivateTab(0), ctx);
+            workspace.tabs[1].pane_group.clone()
+        });
+
+        // Emit the same event terminal_pane.rs raises when its TerminalView
+        // forwards `Event::SetTabColor`. This is the runtime entry point
+        // that was silently dropped by the broken `dispatch_typed_action`
+        // implementation.
+        tab1_pane_group.update(&mut app, |_pane_group, ctx| {
+            ctx.emit(pane_group::Event::SetTabColor(SelectedTabColor::Color(
+                AnsiColorIdentifier::Magenta,
+            )));
+        });
+
+        workspace.read(&app, |workspace, _ctx| {
+            assert_eq!(
+                workspace.tabs[1].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Magenta),
+                "tab 1 (the source of the event) should be magenta",
+            );
+            assert_eq!(
+                workspace.tabs[0].selected_color,
+                SelectedTabColor::Unset,
+                "tab 0 (the active tab) must not be touched",
+            );
+            assert_eq!(
+                workspace.active_tab_index, 0,
+                "active tab must not change",
+            );
+        });
+
+        // `Cleared` round-trips through the same event path.
+        tab1_pane_group.update(&mut app, |_pane_group, ctx| {
+            ctx.emit(pane_group::Event::SetTabColor(SelectedTabColor::Cleared));
+        });
+        workspace.read(&app, |workspace, _ctx| {
+            assert_eq!(workspace.tabs[1].selected_color, SelectedTabColor::Cleared);
+        });
+
+        // `Unset` round-trips through the same event path.
+        tab1_pane_group.update(&mut app, |_pane_group, ctx| {
+            ctx.emit(pane_group::Event::SetTabColor(SelectedTabColor::Unset));
+        });
+        workspace.read(&app, |workspace, _ctx| {
+            assert_eq!(workspace.tabs[1].selected_color, SelectedTabColor::Unset);
+        });
+    });
+}
+
 #[test]
 fn test_workspace_sessions_retrieves_tabs() {
     App::test((), |mut app| async move {

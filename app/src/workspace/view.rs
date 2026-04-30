@@ -13020,13 +13020,19 @@ impl Workspace {
                 ctx.notify();
             }
             pane_group::Event::SetTabColor(color) => {
-                // Route through the typed action so the workspace test
-                // (`test_set_tab_color_targets_specific_tab`) exercises the
-                // same lookup-by-pane-group path as the OSC pipeline.
-                ctx.dispatch_typed_action(&WorkspaceAction::SetTabColor {
-                    pane_group_id: pane_group.id(),
-                    color: *color,
-                });
+                // Invoke the action handler directly: `dispatch_typed_action`
+                // walks the responder chain by removing each view from the
+                // window's view map, but Workspace is already checked out
+                // (we're inside its update), so the dispatcher would silently
+                // skip it. Calling `handle_action` on `self` runs the same
+                // handler the workspace test exercises.
+                self.handle_action(
+                    &WorkspaceAction::SetTabColor {
+                        pane_group_id: pane_group.id(),
+                        color: *color,
+                    },
+                    ctx,
+                );
             }
             pane_group::Event::ShowCommandSearch(options) => {
                 self.show_command_search(options.filter, &options.init_content, ctx);
