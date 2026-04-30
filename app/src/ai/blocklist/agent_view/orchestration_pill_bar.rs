@@ -12,6 +12,8 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use pathfinder_color::ColorU;
+use warp_cli::agent::Harness;
+use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::Fill;
 use warp_core::ui::{appearance::Appearance, theme::WarpTheme};
 use warpui::elements::{
@@ -29,11 +31,12 @@ use warpui::{
 };
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent::conversation::{AIConversation, AIConversationId};
+use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_id;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use crate::ai::harness_display;
 use crate::features::FeatureFlag;
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::pane::view::PaneHeaderAction;
@@ -771,7 +774,11 @@ fn render_hover_card(
         .or_else(|| conversation.title())
         .unwrap_or_else(|| "Agent".to_string());
 
-    // Header: small avatar disc + bold agent name.
+    // Header: small avatar disc + bold agent name on the left, status
+    // badge right-aligned. We use the conversation's `ConversationStatus`
+    // (mapped to icon+color via `status_icon_and_color`) to drive the
+    // badge so the card matches the colors used elsewhere in the agent
+    // details panel.
     let avatar_color = pill_avatar_color(&name, theme);
     let avatar_glyph = AvatarGlyph::Letter(pill_initial(&name));
     let avatar = render_avatar_disc(avatar_color, avatar_glyph, theme, appearance);
@@ -788,17 +795,46 @@ fn render_hover_card(
     .with_clip(ClipConfig::ellipsis())
     .soft_wrap(false)
     .finish();
+    let status_badge = render_status_badge(conversation.status(), theme, appearance);
     let header = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_main_axis_size(MainAxisSize::Min)
-        .with_spacing(8.)
-        .with_child(avatar)
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
         .with_child(
-            ConstrainedBox::new(name_text)
-                .with_max_width(HOVER_CARD_WIDTH - 60.)
+            Flex::row()
+                .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_spacing(8.)
+                .with_child(avatar)
+                .with_child(
+                    ConstrainedBox::new(name_text)
+                        .with_max_width(HOVER_CARD_WIDTH - 110.)
+                        .finish(),
+                )
                 .finish(),
         )
+        .with_child(status_badge)
         .finish();
+
+    // Working directory line: pulled from the root task's first exchange
+    // when available, falling back to the most recent exchange. Hidden
+    // entirely when neither is populated (e.g. cloud agents whose CWD
+    // hasn't synced yet).
+    let cwd_line: Option<Box<dyn Element>> = conversation
+        .initial_working_directory()
+        .or_else(|| conversation.current_working_directory())
+        .filter(|s| !s.is_empty())
+        .map(|cwd| {
+            Text::new(
+                shorten_home_path(&cwd),
+                appearance.ui_font_family(),
+                appearance.monospace_font_size() - 1.,
+            )
+            .with_color(main_text)
+            .with_clip(ClipConfig::ellipsis())
+            .soft_wrap(false)
+            .finish()
+        });
 
     // Description: title or initial query, truncated visually via wrapping
     // inside a constrained box.
@@ -824,9 +860,30 @@ fn render_hover_card(
         .finish()
     });
 
-    // Chips row: branch (if known via a PR artifact) + PR (if known).
-    // Hidden entirely when neither chip applies.
+    // Chips row: branch (if known via a PR artifact) + PR (if known) +
+    // harness (always when known). Hidden entirely when no chip applies.
     let mut chips: Vec<Box<dyn Element>> = Vec::new();
+
+    // Harness chip: defaults to Warp Agent (Oz) when server metadata
+    // hasn't loaded yet so the chip slot stays useful for in-progress
+    // local conversations. The brand color matches `harness_display`
+    // (e.g. orange for Claude Code, blue for Gemini CLI).
+    let harness = conversation
+        .server_metadata()
+        .map(|m| Harness::from(m.harness))
+        .unwrap_or(Harness::Oz);
+    let harness_icon = harness_display::icon_for(harness);
+    let harness_label = harness_display::display_name(harness).to_string();
+    let harness_color = harness_display::brand_color(harness).unwrap_or(sub_text);
+    chips.push(render_chip(
+        harness_icon,
+        harness_label,
+        harness_color,
+        main_text,
+        theme,
+        appearance,
+    ));
+
     for artifact in conversation.artifacts() {
         if let Artifact::PullRequest {
             url: _,
@@ -866,6 +923,13 @@ fn render_hover_card(
         .with_main_axis_size(MainAxisSize::Min)
         .with_spacing(8.)
         .with_child(header);
+    if let Some(cwd_line) = cwd_line {
+        column = column.with_child(
+            ConstrainedBox::new(cwd_line)
+                .with_max_width(HOVER_CARD_WIDTH - 24.)
+                .finish(),
+        );
+    }
     if let Some(description) = description {
         column = column.with_child(
             ConstrainedBox::new(description)
@@ -899,6 +963,68 @@ fn render_hover_card(
             .with_width(HOVER_CARD_WIDTH)
             .finish(),
     )
+}
+
+/// Renders the colored "Working / Done / Error / Cancelled / Blocked"
+/// status badge that sits in the top-right of the hover card. Mirrors
+/// the visual treatment in `conversation_details_panel::render_status_section`
+/// (icon + label, tinted with the same opacity•10 chip background) so
+/// the card and the side panel can't drift.
+fn render_status_badge(
+    status: &ConversationStatus,
+    theme: &WarpTheme,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let (icon, color) = status.status_icon_and_color(theme);
+    let icon_el = ConstrainedBox::new(icon.to_warpui_icon(color.into()).finish())
+        .with_width(12.)
+        .with_height(12.)
+        .finish();
+    let label = Text::new(
+        status.to_string(),
+        appearance.ui_font_family(),
+        appearance.monospace_font_size() - 2.,
+    )
+    .with_color(color)
+    .soft_wrap(false)
+    .finish();
+    let row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_main_axis_size(MainAxisSize::Min)
+        .with_spacing(4.)
+        .with_child(icon_el)
+        .with_child(label)
+        .finish();
+    Container::new(row)
+        .with_padding_left(6.)
+        .with_padding_right(6.)
+        .with_padding_top(2.)
+        .with_padding_bottom(2.)
+        .with_background_color(coloru_with_opacity(color, 10))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .finish()
+}
+
+/// Replaces a `$HOME` prefix in a path with `~` so the working-directory
+/// line in the hover card matches user expectations (`~/warp-internal`
+/// rather than the full absolute path). Falls back to the original path
+/// when `$HOME` is unset or doesn't prefix the path.
+fn shorten_home_path(path: &str) -> String {
+    if let Some(home) = std::env::var_os("HOME") {
+        if let Some(home_str) = home.to_str() {
+            if !home_str.is_empty() {
+                if let Some(rest) = path.strip_prefix(home_str) {
+                    if rest.is_empty() {
+                        return "~".to_string();
+                    }
+                    if let Some(stripped) = rest.strip_prefix('/') {
+                        return format!("~/{stripped}");
+                    }
+                }
+            }
+        }
+    }
+    path.to_string()
 }
 
 /// Renders a small icon + label chip used inside the hover details card.
