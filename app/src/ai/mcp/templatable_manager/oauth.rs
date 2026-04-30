@@ -719,7 +719,10 @@ mod tests {
         let persisted = rx.try_recv().expect("persist channel received credentials");
         assert_eq!(persisted.token_received_at, Some(1_700_000_500));
         assert_eq!(persisted.client_id, "client-id");
-        assert_eq!(persisted.client_secret.as_deref(), Some("client_secret_xyz"));
+        assert_eq!(
+            persisted.client_secret.as_deref(),
+            Some("client_secret_xyz")
+        );
     }
 
     /// Defensive: if rmcp ever calls `save` without a `token_received_at`
@@ -818,6 +821,9 @@ mod tests {
         // Sanity: any timestamp produced by the running test process must be
         // after the OSS-release date (2026-04-28) and before the year 2200.
         assert!(now > 1_745_000_000, "epoch seconds must be a real time");
-        assert!(now < 7_258_118_400, "epoch seconds must be before year 2200");
+        assert!(
+            now < 7_258_118_400,
+            "epoch seconds must be before year 2200"
+        );
     }
 }
