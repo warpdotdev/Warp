@@ -399,6 +399,9 @@ pub struct ServerApi {
     telemetry_api: TelemetryApi,
     last_server_time: Arc<Mutex<Option<ServerTime>>>,
     // We technically use OAuth2 for headless device authentication.
+    // Only carried when the `warp_hosted` feature is enabled; the offline build
+    // omits this field entirely so no OAuth client is constructed at startup.
+    #[cfg(feature = "warp_hosted")]
     oauth_client: self::auth::OAuth2Client,
     /// Cached ambient workload token for requests from ambient agents.
     ambient_workload_token: Arc<Mutex<Option<warp_isolation_platform::WorkloadToken>>>,
@@ -424,6 +427,7 @@ impl ServerApi {
             Some(EVAL_USER_IDS[rand::thread_rng().gen_range(0..EVAL_USER_IDS.len())])
         };
 
+        #[cfg(feature = "warp_hosted")]
         let oauth_client = Self::create_oauth_client();
 
         Self {
@@ -432,6 +436,7 @@ impl ServerApi {
             event_sender,
             telemetry_api: TelemetryApi::new(),
             last_server_time: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "warp_hosted")]
             oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
             ambient_agent_task_id: Arc::new(RwLock::new(None)),
@@ -445,6 +450,7 @@ impl ServerApi {
     fn new_for_test() -> Self {
         let (tx, _) = async_channel::unbounded();
 
+        #[cfg(feature = "warp_hosted")]
         let oauth_client = Self::create_oauth_client();
 
         Self {
@@ -453,6 +459,7 @@ impl ServerApi {
             event_sender: tx,
             telemetry_api: TelemetryApi::new(),
             last_server_time: Arc::new(Mutex::new(None)),
+            #[cfg(feature = "warp_hosted")]
             oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
             ambient_agent_task_id: Arc::new(RwLock::new(None)),
@@ -490,6 +497,7 @@ impl ServerApi {
             .collect())
     }
 
+    #[cfg(feature = "warp_hosted")]
     fn create_oauth_client() -> self::auth::OAuth2Client {
         let server_root =
             Url::parse(&ChannelState::server_root_url()).expect("Server root URL must be valid");

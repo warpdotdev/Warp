@@ -399,14 +399,25 @@ impl LoginSlideView {
             },
             ctx
         );
-        if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled() {
+        // PDX-31: when `warp_hosted` is off there is no hosted backend to
+        // create an anonymous user against, so we always emit `SkippedLogin`.
+        #[cfg(not(feature = "warp_hosted"))]
+        {
             AuthManager::handle(ctx).update(ctx, |_, ctx| {
                 ctx.emit(AuthManagerEvent::SkippedLogin);
             });
-        } else {
-            AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.create_anonymous_user(None, ctx);
-            });
+        }
+        #[cfg(feature = "warp_hosted")]
+        {
+            if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled() {
+                AuthManager::handle(ctx).update(ctx, |_, ctx| {
+                    ctx.emit(AuthManagerEvent::SkippedLogin);
+                });
+            } else {
+                AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
+                    auth_manager.create_anonymous_user(None, ctx);
+                });
+            }
         }
         ctx.emit(LoginSlideEvent::LoginLaterConfirmed);
     }
