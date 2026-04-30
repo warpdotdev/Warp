@@ -68,6 +68,7 @@ pub enum HostSelectorAction {
 
 pub enum HostSelectorEvent {
     MenuVisibilityChanged { open: bool },
+    HostSelected,
 }
 
 pub struct HostSelector {
@@ -272,6 +273,7 @@ impl TypedActionView for HostSelector {
                 self.button.update(ctx, |button, ctx| {
                     button.set_label(label.clone(), ctx);
                 });
+                ctx.emit(HostSelectorEvent::HostSelected);
                 self.set_menu_visibility(false, ctx);
             }
         }

@@ -120,7 +120,11 @@ impl SlashCommandDataSource {
             }
         });
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, event, ctx| {
-            if matches!(event, UserWorkspacesEvent::CodebaseContextEnablementChanged) {
+            if matches!(
+                event,
+                UserWorkspacesEvent::CodebaseContextEnablementChanged
+                    | UserWorkspacesEvent::TeamsChanged
+            ) {
                 me.recompute_active_commands(ctx);
             }
         });
@@ -287,9 +291,7 @@ impl SlashCommandDataSource {
                     }
                 })
                 // /host is only useful when a default self-hosted host is configured.
-                .filter(|(_, command)| {
-                    command.name != commands::HOST.name || has_default_host
-                })
+                .filter(|(_, command)| command.name != commands::HOST.name || has_default_host)
                 // When CLI agent input is open, restrict to the explicit allowlist.
                 .filter(|(_, command)| {
                     !is_cli_agent_input
