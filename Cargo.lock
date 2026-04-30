@@ -9050,6 +9050,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "orchestrator"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "futures-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "ordered-float"
 version = "3.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
