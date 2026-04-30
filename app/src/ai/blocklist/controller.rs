@@ -37,10 +37,10 @@ use crate::ai::document::ai_document_model::{
 use crate::ai::llms::LLMId;
 use crate::ai::{
     agent::{
-        conversation::AIConversationId, AIAgentActionResultType, AIAgentAttachment, AIAgentContext,
-        AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, AIIdentifiers, EntrypointType,
-        FinishedAIAgentOutput, RenderableAIError, RequestCost, RequestMetadata, StaticQueryType,
-        UserQueryMode,
+        conversation::AIConversationId, extract_user_query_mode, AIAgentActionResultType,
+        AIAgentAttachment, AIAgentContext, AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus,
+        AIIdentifiers, EntrypointType, FinishedAIAgentOutput, RenderableAIError, RequestCost,
+        RequestMetadata, StaticQueryType, UserQueryMode,
     },
     llms::LLMPreferences,
     AIRequestUsageModel,
@@ -51,7 +51,6 @@ use crate::global_resource_handles::GlobalResourceHandlesProvider;
 use crate::network::NetworkStatus;
 use crate::notebooks::editor::model::FileLinkResolutionContext;
 use crate::persistence::ModelEvent;
-use crate::search::slash_command_menu::static_commands::commands;
 use crate::server::server_api::AIApiError;
 use crate::terminal::model::block::{
     formatted_terminal_contents_for_input, BlockId, CURSOR_MARKER,
@@ -607,15 +606,7 @@ impl BlocklistAIController {
             return;
         }
 
-        let (query, user_query_mode) = if let Some(q) =
-            commands::strip_command_prefix(&query, commands::PLAN_NAME)
-        {
-            (q, UserQueryMode::Plan)
-        } else if let Some(q) = commands::strip_command_prefix(&query, commands::ORCHESTRATE_NAME) {
-            (q, UserQueryMode::Orchestrate)
-        } else {
-            (query, UserQueryMode::Normal)
-        };
+        let (query, user_query_mode) = extract_user_query_mode(query);
 
         let should_prepend_finished_action_results = matches!(
             input_query.input_query,

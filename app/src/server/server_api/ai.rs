@@ -144,6 +144,7 @@ use warp_graphql::{
     },
 };
 
+pub use crate::ai::agent::UserQueryMode;
 // Re-export ambient agent types for backwards compatibility
 pub use crate::ai::ambient_agents::{
     task::{AttachmentInput, TaskAttachment},
@@ -180,6 +181,9 @@ impl TaskStatusUpdate {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SpawnAgentRequest {
     pub prompt: String,
+    /// The mode the agent should run in (normal, plan, or orchestrate).
+    /// Mirrors the `/plan` and `/orchestrate` slash commands available locally.
+    pub mode: UserQueryMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<AgentConfigSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]

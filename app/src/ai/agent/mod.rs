@@ -2327,11 +2327,37 @@ impl PassiveSuggestionTrigger {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum UserQueryMode {
     #[default]
     Normal,
     Plan,
     Orchestrate,
+}
+
+pub fn extract_user_query_mode(query: String) -> (String, UserQueryMode) {
+    if let Some(query) = commands::strip_command_prefix(&query, commands::PLAN_NAME) {
+        (query, UserQueryMode::Plan)
+    } else if let Some(query) = commands::strip_command_prefix(&query, commands::ORCHESTRATE_NAME) {
+        (query, UserQueryMode::Orchestrate)
+    } else {
+        (query, UserQueryMode::Normal)
+    }
+}
+
+/// Reconstructs the display form of a user query that has been stripped via
+/// [`extract_user_query_mode`], by re-prepending the slash-command prefix
+/// associated with [`UserQueryMode`].
+///
+/// This is the inverse of [`extract_user_query_mode`] and the canonical way
+/// for UI to render a stored `(mode, query)` pair so the displayed prompt
+/// always matches what the user originally submitted.
+pub fn display_user_query_with_mode(mode: UserQueryMode, query: &str) -> String {
+    match mode {
+        UserQueryMode::Normal => query.to_owned(),
+        UserQueryMode::Plan => format!("{} {query}", commands::PLAN.name),
+        UserQueryMode::Orchestrate => format!("{} {query}", commands::ORCHESTRATE.name),
+    }
 }
 
 // TODO(zachbai): Refactor this to consolidate with `LongRunningCommandSnapshot` and `Snapshot`
@@ -2579,13 +2605,7 @@ impl AIAgentInput {
                 query,
                 user_query_mode,
                 ..
-            } => match user_query_mode {
-                UserQueryMode::Plan => Some(format!("{} {query}", commands::PLAN.name)),
-                UserQueryMode::Orchestrate => {
-                    Some(format!("{} {query}", commands::ORCHESTRATE.name))
-                }
-                UserQueryMode::Normal => Some(query.clone()),
-            },
+            } => Some(display_user_query_with_mode(*user_query_mode, query)),
             Self::CreateNewProject { query, .. } => Some(query.clone()),
             Self::CloneRepository {
                 clone_repo_url: url,
