@@ -3071,6 +3071,33 @@ impl RootView {
                 UserAuthenticationError::InvalidStateParameter => {}
                 UserAuthenticationError::MissingStateParameter => {}
             },
+            AuthManagerEvent::AnonymousUserLinked => {
+                // The user just transitioned from anonymous to a real (non-anonymous)
+                // account while already inside the app (i.e. in the `Terminal` state).
+                // Anonymous users intentionally don't see the onboarding flow, so this
+                // is the first opportunity to show it. Without this branch, the user
+                // wouldn't see onboarding until the next time they log in (e.g. after
+                // a logout/login cycle), which is the bug tracked by APP-4346.
+                //
+                // Use the same gating as `complete_auth_and_create_workspace` so we
+                // don't double-trigger when onboarding has already been completed
+                // (locally or on the server) or when the feature flag is off.
+                if matches!(
+                    &self.auth_onboarding_state,
+                    AuthOnboardingState::Terminal(_)
+                ) {
+                    let is_onboarded = auth_state.is_onboarded().unwrap_or(true);
+                    let has_completed_local = has_completed_local_onboarding(ctx);
+                    if !is_onboarded
+                        && !has_completed_local
+                        && FeatureFlag::AgentOnboarding.is_enabled()
+                    {
+                        self.auth_onboarding_state.try_open_onboarding_slides(ctx);
+                        ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
+                        self.focus(ctx);
+                    }
+                }
+            }
             AuthManagerEvent::SkippedLogin => {
                 if let AuthOnboardingState::Auth(_) | AuthOnboardingState::ConfirmIncomingAuth(_) =
                     &self.auth_onboarding_state

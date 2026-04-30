@@ -86,6 +86,10 @@ pub enum AuthManagerEvent {
         #[cfg_attr(target_family = "wasm", allow(unused))]
         user_code: String,
     },
+    /// The previously-anonymous user just linked their account to a real (non-anonymous)
+    /// Warp account. Fires immediately before `AuthComplete` so subscribers can react to
+    /// the transition itself, not just the resulting authenticated state.
+    AnonymousUserLinked,
 }
 
 pub type LoginGatedFeature = &'static str;
@@ -338,6 +342,13 @@ impl AuthManager {
                     llms,
                 } = fetch_user_result;
 
+                // Detect the anonymous-to-non-anonymous transition (account linking)
+                // before we overwrite the previous user state. Subscribers can use the
+                // `AnonymousUserLinked` event below to react to this specific moment
+                // (e.g. trigger onboarding for the freshly-linked account).
+                let was_anonymous = self.auth_state.is_user_anonymous() == Some(true);
+                let just_linked_anonymous_user = was_anonymous && !user.is_user_anonymous();
+
                 self.set_and_persist(Some(user.clone()), Some(credentials), ctx);
 
                 self.set_needs_reauth(false, ctx);
@@ -494,6 +505,9 @@ impl AuthManager {
                     },
                 );
 
+                if just_linked_anonymous_user {
+                    ctx.emit(AuthManagerEvent::AnonymousUserLinked);
+                }
                 ctx.emit(AuthManagerEvent::AuthComplete);
             }
             Err(error) => {
