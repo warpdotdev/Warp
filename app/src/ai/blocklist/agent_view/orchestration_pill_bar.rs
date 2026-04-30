@@ -21,6 +21,7 @@ use warpui::platform::Cursor;
 use warpui::text_layout::ClipConfig;
 use warpui::{AppContext, Entity, ModelHandle, SingletonEntity, View, ViewContext};
 
+use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::{AIConversation, AIConversationId};
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_id;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
@@ -204,13 +205,20 @@ impl OrchestrationPillBar {
         let history = BlocklistAIHistoryModel::as_ref(app);
         let active_conversation = history.conversation(&active_id)?;
 
-        // The pill bar only shows on the orchestrator view. When a child
-        // agent is active, breadcrumbs in the pane header title take over.
-        // Bail out before any further work (sorting, theme lookup, etc.).
-        if parent_conversation_id(active_conversation, app).is_some() {
+        // V2 same-pane semantics: render pills for both the orchestrator and
+        // any same-pane child. When the active conversation is a child,
+        // resolve its orchestrator (parent) so the pill set is anchored on
+        // the orchestrator regardless of which conversation is selected.
+        //
+        // Split-off child views render breadcrumbs only (no pill bar). Bail
+        // here so the pane header renders just the breadcrumbs returned by
+        // `render_orchestration_breadcrumbs` and not a redundant pill row
+        // below it. Without this short-circuit, the breadcrumbs in the title
+        // and the pill bar in the column would both render, producing
+        // duplicate orchestration chrome in the split-off pane/tab.
+        if is_split_off_child(self.agent_view_controller.as_ref(app), app) {
             return None;
         }
-
         let orchestrator_id = parent_conversation_id(active_conversation, app).unwrap_or(active_id);
         let orchestrator = history.conversation(&orchestrator_id)?;
 
@@ -515,10 +523,48 @@ const CRUMB_HEIGHT: f32 = 24.;
 const CRUMB_RADIUS: f32 = 4.;
 const CRUMB_HORIZONTAL_PADDING: f32 = 6.;
 
+/// Returns `true` if the active conversation in `agent_view_controller` is a
+/// child agent that has been opened in a *different* terminal view than this
+/// one — i.e. "Open in new pane" or "Open in new tab" was used to split it
+/// off from its orchestrator. We use this to decide whether the pane header
+/// should render breadcrumbs (split-off) vs. the pill bar (same-pane).
+///
+/// Specifically: the active conversation is a child AND the *parent*
+/// (orchestrator) is currently the active conversation in some other
+/// terminal view (per `ActiveAgentViewsModel`). When the orchestrator pane
+/// switches in place to a child, the parent is no longer the active
+/// conversation in any pane, so this returns `false` and the pill bar keeps
+/// rendering with the active child highlighted.
+pub fn is_split_off_child(
+    agent_view_controller: &AgentViewController,
+    app: &AppContext,
+) -> bool {
+    let Some(active_id) = agent_view_controller
+        .agent_view_state()
+        .active_conversation_id()
+    else {
+        return false;
+    };
+    let history = BlocklistAIHistoryModel::as_ref(app);
+    let Some(active_conversation) = history.conversation(&active_id) else {
+        return false;
+    };
+    let Some(parent_id) = parent_conversation_id(active_conversation, app) else {
+        return false;
+    };
+    let Some(parent_view_id) = ActiveAgentViewsModel::as_ref(app)
+        .terminal_view_id_for_conversation(parent_id, app)
+    else {
+        return false;
+    };
+    parent_view_id != agent_view_controller.terminal_view_id()
+}
+
 /// Renders a `[Parent Avatar] [Parent Title] > [Child Avatar] [Child Name]`
 /// breadcrumb row when the active conversation is a child agent under an
-/// orchestrator. Returns `None` when breadcrumbs should not be shown
-/// (orchestrator view, feature flag off, or no parent conversation available).
+/// orchestrator that has been split off into another pane/tab. Returns
+/// `None` for same-pane child views — those render the pill bar with the
+/// active child highlighted instead.
 ///
 /// We render this manually rather than going through
 /// `crate::ui_components::breadcrumb::render_breadcrumbs` because we need a
@@ -544,6 +590,11 @@ pub fn render_orchestration_breadcrumbs(
         return None;
     }
     if !agent_view_controller.is_fullscreen() {
+        return None;
+    }
+    // V2: only render breadcrumbs from a *split-off* pane/tab. Same-pane
+    // child views render the pill bar with the active child highlighted.
+    if !is_split_off_child(agent_view_controller, app) {
         return None;
     }
     let active_id = agent_view_controller
