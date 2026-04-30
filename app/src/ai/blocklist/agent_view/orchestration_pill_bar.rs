@@ -17,12 +17,13 @@ use warp_cli::agent::Harness;
 use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::Fill;
 use warp_core::ui::{appearance::Appearance, theme::WarpTheme};
+use warpui::elements::new_scrollable::{NewScrollable, ScrollableAppearance, SingleAxisConfig};
 use warpui::elements::{
-    AnchorPair, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
-    CrossAxisAlignment, Element, Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
-    MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor, ParentElement,
-    ParentOffsetBounds, PositionedElementOffsetBounds, PositioningAxis, Radius, SavePosition,
-    Stack, Text, XAxisAnchor, YAxisAnchor,
+    AnchorPair, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle, ConstrainedBox,
+    Container, CornerRadius, CrossAxisAlignment, Element, Empty, Fill as ElementFill, Flex,
+    Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning, OffsetType,
+    ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds,
+    PositioningAxis, Radius, SavePosition, ScrollbarWidth, Stack, Text, XAxisAnchor, YAxisAnchor,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
@@ -1538,6 +1539,7 @@ pub fn is_split_off_child(agent_view_controller: &AgentViewController, app: &App
 pub fn render_orchestration_breadcrumbs(
     agent_view_controller: &AgentViewController,
     parent_crumb_mouse_state: MouseStateHandle,
+    horizontal_scroll_state: ClippedScrollStateHandle,
     app: &AppContext,
 ) -> Option<Box<dyn Element>> {
     // Mirror the gating used by `maybe_add_parent_navigation_card` in
@@ -1630,10 +1632,17 @@ pub fn render_orchestration_breadcrumbs(
     .with_height(16.)
     .finish();
 
+    // The row uses `MainAxisSize::Min` so its intrinsic width is the sum
+    // of the crumbs (avatar + label per crumb plus spacing). Wrapping that
+    // row in a horizontal `NewScrollable` lets the user pan through the
+    // breadcrumbs whenever the title slot is too narrow to fit them —
+    // common when the orchestrator was opened in a split-off pane that's
+    // been resized down. With `MainAxisSize::Max` the row would always
+    // try to fill the title slot which makes the inner content unscrollable.
     let mut row = Flex::row()
-        .with_main_axis_alignment(MainAxisAlignment::Center)
+        .with_main_axis_alignment(MainAxisAlignment::Start)
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_main_axis_size(MainAxisSize::Max)
+        .with_main_axis_size(MainAxisSize::Min)
         .with_spacing(4.);
     row.add_child(render_crumb(
         parent_spec,
@@ -1643,7 +1652,20 @@ pub fn render_orchestration_breadcrumbs(
     ));
     row.add_child(chevron);
     row.add_child(render_crumb(child_spec, None, theme, appearance));
-    Some(row.finish())
+
+    let scrollable = NewScrollable::horizontal(
+        SingleAxisConfig::Clipped {
+            handle: horizontal_scroll_state,
+            child: row.finish(),
+        },
+        theme.nonactive_ui_detail().into(),
+        theme.active_ui_detail().into(),
+        ElementFill::None,
+    )
+    .with_horizontal_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
+    .with_propagate_mousewheel_if_not_handled(true)
+    .finish();
+    Some(scrollable)
 }
 
 fn render_crumb(

@@ -2309,6 +2309,13 @@ struct TerminalViewMouseStates {
     // Mouse state for the pane header ambient agent indicator tooltip.
     ambient_agent_indicator_mouse_handle: MouseStateHandle,
     parent_conversation_header_link: MouseStateHandle,
+    /// Persistent horizontal scroll state for the orchestration breadcrumb
+    /// row. Lives here (rather than as a `MouseStateHandle`) so the user's
+    /// scroll position survives across renders — in narrow split-off panes
+    /// the breadcrumb row often overflows the title slot, and we wrap it
+    /// in a `NewScrollable::horizontal` keyed on this handle so the user
+    /// can pan to read clipped labels.
+    breadcrumbs_horizontal_scroll: ClippedScrollStateHandle,
 }
 
 /// Where content was routed when sent to a CLI agent.
