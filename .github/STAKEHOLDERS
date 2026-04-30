@@ -110,7 +110,8 @@
 # UI framework
 /crates/warpui/ @vorporeal @alokedesai @acarl005
 /crates/warpui_core/ @vorporeal @alokedesai
-/crates/warpui_extras/ @vorporeal @danielpeng
+/crates/warpui_extras/ @vorporeal
+/crates/warpui_extras/src/user_preferences @danielpeng
 /crates/ui_components/ @vorporeal @acarl005 @zachbai @bnavetta
 
 # Conversation rewind / CLI agent UI / macOS/Linux platform issues / performance issues
