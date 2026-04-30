@@ -5,12 +5,12 @@
 
 set -e
 
-if ! [ -d "/Applications/Xcode.app" ]; then
-    echo "Please install Xcode from the App Store before continuing."
+if ! xcode-select -p > /dev/null 2>&1; then
+    echo "Please install Xcode command line tools before continuing."
+    echo "You can install them by running: xcode-select --install"
     exit 1
 fi
 
-sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 # Mimic actually launching XCode, which performs some necessary set-up of the
 # development environment.
 xcodebuild -runFirstLaunch
