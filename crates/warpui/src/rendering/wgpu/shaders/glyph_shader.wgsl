@@ -35,6 +35,12 @@ fn enhance_contrast(alpha: f32, k: f32) -> f32 {
 // and 256/255×4 for indices 1,3.
 const GAMMA_RATIOS: vec4<f32> = vec4<f32>(0.148, -0.895, 1.476, -0.325);
 
+// Contrast factor magnitudes the two paths use as input to enhance_contrast,
+// modulated per-glyph by light_on_dark_contrast below. Values match Zed's
+// gpui defaults; commit Q makes them configurable through a uniform.
+const GRAYSCALE_ENHANCED_CONTRAST: f32 = 1.0;
+const SUBPIXEL_ENHANCED_CONTRAST: f32 = 0.5;
+
 fn apply_alpha_correction(a: f32, b: f32, g: vec4<f32>) -> f32 {
     let brightness_adjustment = g.x * b + g.y;
     let correction = brightness_adjustment * a + (g.z * b + g.w);
@@ -55,6 +61,17 @@ fn apply_alpha_correction3(a: vec3<f32>, b: vec3<f32>, g: vec4<f32>) -> vec3<f32
     let brightness_adjustment = g.x * b + g.y;
     let correction = brightness_adjustment * a + (g.z * b + g.w);
     return a + a * (1.0 - a) * correction;
+}
+
+// Brightness-aware modulation of the contrast factor. Despite the name,
+// this returns ZERO contrast boost for bright (light) text on dark
+// backgrounds because such text already has high contrast and additional
+// boost only thickens it. Mid-gray and darker text gets the full factor.
+// Adapted from Zed's gpui apply_contrast_and_gamma_correction.
+fn light_on_dark_contrast(enhanced_contrast: f32, color: vec3<f32>) -> f32 {
+    let brightness = glyph_color_brightness(color);
+    let multiplier = saturate(4.0 * (0.75 - brightness));
+    return enhanced_contrast * multiplier;
 }
 
 struct Uniforms {
@@ -147,11 +164,16 @@ fn fs_main(in: GlyphVertexShaderOutput) -> @location(0) vec4<f32> {
     // Use the input color for non-emoji, and the sampled color for emoji.
     var color: vec4<f32> = mix(in.color, tex_color, f32(in.is_emoji));
 
-    // Stage 1: brightness-scaled contrast boost (Windows Terminal formula).
-    let k = glyph_color_brightness(color.rgb);
-    let contrasted = enhance_contrast(tex_color.r, k);
-    // Stage 2: gamma-incorrect-target polynomial correction (ClearType / Zed formula).
-    let gamma_corrected = apply_alpha_correction(contrasted, k, GAMMA_RATIOS);
+    // Stage 1: brightness-modulated contrast boost. light_on_dark_contrast
+    // returns zero for bright text on dark backgrounds (where additional
+    // boost only over-thickens), and the full factor for darker text.
+    let enhanced_contrast = light_on_dark_contrast(GRAYSCALE_ENHANCED_CONTRAST, color.rgb);
+    let contrasted = enhance_contrast(tex_color.r, enhanced_contrast);
+    // Stage 2: gamma-incorrect-target polynomial correction. Brightness here
+    // is the scalar luminance of the text colour, used both to gate Stage 1
+    // above and to weight the polynomial below.
+    let brightness = glyph_color_brightness(color.rgb);
+    let gamma_corrected = apply_alpha_correction(contrasted, brightness, GAMMA_RATIOS);
     color.a *= max(gamma_corrected, f32(in.is_emoji));
 
     // Apply the fade.

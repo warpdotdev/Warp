@@ -31,11 +31,15 @@ fn fs_subpixel_main(in: GlyphVertexShaderOutput) -> SubpixelFragmentOutput {
     let coverage_bgr = textureSample(glyphAtlasTexture, glyphAtlasSampler, in.texture_coordinate).rgb;
     let coverage = coverage_bgr.bgr;
 
-    // Stage 1: brightness-scaled contrast boost, applied per-channel. The
-    // scalar k is the perceived luminance of the text colour and matches
-    // the mono path so light-on-dark glyphs get the same fattening effect.
-    let k = glyph_color_brightness(in.color.rgb);
-    let contrasted = enhance_contrast3(coverage, k);
+    // Stage 1: brightness-modulated contrast boost. The subpixel path uses
+    // a smaller base factor than the grayscale path because per-channel
+    // coverage already provides perceptual sharpness; an additional full
+    // contrast boost on top of that pushes mid-coverage values toward 1.0
+    // and reverses the subpixel fringe gradient, producing heavier and
+    // softer text. light_on_dark_contrast further drops the factor to zero
+    // for bright-on-dark, so white terminal text gets no Stage 1 boost.
+    let enhanced_contrast = light_on_dark_contrast(SUBPIXEL_ENHANCED_CONTRAST, in.color.rgb);
+    let contrasted = enhance_contrast3(coverage, enhanced_contrast);
 
     // Stage 2: gamma-incorrect-target polynomial correction. The brightness
     // argument is the text colour itself (vec3) so each channel corrects
