@@ -36,6 +36,7 @@ if (Test-Path $vswhere) {
 if (-not $haveMsvcBuildTools) {
     Write-Output 'Installing Visual Studio Build Tools (MSVC + Windows SDK)...'
     winget install -e --id Microsoft.VisualStudio.2022.BuildTools `
+        --accept-package-agreements --accept-source-agreements `
         --override '--passive --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --includeRecommended'
 }
 
