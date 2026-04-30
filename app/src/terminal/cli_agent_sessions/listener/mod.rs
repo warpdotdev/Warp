@@ -45,6 +45,7 @@ pub fn is_agent_supported(agent: &CLIAgent) -> bool {
             | CLIAgent::OpenCode
             | CLIAgent::Codex
             | CLIAgent::Gemini
+            | CLIAgent::Pi
             | CLIAgent::Auggie
     )
 }
@@ -52,18 +53,20 @@ pub fn is_agent_supported(agent: &CLIAgent) -> bool {
 /// Creates the appropriate handler for the given CLI agent.
 fn create_handler(agent: &CLIAgent) -> Option<Box<dyn CLIAgentSessionHandler>> {
     match agent {
-        // Auggie is supported via the community-maintained auggie-warp plugin
-        // (https://github.com/augmentmoogi/auggie-warp), which emits the same
-        // structured OSC 777 events as the first-party Claude/OpenCode/Gemini
-        // plugins. We don't ship an install flow for it — we just listen.
-        CLIAgent::Claude | CLIAgent::OpenCode | CLIAgent::Gemini | CLIAgent::Auggie => {
-            Some(Box::new(DefaultSessionListener))
-        }
+        // Pi and Auggie are supported via community-maintained plugins, such as
+        // auggie-warp (https://github.com/augmentmoogi/auggie-warp), which emit
+        // the same structured OSC 777 events as the first-party
+        // Claude/OpenCode/Gemini plugins. We don't ship install flows for them —
+        // we just listen.
+        CLIAgent::Claude
+        | CLIAgent::OpenCode
+        | CLIAgent::Gemini
+        | CLIAgent::Pi
+        | CLIAgent::Auggie => Some(Box::new(DefaultSessionListener)),
         CLIAgent::Codex => Some(Box::new(CodexSessionHandler)),
         CLIAgent::Amp
         | CLIAgent::Droid
         | CLIAgent::Copilot
-        | CLIAgent::Pi
         | CLIAgent::CursorCli
         | CLIAgent::Goose
         | CLIAgent::Unknown => None,
@@ -256,6 +259,31 @@ mod tests {
     #[test]
     fn auggie_uses_default_handler_with_rich_status() {
         assert!(agent_supports_rich_status(&CLIAgent::Auggie));
+    }
+
+    #[test]
+    fn pi_is_supported() {
+        assert!(is_agent_supported(&CLIAgent::Pi));
+    }
+
+    #[test]
+    fn pi_uses_default_handler_with_rich_status() {
+        assert!(agent_supports_rich_status(&CLIAgent::Pi));
+    }
+
+    #[test]
+    fn pi_default_handler_forwards_stop() {
+        let mut handler = DefaultSessionListener;
+        let event = CLIAgentEvent {
+            v: 1,
+            agent: CLIAgent::Pi,
+            event: CLIAgentEventType::Stop,
+            session_id: None,
+            cwd: None,
+            project: None,
+            payload: CLIAgentEventPayload::default(),
+        };
+        assert!(handler.handle_event(event).is_some());
     }
 
     #[test]
