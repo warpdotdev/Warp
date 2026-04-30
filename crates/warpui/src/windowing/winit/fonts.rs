@@ -880,7 +880,15 @@ impl platform::FontDB for FontDB {
         lcd_subpixel: bool,
         glyph_config: &GlyphConfig,
     ) -> Result<RectI> {
-        Self::glyph_raster_bounds(self, font_id, size, glyph_id, scale, lcd_subpixel, glyph_config)
+        Self::glyph_raster_bounds(
+            self,
+            font_id,
+            size,
+            glyph_id,
+            scale,
+            lcd_subpixel,
+            glyph_config,
+        )
     }
 
     #[cfg(feature = "fontkit-rasterizer")]

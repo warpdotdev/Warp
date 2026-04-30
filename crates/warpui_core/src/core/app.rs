@@ -934,9 +934,7 @@ impl AppContext {
         // Merge in GPU capability flags learned at window-renderer init.
         // Stored separately because the on_gpu_device_info_reported
         // callback that sets them runs without a mutable AppContext borrow.
-        config.lcd_subpixel_supported = self
-            .gpu_supports_lcd_subpixel
-            .load(Ordering::Acquire);
+        config.lcd_subpixel_supported = self.gpu_supports_lcd_subpixel.load(Ordering::Acquire);
         config
     }
 

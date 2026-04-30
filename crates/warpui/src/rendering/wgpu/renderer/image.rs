@@ -1,9 +1,9 @@
 use crate::image_cache::StaticImage;
-use pathfinder_geometry::rect::RectF;
 use crate::rendering::texture_cache::{TextureCache, TextureCacheIndex};
 use crate::rendering::wgpu::{resources, shader_types};
 use crate::scene::Layer;
 use crate::Scene;
+use pathfinder_geometry::rect::RectF;
 use std::borrow::Cow;
 use std::sync::{atomic::AtomicBool, Arc};
 use wgpu::util::BufferInitDescriptor;

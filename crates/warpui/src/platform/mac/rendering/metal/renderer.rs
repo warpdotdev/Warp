@@ -993,17 +993,21 @@ impl super::super::Renderer for Renderer {
             device: metal_device,
             drawable,
             drawable_size: window.physical_size(),
-            rasterize_glyph_fn:
-                &|glyph_key, scale, subpixel_alignment, lcd_subpixel, glyph_config, format| {
-                    font_cache.rasterized_glyph(
-                        glyph_key,
-                        scale,
-                        subpixel_alignment,
-                        lcd_subpixel,
-                        glyph_config,
-                        format,
-                    )
-                },
+            rasterize_glyph_fn: &|glyph_key,
+                                  scale,
+                                  subpixel_alignment,
+                                  lcd_subpixel,
+                                  glyph_config,
+                                  format| {
+                font_cache.rasterized_glyph(
+                    glyph_key,
+                    scale,
+                    subpixel_alignment,
+                    lcd_subpixel,
+                    glyph_config,
+                    format,
+                )
+            },
             glyph_raster_bounds_fn: &|glyph_key, scale, lcd_subpixel, glyph_config| {
                 font_cache.glyph_raster_bounds(glyph_key, scale, lcd_subpixel, glyph_config)
             },

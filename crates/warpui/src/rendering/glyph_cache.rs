@@ -212,7 +212,9 @@ impl<Texture> GlyphCache<Texture> {
             AtlasTextureKind::Generic
         };
 
-        let texture_offset = self.manager_for(kind).insert(rasterized_glyph.canvas.size)?;
+        let texture_offset = self
+            .manager_for(kind)
+            .insert(rasterized_glyph.canvas.size)?;
         let idx = texture_offset.texture_id.as_usize();
         let textures = self.textures_for_mut(kind);
         if idx >= textures.len() {

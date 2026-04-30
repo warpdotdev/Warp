@@ -329,8 +329,10 @@ impl Pipeline {
         // Sort by atlas kind so draw() can issue one set_pipeline per kind
         // run; HashMap iteration order would otherwise interleave kinds and
         // force redundant pipeline switches.
-        let mut entries: Vec<((AtlasTextureKind, TextureId), Vec<shaders::GlyphInstanceData>)> =
-            texture_to_glyph.into_iter().collect();
+        let mut entries: Vec<(
+            (AtlasTextureKind, TextureId),
+            Vec<shaders::GlyphInstanceData>,
+        )> = texture_to_glyph.into_iter().collect();
         entries.sort_by_key(|((kind, _), _)| *kind);
 
         let mut start_offset = per_frame_state.glyph_data.len();
