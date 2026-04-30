@@ -483,7 +483,7 @@ fn display_title_shows_response_after_permission_request_then_stop() {
         cwd: None,
         project: None,
         payload: CLIAgentEventPayload {
-            query: Some("Clean up temp files".to_string()),
+            query: None,
             response: Some("Deleted all temp files successfully".to_string()),
             ..Default::default()
         },
