@@ -2631,6 +2631,9 @@ impl Input {
         });
         if FeatureFlag::InlineHistoryMenu.is_enabled() {
             ctx.subscribe_to_view(&inline_history_menu_view, |me, _, event, ctx| {
+                if me.is_cloud_mode_input_v2_composing(ctx) {
+                    return;
+                }
                 me.handle_inline_history_menu_event(event, ctx);
             });
         }
@@ -2655,6 +2658,9 @@ impl Input {
             });
             if FeatureFlag::InlineHistoryMenu.is_enabled() {
                 ctx.subscribe_to_view(&view, |me, _, event, ctx| {
+                    if !me.is_cloud_mode_input_v2_composing(ctx) {
+                        return;
+                    }
                     me.handle_inline_history_menu_event(event, ctx);
                 });
             }
