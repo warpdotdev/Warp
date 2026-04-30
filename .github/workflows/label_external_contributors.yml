@@ -56,11 +56,13 @@ jobs:
               pr.head.repo.full_name !== pr.base.repo.full_name;
 
             // Check whether the author is a member of the warpdotdev org. The
-            // membership API requires the requester to be a member of the org;
-            // when the GITHUB_TOKEN cannot satisfy that requirement we fall back
-            // to the PR's author_association field, which GitHub computes based
-            // on the author's relationship to the repository.
-            let isOrgMember = false;
+            // membership API requires the requester to be a member of the org.
+            // When it cannot return a definitive result, fall back to the PR's
+            // author_association field, which GitHub computes based on the
+            // author's relationship to the repository.
+            let isOrgMember =
+              pr.author_association === 'MEMBER' ||
+              pr.author_association === 'OWNER';
             try {
               await github.rest.orgs.checkMembershipForUser({
                 org: 'warpdotdev',
@@ -68,17 +70,10 @@ jobs:
               });
               isOrgMember = true;
             } catch (error) {
-              if (error.status === 404) {
-                isOrgMember = false;
-              } else {
-                console.log(
-                  `checkMembershipForUser failed (${error.status}); ` +
-                    `falling back to author_association="${pr.author_association}"`,
-                );
-                isOrgMember =
-                  pr.author_association === 'MEMBER' ||
-                  pr.author_association === 'OWNER';
-              }
+              console.log(
+                `checkMembershipForUser failed (${error.status}); ` +
+                  `falling back to author_association="${pr.author_association}"`,
+              );
             }
 
             const isExternal = !isOrgMember || isFork;
