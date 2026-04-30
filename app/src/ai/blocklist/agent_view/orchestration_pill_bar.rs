@@ -11,13 +11,13 @@ use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 use pathfinder_color::ColorU;
-use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::theme::Fill;
 use warp_core::ui::{appearance::Appearance, theme::WarpTheme};
 use warpui::elements::{
-    ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element,
+    AnchorPair, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element,
     Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
-    ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack, Text,
+    OffsetType, ParentElement, PositionedElementOffsetBounds, PositioningAxis, Radius,
+    SavePosition, Stack, Text, XAxisAnchor, YAxisAnchor,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
@@ -118,6 +118,14 @@ const OVERFLOW_MENU_WIDTH: f32 = 200.;
 /// Size in logical pixels of the 3-dot button at the trailing edge of each
 /// child pill.
 const OVERFLOW_BUTTON_SIZE: f32 = 16.;
+
+/// Returns the saved-position id used to anchor the 3-dot menu to a
+/// specific child pill's overflow button. The id is global within the
+/// position cache, so we include the conversation id to keep it unique
+/// across multiple sibling pills.
+fn overflow_button_position_id(conversation_id: AIConversationId) -> String {
+    format!("orchestration-pill-overflow-{conversation_id}")
+}
 
 /// Typed actions dispatched by the pill bar's own widgets (the 3-dot
 /// overflow button and the items in its dropdown menu). Each action carries
@@ -592,22 +600,34 @@ impl View for OrchestrationPillBar {
             .with_background(theme.surface_overlay_1())
             .finish();
 
-        // When the 3-dot menu is open, overlay it beneath the pill bar
-        // anchored to the bar's bottom-left. Precise alignment under the
-        // specific clicked pill would require capturing per-pill layout
-        // bounds, which we don't have plumbed through yet; landing the menu
-        // beneath the bar keeps interaction working and the menu visible
-        // until that polish lands. Tracked as a follow-up.
-        if self.menu_open_for.is_some() {
+        // When the 3-dot menu is open, overlay it directly beneath the
+        // clicked pill's overflow button. We anchor to the saved position id
+        // associated with that button (`overflow_button_position_id(id)`,
+        // registered via `SavePosition` in `render_overflow_button`), aligning
+        // the menu's top-right corner to the button's bottom-right so the menu
+        // tucks neatly under the trailing edge of the pill, regardless of how
+        // far across the bar that pill happens to be rendered.
+        if let Some(target_id) = self.menu_open_for {
             let mut stack = Stack::new();
             stack.add_child(bar);
+            let position_id = overflow_button_position_id(target_id);
             stack.add_positioned_overlay_child(
                 ChildView::new(&self.menu).finish(),
-                OffsetPositioning::offset_from_parent(
-                    vec2f(12., 4.),
-                    ParentOffsetBounds::WindowByPosition,
-                    ParentAnchor::BottomLeft,
-                    ChildAnchor::TopLeft,
+                OffsetPositioning::from_axes(
+                    PositioningAxis::relative_to_stack_child(
+                        &position_id,
+                        PositionedElementOffsetBounds::WindowByPosition,
+                        OffsetType::Pixel(0.),
+                        AnchorPair::new(XAxisAnchor::Right, XAxisAnchor::Right),
+                    )
+                    .with_conditional_anchor(),
+                    PositioningAxis::relative_to_stack_child(
+                        &position_id,
+                        PositionedElementOffsetBounds::WindowByPosition,
+                        OffsetType::Pixel(4.),
+                        AnchorPair::new(YAxisAnchor::Bottom, YAxisAnchor::Top),
+                    )
+                    .with_conditional_anchor(),
                 ),
             );
             stack.finish()
@@ -771,13 +791,18 @@ fn render_pill(
 /// that child id and toggles `menu_open_for` on. We use a separate inner
 /// `Hoverable` so the button has its own hover highlight independent of the
 /// surrounding pill body.
+///
+/// The button is wrapped in a `SavePosition` so the open menu can anchor
+/// itself directly beneath this specific pill's button (see
+/// `View::render`); without the saved position, the menu would have to fall
+/// back to a bar-relative offset which doesn't track which pill is active.
 fn render_overflow_button(
     mouse_state: MouseStateHandle,
     conversation_id: AIConversationId,
     text_color: Fill,
     theme: &WarpTheme,
 ) -> Box<dyn Element> {
-    Hoverable::new(mouse_state, move |hover_state| {
+    let button = Hoverable::new(mouse_state, move |hover_state| {
         let bg = if hover_state.is_hovered() || hover_state.is_clicked() {
             Some(internal_colors::fg_overlay_1(theme))
         } else {
@@ -808,7 +833,12 @@ fn render_overflow_button(
         // public Hoverable API today.)
         ctx.dispatch_typed_action(OrchestrationPillBarAction::OpenMenu(conversation_id));
     })
-    .finish()
+    .finish();
+
+    // Cache this button's painted rect under a stable id so the open menu
+    // (rendered as a positioned overlay sibling of the bar in `View::render`)
+    // can anchor relative to it.
+    SavePosition::new(button, &overflow_button_position_id(conversation_id)).finish()
 }
 
 /// Renders the avatar circle as a colored disc with a centered glyph (letter
