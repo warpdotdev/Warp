@@ -1385,8 +1385,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - arch: x64
-            runner: windows-latest-large
+          # - arch: x64
+          #   runner: windows-latest-large
           - arch: arm64
             runner: windows-arm-latest-large
     env:
