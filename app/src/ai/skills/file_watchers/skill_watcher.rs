@@ -9,7 +9,8 @@ use super::{
     },
     utils::{
         find_skill_directories_in_tree, is_home_provider_path, is_home_skill_directory,
-        is_skill_file, read_skills_from_directories,
+        is_skill_file, probe_lazy_subtrees, read_skills_from_directories,
+        scan_skill_directories_in_tree,
     },
 };
 use watcher::{BulkFilesystemWatcherEvent, HomeDirectoryWatcher, HomeDirectoryWatcherEvent};
@@ -257,13 +258,27 @@ impl SkillWatcher {
     /// This is called when RepositoryMetadataEvent::RepositoryUpdated fires.
     fn scan_repository_for_skills(&mut self, repo_path: &Path, ctx: &mut ModelContext<Self>) {
         let repo_metadata = RepoMetadataModel::as_ref(ctx);
-
-        // Find all skill directories in the tree
-        let skill_dirs = find_skill_directories_in_tree(repo_path, repo_metadata, ctx);
-        if skill_dirs.is_empty() {
+        let scan = scan_skill_directories_in_tree(repo_path, repo_metadata, ctx);
+        if scan.found.is_empty() && scan.lazy_dirs.is_empty() {
             return;
         }
-        Self::spawn_read_skills_from_directories(skill_dirs, ctx);
+        let found = scan.found;
+        let lazy_dirs = scan.lazy_dirs;
+        ctx.spawn(
+            async move {
+                let mut skill_dirs = found;
+                skill_dirs.extend(probe_lazy_subtrees(lazy_dirs));
+                read_skills_from_directories(skill_dirs)
+            },
+            move |me, skills, ctx| {
+                if !skills.is_empty() {
+                    me.register_symlink_watches(&skills, ctx);
+                    let _ = me
+                        .watcher_event_tx
+                        .try_send(SkillWatcherEvent::SkillsAdded { skills });
+                }
+            },
+        );
     }
 
     fn spawn_read_skills_from_directories(
@@ -471,17 +486,19 @@ impl SkillWatcher {
         let mut queued_project_directory_creations_to_requeue: Vec<QueuedProjectDirectoryCreation> =
             Vec::new();
         let mut skill_dirs_to_read: HashSet<PathBuf> = HashSet::new();
+        let mut all_lazy_dirs: Vec<PathBuf> = Vec::new();
 
         for (repo_path, queued_project_directory_creations) in queued_by_repo_path {
-            // Find all skill directories in the repository
             let repo_metadata = RepoMetadataModel::as_ref(ctx);
-            let skill_dirs = find_skill_directories_in_tree(&repo_path, repo_metadata, ctx);
-            if skill_dirs.is_empty() {
+            let scan = scan_skill_directories_in_tree(&repo_path, repo_metadata, ctx);
+            if scan.found.is_empty() && scan.lazy_dirs.is_empty() {
                 continue;
             }
+            all_lazy_dirs.extend(scan.lazy_dirs);
 
             for queued_project_directory_creation in queued_project_directory_creations {
-                let relevant_skill_dirs = skill_dirs
+                let relevant_skill_dirs = scan
+                    .found
                     .iter()
                     .filter(|skill_dir| {
                         // If the skill_dir is the child of the new directory, we need to read it again
@@ -511,7 +528,11 @@ impl SkillWatcher {
         }
 
         ctx.spawn(
-            async move { read_skills_from_directories(skill_dirs_to_read) },
+            async move {
+                let mut dirs_to_read: Vec<PathBuf> = skill_dirs_to_read.into_iter().collect();
+                dirs_to_read.extend(probe_lazy_subtrees(all_lazy_dirs));
+                read_skills_from_directories(dirs_to_read)
+            },
             move |me, skills, ctx| {
                 if !skills.is_empty() {
                     me.register_symlink_watches(&skills, ctx);

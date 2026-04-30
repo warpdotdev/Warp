@@ -17,65 +17,35 @@ use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
 /// Max directory depth walked below a lazy node when searching for provider skill dirs.
 const MAX_LAZY_WALK_DEPTH: usize = 3;
 
-/// Walks `dir` up to `MAX_LAZY_WALK_DEPTH` levels deep, probing each level for
-/// provider skill directories. `.git` entries are pruned to avoid crossing nested
-/// repository boundaries.
-fn probe_lazy_subtree(
-    dir: &Path,
-    depth: usize,
-    result_set: &mut HashSet<PathBuf>,
-    result: &mut Vec<PathBuf>,
-) {
-    for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
-        let skills_path = dir.join(&provider.skills_path);
-        if !result_set.contains(&skills_path) && skills_path.is_dir() {
-            result_set.insert(skills_path.clone());
-            result.push(skills_path);
-        }
-    }
-
-    if depth >= MAX_LAZY_WALK_DEPTH {
-        return;
-    }
-
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        // Prune .git to avoid crossing nested repository boundaries.
-        if path.file_name().and_then(|n| n.to_str()) == Some(".git") {
-            continue;
-        }
-        probe_lazy_subtree(&path, depth + 1, result_set, result);
-    }
+/// Result of the fast (in-memory) phase of skill directory discovery.
+pub struct SkillDirectoryScan {
+    /// Skill directories found by tree traversal — safe to use on the model path.
+    pub found: Vec<PathBuf>,
+    /// Lazy-loaded dirs whose subtrees need recursive filesystem probing (Case b).
+    /// Pass these to [`probe_lazy_subtrees`] off the model path.
+    pub lazy_dirs: Vec<PathBuf>,
 }
 
-/// Returns all skill directories in the repo tree (e.g. `/repo/.agents/skills/`).
+/// Fast, in-memory phase: queries the repo tree and returns discovered skill dirs
+/// plus any lazy ancestor dirs that still need probing.
 ///
-/// Uses two passes to handle gitignored provider directories:
-///
-/// - **Pass 1:** collect fully-loaded dirs ending with a known provider skills path.
-/// - **Pass 2:** collect lazy-loaded dirs (`loaded: false`) and probe with `is_dir()`:
-///   - *(a)* lazy dir is a provider root (`.agents`, `.claude`, …) → probe `{dir}/skills`.
-///   - *(b)* lazy dir is an ancestor of a provider root → walk up to
-///     `MAX_LAZY_WALK_DEPTH` levels, probing for provider paths at each level.
-///
-/// Pass 2 scope is bounded by the tree: lazy dirs only appear as children of indexed
-/// parents, so the walk starts from directories the indexer already encountered.
-pub fn find_skill_directories_in_tree(
+/// - **Pass 1:** fully-loaded dirs whose path ends with a known provider skills suffix.
+/// - **Pass 2 Case (a):** lazy dirs named like a provider root (`.agents`, `.claude`, …)
+///   — probed inline with a single `is_dir()` since they have a known structure.
+/// - **Pass 2 Case (b):** all other lazy dirs are returned in `lazy_dirs` for the
+///   caller to probe off the model path via [`probe_lazy_subtrees`].
+pub fn scan_skill_directories_in_tree(
     repo_path: &Path,
     repo_metadata: &RepoMetadataModel,
     ctx: &AppContext,
-) -> Vec<PathBuf> {
+) -> SkillDirectoryScan {
     let Some(id) = repo_metadata::RepositoryIdentifier::try_local(repo_path) else {
-        return Vec::new();
+        return SkillDirectoryScan {
+            found: Vec::new(),
+            lazy_dirs: Vec::new(),
+        };
     };
 
-    // Provider skills paths (e.g. ".agents/skills") and root names (e.g. ".agents").
     let skill_path_suffixes: Vec<String> = SKILL_PROVIDER_DEFINITIONS
         .iter()
         .map(|p| p.skills_path.to_string_lossy().into_owned())
@@ -103,7 +73,7 @@ pub fn find_skill_directories_in_tree(
             .any(|suffix| dir.path.ends_with(suffix.as_str()))
     });
 
-    let mut result: Vec<PathBuf> = repo_metadata
+    let mut found: Vec<PathBuf> = repo_metadata
         .get_repo_contents(&id, args, ctx)
         .unwrap_or_default()
         .into_iter()
@@ -113,8 +83,7 @@ pub fn find_skill_directories_in_tree(
         })
         .collect();
 
-    // Pass 2: probe lazy-loaded (gitignored) dirs.
-    let mut result_set: HashSet<PathBuf> = result.iter().cloned().collect();
+    // Pass 2: collect all lazy-loaded dirs.
     let args_lazy = GetContentsArgs::default()
         .include_ignored()
         .with_filter(move |content| {
@@ -124,7 +93,7 @@ pub fn find_skill_directories_in_tree(
             !dir.loaded
         });
 
-    let lazy_dirs: Vec<PathBuf> = repo_metadata
+    let all_lazy: Vec<PathBuf> = repo_metadata
         .get_repo_contents(&id, args_lazy, ctx)
         .unwrap_or_default()
         .into_iter()
@@ -134,23 +103,85 @@ pub fn find_skill_directories_in_tree(
         })
         .collect();
 
-    for lazy_dir in lazy_dirs {
+    let mut found_set: HashSet<PathBuf> = found.iter().cloned().collect();
+    let mut lazy_dirs: Vec<PathBuf> = Vec::new();
+
+    for lazy_dir in all_lazy {
         let dir_name = lazy_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if provider_root_names.contains(dir_name) {
-            // Case (a): lazy dir is a provider root — probe {dir}/skills.
+            // Case (a): lazy dir is a provider root — single cheap probe for {dir}/skills.
             let skills_path = lazy_dir.join("skills");
-            if !result_set.contains(&skills_path) && skills_path.is_dir() {
-                result_set.insert(skills_path.clone());
-                result.push(skills_path);
+            if !found_set.contains(&skills_path) && skills_path.is_dir() {
+                found_set.insert(skills_path.clone());
+                found.push(skills_path);
             }
         } else {
-            // Case (b): lazy dir may be an ancestor of a provider root — walk
-            // its subtree up to MAX_LAZY_WALK_DEPTH levels.
-            probe_lazy_subtree(&lazy_dir, 0, &mut result_set, &mut result);
+            // Case (b): lazy dir may be an ancestor — defer to probe_lazy_subtrees.
+            lazy_dirs.push(lazy_dir);
         }
     }
 
+    SkillDirectoryScan { found, lazy_dirs }
+}
+
+/// Walks each dir up to `MAX_LAZY_WALK_DEPTH` levels, probing for provider skill dirs.
+/// Skips subdirectories that contain a `.git` entry (nested repository roots).
+/// Intended to run off the model path (e.g. inside `ctx.spawn`).
+pub fn probe_lazy_subtrees(lazy_dirs: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+    let mut result = Vec::new();
+    let mut result_set = HashSet::new();
+    for dir in lazy_dirs {
+        probe_subtree(&dir, 0, &mut result_set, &mut result);
+    }
     result
+}
+
+fn probe_subtree(
+    dir: &Path,
+    depth: usize,
+    result_set: &mut HashSet<PathBuf>,
+    result: &mut Vec<PathBuf>,
+) {
+    for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
+        let skills_path = dir.join(&provider.skills_path);
+        if !result_set.contains(&skills_path) && skills_path.is_dir() {
+            result_set.insert(skills_path.clone());
+            result.push(skills_path);
+        }
+    }
+
+    if depth >= MAX_LAZY_WALK_DEPTH {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        // Skip nested repository roots — their skills belong to their own scan.
+        if path.join(".git").exists() {
+            continue;
+        }
+        probe_subtree(&path, depth + 1, result_set, result);
+    }
+}
+
+/// Convenience wrapper that runs both phases synchronously.
+/// Use [`scan_skill_directories_in_tree`] + [`probe_lazy_subtrees`] when calling
+/// from a model context so the filesystem walk runs off the model path.
+pub fn find_skill_directories_in_tree(
+    repo_path: &Path,
+    repo_metadata: &RepoMetadataModel,
+    ctx: &AppContext,
+) -> Vec<PathBuf> {
+    let scan = scan_skill_directories_in_tree(repo_path, repo_metadata, ctx);
+    let mut found = scan.found;
+    found.extend(probe_lazy_subtrees(scan.lazy_dirs));
+    found
 }
 
 /// Reads all skills from the given skill directories.
