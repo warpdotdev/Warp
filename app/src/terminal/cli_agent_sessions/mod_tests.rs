@@ -408,3 +408,72 @@ fn session_start_without_plugin_version_leaves_none() {
     session.apply_event(&event);
     assert_eq!(session.plugin_version, None);
 }
+
+#[test]
+fn stop_event_clears_stale_permission_summary() {
+    // Regression test: after a PermissionRequest sets summary,
+    // a following Stop event must clear it so the tab title
+    // does not show stale permission-request text.
+    let mut session = CLIAgentSession {
+        agent: CLIAgent::Claude,
+        status: CLIAgentSessionStatus::InProgress,
+        session_context: CLIAgentSessionContext::default(),
+        input_state: CLIAgentInputState::Closed,
+        should_auto_toggle_input: false,
+        listener: None,
+        plugin_version: None,
+        draft_text: None,
+        remote_host: None,
+        custom_command_prefix: None,
+    };
+
+    // PermissionRequest sets summary.
+    let perm_event = CLIAgentEvent {
+        v: 1,
+        agent: CLIAgent::Claude,
+        event: CLIAgentEventType::PermissionRequest,
+        session_id: Some("abc".to_owned()),
+        cwd: Some("/tmp".to_owned()),
+        project: Some("proj".to_owned()),
+        payload: CLIAgentEventPayload {
+            summary: Some("Wants to run Bash: rm -rf /tmp".to_owned()),
+            tool_name: Some("Bash".to_owned()),
+            tool_input_preview: Some("rm -rf /tmp".to_owned()),
+            ..Default::default()
+        },
+    };
+    session.apply_event(&perm_event);
+    assert_eq!(
+        session.session_context.summary.as_deref(),
+        Some("Wants to run Bash: rm -rf /tmp")
+    );
+    assert!(matches!(
+        session.status,
+        CLIAgentSessionStatus::Blocked { .. }
+    ));
+
+    // Stop event clears summary.
+    let stop_event = CLIAgentEvent {
+        v: 1,
+        agent: CLIAgent::Claude,
+        event: CLIAgentEventType::Stop,
+        session_id: Some("abc".to_owned()),
+        cwd: Some("/tmp".to_owned()),
+        project: Some("proj".to_owned()),
+        payload: CLIAgentEventPayload {
+            query: Some("fix the bug".to_owned()),
+            response: Some("Done, all tests pass.".to_owned()),
+            ..Default::default()
+        },
+    };
+    session.apply_event(&stop_event);
+    assert_eq!(session.session_context.summary, None);
+    assert_eq!(
+        session.session_context.response.as_deref(),
+        Some("Done, all tests pass.")
+    );
+    assert!(matches!(
+        session.status,
+        CLIAgentSessionStatus::Success
+    ));
+}
