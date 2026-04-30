@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "warp_hosted"), allow(unused_imports))]
+
 use std::{result::Result as StdResult, sync::Arc};
 
 use anyhow::{anyhow, bail, Context as _, Result};
@@ -8,6 +10,7 @@ use futures::FutureExt;
 use instant::Duration;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
+#[cfg(feature = "warp_hosted")]
 use oauth2::TokenResponse;
 use thiserror::Error;
 use warp_core::errors::{AnyhowErrorExt, ErrorExt};
@@ -212,6 +215,7 @@ pub trait AuthClient: 'static + Send + Sync {
     async fn get_or_create_ambient_workload_token(&self) -> Result<Option<String>>;
 }
 
+#[cfg(feature = "warp_hosted")]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl AuthClient for ServerApi {
@@ -673,7 +677,142 @@ impl AuthClient for ServerApi {
     }
 }
 
+/// PDX-31: stub `AuthClient` implementation used when the `warp_hosted` feature
+/// is disabled. Every call returns either an offline-friendly default (e.g. an
+/// empty list, `None`, or a `NoAuth` token) or an `UnsupportedOffline` error.
+/// No network is touched and no Firebase / OAuth state is constructed.
+#[cfg(not(feature = "warp_hosted"))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+impl AuthClient for ServerApi {
+    async fn create_anonymous_user(
+        &self,
+        _referral_code: Option<String>,
+        _anonymous_user_type: AnonymousUserType,
+    ) -> Result<CreateAnonymousUserResult> {
+        Err(unsupported_offline("create_anonymous_user"))
+    }
+
+    async fn get_or_refresh_access_token(&self) -> Result<AuthToken> {
+        // No hosted backend means no bearer token. Return `NoAuth` so the
+        // request layer simply doesn't attach an Authorization header.
+        Ok(AuthToken::NoAuth)
+    }
+
+    async fn fetch_user(
+        &self,
+        _token: LoginToken,
+        _for_refresh: bool,
+    ) -> StdResult<FetchUserResult, UserAuthenticationError> {
+        Err(UserAuthenticationError::Unexpected(unsupported_offline(
+            "fetch_user",
+        )))
+    }
+
+    async fn fetch_new_custom_token(&self) -> Result<MintCustomTokenResult> {
+        Err(unsupported_offline("fetch_new_custom_token"))
+    }
+
+    fn on_custom_token_fetched(
+        &self,
+        _response: Result<MintCustomTokenResult>,
+    ) -> Result<String, MintCustomTokenError> {
+        Err(MintCustomTokenError::Unknown)
+    }
+
+    async fn fetch_user_properties<'a>(
+        &self,
+        _auth_token: Option<&'a str>,
+    ) -> Result<GqlUserOutput> {
+        Err(unsupported_offline("fetch_user_properties"))
+    }
+
+    async fn get_user_settings(&self) -> Result<Option<SyncedUserSettings>> {
+        Ok(None)
+    }
+
+    async fn get_conversation_usage_history(
+        &self,
+        _days: Option<i32>,
+        _limit: Option<i32>,
+        _last_updated_end_timestamp: Option<warp_graphql::scalars::Time>,
+    ) -> Result<Vec<ConversationUsage>> {
+        Ok(Vec::new())
+    }
+
+    async fn set_is_telemetry_enabled(&self, _value: bool) -> Result<()> {
+        Ok(())
+    }
+
+    async fn set_is_crash_reporting_enabled(&self, _value: bool) -> Result<()> {
+        Ok(())
+    }
+
+    async fn set_is_cloud_conversation_storage_enabled(&self, _value: bool) -> Result<()> {
+        Ok(())
+    }
+
+    async fn update_user_settings(
+        &self,
+        _settings_snapshot: PrivacySettingsSnapshot,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    async fn set_user_is_onboarded(&self) -> Result<bool> {
+        Ok(true)
+    }
+
+    async fn request_device_code(
+        &self,
+    ) -> StdResult<oauth2::StandardDeviceAuthorizationResponse, UserAuthenticationError> {
+        Err(UserAuthenticationError::Unexpected(unsupported_offline(
+            "request_device_code",
+        )))
+    }
+
+    async fn exchange_device_access_token(
+        &self,
+        _details: &oauth2::StandardDeviceAuthorizationResponse,
+        _timeout: Duration,
+    ) -> StdResult<FirebaseToken, UserAuthenticationError> {
+        Err(UserAuthenticationError::Unexpected(unsupported_offline(
+            "exchange_device_access_token",
+        )))
+    }
+
+    async fn list_api_keys(&self) -> Result<Vec<ApiKeyProperties>> {
+        Ok(Vec::new())
+    }
+
+    async fn create_api_key(
+        &self,
+        _name: String,
+        _team_id: Option<cynic::Id>,
+        _expires_at: Option<warp_graphql::scalars::Time>,
+    ) -> Result<GenerateApiKeyResult> {
+        Err(unsupported_offline("create_api_key"))
+    }
+
+    async fn expire_api_key(&self, _key_uid: &ApiKeyUid) -> Result<ExpireApiKeyResult> {
+        Err(unsupported_offline("expire_api_key"))
+    }
+
+    async fn get_or_create_ambient_workload_token(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+}
+
+#[cfg(not(feature = "warp_hosted"))]
+fn unsupported_offline(method: &'static str) -> anyhow::Error {
+    anyhow!(
+        "AuthClient::{} is not supported when the `warp_hosted` feature is disabled",
+        method
+    )
+}
+
 /// Exchange a long-lived token for fresh [`Credentials`].
+#[cfg(feature = "warp_hosted")]
 async fn exchange_credentials(
     client: Arc<http_client::Client>,
     token: LoginToken,
@@ -691,6 +830,7 @@ async fn exchange_credentials(
     }
 }
 
+#[cfg(feature = "warp_hosted")]
 fn fetch_auth_tokens(
     client: Arc<http_client::Client>,
     token: FirebaseToken,
@@ -743,6 +883,7 @@ fn fetch_auth_tokens(
     })
 }
 
+#[cfg(feature = "warp_hosted")]
 fn fetch_access_token_via_proxy<'a>(
     client: Arc<http_client::Client>,
     request_body: &'a [(&'a str, &'a str)],
@@ -759,6 +900,7 @@ fn fetch_access_token_via_proxy<'a>(
 }
 
 /// The [`oauth2::Client`] type, specialized to the endpoints that we require.
+#[cfg(feature = "warp_hosted")]
 pub type OAuth2Client = oauth2::basic::BasicClient<
     oauth2::EndpointNotSet, // HasAuthUrl
     oauth2::EndpointSet,    // HasDeviceAuthUrl

@@ -275,14 +275,26 @@ impl AuthView {
     }
 
     pub fn handle_login_later(&mut self, ctx: &mut ViewContext<Self>) {
-        if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled() {
+        // PDX-31: anonymous user creation requires the hosted backend. When
+        // `warp_hosted` is off we treat "log in later" as "skip login" and
+        // emit `SkippedLogin` unconditionally.
+        #[cfg(not(feature = "warp_hosted"))]
+        {
             AuthManager::handle(ctx).update(ctx, |_, ctx| {
                 ctx.emit(AuthManagerEvent::SkippedLogin);
             });
-        } else {
-            AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.create_anonymous_user(None, ctx)
-            });
+        }
+        #[cfg(feature = "warp_hosted")]
+        {
+            if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled() {
+                AuthManager::handle(ctx).update(ctx, |_, ctx| {
+                    ctx.emit(AuthManagerEvent::SkippedLogin);
+                });
+            } else {
+                AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
+                    auth_manager.create_anonymous_user(None, ctx)
+                });
+            }
         }
     }
 

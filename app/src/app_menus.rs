@@ -879,6 +879,8 @@ fn debug_menu_items() -> Vec<MenuItem> {
             None,
         )));
 
+        // PDX-31: hide the debug menu item when the hosted backend is absent.
+        #[cfg(feature = "warp_hosted")]
         debug_menu_items.push(MenuItem::Custom(CustomMenuItem::new(
             "Create anonymous user",
             move |ctx| ctx.dispatch_global_action("workspace:debug_create_anonymous_user", &()),

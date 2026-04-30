@@ -570,6 +570,11 @@ impl AuthManager {
         }
     }
 
+    /// PDX-31: gated behind `warp_hosted` because creating an anonymous Warp
+    /// account requires Warp's hosted backend (GraphQL `createAnonymousUser`
+    /// mutation + Firebase custom-token exchange). When the feature is off
+    /// callers should not invoke this method; it is compiled out entirely.
+    #[cfg(feature = "warp_hosted")]
     pub fn create_anonymous_user(
         &self,
         referral_code: Option<String>,
@@ -588,6 +593,7 @@ impl AuthManager {
         );
     }
 
+    #[cfg(feature = "warp_hosted")]
     fn on_create_anonymous_user(
         &mut self,
         response: Result<CreateAnonymousUserResult>,
