@@ -5,9 +5,8 @@
 
 set -e
 
-if ! xcode-select -p > /dev/null 2>&1; then
-    echo "Please install Xcode command line tools before continuing."
-    echo "You can install them by running: xcode-select --install"
+if ! (xcode-select -p && command -v xcodebuild) > /dev/null 2>&1; then
+    echo "Please install Xcode before continuing."
     exit 1
 fi
 
