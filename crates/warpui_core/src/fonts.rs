@@ -172,7 +172,16 @@ pub struct SubpixelAlignment(u8);
 
 impl SubpixelAlignment {
     /// The number of subdivisions to slice a pixel into.
-    const STEPS: u8 = 3;
+    ///
+    /// Four buckets give a maximum quantisation error of 0.125 px when the
+    /// quad origin is later floored, matching gpui's SUBPIXEL_VARIANTS_X.
+    /// The value used to be three; the renderer formerly compensated by
+    /// passing the bucket offset back to the quad position, but that left
+    /// quads at fractional pixels and forced Nearest sampling. With the
+    /// quad now floored at scene-build time, the quantisation step is the
+    /// only remaining horizontal positioning error and a finer grid pays
+    /// for itself in fewer atlas cache misses near bucket boundaries.
+    const STEPS: u8 = 4;
 
     /// Quantizes the horizontal component of the provided position to the
     /// nearest subpixel position, where `Self::STEPS` is the number of possible
