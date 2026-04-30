@@ -431,9 +431,7 @@ pub fn render_warping_indicator<V: View>(
 
     let appearance = Appearance::as_ref(app);
 
-    let mut buttons_row = Flex::row()
-        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_spacing(4.);
+    let mut buttons_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
     let mut has_buttons = false;
     if let Some((hide_responses_button_props, should_hide_responses)) = props.hide_responses_button
     {
@@ -473,7 +471,9 @@ pub fn render_warping_indicator<V: View>(
 
     if let Some(stop_button_props) = props.stop_button {
         has_buttons = true;
-        buttons_row.add_child(render_stop_button(stop_button_props, appearance));
+        buttons_row = buttons_row
+            .with_child(render_stop_button(stop_button_props, appearance))
+            .with_spacing(4.);
     }
 
     let warping_indicator_text = if !should_render_waiting_icon {
