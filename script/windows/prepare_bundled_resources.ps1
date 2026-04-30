@@ -23,6 +23,11 @@
 #                    generated schema.
 #   CargoTarget:     (Optional) Rust target triple to pass via --target.
 #                    Should match the target used to build the main binary.
+#                    NOTE: only set this when the target can be executed on
+#                    the build host. `cargo run` will attempt to execute
+#                    the resulting binary, so this must be omitted when
+#                    cross-compiling to a target the host can't run
+#                    (e.g. aarch64-pc-windows-msvc on an x64 runner).
 
 Param(
     [Parameter(Mandatory = $true)]

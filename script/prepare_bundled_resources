@@ -29,6 +29,13 @@
 #                           --target. Should match the target used to build
 #                           the main binary, for the same reason as
 #                           cargo_features.
+#                           NOTE: only set this when the target can be
+#                           executed on the build host (e.g. when not
+#                           cross-compiling, or when running through a
+#                           supported emulator like Rosetta). `cargo run`
+#                           will attempt to execute the resulting binary,
+#                           and a binary built for an unrunnable target
+#                           will fail at this step.
 #
 # Environment variables:
 #   SKIP_SETTINGS_SCHEMA: Set to "1" to skip generating the JSON settings
