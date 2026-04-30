@@ -210,16 +210,19 @@ impl Pipeline {
             None
         };
 
-        // Nearest sampling is required for glyph atlas textures. The glyph rasterizer
-        // bakes sub-pixel X offsets into each cached bitmap (SubpixelAlignment), and the
-        // quad is snapped to the nearest physical pixel, so no GPU-side interpolation is
-        // needed or wanted. Linear sampling would blend adjacent atlas texels for any
-        // UV that lands between texel centers, which happens systematically at fractional
-        // DPI scales (1.25×, 1.5×) where sub-pixel bucket offsets don't align exactly
-        // with physical pixel boundaries — producing visibly blurry text.
+        // Linear sampling is safe now that quad origins are floored to
+        // integer physical pixels at scene-build time. With integer-aligned
+        // quads of 1:1 pixel-to-texel scale, fragment centres map exactly
+        // to texel centres; Linear and Nearest produce identical output for
+        // those samples and the GPU avoids the on-the-fly snap that Nearest
+        // requires. Linear is also more forgiving if a future change ever
+        // produces sub-texel UV coordinates inside a bucket: it degrades
+        // gracefully instead of suddenly aliasing.
+        //
+        // This matches gpui's atlas_sampler in Zed.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            mag_filter: FilterMode::Nearest,
-            min_filter: FilterMode::Nearest,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
             ..Default::default()
         });
 
