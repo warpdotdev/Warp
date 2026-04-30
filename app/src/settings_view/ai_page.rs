@@ -6275,6 +6275,10 @@ struct ApiKeysWidget {
     openai_api_key_editor: ViewHandle<EditorView>,
     anthropic_api_key_editor: ViewHandle<EditorView>,
     google_api_key_editor: ViewHandle<EditorView>,
+    open_router_api_key_editor: ViewHandle<EditorView>,
+    minimax_api_key_editor: ViewHandle<EditorView>,
+    moonshot_api_key_editor: ViewHandle<EditorView>,
+    zai_api_key_editor: ViewHandle<EditorView>,
 
     can_use_warp_credits_with_byok: SwitchStateHandle,
     upgrade_highlight_index: HighlightedHyperlink,
@@ -6291,7 +6295,10 @@ impl ApiKeysWidget {
             openai: openai_key,
             anthropic: anthropic_key,
             google: google_key,
-            ..
+            open_router: open_router_key,
+            minimax: minimax_key,
+            moonshot: moonshot_key,
+            zai: zai_key,
         } = ApiKeyManager::as_ref(ctx).keys().clone();
 
         // A helper macro to create and configure an API key editor.  This avoids a lot
@@ -6378,11 +6385,39 @@ impl ApiKeysWidget {
             set_google_key,
             "AIzaSy..."
         );
+        create_api_key_editor!(
+            open_router_api_key_editor,
+            open_router_key,
+            set_open_router_key,
+            "sk-or-..."
+        );
+        create_api_key_editor!(
+            minimax_api_key_editor,
+            minimax_key,
+            set_minimax_key,
+            "..."
+        );
+        create_api_key_editor!(
+            moonshot_api_key_editor,
+            moonshot_key,
+            set_moonshot_key,
+            "..."
+        );
+        create_api_key_editor!(
+            zai_api_key_editor,
+            zai_key,
+            set_zai_key,
+            "..."
+        );
 
         Self {
             openai_api_key_editor,
             anthropic_api_key_editor,
             google_api_key_editor,
+            open_router_api_key_editor,
+            minimax_api_key_editor,
+            moonshot_api_key_editor,
+            zai_api_key_editor,
 
             can_use_warp_credits_with_byok: Default::default(),
             upgrade_highlight_index: Default::default(),
@@ -6469,6 +6504,34 @@ impl ApiKeysWidget {
             appearance,
             "Google API Key",
             self.google_api_key_editor.clone(),
+            is_enabled,
+            app,
+        ));
+        column.add_child(render_api_key_input(
+            appearance,
+            "OpenRouter API Key",
+            self.open_router_api_key_editor.clone(),
+            is_enabled,
+            app,
+        ));
+        column.add_child(render_api_key_input(
+            appearance,
+            "MiniMax API Key",
+            self.minimax_api_key_editor.clone(),
+            is_enabled,
+            app,
+        ));
+        column.add_child(render_api_key_input(
+            appearance,
+            "Moonshot API Key",
+            self.moonshot_api_key_editor.clone(),
+            is_enabled,
+            app,
+        ));
+        column.add_child(render_api_key_input(
+            appearance,
+            "Z.ai API Key",
+            self.zai_api_key_editor.clone(),
             is_enabled,
             app,
         ));
@@ -6568,7 +6631,7 @@ impl SettingsWidget for ApiKeysWidget {
     type View = AISettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "api keys bring your own byo openai anthropic google claude gemini gpt"
+        "api keys bring your own byo openai anthropic google claude gemini gpt openrouter minimax moonshot zai zhipu"
     }
 
     fn render(

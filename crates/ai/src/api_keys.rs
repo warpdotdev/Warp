@@ -22,6 +22,9 @@ pub struct ApiKeys {
     pub anthropic: Option<String>,
     pub openai: Option<String>,
     pub open_router: Option<String>,
+    pub minimax: Option<String>,
+    pub moonshot: Option<String>,
+    pub zai: Option<String>,
 }
 
 impl ApiKeys {
@@ -30,6 +33,9 @@ impl ApiKeys {
             || self.anthropic.is_some()
             || self.google.is_some()
             || self.open_router.is_some()
+            || self.minimax.is_some()
+            || self.moonshot.is_some()
+            || self.zai.is_some()
     }
 }
 
@@ -93,6 +99,24 @@ impl ApiKeyManager {
         self.write_keys_to_secure_storage(ctx);
     }
 
+    pub fn set_minimax_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.minimax = key;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn set_moonshot_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.moonshot = key;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn set_zai_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.zai = key;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
     pub fn set_aws_credentials_state(
         &mut self,
         state: AwsCredentialsState,
@@ -136,6 +160,20 @@ impl ApiKeyManager {
             .unwrap_or_default();
         let open_router = include_byo_keys
             .then(|| self.keys.open_router.clone())
+            .flatten()
+            .unwrap_or_default();
+        // TODO: Wire minimax, moonshot, and zai keys into the protobuf request
+        // once warp-proto-apis adds support for these providers.
+        let _minimax = include_byo_keys
+            .then(|| self.keys.minimax.clone())
+            .flatten()
+            .unwrap_or_default();
+        let _moonshot = include_byo_keys
+            .then(|| self.keys.moonshot.clone())
+            .flatten()
+            .unwrap_or_default();
+        let _zai = include_byo_keys
+            .then(|| self.keys.zai.clone())
             .flatten()
             .unwrap_or_default();
         // Also include credentials when running with OIDC-managed Bedrock inference, regardless

@@ -2193,10 +2193,17 @@ impl From<warp_graphql::queries::get_feature_model_choices::LlmProvider> for LLM
                 LLMProvider::Unknown
             }
             warp_graphql::queries::get_feature_model_choices::LlmProvider::Other(value) => {
-                report_error!(anyhow!(
-                    "Invalid LlmProvider '{value}'. Make sure to update client GraphQL types!"
-                ));
-                LLMProvider::Unknown
+                match value.as_str() {
+                    "minimax" => LLMProvider::MiniMax,
+                    "moonshot" => LLMProvider::Moonshot,
+                    "zai" => LLMProvider::Zai,
+                    _ => {
+                        report_error!(anyhow!(
+                            "Invalid LlmProvider '{value}'. Make sure to update client GraphQL types!"
+                        ));
+                        LLMProvider::Unknown
+                    }
+                }
             }
         }
     }
@@ -2211,10 +2218,17 @@ impl From<warp_graphql::workspace::LlmProvider> for LLMProvider {
             warp_graphql::workspace::LlmProvider::Xai => LLMProvider::Xai,
             warp_graphql::workspace::LlmProvider::Unknown => LLMProvider::Unknown,
             warp_graphql::workspace::LlmProvider::Other(value) => {
-                report_error!(anyhow!(
-                    "Invalid LlmProvider '{value}'. Make sure to update client GraphQL types!"
-                ));
-                LLMProvider::Unknown
+                match value.as_str() {
+                    "minimax" => LLMProvider::MiniMax,
+                    "moonshot" => LLMProvider::Moonshot,
+                    "zai" => LLMProvider::Zai,
+                    _ => {
+                        report_error!(anyhow!(
+                            "Invalid LlmProvider '{value}'. Make sure to update client GraphQL types!"
+                        ));
+                        LLMProvider::Unknown
+                    }
+                }
             }
         }
     }
