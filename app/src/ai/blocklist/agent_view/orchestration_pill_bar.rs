@@ -1157,12 +1157,17 @@ fn render_pill(
     // `label` into the closure by value rather than cloning it on every
     // build.
     let pill_body = Hoverable::new(mouse_state, move |hover_state| {
-        let (background, text_color) = if is_selected || menu_is_open_for_this {
+        // Highlight the pill only when it's the currently active
+        // conversation. Opening the 3-dot menu on a *non-active* pill
+        // should not change that pill's appearance — the menu itself is
+        // a separate overlay and the user expects only the truly
+        // selected agent's pill to read as selected.
+        let (background, text_color) = if is_selected {
             (
                 theme.foreground().into_solid(),
                 theme.background().into_solid(),
             )
-        } else if hover_state.is_hovered() || hover_state.is_clicked() {
+        } else if hover_state.is_hovered() || hover_state.is_clicked() || menu_is_open_for_this {
             (
                 warp_core::ui::theme::color::internal_colors::neutral_3(theme),
                 warp_core::ui::theme::color::internal_colors::text_main(theme, theme.background()),
@@ -1174,17 +1179,23 @@ fn render_pill(
             )
         };
 
-        // When the 3-dot button is overlaying the trailing edge of the
-        // pill on hover, shrink the label's max width by the button's
-        // footprint so the ellipsis truncates *before* the dots rather
-        // than running underneath them. At rest the label gets the full
-        // budget and the pill keeps its compact width.
-        let show_dots = show_overflow_button && (hover_state.is_hovered() || menu_is_open_for_this);
-        let label_max_width = if show_dots {
+        // Reserve room for the 3-dot button on every child pill, even
+        // at rest. Switching label_max_width based on hover would cause
+        // the pill to *shrink* when the dots appear (the label would
+        // suddenly clip earlier, which propagates outward through Min
+        // sizing), making sibling pills shift. By always using the
+        // shorter budget for child pills we get a stable pill width
+        // independent of hover state: short labels are well under either
+        // budget so they don't grow the pill, and labels near the limit
+        // always clip to the same width so the dots overlay never
+        // overlaps text. Orchestrator pills don't host a 3-dot button
+        // so they keep the full label budget.
+        let label_max_width = if show_overflow_button {
             (PILL_LABEL_MAX_WIDTH - OVERFLOW_BUTTON_SIZE - 2.).max(0.)
         } else {
             PILL_LABEL_MAX_WIDTH
         };
+        let show_dots = show_overflow_button && (hover_state.is_hovered() || menu_is_open_for_this);
 
         let label_text = Text::new(
             label,
