@@ -236,19 +236,19 @@ fn separator_byte_indices_for_file_path_search(word: &str) -> Vec<i32> {
     }
     // To include any substrings starting at the beginning of the word, we
     // pretend there's a separator before the first character.
-    let mut indices = vec![-1];
+    let mut separator_byte_indices = vec![-1];
     // We use char_indices() to get byte indices of each char which are used to index the string,
     // rather than chars().enumerate() would give char indices.
     for (i, c) in word.char_indices() {
         if FILE_LINK_SEPARATORS.contains(&c) {
-            if indices.len() > MAX_SEPARATORS_PER_WORD {
+            if separator_byte_indices.len() > MAX_SEPARATORS_PER_WORD {
                 log::debug!(
                     "link_detection: skipping file path search for token with > {} separator characters",
                     MAX_SEPARATORS_PER_WORD,
                 );
                 return Vec::new();
             }
-            indices.push(i as i32);
+            separator_byte_indices.push(i as i32);
         }
     }
     // Consider trailing periods to be separators. This is because
@@ -256,12 +256,12 @@ fn separator_byte_indices_for_file_path_search(word: &str) -> Vec<i32> {
     // to detect them without including the trailing period. But trailing
     // periods can also be part of a valid file path.
     if word.ends_with('.') {
-        indices.push((word.len() - 1) as i32);
+        separator_byte_indices.push((word.len() - 1) as i32);
     }
     // To include any substrings ending at the end of the word, we pretend there's
     // a separator after the last character.
-    indices.push(word.len() as i32);
-    indices
+    separator_byte_indices.push(word.len() as i32);
+    separator_byte_indices
 }
 
 /// Given a word with no whitespace in it, returns all the possible file paths within the word
