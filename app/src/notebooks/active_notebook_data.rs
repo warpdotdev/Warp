@@ -311,7 +311,7 @@ impl ActiveNotebookData {
 
     /// Checks whether or not this notebook has edit conflicts that would
     /// results in the conflict resolution banner being shown. We check both
-    /// if a conflicting object has been recieved from the server, and that there
+    /// if a conflicting object has been received from the server, and that there
     /// are no pending content changes on the notebook.
     ///
     /// We need to check the pending content changes because of a race condition where

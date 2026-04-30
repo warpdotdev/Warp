@@ -105,7 +105,7 @@ const MINS_PER_HOUR: i64 = 60;
 /// larger numbers. Our row-coordinates in the BlockList are stored as floating-points, and the function
 /// block.find() makes comparisons between floating-point sums to find, given a BlockList row coordinate,
 /// the location within a specific BlockSection (e.g., OutputGrid, Prompt, BottomPadding, etc). Because of
-/// precision issues, row coordinates exactly on the row boundary may on occassion be arbitrarily and incorrectly
+/// precision issues, row coordinates exactly on the row boundary may on occasion be arbitrarily and incorrectly
 /// lumped into the lesser row (the one above).
 ///
 /// By adding a small decimal to the row coordinate, we offset possible downwards precision errors. The value

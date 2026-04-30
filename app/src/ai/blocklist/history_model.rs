@@ -1952,7 +1952,7 @@ impl BlocklistAIHistoryModel {
             return;
         }
 
-        // There's a slight concern here that the conversations we're preserving might not have persisted succesfully
+        // There's a slight concern here that the conversations we're preserving might not have persisted successfully
         // because of some unexpected error. Attempting to then restore these conversations would lead to unexpected behavior.
         // In the future it might be worthwhile to check that these conversations exist in the database before marking them as historical,
         // but for now this is an edge case that we don't need to worry about too much.

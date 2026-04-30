@@ -422,7 +422,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 // checks if the read file action result is completed and successful.
                                 // if successful, we have FileContext with pre-computed line counts that we use to clamp displayed file ranges to the length of the file
                                 let file_names = match agent_action_results {
-                                    // if completed and succesful, generate a user message with file info + line count
+                                    // if completed and successful, generate a user message with file info + line count
                                     Some(AIAgentActionResult {
                                         result:
                                             AIAgentActionResultType::ReadFiles(
