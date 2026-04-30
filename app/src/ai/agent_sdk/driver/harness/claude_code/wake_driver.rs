@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
 use anyhow::{Context, Result};
 use shell_words::quote as shell_quote;
 use uuid::Uuid;
@@ -21,38 +22,13 @@ use super::super::claude_transcript::{
 };
 use super::super::task_env_vars;
 use super::parent_bridge::{
-    acknowledge_parent_bridge_hook_output, ensure_parent_bridge_state_dir,
-    parent_bridge_max_context_chars, parent_bridge_root, prepare_parent_bridge_hook_output,
-    stage_parent_bridge_message, MessageBridgeMessageRecord,
+    acknowledge_parent_bridge_hook_output, ensure_parent_bridge_state_dir, parent_bridge_root,
 };
 use super::{claude_command, prepare_claude_environment_config, ClaudeHarness};
 
 const CLAUDE_WAKE_PROMPT: &str =
     "New lead-agent messages are available. Read the latest lead-agent updates and continue the task accordingly.";
 pub(super) const CLAUDE_WAKE_PROMPT_FILE_NAME: &str = "wake-turn-prompt.txt";
-
-#[derive(Debug, Clone)]
-pub(crate) struct ClaudeWakeMessage {
-    pub(crate) sequence: i64,
-    pub(crate) message_id: String,
-    pub(crate) sender_run_id: String,
-    pub(crate) subject: String,
-    pub(crate) body: String,
-    pub(crate) occurred_at: String,
-}
-
-impl From<ClaudeWakeMessage> for MessageBridgeMessageRecord {
-    fn from(value: ClaudeWakeMessage) -> Self {
-        Self {
-            sequence: value.sequence,
-            message_id: value.message_id,
-            sender_run_id: value.sender_run_id,
-            subject: value.subject,
-            body: value.body,
-            occurred_at: value.occurred_at,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub(super) struct ClaudeWakeRemoteContext {
@@ -61,14 +37,30 @@ pub(super) struct ClaudeWakeRemoteContext {
     pub(super) wake_prompt: String,
 }
 
+struct ClaudeWakeCandidate {
+    task_id: AmbientAgentTaskId,
+    parent_run_id: Option<String>,
+    working_dir: Option<PathBuf>,
+}
+
 impl ClaudeHarness {
     pub(crate) async fn wake_dormant_session(
         server_api: Arc<ServerApi>,
-        task_id: AmbientAgentTaskId,
-        parent_run_id: Option<String>,
+        conversation: AIConversation,
+        parent_conversation: Option<AIConversation>,
         working_dir: Option<PathBuf>,
-        pending_messages: Vec<ClaudeWakeMessage>,
     ) -> Result<Option<String>> {
+        let Some(candidate) =
+            Self::local_wake_candidate(&conversation, parent_conversation.as_ref(), working_dir)
+        else {
+            return Ok(None);
+        };
+        let ClaudeWakeCandidate {
+            task_id,
+            parent_run_id,
+            working_dir,
+        } = candidate;
+
         let task = server_api.get_ambient_agent_task(&task_id).await?;
         let harness = task
             .agent_config_snapshot
@@ -76,14 +68,12 @@ impl ClaudeHarness {
             .and_then(|snapshot| snapshot.harness.as_ref())
             .map(|config| config.harness_type);
         log::info!(
-            "Evaluating dormant Claude wake: task_id={task_id} pending_message_count={} server_task_state={:?} harness={harness:?}",
-            pending_messages.len(),
+            "Evaluating dormant Claude wake: task_id={task_id} server_task_state={:?} harness={harness:?}",
             task.state
         );
         if task.state != AmbientAgentTaskState::Succeeded || harness != Some(Harness::Claude) {
             log::info!(
-                "Skipping dormant Claude wake: task_id={task_id} pending_message_count={} server_task_state={:?} harness={harness:?}",
-                pending_messages.len(),
+                "Skipping dormant Claude wake: task_id={task_id} server_task_state={:?} harness={harness:?}",
                 task.state
             );
             return Ok(None);
@@ -96,7 +86,6 @@ impl ClaudeHarness {
             parent_run_id,
             working_dir,
             remote,
-            pending_messages,
         )
         .await?;
 
@@ -112,6 +101,45 @@ impl ClaudeHarness {
         log::info!("Reopened dormant Claude task before wake command: task_id={task_id}");
 
         Ok(Some(command))
+    }
+
+    fn local_wake_candidate(
+        conversation: &AIConversation,
+        parent_conversation: Option<&AIConversation>,
+        working_dir: Option<PathBuf>,
+    ) -> Option<ClaudeWakeCandidate> {
+        let conversation_id = conversation.id();
+        if !matches!(conversation.status(), ConversationStatus::Success) {
+            log::info!(
+                "Skipping dormant Claude wake candidate: conversation_id={conversation_id:?} reason=not_success status={:?}",
+                conversation.status()
+            );
+            return None;
+        }
+        if !conversation.is_child_agent_conversation() || conversation.is_remote_child() {
+            log::info!(
+                "Skipping dormant Claude wake candidate: conversation_id={conversation_id:?} reason=not_local_child is_child_agent_conversation={} is_remote_child={}",
+                conversation.is_child_agent_conversation(),
+                conversation.is_remote_child()
+            );
+            return None;
+        }
+        let Some(task_id) = conversation.task_id() else {
+            log::info!(
+                "Skipping dormant Claude wake candidate: conversation_id={conversation_id:?} reason=missing_task_id"
+            );
+            return None;
+        };
+        let parent_run_id = conversation
+            .parent_agent_id()
+            .map(str::to_owned)
+            .or_else(|| parent_conversation.and_then(AIConversation::run_id));
+
+        Some(ClaudeWakeCandidate {
+            task_id,
+            parent_run_id,
+            working_dir,
+        })
     }
 
     async fn fetch_local_wake_remote_context(
@@ -159,7 +187,6 @@ impl ClaudeHarness {
         parent_run_id: Option<String>,
         working_dir: Option<PathBuf>,
         mut remote: ClaudeWakeRemoteContext,
-        pending_messages: Vec<ClaudeWakeMessage>,
     ) -> Result<String> {
         let working_dir = working_dir.unwrap_or_else(|| remote.envelope.cwd.clone());
         prepare_claude_environment_config(&working_dir, &HashMap::new())
@@ -178,15 +205,6 @@ impl ClaudeHarness {
         ensure_parent_bridge_state_dir(&state_dir)?;
         let hydrator = MessageHydrator::for_task(server_api, task_id);
         acknowledge_parent_bridge_hook_output(&hydrator, &state_dir).await?;
-        for record in pending_messages
-            .into_iter()
-            .map(MessageBridgeMessageRecord::from)
-        {
-            stage_parent_bridge_message(&state_dir, &record)?;
-        }
-        prepare_parent_bridge_hook_output(&hydrator, &state_dir, parent_bridge_max_context_chars())
-            .await?;
-
         let prompt_path = state_dir.join(CLAUDE_WAKE_PROMPT_FILE_NAME);
         std::fs::write(&prompt_path, remote.wake_prompt.as_bytes())
             .with_context(|| format!("Failed to write {}", prompt_path.display()))?;

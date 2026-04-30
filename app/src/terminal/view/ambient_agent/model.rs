@@ -420,7 +420,9 @@ impl AmbientAgentViewModel {
         // Store the task ID for later use
         self.task_id = Some(task_id);
 
-        self.status = Status::AgentRunning;
+        if matches!(self.status, Status::NotAmbientAgent) {
+            self.status = Status::AgentRunning;
+        }
 
         // Fetch the task so we can set the correct environment (instead of defaulting to the most
         // recently-used one) and the correct harness (so non-oz viewers know to use the

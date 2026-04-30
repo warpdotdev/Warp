@@ -1,7 +1,7 @@
 use super::history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use super::orchestration_events::{OrchestrationEventService, PendingEvent, PendingEventDetail};
 use crate::ai::agent::{
-    conversation::{AIConversationId, ConversationStatus},
+    conversation::{AIAgentHarness, AIConversationId, ConversationStatus},
     ReceivedMessageInput,
 };
 use crate::ai::agent_events::{
@@ -671,9 +671,33 @@ impl OrchestrationEventStreamer {
         conversation_id: AIConversationId,
         ctx: &mut ModelContext<Self>,
     ) {
+        if self.should_skip_sse_for_dormant_local_claude_child(conversation_id, ctx) {
+            log::info!(
+                "Skipping generic SSE delivery for dormant local Claude child {conversation_id:?}; parent bridge will deliver wake events"
+            );
+            return;
+        }
         if !self.sse_connections.contains_key(&conversation_id) {
             self.start_sse_connection(conversation_id, ctx);
         }
+    }
+
+    fn should_skip_sse_for_dormant_local_claude_child(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &ModelContext<Self>,
+    ) -> bool {
+        let Some(conversation) =
+            BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id)
+        else {
+            return false;
+        };
+        conversation.is_child_agent_conversation()
+            && !conversation.is_remote_child()
+            && matches!(conversation.status(), ConversationStatus::Success)
+            && conversation
+                .server_metadata()
+                .is_some_and(|metadata| metadata.harness == AIAgentHarness::ClaudeCode)
     }
 
     /// Opens a long-lived SSE connection for `conversation_id`. Events are
@@ -840,7 +864,7 @@ impl OrchestrationEventStreamer {
         self.sse_connections.remove(&conversation_id);
 
         if self.watched_run_ids.contains_key(&conversation_id) {
-            self.start_sse_connection(conversation_id, ctx);
+            self.start_event_delivery(conversation_id, ctx);
         }
     }
 }

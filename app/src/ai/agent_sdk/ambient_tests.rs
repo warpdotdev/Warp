@@ -1,8 +1,5 @@
 //! Unit tests for ambient agent CLI argument mapping and message helpers.
-use anyhow::anyhow;
-
 use chrono::{TimeZone, Utc};
-use futures::executor::block_on;
 
 use warp_cli::json_filter::JsonOutput;
 use warp_cli::task::{
@@ -15,16 +12,6 @@ use crate::server::server_api::ai::{ArtifactType, ExecutionLocation, RunSortBy, 
 
 const TASK_ID: &str = "00000000-0000-0000-0000-000000000001";
 const OTHER_TASK_ID: &str = "00000000-0000-0000-0000-000000000002";
-
-fn send_log_context() -> SendAgentMessageLogContext {
-    SendAgentMessageLogContext {
-        sender_run_id: TASK_ID.to_string(),
-        task_id: Some(TASK_ID.to_string()),
-        target_agent_ids: vec!["parent-agent".to_string()],
-        subject: "status".to_string(),
-        body_len: 12,
-    }
-}
 
 /// A `ListTasksArgs` whose fields are all at their defaults.
 fn empty_args() -> ListTasksArgs {
@@ -226,46 +213,4 @@ fn task_id_from_oz_run_id_env_rejects_invalid_value() {
     std::env::remove_var(warp_cli::OZ_RUN_ID_ENV);
 
     assert!(err.to_string().contains("Invalid OZ_RUN_ID"));
-}
-
-#[test]
-fn send_agent_message_result_returns_success_before_timeout() {
-    let response = block_on(send_agent_message_result_with_timeout(
-        async {
-            Ok(SendAgentMessageResponse {
-                message_ids: vec!["message-1".to_string()],
-            })
-        },
-        &send_log_context(),
-        Duration::from_secs(1),
-    ))
-    .expect("send should succeed");
-
-    assert_eq!(response.message_ids, ["message-1"]);
-}
-
-#[test]
-fn send_agent_message_result_surfaces_request_errors() {
-    let err = block_on(send_agent_message_result_with_timeout(
-        async { Err::<SendAgentMessageResponse, _>(anyhow!("server rejected request")) },
-        &send_log_context(),
-        Duration::from_secs(1),
-    ))
-    .expect_err("send should fail");
-    let rendered = format!("{err:#}");
-
-    assert!(rendered.contains("Failed to send agent message"));
-    assert!(rendered.contains("server rejected request"));
-}
-
-#[test]
-fn send_agent_message_result_times_out() {
-    let err = block_on(send_agent_message_result_with_timeout(
-        futures::future::pending::<anyhow::Result<SendAgentMessageResponse>>(),
-        &send_log_context(),
-        Duration::from_millis(1),
-    ))
-    .expect_err("send should time out");
-
-    assert!(err.to_string().contains("Timed out sending agent message"));
 }

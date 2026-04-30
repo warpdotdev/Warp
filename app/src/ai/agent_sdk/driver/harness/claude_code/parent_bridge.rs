@@ -653,6 +653,11 @@ async fn read_parent_bridge_resume_cursor(
     run_id: &str,
     state_dir: &Path,
 ) -> Result<i64> {
+    // The server cursor is the durable cross-client source of truth, but the
+    // bridge also keeps a local cursor for same-machine recovery. If Warp or
+    // Claude restarts after the bridge has staged events locally but before the
+    // server cursor update is visible, the local cursor prevents replaying
+    // messages already handed to this Claude session.
     let local_sequence = read_parent_bridge_event_cursor(state_dir)?;
     let Ok(task_id) = run_id.parse() else {
         return Ok(local_sequence);

@@ -39,7 +39,7 @@ pub(crate) mod claude_transcript;
 mod codex;
 mod gemini;
 mod json_utils;
-pub(crate) use claude_code::{ClaudeHarness, ClaudeWakeMessage};
+pub(crate) use claude_code::ClaudeHarness;
 use claude_transcript::ClaudeResumeInfo;
 use codex::CodexHarness;
 use gemini::GeminiHarness;

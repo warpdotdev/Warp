@@ -68,7 +68,7 @@ use crate::ai::skills::{
 };
 
 pub(crate) use driver::harness::{
-    task_env_vars, validate_cli_installed, ClaudeHarness, ClaudeWakeMessage, ThirdPartyHarness,
+    task_env_vars, validate_cli_installed, ClaudeHarness, ThirdPartyHarness,
 };
 pub use driver::AgentDriver;
 use telemetry::CliTelemetryEvent;

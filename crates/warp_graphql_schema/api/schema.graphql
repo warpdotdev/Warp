@@ -215,6 +215,7 @@ enum AdminEnablementSetting {
 """The harness that produced an agent conversation."""
 enum AgentHarness {
   CLAUDE_CODE
+  CODEX
   GEMINI
   OZ
 }

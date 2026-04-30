@@ -1,5 +1,4 @@
 //! Commands to interact with ambient agents on Warp's platform.
-use std::future::Future;
 use std::io::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,7 +39,7 @@ use warp_cli::{
 };
 use warp_core::channel::ChannelState;
 use warp_core::features::FeatureFlag;
-use warpui::r#async::{FutureExt as _, Timer};
+use warpui::r#async::Timer;
 use warpui::{
     platform::TerminationMode, r#async::Spawnable, AppContext, ModelContext, SingletonEntity,
 };
@@ -55,7 +54,6 @@ use super::common::{parse_ambient_task_id, EnvironmentChoice, ResolveConfigurati
 
 const MAX_LINE_WIDTH: usize = 90;
 const STREAM_RETRY_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
-const SEND_AGENT_MESSAGE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Singleton model that runs async work for ambient agent CLI commands.
 struct AmbientAgentRunner;
@@ -655,6 +653,7 @@ impl AmbientAgentRunner {
                 sender_run_id: args.sender_run_id,
             };
             let log_context = SendAgentMessageLogContext::new(&request, scoped_task_id.as_ref());
+            log_context.log_start();
             let send_message = async move {
                 match scoped_task_id {
                     Some(task_id) => {
@@ -665,12 +664,18 @@ impl AmbientAgentRunner {
                     None => ai_client.send_agent_message(request).await,
                 }
             };
-            let response = send_agent_message_result_with_timeout(
-                send_message,
-                &log_context,
-                SEND_AGENT_MESSAGE_TIMEOUT,
-            )
-            .await?;
+            let response = match send_message.await {
+                Ok(response) => {
+                    log_context.log_success(&response);
+                    response
+                }
+                Err(err) => {
+                    let err = err.context(log_context.error_context());
+                    log_context.log_error(&err);
+                    eprintln!("{err:#}");
+                    return Err(err);
+                }
+            };
             print_send_message_response(&response, output_format)?;
             Ok(())
         };
@@ -1028,69 +1033,39 @@ impl SendAgentMessageLogContext {
             self.sender_run_id, self.task_id, self.target_agent_ids
         )
     }
-}
 
-async fn send_agent_message_result_with_timeout<F>(
-    send_message: F,
-    log_context: &SendAgentMessageLogContext,
-    timeout: Duration,
-) -> anyhow::Result<SendAgentMessageResponse>
-where
-    F: Future<Output = anyhow::Result<SendAgentMessageResponse>>,
-{
-    log::info!(
-        "Sending ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={}",
-        log_context.sender_run_id,
-        log_context.task_id,
-        log_context.target_agent_ids,
-        log_context.subject,
-        log_context.body_len
-    );
+    fn log_start(&self) {
+        log::info!(
+            "Sending ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={}",
+            self.sender_run_id,
+            self.task_id,
+            self.target_agent_ids,
+            self.subject,
+            self.body_len
+        );
+    }
 
-    match send_message.with_timeout(timeout).await {
-        Ok(Ok(response)) => {
-            log::info!(
-                "Sent ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={} message_ids={:?}",
-                log_context.sender_run_id,
-                log_context.task_id,
-                log_context.target_agent_ids,
-                log_context.subject,
-                log_context.body_len,
-                response.message_ids
-            );
-            Ok(response)
-        }
-        Ok(Err(err)) => {
-            let err = err.context(log_context.error_context());
-            log::warn!(
-                "Failed to send ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={} error={err:#}",
-                log_context.sender_run_id,
-                log_context.task_id,
-                log_context.target_agent_ids,
-                log_context.subject,
-                log_context.body_len
-            );
-            eprintln!("{err:#}");
-            Err(err)
-        }
-        Err(_) => {
-            let err = anyhow!(
-                "Timed out sending agent message after {timeout:?} (sender_run_id={:?}, task_id={:?}, target_agent_ids={:?})",
-                log_context.sender_run_id,
-                log_context.task_id,
-                log_context.target_agent_ids
-            );
-            log::warn!(
-                "Timed out sending ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={} timeout={timeout:?}",
-                log_context.sender_run_id,
-                log_context.task_id,
-                log_context.target_agent_ids,
-                log_context.subject,
-                log_context.body_len
-            );
-            eprintln!("{err:#}");
-            Err(err)
-        }
+    fn log_success(&self, response: &SendAgentMessageResponse) {
+        log::info!(
+            "Sent ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={} message_ids={:?}",
+            self.sender_run_id,
+            self.task_id,
+            self.target_agent_ids,
+            self.subject,
+            self.body_len,
+            response.message_ids
+        );
+    }
+
+    fn log_error(&self, err: &anyhow::Error) {
+        log::warn!(
+            "Failed to send ambient agent message: sender_run_id={:?} task_id={:?} target_agent_ids={:?} subject={:?} body_len={} error={err:#}",
+            self.sender_run_id,
+            self.task_id,
+            self.target_agent_ids,
+            self.subject,
+            self.body_len
+        );
     }
 }
 

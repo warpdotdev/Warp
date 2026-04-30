@@ -50,7 +50,6 @@ use parent_bridge::{
 use parent_bridge::{MessageBridge, MessageBridgeCleanupDisposition};
 #[cfg(test)]
 use shell_words::quote as shell_quote;
-pub(crate) use wake_driver::ClaudeWakeMessage;
 #[cfg(test)]
 use wake_driver::{ClaudeWakeRemoteContext, CLAUDE_WAKE_PROMPT_FILE_NAME};
 

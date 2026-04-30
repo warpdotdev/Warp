@@ -646,7 +646,7 @@ fn resolve_suffix_returns_none_for_short_key() {
 
 #[test]
 #[serial_test::serial]
-fn prepare_local_wake_command_rehydrates_transcript_and_stages_messages() {
+fn prepare_local_wake_command_rehydrates_transcript_without_staging_messages() {
     let home_dir = TempDir::new().unwrap();
     let claude_config_dir = TempDir::new().unwrap();
     let bridge_state_root = TempDir::new().unwrap();
@@ -670,14 +670,6 @@ fn prepare_local_wake_command_rehydrates_transcript_and_stages_messages() {
         },
         wake_prompt: "resume prompt\n\nwake prompt".to_string(),
     };
-    let message = ClaudeWakeMessage {
-        sequence: 42,
-        message_id: "message-1".to_string(),
-        sender_run_id: "parent-run-123".to_string(),
-        subject: "Please pivot".to_string(),
-        body: "Inspect the failing tests first.".to_string(),
-        occurred_at: "2026-04-17T15:46:00Z".to_string(),
-    };
     let task_id: AmbientAgentTaskId = "550e8400-e29b-41d4-a716-446655440010".parse().unwrap();
     let parent_run_id = "parent-run-456".to_string();
 
@@ -687,14 +679,11 @@ fn prepare_local_wake_command_rehydrates_transcript_and_stages_messages() {
         Some(parent_run_id.clone()),
         Some(working_dir.clone()),
         remote,
-        vec![message.clone()],
     ))
     .unwrap();
 
     let state_dir = bridge_state_root.path().join(session_id.to_string());
     let prompt_path = state_dir.join(CLAUDE_WAKE_PROMPT_FILE_NAME);
-    let surfaced_path =
-        parent_bridge_surfaced_message_path(&state_dir, message.sequence, &message.message_id);
 
     assert!(command.contains("--resume"));
     assert!(command.starts_with("env "));
@@ -717,13 +706,7 @@ fn prepare_local_wake_command_rehydrates_transcript_and_stages_messages() {
         fs::read_to_string(&prompt_path).unwrap(),
         "resume prompt\n\nwake prompt"
     );
-    assert!(surfaced_path.exists());
-    assert!(parent_bridge_hook_output_file(&state_dir).exists());
-    let surfaced_record: MessageBridgeMessageRecord =
-        serde_json::from_slice(&fs::read(&surfaced_path).unwrap()).unwrap();
-    assert_eq!(surfaced_record.sender_run_id, message.sender_run_id);
-    assert_eq!(surfaced_record.subject, message.subject);
-    assert_eq!(surfaced_record.body, message.body);
+    assert!(!parent_bridge_hook_output_file(&state_dir).exists());
 
     let restored_envelope =
         read_envelope(session_id, &working_dir, claude_config_dir.path()).unwrap();

@@ -366,9 +366,10 @@ fn test_lifecycle_event_type_from_proto_includes_cancelled_and_blocked() {
 }
 
 #[test]
-fn test_pending_message_helpers_peek_and_take_only_selected_messages() {
+fn test_has_pending_events_tracks_any_event_kind() {
     let conversation_id = crate::ai::agent::conversation::AIConversationId::new();
     let mut service = OrchestrationEventService::new_without_subscriptions();
+    assert!(!service.has_pending_events(conversation_id));
     service.pending_events.insert(
         conversation_id,
         vec![
@@ -388,33 +389,9 @@ fn test_pending_message_helpers_peek_and_take_only_selected_messages() {
             message_pending_event("message-event-2"),
         ],
     );
-
-    let peeked = service.peek_pending_message_events(conversation_id);
-    assert_eq!(peeked.len(), 2);
-    assert_eq!(peeked[0].event_id, "message-event-1");
-    assert_eq!(peeked[1].event_id, "message-event-2");
-
-    let removed = service.take_pending_events_by_id(
-        conversation_id,
-        &["message-event-2".to_string(), "message-event-1".to_string()],
-    );
-    assert_eq!(removed.len(), 2);
-    assert_eq!(removed[0].event_id, "message-event-1");
-    assert_eq!(removed[1].event_id, "message-event-2");
-
-    let remaining = service
-        .pending_events
-        .get(&conversation_id)
-        .expect("lifecycle events should remain queued");
-    assert_eq!(remaining.len(), 2);
-    assert!(matches!(
-        remaining[0].detail,
-        PendingEventDetail::Lifecycle { .. }
-    ));
-    assert!(matches!(
-        remaining[1].detail,
-        PendingEventDetail::Lifecycle { .. }
-    ));
+    assert!(service.has_pending_events(conversation_id));
+    service.pending_events.remove(&conversation_id);
+    assert!(!service.has_pending_events(conversation_id));
 }
 
 #[test]
