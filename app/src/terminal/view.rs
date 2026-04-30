@@ -12228,6 +12228,10 @@ impl TerminalView {
                         me.pending_onboarding_agentic_suggestions_block = false;
                     }
                 }
+                HistoryEvent::ExternalHistoryUpdated { .. } => {
+                    // Live shell-history sync (GH-3422) — no UI work needed in
+                    // this view; autocomplete consumers re-query on their own.
+                }
             });
         }
 

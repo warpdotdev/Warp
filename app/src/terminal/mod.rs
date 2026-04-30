@@ -72,6 +72,7 @@ pub mod session_settings;
 pub mod settings;
 mod share_block_modal;
 pub mod shared_session;
+pub mod shell_history_watcher;
 mod shell_launch_state;
 pub mod universal_developer_input;
 

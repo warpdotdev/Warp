@@ -83,6 +83,7 @@ pub fn initialize_settings_for_tests_with_mode(
     SameLinePromptBlockSettings::register(app);
     ScrollSettings::register(app);
     SelectionSettings::register(app);
+    ShellHistorySyncSettings::register(app);
     app.update(|ctx| {
         WarpifySettings::register(ctx);
     });

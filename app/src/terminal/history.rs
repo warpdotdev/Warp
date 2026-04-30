@@ -3,15 +3,18 @@ use futures::Future;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
+    path::PathBuf,
     sync::Arc,
 };
 
+use settings::Setting as _;
 use warp_core::command::ExitCode;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use super::{
     model::block::{AgentInteractionMetadata, Block, SerializedAIMetadata, SerializedBlock},
     shell::ShellType,
+    shell_history_watcher::{ShellHistoryWatcher, ShellHistoryWatcherEvent},
 };
 use crate::{
     cloud_object::{
@@ -19,6 +22,7 @@ use crate::{
         Space,
     },
     server::ids::{ClientId, HashableId as _, SyncId},
+    settings::ShellHistorySyncSettings,
     terminal::model::session::{Session, SessionId},
     util::dedupe_from_last,
     workflows::{
@@ -162,6 +166,14 @@ enum ReadHistoryFileState {
 pub enum HistoryEvent {
     /// History has been initialized for the session with the contained ID.
     Initialized(SessionId),
+    /// External history file (e.g. `~/.zsh_history`) was modified by another
+    /// terminal and `num_appended` new entries were merged into
+    /// `history_file_commands` for `host`. Listeners that cache history-derived
+    /// state (autocomplete index, suggestion bar) should re-query.
+    ///
+    /// Only emitted when the user has opted into
+    /// `terminal.live_sync_os_shell_history` (GH-3422).
+    ExternalHistoryUpdated { host: ShellHost, num_appended: usize },
 }
 
 /// This holds the aggregated data from the "commands" table in sqlite. We aggregate as a means of
@@ -191,8 +203,12 @@ pub struct History {
     /// execution metadata from the most recent run.
     persisted_commands_summary: HashMap<ShellHost, HashMap<String, CommandHistorySummary>>,
 
-    /// Entries from the history file for the host.  Immutable once loaded and
-    /// shared between sessions.
+    /// Entries from the history file for the host. Loaded once at session-init
+    /// and shared between sessions. When the user enables
+    /// `terminal.live_sync_os_shell_history` (GH-3422) this map is also
+    /// append-only updated by [`Self::apply_external_history_lines`] whenever
+    /// the underlying histfile is modified by another terminal — see
+    /// [`Self::set_up_external_history_sync`].
     history_file_commands: HashMap<ShellHost, Vec<Arc<HistoryEntry>>>,
 
     /// Global history entries across all sessions for each host.  Only grows.  Deduping
@@ -211,6 +227,18 @@ pub struct History {
     read_history_file_state: HashMap<ShellHost, ReadHistoryFileState>,
 
     session_id_to_shell_host: HashMap<SessionId, ShellHost>,
+
+    /// For live OS-shell-history sync (GH-3422). Map from histfile path to the
+    /// set of hosts whose `history_file_commands` should be re-merged when
+    /// that path changes on disk. Populated by [`Self::maybe_register_live_sync`]
+    /// at session init (only when the live-sync setting is on); consulted by
+    /// [`Self::handle_shell_history_watcher_event`] when watcher events arrive.
+    live_sync_paths: HashMap<PathBuf, HashSet<ShellHost>>,
+
+    /// Set to `true` once [`Self::set_up_external_history_sync`] has installed
+    /// the watcher subscription. The subscription is global and idempotent so
+    /// we want to install it exactly once.
+    external_sync_subscribed: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -567,6 +595,12 @@ impl History {
 
         self.session_id_to_shell_host
             .insert(session_id, host.clone());
+
+        // GH-3422: when the user has opted into live shell-history sync, register
+        // this host's histfile path(s) with `ShellHistoryWatcher` so subsequent
+        // changes by other terminals are merged into `history_file_commands`.
+        // No-op when the setting is off.
+        self.maybe_register_live_sync(&host, ctx);
 
         match self.read_history_file_state.get_mut(&host) {
             None => {
@@ -962,6 +996,211 @@ impl History {
                     break;
                 }
             }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Live OS-shell-history sync (GH-3422).
+    //
+    // When the `terminal.live_sync_os_shell_history` setting is on, the
+    // `History` model subscribes to [`ShellHistoryWatcher`] events. When
+    // another terminal appends to the user's `~/.zsh_history` (or other
+    // shell histfile), the watcher fires, we re-read the file, parse it
+    // with the existing per-shell parser, and append the new commands to
+    // `history_file_commands` so they show up in Warp's autocomplete
+    // immediately. No write-back to disk happens in this code path —
+    // see GH-3422 follow-up.
+    // ---------------------------------------------------------------------
+
+    /// Subscribe to [`ShellHistoryWatcher`] events. Idempotent. Should be
+    /// called once at app startup (from `lib.rs`) after `History` is
+    /// registered as a singleton.
+    pub fn set_up_external_history_sync(&mut self, ctx: &mut ModelContext<Self>) {
+        if self.external_sync_subscribed {
+            return;
+        }
+        self.external_sync_subscribed = true;
+        let watcher_handle = ShellHistoryWatcher::handle(ctx);
+        ctx.subscribe_to_model(&watcher_handle, |me, event, ctx| {
+            me.handle_shell_history_watcher_event(event, ctx);
+        });
+    }
+
+    /// Handler for [`ShellHistoryWatcherEvent::HistfilesChanged`]. For each
+    /// changed path that we registered in [`Self::maybe_register_live_sync`],
+    /// kick off an async re-read of the file and dispatch the parsed lines
+    /// to [`Self::apply_external_history_lines`].
+    fn handle_shell_history_watcher_event(
+        &mut self,
+        event: &ShellHistoryWatcherEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let ShellHistoryWatcherEvent::HistfilesChanged(fs_event) = event;
+        for path in fs_event.added_or_updated_iter() {
+            // Snapshot the host set under this path so we can drop the
+            // borrow on `self` before spawning.
+            let Some(hosts) = self.live_sync_paths.get(path).cloned() else {
+                continue;
+            };
+            for host in hosts {
+                let path_for_read = path.clone();
+                let shell_type = host.shell_type;
+                let host_for_apply = host.clone();
+                ctx.spawn(
+                    async move {
+                        async_fs::read(&path_for_read)
+                            .await
+                            .ok()
+                            .map(|bytes| shell_type.parse_history(&bytes))
+                    },
+                    move |me, lines_opt, ctx| {
+                        if let Some(lines) = lines_opt {
+                            me.apply_external_history_lines(host_for_apply, lines, ctx);
+                        }
+                    },
+                );
+            }
+        }
+    }
+
+    /// Merge `new_lines` (the freshly-re-read histfile contents for `host`)
+    /// into `history_file_commands[host]`. Appends any commands not already
+    /// present, shifts session-index bookkeeping for sessions on the same
+    /// host, and emits [`HistoryEvent::ExternalHistoryUpdated`].
+    fn apply_external_history_lines(
+        &mut self,
+        host: ShellHost,
+        new_lines: Vec<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let new_deduped = dedupe_from_last(new_lines);
+
+        let existing_commands: HashSet<String> = self
+            .history_file_commands
+            .get(&host)
+            .map(|v| v.iter().map(|e| e.command.clone()).collect())
+            .unwrap_or_default();
+
+        let to_append: Vec<String> = new_deduped
+            .into_iter()
+            .filter(|cmd| !existing_commands.contains(cmd))
+            .collect();
+
+        if to_append.is_empty() {
+            return;
+        }
+        let n = to_append.len();
+
+        let new_entries: Vec<Arc<HistoryEntry>> = to_append
+            .into_iter()
+            .map(|command| {
+                self.persisted_commands_summary
+                    .get(&host)
+                    .and_then(|summaries| summaries.get(&command))
+                    .map(|summary| summary.most_recent_entry.clone())
+                    .unwrap_or_else(|| HistoryEntry::command_only(command))
+            })
+            .map(Arc::new)
+            .collect();
+
+        // Capture old boundary BEFORE extending so the index shift below is correct.
+        let old_history_file_len = self
+            .history_file_commands
+            .get(&host)
+            .map(|v| v.len())
+            .unwrap_or(0);
+
+        self.history_file_commands
+            .entry(host.clone())
+            .or_default()
+            .extend(new_entries);
+
+        // The render-space history list for a host is
+        //   history_file_commands[host] ++ session_commands[host]
+        // (see the doc comment on `session_skip_indices`). We just inserted
+        // `n` entries at position `old_history_file_len`, which shifts every
+        // index currently >= that boundary up by `n`.
+        let on_host_session_ids: Vec<SessionId> = self
+            .session_id_to_shell_host
+            .iter()
+            .filter(|(_, h)| **h == host)
+            .map(|(id, _)| *id)
+            .collect();
+
+        for session_id in &on_host_session_ids {
+            if let Some(start) = self.session_start_indices.get_mut(session_id) {
+                if *start >= old_history_file_len {
+                    *start += n;
+                }
+            }
+            if let Some(skips) = self.session_skip_indices.get_mut(session_id) {
+                *skips = skips
+                    .iter()
+                    .map(|&i| if i >= old_history_file_len { i + n } else { i })
+                    .collect();
+            }
+        }
+
+        ctx.emit(HistoryEvent::ExternalHistoryUpdated {
+            host,
+            num_appended: n,
+        });
+    }
+
+    /// Helper called from [`Self::init_session_with`] to register the
+    /// active session's histfile path(s) with [`ShellHistoryWatcher`] when
+    /// the live-sync setting is on. No-op when off.
+    ///
+    /// Idempotent: registering the same `(path, host)` pair twice is safe —
+    /// the underlying watcher refcounts paths and the `live_sync_paths`
+    /// map is keyed by `HashSet<ShellHost>`.
+    fn maybe_register_live_sync(&mut self, host: &ShellHost, ctx: &mut ModelContext<Self>) {
+        let enabled = *ShellHistorySyncSettings::as_ref(ctx)
+            .live_sync_os_shell_history
+            .value();
+        if !enabled {
+            return;
+        }
+
+        let Some(home) = dirs::home_dir() else {
+            log::warn!(
+                "live_sync_os_shell_history is on but no home directory could be \
+                 resolved; skipping live history watch registration"
+            );
+            return;
+        };
+
+        let candidate_paths: Vec<PathBuf> = host
+            .shell_type
+            .history_files()
+            .into_iter()
+            .filter_map(|p| {
+                // `history_files()` returns `~/...`-prefixed strings; expand them.
+                let stripped = p.strip_prefix("~/").or_else(|| p.strip_prefix("~"))?;
+                Some(home.join(stripped))
+            })
+            .collect();
+
+        let watcher_handle = ShellHistoryWatcher::handle(ctx);
+        for path in candidate_paths {
+            // Only register paths that actually exist on disk. Watching a
+            // non-existent file would either fail or rely on the watcher's
+            // parent-directory fallback semantics (varies by OS), and the
+            // initial read at session-init already produces an empty list
+            // for missing histfiles.
+            if !path.exists() {
+                continue;
+            }
+            self.live_sync_paths
+                .entry(path.clone())
+                .or_default()
+                .insert(host.clone());
+            // Always call `register_histfile` — the watcher itself refcounts,
+            // so registering the same path for two sessions is safe and the
+            // first call is the one that actually drives a syscall.
+            watcher_handle.update(ctx, |watcher, ctx| {
+                watcher.register_histfile(&path, ctx);
+            });
         }
     }
 }

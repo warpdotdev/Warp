@@ -1441,6 +1441,7 @@ fn initialize_app(
         } else {
             log::info!("Home directory not found; skipping HomeDirectoryWatcher registration");
         }
+        ctx.add_singleton_model(crate::terminal::shell_history_watcher::ShellHistoryWatcher::new);
     }
 
     #[cfg(feature = "local_fs")]
@@ -1493,6 +1494,15 @@ fn initialize_app(
     });
 
     ctx.add_singleton_model(move |_| History::new(command_history));
+
+    // GH-3422: subscribe History to ShellHistoryWatcher so live updates from
+    // other terminals (when the user has opted in via
+    // `terminal.live_sync_os_shell_history`) flow into Warp's autocomplete.
+    // Idempotent — safe to call once at app startup.
+    #[cfg(not(target_family = "wasm"))]
+    crate::terminal::history::History::handle(ctx).update(ctx, |history, ctx| {
+        history.set_up_external_history_sync(ctx);
+    });
 
     ctx.add_singleton_model(CustomSecretRegexUpdater::new);
 
