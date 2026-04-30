@@ -1971,7 +1971,9 @@ impl RootView {
                 }
 
                 LLMPreferencesEvent::UpdatedActiveAgentModeLLM
-                | LLMPreferencesEvent::UpdatedActiveCodingLLM => {}
+                | LLMPreferencesEvent::UpdatedActiveCodingLLM
+                | LLMPreferencesEvent::UpdatedHarnessModels
+                | LLMPreferencesEvent::UpdatedActiveHarnessModel => {}
             },
         );
 
