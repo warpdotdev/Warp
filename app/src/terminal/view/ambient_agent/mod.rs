@@ -24,7 +24,9 @@ pub(crate) use model::PendingHandoff;
 pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
 #[cfg(all(feature = "local_fs", not(target_family = "wasm")))]
 pub use model::{HandoffSubmissionState, SnapshotUploadStatus};
-pub use model_selector::{ModelSelector, ModelSelectorAction, ModelSelectorEvent};
+pub use model_selector::{
+    HarnessSelection, ModelSelection, ModelSelector, ModelSelectorAction, ModelSelectorEvent,
+};
 pub use progress::{render_progress, ProgressProps, ProgressStep, ProgressStepState};
 pub use progress_ui_state::AmbientAgentProgressUIState;
 pub use tips::{get_cloud_mode_tips, CloudModeTip};
@@ -115,6 +117,7 @@ pub fn create_cloud_mode_view(
                 | AmbientAgentViewModelEvent::Cancelled
                 | AmbientAgentViewModelEvent::HarnessSelected
                 | AmbientAgentViewModelEvent::HostSelected
+                | AmbientAgentViewModelEvent::HarnessModelSelected
                 | AmbientAgentViewModelEvent::HarnessCommandStarted
                 | AmbientAgentViewModelEvent::PendingHandoffChanged
                 | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }

@@ -766,8 +766,7 @@ impl ExecutionProfileEditorView {
                         ctx,
                     );
                 }
-                LLMPreferencesEvent::UpdatedHarnessModels
-                | LLMPreferencesEvent::UpdatedActiveHarnessModel => {}
+                LLMPreferencesEvent::UpdatedHarnessModels => {}
             }
         });
 
