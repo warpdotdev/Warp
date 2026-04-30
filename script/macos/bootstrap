@@ -42,8 +42,18 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 NODE_VERSION="$(node --version | sed 's/^v//')"
-# Use awk for version comparison since sh doesn't support sort -V
-if ! echo "$REQUIRED_NODE_VERSION" "$NODE_VERSION" | awk '{if ($2 < $1) exit 1; else exit 0}'; then
+# Compare semantic versions properly (not lexicographically).
+# Split into major.minor.patch and compare each component.
+node_major="$(echo "$NODE_VERSION" | cut -d. -f1)"
+node_minor="$(echo "$NODE_VERSION" | cut -d. -f2)"
+node_patch="$(echo "$NODE_VERSION" | cut -d. -f3)"
+req_major="$(echo "$REQUIRED_NODE_VERSION" | cut -d. -f1)"
+req_minor="$(echo "$REQUIRED_NODE_VERSION" | cut -d. -f2)"
+req_patch="$(echo "$REQUIRED_NODE_VERSION" | cut -d. -f3)"
+
+if [ "$node_major" -lt "$req_major" ] || \
+   { [ "$node_major" -eq "$req_major" ] && [ "$node_minor" -lt "$req_minor" ]; } || \
+   { [ "$node_major" -eq "$req_major" ] && [ "$node_minor" -eq "$req_minor" ] && [ "$node_patch" -lt "$req_patch" ]; }; then
     echo "Error: Node.js $NODE_VERSION is too old."
     echo "Node.js $REQUIRED_NODE_VERSION+ is required."
     echo "Upgrade via: brew upgrade node"
