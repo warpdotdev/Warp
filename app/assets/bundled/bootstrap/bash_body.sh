@@ -1000,26 +1000,42 @@ test -n '$WARP_CLI_AGENT_PROTOCOL_VERSION' && export WARP_CLI_AGENT_PROTOCOL_VER
 hook="'$(printf "{\"hook\": \"SSH\", \"value\": {\"socket_path\": \"'$SSH_SOCKET_DIR/$WARP_SESSION_ID'\", \"remote_shell\": \"%s\"}}" "${SHELL##*/}" | command -p od -An -v -tx1 | command -p tr -d " \n")'"
 printf '$OSC_START$DCS_JSON_MARKER$OSC_PARAM_SEPARATOR%s$OSC_END' "'$hook'"
 
-if test "'"${SHELL##*/}" != "bash" -a "${SHELL##*/}" != "zsh"'"; then
-  # Emulate the SSHD logic to print the MotD. Because the Warp SSH wrapper passes
-  # a command to run, SSHD does a quiet login, updating utmp and other login
-  # state, but not printing the MotD. For bash and zsh, this is instead handled
-  # by our bootstrap script.
-  if test ! -e "'$HOME/.hushlogin'"; then
-    # This uses an if-else chain instead of a for-loop to avoid expansion issues on older shells.
-    if test -r /etc/motd; then
-      command -p cat /etc/motd
-    elif test -r /run/motd; then
-      command -p cat /run/motd
-    elif test -r /run/motd.dynamic; then
-      command -p cat /run/motd.dynamic
-    elif test -r /usr/lib/motd; then
-      command -p cat /usr/lib/motd
-    elif test -r /usr/lib/motd.dynamic; then
-      command -p cat /usr/lib/motd.dynamic
-    fi
+# Emulate the SSHD logic to print the MotD. Because the Warp SSH wrapper passes
+# a command to run, SSHD does a quiet login, updating utmp and other login
+# state, but not printing the MotD. The previous version of this block only
+# ran for non-bash/non-zsh shells under the (incorrect) assumption that the
+# rcfile-based bootstrap below would handle it for bash/zsh. It does not, so
+# bash/zsh users silently lost the MotD. (GH-1160)
+if test ! -e "'$HOME/.hushlogin'"; then
+  # Modern Linux distros may use any of these forms:
+  #   * /etc/motd as a regular file or symlink to /run/motd.dynamic
+  #   * /etc/motd as a directory (debconf style on some setups)
+  #   * /etc/motd.d/* — concatenated fragments (Fedora / RHEL style)
+  #   * /run/motd.dynamic — pre-rendered dynamic MotD (Ubuntu/Debian)
+  # `test -f` follows symlinks and only succeeds for regular files, which
+  # rules out the "/etc/motd is a directory" failure mode where the old
+  # `cat /etc/motd` would error.
+  if test -f /etc/motd && test -r /etc/motd; then
+    command -p cat /etc/motd
+  elif test -d /etc/motd.d; then
+    for motd_fragment in /etc/motd.d/*; do
+      test -f "$motd_fragment" && command -p cat "$motd_fragment"
+    done
+  elif test -r /run/motd.dynamic; then
+    command -p cat /run/motd.dynamic
+  elif test -r /run/motd; then
+    command -p cat /run/motd
+  elif test -r /usr/lib/motd; then
+    command -p cat /usr/lib/motd
+  elif test -r /usr/lib/motd.dynamic; then
+    command -p cat /usr/lib/motd.dynamic
   fi
-  # Likewise, emulate a login shell by sourcing /etc/profile
+fi
+
+if test "'"${SHELL##*/}" != "bash" -a "${SHELL##*/}" != "zsh"'"; then
+  # Emulate a login shell by sourcing /etc/profile for non-bash/non-zsh
+  # shells. bash and zsh load their own profile/rcfile chain via the
+  # `case` statement below.
   if test -r /etc/profile; then
     . /etc/profile
   fi
