@@ -62,7 +62,15 @@ impl Uniforms {
         drawable_size: Vector2F,
         resources: &Resources,
     ) {
-        let uniforms = shader_types::Uniforms::new(drawable_size);
+        // The surface's CompositeAlphaMode determines whether the compositor
+        // expects the framebuffer's RGB to already be multiplied by alpha.
+        // Pass that bit into the shader so blend_color in glyph_shader.wgsl
+        // knows whether to apply the multiplication.
+        let premultiplied_alpha = matches!(
+            resources.surface_config.borrow().alpha_mode,
+            wgpu::CompositeAlphaMode::PreMultiplied,
+        );
+        let uniforms = shader_types::Uniforms::new(drawable_size, premultiplied_alpha);
         resources
             .queue
             .write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniforms]));

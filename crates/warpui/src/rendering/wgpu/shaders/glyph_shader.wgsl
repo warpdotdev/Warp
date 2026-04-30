@@ -76,9 +76,22 @@ fn light_on_dark_contrast(enhanced_contrast: f32, color: vec3<f32>) -> f32 {
 
 struct Uniforms {
     viewport_size: vec2<f32>,
-    // Padding necessary to ensure that the uniforms is 16 bytes. Some wgpu-supported devices (such as webgl) require
-    // buffer bindings to be a multiple of 16 bytes.
-    padding: vec2<f32>
+    // 1 when the active surface composites with premultiplied alpha,
+    // 0 otherwise. Drives blend_color below.
+    premultiplied_alpha: u32,
+    // Pad to 16 bytes; wgpu uniform buffer bindings need to be a multiple
+    // of 16 on platforms like WebGL.
+    _padding: u32,
+}
+
+// If the surface uses premultiplied alpha, scale the output RGB by the
+// final alpha so the framebuffer ends up in the form the compositor
+// expects. For Opaque surfaces, the compositor ignores alpha entirely and
+// the multiplication would actually darken edge pixels for no reason; the
+// flag stays zero in that case and RGB passes through unchanged.
+fn blend_color(color: vec3<f32>, alpha: f32, premultiplied_alpha: u32) -> vec4<f32> {
+    let multiplier = select(1.0, alpha, premultiplied_alpha != 0u);
+    return vec4<f32>(color * multiplier, alpha);
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -177,5 +190,9 @@ fn fs_main(in: GlyphVertexShaderOutput) -> @location(0) vec4<f32> {
 
     // Apply the fade.
     color.a *= saturate(in.fade_alpha);
-    return color;
+
+    // Apply premultiplied-alpha conversion if the surface needs it. For
+    // opaque surfaces the multiplication is suppressed inside blend_color
+    // and the original RGB passes through unchanged.
+    return blend_color(color.rgb, color.a, uniforms.premultiplied_alpha);
 }

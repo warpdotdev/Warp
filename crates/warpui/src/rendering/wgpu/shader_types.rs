@@ -218,17 +218,26 @@ impl RectData {
 #[derive(Debug, Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 pub(super) struct Uniforms {
     viewport_size: Vector2F,
-    // The shader-side paired struct will automatically be padded as necessary,
-    // so we add any necessary padding bytes here by adjusting the size of this
-    // byte array.
-    _struct_padding_bytes: [u8; 8],
+    /// 1 when the active surface composites with premultiplied alpha,
+    /// 0 otherwise. The glyph fragment shader uses it to decide whether
+    /// to scale the output RGB by the final alpha; getting this wrong on
+    /// transparent compositors makes glyph colours leak through windows
+    /// behind them.
+    premultiplied_alpha: u32,
+    /// Padding to keep the struct 16-byte aligned. WGSL inserts the
+    /// matching pad on its side so the layout matches.
+    _padding: u32,
 }
 
 impl Uniforms {
-    pub(super) fn new(size: pathfinder_geometry::vector::Vector2F) -> Self {
+    pub(super) fn new(
+        size: pathfinder_geometry::vector::Vector2F,
+        premultiplied_alpha: bool,
+    ) -> Self {
         Self {
             viewport_size: size.into(),
-            _struct_padding_bytes: Default::default(),
+            premultiplied_alpha: if premultiplied_alpha { 1 } else { 0 },
+            _padding: 0,
         }
     }
 }
