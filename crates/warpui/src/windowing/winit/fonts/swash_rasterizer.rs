@@ -12,10 +12,13 @@ use pathfinder_geometry::vector::{vec2i, Vector2F, Vector2I};
 
 fn cache_key_flags(lcd_subpixel: bool) -> CacheKeyFlags {
     if lcd_subpixel {
-        // Pair SUBPIXEL_BGRA with OUTLINE_ONLY so swash skips the COLR /
-        // CBDT colour sources and produces just the scalable outline that
-        // the subpixel format needs. Emoji never request this path.
-        CacheKeyFlags::SUBPIXEL_BGRA | CacheKeyFlags::OUTLINE_ONLY
+        // Request subpixel coverage but keep swash's full source list
+        // [ColorOutline, ColorBitmap, Outline]. Scene::draw_glyph sets
+        // lcd_subpixel from device + surface state without knowing whether
+        // the glyph is emoji, so adding OUTLINE_ONLY here would strip the
+        // colour sources from emoji glyphs and stop them routing to the
+        // Polychrome atlas.
+        CacheKeyFlags::SUBPIXEL_BGRA
     } else {
         CacheKeyFlags::empty()
     }
