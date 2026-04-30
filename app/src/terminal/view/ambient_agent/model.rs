@@ -196,10 +196,7 @@ pub struct AmbientAgentViewModel {
     /// Selected worker host for the cloud agent run. Populated from the HostSelector
     /// (which resolves env var > workspace setting) and read by `spawn_agent`.
     worker_host: Option<String>,
-    /// Selected model id for a third-party harness (e.g. `"opus"` for Claude). The cloud-mode
-    /// v2 model selector writes this through when the user picks a non-default model. `None`
-    /// means: use the harness's catalog default at spawn time. Reset whenever `harness`
-    /// changes (in [`Self::set_harness`]) so a previous Claude pick doesn't leak into Gemini.
+    /// Selected model id for a third-party harness (e.g. `"opus"` for Claude).
     harness_model_id: Option<String>,
     /// Whether the optimistic InitialUserQuery block has been inserted for the current run.
     has_inserted_cloud_mode_user_query_block: bool,
@@ -845,26 +842,23 @@ impl AmbientAgentViewModel {
             .ok()
             .filter(|s| !s.is_empty());
 
-        let (top_level_model_id, harness_override) = if selected_harness == Harness::Oz {
-            let oz_model_id = LLMPreferences::as_ref(ctx)
+        let oz_model = (selected_harness == Harness::Oz).then(|| {
+            LLMPreferences::as_ref(ctx)
                 .get_active_base_model(ctx, Some(self.terminal_view_id))
                 .id
-                .to_string();
-            (Some(oz_model_id), None)
-        } else {
-            let harness_config = HarnessConfig {
-                harness_type: selected_harness,
-                model_id: self.harness_model_id.clone(),
-            };
-            (None, Some(harness_config))
-        };
+                .to_string()
+        });
+        let third_party_harness = (selected_harness != Harness::Oz).then(|| HarnessConfig {
+            harness_type: selected_harness,
+            model_id: self.harness_model_id.clone(),
+        });
 
         AgentConfigSnapshot {
             environment_id: self.environment_id.as_ref().map(|id| id.to_string()),
-            model_id: top_level_model_id,
+            model_id: oz_model,
             computer_use_enabled,
             worker_host: self.worker_host.clone(),
-            harness: harness_override,
+            harness: third_party_harness,
             ..Default::default()
         }
     }

@@ -211,8 +211,6 @@ impl ModelSelector {
             ambient_agent_model,
         };
 
-        // Kick off an initial fetch of harness models if the harness is already non-Oz
-        // when the selector is first constructed (e.g. user reloads with Claude selected).
         if let Some(harness) = me.active_harness(ctx) {
             if !matches!(harness, Harness::Oz | Harness::Unknown) {
                 LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
@@ -226,7 +224,6 @@ impl ModelSelector {
         me
     }
 
-    /// Returns the active harness, if there's an associated [`AmbientAgentViewModel`].
     fn active_harness(&self, app: &AppContext) -> Option<Harness> {
         self.ambient_agent_model
             .as_ref()
