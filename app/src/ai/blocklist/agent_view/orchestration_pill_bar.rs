@@ -41,6 +41,8 @@ use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_c
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use crate::ai::harness_display;
+use crate::code::editor::{add_color, remove_color};
+use crate::context_chips::display_chip::GitLineChanges;
 use crate::features::FeatureFlag;
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::pane::view::PaneHeaderAction;
@@ -223,6 +225,17 @@ pub struct OrchestrationPillBar {
     /// conversation (after the configured hover-in delay) and the 3-dot
     /// menu is not also open. Drives the per-pill details card overlay.
     hovered_pill: Option<AIConversationId>,
+    /// Cached git diff stats per conversation, populated lazily when a
+    /// pill is first hovered. The value is `None` when the conversation's
+    /// working directory exists but is not a git repo (or has no
+    /// changes), which lets `contains_key` distinguish "already fetched"
+    /// from "not yet fetched" so we don't re-spawn fetches each frame.
+    /// Cleared when the orchestrator changes.
+    diff_stats_cache: HashMap<AIConversationId, Option<GitLineChanges>>,
+    /// Conversation ids for which a diff stats fetch is currently
+    /// in-flight. Prevents duplicate spawns when the user re-hovers the
+    /// same pill while a previous fetch is still running.
+    diff_stats_in_flight: HashSet<AIConversationId>,
 }
 
 impl Entity for OrchestrationPillBar {
@@ -272,6 +285,12 @@ impl OrchestrationPillBar {
                 this.mouse_states.borrow_mut().clear();
                 this.overflow_button_mouse_states.borrow_mut().clear();
                 this.menu_open_for = None;
+                // The orchestrator (or its conversation set) just
+                // changed; previously cached diff stats are tied to a
+                // specific working directory and should be re-fetched on
+                // demand for the new set.
+                this.diff_stats_cache.clear();
+                this.diff_stats_in_flight.clear();
             }
             this.ensure_mouse_states(ctx);
             ctx.notify();
@@ -301,6 +320,71 @@ impl OrchestrationPillBar {
             menu,
             menu_open_for: None,
             hovered_pill: None,
+            diff_stats_cache: HashMap::new(),
+            diff_stats_in_flight: HashSet::new(),
+        }
+    }
+
+    /// Spawns an async git diff fetch for `conversation_id`'s working
+    /// directory, populating `diff_stats_cache` when it completes. No-ops
+    /// if we already have a cached entry or a fetch is already in flight.
+    ///
+    /// Orchestration child agents typically run in dedicated git worktrees
+    /// (one per child), so reading `git diff --shortstat HEAD` against the
+    /// child's working directory yields a per-agent change count without
+    /// needing to share state with the hidden child terminal view.
+    fn maybe_fetch_diff_stats(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.diff_stats_cache.contains_key(&conversation_id)
+            || self.diff_stats_in_flight.contains(&conversation_id)
+        {
+            return;
+        }
+        let cwd = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .and_then(|c| {
+                c.initial_working_directory()
+                    .or_else(|| c.current_working_directory())
+            })
+            .filter(|s| !s.is_empty());
+        let Some(cwd) = cwd else {
+            // Without a working directory we can't run git; mark the
+            // cache entry as `None` so we don't keep retrying for this
+            // conversation each time it's hovered.
+            self.diff_stats_cache.insert(conversation_id, None);
+            return;
+        };
+        #[cfg(feature = "local_fs")]
+        {
+            use std::path::PathBuf;
+            let path = PathBuf::from(cwd);
+            self.diff_stats_in_flight.insert(conversation_id);
+            ctx.spawn(
+                async move { crate::util::git::get_repo_git_summary(&path).await },
+                move |me, summary, ctx| {
+                    me.diff_stats_in_flight.remove(&conversation_id);
+                    let stats = summary.map(|s| GitLineChanges {
+                        // `RepoGitSummary` doesn't carry a files-changed
+                        // count, so report 0 here. The hover card chip
+                        // hides the file count when it's 0 (it only
+                        // matters for the prompt git chip), so this
+                        // reads cleanly as just `+N -M`.
+                        files_changed: 0,
+                        lines_added: s.lines_added,
+                        lines_removed: s.lines_removed,
+                    });
+                    me.diff_stats_cache.insert(conversation_id, stats);
+                    ctx.notify();
+                },
+            );
+        }
+        #[cfg(not(feature = "local_fs"))]
+        {
+            let _ = cwd;
+            self.diff_stats_cache.insert(conversation_id, None);
         }
     }
 
@@ -378,6 +462,11 @@ impl OrchestrationPillBar {
             return;
         }
         self.hovered_pill = conversation_id;
+        // Kick off the diff stats fetch on hover-in so the chip is
+        // populated by the time (or shortly after) the card animates in.
+        if let Some(id) = conversation_id {
+            self.maybe_fetch_diff_stats(id, ctx);
+        }
         ctx.notify();
     }
 
@@ -698,7 +787,8 @@ impl View for OrchestrationPillBar {
             Some(MenuOrCard::Menu(target_id))
         } else {
             self.hovered_pill.and_then(|id| {
-                render_hover_card(id, self.agent_view_controller.as_ref(app), app)
+                let diff_stats = self.diff_stats_cache.get(&id).cloned().flatten();
+                render_hover_card(id, self.agent_view_controller.as_ref(app), diff_stats, app)
                     .map(|card| MenuOrCard::Card { id, card })
             })
         };
@@ -783,6 +873,7 @@ enum MenuOrCard {
 fn render_hover_card(
     conversation_id: AIConversationId,
     _agent_view_controller: &AgentViewController,
+    diff_stats: Option<GitLineChanges>,
     app: &AppContext,
 ) -> Option<Box<dyn Element>> {
     let history = BlocklistAIHistoryModel::as_ref(app);
@@ -981,6 +1072,14 @@ fn render_hover_card(
         }
     }
 
+    // Diff stats chip: appended last so it sits at the trailing end of
+    // the chips row (matching the Figma reference). Hidden entirely
+    // when there are no changes so the row doesn't gain a redundant
+    // `+0 -0` chip for clean worktrees.
+    if let Some(diff_stats) = diff_stats.filter(|s| s.lines_added > 0 || s.lines_removed > 0) {
+        chips.push(render_diff_stats_chip(&diff_stats, theme, appearance));
+    }
+
     // Assemble.
     let mut column = Flex::column()
         .with_cross_axis_alignment(CrossAxisAlignment::Start)
@@ -1125,6 +1224,61 @@ fn render_chip(
         )
         .finish();
     Container::new(row)
+        .with_padding_left(6.)
+        .with_padding_right(6.)
+        .with_padding_top(2.)
+        .with_padding_bottom(2.)
+        .with_background(internal_colors::neutral_2(theme))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .finish()
+}
+
+/// Renders the git diff stats chip (`+N -M`) shown at the trailing end
+/// of the hover card's chips row. Mirrors the color treatment used by
+/// the prompt chip's git diff stats (see
+/// `display_chip::render_git_diff_stats_content`) — green for additions
+/// via `add_color`, red for deletions via `remove_color` — so the two
+/// chips read as the same UI element across the app. We don't use the
+/// shared helper directly because it always emits a leading file count
+/// + bullet, which doesn't make sense when we only have line totals.
+fn render_diff_stats_chip(
+    line_changes: &GitLineChanges,
+    theme: &WarpTheme,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let font_family = appearance.ui_font_family();
+    let font_size = appearance.monospace_font_size() - 2.;
+    let mut row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_main_axis_size(MainAxisSize::Min)
+        .with_spacing(4.);
+    if line_changes.lines_added > 0 {
+        row.add_child(
+            Text::new(
+                format!("+{}", line_changes.lines_added),
+                font_family,
+                font_size,
+            )
+            .with_color(add_color(appearance))
+            .with_style(Properties::default().weight(Weight::Semibold))
+            .soft_wrap(false)
+            .finish(),
+        );
+    }
+    if line_changes.lines_removed > 0 {
+        row.add_child(
+            Text::new(
+                format!("-{}", line_changes.lines_removed),
+                font_family,
+                font_size,
+            )
+            .with_color(remove_color(appearance))
+            .with_style(Properties::default().weight(Weight::Semibold))
+            .soft_wrap(false)
+            .finish(),
+        );
+    }
+    Container::new(row.finish())
         .with_padding_left(6.)
         .with_padding_right(6.)
         .with_padding_top(2.)
