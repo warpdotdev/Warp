@@ -24,13 +24,13 @@ use warpui::{
     assets::asset_cache::{AssetCache, AssetSource, AssetState},
     elements::{
         new_scrollable::{ScrollableAppearance, SingleAxisConfig},
-        Align, Axis, Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox,
-        Container, CornerRadius, CrossAxisAlignment, DispatchEventResult, Empty, EventHandler,
-        Expanded, Fill, Flex, FormattedTextElement, HeadingFontSizeMultipliers, Hoverable,
-        Image as WarpImage, MainAxisAlignment, MainAxisSize, MouseStateHandle, NewScrollable,
-        OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition,
-        ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack, Table,
-        TableColumnWidth, TableConfig, TableHeader, TableVerticalSizing, Text, Wrap, WrapFill,
+        Align, Axis, Border, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle,
+        ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult, Empty,
+        EventHandler, Expanded, Fill, Flex, FormattedTextElement, HeadingFontSizeMultipliers,
+        Hoverable, Image as WarpImage, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+        NewScrollable, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius,
+        SavePosition, ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack, Table,
+        TableColumnWidth, TableConfig, TableHeader, TableVerticalSizing, Text, Wrap,
     },
     fonts::{Properties, Weight},
     image_cache::{CacheOption, ImageType},
@@ -431,16 +431,9 @@ pub fn render_warping_indicator<V: View>(
 
     let appearance = Appearance::as_ref(app);
 
-    // Use a `Wrap` so chips can flow to a new run when the pane is too narrow
-    // to fit them all on one line. Pairs with the outer `Wrap` in
-    // `render_warping_indicator_base`, which gives this row a constrained
-    // max-width so wrapping actually triggers (a non-flex child of a `Flex`
-    // would otherwise receive an infinite max-width constraint).
-    let mut buttons_row = Wrap::row()
-        .with_main_axis_size(MainAxisSize::Min)
+    let mut buttons_row = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_spacing(4.)
-        .with_run_spacing(4.);
+        .with_spacing(4.);
     let mut has_buttons = false;
     if let Some((hide_responses_button_props, should_hide_responses)) = props.hide_responses_button
     {
@@ -630,42 +623,26 @@ pub fn render_warping_indicator_base(
         );
     }
 
-    // Build the icon + text region as a single inner row. We use `Shrinkable`
-    // for the text column (rather than `Expanded`) so this row can shrink to
-    // its natural width inside the outer `Wrap` below; otherwise it would
-    // always expand to the full pane width and squeeze the chips out.
-    let mut text_with_icon = Flex::row()
+    let mut row = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Start)
         .with_spacing(6.);
 
     if let Some(icon) = icon {
-        text_with_icon = text_with_icon.with_child(
+        row = row.with_child(
             ConstrainedBox::new(icon)
                 .with_width(icon_size(app) - STATUS_ICON_SIZE_DELTA)
                 .with_height(icon_size(app) - STATUS_ICON_SIZE_DELTA)
                 .finish(),
         );
     }
-    text_with_icon = text_with_icon.with_child(Shrinkable::new(1., text_col.finish()).finish());
 
-    // When chips are present, lay out the text region and chips inside a
-    // `Wrap` so the chips fall to a new run when the pane is too narrow to
-    // fit them alongside the text. Each piece is a `WrapFill` so it shares
-    // the available run width with its sibling instead of receiving an
-    // unbounded constraint (the failure mode that caused chips to overflow
-    // the pane in `Flex::row`).
-    let content: Box<dyn Element> = if let Some(buttons) = buttons {
-        Wrap::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_run_spacing(4.)
-            .with_child(WrapFill::new(0., text_with_icon.finish()).finish())
-            .with_child(WrapFill::new(0., buttons).finish())
-            .finish()
-    } else {
-        text_with_icon.finish()
-    };
+    row = row.with_child(Expanded::new(1., text_col.finish()).finish());
+
+    if let Some(buttons) = buttons {
+        row = row.with_child(buttons);
+    }
+
+    let content = Clipped::new(row.finish()).finish();
 
     if is_passive_code_diff {
         Container::new(content)
@@ -675,7 +652,12 @@ pub fn render_warping_indicator_base(
             .with_horizontal_padding(CONTENT_HORIZONTAL_PADDING)
             .finish()
     } else {
-        let mut container = Container::new(content).with_padding_right(CONTENT_HORIZONTAL_PADDING);
+        let mut container = Container::new(
+            ConstrainedBox::new(content)
+                .with_height(STATUS_FOOTER_VERTICAL_PADDING * 2. + appearance.monospace_font_size())
+                .finish(),
+        )
+        .with_padding_right(CONTENT_HORIZONTAL_PADDING);
 
         if FeatureFlag::AgentView.is_enabled() {
             container = container.with_padding_left(*terminal::view::PADDING_LEFT);
