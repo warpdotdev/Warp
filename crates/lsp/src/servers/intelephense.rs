@@ -96,19 +96,15 @@ impl LanguageServerCandidate for IntelephenseCandidate {
 
     async fn is_installed_on_path(&self, executor: &CommandBuilder) -> bool {
         // Intelephense's CLI surface is only LSP transport flags (`--stdio`,
-        // `--node-ipc`, `--socket=N`, `--pipe=X`); both `--version` and
-        // `--help` either error out or hang in connection-transport setup.
-        // Spawn the server with `--stdio` and stdin redirected to /dev/null
-        // so it sees immediate EOF and exits gracefully — that way we only
-        // need to know that the binary spawned at all (i.e. is on PATH and
-        // executable). Any successful spawn proves availability.
-        executor
-            .command("intelephense")
-            .arg("--stdio")
-            .stdin(std::process::Stdio::null())
-            .output()
-            .await
-            .is_ok()
+        // `--node-ipc`, `--socket=N`, `--pipe=X`); `--version` is not
+        // documented and `--help` enters connection-transport setup, so any
+        // spawn-based probe is unreliable — exit codes don't distinguish a
+        // healthy install from a broken one. Use a pure filesystem PATH
+        // search instead: locate an executable named `intelephense` in any
+        // PATH entry. If it isn't there we fall through to the data_dir
+        // install path (which we control), so a broken global install
+        // never prevents Warp from using a known-good copy.
+        binary_in_path("intelephense", executor.path_env_var())
     }
 
     async fn install(
@@ -207,5 +203,101 @@ impl LanguageServerCandidate for IntelephenseCandidate {
 
     async fn fetch_latest_server_metadata(&self) -> anyhow::Result<LanguageServerMetadata> {
         todo!()
+    }
+}
+
+/// Pure-filesystem search for an executable named `name` in any directory
+/// listed by `path_env_var` (or the process's `PATH` if `None`).
+///
+/// We use this instead of spawning the binary with a probe flag for LSP
+/// servers that have no documented version/help argument — running them with
+/// arbitrary flags either errors during connection-transport setup or hangs
+/// reading from stdin, which would cause `is_installed_on_path` to either
+/// reject working installs or accept broken ones based on noise. A
+/// filesystem check has no such ambiguity: the file either exists and is
+/// executable, or it doesn't.
+///
+/// On Windows we additionally try the standard executable extensions
+/// (`.exe`, `.cmd`, `.bat`) since intelephense is shipped via npm as a
+/// `.cmd` shim there.
+#[cfg(feature = "local_fs")]
+fn binary_in_path(name: &str, path_env_var: Option<&str>) -> bool {
+    let owned;
+    let path_str = match path_env_var {
+        Some(p) => p,
+        None => match std::env::var("PATH") {
+            Ok(p) => {
+                owned = p;
+                owned.as_str()
+            }
+            Err(_) => return false,
+        },
+    };
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    #[cfg(windows)]
+    let extensions: &[&str] = &["", ".exe", ".cmd", ".bat"];
+    #[cfg(not(windows))]
+    let extensions: &[&str] = &[""];
+
+    for dir in path_str.split(separator) {
+        if dir.is_empty() {
+            continue;
+        }
+        let dir_path = std::path::Path::new(dir);
+        for ext in extensions {
+            let candidate = dir_path.join(format!("{name}{ext}"));
+            if candidate.is_file() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+#[cfg(feature = "local_fs")]
+mod tests {
+    use super::binary_in_path;
+    use std::fs::{self, File};
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
+
+    /// Creates a fake executable file at `dir/name`. On Unix it gets the
+    /// executable bit; on Windows the suffix decides resolution.
+    fn touch_exe(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+        let path = dir.join(name);
+        File::create(&path).expect("create test binary");
+        #[cfg(unix)]
+        {
+            let mut perms = fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&path, perms).unwrap();
+        }
+        path
+    }
+
+    #[test]
+    fn finds_binary_in_first_path_entry() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        touch_exe(tmp.path(), "intelephense");
+        let path_var = format!("{}:{}", tmp.path().display(), "/nonexistent/dir");
+        assert!(binary_in_path("intelephense", Some(&path_var)));
+    }
+
+    #[test]
+    fn rejects_when_binary_absent() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path_var = tmp.path().display().to_string();
+        assert!(!binary_in_path("intelephense", Some(&path_var)));
+    }
+
+    #[test]
+    fn skips_empty_path_segments() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        touch_exe(tmp.path(), "intelephense");
+        // Leading empty segment must not blow up or short-circuit.
+        let path_var = format!(":{}", tmp.path().display());
+        assert!(binary_in_path("intelephense", Some(&path_var)));
     }
 }

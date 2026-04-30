@@ -7470,6 +7470,7 @@ dependencies = [
  "simple_logger",
  "strum",
  "strum_macros",
+ "tempfile",
  "tokio",
  "url",
  "warp_core",
