@@ -1360,3 +1360,89 @@ impl CommandExecutor for RecordingCommandExecutor {
         false
     }
 }
+
+/// Sample raw `git branch` output containing every marker variant we care about:
+/// `*` for the current branch, `+` for a branch checked out in another linked
+/// worktree, and a leading space for everything else. Each line is one entry,
+/// matching how `last_on_click_values` arrives from the shell-command generator.
+fn raw_git_branch_lines() -> Vec<String> {
+    [
+        "  feature/new-thing",
+        "+ 273-improvement-suggestion-agent",
+        "* main",
+        "  release/1.0",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+#[test]
+fn filter_git_branch_strips_star_marker() {
+    let result = CurrentPrompt::filter_git_branch_on_click_values(Some(vec![
+        "* main".to_string(),
+        "  feature".to_string(),
+    ]));
+    assert_eq!(
+        result,
+        Some(vec!["main".to_string(), "feature".to_string()])
+    );
+}
+
+#[test]
+fn filter_git_branch_strips_plus_marker_for_linked_worktrees() {
+    let result = CurrentPrompt::filter_git_branch_on_click_values(Some(vec![
+        "+ 273-improvement-suggestion-agent".to_string(),
+        "  main".to_string(),
+    ]));
+    assert_eq!(
+        result,
+        Some(vec![
+            "273-improvement-suggestion-agent".to_string(),
+            "main".to_string(),
+        ])
+    );
+    // Regression for #9170: a `+`-prefixed branch must not produce a value
+    // that begins with `+`, otherwise `git checkout {branch_name}` becomes
+    // `git checkout + 273-improvement-suggestion-agent` and fails with
+    // `pathspec '+' did not match any file(s) known to git`.
+    assert!(
+        result
+            .as_ref()
+            .unwrap()
+            .iter()
+            .all(|s| !s.starts_with('+') && !s.starts_with('*')),
+        "filtered branch values should never retain leading worktree markers",
+    );
+}
+
+#[test]
+fn filter_git_branch_handles_mixed_marker_set() {
+    let result = CurrentPrompt::filter_git_branch_on_click_values(Some(raw_git_branch_lines()));
+    let unwrapped = result.expect("filtered values");
+    // `*` (current) is sorted first; the rest preserve their relative order.
+    assert_eq!(
+        unwrapped,
+        vec![
+            "main".to_string(),
+            "feature/new-thing".to_string(),
+            "273-improvement-suggestion-agent".to_string(),
+            "release/1.0".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn filter_git_branch_passes_through_none() {
+    assert_eq!(CurrentPrompt::filter_git_branch_on_click_values(None), None);
+}
+
+#[test]
+fn filter_git_branch_drops_blank_lines() {
+    let result = CurrentPrompt::filter_git_branch_on_click_values(Some(vec![
+        "".to_string(),
+        "   ".to_string(),
+        "* main".to_string(),
+    ]));
+    assert_eq!(result, Some(vec!["main".to_string()]));
+}
