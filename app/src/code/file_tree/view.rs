@@ -562,7 +562,7 @@ impl FileTreeView {
                                 } else {
                                     // For subdirectories, we need to refresh the specific directory
                                     // from the updated repository state
-                                    if let Some(updated_entry) = state.entry.get(root_path) {
+                                    if state.entry.contains(root_path) {
                                         root_dir.entry = state.entry.clone();
                                     }
                                 }

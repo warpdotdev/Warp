@@ -1072,16 +1072,12 @@ fn file_tree_refreshes_after_file_move_operations() {
 
             // Update the repository metadata model with the new state
             repository_metadata_model.update(&mut app, |model, ctx| {
-                model.add_repository_internal(
-                    canonical_repo_root.clone(),
-                    IndexedRepoState::Indexed(moved_repo_state),
-                    ctx,
-                ).unwrap();
+                model.insert_test_state(canonical_repo_root.clone(), moved_repo_state, ctx);
             });
 
             // Emit a FileTreeEntryUpdated event (simulating what happens after a move operation)
-            repository_metadata_model.emit(repo_metadata::local_model::RepositoryMetadataEvent::FileTreeEntryUpdated {
-                path: canonical_repo_root.clone(),
+            repository_metadata_model.emit(repo_metadata::RepoMetadataEvent::FileTreeEntryUpdated {
+                id: repo_metadata::RepositoryIdentifier::local(canonical_repo_root.clone()),
             });
 
             // Verify that the file tree refreshed and files are no longer in the old location
