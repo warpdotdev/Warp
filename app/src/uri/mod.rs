@@ -13,7 +13,9 @@ use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
-use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
+use crate::util::openable_file_type::{
+    is_file_openable_in_warp, is_markdown_file, is_runnable_shell_script, starts_with_shebang,
+};
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{cloud_object::ObjectType, workspace::ToastStack};
 use crate::{drive::OpenWarpDriveObjectArgs, view_components::DismissibleToast};
@@ -30,7 +32,7 @@ use anyhow::{anyhow, ensure, Result};
 use itertools::Itertools;
 use session_sharing_protocol::common::SessionId;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use url::Url;
 use warpui::notification::UserNotification;
@@ -1004,6 +1006,39 @@ fn get_primary_window(
     non_quake_mode_windows.next()
 }
 
+/// What `open_file` should do with an incoming `file://` URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenFileAction {
+    /// Open in the markdown notebook pane.
+    Notebook,
+    /// Open in Warp's code/text editor pane.
+    Editor,
+    /// Open a session at the parent directory and queue the file as the pending command,
+    /// or just open a session at the directory path if `path` is a directory.
+    ExecuteInSession,
+}
+
+/// Pure routing decision for `open_file`. Extracted so it can be unit-tested without
+/// standing up a full `AppContext`.
+fn classify_open_file_action(path: &Path) -> OpenFileAction {
+    if is_markdown_file(path) {
+        return OpenFileAction::Notebook;
+    }
+    if path.is_file() {
+        if is_runnable_shell_script(path) {
+            return OpenFileAction::ExecuteInSession;
+        }
+        // Anything we can show in the editor opens there. The second branch catches
+        // shebang scripts that `is_file_openable_in_warp` rejects on extension alone
+        // (e.g. an extensionless `#!/bin/sh` file without the user-execute bit) so
+        // they don't fall through to the executor and produce a `permission denied`.
+        if is_file_openable_in_warp(path).is_some() || starts_with_shebang(path) {
+            return OpenFileAction::Editor;
+        }
+    }
+    OpenFileAction::ExecuteInSession
+}
+
 /// Handle an incoming `file://` URL.
 /// * Markdown files are opened as notebook panes.
 /// * For directories, open a new session at the directory path.
@@ -1015,7 +1050,8 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
             .map(|view_id| (window_id, view_id))
     });
 
-    if is_markdown_file(&path) {
+    let action = classify_open_file_action(&path);
+    if action == OpenFileAction::Notebook {
         if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
             ctx.dispatch_action(
                 primary_window_id,
@@ -1027,7 +1063,7 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
         } else {
             ctx.dispatch_global_action("root_view:open_new_with_file_notebook", &path);
         }
-    } else if path.is_file() && is_file_openable_in_warp(&path).is_some() {
+    } else if action == OpenFileAction::Editor {
         #[cfg(feature = "local_fs")]
         {
             use crate::code::editor_management::CodeSource;
