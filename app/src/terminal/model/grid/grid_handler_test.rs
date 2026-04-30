@@ -1332,6 +1332,47 @@ pub fn test_grid_agnostic_point() {
     assert_eq!(grid_agnostic_point, Point { row: 2, col: 17 });
 }
 
+/// Regression test for GH-9013.
+///
+/// Repeated SIGABRT crashes were reported in `GridHandler::resize` from
+/// `InitialCursorState::into_content_offset`'s `.expect("should have a content
+/// offset for point")`. The underlying call (`flat_storage.content_offset_at_point`)
+/// errors when the pre-resize cursor point is outside the post-resize storage
+/// bounds or sits at an empty cell after a hard-wrap. Eight crashes with the
+/// same stack were collected in one week prior to the fix.
+///
+/// This test exercises a sequence of shrink-then-grow resizes that previously
+/// could hit the panic path: it puts content into the grid (so flat_storage
+/// is non-empty), resizes down to a 1×1 grid (where most pre-resize cursor
+/// points are out-of-bounds), then resizes back up. With the fix, the resize
+/// path falls back to byte offset 0 / `Point::default()` instead of
+/// `.expect()`-ing — the grid remains usable.
+#[test]
+pub fn test_resize_does_not_panic_on_out_of_bounds_cursor() {
+    let mut grid = mock_blockgrid(
+        "\
+        line one with some length\r\n\
+        line two\r\n\
+        line three is longer still\r\n\
+        line four\r\n",
+    );
+
+    // Aggressive shrink: most pre-resize cursor positions are out of bounds in a 2x2 grid.
+    grid.resize(SizeInfo::new_without_font_metrics(2, 2));
+    // Grow back to a usable size — the grid must still be functional.
+    grid.resize(SizeInfo::new_without_font_metrics(20, 20));
+    // Shrink to a different small size and back, to cover the "hard-wrapped line"
+    // path where the cursor could end up at an empty cell after the line end.
+    grid.resize(SizeInfo::new_without_font_metrics(5, 2));
+    grid.resize(SizeInfo::new_without_font_metrics(40, 10));
+
+    // Sanity check: the grid remains queryable after the resize storm — i.e.
+    // the resize path didn't poison internal state.
+    let grid_handler = grid.grid_handler();
+    assert_eq!(grid_handler.columns(), 40);
+    assert_eq!(grid_handler.visible_rows(), 10);
+}
+
 #[test]
 pub fn test_compatible_point() {
     let mut grid = mock_blockgrid(

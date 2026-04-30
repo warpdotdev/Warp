@@ -271,18 +271,46 @@ impl InitialCursorState {
     fn into_content_offset(self, grid: &GridHandler) -> CursorContentOffset {
         match self {
             Self::AtPoint(point) => {
-                let content_offset = grid
-                    .flat_storage
-                    .content_offset_at_point(point)
-                    .expect("should have a content offset for point");
+                let content_offset =
+                    Self::resolve_content_offset(point, grid, "InitialCursorState::AtPoint");
                 CursorContentOffset::AtPoint(content_offset)
             }
             Self::AtCellAfterPoint(point) => {
-                let content_offset = grid
-                    .flat_storage
-                    .content_offset_at_point(point)
-                    .expect("should have a content offset for point");
+                let content_offset = Self::resolve_content_offset(
+                    point,
+                    grid,
+                    "InitialCursorState::AtCellAfterPoint",
+                );
                 CursorContentOffset::AtCellAfterPoint(content_offset)
+            }
+        }
+    }
+
+    /// Looks up `point` in `grid.flat_storage` and returns its byte offset, or
+    /// falls back to byte offset 0 (start of content) on error.
+    ///
+    /// `flat_storage.content_offset_at_point` errors when the point is outside
+    /// the storage bounds or refers to an empty cell after the end of a
+    /// hard-wrapped line. Both can happen during resize when the cursor's
+    /// pre-resize point doesn't survive the layout change (e.g. the cursor was
+    /// past the end of a line that's no longer wrapped, or in a row that's
+    /// been folded into history).
+    ///
+    /// Previously this was an `.expect("should have a content offset for
+    /// point")`, which crashed the app with SIGABRT during resize for users
+    /// hitting the edge case (GH-9013, 8+ reports in one week, all with the
+    /// same stack). Now we log the failure and fall back to byte offset 0,
+    /// which makes the cursor land at the top-left of the resized grid — a
+    /// recoverable, user-correctable state instead of a hard crash.
+    fn resolve_content_offset(point: Point, grid: &GridHandler, source: &str) -> ByteOffset {
+        match grid.flat_storage.content_offset_at_point(point) {
+            Ok(offset) => offset,
+            Err(err) => {
+                log::warn!(
+                    "GH-9013: {source} resize fell back to ByteOffset(0) because \
+                     `content_offset_at_point({point:?})` failed: {err:?}"
+                );
+                ByteOffset::default()
             }
         }
     }
@@ -300,16 +328,14 @@ enum CursorContentOffset {
 impl CursorContentOffset {
     fn into_cursor_point(self, new_cols: usize, grid: &GridHandler) -> FinalCursorState {
         match self {
-            Self::AtPoint(byte_offset) => FinalCursorState::AtPoint(
-                grid.flat_storage
-                    .content_offset_to_point(byte_offset)
-                    .expect("content offset should be valid"),
-            ),
+            Self::AtPoint(byte_offset) => FinalCursorState::AtPoint(Self::resolve_point(
+                byte_offset,
+                grid,
+                "CursorContentOffset::AtPoint",
+            )),
             Self::AtCellAfterPoint(byte_offset) => {
-                let mut point = grid
-                    .flat_storage
-                    .content_offset_to_point(byte_offset)
-                    .expect("content offset should be valid");
+                let mut point =
+                    Self::resolve_point(byte_offset, grid, "CursorContentOffset::AtCellAfterPoint");
                 // All data is in flat storage at the moment, so we need to
                 // explicitly ask it about row wrapping.
                 let input_needs_wrap =
@@ -321,6 +347,27 @@ impl CursorContentOffset {
                     point,
                     input_needs_wrap,
                 }
+            }
+        }
+    }
+
+    /// Looks up the grid `Point` for `byte_offset`, falling back to
+    /// `Point::default()` (origin) on error.
+    ///
+    /// Mirrors [`InitialCursorState::resolve_content_offset`] in spirit: the
+    /// underlying call can fail when the offset is outside stored content or
+    /// points at a non-cell location (e.g. a newline). Previously this was an
+    /// `.expect("content offset should be valid")` and would crash the app
+    /// during resize edge cases — see GH-9013.
+    fn resolve_point(byte_offset: ByteOffset, grid: &GridHandler, source: &str) -> Point {
+        match grid.flat_storage.content_offset_to_point(byte_offset) {
+            Ok(point) => point,
+            Err(err) => {
+                log::warn!(
+                    "GH-9013: {source} resize fell back to Point::default() because \
+                     `content_offset_to_point({byte_offset:?})` failed: {err:?}"
+                );
+                Point::default()
             }
         }
     }
