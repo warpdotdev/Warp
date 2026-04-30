@@ -16568,9 +16568,10 @@ impl TerminalView {
     ) -> Vec<MenuItem<TerminalAction>> {
         let mut items = Vec::new();
 
-        if ShareableObject::AIConversation(conversation_id)
-            .link(ctx)
-            .is_some()
+        if FeatureFlag::CloudConversations.is_enabled()
+            && ShareableObject::AIConversation(conversation_id)
+                .link(ctx)
+                .is_some()
         {
             items.push(
                 MenuItemFields::new("Copy share link")
