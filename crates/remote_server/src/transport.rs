@@ -82,6 +82,21 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
         &self,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<bool, String>> + Send>>;
 
+    /// Combined platform detection and binary check in a single transport
+    /// round-trip. Returns `(platform_result, binary_check_result)`.
+    ///
+    /// Implementations should combine both checks into a single command
+    /// to avoid opening multiple channels (e.g. hitting the remote
+    /// host's `MaxSessions` limit over SSH).
+    fn detect_platform_and_check_binary(
+        &self,
+    ) -> Pin<
+        Box<
+            dyn std::future::Future<Output = (Result<RemotePlatform, String>, Result<bool, String>)>
+                + Send,
+        >,
+    >;
+
     /// Installs the remote server binary on the remote host.
     ///
     /// Pure I/O — does not emit any events. The caller

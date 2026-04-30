@@ -184,6 +184,45 @@ pub fn binary_check_command() -> String {
     format!("test -x {bin}")
 }
 
+/// Sentinel line separating `uname -sm` output from the binary-check result
+/// in [`platform_and_binary_check_command`].
+const PLATFORM_CHECK_DELIM: &str = "__WARP_PLATFORM_CHECK_DELIM__";
+
+/// Returns a single shell command that detects the remote platform via
+/// `uname -sm` **and** checks whether the remote server binary is installed,
+/// producing structured stdout that [`parse_platform_and_binary_check_output`]
+/// can parse.
+///
+/// Using one command avoids opening multiple SSH channels, which can hit
+/// the remote host's `MaxSessions` limit.
+pub fn platform_and_binary_check_command() -> String {
+    let bin = remote_server_binary();
+    format!(
+        "uname -sm; printf '{PLATFORM_CHECK_DELIM}\\n'; test -x {bin} && echo INSTALLED || echo NOT_INSTALLED"
+    )
+}
+
+/// Parse the stdout of [`platform_and_binary_check_command`] into a
+/// platform result and a binary-installed result.
+pub fn parse_platform_and_binary_check_output(
+    stdout: &str,
+) -> (Result<RemotePlatform>, Result<bool>) {
+    let Some((uname_section, check_section)) = stdout.split_once(PLATFORM_CHECK_DELIM) else {
+        let err = "missing delimiter in combined platform/binary check output";
+        return (Err(anyhow!(err)), Err(anyhow!(err)));
+    };
+
+    let platform_result = parse_uname_output(uname_section);
+
+    let binary_result = match check_section.trim() {
+        "INSTALLED" => Ok(true),
+        "NOT_INSTALLED" => Ok(false),
+        other => Err(anyhow!("unexpected binary check result: {other}")),
+    };
+
+    (platform_result, binary_result)
+}
+
 /// The install script template, loaded from a standalone `.sh` file for
 /// readability. Placeholders like `{download_base_url}` are substituted by
 /// [`install_script`].

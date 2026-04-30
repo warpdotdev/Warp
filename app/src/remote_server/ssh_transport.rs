@@ -117,6 +117,43 @@ impl RemoteTransport for SshTransport {
         })
     }
 
+    fn detect_platform_and_check_binary(
+        &self,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = (Result<RemotePlatform, String>, Result<bool, String>)> + Send,
+        >,
+    > {
+        let socket_path = self.socket_path.clone();
+        Box::pin(async move {
+            log::info!(
+                "Checking platform and remote server binary at {}",
+                setup::remote_server_binary()
+            );
+            match run_ssh_command(
+                &socket_path,
+                &setup::platform_and_binary_check_command(),
+                CHECK_TIMEOUT,
+            )
+            .await
+            {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let (platform, binary) =
+                        setup::parse_platform_and_binary_check_output(&stdout);
+                    (
+                        platform.map_err(|e| format!("{e:#}")),
+                        binary.map_err(|e| format!("{e:#}")),
+                    )
+                }
+                Err(e) => {
+                    let error = format!("{e:#}");
+                    (Err(error.clone()), Err(error))
+                }
+            }
+        })
+    }
+
     fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {

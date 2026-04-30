@@ -77,6 +77,45 @@ fn parse_uname_missing_arch() {
 }
 
 #[test]
+fn parse_combined_linux_installed() {
+    let stdout = "Linux x86_64\n__WARP_PLATFORM_CHECK_DELIM__\nINSTALLED\n";
+    let (platform, binary) = parse_platform_and_binary_check_output(stdout);
+    let platform = platform.unwrap();
+    assert_eq!(platform.os, RemoteOs::Linux);
+    assert_eq!(platform.arch, RemoteArch::X86_64);
+    assert_eq!(binary.unwrap(), true);
+}
+
+#[test]
+fn parse_combined_darwin_not_installed() {
+    let stdout = "Darwin arm64\n__WARP_PLATFORM_CHECK_DELIM__\nNOT_INSTALLED\n";
+    let (platform, binary) = parse_platform_and_binary_check_output(stdout);
+    let platform = platform.unwrap();
+    assert_eq!(platform.os, RemoteOs::MacOs);
+    assert_eq!(platform.arch, RemoteArch::Aarch64);
+    assert_eq!(binary.unwrap(), false);
+}
+
+#[test]
+fn parse_combined_with_shell_init_output() {
+    let stdout =
+        "Welcome to server\nLinux aarch64\n__WARP_PLATFORM_CHECK_DELIM__\nINSTALLED\n";
+    let (platform, binary) = parse_platform_and_binary_check_output(stdout);
+    let platform = platform.unwrap();
+    assert_eq!(platform.os, RemoteOs::Linux);
+    assert_eq!(platform.arch, RemoteArch::Aarch64);
+    assert_eq!(binary.unwrap(), true);
+}
+
+#[test]
+fn parse_combined_missing_delimiter() {
+    let stdout = "Linux x86_64\n";
+    let (platform, binary) = parse_platform_and_binary_check_output(stdout);
+    assert!(platform.is_err());
+    assert!(binary.is_err());
+}
+
+#[test]
 fn state_is_ready() {
     assert!(RemoteServerSetupState::Ready.is_ready());
     assert!(!RemoteServerSetupState::Checking.is_ready());
