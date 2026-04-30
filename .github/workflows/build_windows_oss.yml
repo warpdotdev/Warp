@@ -1,0 +1,81 @@
+name: Build Windows OSS
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build_windows_oss.yml"
+      - ".cargo/**"
+      - "app/**"
+      - "command-signatures-v2/**"
+      - "crates/**"
+      - "resources/**"
+      - "script/**"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+  pull_request:
+    paths:
+      - ".github/workflows/build_windows_oss.yml"
+      - ".cargo/**"
+      - "app/**"
+      - "command-signatures-v2/**"
+      - "crates/**"
+      - "resources/**"
+      - "script/**"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-oss-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_windows_oss:
+    name: Build Windows OSS installer
+    runs-on: windows-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: ./.github/actions/prepare_environment
+        with:
+          target_os: windows
+          cache_key: windows-oss-x64
+          is_self_hosted: false
+          install_release_deps: true
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $innoSetupPath = "${env:ProgramFiles(x86)}\Inno Setup 6"
+          if (Test-Path $innoSetupPath) {
+            $innoSetupPath >> $env:GITHUB_PATH
+          }
+
+      - name: Build Windows OSS installer
+        id: bundle
+        shell: bash
+        run: script/bundle --channel oss --arch x64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows OSS installer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: warp-oss-windows-x64-installer
+          path: ${{ steps.bundle.outputs.installer_path }}
+          if-no-files-found: error
+
+      - name: Upload Windows OSS debug symbols
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: warp-oss-windows-x64-pdb
+          path: ${{ steps.bundle.outputs.pdb_file_path }}
+          if-no-files-found: warn

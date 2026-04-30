@@ -1,7 +1,10 @@
 use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::{App, SingletonEntity};
 
-use super::{has_completed_local_onboarding, RootView, HAS_COMPLETED_ONBOARDING_KEY};
+use super::{
+    has_completed_local_onboarding, logged_out_startup_destination,
+    LoggedOutStartupDestination, RootView, HAS_COMPLETED_ONBOARDING_KEY,
+};
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::AuthStateProvider;
 use crate::server::server_api::ServerApiProvider;
@@ -22,6 +25,49 @@ fn set_local_onboarding_completed(app: &mut App, completed: bool) {
             )
             .unwrap();
     });
+}
+
+#[test]
+fn test_skip_firebase_anonymous_user_bypasses_startup_login() {
+    assert_eq!(
+        logged_out_startup_destination(
+            true,  // force_login
+            true,  // skip_firebase_anonymous_user
+            true,  // open_warp_new_settings_modes
+            true,  // agent_onboarding
+            false, // has_completed_local_onboarding
+        ),
+        LoggedOutStartupDestination::Workspace,
+        "logged-out native startup should go straight to the app when loginless mode is enabled"
+    );
+}
+
+#[test]
+fn test_force_login_still_wins_when_loginless_mode_is_disabled() {
+    assert_eq!(
+        logged_out_startup_destination(
+            true,  // force_login
+            false, // skip_firebase_anonymous_user
+            true,  // open_warp_new_settings_modes
+            true,  // agent_onboarding
+            false, // has_completed_local_onboarding
+        ),
+        LoggedOutStartupDestination::Auth
+    );
+}
+
+#[test]
+fn test_pre_login_onboarding_still_runs_when_loginless_mode_is_disabled() {
+    assert_eq!(
+        logged_out_startup_destination(
+            false, // force_login
+            false, // skip_firebase_anonymous_user
+            true,  // open_warp_new_settings_modes
+            true,  // agent_onboarding
+            false, // has_completed_local_onboarding
+        ),
+        LoggedOutStartupDestination::Onboarding
+    );
 }
 
 /// Regression test for the bug fixed by introducing

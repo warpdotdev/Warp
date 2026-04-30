@@ -1693,6 +1693,34 @@ enum AuthOnboardingState {
     Terminal(ViewHandle<Workspace>),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoggedOutStartupDestination {
+    Workspace,
+    Onboarding,
+    Auth,
+}
+
+fn logged_out_startup_destination(
+    force_login: bool,
+    skip_firebase_anonymous_user: bool,
+    open_warp_new_settings_modes: bool,
+    agent_onboarding: bool,
+    has_completed_local_onboarding: bool,
+) -> LoggedOutStartupDestination {
+    if skip_firebase_anonymous_user {
+        LoggedOutStartupDestination::Workspace
+    } else if force_login {
+        LoggedOutStartupDestination::Auth
+    } else if open_warp_new_settings_modes
+        && agent_onboarding
+        && !has_completed_local_onboarding
+    {
+        LoggedOutStartupDestination::Onboarding
+    } else {
+        LoggedOutStartupDestination::Auth
+    }
+}
+
 pub struct RootView {
     auth_onboarding_state: AuthOnboardingState,
     server_time: Option<Arc<ServerTime>>,
@@ -1760,32 +1788,39 @@ impl RootView {
                 if #[cfg(target_family = "wasm")] {
                     AuthOnboardingState::WebImport(AuthOnboardingTarget::Workspace(workspace_args.into()))
                 } else {
-                    // When OpenWarpNewSettingsModes is enabled, show onboarding before login for
-                    // users who haven't completed it yet (tracked via a local UserPreferences key).
-                    let has_completed_local_onboarding = FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
-                        && has_completed_local_onboarding(ctx);
-                    let should_show_pre_login_onboarding = FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
-                        && FeatureFlag::AgentOnboarding.is_enabled()
-                        && !has_completed_local_onboarding;
-                    if FeatureFlag::ForceLogin.is_enabled() {
-                        // ForceLogin is true for Preview
-                        AuthOnboardingState::Auth(workspace_args.into())
-                    } else if should_show_pre_login_onboarding {
-                        let workspace_args_box: Box<WorkspaceArgs> = workspace_args.into();
-                        let onboarding_view = Self::create_agent_onboarding_view(ctx);
-                        onboarding_view.update(ctx, |view, ctx| {
-                            view.start_onboarding(ctx);
-                        });
-                        AuthOnboardingState::Onboarding {
-                            onboarding_view,
-                            target: AuthOnboardingTarget::Workspace(workspace_args_box),
+                    // Choose the logged-out native startup path. Loginless mode wins so
+                    // startup never blocks on auth when the user can use Warp without an account.
+                    let open_warp_new_settings_modes =
+                        FeatureFlag::OpenWarpNewSettingsModes.is_enabled();
+                    let local_onboarding_completed =
+                        open_warp_new_settings_modes && has_completed_local_onboarding(ctx);
+
+                    match logged_out_startup_destination(
+                        FeatureFlag::ForceLogin.is_enabled(),
+                        FeatureFlag::SkipFirebaseAnonymousUser.is_enabled(),
+                        open_warp_new_settings_modes,
+                        FeatureFlag::AgentOnboarding.is_enabled(),
+                        local_onboarding_completed,
+                    ) {
+                        LoggedOutStartupDestination::Workspace => {
+                            // Loginless mode should never block startup on auth or pre-login
+                            // onboarding; gated cloud features can still request auth later.
+                            AuthOnboardingState::Terminal(workspace_args.create_workspace(ctx))
                         }
-                    } else if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled() {
-                        // When SkipFirebaseAnonymousUser is enabled, skip the login screen
-                        // entirely and go directly into the workspace.
-                        AuthOnboardingState::Terminal(workspace_args.create_workspace(ctx))
-                    } else {
-                        AuthOnboardingState::Auth(workspace_args.into())
+                        LoggedOutStartupDestination::Onboarding => {
+                            let workspace_args_box: Box<WorkspaceArgs> = workspace_args.into();
+                            let onboarding_view = Self::create_agent_onboarding_view(ctx);
+                            onboarding_view.update(ctx, |view, ctx| {
+                                view.start_onboarding(ctx);
+                            });
+                            AuthOnboardingState::Onboarding {
+                                onboarding_view,
+                                target: AuthOnboardingTarget::Workspace(workspace_args_box),
+                            }
+                        }
+                        LoggedOutStartupDestination::Auth => {
+                            AuthOnboardingState::Auth(workspace_args.into())
+                        }
                     }
                 }
             }
