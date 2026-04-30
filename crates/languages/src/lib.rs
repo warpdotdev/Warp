@@ -152,7 +152,11 @@ pub fn language_by_filename(path: &Path) -> Option<Arc<Language>> {
         "tsx" => language_by_name("tsx"),
         "ts" | "cts" | "mts" => language_by_name("typescript"),
         "java" | "groovy" | "gvy" | "gy" | "gsh" => language_by_name("java"),
+<<<<<<< HEAD
         "cpp" | "cxx" | "cc" | "h" | "hh" | "hpp" | "hxx" | "H" | "h++" => language_by_name("cpp"),
+=======
+        "cpp" | "cxx" | "cc" | "h" | "hh" | "hpp" | "hxx" | "H" => language_by_name("cpp"),
+>>>>>>> 02f30daa (curr)
         "sh" | "zsh" | "bash" => language_by_name("shell"),
         "cs" => language_by_name("csharp"),
         "html" => language_by_name("html"),
