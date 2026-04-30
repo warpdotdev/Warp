@@ -800,7 +800,11 @@ fn find_skill_directories_in_tree_finds_skills_in_lazy_loaded_provider_dir() {
 
             model_handle.read(&app, |model, ctx| {
                 let skill_dirs = find_skill_directories_in_tree(&repo, model, ctx);
-                assert_eq!(skill_dirs.len(), 1);
+                assert_eq!(
+                    skill_dirs.len(),
+                    1,
+                    "expected lazy-loaded .agents/ skills dir"
+                );
                 assert!(skill_dirs.contains(&repo.join("sub-project/.agents/skills")));
 
                 let skills = read_skills_from_directories(skill_dirs);
@@ -883,6 +887,78 @@ fn find_skill_directories_in_tree_finds_skills_when_parent_dir_is_lazy_loaded() 
                 let skills = read_skills_from_directories(skill_dirs);
                 assert_eq!(skills.len(), 1);
                 assert_eq!(skills[0].name, "sub-skill");
+            });
+        });
+    });
+}
+
+/// Security test: dependency/cache directories must not be probed as workspace roots.
+///
+/// When a directory like `node_modules/` is gitignored (lazy-loaded with no children),
+/// Pass 2 Case (b) must skip it even if `node_modules/.agents/skills/` happens to exist
+/// on disk. Skills inside dependency trees are not authored by the repo owner and could
+/// be injected via a supply-chain attack.
+///
+/// `DEPENDENCY_DIR_NAMES` lists well-known package directories that are always skipped
+/// in Case (b). This test verifies that `node_modules` is in that list and that
+/// `find_skill_directories_in_tree` returns nothing when the only lazy-loaded directory
+/// is `node_modules/`.
+#[test]
+fn find_skill_directories_in_tree_skips_dependency_dirs() {
+    VirtualFS::test("find_skip_node_modules", |dirs, mut vfs| {
+        let repo = dirs.tests().join("repo");
+
+        // Create skills inside node_modules — these must NOT be loaded.
+        vfs.mkdir("repo/node_modules/.agents/skills/injected-skill")
+            .with_files(vec![Stub::FileWithContent(
+                "repo/node_modules/.agents/skills/injected-skill/SKILL.md",
+                "---\nname: injected-skill\ndescription: malicious\n---\n# evil",
+            )]);
+
+        // node_modules/ appears in the tree as lazy-loaded (gitignored).
+        let node_modules = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(
+                &repo.join("node_modules"),
+            )
+            .unwrap(),
+            children: vec![],
+            ignored: true,
+            loaded: false,
+        });
+        let root = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(&repo).unwrap(),
+            children: vec![node_modules],
+            ignored: false,
+            loaded: true,
+        });
+
+        App::test((), |mut app| async move {
+            let watcher = app.add_singleton_model(DirectoryWatcher::new);
+            app.add_singleton_model(|_| DetectedRepositories::default());
+            let repo_handle = watcher.update(&mut app, |w, ctx| {
+                w.add_directory(
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                        .unwrap(),
+                    ctx,
+                )
+                .unwrap()
+            });
+            let state = FileTreeState::new(root, vec![], Some(repo_handle));
+
+            let model_handle = app.add_singleton_model(RepoMetadataModel::new);
+            model_handle.update(&mut app, |model, ctx| {
+                let key =
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                        .unwrap();
+                model.insert_test_state(key, state, ctx);
+            });
+
+            model_handle.read(&app, |model, ctx| {
+                let skill_dirs = find_skill_directories_in_tree(&repo, model, ctx);
+                assert!(
+                    skill_dirs.is_empty(),
+                    "node_modules must not be probed for skills, but found: {skill_dirs:?}"
+                );
             });
         });
     });
