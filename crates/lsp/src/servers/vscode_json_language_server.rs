@@ -300,13 +300,48 @@ fn is_executable_file(path: &std::path::Path) -> bool {
 #[cfg(feature = "local_fs")]
 mod tests {
     use super::binary_in_path;
+    use std::ffi::OsString;
     use std::fs::{self, File};
+    use std::path::Path;
 
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt as _;
 
-    fn touch_exe(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
-        let path = dir.join(name);
+    /// Joins multiple path components into a PATH-formatted string using
+    /// the platform separator (`:` on Unix, `;` on Windows). Wraps
+    /// `std::env::join_paths` so the new tests work cross-platform with
+    /// the matching split logic in `binary_in_path`.
+    fn make_path_var<I, P>(parts: I) -> String
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<Path>,
+    {
+        let owned: Vec<OsString> = parts
+            .into_iter()
+            .map(|p| p.as_ref().as_os_str().to_owned())
+            .collect();
+        std::env::join_paths(owned)
+            .expect("failed to join PATH")
+            .into_string()
+            .expect("PATH contained non-UTF-8 component")
+    }
+
+    /// On Windows, `binary_in_path` expects an executable to end in
+    /// `.exe`/`.cmd`/`.bat`. The npm shim is a `.cmd`, so use that as
+    /// the test artefact when running on Windows.
+    fn binary_filename(stem: &str) -> String {
+        #[cfg(windows)]
+        {
+            format!("{stem}.cmd")
+        }
+        #[cfg(not(windows))]
+        {
+            stem.to_string()
+        }
+    }
+
+    fn touch_exe(dir: &Path, stem: &str) -> std::path::PathBuf {
+        let path = dir.join(binary_filename(stem));
         File::create(&path).expect("create test binary");
         #[cfg(unix)]
         {
@@ -321,7 +356,7 @@ mod tests {
     fn finds_binary_in_first_path_entry() {
         let tmp = tempfile::tempdir().expect("tempdir");
         touch_exe(tmp.path(), "vscode-json-languageserver");
-        let path_var = format!("{}:{}", tmp.path().display(), "/nonexistent/dir");
+        let path_var = make_path_var([tmp.path(), Path::new("/nonexistent/dir")]);
         assert!(binary_in_path(
             "vscode-json-languageserver",
             Some(&path_var)
@@ -331,7 +366,7 @@ mod tests {
     #[test]
     fn rejects_when_binary_absent() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let path_var = tmp.path().display().to_string();
+        let path_var = make_path_var([tmp.path()]);
         assert!(!binary_in_path(
             "vscode-json-languageserver",
             Some(&path_var)
@@ -354,7 +389,7 @@ mod tests {
             0,
             "test setup failed: file unexpectedly executable",
         );
-        let path_var = tmp.path().display().to_string();
+        let path_var = make_path_var([tmp.path()]);
         assert!(!binary_in_path(
             "vscode-json-languageserver",
             Some(&path_var)
