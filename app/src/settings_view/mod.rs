@@ -83,6 +83,7 @@ mod billing_and_usage_page;
 mod code_page;
 mod delete_environment_confirmation_dialog;
 mod directory_color_add_picker;
+mod doppler_page;
 pub(crate) mod environments_page;
 mod execution_profile_view;
 mod features;
@@ -222,6 +223,9 @@ pub enum SettingsSection {
     // ── Cloud platform umbrella subpages ──
     CloudEnvironments,
     OzCloudAPIKeys,
+    /// Secrets (Doppler) section: hosts the "Sign in with Doppler" button.
+    /// Project picker / status reader are tracked separately (PDX-51, PDX-52).
+    Doppler,
 }
 
 use crate::util::bindings::custom_tag_to_keystroke;
@@ -244,6 +248,7 @@ impl Display for SettingsSection {
             SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
             SettingsSection::CloudEnvironments => write!(f, "Environments"),
             SettingsSection::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
+            SettingsSection::Doppler => write!(f, "Secrets (Doppler)"),
             _ => write!(f, "{self:?}"),
         }
     }
@@ -345,6 +350,7 @@ impl FromStr for SettingsSection {
             "Editor and Code Review" | "EditorAndCodeReview" => Ok(Self::EditorAndCodeReview),
             "CloudEnvironments" => Ok(Self::CloudEnvironments),
             "Oz Cloud API Keys" | "OzCloudAPIKeys" => Ok(Self::OzCloudAPIKeys),
+            "Secrets (Doppler)" | "Doppler" => Ok(Self::Doppler),
             _ => Err(()),
         }
     }
@@ -970,6 +976,7 @@ macro_rules! update_page {
             SettingsPageViewHandle::BillingAndUsage(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::WarpDrive(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::Doppler(handle) => $ctx.update_view(handle, $update),
         }
     };
 }
@@ -1118,6 +1125,12 @@ impl SettingsView {
             me.handle_warp_drive_page_event(event, ctx);
         });
 
+        // Doppler (Secrets) page — fire-and-forget `doppler login` button.
+        // No event subscription: the page only emits `SettingsPageEvent`s,
+        // which are routed via the standard SettingsPageMeta plumbing.
+        let doppler_page_handle =
+            ctx.add_typed_action_view(doppler_page::DopplerSettingsPageView::new);
+
         let platform_page_handle = ctx.add_typed_action_view(platform_page::PlatformPageView::new);
         ctx.subscribe_to_view(&platform_page_handle, |me, _, event, ctx| {
             me.handle_platform_page_event(event, ctx);
@@ -1178,6 +1191,7 @@ impl SettingsView {
             SettingsPage::new(environments_page_handle.clone()),
             SettingsPage::new(privacy_page_handle),
             SettingsPage::new(about_page_handle),
+            SettingsPage::new(doppler_page_handle),
         ]);
 
         // Build sidebar nav items. AI page is presented as an "Agents" umbrella
@@ -1211,6 +1225,7 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Referrals),
             SettingsNavItem::Page(SettingsSection::SharedBlocks),
             SettingsNavItem::Page(SettingsSection::WarpDrive),
+            SettingsNavItem::Page(SettingsSection::Doppler),
             SettingsNavItem::Page(SettingsSection::Privacy),
             SettingsNavItem::Page(SettingsSection::About),
         ];
@@ -1962,6 +1977,7 @@ impl SettingsView {
             SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Code(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::WarpDrive(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::Doppler(v) => v.as_ref(app).should_render(app),
         }
     }
 
