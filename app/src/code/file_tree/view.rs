@@ -545,7 +545,7 @@ impl FileTreeView {
                     .filter(|(_, root_dir)| {
                         // Check if this root directory is within the updated repository
                         let root_dir_path = root_dir.entry.root_directory();
-                        *root_dir_path == std_path || root_dir_path.starts_with(&std_path)
+                        **root_dir_path == *std_path || root_dir_path.starts_with(std_path)
                     })
                     .map(|(root_path, _)| root_path.clone())
                     .collect();
@@ -557,7 +557,7 @@ impl FileTreeView {
                         for root_path in &affected_root_paths {
                             if let Some(root_dir) = self.root_directories.get_mut(root_path) {
                                 // If this is the repository root itself, update the entire entry
-                                if *root_dir.entry.root_directory() == std_path {
+                                if **root_dir.entry.root_directory() == *std_path {
                                     root_dir.entry = state.entry.clone();
                                 } else {
                                     // For subdirectories, we need to refresh the specific directory
