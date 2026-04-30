@@ -1,5 +1,5 @@
 use crate::fonts::{canvas, RasterizedGlyph};
-use crate::rendering::atlas::{self, AllocatedRegion, TextureId};
+use crate::rendering::atlas::{self, AllocatedRegion, AtlasTextureKind, TextureId};
 use crate::{fonts::SubpixelAlignment, rendering, scene::GlyphKey};
 use anyhow::Result;
 use ordered_float::OrderedFloat;
@@ -12,8 +12,12 @@ use std::collections::HashMap;
 
 const ATLAS_SIZE: usize = 1024;
 
-/// Callback to create a texture at a given size.
-type CreateTextureCallback<'a, T> = dyn Fn(usize) -> T + 'a;
+/// Callback to create a texture at a given size with a given kind.
+///
+/// The kind tells the backend which texture format to allocate so that the
+/// returned texture is sampleable by the render pipeline that will consume
+/// it (`Generic` is `Rgba8Unorm`, `Subpixel` is `Bgra8Unorm`).
+type CreateTextureCallback<'a, T> = dyn Fn(usize, AtlasTextureKind) -> T + 'a;
 
 /// Callback to insert [`RasterizedGlyph`] at a region identified by [`AllocatedRegion`] into a
 /// texture, `T`.
@@ -41,12 +45,19 @@ pub(crate) type RasterizeGlyphFn<'a> = dyn Fn(
     ) -> Result<RasterizedGlyph>
     + 'a;
 
-/// A cache that caches glyphs in a texture atlas.  
+/// A cache that caches glyphs in texture atlases of various kinds.
+///
+/// Each [`AtlasTextureKind`] has its own [`atlas::Manager`] and texture list
+/// so allocations of one kind never share a texture with allocations of
+/// another. The kind a glyph is routed to is derived from its
+/// [`GlyphCacheKey::lcd_subpixel`] flag at insertion time.
 pub struct GlyphCache<Texture> {
-    textures: Vec<Texture>,
+    generic_textures: Vec<Texture>,
+    subpixel_textures: Vec<Texture>,
     cache: HashMap<GlyphCacheKey, GlyphTextureOffset>,
     glyph_config: rendering::GlyphConfig,
-    atlas_manager: atlas::Manager,
+    generic_manager: atlas::Manager,
+    subpixel_manager: atlas::Manager,
 }
 
 #[derive(Hash, PartialEq, Eq)]
@@ -74,8 +85,13 @@ impl GlyphCacheKey {
 }
 
 /// A glyph within a texture atlas.
+///
+/// `kind` and `texture_id` together address a specific atlas texture: the
+/// `kind` selects which per-kind list of textures the [`GlyphCache`] holds,
+/// and `texture_id` indexes into that list.
 #[derive(Copy, Debug, Clone)]
 pub(crate) struct GlyphTextureOffset {
+    pub kind: AtlasTextureKind,
     pub texture_id: TextureId,
     pub allocated_region: AllocatedRegion,
     pub raster_bounds: RectF,
@@ -85,10 +101,12 @@ pub(crate) struct GlyphTextureOffset {
 impl<Texture> GlyphCache<Texture> {
     pub(crate) fn new(glyph_config: rendering::GlyphConfig) -> Self {
         GlyphCache {
-            textures: Vec::new(),
+            generic_textures: Vec::new(),
+            subpixel_textures: Vec::new(),
             cache: HashMap::new(),
             glyph_config,
-            atlas_manager: atlas::Manager::new(ATLAS_SIZE),
+            generic_manager: atlas::Manager::new(ATLAS_SIZE),
+            subpixel_manager: atlas::Manager::new(ATLAS_SIZE),
         }
     }
 
@@ -100,16 +118,41 @@ impl<Texture> GlyphCache<Texture> {
         }
     }
 
-    /// Returns the texture identified by [`TextureId`].
-    pub(crate) fn texture(&self, texture_id: &TextureId) -> Option<&Texture> {
-        self.textures.get(texture_id.as_usize())
+    /// Returns the texture for the atlas of the given `kind` at `texture_id`.
+    pub(crate) fn texture(
+        &self,
+        kind: AtlasTextureKind,
+        texture_id: &TextureId,
+    ) -> Option<&Texture> {
+        self.textures_for(kind).get(texture_id.as_usize())
+    }
+
+    fn textures_for(&self, kind: AtlasTextureKind) -> &Vec<Texture> {
+        match kind {
+            AtlasTextureKind::Generic => &self.generic_textures,
+            AtlasTextureKind::Subpixel => &self.subpixel_textures,
+        }
+    }
+
+    fn textures_for_mut(&mut self, kind: AtlasTextureKind) -> &mut Vec<Texture> {
+        match kind {
+            AtlasTextureKind::Generic => &mut self.generic_textures,
+            AtlasTextureKind::Subpixel => &mut self.subpixel_textures,
+        }
+    }
+
+    fn manager_for(&mut self, kind: AtlasTextureKind) -> &mut atlas::Manager {
+        match kind {
+            AtlasTextureKind::Generic => &mut self.generic_manager,
+            AtlasTextureKind::Subpixel => &mut self.subpixel_manager,
+        }
     }
 
     /// Returns a [`GlyphTextureOffset`] identified by [`GlyphKey`]. If the [`GlyphKey`] has not
     /// been previously cached, the glyph is rasterized and inserted into the texture via the
     /// `insert_into_texture` callback. If a new texture needs to be created (since a previous
-    /// texture is now fill), the `create_texture` callback is called to construct a new texture
-    /// atlas.
+    /// texture is now full), the `create_texture` callback is called to construct a new texture
+    /// atlas of the appropriate kind.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn get(
         &mut self,
@@ -125,48 +168,59 @@ impl<Texture> GlyphCache<Texture> {
         let cache_key =
             GlyphCacheKey::new(glyph_key, scale_factor, subpixel_alignment, lcd_subpixel);
 
-        match self.cache.get(&cache_key) {
-            None => {
-                let bounds = raster_bounds_fn(
-                    glyph_key,
-                    Vector2F::splat(scale_factor),
-                    lcd_subpixel,
-                    &self.glyph_config,
-                )?;
-
-                if bounds.size() == Vector2I::zero() {
-                    return Ok(None);
-                }
-
-                let rasterized_glyph = rasterize_glyph_fn(
-                    glyph_key,
-                    Vector2F::splat(scale_factor),
-                    subpixel_alignment,
-                    lcd_subpixel,
-                    &self.glyph_config,
-                    crate::fonts::canvas::RasterFormat::Rgba32,
-                )?;
-
-                let texture_offset = self.atlas_manager.insert(rasterized_glyph.canvas.size)?;
-                let idx = texture_offset.texture_id.as_usize();
-                if idx >= self.textures.len() {
-                    self.textures
-                        .resize_with(idx + 1, || create_texture(ATLAS_SIZE));
-                }
-                let texture = &mut self.textures[idx];
-                insert_into_texture(texture_offset.allocated_region, &rasterized_glyph, texture);
-
-                let glyph_texture_offset = GlyphTextureOffset {
-                    texture_id: texture_offset.texture_id,
-                    raster_bounds: bounds.to_f32(),
-                    is_emoji: rasterized_glyph.is_emoji,
-                    allocated_region: texture_offset.allocated_region,
-                };
-
-                self.cache.insert(cache_key, glyph_texture_offset);
-                Ok(Some(glyph_texture_offset))
-            }
-            Some(gto) => Ok(Some(*gto)),
+        if let Some(gto) = self.cache.get(&cache_key) {
+            return Ok(Some(*gto));
         }
+
+        let bounds = raster_bounds_fn(
+            glyph_key,
+            Vector2F::splat(scale_factor),
+            lcd_subpixel,
+            &self.glyph_config,
+        )?;
+
+        if bounds.size() == Vector2I::zero() {
+            return Ok(None);
+        }
+
+        let rasterized_glyph = rasterize_glyph_fn(
+            glyph_key,
+            Vector2F::splat(scale_factor),
+            subpixel_alignment,
+            lcd_subpixel,
+            &self.glyph_config,
+            crate::fonts::canvas::RasterFormat::Rgba32,
+        )?;
+
+        // Color glyphs (emoji) and grayscale-rasterized glyphs both share the
+        // Generic atlas. Only glyphs whose pixel data is genuine LCD subpixel
+        // coverage go into the Subpixel atlas; that path requires the
+        // dual-source-blend pipeline to interpret the per-channel coverage
+        // correctly.
+        let kind = if lcd_subpixel && !rasterized_glyph.is_emoji {
+            AtlasTextureKind::Subpixel
+        } else {
+            AtlasTextureKind::Generic
+        };
+
+        let texture_offset = self.manager_for(kind).insert(rasterized_glyph.canvas.size)?;
+        let idx = texture_offset.texture_id.as_usize();
+        let textures = self.textures_for_mut(kind);
+        if idx >= textures.len() {
+            textures.resize_with(idx + 1, || create_texture(ATLAS_SIZE, kind));
+        }
+        let texture = &mut textures[idx];
+        insert_into_texture(texture_offset.allocated_region, &rasterized_glyph, texture);
+
+        let glyph_texture_offset = GlyphTextureOffset {
+            kind,
+            texture_id: texture_offset.texture_id,
+            raster_bounds: bounds.to_f32(),
+            is_emoji: rasterized_glyph.is_emoji,
+            allocated_region: texture_offset.allocated_region,
+        };
+
+        self.cache.insert(cache_key, glyph_texture_offset);
+        Ok(Some(glyph_texture_offset))
     }
 }

@@ -16,8 +16,17 @@ pub(super) struct TextureWithBindGroup {
 }
 
 impl TextureWithBindGroup {
+    /// Creates a new atlas texture of the given pixel `format`.
+    ///
+    /// The format determines how downstream pipelines interpret samples:
+    /// `Rgba8Unorm` is used for the generic glyph atlas (grayscale coverage
+    /// replicated into RGBA, plus color emoji), and `Bgra8Unorm` is used for
+    /// the subpixel atlas where each channel encodes coverage of a single
+    /// LCD subpixel. Both formats are 4 bytes per texel, so the upload path
+    /// in [`Self::insert_glyph_into_texture`] is shared.
     pub(super) fn new(
         size: usize,
+        format: TextureFormat,
         device: &wgpu::Device,
         bind_group_layout: &BindGroupLayout,
         sampler: &Sampler,
@@ -32,7 +41,7 @@ impl TextureWithBindGroup {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
+            format,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: &[],
         });

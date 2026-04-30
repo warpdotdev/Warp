@@ -1,7 +1,19 @@
 use crate::fonts::SubpixelAlignment;
-use crate::rendering::atlas::TextureId;
+use crate::rendering::atlas::{AtlasTextureKind, TextureId};
 use crate::rendering::wgpu::renderer::WGPUContext;
 use crate::rendering::wgpu::texture_with_bind_group::TextureWithBindGroup;
+
+fn format_for_kind(kind: AtlasTextureKind) -> wgpu::TextureFormat {
+    match kind {
+        // The generic atlas holds grayscale coverage replicated into RGBA
+        // (for non-emoji glyphs) and full-colour emoji bitmaps. Both fit in
+        // four 8-bit channels of unsigned-normalised data.
+        AtlasTextureKind::Generic => wgpu::TextureFormat::Rgba8Unorm,
+        // The subpixel atlas holds three independent coverage values per
+        // texel in BGR order, matching swash's `subpixel_bgra` output.
+        AtlasTextureKind::Subpixel => wgpu::TextureFormat::Bgra8Unorm,
+    }
+}
 use crate::rendering::wgpu::{resources, shader_types};
 use crate::rendering::{GlyphCache, GlyphConfig};
 use crate::scene::{GlyphFade, Layer};
@@ -36,6 +48,7 @@ pub(super) struct LayerState {
 }
 
 pub(super) struct PerTextureState {
+    kind: AtlasTextureKind,
     texture_id: TextureId,
     start_offset: usize,
     len: usize,
@@ -155,8 +168,10 @@ impl Pipeline {
 
         let scale_factor = scene.scale_factor();
 
-        let mut texture_to_glyph: HashMap<TextureId, Vec<shaders::GlyphInstanceData>> =
-            HashMap::new();
+        let mut texture_to_glyph: HashMap<
+            (AtlasTextureKind, TextureId),
+            Vec<shaders::GlyphInstanceData>,
+        > = HashMap::new();
         for glyph in &layer.glyphs {
             let glyph_position = glyph.position * scale_factor;
             let subpixel_alignment = SubpixelAlignment::new(glyph_position);
@@ -169,9 +184,10 @@ impl Pipeline {
                 scene.scale_factor(),
                 subpixel_alignment,
                 lcd_subpixel,
-                &|size| {
+                &|size, kind| {
                     TextureWithBindGroup::new(
                         size,
+                        format_for_kind(kind),
                         &ctx.resources.device,
                         &self.texture_bind_group_layout,
                         &self.sampler,
@@ -216,7 +232,7 @@ impl Pipeline {
                     );
 
                     texture_to_glyph
-                        .entry(gto.texture_id)
+                        .entry((gto.kind, gto.texture_id))
                         .or_default()
                         .push(glyph_instance_data);
                 }
@@ -237,11 +253,12 @@ impl Pipeline {
         let mut start_offset = per_frame_state.glyph_data.len();
         let per_texture_data = texture_to_glyph
             .into_iter()
-            .map(|(texture_id, mut glyph_instance_data)| {
+            .map(|((kind, texture_id), mut glyph_instance_data)| {
                 let len = glyph_instance_data.len();
                 per_frame_state.glyph_data.append(&mut glyph_instance_data);
 
                 let state = PerTextureState {
+                    kind,
                     texture_id,
                     start_offset,
                     len,
@@ -289,7 +306,7 @@ impl Pipeline {
         for per_texture_state in &layer_state.textures {
             let texture_with_view = self
                 .glyph_cache
-                .texture(&per_texture_state.texture_id)
+                .texture(per_texture_state.kind, &per_texture_state.texture_id)
                 .expect("texture ID should be in atlas");
 
             render_pass.set_bind_group(1, texture_with_view.bind_group(), &[]);
