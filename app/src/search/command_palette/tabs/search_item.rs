@@ -12,11 +12,12 @@ use warpui::{AppContext, Element, SingletonEntity};
 
 pub struct SearchItem {
     tab: TabNavigationData,
+    mru_rank: usize,
 }
 
 impl SearchItem {
-    pub fn new(tab: TabNavigationData) -> Self {
-        Self { tab }
+    pub fn new(tab: TabNavigationData, mru_rank: usize) -> Self {
+        Self { tab, mru_rank }
     }
 }
 
@@ -84,7 +85,7 @@ impl crate::search::item::SearchItem for SearchItem {
     }
 
     fn score(&self) -> OrderedFloat<f64> {
-        OrderedFloat::from(0.0)
+        OrderedFloat::from(1000.0 - self.mru_rank as f64)
     }
 
     fn accept_result(&self) -> Self::Action {

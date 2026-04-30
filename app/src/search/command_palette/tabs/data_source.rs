@@ -37,10 +37,11 @@ impl SyncDataSource for DataSource {
 
         let results = tabs
             .into_iter()
-            .filter(|tab| {
+            .enumerate()
+            .filter(|(_, tab)| {
                 query_text.is_empty() || tab.title.to_lowercase().contains(&query_text)
             })
-            .map(|tab| QueryResult::from(SearchItem::new(tab)))
+            .map(|(i, tab)| QueryResult::from(SearchItem::new(tab, i)))
             .collect();
 
         Ok(results)
