@@ -9,8 +9,8 @@ use wgpu::{
 /// Helper struct that includes a [`Texture`] and its corresponding [`BindGroup`] for use in the
 /// `GlyphCache`.
 ///
-/// The format is recorded so [`Self::insert_glyph_into_texture`] can convert
-/// the rasterizer's RGBA32 output into the layout this texture expects.
+/// The format is recorded so [`Self::insert_glyph_into_texture`] can
+/// convert the rasterizer's RGBA32 output into the texture's layout.
 pub(super) struct TextureWithBindGroup {
     texture: Texture,
     /// The [`BindGroup`] associated with the `texture`. We compute this whenever we need to create
@@ -22,10 +22,10 @@ pub(super) struct TextureWithBindGroup {
 impl TextureWithBindGroup {
     /// Creates a new atlas texture of the given pixel `format`.
     ///
-    /// Three formats are used in practice: `R8Unorm` for the monochrome
-    /// coverage atlas (one byte per texel), and `Bgra8Unorm` for both the
-    /// subpixel coverage atlas and the polychrome (emoji) atlas (four
-    /// bytes per texel). The format dictates the upload-path conversion in
+    /// Two formats are used: `R8Unorm` for the monochrome coverage atlas
+    /// (one byte per texel) and `Bgra8Unorm` for both the subpixel coverage
+    /// atlas and the polychrome (emoji) atlas (four bytes per texel). The
+    /// format drives the upload-path conversion in
     /// [`Self::insert_glyph_into_texture`] below.
     pub(super) fn new(
         size: usize,
@@ -78,26 +78,20 @@ impl TextureWithBindGroup {
         glyph: &RasterizedGlyph,
         queue: &Queue,
     ) {
-        // Convert the rasterizer's four-byte-per-pixel canvas into whatever
-        // layout the destination texture expects. There are three cases:
+        // Convert the rasterizer's RGBA32 canvas into the destination
+        // texture's layout. Three cases:
         //
-        //   R8Unorm (Generic, non-emoji grayscale): extract the alpha byte.
-        //   The rasterizer replicates the A8 mask into RGBA32, so picking
-        //   the first byte of each four-byte group recovers the original
-        //   coverage exactly.
+        //   R8Unorm (Generic): extract the alpha byte. The rasterizer
+        //   replicates the A8 mask into RGBA32, so the first byte of each
+        //   four-byte group is the original coverage.
         //
-        //   Bgra8Unorm + emoji glyph (Polychrome): swash returns RGBA in
-        //   memory order but the texture reads its bytes as BGRA, so we
-        //   swap R and B per pixel on the CPU side. After this swap the
-        //   fragment shader's straight .rgb sample yields logical RGB.
+        //   Bgra8Unorm + emoji (Polychrome): swash returns RGBA but the
+        //   texture stores BGRA, so swap R and B per pixel.
         //
-        //   Bgra8Unorm + non-emoji subpixel coverage (Subpixel): swash has
-        //   a documented quirk where its subpixel format produces what the
-        //   subpixel fragment shader treats as already-correctly-ordered
-        //   bytes for our Bgra8Unorm upload combined with its existing
-        //   .rgb sample. No CPU swap is needed; doing one would re-break
-        //   the subpixel ordering. Keep this branch separate so the same
-        //   format does not silently apply the emoji-only swap.
+        //   Bgra8Unorm + subpixel non-emoji: swash's subpixel byte order
+        //   already matches the Bgra8Unorm upload + .rgb sample combo. A
+        //   swap here would re-break the ordering. Kept as a separate arm
+        //   so the format alone cannot silently apply the emoji swap.
         let pixel_count = (region.pixel_region.width() * region.pixel_region.height()) as usize;
         let upload_bytes: std::borrow::Cow<'_, [u8]>;
         let bytes_per_row = match self.format {

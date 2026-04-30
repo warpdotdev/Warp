@@ -1,47 +1,38 @@
 //! Gamma correction tables and helpers for the glyph fragment shaders.
 //!
-//! The numbers in [`get_gamma_correction_ratios`] come from Microsoft's
-//! ClearType reference implementation as reproduced by gpui's text
-//! rendering pipeline. Each row is a four-coefficient polynomial that
-//! corrects coverage values produced by the rasterizer (which assumes
-//! gamma = 1.0) for the actual perceived gamma of the destination
-//! display, the gamma the user wants the rendered glyph to look correct
-//! at.
+//! The coefficients in [`get_gamma_correction_ratios`] come from Microsoft's
+//! ClearType reference, via gpui. Each row is a four-coefficient polynomial
+//! that corrects rasterizer-produced coverage (which assumes gamma=1.0) for
+//! the destination display's actual perceived gamma.
 //!
 //! The shader applies the correction as
 //!     corrected = a + a * (1 - a) * ((g.x*b + g.y) * a + (g.z*b + g.w))
 //! where `a` is the raw coverage, `b` is the text colour brightness, and
 //! `g` is the four-element vector returned here.
 
-/// Default gamma to use when the env var is unset. 1.8 is the
-/// macOS / Linux compromise gpui uses; it produces text that reads as
-/// "neither too thick nor too thin" on the typical desktop displays
-/// this renderer targets.
+/// Default gamma when the env var is unset. 1.8 is gpui's macOS/Linux
+/// compromise: text reads as neither too thick nor too thin on typical
+/// desktop displays.
 pub const DEFAULT_GAMMA: f32 = 1.8;
 
-/// Default Stage 1 contrast factor for the grayscale glyph path. Matches
-/// gpui's `grayscale_enhanced_contrast` default.
+/// Default Stage 1 contrast factor for the grayscale path. Matches gpui.
 pub const DEFAULT_GRAYSCALE_ENHANCED_CONTRAST: f32 = 1.0;
 
-/// Default Stage 1 contrast factor for the LCD subpixel glyph path.
-/// Half the grayscale value because per-channel coverage already supplies
-/// most of the perceptual sharpness; piling on a full grayscale-strength
-/// boost saturates the fringe and reverses the subpixel resolution gain.
+/// Default Stage 1 contrast factor for the subpixel path. Half the
+/// grayscale value because per-channel coverage already supplies the
+/// perceptual sharpness; full grayscale strength saturates the fringe and
+/// reverses the subpixel resolution gain.
 pub const DEFAULT_SUBPIXEL_ENHANCED_CONTRAST: f32 = 0.5;
 
-/// Computes the four-element gamma-correction ratio vector that the
-/// fragment shader expects in its uniform buffer.
+/// Computes the four-element gamma-correction ratio vector the fragment
+/// shader expects in its uniform buffer.
 ///
-/// `gamma` is clamped to the range [1.0, 2.2] in 0.1 increments before
-/// the lookup; values outside that range are pinned to the closest
-/// supported entry. Calling with the default 1.8 returns the same
-/// numbers the shaders previously had hardcoded.
+/// `gamma` is rounded to the nearest 0.1 in [1.0, 2.2]; values outside that
+/// range are pinned to the closest supported entry.
 pub fn get_gamma_correction_ratios(gamma: f32) -> [f32; 4] {
-    // Coefficients sourced from Microsoft's ClearType reference,
-    // reproduced from gpui's gamma table. Each row corresponds to a
-    // gamma value of 1.0, 1.1, ..., 2.2 in steps of 0.1; the divisions
-    // by 4 are part of the original encoding and are kept literal so
-    // the table reads identically to the upstream.
+    // Rows correspond to gamma 1.0, 1.1, ..., 2.2 in 0.1 steps. The
+    // /4.0 divisions are part of the original encoding and are kept
+    // literal so the table reads identically to the gpui upstream.
     const RATIOS: [[f32; 4]; 13] = [
         [0.0000 / 4.0, 0.0000 / 4.0, 0.0000 / 4.0, 0.0000 / 4.0],
         [0.0166 / 4.0, -0.0807 / 4.0, 0.2227 / 4.0, -0.0751 / 4.0],
@@ -58,9 +49,8 @@ pub fn get_gamma_correction_ratios(gamma: f32) -> [f32; 4] {
         [0.2031 / 4.0, -1.3864 / 4.0, 1.9851 / 4.0, -0.3501 / 4.0],
     ];
 
-    // Normalisation constants from Microsoft's reference. NORM13 applies
-    // to the indices that produce a 16-bit-shifted result, NORM24 to the
-    // 8-bit-shifted indices.
+    // Normalisation constants from Microsoft's reference: NORM13 for
+    // 16-bit-shifted indices, NORM24 for 8-bit-shifted indices.
     const NORM13: f32 = ((0x10000 as f64) / (255.0 * 255.0) * 4.0) as f32;
     const NORM24: f32 = ((0x100 as f64) / 255.0 * 4.0) as f32;
 
@@ -75,8 +65,8 @@ pub fn get_gamma_correction_ratios(gamma: f32) -> [f32; 4] {
 }
 
 /// Reads the user-configurable gamma and Stage 1 contrast factors from
-/// process env vars and falls back to the defaults above when an env
-/// var is unset or fails to parse. Returns
+/// process env vars, falling back to the defaults above when an env var is
+/// unset or fails to parse. Returns
 /// `(gamma_ratios, grayscale_enhanced_contrast, subpixel_enhanced_contrast)`.
 pub fn read_env_gamma_settings() -> ([f32; 4], f32, f32) {
     let gamma = std::env::var("WARP_FONTS_GAMMA")

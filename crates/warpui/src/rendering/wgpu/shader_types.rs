@@ -218,26 +218,21 @@ impl RectData {
 #[derive(Debug, Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 pub(super) struct Uniforms {
     viewport_size: Vector2F,
-    /// 1 when the active surface composites with premultiplied alpha,
-    /// 0 otherwise. The glyph fragment shader uses it to decide whether
-    /// to scale the output RGB by the final alpha; getting this wrong on
-    /// transparent compositors makes glyph colours leak through windows
-    /// behind them.
+    /// 1 when the surface composites with premultiplied alpha, 0 otherwise.
+    /// Drives whether the glyph shader pre-multiplies RGB by alpha; wrong
+    /// values let glyph colour bleed through transparent windows.
     premultiplied_alpha: u32,
     _padding0: u32,
-    /// Four-element ClearType / DirectWrite gamma-correction polynomial
-    /// coefficients. Computed on the host from the user's gamma setting
-    /// and uploaded once per frame; the shader uses them in Stage 2 of
-    /// the alpha-correction formula.
+    /// ClearType / DirectWrite gamma-correction polynomial coefficients,
+    /// applied in Stage 2 of the alpha-correction formula.
     gamma_ratios: Vector4F,
-    /// Stage 1 contrast factor applied to grayscale glyph coverage,
-    /// modulated per-glyph by the brightness-aware multiplier. 1.0 by
-    /// default; set WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST to override.
+    /// Stage 1 contrast factor for the grayscale path, modulated per-glyph
+    /// by the brightness-aware multiplier. Defaults to 1.0; override via
+    /// WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST.
     grayscale_enhanced_contrast: f32,
-    /// Stage 1 contrast factor for LCD subpixel coverage. 0.5 by default
-    /// because per-channel coverage already supplies most of the
-    /// perceptual sharpness; set WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST
-    /// to override.
+    /// Stage 1 contrast factor for the LCD subpixel path. Defaults to 0.5
+    /// because per-channel coverage already supplies most of the perceptual
+    /// sharpness; override via WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST.
     subpixel_enhanced_contrast: f32,
     _padding1: [u32; 2],
 }

@@ -139,12 +139,12 @@ impl Pipeline {
         };
         let scale_factor = scene.scale_factor();
         for image in &layer.images {
-            // Floor the physical-pixel origin so the quad starts on an exact pixel
-            // boundary. At fractional DPI (1.25×, 1.5×) the raw scaled origin is
-            // often fractional (e.g. 62.5 px). With FilterMode::Linear that shifts
-            // every UV sample away from its texel center, smearing adjacent texels
-            // into each other — the source of image blur. Flooring only the origin
-            // preserves the image size so the texture continues to fill the quad.
+            // Floor the physical-pixel origin so the quad starts on an exact
+            // pixel boundary. At fractional DPI (1.25x, 1.5x) the raw scaled
+            // origin is often fractional (e.g. 62.5 px); with Linear
+            // filtering that shifts every UV sample off its texel centre and
+            // smears adjacent texels, which is the visible image blur. Only
+            // the origin is floored so the size still fills the quad.
             let physical_origin = (image.bounds.origin() * scale_factor).floor();
             let physical_size = image.bounds.size() * scale_factor;
             let bounds = RectF::new(physical_origin, physical_size);

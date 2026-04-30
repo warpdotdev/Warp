@@ -15,8 +15,8 @@ const ATLAS_SIZE: usize = 1024;
 /// Callback to create a texture at a given size with a given kind.
 ///
 /// The kind tells the backend which texture format to allocate so that the
-/// returned texture is sampleable by the render pipeline that will consume
-/// it (`Generic` is `Rgba8Unorm`, `Subpixel` is `Bgra8Unorm`).
+/// returned texture is sampleable by the consuming render pipeline
+/// (`Generic` is `R8Unorm`, `Subpixel` and `Polychrome` are `Bgra8Unorm`).
 type CreateTextureCallback<'a, T> = dyn Fn(usize, AtlasTextureKind) -> T + 'a;
 
 /// Callback to insert [`RasterizedGlyph`] at a region identified by [`AllocatedRegion`] into a
@@ -26,9 +26,9 @@ type InsertIntoTextureCallback<'a, T> = dyn Fn(AllocatedRegion, &RasterizedGlyph
 /// Callback to compute the bounds of a glyph when rasterized.
 ///
 /// The `bool` argument is `lcd_subpixel`: true requests LCD subpixel
-/// rasterization, false requests grayscale. The flag affects the produced
-/// bitmap's pixel dimensions on backends whose subpixel mode produces wider
-/// bitmaps than grayscale, so it must participate in cache key uniqueness.
+/// rasterization, false grayscale. The flag affects the bitmap's pixel
+/// dimensions on backends where subpixel produces wider output, so it
+/// must participate in cache-key uniqueness.
 pub(crate) type GlyphRasterBoundsFn<'a> =
     dyn Fn(GlyphKey, Vector2F, bool, &rendering::GlyphConfig) -> Result<RectI> + 'a;
 
@@ -47,12 +47,10 @@ pub(crate) type RasterizeGlyphFn<'a> = dyn Fn(
 
 /// A cache that caches glyphs in texture atlases of various kinds.
 ///
-/// Each [`AtlasTextureKind`] has its own [`atlas::Manager`] and texture list
-/// so allocations of one kind never share a texture with allocations of
-/// another. The kind a glyph is routed to is derived from a combination of
-/// the rasterizer's `is_emoji` result and the cache key's `lcd_subpixel`
-/// flag at insertion time: emoji always go to `Polychrome`, non-emoji
-/// subpixel glyphs to `Subpixel`, everything else to `Generic`.
+/// Each [`AtlasTextureKind`] has its own [`atlas::Manager`] and texture
+/// list, so allocations of one kind never share a texture with another.
+/// Routing at insertion time: emoji go to `Polychrome`, non-emoji subpixel
+/// glyphs to `Subpixel`, everything else to `Generic`.
 pub struct GlyphCache<Texture> {
     generic_textures: Vec<Texture>,
     subpixel_textures: Vec<Texture>,
@@ -201,14 +199,11 @@ impl<Texture> GlyphCache<Texture> {
             crate::fonts::canvas::RasterFormat::Rgba32,
         )?;
 
-        // Route the glyph to the atlas whose format matches its pixel data:
-        //   - Emoji always go to Polychrome (Bgra8Unorm) because their
-        //     bytes are real RGBA colour and need full per-channel storage.
-        //   - Non-emoji glyphs that requested LCD subpixel rendering go to
-        //     Subpixel (Bgra8Unorm); their bytes encode three independent
-        //     coverage values per texel.
-        //   - Everything else, the grayscale fallback path, goes to Generic
-        //     (R8Unorm) which holds a single coverage byte per texel.
+        // Route to the atlas whose format matches the pixel data:
+        //   - Emoji -> Polychrome (Bgra8Unorm), real RGBA colour.
+        //   - lcd_subpixel non-emoji -> Subpixel (Bgra8Unorm), three
+        //     independent coverage values per texel.
+        //   - Everything else -> Generic (R8Unorm), one coverage byte.
         let kind = if rasterized_glyph.is_emoji {
             AtlasTextureKind::Polychrome
         } else if lcd_subpixel {

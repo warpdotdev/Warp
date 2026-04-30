@@ -67,16 +67,15 @@ pub struct Resources {
     pub surface: Surface<'static>,
     pub surface_config: RefCell<SurfaceConfiguration>,
     pub supported_backends: Vec<wgpu::Backend>,
-    /// Cached gamma-correction polynomial vector, computed once at
-    /// renderer creation from the WARP_FONTS_GAMMA env var (or the
-    /// 1.8 default). Re-read by configure_render_pass on every frame
-    /// to populate the glyph shader's uniform buffer.
+    /// Gamma-correction polynomial computed at renderer creation from
+    /// WARP_FONTS_GAMMA (default 1.8). Re-uploaded each frame as part of
+    /// the glyph shader's uniform buffer.
     pub gamma_ratios: [f32; 4],
-    /// Cached Stage 1 contrast factor for the grayscale glyph path.
-    /// From WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST or the default 1.0.
+    /// Stage 1 contrast factor for the grayscale path, from
+    /// WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST (default 1.0).
     pub grayscale_enhanced_contrast: f32,
-    /// Cached Stage 1 contrast factor for the subpixel glyph path.
-    /// From WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST or the default 0.5.
+    /// Stage 1 contrast factor for the subpixel path, from
+    /// WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST (default 0.5).
     pub subpixel_enhanced_contrast: f32,
     uniforms: uniforms::Uniforms,
     quad: quad::Resources,
@@ -133,10 +132,9 @@ impl Resources {
             let uniforms = uniforms::Uniforms::new(&device);
             let quad = quad::Resources::new(&device);
 
-            // Read gamma and contrast settings once at renderer creation.
-            // Subsequent env-var changes are not picked up; the renderer
-            // would have to be rebuilt. Acceptable because these knobs
-            // exist for tuning, not for live theming.
+            // Read gamma and contrast settings once at renderer creation;
+            // these knobs are for tuning, not live theming, so subsequent
+            // env-var changes are not picked up.
             let (gamma_ratios, grayscale_enhanced_contrast, subpixel_enhanced_contrast) =
                 warpui_core::rendering::gamma::read_env_gamma_settings();
 
@@ -169,18 +167,17 @@ impl Resources {
         self.uniforms.bind_group_layout()
     }
 
-    /// Whether the active GPU device exposes dual-source blending. This is
-    /// the prerequisite for the subpixel glyph render pipeline; when false,
-    /// the renderer falls back to the grayscale path for all glyphs.
+    /// Whether the GPU exposes dual-source blending. Prerequisite for the
+    /// subpixel pipeline; false means all glyphs go through the grayscale
+    /// path.
     pub fn supports_dual_source_blending(&self) -> bool {
         self.device
             .features()
             .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
     }
 
-    /// Whether the configured surface composites without an opaque alpha
-    /// channel. Returns true for any [`CompositeAlphaMode`] other than
-    /// `Opaque`, including `Inherit` which the wgpu docs describe as
+    /// Whether the surface composites with anything other than opaque alpha.
+    /// `Inherit` is treated as transparent because wgpu documents it as
     /// platform-defined and therefore not safe to assume opaque.
     pub fn surface_is_transparent(&self) -> bool {
         !matches!(
@@ -654,14 +651,11 @@ async fn initialize_device(
 
     limits.max_mesh_output_layers = 0;
 
-    // Opt into dual-source blending when the adapter exposes it. The feature
-    // maps to Vulkan core 1.0 dualSrcBlend, Metal MSL 1.2+ dual-source
-    // outputs, and DX12 dual-source blend states; it is widely available on
-    // desktop hardware but not universal on mobile. Requesting a feature the
-    // adapter does not expose causes request_device to fail, so the check
-    // against adapter.features() is the gate. When the feature is not
-    // available, the LCD subpixel rendering path falls back to grayscale at
-    // scene build time.
+    // Opt into dual-source blending when the adapter exposes it (Vulkan
+    // dualSrcBlend, Metal MSL 1.2+, DX12). request_device fails if a
+    // feature the adapter doesn't expose is required, so gate on
+    // adapter.features(). When unavailable, scene-build classification
+    // routes glyphs to the grayscale path.
     let mut required_features = wgpu::Features::empty();
     if adapter
         .features()

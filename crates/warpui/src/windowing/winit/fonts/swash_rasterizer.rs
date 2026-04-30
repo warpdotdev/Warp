@@ -12,13 +12,9 @@ use pathfinder_geometry::vector::{vec2i, Vector2F, Vector2I};
 
 fn cache_key_flags(lcd_subpixel: bool) -> CacheKeyFlags {
     if lcd_subpixel {
-        // Subpixel rasterization is only ever requested for non-emoji
-        // glyphs; emoji always go through the grayscale path on Generic
-        // atlas with the existing color-source fallback. Pair SUBPIXEL_BGRA
-        // with OUTLINE_ONLY so swash skips the COLR / CBDT lookups for
-        // these glyphs and produces only the scalable outline result that
-        // the subpixel format expects, matching gpui's monochrome
-        // rasterization path.
+        // Pair SUBPIXEL_BGRA with OUTLINE_ONLY so swash skips the COLR /
+        // CBDT colour sources and produces just the scalable outline that
+        // the subpixel format needs. Emoji never request this path.
         CacheKeyFlags::SUBPIXEL_BGRA | CacheKeyFlags::OUTLINE_ONLY
     } else {
         CacheKeyFlags::empty()

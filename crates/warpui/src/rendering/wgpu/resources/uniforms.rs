@@ -17,13 +17,10 @@ impl Uniforms {
             label: Some("Quad Uniforms Bind Group Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                // The glyph fragment shader now reads gamma_ratios,
-                // grayscale_enhanced_contrast, and
-                // subpixel_enhanced_contrast from this uniform buffer in
-                // addition to the viewport_size the vertex stage needs,
-                // so the binding has to be visible to both stages. Adding
-                // FRAGMENT here is permissive: shaders that only read in
-                // the vertex stage continue to work without change.
+                // The glyph fragment shader reads gamma_ratios and the two
+                // enhanced_contrast factors from this buffer, on top of the
+                // viewport_size the vertex stage needs. Visibility has to
+                // cover both stages.
                 visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
@@ -69,18 +66,16 @@ impl Uniforms {
         drawable_size: Vector2F,
         resources: &Resources,
     ) {
-        // The surface's CompositeAlphaMode determines whether the compositor
-        // expects the framebuffer's RGB to already be multiplied by alpha.
-        // Pass that bit into the shader so blend_color in glyph_shader.wgsl
-        // knows whether to apply the multiplication.
+        // CompositeAlphaMode tells us whether the compositor expects the
+        // framebuffer's RGB to be already multiplied by alpha; pass that
+        // through so blend_color in glyph_shader.wgsl can apply the multiply.
         let premultiplied_alpha = matches!(
             resources.surface_config.borrow().alpha_mode,
             wgpu::CompositeAlphaMode::PreMultiplied,
         );
-        // Gamma and Stage 1 contrast factors are cached on the Resources
-        // struct; populating them per-frame instead of per-renderer keeps
-        // the uniform buffer's payload self-contained even though these
-        // values do not change between frames.
+        // Gamma and Stage 1 contrast factors are cached on Resources but
+        // re-uploaded per-frame so the uniform buffer's payload stays
+        // self-contained.
         let uniforms = shader_types::Uniforms::new(
             drawable_size,
             premultiplied_alpha,

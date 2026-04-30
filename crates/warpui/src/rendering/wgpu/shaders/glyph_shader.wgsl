@@ -1,26 +1,15 @@
-// Two-stage alpha correction for glyph coverage masks.
+// Two-stage alpha correction for glyph coverage masks. Skipped for emoji
+// (is_emoji=1) where tex_color already contains the final RGBA.
 //
-// Stage 1 — contrast boost (enhance_contrast):
-//   Fonts are designed assuming gamma-space blending. At 1.25× or 1.5× DPI
-//   the glyph rasterizer produces AA coverage values that map to the right
-//   perceived weight ONLY if blended in gamma space. Our pipeline does that
-//   (non-sRGB surface, no linearisation). Still, mid-coverage fringe pixels
-//   look slightly too thin for bright (white) text because the hardware gamma
-//   curve is not perfectly 2.2. The Windows Terminal DWrite formula
-//   enhance_contrast(α, k) = α*(k+1)/(αk+1) applies a brightness-scaled
-//   boost: brighter text (higher k) gets a stronger push.
+// Stage 1, enhance_contrast: applies the Windows Terminal DWrite formula
+// alpha*(k+1)/(alpha*k+1) to push mid-coverage fringe pixels darker. The
+// boost is brightness-scaled.
 //
-// Stage 2 — gamma-incorrect-target correction (apply_alpha_correction):
-//   This is the ClearType / DirectWrite polynomial correction that accounts
-//   for the difference between the true display gamma and the gamma=1.0
-//   assumption built into the coverage values. It further boosts mid-range
-//   coverage to match what a physically-perfect gamma-2.2 pipeline would
-//   produce. Derived from Microsoft's gamma correction lookup table via Zed.
-//   GAMMA_RATIOS correspond to gamma=1.8, a good default for Linux/BSD.
-//   Reference: https://github.com/zed-industries/zed/blob/main/crates/gpui_wgpu/src/shaders.wgsl
-//
-// Both stages are skipped for emoji (is_emoji=1): tex_color already contains
-// the final RGBA.
+// Stage 2, apply_alpha_correction: the ClearType / DirectWrite polynomial
+// that corrects for the gap between the true display gamma and the gamma=1.0
+// assumption baked into the rasterizer's coverage values. GAMMA_RATIOS
+// targets gamma=1.8, a Linux/BSD-friendly default.
+// Reference: https://github.com/zed-industries/zed/blob/main/crates/gpui_wgpu/src/shaders.wgsl
 fn glyph_color_brightness(color: vec3<f32>) -> f32 {
     // REC. 601 luminance coefficients for perceived brightness.
     return dot(color, vec3<f32>(0.30, 0.59, 0.11));
@@ -30,10 +19,10 @@ fn enhance_contrast(alpha: f32, k: f32) -> f32 {
     return alpha * (k + 1.0) / (alpha * k + 1.0);
 }
 
-// GAMMA_RATIOS, GRAYSCALE_ENHANCED_CONTRAST, and SUBPIXEL_ENHANCED_CONTRAST
-// now arrive through the Uniforms buffer below; they are populated by the
-// host from WARP_FONTS_GAMMA / WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST /
-// WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST on renderer creation.
+// gamma_ratios, grayscale_enhanced_contrast, and subpixel_enhanced_contrast
+// arrive through the Uniforms buffer below, populated by the host from
+// WARP_FONTS_GAMMA / WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST /
+// WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST at renderer creation.
 
 fn apply_alpha_correction(a: f32, b: f32, g: vec4<f32>) -> f32 {
     let brightness_adjustment = g.x * b + g.y;
@@ -41,12 +30,9 @@ fn apply_alpha_correction(a: f32, b: f32, g: vec4<f32>) -> f32 {
     return a + a * (1.0 - a) * correction;
 }
 
-// Per-channel variants used by the subpixel fragment shader. Each LCD
-// subpixel has its own coverage, so the contrast and gamma correction are
-// applied independently to R, G, and B. The brightness term is also
-// vec3 so each component contributes only to its own correction; for a
-// monochrome text colour all three components are equal and the result
-// matches the scalar formula above.
+// Per-channel variants for the subpixel fragment shader: each LCD subpixel
+// gets its own contrast and gamma correction. Falls back to the scalar
+// formula above when all three components are equal.
 fn enhance_contrast3(alpha: vec3<f32>, k: f32) -> vec3<f32> {
     return alpha * (k + 1.0) / (alpha * k + 1.0);
 }
@@ -57,11 +43,9 @@ fn apply_alpha_correction3(a: vec3<f32>, b: vec3<f32>, g: vec4<f32>) -> vec3<f32
     return a + a * (1.0 - a) * correction;
 }
 
-// Brightness-aware modulation of the contrast factor. Despite the name,
-// this returns ZERO contrast boost for bright (light) text on dark
-// backgrounds because such text already has high contrast and additional
-// boost only thickens it. Mid-gray and darker text gets the full factor.
-// Adapted from Zed's gpui apply_contrast_and_gamma_correction.
+// Despite the name, returns ZERO boost for bright text on dark backgrounds
+// (already high contrast; extra boost just thickens). Mid-gray and darker
+// text gets the full factor. From Zed's apply_contrast_and_gamma_correction.
 fn light_on_dark_contrast(enhanced_contrast: f32, color: vec3<f32>) -> f32 {
     let brightness = glyph_color_brightness(color);
     let multiplier = saturate(4.0 * (0.75 - brightness));
@@ -70,27 +54,22 @@ fn light_on_dark_contrast(enhanced_contrast: f32, color: vec3<f32>) -> f32 {
 
 struct Uniforms {
     viewport_size: vec2<f32>,
-    // 1 when the active surface composites with premultiplied alpha,
-    // 0 otherwise. Drives blend_color below.
+    // 1 if the surface composites with premultiplied alpha, 0 otherwise.
     premultiplied_alpha: u32,
     _padding0: u32,
-    // ClearType / DirectWrite gamma-correction polynomial coefficients,
-    // computed on the host from WARP_FONTS_GAMMA.
+    // ClearType / DirectWrite gamma-correction polynomial coefficients.
     gamma_ratios: vec4<f32>,
-    // Stage 1 contrast factor for the grayscale path. From
-    // WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST or default 1.0.
+    // Stage 1 contrast factor for the grayscale path. Default 1.0.
     grayscale_enhanced_contrast: f32,
-    // Stage 1 contrast factor for the LCD subpixel path. From
-    // WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST or default 0.5.
+    // Stage 1 contrast factor for the subpixel path. Default 0.5.
     subpixel_enhanced_contrast: f32,
     _padding1: vec2<u32>,
 }
 
-// If the surface uses premultiplied alpha, scale the output RGB by the
-// final alpha so the framebuffer ends up in the form the compositor
-// expects. For Opaque surfaces, the compositor ignores alpha entirely and
-// the multiplication would actually darken edge pixels for no reason; the
-// flag stays zero in that case and RGB passes through unchanged.
+// On premultiplied-alpha surfaces, scale RGB by the final alpha so the
+// compositor reads the framebuffer correctly. For Opaque surfaces the flag
+// stays zero and RGB passes through unchanged (the multiplication would
+// just darken edge pixels for no reason).
 fn blend_color(color: vec3<f32>, alpha: f32, premultiplied_alpha: u32) -> vec4<f32> {
     let multiplier = select(1.0, alpha, premultiplied_alpha != 0u);
     return vec4<f32>(color * multiplier, alpha);
@@ -131,13 +110,10 @@ fn vs_main(
     var size: vec2<f32> = glyph.bounds.zw;
     var pixel_pos: vec2<f32> = glyph.vertex_position * size + origin;
 
-    // No flooring needed here. The Rust side already snaps glyph quad
-    // origins to integer physical pixels at scene-build time, so both
-    // bounds.xy and bounds.zw arrive as whole numbers; the multiply-add
-    // above produces integer pixel_pos at the vertices and integer-stepped
-    // values at fragment centres. Flooring again would either be a no-op
-    // or shift the quad by less than one pixel and reintroduce the very
-    // sub-pixel mismatch the upstream pre-floor was meant to fix.
+    // No flooring here: the Rust side already snaps quad origins to integer
+    // physical pixels, so pixel_pos is integer at the vertices. Flooring
+    // again would shift the quad by < 1 pixel and reintroduce the sub-pixel
+    // mismatch the pre-floor was meant to fix.
 
     // Evaluating the glyphs fade effect. Note that the fade may go in two different directions:
     // - Right to left (default) - where the opaque side is on the right, and transparent on the left
@@ -178,14 +154,10 @@ fn fs_main(in: GlyphVertexShaderOutput) -> @location(0) vec4<f32> {
     // Use the input color for non-emoji, and the sampled color for emoji.
     var color: vec4<f32> = mix(in.color, tex_color, f32(in.is_emoji));
 
-    // Stage 1: brightness-modulated contrast boost. light_on_dark_contrast
-    // returns zero for bright text on dark backgrounds (where additional
-    // boost only over-thickens), and the full factor for darker text.
+    // Stage 1: brightness-modulated contrast boost.
     let enhanced_contrast = light_on_dark_contrast(uniforms.grayscale_enhanced_contrast, color.rgb);
     let contrasted = enhance_contrast(tex_color.r, enhanced_contrast);
-    // Stage 2: gamma-incorrect-target polynomial correction. Brightness here
-    // is the scalar luminance of the text colour, used both to gate Stage 1
-    // above and to weight the polynomial below.
+    // Stage 2: gamma-correction polynomial weighted by the text's luminance.
     let brightness = glyph_color_brightness(color.rgb);
     let gamma_corrected = apply_alpha_correction(contrasted, brightness, uniforms.gamma_ratios);
     color.a *= max(gamma_corrected, f32(in.is_emoji));
@@ -193,8 +165,5 @@ fn fs_main(in: GlyphVertexShaderOutput) -> @location(0) vec4<f32> {
     // Apply the fade.
     color.a *= saturate(in.fade_alpha);
 
-    // Apply premultiplied-alpha conversion if the surface needs it. For
-    // opaque surfaces the multiplication is suppressed inside blend_color
-    // and the original RGB passes through unchanged.
     return blend_color(color.rgb, color.a, uniforms.premultiplied_alpha);
 }

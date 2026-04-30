@@ -7,27 +7,16 @@ use pathfinder_geometry::rect::{RectF, RectI};
 use thiserror::Error;
 
 /// Distinguishes the kinds of glyph atlases that the renderer maintains.
+/// Each kind carries a different texture format and is consumed by
+/// different fragment-shader logic.
 ///
-/// The kinds carry different texture formats and are sampled by different
-/// fragment-shader logic:
-///
-/// - `Generic` is the monochrome coverage atlas, `R8Unorm` (one byte per
-///   texel). Used for non-emoji glyphs that take the grayscale fallback
-///   path (transparent windows, GPUs without dual-source blending, or
-///   anything else that opts out of LCD subpixel rendering). The atlas
-///   stores the alpha byte produced by swash's `Format::Alpha` rasterizer.
-///
-/// - `Subpixel` is a `Bgra8Unorm` atlas that stores three independent
-///   coverage values per texel, one per LCD subpixel in BGR order, produced
-///   by swash's subpixel rasterizer. The subpixel render pipeline composites
-///   it through dual-source blending so each subpixel weights the
-///   destination colour independently.
-///
-/// - `Polychrome` is a `Bgra8Unorm` atlas that stores actual RGBA colour
-///   data for emoji glyphs (the `Source::ColorOutline` and
-///   `Source::ColorBitmap` swash sources). The fragment shader samples
-///   it as colour rather than as coverage; the surrounding text colour is
-///   ignored.
+/// - `Generic` (R8Unorm): single-byte coverage from `Format::Alpha`,
+///   used by non-emoji glyphs on the grayscale fallback path.
+/// - `Subpixel` (Bgra8Unorm): three per-LCD-subpixel coverage values in
+///   BGR order from swash's subpixel rasterizer, composited via the
+///   dual-source-blend pipeline.
+/// - `Polychrome` (Bgra8Unorm): real RGBA colour for emoji glyphs from
+///   `Source::ColorOutline` / `Source::ColorBitmap`; sampled as colour.
 ///
 /// Atlases of different kinds never share textures: an allocated rectangle
 /// is meaningful only within its kind's manager.
