@@ -94,15 +94,8 @@ pub struct DropdownItem<A: Action + Clone> {
     action: A,
     /// Custom font for the dropdown item
     family_id: Option<FamilyId>,
-    /// Optional tooltip shown when hovering this row. Useful when `display_text`
-    /// is a shortened or substituted form (e.g. home-prefix `~`) and the user
-    /// may want to see the full underlying value.
+    /// Optional hover tooltip shown over the row.
     tooltip: Option<String>,
-    /// When set, render the row label with soft-wrap capped at this many lines
-    /// instead of a single elided line. Pairs well with `tooltip` for surfaces
-    /// (like saved-repo paths) where two long entries can otherwise share a
-    /// visually identical truncated prefix.
-    max_lines: Option<usize>,
 }
 
 impl<A> DropdownItem<A>
@@ -118,7 +111,6 @@ where
             action,
             family_id: None,
             tooltip: None,
-            max_lines: None,
         }
     }
 
@@ -129,21 +121,10 @@ where
         self
     }
 
-    /// Set a tooltip to display when hovering this row. The tooltip is wired
-    /// through to the underlying [`MenuItemFields`] tooltip support, so the
-    /// menu primitive renders it next to the row on hover with no extra work
-    /// at the call site.
+    /// Set a hover tooltip for this row. Useful when `display_text` is a
+    /// shortened form of richer underlying data (e.g. a truncated path).
     pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
         self.tooltip = Some(tooltip.into());
-        self
-    }
-
-    /// Soft-wrap the row label and cap it to `max_lines` rendered lines. Without
-    /// this, labels render as a single line and any overflow is elided with an
-    /// ellipsis, which makes long entries that share a common prefix
-    /// visually indistinguishable.
-    pub fn with_max_lines(mut self, max_lines: usize) -> Self {
-        self.max_lines = Some(max_lines);
         self
     }
 }
@@ -153,26 +134,18 @@ where
     A: Action + Clone,
 {
     fn from(dropdown_item: &DropdownItem<A>) -> MenuItem<DropdownAction<A>> {
-        // Pick the constructor based on whether the caller asked for soft-wrap;
-        // `MenuItemFields::new_multiline` switches the underlying label element
-        // to one that uses `Text::soft_wrap(true)` and caps the rendered height
-        // at `max_lines * font_size * line_height_ratio`.
-        let mut fields = match dropdown_item.max_lines {
-            Some(max_lines) => {
-                MenuItemFields::new_multiline(dropdown_item.display_text.clone(), max_lines)
-            }
-            None => MenuItemFields::new(dropdown_item.display_text.clone()),
-        }
-        .with_on_select_action(DropdownAction::SelectActionAndClose(
-            dropdown_item.action.clone(),
-        ));
-        if let Some(family_id) = dropdown_item.family_id {
-            fields = fields.with_font_override(family_id);
-        }
+        let mut menu_item = MenuItemFields::new(dropdown_item.display_text.clone())
+            .with_on_select_action(DropdownAction::SelectActionAndClose(
+                dropdown_item.action.clone(),
+            ));
         if let Some(tooltip) = &dropdown_item.tooltip {
-            fields = fields.with_tooltip(tooltip.clone());
+            menu_item = menu_item.with_tooltip(tooltip.clone());
         }
-        fields.into_item()
+        if let Some(family_id) = dropdown_item.family_id {
+            menu_item.with_font_override(family_id).into_item()
+        } else {
+            menu_item.into_item()
+        }
     }
 }
 
