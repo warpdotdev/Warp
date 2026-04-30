@@ -107,7 +107,10 @@ fn imported_comment_code_review_button_uses_repo_tooltip_when_repo_disabled() {
     assert!(disabled);
     assert_eq!(
         tooltip,
-        Some("Navigate to /tmp/repo to open these comments".to_string())
+        Some(format!(
+            "Navigate to {} to open these comments",
+            repo_path.display()
+        ))
     );
 }
 
