@@ -167,7 +167,7 @@ pub(crate) async fn sorted_cd_directories(
     for entry in cdpath.split(':').filter(|e| !e.is_empty() && *e != ".") {
         let override_ctx = CdpathOverrideContext {
             inner: ctx,
-            cdpath_pwd: TypedPathBuf::from(entry),
+            cdpath_pwd: resolve_cdpath_entry(entry, ctx),
         };
         let extra = sorted_directories_relative_to(path, matcher, &override_ctx).await;
         for suggestion in extra {
@@ -178,6 +178,25 @@ pub(crate) async fn sorted_cd_directories(
     }
 
     results
+}
+
+/// Tilde-expand a `$CDPATH` entry against the shell's home dir, then resolve
+/// relative entries against the shell's pwd so `cd` matches shell behavior.
+fn resolve_cdpath_entry(entry: &str, ctx: &dyn PathCompletionContext) -> TypedPathBuf {
+    let expanded = if entry == "~" {
+        ctx.home_directory().unwrap_or_default().to_owned()
+    } else if let Some(rest) = entry.strip_prefix("~/") {
+        format!("{}/{}", ctx.home_directory().unwrap_or_default(), rest)
+    } else {
+        entry.to_owned()
+    };
+
+    let resolved = TypedPathBuf::from(expanded.as_str());
+    if resolved.is_absolute() {
+        resolved
+    } else {
+        ctx.pwd().join(expanded)
+    }
 }
 
 fn is_cdpath_eligible_token(token: &str) -> bool {

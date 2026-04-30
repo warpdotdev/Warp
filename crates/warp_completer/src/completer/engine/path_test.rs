@@ -563,3 +563,73 @@ pub fn test_sorted_cd_directories_skips_dot_entry_in_cdpath() {
     .collect();
     assert_eq!(displays, vec!["local-only/"]);
 }
+
+#[cfg(unix)]
+#[test]
+pub fn test_sorted_cd_directories_resolves_relative_cdpath_against_pwd() {
+    // CDPATH=src — must resolve to <pwd>/src, not be passed raw.
+    let ctx = MockPathCompletionContext::new(TypedPathBuf::from("/work/proj"))
+        .with_entries_in_pwd([dir_entry("local-only")])
+        .with_entries(
+            TypedPathBuf::from("/work/proj/src"),
+            [dir_entry("inner-mod")],
+        )
+        .with_cdpath("src".to_owned());
+
+    let displays: Vec<String> = warpui::r#async::block_on(sorted_cd_directories(
+        &ParsedToken::empty(),
+        MatchStrategy::CaseInsensitive,
+        &ctx,
+    ))
+    .into_iter()
+    .map(|m| m.suggestion.display.to_string())
+    .collect();
+    assert_eq!(displays, vec!["local-only/", "inner-mod/"]);
+}
+
+#[cfg(unix)]
+#[test]
+pub fn test_sorted_cd_directories_resolves_parent_relative_cdpath() {
+    // CDPATH=.. — must resolve to <pwd>/.. so siblings of pwd are reachable.
+    let ctx = MockPathCompletionContext::new(TypedPathBuf::from("/work/proj"))
+        .with_entries_in_pwd([dir_entry("local-only")])
+        .with_entries(
+            TypedPathBuf::from("/work/proj/.."),
+            [dir_entry("sibling-dir")],
+        )
+        .with_cdpath("..".to_owned());
+
+    let displays: Vec<String> = warpui::r#async::block_on(sorted_cd_directories(
+        &ParsedToken::empty(),
+        MatchStrategy::CaseInsensitive,
+        &ctx,
+    ))
+    .into_iter()
+    .map(|m| m.suggestion.display.to_string())
+    .collect();
+    assert_eq!(displays, vec!["local-only/", "sibling-dir/"]);
+}
+
+#[cfg(unix)]
+#[test]
+pub fn test_sorted_cd_directories_expands_tilde_in_cdpath() {
+    // CDPATH=~/code — tilde must expand to the shell's home dir.
+    let ctx = MockPathCompletionContext::new(TypedPathBuf::from("/work/proj"))
+        .with_home_directory("/home/me".to_owned())
+        .with_entries_in_pwd([dir_entry("local-only")])
+        .with_entries(
+            TypedPathBuf::from("/home/me/code"),
+            [dir_entry("from-home")],
+        )
+        .with_cdpath("~/code".to_owned());
+
+    let displays: Vec<String> = warpui::r#async::block_on(sorted_cd_directories(
+        &ParsedToken::empty(),
+        MatchStrategy::CaseInsensitive,
+        &ctx,
+    ))
+    .into_iter()
+    .map(|m| m.suggestion.display.to_string())
+    .collect();
+    assert_eq!(displays, vec!["local-only/", "from-home/"]);
+}
