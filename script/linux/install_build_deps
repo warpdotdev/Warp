@@ -74,11 +74,25 @@ if [[ "$(printf '%s\n' "$REQUIRED_NODE_VERSION" "$NODE_VERSION" | sort -V | head
 fi
 
 # Check for yarn (required by command-signatures-v2 crate).
+# The crate uses Yarn 4 via Corepack, not Yarn 1 from Homebrew.
 # yarn is typically enabled via `corepack enable` after installing Node.js.
 if ! command -v yarn &>/dev/null; then
   echo -e "${red}Error: yarn is not installed.${reset}"
   echo "yarn is required to build the command-signatures-v2 crate."
   echo "Enable it via corepack (ships with Node.js):"
+  echo "  corepack enable"
+  exit 1
+fi
+
+# Verify yarn version is 4.x (Corepack-managed), not 1.x (Homebrew).
+YARN_VERSION="$(yarn --version 2>/dev/null)"
+YARN_MAJOR="$(echo "$YARN_VERSION" | cut -d. -f1)"
+if [ "$YARN_MAJOR" -lt 4 ] 2>/dev/null; then
+  echo -e "${red}Error: yarn $YARN_VERSION detected, but Yarn 4+ is required.${reset}"
+  echo "The command-signatures-v2 crate requires Yarn 4 via Corepack."
+  echo "If you have yarn installed via Homebrew, remove it first:"
+  echo "  brew uninstall yarn"
+  echo "Then enable Corepack:"
   echo "  corepack enable"
   exit 1
 fi
