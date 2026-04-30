@@ -1655,13 +1655,19 @@ impl FileTreeView {
                 root_dir.items = items;
             }
 
-            // If we found the selection in this root, update selected_item
-            if let (Some(index), Some(id)) = (new_index, id_to_preserve.as_ref()) {
+            // If we found the selection in this root, update selected_item.
+            // If the selection was expected but not found (e.g. filtered out as hidden),
+            // clear selected_item to avoid stale references.
+            if let Some(id) = id_to_preserve.as_ref() {
                 if id.root == root_path {
-                    self.selected_item = Some(FileTreeIdentifier {
-                        root: root_path,
-                        index,
-                    });
+                    if let Some(index) = new_index {
+                        self.selected_item = Some(FileTreeIdentifier {
+                            root: root_path,
+                            index,
+                        });
+                    } else if selected_item_path.is_some() {
+                        self.selected_item = None;
+                    }
                 }
             }
 
@@ -1694,10 +1700,11 @@ impl FileTreeView {
         // Only filter descendants (depth > 0), not the root entry itself,
         // so that hidden workspace directories (e.g. ~/.config) are still shown.
         if !self.show_hidden_files && depth > 0 {
-            if let Some(name) = current_path.file_name() {
-                if name.starts_with('.') {
-                    return (selected_item_index, removed_item);
-                }
+            if current_path
+                .file_name()
+                .is_some_and(|name| name.as_bytes().starts_with(b"."))
+            {
+                return (selected_item_index, removed_item);
             }
         }
 

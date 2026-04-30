@@ -255,6 +255,13 @@ impl LeftPanelView {
             },
         );
 
+        ctx.subscribe_to_model(&CodeSettings::handle(ctx), |me, _, event, ctx| {
+            if let crate::settings::CodeSettingsChangedEvent::ShowHiddenFiles { .. } = event {
+                me.mouse_state_handles.hidden_files_toggle = MouseStateHandle::default();
+                ctx.notify();
+            }
+        });
+
         ctx.subscribe_to_model(&working_directories_model, |me, _, event, ctx| {
             if let WorkingDirectoriesEvent::DirectoriesChanged {
                 pane_group_id,
