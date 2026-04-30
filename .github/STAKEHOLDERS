@@ -108,10 +108,10 @@
 /crates/voice_input/ @Advait-M
 
 # UI framework
-/crates/warpui/ @vorporeal
-/crates/warpui_core/ @vorporeal
-/crates/warpui_extras/ @vorporeal
-/crates/ui_components/ @vorporeal
+/crates/warpui/ @vorporeal @alokedesai @acarl005
+/crates/warpui_core/ @vorporeal @alokedesai
+/crates/warpui_extras/ @vorporeal @danielpeng
+/crates/ui_components/ @vorporeal @acarl005 @zachbai @bnavetta
 
 # Conversation rewind / CLI agent UI / macOS/Linux platform issues / performance issues
 /app/src/terminal/cli_agent.rs @zachbai
