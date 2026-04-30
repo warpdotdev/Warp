@@ -1536,6 +1536,11 @@ impl DiffStateModel {
             if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
                 self.refresh_pr_info(ctx);
             }
+        } else if FeatureFlag::GitOperationsInCodeReview.is_enabled()
+            && self.pr_info().is_none()
+            && !self.is_pr_info_refreshing()
+        {
+            self.refresh_pr_info(ctx);
         }
 
         ctx.emit(DiffStateModelEvent::DiffMetadataChanged(
