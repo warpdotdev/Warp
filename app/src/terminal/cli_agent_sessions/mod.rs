@@ -176,6 +176,10 @@ impl CLIAgentSession {
             CLIAgentEventType::Stop => {
                 self.session_context.query = event.payload.query.clone();
                 self.session_context.response = event.payload.response.clone();
+                // Clear stale summary from PermissionRequest so the tab title
+                // falls back to the final response instead of showing the last
+                // permission prompt text.
+                self.session_context.summary = None;
                 CLIAgentSessionStatus::Success
             }
             CLIAgentEventType::PermissionRequest => {
