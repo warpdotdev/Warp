@@ -823,21 +823,29 @@ fn find_skill_directories_in_tree_finds_skills_in_lazy_loaded_provider_dir() {
 /// provider-named directories) could not find it.
 ///
 /// The fix expands Pass 2 to also probe `{lazy_dir}/{provider_path}` for every
-/// known provider when the lazy-loaded directory is not itself a provider root.
+/// known provider when the lazy-loaded directory passes `looks_like_workspace_root`
+/// (i.e., it contains a project manifest such as `Cargo.toml`, `package.json`, or
+/// `.git`). This positive ownership signal replaces the earlier denylist approach.
 ///
 /// This test constructs a tree where `sub-project/` has `loaded: false` (no
 /// children), while the real `sub-project/.agents/skills/` directory exists on disk.
+/// A `package.json` file is placed in `sub-project/` so that `looks_like_workspace_root`
+/// returns `true` and the directory is probed.
 #[test]
 fn find_skill_directories_in_tree_finds_skills_when_parent_dir_is_lazy_loaded() {
     VirtualFS::test("find_lazy_parent_skills", |dirs, mut vfs| {
         let repo = dirs.tests().join("repo");
 
         // Create the actual filesystem structure: sub-project/.agents/skills/sub-skill/SKILL.md
+        // package.json provides the positive ownership signal for looks_like_workspace_root.
         vfs.mkdir("repo/sub-project/.agents/skills/sub-skill")
-            .with_files(vec![Stub::FileWithContent(
-                "repo/sub-project/.agents/skills/sub-skill/SKILL.md",
-                "---\nname: sub-skill\ndescription: test\n---\n# sub-skill",
-            )]);
+            .with_files(vec![
+                Stub::FileWithContent(
+                    "repo/sub-project/.agents/skills/sub-skill/SKILL.md",
+                    "---\nname: sub-skill\ndescription: test\n---\n# sub-skill",
+                ),
+                Stub::FileWithContent("repo/sub-project/package.json", "{}"),
+            ]);
 
         // Build a tree that mirrors what the indexer produces when `sub-project/` is
         // gitignored: `sub-project/` appears with `loaded: false` and no children,
@@ -892,17 +900,19 @@ fn find_skill_directories_in_tree_finds_skills_when_parent_dir_is_lazy_loaded() 
     });
 }
 
-/// Security test: dependency/cache directories must not be probed as workspace roots.
+/// Security test: lazy-loaded directories without a workspace ownership signal must not be probed.
 ///
-/// When a directory like `node_modules/` is gitignored (lazy-loaded with no children),
-/// Pass 2 Case (b) must skip it even if `node_modules/.agents/skills/` happens to exist
-/// on disk. Skills inside dependency trees are not authored by the repo owner and could
-/// be injected via a supply-chain attack.
+/// When `node_modules/` (or any other dependency/build/cache directory) is gitignored
+/// and appears as a lazy-loaded entry, Pass 2 Case (b) must skip it because it does not
+/// contain a project manifest (`Cargo.toml`, `package.json`, `.git`, etc.).
 ///
-/// `DEPENDENCY_DIR_NAMES` lists well-known package directories that are always skipped
-/// in Case (b). This test verifies that `node_modules` is in that list and that
-/// `find_skill_directories_in_tree` returns nothing when the only lazy-loaded directory
-/// is `node_modules/`.
+/// The positive `looks_like_workspace_root` check is the trust boundary: only directories
+/// that carry an explicit ownership signal are probed for provider skill paths. This covers
+/// all unlisted dependency trees (`third_party/`, `.tox/`, `.pnpm-store/`, `deps/`, …)
+/// without relying on a fragile, ever-growing denylist.
+///
+/// The `node_modules/` directory created here intentionally contains no manifest file, so
+/// `looks_like_workspace_root` returns `false` and the directory is never probed.
 #[test]
 fn find_skill_directories_in_tree_skips_dependency_dirs() {
     VirtualFS::test("find_skip_node_modules", |dirs, mut vfs| {

@@ -4,47 +4,6 @@ use std::{
     sync::LazyLock,
 };
 
-/// Well-known dependency/cache directory names that should never be probed as
-/// potential workspace roots in Pass 2 Case (b). Skills inside these trees are
-/// not authored by the repo owner and must not be auto-loaded.
-static DEPENDENCY_DIR_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    [
-        // JavaScript / Node
-        "node_modules",
-        "bower_components",
-        "jspm_packages",
-        ".yarn",
-        ".pnp",
-        // Rust
-        "target",
-        // Go
-        "vendor",
-        // Python
-        "__pycache__",
-        ".venv",
-        "venv",
-        "env",
-        ".eggs",
-        "site-packages",
-        // Java / Kotlin / Gradle
-        ".gradle",
-        ".m2",
-        // iOS / macOS
-        "Pods",
-        "DerivedData",
-        // Ruby
-        "gems",
-        // Generic build / dist artefacts
-        "dist",
-        "build",
-        ".build",
-        "out",
-        ".cache",
-        ".tmp",
-    ]
-    .into()
-});
-
 use ai::skills::{
     home_skills_path, read_skills, ParsedSkill, SkillProvider, SKILL_PROVIDER_DEFINITIONS,
 };
@@ -54,6 +13,39 @@ use repo_metadata::{local_model::GetContentsArgs, RepoContent, RepoMetadataModel
 use warpui::AppContext;
 
 use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
+
+/// Returns `true` if `dir` contains at least one common project-manifest file or a
+/// `.git` entry, indicating it is an intentional workspace root rather than a
+/// dependency or build-artefact directory.
+///
+/// This is used as a positive ownership signal in Pass 2 Case (b) of
+/// [`find_skill_directories_in_tree`]: only directories that pass this check are
+/// probed for provider skill paths, so unrecognised dependency trees (e.g.
+/// `third_party/`, `.tox/`, `.pnpm-store/`) are skipped without the need for a
+/// fragile, ever-growing denylist.
+fn looks_like_workspace_root(dir: &Path) -> bool {
+    const INDICATORS: &[&str] = &[
+        ".git",
+        "Cargo.toml",
+        "package.json",
+        "go.mod",
+        "pyproject.toml",
+        "setup.py",
+        "Gemfile",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "CMakeLists.txt",
+        "Makefile",
+        "meson.build",
+        "WORKSPACE",
+        "WORKSPACE.bazel",
+        "pubspec.yaml",
+        "mix.exs",
+        "composer.json",
+    ];
+    INDICATORS.iter().any(|name| dir.join(name).exists())
+}
 
 /// Finds all skill directories in a repository by querying the RepoMetadataModel tree.
 ///
@@ -75,14 +67,13 @@ use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
 /// - **Case (b) — parent of provider root is lazy:** The lazy dir is not a provider
 ///   root but could be a parent of one, e.g. `sub-project/` is gitignored so `.agents/`
 ///   is never in the tree at all. For each known provider, `{dir}/{provider_path}` is
-///   checked with `is_dir()`. Directories whose names appear in `DEPENDENCY_DIR_NAMES`
-///   (e.g. `node_modules`, `target`, `vendor`) are skipped to prevent loading untrusted
-///   skills from dependency trees.
+///   checked with `is_dir()`, **but only if [`looks_like_workspace_root`] returns
+///   `true`**. This positive ownership check (presence of `Cargo.toml`, `package.json`,
+///   `.git`, etc.) prevents unrecognised dependency trees (`third_party/`, `.tox/`,
+///   `.pnpm-store/`, …) from being probed without relying on a fragile denylist.
 ///
 /// In both cases only directories already registered in the tree are examined, keeping
-/// the scope bounded. Additionally, Case (b) explicitly skips well-known
-/// dependency/cache directory names so that gitignored package trees (e.g.
-/// `node_modules/`) cannot be used to inject untrusted skills.
+/// the scope bounded.
 pub fn find_skill_directories_in_tree(
     repo_path: &Path,
     repo_metadata: &RepoMetadataModel,
@@ -146,12 +137,11 @@ pub fn find_skill_directories_in_tree(
     //
     //   Case (b) — parent of provider root is lazy (e.g. `sub-project/` is
     //   gitignored, so `.agents/` is never in the tree at all): probe
-    //   `{dir}/{provider_path}` for every known provider.
+    //   `{dir}/{provider_path}` for every known provider, but only when
+    //   `looks_like_workspace_root` returns true.
     //
     // Only directories already registered in the tree are examined, keeping
-    // the scope bounded. Dependency subtrees like `node_modules` are safe:
-    // when their parent is lazy-loaded their children are absent from the
-    // tree, so Pass 2 can never reach a `node_modules/.agents/` entry.
+    // the scope bounded.
     let mut result_set: HashSet<PathBuf> = result.iter().cloned().collect();
     let args_lazy = GetContentsArgs::default()
         .include_ignored()
@@ -182,14 +172,13 @@ pub fn find_skill_directories_in_tree(
                 result_set.insert(skills_path.clone());
                 result.push(skills_path);
             }
-        } else if !DEPENDENCY_DIR_NAMES.contains(dir_name) {
+        } else if looks_like_workspace_root(&lazy_dir) {
             // Case (b): the lazy dir is a parent of a potential provider root
             // (e.g. `sub-project/` is gitignored, so `.agents/` was never
-            // indexed). Probe `{dir}/{provider_path}` for every known provider.
-            //
-            // Dependency/cache directories (node_modules, target, vendor, …) are
-            // excluded via DEPENDENCY_DIR_NAMES: skills inside those trees are not
-            // authored by the repo owner and must not be auto-loaded.
+            // indexed). Only probe directories that look like intentional workspace
+            // roots (contain a manifest like Cargo.toml, package.json, .git, …).
+            // This positive ownership check avoids probing arbitrary dependency or
+            // build-artefact trees without relying on a fragile denylist.
             for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
                 let skills_path = lazy_dir.join(&provider.skills_path);
                 if !result_set.contains(&skills_path) && skills_path.is_dir() {
