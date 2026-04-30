@@ -144,6 +144,11 @@ impl RepoPicker {
                             ctx.dispatch_typed_action(
                                 crate::menu::MenuAction::ClearHover(0),
                             );
+                        } else {
+                            // Clear the suppress flag when pointer leaves the footer.
+                            ctx.dispatch_typed_action(
+                                crate::menu::MenuAction::ClearHoverDone(0),
+                            );
                         }
                     })
                     .with_cursor(Cursor::PointingHand)

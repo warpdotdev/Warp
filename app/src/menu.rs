@@ -69,6 +69,9 @@ pub struct SubMenu<A: Action + Clone = ()> {
     /// Tracks whether the most recent selection movement came from pointer
     /// hover or from a keyboard/programmatic path.
     last_selection_source: Option<MenuSelectionSource>,
+    /// When true, suppresses hover highlighting of menu items.
+    /// Set when the pinned footer/header is hovered, cleared when it's not.
+    suppress_item_hover: bool,
     /// Contains variant specific state.
     menu_variant: MenuVariant,
 }
@@ -983,7 +986,8 @@ impl<A: Action + Clone> MenuItemFields<A> {
             .horizontal_padding_override
             .unwrap_or(horizontal_padding);
         let mut ret = Hoverable::new(self.mouse_state.clone(), |state| {
-            let is_hovered = state.is_hovered() && !safe_zone_suppresses_hover;
+            let is_hovered = state.is_hovered() && !safe_zone_suppresses_hover
+                && !self.suppress_item_hover;
             let is_hovered_or_selected = is_hovered || is_selected;
             let default_hover_background = if self.highlight_on_hover {
                 theme.accent_button_color()
@@ -1526,6 +1530,8 @@ pub enum MenuAction {
     /// Clears the hovered row index, used when hovering over a pinned footer/header
     /// to prevent repo list items from showing hover state.
     ClearHover(usize),
+    /// Clears the suppress_item_hover flag when the pointer leaves the footer/header.
+    ClearHoverDone(usize),
 }
 
 pub fn init(app: &mut AppContext) {
@@ -2371,7 +2377,8 @@ impl<A: Action + Clone> SubMenu<A> {
             HoverSubmenuLeafNode { .. }
             | UnhoverSubmenuParent(_)
             | HoverSubmenuWithChildren(_, _)
-            | ClearHover(_) => ActionAccessibilityContent::Empty,
+            | ClearHover(_)
+            | ClearHoverDone(_) => ActionAccessibilityContent::Empty,
         }
     }
 
@@ -2438,7 +2445,14 @@ impl<A: Action + Clone> SubMenu<A> {
                     return;
                 }
                 self.hovered_row_index = None;
+                self.suppress_item_hover = true;
                 ctx.emit(Event::ItemHovered);
+            }
+            MenuAction::ClearHoverDone(depth) => {
+                if *depth != self.depth {
+                    return;
+                }
+                self.suppress_item_hover = false;
             }
         }
     }
