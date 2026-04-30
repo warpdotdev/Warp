@@ -94,6 +94,13 @@ pub struct Glyph {
     pub position: Vector2F,
     pub fade: Option<GlyphFade>,
     pub color: ColorU,
+    /// Whether this glyph should be rasterized as LCD subpixel coverage and
+    /// composited through the dual-source-blend pipeline. Set by
+    /// [`Scene::draw_glyph`] using the renderer's reported capabilities and
+    /// the surface's transparency state. The renderer treats this as a
+    /// preference, not an obligation: a glyph tagged true on a backend that
+    /// has no subpixel pipeline silently falls back to grayscale.
+    pub lcd_subpixel: bool,
 }
 
 #[derive(Clone, Default)]
@@ -654,6 +661,17 @@ impl Scene {
         font_size: f32,
         color: ColorU,
     ) -> &mut Glyph {
+        // Decide whether this glyph should take the LCD subpixel path.
+        // Subpixel rasterisation is only correct when the GPU reports
+        // dual-source blending (so the renderer has a pipeline that can
+        // consume the per-channel coverage) and when the surface composites
+        // with a fully opaque alpha (otherwise per-channel coverage would
+        // corrupt the destination alpha that the compositor reads). Both
+        // checks happen at scene-build time so a single classification
+        // decision flows through the cache key and the renderer dispatch.
+        let lcd_subpixel = self.rendering_config.lcd_subpixel_supported
+            && !self.rendering_config.surface_is_transparent;
+
         // TODO: Support hit testing on glyphs?
         let layer = self.active_layer();
         layer.glyphs.push(Glyph {
@@ -665,6 +683,7 @@ impl Scene {
             position,
             color,
             fade: None,
+            lcd_subpixel,
         });
         layer.glyphs.last_mut().unwrap()
     }

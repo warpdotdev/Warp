@@ -38,7 +38,7 @@ use std::{
     pin::pin,
     rc::{self, Rc},
     sync::{
-        atomic::{AtomicI64, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
         Arc, OnceLock,
     },
 };
@@ -611,6 +611,12 @@ pub struct AppContext {
     presenters: HashMap<WindowId, Rc<RefCell<Presenter>>>,
     /// Configuration options related to rendering of the application.
     rendering_config: rendering::Config,
+    /// Latched bit reporting whether any window's renderer has reported
+    /// dual-source blending support. Stored in an Arc<AtomicBool> so the
+    /// `on_gpu_device_info_reported` callback can write to it without
+    /// borrowing the AppContext, since the callback is invoked synchronously
+    /// from inside the GPU resource creation path.
+    gpu_supports_lcd_subpixel: Arc<AtomicBool>,
     global_actions: HashMap<String, Vec<Box<GlobalActionCallback>>>,
     keystroke_matcher: Matcher,
     next_task_id: usize,
@@ -772,6 +778,7 @@ impl AppContext {
             global_actions: Default::default(),
             presenters: Default::default(),
             rendering_config: Default::default(),
+            gpu_supports_lcd_subpixel: Arc::new(AtomicBool::new(false)),
             keystroke_matcher: Default::default(),
             disabled_key_bindings_windows: Default::default(),
             next_task_id: 0,
@@ -923,7 +930,14 @@ impl AppContext {
     }
 
     pub fn rendering_config(&self) -> rendering::Config {
-        self.rendering_config
+        let mut config = self.rendering_config;
+        // Merge in GPU capability flags learned at window-renderer init.
+        // Stored separately because the on_gpu_device_info_reported
+        // callback that sets them runs without a mutable AppContext borrow.
+        config.lcd_subpixel_supported = self
+            .gpu_supports_lcd_subpixel
+            .load(Ordering::Acquire);
+        config
     }
 
     pub fn update_rendering_config<U>(&mut self, update_fn: U)
@@ -2313,6 +2327,19 @@ impl AppContext {
         self.presenters
             .insert(window_id, Rc::new(RefCell::new(Presenter::new(window_id))));
 
+        // Wrap the user-supplied GPU-info callback so we can latch the
+        // dual-source-blending capability into AppContext before forwarding
+        // to the user. The callback is called synchronously from inside
+        // Resources::new, so the latch is observable on the next call to
+        // rendering_config(). Using an Arc<AtomicBool> keeps the wrapper
+        // Send + Sync and avoids needing a mutable AppContext borrow.
+        let user_callback = on_gpu_driver_reported.unwrap_or_else(|| Box::new(|_| {}));
+        let lcd_supported = Arc::clone(&self.gpu_supports_lcd_subpixel);
+        let on_gpu_info: Box<rendering::OnGPUDeviceSelected> = Box::new(move |info| {
+            lcd_supported.store(info.supports_dual_source_blending, Ordering::Release);
+            user_callback(info);
+        });
+
         let window_options = WindowOptions {
             bounds: window_bounds,
             fullscreen_state,
@@ -2323,7 +2350,7 @@ impl AppContext {
             background_blur_texture,
             gpu_power_preference: self.rendering_config.gpu_power_preference,
             backend_preference: self.rendering_config.backend_preference,
-            on_gpu_device_info_reported: on_gpu_driver_reported.unwrap_or(Box::new(|_| {})),
+            on_gpu_device_info_reported: on_gpu_info,
             window_instance,
         };
 

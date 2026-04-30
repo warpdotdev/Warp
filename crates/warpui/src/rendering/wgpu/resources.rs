@@ -111,7 +111,13 @@ impl Resources {
                 adapter_info.name,
             );
 
-            on_gpu_device_selected(device_info_from_adapter_info(adapter_info));
+            let supports_dual_source_blending = device
+                .features()
+                .contains(wgpu::Features::DUAL_SOURCE_BLENDING);
+            on_gpu_device_selected(device_info_from_adapter_info(
+                adapter_info,
+                supports_dual_source_blending,
+            ));
 
             let uniforms = uniforms::Uniforms::new(&device);
             let quad = quad::Resources::new(&device);
@@ -231,7 +237,10 @@ impl Resources {
     }
 }
 
-fn device_info_from_adapter_info(adapter_info: wgpu::AdapterInfo) -> GPUDeviceInfo {
+fn device_info_from_adapter_info(
+    adapter_info: wgpu::AdapterInfo,
+    supports_dual_source_blending: bool,
+) -> GPUDeviceInfo {
     let device_type = match adapter_info.device_type {
         DeviceType::Other => GPUDeviceType::Other,
         DeviceType::IntegratedGpu => GPUDeviceType::IntegratedGpu,
@@ -253,6 +262,7 @@ fn device_info_from_adapter_info(adapter_info: wgpu::AdapterInfo) -> GPUDeviceIn
         driver_name: adapter_info.driver,
         driver_info: adapter_info.driver_info,
         backend,
+        supports_dual_source_blending,
     }
 }
 

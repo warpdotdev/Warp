@@ -257,10 +257,11 @@ impl Pipeline {
         for glyph in &layer.glyphs {
             let glyph_position = glyph.position * scale_factor;
             let subpixel_alignment = SubpixelAlignment::new(glyph_position);
-            // Subpixel rendering is wired into the glyph classification step
-            // upstream (see commit that adds Glyph::lcd_subpixel). Until that
-            // lands, all glyphs route through the grayscale path.
-            let lcd_subpixel = false;
+            // Scene-time classification has already decided whether this
+            // glyph wants the LCD subpixel path; the cache routes to the
+            // correct atlas kind and pipeline_for_kind picks the matching
+            // pipeline at draw time.
+            let lcd_subpixel = glyph.lcd_subpixel;
             match self.glyph_cache.get(
                 glyph.glyph_key,
                 scene.scale_factor(),
