@@ -17,7 +17,14 @@ impl Uniforms {
             label: Some("Quad Uniforms Bind Group Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                // The glyph fragment shader now reads gamma_ratios,
+                // grayscale_enhanced_contrast, and
+                // subpixel_enhanced_contrast from this uniform buffer in
+                // addition to the viewport_size the vertex stage needs,
+                // so the binding has to be visible to both stages. Adding
+                // FRAGMENT here is permissive: shaders that only read in
+                // the vertex stage continue to work without change.
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
