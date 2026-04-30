@@ -235,6 +235,135 @@ fn test_action_focus_cloud_mode_parse() {
     let action = Action::parse(&url).unwrap();
     assert!(matches!(action, Action::FocusCloudMode));
 }
+#[test]
+fn test_action_open_file_parse_with_line_and_column() {
+    let url = Url::parse(&format!(
+        "{}://action/open_file?path=/tmp/project/src/main.rs&line=120&column=8",
+        ChannelState::url_scheme()
+    ))
+    .unwrap();
+
+    let action = Action::parse(&url).unwrap();
+    match action {
+        Action::OpenFile { path, line_col } => {
+            assert_eq!(path, PathBuf::from("/tmp/project/src/main.rs"));
+            assert_eq!(
+                line_col,
+                Some(LineAndColumnArg {
+                    line_num: 120,
+                    column_num: Some(8),
+                })
+            );
+        }
+        Action::NewTab
+        | Action::NewWindow
+        | Action::Docker
+        | Action::OpenRepo
+        | Action::CloudAgentSetup
+        | Action::NewCloudAgentConversation
+        | Action::NewAgentConversation
+        | Action::CreateEnvironment { .. }
+        | Action::FocusCloudMode => panic!("unexpected action: {action:?}"),
+    }
+}
+
+#[test]
+fn test_parse_open_file_url_path_only() {
+    let url = Url::parse("warp://action/open_file?path=/tmp/project/src/main.rs").unwrap();
+
+    let (path, line_col) = parse_open_file_url(&url).unwrap();
+
+    assert_eq!(path, PathBuf::from("/tmp/project/src/main.rs"));
+    assert_eq!(line_col, None);
+}
+
+#[test]
+fn test_parse_open_file_url_line_only() {
+    let url = Url::parse("warp://action/open_file?path=/tmp/project/src/main.rs&line=120").unwrap();
+
+    let (path, line_col) = parse_open_file_url(&url).unwrap();
+
+    assert_eq!(path, PathBuf::from("/tmp/project/src/main.rs"));
+    assert_eq!(
+        line_col,
+        Some(LineAndColumnArg {
+            line_num: 120,
+            column_num: None,
+        })
+    );
+}
+
+#[test]
+fn test_parse_open_file_url_expands_tilde_path() {
+    let url =
+        Url::parse("warp://action/open_file?path=%7E%2FProjects%2Fsrc%2Fmain.rs&line=1").unwrap();
+    let home = dirs::home_dir().expect("HOME must be set for this test");
+
+    let (path, line_col) = parse_open_file_url(&url).unwrap();
+
+    assert_eq!(path, home.join("Projects/src/main.rs"));
+    assert_eq!(
+        line_col,
+        Some(LineAndColumnArg {
+            line_num: 1,
+            column_num: None,
+        })
+    );
+}
+
+#[test]
+fn test_parse_open_file_url_missing_path_errors() {
+    let url = Url::parse("warp://action/open_file?line=120").unwrap();
+
+    let err = parse_open_file_url(&url).unwrap_err();
+
+    assert!(
+        format!("{err:?}").contains("Missing `path`"),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn test_parse_open_file_url_invalid_line_errors() {
+    for line in ["abc", "0"] {
+        let url = Url::parse(&format!(
+            "warp://action/open_file?path=/tmp/project/src/main.rs&line={line}"
+        ))
+        .unwrap();
+
+        assert!(
+            parse_open_file_url(&url).is_err(),
+            "line={line} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn test_parse_open_file_url_invalid_column_errors() {
+    for column in ["abc", "0"] {
+        let url = Url::parse(&format!(
+            "warp://action/open_file?path=/tmp/project/src/main.rs&line=120&column={column}"
+        ))
+        .unwrap();
+
+        assert!(
+            parse_open_file_url(&url).is_err(),
+            "column={column} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn test_parse_open_file_url_column_without_line_errors() {
+    let url = Url::parse("warp://action/open_file?path=/tmp/project/src/main.rs&column=8").unwrap();
+
+    let err = parse_open_file_url(&url).unwrap_err();
+
+    assert!(
+        format!("{err:?}").contains("`column` requires `line`"),
+        "unexpected error: {err:?}"
+    );
+}
 
 #[test]
 fn test_action_create_environment_parse_no_repos() {
@@ -601,6 +730,41 @@ fn test_open_file_non_executable_sh_routes_to_editor() {
     std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
     std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
     assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
+}
+
+#[test]
+fn test_open_file_line_target_routes_markdown_to_editor() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("README.md");
+    std::fs::write(&p, b"# hi\n").unwrap();
+    let line_col = Some(LineAndColumnArg {
+        line_num: 3,
+        column_num: Some(1),
+    });
+
+    assert_eq!(
+        classify_open_file_action_with_line_col(&p, line_col),
+        OpenFileAction::Editor
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn test_open_file_line_target_routes_executable_shell_script_to_editor() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("run.sh");
+    std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let line_col = Some(LineAndColumnArg {
+        line_num: 2,
+        column_num: None,
+    });
+
+    assert_eq!(
+        classify_open_file_action_with_line_col(&p, line_col),
+        OpenFileAction::Editor
+    );
 }
 
 #[test]

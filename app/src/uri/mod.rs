@@ -38,6 +38,7 @@ use url::Url;
 use warpui::notification::UserNotification;
 use warpui::{platform::TerminationMode, SingletonEntity as _, TypedActionView};
 
+use warp_util::path::LineAndColumnArg;
 use warpui::{AppContext, EntityId, ViewHandle, WindowId};
 
 use self::docker::open_docker_container;
@@ -665,17 +666,56 @@ fn parse_tab_path(url: &Url) -> Option<PathBuf> {
     let raw = url.query_pairs().find(|(k, _)| k == "path")?.1;
     Some(PathBuf::from(shellexpand::tilde(&raw).into_owned()))
 }
+fn parse_positive_usize_query_param(url: &Url, param_name: &str) -> Result<Option<usize>> {
+    let Some(raw) = url
+        .query_pairs()
+        .find_map(|(key, value)| (key == param_name).then(|| value.into_owned()))
+    else {
+        return Ok(None);
+    };
+
+    let parsed = raw
+        .parse::<usize>()
+        .map_err(|_| anyhow!("`{param_name}` must be a positive integer"))?;
+    ensure!(parsed > 0, "`{param_name}` must be greater than zero");
+    Ok(Some(parsed))
+}
+
+fn parse_open_file_url(url: &Url) -> Result<(PathBuf, Option<LineAndColumnArg>)> {
+    let path = parse_tab_path(url)
+        .ok_or_else(|| anyhow!("Missing `path` query parameter for open_file action"))?;
+    let line = parse_positive_usize_query_param(url, "line")?;
+    let column = parse_positive_usize_query_param(url, "column")?;
+    ensure!(
+        line.is_some() || column.is_none(),
+        "`column` requires `line` for open_file action"
+    );
+
+    Ok((
+        path,
+        line.map(|line_num| LineAndColumnArg {
+            line_num,
+            column_num: column,
+        }),
+    ))
+}
 
 #[derive(Debug)]
 enum Action {
     NewTab,
     NewWindow,
+    OpenFile {
+        path: PathBuf,
+        line_col: Option<LineAndColumnArg>,
+    },
     Docker,
     OpenRepo,
     CloudAgentSetup,
     NewCloudAgentConversation,
     NewAgentConversation,
-    CreateEnvironment { repos: Vec<String> },
+    CreateEnvironment {
+        repos: Vec<String>,
+    },
     FocusCloudMode,
 }
 
@@ -684,6 +724,10 @@ impl Action {
         match url.path() {
             "/new_tab" => Ok(Self::NewTab),
             "/new_window" => Ok(Self::NewWindow),
+            "/open_file" => {
+                let (path, line_col) = parse_open_file_url(url)?;
+                Ok(Self::OpenFile { path, line_col })
+            }
             "/docker/open_subshell" => Ok(Self::Docker),
             "/open-repo" => Ok(Self::OpenRepo),
             "/cloud_agent_setup" => Ok(Self::CloudAgentSetup),
@@ -719,7 +763,10 @@ impl Action {
                     log::warn!("Could not parse path to open a new tab/window");
                     return;
                 };
-                open_file(window_id, path, ctx);
+                open_file(window_id, path, None, ctx);
+            }
+            Action::OpenFile { path, line_col } => {
+                open_file(primary_window_id, path.clone(), *line_col, ctx);
             }
             Action::Docker => {
                 if let Err(err) = open_docker_container(url, ctx) {
@@ -918,6 +965,7 @@ impl Action {
         match self {
             Self::Docker
             | Self::CreateEnvironment { .. }
+            | Self::OpenFile { .. }
             | Self::OpenRepo
             | Self::CloudAgentSetup
             | Self::NewCloudAgentConversation
@@ -956,7 +1004,7 @@ pub fn handle_incoming_uri(url: &Url, ctx: &mut AppContext) {
     #[cfg(feature = "local_tty")]
     if url.scheme() == "file" {
         if let Ok(path) = url.to_file_path() {
-            open_file(primary_window_id, path, ctx);
+            open_file(primary_window_id, path, None, ctx);
         }
         return;
     }
@@ -1039,18 +1087,37 @@ fn classify_open_file_action(path: &Path) -> OpenFileAction {
     OpenFileAction::ExecuteInSession
 }
 
+fn classify_open_file_action_with_line_col(
+    path: &Path,
+    line_col: Option<LineAndColumnArg>,
+) -> OpenFileAction {
+    if line_col.is_some()
+        && path.is_file()
+        && (is_file_openable_in_warp(path).is_some() || starts_with_shebang(path))
+    {
+        return OpenFileAction::Editor;
+    }
+
+    classify_open_file_action(path)
+}
+
 /// Handle an incoming `file://` URL.
 /// * Markdown files are opened as notebook panes.
 /// * For directories, open a new session at the directory path.
 /// * For other files, open a new session at the parent directory path, then possibly execute the
 ///   file.
-fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
+fn open_file(
+    window_id: Option<WindowId>,
+    path: PathBuf,
+    line_col: Option<LineAndColumnArg>,
+    ctx: &mut AppContext,
+) {
     let primary_window_and_view = window_id.and_then(|window_id| {
         ctx.root_view_id(window_id)
             .map(|view_id| (window_id, view_id))
     });
 
-    let action = classify_open_file_action(&path);
+    let action = classify_open_file_action_with_line_col(&path, line_col);
     if action == OpenFileAction::Notebook {
         if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
             ctx.dispatch_action(
@@ -1070,12 +1137,16 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
             use crate::root_view::{open_new_with_workspace_source, NewWorkspaceSource};
             use crate::util::{
                 file::external_editor::EditorSettings,
-                openable_file_type::resolve_file_target_to_open_in_warp,
+                openable_file_type::{resolve_file_target_to_open_in_warp, FileTarget},
             };
 
             // Open text/code files in Warp's code editor, respecting the user's layout preference.
             let editor_settings = EditorSettings::as_ref(ctx);
-            let target = resolve_file_target_to_open_in_warp(&path, editor_settings, None);
+            let target = if line_col.is_some() {
+                FileTarget::CodeEditor(*editor_settings.open_file_layout)
+            } else {
+                resolve_file_target_to_open_in_warp(&path, editor_settings, None)
+            };
 
             let window_id = if let Some((wid, _)) = primary_window_and_view {
                 wid
@@ -1095,7 +1166,7 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
                 if let Some(workspace) = workspaces.into_iter().next() {
                     workspace.update(ctx, |workspace, ctx| {
                         let source = CodeSource::Finder { path: path.clone() };
-                        workspace.open_file_with_target(path, target, None, source, ctx);
+                        workspace.open_file_with_target(path, target, line_col, source, ctx);
                     });
                 }
             }
