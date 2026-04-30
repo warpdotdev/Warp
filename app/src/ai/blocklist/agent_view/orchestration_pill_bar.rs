@@ -330,9 +330,13 @@ impl OrchestrationPillBar {
     /// if we already have a cached entry or a fetch is already in flight.
     ///
     /// Orchestration child agents typically run in dedicated git worktrees
-    /// (one per child), so reading `git diff --shortstat HEAD` against the
-    /// child's working directory yields a per-agent change count without
-    /// needing to share state with the hidden child terminal view.
+    /// (one per child) and commit their work as they go, so a plain
+    /// `git diff --shortstat HEAD` would report `0` immediately after each
+    /// commit — masking the agent's actual change footprint. We use
+    /// [`get_branch_change_summary`] instead, which diffs against the
+    /// detected main branch and therefore captures both committed and
+    /// uncommitted work on the agent's branch (the same notion of "diff
+    /// that would land in a PR" the agent details panel uses elsewhere).
     fn maybe_fetch_diff_stats(
         &mut self,
         conversation_id: AIConversationId,
@@ -363,18 +367,16 @@ impl OrchestrationPillBar {
             let path = PathBuf::from(cwd);
             self.diff_stats_in_flight.insert(conversation_id);
             ctx.spawn(
-                async move { crate::util::git::get_repo_git_summary(&path).await },
+                async move { crate::util::git::get_branch_change_summary(&path).await },
                 move |me, summary, ctx| {
                     me.diff_stats_in_flight.remove(&conversation_id);
-                    let stats = summary.map(|s| GitLineChanges {
-                        // `RepoGitSummary` doesn't carry a files-changed
-                        // count, so report 0 here. The hover card chip
-                        // hides the file count when it's 0 (it only
-                        // matters for the prompt git chip), so this
-                        // reads cleanly as just `+N -M`.
+                    let stats = summary.map(|(lines_added, lines_removed)| GitLineChanges {
+                        // The hover card chip we render only consumes
+                        // `lines_added` / `lines_removed`, so the
+                        // files-changed slot is unused here.
                         files_changed: 0,
-                        lines_added: s.lines_added,
-                        lines_removed: s.lines_removed,
+                        lines_added,
+                        lines_removed,
                     });
                     me.diff_stats_cache.insert(conversation_id, stats);
                     ctx.notify();
