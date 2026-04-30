@@ -15,6 +15,7 @@ default-members = [
   "crates/editor",
   "crates/graphql",
   "crates/markdown_parser",
+  "crates/orchestrator",
   "crates/sum_tree",
   "crates/warpui",
   "crates/warp_completer",
@@ -53,6 +54,7 @@ markdown_parser = { path = "crates/markdown_parser" }
 natural_language_detection = { path = "crates/natural_language_detection" }
 node_runtime = { path = "crates/node_runtime" }
 onboarding = { path = "crates/onboarding" }
+orchestrator = { path = "crates/orchestrator" }
 persistence = { path = "crates/persistence" }
 prevent_sleep = { path = "crates/prevent_sleep" }
 repo_metadata = { path = "crates/repo_metadata" }
