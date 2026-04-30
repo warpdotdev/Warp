@@ -464,15 +464,7 @@ impl UriHost {
                     .last()
                     .unwrap_or("");
 
-                let uuid_bytes: Option<Vec<u8>> = if uuid_hex.len() == 32 {
-                    (0..16)
-                        .map(|i| u8::from_str_radix(&uuid_hex[i * 2..i * 2 + 2], 16).ok())
-                        .collect()
-                } else {
-                    None
-                };
-
-                let Some(uuid_bytes) = uuid_bytes else {
+                let Some(uuid_bytes) = decode_uuid_hex(uuid_hex) else {
                     log::warn!(
                         "pane deep link received invalid UUID hex (safe: len={})",
                         uuid_hex.len()
@@ -1437,6 +1429,16 @@ fn safe_url_log_fields(url: &Url) -> String {
         url.host_str().unwrap_or("-"),
         url.path(),
     )
+}
+
+fn decode_uuid_hex(hex: &str) -> Option<Vec<u8>> {
+    if hex.len() == 32 {
+        (0..16)
+            .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok())
+            .collect()
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]

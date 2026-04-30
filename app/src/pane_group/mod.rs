@@ -2134,7 +2134,7 @@ impl PaneGroup {
     /// the given bytes, or `None` if no such pane exists in this group.
     pub fn find_pane_by_session_uuid(&self, uuid: &[u8]) -> Option<PaneId> {
         self.panes_of::<TerminalPane>()
-            .find(|pane| pane.session_uuid() == uuid)
+            .find(|pane| pane.session_uuid() == uuid && !self.is_pane_hidden_for_close(pane.id()))
             .map(|pane| pane.id())
     }
 

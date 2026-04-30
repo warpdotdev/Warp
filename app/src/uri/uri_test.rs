@@ -699,10 +699,20 @@ fn test_pane_uri_invalid_hex_does_not_panic() {
 fn test_pane_uri_case_insensitive_hex() {
     let upper = "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4";
     let lower = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4";
-    let decode = |s: &str| -> Vec<u8> {
-        (0..16)
-            .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap())
-            .collect()
-    };
-    assert_eq!(decode(upper), decode(lower));
+    let upper_bytes = super::decode_uuid_hex(upper).expect("upper hex should decode");
+    let lower_bytes = super::decode_uuid_hex(lower).expect("lower hex should decode");
+    assert_eq!(upper_bytes, lower_bytes);
+    assert_eq!(upper_bytes.len(), 16);
+}
+
+#[test]
+fn test_decode_uuid_hex_rejects_wrong_length() {
+    assert!(super::decode_uuid_hex("ABCD").is_none());
+    assert!(super::decode_uuid_hex("").is_none());
+    assert!(super::decode_uuid_hex("A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4FF").is_none());
+}
+
+#[test]
+fn test_decode_uuid_hex_rejects_invalid_chars() {
+    assert!(super::decode_uuid_hex("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ").is_none());
 }
