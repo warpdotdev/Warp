@@ -22,10 +22,8 @@ if (-not (Get-Command -Name cargo -Type Application -ErrorAction SilentlyContinu
     exit 1
 }
 
-# Visual Studio Build Tools (MSVC compiler + linker + Windows SDK) are required
-# to link Rust crates targeting x86_64-pc-windows-msvc. Without them, rustc falls
-# back to the GNU coreutils `link` from Git for Windows and fails with
-# `link: extra operand` errors.
+# Visual Studio Build Tools (MSVC compiler + linker + Windows SDK) are required to link Rust crates
+# targeting x86_64-pc-windows-msvc.
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $haveMsvcBuildTools = $false
 if (Test-Path $vswhere) {
