@@ -95,15 +95,17 @@ impl LanguageServerCandidate for IntelephenseCandidate {
     }
 
     async fn is_installed_on_path(&self, executor: &CommandBuilder) -> bool {
-        // Intelephense doesn't document a `--version` flag; its CLI surface is
-        // only LSP transport flags. `--help`, by contrast, is handled by the
-        // underlying argument parser and exits cleanly with a non-zero status
-        // and usage text. We only care about whether the binary spawned at
-        // all (i.e., is on PATH and executable), so accept any clean exit
-        // from the `output()` future regardless of `status.success()`.
+        // Intelephense's CLI surface is only LSP transport flags (`--stdio`,
+        // `--node-ipc`, `--socket=N`, `--pipe=X`); both `--version` and
+        // `--help` either error out or hang in connection-transport setup.
+        // Spawn the server with `--stdio` and stdin redirected to /dev/null
+        // so it sees immediate EOF and exits gracefully — that way we only
+        // need to know that the binary spawned at all (i.e. is on PATH and
+        // executable). Any successful spawn proves availability.
         executor
             .command("intelephense")
-            .arg("--help")
+            .arg("--stdio")
+            .stdin(std::process::Stdio::null())
             .output()
             .await
             .is_ok()
