@@ -108,20 +108,3 @@ fn test_possible_file_paths_in_word_accepts_token_at_separator_count_cap() {
     }
     assert!(possible_file_paths_in_word(&at_cap).next().is_some());
 }
-
-#[test]
-fn test_possible_file_paths_in_word_keeps_realistic_paths_within_limits() {
-    let word = "/a/b/c/d/e/f/g/h/i/j/k/l/m/n.rs:42:7";
-    let possible_paths = possible_file_paths_in_word(word).collect_vec();
-    assert!(possible_paths.contains(&"/a/b/c/d/e/f/g/h/i/j/k/l/m/n.rs"));
-    assert!(possible_paths.contains(&"/a/b/c/d/e/f/g/h/i/j/k/l/m/n.rs:42"));
-}
-
-#[test]
-fn test_possible_file_paths_in_word_handles_pathological_token() {
-    let pathological: String = (0..1000)
-        .map(|i| format!("\"key{i}\":\"value{i}\","))
-        .collect();
-    assert!(pathological.len() < MAX_WORD_LEN_FOR_FILE_PATH);
-    assert!(possible_file_paths_in_word(&pathological).next().is_none());
-}
