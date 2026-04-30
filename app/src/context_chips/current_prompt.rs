@@ -354,7 +354,7 @@ impl CurrentPrompt {
     fn update_on_click_value(&mut self, chip_kind: &ContextChipKind, value: Option<Vec<String>>) {
         log::debug!("Updating prompt on_click value of {chip_kind:?} to {value:?}");
         let filter_values = match chip_kind {
-            ContextChipKind::ShellGitBranch => Self::filter_git_branch_on_click_values(value),
+            ContextChipKind::ShellGitBranch => self.filter_git_branch_on_click_values(value),
             _ => value,
         };
         if let Some(state) = self.states.get_mut(chip_kind) {
@@ -615,7 +615,10 @@ impl CurrentPrompt {
         }
     }
 
-    fn filter_git_branch_on_click_values(values_opt: Option<Vec<String>>) -> Option<Vec<String>> {
+    fn filter_git_branch_on_click_values(
+        &self,
+        values_opt: Option<Vec<String>>,
+    ) -> Option<Vec<String>> {
         values_opt.map(|values| {
             let mut trimmed: Vec<String> = values
                 .into_iter()
