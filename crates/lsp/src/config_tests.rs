@@ -381,4 +381,44 @@ mod json_language_detection {
         assert_eq!(LanguageId::Json.lsp_language_identifier(), "json");
         assert_eq!(LanguageId::Jsonc.lsp_language_identifier(), "jsonc");
     }
+
+    #[test]
+    fn json_server_restricts_schema_protocols_to_file() {
+        // The VS Code JSON server fetches schema URIs itself by default
+        // for any of `http`/`https`/`file`. An untrusted document with
+        // `$schema: "http://attacker.example/foo"` would otherwise trigger
+        // outbound network requests outside Warp's control. Initialization
+        // options must restrict the server to local-file schemas.
+        let opts = LSPServerType::VsCodeJsonLanguageServer
+            .initialization_options()
+            .expect("JSON server must ship initialization options");
+        let protocols = opts
+            .get("handledSchemaProtocols")
+            .and_then(|v| v.as_array());
+        let protocols = protocols.expect("`handledSchemaProtocols` must be set");
+        let protocols: Vec<&str> = protocols.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(
+            protocols,
+            vec!["file"],
+            "JSON server must NOT auto-fetch http(s) schemas; got {protocols:?}",
+        );
+    }
+
+    #[test]
+    fn other_servers_have_no_initialization_options() {
+        // Sanity check that we haven't accidentally attached options to
+        // unrelated servers.
+        for kind in [
+            LSPServerType::RustAnalyzer,
+            LSPServerType::GoPls,
+            LSPServerType::Pyright,
+            LSPServerType::TypeScriptLanguageServer,
+            LSPServerType::Clangd,
+        ] {
+            assert!(
+                kind.initialization_options().is_none(),
+                "{kind:?} should not declare initialization_options",
+            );
+        }
+    }
 }

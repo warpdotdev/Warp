@@ -223,6 +223,35 @@ impl LSPServerType {
         }
     }
 
+    /// Server-specific `initialization_options` to attach to the LSP
+    /// `initialize` request. Returns `None` for servers that don't need
+    /// any non-default options.
+    pub fn initialization_options(&self) -> Option<serde_json::Value> {
+        match self {
+            LSPServerType::RustAnalyzer
+            | LSPServerType::GoPls
+            | LSPServerType::Pyright
+            | LSPServerType::TypeScriptLanguageServer
+            | LSPServerType::Clangd => None,
+            LSPServerType::VsCodeJsonLanguageServer => {
+                // The VS Code JSON language server defaults to fetching
+                // schema URIs over `http`, `https`, and `file` itself. That
+                // means an untrusted JSON document with a `$schema` of
+                // `http://attacker.example/foo.json` can trigger network
+                // requests outside Warp's control. Restrict the server to
+                // local-file schemas only — `http(s)` schemas can be
+                // delegated back to the client later if Warp needs to
+                // proxy them through its own HTTP client. The init option
+                // is documented at
+                // https://github.com/microsoft/vscode-json-languageservice#configuration
+                Some(serde_json::json!({
+                    "handledSchemaProtocols": ["file"],
+                    "provideFormatter": true,
+                }))
+            }
+        }
+    }
+
     pub fn all() -> impl Iterator<Item = LSPServerType> {
         LSPServerType::iter()
     }
