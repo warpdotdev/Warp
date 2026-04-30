@@ -431,11 +431,35 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                                 },
                                             ),
                                         ..
-                                    }) => group_file_contexts_for_display(
-                                        file_contexts,
-                                        props.shell_launch_data,
-                                        props.current_working_directory,
-                                    ),
+                                    }) => {
+                                        if file_contexts.is_empty() {
+                                            // Empty file contexts — render as a failed
+                                            // action so the user sees the error instead
+                                            // of an empty box.
+                                            let formatted_text = render_requested_action_body_text(
+                                                "Failed to read files".into(),
+                                                appearance.ui_font_family(),
+                                                app,
+                                            );
+                                            let renderable_action =
+                                                RenderableAction::new_with_formatted_text(
+                                                    formatted_text,
+                                                    app,
+                                                )
+                                                .with_icon(
+                                                    inline_action_icons::red_x_icon(appearance)
+                                                        .finish(),
+                                                );
+                                            output_items
+                                                .add_child(renderable_action.render(app).finish());
+                                            continue;
+                                        }
+                                        group_file_contexts_for_display(
+                                            file_contexts,
+                                            props.shell_launch_data,
+                                            props.current_working_directory,
+                                        )
+                                    }
                                     // if not completed/successful, generate a user message without line count
                                     _ => files
                                         .iter()
