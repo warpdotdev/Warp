@@ -12,15 +12,17 @@ use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
 use pathfinder_color::ColorU;
+use pathfinder_geometry::vector::vec2f;
 use warp_cli::agent::Harness;
 use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::Fill;
 use warp_core::ui::{appearance::Appearance, theme::WarpTheme};
 use warpui::elements::{
-    AnchorPair, ChildView, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-    Element, Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-    OffsetPositioning, OffsetType, ParentElement, PositionedElementOffsetBounds, PositioningAxis,
-    Radius, SavePosition, Stack, Text, XAxisAnchor, YAxisAnchor,
+    AnchorPair, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
+    CrossAxisAlignment, Element, Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
+    MouseStateHandle, OffsetPositioning, OffsetType, ParentAnchor, ParentElement,
+    ParentOffsetBounds, PositionedElementOffsetBounds, PositioningAxis, Radius, SavePosition,
+    Stack, Text, XAxisAnchor, YAxisAnchor,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
@@ -1202,7 +1204,13 @@ fn render_pill(
             render_avatar_disc(avatar_color, avatar_glyph, theme, appearance)
         };
 
-        let mut row = Flex::row()
+        // Body row contains just the avatar + label — the 3-dot button
+        // is rendered as a positioned overlay (below) so it doesn't take
+        // a slot in this row. That means the pill's intrinsic width is
+        // determined by the label alone, and the dots can visually clip
+        // the trailing edge of the text when shown without making the
+        // pill itself wider or shifting siblings.
+        let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(6.)
@@ -1211,50 +1219,50 @@ fn render_pill(
                 ConstrainedBox::new(label_text)
                     .with_max_width(PILL_LABEL_MAX_WIDTH)
                     .finish(),
-            );
-        if show_overflow_button {
-            // Render the 3-dot button as part of the pill body so the
-            // pill's own pill-shaped background and corner radius extend
-            // visually past the trailing edge of the label. Extra left
-            // gap keeps the button visually distinct from the label.
-            //
-            // The slot is always reserved (so the pill's width is stable
-            // and neighbouring pills don't shift on hover), but the dots
-            // glyph itself is only visible when the pill body is
-            // hovered or its 3-dot menu is currently open. This keeps the
-            // bar visually quieter at rest while still giving the user a
-            // clickable affordance whenever they're interacting with the
-            // pill.
-            let show_dots = hover_state.is_hovered() || menu_is_open_for_this;
-            row = row.with_child(render_overflow_button(
-                overflow_mouse_state.clone(),
-                conversation_id,
-                text_color.into(),
-                theme,
-                show_dots,
-            ));
-        }
-        let row = row.finish();
+            )
+            .finish();
 
         // Constrain pill to a fixed height so the half-stadium corner radius
         // renders as a clean continuous shape rather than awkwardly clamping.
-        // Use a tighter trailing pad when the overflow button is present so
-        // the button doesn't sit flush against the pill's curved edge.
-        let trailing_pad = if show_overflow_button {
-            4.
-        } else {
-            PILL_HORIZONTAL_PADDING_RIGHT
-        };
-        ConstrainedBox::new(
+        let pill_inner = ConstrainedBox::new(
             Container::new(row)
                 .with_padding_left(PILL_HORIZONTAL_PADDING_LEFT)
-                .with_padding_right(trailing_pad)
+                .with_padding_right(PILL_HORIZONTAL_PADDING_RIGHT)
                 .with_background_color(background)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_RADIUS)))
                 .finish(),
         )
         .with_height(PILL_HEIGHT)
-        .finish()
+        .finish();
+
+        // Render the 3-dot button as a positioned overlay only when the
+        // pill is being hovered (or its 3-dot menu is already open). The
+        // overlay sits on top of the trailing edge of the pill, visually
+        // overlapping the text rather than reserving its own slot — the
+        // pill width is identical at rest and on hover, so neighbours
+        // never shift.
+        let show_dots = show_overflow_button && (hover_state.is_hovered() || menu_is_open_for_this);
+        if show_dots {
+            let mut stack = Stack::new();
+            stack.add_child(pill_inner);
+            stack.add_positioned_child(
+                render_overflow_button(
+                    overflow_mouse_state.clone(),
+                    conversation_id,
+                    text_color.into(),
+                    theme,
+                ),
+                OffsetPositioning::offset_from_parent(
+                    vec2f(-PILL_HORIZONTAL_PADDING_RIGHT + 4., 0.),
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::MiddleRight,
+                    ChildAnchor::MiddleRight,
+                ),
+            );
+            stack.finish()
+        } else {
+            pill_inner
+        }
     })
     .with_cursor(if is_selected {
         Cursor::Arrow
@@ -1324,30 +1332,17 @@ fn render_overflow_button(
     conversation_id: AIConversationId,
     text_color: Fill,
     theme: &WarpTheme,
-    visible: bool,
 ) -> Box<dyn Element> {
     let button = Hoverable::new(mouse_state, move |hover_state| {
-        // Background highlight only shows when the dots themselves are
-        // visible (i.e. the pill is being hovered): a bare highlight
-        // around an invisible icon would draw attention to the slot at
-        // rest and undo the point of hiding it.
-        let bg = if visible && (hover_state.is_hovered() || hover_state.is_clicked()) {
+        // The button's own surface gets a subtle filled background when
+        // hovered or pressed so it reads as a discrete clickable target
+        // even though it sits on top of the pill body's own highlight.
+        let bg = if hover_state.is_hovered() || hover_state.is_clicked() {
             Some(internal_colors::fg_overlay_1(theme))
         } else {
             None
         };
-        // Always lay out the slot at the same size so the surrounding
-        // pill (and its siblings) don't reflow when hover state
-        // changes — just swap the icon for `Empty` when we don't want
-        // it visible. The button remains clickable in both cases; the
-        // user just won't see the glyph until they're already hovering
-        // the pill.
-        let glyph: Box<dyn Element> = if visible {
-            Icon::DotsVertical.to_warpui_icon(text_color).finish()
-        } else {
-            Empty::new().finish()
-        };
-        let icon = ConstrainedBox::new(glyph)
+        let icon = ConstrainedBox::new(Icon::DotsVertical.to_warpui_icon(text_color).finish())
             .with_width(OVERFLOW_BUTTON_SIZE)
             .with_height(OVERFLOW_BUTTON_SIZE)
             .finish();
