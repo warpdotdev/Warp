@@ -227,11 +227,6 @@ const MAX_SEPARATORS_PER_WORD: usize = 256;
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 fn separator_byte_indices_for_file_path_search(word: &str) -> Vec<i32> {
     if word.len() > MAX_WORD_LEN_FOR_FILE_PATH {
-        log::debug!(
-            "link_detection: skipping file path search for token of {} bytes (cap is {})",
-            word.len(),
-            MAX_WORD_LEN_FOR_FILE_PATH,
-        );
         return Vec::new();
     }
     // To include any substrings starting at the beginning of the word, we
@@ -242,10 +237,6 @@ fn separator_byte_indices_for_file_path_search(word: &str) -> Vec<i32> {
     for (i, c) in word.char_indices() {
         if FILE_LINK_SEPARATORS.contains(&c) {
             if separator_byte_indices.len() > MAX_SEPARATORS_PER_WORD {
-                log::debug!(
-                    "link_detection: skipping file path search for token with > {} separator characters",
-                    MAX_SEPARATORS_PER_WORD,
-                );
                 return Vec::new();
             }
             separator_byte_indices.push(i as i32);
@@ -255,7 +246,8 @@ fn separator_byte_indices_for_file_path_search(word: &str) -> Vec<i32> {
     // in natural language we might use a file path at the end of a sentence, and want
     // to detect them without including the trailing period. But trailing
     // periods can also be part of a valid file path.
-    if word.ends_with('.') {
+    let word_ends_with_period = word.ends_with('.');
+    if word_ends_with_period {
         separator_byte_indices.push((word.len() - 1) as i32);
     }
     // To include any substrings ending at the end of the word, we pretend there's
