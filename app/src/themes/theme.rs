@@ -151,16 +151,7 @@ impl ThemeKind {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    Hash,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    PartialOrd,
-    Ord,
-    schemars::JsonSchema,
+    Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord, schemars::JsonSchema,
 )]
 #[schemars(description = "A user-provided custom theme.")]
 pub struct CustomTheme {
