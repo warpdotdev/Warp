@@ -529,7 +529,9 @@ VMs and runtimes:\n{}",
                 .with_border(Border::all(1.).with_border_fill(theme.active_ui_detail()));
         }
 
-        Hoverable::new(mouse_state, |_| button.finish())
+        let button = button.finish();
+
+        Hoverable::new(mouse_state, |_| button)
             .with_cursor(Cursor::PointingHand)
             .on_click(move |ctx, _, _| {
                 ctx.dispatch_typed_action(MonolithCockpitAction::ShowTenantFilter { filter });
@@ -1314,6 +1316,18 @@ impl TypedActionView for MonolithCockpitView {
             }
             MonolithCockpitAction::ShowTenantFilter { filter } => {
                 self.tenant_filter = *filter;
+                if matches!(
+                    filter,
+                    TenantFilter::RunningAgents | TenantFilter::DownAgents | TenantFilter::WithVms
+                ) {
+                    let (profile, _) = Self::load_profile(ctx);
+                    self.expanded_tenants = profile
+                        .tenants
+                        .iter()
+                        .filter(|tenant| Self::tenant_matches_filter(tenant, *filter))
+                        .map(|tenant| tenant.name.clone())
+                        .collect();
+                }
                 ctx.notify();
             }
             MonolithCockpitAction::ExpandAllTenants { tenant_names } => {
@@ -1435,6 +1449,15 @@ impl View for MonolithCockpitView {
         }
 
         body.add_child(Self::section_label("FLEET CONTROLS", app));
+        body.add_child(
+            Text::new(
+                format!("filter: {}", Self::tenant_filter_label(self.tenant_filter)),
+                appearance.ui_font_family(),
+                11.,
+            )
+            .with_color(theme.disabled_ui_text_color().into_solid())
+            .finish(),
+        );
         let tenant_names = filtered_tenants
             .iter()
             .map(|tenant| tenant.name.clone())
