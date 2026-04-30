@@ -1,8 +1,8 @@
 //! Skill provider definitions and utilities.
 //!
-//! This module defines the supported skill providers (i.e. Agents, Claude, Codex, Warp) and their
-//! associated skills directory paths. It provides utilities for looking up providers
-//! from paths and vice versa.
+//! This module defines supported skill providers and their associated skills
+//! directory paths. It provides utilities for looking up providers from paths
+//! and vice versa.
 use dirs::home_dir;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -14,7 +14,7 @@ use warp_core::ui::color::CLAUDE_ORANGE;
 use warp_core::ui::icons::Icon;
 use warp_core::ui::theme::Fill;
 
-/// Represents a skill provider/origin (Agents, Claude, Codex, or Warp).
+/// Represents a skill provider/origin.
 #[derive(
     Debug,
     Clone,
@@ -35,6 +35,9 @@ pub enum SkillProvider {
     Codex,
     Cursor,
     Gemini,
+    Vibe,
+    Devin,
+    Windsurf,
     Copilot,
     Droid,
     Github,
@@ -85,6 +88,9 @@ impl SkillProvider {
             SkillProvider::Warp
             | SkillProvider::Agents
             | SkillProvider::Cursor
+            | SkillProvider::Vibe
+            | SkillProvider::Devin
+            | SkillProvider::Windsurf
             | SkillProvider::Copilot
             | SkillProvider::Github => Icon::WarpLogoLight,
         }
@@ -127,6 +133,18 @@ pub static SKILL_PROVIDER_DEFINITIONS: LazyLock<Vec<SkillProviderDefinition>> =
             SkillProviderDefinition {
                 provider: SkillProvider::Gemini,
                 skills_path: PathBuf::from(".gemini").join("skills"),
+            },
+            SkillProviderDefinition {
+                provider: SkillProvider::Vibe,
+                skills_path: PathBuf::from(".vibe").join("skills"),
+            },
+            SkillProviderDefinition {
+                provider: SkillProvider::Devin,
+                skills_path: PathBuf::from(".devin").join("skills"),
+            },
+            SkillProviderDefinition {
+                provider: SkillProvider::Windsurf,
+                skills_path: PathBuf::from(".windsurf").join("skills"),
             },
             SkillProviderDefinition {
                 provider: SkillProvider::Copilot,

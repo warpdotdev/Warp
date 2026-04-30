@@ -223,3 +223,29 @@ fn resolve_simple_name_uses_directory_precedence() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn resolve_simple_name_finds_subdirectory_skill_when_git_root_is_parent() -> Result<()> {
+    let temp_dir = tempfile::TempDir::new().context("Failed to create temp dir")?;
+    let root = temp_dir.path();
+    let package_skill = root
+        .join("packages")
+        .join("frontend")
+        .join(".agents/skills/my-skill/SKILL.md");
+
+    write_skill_file(
+        &package_skill,
+        "my-skill",
+        "desc",
+        "# Package skill\n\nThis should resolve from a subdirectory.",
+    )?;
+
+    let spec = SkillSpec::without_repo("my-skill".to_string());
+    let resolved = resolve_from_root_path_by_directory_scan(&spec, root)?
+        .context("Expected to resolve skill by scanning subdirectories")?;
+
+    assert_eq!(resolved.skill_path, package_skill);
+    assert!(resolved.instructions.contains("Package skill"));
+
+    Ok(())
+}

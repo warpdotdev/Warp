@@ -2,6 +2,23 @@
 
 set -e
 
+confirm_system_changes() {
+  if [[ "${WARP_BOOTSTRAP_ASSUME_YES:-}" == "1" ]]; then
+    return
+  fi
+
+  echo "This bootstrap script will run sudo commands and install system-wide developer dependencies."
+  read -r -p "Continue? [y/N] " answer
+  case "$answer" in
+    y|Y|yes|YES) ;;
+    *) echo "Bootstrap cancelled."; exit 1 ;;
+  esac
+}
+
+confirm_system_changes
+
+bash "$PWD"/script/check_node_yarn
+
 # Update the apt cache before installing dependencies.  It can be slow, so the install scripts
 # don't do it (to avoid doing it more than once).
 sudo apt update -y

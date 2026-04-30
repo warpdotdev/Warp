@@ -1,7 +1,7 @@
 //! CLI agent detection and configuration.
 //!
 //! This module provides types for detecting and working with CLI-based AI agents
-//! like Claude Code, Gemini CLI, Codex, Amp, and Droid.
+//! like Claude Code, Gemini CLI, Codex, Amp, Droid, Devin, and Mistral Vibe.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -111,7 +111,8 @@ const GOOSE_COLOR: ColorU = ColorU {
     a: 255,
 };
 
-/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose)
+/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid,
+/// OpenCode, Copilot, Pi, Auggie, Cursor, Goose, Devin, Mistral Vibe).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
     Claude,
@@ -125,6 +126,8 @@ pub enum CLIAgent {
     Auggie,
     CursorCli,
     Goose,
+    Devin,
+    MistralVibe,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -144,6 +147,8 @@ impl CLIAgent {
             CLIAgent::Auggie => "auggie",
             CLIAgent::CursorCli => "agent",
             CLIAgent::Goose => "goose",
+            CLIAgent::Devin => "devin",
+            CLIAgent::MistralVibe => "vibe",
             CLIAgent::Unknown => "",
         }
     }
@@ -175,6 +180,8 @@ impl CLIAgent {
             CLIAgent::Auggie => "Auggie",
             CLIAgent::CursorCli => "Cursor",
             CLIAgent::Goose => "Goose",
+            CLIAgent::Devin => "Devin",
+            CLIAgent::MistralVibe => "Mistral Vibe",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -193,6 +200,7 @@ impl CLIAgent {
             CLIAgent::Auggie => Some(Icon::AuggieLogo),
             CLIAgent::CursorCli => Some(Icon::CursorLogo),
             CLIAgent::Goose => Some(Icon::GooseLogo),
+            CLIAgent::Devin | CLIAgent::MistralVibe => None,
             CLIAgent::Unknown => None,
         }
     }
@@ -221,6 +229,12 @@ impl CLIAgent {
             CLIAgent::Auggie => &[SkillProvider::Agents],
             CLIAgent::CursorCli => &[SkillProvider::Agents],
             CLIAgent::Goose => &[SkillProvider::Agents],
+            CLIAgent::Devin => &[
+                SkillProvider::Agents,
+                SkillProvider::Devin,
+                SkillProvider::Windsurf,
+            ],
+            CLIAgent::MistralVibe => &[SkillProvider::Agents, SkillProvider::Vibe],
             CLIAgent::Unknown => &[],
         }
     }
@@ -243,7 +257,7 @@ impl CLIAgent {
     pub fn supports_bash_mode(&self) -> bool {
         matches!(
             self,
-            CLIAgent::Claude | CLIAgent::Codex | CLIAgent::OpenCode
+            CLIAgent::Claude | CLIAgent::Codex | CLIAgent::OpenCode | CLIAgent::MistralVibe
         )
     }
 
@@ -261,6 +275,7 @@ impl CLIAgent {
             CLIAgent::Auggie => Some(AUGGIE_COLOR),
             CLIAgent::CursorCli => Some(CURSOR_COLOR),
             CLIAgent::Goose => Some(GOOSE_COLOR),
+            CLIAgent::Devin | CLIAgent::MistralVibe => None,
             CLIAgent::Unknown => None,
         }
     }
@@ -522,6 +537,8 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Auggie => CLIAgentType::Auggie,
             CLIAgent::CursorCli => CLIAgentType::Cursor,
             CLIAgent::Goose => CLIAgentType::Goose,
+            CLIAgent::Devin => CLIAgentType::Devin,
+            CLIAgent::MistralVibe => CLIAgentType::MistralVibe,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }
     }

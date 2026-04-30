@@ -14,6 +14,15 @@ if (-not $gitBinDir) {
     exit 1
 }
 
+if ($env:WARP_BOOTSTRAP_ASSUME_YES -ne '1') {
+    Write-Output 'This bootstrap script will install developer dependencies with rustup, winget, and Google Cloud SDK.'
+    $answer = Read-Host 'Continue? [y/N]'
+    if ($answer -notin @('y', 'Y', 'yes', 'YES')) {
+        Write-Output 'Bootstrap cancelled.'
+        exit 1
+    }
+}
+
 if (-not (Get-Command -Name cargo -Type Application -ErrorAction SilentlyContinue)) {
     Write-Output 'Installing rust...'
     Invoke-WebRequest -Uri 'https://win.rustup.rs/x86_64' -OutFile "$env:Temp\rustup-init.exe"
@@ -21,6 +30,8 @@ if (-not (Get-Command -Name cargo -Type Application -ErrorAction SilentlyContinu
     Write-Output 'Please start a new terminal session so that cargo is in your PATH'
     exit 1
 }
+
+& "$PWD\script\windows\check_node_yarn.ps1"
 
 # A bash executable should come with Git for Windows
 & "$gitBinDir\bash.exe" "$PWD\script\install_cargo_test_deps"

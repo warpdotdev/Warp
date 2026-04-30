@@ -1,0 +1,20 @@
+{
+  "name": "Warp",
+  "build": {
+    "context": "..",
+    "dockerfile": "../docker/agent-dev/Dockerfile"
+  },
+  "workspaceFolder": "/workspaces/warp",
+  "remoteEnv": {
+    "CARGO_TARGET_DIR": "/workspaces/warp/target"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb",
+        "tamasfe.even-better-toml"
+      ]
+    }
+  }
+}

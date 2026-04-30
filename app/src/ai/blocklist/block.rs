@@ -526,6 +526,7 @@ pub(super) struct ImportedCommentElementState {
     pub(super) open_in_code_review_button: ViewHandle<ActionButton>,
     pub(super) chevron_button: ViewHandle<ActionButton>,
     pub(super) header_click_handler: HeaderClickHandler,
+    pub(super) is_opened_in_code_review: bool,
 }
 
 impl ImportedCommentElementState {
@@ -585,6 +586,7 @@ impl ImportedCommentElementState {
             open_in_code_review_button,
             chevron_button,
             header_click_handler,
+            is_opened_in_code_review: false,
         }
     }
 }
@@ -613,6 +615,18 @@ impl ImportedCommentGroup {
 
     fn card_mut(&mut self, comment_index: usize) -> Option<&mut CommentViewCard> {
         self.cards.get_mut(comment_index)
+    }
+
+    fn mark_comment_opened_in_code_review(&mut self, comment_index: usize) {
+        if let Some(state) = self.element_states.get_mut(comment_index) {
+            state.is_opened_in_code_review = true;
+        }
+    }
+
+    fn mark_all_opened_in_code_review(&mut self) {
+        for state in &mut self.element_states {
+            state.is_opened_in_code_review = true;
+        }
     }
 
     fn set_buttons_disabled(&self, should_disable: bool, ctx: &mut ViewContext<AIBlock>) {
@@ -6287,19 +6301,29 @@ impl TypedActionView for AIBlock {
                 if let Some(group) = self.imported_comments.get_mut(action_id) {
                     let repo_path = group.repo_path.clone();
                     let base_branch = group.base_branch.clone();
-                    if let Some(card) = group.card_mut(*comment_index) {
+                    if let Some(comment) = group
+                        .cards
+                        .get(*comment_index)
+                        .map(|card| card.source().clone())
+                    {
+                        group.mark_comment_opened_in_code_review(*comment_index);
                         ctx.emit(AIBlockEvent::OpenImportedCommentInCodeReview {
                             repo_path,
-                            comment: Box::new(card.source().clone()),
+                            comment: Box::new(comment),
                             base_branch,
                         });
+                        ctx.notify();
                     }
                 }
             }
             AIBlockAction::OpenAllImportedCommentsInCodeReview => {
+                for group in self.imported_comments.values_mut() {
+                    group.mark_all_opened_in_code_review();
+                }
                 ctx.emit(AIBlockEvent::OpenAllImportedCommentsForConversation {
                     conversation_id: self.client_ids.conversation_id,
                 });
+                ctx.notify();
             }
             AIBlockAction::OpenCommentInGitHub { url } => {
                 ctx.open_url(url);

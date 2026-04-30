@@ -18,6 +18,7 @@ use ai::skills::{
 };
 use command::blocking::Command;
 use command::r#async::Command as AsyncCommand;
+use walkdir::{DirEntry, WalkDir};
 use warp_cli::skill::SkillSpec;
 use warpui::AppContext;
 use warpui::SingletonEntity as _;
@@ -429,7 +430,39 @@ fn resolve_from_root_path_by_directory_scan(
         return Ok(None);
     }
 
-    // For simple skill names, iterate through SKILL_PROVIDER_DEFINITIONS in precedence order.
+    // For simple skill names, first check provider directories directly under
+    // the root in precedence order.
+    if let Some(resolved) = resolve_from_provider_paths_at_root(spec, root)? {
+        return Ok(Some(resolved));
+    }
+
+    // Then scan descendant directories. This catches skills scoped to a
+    // subproject when the git root is a parent directory and SkillManager's
+    // cache has not warmed yet.
+    for entry in WalkDir::new(root)
+        .follow_links(false)
+        .min_depth(1)
+        .into_iter()
+        .filter_entry(should_descend_into_for_skill_scan)
+    {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        if !entry.file_type().is_dir() {
+            continue;
+        }
+        if let Some(resolved) = resolve_from_provider_paths_at_root(spec, entry.path())? {
+            return Ok(Some(resolved));
+        }
+    }
+
+    Ok(None)
+}
+
+fn resolve_from_provider_paths_at_root(
+    spec: &SkillSpec,
+    root: &Path,
+) -> Result<Option<ResolvedSkill>, ResolveSkillError> {
     for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
         let path = root
             .join(&provider.skills_path)
@@ -447,6 +480,24 @@ fn resolve_from_root_path_by_directory_scan(
     }
 
     Ok(None)
+}
+
+fn should_descend_into_for_skill_scan(entry: &DirEntry) -> bool {
+    let Some(file_name) = entry.file_name().to_str() else {
+        return true;
+    };
+
+    !matches!(
+        file_name,
+        ".git"
+            | ".hg"
+            | ".svn"
+            | "target"
+            | "node_modules"
+            | ".venv"
+            | "venv"
+            | ".direnv"
+    )
 }
 
 fn parsed_skill_from_manager_or_disk(
