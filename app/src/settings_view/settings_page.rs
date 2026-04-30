@@ -1539,7 +1539,7 @@ impl<V: warpui::View> PageType<V> {
         }
     }
 
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     pub fn scroll_by(&self, delta: Pixels) {
         match self {
             PageType::Monolith {

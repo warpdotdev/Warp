@@ -67,7 +67,8 @@ use crate::{
             icons::red_stop_icon, AIAgentAction, AIAgentActionType, AIAgentInput,
             AIAgentOutputMessageType, AIAgentTextSection, AgentOutputImage, AgentOutputImageLayout,
             AgentOutputMermaidDiagram, AgentOutputTable, AgentOutputTableRendering,
-            ProgrammingLanguage, RenderableAIError, SummarizationType, WebSearchStatus,
+            ProgrammingLanguage, RenderableAIError, SummarizationType, UserQueryMode,
+            WebSearchStatus,
         },
         blocklist::{
             block::{
@@ -3402,13 +3403,28 @@ pub struct UserQueryProps<'a> {
     pub find_context: Option<FindContext<'a>>,
     pub font_properties: &'a Properties,
 }
+pub(crate) fn user_query_mode_prefix_highlight_len(mode: UserQueryMode) -> Option<usize> {
+    match mode {
+        UserQueryMode::Normal => None,
+        UserQueryMode::Plan => Some(commands::PLAN.name.len()),
+        UserQueryMode::Orchestrate => Some(commands::ORCHESTRATE.name.len()),
+    }
+}
+
 pub(super) fn query_prefix_highlight_len(
     input: &AIAgentInput,
     displayed_query: &str,
 ) -> Option<usize> {
-    if displayed_query.starts_with(commands::PLAN.name) {
-        Some(commands::PLAN.name.len())
-    } else if displayed_query.starts_with(commands::CREATE_ENVIRONMENT.name) {
+    if let AIAgentInput::UserQuery {
+        user_query_mode, ..
+    } = input
+    {
+        if let Some(prefix_len) = user_query_mode_prefix_highlight_len(*user_query_mode) {
+            return Some(prefix_len);
+        }
+    }
+
+    if displayed_query.starts_with(commands::CREATE_ENVIRONMENT.name) {
         Some(commands::CREATE_ENVIRONMENT.name.len())
     } else if displayed_query.starts_with(commands::AGENT.name) {
         Some(commands::AGENT.name.len())
