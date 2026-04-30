@@ -6685,13 +6685,6 @@ impl TerminalView {
         self.ambient_agent_task_id_for_details_panel_from_model(&model, app)
     }
 
-    /// Cloud-Oz-specific predicate: the conversation details panel can be auto-
-    /// opened (and rendered without an active local conversation) when this
-    /// view is backed by an `AmbientAgentTask` and `CloudMode` is enabled.
-    fn can_show_conversation_details_ui_for_task_id(task_id: Option<AmbientAgentTaskId>) -> bool {
-        FeatureFlag::CloudMode.is_enabled() && task_id.is_some()
-    }
-
     /// Whether this terminal pane has an active local AI conversation that the
     /// conversation details panel could populate from. Used to broaden the
     /// panel beyond cloud Oz runs to all conversations.
@@ -6703,13 +6696,23 @@ impl TerminalView {
     }
 
     /// Whether the conversation details side panel should be available in the
-    /// pane header / pane layout for this terminal view. True for cloud Oz runs
-    /// (existing behavior) and for any terminal view with an active local AI
-    /// conversation.
+    /// pane header / pane layout for this terminal view.
+    fn can_show_conversation_details_ui_from_model(
+        &self,
+        model: &TerminalModel,
+        app: &AppContext,
+    ) -> bool {
+        self.ambient_agent_task_id_for_details_panel_from_model(model, app)
+            .is_some()
+            || self.has_active_local_ai_conversation(app)
+    }
+
+    /// Convenience wrapper around
+    /// [`Self::can_show_conversation_details_ui_from_model`] that locks the
+    /// terminal model. Do not call from contexts that already hold the lock.
     fn can_show_conversation_details_ui(&self, app: &AppContext) -> bool {
-        Self::can_show_conversation_details_ui_for_task_id(
-            self.ambient_agent_task_id_for_details_panel(app),
-        ) || self.has_active_local_ai_conversation(app)
+        let model = self.model.lock();
+        self.can_show_conversation_details_ui_from_model(&model, app)
     }
 
     fn maybe_insert_tombstone_for_non_running_shared_ambient_task(
@@ -25560,8 +25563,6 @@ impl View for TerminalView {
         let appearance = Appearance::as_ref(app);
         let semantic_selection = SemanticSelection::as_ref(app);
         let model = self.model.lock();
-        let ambient_agent_task_id_for_details_panel =
-            self.ambient_agent_task_id_for_details_panel_from_model(&model, app);
         let input_mode = if FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(app).is_fullscreen()
         {
@@ -26046,13 +26047,12 @@ impl View for TerminalView {
 
         // Wrap with conversation details panel on the right if open.
         // On WASM, the panel is rendered in the wasm_view instead.
-        // Available for cloud Oz runs (existing behavior) and for any
-        // active local AI conversation in this terminal view (APP-3595).
+        //
+        // Use the `_from_model` variant since `render` already holds
+        // `self.model.lock()` and the task-id lookup would otherwise re-lock.
         let should_show_panel = !cfg!(target_family = "wasm")
             && self.is_conversation_details_panel_open
-            && (Self::can_show_conversation_details_ui_for_task_id(
-                ambient_agent_task_id_for_details_panel,
-            ) || self.has_active_local_ai_conversation(app));
+            && self.can_show_conversation_details_ui_from_model(&model, app);
 
         if should_show_panel {
             // Wrap panel with agent view background for visual consistency
