@@ -61,27 +61,6 @@ pub struct Connection {
 /// Object-safe: returns boxed futures so implementations can be stored
 /// as `Arc<dyn RemoteTransport>` for reconnection.
 pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
-    /// Detects the remote host's OS and architecture by running `uname -sm`.
-    ///
-    /// Returns the parsed [`RemotePlatform`] on success, or an error string
-    /// if the command fails or the output cannot be parsed.
-    fn detect_platform(
-        &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<RemotePlatform, String>> + Send>>;
-
-    /// Checks whether the remote server binary is present on the remote host.
-    ///
-    /// Pure I/O — does not emit any events. The caller
-    /// ([`RemoteServerManager::check_binary`]) is responsible for emitting
-    /// [`SetupStateChanged`] and [`BinaryCheckComplete`].
-    ///
-    /// Returns `Ok(true)` if the binary is installed and executable,
-    /// `Ok(false)` if it is definitively not installed, and
-    /// `Err(_)` if the check failed (e.g. SSH timeout/unreachable).
-    fn check_binary(
-        &self,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<bool, String>> + Send>>;
-
     /// Combined platform detection and binary check in a single transport
     /// round-trip. Returns `(platform_result, binary_check_result)`.
     ///

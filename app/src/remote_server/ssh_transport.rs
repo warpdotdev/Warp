@@ -76,47 +76,6 @@ impl SshTransport {
 }
 
 impl RemoteTransport for SshTransport {
-    fn detect_platform(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = Result<RemotePlatform, String>> + Send>> {
-        let socket_path = self.socket_path.clone();
-        Box::pin(async move {
-            match run_ssh_command(&socket_path, "uname -sm", CHECK_TIMEOUT).await {
-                Ok(output) if output.status.success() => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    setup::parse_uname_output(&stdout).map_err(|e| format!("{e:#}"))
-                }
-                Ok(output) => {
-                    let code = output.status.code().unwrap_or(-1);
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    Err(format!("uname -sm exited with code {code}: {stderr}"))
-                }
-                Err(e) => Err(format!("{e:#}")),
-            }
-        })
-    }
-
-    fn check_binary(&self) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
-        let socket_path = self.socket_path.clone();
-        Box::pin(async move {
-            let bin_path = setup::remote_server_binary();
-            log::info!("Checking for remote server binary at {bin_path}");
-            match run_ssh_command(&socket_path, &setup::binary_check_command(), CHECK_TIMEOUT).await
-            {
-                Ok(output) => match output.status.code() {
-                    Some(0) => Ok(true),
-                    Some(1) => Ok(false),
-                    Some(code) => {
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        Err(format!("binary check exited with code {code}: {stderr}"))
-                    }
-                    None => Err("binary check terminated by signal".into()),
-                },
-                Err(e) => Err(format!("{e:#}")),
-            }
-        })
-    }
-
     fn detect_platform_and_check_binary(
         &self,
     ) -> Pin<
