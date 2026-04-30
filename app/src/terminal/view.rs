@@ -23768,9 +23768,17 @@ impl TerminalView {
             .active_block()
             .is_active_and_long_running();
 
+        // CLI agents are always long-running foreground processes, so without
+        // this carve-out image drops would skip attach and be typed into the
+        // agent's PTY as a path string instead of routed to the image-attach
+        // pipeline (matching the Cmd+V image-paste flow).
+        let cli_agent_session_active = CLIAgentSessionsModel::as_ref(ctx)
+            .session(self.view_id)
+            .is_some();
+
         let image_filepaths = get_image_filepaths_from_paths(paths);
 
-        if !is_in_long_running_command {
+        if !is_in_long_running_command || cli_agent_session_active {
             // Check for image file paths to be auto-attached
             let num_images = image_filepaths.len();
 

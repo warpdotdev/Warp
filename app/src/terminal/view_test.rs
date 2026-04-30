@@ -3831,6 +3831,77 @@ fn submit_cli_agent_rich_input_opencode_defers_enter_and_close() {
 }
 
 #[test]
+fn drag_drop_image_in_cli_agent_long_running_command_attaches_instead_of_typing_path() {
+    // Regression test for the bug where dropping a screenshot file into a
+    // tab with an active CLI agent (e.g. Claude Code) typed the file path
+    // into the agent's PTY instead of routing the drop through the
+    // image-attach pipeline (the same one Cmd+V image-paste uses).
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cli_rich = FeatureFlag::CLIAgentRichInput.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let pty_writes: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
+        let writes = pty_writes.clone();
+        app.update(|ctx| {
+            ctx.subscribe_to_view(&terminal, move |_, event, _| {
+                if let Event::WriteBytesToPty { bytes } = event {
+                    writes.borrow_mut().push(bytes.to_vec());
+                }
+            });
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::Claude,
+                        status: CLIAgentSessionStatus::InProgress,
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: false,
+                        listener: None,
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+            });
+            view.open_cli_agent_rich_input(CLIAgentInputEntrypoint::FooterButton, ctx);
+            assert!(view.has_active_cli_agent_input_session(ctx));
+
+            // CLI agents always run as long-running foreground commands; this
+            // is the condition that previously short-circuited image attach.
+            {
+                let mut model = view.model.lock();
+                model.simulate_long_running_block("claude", "");
+                assert!(model
+                    .block_list()
+                    .active_block()
+                    .is_active_and_long_running());
+            }
+
+            // The path does not need to exist on disk — the attach helper
+            // queues async file processing and returns the queued count
+            // synchronously, which is what the caller's early-return checks.
+            view.drag_and_drop_files(&["/tmp/cli-agent-drag-drop.png".to_owned()], ctx);
+        });
+
+        assert!(
+            pty_writes.borrow().is_empty(),
+            "image drop into a CLI-agent long-running command must not type \
+             the path into the PTY; got writes: {:?}",
+            pty_writes.borrow()
+        );
+    })
+}
+
+#[test]
 fn submit_without_auto_dismiss_keeps_rich_input_open() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
