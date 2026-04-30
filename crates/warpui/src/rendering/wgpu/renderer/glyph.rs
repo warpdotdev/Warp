@@ -5,13 +5,18 @@ use crate::rendering::wgpu::texture_with_bind_group::TextureWithBindGroup;
 
 fn format_for_kind(kind: AtlasTextureKind) -> wgpu::TextureFormat {
     match kind {
-        // The generic atlas holds grayscale coverage replicated into RGBA
-        // (for non-emoji glyphs) and full-colour emoji bitmaps. Both fit in
-        // four 8-bit channels of unsigned-normalised data.
-        AtlasTextureKind::Generic => wgpu::TextureFormat::Rgba8Unorm,
+        // The generic atlas holds non-emoji grayscale coverage as a single
+        // unsigned-normalised byte per texel. R8Unorm is exactly the right
+        // shape for that: no wasted channels, no expansion at upload time.
+        AtlasTextureKind::Generic => wgpu::TextureFormat::R8Unorm,
         // The subpixel atlas holds three independent coverage values per
-        // texel in BGR order, matching swash's `subpixel_bgra` output.
+        // texel; the upload path swaps R and B on the CPU side so the
+        // shader can read .rgb and get logical RGB without a swizzle.
         AtlasTextureKind::Subpixel => wgpu::TextureFormat::Bgra8Unorm,
+        // The polychrome atlas holds full RGBA emoji bitmaps; the upload
+        // path performs the same R<->B swap so the texture's BGRA storage
+        // ends up matching the shader's expected RGB read order.
+        AtlasTextureKind::Polychrome => wgpu::TextureFormat::Bgra8Unorm,
     }
 }
 use crate::rendering::wgpu::{resources, shader_types};
@@ -445,7 +450,13 @@ impl Pipeline {
     /// keeps us from panicking if it ever does.
     fn pipeline_for_kind(&self, kind: AtlasTextureKind) -> &RenderPipeline {
         match kind {
-            AtlasTextureKind::Generic => &self.render_pipeline,
+            // Generic and Polychrome both ride the mono pipeline. The
+            // is_emoji flag in the per-glyph instance data switches the
+            // fragment shader between coverage-and-text-colour mode and
+            // direct-RGBA-sample mode, which is what the polychrome atlas
+            // contains. Subpixel has its own pipeline only because of the
+            // dual-source-blend equation it needs.
+            AtlasTextureKind::Generic | AtlasTextureKind::Polychrome => &self.render_pipeline,
             AtlasTextureKind::Subpixel => self
                 .subpixel_render_pipeline
                 .as_ref()

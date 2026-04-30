@@ -9,18 +9,25 @@ use thiserror::Error;
 /// Distinguishes the kinds of glyph atlases that the renderer maintains.
 ///
 /// The kinds carry different texture formats and are sampled by different
-/// render pipelines:
+/// fragment-shader logic:
 ///
-/// - `Generic` is the default `Rgba8Unorm` atlas used for grayscale glyph
-///   coverage and color emoji. The fragment shader interprets the sampled
-///   value as either coverage (when [`super::scene::Glyph`] is monochrome)
-///   or as RGBA color (when the rasterized glyph is an emoji).
+/// - `Generic` is the monochrome coverage atlas, `R8Unorm` (one byte per
+///   texel). Used for non-emoji glyphs that take the grayscale fallback
+///   path (transparent windows, GPUs without dual-source blending, or
+///   anything else that opts out of LCD subpixel rendering). The atlas
+///   stores the alpha byte produced by swash's `Format::Alpha` rasterizer.
 ///
 /// - `Subpixel` is a `Bgra8Unorm` atlas that stores three independent
 ///   coverage values per texel, one per LCD subpixel in BGR order, produced
 ///   by swash's subpixel rasterizer. The subpixel render pipeline composites
 ///   it through dual-source blending so each subpixel weights the
-///   destination color independently.
+///   destination colour independently.
+///
+/// - `Polychrome` is a `Bgra8Unorm` atlas that stores actual RGBA colour
+///   data for emoji glyphs (the `Source::ColorOutline` and
+///   `Source::ColorBitmap` swash sources). The fragment shader samples
+///   it as colour rather than as coverage; the surrounding text colour is
+///   ignored.
 ///
 /// Atlases of different kinds never share textures: an allocated rectangle
 /// is meaningful only within its kind's manager.
@@ -28,6 +35,7 @@ use thiserror::Error;
 pub(crate) enum AtlasTextureKind {
     Generic,
     Subpixel,
+    Polychrome,
 }
 
 /// A region of an atlas that has been allocated.

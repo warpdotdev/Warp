@@ -27,7 +27,11 @@ struct SubpixelFragmentOutput {
 fn fs_subpixel_main(in: GlyphVertexShaderOutput) -> SubpixelFragmentOutput {
     // Sample three independent coverage values from the BGRA8 subpixel
     // atlas. The .rgb swizzle reorders BGR storage to logical RGB, which
-    // is what the per-channel contrast helpers expect.
+    // is what the per-channel contrast helpers expect. The non-emoji
+    // branch of the upload path (texture_with_bind_group.rs) deliberately
+    // does NOT R<->B swap subpixel data on the CPU, because swash's
+    // subpixel byte ordering combined with the Bgra8Unorm storage already
+    // produces channels in the order this swizzle expects.
     let coverage_bgr = textureSample(glyphAtlasTexture, glyphAtlasSampler, in.texture_coordinate).rgb;
     let coverage = coverage_bgr.bgr;
 

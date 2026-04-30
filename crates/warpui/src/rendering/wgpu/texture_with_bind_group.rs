@@ -8,22 +8,25 @@ use wgpu::{
 
 /// Helper struct that includes a [`Texture`] and its corresponding [`BindGroup`] for use in the
 /// `GlyphCache`.
+///
+/// The format is recorded so [`Self::insert_glyph_into_texture`] can convert
+/// the rasterizer's RGBA32 output into the layout this texture expects.
 pub(super) struct TextureWithBindGroup {
     texture: Texture,
     /// The [`BindGroup`] associated with the `texture`. We compute this whenever we need to create
     /// a new texture as a performance optimization to ensure we don't create it on every render.
     bind_group: BindGroup,
+    format: TextureFormat,
 }
 
 impl TextureWithBindGroup {
     /// Creates a new atlas texture of the given pixel `format`.
     ///
-    /// The format determines how downstream pipelines interpret samples:
-    /// `Rgba8Unorm` is used for the generic glyph atlas (grayscale coverage
-    /// replicated into RGBA, plus color emoji), and `Bgra8Unorm` is used for
-    /// the subpixel atlas where each channel encodes coverage of a single
-    /// LCD subpixel. Both formats are 4 bytes per texel, so the upload path
-    /// in [`Self::insert_glyph_into_texture`] is shared.
+    /// Three formats are used in practice: `R8Unorm` for the monochrome
+    /// coverage atlas (one byte per texel), and `Bgra8Unorm` for both the
+    /// subpixel coverage atlas and the polychrome (emoji) atlas (four
+    /// bytes per texel). The format dictates the upload-path conversion in
+    /// [`Self::insert_glyph_into_texture`] below.
     pub(super) fn new(
         size: usize,
         format: TextureFormat,
@@ -65,6 +68,7 @@ impl TextureWithBindGroup {
         Self {
             texture,
             bind_group,
+            format,
         }
     }
 
@@ -74,7 +78,60 @@ impl TextureWithBindGroup {
         glyph: &RasterizedGlyph,
         queue: &Queue,
     ) {
-        let bytes_per_row: u32 = 4 * (glyph.canvas.size.x() as u32);
+        // Convert the rasterizer's four-byte-per-pixel canvas into whatever
+        // layout the destination texture expects. There are three cases:
+        //
+        //   R8Unorm (Generic, non-emoji grayscale): extract the alpha byte.
+        //   The rasterizer replicates the A8 mask into RGBA32, so picking
+        //   the first byte of each four-byte group recovers the original
+        //   coverage exactly.
+        //
+        //   Bgra8Unorm + emoji glyph (Polychrome): swash returns RGBA in
+        //   memory order but the texture reads its bytes as BGRA, so we
+        //   swap R and B per pixel on the CPU side. After this swap the
+        //   fragment shader's straight .rgb sample yields logical RGB.
+        //
+        //   Bgra8Unorm + non-emoji subpixel coverage (Subpixel): swash has
+        //   a documented quirk where its subpixel format produces what the
+        //   subpixel fragment shader treats as already-correctly-ordered
+        //   bytes for our Bgra8Unorm upload combined with its existing
+        //   .rgb sample. No CPU swap is needed; doing one would re-break
+        //   the subpixel ordering. Keep this branch separate so the same
+        //   format does not silently apply the emoji-only swap.
+        let pixel_count = (region.pixel_region.width() * region.pixel_region.height()) as usize;
+        let upload_bytes: std::borrow::Cow<'_, [u8]>;
+        let bytes_per_row = match self.format {
+            TextureFormat::R8Unorm => {
+                let mut compact = Vec::with_capacity(pixel_count);
+                for chunk in glyph.canvas.pixels.chunks_exact(4) {
+                    compact.push(chunk[0]);
+                }
+                upload_bytes = std::borrow::Cow::Owned(compact);
+                region.pixel_region.width() as u32
+            }
+            TextureFormat::Bgra8Unorm if glyph.is_emoji => {
+                let mut swapped = glyph.canvas.pixels.clone();
+                for pixel in swapped.chunks_exact_mut(4) {
+                    pixel.swap(0, 2);
+                }
+                upload_bytes = std::borrow::Cow::Owned(swapped);
+                4 * region.pixel_region.width() as u32
+            }
+            TextureFormat::Bgra8Unorm => {
+                upload_bytes = std::borrow::Cow::Borrowed(glyph.canvas.pixels.as_slice());
+                4 * region.pixel_region.width() as u32
+            }
+            other => {
+                debug_assert!(
+                    false,
+                    "unexpected glyph atlas format {:?}; upload assumes R8Unorm or Bgra8Unorm",
+                    other,
+                );
+                upload_bytes = std::borrow::Cow::Borrowed(glyph.canvas.pixels.as_slice());
+                4 * region.pixel_region.width() as u32
+            }
+        };
+
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.texture,
@@ -86,7 +143,7 @@ impl TextureWithBindGroup {
                 },
                 aspect: wgpu::TextureAspect::All,
             },
-            glyph.canvas.pixels.as_slice(),
+            upload_bytes.as_ref(),
             TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(bytes_per_row),
