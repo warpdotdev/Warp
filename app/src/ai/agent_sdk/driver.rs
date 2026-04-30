@@ -41,8 +41,11 @@ use crate::{
             AmbientConversationStatus,
         },
         blocklist::{
-            agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-            BlocklistAIPermissions,
+            agent_view::AgentViewEntryOrigin,
+            orchestration_event_streamer::{
+                register_agent_event_consumer, unregister_agent_event_consumer,
+            },
+            BlocklistAIHistoryEvent, BlocklistAIHistoryModel, BlocklistAIPermissions,
         },
         cloud_environments::{AmbientAgentEnvironment, CloudAmbientAgentEnvironment},
         execution_profiles::profiles::AIExecutionProfilesModel,
@@ -283,6 +286,17 @@ pub struct AgentDriver {
     /// when building the runner and taken back to `None` after use so subsequent runs start
     /// fresh.
     resume_payload: Option<ResumePayload>,
+
+    /// Conversation ID this driver is running. Set at construction for
+    /// resumed runs and on `ConversationServerTokenAssigned` for fresh
+    /// runs; consumed by `unregister_streamer_consumer` at end of run.
+    run_conversation_id: Option<AIConversationId>,
+
+    /// Parent agent run's `run_id` from the server task metadata, when
+    /// this driver run was spawned by another agent. Stamped onto the
+    /// conversation's `parent_agent_id` field at register time so the
+    /// streamer recognizes the child role in driver-hosted processes.
+    parent_run_id: Option<String>,
 }
 
 pub(crate) enum SDKConversationOutputStatus {
@@ -588,6 +602,9 @@ impl AgentDriver {
 
         // Inject cloud provider env vars.
         cloud_provider::collect_env_vars(&cloud_providers, &mut env_vars)?;
+        // Clone before consuming for env vars; the field on `Self` is
+        // also needed at register time.
+        let parent_run_id_for_self = parent_run_id.clone();
         env_vars.extend(task_env_vars(
             task_id.as_ref(),
             parent_run_id.as_deref(),
@@ -616,6 +633,17 @@ impl AgentDriver {
             me.handle_terminal_driver_event(event, ctx);
         });
 
+        let mut run_conversation_id: Option<AIConversationId> = None;
+
+        // For a resumed conversation the ID is known up front; register
+        // immediately so the streamer can satisfy the parent gate as soon
+        // as the first child is registered.
+        if let Some(conv_id) = restored_conversation_id {
+            stamp_parent_agent_id_if_some(conv_id, parent_run_id_for_self.as_deref(), ctx);
+            register_agent_event_consumer(conv_id, ctx.model_id(), ctx);
+            run_conversation_id = Some(conv_id);
+        }
+
         Ok(Self {
             terminal_driver,
             working_dir,
@@ -633,7 +661,18 @@ impl AgentDriver {
             snapshot_script_timeout: snapshot_script_timeout
                 .unwrap_or(snapshot::DEFAULT_DECLARATIONS_SCRIPT_TIMEOUT),
             resume_payload,
+            run_conversation_id,
+            parent_run_id: parent_run_id_for_self,
         })
+    }
+
+    /// Pair to the registration in `new` / `execute_run`. No-op when
+    /// nothing was registered.
+    fn unregister_streamer_consumer(&self, ctx: &mut ModelContext<Self>) {
+        let Some(conversation_id) = self.run_conversation_id else {
+            return;
+        };
+        unregister_agent_event_consumer(conversation_id, ctx.model_id(), ctx);
     }
 
     pub fn set_output_format(&mut self, output_format: OutputFormat) {
@@ -681,6 +720,13 @@ impl AgentDriver {
                     }
                 }
                 let result = Self::run_internal(task, foreground.clone()).await;
+
+                // Unregister the driver consumer now that the run is done.
+                // The streamer will tear down the SSE if no other consumer
+                // remains and the conversation isn't a child.
+                let _ = foreground
+                    .spawn(|me, ctx| me.unregister_streamer_consumer(ctx))
+                    .await;
 
                 // Run the snapshot upload before signaling the caller. The caller resumes and
                 // triggers process termination as soon as it receives `result`; the snapshot
@@ -1679,6 +1725,25 @@ impl AgentDriver {
                 return;
             }
 
+            // Fresh runs learn their conversation_id via
+            // `ConversationServerTokenAssigned`; resumed runs already
+            // registered in `new` (and so skip this branch).
+            if me.run_conversation_id.is_none() {
+                if let BlocklistAIHistoryEvent::ConversationServerTokenAssigned {
+                    conversation_id,
+                    ..
+                } = event
+                {
+                    me.run_conversation_id = Some(*conversation_id);
+                    stamp_parent_agent_id_if_some(
+                        *conversation_id,
+                        me.parent_run_id.as_deref(),
+                        ctx,
+                    );
+                    register_agent_event_consumer(*conversation_id, ctx.model_id(), ctx);
+                }
+            }
+
             match event {
                 BlocklistAIHistoryEvent::UpdatedTodoList { .. } => {
                     // TODO: Log TODO list updates.
@@ -2283,6 +2348,25 @@ pub(super) async fn report_driver_error(
             anyhow!(e).context(format!("Failed to report driver error for task {task_id}"))
         );
     }
+}
+
+/// Stamps `parent_agent_id` (= parent's `run_id` under v2) onto the
+/// driver-hosted conversation so the streamer's child-role check
+/// succeeds. No-op when `parent_run_id` is `None` (a top-level run).
+fn stamp_parent_agent_id_if_some(
+    conv_id: AIConversationId,
+    parent_run_id: Option<&str>,
+    ctx: &mut ModelContext<AgentDriver>,
+) {
+    let Some(parent_run_id) = parent_run_id else {
+        return;
+    };
+    let parent_run_id = parent_run_id.to_owned();
+    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
+        if let Some(conv) = history.conversation_mut(&conv_id) {
+            conv.set_parent_agent_id(parent_run_id);
+        }
+    });
 }
 
 /// Write the session URL to stdout using the appropriate output format
