@@ -81,6 +81,9 @@ enum PillKind {
 /// labels; clicking a pinned pill focuses that other pane/tab instead of
 /// switching this pane in place.
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // PinnedInOtherPane is wired up but currently never
+                    // constructed — pin detection is disabled until pane-visibility plumbing
+                    // lands. See `pill_specs` for context.
 enum PillPinState {
     Unpinned,
     PinnedInOtherPane,
@@ -250,8 +253,6 @@ impl OrchestrationPillBar {
 
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let this_terminal_view_id = self.agent_view_controller.as_ref(app).terminal_view_id();
-        let active_views = ActiveAgentViewsModel::as_ref(app);
 
         let mut specs = Vec::with_capacity(1 + children.len());
 
@@ -268,24 +269,30 @@ impl OrchestrationPillBar {
             pin_state: PillPinState::Unpinned,
         });
 
-        // Then a pill per child agent. A child is "pinned" when its
-        // conversation has an active agent view in some *other* terminal
-        // view than the current pane (e.g. the user picked "Open in new
-        // pane"/"Open in new tab" from the 3-dot menu, or the workspace
-        // restored the child into its own pane). Clicking a pinned pill
-        // focuses that other pane/tab — it doesn't navigate this pane in
-        // place.
+        // Then a pill per child agent.
+        //
+        // V2-of-V2 NOTE: pin detection is intentionally disabled here. The
+        // intended signal was "this child has an active agent view in some
+        // *other* visible terminal view than the orchestrator pane" (using
+        // `ActiveAgentViewsModel::terminal_view_id_for_conversation`), but
+        // every child agent already has a hidden terminal view registered in
+        // `ActiveAgentViewsModel` (via `TerminalPane::attach` when the
+        // orchestrator's `StartAgentExecutor` creates the hidden child pane
+        // through `create_hidden_child_agent_conversation`). That makes the
+        // naive check fire for every child — swapping every avatar for the
+        // pin glyph and routing every click through `RevealChildAgent`
+        // instead of `SwitchAgentViewToConversation`, which broke the
+        // expected in-place switching.
+        //
+        // Restoring real pin detection requires plumbing pane visibility
+        // (visible vs. hidden-for-child-agent) into `ActiveAgentViewsModel`,
+        // or exposing a `is_child_agent_pane_visible(conversation_id)` accessor
+        // off `PaneGroup`. Tracked as a follow-up.
         for child in children {
             let name = child
                 .agent_name()
                 .filter(|n| !n.is_empty())
                 .unwrap_or("Agent");
-            let pin_state = match active_views.terminal_view_id_for_conversation(child.id(), app) {
-                Some(view_id) if view_id != this_terminal_view_id => {
-                    PillPinState::PinnedInOtherPane
-                }
-                _ => PillPinState::Unpinned,
-            };
             specs.push(PillSpec {
                 conversation_id: child.id(),
                 label: name.to_string(),
@@ -293,7 +300,7 @@ impl OrchestrationPillBar {
                 avatar_glyph: AvatarGlyph::Letter(pill_initial(name)),
                 is_selected: child.id() == active_id,
                 kind: PillKind::Child,
-                pin_state,
+                pin_state: PillPinState::Unpinned,
             });
         }
 
