@@ -1174,6 +1174,18 @@ fn render_pill(
             )
         };
 
+        // When the 3-dot button is overlaying the trailing edge of the
+        // pill on hover, shrink the label's max width by the button's
+        // footprint so the ellipsis truncates *before* the dots rather
+        // than running underneath them. At rest the label gets the full
+        // budget and the pill keeps its compact width.
+        let show_dots = show_overflow_button && (hover_state.is_hovered() || menu_is_open_for_this);
+        let label_max_width = if show_dots {
+            (PILL_LABEL_MAX_WIDTH - OVERFLOW_BUTTON_SIZE - 2.).max(0.)
+        } else {
+            PILL_LABEL_MAX_WIDTH
+        };
+
         let label_text = Text::new(
             label,
             appearance.ui_font_family(),
@@ -1217,7 +1229,7 @@ fn render_pill(
             .with_child(leading)
             .with_child(
                 ConstrainedBox::new(label_text)
-                    .with_max_width(PILL_LABEL_MAX_WIDTH)
+                    .with_max_width(label_max_width)
                     .finish(),
             )
             .finish();
@@ -1237,11 +1249,11 @@ fn render_pill(
 
         // Render the 3-dot button as a positioned overlay only when the
         // pill is being hovered (or its 3-dot menu is already open). The
-        // overlay sits on top of the trailing edge of the pill, visually
-        // overlapping the text rather than reserving its own slot — the
-        // pill width is identical at rest and on hover, so neighbours
-        // never shift.
-        let show_dots = show_overflow_button && (hover_state.is_hovered() || menu_is_open_for_this);
+        // overlay sits at the trailing edge of the pill; the label above
+        // already shortens its max width when `show_dots` is true so the
+        // ellipsis truncates before reaching the dots rather than running
+        // underneath them. The pill's outer width still doesn't change
+        // between rest and hover.
         if show_dots {
             let mut stack = Stack::new();
             stack.add_child(pill_inner);
@@ -1269,6 +1281,13 @@ fn render_pill(
     } else {
         Cursor::PointingHand
     })
+    // The 3-dot overflow button is a child Hoverable on top of this one.
+    // Without `defer_events_to_children`, both the inner and outer click
+    // handlers fire for the same mouse-up — the overflow button opens the
+    // menu *and* the pill body switches the agent view in place. Defer
+    // skips the outer click whenever a child already handled it so the
+    // 3-dot click only opens the menu.
+    .with_defer_events_to_children()
     .with_hover_in_delay(HOVER_CARD_IN_DELAY)
     .with_hover_out_delay(HOVER_CARD_OUT_DELAY)
     .on_hover(move |is_hovered, ctx, _app, _pos| {
@@ -1357,14 +1376,12 @@ fn render_overflow_button(
     })
     .with_cursor(Cursor::PointingHand)
     .on_click(move |ctx, _app, _| {
-        // The 3-dot button is rendered inside the pill's outer click
-        // surface, so we need to ensure clicks here don't *also* trigger
-        // the pill body's `SwitchAgentViewToConversation` click. We do that
-        // by dispatching the typed action and relying on warpui's event
-        // bubbling — the inner Hoverable consumes the click before it can
-        // reach the outer one. (If this proves wrong empirically, we'll
-        // need an explicit `stop_propagation` hook, but that's not in the
-        // public Hoverable API today.)
+        // The outer pill body is configured with
+        // `with_defer_events_to_children`, so this child Hoverable is
+        // allowed to consume the click event and the outer pill's
+        // `SwitchAgentViewToConversation` handler is skipped for the
+        // same mouse-up. That keeps a click on the dots strictly to
+        // "open the menu" without also switching the agent view.
         ctx.dispatch_typed_action(OrchestrationPillBarAction::OpenMenu(conversation_id));
     })
     .finish();
