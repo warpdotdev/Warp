@@ -240,9 +240,8 @@ impl PaneData {
     /// configuration), then this will collapse that Node into the root of this `PaneData`
     pub fn new_branch(axis: SplitDirection, nodes: Vec<(PaneFlex, PaneNode)>, len: usize) -> Self {
         let root = if nodes.len() == 1 {
-            let mut mutable_nodes = nodes;
-            // Safety: We know there is exactly one node in the list
-            mutable_nodes.pop().unwrap().1
+            // Use into_iter().next() to safely extract the single element
+            nodes.into_iter().next().map(|(_, node)| node).unwrap()
         } else {
             let dividers = iter::repeat_with(Divider::new)
                 .take(nodes.len() - 1)
@@ -979,7 +978,7 @@ impl PaneBranch {
                         }
                         if self.nodes.len() == 1 {
                             // Safety: We know that there is an element in `self.nodes`
-                            return BranchRemoveResult::Collapse(self.nodes.pop().unwrap().1);
+                            return BranchRemoveResult::Collapse(self.nodes.swap_remove(0).1);
                         } else {
                             return BranchRemoveResult::Removed;
                         }
