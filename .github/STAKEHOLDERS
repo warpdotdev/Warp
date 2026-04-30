@@ -76,9 +76,9 @@
 /crates/onboarding/ @kevinchevalier
 
 # MCP and skills
-/app/src/ai/mcp/ @peicodes
-/app/src/ai/skills/ @peicodes
-/crates/mcp/ @peicodes
+/app/src/ai/mcp/ @peicodes @vkodithala
+/app/src/ai/skills/ @peicodes @vkodithala
+/crates/mcp/ @peicodes @vkodithala
 
 # Conversation management / credit usage footer / input UI / natural-language detection
 /app/src/ai/active_agent_views_model.rs @harryalbert
@@ -145,6 +145,9 @@
 
 # Grep tool call UI
 /app/src/ai/blocklist/action_model/execute/grep.rs @vkodithala
+
+# Long-running shell commands
+/app/src/ai/blocklist/action_model/execute/shell_command.rs @vkodithala
 
 ###########################################################################
 # Team: Platform
