@@ -1043,27 +1043,30 @@ where
 
             // iTerm inline image protocol.
             b"1337" => {
+                // All sub-protocols here read params[1]; bail early if it's
+                // missing rather than panicking on an unbounded index.
+                let Some(subkey) = params.get(1) else {
+                    return unhandled(params);
+                };
                 // Warp extension: programmatic tab color via
                 // OSC 1337 ; SetTabColor=<value> ST. Recognized before the
                 // image parser so unknown values silently no-op rather than
                 // falling through to image handling.
-                if params.len() >= 2 {
-                    if let Some(value) = params[1].strip_prefix(b"SetTabColor=") {
-                        let value = match str::from_utf8(value) {
-                            Ok(s) => s,
-                            Err(_) => {
-                                debug!("OSC 1337 SetTabColor: non-UTF-8 value");
-                                return;
-                            }
-                        };
-                        match SelectedTabColor::from_arg(value) {
-                            Some(color) => self.handler.set_tab_color(color),
-                            None => debug!("OSC 1337 SetTabColor: unknown value {value:?}"),
+                if let Some(value) = subkey.strip_prefix(b"SetTabColor=") {
+                    let value = match str::from_utf8(value) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            debug!("OSC 1337 SetTabColor: non-UTF-8 value");
+                            return;
                         }
-                        return;
+                    };
+                    match SelectedTabColor::from_arg(value) {
+                        Some(color) => self.handler.set_tab_color(color),
+                        None => debug!("OSC 1337 SetTabColor: unknown value {value:?}"),
                     }
+                    return;
                 }
-                if params[1].starts_with(b"File=") {
+                if subkey.starts_with(b"File=") {
                     let metadata = parse_iterm_image_metadata(params);
 
                     let last_param = match params.last() {
@@ -1079,16 +1082,16 @@ where
                     self.handler.start_iterm_image_receiving(metadata);
                     self.handler.on_iterm_image_data_received(image_data);
                     self.handler.end_iterm_image_receiving();
-                } else if params[1].starts_with(b"MultipartFile=") {
+                } else if subkey.starts_with(b"MultipartFile=") {
                     let metadata = parse_iterm_image_metadata(params);
                     self.handler.start_iterm_image_receiving(metadata);
-                } else if params[1].starts_with(b"FilePart=") {
-                    let image_data = match params[1].iter().position(|&byte| byte == b'=') {
-                        Some(position) => &params[1][position + 1..],
+                } else if subkey.starts_with(b"FilePart=") {
+                    let image_data = match subkey.iter().position(|&byte| byte == b'=') {
+                        Some(position) => &subkey[position + 1..],
                         None => return unhandled(params),
                     };
                     self.handler.on_iterm_image_data_received(image_data);
-                } else if params[1].starts_with(b"FileEnd") {
+                } else if subkey.starts_with(b"FileEnd") {
                     self.handler.end_iterm_image_receiving();
                 } else {
                     unhandled(params)

@@ -977,7 +977,7 @@ fn test_set_tab_color_targets_specific_tab() {
             let tab1_pane_group_id = workspace.tabs[1].pane_group.id();
 
             workspace.handle_action(
-                &WorkspaceAction::SetTabColor {
+                &WorkspaceAction::SetTabColorForPaneGroup {
                     pane_group_id: tab1_pane_group_id,
                     color: SelectedTabColor::Color(AnsiColorIdentifier::Magenta),
                 },
@@ -1001,7 +1001,7 @@ fn test_set_tab_color_targets_specific_tab() {
 
             // `Cleared` round-trips on the targeted tab.
             workspace.handle_action(
-                &WorkspaceAction::SetTabColor {
+                &WorkspaceAction::SetTabColorForPaneGroup {
                     pane_group_id: tab1_pane_group_id,
                     color: SelectedTabColor::Cleared,
                 },
@@ -1011,7 +1011,7 @@ fn test_set_tab_color_targets_specific_tab() {
 
             // `Unset` round-trips on the targeted tab.
             workspace.handle_action(
-                &WorkspaceAction::SetTabColor {
+                &WorkspaceAction::SetTabColorForPaneGroup {
                     pane_group_id: tab1_pane_group_id,
                     color: SelectedTabColor::Unset,
                 },
@@ -1026,7 +1026,7 @@ fn test_set_tab_color_targets_specific_tab() {
 ///
 /// `pane_group::Event::SetTabColor` is the event the terminal pane raises
 /// when the PTY processes `OSC 1337 ; SetTabColor=<value> ST`. It used to be
-/// handled by re-dispatching `WorkspaceAction::SetTabColor` via
+/// handled by re-dispatching `WorkspaceAction::SetTabColorForPaneGroup` via
 /// `ctx.dispatch_typed_action`, but that traverses the responder chain by
 /// removing each view from the window's view map. Because the workspace's
 /// own update had already checked Workspace's view out of the map, the

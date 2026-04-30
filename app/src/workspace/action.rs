@@ -123,7 +123,7 @@ pub enum WorkspaceAction {
     /// the given `EntityId`. Used by the OSC 1337 `SetTabColor` path so a
     /// programmatic request from a non-active tab still recolors the source
     /// tab (and only that tab).
-    SetTabColor {
+    SetTabColorForPaneGroup {
         pane_group_id: EntityId,
         color: SelectedTabColor,
     },
@@ -736,7 +736,7 @@ impl WorkspaceAction {
             | RenameActiveTab
             | SetActiveTabName(_)
             | SetActiveTabColor(_)
-            | SetTabColor { .. }
+            | SetTabColorForPaneGroup { .. }
             | CloseTab(_)
             | CloseActiveTab
             | CloseOtherTabs(_)

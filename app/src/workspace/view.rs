@@ -13027,7 +13027,7 @@ impl Workspace {
                 // skip it. Calling `handle_action` on `self` runs the same
                 // handler the workspace test exercises.
                 self.handle_action(
-                    &WorkspaceAction::SetTabColor {
+                    &WorkspaceAction::SetTabColorForPaneGroup {
                         pane_group_id: pane_group.id(),
                         color: *color,
                     },
@@ -19781,7 +19781,7 @@ impl TypedActionView for Workspace {
             RenameActiveTab => self.rename_tab(self.active_tab_index, ctx),
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
             SetActiveTabColor(color) => self.set_tab_color(self.active_tab_index, *color, ctx),
-            SetTabColor {
+            SetTabColorForPaneGroup {
                 pane_group_id,
                 color,
             } => {

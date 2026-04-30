@@ -100,9 +100,13 @@ impl SelectedTabColor {
         }
     }
 
-    /// Parses the user-facing color argument shared by `/set-tab-color` and the
-    /// OSC 1337 `SetTabColor=` escape sequence. Whitespace is trimmed and
-    /// matching is case-insensitive. Returns `None` for unknown values.
+    /// Parses the color argument from `OSC 1337 ; SetTabColor=<value> ST`.
+    /// Whitespace is trimmed and matching is case-insensitive. Returns `None`
+    /// for unknown values.
+    ///
+    /// Not used by the `/set-tab-color` slash command — that surface accepts a
+    /// narrower set of inputs (named colors plus `none`) and produces its own
+    /// error toast for unknown values.
     pub fn from_arg(arg: &str) -> Option<Self> {
         match arg.trim().to_ascii_lowercase().as_str() {
             "red" => Some(Self::Color(AnsiColorIdentifier::Red)),
