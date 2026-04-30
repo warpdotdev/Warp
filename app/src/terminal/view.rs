@@ -3293,10 +3293,21 @@ impl TerminalView {
             ctx.notify();
         });
 
+        let ai_context_model = ctx.add_model(|ctx| {
+            BlocklistAIContextModel::new(
+                sessions.clone(),
+                &model_events_handle,
+                model.clone(),
+                terminal_view_id,
+                agent_view_controller.clone(),
+                ctx,
+            )
+        });
         let ai_input_model = ctx.add_model(|ctx| {
             let mut model = BlocklistAIInputModel::new(
                 model.clone(),
                 agent_view_controller.clone(),
+                ai_context_model.clone(),
                 terminal_view_id,
                 ctx,
             );
@@ -3321,23 +3332,6 @@ impl TerminalView {
                 terminal_view_id,
                 ctx,
             )
-        });
-        let ai_context_model = ctx.add_model(|ctx| {
-            BlocklistAIContextModel::new(
-                sessions.clone(),
-                &model_events_handle,
-                model.clone(),
-                terminal_view_id,
-                agent_view_controller.clone(),
-                ctx,
-            )
-        });
-        // Now that the context model exists, wire its handle into the input model so the input
-        // model can consult `has_locking_attachment` for force-locking decisions (image attached,
-        // file attached, block context, etc.). The input model is constructed first because it
-        // owns lock state that the context model never reads.
-        ai_input_model.update(ctx, |ai_input_model, _| {
-            ai_input_model.set_ai_context_model(ai_context_model.clone());
         });
         let ai_controller = ctx.add_model(|ctx| {
             BlocklistAIController::new(

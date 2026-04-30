@@ -149,11 +149,10 @@ pub struct BlocklistAIInputModel {
 
     agent_view_controller: ModelHandle<AgentViewController>,
 
-    /// Handle to the per-pane context model. Wired up via [`Self::set_ai_context_model`]
-    /// after both models are constructed in `TerminalView::new`. Used to read pending
-    /// attachments / blocks when deciding whether to force-lock the input to AI mode
-    /// (see [`BlocklistAIContextModel::has_locking_attachment`]).
-    ai_context_model: Option<ModelHandle<BlocklistAIContextModel>>,
+    /// Handle to the per-pane context model. Used to read pending attachments / blocks when
+    /// deciding whether to force-lock the input to AI mode (see
+    /// [`BlocklistAIContextModel::has_locking_attachment`]).
+    ai_context_model: ModelHandle<BlocklistAIContextModel>,
 
     terminal_view_id: EntityId,
 
@@ -165,6 +164,7 @@ impl BlocklistAIInputModel {
     pub fn new(
         model: Arc<FairMutex<TerminalModel>>,
         agent_view_controller: ModelHandle<AgentViewController>,
+        ai_context_model: ModelHandle<BlocklistAIContextModel>,
         terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
@@ -340,7 +340,7 @@ impl BlocklistAIInputModel {
                 is_locked: !is_autodetection_enabled,
             },
             agent_view_controller,
-            ai_context_model: None,
+            ai_context_model,
             terminal_view_id,
             last_ai_autodetection_ts: None,
             last_explicit_input_type_set_at: None,
@@ -350,20 +350,9 @@ impl BlocklistAIInputModel {
         }
     }
 
-    /// Wire up the per-pane [`BlocklistAIContextModel`] handle. Must be called once after both
-    /// models are constructed (see `TerminalView::new`). The handle is `Option` because the
-    /// context model is constructed *after* the input model.
-    pub fn set_ai_context_model(&mut self, handle: ModelHandle<BlocklistAIContextModel>) {
-        self.ai_context_model = Some(handle);
-    }
-
-    /// Convenience wrapper around `BlocklistAIContextModel::has_locking_attachment` that no-ops
-    /// when the handle has not been wired up yet.
+    /// Convenience wrapper around `BlocklistAIContextModel::has_locking_attachment`.
     fn has_locking_attachment(&self, app: &AppContext) -> bool {
-        self.ai_context_model
-            .as_ref()
-            .map(|handle| handle.as_ref(app).has_locking_attachment())
-            .unwrap_or(false)
+        self.ai_context_model.as_ref(app).has_locking_attachment()
     }
 
     /// Returns the InputType enum which specifies how we will handle the terminal input.
