@@ -68,6 +68,7 @@ pub mod resizable_data;
 pub mod rich_history;
 pub mod safe_mode_settings;
 mod secret_regex_updater;
+pub mod session_id;
 pub mod session_settings;
 pub mod settings;
 mod share_block_modal;
@@ -91,6 +92,7 @@ pub(crate) mod cli_agent_sessions;
 
 pub use mock_terminal_manager::MockTerminalManager;
 use model_events::{ModelEvent, ModelEventDispatcher};
+pub use session_id::{WarpSessionId, WarpSessionRegistry};
 pub use share_block_modal::{ShareBlockModal, ShareBlockModalEvent, ShareBlockType};
 pub use terminal_manager::TerminalManager;
 

@@ -573,3 +573,34 @@ fn test_parse_tab_path_bare_tilde() {
     let home = dirs::home_dir().expect("HOME must be set for this test");
     assert_eq!(parse_tab_path(&url), Some(home));
 }
+
+/// `warp://session/<uuid>` must be recognized as a valid custom URI host
+/// so the focus-session deep link reaches `UriHost::handle`.
+#[test]
+fn test_validate_custom_uri_accepts_session_host() {
+    let url = Url::parse(&format!(
+        "{}://session/550e8400-e29b-41d4-a716-446655440000",
+        ChannelState::url_scheme()
+    ))
+    .unwrap();
+    let host = validate_custom_uri(&url).expect("session URI should validate");
+    assert_eq!(host, UriHost::Session);
+}
+
+/// `UriHost::from_str` must map the literal `"session"` host to
+/// `UriHost::Session` regardless of feature flags.
+#[test]
+fn test_uri_host_session_from_str() {
+    assert_eq!(UriHost::from_str("session").unwrap(), UriHost::Session);
+}
+
+/// `WarpSessionId` parses any well-formed UUID and rejects malformed ones,
+/// which is the prerequisite for the `warp://session/<id>` lookup.
+#[test]
+fn test_warp_session_id_from_str() {
+    use crate::terminal::WarpSessionId;
+    let raw = "550e8400-e29b-41d4-a716-446655440000";
+    let id = WarpSessionId::from_str(raw).expect("valid UUID parses");
+    assert_eq!(id.to_string(), raw);
+    assert!(WarpSessionId::from_str("not-a-uuid").is_err());
+}

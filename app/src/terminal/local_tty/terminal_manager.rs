@@ -82,6 +82,7 @@ use crate::terminal::model::session::Sessions;
 
 use crate::terminal::model_events::ModelEventDispatcher;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
+use crate::terminal::session_id::{WarpSessionId, WarpSessionRegistry};
 use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::settings::SharedSessionSettings;
@@ -175,6 +176,11 @@ pub struct TerminalManager {
     /// connection ongoing.
     #[allow(dead_code)]
     session_sharer: Rc<RefCell<Option<ModelHandle<Network>>>>,
+
+    /// Stable identifier for this terminal session, exposed to the shell as
+    /// `WARP_SESSION_ID` and used as the key in [`WarpSessionRegistry`] for
+    /// the `warp://session/<id>` deep link.
+    warp_session_id: WarpSessionId,
 }
 
 impl Drop for TerminalManager {
@@ -216,7 +222,7 @@ impl TerminalManager {
     #[allow(clippy::too_many_arguments)]
     pub fn create_model(
         startup_directory: Option<PathBuf>,
-        env_vars: HashMap<OsString, OsString>,
+        mut env_vars: HashMap<OsString, OsString>,
         is_shared_session_creator: IsSharedSessionCreator,
         resources: TerminalViewResources,
         restored_blocks: Option<&Vec<SerializedBlockListItem>>,
@@ -229,6 +235,16 @@ impl TerminalManager {
         initial_input_config: Option<InputConfig>,
         ctx: &mut AppContext,
     ) -> ModelHandle<Box<dyn crate::terminal::TerminalManager>> {
+        // Mint a stable identifier for this session and surface it to the
+        // shell via `WARP_SESSION_ID`. Caller-provided overrides still win
+        // because they are merged into `env_vars` last in the spawn paths;
+        // we therefore use `entry().or_insert_with` to avoid clobbering an
+        // explicit override (e.g. tests or session restoration).
+        let warp_session_id = WarpSessionId::new();
+        env_vars
+            .entry(OsString::from("WARP_SESSION_ID"))
+            .or_insert_with(|| warp_session_id.to_string().into());
+
         // Create all the necessary channels we need for communication.
         let (wakeups_tx, wakeups_rx) = async_channel::unbounded();
         let (events_tx, events_rx) = async_channel::unbounded();
@@ -390,6 +406,12 @@ impl TerminalManager {
                 false,
                 ctx,
             )
+        });
+
+        // Make this session findable by `warp://session/<id>` deep links.
+        // We hold a weak handle so closing the pane naturally drops it.
+        WarpSessionRegistry::handle(ctx).update(ctx, |registry, _ctx| {
+            registry.register(warp_session_id, view.downgrade());
         });
 
         // We need to append the session restoration separator to the block list if there are any
@@ -747,6 +769,7 @@ impl TerminalManager {
 
             inactive_pty_reads_rx,
             session_sharer,
+            warp_session_id,
         };
 
         let terminal_manager_model = ctx.add_model(|ctx| {
@@ -2508,9 +2531,19 @@ impl crate::terminal::TerminalManager for TerminalManager {
         // The detach type is intentionally ignored: a sharer always stops sharing immediately,
         // even on a reversible `HiddenForClose` detach. This is desirable for security — a sharer
         // should not continue accepting commands from viewers while the session is not visible.
-        _detach_type: crate::pane_group::pane::DetachType,
+        detach_type: crate::pane_group::pane::DetachType,
         app: &mut AppContext,
     ) {
+        // Drop the registry entry on permanent close so deep links to a
+        // closed pane immediately fall through to the "no live session"
+        // branch instead of relying on weak-handle pruning at lookup time.
+        if matches!(detach_type, crate::pane_group::pane::DetachType::Closed) {
+            let session_id = self.warp_session_id;
+            WarpSessionRegistry::handle(app).update(app, |registry, _ctx| {
+                registry.unregister(&session_id);
+            });
+        }
+
         let shared_session_status = self.model.lock().shared_session_status().clone();
         if shared_session_status.is_sharer() {
             let is_confirm_close_session =

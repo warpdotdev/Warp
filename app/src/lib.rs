@@ -1771,6 +1771,10 @@ fn initialize_app(
     // Add a singleton model to maintain state of shared session across all windows.
     ctx.add_singleton_model(terminal::shared_session::manager::Manager::new);
 
+    // Tracks `WarpSessionId -> TerminalView` so the `warp://session/<id>`
+    // deep link can focus the originating tab/pane.
+    ctx.add_singleton_model(terminal::WarpSessionRegistry::new);
+
     ctx.add_singleton_model(
         terminal::shared_session::permissions_manager::SessionPermissionsManager::new,
     );

@@ -13,6 +13,7 @@ use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
+use crate::terminal::WarpSessionRegistry;
 use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{cloud_object::ObjectType, workspace::ToastStack};
@@ -63,6 +64,9 @@ pub enum UriHost {
     Launch,
     /// Supports joining shared sessions via a warp:// URI.
     SharedSession,
+    /// Focuses an existing local terminal session by its `WARP_SESSION_ID`.
+    /// e.g. `warp://session/<uuid>`
+    Session,
     /// Supports viewing AI conversations via a warp:// URI.
     Conversation,
     /// Supports WD object actions
@@ -92,6 +96,7 @@ impl FromStr for UriHost {
             "shared_session" if FeatureFlag::ViewingSharedSessions.is_enabled() => {
                 Ok(Self::SharedSession)
             }
+            "session" => Ok(Self::Session),
             "conversation" => Ok(Self::Conversation),
             "drive" => Ok(Self::Drive),
             "settings" => Ok(Self::Settings),
@@ -215,6 +220,12 @@ impl UriHost {
                 } else {
                     log::warn!("Failed to join shared session with uri={url}");
                 }
+            }
+            UriHost::Session => {
+                // We expect the uri to have the WARP_SESSION_ID UUID as the
+                // last segment, e.g. `warp://session/<uuid>`. Look up the
+                // owning terminal view in the registry and focus its tab/pane.
+                handle_session_focus(url, ctx);
             }
             UriHost::Conversation => {
                 // We expect the uri to have the conversation ID as the last segment.
@@ -464,6 +475,10 @@ impl UriHost {
             Self::Team | Self::Drive | Self::Settings => W::default(),
             // These URLs always open new windows.
             Self::Launch | Self::SharedSession | Self::Conversation | Self::Home => W::Nothing,
+            // The session deep link does its own per-session window focus
+            // inside `handle_session_focus`, so the host-level window hint
+            // is a no-op.
+            Self::Session => W::Nothing,
             // This will actually be handled by [`Action::window_behavior_hint`].
             Self::Action => W::Nothing,
             // TODO(vorporeal): probably want to focus the window with the MCP pane open
@@ -1143,6 +1158,44 @@ fn open_window_with_action(active_window_id: Option<WindowId>, action: &str, ctx
     }
 }
 
+/// Implements `warp://session/<id>` deep links: parse the trailing UUID,
+/// look it up in the [`WarpSessionRegistry`], then mirror the
+/// `Action::FocusCloudMode` flow to focus the matching window/tab/pane.
+fn handle_session_focus(url: &Url, ctx: &mut AppContext) {
+    let Some(session_id_str) = url.path_segments().into_iter().flatten().last() else {
+        log::warn!("warp://session/<id> URI is missing the session id segment");
+        return;
+    };
+    let Ok(session_id) = crate::terminal::WarpSessionId::from_str(session_id_str) else {
+        log::warn!("warp://session/<id> URI has an invalid session id");
+        return;
+    };
+
+    let terminal_view_id = WarpSessionRegistry::as_ref(ctx).lookup_view_id(&session_id, ctx);
+    let Some(terminal_view_id) = terminal_view_id else {
+        // Either the URI has a stale id or the session was already closed —
+        // either way there's nothing to focus, so we just no-op.
+        log::warn!("No live Warp session found for warp://session/<id> URI");
+        return;
+    };
+
+    let Some((window_id, workspace)) = find_workspace_for_terminal_view(terminal_view_id, ctx)
+    else {
+        log::warn!(
+            "Found a Warp session for warp://session/<id> URI but it is no longer in any workspace"
+        );
+        return;
+    };
+
+    ctx.windows().show_window_and_focus_app(window_id);
+    workspace.update(ctx, |workspace, ctx| {
+        workspace.handle_action(
+            &WorkspaceAction::FocusTerminalViewInWorkspace { terminal_view_id },
+            ctx,
+        );
+    });
+}
+
 fn find_workspace_for_terminal_view(
     terminal_view_id: EntityId,
     ctx: &mut AppContext,
@@ -1299,6 +1352,7 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
         UriHost::Action
         | UriHost::Launch
         | UriHost::SharedSession
+        | UriHost::Session
         | UriHost::Conversation
         | UriHost::Drive
         | UriHost::Team
