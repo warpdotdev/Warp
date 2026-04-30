@@ -116,7 +116,10 @@ echo "Preparing bundled resources..."
 if [ "${GENERATE_SCHEMA:-false}" != "true" ]; then
   export SKIP_SETTINGS_SCHEMA=1
 fi
-NO_LICENSES=1 "${REPO_ROOT}/script/prepare_bundled_resources" "$WARP_APP_PATH/Contents/Resources" "$WARP_CHANNEL"
+# Pass FEATURES through (and an empty cargo profile, since this script does
+# not configure one) so that the schema generation reuses the same compiled
+# artifacts as the cargo bundle invocation above.
+NO_LICENSES=1 "${REPO_ROOT}/script/prepare_bundled_resources" "$WARP_APP_PATH/Contents/Resources" "$WARP_CHANNEL" "" "$FEATURES"
 
 "${REPO_ROOT}/script/compile_icon" "$WARP_CHANNEL" "$WARP_APP_PATH"
 
