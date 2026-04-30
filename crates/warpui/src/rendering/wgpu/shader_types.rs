@@ -224,20 +224,45 @@ pub(super) struct Uniforms {
     /// transparent compositors makes glyph colours leak through windows
     /// behind them.
     premultiplied_alpha: u32,
-    /// Padding to keep the struct 16-byte aligned. WGSL inserts the
-    /// matching pad on its side so the layout matches.
-    _padding: u32,
+    _padding0: u32,
+    /// Four-element ClearType / DirectWrite gamma-correction polynomial
+    /// coefficients. Computed on the host from the user's gamma setting
+    /// and uploaded once per frame; the shader uses them in Stage 2 of
+    /// the alpha-correction formula.
+    gamma_ratios: Vector4F,
+    /// Stage 1 contrast factor applied to grayscale glyph coverage,
+    /// modulated per-glyph by the brightness-aware multiplier. 1.0 by
+    /// default; set WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST to override.
+    grayscale_enhanced_contrast: f32,
+    /// Stage 1 contrast factor for LCD subpixel coverage. 0.5 by default
+    /// because per-channel coverage already supplies most of the
+    /// perceptual sharpness; set WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST
+    /// to override.
+    subpixel_enhanced_contrast: f32,
+    _padding1: [u32; 2],
 }
 
 impl Uniforms {
     pub(super) fn new(
         size: pathfinder_geometry::vector::Vector2F,
         premultiplied_alpha: bool,
+        gamma_ratios: [f32; 4],
+        grayscale_enhanced_contrast: f32,
+        subpixel_enhanced_contrast: f32,
     ) -> Self {
         Self {
             viewport_size: size.into(),
             premultiplied_alpha: if premultiplied_alpha { 1 } else { 0 },
-            _padding: 0,
+            _padding0: 0,
+            gamma_ratios: vec4f(
+                gamma_ratios[0],
+                gamma_ratios[1],
+                gamma_ratios[2],
+                gamma_ratios[3],
+            ),
+            grayscale_enhanced_contrast,
+            subpixel_enhanced_contrast,
+            _padding1: [0; 2],
         }
     }
 }

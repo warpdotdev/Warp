@@ -70,7 +70,17 @@ impl Uniforms {
             resources.surface_config.borrow().alpha_mode,
             wgpu::CompositeAlphaMode::PreMultiplied,
         );
-        let uniforms = shader_types::Uniforms::new(drawable_size, premultiplied_alpha);
+        // Gamma and Stage 1 contrast factors are cached on the Resources
+        // struct; populating them per-frame instead of per-renderer keeps
+        // the uniform buffer's payload self-contained even though these
+        // values do not change between frames.
+        let uniforms = shader_types::Uniforms::new(
+            drawable_size,
+            premultiplied_alpha,
+            resources.gamma_ratios,
+            resources.grayscale_enhanced_contrast,
+            resources.subpixel_enhanced_contrast,
+        );
         resources
             .queue
             .write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[uniforms]));

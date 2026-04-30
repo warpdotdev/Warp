@@ -67,6 +67,17 @@ pub struct Resources {
     pub surface: Surface<'static>,
     pub surface_config: RefCell<SurfaceConfiguration>,
     pub supported_backends: Vec<wgpu::Backend>,
+    /// Cached gamma-correction polynomial vector, computed once at
+    /// renderer creation from the WARP_FONTS_GAMMA env var (or the
+    /// 1.8 default). Re-read by configure_render_pass on every frame
+    /// to populate the glyph shader's uniform buffer.
+    pub gamma_ratios: [f32; 4],
+    /// Cached Stage 1 contrast factor for the grayscale glyph path.
+    /// From WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST or the default 1.0.
+    pub grayscale_enhanced_contrast: f32,
+    /// Cached Stage 1 contrast factor for the subpixel glyph path.
+    /// From WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST or the default 0.5.
+    pub subpixel_enhanced_contrast: f32,
     uniforms: uniforms::Uniforms,
     quad: quad::Resources,
 }
@@ -122,6 +133,13 @@ impl Resources {
             let uniforms = uniforms::Uniforms::new(&device);
             let quad = quad::Resources::new(&device);
 
+            // Read gamma and contrast settings once at renderer creation.
+            // Subsequent env-var changes are not picked up; the renderer
+            // would have to be rebuilt. Acceptable because these knobs
+            // exist for tuning, not for live theming.
+            let (gamma_ratios, grayscale_enhanced_contrast, subpixel_enhanced_contrast) =
+                warpui_core::rendering::gamma::read_env_gamma_settings();
+
             let device_lost = Arc::new(AtomicBool::new(false));
 
             let device_lost_clone = device_lost.clone();
@@ -138,6 +156,9 @@ impl Resources {
                 surface,
                 surface_config: surface_config.into(),
                 supported_backends: supported_backends.into_iter().collect(),
+                gamma_ratios,
+                grayscale_enhanced_contrast,
+                subpixel_enhanced_contrast,
                 uniforms,
                 quad,
             })

@@ -42,14 +42,14 @@ fn fs_subpixel_main(in: GlyphVertexShaderOutput) -> SubpixelFragmentOutput {
     // and reverses the subpixel fringe gradient, producing heavier and
     // softer text. light_on_dark_contrast further drops the factor to zero
     // for bright-on-dark, so white terminal text gets no Stage 1 boost.
-    let enhanced_contrast = light_on_dark_contrast(SUBPIXEL_ENHANCED_CONTRAST, in.color.rgb);
+    let enhanced_contrast = light_on_dark_contrast(uniforms.subpixel_enhanced_contrast, in.color.rgb);
     let contrasted = enhance_contrast3(coverage, enhanced_contrast);
 
     // Stage 2: gamma-incorrect-target polynomial correction. The brightness
     // argument is the text colour itself (vec3) so each channel corrects
     // against the matching component of the destination, which is what
     // dual-source blending will combine with.
-    let gamma_corrected = apply_alpha_correction3(contrasted, in.color.rgb, GAMMA_RATIOS);
+    let gamma_corrected = apply_alpha_correction3(contrasted, in.color.rgb, uniforms.gamma_ratios);
 
     // Apply the fade from the vertex stage. Saturate prevents overshoot
     // outside the fade region from boosting alpha past 1.
