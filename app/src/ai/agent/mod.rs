@@ -2327,7 +2327,6 @@ impl PassiveSuggestionTrigger {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum UserQueryMode {
     #[default]
     Normal,

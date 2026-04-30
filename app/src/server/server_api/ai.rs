@@ -158,6 +158,23 @@ pub struct TaskStatusUpdate {
     pub message: String,
     pub error_code: Option<PlatformErrorCode>,
 }
+fn public_api_user_query_mode(mode: UserQueryMode) -> &'static str {
+    match mode {
+        UserQueryMode::Normal => "normal",
+        UserQueryMode::Plan => "plan",
+        UserQueryMode::Orchestrate => "orchestrate",
+    }
+}
+
+fn serialize_user_query_mode_for_public_api<S>(
+    mode: &UserQueryMode,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(public_api_user_query_mode(*mode))
+}
 
 impl TaskStatusUpdate {
     /// Create a status update with just a message (no error code).
@@ -181,8 +198,8 @@ impl TaskStatusUpdate {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SpawnAgentRequest {
     pub prompt: String,
-    /// The mode the agent should run in (normal, plan, or orchestrate).
-    /// Mirrors the `/plan` and `/orchestrate` slash commands available locally.
+    /// The public API accepts lowercase mode strings (`normal`, `plan`, or `orchestrate`).
+    #[serde(serialize_with = "serialize_user_query_mode_for_public_api")]
     pub mode: UserQueryMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<AgentConfigSnapshot>,
