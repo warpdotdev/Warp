@@ -75,6 +75,17 @@ enum PillKind {
     Child,
 }
 
+/// Whether this pill's conversation is currently "pinned" — i.e. living in
+/// another visible terminal view (a separate pane or tab from this one). The
+/// orchestrator pane displays a pin glyph in front of pinned children's
+/// labels; clicking a pinned pill focuses that other pane/tab instead of
+/// switching this pane in place.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PillPinState {
+    Unpinned,
+    PinnedInOtherPane,
+}
+
 /// Pre-computed data for one pill in the bar.
 struct PillSpec {
     conversation_id: AIConversationId,
@@ -83,6 +94,7 @@ struct PillSpec {
     avatar_glyph: AvatarGlyph,
     is_selected: bool,
     kind: PillKind,
+    pin_state: PillPinState,
 }
 
 #[derive(Clone, Copy)]
@@ -238,10 +250,14 @@ impl OrchestrationPillBar {
 
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
+        let this_terminal_view_id = self.agent_view_controller.as_ref(app).terminal_view_id();
+        let active_views = ActiveAgentViewsModel::as_ref(app);
 
         let mut specs = Vec::with_capacity(1 + children.len());
 
-        // Orchestrator pill first.
+        // Orchestrator pill first. The orchestrator never carries a pin
+        // glyph: it represents the home view of the orchestration tree, not
+        // a sibling that has been split off.
         specs.push(PillSpec {
             conversation_id: orchestrator_id,
             label: orchestrator_label(orchestrator),
@@ -249,14 +265,29 @@ impl OrchestrationPillBar {
             avatar_glyph: AvatarGlyph::Icon(Icon::Oz),
             is_selected: orchestrator_id == active_id,
             kind: PillKind::Orchestrator,
+            pin_state: PillPinState::Unpinned,
         });
 
-        // Then a pill per child agent.
+        // Then a pill per child agent. A child is "pinned" when its
+        // conversation has an active agent view in some *other* terminal
+        // view than the current pane (e.g. the user picked "Open in new
+        // pane"/"Open in new tab" from the 3-dot menu, or the workspace
+        // restored the child into its own pane). Clicking a pinned pill
+        // focuses that other pane/tab — it doesn't navigate this pane in
+        // place.
         for child in children {
             let name = child
                 .agent_name()
                 .filter(|n| !n.is_empty())
                 .unwrap_or("Agent");
+            let pin_state = match active_views
+                .terminal_view_id_for_conversation(child.id(), app)
+            {
+                Some(view_id) if view_id != this_terminal_view_id => {
+                    PillPinState::PinnedInOtherPane
+                }
+                _ => PillPinState::Unpinned,
+            };
             specs.push(PillSpec {
                 conversation_id: child.id(),
                 label: name.to_string(),
@@ -264,6 +295,7 @@ impl OrchestrationPillBar {
                 avatar_glyph: AvatarGlyph::Letter(pill_initial(name)),
                 is_selected: child.id() == active_id,
                 kind: PillKind::Child,
+                pin_state,
             });
         }
 
@@ -341,6 +373,8 @@ fn render_pill(
     let conversation_id = spec.conversation_id;
     let kind = spec.kind;
     let is_selected = spec.is_selected;
+    let pin_state = spec.pin_state;
+    let is_pinned = matches!(pin_state, PillPinState::PinnedInOtherPane);
     // `spec` is owned by value, so we can move `label` directly into the
     // build closure below without cloning.
     let label = spec.label;
@@ -387,16 +421,23 @@ fn render_pill(
         })
         .finish();
 
-        // Avatar circle: rendered as a Stack-layered colored disc with the
-        // glyph centered on top. This avoids visually competing with the pill
-        // background (which sits behind it) and keeps the corners clean.
-        let avatar = render_avatar_disc(avatar_color, avatar_glyph, theme, appearance);
+        // Pinned pills swap the avatar disc for a pin glyph (per Figma) so
+        // the user can spot at a glance that this child is currently living
+        // in a separate pane/tab. Unpinned pills keep the avatar disc.
+        let leading: Box<dyn Element> = if is_pinned {
+            ConstrainedBox::new(Icon::Pin.to_warpui_icon(text_color).finish())
+                .with_width(AVATAR_SIZE)
+                .with_height(AVATAR_SIZE)
+                .finish()
+        } else {
+            render_avatar_disc(avatar_color, avatar_glyph, theme, appearance)
+        };
 
         let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(6.)
-            .with_child(avatar)
+            .with_child(leading)
             .with_child(
                 ConstrainedBox::new(label_text)
                     .with_max_width(PILL_LABEL_MAX_WIDTH)
@@ -426,15 +467,21 @@ fn render_pill(
         if is_selected {
             return;
         }
-        // Both child and orchestrator pills use SwitchAgentViewToConversation
-        // so the active pane navigates in place — no new splits.
-        // Wrapped in PaneHeaderAction::CustomAction since the pill bar lives
-        // inside the pane header chrome (mirrors `agent_view_back_button`).
         let _ = kind;
+        // Pinned pills focus the existing pane/tab that already hosts this
+        // child agent (via `RevealChildAgent`, which the pane group treats
+        // as a request to show + focus an existing child pane). Unpinned
+        // pills navigate the *current* pane in place via
+        // `SwitchAgentViewToConversation`. Both paths bubble through
+        // `PaneHeaderAction::CustomAction` because the pill bar lives
+        // inside the pane header chrome (mirrors `agent_view_back_button`).
+        let action = if is_pinned {
+            TerminalAction::RevealChildAgent { conversation_id }
+        } else {
+            TerminalAction::SwitchAgentViewToConversation { conversation_id }
+        };
         ctx.dispatch_typed_action(
-            PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
-                TerminalAction::SwitchAgentViewToConversation { conversation_id },
-            ),
+            PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(action),
         );
     })
     .finish()

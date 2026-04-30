@@ -1107,12 +1107,23 @@ fn handle_terminal_view_event(
                 ctx.emit(pane_group::Event::FreeTierLimitCheckTriggered);
             }
             Event::RevealChildAgent { conversation_id } => {
+                // Hidden child pane case: reveal it, then focus.
                 if let Some(&child_pane_id) = group.child_agent_panes.get(conversation_id) {
                     group.panes.show_pane_for_child_agent(child_pane_id);
                     group.handle_pane_count_change(ctx);
                     group.focus_pane(child_pane_id, true, ctx);
+                } else if let Some(visible_pane_id) =
+                    group.find_visible_terminal_pane_for_conversation(*conversation_id, ctx)
+                {
+                    // Already-visible pane case (e.g. a pinned child pill in
+                    // the orchestrator's pill bar): the child has been opened
+                    // in another pane via "Open in new pane"/"Open in new tab"
+                    // and is no longer in `child_agent_panes`. Walk visible
+                    // terminal panes, find the one whose terminal view has
+                    // this conversation active, and focus it in place.
+                    group.focus_pane(visible_pane_id.into(), true, ctx);
                 } else {
-                    log::warn!("No hidden pane found for child conversation {conversation_id:?}");
+                    log::warn!("No pane found for child conversation {conversation_id:?}");
                 }
             }
             Event::StartAgentConversation(request) => {
