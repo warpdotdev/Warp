@@ -1033,21 +1033,3 @@ impl Entity for BlocklistAIContextModel {
 #[cfg(test)]
 #[path = "context_model_test.rs"]
 mod tests;
-
-#[cfg(test)]
-impl BlocklistAIContextModel {
-    pub(crate) fn append_pending_attachments_for_test(
-        &mut self,
-        attachments: Vec<PendingAttachment>,
-    ) {
-        self.pending_attachments.extend(attachments);
-    }
-
-    pub(crate) fn insert_pending_block_id_for_test(&mut self, block_id: BlockId) {
-        self.pending_context_block_ids.insert(block_id);
-    }
-
-    pub(crate) fn set_pending_selected_text_for_test(&mut self, text: Option<String>) {
-        self.pending_context_selected_text = text;
-    }
-}
