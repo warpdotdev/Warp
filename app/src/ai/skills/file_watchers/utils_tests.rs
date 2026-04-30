@@ -814,3 +814,71 @@ fn find_skill_directories_in_tree_finds_skills_in_lazy_loaded_provider_dir() {
         });
     });
 }
+
+/// Regression test for warpdotdev/warp#9486 — parent of provider root is lazy-loaded.
+///
+/// When `sub-project/` is itself gitignored the tree contains it with `loaded: false`
+/// and no children, so `.agents/` is never indexed. Pass 2 Case (b) probes
+/// `{lazy_dir}/{provider_path}` for every known provider, which covers this scenario.
+#[test]
+fn find_skill_directories_in_tree_finds_skills_when_parent_dir_is_lazy_loaded() {
+    VirtualFS::test("find_lazy_parent_skills", |dirs, mut vfs| {
+        let repo = dirs.tests().join("repo");
+
+        vfs.mkdir("repo/sub-project/.agents/skills/sub-skill")
+            .with_files(vec![Stub::FileWithContent(
+                "repo/sub-project/.agents/skills/sub-skill/SKILL.md",
+                "---\nname: sub-skill\ndescription: test\n---\n# sub-skill",
+            )]);
+
+        // sub-project/ is lazy-loaded (ignored: true, loaded: false, no children),
+        // so .agents/ is entirely absent from the tree.
+        let sub_project = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(
+                &repo.join("sub-project"),
+            )
+            .unwrap(),
+            children: vec![],
+            ignored: true,
+            loaded: false,
+        });
+        let root = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(&repo).unwrap(),
+            children: vec![sub_project],
+            ignored: false,
+            loaded: true,
+        });
+
+        App::test((), |mut app| async move {
+            let watcher = app.add_singleton_model(DirectoryWatcher::new);
+            app.add_singleton_model(|_| DetectedRepositories::default());
+            let repo_handle = watcher.update(&mut app, |w, ctx| {
+                w.add_directory(
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                        .unwrap(),
+                    ctx,
+                )
+                .unwrap()
+            });
+            let state = FileTreeState::new(root, vec![], Some(repo_handle));
+
+            let model_handle = app.add_singleton_model(RepoMetadataModel::new);
+            model_handle.update(&mut app, |model, ctx| {
+                let key =
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                        .unwrap();
+                model.insert_test_state(key, state, ctx);
+            });
+
+            model_handle.read(&app, |model, ctx| {
+                let skill_dirs = find_skill_directories_in_tree(&repo, model, ctx);
+                assert_eq!(skill_dirs.len(), 1);
+                assert!(skill_dirs.contains(&repo.join("sub-project/.agents/skills")));
+
+                let skills = read_skills_from_directories(skill_dirs);
+                assert_eq!(skills.len(), 1);
+                assert_eq!(skills[0].name, "sub-skill");
+            });
+        });
+    });
+}

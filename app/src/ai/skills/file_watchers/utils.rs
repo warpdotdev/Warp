@@ -24,17 +24,22 @@ use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
 /// end with a known provider skills path (e.g. `.agents/skills`). Gitignored directories
 /// are skipped here because they are lazy-loaded with empty children in the tree.
 ///
-/// **Pass 2 — lazy-loaded provider roots:** Traversal with `include_ignored: true` to
-/// find directories that are lazy-loaded (`loaded: false`) *and* are named exactly like a
-/// provider root (`.agents`, `.claude`, …). When such a directory is found, a single
-/// `is_dir()` check is performed for `{provider_dir}/skills`.
+/// **Pass 2 — lazy-loaded directories:** Traversal with `include_ignored: true` to find
+/// directories that are lazy-loaded (`loaded: false`). Two sub-cases are handled:
 ///
-/// Probing is deliberately restricted to lazy dirs whose name matches a known provider
-/// root. This keeps the trust boundary tight: a lazy dir only enters the tree if its
-/// parent is indexed, so only provider dirs that live directly inside an already-tracked
-/// directory are candidates. Arbitrary dependency or build-artefact subtrees (e.g.
-/// `node_modules/`, `vendor/`, `third_party/`) are never reached because their parent
-/// being lazy-loaded means their children are absent from the tree entirely.
+/// - **Case (a) — provider root is lazy:** The lazy dir is named like a provider root
+///   (`.agents`, `.claude`, …), e.g. `sub-project/.agents/` is gitignored. A single
+///   `is_dir()` check is performed for `{provider_dir}/skills`.
+///
+/// - **Case (b) — parent of provider root is lazy:** The lazy dir is not a provider
+///   root but could be a parent of one, e.g. `sub-project/` is gitignored so `.agents/`
+///   is never in the tree at all. `{dir}/{provider_path}` is checked with `is_dir()`
+///   for every known provider.
+///
+/// The scope of Pass 2 is bounded by the tree itself: a lazy dir only appears in the
+/// tree if its parent was indexed, so only dirs that the indexer actually encountered
+/// are candidates. Deeper subtrees below a lazy node (e.g. children of `node_modules/`)
+/// are never in the tree and therefore never reached.
 pub fn find_skill_directories_in_tree(
     repo_path: &Path,
     repo_metadata: &RepoMetadataModel,
@@ -88,37 +93,33 @@ pub fn find_skill_directories_in_tree(
         })
         .collect();
 
-    // ── Pass 2: check lazy-loaded provider root directories ───────────────────
+    // ── Pass 2: check lazy-loaded directories ────────────────────────────────
     //
-    // Gitignored directories appear in the tree with `loaded: false` and no children.
-    // Only dirs whose name matches a known provider root (e.g. `.agents`, `.claude`)
-    // are collected here. For each such dir a single `is_dir()` probe is made for the
-    // `skills` subdirectory.
+    // Gitignored directories appear in the tree with `loaded: false` and no
+    // children. Two sub-cases are handled with targeted `is_dir()` probes:
     //
-    // Probing is restricted to provider-root-named dirs: any other lazy dir (e.g.
-    // `node_modules/`, `vendor/`, `third_party/`) is silently skipped. When a broader
-    // lazy dir contains a provider root (e.g. `ignored-parent/.agents/`), `.agents/`
-    // itself still appears in the tree as a child because only its *own* contents are
-    // withheld, so Case (a) still applies.
-    let provider_root_names_lazy = provider_root_names.clone();
+    //   Case (a) — provider root is lazy (e.g. `sub-project/.agents/` is
+    //   gitignored): probe `{dir}/skills`.
+    //
+    //   Case (b) — parent of provider root is lazy (e.g. `sub-project/` is
+    //   gitignored, so `.agents/` is never in the tree at all): probe
+    //   `{dir}/{provider_path}` for every known provider.
+    //
+    // The scope is bounded by the tree: a lazy dir only appears as a child of
+    // an indexed (loaded) parent, so only directories the indexer encountered
+    // are candidates. Subtrees below a lazy node are absent from the tree and
+    // therefore never reached by this pass.
+    let mut result_set: HashSet<PathBuf> = result.iter().cloned().collect();
     let args_lazy = GetContentsArgs::default()
         .include_ignored()
         .with_filter(move |content| {
             let RepoContent::Directory(dir) = content else {
                 return false;
             };
-            if !dir.loaded {
-                return dir
-                    .path
-                    .file_name()
-                    .is_some_and(|name| provider_root_names_lazy.contains(name));
-            }
-            false
+            !dir.loaded
         });
 
-    let mut result_set: HashSet<PathBuf> = result.iter().cloned().collect();
-
-    let lazy_provider_dirs: Vec<PathBuf> = repo_metadata
+    let lazy_dirs: Vec<PathBuf> = repo_metadata
         .get_repo_contents(&id, args_lazy, ctx)
         .unwrap_or_default()
         .into_iter()
@@ -128,11 +129,27 @@ pub fn find_skill_directories_in_tree(
         })
         .collect();
 
-    for provider_dir in lazy_provider_dirs {
-        let skills_path = provider_dir.join("skills");
-        if !result_set.contains(&skills_path) && skills_path.is_dir() {
-            result_set.insert(skills_path.clone());
-            result.push(skills_path);
+    for lazy_dir in lazy_dirs {
+        let dir_name = lazy_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if provider_root_names.contains(dir_name) {
+            // Case (a): the lazy dir is itself a provider root (e.g. `.agents/`).
+            // Probe one level deeper for the `skills` subdirectory.
+            let skills_path = lazy_dir.join("skills");
+            if !result_set.contains(&skills_path) && skills_path.is_dir() {
+                result_set.insert(skills_path.clone());
+                result.push(skills_path);
+            }
+        } else {
+            // Case (b): the lazy dir is a parent of a potential provider root
+            // (e.g. `sub-project/` is gitignored, so `.agents/` was never
+            // indexed). Probe `{dir}/{provider_path}` for every known provider.
+            for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
+                let skills_path = lazy_dir.join(&provider.skills_path);
+                if !result_set.contains(&skills_path) && skills_path.is_dir() {
+                    result_set.insert(skills_path.clone());
+                    result.push(skills_path);
+                }
+            }
         }
     }
 
