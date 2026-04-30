@@ -1388,7 +1388,7 @@ jobs:
           - arch: x64
             runner: windows-latest-large
           - arch: arm64
-            runner: windows-latest-large
+            runner: windows-arm-latest-large
     env:
       TRUSTED_SIGNING_ENDPOINT: https://eus.codesigning.azure.net/
       TRUSTED_SIGNING_ACCOUNT: warpdotdev
