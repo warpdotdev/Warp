@@ -272,6 +272,21 @@ mod tests {
     }
 
     #[test]
+    fn pi_default_handler_skips_session_start() {
+        let mut handler = DefaultSessionListener;
+        let event = CLIAgentEvent {
+            v: 1,
+            agent: CLIAgent::Pi,
+            event: CLIAgentEventType::SessionStart,
+            session_id: None,
+            cwd: None,
+            project: None,
+            payload: CLIAgentEventPayload::default(),
+        };
+        assert!(handler.handle_event(event).is_none());
+    }
+
+    #[test]
     fn pi_default_handler_forwards_stop() {
         let mut handler = DefaultSessionListener;
         let event = CLIAgentEvent {
