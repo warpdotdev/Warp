@@ -24485,6 +24485,10 @@ impl TypedActionView for TerminalView {
             | ToggleUsageFooter
             | RevealChildAgent { .. }
             | SwitchAgentViewToConversation { .. }
+            | OpenChildAgentInNewPane { .. }
+            | OpenChildAgentInNewTab { .. }
+            | StopAgentConversation { .. }
+            | KillAgentConversation { .. }
             | OpenCLIAgentRichInput
             | ToggleSessionRecording => Empty,
         }
@@ -25519,6 +25523,53 @@ impl TypedActionView for TerminalView {
                     None,
                     AgentViewEntryOrigin::OrchestrationPillBar,
                     *conversation_id,
+                    ctx,
+                );
+            }
+            OpenChildAgentInNewPane { conversation_id }
+            | OpenChildAgentInNewTab { conversation_id } => {
+                // V2-of-V2: both paths reuse `RevealChildAgent`. The pane
+                // group's handler reveals a hidden child pane (the common
+                // case, since orchestrator-spawned children start hidden)
+                // and falls through to focusing an already-visible pane via
+                // `find_visible_terminal_pane_for_conversation`. Tab-level
+                // routing for "Open in new tab" is a follow-up.
+                ctx.emit(Event::RevealChildAgent {
+                    conversation_id: *conversation_id,
+                });
+            }
+            StopAgentConversation { conversation_id } => {
+                // Cancel the ambient task if this is a cloud agent. For
+                // local conversations there is no per-conversation cancel
+                // entry point yet — V2-of-V2 stops at the cloud-side cancel.
+                if let Some(task_id) = BlocklistAIHistoryModel::as_ref(ctx)
+                    .conversation(conversation_id)
+                    .and_then(|c| c.task_id())
+                {
+                    crate::ai::ambient_agents::task::cancel_task_with_toast(task_id, ctx);
+                } else {
+                    // TODO(QUALITY-567): wire local conversation cancel for
+                    // child agents whose run is hosted in this client.
+                    log::info!(
+                        "StopAgentConversation: no task_id for conversation {conversation_id:?}; skipping (local cancel TODO)",
+                    );
+                }
+            }
+            KillAgentConversation { conversation_id } => {
+                // Best-effort: cancel the ambient run if there is one, then
+                // remove the conversation from local history. Cloud-side
+                // deletion is intentionally not done in V2 (see PRODUCT.md
+                // "Non-goals" — server cleanup is a follow-up).
+                if let Some(task_id) = BlocklistAIHistoryModel::as_ref(ctx)
+                    .conversation(conversation_id)
+                    .and_then(|c| c.task_id())
+                {
+                    crate::ai::ambient_agents::task::cancel_task_with_toast(task_id, ctx);
+                }
+                conversation_utils::remove_conversation(
+                    *conversation_id,
+                    self.view_id,
+                    false, /* delete_from_cloud */
                     ctx,
                 );
             }
