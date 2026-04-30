@@ -659,3 +659,50 @@ fn test_open_file_non_runnable_shebang_routes_to_editor() {
     std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
     assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
 }
+
+#[test]
+fn test_pane_uri_host_parsing() {
+    let result = UriHost::from_str("pane");
+    assert!(matches!(result, Ok(UriHost::Pane)));
+}
+
+#[test]
+fn test_pane_uri_validation() {
+    let url = Url::parse(&format!(
+        "{}://pane/A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4",
+        ChannelState::url_scheme()
+    ))
+    .unwrap();
+    let host = validate_custom_uri(&url).unwrap();
+    assert!(matches!(host, UriHost::Pane));
+}
+
+#[test]
+fn test_pane_uri_empty_path_does_not_panic() {
+    let url = Url::parse(&format!("{}://pane/", ChannelState::url_scheme())).unwrap();
+    let host = validate_custom_uri(&url).unwrap();
+    assert!(matches!(host, UriHost::Pane));
+}
+
+#[test]
+fn test_pane_uri_invalid_hex_does_not_panic() {
+    let url = Url::parse(&format!(
+        "{}://pane/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+        ChannelState::url_scheme()
+    ))
+    .unwrap();
+    let host = validate_custom_uri(&url).unwrap();
+    assert!(matches!(host, UriHost::Pane));
+}
+
+#[test]
+fn test_pane_uri_case_insensitive_hex() {
+    let upper = "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4";
+    let lower = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4";
+    let decode = |s: &str| -> Vec<u8> {
+        (0..16)
+            .map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap())
+            .collect()
+    };
+    assert_eq!(decode(upper), decode(lower));
+}
