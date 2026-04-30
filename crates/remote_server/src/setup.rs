@@ -197,7 +197,7 @@ fn parse_status(
 /// The script is intentionally self-contained — the supported-glibc
 /// floor is hardcoded inside the script (see `preinstall_check.sh`)
 /// rather than templated from Rust.
-pub const PREINSTALL_CHECK_SCRIPT: &str = include_str!("../preinstall_check.sh");
+pub const PREINSTALL_CHECK_SCRIPT: &str = include_str!("preinstall_check.sh");
 
 /// Detected remote platform from `uname -sm` output.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -382,7 +382,7 @@ fn pinned_version() -> &'static str {
 /// The install script template, loaded from a standalone `.sh` file for
 /// readability. Placeholders like `{download_base_url}` are substituted by
 /// [`install_script`].
-const INSTALL_SCRIPT_TEMPLATE: &str = include_str!("../install_remote_server.sh");
+const INSTALL_SCRIPT_TEMPLATE: &str = include_str!("install_remote_server.sh");
 
 /// Returns the install script that downloads and installs the CLI binary
 /// at the current client version.
@@ -447,5 +447,5 @@ pub const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[cfg(test)]
-#[path = "mod_test.rs"]
+#[path = "setup_tests.rs"]
 mod tests;
