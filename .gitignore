@@ -49,6 +49,9 @@ app/src/persistence/schema.rs.orig
 # Don't include personal Claude Code settings
 .claude/settings.local.json
 
+# Don't include Claude Code worktrees
+.claude/worktrees/
+
 # Tab drag development notes
 pr_cleanup.md
 desired_behavior.md
