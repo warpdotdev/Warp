@@ -659,12 +659,6 @@ msys2_shells = []
 file_retrieval_tools = []
 welcome_tab = []
 get_started_tab = []
-# Enables integration with Warp's hosted backend services: RudderStack
-# product-analytics telemetry and the GraphQL mutations that sync privacy
-# settings to Warp's servers. This is OFF by default in the offline fork
-# (PDX-33). Crash reporting (Sentry) is gated separately via
-# `crash_reporting` and is unaffected by this flag.
-warp_hosted = []
 code_mode_chip = []
 github_pr_prompt_chip = []
 create_project_flow = []
@@ -761,9 +755,14 @@ sequential_storage = []
 session_sharing = []
 session_sharing_acls = []
 skip_login = []
-# Gate the entire Warp hosted account auth path (Firebase, OAuth device flow,
-# warp-server GraphQL auth mutations, hardcoded warp.dev URLs). When OFF, the
-# app boots without contacting Firebase/identitytoolkit/oz.warp.dev.
+# Gate every code path that talks to Warp's hosted backend: Firebase /
+# OAuth device flow, warp-server GraphQL mutations (auth + privacy
+# settings sync), RudderStack product-analytics telemetry, and the
+# hardcoded warp.dev / oz.warp.dev / identitytoolkit.googleapis.com
+# URLs. ON by default to preserve upstream behavior; the Helm minimal
+# build opts out via `--no-default-features` (PDX-31, PDX-33).
+# Crash reporting (Sentry) is gated separately via `crash_reporting`
+# and is unaffected by this flag (PDX-78 territory).
 warp_hosted = ["warp_core/warp_hosted"]
 # This feature should only be enabled when building a self-contained binary with the bundle script.
 standalone = []
