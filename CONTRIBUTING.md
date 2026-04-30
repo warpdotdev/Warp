@@ -124,7 +124,7 @@ Contributors with several merged PRs may be invited to become collaborators. Col
 
 ## Development Setup
 
-See [README.md](README.md) and [WARP.md](WARP.md) for the full engineering guide. Quick start:
+See [README.md](README.md), [REPOSITORY_LAYOUT.md](REPOSITORY_LAYOUT.md), and [WARP.md](WARP.md) for the full engineering guide. Quick start:
 
 ```bash
 ./script/bootstrap   # platform-specific setup
