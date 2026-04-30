@@ -16958,6 +16958,7 @@ impl TerminalView {
         &self,
         conversation_id: AIConversationId,
         fork_from_exchange: Option<ForkFromExchange>,
+        destination: ForkedConversationDestination,
         ctx: &mut ViewContext<Self>,
     ) {
         ctx.dispatch_global_action(
@@ -16968,7 +16969,7 @@ impl TerminalView {
                 summarize_after_fork: false,
                 summarization_prompt: None,
                 initial_prompt: None,
-                destination: ForkedConversationDestination::SplitPane,
+                destination,
             },
         );
     }
@@ -17010,6 +17011,8 @@ impl TerminalView {
         conversation_token: ServerConversationToken,
         server_output_id: Option<ServerOutputId>,
     ) -> Vec<(String, ContextMenuAction)> {
+        // Always provide the ability to copy a unique debugging ID for external reference.
+        // This includes the server_output_id (request ID) and server-side conversation token.
         let mut items = vec![(
             "Copy debugging ID".to_string(),
             ContextMenuAction::CopyExternalDebuggingId {
@@ -17018,6 +17021,10 @@ impl TerminalView {
             },
         )];
 
+        // When running in a 'dogfood' channel, expose additional debugging/collaboration tools:
+        // - "Copy debugging link" gives a direct URL (for internal/QA use).
+        // - "Copy conversation ID" exposes only the conversation token (for internal handoff or support).
+        // These are restricted to dogfood builds for security and to prevent leakage of internal data.
         if ChannelState::channel().is_dogfood() {
             items.push((
                 "Copy debugging link".to_string(),
@@ -17089,15 +17096,13 @@ impl TerminalView {
                 .into_item(),
         );
 
-        if !cfg!(target_family = "wasm") {
-            items.push(
-                MenuItemFields::new("Fork")
-                    .with_on_select_action(TerminalAction::ContextMenu(
-                        ContextMenuAction::ForkAIConversation { conversation_id },
-                    ))
-                    .into_item(),
-            );
-        }
+        items.push(
+            MenuItemFields::new("Fork")
+                .with_on_select_action(TerminalAction::ContextMenu(
+                    ContextMenuAction::ForkAIConversation { conversation_id },
+                ))
+                .into_item(),
+        );
 
         if let Some(conversation_token) = self.conversation_server_token(conversation_id, ctx) {
             let server_output_id = self.conversation_debug_request_id(conversation_id, ctx);
@@ -23732,7 +23737,15 @@ impl TerminalView {
                 self.copy_conversation_text(*conversation_id, ctx);
             }
             ForkAIConversation { conversation_id } => {
-                self.fork_ai_conversation(*conversation_id, None, ctx);
+                // Forking from the blocklist opens the conversation in the current pane
+                // (replacing the existing view), since the user is already in this pane
+                // and a split would be unexpected from a non-agent-view context.
+                self.fork_ai_conversation(
+                    *conversation_id,
+                    None,
+                    ForkedConversationDestination::CurrentPane,
+                    ctx,
+                );
             }
             OpenConversationShareDialog { conversation_id } => {
                 // Set the shareable object and open the sharing dialog via the pane header
@@ -23789,6 +23802,7 @@ impl TerminalView {
                         exchange_id: *exchange_id,
                         fork_from_exact_exchange: false,
                     }),
+                    ForkedConversationDestination::SplitPane,
                     ctx,
                 );
             }
@@ -23803,6 +23817,7 @@ impl TerminalView {
                         exchange_id: *exchange_id,
                         fork_from_exact_exchange: true,
                     }),
+                    ForkedConversationDestination::SplitPane,
                     ctx,
                 );
             }
