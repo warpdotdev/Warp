@@ -97,13 +97,14 @@ impl AgentViewZeroStateBlock {
         origin: AgentViewEntryOrigin,
         agent_view_controller: ModelHandle<AgentViewController>,
         sessions: &ModelHandle<Sessions>,
-        cloud_agent_view_model: &ModelHandle<AmbientAgentViewModel>,
+        cloud_agent_view_model: Option<&ModelHandle<AmbientAgentViewModel>>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         model_events_dispatcher: &ModelHandle<ModelEventDispatcher>,
         should_show_init_callout: bool,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let cloud_agent_view_model_clone = cloud_agent_view_model.clone();
+        let cloud_agent_view_model_clone = cloud_agent_view_model.cloned();
+
         let model_events_clone = model_events_dispatcher.clone();
         ctx.subscribe_to_model(
             &BlocklistAIHistoryModel::handle(ctx),
@@ -116,7 +117,10 @@ impl AgentViewZeroStateBlock {
                         me.should_hide = true;
                         ctx.unsubscribe_to_model(&model_events_clone);
                         ctx.unsubscribe_to_model(&history_model);
-                        ctx.unsubscribe_to_model(&cloud_agent_view_model_clone);
+                        if let Some(cloud_agent_view_model) = cloud_agent_view_model_clone.as_ref()
+                        {
+                            ctx.unsubscribe_to_model(cloud_agent_view_model);
+                        }
                         ctx.notify();
                         return;
                     }
@@ -140,7 +144,7 @@ impl AgentViewZeroStateBlock {
             ctx.notify();
         });
 
-        let cloud_agent_view_model_clone = cloud_agent_view_model.clone();
+        let cloud_agent_view_model_clone = cloud_agent_view_model.cloned();
         ctx.subscribe_to_model(
             model_events_dispatcher,
             move |me, model_events_dispatcher, event, ctx| {
@@ -152,7 +156,11 @@ impl AgentViewZeroStateBlock {
                             me.should_hide = true;
                             ctx.unsubscribe_to_model(&model_events_dispatcher);
                             ctx.unsubscribe_to_model(&BlocklistAIHistoryModel::handle(ctx));
-                            ctx.unsubscribe_to_model(&cloud_agent_view_model_clone);
+                            if let Some(cloud_agent_view_model) =
+                                cloud_agent_view_model_clone.as_ref()
+                            {
+                                ctx.unsubscribe_to_model(cloud_agent_view_model);
+                            }
                             ctx.notify();
                         }
                     }
@@ -166,34 +174,35 @@ impl AgentViewZeroStateBlock {
             },
         );
 
-        let model_events_clone = model_events_dispatcher.clone();
-        ctx.subscribe_to_model(cloud_agent_view_model, move |me, model, event, ctx| {
-            if FeatureFlag::CloudModeSetupV2.is_enabled() {
-                match event {
-                    AmbientAgentViewModelEvent::DispatchedAgent
-                    | AmbientAgentViewModelEvent::Cancelled
-                        if !me.should_hide =>
-                    {
-                        me.should_hide = true;
-                        ctx.unsubscribe_to_model(&model);
-                        ctx.unsubscribe_to_model(&model_events_clone);
-                        ctx.unsubscribe_to_model(&BlocklistAIHistoryModel::handle(ctx));
-                        ctx.notify();
+        if let Some(cloud_agent_view_model) = cloud_agent_view_model {
+            let model_events_clone = model_events_dispatcher.clone();
+            ctx.subscribe_to_model(cloud_agent_view_model, move |me, model, event, ctx| {
+                if FeatureFlag::CloudModeSetupV2.is_enabled() {
+                    match event {
+                        AmbientAgentViewModelEvent::DispatchedAgent
+                        | AmbientAgentViewModelEvent::Cancelled
+                            if !me.should_hide =>
+                        {
+                            me.should_hide = true;
+                            ctx.unsubscribe_to_model(&model);
+                            ctx.unsubscribe_to_model(&model_events_clone);
+                            ctx.unsubscribe_to_model(&BlocklistAIHistoryModel::handle(ctx));
+                            ctx.notify();
+                        }
+                        _ => (),
                     }
-                    _ => (),
+                } else if model.as_ref(ctx).should_show_status_footer() {
+                    me.should_hide = true;
+                    ctx.unsubscribe_to_model(&model);
+                    ctx.unsubscribe_to_model(&model_events_clone);
+                    ctx.unsubscribe_to_model(&BlocklistAIHistoryModel::handle(ctx));
+                    ctx.notify();
                 }
-            } else if model.as_ref(ctx).should_show_status_footer() {
-                me.should_hide = true;
-                ctx.unsubscribe_to_model(&model);
-                ctx.unsubscribe_to_model(&model_events_clone);
-                ctx.unsubscribe_to_model(&BlocklistAIHistoryModel::handle(ctx));
-                ctx.notify();
-            }
-        });
+            });
+        }
 
-        let cloud_agent_view = cloud_agent_view_model.as_ref(ctx);
         let has_parent_terminal =
-            !cloud_agent_view.is_ambient_agent() || cloud_agent_view.has_parent_terminal();
+            cloud_agent_view_model.is_none_or(|model| !model.as_ref(ctx).is_ambient_agent());
         let changelog_model = ChangelogModel::handle(ctx);
         ctx.subscribe_to_model(&changelog_model, |me, changelog_model, event, ctx| {
             if let changelog_model::Event::ChangelogRequestComplete { .. } = event {

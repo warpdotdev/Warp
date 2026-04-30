@@ -218,7 +218,7 @@ fn finish_restore_fetch_uses_server_cursor_when_sqlite_is_absent() {
         let server_api = ServerApiProvider::new_for_test().get();
 
         let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
         });
 
         // Seed event_cursor as on_restored_conversations would before spawning
@@ -283,24 +283,22 @@ fn restored_inprogress_parent_defers_delivery_until_success() {
         // a permissive expectation prevents spurious panics either way.
         mock.expect_get_ambient_agent_task()
             .returning(|_| Ok(make_ambient_task_with_event_seq(None)));
-        mock.expect_poll_agent_events()
-            .returning(|_, _, _| Ok(vec![]));
         mock.expect_update_event_sequence_on_server()
             .returning(|_, _| Ok(()));
         let ai_client: Arc<dyn AIClient> = Arc::new(mock);
         let server_api = ServerApiProvider::new_for_test().get();
 
-        let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+        let streamer = app.add_singleton_model(|ctx| {
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
         });
 
         // Synchronous part of `on_restored_conversations`: cursor seeded,
         // own run_id watched. No event delivery yet because parent is
         // InProgress.
-        poller.update(&mut app, |me, ctx| {
+        streamer.update(&mut app, |me, ctx| {
             me.on_restored_conversations(vec![conversation_id], ctx);
         });
-        poller.read(&app, |me, _| {
+        streamer.read(&app, |me, _| {
             assert_eq!(me.event_cursor.get(&conversation_id).copied(), Some(0));
             assert!(
                 me.watched_run_ids
@@ -309,17 +307,13 @@ fn restored_inprogress_parent_defers_delivery_until_success() {
                 "own run_id should have been registered as watched"
             );
             assert!(
-                !me.poll_in_flight.contains(&conversation_id),
-                "InProgress parent must not start polling"
-            );
-            assert!(
                 me.sse_connections.is_empty(),
                 "InProgress parent must not open SSE"
             );
         });
 
-        // Transitioning the conversation to Success should trigger event
-        // delivery (poll_and_inject in the non-SSE default path).
+        // Transitioning the conversation to Success should open an SSE
+        // connection for event delivery.
         history_model.update(&mut app, |model, ctx| {
             model.update_conversation_status(
                 terminal_view_id,
@@ -328,17 +322,17 @@ fn restored_inprogress_parent_defers_delivery_until_success() {
                 ctx,
             );
         });
-        poller.read(&app, |me, _| {
+        streamer.read(&app, |me, _| {
             assert!(
-                me.poll_in_flight.contains(&conversation_id),
-                "Success transition with watched run_ids should start delivery"
+                me.sse_connections.contains_key(&conversation_id),
+                "Success transition with watched run_ids should open an SSE connection"
             );
         });
     });
 }
 
 #[test]
-fn handle_poll_result_persists_max_seq_to_history_model() {
+fn handle_event_batch_persists_max_seq_to_history_model() {
     use crate::ai::agent::conversation::{AIConversation, AIConversationId};
     use crate::persistence::ModelEvent;
     use crate::server::server_api::ai::MockAIClient;
@@ -378,7 +372,7 @@ fn handle_poll_result_persists_max_seq_to_history_model() {
         let server_api = ServerApiProvider::new_for_test().get();
 
         let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
         });
 
         // Build a poll batch with max sequence = 42. Use an unrecognized
@@ -405,7 +399,7 @@ fn handle_poll_result_persists_max_seq_to_history_model() {
         ];
 
         poller.update(&mut app, |me, ctx| {
-            me.handle_poll_result(
+            me.handle_event_batch(
                 conversation_id,
                 /* self_run_id */ "some-other-run",
                 /* previous_cursor */ 0,
@@ -463,7 +457,7 @@ fn finish_restore_fetch_no_ops_when_conversation_deleted_mid_flight() {
         let server_api = ServerApiProvider::new_for_test().get();
 
         let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
         });
 
         // Seed cursor as on_restored_conversations would.
@@ -542,7 +536,7 @@ fn finish_restore_fetch_reconnects_sse_when_children_added_to_open_connection() 
         let server_api = ServerApiProvider::new_for_test().get();
 
         let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
         });
 
         // Seed the state on_restored_conversations would have set up, then

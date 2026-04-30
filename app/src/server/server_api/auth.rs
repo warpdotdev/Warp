@@ -268,6 +268,12 @@ impl AuthClient for ServerApi {
                     let new_firebase_token_info = result?;
                     self.auth_state
                         .update_firebase_tokens(new_firebase_token_info.clone());
+                    let _ = self
+                        .event_sender
+                        .send(ServerApiEvent::AccessTokenRefreshed {
+                            token: new_firebase_token_info.id_token.clone(),
+                        })
+                        .await;
                     return Ok(AuthToken::Firebase(new_firebase_token_info.id_token));
                 }
 

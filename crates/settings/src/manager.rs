@@ -94,7 +94,7 @@ pub enum SettingsEvent {
 }
 
 impl SettingsManager {
-    /// Registers a function that updates a a setting with the given storage key
+    /// Registers a function that updates a setting with the given storage key
     /// to have a new value. Also tracks whether that storage key is for a cloud-synced
     /// setting and what platforms it's supported on.
     #[allow(clippy::too_many_arguments)]

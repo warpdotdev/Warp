@@ -865,10 +865,10 @@ impl OrchestrationEventService {
         }
     }
 
-    /// Accepts pre-built events from the v2 poller and enqueues them
+    /// Accepts pre-built events from the v2 streamer and enqueues them
     /// for drain by the controller via the normal v1 path.
     /// Lifecycle events go through coalescing and cap enforcement.
-    pub fn enqueue_polled_events(
+    pub fn enqueue_event_batch(
         &mut self,
         conversation_id: AIConversationId,
         events: Vec<PendingEvent>,
