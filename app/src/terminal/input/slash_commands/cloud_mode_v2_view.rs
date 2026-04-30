@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
+<<<<<<< HEAD
 use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill;
@@ -10,6 +11,15 @@ use warpui::elements::{
     Flex, Hoverable, MainAxisSize, MouseInBehavior, MouseStateHandle, OffsetPositioning,
     ParentElement, PositionedElementAnchor, PositionedElementOffsetBounds, Radius, SavePosition,
     ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Stack, Text,
+=======
+use warp_core::ui::appearance::Appearance;
+use warp_core::ui::theme::Fill;
+use warpui::elements::{
+    Border, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, CornerRadius,
+    CrossAxisAlignment, DispatchEventResult, DropShadow, EventHandler, Flex, Hoverable,
+    MainAxisSize, MouseInBehavior, MouseStateHandle, ParentElement, Radius, SavePosition,
+    ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Text,
+>>>>>>> b5e670ed (curr)
 };
 use warpui::platform::Cursor;
 use warpui::{
@@ -17,7 +27,10 @@ use warpui::{
 };
 
 use crate::search::data_source::QueryFilter;
+<<<<<<< HEAD
 use crate::search::item::SearchItemDetail;
+=======
+>>>>>>> b5e670ed (curr)
 use crate::search::mixer::{AddAsyncSourceOptions, SearchMixer, SearchMixerEvent};
 use crate::search::result_renderer::{QueryResultRenderer, QueryResultRendererStyles};
 use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
@@ -51,12 +64,16 @@ const MENU_CORNER_RADIUS: f32 = 6.;
 
 const ROW_VERTICAL_PADDING: f32 = 4.;
 
+<<<<<<< HEAD
 const ICON_SIZE: f32 = 16.;
 
+=======
+>>>>>>> b5e670ed (curr)
 const DIVIDER_HEIGHT: f32 = 1.;
 
 const DIVIDER_VERTICAL_PADDING: f32 = 0.;
 
+<<<<<<< HEAD
 const SIDECAR_WIDTH: f32 = MENU_WIDTH;
 
 const SIDECAR_MAX_HEIGHT: f32 = 240.;
@@ -69,10 +86,13 @@ const SIDECAR_TITLE_TO_DESCRIPTION_GAP: f32 = 4.;
 
 const NAME_DESCRIPTION_GAP_PX: f32 = 8.;
 
+=======
+>>>>>>> b5e670ed (curr)
 fn row_position_id(visible_idx: usize) -> String {
     format!("cloud_mode_v2_slash_row_{visible_idx}")
 }
 
+<<<<<<< HEAD
 fn item_is_truncated_in_row(detail: &SearchItemDetail, app: &AppContext) -> bool {
     let appearance = Appearance::as_ref(app);
     let font_size = inline_styles::font_size(appearance);
@@ -91,6 +111,8 @@ fn item_is_truncated_in_row(detail: &SearchItemDetail, app: &AppContext) -> bool
     }
 }
 
+=======
+>>>>>>> b5e670ed (curr)
 static QUERY_RESULT_RENDERER_STYLES: LazyLock<QueryResultRendererStyles> =
     LazyLock::new(|| QueryResultRendererStyles {
         result_item_height_fn: |appearance| appearance.monospace_font_size() + 8.,
@@ -910,6 +932,7 @@ impl CloudModeV2SlashCommandView {
         .with_vertical_padding(ROW_VERTICAL_PADDING)
         .finish()
     }
+<<<<<<< HEAD
 
     fn selected_detail_data(&self) -> Option<SearchItemDetail> {
         match &self.menu_state {
@@ -1025,6 +1048,48 @@ impl CloudModeV2SlashCommandView {
     }
 
     fn render_menu_panel(&self, app: &AppContext) -> Box<dyn Element> {
+=======
+}
+
+impl Entity for CloudModeV2SlashCommandView {
+    type Event = SlashCommandsEvent;
+}
+
+impl TypedActionView for CloudModeV2SlashCommandView {
+    type Action = CloudModeV2SlashCommandAction;
+
+    fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
+        match action {
+            CloudModeV2SlashCommandAction::Accept {
+                item,
+                cmd_or_ctrl_enter,
+            } => {
+                self.emit_selection(item, *cmd_or_ctrl_enter, ctx);
+            }
+            CloudModeV2SlashCommandAction::HoverIdx(idx) => {
+                let idx = *idx;
+                match &self.menu_state {
+                    MenuState::NoSearchActive { .. } => self.set_browsing_selection(idx, ctx),
+                    MenuState::SearchActive { .. } => self.set_search_selection(idx, ctx),
+                }
+            }
+            CloudModeV2SlashCommandAction::ToggleSection(section) => {
+                self.toggle_section(*section, ctx);
+            }
+            CloudModeV2SlashCommandAction::Dismiss => {
+                self.dismiss(ctx);
+            }
+        }
+    }
+}
+
+impl View for CloudModeV2SlashCommandView {
+    fn ui_name() -> &'static str {
+        "CloudModeV2SlashCommandView"
+    }
+
+    fn render(&self, app: &AppContext) -> Box<dyn Element> {
+>>>>>>> b5e670ed (curr)
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let menu_bg = inline_styles::menu_background_color(app);
@@ -1093,6 +1158,7 @@ impl CloudModeV2SlashCommandView {
     }
 }
 
+<<<<<<< HEAD
 impl Entity for CloudModeV2SlashCommandView {
     type Event = SlashCommandsEvent;
 }
@@ -1151,6 +1217,8 @@ impl View for CloudModeV2SlashCommandView {
     }
 }
 
+=======
+>>>>>>> b5e670ed (curr)
 fn render_section_header(section: Section, app: &AppContext) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();

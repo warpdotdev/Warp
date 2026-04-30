@@ -813,6 +813,7 @@ impl AgentInputFooter {
         }
     }
 
+<<<<<<< HEAD
     pub fn is_v2_environment_selector_open(&self, app: &AppContext) -> bool {
         self.environment_selector
             .as_ref()
@@ -825,6 +826,8 @@ impl AgentInputFooter {
         }
     }
 
+=======
+>>>>>>> b5e670ed (curr)
     fn should_render_cloud_mode_v2(&self, app: &AppContext) -> bool {
         FeatureFlag::CloudModeInputV2.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
