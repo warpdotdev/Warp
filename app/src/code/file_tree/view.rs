@@ -1700,11 +1700,10 @@ impl FileTreeView {
         // Only filter descendants (depth > 0), not the root entry itself,
         // so that hidden workspace directories (e.g. ~/.config) are still shown.
         if !self.show_hidden_files && depth > 0 {
-            if current_path
-                .file_name()
-                .is_some_and(|name| name.as_bytes().starts_with(b"."))
-            {
-                return (selected_item_index, removed_item);
+            if let Some(name) = current_path.file_name() {
+                if name.starts_with('.') {
+                    return (selected_item_index, removed_item);
+                }
             }
         }
 
