@@ -1486,41 +1486,39 @@ impl TerminalManager {
                     Self::stream_historical_agent_conversations(&terminal_view, &model, ctx);
                 }
 
-                if FeatureFlag::LinkSharedSessionToLocalOzRun.is_enabled() {
-                    let terminal_view_id = terminal_view.id();
-                    let session_id_for_link = *session_id;
+                let terminal_view_id = terminal_view.id();
+                let session_id_for_link = *session_id;
 
-                    let history = BlocklistAIHistoryModel::handle(ctx);
-                    let task_id = history
-                        .as_ref(ctx)
-                        .active_conversation(terminal_view_id)
-                        .and_then(|c| c.task_id());
+                let history = BlocklistAIHistoryModel::handle(ctx);
+                let task_id = history
+                    .as_ref(ctx)
+                    .active_conversation(terminal_view_id)
+                    .and_then(|c| c.task_id());
 
-                    if let Some(task_id) = task_id {
-                        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-                        terminal_view.update(ctx, |_view, ctx| {
-                            ctx.spawn(
-                                async move {
-                                    ai_client
-                                        .update_agent_task(
-                                            task_id,
-                                            None,
-                                            Some(session_id_for_link),
-                                            None,
-                                            None,
-                                        )
-                                        .await
-                                },
-                                move |_view, result, _ctx| {
-                                    if let Err(e) = result {
-                                        log::warn!(
-                                            "Failed to link shared session {session_id_for_link} to Oz task {task_id}: {e}"
-                                        );
-                                    }
-                                },
-                            );
-                        });
-                    }
+                if let Some(task_id) = task_id {
+                    let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+                    terminal_view.update(ctx, |_view, ctx| {
+                        ctx.spawn(
+                            async move {
+                                ai_client
+                                    .update_agent_task(
+                                        task_id,
+                                        None,
+                                        Some(session_id_for_link),
+                                        None,
+                                        None,
+                                    )
+                                    .await
+                            },
+                            move |_view, result, _ctx| {
+                                if let Err(e) = result {
+                                    log::warn!(
+                                        "Failed to link shared session {session_id_for_link} to Oz task {task_id}: {e}"
+                                    );
+                                }
+                            },
+                        );
+                    });
                 }
             }
             NetworkEvent::FailedToCreateSharedSession {
