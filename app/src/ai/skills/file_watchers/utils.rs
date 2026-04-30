@@ -14,39 +14,6 @@ use warpui::AppContext;
 
 use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
 
-/// Returns `true` if `dir` contains at least one common project-manifest file or a
-/// `.git` entry, indicating it is an intentional workspace root rather than a
-/// dependency or build-artefact directory.
-///
-/// This is used as a positive ownership signal in Pass 2 Case (b) of
-/// [`find_skill_directories_in_tree`]: only directories that pass this check are
-/// probed for provider skill paths, so unrecognised dependency trees (e.g.
-/// `third_party/`, `.tox/`, `.pnpm-store/`) are skipped without the need for a
-/// fragile, ever-growing denylist.
-fn looks_like_workspace_root(dir: &Path) -> bool {
-    const INDICATORS: &[&str] = &[
-        ".git",
-        "Cargo.toml",
-        "package.json",
-        "go.mod",
-        "pyproject.toml",
-        "setup.py",
-        "Gemfile",
-        "pom.xml",
-        "build.gradle",
-        "build.gradle.kts",
-        "CMakeLists.txt",
-        "Makefile",
-        "meson.build",
-        "WORKSPACE",
-        "WORKSPACE.bazel",
-        "pubspec.yaml",
-        "mix.exs",
-        "composer.json",
-    ];
-    INDICATORS.iter().any(|name| dir.join(name).exists())
-}
-
 /// Finds all skill directories in a repository by querying the RepoMetadataModel tree.
 ///
 /// Returns a list of paths to skill directories (e.g., `/repo/.agents/skills/`, `/repo/sub/.claude/skills/`).
@@ -57,23 +24,17 @@ fn looks_like_workspace_root(dir: &Path) -> bool {
 /// end with a known provider skills path (e.g. `.agents/skills`). Gitignored directories
 /// are skipped here because they are lazy-loaded with empty children in the tree.
 ///
-/// **Pass 2 — lazy-loaded directories:** Traversal with `include_ignored: true` to find
-/// directories that are lazy-loaded (`loaded: false`). Two sub-cases are handled:
+/// **Pass 2 — lazy-loaded provider roots:** Traversal with `include_ignored: true` to
+/// find directories that are lazy-loaded (`loaded: false`) *and* are named exactly like a
+/// provider root (`.agents`, `.claude`, …). When such a directory is found, a single
+/// `is_dir()` check is performed for `{provider_dir}/skills`.
 ///
-/// - **Case (a) — provider root is lazy:** The lazy dir is named like a provider root
-///   (`.agents`, `.claude`, …), e.g. `sub-project/.agents/` is gitignored. A single
-///   `is_dir()` check is performed for `{provider_dir}/skills`.
-///
-/// - **Case (b) — parent of provider root is lazy:** The lazy dir is not a provider
-///   root but could be a parent of one, e.g. `sub-project/` is gitignored so `.agents/`
-///   is never in the tree at all. For each known provider, `{dir}/{provider_path}` is
-///   checked with `is_dir()`, **but only if [`looks_like_workspace_root`] returns
-///   `true`**. This positive ownership check (presence of `Cargo.toml`, `package.json`,
-///   `.git`, etc.) prevents unrecognised dependency trees (`third_party/`, `.tox/`,
-///   `.pnpm-store/`, …) from being probed without relying on a fragile denylist.
-///
-/// In both cases only directories already registered in the tree are examined, keeping
-/// the scope bounded.
+/// Probing is deliberately restricted to lazy dirs whose name matches a known provider
+/// root. This keeps the trust boundary tight: a lazy dir only enters the tree if its
+/// parent is indexed, so only provider dirs that live directly inside an already-tracked
+/// directory are candidates. Arbitrary dependency or build-artefact subtrees (e.g.
+/// `node_modules/`, `vendor/`, `third_party/`) are never reached because their parent
+/// being lazy-loaded means their children are absent from the tree entirely.
 pub fn find_skill_directories_in_tree(
     repo_path: &Path,
     repo_metadata: &RepoMetadataModel,
@@ -127,32 +88,37 @@ pub fn find_skill_directories_in_tree(
         })
         .collect();
 
-    // ── Pass 2: check lazy-loaded directories ────────────────────────────────
+    // ── Pass 2: check lazy-loaded provider root directories ───────────────────
     //
-    // Gitignored directories appear in the tree with `loaded: false` and no
-    // children. Two sub-cases are handled with targeted `is_dir()` probes:
+    // Gitignored directories appear in the tree with `loaded: false` and no children.
+    // Only dirs whose name matches a known provider root (e.g. `.agents`, `.claude`)
+    // are collected here. For each such dir a single `is_dir()` probe is made for the
+    // `skills` subdirectory.
     //
-    //   Case (a) — provider root is lazy (e.g. `sub-project/.agents/` is
-    //   gitignored): probe `{dir}/skills`.
-    //
-    //   Case (b) — parent of provider root is lazy (e.g. `sub-project/` is
-    //   gitignored, so `.agents/` is never in the tree at all): probe
-    //   `{dir}/{provider_path}` for every known provider, but only when
-    //   `looks_like_workspace_root` returns true.
-    //
-    // Only directories already registered in the tree are examined, keeping
-    // the scope bounded.
-    let mut result_set: HashSet<PathBuf> = result.iter().cloned().collect();
+    // Probing is restricted to provider-root-named dirs: any other lazy dir (e.g.
+    // `node_modules/`, `vendor/`, `third_party/`) is silently skipped. When a broader
+    // lazy dir contains a provider root (e.g. `ignored-parent/.agents/`), `.agents/`
+    // itself still appears in the tree as a child because only its *own* contents are
+    // withheld, so Case (a) still applies.
+    let provider_root_names_lazy = provider_root_names.clone();
     let args_lazy = GetContentsArgs::default()
         .include_ignored()
         .with_filter(move |content| {
             let RepoContent::Directory(dir) = content else {
                 return false;
             };
-            !dir.loaded
+            if !dir.loaded {
+                return dir
+                    .path
+                    .file_name()
+                    .is_some_and(|name| provider_root_names_lazy.contains(name));
+            }
+            false
         });
 
-    let lazy_dirs: Vec<PathBuf> = repo_metadata
+    let mut result_set: HashSet<PathBuf> = result.iter().cloned().collect();
+
+    let lazy_provider_dirs: Vec<PathBuf> = repo_metadata
         .get_repo_contents(&id, args_lazy, ctx)
         .unwrap_or_default()
         .into_iter()
@@ -162,30 +128,11 @@ pub fn find_skill_directories_in_tree(
         })
         .collect();
 
-    for lazy_dir in lazy_dirs {
-        let dir_name = lazy_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if provider_root_names.contains(dir_name) {
-            // Case (a): the lazy dir is itself a provider root (e.g. `.agents/`).
-            // Probe one level deeper for the `skills` subdirectory.
-            let skills_path = lazy_dir.join("skills");
-            if !result_set.contains(&skills_path) && skills_path.is_dir() {
-                result_set.insert(skills_path.clone());
-                result.push(skills_path);
-            }
-        } else if looks_like_workspace_root(&lazy_dir) {
-            // Case (b): the lazy dir is a parent of a potential provider root
-            // (e.g. `sub-project/` is gitignored, so `.agents/` was never
-            // indexed). Only probe directories that look like intentional workspace
-            // roots (contain a manifest like Cargo.toml, package.json, .git, …).
-            // This positive ownership check avoids probing arbitrary dependency or
-            // build-artefact trees without relying on a fragile denylist.
-            for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
-                let skills_path = lazy_dir.join(&provider.skills_path);
-                if !result_set.contains(&skills_path) && skills_path.is_dir() {
-                    result_set.insert(skills_path.clone());
-                    result.push(skills_path);
-                }
-            }
+    for provider_dir in lazy_provider_dirs {
+        let skills_path = provider_dir.join("skills");
+        if !result_set.contains(&skills_path) && skills_path.is_dir() {
+            result_set.insert(skills_path.clone());
+            result.push(skills_path);
         }
     }
 
