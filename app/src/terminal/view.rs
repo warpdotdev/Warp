@@ -1982,6 +1982,13 @@ pub enum Event {
     RevealChildAgent {
         conversation_id: AIConversationId,
     },
+    /// Emitted when the user picks "Open in new tab" from a child pill's 3-dot
+    /// menu in the orchestration pill bar. Bubbles up through `PaneGroup` to
+    /// `Workspace`, which creates a new tab and switches its agent view to
+    /// the given child conversation.
+    OpenChildAgentInNewTab {
+        conversation_id: AIConversationId,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -25527,15 +25534,27 @@ impl TypedActionView for TerminalView {
                     ctx,
                 );
             }
-            OpenChildAgentInNewPane { conversation_id }
-            | OpenChildAgentInNewTab { conversation_id } => {
-                // V2-of-V2: both paths reuse `RevealChildAgent`. The pane
-                // group's handler reveals a hidden child pane (the common
-                // case, since orchestrator-spawned children start hidden)
-                // and falls through to focusing an already-visible pane via
-                // `find_visible_terminal_pane_for_conversation`. Tab-level
-                // routing for "Open in new tab" is a follow-up.
+            OpenChildAgentInNewPane { conversation_id } => {
+                // "Open in new pane": orchestrator-spawned children already
+                // live in their own hidden pane within the orchestrator's
+                // pane group, so reveal that pane in place. If the child
+                // has been promoted out into another visible pane already,
+                // `RevealChildAgent`'s pane-group handler falls through to
+                // focusing it via `find_visible_terminal_pane_for_conversation`.
                 ctx.emit(Event::RevealChildAgent {
+                    conversation_id: *conversation_id,
+                });
+            }
+            OpenChildAgentInNewTab { conversation_id } => {
+                // "Open in new tab": bubble up to the workspace, which is
+                // the only layer that can add a new tab. The workspace will
+                // create a fresh session tab and call
+                // `enter_agent_view_for_conversation` with this id so the
+                // new tab opens directly into the child's agent view (not
+                // the orchestrator's). The current tab stays where it is
+                // and the workspace switches focus to the new tab as part
+                // of `add_new_session_tab_with_default_mode`.
+                ctx.emit(Event::OpenChildAgentInNewTab {
                     conversation_id: *conversation_id,
                 });
             }

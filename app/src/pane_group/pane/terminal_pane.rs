@@ -1126,6 +1126,15 @@ fn handle_terminal_view_event(
                     log::warn!("No pane found for child conversation {conversation_id:?}");
                 }
             }
+            Event::OpenChildAgentInNewTab { conversation_id } => {
+                // The pane group can't add a new tab — only the workspace
+                // can. Forward the request upward so `WorkspaceView` can
+                // create a fresh tab and switch its agent view to this
+                // child conversation.
+                ctx.emit(pane_group::Event::OpenChildAgentInNewTab {
+                    conversation_id: *conversation_id,
+                });
+            }
             Event::StartAgentConversation(request) => {
                 let request = request.clone();
                 match request.execution_mode.clone() {

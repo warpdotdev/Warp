@@ -599,6 +599,12 @@ pub enum Event {
     /// Clears the hovered tab index so it no longer appears as highlighted drop target
     ClearHoveredTabIndex,
     OpenWarpDriveObjectInPane(ObjectUid),
+    /// Tell the workspace to open the given child agent conversation in a
+    /// fresh tab. Bubbled up by `TerminalView::Event::OpenChildAgentInNewTab`
+    /// from the orchestration pill bar's 3-dot menu.
+    OpenChildAgentInNewTab {
+        conversation_id: AIConversationId,
+    },
     OpenSuggestedAgentModeWorkflowModal {
         workflow_and_id: SuggestedAgentModeWorkflowAndId,
     },
