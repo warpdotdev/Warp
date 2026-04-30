@@ -256,10 +256,13 @@ impl PromptRenderHelper {
                     RemoteServerSetupState::Checking => "Starting shell...".to_string(),
                     RemoteServerSetupState::Installing {
                         progress_percent: Some(p),
-                    } => format!("Installing Warp SSH tools... ({p}%)"),
+                    } => format!("Installing Warp SSH Extension... ({p}%)"),
                     RemoteServerSetupState::Installing {
                         progress_percent: None,
-                    } => "Installing Warp SSH tools...".to_string(),
+                    } => "Installing Warp SSH Extension...".to_string(),
+                    RemoteServerSetupState::Updating => {
+                        "Updating Warp SSH Extension...".to_string()
+                    }
                     RemoteServerSetupState::Initializing => "Initializing...".to_string(),
                     RemoteServerSetupState::Ready => "Starting shell...".to_string(),
                     RemoteServerSetupState::Failed { .. } => "Starting shell...".to_string(),
