@@ -474,7 +474,7 @@ impl UriHost {
 
                 let Some(uuid_bytes) = uuid_bytes else {
                     log::warn!(
-                        "warposs://pane/ received invalid UUID hex (safe: len={})",
+                        "pane deep link received invalid UUID hex (safe: len={})",
                         uuid_hex.len()
                     );
                     return;
@@ -509,7 +509,7 @@ impl UriHost {
                         );
                     }
                 } else {
-                    log::warn!("warposs://pane/ could not find pane with given UUID");
+                    log::warn!("pane deep link could not find pane with given UUID");
                 }
             }
         }
