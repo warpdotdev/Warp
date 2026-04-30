@@ -181,7 +181,9 @@ impl LSPServerType {
                 ]
             }
             LSPServerType::Clangd => vec![LanguageId::C, LanguageId::Cpp],
-            LSPServerType::VsCodeJsonLanguageServer => vec![LanguageId::Json],
+            LSPServerType::VsCodeJsonLanguageServer => {
+                vec![LanguageId::Json, LanguageId::Jsonc]
+            }
         }
     }
 

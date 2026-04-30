@@ -9,8 +9,6 @@ use async_trait::async_trait;
 
 #[cfg(feature = "local_fs")]
 use anyhow::Context;
-#[cfg(feature = "local_fs")]
-use command::r#async::Command;
 
 /// Language server candidate for the VS Code [JSON language server][upstream],
 /// distributed on npm as [`vscode-json-languageserver`][npm].
@@ -46,6 +44,14 @@ impl VsCodeJsonLanguageServerCandidate {
     /// than relying on the `vscode-json-languageserver` wrapper script (which
     /// has a node shebang). First tries our custom node, then falls back to
     /// system node.
+    ///
+    /// `vscode-json-languageserver` only documents `--stdio`, `--node-ipc`,
+    /// and `--socket=` as transport flags. `--version` and `--help` go through
+    /// the language-server connection setup and exit with the missing
+    /// connection-transport error, so we treat the presence of the
+    /// npm-installed entry-point JS file as proof that the install completed.
+    /// Any genuine failure surfaces through the LSP transport itself when
+    /// `command_and_params` later spawns the server with `--stdio`.
     #[cfg(feature = "local_fs")]
     pub async fn find_installed_binary_config(
         path_env_var: Option<&str>,
@@ -63,30 +69,10 @@ impl VsCodeJsonLanguageServerCandidate {
 
         let node_binary = node_runtime::find_working_node_binary(path_env_var).await?;
 
-        // Verify the install works by spawning `node jsonServerMain.js --help`.
-        // The server prints usage on --help and exits 0 even though it has no
-        // dedicated --version flag.
-        let mut cmd = Command::new(&node_binary);
-        if let Some(path) = path_env_var {
-            cmd.env("PATH", path);
-        }
-        cmd.arg(&langserver_js).arg("--help");
-        match cmd.output().await {
-            Ok(output) if output.status.success() => {
-                log::info!("Verified vscode-json-languageserver installation");
-            }
-            Ok(output) => {
-                log::warn!(
-                    "vscode-json-languageserver health check failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                return None;
-            }
-            Err(e) => {
-                log::warn!("Failed to run vscode-json-languageserver health check: {e}");
-                return None;
-            }
-        }
+        log::info!(
+            "Found vscode-json-languageserver installation at {}",
+            langserver_js.display()
+        );
 
         Some(CustomBinaryConfig {
             binary_path: node_binary,
@@ -116,13 +102,20 @@ impl LanguageServerCandidate for VsCodeJsonLanguageServerCandidate {
     }
 
     async fn is_installed_on_path(&self, executor: &CommandBuilder) -> bool {
+        // `vscode-json-languageserver` only documents `--stdio`, `--node-ipc`,
+        // and `--socket=` as transport flags; passing `--version` or `--help`
+        // makes it error during connection-transport setup. We just need to
+        // know that the binary spawned at all (i.e. is on PATH and
+        // executable), so we use `--stdio` and accept any clean spawn — the
+        // server will start reading LSP messages from stdin, but `output()`
+        // returns Ok as soon as the child process is reaped after EOF.
         executor
             .command("vscode-json-languageserver")
-            .arg("--help")
+            .arg("--stdio")
+            .stdin(std::process::Stdio::null())
             .output()
             .await
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+            .is_ok()
     }
 
     async fn install(

@@ -238,27 +238,34 @@ mod json_language_detection {
     }
 
     #[test]
-    fn classifies_jsonc_files() {
-        // .jsonc is JSON-with-comments; the VS Code JSON server handles it.
+    fn classifies_jsonc_files_distinctly() {
+        // .jsonc is JSON-with-comments; the VS Code JSON server distinguishes
+        // `json` from `jsonc` and only allows comments under `jsonc`. We must
+        // route .jsonc through its own LanguageId so the right languageId is
+        // sent in `didOpen`.
         assert_eq!(
             LanguageId::from_path(&PathBuf::from(".vscode/settings.jsonc")),
-            Some(LanguageId::Json)
+            Some(LanguageId::Jsonc)
         );
     }
 
     #[test]
-    fn json_routes_to_vscode_json_language_server() {
+    fn both_json_and_jsonc_route_to_vscode_json_language_server() {
         assert_eq!(
             LanguageId::Json.server_type(),
+            LSPServerType::VsCodeJsonLanguageServer
+        );
+        assert_eq!(
+            LanguageId::Jsonc.server_type(),
             LSPServerType::VsCodeJsonLanguageServer
         );
     }
 
     #[test]
-    fn vscode_json_language_server_advertises_json_language() {
+    fn vscode_json_language_server_advertises_both_languages() {
         assert_eq!(
             LSPServerType::VsCodeJsonLanguageServer.languages(),
-            vec![LanguageId::Json]
+            vec![LanguageId::Json, LanguageId::Jsonc]
         );
     }
 
@@ -280,9 +287,11 @@ mod json_language_detection {
     }
 
     #[test]
-    fn json_lsp_language_identifier_matches_spec() {
-        // LSP spec uses "json" as the canonical languageId — VS Code, Zed,
-        // and Neovim all use this identifier when initialising the server.
+    fn json_and_jsonc_emit_distinct_lsp_language_identifiers() {
+        // The LSP spec defines `json` and `jsonc` as separate document
+        // languageIds; only `jsonc` accepts comments. Make sure we don't
+        // collapse them into the same identifier when sending `didOpen`.
         assert_eq!(LanguageId::Json.lsp_language_identifier(), "json");
+        assert_eq!(LanguageId::Jsonc.lsp_language_identifier(), "jsonc");
     }
 }

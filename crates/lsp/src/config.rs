@@ -33,6 +33,11 @@ pub enum LanguageId {
     C,
     Cpp,
     Json,
+    /// JSON-with-comments. The VS Code JSON language server treats `json` and
+    /// `jsonc` as distinct languageIds and only allows comments under `jsonc`,
+    /// so `.jsonc` files (and `tsconfig.json`-style configs) need their own
+    /// variant rather than being collapsed into `Json`.
+    Jsonc,
 }
 
 impl LanguageId {
@@ -53,9 +58,11 @@ impl LanguageId {
             // compile_commands.json is present, clangd will use the correct language
             // regardless of the languageId we send.
             "h" | "H" | "hh" | "hpp" | "hxx" => Some(Self::Cpp),
-            // JSON. `.jsonc` is JSON-with-comments (used by VS Code config files
-            // like `tsconfig.json`); the JSON language server handles both.
-            "json" | "jsonc" => Some(Self::Json),
+            "json" => Some(Self::Json),
+            // `.jsonc` is JSON-with-comments. Send the dedicated `jsonc`
+            // languageId so the VS Code JSON server applies the relaxed
+            // grammar that permits comments.
+            "jsonc" => Some(Self::Jsonc),
             _ => None,
         }
     }
@@ -74,6 +81,7 @@ impl LanguageId {
             LanguageId::C => "c",
             LanguageId::Cpp => "cpp",
             LanguageId::Json => "json",
+            LanguageId::Jsonc => "jsonc",
         }
     }
 
@@ -88,7 +96,7 @@ impl LanguageId {
             | LanguageId::JavaScript
             | LanguageId::JavaScriptReact => LSPServerType::TypeScriptLanguageServer,
             LanguageId::C | LanguageId::Cpp => LSPServerType::Clangd,
-            LanguageId::Json => LSPServerType::VsCodeJsonLanguageServer,
+            LanguageId::Json | LanguageId::Jsonc => LSPServerType::VsCodeJsonLanguageServer,
         }
     }
 }
