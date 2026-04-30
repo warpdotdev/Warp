@@ -627,20 +627,27 @@ impl<'a> Frame<'a> {
             let glyph_position = glyph.position * scale_factor;
             let subpixel_alignment = SubpixelAlignment::new(glyph_position);
 
+            // Subpixel rasterization is not used on macOS: CoreText handles
+            // its own subpixel decisions, and the cosmic-text/swash subpixel
+            // path is wired only into the wgpu/Linux/BSD renderer.
+            let lcd_subpixel = false;
             match self.resources.glyph_cache.get(
                 glyph.glyph_key,
                 self.scene.scale_factor(),
                 subpixel_alignment,
+                lcd_subpixel,
                 &|atlas_size| create_new_texture_atlas(atlas_size, self.ctx.device),
                 &insert_glyph_into_texture,
-                &|glyph_key, scale, alignment| {
-                    self.ctx.glyph_raster_bounds(glyph_key, scale, alignment)
+                &|glyph_key, scale, lcd_subpixel, glyph_config| {
+                    self.ctx
+                        .glyph_raster_bounds(glyph_key, scale, lcd_subpixel, glyph_config)
                 },
-                &|glyph_key, scale, subpixel_alignment, glyph_config, format| {
+                &|glyph_key, scale, subpixel_alignment, lcd_subpixel, glyph_config, format| {
                     self.ctx.rasterize_glyph(
                         glyph_key,
                         scale,
                         subpixel_alignment,
+                        lcd_subpixel,
                         glyph_config,
                         format,
                     )
@@ -925,24 +932,34 @@ pub(super) struct MetalDrawContext<'a> {
 }
 
 impl MetalDrawContext<'_> {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn rasterize_glyph(
         &self,
         glyph_key: GlyphKey,
         scale: Vector2F,
         subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
         format: canvas::RasterFormat,
     ) -> anyhow::Result<RasterizedGlyph> {
-        (self.rasterize_glyph_fn)(glyph_key, scale, subpixel_alignment, glyph_config, format)
+        (self.rasterize_glyph_fn)(
+            glyph_key,
+            scale,
+            subpixel_alignment,
+            lcd_subpixel,
+            glyph_config,
+            format,
+        )
     }
 
     pub(super) fn glyph_raster_bounds(
         &self,
         glyph_key: GlyphKey,
         scale: Vector2F,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
     ) -> anyhow::Result<RectI> {
-        (self.glyph_raster_bounds_fn)(glyph_key, scale, glyph_config)
+        (self.glyph_raster_bounds_fn)(glyph_key, scale, lcd_subpixel, glyph_config)
     }
 }
 
@@ -970,17 +987,19 @@ impl super::super::Renderer for Renderer {
             device: metal_device,
             drawable,
             drawable_size: window.physical_size(),
-            rasterize_glyph_fn: &|glyph_key, scale, subpixel_alignment, glyph_config, format| {
-                font_cache.rasterized_glyph(
-                    glyph_key,
-                    scale,
-                    subpixel_alignment,
-                    glyph_config,
-                    format,
-                )
-            },
-            glyph_raster_bounds_fn: &|glyph_key, scale, alignment| {
-                font_cache.glyph_raster_bounds(glyph_key, scale, alignment)
+            rasterize_glyph_fn:
+                &|glyph_key, scale, subpixel_alignment, lcd_subpixel, glyph_config, format| {
+                    font_cache.rasterized_glyph(
+                        glyph_key,
+                        scale,
+                        subpixel_alignment,
+                        lcd_subpixel,
+                        glyph_config,
+                        format,
+                    )
+                },
+            glyph_raster_bounds_fn: &|glyph_key, scale, lcd_subpixel, glyph_config| {
+                font_cache.glyph_raster_bounds(glyph_key, scale, lcd_subpixel, glyph_config)
             },
         };
 

@@ -404,12 +404,20 @@ pub trait FontDB: 'static {
     fn glyph_advance(&self, font_id: FontId, glyph_id: GlyphId) -> Result<Vector2I>;
 
     /// Computes the size of the canvas needed to rasterize the glyph.
+    ///
+    /// `lcd_subpixel` selects between grayscale alpha rasterization (false)
+    /// and three-channel LCD subpixel rasterization (true). Backends that
+    /// do not produce different pixel dimensions for the two modes may
+    /// ignore this parameter; backends whose subpixel mode produces wider
+    /// bitmaps must honour it.
+    #[allow(clippy::too_many_arguments)]
     fn glyph_raster_bounds(
         &self,
         font_id: FontId,
         size: f32,
         glyph_id: GlyphId,
         scale: Vector2F,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
     ) -> Result<RectI>;
 
@@ -417,6 +425,11 @@ pub trait FontDB: 'static {
     fn glyph_typographic_bounds(&self, font_id: FontId, glyph_id: GlyphId) -> Result<RectI>;
 
     /// Rasterizes a single glyph so it can be rendered to the screen.
+    ///
+    /// `lcd_subpixel` requests three-channel LCD subpixel coverage instead
+    /// of grayscale alpha. The resulting bitmap is intended to be composited
+    /// with dual-source blending; backends without subpixel support fall
+    /// back to grayscale silently.
     #[allow(clippy::too_many_arguments)]
     fn rasterize_glyph(
         &self,
@@ -425,6 +438,7 @@ pub trait FontDB: 'static {
         glyph_id: GlyphId,
         scale: Vector2F,
         subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
         format: RasterFormat,
     ) -> Result<RasterizedGlyph>;

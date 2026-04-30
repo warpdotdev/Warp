@@ -88,7 +88,7 @@ font-kit.workspace = true
 bimap = "0.6.2"
 bytemuck.workspace = true
 command.workspace = true
-cosmic-text = { git = "https://github.com/warpdotdev/cosmic-text.git", rev = "15198beba692162201c0ea8b15222cf5643ea068" }
+cosmic-text = { git = "https://github.com/rudrabhoj/cosmic-text-warpdev.git", rev = "53dc2b66c31f39411feb9eaf6bf1f43c437e3903" }
 derivative.workspace = true
 fontdb = "0.23.0"
 memmap2 = "0.9.3"

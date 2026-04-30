@@ -799,17 +799,18 @@ impl Window {
         renderer.render(
             scene.as_ref(),
             resources,
-            &|glyph_key, scale, subpixel_alignment, glyph_config, format| {
+            &|glyph_key, scale, subpixel_alignment, lcd_subpixel, glyph_config, format| {
                 font_cache.rasterized_glyph(
                     glyph_key,
                     scale,
                     subpixel_alignment,
+                    lcd_subpixel,
                     glyph_config,
                     format,
                 )
             },
-            &|glyph_key, scale, alignment| {
-                font_cache.glyph_raster_bounds(glyph_key, scale, alignment)
+            &|glyph_key, scale, lcd_subpixel, glyph_config| {
+                font_cache.glyph_raster_bounds(glyph_key, scale, lcd_subpixel, glyph_config)
             },
             inner.surface_size,
             Some(Box::new(|| {

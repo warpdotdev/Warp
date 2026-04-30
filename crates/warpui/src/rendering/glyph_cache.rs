@@ -20,14 +20,22 @@ type CreateTextureCallback<'a, T> = dyn Fn(usize) -> T + 'a;
 type InsertIntoTextureCallback<'a, T> = dyn Fn(AllocatedRegion, &RasterizedGlyph, &mut T) + 'a;
 
 /// Callback to compute the bounds of a glyph when rasterized.
+///
+/// The `bool` argument is `lcd_subpixel`: true requests LCD subpixel
+/// rasterization, false requests grayscale. The flag affects the produced
+/// bitmap's pixel dimensions on backends whose subpixel mode produces wider
+/// bitmaps than grayscale, so it must participate in cache key uniqueness.
 pub(crate) type GlyphRasterBoundsFn<'a> =
-    dyn Fn(GlyphKey, Vector2F, &rendering::GlyphConfig) -> Result<RectI> + 'a;
+    dyn Fn(GlyphKey, Vector2F, bool, &rendering::GlyphConfig) -> Result<RectI> + 'a;
 
 /// Callback to rasterize a glyph.
+///
+/// The `bool` argument is `lcd_subpixel`; see [`GlyphRasterBoundsFn`].
 pub(crate) type RasterizeGlyphFn<'a> = dyn Fn(
         GlyphKey,
         Vector2F,
         SubpixelAlignment,
+        bool,
         &rendering::GlyphConfig,
         canvas::RasterFormat,
     ) -> Result<RasterizedGlyph>
@@ -46,14 +54,21 @@ struct GlyphCacheKey {
     glyph_key: GlyphKey,
     scale_factor: OrderedFloat<f32>,
     subpixel_alignment: SubpixelAlignment,
+    lcd_subpixel: bool,
 }
 
 impl GlyphCacheKey {
-    fn new(glyph_key: GlyphKey, scale_factor: f32, subpixel_alignment: SubpixelAlignment) -> Self {
+    fn new(
+        glyph_key: GlyphKey,
+        scale_factor: f32,
+        subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
+    ) -> Self {
         GlyphCacheKey {
             glyph_key,
             scale_factor: scale_factor.into(),
             subpixel_alignment,
+            lcd_subpixel,
         }
     }
 }
@@ -101,17 +116,23 @@ impl<Texture> GlyphCache<Texture> {
         glyph_key: GlyphKey,
         scale_factor: f32,
         subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
         create_texture: &CreateTextureCallback<'_, Texture>,
         insert_into_texture: &InsertIntoTextureCallback<'_, Texture>,
         raster_bounds_fn: &GlyphRasterBoundsFn<'_>,
         rasterize_glyph_fn: &RasterizeGlyphFn<'_>,
     ) -> Result<Option<GlyphTextureOffset>> {
-        let cache_key = GlyphCacheKey::new(glyph_key, scale_factor, subpixel_alignment);
+        let cache_key =
+            GlyphCacheKey::new(glyph_key, scale_factor, subpixel_alignment, lcd_subpixel);
 
         match self.cache.get(&cache_key) {
             None => {
-                let bounds =
-                    raster_bounds_fn(glyph_key, Vector2F::splat(scale_factor), &self.glyph_config)?;
+                let bounds = raster_bounds_fn(
+                    glyph_key,
+                    Vector2F::splat(scale_factor),
+                    lcd_subpixel,
+                    &self.glyph_config,
+                )?;
 
                 if bounds.size() == Vector2I::zero() {
                     return Ok(None);
@@ -121,6 +142,7 @@ impl<Texture> GlyphCache<Texture> {
                     glyph_key,
                     Vector2F::splat(scale_factor),
                     subpixel_alignment,
+                    lcd_subpixel,
                     &self.glyph_config,
                     crate::fonts::canvas::RasterFormat::Rgba32,
                 )?;

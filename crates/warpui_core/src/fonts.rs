@@ -207,7 +207,7 @@ pub struct FontInfo {
     pub is_monospace: bool,
 }
 
-type RasterBoundsKey = (GlyphKey, (OrderedFloat<f32>, OrderedFloat<f32>));
+type RasterBoundsKey = (GlyphKey, (OrderedFloat<f32>, OrderedFloat<f32>), bool);
 
 pub struct Cache {
     selections: DashMap<(FamilyId, Properties), FontId>,
@@ -403,11 +403,14 @@ impl Cache {
         &self,
         glyph_key: GlyphKey,
         scale: Vector2F,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
     ) -> Result<RectI> {
-        let entry = self
-            .raster_bounds
-            .entry((glyph_key, (scale.x().into(), scale.y().into())));
+        let entry = self.raster_bounds.entry((
+            glyph_key,
+            (scale.x().into(), scale.y().into()),
+            lcd_subpixel,
+        ));
         let bounds = match entry {
             Entry::Occupied(entry) => entry.into_ref(),
             Entry::Vacant(entry) => entry.insert(self.platform.glyph_raster_bounds(
@@ -415,6 +418,7 @@ impl Cache {
                 glyph_key.font_size.into(),
                 glyph_key.glyph_id,
                 scale,
+                lcd_subpixel,
                 glyph_config,
             )),
         };
@@ -424,11 +428,13 @@ impl Cache {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn rasterized_glyph(
         &self,
         glyph_key: GlyphKey,
         scale: Vector2F,
         subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
         format: canvas::RasterFormat,
     ) -> Result<RasterizedGlyph> {
@@ -438,6 +444,7 @@ impl Cache {
             glyph_key.glyph_id,
             scale,
             subpixel_alignment,
+            lcd_subpixel,
             glyph_config,
             format,
         )

@@ -855,6 +855,7 @@ impl platform::FontDB for FontDB {
         size: f32,
         glyph_id: GlyphId,
         scale: Vector2F,
+        lcd_subpixel: bool,
         glyph_config: &GlyphConfig,
     ) -> Result<RectI> {
         let fonts = self
@@ -863,6 +864,8 @@ impl platform::FontDB for FontDB {
         for font in fonts {
             self.load_font_kit_font(font)?
         }
+        // font-kit has no LCD subpixel rasterizer; the flag is a no-op here.
+        let _ = lcd_subpixel;
         self.font_kit_rasterizer
             .glyph_raster_bounds(font_id, size, glyph_id, scale, glyph_config)
     }
@@ -874,9 +877,10 @@ impl platform::FontDB for FontDB {
         size: f32,
         glyph_id: GlyphId,
         scale: Vector2F,
+        lcd_subpixel: bool,
         glyph_config: &GlyphConfig,
     ) -> Result<RectI> {
-        Self::glyph_raster_bounds(self, font_id, size, glyph_id, scale, glyph_config)
+        Self::glyph_raster_bounds(self, font_id, size, glyph_id, scale, lcd_subpixel, glyph_config)
     }
 
     #[cfg(feature = "fontkit-rasterizer")]
@@ -887,6 +891,7 @@ impl platform::FontDB for FontDB {
         glyph_id: GlyphId,
         scale: Vector2F,
         subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
         glyph_config: &GlyphConfig,
         format: RasterFormat,
     ) -> Result<RasterizedGlyph> {
@@ -896,6 +901,8 @@ impl platform::FontDB for FontDB {
         for font in fonts {
             self.load_font_kit_font(font)?
         }
+        // font-kit has no LCD subpixel rasterizer; the flag is a no-op here.
+        let _ = lcd_subpixel;
         self.font_kit_rasterizer.rasterize_glyph(
             font_id,
             size,
@@ -915,6 +922,7 @@ impl platform::FontDB for FontDB {
         glyph_id: GlyphId,
         scale: Vector2F,
         subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
         glyph_config: &GlyphConfig,
         format: RasterFormat,
     ) -> Result<RasterizedGlyph> {
@@ -925,6 +933,7 @@ impl platform::FontDB for FontDB {
             glyph_id,
             scale,
             subpixel_alignment,
+            lcd_subpixel,
             glyph_config,
             format,
         )
