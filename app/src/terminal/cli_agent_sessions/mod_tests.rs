@@ -408,3 +408,97 @@ fn session_start_without_plugin_version_leaves_none() {
     session.apply_event(&event);
     assert_eq!(session.plugin_version, None);
 }
+
+#[test]
+fn title_like_text_falls_back_to_response_when_summary_is_empty() {
+    let context = CLIAgentSessionContext {
+        summary: None,
+        response: Some("Task completed successfully".to_string()),
+        ..Default::default()
+    };
+
+    assert_eq!(
+        context.title_like_text(),
+        Some("Task completed successfully".to_string())
+    );
+}
+
+#[test]
+fn title_like_text_prefers_summary_over_response() {
+    let context = CLIAgentSessionContext {
+        summary: Some("Wants to run Bash: ls".to_string()),
+        response: Some("Task completed".to_string()),
+        ..Default::default()
+    };
+
+    assert_eq!(
+        context.title_like_text(),
+        Some("Wants to run Bash: ls".to_string())
+    );
+}
+
+#[test]
+fn display_title_shows_response_after_permission_request_then_stop() {
+    let mut session = CLIAgentSession {
+        agent: CLIAgent::Claude,
+        status: CLIAgentSessionStatus::InProgress,
+        session_context: CLIAgentSessionContext::default(),
+        input_state: CLIAgentInputState::Closed,
+        should_auto_toggle_input: false,
+        listener: None,
+        plugin_version: None,
+        draft_text: None,
+        remote_host: None,
+        custom_command_prefix: None,
+    };
+
+    // First: a permission request sets the summary
+    let permission_event = CLIAgentEvent {
+        v: 1,
+        agent: CLIAgent::Claude,
+        event: CLIAgentEventType::PermissionRequest,
+        session_id: Some("abc".to_string()),
+        cwd: None,
+        project: None,
+        payload: CLIAgentEventPayload {
+            summary: Some("Wants to run Bash: rm -rf /tmp".to_string()),
+            tool_name: Some("Bash".to_string()),
+            tool_input_preview: Some("rm -rf /tmp".to_string()),
+            ..Default::default()
+        },
+    };
+
+    session.apply_event(&permission_event);
+    assert_eq!(
+        session.session_context.display_title(),
+        Some("Wants to run Bash: rm -rf /tmp".to_string())
+    );
+
+    // Then: a stop event sets response and clears summary
+    let stop_event = CLIAgentEvent {
+        v: 1,
+        agent: CLIAgent::Claude,
+        event: CLIAgentEventType::Stop,
+        session_id: Some("abc".to_string()),
+        cwd: None,
+        project: None,
+        payload: CLIAgentEventPayload {
+            query: Some("Clean up temp files".to_string()),
+            response: Some("Deleted all temp files successfully".to_string()),
+            ..Default::default()
+        },
+    };
+
+    session.apply_event(&stop_event);
+    assert_eq!(session.session_context.summary, None);
+    // display_title prefers query (latest user prompt) over response
+    assert_eq!(
+        session.session_context.display_title(),
+        Some("Clean up temp files".to_string())
+    );
+    // title_like_text falls back to response when summary is None
+    assert_eq!(
+        session.session_context.title_like_text(),
+        Some("Deleted all temp files successfully".to_string())
+    );
+}
