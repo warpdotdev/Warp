@@ -19,10 +19,11 @@ use warp_util::file::FileId;
 
 use super::proto::{
     client_message, delete_file_response, run_command_response, server_message,
-    write_file_response, Abort, Authenticate, ClientMessage, CodebaseIndexStatusesSnapshot,
-    DeleteFile, DeleteFileResponse, DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead,
-    FileContextProto, FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
-    NavigatedToDirectoryResponse, ReadFileContextResponse, RunCommandError, RunCommandErrorCode,
+    write_file_response, Abort, Authenticate, BufferEdit, BufferUpdatedPush, CloseBuffer,
+    ClientMessage, CodebaseIndexStatusesSnapshot, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
+    ErrorCode, ErrorResponse, FailedFileRead, FileContextProto, FileOperationError, Initialize,
+    InitializeResponse, NavigatedToDirectory, NavigatedToDirectoryResponse, OpenBuffer,
+    OpenBufferResponse, ReadFileContextResponse, RunCommandError, RunCommandErrorCode,
     RunCommandRequest, RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped,
     WriteFile, WriteFileResponse, WriteFileSuccess,
 };
@@ -198,6 +199,18 @@ pub struct ServerModel {
     pending_file_ops: PendingFileOps,
     /// Daemon-wide auth credentials and user identity.
     auth: DaemonAuthContext,
+    /// Server-side state for buffers opened via `OpenBuffer`.
+    open_buffers: HashMap<String, ServerBufferState>,
+}
+
+/// Server-side tracking for a buffer opened by a client.
+struct ServerBufferState {
+    /// Monotonically increasing version bumped on each file-watcher change.
+    server_version: u64,
+    /// Last client version acknowledged by the server.
+    client_version: u64,
+    /// The connection that opened this buffer (for push targeting).
+    conn_id: ConnectionId,
 }
 
 impl Entity for ServerModel {
@@ -223,6 +236,7 @@ impl ServerModel {
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
             auth: DaemonAuthContext::new(),
+            open_buffers: HashMap::new(),
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -448,6 +462,17 @@ impl ServerModel {
             }
             Some(client_message::Message::ReadFileContext(msg)) => {
                 self.handle_read_file_context(msg, &request_id, conn_id, ctx)
+            }
+            Some(client_message::Message::OpenBuffer(msg)) => {
+                self.handle_open_buffer(msg, &request_id, conn_id, ctx)
+            }
+            Some(client_message::Message::BufferEdit(msg)) => {
+                self.handle_buffer_edit(msg, conn_id, ctx);
+                return; // fire-and-forget notification
+            }
+            Some(client_message::Message::CloseBuffer(msg)) => {
+                self.handle_close_buffer(msg);
+                return; // fire-and-forget notification
             }
             None => {
                 log::warn!(
@@ -1190,6 +1215,183 @@ impl ServerModel {
 
         HandlerOutcome::Async(Some(handle))
     }
+
+    /// Handles `OpenBuffer` by reading the file and returning its content.
+    /// Registers the buffer for future edit syncing.
+    fn handle_open_buffer(
+        &mut self,
+        msg: OpenBuffer,
+        request_id: &RequestId,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) -> HandlerOutcome {
+        log::info!(
+            "Handling OpenBuffer path={} (request_id={request_id})",
+            msg.path
+        );
+
+        let path = msg.path.clone();
+        let path_for_read = PathBuf::from(&msg.path);
+        let request_id_for_response = request_id.clone();
+
+        let handle = self.spawn_request_handler(
+            request_id.clone(),
+            async move { async_fs::read_to_string(&path_for_read).await },
+            move |me, result, _ctx| {
+                match result {
+                    Ok(content) => {
+                        let server_version = 1u64;
+                        me.open_buffers.insert(
+                            path.clone(),
+                            ServerBufferState {
+                                server_version,
+                                client_version: 0,
+                                conn_id,
+                            },
+                        );
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id_for_response),
+                            server_message::Message::OpenBufferResponse(OpenBufferResponse {
+                                content,
+                                server_version,
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        me.send_server_message(
+                            Some(conn_id),
+                            Some(&request_id_for_response),
+                            server_message::Message::Error(ErrorResponse {
+                                code: ErrorCode::Internal.into(),
+                                message: format!("Failed to read file: {e}"),
+                            }),
+                        );
+                    }
+                }
+            },
+            ctx,
+        );
+        HandlerOutcome::Async(Some(handle))
+    }
+
+    /// Handles `BufferEdit` notification (fire-and-forget).
+    /// If the expected server version matches, applies the edit.
+    /// If not, pushes the current content back to the client.
+    fn handle_buffer_edit(
+        &mut self,
+        msg: BufferEdit,
+        conn_id: ConnectionId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(state) = self.open_buffers.get_mut(&msg.path) else {
+            log::warn!("BufferEdit for unknown buffer: {}", msg.path);
+            return;
+        };
+
+        if msg.expected_server_version == state.server_version {
+            // Accept: update client version.
+            state.client_version = msg.new_client_version;
+
+            // Write the edits to disk asynchronously.
+            // For now, we reconstruct the file content by reading + applying edits.
+            // TODO: Maintain an in-memory buffer on the server side for incremental application.
+            let path = PathBuf::from(&msg.path);
+            let edits = msg.edits;
+            ctx.spawn(
+                async move {
+                    // Read current file, apply edits, write back.
+                    let content = async_fs::read_to_string(&path).await?;
+                    let updated = apply_text_edits_to_string(&content, &edits);
+                    async_fs::write(&path, &updated).await?;
+                    Ok::<(), std::io::Error>(())
+                },
+                |_me, result, _ctx| {
+                    if let Err(e) = result {
+                        log::warn!("Failed to apply buffer edit to disk: {e}");
+                    }
+                },
+            );
+        } else {
+            // Reject: push current server content.
+            log::info!(
+                "BufferEdit rejected for {}: expected S={}, actual S={}",
+                msg.path,
+                msg.expected_server_version,
+                state.server_version
+            );
+            let path = PathBuf::from(&msg.path);
+            let server_version = state.server_version;
+            let client_version = state.client_version;
+            let push_path = msg.path.clone();
+            ctx.spawn(
+                async move { async_fs::read_to_string(&path).await },
+                move |me, result, _ctx| {
+                    if let Ok(content) = result {
+                        me.send_server_message(
+                            Some(conn_id),
+                            None,
+                            server_message::Message::BufferUpdated(BufferUpdatedPush {
+                                path: push_path,
+                                new_server_version: server_version,
+                                expected_client_version: client_version,
+                                content,
+                            }),
+                        );
+                    }
+                },
+            );
+        }
+    }
+
+    /// Handles `CloseBuffer` notification (fire-and-forget).
+    fn handle_close_buffer(&mut self, msg: CloseBuffer) {
+        log::info!("Handling CloseBuffer path={}", msg.path);
+        self.open_buffers.remove(&msg.path);
+    }
+}
+
+/// Applies text edits to a string. Edits are applied in reverse order
+/// (bottom-to-top) to avoid offset invalidation.
+fn apply_text_edits_to_string(
+    content: &str,
+    edits: &[super::proto::TextEdit],
+) -> String {
+    let lines: Vec<&str> = content.split('\n').collect();
+
+    // Convert line/column edits to byte offsets, then apply in reverse.
+    let mut byte_edits: Vec<(usize, usize, &str)> = edits
+        .iter()
+        .filter_map(|edit| {
+            let start = line_col_to_byte_offset(&lines, edit.start_line as usize, edit.start_column as usize)?;
+            let end = line_col_to_byte_offset(&lines, edit.end_line as usize, edit.end_column as usize)?;
+            Some((start, end, edit.text.as_str()))
+        })
+        .collect();
+
+    // Sort by start offset descending so we can apply without shifting.
+    byte_edits.sort_by(|a, b| b.0.cmp(&a.0));
+
+    let mut result = content.to_string();
+    for (start, end, text) in byte_edits {
+        let start = start.min(result.len());
+        let end = end.min(result.len());
+        result.replace_range(start..end, text);
+    }
+    result
+}
+
+/// Converts 0-indexed line/column to a byte offset within newline-split content.
+fn line_col_to_byte_offset(lines: &[&str], line: usize, col: usize) -> Option<usize> {
+    if line >= lines.len() {
+        return None;
+    }
+    let mut offset = 0;
+    for l in &lines[..line] {
+        offset += l.len() + 1; // +1 for '\n'
+    }
+    offset += col.min(lines[line].len());
+    Some(offset)
 }
 
 /// Converts a [`ReadFileContextResult`] into its protobuf equivalent.

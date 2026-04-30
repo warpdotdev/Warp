@@ -24,6 +24,9 @@ message ClientMessage {
     ReadFileContextRequest read_file_context = 10;
     Authenticate authenticate = 11;
     UpdatePreferences update_preferences = 12;
+    OpenBuffer open_buffer = 13;
+    BufferEdit buffer_edit = 14;
+    CloseBuffer close_buffer = 15;
   }
 }
 // Top-level envelope for all server → client messages.
@@ -44,6 +47,8 @@ message ServerMessage {
     ReadFileContextResponse read_file_context_response = 11;
     CodebaseIndexStatusesSnapshot codebase_index_statuses_snapshot = 12;
     CodebaseIndexStatusUpdated codebase_index_status_updated = 13;
+    OpenBufferResponse open_buffer_response = 14;
+    BufferUpdatedPush buffer_updated = 15;
   }
 }
 
@@ -344,4 +349,55 @@ message RepoMetadataUpdatePush {
   string repo_path = 1;
   repeated string remove_entries = 2;
   repeated RepoMetadataEntryUpdate update_entries = 3;
+}
+
+// ── Buffer syncing ────────────────────────────────────────────────
+
+// Client → server: open a buffer for bidirectional syncing.
+// The server reads the file, starts watching it, and returns the content.
+message OpenBuffer {
+  string path = 1;
+}
+
+// Server → client: response to OpenBuffer with the initial file content.
+message OpenBufferResponse {
+  string content = 1;
+  uint64 server_version = 2;
+}
+
+// Client → server: push an incremental edit (fire-and-forget notification).
+// If the server accepts (expected_server_version matches its local version),
+// it applies the edit silently — no response needed since the client already
+// has the edit applied locally.
+// If the server rejects (version mismatch), it pushes a BufferUpdatedPush
+// with its current state.
+message BufferEdit {
+  string path = 1;
+  uint64 expected_server_version = 2;
+  uint64 new_client_version = 3;
+  repeated TextEdit edits = 4;
+}
+
+// A single text edit within a buffer, using 0-indexed line/column positions.
+message TextEdit {
+  uint32 start_line = 1;
+  uint32 start_column = 2;
+  uint32 end_line = 3;
+  uint32 end_column = 4;
+  string text = 5;
+}
+
+// Server → client push: file changed on disk OR a BufferEdit was rejected.
+// The client uses expected_client_version to detect conflicts.
+message BufferUpdatedPush {
+  string path = 1;
+  uint64 new_server_version = 2;
+  uint64 expected_client_version = 3;
+  // Full content for now; incremental diffs can be added later.
+  string content = 4;
+}
+
+// Client → server: close a buffer (stop watching).
+message CloseBuffer {
+  string path = 1;
 }
