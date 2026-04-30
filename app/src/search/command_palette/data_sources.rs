@@ -16,13 +16,10 @@ use crate::search::mixer::AddAsyncSourceOptions;
 use crate::search::QueryFilter;
 use crate::session_management::SessionSource;
 use crate::settings::AISettings;
-use crate::workspace::Workspace;
 use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
 use warpui::keymap::BindingId;
-use warpui::{
-    AppContext, Entity, ModelContext, ModelHandle, SingletonEntity, WeakViewHandle, WindowId,
-};
+use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use super::conversations;
 use super::warp_drive;
@@ -180,22 +177,38 @@ impl DataSourceStore {
     pub fn reset_ctrl_tab_mixer(
         &mut self,
         mixer: ModelHandle<CommandPaletteMixer>,
-        workspace: WeakViewHandle<Workspace>,
-        window_id: WindowId,
+        tabs: Vec<crate::session_management::TabNavigationData>,
         ctx: &mut ModelContext<Self>,
     ) {
         if self.tabs_data_source.is_none() {
-            self.tabs_data_source =
-                Some(ctx.add_model(|_| tabs::DataSource::new(workspace, window_id)));
+            self.tabs_data_source = Some(ctx.add_model(|_| tabs::DataSource::new()));
         }
 
         if let Some(tabs_data_source) = &self.tabs_data_source {
+            tabs_data_source.update(ctx, |ds, _| ds.set_tabs(tabs));
             mixer.update(ctx, |mixer, ctx| {
                 mixer.reset(ctx);
                 mixer.add_sync_source(tabs_data_source.clone(), HashSet::from([QueryFilter::Tabs]));
                 ctx.notify();
             });
         }
+    }
+
+    /// Restores the [`CommandPaletteMixer`] to the sessions-only source for Ctrl+Tab,
+    /// undoing any previous `reset_ctrl_tab_mixer` call.
+    pub fn restore_ctrl_tab_session_mixer(
+        &self,
+        mixer: ModelHandle<CommandPaletteMixer>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        mixer.update(ctx, |mixer, ctx| {
+            mixer.reset(ctx);
+            mixer.add_sync_source(
+                self.sessions_data_source.clone(),
+                HashSet::from([QueryFilter::Sessions]),
+            );
+            ctx.notify();
+        });
     }
 
     /// Returns a [`QueryResult`] from the data sources identified by the `summary`. `None` if none
