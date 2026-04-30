@@ -425,7 +425,7 @@ fn render_pill(
         // the user can spot at a glance that this child is currently living
         // in a separate pane/tab. Unpinned pills keep the avatar disc.
         let leading: Box<dyn Element> = if is_pinned {
-            ConstrainedBox::new(Icon::Pin.to_warpui_icon(text_color).finish())
+            ConstrainedBox::new(Icon::Pin.to_warpui_icon(text_color.into()).finish())
                 .with_width(AVATAR_SIZE)
                 .with_height(AVATAR_SIZE)
                 .finish()
