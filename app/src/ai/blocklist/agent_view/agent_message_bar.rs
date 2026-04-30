@@ -19,6 +19,7 @@ use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
 use crate::ai::blocklist::agent_view::zero_state_block::render_ambient_credits_banner;
 use crate::ai::blocklist::agent_view::{
     agent_view_bg_fill, AgentViewController, AgentViewControllerEvent,
+    ENTER_CLOUD_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE,
 };
 use crate::ai::blocklist::{
     BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIHistoryEvent,
@@ -65,6 +66,7 @@ pub struct AgentMessageBarMouseStates {
     pub toggle_slash_commands: MouseStateHandle,
     pub toggle_plan: MouseStateHandle,
     pub toggle_conversation_menu: MouseStateHandle,
+    pub start_cloud_conversation: MouseStateHandle,
     pub toggle_code_review: MouseStateHandle,
     pub clear_attached_context: MouseStateHandle,
     /// Mouse state handle for the "Get Figma MCP" contextual button.
@@ -592,6 +594,21 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
                     mouse_states.toggle_conversation_menu.clone(),
                 ));
             }
+        }
+
+        if !is_cloud_agent && !has_conversation_been_updated_since_agent_view_entry {
+            items.push(MessageItem::clickable(
+                vec![
+                    MessageItem::keystroke(
+                        ENTER_CLOUD_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone(),
+                    ),
+                    MessageItem::text("new cloud conversation"),
+                ],
+                |ctx| {
+                    ctx.dispatch_typed_action(TerminalAction::EnterCloudAgentView);
+                },
+                mouse_states.start_cloud_conversation.clone(),
+            ));
         }
 
         // Code review only works locally.
