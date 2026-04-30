@@ -776,13 +776,9 @@ impl RemoteServerManager {
                 .remove_remote_server_binary()
                 .with_timeout(REMOVAL_TIMEOUT)
                 .await
-                .unwrap_or_else(|_| {
-                    Err(anyhow::anyhow!("timed out after {REMOVAL_TIMEOUT:?}"))
-                })
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("timed out after {REMOVAL_TIMEOUT:?}")))
             {
-                log::warn!(
-                    "Failed to remove stale remote binary for session {session_id:?}: {e}"
-                );
+                log::warn!("Failed to remove stale remote binary for session {session_id:?}: {e}");
             }
             return Err(ConnectAndHandshakeError::Initialize(anyhow::anyhow!(
                 "remote server version mismatch (client: {client_version:?}, \

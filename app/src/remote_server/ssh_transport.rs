@@ -98,9 +98,7 @@ impl RemoteTransport for SshTransport {
         })
     }
 
-    fn check_binary(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
+    fn check_binary(&self) -> Pin<Box<dyn Future<Output = Result<bool, String>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             let bin_path = remote_server::setup::remote_server_binary();
@@ -128,9 +126,7 @@ impl RemoteTransport for SshTransport {
         })
     }
 
-    fn check_has_old_binary(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = anyhow::Result<bool>> + Send>> {
+    fn check_has_old_binary(&self) -> Pin<Box<dyn Future<Output = anyhow::Result<bool>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             // Treat the existence of the remote-server install directory
@@ -163,9 +159,7 @@ impl RemoteTransport for SshTransport {
         })
     }
 
-    fn install_binary(
-        &self,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
+    fn install_binary(&self) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send>> {
         let socket_path = self.socket_path.clone();
         Box::pin(async move {
             let script = remote_server::setup::install_script();
