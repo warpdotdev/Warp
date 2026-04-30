@@ -357,13 +357,18 @@ fn replace_unicode_word_boundaries(pattern: &str) -> String {
             in_character_class = false;
         }
 
-        if c == '\\'
-            && !in_character_class
-            && !is_escaped
-            && chars.peek().is_some_and(|(_, next)| *next == 'b')
-        {
-            result.push_str("(?-u:\\b)");
-            chars.next();
+        if c == '\\' && !in_character_class && !is_escaped {
+            match chars.peek().map(|(_, next)| *next) {
+                Some('b') => {
+                    result.push_str("(?-u:\\b)");
+                    chars.next();
+                }
+                Some('B') => {
+                    result.push_str("(?-u:\\B)");
+                    chars.next();
+                }
+                _ => result.push(c),
+            }
         } else {
             result.push(c);
         }
@@ -390,16 +395,23 @@ mod tests {
             replace_unicode_word_boundaries(r"\bTOKEN\b"),
             r"(?-u:\b)TOKEN(?-u:\b)"
         );
+
+        assert_eq!(
+            replace_unicode_word_boundaries(r"\B_TOKEN\B"),
+            r"(?-u:\B)_TOKEN(?-u:\B)"
+        );
     }
 
     #[test]
     fn preserves_escaped_literal_backslash_b() {
         assert_eq!(replace_unicode_word_boundaries(r"\\bTOKEN"), r"\\bTOKEN");
+        assert_eq!(replace_unicode_word_boundaries(r"\\BTOKEN"), r"\\BTOKEN");
     }
 
     #[test]
     fn preserves_backslash_b_in_character_classes() {
         assert_eq!(replace_unicode_word_boundaries(r"[\b]TOKEN"), r"[\b]TOKEN");
+        assert_eq!(replace_unicode_word_boundaries(r"[\B]TOKEN"), r"[\B]TOKEN");
     }
 
     #[test]
