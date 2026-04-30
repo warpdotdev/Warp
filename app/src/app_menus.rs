@@ -381,7 +381,21 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
         updateable_custom_item_without_checkmark(CustomAction::NavigationPalette, ctx),
         updateable_custom_item_without_checkmark(CustomAction::LaunchConfigPalette, ctx),
         updateable_custom_item_without_checkmark(CustomAction::FilesPalette, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::ToggleConversationListView, ctx),
+    ];
+
+    // The `ToggleConversationListView` action only has a registered
+    // description and key bindings when this flag is enabled (see
+    // `crate::workspace::mod`). Inserting it unconditionally caused
+    // `default_name` to trip its `debug_assert!` in OSS/dogfood/preview
+    // builds and rendered `<NO DESCRIPTION>` in release builds.
+    if FeatureFlag::AgentViewConversationListView.is_enabled() {
+        items.push(updateable_custom_item_without_checkmark(
+            CustomAction::ToggleConversationListView,
+            ctx,
+        ));
+    }
+
+    items.extend([
         updateable_custom_item_without_checkmark(CustomAction::ToggleProjectExplorer, ctx),
         updateable_custom_item_without_checkmark(CustomAction::ToggleGlobalSearch, ctx),
         MenuItem::Separator,
@@ -435,7 +449,7 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
             },
             None,
         )),
-    ];
+    ]);
 
     let is_compact_mode = matches!(
         TerminalSettings::handle(ctx)
