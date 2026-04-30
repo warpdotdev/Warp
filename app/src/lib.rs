@@ -1994,19 +1994,6 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             crash_reporting::uninit_sentry();
         })),
         on_should_close_window: Some(Box::new(move |window_id, ctx| {
-            let general_settings = GeneralSettings::as_ref(ctx);
-            // On Linux or Windows, if we're about to close the final window, we should quit the app instead.
-            // On Mac, we do this conditionally based on a user setting.
-            let quit_on_last_window_closed = cfg!(any(target_os = "linux", windows))
-                || *general_settings.quit_on_last_window_closed;
-            if ctx.window_ids().count() == 1 && quit_on_last_window_closed {
-                log::info!("No windows left, terminating app");
-                ctx.terminate_app(TerminationMode::Cancellable, None);
-                return ApproveTerminateResult::Cancel;
-            }
-
-            let summary = UnsavedStateSummary::for_window(window_id, ctx);
-
             send_telemetry_from_app_ctx!(
                 TelemetryEvent::UserInitiatedClose {
                     initiated_on: CloseTarget::Window,
@@ -2014,28 +2001,63 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
                 ctx
             );
 
-            // Don't show dialog on integration test. Machine can't press buttons.
-            if !is_integration_test && summary.should_display_warning(ctx) {
-                let shown = summary
-                    .dialog()
-                    .on_confirm(move |ctx| {
-                        ctx.windows()
-                            .close_window(window_id, TerminationMode::ForceTerminate);
-                    })
-                    .on_cancel(move |ctx| {
-                        on_close_window_cancelled(window_id, false, ctx);
-                    })
-                    .on_show_processes(move |ctx| {
-                        on_close_window_cancelled(window_id, true, ctx);
-                    })
-                    .show(ctx);
-                if shown {
-                    ApproveTerminateResult::Cancel
+            let general_settings = GeneralSettings::as_ref(ctx);
+
+            #[cfg(target_os = "macos")]
+            {
+                let window_ids = ctx.window_ids().collect_vec();
+                let window_visibility = window_ids
+                    .iter()
+                    .map(|id| (*id, ctx.windows().is_window_visible(*id)))
+                    .collect_vec();
+                let is_closing_last_visible_window =
+                    is_closing_last_visible_window(window_id, &window_visibility);
+
+                if is_closing_last_visible_window && *general_settings.quit_on_last_window_closed {
+                    log::info!("No windows left, terminating app");
+                    ctx.terminate_app(TerminationMode::Cancellable, None);
+                } else {
+                    ctx.windows().hide_window(window_id);
+                }
+                ApproveTerminateResult::Cancel
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                // On Linux or Windows, if we're about to close the final window, we should quit the app instead.
+                let quit_on_last_window_closed = cfg!(any(target_os = "linux", windows))
+                    || *general_settings.quit_on_last_window_closed;
+                if ctx.window_ids().count() == 1 && quit_on_last_window_closed {
+                    log::info!("No windows left, terminating app");
+                    ctx.terminate_app(TerminationMode::Cancellable, None);
+                    return ApproveTerminateResult::Cancel;
+                }
+
+                let summary = UnsavedStateSummary::for_window(window_id, ctx);
+
+                // Don't show dialog on integration test. Machine can't press buttons.
+                if !is_integration_test && summary.should_display_warning(ctx) {
+                    let shown = summary
+                        .dialog()
+                        .on_confirm(move |ctx| {
+                            ctx.windows()
+                                .close_window(window_id, TerminationMode::ForceTerminate);
+                        })
+                        .on_cancel(move |ctx| {
+                            on_close_window_cancelled(window_id, false, ctx);
+                        })
+                        .on_show_processes(move |ctx| {
+                            on_close_window_cancelled(window_id, true, ctx);
+                        })
+                        .show(ctx);
+                    if shown {
+                        ApproveTerminateResult::Cancel
+                    } else {
+                        ApproveTerminateResult::Terminate
+                    }
                 } else {
                     ApproveTerminateResult::Terminate
                 }
-            } else {
-                ApproveTerminateResult::Terminate
             }
         })),
         on_should_terminate_app: Some(Box::new(move |ctx| {
@@ -2116,7 +2138,11 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             // e.g. clicking on the Dock icon. It is NOT called from the New Window
             // menu item.
             App::record_last_active_timestamp();
-            ctx.dispatch_global_action("root_view:open_new", &());
+            if let Some(window_id) = ctx.windows().frontmost_window_id() {
+                ctx.windows().show_window_and_focus_app(window_id);
+            } else {
+                ctx.dispatch_global_action("root_view:open_new", &());
+            }
             ctx.dispatch_global_action("workspace:save_app", &());
         })),
         on_open_urls: Some(Box::new(move |urls, ctx| {
@@ -2256,6 +2282,86 @@ fn on_close_app_cancelled(open_navigation_palette: bool, ctx: &mut AppContext) {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn is_closing_last_visible_window(
+    window_id: WindowId,
+    window_visibility: &[(WindowId, Option<bool>)],
+) -> bool {
+    if window_visibility
+        .iter()
+        .any(|(_, visible)| visible.is_none())
+    {
+        return window_visibility.len() == 1
+            && window_visibility
+                .first()
+                .is_some_and(|(id, _)| *id == window_id);
+    }
+
+    let mut visible_window_ids = window_visibility
+        .iter()
+        .filter_map(|(id, visible)| visible.unwrap_or(false).then_some(*id));
+
+    visible_window_ids
+        .next()
+        .is_some_and(|visible_window_id| visible_window_id == window_id)
+        && visible_window_ids.next().is_none()
+}
+
+#[cfg(test)]
+#[cfg(target_os = "macos")]
+mod window_close_tests {
+    use super::*;
+
+    #[test]
+    fn test_closing_last_visible_window_ignores_hidden_windows() {
+        let visible_window = WindowId::from_usize(1);
+
+        assert!(is_closing_last_visible_window(
+            visible_window,
+            &[
+                (visible_window, Some(true)),
+                (WindowId::from_usize(2), Some(false)),
+                (WindowId::from_usize(3), Some(false)),
+            ],
+        ));
+    }
+
+    #[test]
+    fn test_closing_last_visible_window_requires_no_other_visible_windows() {
+        let closing_window = WindowId::from_usize(1);
+        let other_visible_window = WindowId::from_usize(2);
+
+        assert!(!is_closing_last_visible_window(
+            closing_window,
+            &[
+                (closing_window, Some(true)),
+                (other_visible_window, Some(true)),
+                (WindowId::from_usize(3), Some(false)),
+            ],
+        ));
+    }
+
+    #[test]
+    fn test_closing_last_visible_window_falls_back_when_visibility_unknown() {
+        assert!(is_closing_last_visible_window(
+            WindowId::from_usize(1),
+            &[(WindowId::from_usize(1), None)],
+        ));
+        assert!(!is_closing_last_visible_window(
+            WindowId::from_usize(1),
+            &[
+                (WindowId::from_usize(1), None),
+                (WindowId::from_usize(2), Some(false)),
+            ],
+        ));
+        assert!(!is_closing_last_visible_window(
+            WindowId::from_usize(1),
+            &[(WindowId::from_usize(2), None)],
+        ));
+    }
+}
+
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn on_close_window_cancelled(
     window_id: WindowId,
     open_navigation_palette: bool,

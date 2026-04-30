@@ -91,18 +91,33 @@ impl warpui_core::platform::WindowManager for WindowManager {
         window_id: WindowId,
         _behavior: platform::WindowFocusBehavior,
     ) {
+        if let Some(window) = self.windows.get(&window_id) {
+            window.set_visible(true);
+        }
         self.set_active_window(Some(window_id));
     }
 
     fn hide_app(&self) {
-        // No-op.
+        for window in self.windows.values() {
+            window.set_visible(false);
+        }
+        self.set_active_window(None);
     }
 
     fn hide_window(&self, window_id: WindowId) {
+        if let Some(window) = self.windows.get(&window_id) {
+            window.set_visible(false);
+        }
         // If hiding the active window, clear focus.
         if *self.active_window.borrow() == Some(window_id) {
             self.set_active_window(None);
         }
+    }
+
+    fn is_window_visible(&self, window_id: WindowId) -> Option<bool> {
+        self.windows
+            .get(&window_id)
+            .map(|window| window.is_visible())
     }
 
     fn set_window_bounds(&self, window_id: WindowId, bound: RectF) {
@@ -176,6 +191,7 @@ pub struct Window {
     callbacks: WindowCallbacks,
     bounds: RefCell<RectF>,
     fullscreen_state: RefCell<platform::FullscreenState>,
+    visible: RefCell<bool>,
 }
 
 impl Window {
@@ -189,11 +205,20 @@ impl Window {
             callbacks,
             bounds: RefCell::new(bounds),
             fullscreen_state: RefCell::new(options.fullscreen_state),
+            visible: RefCell::new(true),
         }
     }
 
     fn set_bounds(&self, rect: RectF) {
         *self.bounds.borrow_mut() = rect;
+    }
+
+    fn set_visible(&self, visible: bool) {
+        *self.visible.borrow_mut() = visible;
+    }
+
+    fn is_visible(&self) -> bool {
+        *self.visible.borrow()
     }
 }
 

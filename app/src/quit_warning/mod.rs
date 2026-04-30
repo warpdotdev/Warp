@@ -27,6 +27,7 @@ enum QuitScope<'a> {
         pane_id: PaneId,
     },
     Tabs(Vec<WeakViewHandle<PaneGroup>>),
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     Window(WindowId),
     App,
     #[allow(dead_code)]
@@ -207,6 +208,7 @@ impl UnsavedStateSummary<'static> {
         Self::for_scope(QuitScope::App, ctx)
     }
 
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn for_window(window_id: WindowId, ctx: &mut AppContext) -> Self {
         Self::for_scope(QuitScope::Window(window_id), ctx)
     }

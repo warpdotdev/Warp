@@ -583,6 +583,9 @@ pub trait WindowManager {
     fn show_window_and_focus_app(&self, window_id: WindowId, behavior: WindowFocusBehavior);
     fn hide_app(&self);
     fn hide_window(&self, window_id: WindowId);
+    fn is_window_visible(&self, _window_id: WindowId) -> Option<bool> {
+        None
+    }
     fn set_window_bounds(&self, window_id: WindowId, bound: RectF);
 
     /// Sets the background blur radius for all windows to the given `blur_radius_pixels` value.
