@@ -79,30 +79,6 @@ fn available_harness_models_info_for_id_finds_match() {
 }
 
 #[test]
-fn available_harness_models_default_falls_back_to_first() {
-    // When the configured default id isn't in the model list, the helper should fall back
-    // to the first available model so callers can still render *something*.
-    let models = AvailableHarnessModels {
-        default_model_id: "missing".to_owned(),
-        models: vec![HarnessModelInfo {
-            id: "sonnet".to_owned(),
-            display_name: "Claude Sonnet".to_owned(),
-        }],
-    };
-
-    assert_eq!(
-        models.default_model_info().map(|m| m.id.as_str()),
-        Some("sonnet"),
-    );
-}
-
-#[test]
-fn available_harness_models_default_is_empty_when_no_models() {
-    let models = AvailableHarnessModels::default();
-    assert!(models.default_model_info().is_none());
-}
-
-#[test]
 fn available_harness_models_round_trip_serde() {
     // Cache write/read path serializes to JSON; ensure round-trip preserves values.
     let models = AvailableHarnessModels {

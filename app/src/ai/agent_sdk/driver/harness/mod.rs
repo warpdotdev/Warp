@@ -324,8 +324,6 @@ pub(crate) fn harness_model_env_vars(
         return env_vars;
     };
 
-    // Use exhaustive matching here so adding new harness variants (e.g. OpenCode, Gemini)
-    // requires us to consider whether they need their own model env var.
     match selected_harness {
         Harness::Claude => {
             env_vars.insert(OsString::from("ANTHROPIC_MODEL"), OsString::from(model_id));

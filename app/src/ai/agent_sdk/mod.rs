@@ -384,7 +384,6 @@ fn build_merged_config_and_task(
         None => Vec::new(),
     };
 
-    // Only validate the model ID as an Oz LLM when the Oz harness is active.
     let model_override: Option<LLMId> = merged_config
         .model_id
         .as_deref()
@@ -435,7 +434,6 @@ fn build_server_side_task(
         None => Vec::new(),
     };
 
-    // When a non-Oz harness is active, --model targets the harness rather than the Oz model.
     let harness_model_id = if args.harness != Harness::Oz {
         args.model.model.clone()
     } else {

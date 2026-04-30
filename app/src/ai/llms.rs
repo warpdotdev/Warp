@@ -48,20 +48,16 @@ pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -
 pub const MODELS_BY_FEATURE_CACHE_KEY: &str = "AvailableLLMs";
 
 /// Key for cached harness models in user preferences.
-/// Stores a serialized `HashMap<String, AvailableHarnessModels>` keyed by harness config name.
+/// Stores a serialized `HashMap<Harness, AvailableHarnessModels>` (JSON keys are the lowercase
+/// harness names produced by `Harness`'s serde representation, e.g. `"claude"`).
 pub const HARNESS_MODELS_CACHE_KEY: &str = "HarnessModels";
 
-/// Metadata about a single model supported by a third-party harness.
-///
-/// Unlike [`LLMInfo`], this is a thin shape — harness models are simple opaque IDs
-/// (e.g. `"opus"`, `"sonnet"`) that the harness CLI interprets directly.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct HarnessModelInfo {
     pub id: String,
     pub display_name: String,
 }
 
-/// The set of models available for a particular third-party harness.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct AvailableHarnessModels {
     pub default_model_id: String,
@@ -71,11 +67,6 @@ pub struct AvailableHarnessModels {
 impl AvailableHarnessModels {
     pub fn info_for_id(&self, id: &str) -> Option<&HarnessModelInfo> {
         self.models.iter().find(|m| m.id == id)
-    }
-
-    pub fn default_model_info(&self) -> Option<&HarnessModelInfo> {
-        self.info_for_id(&self.default_model_id)
-            .or_else(|| self.models.first())
     }
 }
 
@@ -557,11 +548,11 @@ pub struct LLMPreferences {
     // from the base LLM for the active profile. This means that if the user selects the
     // profile's default model and changes their profile, the model will update to that profile's default.
     base_llm_for_terminal_view: HashMap<EntityId, LLMId>,
-    /// Models supported by each third-party harness, keyed by harness config name (e.g. `"claude"`).
+    /// Models supported by each third-party harness, keyed by [`Harness`].
     /// Populated lazily as the user opens the harness model selector.
-    harness_models: HashMap<String, AvailableHarnessModels>,
-    /// Set of (harness-name) for which a fetch is in-flight, to dedupe redundant requests.
-    inflight_harness_model_fetches: HashSet<String>,
+    harness_models: HashMap<Harness, AvailableHarnessModels>,
+    /// Set of harnesses for which a fetch is in-flight, to dedupe redundant requests.
+    inflight_harness_model_fetches: HashSet<Harness>,
 }
 
 impl LLMPreferences {
@@ -1098,7 +1089,7 @@ impl LLMPreferences {
     }
 
     pub fn get_harness_models(&self, harness: Harness) -> Option<&AvailableHarnessModels> {
-        self.harness_models.get(&harness.to_string())
+        self.harness_models.get(&harness)
     }
 
     /// Returns the choices to display in the cloud model selector for a third-party harness.
@@ -1107,7 +1098,7 @@ impl LLMPreferences {
         harness: Harness,
     ) -> impl Iterator<Item = &HarnessModelInfo> {
         self.harness_models
-            .get(&harness.to_string())
+            .get(&harness)
             .into_iter()
             .flat_map(|m| m.models.iter())
     }
@@ -1123,20 +1114,17 @@ impl LLMPreferences {
             return;
         }
 
-        let harness_key = harness.to_string();
-        if !self
-            .inflight_harness_model_fetches
-            .insert(harness_key.clone())
-        {
+        if !self.inflight_harness_model_fetches.insert(harness) {
             return;
         }
 
         let ai_api_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let harness_for_request = harness_key.clone();
+        // The REST endpoint takes the lowercase harness name as a query string param.
+        let harness_name = harness.to_string();
         ctx.spawn(
-            async move { ai_api_client.get_harness_models(&harness_for_request).await },
+            async move { ai_api_client.get_harness_models(&harness_name).await },
             move |me, result, ctx| {
-                me.inflight_harness_model_fetches.remove(&harness_key);
+                me.inflight_harness_model_fetches.remove(&harness);
                 match result {
                     Ok(response) => {
                         let new_value = AvailableHarnessModels {
@@ -1152,17 +1140,17 @@ impl LLMPreferences {
                         };
                         let changed = me
                             .harness_models
-                            .get(&harness_key)
+                            .get(&harness)
                             .is_none_or(|existing| existing != &new_value);
                         if changed {
-                            me.harness_models.insert(harness_key.clone(), new_value);
+                            me.harness_models.insert(harness, new_value);
                             me.persist_harness_models(ctx);
                             ctx.emit(LLMPreferencesEvent::UpdatedHarnessModels);
                         }
                     }
                     Err(e) => {
                         report_error!(
-                            e.context(format!("Failed to fetch harness models for {harness_key}"))
+                            e.context(format!("Failed to fetch harness models for {harness}"))
                         );
                     }
                 }
@@ -1247,13 +1235,13 @@ fn get_cached_models(app: &mut AppContext) -> Option<ModelsByFeature> {
 /// Loads the per-harness model cache from disk.
 fn get_cached_harness_models(
     app: &mut AppContext,
-) -> Option<HashMap<String, AvailableHarnessModels>> {
+) -> Option<HashMap<Harness, AvailableHarnessModels>> {
     let value = app
         .private_user_preferences()
         .read_value(HARNESS_MODELS_CACHE_KEY)
         .ok()
         .flatten()?;
-    match serde_json::from_str::<HashMap<String, AvailableHarnessModels>>(value.as_str()) {
+    match serde_json::from_str::<HashMap<Harness, AvailableHarnessModels>>(value.as_str()) {
         Ok(cached) => Some(cached),
         Err(e) => {
             log::warn!("Failed to deserialize cached harness models: {e}");

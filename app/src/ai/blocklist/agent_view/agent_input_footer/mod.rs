@@ -844,6 +844,11 @@ impl AgentInputFooter {
     }
 
     fn render_cloud_mode_v2_footer(&self, app: &AppContext) -> Box<dyn Element> {
+        // `app` is only consumed under the `voice_input` cfg below; reference it here so the
+        // parameter doesn't trip the unused-variable lint when the feature is disabled.
+        #[cfg(not(feature = "voice_input"))]
+        let _ = app;
+
         let mut left = Flex::row()
             .with_main_axis_size(MainAxisSize::Min)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
