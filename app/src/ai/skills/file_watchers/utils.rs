@@ -14,6 +14,46 @@ use warpui::AppContext;
 
 use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
 
+/// Max directory depth walked below a lazy node when searching for provider skill dirs.
+const MAX_LAZY_WALK_DEPTH: usize = 3;
+
+/// Walks `dir` up to `MAX_LAZY_WALK_DEPTH` levels deep, probing each level for
+/// provider skill directories. `.git` entries are pruned to avoid crossing nested
+/// repository boundaries.
+fn probe_lazy_subtree(
+    dir: &Path,
+    depth: usize,
+    result_set: &mut HashSet<PathBuf>,
+    result: &mut Vec<PathBuf>,
+) {
+    for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
+        let skills_path = dir.join(&provider.skills_path);
+        if !result_set.contains(&skills_path) && skills_path.is_dir() {
+            result_set.insert(skills_path.clone());
+            result.push(skills_path);
+        }
+    }
+
+    if depth >= MAX_LAZY_WALK_DEPTH {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        // Prune .git to avoid crossing nested repository boundaries.
+        if path.file_name().and_then(|n| n.to_str()) == Some(".git") {
+            continue;
+        }
+        probe_lazy_subtree(&path, depth + 1, result_set, result);
+    }
+}
+
 /// Returns all skill directories in the repo tree (e.g. `/repo/.agents/skills/`).
 ///
 /// Uses two passes to handle gitignored provider directories:
@@ -21,11 +61,11 @@ use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
 /// - **Pass 1:** collect fully-loaded dirs ending with a known provider skills path.
 /// - **Pass 2:** collect lazy-loaded dirs (`loaded: false`) and probe with `is_dir()`:
 ///   - *(a)* lazy dir is a provider root (`.agents`, `.claude`, …) → probe `{dir}/skills`.
-///   - *(b)* lazy dir is a parent (e.g. gitignored `sub-project/`) → probe
-///     `{dir}/{provider_path}` for every known provider.
+///   - *(b)* lazy dir is an ancestor of a provider root → walk up to
+///     `MAX_LAZY_WALK_DEPTH` levels, probing for provider paths at each level.
 ///
 /// Pass 2 scope is bounded by the tree: lazy dirs only appear as children of indexed
-/// parents, so subtrees below a lazy node are never reached.
+/// parents, so the walk starts from directories the indexer already encountered.
 pub fn find_skill_directories_in_tree(
     repo_path: &Path,
     repo_metadata: &RepoMetadataModel,
@@ -104,15 +144,9 @@ pub fn find_skill_directories_in_tree(
                 result.push(skills_path);
             }
         } else {
-            // Case (b): lazy dir may be a parent of a provider root — probe
-            // {dir}/{provider_path} for each known provider.
-            for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
-                let skills_path = lazy_dir.join(&provider.skills_path);
-                if !result_set.contains(&skills_path) && skills_path.is_dir() {
-                    result_set.insert(skills_path.clone());
-                    result.push(skills_path);
-                }
-            }
+            // Case (b): lazy dir may be an ancestor of a provider root — walk
+            // its subtree up to MAX_LAZY_WALK_DEPTH levels.
+            probe_lazy_subtree(&lazy_dir, 0, &mut result_set, &mut result);
         }
     }
 

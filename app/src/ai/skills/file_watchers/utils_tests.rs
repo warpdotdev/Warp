@@ -815,11 +815,7 @@ fn find_skill_directories_in_tree_finds_skills_in_lazy_loaded_provider_dir() {
     });
 }
 
-/// Regression test for warpdotdev/warp#9486 — parent of provider root is lazy-loaded.
-///
-/// When `sub-project/` is itself gitignored the tree contains it with `loaded: false`
-/// and no children, so `.agents/` is never indexed. Pass 2 Case (b) probes
-/// `{lazy_dir}/{provider_path}` for every known provider, which covers this scenario.
+/// Pass 2 Case (b): lazy dir is a direct parent of the provider root.
 #[test]
 fn find_skill_directories_in_tree_finds_skills_when_parent_dir_is_lazy_loaded() {
     VirtualFS::test("find_lazy_parent_skills", |dirs, mut vfs| {
@@ -878,6 +874,73 @@ fn find_skill_directories_in_tree_finds_skills_when_parent_dir_is_lazy_loaded() 
                 let skills = read_skills_from_directories(skill_dirs);
                 assert_eq!(skills.len(), 1);
                 assert_eq!(skills[0].name, "sub-skill");
+            });
+        });
+    });
+}
+
+/// Pass 2 Case (b): lazy dir is a deeper ancestor of the provider root
+/// (e.g. `packages/` is lazy, skills live at `packages/frontend/.agents/skills/`).
+#[test]
+fn find_skill_directories_in_tree_finds_skills_in_nested_lazy_ancestor() {
+    VirtualFS::test("find_nested_lazy_ancestor_skills", |dirs, mut vfs| {
+        let repo = dirs.tests().join("repo");
+
+        vfs.mkdir("repo/packages/frontend/.agents/skills/nested-skill")
+            .with_files(vec![Stub::FileWithContent(
+                "repo/packages/frontend/.agents/skills/nested-skill/SKILL.md",
+                "---\nname: nested-skill\ndescription: test\n---\n# nested-skill",
+            )]);
+
+        // packages/ is lazy-loaded — frontend/ and .agents/ are absent from the tree.
+        let packages = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(
+                &repo.join("packages"),
+            )
+            .unwrap(),
+            children: vec![],
+            ignored: true,
+            loaded: false,
+        });
+        let root = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(&repo).unwrap(),
+            children: vec![packages],
+            ignored: false,
+            loaded: true,
+        });
+
+        App::test((), |mut app| async move {
+            let watcher = app.add_singleton_model(DirectoryWatcher::new);
+            app.add_singleton_model(|_| DetectedRepositories::default());
+            let repo_handle = watcher.update(&mut app, |w, ctx| {
+                w.add_directory(
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                        .unwrap(),
+                    ctx,
+                )
+                .unwrap()
+            });
+            let state = FileTreeState::new(root, vec![], Some(repo_handle));
+
+            let model_handle = app.add_singleton_model(RepoMetadataModel::new);
+            model_handle.update(&mut app, |model, ctx| {
+                let key =
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                        .unwrap();
+                model.insert_test_state(key, state, ctx);
+            });
+
+            model_handle.read(&app, |model, ctx| {
+                let skill_dirs = find_skill_directories_in_tree(&repo, model, ctx);
+                assert_eq!(skill_dirs.len(), 1);
+                assert!(
+                    skill_dirs.contains(&repo.join("packages/frontend/.agents/skills")),
+                    "expected packages/frontend/.agents/skills, got: {skill_dirs:?}"
+                );
+
+                let skills = read_skills_from_directories(skill_dirs);
+                assert_eq!(skills.len(), 1);
+                assert_eq!(skills[0].name, "nested-skill");
             });
         });
     });
