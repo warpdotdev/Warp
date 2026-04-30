@@ -82,6 +82,19 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
         &self,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<bool, String>> + Send>>;
 
+    /// Checks whether the remote host already has an existing install
+    /// of the remote server binary.
+    ///
+    /// Used by the manager to distinguish a fresh install (no prior
+    /// install on disk, user should be prompted) from an update (prior
+    /// install present, install should happen automatically).
+    ///
+    /// Returns `Ok(true)` if a prior install was detected, `Ok(false)`
+    /// if not, and `Err(_)` on SSH failure.
+    fn check_has_old_binary(
+        &self,
+    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<bool>> + Send>>;
+
     /// Installs the remote server binary on the remote host.
     ///
     /// Pure I/O — does not emit any events. The caller
@@ -108,4 +121,18 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
         &self,
         executor: std::sync::Arc<executor::Background>,
     ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<Connection>> + Send>>;
+
+    /// Remove the remote server binary, forcing a reinstall on the next
+    /// [`install_binary`] call.
+    ///
+    /// Called by the manager after the initialize handshake reports a
+    /// version that disagrees with the client's: the file at the expected
+    /// path is stale/wrong, so we remove it so the next setup sees a miss
+    /// and reinstalls from the CDN instead of looping on the same bad
+    /// binary.
+    ///
+    /// [`install_binary`]: RemoteTransport::install_binary
+    fn remove_remote_server_binary(
+        &self,
+    ) -> Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send>>;
 }

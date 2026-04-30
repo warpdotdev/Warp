@@ -17,7 +17,11 @@ use crate::transport::RemoteTransport;
 use crate::HostId;
 use repo_metadata::RepoMetadataUpdate;
 use serde::Serialize;
+#[cfg(not(target_family = "wasm"))]
+use warp_core::channel::ChannelState;
 use warp_core::SessionId;
+#[cfg(not(target_family = "wasm"))]
+use warpui::r#async::FutureExt as _;
 use warpui::{Entity, ModelContext, ModelSpawner, SingletonEntity};
 
 /// Maximum number of reconnection attempts after a spontaneous disconnect.
@@ -113,6 +117,27 @@ impl RemoteServerErrorKind {
             | ClientError::UnexpectedResponse
             | ClientError::FileOperationFailed(_) => Self::Other,
         }
+    }
+}
+
+/// Returns `true` if the client and server are on compatible versions for
+/// the initialize handshake.
+///
+/// Semantics:
+/// - Both sides carry a non-empty release tag (`Some(_)` client, non-empty
+///   `server` string): the tags must match exactly. Mismatched releases
+///   cause the manager to tear the session down and delete the stale
+///   binary so the next reconnect reinstalls.
+/// - Both sides are unknown (client `None` and server reports an empty
+///   string): treat as compatible. This preserves the `cargo run` +
+///   `script/deploy_remote_server` dev loop, where neither side reports a
+///   release tag.
+#[cfg(not(target_family = "wasm"))]
+fn version_is_compatible(client: Option<&str>, server: &str) -> bool {
+    match (client, server.is_empty()) {
+        (Some(c), false) => c == server,
+        (None, true) => true,
+        (Some(_), true) | (None, false) => false,
     }
 }
 
@@ -289,6 +314,14 @@ pub enum RemoteServerManagerEvent {
         /// The detected remote platform (OS + arch) from `uname -sm`.
         /// `None` if detection failed or was not attempted.
         remote_platform: Option<RemotePlatform>,
+        /// `true` if the remote already has an existing install of the
+        /// remote-server binary, detected by probing whether the install
+        /// directory exists (see `RemoteTransport::check_has_old_binary`).
+        /// Combined with `result == Ok(false)`, this tells the controller
+        /// it should auto-install as an update instead of prompting the
+        /// user. `false` when no prior install was detected, or when the
+        /// detection itself failed.
+        has_old_binary: bool,
     },
     /// Result of [`RemoteServerManager::install_binary`]. Returns a result where:
     /// - `Ok(())` means the install succeeded, and
@@ -438,14 +471,32 @@ impl RemoteServerManager {
             let spawner = self.spawner.clone();
             ctx.background_executor()
                 .spawn(async move {
-                    // Run platform detection and binary check concurrently.
-                    let (platform_result, check_result) =
-                        futures::join!(transport.detect_platform(), transport.check_binary(),);
+                    // Run platform detection, binary check, and old-binary
+                    // check concurrently. The old-binary check lets the
+                    // controller distinguish fresh install (no prior
+                    // versioned binary) from update (prior versioned
+                    // binary present), so it can skip the install prompt
+                    // in the update case.
+                    let (platform_result, check_result, old_binary_result) = futures::join!(
+                        transport.detect_platform(),
+                        transport.check_binary(),
+                        transport.check_has_old_binary(),
+                    );
                     let platform = match platform_result {
                         Ok(p) => Some(p),
                         Err(e) => {
                             log::warn!("Platform detection failed for session {session_id:?}: {e}");
                             None
+                        }
+                    };
+                    let has_old_binary = match old_binary_result {
+                        Ok(has) => has,
+                        Err(e) => {
+                            log::warn!(
+                                "Old-binary detection failed for session {session_id:?}: {e}. \
+                                 Treating as fresh install."
+                            );
+                            false
                         }
                     };
                     let _ = spawner
@@ -465,6 +516,7 @@ impl RemoteServerManager {
                                 session_id,
                                 result: check_result,
                                 remote_platform: platform,
+                                has_old_binary,
                             });
                         })
                         .await;
@@ -483,6 +535,7 @@ impl RemoteServerManager {
         &mut self,
         session_id: SessionId,
         transport: T,
+        is_update: bool,
         ctx: &mut ModelContext<Self>,
     ) where
         T: RemoteTransport + 'static,
@@ -494,11 +547,16 @@ impl RemoteServerManager {
 
         #[cfg(not(target_family = "wasm"))]
         {
+            let setup_state = if is_update {
+                RemoteServerSetupState::Updating
+            } else {
+                RemoteServerSetupState::Installing {
+                    progress_percent: None,
+                }
+            };
             ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
                 session_id,
-                state: RemoteServerSetupState::Installing {
-                    progress_percent: None,
-                },
+                state: setup_state,
             });
             let spawner = self.spawner.clone();
             ctx.background_executor()
@@ -701,6 +759,35 @@ impl RemoteServerManager {
             .initialize(auth_token.as_deref())
             .await
             .map_err(|e| ConnectAndHandshakeError::Initialize(anyhow::anyhow!("{e:#}")))?;
+
+        // Version compatibility check. If the server reports a different release
+        // tag than the client expects, the binary on disk is stale. Remove it so
+        // the next reconnect (or explicit reconnect by the user) will reinstall.
+        let client_version = ChannelState::app_version();
+        if !version_is_compatible(client_version, &resp.server_version) {
+            log::warn!(
+                "Remote server version mismatch for session {session_id:?}: \
+                 client={client_version:?}, server={:?}. Removing stale binary.",
+                resp.server_version
+            );
+
+            const REMOVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+            if let Err(e) = transport
+                .remove_remote_server_binary()
+                .with_timeout(REMOVAL_TIMEOUT)
+                .await
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("timed out after {REMOVAL_TIMEOUT:?}")))
+            {
+                log::warn!("Failed to remove stale remote binary for session {session_id:?}: {e}");
+            }
+            return Err(ConnectAndHandshakeError::Initialize(anyhow::anyhow!(
+                "remote server version mismatch (client: {client_version:?}, \
+                 server: {:?}); reconnect to reinstall",
+                resp.server_version
+            )));
+        }
+
         Ok(HostId::new(resp.host_id))
     }
 
