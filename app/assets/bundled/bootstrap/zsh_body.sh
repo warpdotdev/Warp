@@ -899,26 +899,39 @@ printf '$OSC_START$DCS_JSON_MARKER$OSC_PARAM_SEPARATOR%s$OSC_END' "'$hook'"
 if test ! -e "'$HOME/.hushlogin'"; then
   # Modern Linux distros may use any of these forms:
   #   * /etc/motd as a regular file or symlink to /run/motd.dynamic
-  #   * /etc/motd as a directory (debconf style on some setups)
   #   * /etc/motd.d/* — concatenated fragments (Fedora / RHEL style)
   #   * /run/motd.dynamic — pre-rendered dynamic MotD (Ubuntu/Debian)
   # `test -f` follows symlinks and only succeeds for regular files, which
   # rules out the "/etc/motd is a directory" failure mode where the old
   # `cat /etc/motd` would error.
+  #
+  # Quoting note: this whole block runs on the *remote* shell but is embedded
+  # in a double-quoted heredoc that the local shell parses first. The remote
+  # for-loop variable and emit-tracker must be referenced as \$VAR so the
+  # local shell leaves the dollar-sign alone.
+  motd_emitted=0
   if test -f /etc/motd && test -r /etc/motd; then
     command -p cat /etc/motd
-  elif test -d /etc/motd.d; then
+    motd_emitted=1
+  fi
+  if test "\$motd_emitted" = 0 && test -d /etc/motd.d; then
     for motd_fragment in /etc/motd.d/*; do
-      test -f "$motd_fragment" && command -p cat "$motd_fragment"
+      if test -f "\$motd_fragment" && test -r "\$motd_fragment"; then
+        command -p cat "\$motd_fragment"
+        motd_emitted=1
+      fi
     done
-  elif test -r /run/motd.dynamic; then
-    command -p cat /run/motd.dynamic
-  elif test -r /run/motd; then
-    command -p cat /run/motd
-  elif test -r /usr/lib/motd; then
-    command -p cat /usr/lib/motd
-  elif test -r /usr/lib/motd.dynamic; then
-    command -p cat /usr/lib/motd.dynamic
+  fi
+  if test "\$motd_emitted" = 0; then
+    if test -r /run/motd.dynamic; then
+      command -p cat /run/motd.dynamic
+    elif test -r /run/motd; then
+      command -p cat /run/motd
+    elif test -r /usr/lib/motd; then
+      command -p cat /usr/lib/motd
+    elif test -r /usr/lib/motd.dynamic; then
+      command -p cat /usr/lib/motd.dynamic
+    fi
   fi
 fi
 
