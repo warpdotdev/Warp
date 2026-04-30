@@ -92,19 +92,21 @@ Today, codebase indexing is local-only: the filesystem walk, tree build, chunkin
 27. Indexing respects the filesystem permissions of the OS user running the remote daemon. If the daemon cannot read a file, that file is not indexed.
 
 28. The remote daemon uses its authenticated Warp credential only to call Warp services needed for indexing and sync. The credential is never displayed to the user, sent to the agent, or included in agent conversation context.
+29. Any remote client <> remote server proto message that can cause the daemon to make auth-required outbound Warp service requests must include the client's current auth token or request-scoped bearer credential. The daemon must reject those requests when the token is missing or invalid instead of treating the daemon's stored token as sufficient, so a process writing directly to the proxy socket cannot bypass authentication.
 
+30. Remote indexing does not change `ReadFiles`, `ApplyFileDiffs`, shell execution, or other remote agent tools. Those tools remain available regardless of whether remote indexing is enabled.
 29. Remote indexing does not change `ReadFiles`, `ApplyFileDiffs`, shell execution, or other remote agent tools. Those tools remain available regardless of whether remote indexing is enabled.
 
 ### Backend reachability and firewall behavior
-30. The v1 product assumes the remote daemon can reach `app.warp.dev`; that assumption has been checked with the initial target enterprise environments.
+31. The v1 product assumes the remote daemon can reach `app.warp.dev`; that assumption has been checked with the initial target enterprise environments.
 
-31. If the remote daemon cannot reach `app.warp.dev`, remote indexing fails with a user-readable error such as "Warp could not reach the backend from this remote host." The user can retry after fixing network access.
+32. If the remote daemon cannot reach `app.warp.dev`, remote indexing fails with a user-readable error such as "Warp could not reach the backend from this remote host." The user can retry after fixing network access.
 
-32. A backend-unreachable repo is not searchable. Warp should not pretend the feature is enabled if sync cannot complete.
+33. A backend-unreachable repo is not searchable. Warp should not pretend the feature is enabled if sync cannot complete.
 
 ### Local behavior must not regress
-33. Existing local codebase-indexing speedbumps, settings, indexing status, and retrieval behavior are unchanged.
+34. Existing local codebase-indexing speedbumps, settings, indexing status, and retrieval behavior are unchanged.
 
-34. Existing local settings continue to apply to local repos. Remote auto-indexing may have its own setting, but changing it does not unexpectedly toggle local indexing.
+35. Existing local settings continue to apply to local repos. Remote auto-indexing may have its own setting, but changing it does not unexpectedly toggle local indexing.
 
-35. If the remote-indexing feature flag is disabled, remote sessions behave as they do today: no remote `SearchCodebase`, no remote indexing speedbump, and no user-visible errors from the disabled feature.
+36. If the remote-indexing feature flag is disabled, remote sessions behave as they do today: no remote `SearchCodebase`, no remote indexing speedbump, and no user-visible errors from the disabled feature.

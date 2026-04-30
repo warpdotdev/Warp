@@ -84,7 +84,7 @@ Avoid depending on unrelated `crates/ai` agent, MCP, terminal, or UI modules in 
 Add a daemon-side implementation of the `StoreClient` trait. It should use the APP-3801 daemon credential and a small HTTP/GraphQL client rather than depending on client-side `ServerApi`.
 
 Required behavior:
-- Reads the current token from `ServerModel::auth_token()` or an injected token provider immediately before each upstream request.
+- Reads the request-scoped token supplied by the remote client/server proto message for operations triggered by that message. The daemon may keep `ServerModel::auth_token()` or an injected token provider as the initialized token cache, but auth-required outbound Warp service requests must not be authorized solely by the cached daemon token.
 - Sends the same backend operations the local client sends today: config fetch, Merkle tree sync, embedding generation, intermediate-node update, cache population, relevant-fragment retrieval only if a future daemon-retrieval path needs it, and reranking only if a future daemon-retrieval path needs it.
 - Classifies errors into at least unauthenticated, backend unreachable, backend rejected, and internal/unknown so status UI can distinguish actionable failures.
 - Redacts tokens from logs and never persists them.
@@ -116,6 +116,8 @@ Extend `crates/remote_server/proto/remote_server.proto` with request/response an
 - `RetryCodebaseIndexing { repo_path }`
 - `HydrateCodebaseFragments { repo_path, content_hashes }`
 - `CodebaseIndexStatusUpdated { repo_path, status }`
+
+Any request message that can lead to auth-required outbound Warp service calls must carry the current client auth token or an equivalent request-scoped bearer credential in the proto payload. In this v1 protocol, that applies at minimum to `EnableCodebaseIndexing` and `RetryCodebaseIndexing`, because they can trigger config fetches, embedding generation, and index sync. If future versions let `HydrateCodebaseFragments` or daemon-side retrieval call Warp services, those messages must also carry the token before those outbound calls are added. Handlers must reject missing or invalid request-scoped tokens instead of falling back to the daemon's stored `auth_token`; the stored token is only a cache/initialization aid and must not make the proxy socket an ambient-authority boundary.
 
 `IndexStatus` should include:
 - `state`: not enabled, queued, indexing, ready, stale, failed, disabled, unavailable.
@@ -226,7 +228,7 @@ The daemon should not independently check the feature flag. If it receives a val
 ## 5. Testing and validation
 - Move existing codebase-index unit tests with the extracted crate and run them unchanged. This covers PRODUCT §21-24 and local non-regression in §33.
 - Add daemon-side `StoreClient` tests for token-present, missing-token, backend-unreachable, backend-rejected, and config-fetch behavior. This covers PRODUCT §25 and §30-32.
-- Add remote-server protocol/handler tests for enable, status, drop, retry, hydrate, and pushed status transitions. This covers PRODUCT §8-14 and §21-24.
+- Add remote-server protocol/handler tests for enable, status, drop, retry, hydrate, pushed status transitions, and rejection of auth-required requests that omit the request-scoped token. This covers PRODUCT §8-14, §21-24, and §29.
 - Add client `RemoteCodebaseIndexModel` tests for queued → indexing → ready, ready → stale → ready, failed → retry → ready, disabled, and unavailable transitions. This covers PRODUCT §10-14 and §17-19.
 - Add `SearchCodebaseExecutor` tests for remote ready, indexing, failed, unavailable, not indexed, and local fallback paths. Verify the remote ready path calls client `get_relevant_fragments`, daemon hydrate, client rerank, then remote `ReadFileContext` in order. This covers PRODUCT §15-20 and §29.
 - Add settings/speedbump UI tests or snapshots for local entries, remote entries, remote tag/host labeling, retry, drop, and independent local/remote automatic indexing settings. This covers PRODUCT §4-14 and §34.
@@ -241,6 +243,7 @@ The daemon should not independently check the feature flag. If it receives a val
 - **Status push loss during disconnect.** Mitigation: status is cached on the daemon and clients resync with `GetCodebaseIndexStatus` on reconnect.
 - **Snapshot corruption/version skew.** Mitigation: match local snapshot behavior by deleting bad snapshots and rebuilding.
 - **Credential exposure.** Mitigation: use APP-3801 token provider, never persist tokens, redact protocol logs, and ensure agent context never includes auth material.
+- **Proxy-socket auth bypass.** Mitigation: require request-scoped auth tokens on remote client/server proto messages before handlers make auth-required outbound Warp service requests; reject missing or invalid tokens instead of relying on daemon-stored credentials as ambient authority.
 - **Root hash staleness.** Mitigation: stale state keeps last ready root hash usable until a new ready hash arrives; failed sync does not overwrite the last ready hash.
 
 ## 7. Follow-ups
