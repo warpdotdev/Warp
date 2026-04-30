@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+# Bootstrap dispatches to the platform-specific install scripts. Each step
+# that needs root sources `script/warp_sudo` and asks for confirmation
+# before running. Pass -y / --yes (or set WARP_SKIP_SUDO_PROMPT=1) to skip
+# the prompts in unattended environments.
+
+for arg in "$@"; do
+  case "$arg" in
+    -y|--yes) export WARP_SKIP_SUDO_PROMPT=1 ;;
+  esac
+done
+
 OS_TYPE="$(uname -s)"
 
 if [[ "$OS_TYPE" = "Darwin" ]]; then
