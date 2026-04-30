@@ -478,8 +478,8 @@ impl UriHost {
             Self::Codex => W::default(),
             // Linear deeplink opens a new tab with agent view
             Self::Linear => W::default(),
-            // Tab config deeplink prefers existing window unless ?new_window=true.
-            Self::TabConfig => W::default(),
+            // Handler picks the window itself based on `?new_window=true`.
+            Self::TabConfig => W::Nothing,
         }
     }
 }
