@@ -96,21 +96,23 @@ impl CLIAgentSessionContext {
     }
 
     pub(crate) fn latest_user_prompt(&self) -> Option<String> {
-        self.query
-            .as_deref()
-            .map(str::trim)
-            .filter(|query| !query.is_empty())
-            .map(str::to_owned)
+        trim_non_empty(self.query.as_deref())
     }
 
-    /// Returns summary text suitable as a fallback title when no user prompt is available.
+    /// Returns text suitable as a fallback title when no user prompt is available.
+    /// Prefers `summary` (e.g. permission request text while blocked), then falls back
+    /// to `response` (the agent's final message after a Stop event).
     pub(crate) fn title_like_text(&self) -> Option<String> {
-        self.summary
-            .as_deref()
-            .map(str::trim)
-            .filter(|summary| !summary.is_empty())
-            .map(str::to_owned)
+        trim_non_empty(self.summary.as_deref())
+            .or_else(|| trim_non_empty(self.response.as_deref()))
     }
+}
+
+/// Trims whitespace and returns `Some` only if the result is non-empty.
+fn trim_non_empty(opt: Option<&str>) -> Option<String> {
+    opt.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
 }
 
 /// A tracked CLI agent session.
@@ -176,6 +178,7 @@ impl CLIAgentSession {
             CLIAgentEventType::Stop => {
                 self.session_context.query = event.payload.query.clone();
                 self.session_context.response = event.payload.response.clone();
+                self.session_context.summary = None;
                 CLIAgentSessionStatus::Success
             }
             CLIAgentEventType::PermissionRequest => {
