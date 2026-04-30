@@ -65,11 +65,11 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
 - Workspace and session management (`workspace/`)
 
 **Core Libraries**:
-- `warp_core/` - Core utilities and platform abstractions
-- `editor/` - Text editing functionality
-- `ui/` - Custom UI framework
-- `ipc/` - Inter-process communication
-- `graphql/` - GraphQL client and schema
+- `crates/warp_core/` - Core utilities and platform abstractions
+- `crates/editor/` - Text editing functionality
+- `crates/warpui/` and `crates/warpui_core/` - Custom UI framework
+- `crates/ipc/` - Inter-process communication
+- `crates/graphql/` - GraphQL client and schema
 
 ### Key Architectural Patterns
 
@@ -82,10 +82,10 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
 ### Development Guidelines
 
 **Workspace Structure**:
-- This is a Cargo workspace with 34+ member crates
-- Main binary is in `app/`, UI framework in `ui/`
+- This is a Cargo workspace with 60+ member crates
+- Main binary is in `app/`, UI framework in `crates/warpui/`
 - Platform-specific code is conditionally compiled
-- Integration tests are in `integration/`
+- Integration tests are in `crates/integration/`
 
 **Coding Style Preferences**:
 - Avoid unnecessary type annotations, especially in closure params.
@@ -134,11 +134,11 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
 
 **Database**:
 - Uses Diesel ORM with SQLite
-- Migrations in `migrations/` directory
-- Schema defined in `app/src/persistence/schema.rs`
+- Migrations in `crates/persistence/migrations/`
+- Schema defined in `crates/persistence/src/schema.rs`
 
 **GraphQL**:
-- Schema and client code generation from `graphql/api/schema.graphql`
+- Schema and client code generation from `crates/warp_graphql_schema/api/schema.graphql`
 - TypeScript types generated for frontend integration
 
 ### Feature Flags

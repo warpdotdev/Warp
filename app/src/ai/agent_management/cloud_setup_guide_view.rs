@@ -412,6 +412,7 @@ impl CloudSetupGuideView {
                 mouse_handles: Some(handles),
                 file_path: None,
             },
+            true,
             app,
             None,
         )

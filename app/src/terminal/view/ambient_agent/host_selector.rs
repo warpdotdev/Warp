@@ -123,6 +123,21 @@ impl HostSelector {
         self.is_menu_open
     }
 
+    /// Programmatically opens the host selector popover. No-op if already open.
+    pub fn open_menu(&mut self, ctx: &mut ViewContext<Self>) {
+        self.set_menu_visibility(true, ctx);
+    }
+
+    /// Highlights the currently-selected host in the menu. Called when the menu transitions
+    /// from closed to open so the user has a clear starting point for arrow-key navigation
+    /// instead of an unselected list.
+    fn highlight_selected_host(&mut self, ctx: &mut ViewContext<Self>) {
+        let selected_action = HostSelectorAction::SelectHost(self.selected);
+        self.menu.update(ctx, |menu, ctx| {
+            menu.set_selected_by_action(&selected_action, ctx);
+        });
+    }
+
     fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
         if self.is_menu_open == is_open {
             return;
@@ -130,6 +145,7 @@ impl HostSelector {
         self.is_menu_open = is_open;
         if is_open {
             ctx.focus(&self.menu);
+            self.highlight_selected_host(ctx);
         }
         ctx.emit(HostSelectorEvent::MenuVisibilityChanged { open: is_open });
         ctx.notify();

@@ -2802,9 +2802,8 @@ fn input_for_query(
     }
 }
 
-/// Validates that tool call results have corresponding tool calls in the task context.
-/// Logs an error if a tool call result is found without a corresponding tool call,
-/// or if a tool call result is in a different task than the tool call use.
+/// Validates that tool call results have corresponding tool calls in the task context, otherwise
+/// logs a warning.
 fn validate_tool_call_results<'a>(
     inputs: impl Iterator<Item = &'a AIAgentInput>,
     tasks: &[Task],
@@ -2831,8 +2830,9 @@ fn validate_tool_call_results<'a>(
                 .unwrap_or("None");
 
             if !tool_call_to_task_map.contains_key(&action_id_str) {
-                log::error!(
-                    "Found tool call result with ID '{action_id_str}' but no corresponding tool call in task context. Server conversation ID: '{server_conversation_id}'"
+                log::warn!(
+                    "Found tool call result with ID '{action_id_str}' but no corresponding tool \
+                    call in task context. Server conversation ID: '{server_conversation_id}'"
                 );
             }
         }

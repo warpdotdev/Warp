@@ -11,24 +11,12 @@
 //! All platform-specific code is contained here so that the parent `mod.rs`
 //! is a thin dispatcher with no Unix assumptions.
 
-mod proxy;
+pub(super) mod proxy;
 
 use super::server_model::{ConnectionId, ServerModel};
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
 use warpui::r#async::executor;
-
-/// Run the `remote-server-proxy` subcommand.
-///
-/// Ensures the daemon is running (starting it if necessary), then bridges
-/// this process's stdin/stdout to the daemon's Unix socket for the lifetime
-/// of the SSH session.
-pub fn run_proxy(identity_key: String) -> anyhow::Result<()> {
-    env_logger::Builder::from_default_env()
-        .target(env_logger::Target::Stderr)
-        .init();
-    proxy::run(&identity_key)
-}
 
 /// Run the `remote-server-daemon` subcommand.
 ///
@@ -36,15 +24,6 @@ pub fn run_proxy(identity_key: String) -> anyhow::Result<()> {
 /// WarpUI app startup to [`super::run_daemon_app`] with the Unix-specific
 /// `ServerModel` constructor.
 pub fn run_daemon(identity_key: String) -> anyhow::Result<()> {
-    // Log to a rotating file so daemon output is preserved across invocations.
-    // The file is written to the same directory as client logs (~/Library/Logs
-    // on macOS, ~/.local/share/warp-terminal on Linux). Since the daemon runs
-    // on the remote host, there is no conflict with client-side log files.
-    warp_logging::init(warp_logging::LogConfig {
-        is_cli: true,
-        log_destination: Some(warp_logging::LogDestination::File),
-    })?;
-
     // socket_path: ~/.warp[-channel]/remote-server/{identity_key}/server.sock
     //   The Unix domain socket the daemon binds on.  Proxy processes connect
     //   to it and bridge their SSH stdio channel through it.

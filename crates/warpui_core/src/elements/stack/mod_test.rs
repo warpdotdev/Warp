@@ -450,7 +450,7 @@ fn test_relative_positioning() {
         );
 
         // Now just bound vertically to the parent. This should not change the positioning since
-        // the element is already bound vertically within teh parent.
+        // the element is already bound vertically within the parent.
         position_child_and_assert_location(
             OffsetPositioning::from_axes(
                 PositioningAxis::relative_to_stack_child(

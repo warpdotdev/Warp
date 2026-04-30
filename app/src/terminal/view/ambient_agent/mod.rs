@@ -64,17 +64,43 @@ pub fn create_cloud_mode_view(
 
     // Subscribe to the ambient agent view model to join the session once it's ready.
     // This ensures that we use the manager corresponding to this specific view.
-    let view_model = terminal_view.as_ref(ctx).ambient_agent_view_model().clone();
+    let Some(view_model) = terminal_view
+        .as_ref(ctx)
+        .ambient_agent_view_model()
+        .cloned()
+    else {
+        log::warn!("Cloud mode view was created without an ambient agent view model");
+        return (terminal_view, terminal_manager);
+    };
     terminal_manager.update(ctx, |_, ctx| {
         ctx.subscribe_to_model(&view_model, move |manager, event, ctx| {
-            if let AmbientAgentViewModelEvent::SessionReady { session_id } = event {
-                if let Some(manager) = manager
-                    .as_any_mut()
-                    .downcast_mut::<shared_session::viewer::TerminalManager>()
-                {
+            let Some(manager) = manager
+                .as_any_mut()
+                .downcast_mut::<shared_session::viewer::TerminalManager>()
+            else {
+                return;
+            };
+            match event {
+                AmbientAgentViewModelEvent::SessionReady { session_id } => {
                     manager.connect_to_session(*session_id, ctx);
                 }
-            };
+                AmbientAgentViewModelEvent::FollowupSessionReady { session_id } => {
+                    manager.attach_followup_session(*session_id, ctx);
+                }
+                AmbientAgentViewModelEvent::EnteredSetupState
+                | AmbientAgentViewModelEvent::EnteredComposingState
+                | AmbientAgentViewModelEvent::DispatchedAgent
+                | AmbientAgentViewModelEvent::ProgressUpdated
+                | AmbientAgentViewModelEvent::EnvironmentSelected
+                | AmbientAgentViewModelEvent::Failed { .. }
+                | AmbientAgentViewModelEvent::ShowCloudAgentCapacityModal
+                | AmbientAgentViewModelEvent::ShowAICreditModal
+                | AmbientAgentViewModelEvent::NeedsGithubAuth
+                | AmbientAgentViewModelEvent::Cancelled
+                | AmbientAgentViewModelEvent::HarnessSelected
+                | AmbientAgentViewModelEvent::HarnessCommandStarted
+                | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => {}
+            }
         });
     });
 
@@ -85,13 +111,17 @@ pub fn create_cloud_mode_view(
 /// received yet. In this state, we hide the interactive input and render a loading footer
 /// instead.
 pub fn is_cloud_agent_pre_first_exchange(
-    ambient_agent_view_model: &ModelHandle<AmbientAgentViewModel>,
+    ambient_agent_view_model: Option<&ModelHandle<AmbientAgentViewModel>>,
     agent_view_controller: &ModelHandle<AgentViewController>,
     app: &AppContext,
 ) -> bool {
     if !(FeatureFlag::CloudMode.is_enabled() && FeatureFlag::AgentView.is_enabled()) {
         return false;
     }
+
+    let Some(ambient_agent_view_model) = ambient_agent_view_model else {
+        return false;
+    };
 
     if !matches!(
         ambient_agent_view_model.as_ref(app).status(),

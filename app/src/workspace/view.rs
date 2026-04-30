@@ -2815,10 +2815,16 @@ impl Workspace {
         if FeatureFlag::SshRemoteServer.is_enabled() {
             ctx.subscribe_to_model(
                 &RemoteServerManager::handle(ctx),
-                |me, _handle, event, ctx| {
-                    if matches!(event, RemoteServerManagerEvent::SessionConnected { .. }) {
+                |me, _handle, event, ctx| match event {
+                    RemoteServerManagerEvent::SessionConnected { .. } => {
                         me.update_active_session(ctx);
                     }
+                    RemoteServerManagerEvent::SetupStateChanged { state, .. }
+                        if state.is_failed() =>
+                    {
+                        me.update_active_session(ctx);
+                    }
+                    _ => {}
                 },
             );
         }
@@ -3426,6 +3432,15 @@ impl Workspace {
                 self.sync_window_button_visibility(ctx);
                 ctx.notify();
             }
+            TabSettingsChangedEvent::ShowVerticalTabPanelInRestoredWindows { .. } => {
+                if FeatureFlag::VerticalTabs.is_enabled()
+                    && *TabSettings::as_ref(ctx).use_vertical_tabs
+                    && *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
+                {
+                    self.vertical_tabs_panel_open = true;
+                }
+                ctx.notify();
+            }
             TabSettingsChangedEvent::ShowCodeReviewButton { .. } => {
                 // Close the right panel if it's open and the setting was just disabled.
                 if !*TabSettings::as_ref(ctx).show_code_review_button {
@@ -3718,7 +3733,15 @@ impl Workspace {
         match workspace_setting {
             NewWorkspaceSource::Restored {
                 window_snapshot, ..
-            } => window_snapshot.vertical_tabs_panel_open,
+            } => {
+                if should_default_open
+                    && *TabSettings::as_ref(ctx).show_vertical_tab_panel_in_restored_windows
+                {
+                    true
+                } else {
+                    window_snapshot.vertical_tabs_panel_open
+                }
+            }
             NewWorkspaceSource::TransferredTab {
                 vertical_tabs_panel_open,
                 ..
@@ -5065,6 +5088,41 @@ impl Workspace {
         ctx.notify();
     }
 
+    /// Programmatically sets the manual color override for a tab.
+    ///
+    /// - `Color(_)` applies that color.
+    /// - `Cleared` explicitly clears the color (also suppresses any directory default).
+    /// - `Unset` removes the manual override, letting the directory default apply.
+    pub fn set_tab_color(
+        &mut self,
+        index: usize,
+        color: SelectedTabColor,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.tabs.get(index).is_none() {
+            log::warn!(
+                "Not setting tab color: index was {index} but len is {}",
+                self.tabs.len()
+            );
+            return;
+        }
+        if self.tabs[index].selected_color == color {
+            return;
+        }
+        self.tabs[index].selected_color = color;
+        send_telemetry_from_ctx!(
+            TelemetryEvent::TabOperations {
+                action: if matches!(color, SelectedTabColor::Color(_)) {
+                    TabTelemetryAction::SetColor
+                } else {
+                    TabTelemetryAction::ResetColor
+                },
+            },
+            ctx
+        );
+        ctx.notify();
+    }
+
     pub fn toggle_tab_color(
         &mut self,
         index: usize,
@@ -5078,29 +5136,16 @@ impl Workspace {
             );
             return;
         }
-        let is_same = self.tabs[index].color() == Some(color);
-        self.tabs[index].selected_color = if is_same {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::TabOperations {
-                    action: TabTelemetryAction::ResetColor,
-                },
-                ctx
-            );
+        let next = if self.tabs[index].color() == Some(color) {
             if FeatureFlag::DirectoryTabColors.is_enabled() {
                 SelectedTabColor::Cleared
             } else {
                 SelectedTabColor::Unset
             }
         } else {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::TabOperations {
-                    action: TabTelemetryAction::SetColor,
-                },
-                ctx
-            );
             SelectedTabColor::Color(color)
         };
-        ctx.notify();
+        self.set_tab_color(index, next, ctx);
     }
 
     /// Syncs the tab color for the given tab based on the active terminal's CWD.
@@ -5987,7 +6032,7 @@ impl Workspace {
     /// Builds the unified new-session menu items
     /// tab bar chevron and the vertical tab bar `+` button.
     ///
-    /// Order: Agent → Terminal (sidecar) → Cloud Oz → [tab configs] → separator → New worktree config (sidecar) → New tab config.
+    /// Order: Agent → Terminal (sidecar) → Cloud Oz → [tab configs] → separator → New worktree config (sidecar) → New tab config → separator → Reopen closed session.
     fn unified_new_session_menu_items(
         &self,
         ctx: &mut ViewContext<Self>,
@@ -5999,6 +6044,8 @@ impl Workspace {
         let effective_default = ai_settings.default_session_mode(ctx);
         let default_tab_config_path = ai_settings.default_tab_config_path().to_string();
         let shortcut_label = keybinding_name_to_display_string(NEW_TAB_BINDING_NAME, ctx);
+        let reopen_closed_session_shortcut_label =
+            keybinding_name_to_display_string("app:reopen_closed_session", ctx);
 
         // 1. Agent (if AI enabled)
         if is_any_ai_enabled {
@@ -6158,6 +6205,15 @@ impl Workspace {
                     .into_item(),
             );
         }
+
+        menu_items.push(MenuItem::Separator);
+        menu_items.push(
+            MenuItemFields::new("Reopen closed session")
+                .with_on_select_action(WorkspaceAction::ReopenClosedSession)
+                .with_key_shortcut_label(reopen_closed_session_shortcut_label)
+                .with_disabled(UndoCloseStack::handle(ctx).as_ref(ctx).is_empty())
+                .into_item(),
+        );
 
         menu_items
     }
@@ -11489,6 +11545,14 @@ impl Workspace {
             }
         });
 
+        // True when the fork is paired with a follow-up that fires immediately after restore
+        // (a prompt to send, or a `/summarize` triggered by `summarize_after_fork`).
+        // Used to suppress the `couldn't find original conversation directory` ephemeral hint
+        // for cloud-to-local forks, which would otherwise mask the warping indicator while the
+        // agent processes the follow-up. See `BlocklistAIStatusBar::render`'s
+        // `ephemeral_message_model.current_message().is_none()` gate.
+        let has_initial_query = summarize_after_fork || initial_prompt.is_some();
+
         // Load the conversation data asynchronously
         let future = history_model
             .as_ref(ctx)
@@ -11581,6 +11645,7 @@ impl Workspace {
                     None,
                     Some(ConversationRestorationInNewPaneType::Forked {
                         conversation: forked_conversation,
+                        has_initial_query,
                     }),
                     false,
                     ctx,
@@ -11627,6 +11692,7 @@ impl Workspace {
                     None, /* chosen_shell */
                     Some(ConversationRestorationInNewPaneType::Forked {
                         conversation: forked_conversation.clone(),
+                        has_initial_query,
                     }),
                     ctx,
                 );
@@ -13017,7 +13083,10 @@ impl Workspace {
             pane_group::Event::SyncInput(input_type) => {
                 self.process_sync_event_for_all_synced_pane_groups(input_type, ctx);
             }
-            pane_group::Event::TerminalViewStateChanged => ctx.notify(),
+            pane_group::Event::TerminalViewStateChanged => {
+                self.update_active_session(ctx);
+                ctx.notify();
+            }
             pane_group::Event::OnboardingTutorialCompleted => {
                 self.pending_session_config_tab_config_chip = false;
                 self.show_session_config_tab_config_chip = false;
@@ -14283,24 +14352,33 @@ impl Workspace {
 
         if let Some(terminal_handle) = pane_group_handle.as_ref(ctx).active_session_view(ctx) {
             #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
-            let (session, path_if_local, is_local, is_wsl_session, session_id, pwd) =
-                terminal_handle.read(ctx, |terminal, ctx| {
-                    let active_session_id = terminal.active_block_session_id();
-                    let session = active_session_id
-                        .and_then(|id| terminal.sessions_model().as_ref(ctx).get(id));
-                    let path_if_local = terminal.active_session_path_if_local(ctx);
-                    let is_local = terminal.active_session_is_local(ctx);
-                    let is_wsl_session = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
-                    let pwd = terminal.pwd();
-                    (
-                        session,
-                        path_if_local,
-                        is_local,
-                        is_wsl_session,
-                        active_session_id,
-                        pwd,
-                    )
-                });
+            let (
+                session,
+                path_if_local,
+                is_local,
+                is_wsl_session,
+                session_id,
+                pwd,
+                has_pending_ssh,
+            ) = terminal_handle.read(ctx, |terminal, ctx| {
+                let active_session_id = terminal.active_block_session_id();
+                let session =
+                    active_session_id.and_then(|id| terminal.sessions_model().as_ref(ctx).get(id));
+                let path_if_local = terminal.active_session_path_if_local(ctx);
+                let is_local = terminal.active_session_is_local(ctx);
+                let is_wsl_session = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
+                let pwd = terminal.pwd();
+                let has_pending_ssh = terminal.has_pending_ssh_command();
+                (
+                    session,
+                    path_if_local,
+                    is_local,
+                    is_wsl_session,
+                    active_session_id,
+                    pwd,
+                    has_pending_ssh,
+                )
+            });
 
             let window_id = ctx.window_id();
             let working_directory_clone = path_if_local.clone();
@@ -14330,8 +14408,9 @@ impl Workspace {
             // `connect_session` was called at `InitShell` time.
             let has_remote_server = is_remote
                 && FeatureFlag::SshRemoteServer.is_enabled()
-                && session_id
-                    .is_some_and(|sid| RemoteServerManager::as_ref(ctx).session(sid).is_some());
+                && session_id.is_some_and(|sid| {
+                    RemoteServerManager::as_ref(ctx).is_session_potentially_active(sid)
+                });
 
             // When the session has a remote server, tell it about the current
             // directory so it can start indexing and push repo metadata back.
@@ -14350,6 +14429,18 @@ impl Workspace {
                 is_unsupported_session,
                 has_remote_server,
             );
+
+            // When an SSH command is running (pending host set + block
+            // still long-running), the old local session is still active
+            // so the enablement computes as `Enabled`. Override to
+            // `PendingRemoteSession` so the file tree shows loading
+            // instead of the stale local tree.
+            let enablement =
+                if has_pending_ssh && matches!(enablement, CodingPanelEnablementState::Enabled) {
+                    CodingPanelEnablementState::PendingRemoteSession
+                } else {
+                    enablement
+                };
 
             self.left_panel_view.update(ctx, |left_panel, ctx| {
                 left_panel.update_coding_panel_enablement(enablement, ctx);
@@ -18140,7 +18231,7 @@ impl Workspace {
         let mut main_content = Flex::row();
 
         // In horizontal tabs mode, config-driven panels render inside this row
-        // so they share the same background/corner-radius wrapper from render_main_panel.
+        // alongside the terminal area.
         // In vertical tabs mode, panels are rendered in render_panels instead.
         if !vertical_tabs_active {
             let config = TabSettings::as_ref(app)
@@ -18705,23 +18796,6 @@ impl Workspace {
         container.finish()
     }
 
-    fn render_main_panel(
-        &self,
-        app: &AppContext,
-        terminal_view: Box<dyn Element>,
-    ) -> Box<dyn Element> {
-        if FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(app).use_vertical_tabs {
-            Shrinkable::new(1.0, terminal_view).finish()
-        } else {
-            let main_content = Container::new(terminal_view)
-                .with_background(util::get_terminal_background_fill(self.window_id, app))
-                .with_corner_radius(*PANEL_CORNER_RADIUS)
-                .finish();
-
-            Shrinkable::new(1.0, main_content).finish()
-        }
-    }
-
     fn render_panel_separator(app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         ConstrainedBox::new(
@@ -18765,8 +18839,7 @@ impl Workspace {
             && *TabSettings::as_ref(app).use_vertical_tabs;
 
         // In vertical tabs mode, config-driven panels are rendered here.
-        // In horizontal tabs mode, they're rendered inside render_banner_and_active_tab
-        // so they share the same background/corner-radius wrapper.
+        // In horizontal tabs mode, they're rendered inside render_banner_and_active_tab.
         if vertical_tabs_active {
             let config = TabSettings::as_ref(app)
                 .header_toolbar_chip_selection
@@ -18802,7 +18875,9 @@ impl Workspace {
         if prev_panel_added {
             panels_view.add_child(Self::render_panel_separator(app));
         }
-        panels_view = panels_view.with_child(self.render_main_panel(app, terminal_view));
+        // The outer workspace container in `render` already paints the terminal
+        // background fill, so don't paint it again here (see APP-4328).
+        panels_view = panels_view.with_child(Shrinkable::new(1.0, terminal_view).finish());
         prev_panel_added = true;
 
         if vertical_tabs_active {
@@ -19677,6 +19752,7 @@ impl TypedActionView for Workspace {
             ResetPaneName(locator) => self.clear_pane_name(*locator, ctx),
             RenameActiveTab => self.rename_tab(self.active_tab_index, ctx),
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
+            SetActiveTabColor(color) => self.set_tab_color(self.active_tab_index, *color, ctx),
             ToggleTabRightClickMenu { tab_index, anchor } => {
                 self.toggle_tab_right_click_menu(*tab_index, *anchor, ctx)
             }
@@ -21055,12 +21131,6 @@ impl TypedActionView for Workspace {
                 session_id,
                 task_id,
             } => {
-                // Mark task as manually opened so it appears in the conversation list
-                // even if its source is not user-initiated.
-                AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                    model.mark_task_as_manually_opened(*task_id, ctx);
-                });
-
                 // Check if there's already a terminal viewing this task.
                 if let Some(tab_index) =
                     self.find_tab_with_ambient_agent_conversation(*task_id, ctx)
@@ -21074,14 +21144,6 @@ impl TypedActionView for Workspace {
                 conversation_id,
                 ambient_agent_task_id,
             } => {
-                // Mark task as manually opened so it appears in the conversation list
-                // even if its source is not user-initiated.
-                if let Some(task_id) = ambient_agent_task_id {
-                    AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                        model.mark_task_as_manually_opened(*task_id, ctx);
-                    });
-                }
-
                 // Check if there's already a terminal viewing this conversation's task.
                 if let Some(task_id) = ambient_agent_task_id {
                     if let Some(tab_index) =
@@ -21878,7 +21940,9 @@ impl View for Workspace {
             // Hide the vertical tab rail for simplified WASM views (notebooks, shared sessions, etc.)
             let panels_row = self.render_panels(app, Shrinkable::new(1.0, content).finish(), true);
             outer_column.add_child(Shrinkable::new(1.0, panels_row).finish());
-            outer_column.finish()
+            Container::new(outer_column.finish())
+                .with_background(util::get_terminal_background_fill(self.window_id, app))
+                .finish()
         } else {
             let mut outer_column = Flex::column();
             if tab_bar_mode == ShowTabBar::Stacked {
