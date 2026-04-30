@@ -1389,6 +1389,7 @@ fn resolve_orchestration_harness_label() -> &'static str {
         Some(Harness::Claude) => "claude",
         Some(Harness::OpenCode) => "opencode",
         Some(Harness::Gemini) => "gemini",
+        Some(Harness::Codex) => "codex",
         Some(Harness::Unknown) | None => "unknown",
     }
 }

@@ -2,16 +2,21 @@
 //! We fall back to the existing Warpification behavior and display this banner so the user knows why advanced features are unavailable.
 
 use warp_core::ui::theme::color::internal_colors;
+use warp_core::ui::theme::AnsiColorIdentifier;
 use warpui::{
     elements::{
-        ConstrainedBox, Container, CrossAxisAlignment, Flex, Hoverable, MainAxisAlignment,
-        MainAxisSize, MouseStateHandle, ParentElement, Shrinkable, Text,
+        ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Hoverable,
+        MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
     },
     platform::Cursor,
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
 };
 
 use crate::{terminal::model::session::SessionId, ui_components::icons::Icon, Appearance};
+
+const BANNER_BODY: &str =
+    "While advanced features like file browsing and code review are currently \
+    disabled, the rest of your Warpified experience is fully available.";
 
 #[derive(Clone, Debug)]
 pub enum SshRemoteServerFailedBannerAction {
@@ -23,15 +28,48 @@ pub enum SshRemoteServerFailedBannerEvent {
     Dismissed,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum SshRemoteServerFailureKind {
+    BinaryCheck,
+    BinaryInstall,
+    Launch,
+}
+
+impl SshRemoteServerFailureKind {
+    fn title(self) -> &'static str {
+        match self {
+            Self::BinaryCheck => "SSH extension couldn't be verified",
+            Self::BinaryInstall => "SSH extension couldn't be installed",
+            Self::Launch => "SSH extension couldn't be started",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::BinaryCheck => {
+                "The SSH extension binary could not be verified on the remote host."
+            }
+            Self::BinaryInstall => {
+                "The binary could not be written or executed on the remote host."
+            }
+            Self::Launch => "The SSH extension could not be started on the remote host.",
+        }
+    }
+}
+
 pub struct SshRemoteServerFailedBanner {
     session_id: SessionId,
+    kind: SshRemoteServerFailureKind,
+    error: String,
     close_mouse_state: MouseStateHandle,
 }
 
 impl SshRemoteServerFailedBanner {
-    pub fn new(session_id: SessionId) -> Self {
+    pub fn new(session_id: SessionId, kind: SshRemoteServerFailureKind, error: String) -> Self {
         Self {
             session_id,
+            kind,
+            error,
             close_mouse_state: MouseStateHandle::default(),
         }
     }
@@ -68,27 +106,47 @@ impl View for SshRemoteServerFailedBanner {
         .with_margin_right(8.)
         .finish();
 
-        // Title
-        let title = Text::new(
-            "SSH extension couldn't be installed",
-            appearance.ui_font_family(),
-            font_size,
-        )
-        .with_color(fg_color)
-        .finish();
+        let title = Text::new(self.kind.title(), appearance.ui_font_family(), font_size)
+            .with_color(fg_color)
+            .finish();
 
-        // Description
-        let body = Text::new(
-            "The binary could not be written or executed on the remote host. \
-             This may be due to permission restrictions or missing dependencies. \
-             While advanced features like file browsing and code review are currently \
-             disabled, the rest of your Warpified experience is fully available.",
-            appearance.ui_font_family(),
-            small_font_size,
-        )
-        .soft_wrap(true)
-        .with_color(muted_color)
-        .finish();
+        let body_text = format!("{} {BANNER_BODY}", self.kind.description());
+        let body = Text::new(body_text, appearance.ui_font_family(), small_font_size)
+            .soft_wrap(true)
+            .with_color(muted_color)
+            .finish();
+
+        // Error detail line wrapped in a red-tinted background container.
+        let trimmed_error = self.error.trim();
+        let error_element = if trimmed_error.is_empty() {
+            None
+        } else {
+            let ansi_red = AnsiColorIdentifier::Red.to_ansi_color(&theme.terminal_colors().normal);
+            let error_bg = theme.ansi_overlay_1(ansi_red);
+            let error_text_color = theme.ansi_fg_red();
+
+            let error_text = Text::new(
+                format!("ERROR: {trimmed_error}"),
+                appearance.ui_font_family(),
+                small_font_size,
+            )
+            .soft_wrap(true)
+            .with_color(error_text_color)
+            .finish();
+
+            let error_container = Container::new(error_text)
+                .with_background(error_bg)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                .with_uniform_padding(12.)
+                .finish();
+
+            Some(
+                Container::new(error_container)
+                    .with_margin_top(8.)
+                    .with_margin_left(24.)
+                    .finish(),
+            )
+        };
 
         // Close (X) button
         let close_icon_color = muted_color;
@@ -131,11 +189,17 @@ impl View for SshRemoteServerFailedBanner {
             .with_margin_left(24.)
             .finish();
 
-        let content = Flex::column()
+        let mut content = Flex::column()
             .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_child(header_row)
-            .with_child(body_container)
-            .finish();
+            .with_child(body_container);
+
+        if let Some(error) = error_element {
+            content = content.with_child(error);
+        }
+
+        let content = content.finish();
 
         Container::new(content)
             .with_background(internal_colors::fg_overlay_1(theme))

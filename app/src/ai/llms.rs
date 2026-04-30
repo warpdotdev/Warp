@@ -121,6 +121,18 @@ pub struct RoutingHostConfig {
     pub model_routing_host: LLMModelHost,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LLMContextWindow {
+    #[serde(default)]
+    pub is_configurable: bool,
+    #[serde(default)]
+    pub min: u32,
+    #[serde(default)]
+    pub max: u32,
+    #[serde(default)]
+    pub default_max: u32,
+}
+
 /// Metadata about an LLM.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct LLMInfo {
@@ -136,6 +148,7 @@ pub struct LLMInfo {
     pub provider: LLMProvider,
     pub host_configs: HashMap<LLMModelHost, RoutingHostConfig>,
     pub discount_percentage: Option<f32>,
+    pub context_window: LLMContextWindow,
 }
 
 impl<'de> Deserialize<'de> for LLMInfo {
@@ -181,6 +194,8 @@ impl<'de> Deserialize<'de> for LLMInfo {
             host_configs: HostConfigsWire,
             #[serde(default)]
             discount_percentage: Option<f32>,
+            #[serde(default)]
+            context_window: LLMContextWindow,
         }
 
         let wire = WireLLMInfo::deserialize(deserializer)?;
@@ -215,6 +230,7 @@ impl<'de> Deserialize<'de> for LLMInfo {
             spec: wire.spec,
             host_configs,
             discount_percentage: wire.discount_percentage,
+            context_window: wire.context_window,
         })
     }
 }
@@ -281,6 +297,7 @@ impl LLMInfo {
             provider: LLMProvider::Unknown,
             host_configs: HashMap::new(),
             discount_percentage: None,
+            context_window: LLMContextWindow::default(),
         }
     }
 }
@@ -406,6 +423,7 @@ fn default_computer_use_llms() -> AvailableLLMs {
             provider: LLMProvider::Unknown,
             host_configs: HashMap::new(),
             discount_percentage: None,
+            context_window: LLMContextWindow::default(),
         }],
         preferred_codex_model_id: None,
     }
@@ -432,6 +450,7 @@ impl Default for ModelsByFeature {
                     provider: LLMProvider::Unknown,
                     host_configs: HashMap::new(),
                     discount_percentage: None,
+                    context_window: LLMContextWindow::default(),
                 }],
                 preferred_codex_model_id: None,
             },
@@ -453,6 +472,7 @@ impl Default for ModelsByFeature {
                     provider: LLMProvider::Unknown,
                     host_configs: HashMap::new(),
                     discount_percentage: None,
+                    context_window: LLMContextWindow::default(),
                 }],
                 preferred_codex_model_id: None,
             },
@@ -474,6 +494,7 @@ impl Default for ModelsByFeature {
                     provider: LLMProvider::Unknown,
                     host_configs: HashMap::new(),
                     discount_percentage: None,
+                    context_window: LLMContextWindow::default(),
                 }],
                 preferred_codex_model_id: None,
             }),
@@ -924,20 +945,33 @@ impl LLMPreferences {
             }
         }
 
-        // Clear any model selections where the model is no longer supported.
+        // Clear any model selections where the model is no longer supported,
+        // and clear orphaned context window limits for non-configurable models.
         let profiles_model = AIExecutionProfilesModel::handle(ctx);
         profiles_model.update(ctx, |profiles, ctx| {
             for profile_id in profiles.get_all_profile_ids() {
                 if let Some(profile) = profiles.get_profile_by_id(profile_id, ctx) {
-                    if let Some(preferred_llm_id) = &profile.data().base_model {
-                        if self
-                            .models_by_feature
-                            .agent_mode
-                            .info_for_id(preferred_llm_id)
-                            .is_none()
-                        {
-                            profiles.set_base_model(profile_id, None, ctx);
-                        }
+                    let profile_data = profile.data();
+                    let preferred_base_model = profile_data.base_model.clone();
+                    let effective_base_model_id = preferred_base_model
+                        .as_ref()
+                        .unwrap_or(&self.models_by_feature.agent_mode.default_id);
+                    let effective_base_model_info = self
+                        .models_by_feature
+                        .agent_mode
+                        .info_for_id(effective_base_model_id);
+                    let effective_base_model_missing = effective_base_model_info.is_none();
+                    let effective_base_model_is_configurable = effective_base_model_info
+                        .is_some_and(|info| info.context_window.is_configurable);
+                    let has_context_window_limit = profile_data.context_window_limit.is_some();
+
+                    if preferred_base_model.is_some() && effective_base_model_missing {
+                        profiles.set_base_model(profile_id, None, ctx);
+                    }
+                    if has_context_window_limit
+                        && (effective_base_model_missing || !effective_base_model_is_configurable)
+                    {
+                        profiles.set_context_window_limit(profile_id, None, ctx);
                     }
                     if let Some(preferred_llm_id) = &profile.data().coding_model {
                         if self

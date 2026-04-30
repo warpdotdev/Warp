@@ -4,9 +4,11 @@ use std::sync::{
 };
 
 use chrono::Utc;
+use session_sharing_protocol::common::SessionId;
 
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::server::server_api::ai::{MockAIClient, SpawnAgentResponse};
+use crate::terminal::shared_session;
 
 use super::{spawn_task, AmbientAgentEvent, SessionJoinInfo};
 
@@ -107,6 +109,35 @@ fn session_join_info_prefers_session_link_and_tolerates_missing_session_id() {
     let join_info = SessionJoinInfo::from_task(&task).expect("expected join info");
     assert_eq!(join_info.session_link, "https://example.com/session/abc");
     assert!(join_info.session_id.is_none());
+}
+
+#[test]
+fn session_join_info_falls_back_to_session_id() {
+    let session_id = SessionId::new();
+    let task = task_with(
+        AmbientAgentTaskState::InProgress,
+        Some(session_id.to_string()),
+        None,
+    );
+
+    let join_info = SessionJoinInfo::from_task(&task).expect("expected join info");
+
+    assert_eq!(join_info.session_id, Some(session_id));
+    assert_eq!(
+        join_info.session_link,
+        shared_session::join_link(&session_id)
+    );
+}
+
+#[test]
+fn session_join_info_ignores_empty_link_and_invalid_session_id() {
+    let task = task_with(
+        AmbientAgentTaskState::InProgress,
+        Some("not-a-session-id".to_string()),
+        Some(String::new()),
+    );
+
+    assert_eq!(SessionJoinInfo::from_task(&task), None);
 }
 
 #[tokio::test]

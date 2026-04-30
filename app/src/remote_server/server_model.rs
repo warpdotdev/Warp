@@ -18,12 +18,12 @@ use warp_util::file::FileId;
 
 use super::proto::{
     client_message, delete_file_response, run_command_response, server_message,
-    write_file_response, Abort, ClientMessage, DeleteFile, DeleteFileResponse, DeleteFileSuccess,
-    ErrorCode, ErrorResponse, FailedFileRead, FileContextProto, FileOperationError,
-    InitializeResponse, NavigatedToDirectory, NavigatedToDirectoryResponse,
-    ReadFileContextResponse, RunCommandError, RunCommandErrorCode, RunCommandRequest,
-    RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped, WriteFile,
-    WriteFileResponse, WriteFileSuccess,
+    write_file_response, Abort, Authenticate, ClientMessage, DeleteFile, DeleteFileResponse,
+    DeleteFileSuccess, ErrorCode, ErrorResponse, FailedFileRead, FileContextProto,
+    FileOperationError, Initialize, InitializeResponse, NavigatedToDirectory,
+    NavigatedToDirectoryResponse, ReadFileContextResponse, RunCommandError, RunCommandErrorCode,
+    RunCommandRequest, RunCommandResponse, RunCommandSuccess, ServerMessage, SessionBootstrapped,
+    WriteFile, WriteFileResponse, WriteFileSuccess,
 };
 
 /// How long the daemon waits with no connections before exiting.
@@ -164,6 +164,13 @@ pub struct ServerModel {
     executors: HashMap<SessionId, Arc<LocalCommandExecutor>>,
     /// Tracks in-flight file write/delete operations and handles cleanup.
     pending_file_ops: PendingFileOps,
+    /// Daemon-wide bearer credential for the identity-scoped daemon.
+    ///
+    /// The token is written by Initialize when the client supplies a
+    /// non-empty credential, or by Authenticate during token rotation. It is
+    /// intentionally retained across proxy connection teardown and cleared
+    /// only by daemon process exit.
+    auth_token: Option<String>,
 }
 
 impl Entity for ServerModel {
@@ -188,6 +195,7 @@ impl ServerModel {
             host_id,
             executors: HashMap::new(),
             pending_file_ops: PendingFileOps::new(),
+            auth_token: None,
         };
         // Subscribe to FileModel and RepoMetadataModel events
         // file operation results and repo metadata pushes are forwarded to all
@@ -377,7 +385,13 @@ impl ServerModel {
         let request_id = RequestId::from(msg.request_id);
 
         let outcome = match msg.message {
-            Some(client_message::Message::Initialize(_)) => self.handle_initialize(&request_id),
+            Some(client_message::Message::Initialize(msg)) => {
+                self.handle_initialize(msg, &request_id)
+            }
+            Some(client_message::Message::Authenticate(msg)) => {
+                self.handle_authenticate(msg);
+                return;
+            }
             Some(client_message::Message::SessionBootstrapped(msg)) => {
                 self.handle_session_bootstrapped(msg);
                 return;
@@ -497,8 +511,11 @@ impl ServerModel {
     }
 
     /// Handles `Initialize` by returning the server version and host id.
-    fn handle_initialize(&self, request_id: &RequestId) -> HandlerOutcome {
+    fn handle_initialize(&mut self, msg: Initialize, request_id: &RequestId) -> HandlerOutcome {
         log::info!("Handling Initialize (request_id={request_id})");
+        if !msg.auth_token.is_empty() {
+            self.auth_token = Some(msg.auth_token);
+        }
         let server_version = ChannelState::app_version()
             .unwrap_or(env!("CARGO_PKG_VERSION"))
             .to_string();
@@ -508,6 +525,20 @@ impl ServerModel {
                 host_id: self.host_id.clone(),
             },
         ))
+    }
+
+    /// Handles `Authenticate` by replacing the daemon-wide credential.
+    /// This is a notification — no response is sent.
+    fn handle_authenticate(&mut self, msg: Authenticate) {
+        if msg.auth_token.is_empty() {
+            log::warn!("Received Authenticate notification with empty auth token; ignoring");
+            return;
+        }
+        self.auth_token = Some(msg.auth_token);
+    }
+
+    pub fn auth_token(&self) -> Option<&str> {
+        self.auth_token.as_deref()
     }
 
     /// Handles `Abort` by cancelling the in-progress request it targets.
@@ -1074,3 +1105,7 @@ fn file_context_result_to_proto(result: ReadFileContextResult) -> ReadFileContex
         failed_files,
     }
 }
+
+#[cfg(test)]
+#[path = "server_model_tests.rs"]
+mod tests;
