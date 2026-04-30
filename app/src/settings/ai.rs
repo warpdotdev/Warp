@@ -1728,9 +1728,6 @@ impl AISettings {
     }
 
     pub fn is_command_denylist_editable(&self, app: &AppContext) -> bool {
-        // The denylist editor is always enabled when AI is on. Users can always
-        // add entries to make the denylist more restrictive, even when the org
-        // sets an override. Per-item removal is controlled at the row level.
         self.is_any_ai_enabled(app)
     }
 

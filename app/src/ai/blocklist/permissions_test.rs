@@ -642,7 +642,6 @@ fn test_can_autoexecute_command_denylist_precedence() {
 
         // Org + user denylists are merged: both should be active
         permissions.read(&app, |model, ctx| {
-            // git commands should be denied (from workspace/org denylist)
             let result = model.can_autoexecute_command(
                 &convo_id,
                 "git status",
@@ -660,7 +659,6 @@ fn test_can_autoexecute_command_denylist_precedence() {
                 )
             ));
 
-            // rm commands should ALSO still be denied (from user profile, merged in)
             let result = model.can_autoexecute_command(
                 &convo_id,
                 "rm file.txt",
@@ -1326,7 +1324,6 @@ fn test_merged_denylist_deduplication() {
 
         let rm_predicate = AgentModeCommandExecutionPredicate::new_regex("rm .*").unwrap();
 
-        // Add "rm .*" to user profile denylist
         profile_model.update(&mut app, |model, ctx| {
             model.add_to_command_denylist(
                 *model.active_profile(Some(terminal_view_id), ctx).id(),
@@ -1335,7 +1332,6 @@ fn test_merged_denylist_deduplication() {
             );
         });
 
-        // Also set workspace denylist with "rm .*" (duplicate) + "git .*"
         user_workspaces.update(&mut app, |model, ctx| {
             model.setup_test_workspace(ctx);
             model.update_ai_autonomy_settings(
@@ -1349,13 +1345,10 @@ fn test_merged_denylist_deduplication() {
             );
         });
 
-        // Merged list should have "rm .*" only once + "git .*"
         permissions.read(&app, |model, ctx| {
             let denylist = model.get_execute_commands_denylist(ctx, Some(terminal_view_id));
-            // "rm .*" should appear exactly once (deduplicated)
             let rm_count = denylist.iter().filter(|p| p.to_string() == "rm .*").count();
             assert_eq!(rm_count, 1, "duplicate entries should be deduplicated");
-            // "git .*" should also be present
             assert!(
                 denylist.iter().any(|p| p.to_string() == "git .*"),
                 "org entry 'git .*' should be in merged list"
@@ -1373,13 +1366,11 @@ fn test_get_org_execute_commands_denylist() {
             ..
         } = initialize_permissions_test(&mut app);
 
-        // No org override: should return empty
         permissions.read(&app, |_, ctx| {
             let org_list = BlocklistAIPermissions::get_org_execute_commands_denylist(ctx);
             assert!(org_list.is_empty());
         });
 
-        // Set org denylist
         user_workspaces.update(&mut app, |model, ctx| {
             model.setup_test_workspace(ctx);
             model.update_ai_autonomy_settings(
@@ -1414,7 +1405,6 @@ fn test_empty_org_denylist_allows_user_entries() {
             ..
         } = initialize_permissions_test(&mut app);
 
-        // Add user denylist entry
         profile_model.update(&mut app, |model, ctx| {
             model.add_to_command_denylist(
                 *model.active_profile(Some(terminal_view_id), ctx).id(),
@@ -1423,7 +1413,6 @@ fn test_empty_org_denylist_allows_user_entries() {
             );
         });
 
-        // Set org denylist to empty (Some([]))
         user_workspaces.update(&mut app, |model, ctx| {
             model.setup_test_workspace(ctx);
             model.update_ai_autonomy_settings(
@@ -1434,7 +1423,6 @@ fn test_empty_org_denylist_allows_user_entries() {
             );
         });
 
-        // User entry should still be active despite empty org override
         permissions.read(&app, |model, ctx| {
             let result = model.can_autoexecute_command(
                 &convo_id,

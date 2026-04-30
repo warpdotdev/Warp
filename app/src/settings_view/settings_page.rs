@@ -1009,9 +1009,7 @@ pub struct InputListItem<SettingsPageAction: Action + Clone> {
     pub item: String,
     pub mouse_state_handle: MouseStateHandle,
     pub on_remove_action: SettingsPageAction,
-    /// When true, the remove button is disabled and text uses the disabled color.
     pub is_disabled: bool,
-    /// When `Some`, the row is wrapped in a workspace-override tooltip on hover.
     /// Must be pre-created (not inline during render) to preserve mouse tracking.
     pub tooltip_mouse_state: Option<MouseStateHandle>,
 }
@@ -1104,8 +1102,6 @@ pub fn render_alternating_color_list<
     }
 }
 
-/// Wraps a single row element in a hoverable tooltip that shows the
-/// workspace-override message on hover.
 fn render_workspace_override_row_tooltip(
     child: Box<dyn Element>,
     mouse_state: MouseStateHandle,
