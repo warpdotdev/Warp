@@ -1802,14 +1802,18 @@ pub fn init(app: &mut AppContext) {
             "Scroll terminal output up one page",
             InputAction::PageUp,
         )
-        .with_context_predicate(id!("Input") & !id!("IMEOpen"))
+        .with_context_predicate(
+            id!("Input") & !id!("IMEOpen") & id!("TerminalView_NonEmptyBlockList"),
+        )
         .with_key_binding("pageup"),
         EditableBinding::new(
             "terminal:scroll_down_one_page",
             "Scroll terminal output down one page",
             InputAction::PageDown,
         )
-        .with_context_predicate(id!("Input") & !id!("IMEOpen"))
+        .with_context_predicate(
+            id!("Input") & !id!("IMEOpen") & id!("TerminalView_NonEmptyBlockList"),
+        )
         .with_key_binding("pagedown"),
     ]);
 

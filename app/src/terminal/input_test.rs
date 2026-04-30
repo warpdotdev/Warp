@@ -6284,8 +6284,8 @@ fn test_terminal_only_escape_locks_shell_mode() {
 fn test_page_up_and_down_scroll_terminal_from_prompt() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
-
-        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
+        let (window_id, terminal) =
+            add_window_with_bootstrapped_terminal_and_window_id(&mut app, None, None).await;
         let (input, editor) = terminal.read(&app, |terminal, ctx| {
             let input = terminal.input().clone();
             let editor = input.as_ref(ctx).editor().clone();
@@ -6302,10 +6302,19 @@ fn test_page_up_and_down_scroll_terminal_from_prompt() {
         input.update(&mut app, |input, ctx| {
             input.user_insert("echo first line\necho second line", ctx);
         });
-        editor.update(&mut app, |editor, ctx| {
-            editor.move_to_buffer_end(ctx);
-            editor.handle_action(&EditorAction::PageUp, ctx);
-        });
+        editor.update(&mut app, |editor, ctx| editor.move_to_buffer_end(ctx));
+
+        let focus_path = [terminal.id(), input.id(), editor.id()];
+
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &focus_path,
+                &Keystroke::parse("pageup").unwrap(),
+                false,
+            )
+            .unwrap();
+        assert!(handled);
 
         assert_eq!(
             input.read(&app, |input, ctx| input.buffer_text(ctx)),
@@ -6318,9 +6327,15 @@ fn test_page_up_and_down_scroll_terminal_from_prompt() {
             ScrollPosition::FixedAtPosition { .. }
         ));
 
-        editor.update(&mut app, |editor, ctx| {
-            editor.handle_action(&EditorAction::PageDown, ctx);
-        });
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &focus_path,
+                &Keystroke::parse("pagedown").unwrap(),
+                false,
+            )
+            .unwrap();
+        assert!(handled);
 
         assert_eq!(
             input.read(&app, |input, ctx| input.buffer_text(ctx)),
@@ -6344,9 +6359,12 @@ fn test_page_up_and_down_do_not_scroll_terminal_when_suggestions_are_visible() {
             "echo alpha\necho beta".to_string(),
             "git status\ngit diff".to_string(),
         ];
-        let terminal =
-            add_window_with_bootstrapped_terminal(&mut app, Some(history_file_commands), None)
-                .await;
+        let (window_id, terminal) = add_window_with_bootstrapped_terminal_and_window_id(
+            &mut app,
+            Some(history_file_commands),
+            None,
+        )
+        .await;
         let (input, editor) = terminal.read(&app, |terminal, ctx| {
             let input = terminal.input().clone();
             let editor = input.as_ref(ctx).editor().clone();
@@ -6368,10 +6386,26 @@ fn test_page_up_and_down_do_not_scroll_terminal_when_suggestions_are_visible() {
         let initial_scroll_position = terminal.read(&app, |terminal, _| terminal.scroll_position());
         let initial_buffer = input.read(&app, |input, ctx| input.buffer_text(ctx));
 
-        editor.update(&mut app, |editor, ctx| {
-            editor.handle_action(&EditorAction::PageUp, ctx);
-            editor.handle_action(&EditorAction::PageDown, ctx);
-        });
+        let focus_path = [terminal.id(), input.id(), editor.id()];
+
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &focus_path,
+                &Keystroke::parse("pageup").unwrap(),
+                false,
+            )
+            .unwrap();
+        assert!(handled);
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &focus_path,
+                &Keystroke::parse("pagedown").unwrap(),
+                false,
+            )
+            .unwrap();
+        assert!(handled);
 
         terminal.read(&app, |terminal, _| {
             assert_eq!(terminal.scroll_position(), initial_scroll_position);
@@ -6388,7 +6422,8 @@ fn test_page_up_and_down_scroll_terminal_with_vim_mode_enabled() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
-        let terminal = add_window_with_bootstrapped_terminal(&mut app, None, None).await;
+        let (window_id, terminal) =
+            add_window_with_bootstrapped_terminal_and_window_id(&mut app, None, None).await;
         let (input, editor) = terminal.read(&app, |terminal, ctx| {
             let input = terminal.input().clone();
             let editor = input.as_ref(ctx).editor().clone();
@@ -6416,9 +6451,17 @@ fn test_page_up_and_down_scroll_terminal_with_vim_mode_enabled() {
             assert_eq!(editor.vim_mode(ctx), Some(VimMode::Normal));
         });
 
-        editor.update(&mut app, |editor, ctx| {
-            editor.handle_action(&EditorAction::PageUp, ctx);
-        });
+        let focus_path = [terminal.id(), input.id(), editor.id()];
+
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &focus_path,
+                &Keystroke::parse("pageup").unwrap(),
+                false,
+            )
+            .unwrap();
+        assert!(handled);
 
         assert_eq!(
             input.read(&app, |input, ctx| input.buffer_text(ctx)),
@@ -6431,9 +6474,15 @@ fn test_page_up_and_down_scroll_terminal_with_vim_mode_enabled() {
             ScrollPosition::FixedAtPosition { .. }
         ));
 
-        editor.update(&mut app, |editor, ctx| {
-            editor.handle_action(&EditorAction::PageDown, ctx);
-        });
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &focus_path,
+                &Keystroke::parse("pagedown").unwrap(),
+                false,
+            )
+            .unwrap();
+        assert!(handled);
 
         assert_eq!(
             input.read(&app, |input, ctx| input.buffer_text(ctx)),
