@@ -525,11 +525,10 @@ impl BlocklistAIInputModel {
             return false;
         }
 
-        // Defense in depth: while there is a pending image (or other
-        // locking context), the classifier must never have a chance to flip the input
-        // back to shell mode, even per-keystroke. The `EnteredAgentView` subscriber
-        // and `set_input_mode_agent` already lock at entry; this guard protects the
-        // window if any future caller forgets.
+        // Defense in depth: while there is a pending attachment (image / file) or block,
+        // the classifier must never have a chance to flip the input back to shell mode, even
+        // per-keystroke. The `EnteredAgentView` subscriber and `set_input_mode_agent` already
+        // lock at entry; this guard protects the window if any future caller forgets.
         if self.has_locking_attachment(app) {
             return false;
         }

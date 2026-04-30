@@ -9858,11 +9858,9 @@ impl Input {
             .collect();
         let num_paths = paths_to_process.len();
 
-        // Dispatch the read+attach pipeline FIRST so the context model's
-        // `pending_image_attachments_in_progress` counter is incremented synchronously before
-        // `set_input_mode_agent` runs. That way `has_locking_attachment()` is true at lock time
-        // and the should_unlock branch (which would otherwise re-enable autodetection in
-        // fullscreen agent view with NLD on) is skipped.
+        // Dispatch the async read + attach pipeline. The resulting `ImageContext` will be
+        // appended to `pending_attachments` once the spawned future resolves; until then
+        // `has_locking_attachment()` returns false for this attach.
         self.editor.update(ctx, |editor, ctx| {
             editor.read_and_process_images_async(num_paths, paths_to_process, ctx);
         });
@@ -9911,10 +9909,9 @@ impl Input {
             file_name,
         };
 
-        // QUALITY-544: dispatch image processing FIRST so the context model's
-        // `pending_image_attachments_in_progress` counter is incremented synchronously before
-        // `set_input_mode_agent` runs (which gates its should_unlock branch on
-        // `has_locking_attachment()`).
+        // Dispatch the async resize/encode pipeline. The resulting `ImageContext` will be
+        // appended to `pending_attachments` once the spawned future resolves; until then
+        // `has_locking_attachment()` returns false for this attach.
         self.editor.update(ctx, |editor, ctx| {
             editor.process_and_attach_images_as_ai_context(1, vec![attached_image], ctx);
         });
@@ -12857,10 +12854,9 @@ impl Input {
         // When AgentView is enabled, reverting to AI mode in an active agent view with an empty
         // buffer should unlock (re-enable autodetection) - semantically like clearing the "!".
         //
-        // QUALITY-544: but if there is a pending image attachment (or other locking context such
-        // as a file attachment or block), do NOT unlock. The user's intent is unambiguously
-        // "talk to the agent"; letting the classifier flip the input back to shell mode would
-        // be a bug.
+        // If there is a pending image / file attachment or block, do NOT unlock. The user's
+        // intent is unambiguously "talk to the agent"; letting the classifier flip the input
+        // back to shell mode would be a bug.
         let has_locking_attachment = self.ai_context_model.as_ref(ctx).has_locking_attachment();
         let should_unlock = FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen()

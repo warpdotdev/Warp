@@ -5089,16 +5089,6 @@ impl EditorView {
             return;
         }
 
-        // Mark image-attachment-in-progress synchronously so the input model can
-        // force-lock to AI mode for the duration of the async file read + processing pipeline.
-        // Paired with `note_image_attachment_completed` in the spawn callback below (always
-        // fires regardless of outcome).
-        if let Some(context_model) = &self.context_model {
-            context_model.update(ctx, |context_model, ctx| {
-                context_model.note_image_attachment_started(ctx);
-            });
-        }
-
         let window_id = ctx.window_id();
 
         ctx.spawn(
@@ -5184,15 +5174,6 @@ impl EditorView {
                 if !images.is_empty() {
                     this.process_and_attach_images_as_ai_context(num_images_user_attached, images, ctx);
                 }
-
-                // Pair with `note_image_attachment_started` above. Decrement regardless of
-                // outcome so the counter never leaks. If `process_and_attach_images_as_ai_context`
-                // ran above, it manages its own independent increment/decrement.
-                if let Some(context_model) = &this.context_model {
-                    context_model.update(ctx, |context_model, ctx| {
-                        context_model.note_image_attachment_completed(ctx);
-                    });
-                }
             },
         );
     }
@@ -5233,18 +5214,7 @@ impl EditorView {
             ctx
         );
 
-        // QUALITY-544: mark image-attachment-in-progress synchronously so callers (e.g. terminal
-        // input.rs) that invoke `set_input_mode_agent` immediately after this method see
-        // `has_locking_attachment() == true` and skip the autodetect-unlock branch. Paired with
-        // `note_image_attachment_completed` in both the resolve and abort callbacks below so the
-        // counter is balanced regardless of how the spawned future exits.
-        if let Some(context_model) = &self.context_model {
-            context_model.update(ctx, |context_model, ctx| {
-                context_model.note_image_attachment_started(ctx);
-            });
-        }
-
-        self.process_attached_images_future_handle = Some(ctx.spawn_abortable(
+        self.process_attached_images_future_handle = Some(ctx.spawn(
             async move {
                 let mut processed_pending_images = vec![];
                 let mut num_oversized_images: usize = 0;
@@ -5286,14 +5256,8 @@ impl EditorView {
             move |this, (num_oversized_images, num_unprocessed_images, pending_images), ctx| {
                 // If the handle was taken between the future producing a value and this callback
                 // running (e.g. `abort_attached_images_future_handle` fired from `submit_ai_query`
-                // after the result was already in the channel), discard the result but still
-                // decrement the counter to balance `note_image_attachment_started` above.
+                // after the result was already in the channel), discard the result.
                 if this.process_attached_images_future_handle.is_none() {
-                    if let Some(context_model) = &this.context_model {
-                        context_model.update(ctx, |context_model, ctx| {
-                            context_model.note_image_attachment_completed(ctx);
-                        });
-                    }
                     return;
                 }
 
@@ -5342,26 +5306,10 @@ impl EditorView {
                 if let Some(context_model) = &this.context_model {
                     context_model.update(ctx, |context_model, ctx| {
                         context_model.append_pending_images(pending_images, ctx);
-                        // Pair with `note_image_attachment_started` above. The pending images
-                        // (if any survived processing) are now in `pending_attachments`, so
-                        // `has_locking_attachment` continues to return true via that path.
-                        context_model.note_image_attachment_completed(ctx);
                     });
                 }
 
                 ctx.emit(Event::ProcessingAttachedImages(false));
-            },
-            |this, ctx| {
-                // Future was aborted before producing a value (e.g. `submit_ai_query` called
-                // `abort_attached_images_future_handle` while image processing was still in
-                // flight). `ctx.spawn`'s default abort callback is a no-op, so without an explicit
-                // decrement here `pending_image_attachments_in_progress` would leak and keep the
-                // input force-locked until an unrelated context reset.
-                if let Some(context_model) = &this.context_model {
-                    context_model.update(ctx, |context_model, ctx| {
-                        context_model.note_image_attachment_completed(ctx);
-                    });
-                }
             },
         ));
 

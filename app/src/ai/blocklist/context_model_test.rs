@@ -1,11 +1,10 @@
-//! Unit tests for [`BlocklistAIContextModel::has_locking_attachment`] and the
-//! `note_image_attachment_started` / `note_image_attachment_completed` counter mechanics.
+//! Unit tests for [`BlocklistAIContextModel::has_locking_attachment`].
 //!
 //! These tests deliberately bypass the production [`BlocklistAIContextModel::new`] constructor
 //! (which subscribes to several singletons) and instead use [`BlocklistAIContextModel::new_for_test`]
 //! together with [`super::agent_view::AgentViewController::new`] backed by
 //! [`crate::terminal::view::ambient_agent::AmbientAgentViewModel::new_for_test`]. That keeps the
-//! fixture small enough to focus on the lock/counter logic without standing up `BlocklistAIHistoryModel`,
+//! fixture small enough to focus on the lock logic without standing up `BlocklistAIHistoryModel`,
 //! `LLMPreferences`, `CloudModel`, `UpdateManager`, or `AppExecutionMode`.
 
 use std::sync::Arc;
@@ -90,7 +89,6 @@ fn has_locking_attachment_is_false_for_default_state() {
 
         model.read(&app, |m, _| {
             assert!(!m.has_locking_attachment());
-            assert_eq!(m.pending_image_attachments_in_progress_for_test(), 0);
         });
     });
 }
@@ -112,8 +110,7 @@ fn has_locking_attachment_is_true_with_pending_block_id() {
 fn has_locking_attachment_is_false_with_only_pending_selected_text() {
     // Selected text alone is *not* a locking attachment: the user could be selecting shell
     // command text (e.g. to copy a previously-run command), and forcing the input into AI
-    // mode in that case would be wrong. Only images, files, blocks, or in-progress
-    // image-attach pipelines should force the lock.
+    // mode in that case would be wrong. Only images, files, or blocks should force the lock.
     App::test((), |mut app| async move {
         let model = build_test_context_model(&mut app);
 
@@ -169,92 +166,5 @@ fn has_locking_attachment_is_true_with_mixed_image_and_file_attachments() {
         });
 
         model.read(&app, |m, _| assert!(m.has_locking_attachment()));
-    });
-}
-
-#[test]
-fn note_image_attachment_started_increments_counter_and_locks_input() {
-    App::test((), |mut app| async move {
-        let model = build_test_context_model(&mut app);
-
-        model.update(&mut app, |m, ctx| m.note_image_attachment_started(ctx));
-
-        model.read(&app, |m, _| {
-            assert_eq!(m.pending_image_attachments_in_progress_for_test(), 1);
-            // The counter alone — without any actual `pending_attachments` entry — must lock the
-            // input so paste / drag-and-drop flows can't slip into NLD before the async pipeline
-            // appends the resulting `ImageContext`.
-            assert!(m.has_locking_attachment());
-        });
-    });
-}
-
-#[test]
-fn note_image_attachment_completed_decrements_counter_and_unlocks_input() {
-    App::test((), |mut app| async move {
-        let model = build_test_context_model(&mut app);
-
-        model.update(&mut app, |m, ctx| {
-            m.note_image_attachment_started(ctx);
-            m.note_image_attachment_completed(ctx);
-        });
-
-        model.read(&app, |m, _| {
-            assert_eq!(m.pending_image_attachments_in_progress_for_test(), 0);
-            assert!(!m.has_locking_attachment());
-        });
-    });
-}
-
-#[test]
-fn note_image_attachment_started_supports_multiple_concurrent_pipelines() {
-    App::test((), |mut app| async move {
-        let model = build_test_context_model(&mut app);
-
-        model.update(&mut app, |m, ctx| {
-            m.note_image_attachment_started(ctx);
-            m.note_image_attachment_started(ctx);
-            m.note_image_attachment_started(ctx);
-        });
-
-        model.read(&app, |m, _| {
-            assert_eq!(m.pending_image_attachments_in_progress_for_test(), 3);
-            assert!(m.has_locking_attachment());
-        });
-
-        // One completion should not release the lock while two pipelines are still in flight.
-        model.update(&mut app, |m, ctx| m.note_image_attachment_completed(ctx));
-        model.read(&app, |m, _| {
-            assert_eq!(m.pending_image_attachments_in_progress_for_test(), 2);
-            assert!(m.has_locking_attachment());
-        });
-
-        model.update(&mut app, |m, ctx| {
-            m.note_image_attachment_completed(ctx);
-            m.note_image_attachment_completed(ctx);
-        });
-        model.read(&app, |m, _| {
-            assert_eq!(m.pending_image_attachments_in_progress_for_test(), 0);
-            assert!(!m.has_locking_attachment());
-        });
-    });
-}
-
-#[test]
-fn note_image_attachment_completed_saturates_at_zero() {
-    // Defensive: a stray `_completed` without a matching `_started` (or a double-completion) must
-    // not underflow `usize` and silently lock the input forever.
-    App::test((), |mut app| async move {
-        let model = build_test_context_model(&mut app);
-
-        model.update(&mut app, |m, ctx| {
-            m.note_image_attachment_completed(ctx);
-            m.note_image_attachment_completed(ctx);
-        });
-
-        model.read(&app, |m, _| {
-            assert_eq!(m.pending_image_attachments_in_progress_for_test(), 0);
-            assert!(!m.has_locking_attachment());
-        });
     });
 }
