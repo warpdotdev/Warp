@@ -29,6 +29,39 @@ if ! command -v cargo; then
     exit 1
 fi
 
+# Check for Node.js (required by command-signatures-v2 crate).
+# The build.rs in that crate compiles a TypeScript helper using yarn,
+# which requires Node.js 18.14.1+ and yarn (typically via corepack).
+REQUIRED_NODE_VERSION="18.14.1"
+if ! command -v node >/dev/null 2>&1; then
+    echo "Error: Node.js is not installed."
+    echo "Node.js $REQUIRED_NODE_VERSION+ is required to build the command-signatures-v2 crate."
+    echo "Install it via: brew install node"
+    echo "  or use a version manager like nvm, fnm, or volta."
+    exit 1
+fi
+
+NODE_VERSION="$(node --version | sed 's/^v//')"
+# Use awk for version comparison since sh doesn't support sort -V
+if ! echo "$REQUIRED_NODE_VERSION" "$NODE_VERSION" | awk '{if ($2 < $1) exit 1; else exit 0}'; then
+    echo "Error: Node.js $NODE_VERSION is too old."
+    echo "Node.js $REQUIRED_NODE_VERSION+ is required."
+    echo "Upgrade via: brew upgrade node"
+    exit 1
+fi
+
+# Check for yarn (required by command-signatures-v2 crate).
+# yarn is typically enabled via `corepack enable` after installing Node.js.
+if ! command -v yarn >/dev/null 2>&1; then
+    echo "Error: yarn is not installed."
+    echo "yarn is required to build the command-signatures-v2 crate."
+    echo "Enable it via corepack (ships with Node.js):"
+    echo "  corepack enable"
+    exit 1
+fi
+
+echo "✅ Node.js $(node --version) and yarn $(yarn --version) detected."
+
 # Install various binaries through cargo.
 "$PWD"/script/install_cargo_test_deps
 "$PWD"/script/install_cargo_release_deps

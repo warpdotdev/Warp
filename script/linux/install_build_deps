@@ -53,6 +53,38 @@ else
   echo -e "⚠️  ${red}Unknown Linux distribution; necessary build dependencies may not be installed!${reset}"
 fi
 
+# Check for Node.js (required by command-signatures-v2 crate).
+# The build.rs in that crate compiles a TypeScript helper using yarn,
+# which requires Node.js 18.14.1+ and yarn (typically via corepack).
+REQUIRED_NODE_VERSION="18.14.1"
+if ! command -v node &>/dev/null; then
+  echo -e "${red}Error: Node.js is not installed.${reset}"
+  echo "Node.js $REQUIRED_NODE_VERSION+ is required to build the command-signatures-v2 crate."
+  echo "Install it via your system package manager, nvm, fnm, or volta:"
+  echo "  https://nodejs.org/en/download"
+  exit 1
+fi
+
+NODE_VERSION="$(node --version | sed 's/^v//')"
+if [[ "$(printf '%s\n' "$REQUIRED_NODE_VERSION" "$NODE_VERSION" | sort -V | head -n1)" != "$REQUIRED_NODE_VERSION" ]]; then
+  echo -e "${red}Error: Node.js $NODE_VERSION is too old.${reset}"
+  echo "Node.js $REQUIRED_NODE_VERSION+ is required. Current version: $NODE_VERSION"
+  echo "Upgrade via your system package manager, nvm, fnm, or volta."
+  exit 1
+fi
+
+# Check for yarn (required by command-signatures-v2 crate).
+# yarn is typically enabled via `corepack enable` after installing Node.js.
+if ! command -v yarn &>/dev/null; then
+  echo -e "${red}Error: yarn is not installed.${reset}"
+  echo "yarn is required to build the command-signatures-v2 crate."
+  echo "Enable it via corepack (ships with Node.js):"
+  echo "  corepack enable"
+  exit 1
+fi
+
+echo "✅ Node.js $(node --version) and yarn $(yarn --version) detected."
+
 # Install Rust.
 "$PWD"/script/install_rust
 

@@ -36,6 +36,10 @@ Environment variables:
 - `./script/run-clang-format.py -r --extensions 'c,h,cpp,m' ./crates/warpui/src/ ./app/src/` - Format C/C++/Obj-C code
 - `find . -name "*.wgsl" -exec wgslfmt --check {} +` - Check WGSL shader formatting
 
+### Prerequisites
+- **Node.js 18.14.1+** — Required by the `command-signatures-v2` crate, which compiles a TypeScript helper at build time using yarn.
+- **yarn** — Required by the `command-signatures-v2` build script. Enable via `corepack enable` after installing Node.js.
+
 ### Platform Setup
 - `./script/bootstrap` - Platform-specific setup (calls platform-specific bootstrap scripts)
 - `./script/install_cargo_build_deps` - Install Cargo build dependencies
