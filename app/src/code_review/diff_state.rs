@@ -348,7 +348,6 @@ struct DiffMetadata {
     unpushed_commits: Vec<Commit>,
     upstream_ref: Option<String>,
     pr_info: Option<PrInfo>,
-    pr_info_stale: bool,
 }
 
 #[derive(Default, Debug)]
@@ -373,6 +372,7 @@ pub struct DiffStateModel {
     metadata: Option<DiffMetadata>,
     computing_diffs_abort_handle: Option<SpawnedFutureHandle>,
     computing_metadata_abort_handle: Option<SpawnedFutureHandle>,
+    refreshing_pr_info_handle: Option<SpawnedFutureHandle>,
     /// Controls whether periodic throttled metadata refresh is active.
     /// Refresh is suppressed when the code review pane is not open.
     metadata_refresh_enabled: bool,
@@ -419,6 +419,7 @@ impl DiffStateModel {
             metadata: None,
             computing_diffs_abort_handle: None,
             computing_metadata_abort_handle: None,
+            refreshing_pr_info_handle: None,
             metadata_refresh_enabled: false,
         };
 
@@ -587,12 +588,9 @@ impl DiffStateModel {
             .and_then(|metadata| metadata.pr_info.as_ref())
     }
 
-    /// Whether PR info for the current branch is still being refreshed.
-    pub fn pr_info_stale(&self) -> bool {
-        self.metadata
-            .as_ref()
-            .map(|metadata| metadata.pr_info_stale)
-            .unwrap_or(true)
+    /// Whether PR info for the current branch is currently being refreshed.
+    pub fn is_pr_info_refreshing(&self) -> bool {
+        self.refreshing_pr_info_handle.is_some()
     }
 
     /// Checks if git operations like stash or reset would be blocked due to repository state.
@@ -1429,7 +1427,6 @@ impl DiffStateModel {
             unpushed_commits,
             upstream_ref,
             pr_info: None,
-            pr_info_stale: true,
         })
     }
 
@@ -1507,22 +1504,13 @@ impl DiffStateModel {
             .metadata
             .as_ref()
             .and_then(|metadata| metadata.pr_info.clone());
-        let previous_pr_info_stale = self
-            .metadata
-            .as_ref()
-            .is_some_and(|metadata| metadata.pr_info_stale);
 
         match metadata {
             Ok(mut metadata) => {
-                // Carry forward cached PR info so the button doesn't flash
-                // "Create PR" between branch switch and `refresh_pr_info`.
+                // Carry forward cached PR info while refresh_pr_info is pending
+                // so the header doesn't flash to Commit/Create PR between
+                // branch switch and PR lookup completion.
                 metadata.pr_info = previous_pr_info;
-                // Inherit staleness only on same-branch refreshes; branch
-                // change leaves it at the default (stale) so the retry can
-                // re-fire.
-                if previous_branch.as_deref() == Some(metadata.current_branch_name.as_str()) {
-                    metadata.pr_info_stale = previous_pr_info_stale;
-                }
                 self.metadata = Some(metadata);
             }
             Err(e) => {
@@ -1548,13 +1536,6 @@ impl DiffStateModel {
             if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
                 self.refresh_pr_info(ctx);
             }
-        } else if FeatureFlag::GitOperationsInCodeReview.is_enabled()
-            && self
-                .metadata
-                .as_ref()
-                .is_some_and(|metadata| metadata.pr_info_stale)
-        {
-            self.refresh_pr_info(ctx);
         }
 
         ctx.emit(DiffStateModelEvent::DiffMetadataChanged(
@@ -2917,6 +2898,9 @@ impl DiffStateModel {
     /// Call this on branch change or after push — not on every metadata refresh.
     #[cfg(feature = "local_fs")]
     pub fn refresh_pr_info(&mut self, ctx: &mut ModelContext<Self>) {
+        if let Some(handle) = self.refreshing_pr_info_handle.take() {
+            handle.abort();
+        }
         let Some(repo_path) = self.active_repository_path(ctx) else {
             return;
         };
@@ -2929,7 +2913,7 @@ impl DiffStateModel {
             use futures::FutureExt;
             futures::future::ready(None).boxed()
         };
-        ctx.spawn(
+        let handle = ctx.spawn(
             async move {
                 let path_env = path_future.await;
                 get_pr_for_branch(&repo_path, path_env.as_deref())
@@ -2937,15 +2921,16 @@ impl DiffStateModel {
                     .unwrap_or(None)
             },
             |me, pr_info, ctx| {
+                me.refreshing_pr_info_handle = None;
                 if let Some(metadata) = &mut me.metadata {
                     metadata.pr_info = pr_info;
-                    metadata.pr_info_stale = false;
                     ctx.emit(DiffStateModelEvent::DiffMetadataChanged(
                         InvalidationBehavior::PromptRefresh,
                     ));
                 }
             },
         );
+        self.refreshing_pr_info_handle = Some(handle);
     }
 
     #[cfg(not(feature = "local_fs"))]
