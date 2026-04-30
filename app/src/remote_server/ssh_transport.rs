@@ -190,10 +190,10 @@ impl RemoteTransport for SshTransport {
         executor: Arc<executor::Background>,
     ) -> Pin<Box<dyn Future<Output = Result<Connection>> + Send>> {
         let socket_path = self.socket_path.clone();
+        let remote_proxy_command = self.remote_proxy_command();
         Box::pin(async move {
-            let binary = remote_server::setup::remote_server_binary();
             let mut args = remote_server::ssh::ssh_args(&socket_path);
-            args.push(format!("{binary} remote-server-proxy"));
+            args.push(remote_proxy_command);
 
             // `kill_on_drop(true)` pairs with ownership of the `Child` being
             // returned in the [`Connection`] below: the
