@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::{borrow::Cow, ops::RangeInclusive};
 
 use regex::escape;
 use regex_automata::hybrid::dfa::{Cache, DFA};
@@ -66,6 +66,21 @@ impl RegexDFAs {
         enable_unicode_word_boundary: bool,
         case_sensitive: bool,
     ) -> Result<RegexDFAs, Box<BuildError>> {
+        let patterns = patterns
+            .iter()
+            .map(|pattern| {
+                if enable_unicode_word_boundary {
+                    Cow::Borrowed(*pattern)
+                } else {
+                    Cow::Owned(replace_unicode_word_boundaries(pattern))
+                }
+            })
+            .collect::<Vec<_>>();
+        let pattern_refs = patterns
+            .iter()
+            .map(|pattern| pattern.as_ref())
+            .collect::<Vec<_>>();
+
         let mut builder = DFA::builder();
         builder.configure(
             DFA::config()
@@ -81,7 +96,7 @@ impl RegexDFAs {
         if !case_sensitive {
             builder.syntax(Config::new().case_insensitive(true));
         }
-        Self::new_internal(patterns, builder)
+        Self::new_internal(&pattern_refs, builder)
     }
 
     // Based on FindConfig, create DFAs for all directions
