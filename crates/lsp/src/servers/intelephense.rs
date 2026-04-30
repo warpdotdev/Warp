@@ -9,8 +9,6 @@ use async_trait::async_trait;
 
 #[cfg(feature = "local_fs")]
 use anyhow::Context;
-#[cfg(feature = "local_fs")]
-use command::r#async::Command;
 
 /// Language server candidate for [Intelephense](https://intelephense.com/),
 /// the de-facto standard PHP language server (used by Zed, VS Code, Neovim,
@@ -41,6 +39,15 @@ impl IntelephenseCandidate {
     /// Like Pyright, we run node directly with the langserver JS file rather than
     /// relying on the `intelephense` wrapper script (which has a node shebang).
     /// First tries our custom node installation, then falls back to system node.
+    ///
+    /// Unlike Pyright, Intelephense does not document a `--version` flag — its
+    /// only documented arguments are LSP transport flags (`--stdio`,
+    /// `--node-ipc`, `--socket=N`, `--pipe=X`). Running it with `--version`
+    /// would either error out or hang waiting for LSP messages, so we treat
+    /// the presence of the npm-installed entry-point JS file as the proof
+    /// that the install completed. The next call to `command_and_params`
+    /// will spawn the server with `--stdio` and any real failure (corrupted
+    /// install, broken node, etc.) surfaces through the LSP transport itself.
     #[cfg(feature = "local_fs")]
     pub async fn find_installed_binary_config(
         path_env_var: Option<&str>,
@@ -58,31 +65,10 @@ impl IntelephenseCandidate {
 
         let node_binary = node_runtime::find_working_node_binary(path_env_var).await?;
 
-        // Verify the install works by spawning `node intelephense.js --version`.
-        // Intelephense exits 0 with a version string on stdout; if the install
-        // is broken, the spawn fails or the exit is non-zero.
-        let mut cmd = Command::new(&node_binary);
-        if let Some(path) = path_env_var {
-            cmd.env("PATH", path);
-        }
-        cmd.arg(&langserver_js).arg("--version");
-        match cmd.output().await {
-            Ok(output) if output.status.success() => {
-                let version = String::from_utf8_lossy(&output.stdout);
-                log::info!("Verified intelephense installation: {}", version.trim());
-            }
-            Ok(output) => {
-                log::warn!(
-                    "Intelephense version check failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                return None;
-            }
-            Err(e) => {
-                log::warn!("Failed to run intelephense version check: {e}");
-                return None;
-            }
-        }
+        log::info!(
+            "Found intelephense installation at {}",
+            langserver_js.display()
+        );
 
         Some(CustomBinaryConfig {
             binary_path: node_binary,
@@ -109,13 +95,18 @@ impl LanguageServerCandidate for IntelephenseCandidate {
     }
 
     async fn is_installed_on_path(&self, executor: &CommandBuilder) -> bool {
+        // Intelephense doesn't document a `--version` flag; its CLI surface is
+        // only LSP transport flags. `--help`, by contrast, is handled by the
+        // underlying argument parser and exits cleanly with a non-zero status
+        // and usage text. We only care about whether the binary spawned at
+        // all (i.e., is on PATH and executable), so accept any clean exit
+        // from the `output()` future regardless of `status.success()`.
         executor
             .command("intelephense")
-            .arg("--version")
+            .arg("--help")
             .output()
             .await
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+            .is_ok()
     }
 
     async fn install(
