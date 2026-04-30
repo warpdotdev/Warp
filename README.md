@@ -53,6 +53,14 @@ Engineering details (testing, presubmit, platform-specific notes) are in [`WARP.
 
 ---
 
+## Warp Contributions Overview Dashboard
+
+Explore [build.warp.dev](https://build.warp.dev) to:
+- Watch thousands of Oz agents triage issues, write specs, implement changes, and review PRs
+- View top contributors and in-flight features
+- Track your own issues with GitHub sign-in
+- Click into active agent sessions in a web-compiled Warp terminal
+
 ## Licensing
 
 This fork inherits the upstream license setup unchanged:

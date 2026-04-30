@@ -188,7 +188,7 @@ impl Log for WasmLogger {
     fn flush(&self) {}
 }
 
-/// Initialize the logger which the given config. If failed, it will log a message to the the browser console.
+/// Initialize the logger with the given config. If initialization fails, it will log a message to the browser console.
 fn init_logger(config: Config) {
     let max_level = config.level;
     let wl = WasmLogger {

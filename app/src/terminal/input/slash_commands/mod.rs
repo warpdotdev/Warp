@@ -1,17 +1,26 @@
+mod cloud_mode_v2_view;
 mod data_source;
 mod search_item;
-mod view;
+pub(super) mod view;
 
+pub use cloud_mode_v2_view::{CloudModeV2SlashCommandView, Section as CloudModeV2Section};
 pub use data_source::*;
-pub use view::*;
+pub use view::{CloseReason, InlineSlashCommandView, SlashCommandsEvent};
 
 use ai::skills::SkillReference;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::appearance::Appearance;
+use warp_core::ui::theme::AnsiColorIdentifier;
 use warpui::clipboard::ClipboardContent;
 use warpui::{SingletonEntity, ViewContext};
 
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent::conversation::AIConversationId;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent_conversations_model::AgentConversationsModel;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::agent_management::telemetry::AgentManagementTelemetryEvent;
 use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
@@ -24,6 +33,7 @@ use crate::search::slash_command_menu::{SlashCommandId, StaticCommand};
 use crate::server::ids::SyncId;
 use crate::server::telemetry::SlashCommandAcceptedDetails;
 use crate::settings::AISettings;
+use crate::tab::SelectedTabColor;
 use crate::terminal::input::decorations::InputBackgroundJobOptions;
 use crate::terminal::input::inline_menu::{InlineMenuAction, InlineMenuType};
 use crate::terminal::input::message_bar::Message;
@@ -31,13 +41,18 @@ use crate::terminal::input::slash_command_model::{
     SlashCommandEntryState, UpdatedSlashCommandModel,
 };
 use crate::terminal::input::{
-    CompletionsTrigger, Event, Input, InputSuggestionsMode, UserQueryMenuAction,
+    CompletionsTrigger, Event, Input, InputAction, InputSuggestionsMode, UserQueryMenuAction,
 };
 use crate::terminal::view::TerminalAction;
+use crate::ui_components::color_dot;
 use crate::view_components::DismissibleToast;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
 use crate::TelemetryEvent;
+#[cfg(not(target_family = "wasm"))]
+use warp_cli::agent::Harness;
+#[cfg(not(target_family = "wasm"))]
+use warpui::AppContext;
 
 #[derive(Debug, Clone)]
 pub enum AcceptSlashCommandOrSavedPrompt {
@@ -400,7 +415,19 @@ impl Input {
                 ctx.emit(Event::CreateDockerSandbox);
             }
             conversations if command.name == commands::CONVERSATIONS.name => {
-                if FeatureFlag::AgentView.is_enabled() {
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    self.suggestions_mode_model.update(ctx, |model, ctx| {
+                        model.set_mode(InputSuggestionsMode::Closed, ctx);
+                    });
+                    self.clear_buffer_and_reset_undo_stack(ctx);
+                    if let Some(view) = self.cloud_mode_v2_history_menu_view.clone() {
+                        view.update(ctx, |v, ctx| {
+                            v.arm_initial_buffer_sync(ctx);
+                        });
+                    }
+                    ctx.dispatch_typed_action_deferred(InputAction::OpenInlineHistoryMenu);
+                    return true;
+                } else if FeatureFlag::AgentView.is_enabled() {
                     self.open_conversation_menu(ctx);
                 } else {
                     ctx.dispatch_typed_action(&TerminalAction::OpenConversationsPalette);
@@ -419,6 +446,54 @@ impl Input {
                 };
 
                 ctx.dispatch_typed_action(&WorkspaceAction::SetActiveTabName(name.to_owned()));
+            }
+            set_tab_color if command.name == commands::SET_TAB_COLOR.name => {
+                let supported_options = || {
+                    color_dot::TAB_COLOR_OPTIONS
+                        .iter()
+                        .map(|c| c.to_string().to_ascii_lowercase())
+                        .chain(std::iter::once("none".to_owned()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+
+                let Some(arg) = argument
+                    .map(|name| name.trim())
+                    .filter(|name| !name.is_empty())
+                else {
+                    show_error_toast(
+                        format!(
+                            "Please provide a color after /set-tab-color ({})",
+                            supported_options()
+                        ),
+                        ctx,
+                    );
+                    return true;
+                };
+
+                let color = if arg.eq_ignore_ascii_case("none") {
+                    SelectedTabColor::Cleared
+                } else {
+                    let parsed = arg
+                        .parse::<AnsiColorIdentifier>()
+                        .ok()
+                        .filter(|c| color_dot::TAB_COLOR_OPTIONS.contains(c));
+                    match parsed {
+                        Some(c) => SelectedTabColor::Color(c),
+                        None => {
+                            show_error_toast(
+                                format!(
+                                    "Unknown tab color '{arg}'. Use one of: {}.",
+                                    supported_options()
+                                ),
+                                ctx,
+                            );
+                            return true;
+                        }
+                    }
+                };
+
+                ctx.dispatch_typed_action(&WorkspaceAction::SetActiveTabColor(color));
             }
             create_env if command.name == commands::CREATE_ENVIRONMENT.name => {
                 // If the user included args after the slash command, treat them as repo paths/URLs.
@@ -627,11 +702,63 @@ impl Input {
                 if !FeatureFlag::ListSkills.is_enabled() {
                     return false;
                 }
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    self.apply_v2_slash_section_filter(CloudModeV2Section::Skills, ctx);
+                    return true;
+                }
                 // Open the skill selector menu for invocation - skill command will be inserted into buffer
                 self.open_invoke_skill_selector(ctx);
             }
+            host if command.name == commands::HOST.name => {
+                if !self.is_cloud_mode_input_v2_composing(ctx) {
+                    // Defensive: the command is registered only when the V2 flag is on and its
+                    // availability requires CLOUD_AGENT_V2, so this branch should be unreachable.
+                    return false;
+                }
+                self.suggestions_mode_model.update(ctx, |model, ctx| {
+                    model.set_mode(InputSuggestionsMode::Closed, ctx);
+                });
+                self.clear_buffer_and_reset_undo_stack(ctx);
+                self.open_v2_host_selector(ctx);
+                return true;
+            }
+            harness if command.name == commands::HARNESS.name => {
+                if !self.is_cloud_mode_input_v2_composing(ctx) {
+                    // Defensive: the command is registered only when the V2 flag is on and its
+                    // availability requires CLOUD_AGENT_V2, so this branch should be unreachable.
+                    return false;
+                }
+                self.suggestions_mode_model.update(ctx, |model, ctx| {
+                    model.set_mode(InputSuggestionsMode::Closed, ctx);
+                });
+                self.clear_buffer_and_reset_undo_stack(ctx);
+                self.open_v2_harness_selector(ctx);
+                return true;
+            }
+            environment if command.name == commands::ENVIRONMENT.name => {
+                if !self.is_cloud_mode_input_v2_composing(ctx) {
+                    return false;
+                }
+                self.suggestions_mode_model.update(ctx, |model, ctx| {
+                    model.set_mode(InputSuggestionsMode::Closed, ctx);
+                });
+                self.clear_buffer_and_reset_undo_stack(ctx);
+                self.open_v2_environment_selector(ctx);
+                return true;
+            }
             models if command.name == commands::MODEL.name => {
-                self.open_model_selector(ctx);
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    self.suggestions_mode_model.update(ctx, |model, ctx| {
+                        model.set_mode(InputSuggestionsMode::Closed, ctx);
+                    });
+                    self.clear_buffer_and_reset_undo_stack(ctx);
+                    self.agent_input_footer.update(ctx, |footer, ctx| {
+                        footer.open_v2_model_selector(ctx);
+                    });
+                    return true;
+                } else {
+                    self.open_model_selector(ctx);
+                }
             }
             profiles if command.name == commands::PROFILE.name => {
                 if !FeatureFlag::InlineProfileSelector.is_enabled() {
@@ -641,6 +768,10 @@ impl Input {
                 self.open_profile_selector(ctx);
             }
             prompts if command.name == commands::PROMPTS.name => {
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    self.apply_v2_slash_section_filter(CloudModeV2Section::Prompts, ctx);
+                    return true;
+                }
                 if FeatureFlag::AgentView.is_enabled() {
                     self.open_prompts_menu(ctx);
                 } else {
@@ -743,6 +874,48 @@ impl Input {
             fork_from if command.name == commands::FORK_FROM.name => {
                 self.open_user_query_menu(UserQueryMenuAction::ForkFrom, ctx);
                 return true;
+            }
+            #[cfg(not(target_family = "wasm"))]
+            continue_locally if command.name == commands::CONTINUE_LOCALLY.name => {
+                let Some(conversation_id) = self
+                    .ai_context_model
+                    .as_ref(ctx)
+                    .selected_conversation_id(ctx)
+                else {
+                    show_error_toast(
+                        "/continue-locally requires an active conversation".to_owned(),
+                        ctx,
+                    );
+                    return true;
+                };
+
+                if !conversation_is_cloud_oz_for_slash_command(conversation_id, ctx) {
+                    show_error_toast(
+                        "/continue-locally is only available for cloud Oz conversations".to_owned(),
+                        ctx,
+                    );
+                    return true;
+                }
+
+                let destination = if trigger.is_cmd_or_ctrl_enter() {
+                    ForkedConversationDestination::NewTab
+                } else {
+                    ForkedConversationDestination::SplitPane
+                };
+
+                send_telemetry_from_ctx!(
+                    AgentManagementTelemetryEvent::SlashCommandContinueLocally,
+                    ctx
+                );
+
+                ctx.dispatch_typed_action(&WorkspaceAction::ForkAIConversation {
+                    conversation_id,
+                    fork_from_exchange: None,
+                    summarize_after_fork: false,
+                    summarization_prompt: None,
+                    initial_prompt: argument.cloned(),
+                    destination,
+                });
             }
             fork_and_compact if command.name == commands::FORK_AND_COMPACT.name => {
                 let Some(conversation_id) = self
@@ -897,9 +1070,17 @@ impl Input {
             self.suggestions_mode_model.as_ref(ctx).mode(),
             InputSuggestionsMode::SlashCommands
         ) {
-            self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                view.accept_selected_item(true, ctx);
-            });
+            if self.is_cloud_mode_input_v2_composing(ctx) {
+                if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                    view.update(ctx, |view, ctx| {
+                        view.accept_selected_item(true, ctx);
+                    });
+                }
+            } else {
+                self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                    view.accept_selected_item(true, ctx);
+                });
+            }
             return true;
         }
 
@@ -916,6 +1097,11 @@ impl Input {
                     ctx,
                 )
             }
+            SlashCommandEntryState::SkillCommand(_)
+                if self.is_cloud_mode_input_v2_composing(ctx) =>
+            {
+                false
+            }
             SlashCommandEntryState::SkillCommand(detected_skill) => {
                 let reference = detected_skill.reference.clone();
                 let user_query = detected_skill.argument.clone();
@@ -927,6 +1113,41 @@ impl Input {
             | SlashCommandEntryState::Composing { .. }
             | SlashCommandEntryState::DisabledUntilEmptyBuffer => false,
         }
+    }
+
+    fn apply_v2_slash_section_filter(
+        &mut self,
+        section: CloudModeV2Section,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.editor.update(ctx, |editor, ctx| {
+            editor.set_buffer_text("/", ctx);
+        });
+        if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+            view.update(ctx, |v, ctx| {
+                v.set_section_filter(Some(section), ctx);
+            });
+        }
+    }
+
+    pub(super) fn maybe_clear_v2_slash_section_filter(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        if !self.is_cloud_mode_input_v2_composing(ctx) {
+            return false;
+        }
+        let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() else {
+            return false;
+        };
+        let has_filter = view.as_ref(ctx).has_section_filter();
+        if !has_filter {
+            return false;
+        }
+        view.update(ctx, |v, ctx| {
+            v.set_section_filter(None, ctx);
+        });
+        true
     }
 
     /// Executes a slash command on `enter` keypress.
@@ -948,9 +1169,17 @@ impl Input {
             self.suggestions_mode_model.as_ref(ctx).mode(),
             InputSuggestionsMode::SlashCommands
         ) {
-            self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                view.accept_selected_item(false, ctx);
-            });
+            if self.is_cloud_mode_input_v2_composing(ctx) {
+                if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                    view.update(ctx, |view, ctx| {
+                        view.accept_selected_item(false, ctx);
+                    });
+                }
+            } else {
+                self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                    view.accept_selected_item(false, ctx);
+                });
+            }
             return true;
         }
 
@@ -966,6 +1195,11 @@ impl Input {
                     ctx,
                 )
             }
+            SlashCommandEntryState::SkillCommand(_)
+                if self.is_cloud_mode_input_v2_composing(ctx) =>
+            {
+                false
+            }
             SlashCommandEntryState::SkillCommand(detected_skill) => {
                 let reference = detected_skill.reference.clone();
                 let user_query = detected_skill.argument.clone();
@@ -977,5 +1211,38 @@ impl Input {
             | SlashCommandEntryState::Composing { .. }
             | SlashCommandEntryState::DisabledUntilEmptyBuffer => false,
         }
+    }
+}
+
+/// Returns true when the conversation with `conversation_id` is associated with a cloud Oz
+/// `AmbientAgentTask`. Used as the defensive runtime gate for `/continue-locally` so a
+/// keybinding-triggered execution can't fall through onto a non-cloud-Oz conversation after
+/// the menu has been recomputed. Mirrors `SlashCommandDataSource::active_conversation_is_cloud_oz`.
+#[cfg(not(target_family = "wasm"))]
+fn conversation_is_cloud_oz_for_slash_command(
+    conversation_id: AIConversationId,
+    ctx: &AppContext,
+) -> bool {
+    let history = BlocklistAIHistoryModel::as_ref(ctx);
+    let Some(conversation) = history.conversation(&conversation_id) else {
+        return false;
+    };
+    let Some(task_id) = conversation.task_id() else {
+        return false;
+    };
+
+    let Some(task) = AgentConversationsModel::as_ref(ctx).get_task_data(&task_id) else {
+        // Permissive: not yet fetched. Matches the data-source default so the command isn't
+        // wrongly blocked while the task fetch is in flight.
+        return true;
+    };
+
+    match task
+        .agent_config_snapshot
+        .as_ref()
+        .and_then(|s| s.harness.as_ref())
+    {
+        Some(config) => config.harness_type == Harness::Oz,
+        None => true,
     }
 }

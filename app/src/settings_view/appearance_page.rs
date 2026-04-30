@@ -55,8 +55,8 @@ use crate::window_settings::{
 use crate::workspace::header_toolbar_editor::HeaderToolbarInlineEditor;
 use crate::workspace::tab_settings::{
     DirectoryTabColor, PreserveActiveTabColor, ShowCodeReviewButton, ShowIndicatorsButton,
-    TabCloseButtonPosition, TabSettings, TabSettingsChangedEvent,
-    UseLatestUserPromptAsConversationTitleInTabNames, UseVerticalTabs,
+    ShowVerticalTabPanelInRestoredWindows, TabCloseButtonPosition, TabSettings,
+    TabSettingsChangedEvent, UseLatestUserPromptAsConversationTitleInTabNames, UseVerticalTabs,
     WorkspaceDecorationVisibility,
 };
 use crate::workspace::WorkspaceAction;
@@ -381,6 +381,14 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
             context,
             flags::USE_VERTICAL_TABS_FLAG,
         ));
+        toggle_binding_pairs.push(ToggleSettingActionPair::new(
+            "show vertical tabs panel in restored windows",
+            builder(SettingsAction::AppearancePageToggle(
+                AppearancePageAction::ToggleShowVerticalTabPanelInRestoredWindows,
+            )),
+            context,
+            flags::USE_VERTICAL_TABS_FLAG,
+        ));
     }
 
     if FeatureFlag::Ligatures.is_enabled() {
@@ -452,6 +460,7 @@ pub enum AppearancePageAction {
     ToggleShowCodeReviewButton,
     TogglePreserveActiveTabColor,
     ToggleVerticalTabs,
+    ToggleShowVerticalTabPanelInRestoredWindows,
     ToggleUseLatestUserPromptAsConversationTitleInTabNames,
     ToggleLigatureRendering,
     ToggleBlurTexture,
@@ -590,6 +599,9 @@ impl TypedActionView for AppearanceSettingsPageView {
             ToggleShowCodeReviewButton => self.toggle_show_code_review_button(ctx),
             TogglePreserveActiveTabColor => self.toggle_preserve_active_tab_color(ctx),
             ToggleVerticalTabs => self.toggle_vertical_tabs(ctx),
+            ToggleShowVerticalTabPanelInRestoredWindows => {
+                self.toggle_show_vertical_tab_panel_in_restored_windows(ctx)
+            }
             ToggleUseLatestUserPromptAsConversationTitleInTabNames => {
                 self.toggle_use_latest_user_prompt_as_conversation_title_in_tab_names(ctx)
             }
@@ -1375,6 +1387,9 @@ impl AppearanceSettingsPageView {
 
         if FeatureFlag::VerticalTabs.is_enabled() {
             tab_settings_widgets.push(Box::new(VerticalTabsWidget::default()));
+            tab_settings_widgets.push(Box::new(
+                ShowVerticalTabPanelInRestoredWindowsWidget::default(),
+            ));
             tab_settings_widgets.push(Box::new(
                 UseLatestUserPromptAsConversationTitleInTabNamesWidget::default(),
             ));
@@ -2302,6 +2317,14 @@ impl AppearanceSettingsPageView {
 
         ctx.update_model(&tab_settings, move |tab_settings, ctx| {
             report_if_error!(tab_settings.use_vertical_tabs.set_value(new_value, ctx));
+        });
+    }
+
+    fn toggle_show_vertical_tab_panel_in_restored_windows(&mut self, ctx: &mut ViewContext<Self>) {
+        TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+            report_if_error!(settings
+                .show_vertical_tab_panel_in_restored_windows
+                .toggle_and_save_value(ctx));
         });
     }
 
@@ -4581,6 +4604,56 @@ impl SettingsWidget for VerticalTabsWidget {
                 })
                 .finish(),
             None,
+        )
+    }
+}
+
+#[derive(Default)]
+struct ShowVerticalTabPanelInRestoredWindowsWidget {
+    switch_state: SwitchStateHandle,
+}
+
+impl SettingsWidget for ShowVerticalTabPanelInRestoredWindowsWidget {
+    type View = AppearanceSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "vertical tabs panel restore window session snapshot"
+    }
+
+    fn render(
+        &self,
+        view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let tab_settings = TabSettings::as_ref(app);
+
+        render_body_item::<AppearancePageAction>(
+            "Show vertical tabs panel in restored windows".into(),
+            None,
+            LocalOnlyIconState::for_setting(
+                ShowVerticalTabPanelInRestoredWindows::storage_key(),
+                ShowVerticalTabPanelInRestoredWindows::sync_to_cloud(),
+                &mut view.local_only_icon_tooltip_states.borrow_mut(),
+                app,
+            ),
+            ToggleState::Enabled,
+            appearance,
+            appearance
+                .ui_builder()
+                .switch(self.switch_state.clone())
+                .check(*tab_settings.show_vertical_tab_panel_in_restored_windows)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(
+                        AppearancePageAction::ToggleShowVerticalTabPanelInRestoredWindows,
+                    );
+                })
+                .finish(),
+            Some(
+                "When enabled, reopening or restoring a window opens the vertical tabs panel even if it was closed when the window was last saved."
+                    .to_string(),
+            ),
         )
     }
 }
