@@ -1447,6 +1447,7 @@ where
             }
             ('t', None) => match next_param_or(1) as usize {
                 14 => handler.text_area_size_pixels(writer),
+                16 => handler.cell_pixel_size(writer),
                 18 => handler.text_area_size_chars(writer),
                 22 => handler.push_title(),
                 23 => handler.pop_title(),

@@ -1212,6 +1212,13 @@ impl ansi::Handler for GridHandler {
         let _ = write!(writer, "\x1b[4;{height};{width}t");
     }
 
+    fn cell_pixel_size<W: std::io::Write>(&mut self, writer: &mut W) {
+        let sf = self.ansi_handler_state.scale_factor;
+        let cell_w_phys = ((self.ansi_handler_state.cell_width as f32) * sf).round() as usize;
+        let cell_h_phys = ((self.ansi_handler_state.cell_height as f32) * sf).round() as usize;
+        let _ = write!(writer, "\x1b[6;{cell_h_phys};{cell_w_phys}t");
+    }
+
     fn text_area_size_chars<W: std::io::Write>(&mut self, writer: &mut W) {
         let _ = write!(writer, "\x1b[8;{};{}t", self.visible_rows(), self.columns());
     }

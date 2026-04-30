@@ -638,6 +638,10 @@ impl ansi::Handler for EarlyOutputHandler<'_> {
         delegate!(self.text_area_size_pixels(writer));
     }
 
+    fn cell_pixel_size<W: std::io::Write>(&mut self, writer: &mut W) {
+        delegate!(self.cell_pixel_size(writer));
+    }
+
     fn text_area_size_chars<W: std::io::Write>(&mut self, writer: &mut W) {
         delegate!(self.text_area_size_chars(writer));
     }

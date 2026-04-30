@@ -233,6 +233,9 @@ pub trait Handler {
     /// Report text area size in pixels.
     fn text_area_size_pixels<W: io::Write>(&mut self, _: &mut W);
 
+    /// Report single cell size in physical pixels (CSI 16t → \x1b[6;height;widtht).
+    fn cell_pixel_size<W: io::Write>(&mut self, _: &mut W);
+
     /// Report text area size in characters.
     fn text_area_size_chars<W: io::Write>(&mut self, _: &mut W);
 
