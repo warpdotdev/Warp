@@ -242,9 +242,11 @@ fn prepare_codex_config_toml_upgrades_untrusted_entry() {
     fs::create_dir_all(&working_dir).unwrap();
     let canonical = working_dir.canonicalize().unwrap();
     let key = canonical.to_string_lossy().into_owned();
+    // Use a TOML literal-string key ('...') so Windows backslashes in `key`
+    // (e.g. `\\?\C:\...`) are not interpreted as escape sequences.
     fs::write(
         &config_path,
-        format!("[projects.\"{key}\"]\ntrust_level = \"untrusted\"\n"),
+        format!("[projects.'{key}']\ntrust_level = \"untrusted\"\n"),
     )
     .unwrap();
 
