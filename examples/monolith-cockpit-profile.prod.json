@@ -1,0 +1,184 @@
+{
+  "tenants": [
+    {
+      "name": "acme-corp",
+      "environment": "prod / offboarded",
+      "hosts": []
+    },
+    {
+      "name": "codex-smoke-1776096636",
+      "environment": "prod / offboarded",
+      "hosts": []
+    },
+    {
+      "name": "codex-smoke-1776097324",
+      "environment": "prod / offboarded",
+      "hosts": []
+    },
+    {
+      "name": "fit",
+      "environment": "prod / offboarded",
+      "hosts": [
+        {
+          "name": "raava-fit-gcp-hermes-direct",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "terminated",
+          "runtimes": [
+            {
+              "name": "gcp-hermes-direct",
+              "status": "stopped",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        },
+        {
+          "name": "raava-fit-gcp-hermes-direct-c",
+          "zone": "us-east1-c",
+          "project": "raava-481318",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "gcp-hermes-direct",
+              "status": "running",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fit-roofin",
+      "environment": "prod / offboarded",
+      "hosts": []
+    },
+    {
+      "name": "fit-roofing-co",
+      "environment": "prod / active",
+      "hosts": []
+    },
+    {
+      "name": "fit-roofing-construction",
+      "environment": "prod / offboarded",
+      "hosts": []
+    },
+    {
+      "name": "healing-with-strength",
+      "environment": "prod / active",
+      "hosts": [
+        {
+          "name": "raava-acme-corp-jarvis-gce",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "terminated",
+          "runtimes": [
+            {
+              "name": "jarvis-gce",
+              "status": "stopped",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        },
+        {
+          "name": "raava-healing-with-strength-hws-coo-ea",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "hws-coo-ea",
+              "status": "running",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ijt-capital",
+      "environment": "prod / active",
+      "hosts": [
+        {
+          "name": "raava-ijt-capital-aurum",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "aurum",
+              "status": "running",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "isaiah-cruzs-fleet",
+      "environment": "prod / offboarded",
+      "hosts": []
+    },
+    {
+      "name": "open-invite",
+      "environment": "prod / active",
+      "hosts": []
+    },
+    {
+      "name": "raava",
+      "environment": "prod / active",
+      "hosts": [
+        {
+          "name": "raava-raava-fleet-commander",
+          "zone": "us-east1-b",
+          "project": "raava-481318",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "fleet-commander",
+              "status": "running",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "raava-demo",
+      "environment": "prod / offboarded",
+      "hosts": []
+    },
+    {
+      "name": "schwarz-group",
+      "environment": "prod / active",
+      "hosts": [
+        {
+          "name": "schwarz-group-jschwarz-ea",
+          "zone": "us-east1-d",
+          "project": "raava-481318",
+          "status": "ssh ready",
+          "runtimes": [
+            {
+              "name": "jschwarz-ea",
+              "status": "running",
+              "workdir": "/home/agent/hermes-agent",
+              "git_ref": "unknown",
+              "service_name": "hermes-gateway"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

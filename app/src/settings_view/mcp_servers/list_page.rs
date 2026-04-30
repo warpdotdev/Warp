@@ -4,7 +4,7 @@ use crate::modal::Modal;
 use crate::modal::ModalEvent;
 use crate::modal::ModalViewState;
 use crate::server::telemetry::{MCPTemplateInstallationSource, TelemetryEvent};
-use crate::settings::{AISettings, AISettingsChangedEvent};
+use crate::settings::{AISettings, AISettingsChangedEvent, MonolithSettings};
 use crate::settings_view::mcp_servers_page::InstallOrigin;
 use crate::settings_view::settings_page::{
     build_toggle_element, render_body_item_label, LocalOnlyIconState, ToggleState,
@@ -54,7 +54,7 @@ use crate::{
     workspaces::user_workspaces::UserWorkspaces,
 };
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
-use settings::ToggleableSetting as _;
+use settings::{Setting as _, ToggleableSetting as _};
 use std::cmp::Ordering;
 use std::{collections::HashMap, path::PathBuf};
 use strum::IntoEnumIterator;
@@ -66,7 +66,7 @@ use warpui::{
     elements::{
         Align, Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
         Expanded, Fill, Flex, FormattedTextElement, HighlightedHyperlink, MainAxisAlignment,
-        MainAxisSize, ParentElement, Radius, Text,
+        MainAxisSize, Padding, ParentElement, Radius, Shrinkable, Text,
     },
     ui_components::{
         components::{Coords, UiComponent, UiComponentStyles},
@@ -74,6 +74,7 @@ use warpui::{
     },
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
+use warpui_extras::secure_storage::AppContextExt;
 
 const DESCRIPTION_TEXT: &str = "Add MCP servers to extend the Warp Agent's capabilities. MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. Add a custom server, or use the presets to get started with popular servers. You can also find team servers that have been shared with you here. ";
 
@@ -99,10 +100,12 @@ pub enum MCPServersListPageViewEvent {
 pub enum MCPServersListPageViewAction {
     Add,
     ToggleFileBasedMcp,
+    SaveMonolithApiKey,
 }
 
 const EMPTY_STATE_TEXT: &str = "Once you add a MCP server, it will be shown here.";
 const NO_SEARCH_RESULTS_TEXT: &str = "No search results found";
+const MONOLITH_API_KEY_STORAGE_KEY: &str = "monolith.platform_admin_api_key";
 
 pub struct MCPServersListPageView {
     server_cards: HashMap<ServerCardItemId, ViewHandle<ServerCardView>>,
@@ -113,6 +116,8 @@ pub struct MCPServersListPageView {
     search_editor: ViewHandle<EditorView>,
     search_bar: ViewHandle<SearchBar>,
     add_button: ViewHandle<ActionButton>,
+    monolith_api_key_editor: ViewHandle<EditorView>,
+    monolith_api_key_save_button: ViewHandle<ActionButton>,
     file_based_mcp_toggle: SwitchStateHandle,
 }
 
@@ -237,6 +242,27 @@ impl MCPServersListPageView {
                 .on_click(|ctx| ctx.dispatch_typed_action(MCPServersListPageViewAction::Add))
         });
 
+        let monolith_api_key_editor = {
+            let options = SingleLineEditorOptions {
+                is_password: true,
+                text: TextOptions::ui_text(None, appearance.as_ref(ctx)),
+                propagate_and_no_op_vertical_navigation_keys:
+                    PropagateAndNoOpNavigationKeys::Always,
+                ..Default::default()
+            };
+            let editor = ctx.add_typed_action_view(|ctx| EditorView::single_line(options, ctx));
+            editor.update(ctx, |editor, ctx| {
+                editor.set_placeholder_text("Platform admin API key", ctx);
+            });
+            editor
+        };
+
+        let monolith_api_key_save_button = ctx.add_typed_action_view(|_| {
+            ActionButton::new("Save", NakedTheme).on_click(|ctx| {
+                ctx.dispatch_typed_action(MCPServersListPageViewAction::SaveMonolithApiKey)
+            })
+        });
+
         let mut me = Self {
             server_cards: Default::default(),
             gallery_server_cards,
@@ -245,6 +271,8 @@ impl MCPServersListPageView {
             search_editor,
             search_bar,
             add_button,
+            monolith_api_key_editor,
+            monolith_api_key_save_button,
             file_based_mcp_toggle: Default::default(),
         };
 
@@ -1180,6 +1208,94 @@ impl MCPServersListPageView {
             .finish()
     }
 
+    fn render_monolith_auth_section(
+        &self,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let settings = MonolithSettings::as_ref(app);
+        let api_url = settings.api_url.value();
+        let has_saved_key = app
+            .secure_storage()
+            .read_value(MONOLITH_API_KEY_STORAGE_KEY)
+            .is_ok_and(|value| !value.is_empty());
+        let status_text = if has_saved_key {
+            "platform admin key saved"
+        } else {
+            "platform admin key required"
+        };
+
+        let header = Flex::row()
+            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Text::new("Monolith platform access", appearance.ui_font_family(), 13.)
+                    .with_color(theme.active_ui_text_color().into_solid())
+                    .finish(),
+            )
+            .with_child(
+                Text::new(status_text, appearance.ui_font_family(), 11.)
+                    .with_color(theme.disabled_ui_text_color().into_solid())
+                    .finish(),
+            )
+            .finish();
+
+        let description = Text::new(
+            "Used by the Monolith MCP server and cockpit actions that call Fleet API. Store only a platform-admin key here; tenant/user keys must not authorize fleet-wide VM inventory.",
+            appearance.ui_font_family(),
+            12.,
+        )
+        .with_color(theme.nonactive_ui_text_color().into_solid())
+        .finish();
+
+        let api_url_line = Flex::row()
+            .with_spacing(6.)
+            .with_child(
+                Text::new("API", appearance.ui_font_family(), 12.)
+                    .with_color(theme.disabled_ui_text_color().into_solid())
+                    .finish(),
+            )
+            .with_child(
+                Text::new(api_url.clone(), appearance.ui_font_family(), 12.)
+                    .with_color(theme.main_text_color(theme.background()).into_solid())
+                    .finish(),
+            )
+            .finish();
+
+        let key_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(8.)
+            .with_child(
+                Shrinkable::new(
+                    1.,
+                    Container::new(ChildView::new(&self.monolith_api_key_editor).finish())
+                        .with_padding(Padding::uniform(6.).with_left(10.).with_right(10.))
+                        .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
+                        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+                        .finish(),
+                )
+                .finish(),
+            )
+            .with_child(ChildView::new(&self.monolith_api_key_save_button).finish())
+            .finish();
+
+        Container::new(
+            Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_spacing(8.)
+                .with_child(header)
+                .with_child(description)
+                .with_child(api_url_line)
+                .with_child(key_row)
+                .finish(),
+        )
+        .with_padding(Padding::uniform(12.))
+        .with_border(Border::all(1.).with_border_fill(theme.surface_3()))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
+        .finish()
+    }
+
     fn render_page_body(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         let description_fragments = vec![
             FormattedTextFragment::plain_text(DESCRIPTION_TEXT),
@@ -1252,6 +1368,7 @@ impl MCPServersListPageView {
             page.add_child(empty_state);
         } else {
             page.add_child(self.render_controls());
+            page.add_child(self.render_monolith_auth_section(appearance, app));
 
             if FeatureFlag::FileBasedMcp.is_enabled() {
                 page.add_child(self.render_file_based_mcp_section(appearance, app));
@@ -1818,6 +1935,26 @@ impl TypedActionView for MCPServersListPageView {
                     if let Err(e) = settings.file_based_mcp_enabled.toggle_and_save_value(ctx) {
                         log::warn!("Failed to toggle file-based MCP setting: {e:?}");
                     }
+                });
+                ctx.notify();
+            }
+            MCPServersListPageViewAction::SaveMonolithApiKey => {
+                let api_key = self.monolith_api_key_editor.as_ref(ctx).buffer_text(ctx);
+                if api_key.trim().is_empty() {
+                    if let Err(e) = ctx
+                        .secure_storage()
+                        .remove_value(MONOLITH_API_KEY_STORAGE_KEY)
+                    {
+                        log::warn!("Failed to remove Monolith API key from secure storage: {e:?}");
+                    }
+                } else if let Err(e) = ctx
+                    .secure_storage()
+                    .write_value(MONOLITH_API_KEY_STORAGE_KEY, api_key.trim())
+                {
+                    log::warn!("Failed to save Monolith API key to secure storage: {e:?}");
+                }
+                self.monolith_api_key_editor.update(ctx, |editor, ctx| {
+                    editor.clear_buffer_and_reset_undo_stack(ctx);
                 });
                 ctx.notify();
             }
