@@ -47,3 +47,6 @@ nix = { workspace = true }
 repo_metadata.workspace = true
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["process"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tempfile = { workspace = true }

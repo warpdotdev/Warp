@@ -42,6 +42,15 @@ pub enum LanguageId {
 
 impl LanguageId {
     pub fn from_path(path: &Path) -> Option<Self> {
+        // Some files use the `.json` extension by convention but actually
+        // contain JSON-with-comments — `tsconfig.json` is the canonical
+        // example, alongside the VS Code `.vscode/*.json` family. Match
+        // these by filename first so we send `jsonc` (not `json`) in
+        // `didOpen` and the JSON server applies its comments-tolerant
+        // grammar instead of flagging valid `// …` lines as syntax errors.
+        if filename_is_jsonc(path) {
+            return Some(Self::Jsonc);
+        }
         let extn = path.extension()?;
         match extn.to_str()? {
             "rs" => Some(Self::Rust),
@@ -351,6 +360,38 @@ pub fn default_init_params(workspace_uri: &Path, client_name: String) -> Result<
         work_done_progress_params: WorkDoneProgressParams::default(),
         ..Default::default()
     })
+}
+
+/// Returns `true` for paths whose final filename is a well-known JSON-with-comments
+/// config file. The VS Code JSON language server distinguishes `json` from `jsonc`
+/// and only allows comments under `jsonc`, but several Microsoft tools ship with
+/// `.json` extensions and JSONC contents (TypeScript's `tsconfig.json`,
+/// VS Code's own `settings.json`, etc.). Routing these by name keeps users
+/// from getting spurious "comments not allowed" diagnostics.
+fn filename_is_jsonc(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    // Exact filename matches that are always JSONC by convention.
+    const EXACT: &[&str] = &[
+        "tsconfig.json",
+        "jsconfig.json",
+        // VS Code workspace/user/folder settings files.
+        "settings.json",
+        "launch.json",
+        "tasks.json",
+        "keybindings.json",
+        "extensions.json",
+        // Other editor configs that follow the same convention.
+        "devcontainer.json",
+        "typedoc.json",
+    ];
+    if EXACT.contains(&name) {
+        return true;
+    }
+    // Variants like `tsconfig.build.json`, `tsconfig.app.json`, etc.
+    name.starts_with("tsconfig.") && name.ends_with(".json")
+        || name.starts_with("jsconfig.") && name.ends_with(".json")
 }
 
 #[cfg(test)]

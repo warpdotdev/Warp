@@ -244,9 +244,51 @@ mod json_language_detection {
         // route .jsonc through its own LanguageId so the right languageId is
         // sent in `didOpen`.
         assert_eq!(
-            LanguageId::from_path(&PathBuf::from(".vscode/settings.jsonc")),
+            LanguageId::from_path(&PathBuf::from("docs/example.jsonc")),
             Some(LanguageId::Jsonc)
         );
+    }
+
+    #[test]
+    fn known_dotjson_jsonc_filenames_route_to_jsonc() {
+        // Several well-known config files use `.json` by convention but
+        // contain JSON-with-comments. Sending `json` would surface valid
+        // `// …` lines as syntax errors.
+        for name in [
+            "tsconfig.json",
+            "jsconfig.json",
+            "tsconfig.build.json",
+            "jsconfig.app.json",
+            ".vscode/settings.json",
+            ".vscode/launch.json",
+            ".vscode/keybindings.json",
+            ".vscode/tasks.json",
+            ".vscode/extensions.json",
+            ".devcontainer/devcontainer.json",
+        ] {
+            assert_eq!(
+                LanguageId::from_path(&PathBuf::from(name)),
+                Some(LanguageId::Jsonc),
+                "{name} should be classified as JSONC",
+            );
+        }
+    }
+
+    #[test]
+    fn unrelated_dotjson_stays_strict_json() {
+        // package.json, manifest.json, etc. are strict JSON.
+        for name in [
+            "package.json",
+            "package-lock.json",
+            "manifest.json",
+            "data.json",
+        ] {
+            assert_eq!(
+                LanguageId::from_path(&PathBuf::from(name)),
+                Some(LanguageId::Json),
+                "{name} should remain strict JSON",
+            );
+        }
     }
 
     #[test]

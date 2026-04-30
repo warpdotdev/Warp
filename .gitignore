@@ -48,6 +48,7 @@ app/src/persistence/schema.rs.orig
 
 # Don't include personal Claude Code settings
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Tab drag development notes
 pr_cleanup.md
