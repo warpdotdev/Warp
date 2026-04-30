@@ -9,6 +9,7 @@
 use std::cell::RefCell;
 use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
+use std::time::Duration;
 
 use pathfinder_color::ColorU;
 use warp_core::ui::theme::Fill;
@@ -29,6 +30,7 @@ use warpui::{
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::{AIConversation, AIConversationId};
+use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_id;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
@@ -127,6 +129,26 @@ fn overflow_button_position_id(conversation_id: AIConversationId) -> String {
     format!("orchestration-pill-overflow-{conversation_id}")
 }
 
+/// Returns the saved-position id used to anchor the hover details card
+/// to a specific pill's body. Unique per conversation so neighbouring
+/// pills don't fight over the same id.
+fn pill_body_position_id(conversation_id: AIConversationId) -> String {
+    format!("orchestration-pill-body-{conversation_id}")
+}
+
+/// Width of the per-pill hover details card.
+const HOVER_CARD_WIDTH: f32 = 280.;
+/// Delay before the hover card appears after the cursor first lands on a
+/// pill. Matches the standard tooltip / popover delay so a quick scrub
+/// across the bar doesn't pop a card per pill.
+const HOVER_CARD_IN_DELAY: Duration = Duration::from_millis(300);
+/// Delay before the card disappears after the cursor leaves the pill.
+/// Small but nonzero so a single-pixel gap between pill and card doesn't
+/// instantly dismiss it. (V1 doesn't yet share hover state across the pill
+/// and the card itself, so the card disappears as soon as the pointer
+/// leaves the pill body — the hover-out delay just smooths that.)
+const HOVER_CARD_OUT_DELAY: Duration = Duration::from_millis(80);
+
 /// Typed actions dispatched by the pill bar's own widgets (the 3-dot
 /// overflow button and the items in its dropdown menu). Each action carries
 /// the `AIConversationId` of the child pill it targets so a single
@@ -151,6 +173,11 @@ pub enum OrchestrationPillBarAction {
     /// Menu item: cancel any in-flight task and remove the conversation
     /// from local history (no server delete).
     Kill(AIConversationId),
+    /// Set or clear which pill the user is currently hovering. Dispatched
+    /// from the pill body's `on_hover` handler after the configured
+    /// hover-in delay so the details card can be rendered as an overlay.
+    /// `None` clears the hovered pill (cursor left the bar).
+    SetHoveredPill(Option<AIConversationId>),
 }
 
 /// View that renders the orchestration pill bar above the agent view content.
@@ -184,6 +211,10 @@ pub struct OrchestrationPillBar {
     /// gate whether the menu overlay renders and to highlight the active
     /// pill while the menu is open.
     menu_open_for: Option<AIConversationId>,
+    /// `Some(id)` while the cursor is hovering the pill for that
+    /// conversation (after the configured hover-in delay) and the 3-dot
+    /// menu is not also open. Drives the per-pill details card overlay.
+    hovered_pill: Option<AIConversationId>,
 }
 
 impl Entity for OrchestrationPillBar {
@@ -261,6 +292,7 @@ impl OrchestrationPillBar {
             overflow_button_mouse_states: RefCell::new(HashMap::new()),
             menu,
             menu_open_for: None,
+            hovered_pill: None,
         }
     }
 
@@ -313,6 +345,10 @@ impl OrchestrationPillBar {
             menu.set_items(items, ctx);
         });
         self.menu_open_for = Some(conversation_id);
+        // The hover card and the open 3-dot menu both anchor to the same
+        // pill, so suppress the card while the menu is shown to avoid
+        // overlapping overlays.
+        self.hovered_pill = None;
         ctx.focus(&self.menu);
         ctx.notify();
     }
@@ -322,6 +358,18 @@ impl OrchestrationPillBar {
             return;
         }
         self.menu_open_for = None;
+        ctx.notify();
+    }
+
+    fn set_hovered_pill(
+        &mut self,
+        conversation_id: Option<AIConversationId>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.hovered_pill == conversation_id {
+            return;
+        }
+        self.hovered_pill = conversation_id;
         ctx.notify();
     }
 
@@ -530,6 +578,9 @@ impl TypedActionView for OrchestrationPillBar {
                     ),
                 );
             }
+            OrchestrationPillBarAction::SetHoveredPill(id) => {
+                self.set_hovered_pill(*id, ctx);
+            }
         }
     }
 }
@@ -607,34 +658,290 @@ impl View for OrchestrationPillBar {
         // the menu's top-right corner to the button's bottom-right so the menu
         // tucks neatly under the trailing edge of the pill, regardless of how
         // far across the bar that pill happens to be rendered.
-        if let Some(target_id) = self.menu_open_for {
-            let mut stack = Stack::new();
-            stack.add_child(bar);
-            let position_id = overflow_button_position_id(target_id);
-            stack.add_positioned_overlay_child(
-                ChildView::new(&self.menu).finish(),
-                OffsetPositioning::from_axes(
-                    PositioningAxis::relative_to_stack_child(
-                        &position_id,
-                        PositionedElementOffsetBounds::WindowByPosition,
-                        OffsetType::Pixel(0.),
-                        AnchorPair::new(XAxisAnchor::Right, XAxisAnchor::Right),
-                    )
-                    .with_conditional_anchor(),
-                    PositioningAxis::relative_to_stack_child(
-                        &position_id,
-                        PositionedElementOffsetBounds::WindowByPosition,
-                        OffsetType::Pixel(4.),
-                        AnchorPair::new(YAxisAnchor::Bottom, YAxisAnchor::Top),
-                    )
-                    .with_conditional_anchor(),
-                ),
-            );
-            stack.finish()
+        //
+        // Otherwise, when no menu is open but a pill is hovered, we overlay
+        // the hover details card under that pill instead. The two overlays
+        // are mutually exclusive by design: opening the menu clears
+        // `hovered_pill` (see `open_menu_for`).
+        let overlay = if let Some(target_id) = self.menu_open_for {
+            Some(MenuOrCard::Menu(target_id))
         } else {
-            bar
+            self.hovered_pill.and_then(|id| {
+                render_hover_card(id, self.agent_view_controller.as_ref(app), app)
+                    .map(|card| MenuOrCard::Card { id, card })
+            })
+        };
+
+        match overlay {
+            Some(MenuOrCard::Menu(target_id)) => {
+                let mut stack = Stack::new();
+                stack.add_child(bar);
+                let position_id = overflow_button_position_id(target_id);
+                stack.add_positioned_overlay_child(
+                    ChildView::new(&self.menu).finish(),
+                    OffsetPositioning::from_axes(
+                        PositioningAxis::relative_to_stack_child(
+                            &position_id,
+                            PositionedElementOffsetBounds::WindowByPosition,
+                            OffsetType::Pixel(0.),
+                            AnchorPair::new(XAxisAnchor::Right, XAxisAnchor::Right),
+                        )
+                        .with_conditional_anchor(),
+                        PositioningAxis::relative_to_stack_child(
+                            &position_id,
+                            PositionedElementOffsetBounds::WindowByPosition,
+                            OffsetType::Pixel(4.),
+                            AnchorPair::new(YAxisAnchor::Bottom, YAxisAnchor::Top),
+                        )
+                        .with_conditional_anchor(),
+                    ),
+                );
+                stack.finish()
+            }
+            Some(MenuOrCard::Card { id, card }) => {
+                let mut stack = Stack::new();
+                stack.add_child(bar);
+                let position_id = pill_body_position_id(id);
+                stack.add_positioned_overlay_child(
+                    card,
+                    OffsetPositioning::from_axes(
+                        PositioningAxis::relative_to_stack_child(
+                            &position_id,
+                            PositionedElementOffsetBounds::WindowByPosition,
+                            OffsetType::Pixel(0.),
+                            AnchorPair::new(XAxisAnchor::Left, XAxisAnchor::Left),
+                        )
+                        .with_conditional_anchor(),
+                        PositioningAxis::relative_to_stack_child(
+                            &position_id,
+                            PositionedElementOffsetBounds::WindowByPosition,
+                            OffsetType::Pixel(6.),
+                            AnchorPair::new(YAxisAnchor::Bottom, YAxisAnchor::Top),
+                        )
+                        .with_conditional_anchor(),
+                    ),
+                );
+                stack.finish()
+            }
+            None => bar,
         }
     }
+}
+
+/// Local enum used by `View::render` to model the at-most-one overlay
+/// rendered on top of the pill bar (the 3-dot menu *or* the hover details
+/// card). Wrapping these in one enum keeps the positioning logic in a
+/// single match arm rather than two near-duplicate `if let` branches.
+enum MenuOrCard {
+    Menu(AIConversationId),
+    Card {
+        id: AIConversationId,
+        card: Box<dyn Element>,
+    },
+}
+
+/// Builds the hover details card overlay for the given conversation, or
+/// returns `None` if there's no conversation to summarise (e.g. the id
+/// has just been removed from history). Hidden by `View::render` until the
+/// hover-in delay elapses.
+///
+/// V1 scope keeps the card pragmatic: title + description + a compact
+/// chips row showing the agent's harness (placeholder for now), branch
+/// (from any PR artifact), and a clickable-looking PR chip. We hide chips
+/// whose data is not available rather than showing empty placeholders.
+fn render_hover_card(
+    conversation_id: AIConversationId,
+    _agent_view_controller: &AgentViewController,
+    app: &AppContext,
+) -> Option<Box<dyn Element>> {
+    let history = BlocklistAIHistoryModel::as_ref(app);
+    let conversation = history.conversation(&conversation_id)?;
+
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let bg = theme.surface_2();
+    let main_text = internal_colors::text_main(theme, bg);
+    let sub_text = internal_colors::text_sub(theme, bg);
+    let outline = theme.outline();
+
+    let name = conversation
+        .agent_name()
+        .filter(|n| !n.is_empty())
+        .map(|n| n.to_string())
+        .or_else(|| conversation.title())
+        .unwrap_or_else(|| "Agent".to_string());
+
+    // Header: small avatar disc + bold agent name.
+    let avatar_color = pill_avatar_color(&name, theme);
+    let avatar_glyph = AvatarGlyph::Letter(pill_initial(&name));
+    let avatar = render_avatar_disc(avatar_color, avatar_glyph, theme, appearance);
+    let name_text = Text::new(
+        name,
+        appearance.ui_font_family(),
+        appearance.monospace_font_size(),
+    )
+    .with_color(main_text)
+    .with_style(Properties {
+        weight: Weight::Semibold,
+        ..Default::default()
+    })
+    .with_clip(ClipConfig::ellipsis())
+    .soft_wrap(false)
+    .finish();
+    let header = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_main_axis_size(MainAxisSize::Min)
+        .with_spacing(8.)
+        .with_child(avatar)
+        .with_child(
+            ConstrainedBox::new(name_text)
+                .with_max_width(HOVER_CARD_WIDTH - 60.)
+                .finish(),
+        )
+        .finish();
+
+    // Description: title or initial query, truncated visually via wrapping
+    // inside a constrained box.
+    let description_text = conversation
+        .title()
+        .filter(|s| !s.is_empty())
+        .or_else(|| conversation.initial_query())
+        .filter(|s| !s.is_empty());
+    let description: Option<Box<dyn Element>> = description_text.map(|description| {
+        let trimmed = if description.chars().count() > 200 {
+            let truncated: String = description.chars().take(197).collect();
+            format!("{truncated}\u{2026}")
+        } else {
+            description
+        };
+        Text::new(
+            trimmed,
+            appearance.ui_font_family(),
+            appearance.monospace_font_size() - 1.,
+        )
+        .with_color(sub_text)
+        .soft_wrap(true)
+        .finish()
+    });
+
+    // Chips row: branch (if known via a PR artifact) + PR (if known).
+    // Hidden entirely when neither chip applies.
+    let mut chips: Vec<Box<dyn Element>> = Vec::new();
+    for artifact in conversation.artifacts() {
+        if let Artifact::PullRequest {
+            url: _,
+            branch,
+            repo,
+            number,
+        } = artifact
+        {
+            if !branch.is_empty() {
+                chips.push(render_chip(
+                    Icon::GitBranch,
+                    branch.clone(),
+                    sub_text,
+                    main_text,
+                    theme,
+                    appearance,
+                ));
+            }
+            if let (Some(repo), Some(number)) = (repo, number) {
+                chips.push(render_chip(
+                    Icon::Github,
+                    format!("{repo}#{number}"),
+                    sub_text,
+                    main_text,
+                    theme,
+                    appearance,
+                ));
+            }
+            // Only one PR artifact is meaningful per conversation; bail.
+            break;
+        }
+    }
+
+    // Assemble.
+    let mut column = Flex::column()
+        .with_cross_axis_alignment(CrossAxisAlignment::Start)
+        .with_main_axis_size(MainAxisSize::Min)
+        .with_spacing(8.)
+        .with_child(header);
+    if let Some(description) = description {
+        column = column.with_child(
+            ConstrainedBox::new(description)
+                .with_max_width(HOVER_CARD_WIDTH - 24.)
+                .finish(),
+        );
+    }
+    if !chips.is_empty() {
+        let mut chip_row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_spacing(6.);
+        for chip in chips {
+            chip_row = chip_row.with_child(chip);
+        }
+        column = column.with_child(chip_row.finish());
+    }
+
+    let card = Container::new(column.finish())
+        .with_padding_left(12.)
+        .with_padding_right(12.)
+        .with_padding_top(10.)
+        .with_padding_bottom(10.)
+        .with_background(bg)
+        .with_border(warpui::elements::Border::all(1.).with_border_fill(outline))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
+        .finish();
+
+    Some(
+        ConstrainedBox::new(card)
+            .with_width(HOVER_CARD_WIDTH)
+            .finish(),
+    )
+}
+
+/// Renders a small icon + label chip used inside the hover details card.
+fn render_chip(
+    icon: Icon,
+    label: String,
+    icon_color: ColorU,
+    text_color: ColorU,
+    theme: &WarpTheme,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    let icon_el = ConstrainedBox::new(icon.to_warpui_icon(icon_color.into()).finish())
+        .with_width(12.)
+        .with_height(12.)
+        .finish();
+    let text = Text::new(
+        label,
+        appearance.ui_font_family(),
+        appearance.monospace_font_size() - 2.,
+    )
+    .with_color(text_color)
+    .soft_wrap(false)
+    .with_clip(ClipConfig::ellipsis())
+    .finish();
+    let row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_main_axis_size(MainAxisSize::Min)
+        .with_spacing(4.)
+        .with_child(icon_el)
+        .with_child(
+            ConstrainedBox::new(text)
+                .with_max_width(HOVER_CARD_WIDTH - 60.)
+                .finish(),
+        )
+        .finish();
+    Container::new(row)
+        .with_padding_left(6.)
+        .with_padding_right(6.)
+        .with_padding_top(2.)
+        .with_padding_bottom(2.)
+        .with_background(internal_colors::neutral_2(theme))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .finish()
 }
 
 fn render_pill(
@@ -759,6 +1066,23 @@ fn render_pill(
     } else {
         Cursor::PointingHand
     })
+    .with_hover_in_delay(HOVER_CARD_IN_DELAY)
+    .with_hover_out_delay(HOVER_CARD_OUT_DELAY)
+    .on_hover(move |is_hovered, ctx, _app, _pos| {
+        // Drive the hover-details-card overlay via a typed action so the
+        // pill bar's `handle_action` can update its `hovered_pill` field
+        // and re-render. We pass the conversation id on hover-in and
+        // `None` on hover-out; if the pointer scrubs from one pill to
+        // another the new pill's hover-in arrives after this pill's
+        // hover-out, so the action surface still ends up with the
+        // correct id.
+        let payload = if is_hovered {
+            Some(conversation_id)
+        } else {
+            None
+        };
+        ctx.dispatch_typed_action(OrchestrationPillBarAction::SetHoveredPill(payload));
+    })
     .on_click(move |ctx, _app, _| {
         if is_selected {
             return;
@@ -782,7 +1106,11 @@ fn render_pill(
     })
     .finish();
 
-    pill_body
+    // Cache the painted rect of this pill body under a stable id so the
+    // hover details card overlay (rendered as a positioned overlay sibling
+    // of the bar in `View::render`) can anchor relative to it without
+    // having to know which index this pill ended up at in the row.
+    SavePosition::new(pill_body, &pill_body_position_id(conversation_id)).finish()
 }
 
 /// Renders the trailing 3-dot button on a child pill. Click dispatches
