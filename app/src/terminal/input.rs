@@ -10007,9 +10007,6 @@ impl Input {
             .collect();
         let num_paths = paths_to_process.len();
 
-        // Dispatch the async read + attach pipeline. The resulting `ImageContext` will be
-        // appended to `pending_attachments` once the spawned future resolves; until then
-        // `has_locking_attachment()` returns false for this attach.
         self.editor.update(ctx, |editor, ctx| {
             editor.read_and_process_images_async(num_paths, paths_to_process, ctx);
         });
@@ -10058,9 +10055,6 @@ impl Input {
             file_name,
         };
 
-        // Dispatch the async resize/encode pipeline. The resulting `ImageContext` will be
-        // appended to `pending_attachments` once the spawned future resolves; until then
-        // `has_locking_attachment()` returns false for this attach.
         self.editor.update(ctx, |editor, ctx| {
             editor.process_and_attach_images_as_ai_context(1, vec![attached_image], ctx);
         });

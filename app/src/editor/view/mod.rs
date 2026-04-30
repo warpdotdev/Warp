@@ -5254,9 +5254,7 @@ impl EditorView {
                 )
             },
             move |this, (num_oversized_images, num_unprocessed_images, pending_images), ctx| {
-                // If the handle was taken between the future producing a value and this callback
-                // running (e.g. `abort_attached_images_future_handle` fired from `submit_ai_query`
-                // after the result was already in the channel), discard the result.
+                // Future was aborted
                 if this.process_attached_images_future_handle.is_none() {
                     return;
                 }
