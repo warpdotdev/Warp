@@ -560,9 +560,6 @@ pub struct LLMPreferences {
     /// Models supported by each third-party harness, keyed by harness config name (e.g. `"claude"`).
     /// Populated lazily as the user opens the harness model selector.
     harness_models: HashMap<String, AvailableHarnessModels>,
-    /// Per-(terminal, harness-name) model selection.
-    /// Storing only explicit overrides means changing the server-side default still flows through automatically.
-    selected_harness_model_for_terminal_view: HashMap<(EntityId, String), String>,
     /// Set of (harness-name) for which a fetch is in-flight, to dedupe redundant requests.
     inflight_harness_model_fetches: HashSet<String>,
 }
@@ -604,7 +601,6 @@ impl LLMPreferences {
             last_update: None,
             base_llm_for_terminal_view,
             harness_models,
-            selected_harness_model_for_terminal_view: HashMap::new(),
             inflight_harness_model_fetches: HashSet::new(),
         };
 
@@ -1101,6 +1097,10 @@ impl LLMPreferences {
         }
     }
 
+    pub fn get_harness_models(&self, harness: Harness) -> Option<&AvailableHarnessModels> {
+        self.harness_models.get(&harness.to_string())
+    }
+
     /// Returns the choices to display in the cloud model selector for a third-party harness.
     pub fn get_harness_llm_choices(
         &self,
@@ -1110,72 +1110,6 @@ impl LLMPreferences {
             .get(&harness.to_string())
             .into_iter()
             .flat_map(|m| m.models.iter())
-    }
-
-    /// Returns the active harness model for a (terminal, harness) pair, falling back to the
-    /// harness's default if no override is set.
-    pub fn get_active_harness_model(
-        &self,
-        terminal_view_id: EntityId,
-        harness: Harness,
-    ) -> Option<&HarnessModelInfo> {
-        let harness_key = harness.to_string();
-        let available = self.harness_models.get(&harness_key)?;
-
-        if let Some(selected_id) = self
-            .selected_harness_model_for_terminal_view
-            .get(&(terminal_view_id, harness_key))
-        {
-            if let Some(info) = available.info_for_id(selected_id) {
-                return Some(info);
-            }
-        }
-
-        available.default_model_info()
-    }
-
-    /// Returns the model id to send to a third-party harness for a (terminal, harness) pair.
-    /// Returns `None` if no models are known for this harness yet.
-    pub fn get_active_harness_model_id(
-        &self,
-        terminal_view_id: EntityId,
-        harness: Harness,
-    ) -> Option<String> {
-        self.get_active_harness_model(terminal_view_id, harness)
-            .map(|info| info.id.clone())
-    }
-
-    /// Updates the user's preferred model for a (terminal, harness) pair.
-    /// If the chosen model id matches the harness's default, the override is cleared instead
-    /// so future default changes flow through.
-    pub fn update_preferred_harness_model(
-        &mut self,
-        terminal_view_id: EntityId,
-        harness: Harness,
-        model_id: &str,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let harness_key = harness.to_string();
-        let key = (terminal_view_id, harness_key.clone());
-
-        let default_id = self
-            .harness_models
-            .get(&harness_key)
-            .map(|m| m.default_model_id.clone());
-
-        let changed = if Some(model_id.to_string()) == default_id {
-            self.selected_harness_model_for_terminal_view
-                .remove(&key)
-                .is_some()
-        } else {
-            self.selected_harness_model_for_terminal_view
-                .insert(key, model_id.to_string());
-            true
-        };
-
-        if changed {
-            ctx.emit(LLMPreferencesEvent::UpdatedActiveHarnessModel);
-        }
     }
 
     /// Fetches the list of harness models from the server and caches them.
@@ -1260,8 +1194,6 @@ pub enum LLMPreferencesEvent {
     UpdatedActiveCodingLLM,
     /// Emitted when the cached models for a third-party harness change.
     UpdatedHarnessModels,
-    /// Emitted when the user picks a different model for a third-party harness.
-    UpdatedActiveHarnessModel,
 }
 
 impl Entity for LLMPreferences {

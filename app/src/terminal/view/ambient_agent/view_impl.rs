@@ -281,6 +281,11 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::HostSelected => {}
+            AmbientAgentViewModelEvent::HarnessModelSelected => {
+                // The harness model selection only affects the cloud-mode v2 model selector
+                // button label / menu, both of which subscribe to the view model directly.
+                // Nothing to do at this layer.
+            }
             AmbientAgentViewModelEvent::HarnessCommandStarted => {
                 // Stop classifying new blocks as environment setup commands, mirroring the
                 // Oz path in the `AppendedExchange` handler. Flipping this flag to `false`

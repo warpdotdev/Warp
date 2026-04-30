@@ -17,7 +17,7 @@ use warp_core::ui::theme::Fill;
 
 use crate::ai::blocklist::agent_view::agent_input_footer::AgentInputButtonTheme;
 use crate::ai::harness_display::icon_for as harness_icon_for;
-use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
+use crate::ai::llms::{LLMId, LLMPreferences, LLMPreferencesEvent};
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys,
     SingleLineEditorOptions, TextOptions,
@@ -62,7 +62,7 @@ const NO_RESULTS_LABEL: &str = "No results";
 pub enum ModelSelectorAction {
     ToggleMenu,
     /// Select an Oz Agent Mode model.
-    SelectModel(crate::ai::llms::LLMId),
+    SelectModel(LLMId),
     /// Select a model for a third-party harness, identified by the harness config name and
     /// opaque model id (e.g. `"opus"`).
     SelectHarnessModel {
@@ -75,6 +75,18 @@ pub enum ModelSelectorEvent {
     MenuVisibilityChanged { open: bool },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HarnessSelection {
+    pub harness: Harness,
+    pub model_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ModelSelection {
+    Oz(LLMId),
+    Harness(HarnessSelection),
+}
+
 pub struct ModelSelector {
     button: ViewHandle<ActionButton>,
     menu: ViewHandle<Menu<ModelSelectorAction>>,
@@ -84,8 +96,9 @@ pub struct ModelSelector {
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     terminal_view_id: EntityId,
     /// Optional handle to the ambient agent view model, used to determine the
-    /// active execution harness in cloud mode v2. When `None`, the selector
-    /// always renders Oz Agent Mode models.
+    /// active execution harness in cloud mode v2 and to read/write the user's
+    /// harness model selection. When `None`, the selector always renders Oz
+    /// Agent Mode models.
     ambient_agent_model: Option<ModelHandle<AmbientAgentViewModel>>,
 }
 
@@ -155,8 +168,7 @@ impl ModelSelector {
             |me, _, event, ctx| match event {
                 LLMPreferencesEvent::UpdatedActiveAgentModeLLM
                 | LLMPreferencesEvent::UpdatedAvailableLLMs
-                | LLMPreferencesEvent::UpdatedHarnessModels
-                | LLMPreferencesEvent::UpdatedActiveHarnessModel => {
+                | LLMPreferencesEvent::UpdatedHarnessModels => {
                     me.refresh_button(ctx);
                     me.refresh_menu(ctx);
                 }
@@ -168,12 +180,9 @@ impl ModelSelector {
             me.refresh_menu(ctx);
         });
 
-        // When the user switches harness in cloud mode v2, the data source for the
-        // model selector flips between Oz LLMs and per-harness model lists. Subscribe
-        // so the menu/button reflect the new harness immediately.
         if let Some(ambient_agent_model) = ambient_agent_model.as_ref() {
-            ctx.subscribe_to_model(ambient_agent_model, |me, model, event, ctx| {
-                if let AmbientAgentViewModelEvent::HarnessSelected = event {
+            ctx.subscribe_to_model(ambient_agent_model, |me, model, event, ctx| match event {
+                AmbientAgentViewModelEvent::HarnessSelected => {
                     let harness = model.as_ref(ctx).selected_harness();
                     if !matches!(harness, Harness::Oz | Harness::Unknown) {
                         LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
@@ -183,6 +192,11 @@ impl ModelSelector {
                     me.refresh_button(ctx);
                     me.refresh_menu(ctx);
                 }
+                AmbientAgentViewModelEvent::HarnessModelSelected => {
+                    me.refresh_button(ctx);
+                    me.refresh_menu(ctx);
+                }
+                _ => {}
             });
         }
 
@@ -225,6 +239,33 @@ impl ModelSelector {
 
     pub fn open_menu(&mut self, ctx: &mut ViewContext<Self>) {
         self.set_menu_visibility(true, ctx);
+    }
+
+    /// Resolves the selection for `harness`, preferring the user's pick on the ambient agent
+    /// view model and falling back to the harness catalog's default model id.
+    fn resolved_harness_selection(
+        &self,
+        harness: Harness,
+        app: &AppContext,
+    ) -> Option<HarnessSelection> {
+        if let Some(model_id) = self
+            .ambient_agent_model
+            .as_ref()
+            .and_then(|m| m.as_ref(app).selected_harness_model_id())
+            .map(str::to_owned)
+        {
+            return Some(HarnessSelection { harness, model_id });
+        }
+        let models = LLMPreferences::as_ref(app).get_harness_models(harness)?;
+        let default_id = &models.default_model_id;
+        if default_id.is_empty() {
+            None
+        } else {
+            Some(HarnessSelection {
+                harness,
+                model_id: default_id.clone(),
+            })
+        }
     }
 
     fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
@@ -285,11 +326,14 @@ impl ModelSelector {
     fn refresh_button(&mut self, ctx: &mut ViewContext<Self>) {
         let active_label = match self.active_harness(ctx) {
             Some(harness) if !matches!(harness, Harness::Oz | Harness::Unknown) => {
-                // For third-party harnesses, show the harness model display name (or fall
-                // back to a placeholder if we haven't fetched the model list yet).
-                LLMPreferences::as_ref(ctx)
-                    .get_active_harness_model(self.terminal_view_id, harness)
-                    .map(|info| info.display_name.clone())
+                let llm_preferences = LLMPreferences::as_ref(ctx);
+                self.resolved_harness_selection(harness, ctx)
+                    .and_then(|selection| {
+                        llm_preferences.get_harness_models(harness).and_then(|m| {
+                            m.info_for_id(&selection.model_id)
+                                .map(|info| info.display_name.clone())
+                        })
+                    })
                     .unwrap_or_else(|| "default".to_string())
             }
             _ => LLMPreferences::as_ref(ctx)
@@ -388,8 +432,9 @@ impl ModelSelector {
         ctx: &AppContext,
     ) -> (Vec<MenuItem<ModelSelectorAction>>, ModelSelectorAction) {
         let llm_preferences = LLMPreferences::as_ref(ctx);
-        let active_id = llm_preferences
-            .get_active_harness_model_id(self.terminal_view_id, harness)
+        let active_id = self
+            .resolved_harness_selection(harness, ctx)
+            .map(|selection| selection.model_id)
             .unwrap_or_default();
         let icon = harness_icon_for(harness);
 
@@ -482,13 +527,16 @@ impl TypedActionView for ModelSelector {
                 self.set_menu_visibility(false, ctx);
             }
             ModelSelectorAction::SelectHarnessModel { harness, model_id } => {
-                let terminal_view_id = self.terminal_view_id;
-                let harness = *harness;
-                let model_id = model_id.clone();
-                LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
-                    prefs.update_preferred_harness_model(terminal_view_id, harness, &model_id, ctx);
-                });
+                if let Some(ambient_agent_model) = self.ambient_agent_model.clone() {
+                    if ambient_agent_model.as_ref(ctx).selected_harness() == *harness {
+                        ambient_agent_model.update(ctx, |model, ctx| {
+                            model.set_harness_model_id(Some(model_id.clone()), ctx);
+                        });
+                    }
+                }
                 self.set_menu_visibility(false, ctx);
+                self.refresh_button(ctx);
+                self.refresh_menu(ctx);
             }
         }
     }

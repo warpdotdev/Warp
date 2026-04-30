@@ -1058,27 +1058,32 @@ impl AgentDriverRunner {
                 }
             }
         };
-        let (parent_run_id, task_conversation_id, task_harness) = match task_metadata_result {
-            Ok(Some(task_metadata)) => {
-                // The task's harness is stored on the snapshot; if absent, it's the default Oz.
-                let task_harness = task_metadata
-                    .agent_config_snapshot
-                    .as_ref()
-                    .and_then(|c| c.harness.as_ref())
-                    .map(|h| h.harness_type)
-                    .unwrap_or(Harness::Oz);
-                (
-                    task_metadata.parent_run_id,
-                    task_metadata.conversation_id,
-                    Some(task_harness),
-                )
-            }
-            Ok(None) => (None, None, None),
-            Err(err) => {
-                log::warn!("Failed to fetch task metadata: {err:#}");
-                (None, None, None)
-            }
-        };
+        let (parent_run_id, task_conversation_id, task_harness, task_harness_model_id) =
+            match task_metadata_result {
+                Ok(Some(task_metadata)) => {
+                    // The task's harness is stored on the snapshot; if absent, it's the default Oz.
+                    let task_harness_config = task_metadata
+                        .agent_config_snapshot
+                        .as_ref()
+                        .and_then(|c| c.harness.as_ref());
+                    let task_harness = task_harness_config
+                        .map(|h| h.harness_type)
+                        .unwrap_or(Harness::Oz);
+                    let task_harness_model_id =
+                        task_harness_config.and_then(|h| h.model_id.clone());
+                    (
+                        task_metadata.parent_run_id,
+                        task_metadata.conversation_id,
+                        Some(task_harness),
+                        task_harness_model_id,
+                    )
+                }
+                Ok(None) => (None, None, None, None),
+                Err(err) => {
+                    log::warn!("Failed to fetch task metadata: {err:#}");
+                    (None, None, None, None)
+                }
+            };
 
         // Validate the requested `--harness` against the task's harness setting. This avoids the
         // extra conversation-metadata roundtrip that would otherwise be needed downstream when the
@@ -1107,6 +1112,10 @@ impl AgentDriverRunner {
         driver_options.task_id = parsed_task_id;
         driver_options.parent_run_id = parent_run_id;
         driver_options.secrets = secrets;
+        // CLI flags continue to take precedence so users can still override per-invocation.
+        if driver_options.harness_model_id.is_none() {
+            driver_options.harness_model_id = task_harness_model_id;
+        }
 
         // Update the task prompt to include the downloaded attachments dir
         if let AgentRunPrompt::ServerSide {

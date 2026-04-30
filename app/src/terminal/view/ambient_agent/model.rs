@@ -106,6 +106,11 @@ pub struct AmbientAgentViewModel {
     /// Selected worker host for the cloud agent run. Populated from the HostSelector
     /// (which resolves env var > workspace setting) and read by `spawn_agent`.
     worker_host: Option<String>,
+    /// Selected model id for a third-party harness (e.g. `"opus"` for Claude). The cloud-mode
+    /// v2 model selector writes this through when the user picks a non-default model. `None`
+    /// means: use the harness's catalog default at spawn time. Reset whenever `harness`
+    /// changes (in [`Self::set_harness`]) so a previous Claude pick doesn't leak into Gemini.
+    harness_model_id: Option<String>,
     /// Whether the optimistic InitialUserQuery block has been inserted for the current run.
     has_inserted_cloud_mode_user_query_block: bool,
     /// Whether the harness CLI (e.g. `claude`, `gemini`) has started running for a non-oz run.
@@ -141,7 +146,12 @@ impl AmbientAgentViewModel {
             task_id: None,
             conversation_id: None,
             harness: Harness::default(),
+<<<<<<< HEAD
             worker_host: None,
+||||||| parent of 12aa088 (Some refactoring, things work)
+=======
+            harness_model_id: None,
+>>>>>>> 12aa088 (Some refactoring, things work)
             has_inserted_cloud_mode_user_query_block: false,
             harness_command_started: false,
         }
@@ -241,11 +251,30 @@ impl AmbientAgentViewModel {
             return;
         }
         self.harness = harness;
+        self.harness_model_id = None;
         ctx.emit(AmbientAgentViewModelEvent::HarnessSelected);
     }
 
+<<<<<<< HEAD
     pub fn set_worker_host(&mut self, worker_host: Option<String>) {
         self.worker_host = worker_host;
+||||||| parent of 12aa088 (Some refactoring, things work)
+=======
+    pub fn selected_harness_model_id(&self) -> Option<&str> {
+        self.harness_model_id.as_deref()
+    }
+
+    pub fn set_harness_model_id(
+        &mut self,
+        harness_model_id: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if self.harness_model_id == harness_model_id {
+            return;
+        }
+        self.harness_model_id = harness_model_id;
+        ctx.emit(AmbientAgentViewModelEvent::HarnessModelSelected);
+>>>>>>> 12aa088 (Some refactoring, things work)
     }
 
     /// True when the run is configured to use a non-Oz execution harness and the
@@ -452,6 +481,7 @@ impl AmbientAgentViewModel {
         self.environment_id = None;
         self.task_id = None;
         self.conversation_id = None;
+        self.harness_model_id = None;
         self.has_inserted_cloud_mode_user_query_block = false;
         self.harness_command_started = false;
         self.stop_progress_timer();
@@ -470,11 +500,6 @@ impl AmbientAgentViewModel {
         attachments: Vec<AttachmentInput>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let model_id = LLMPreferences::as_ref(ctx)
-            .get_active_base_model(ctx, Some(self.terminal_view_id))
-            .id
-            .to_string();
-
         // Determine computer_use_enabled based on workspace AI autonomy settings
         let CloudAgentComputerUseState { enabled, .. } =
             ComputerUsePermission::resolve_cloud_agent_state(ctx);
@@ -486,24 +511,23 @@ impl AmbientAgentViewModel {
             .ok()
             .filter(|s| !s.is_empty());
 
-        let (harness_override, effective_model_id) = if self.harness != Harness::Oz {
-            // For non-Oz harnesses, the model goes on HarnessConfig, not top-level model_id.
-            // Pull the user's per-(terminal, harness) selection from LLMPreferences;
-            // falls back to the harness's default when no override is set.
-            let harness_model_id = LLMPreferences::as_ref(ctx)
-                .get_active_harness_model_id(self.terminal_view_id, self.harness);
+        let (top_level_model_id, harness_override) = if self.harness == Harness::Oz {
+            let oz_model_id = LLMPreferences::as_ref(ctx)
+                .get_active_base_model(ctx, Some(self.terminal_view_id))
+                .id
+                .to_string();
+            (Some(oz_model_id), None)
+        } else {
             let harness_config = HarnessConfig {
                 harness_type: self.harness,
-                model_id: harness_model_id,
+                model_id: self.harness_model_id.clone(),
             };
-            (Some(harness_config), None)
-        } else {
-            (None, Some(model_id))
+            (None, Some(harness_config))
         };
 
         let config = Some(AgentConfigSnapshot {
             environment_id: self.environment_id.as_ref().map(|id| id.to_string()),
-            model_id: effective_model_id,
+            model_id: top_level_model_id,
             computer_use_enabled,
             worker_host: self.worker_host.clone(),
             harness: harness_override,
@@ -957,8 +981,14 @@ pub enum AmbientAgentViewModelEvent {
     Cancelled,
     /// The selected execution harness (Oz / Claude Code) changed.
     HarnessSelected,
+<<<<<<< HEAD
     /// The selected worker host changed via the HostSelector.
     HostSelected,
+||||||| parent of 12aa088 (Some refactoring, things work)
+=======
+    /// The selected third-party harness model id changed (e.g. user picked `"opus"` for Claude).
+    HarnessModelSelected,
+>>>>>>> 12aa088 (Some refactoring, things work)
     /// The harness CLI (for non-oz runs) has started executing in the shared session.
     /// Fires once per run and signals the transition out of the pre-first-exchange phase
     /// for claude / gemini / other third-party harnesses.
