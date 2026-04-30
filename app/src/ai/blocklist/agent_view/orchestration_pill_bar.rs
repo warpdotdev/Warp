@@ -35,6 +35,7 @@ use warpui::{
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
+use crate::ai::agent_conversations_model::{AgentConversationsModel, ConversationOrTask};
 use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_id;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
@@ -45,6 +46,7 @@ use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::pane::view::PaneHeaderAction;
 use crate::terminal::view::TerminalAction;
 use crate::ui_components::icons::Icon;
+use crate::workspace::{RestoreConversationLayout, WorkspaceAction};
 use warp_core::ui::theme::color::internal_colors;
 
 const PILL_HEIGHT: f32 = 22.;
@@ -1723,7 +1725,50 @@ fn render_crumb(
             .finish()
     })
     .with_cursor(Cursor::PointingHand)
-    .on_click(move |ctx, _, _| {
+    .on_click(move |ctx, app, _| {
+        // Prefer focusing an existing terminal view that already has this
+        // conversation open (could be in another pane in this tab, another
+        // tab, or another window) instead of switching the *current* pane
+        // to it. The agent conversations model's per-conversation
+        // `nav_data` carries the (window_id, pane_view_locator,
+        // terminal_view_id) tuple needed to navigate, and
+        // `ActiveAgentViewsModel::is_conversation_open` confirms the
+        // conversation is presently shown there. When that's true we
+        // dispatch `RestoreOrNavigateToConversation` — the workspace
+        // handler short-circuits to focusing the existing pane (and
+        // switching tabs / windows as needed) before falling through to
+        // any restore layout.
+        //
+        // When the conversation isn't open anywhere we fall back to the
+        // original behaviour of switching the current pane in place via
+        // `SwitchAgentViewToConversation`. That keeps the breadcrumb
+        // useful even after the orchestrator's pane has been closed and
+        // its conversation persists only in history.
+        let nav_data = AgentConversationsModel::as_ref(app)
+            .get_conversation(&conversation_id)
+            .and_then(|entry| match entry {
+                ConversationOrTask::Conversation(metadata) => Some(metadata.nav_data.clone()),
+                ConversationOrTask::Task(_) => None,
+            });
+        let is_open_elsewhere = nav_data.is_some()
+            && ActiveAgentViewsModel::as_ref(app).is_conversation_open(conversation_id, app);
+        if is_open_elsewhere {
+            if let Some(nav_data) = nav_data {
+                ctx.dispatch_typed_action(WorkspaceAction::RestoreOrNavigateToConversation {
+                    pane_view_locator: nav_data.pane_view_locator,
+                    window_id: nav_data.window_id,
+                    conversation_id,
+                    terminal_view_id: nav_data.terminal_view_id,
+                    // `ActivePane` matches our "open here if not visible
+                    // anywhere" fall-back. The workspace handler only
+                    // consults `restore_layout` when the navigation tuple
+                    // is incomplete or stale, so when we found a real open
+                    // pane this is effectively unused.
+                    restore_layout: Some(RestoreConversationLayout::ActivePane),
+                });
+                return;
+            }
+        }
         ctx.dispatch_typed_action(
             PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
                 TerminalAction::SwitchAgentViewToConversation { conversation_id },
