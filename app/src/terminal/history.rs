@@ -11,10 +11,11 @@ use settings::Setting as _;
 use warp_core::command::ExitCode;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
+#[cfg(not(target_family = "wasm"))]
+use super::shell_history_watcher::{ShellHistoryWatcher, ShellHistoryWatcherEvent};
 use super::{
     model::block::{AgentInteractionMetadata, Block, SerializedAIMetadata, SerializedBlock},
     shell::ShellType,
-    shell_history_watcher::{ShellHistoryWatcher, ShellHistoryWatcherEvent},
 };
 use crate::{
     cloud_object::{
@@ -23,7 +24,7 @@ use crate::{
     },
     server::ids::{ClientId, HashableId as _, SyncId},
     settings::ShellHistorySyncSettings,
-    terminal::model::session::{Session, SessionId},
+    terminal::model::session::{Session, SessionId, SessionType},
     util::dedupe_from_last,
     workflows::{
         local_workflows::LocalWorkflows, workflow::Workflow, WorkflowId, WorkflowSource,
@@ -596,11 +597,12 @@ impl History {
         self.session_id_to_shell_host
             .insert(session_id, host.clone());
 
-        // GH-3422: when the user has opted into live shell-history sync, register
-        // this host's histfile path(s) with `ShellHistoryWatcher` so subsequent
-        // changes by other terminals are merged into `history_file_commands`.
-        // No-op when the setting is off.
-        self.maybe_register_live_sync(&host, ctx);
+        // GH-3422: when the user has opted into live shell-history sync and the
+        // session is local, register this session's histfile path(s) with
+        // `ShellHistoryWatcher` so subsequent changes by other terminals are
+        // merged into `history_file_commands`. No-op when the setting is off,
+        // when the session is remote (we only watch local files), or on wasm.
+        self.maybe_register_live_sync(&session, &host, ctx);
 
         match self.read_history_file_state.get_mut(&host) {
             None => {
@@ -1015,6 +1017,7 @@ impl History {
     /// Subscribe to [`ShellHistoryWatcher`] events. Idempotent. Should be
     /// called once at app startup (from `lib.rs`) after `History` is
     /// registered as a singleton.
+    #[cfg(not(target_family = "wasm"))]
     pub fn set_up_external_history_sync(&mut self, ctx: &mut ModelContext<Self>) {
         if self.external_sync_subscribed {
             return;
@@ -1026,10 +1029,16 @@ impl History {
         });
     }
 
+    /// Wasm stub — no filesystem watcher available, so live shell-history sync
+    /// is a no-op. The setting itself is still registered, just inert.
+    #[cfg(target_family = "wasm")]
+    pub fn set_up_external_history_sync(&mut self, _ctx: &mut ModelContext<Self>) {}
+
     /// Handler for [`ShellHistoryWatcherEvent::HistfilesChanged`]. For each
     /// changed path that we registered in [`Self::maybe_register_live_sync`],
     /// kick off an async re-read of the file and dispatch the parsed lines
     /// to [`Self::apply_external_history_lines`].
+    #[cfg(not(target_family = "wasm"))]
     fn handle_shell_history_watcher_event(
         &mut self,
         event: &ShellHistoryWatcherEvent,
@@ -1063,10 +1072,14 @@ impl History {
         }
     }
 
-    /// Merge `new_lines` (the freshly-re-read histfile contents for `host`)
-    /// into `history_file_commands[host]`. Appends any commands not already
-    /// present, shifts session-index bookkeeping for sessions on the same
-    /// host, and emits [`HistoryEvent::ExternalHistoryUpdated`].
+    /// Merge a freshly-re-read histfile (`new_lines`) into
+    /// `history_file_commands[host]`. **Replaces** the cached entries with the
+    /// re-deduped list rather than appending, so a re-run of an existing
+    /// command in another terminal correctly moves it to the most-recent
+    /// position (`dedupe_from_last` keeps the last occurrence; the order of the
+    /// resulting list is the user's most-recent recency view of the file).
+    /// Shifts session-index bookkeeping by the size delta and emits
+    /// [`HistoryEvent::ExternalHistoryUpdated`].
     fn apply_external_history_lines(
         &mut self,
         host: ShellHost,
@@ -1075,23 +1088,22 @@ impl History {
     ) {
         let new_deduped = dedupe_from_last(new_lines);
 
-        let existing_commands: HashSet<String> = self
-            .history_file_commands
-            .get(&host)
-            .map(|v| v.iter().map(|e| e.command.clone()).collect())
-            .unwrap_or_default();
-
-        let to_append: Vec<String> = new_deduped
-            .into_iter()
-            .filter(|cmd| !existing_commands.contains(cmd))
-            .collect();
-
-        if to_append.is_empty() {
-            return;
+        // Cheap no-op short-circuit: if the new list is identical to the cache,
+        // skip the rebuild and the event entirely. Common when the watcher
+        // fires for a write that didn't actually change deduped contents
+        // (e.g. another process touched mtime).
+        if let Some(current) = self.history_file_commands.get(&host) {
+            if current.len() == new_deduped.len()
+                && current
+                    .iter()
+                    .zip(new_deduped.iter())
+                    .all(|(entry, command)| entry.command == *command)
+            {
+                return;
+            }
         }
-        let n = to_append.len();
 
-        let new_entries: Vec<Arc<HistoryEntry>> = to_append
+        let new_entries: Vec<Arc<HistoryEntry>> = new_deduped
             .into_iter()
             .map(|command| {
                 self.persisted_commands_summary
@@ -1103,23 +1115,27 @@ impl History {
             .map(Arc::new)
             .collect();
 
-        // Capture old boundary BEFORE extending so the index shift below is correct.
         let old_history_file_len = self
             .history_file_commands
             .get(&host)
             .map(|v| v.len())
             .unwrap_or(0);
+        let new_history_file_len = new_entries.len();
 
         self.history_file_commands
-            .entry(host.clone())
-            .or_default()
-            .extend(new_entries);
+            .insert(host.clone(), new_entries);
 
         // The render-space history list for a host is
         //   history_file_commands[host] ++ session_commands[host]
-        // (see the doc comment on `session_skip_indices`). We just inserted
-        // `n` entries at position `old_history_file_len`, which shifts every
-        // index currently >= that boundary up by `n`.
+        // The boundary moved from `old_history_file_len` to
+        // `new_history_file_len`. For sessions on this host, indices that
+        // pointed into the session_commands portion (i.e. were
+        // `>= old_history_file_len`) need to shift by the same delta.
+        // Indices that pointed into the history_file portion are now stale
+        // because the file portion was replaced — drop them from
+        // `session_skip_indices` and clamp `session_start_indices` to the new
+        // boundary at minimum.
+        let delta: isize = new_history_file_len as isize - old_history_file_len as isize;
         let on_host_session_ids: Vec<SessionId> = self
             .session_id_to_shell_host
             .iter()
@@ -1129,32 +1145,62 @@ impl History {
 
         for session_id in &on_host_session_ids {
             if let Some(start) = self.session_start_indices.get_mut(session_id) {
-                if *start >= old_history_file_len {
-                    *start += n;
-                }
+                let shifted = (*start as isize + delta).max(new_history_file_len as isize);
+                *start = shifted.max(0) as usize;
             }
             if let Some(skips) = self.session_skip_indices.get_mut(session_id) {
                 *skips = skips
                     .iter()
-                    .map(|&i| if i >= old_history_file_len { i + n } else { i })
+                    .filter_map(|&i| {
+                        if i >= old_history_file_len {
+                            // index pointed into session_commands; shift by delta
+                            let shifted = i as isize + delta;
+                            (shifted >= 0).then_some(shifted as usize)
+                        } else {
+                            // index pointed into the now-replaced history_file
+                            // portion; drop it (the underlying entries are gone)
+                            None
+                        }
+                    })
                     .collect();
             }
         }
 
+        let num_appended = new_history_file_len.saturating_sub(old_history_file_len);
         ctx.emit(HistoryEvent::ExternalHistoryUpdated {
             host,
-            num_appended: n,
+            num_appended,
         });
     }
 
-    /// Helper called from [`Self::init_session_with`] to register the
-    /// active session's histfile path(s) with [`ShellHistoryWatcher`] when
-    /// the live-sync setting is on. No-op when off.
+    /// Helper called from [`Self::init_session_with`] to register the active
+    /// session's histfile path with [`ShellHistoryWatcher`] when the live-sync
+    /// setting is on. No-op when:
+    ///   * the setting is off, or
+    ///   * the session is remote (we deliberately don't watch the *local*
+    ///     home-dir histfile for a remote session — that would merge local
+    ///     command history into the remote session's autocomplete), or
+    ///   * we're targeting wasm (no filesystem watcher available).
+    ///
+    /// Honors the session's resolved `HISTFILE` (`session.info.histfile`)
+    /// so users with custom paths get live updates too; falls back to the
+    /// shell's default histfile candidates.
     ///
     /// Idempotent: registering the same `(path, host)` pair twice is safe —
     /// the underlying watcher refcounts paths and the `live_sync_paths`
     /// map is keyed by `HashSet<ShellHost>`.
-    fn maybe_register_live_sync(&mut self, host: &ShellHost, ctx: &mut ModelContext<Self>) {
+    #[cfg(not(target_family = "wasm"))]
+    fn maybe_register_live_sync(
+        &mut self,
+        session: &Arc<Session>,
+        host: &ShellHost,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        // Live-sync watches a *local* file — meaningless for a remote session.
+        if !matches!(session.session_type(), SessionType::Local) {
+            return;
+        }
+
         let enabled = *ShellHistorySyncSettings::as_ref(ctx)
             .live_sync_os_shell_history
             .value();
@@ -1162,24 +1208,29 @@ impl History {
             return;
         }
 
-        let Some(home) = dirs::home_dir() else {
-            log::warn!(
-                "live_sync_os_shell_history is on but no home directory could be \
-                 resolved; skipping live history watch registration"
-            );
-            return;
+        // Prefer the session's resolved `HISTFILE` (handles `HISTFILE=...`
+        // overrides in the user's rc files). Fall back to the shell's default
+        // candidates expanded against the home directory.
+        let candidate_paths: Vec<PathBuf> = if let Some(custom) = session.histfile().as_deref() {
+            vec![PathBuf::from(custom)]
+        } else {
+            let Some(home) = dirs::home_dir() else {
+                log::warn!(
+                    "live_sync_os_shell_history is on but no home directory could be \
+                     resolved; skipping live history watch registration"
+                );
+                return;
+            };
+            host.shell_type
+                .history_files()
+                .into_iter()
+                .filter_map(|p| {
+                    // `history_files()` returns `~/...`-prefixed strings; expand them.
+                    let stripped = p.strip_prefix("~/").or_else(|| p.strip_prefix("~"))?;
+                    Some(home.join(stripped))
+                })
+                .collect()
         };
-
-        let candidate_paths: Vec<PathBuf> = host
-            .shell_type
-            .history_files()
-            .into_iter()
-            .filter_map(|p| {
-                // `history_files()` returns `~/...`-prefixed strings; expand them.
-                let stripped = p.strip_prefix("~/").or_else(|| p.strip_prefix("~"))?;
-                Some(home.join(stripped))
-            })
-            .collect();
 
         let watcher_handle = ShellHistoryWatcher::handle(ctx);
         for path in candidate_paths {
@@ -1202,6 +1253,16 @@ impl History {
                 watcher.register_histfile(&path, ctx);
             });
         }
+    }
+
+    /// Wasm stub for [`Self::maybe_register_live_sync`].
+    #[cfg(target_family = "wasm")]
+    fn maybe_register_live_sync(
+        &mut self,
+        _session: &Arc<Session>,
+        _host: &ShellHost,
+        _ctx: &mut ModelContext<Self>,
+    ) {
     }
 }
 
