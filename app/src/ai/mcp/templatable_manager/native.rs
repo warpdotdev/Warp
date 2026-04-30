@@ -62,7 +62,7 @@ use warpui::{windowing::WindowManager, ModelContext, SingletonEntity};
 
 use super::{
     oauth::{self, AuthContext, FileBasedPersistedCredentialsMap, PersistedCredentialsMap},
-    utils::{should_query_resources, should_query_tools},
+    utils::{query_resources_for, query_tools_for},
     MCPServerState, SpawnedServerInfo, TemplatableMCPServerInfo, TemplatableMCPServerManager,
     TemplatableMCPServerManagerEvent,
 };
@@ -1946,28 +1946,9 @@ async fn spawn_server(
 
     let capabilities = server_info.map(|info| &info.capabilities);
 
-    let resources = if should_query_resources(capabilities) {
-        match service.list_all_resources().await {
-            Ok(result) => result,
-            Err(err) => {
-                log::warn!("Failed to list resources for MCP server '{server_name}': {err}");
-                vec![]
-            }
-        }
-    } else {
-        vec![]
-    };
-    let tools = if should_query_tools(capabilities) {
-        match service.list_all_tools().await {
-            Ok(result) => result,
-            Err(err) => {
-                log::warn!("Failed to list tools for MCP server '{server_name}': {err}");
-                vec![]
-            }
-        }
-    } else {
-        vec![]
-    };
+    let resources =
+        query_resources_for(capabilities, &server_name, || service.list_all_resources()).await;
+    let tools = query_tools_for(capabilities, &server_name, || service.list_all_tools()).await;
 
     Ok(TemplatableMCPServerInfo {
         name: server_name,
