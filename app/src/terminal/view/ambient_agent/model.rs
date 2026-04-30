@@ -9,7 +9,7 @@ use warpui::r#async::{SpawnedFutureHandle, Timer};
 use warpui::{Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent::{conversation::AIConversationId, extract_user_query_mode};
 use crate::ai::ambient_agents::spawn::{spawn_task, AmbientAgentEvent};
 use crate::ai::ambient_agents::task::HarnessConfig;
 use crate::ai::ambient_agents::telemetry::CloudAgentTelemetryEvent;
@@ -488,8 +488,10 @@ impl AmbientAgentViewModel {
             ..Default::default()
         });
 
+        let (prompt, mode) = extract_user_query_mode(prompt);
         let request = SpawnAgentRequest {
             prompt,
+            mode,
             config,
             title: None,
             team: None,

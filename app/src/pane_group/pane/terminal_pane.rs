@@ -34,7 +34,7 @@ use crate::{
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
-    server::server_api::ai::SpawnAgentRequest,
+    server::server_api::ai::{SpawnAgentRequest, UserQueryMode},
     session_management::SessionNavigationData,
     terminal::cli_agent_sessions::CLIAgentSessionsModel,
     terminal::{
@@ -1371,6 +1371,8 @@ fn handle_terminal_view_event(
                             };
                             let spawn_request = SpawnAgentRequest {
                                 prompt: request.prompt,
+                                // Agents spawned during orchestrations are always run in normal mode.
+                                mode: UserQueryMode::Normal,
                                 config: Some(AgentConfigSnapshot {
                                     environment_id,
                                     model_id: (!model_id.is_empty()).then_some(model_id),

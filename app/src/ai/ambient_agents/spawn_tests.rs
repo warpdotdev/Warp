@@ -6,6 +6,7 @@ use std::sync::{
 use chrono::Utc;
 use session_sharing_protocol::common::SessionId;
 
+use crate::ai::agent::UserQueryMode;
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::server::server_api::ai::{MockAIClient, SpawnAgentResponse};
 use crate::terminal::shared_session;
@@ -62,6 +63,7 @@ async fn poll_stops_on_terminal_failure_like_state() {
     let ai_client = Arc::new(mock);
     let request = crate::server::server_api::ai::SpawnAgentRequest {
         prompt: "test".to_string(),
+        mode: UserQueryMode::Normal,
         config: None,
         title: None,
         team: None,
@@ -177,6 +179,7 @@ async fn poll_for_session_join_info_waits_until_link_is_available() {
     let ai_client = Arc::new(mock);
     let request = crate::server::server_api::ai::SpawnAgentRequest {
         prompt: "test".to_string(),
+        mode: UserQueryMode::Normal,
         config: None,
         title: None,
         team: None,
