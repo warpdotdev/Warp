@@ -54,7 +54,6 @@
 /app/src/search/command_palette/ @acarl005
 
 # @ context, slash commands, and global search / file tree
-/app/src/context_chips/ @moirahuang
 /app/src/search/ai_context_menu/ @moirahuang
 /app/src/search/files/ @moirahuang
 /app/src/search/search_results_menu/ @moirahuang
