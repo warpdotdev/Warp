@@ -36,4 +36,5 @@ tokio = { workspace = true, features = [
     "test-util",
 ] }
 tokio-test = "0.4"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }
 which = "4.4"
