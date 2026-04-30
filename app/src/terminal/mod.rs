@@ -326,6 +326,10 @@ pub struct SizeInfo {
 
     /// Vertical window padding.
     padding_y_px: Pixels,
+
+    /// The device pixel ratio (physical pixels per logical pixel) for the window
+    /// hosting this terminal pane, e.g. 1.0, 1.25, 1.5, 2.0.
+    scale_factor: f32,
 }
 
 /// Helper struct containing the cell size and window padding info.
@@ -350,6 +354,7 @@ impl SizeInfo {
         cell_height_px: Pixels,
         padding_x_px: Pixels,
         padding_y_px: Pixels,
+        scale_factor: f32,
     ) -> SizeInfo {
         let rows = (pane_size_px.y() - 2. * padding_y_px.as_f32()) / cell_height_px.as_f32();
         let columns = (pane_size_px.x() - 2. * padding_x_px.as_f32()) / cell_width_px.as_f32();
@@ -363,6 +368,7 @@ impl SizeInfo {
             cell_height_px,
             padding_x_px: padding_x_px.floor(),
             padding_y_px: padding_y_px.floor(),
+            scale_factor,
         }
     }
 
@@ -377,6 +383,7 @@ impl SizeInfo {
             1.0.into_pixels(), /* cell_height */
             Pixels::zero(),    /* padding_x */
             Pixels::zero(),    /* padding_y */
+            1.0,               /* scale_factor */
         )
     }
 

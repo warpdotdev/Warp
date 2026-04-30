@@ -56,6 +56,7 @@ pub(super) struct State {
     /// Information about cell dimensions.
     pub cell_width: usize,
     pub cell_height: usize,
+    pub scale_factor: f32,
 
     /// Mode flags.
     pub mode: TermMode,
@@ -128,6 +129,7 @@ impl State {
         Self {
             cell_width: size_info.cell_width_px.as_f32() as usize,
             cell_height: size_info.cell_height_px.as_f32() as usize,
+            scale_factor: size_info.scale_factor,
             mode: Default::default(),
             tabs,
             cursor_style: Default::default(),
@@ -1202,8 +1204,11 @@ impl ansi::Handler for GridHandler {
     }
 
     fn text_area_size_pixels<W: std::io::Write>(&mut self, writer: &mut W) {
-        let width = self.ansi_handler_state.cell_width * self.columns();
-        let height = self.ansi_handler_state.cell_height * self.visible_rows();
+        let sf = self.ansi_handler_state.scale_factor;
+        let cell_w_phys = ((self.ansi_handler_state.cell_width as f32) * sf).round() as usize;
+        let cell_h_phys = ((self.ansi_handler_state.cell_height as f32) * sf).round() as usize;
+        let width = cell_w_phys * self.columns();
+        let height = cell_h_phys * self.visible_rows();
         let _ = write!(writer, "\x1b[4;{height};{width}t");
     }
 

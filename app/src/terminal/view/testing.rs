@@ -58,6 +58,7 @@ impl TerminalView {
             1.0.into_pixels(),
             Pixels::zero(),
             Pixels::zero(),
+            1.0,
         );
         let (wakeups_tx, wakeups_rx) = async_channel::unbounded();
         let (events_tx, events_rx) = async_channel::unbounded();
