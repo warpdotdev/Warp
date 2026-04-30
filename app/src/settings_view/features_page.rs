@@ -9,7 +9,7 @@ use warp_core::context_flag::ContextFlag;
 use warpui::platform::GraphicsBackend;
 use warpui::rendering::GPUPowerPreference;
 use warpui::{elements::DispatchEventResult, platform::Cursor};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use {
     crate::settings::ForceX11, crate::settings::LinuxAppConfiguration,
     warpui::platform::linux::windowing_system_is_customizable,
@@ -519,7 +519,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         );
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     {
         if windowing_system_is_customizable(app) {
             toggle_binding_pairs.push(
@@ -531,7 +531,10 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
                     context,
                     flags::ALLOW_NATIVE_WAYLAND,
                 )
-                .is_supported_on_current_platform(cfg!(target_os = "linux")),
+                .is_supported_on_current_platform(cfg!(any(
+                    target_os = "linux",
+                    target_os = "freebsd"
+                ))),
             );
         }
     }
@@ -631,7 +634,7 @@ pub enum FeaturesPageAction {
     ToggleAutosuggestions,
     ToggleConfirmCloseSession,
     ToggleShowChangelogAfterUpdate,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     ToggleForceX11,
     ToggleAutosuggestionKeybindingHint,
     ToggleShowAutosuggestionIgnoreButton,
@@ -1097,7 +1100,7 @@ impl FeaturesPageAction {
                     value: to_string(selection_setting),
                 }
             }
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             Self::ToggleForceX11 => {
                 let setting = *LinuxAppConfiguration::as_ref(ctx).force_x11.value();
                 TelemetryEvent::FeaturesPageAction {
@@ -1237,7 +1240,7 @@ pub struct FeaturesPageView {
 
     window_id: WindowId,
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     force_x11_changed: bool,
     gpu_power_preference_changed: bool,
     graphics_backend_preference_changed: bool,
@@ -1834,7 +1837,7 @@ impl TypedActionView for FeaturesPageView {
                         .toggle_and_save_value(ctx));
                 });
             }
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             ToggleForceX11 => {
                 LinuxAppConfiguration::handle(ctx).update(ctx, |linux_app_configuration, ctx| {
                     report_if_error!(linux_app_configuration.force_x11.toggle_and_save_value(ctx));
@@ -2415,7 +2418,7 @@ impl FeaturesPageView {
             mouse_scroll_input_editor,
             valid_mouse_scroll_multiplier: true,
 
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             force_x11_changed: false,
             gpu_power_preference_changed: false,
             graphics_backend_preference_changed: false,
@@ -2740,7 +2743,7 @@ impl FeaturesPageView {
             system_widgets.push(Box::new(GraphicsBackendWidget::default()));
         }
 
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         {
             if windowing_system_is_customizable(ctx) {
                 system_widgets.push(Box::new(WindowSystemWidget::default()));
@@ -4041,7 +4044,7 @@ impl SettingsPageMeta for FeaturesPageView {
         // notify on the [`DisplayCount`] model. However, no mechanism exists on Linux to trigger
         // that callback. As a workaround, we check for updates here where quake mode is
         // configured.
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         DisplayCount::handle(ctx).update(ctx, |display_count, ctx| {
             display_count.0 = ctx.windows().display_count();
             ctx.notify();
@@ -7107,14 +7110,14 @@ impl SettingsWidget for GPUWidget {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 #[derive(Default)]
 struct WindowSystemWidget {
     additional_info_link: MouseStateHandle,
     switch_state: SwitchStateHandle,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 impl SettingsWidget for WindowSystemWidget {
     type View = FeaturesPageView;
 

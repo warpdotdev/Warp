@@ -94,7 +94,7 @@ ctrlc.workspace = true
 font-kit.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
-[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
 arboard = { workspace = true, features = ["image-data"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]

@@ -148,7 +148,7 @@ pub fn test_focus_panes_on_hover() -> Builder {
 
 pub fn test_close_tab_with_long_running_process() -> Builder {
     new_builder()
-        .set_should_run_test(|| cfg!(target_os = "linux"))
+        .set_should_run_test(|| cfg!(any(target_os = "linux", target_os = "freebsd")))
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
         .with_step(
             new_step_with_default_assertions("Open a new tab")
