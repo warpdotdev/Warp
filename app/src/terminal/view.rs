@@ -19006,7 +19006,8 @@ impl TerminalView {
                 });
             }
             AIBlockEvent::OpenAllImportedCommentsForConversation { conversation_id } => {
-                let (all_comments, base_branch) = self.all_comments_in_thread(conversation_id, ctx);
+                let (all_comments, base_branch, source_blocks) =
+                    self.all_comments_in_thread(conversation_id, ctx);
                 if !all_comments.is_empty() {
                     let diff_mode = self.diff_mode_for_branch(base_branch.as_deref(), ctx);
                     ctx.emit(Event::ImportAllCodeReviewComments {
@@ -19014,6 +19015,11 @@ impl TerminalView {
                         comments: all_comments,
                         diff_mode,
                     });
+                    for source_block in source_blocks {
+                        source_block.update(ctx, |block, ctx| {
+                            block.mark_imported_comments_added_to_code_review(ctx);
+                        });
+                    }
                 }
             }
             AIBlockEvent::OpenAIDocumentPane {
@@ -19114,20 +19120,28 @@ impl TerminalView {
         &self,
         conversation_id: &AIConversationId,
         ctx: &AppContext,
-    ) -> (Vec<AttachedReviewComment>, Option<String>) {
+    ) -> (
+        Vec<AttachedReviewComment>,
+        Option<String>,
+        Vec<ViewHandle<AIBlock>>,
+    ) {
         let mut all_comments = Vec::new();
         let mut base_branch = None;
-        for ai_block in self.ai_blocks_for_current_thread(conversation_id, ctx) {
+        let mut source_blocks = Vec::new();
+        for ai_metadata in self.ai_block_metadata_for_current_thread(conversation_id, ctx) {
+            let ai_block = ai_metadata.ai_block_handle.as_ref(ctx);
             if let Some(imported) = ai_block.collect_imported_comments() {
                 all_comments.extend(imported.comments);
                 if base_branch.is_none() {
                     base_branch = imported.base_branch;
                 }
+                source_blocks.push(ai_metadata.ai_block_handle.clone());
             }
         }
         // The iterator yields blocks newest-first; reverse to get chronological order.
         all_comments.reverse();
-        (all_comments, base_branch)
+        source_blocks.reverse();
+        (all_comments, base_branch, source_blocks)
     }
 
     /// Returns `true` if any block in the current thread of the given conversation has imported
