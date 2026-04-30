@@ -2631,14 +2631,6 @@ impl Input {
         });
         if FeatureFlag::InlineHistoryMenu.is_enabled() {
             ctx.subscribe_to_view(&inline_history_menu_view, |me, _, event, ctx| {
-                // Only the active view's events should be processed. When
-                // CloudModeInputV2 is enabled and we're composing for an
-                // ambient agent, the cloud-mode-v2 wrapper is the active view
-                // and this regular view's events must be ignored, otherwise
-                // both views would write to the buffer and the second write
-                // would desync from this view's selection, tripping the
-                // `mismatched` check in `handle_editor_event` and closing the
-                // menu.
                 if me.is_cloud_mode_input_v2_composing(ctx) {
                     return;
                 }
@@ -2666,9 +2658,6 @@ impl Input {
             });
             if FeatureFlag::InlineHistoryMenu.is_enabled() {
                 ctx.subscribe_to_view(&view, |me, _, event, ctx| {
-                    // Mirror of the regular view's guard: this wrapper is
-                    // only the active view when we're composing for an
-                    // ambient agent in cloud-mode-v2.
                     if !me.is_cloud_mode_input_v2_composing(ctx) {
                         return;
                     }
