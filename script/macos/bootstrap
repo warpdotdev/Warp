@@ -72,7 +72,7 @@ if ! command -v yarn >/dev/null 2>&1; then
 fi
 
 # Verify yarn version is 4.x (Corepack-managed), not 1.x (Homebrew).
-YARN_VERSION="$(yarn --version 2>/dev/null)"
+YARN_VERSION="$(cd "$PWD"/crates/command-signatures-v2/js && yarn --version 2>/dev/null)"
 YARN_MAJOR="$(echo "$YARN_VERSION" | cut -d. -f1)"
 if [ "$YARN_MAJOR" -lt 4 ] 2>/dev/null; then
     echo "Error: yarn $YARN_VERSION detected, but Yarn 4+ is required."
