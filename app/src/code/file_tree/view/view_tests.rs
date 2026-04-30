@@ -985,3 +985,121 @@ fn absorbed_descendant_is_unregistered_from_lazy_loaded_paths() {
         });
     });
 }
+
+#[test]
+fn file_tree_refreshes_after_file_move_operations() {
+    VirtualFS::test("file_tree_move_refresh", |dirs, mut vfs| {
+        vfs.mkdir("repo/.git/objects")
+            .mkdir("repo/src")
+            .mkdir("repo/new_dir")
+            .with_files(vec![
+                Stub::FileWithContent("repo/.git/HEAD", "ref: refs/heads/main"),
+                Stub::FileWithContent("repo/.git/config", "[core]\n\trepositoryformatversion = 0"),
+                Stub::FileWithContent("repo/src/main.rs", "fn main() {}\n"),
+                Stub::FileWithContent("repo/src/utils.rs", "pub fn helper() {}\n"),
+            ]);
+
+        let repo_root = dirs.tests().join("repo");
+        let canonical_repo_root =
+            warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo_root)
+                .unwrap();
+
+        App::test((), |mut app| async move {
+            let (detected_repositories, repository_metadata_model) = initialize_app(&mut app);
+
+            let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
+
+            detected_repositories.update(&mut app, |repositories, _ctx| {
+                repositories.insert_test_repo_root(canonical_repo_root.clone());
+            });
+
+            file_tree_view.update(&mut app, |view, ctx| {
+                view.set_is_active(true, ctx);
+                view.set_root_directories(vec![repo_root.clone()], ctx);
+            });
+
+            // Wait for initial indexing to complete
+            file_tree_view.update(&mut app, |view, ctx| {
+                view.update_directory_contents(&[canonical_repo_root.clone()], false, ctx);
+            });
+
+            // Verify initial state - files should be in src/
+            file_tree_view.read(&app, |view, _ctx| {
+                let flattened_items = view.flattened_items();
+                let main_rs_path = canonical_repo_root.join("src/main.rs");
+                let utils_rs_path = canonical_repo_root.join("src/utils.rs");
+                
+                assert!(flattened_items.iter().any(|item| item.id.path == main_rs_path));
+                assert!(flattened_items.iter().any(|item| item.id.path == utils_rs_path));
+            });
+
+            // Simulate a file move operation by updating the repository state
+            let moved_repo_state = {
+                let moved_main_file = Entry::File(FileMetadata::new(
+                    repo_root.join("new_dir/main.rs"),
+                    false,
+                ));
+                let moved_utils_file = Entry::File(FileMetadata::new(
+                    repo_root.join("new_dir/utils.rs"),
+                    false,
+                ));
+                let new_dir = Entry::Directory(DirectoryEntry {
+                    path: warp_util::standardized_path::StandardizedPath::try_from_local(
+                        &repo_root.join("new_dir"),
+                    )
+                    .unwrap(),
+                    children: vec![moved_main_file, moved_utils_file],
+                    ignored: false,
+                    loaded: true,
+                });
+                let src_dir = Entry::Directory(DirectoryEntry {
+                    path: warp_util::standardized_path::StandardizedPath::try_from_local(
+                        &repo_root.join("src"),
+                    )
+                    .unwrap(),
+                    children: vec![],
+                    ignored: false,
+                    loaded: true,
+                });
+                let root = Entry::Directory(DirectoryEntry {
+                    path: std_path(&repo_root),
+                    children: vec![src_dir, new_dir],
+                    ignored: false,
+                    loaded: true,
+                });
+                FileTreeState::new(root, vec![], None)
+            };
+
+            // Update the repository metadata model with the new state
+            repository_metadata_model.update(&mut app, |model, ctx| {
+                model.add_repository_internal(
+                    canonical_repo_root.clone(),
+                    IndexedRepoState::Indexed(moved_repo_state),
+                    ctx,
+                ).unwrap();
+            });
+
+            // Emit a FileTreeEntryUpdated event (simulating what happens after a move operation)
+            repository_metadata_model.emit(repo_metadata::local_model::RepositoryMetadataEvent::FileTreeEntryUpdated {
+                path: canonical_repo_root.clone(),
+            });
+
+            // Verify that the file tree refreshed and files are no longer in the old location
+            file_tree_view.read(&app, |view, _ctx| {
+                let flattened_items = view.flattened_items();
+                let old_main_rs_path = canonical_repo_root.join("src/main.rs");
+                let old_utils_rs_path = canonical_repo_root.join("src/utils.rs");
+                let new_main_rs_path = canonical_repo_root.join("new_dir/main.rs");
+                let new_utils_rs_path = canonical_repo_root.join("new_dir/utils.rs");
+                
+                // Files should NOT be in the old location
+                assert!(!flattened_items.iter().any(|item| item.id.path == old_main_rs_path));
+                assert!(!flattened_items.iter().any(|item| item.id.path == old_utils_rs_path));
+                
+                // Files should be in the new location
+                assert!(flattened_items.iter().any(|item| item.id.path == new_main_rs_path));
+                assert!(flattened_items.iter().any(|item| item.id.path == new_utils_rs_path));
+            });
+        });
+    });
+}

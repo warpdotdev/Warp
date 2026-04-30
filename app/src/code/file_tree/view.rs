@@ -536,22 +536,36 @@ impl FileTreeView {
             RepoMetadataEvent::FileTreeEntryUpdated {
                 id: RepositoryIdentifier::Local(std_path),
             } => {
-                // Find root directories whose backing model entry matches this path.
-                let root_paths: Vec<StandardizedPath> = self
+                // Find all displayed directories that belong to the updated repository.
+                // This handles both direct repository root updates and updates to subdirectories
+                // within the repository (e.g., after file move operations).
+                let affected_root_paths: Vec<StandardizedPath> = self
                     .root_directories
                     .iter()
-                    .filter_map(|(root_path, root_dir)| {
-                        (**root_dir.entry.root_directory() == *std_path)
-                            .then_some(root_path.clone())
+                    .filter(|(_, root_dir)| {
+                        // Check if this root directory is within the updated repository
+                        let root_dir_path = root_dir.entry.root_directory();
+                        *root_dir_path == std_path || root_dir_path.starts_with(&std_path)
                     })
+                    .map(|(root_path, _)| root_path.clone())
                     .collect();
 
-                if !root_paths.is_empty() {
+                if !affected_root_paths.is_empty() {
                     let id = RepositoryIdentifier::Local(std_path.clone());
                     if let Some(state) = RepoMetadataModel::as_ref(ctx).get_repository(&id, ctx) {
-                        for root_path in root_paths {
-                            if let Some(root_dir) = self.root_directories.get_mut(&root_path) {
-                                root_dir.entry = state.entry.clone();
+                        // Update all affected root directories with the new repository state
+                        for root_path in &affected_root_paths {
+                            if let Some(root_dir) = self.root_directories.get_mut(root_path) {
+                                // If this is the repository root itself, update the entire entry
+                                if *root_dir.entry.root_directory() == std_path {
+                                    root_dir.entry = state.entry.clone();
+                                } else {
+                                    // For subdirectories, we need to refresh the specific directory
+                                    // from the updated repository state
+                                    if let Some(updated_entry) = state.entry.get(root_path) {
+                                        root_dir.entry = state.entry.clone();
+                                    }
+                                }
                             }
                         }
 
