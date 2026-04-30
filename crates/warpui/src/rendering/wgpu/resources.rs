@@ -142,6 +142,26 @@ impl Resources {
         self.uniforms.bind_group_layout()
     }
 
+    /// Whether the active GPU device exposes dual-source blending. This is
+    /// the prerequisite for the subpixel glyph render pipeline; when false,
+    /// the renderer falls back to the grayscale path for all glyphs.
+    pub fn supports_dual_source_blending(&self) -> bool {
+        self.device
+            .features()
+            .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
+    }
+
+    /// Whether the configured surface composites without an opaque alpha
+    /// channel. Returns true for any [`CompositeAlphaMode`] other than
+    /// `Opaque`, including `Inherit` which the wgpu docs describe as
+    /// platform-defined and therefore not safe to assume opaque.
+    pub fn surface_is_transparent(&self) -> bool {
+        !matches!(
+            self.surface_config.borrow().alpha_mode,
+            CompositeAlphaMode::Opaque
+        )
+    }
+
     pub fn configure_render_pass<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
@@ -603,12 +623,29 @@ async fn initialize_device(
 
     limits.max_mesh_output_layers = 0;
 
+    // Opt into dual-source blending when the adapter exposes it. The feature
+    // maps to Vulkan core 1.0 dualSrcBlend, Metal MSL 1.2+ dual-source
+    // outputs, and DX12 dual-source blend states; it is widely available on
+    // desktop hardware but not universal on mobile. Requesting a feature the
+    // adapter does not expose causes request_device to fail, so the check
+    // against adapter.features() is the gate. When the feature is not
+    // available, the LCD subpixel rendering path falls back to grayscale at
+    // scene build time.
+    let mut required_features = wgpu::Features::empty();
+    if adapter
+        .features()
+        .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
+    {
+        required_features |= wgpu::Features::DUAL_SOURCE_BLENDING;
+    }
+
     let (device, queue) = match adapter
         .request_device(&wgpu::DeviceDescriptor {
             // Use the broadest/most permissive device requirements
             // so that we can run on as many machines as possible.
             // If we use any WGSL features that aren't included in
             // these defaults, we can add specific overrides as needed.
+            required_features,
             required_limits: limits,
             ..Default::default()
         })
