@@ -1,17 +1,26 @@
-// Brightness-scaled contrast enhancement for glyph alpha masks.
+// Two-stage alpha correction for glyph coverage masks.
 //
-// Linear sRGB blending makes light-on-dark text appear too thin because AA fringe
-// pixels blend perceptually darker than expected. Dark-on-light text has the opposite
-// problem — it already looks heavier than its geometric coverage.
+// Stage 1 — contrast boost (enhance_contrast):
+//   Fonts are designed assuming gamma-space blending. At 1.25× or 1.5× DPI
+//   the glyph rasterizer produces AA coverage values that map to the right
+//   perceived weight ONLY if blended in gamma space. Our pipeline does that
+//   (non-sRGB surface, no linearisation). Still, mid-coverage fringe pixels
+//   look slightly too thin for bright (white) text because the hardware gamma
+//   curve is not perfectly 2.2. The Windows Terminal DWrite formula
+//   enhance_contrast(α, k) = α*(k+1)/(αk+1) applies a brightness-scaled
+//   boost: brighter text (higher k) gets a stronger push.
 //
-// To compensate, we compute the text color's brightness (k) and use it to boost the
-// glyph alpha through enhance_contrast(). Brighter text gets a stronger boost;
-// dark text is left unchanged.
+// Stage 2 — gamma-incorrect-target correction (apply_alpha_correction):
+//   This is the ClearType / DirectWrite polynomial correction that accounts
+//   for the difference between the true display gamma and the gamma=1.0
+//   assumption built into the coverage values. It further boosts mid-range
+//   coverage to match what a physically-perfect gamma-2.2 pipeline would
+//   produce. Derived from Microsoft's gamma correction lookup table via Zed.
+//   GAMMA_RATIOS correspond to gamma=1.8, a good default for Linux/BSD.
+//   Reference: https://github.com/zed-industries/zed/blob/main/crates/gpui_wgpu/src/shaders.wgsl
 //
-// enhance_contrast() adapted from DWrite_EnhanceContrast in Windows Terminal's DirectWrite shader:
-// https://github.com/microsoft/terminal/blob/1283c0f5b99a2961673249fa77c6b986efb5086c/src/renderer/atlas/dwrite.hlsl
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT license.
+// Both stages are skipped for emoji (is_emoji=1): tex_color already contains
+// the final RGBA.
 fn glyph_color_brightness(color: vec3<f32>) -> f32 {
     // REC. 601 luminance coefficients for perceived brightness.
     return dot(color, vec3<f32>(0.30, 0.59, 0.11));
@@ -19,6 +28,33 @@ fn glyph_color_brightness(color: vec3<f32>) -> f32 {
 
 fn enhance_contrast(alpha: f32, k: f32) -> f32 {
     return alpha * (k + 1.0) / (alpha * k + 1.0);
+}
+
+// Gamma correction ratios for gamma=1.8 (index 8 in Microsoft's ClearType table).
+// Computed as: ratios[i] * NORM, where NORM = 65536/(255²)×4 for indices 0,2
+// and 256/255×4 for indices 1,3.
+const GAMMA_RATIOS: vec4<f32> = vec4<f32>(0.148, -0.895, 1.476, -0.325);
+
+fn apply_alpha_correction(a: f32, b: f32, g: vec4<f32>) -> f32 {
+    let brightness_adjustment = g.x * b + g.y;
+    let correction = brightness_adjustment * a + (g.z * b + g.w);
+    return a + a * (1.0 - a) * correction;
+}
+
+// Per-channel variants used by the subpixel fragment shader. Each LCD
+// subpixel has its own coverage, so the contrast and gamma correction are
+// applied independently to R, G, and B. The brightness term is also
+// vec3 so each component contributes only to its own correction; for a
+// monochrome text colour all three components are equal and the result
+// matches the scalar formula above.
+fn enhance_contrast3(alpha: vec3<f32>, k: f32) -> vec3<f32> {
+    return alpha * (k + 1.0) / (alpha * k + 1.0);
+}
+
+fn apply_alpha_correction3(a: vec3<f32>, b: vec3<f32>, g: vec4<f32>) -> vec3<f32> {
+    let brightness_adjustment = g.x * b + g.y;
+    let correction = brightness_adjustment * a + (g.z * b + g.w);
+    return a + a * (1.0 - a) * correction;
 }
 
 struct Uniforms {
@@ -111,11 +147,12 @@ fn fs_main(in: GlyphVertexShaderOutput) -> @location(0) vec4<f32> {
     // Use the input color for non-emoji, and the sampled color for emoji.
     var color: vec4<f32> = mix(in.color, tex_color, f32(in.is_emoji));
 
-    // Scale contrast boost by text brightness:
-    // light text (white=1) gets full boost; dark text (black=0) gets none.
+    // Stage 1: brightness-scaled contrast boost (Windows Terminal formula).
     let k = glyph_color_brightness(color.rgb);
     let contrasted = enhance_contrast(tex_color.r, k);
-    color.a *= max(contrasted, f32(in.is_emoji));
+    // Stage 2: gamma-incorrect-target polynomial correction (ClearType / Zed formula).
+    let gamma_corrected = apply_alpha_correction(contrasted, k, GAMMA_RATIOS);
+    color.a *= max(gamma_corrected, f32(in.is_emoji));
 
     // Apply the fade.
     color.a *= saturate(in.fade_alpha);
