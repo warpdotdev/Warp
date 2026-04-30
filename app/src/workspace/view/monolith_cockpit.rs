@@ -71,6 +71,7 @@ pub enum MonolithCockpitAction {
         tenant_name: String,
         context: String,
     },
+    ClearSelectedTenant,
     ShowTenantFilter {
         filter: TenantFilter,
     },
@@ -101,6 +102,9 @@ pub struct MonolithCockpitView {
     tenant_mouse_states: Vec<MouseStateHandle>,
     environment_mouse_states: Vec<MouseStateHandle>,
     cloud_mouse_states: Vec<MouseStateHandle>,
+    filter_mouse_states: Vec<MouseStateHandle>,
+    fleet_control_mouse_states: Vec<MouseStateHandle>,
+    tenant_context_mouse_states: Vec<MouseStateHandle>,
     scroll_state: ClippedScrollStateHandle,
     expanded_tenants: HashSet<String>,
     tenant_filter: TenantFilter,
@@ -114,6 +118,9 @@ impl MonolithCockpitView {
             tenant_mouse_states: (0..128).map(|_| MouseStateHandle::default()).collect(),
             environment_mouse_states: (0..2).map(|_| MouseStateHandle::default()).collect(),
             cloud_mouse_states: (0..16).map(|_| MouseStateHandle::default()).collect(),
+            filter_mouse_states: (0..16).map(|_| MouseStateHandle::default()).collect(),
+            fleet_control_mouse_states: (0..8).map(|_| MouseStateHandle::default()).collect(),
+            tenant_context_mouse_states: (0..4).map(|_| MouseStateHandle::default()).collect(),
             scroll_state: ClippedScrollStateHandle::default(),
             expanded_tenants: HashSet::new(),
             tenant_filter: TenantFilter::All,
@@ -755,15 +762,41 @@ VMs and runtimes:\n{}",
                             ))
                             .finish(),
                     )
-                    .with_child(Self::typed_button(
-                        "copy context",
-                        MonolithCockpitAction::CopyTenantContext {
-                            tenant_name: tenant.name.clone(),
-                            context,
-                        },
-                        self.cloud_mouse_states.get(4).cloned().unwrap_or_default(),
-                        app,
-                    ))
+                    .with_child(
+                        Flex::row()
+                            .with_spacing(6.)
+                            .with_child(Self::primary_typed_button(
+                                "exit tenant",
+                                MonolithCockpitAction::ClearSelectedTenant,
+                                self.tenant_context_mouse_states
+                                    .first()
+                                    .cloned()
+                                    .unwrap_or_default(),
+                                app,
+                            ))
+                            .with_child(Self::typed_button(
+                                "copy context",
+                                MonolithCockpitAction::CopyTenantContext {
+                                    tenant_name: tenant.name.clone(),
+                                    context,
+                                },
+                                self.tenant_context_mouse_states
+                                    .get(1)
+                                    .cloned()
+                                    .unwrap_or_default(),
+                                app,
+                            ))
+                            .finish(),
+                    )
+                    .with_child(
+                        Text::new(
+                            "Tenant scope is active. Exit tenant returns the cockpit to full-fleet browsing.",
+                            appearance.ui_font_family(),
+                            11.,
+                        )
+                        .with_color(theme.disabled_ui_text_color().into_solid())
+                        .finish(),
+                    )
                     .finish(),
             )
             .with_padding(Padding::uniform(10.))
@@ -1314,19 +1347,41 @@ impl TypedActionView for MonolithCockpitView {
                     .write(ClipboardContent::plain_text(context.clone()));
                 ctx.notify();
             }
+            MonolithCockpitAction::ClearSelectedTenant => {
+                self.selected_tenant = None;
+                ctx.notify();
+            }
             MonolithCockpitAction::ShowTenantFilter { filter } => {
                 self.tenant_filter = *filter;
-                if matches!(
-                    filter,
-                    TenantFilter::RunningAgents | TenantFilter::DownAgents | TenantFilter::WithVms
-                ) {
-                    let (profile, _) = Self::load_profile(ctx);
-                    self.expanded_tenants = profile
+                let (profile, _) = Self::load_profile(ctx);
+                self.expanded_tenants = match filter {
+                    TenantFilter::All => {
+                        self.selected_tenant = None;
+                        HashSet::new()
+                    }
+                    TenantFilter::Active | TenantFilter::Offboarded => profile
+                        .tenants
+                        .iter()
+                        .filter(|tenant| {
+                            Self::tenant_matches_filter(tenant, *filter) && !tenant.hosts.is_empty()
+                        })
+                        .map(|tenant| tenant.name.clone())
+                        .collect(),
+                    TenantFilter::WithVms
+                    | TenantFilter::RunningAgents
+                    | TenantFilter::DownAgents => profile
                         .tenants
                         .iter()
                         .filter(|tenant| Self::tenant_matches_filter(tenant, *filter))
                         .map(|tenant| tenant.name.clone())
-                        .collect();
+                        .collect(),
+                };
+                if self.selected_tenant.as_ref().is_some_and(|selected| {
+                    !profile.tenants.iter().any(|tenant| {
+                        &tenant.name == selected && Self::tenant_matches_filter(tenant, *filter)
+                    })
+                }) {
+                    self.selected_tenant = None;
                 }
                 ctx.notify();
             }
@@ -1462,7 +1517,7 @@ impl View for MonolithCockpitView {
             .iter()
             .map(|tenant| tenant.name.clone())
             .collect::<Vec<_>>();
-        let mut header_button_index = 0;
+        let mut filter_button_index = 0;
         body.add_child(
             Flex::row()
                 .with_spacing(6.)
@@ -1470,7 +1525,7 @@ impl View for MonolithCockpitView {
                     &format!("all {}", Self::filter_count(&profile, TenantFilter::All)),
                     TenantFilter::All,
                     self.tenant_filter == TenantFilter::All,
-                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    Self::next_mouse_state(&self.filter_mouse_states, &mut filter_button_index),
                     app,
                 ))
                 .with_child(Self::tenant_filter_button(
@@ -1480,7 +1535,7 @@ impl View for MonolithCockpitView {
                     ),
                     TenantFilter::Active,
                     self.tenant_filter == TenantFilter::Active,
-                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    Self::next_mouse_state(&self.filter_mouse_states, &mut filter_button_index),
                     app,
                 ))
                 .with_child(Self::tenant_filter_button(
@@ -1490,9 +1545,15 @@ impl View for MonolithCockpitView {
                     ),
                     TenantFilter::Offboarded,
                     self.tenant_filter == TenantFilter::Offboarded,
-                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    Self::next_mouse_state(&self.filter_mouse_states, &mut filter_button_index),
                     app,
                 ))
+                .finish(),
+        );
+
+        body.add_child(
+            Flex::row()
+                .with_spacing(6.)
                 .with_child(Self::tenant_filter_button(
                     &format!(
                         "with vms {}",
@@ -1500,7 +1561,7 @@ impl View for MonolithCockpitView {
                     ),
                     TenantFilter::WithVms,
                     self.tenant_filter == TenantFilter::WithVms,
-                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    Self::next_mouse_state(&self.filter_mouse_states, &mut filter_button_index),
                     app,
                 ))
                 .with_child(Self::tenant_filter_button(
@@ -1510,7 +1571,7 @@ impl View for MonolithCockpitView {
                     ),
                     TenantFilter::RunningAgents,
                     self.tenant_filter == TenantFilter::RunningAgents,
-                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    Self::next_mouse_state(&self.filter_mouse_states, &mut filter_button_index),
                     app,
                 ))
                 .with_child(Self::tenant_filter_button(
@@ -1520,25 +1581,32 @@ impl View for MonolithCockpitView {
                     ),
                     TenantFilter::DownAgents,
                     self.tenant_filter == TenantFilter::DownAgents,
-                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    Self::next_mouse_state(&self.filter_mouse_states, &mut filter_button_index),
                     app,
                 ))
                 .finish(),
         );
 
+        let mut fleet_control_button_index = 0;
         body.add_child(
             Flex::row()
                 .with_spacing(6.)
                 .with_child(Self::typed_button(
                     "expand all",
                     MonolithCockpitAction::ExpandAllTenants { tenant_names },
-                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    Self::next_mouse_state(
+                        &self.fleet_control_mouse_states,
+                        &mut fleet_control_button_index,
+                    ),
                     app,
                 ))
                 .with_child(Self::typed_button(
                     "collapse all",
                     MonolithCockpitAction::CollapseAllTenants,
-                    Self::next_mouse_state(&self.cloud_mouse_states, &mut header_button_index),
+                    Self::next_mouse_state(
+                        &self.fleet_control_mouse_states,
+                        &mut fleet_control_button_index,
+                    ),
                     app,
                 ))
                 .finish(),
