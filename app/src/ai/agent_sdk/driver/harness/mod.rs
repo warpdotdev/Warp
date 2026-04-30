@@ -44,6 +44,7 @@ mod json_utils;
 pub(crate) use claude_code::ClaudeHarness;
 use claude_transcript::ClaudeResumeInfo;
 use codex::CodexHarness;
+use codex_transcript::CodexResumeInfo;
 use gemini::GeminiHarness;
 
 /// Harness-agnostic payload describing how to resume an existing conversation.
@@ -54,6 +55,62 @@ use gemini::GeminiHarness;
 pub(crate) enum ResumePayload {
     /// Claude Code session state fetched from the server's transcript endpoint.
     Claude(ClaudeResumeInfo),
+    /// Codex session state fetched from the server's transcript endpoint.
+    Codex(CodexResumeInfo),
+}
+
+impl TryFrom<ResumePayload> for ClaudeResumeInfo {
+    type Error = AgentDriverError;
+
+    fn try_from(payload: ResumePayload) -> Result<Self, Self::Error> {
+        match payload {
+            ResumePayload::Claude(info) => Ok(info),
+            _ => {
+                log::error!("ClaudeHarness given non-Claude ResumePayload variant");
+                Err(AgentDriverError::InvalidRuntimeState)
+            }
+        }
+    }
+}
+
+impl TryFrom<ResumePayload> for CodexResumeInfo {
+    type Error = AgentDriverError;
+
+    fn try_from(payload: ResumePayload) -> Result<Self, Self::Error> {
+        match payload {
+            ResumePayload::Codex(info) => Ok(info),
+            _ => {
+                log::error!("CodexHarness given non-Codex ResumePayload variant");
+                Err(AgentDriverError::InvalidRuntimeState)
+            }
+        }
+    }
+}
+
+/// Fetch the harness transcript for `conversation_id` and deserialize it into `E`.
+pub(super) async fn fetch_transcript_envelope<E: serde::de::DeserializeOwned>(
+    harness_label: &str,
+    conversation_id: &AIConversationId,
+    client: Arc<dyn HarnessSupportClient>,
+) -> Result<E, AgentDriverError> {
+    let bytes = client.fetch_transcript().await.map_err(|err| {
+        // A 404 from the server maps to "no stored transcript" so the CLI can tell
+        // the user the prior run never saved state.
+        let message = format!("{err:#}").to_lowercase();
+        if message.contains("status 404") {
+            AgentDriverError::ConversationResumeStateMissing {
+                harness: harness_label.to_string(),
+                conversation_id: conversation_id.to_string(),
+            }
+        } else {
+            AgentDriverError::ConversationLoadFailed(format!("{err:#}"))
+        }
+    })?;
+    serde_json::from_slice(&bytes).map_err(|err| {
+        AgentDriverError::ConversationLoadFailed(format!(
+            "Failed to deserialize {harness_label} transcript for {conversation_id}: {err:#}"
+        ))
+    })
 }
 
 /// Trait for third-party agent harnesses that execute prompts via their own CLIs.
