@@ -305,8 +305,7 @@ fn write_codex_auth_json(path: &Path, auth: &CodexAuthDotJson) -> Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create {}", parent.display()))?;
     }
-    let bytes =
-        serde_json::to_vec_pretty(auth).context("Failed to serialize Codex auth.json")?;
+    let bytes = serde_json::to_vec_pretty(auth).context("Failed to serialize Codex auth.json")?;
 
     #[cfg(unix)]
     {
@@ -323,8 +322,7 @@ fn write_codex_auth_json(path: &Path, auth: &CodexAuthDotJson) -> Result<()> {
             .with_context(|| format!("Failed to write {}", path.display()))?;
     }
     #[cfg(not(unix))]
-    fs::write(path, &bytes)
-        .with_context(|| format!("Failed to write {}", path.display()))?;
+    fs::write(path, &bytes).with_context(|| format!("Failed to write {}", path.display()))?;
 
     Ok(())
 }
@@ -332,7 +330,7 @@ fn write_codex_auth_json(path: &Path, auth: &CodexAuthDotJson) -> Result<()> {
 /// Returns the OpenAI API key for Codex auth, preferring the `OPENAI_API_KEY` env
 /// var so the seeded `auth.json` matches the credential the launched Codex process
 /// will see. [`AgentDriver::new`] skips a managed `OPENAI_API_KEY` secret when the
-/// env var is already set, so we mirror that precedence here. 
+/// env var is already set, so we mirror that precedence here.
 fn resolve_openai_api_key(secrets: &HashMap<String, ManagedSecretValue>) -> Option<String> {
     if let Ok(value) = std::env::var(OPENAI_API_KEY_ENV) {
         let trimmed = value.trim();
