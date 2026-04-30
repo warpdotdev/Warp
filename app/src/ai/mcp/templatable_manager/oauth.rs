@@ -623,6 +623,7 @@ pub(crate) fn write_to_secure_storage<T: Serialize>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oauth2::TokenResponse as _;
     use rmcp::transport::auth::OAuthTokenResponse;
 
     /// Builds a minimal `OAuthTokenResponse` for tests, optionally with a refresh token.
