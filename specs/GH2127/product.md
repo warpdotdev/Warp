@@ -3,7 +3,7 @@ GitHub issue: https://github.com/warpdotdev/warp/issues/2127
 Figma: none provided
 
 ## Summary
-Add a first-class SSH Profiles panel to Warp so users can save frequently used SSH connections and open them with one click. Profiles store connection metadata in Warp settings, store passwords only in local secure storage, support jump-host chaining through other saved profiles, and respect the user's existing SSH Warpify settings.
+Add a first-class SSH Profiles panel to Warp so users can save frequently used SSH connections and open them with one click. Profiles store connection metadata in Warp settings, store SSH secrets only in local secure storage, support jump-host chaining through other saved profiles, and respect the user's existing SSH Warpify settings.
 
 ## Problem
 Users who connect to the same SSH hosts many times per day currently need to type or maintain repeated `ssh` commands, shell aliases, launch configurations, or external connection managers. Launch configurations can run an SSH command, but they do not provide a compact connection list, editable per-host metadata, password storage, jump-host composition, or a Termius/iTerm-style workflow inside Warp.
@@ -11,7 +11,7 @@ Users who connect to the same SSH hosts many times per day currently need to typ
 ## Goals
 - Provide a dedicated SSH Profiles panel in the existing toolbar/panel system.
 - Let users add, edit, delete, and connect saved SSH profiles without editing settings files by hand.
-- Keep passwords out of plaintext settings and out of cloud sync.
+- Keep SSH secrets out of plaintext settings and out of cloud sync.
 - Let jump hosts be selected from other saved profiles instead of requiring users to type raw `-J` strings.
 - Preserve Warp's existing SSH/Warpify behavior: profile connections should use the same Warpify on/off settings as manual SSH commands.
 - Make the first version small enough to review safely: host profiles, tags, jump hosts, one-click connect, and direct-target password auto-fill.
@@ -56,9 +56,9 @@ Users who connect to the same SSH hosts many times per day currently need to typ
    - port must be 1 through 65535
    - invalid forms keep Save disabled and Enter must not submit
 
-9. Editing an existing profile preserves its stable identity. Renaming the label or changing the host must not accidentally reuse another profile's password record or orphan the profile's own password record.
+9. Editing an existing profile preserves its stable identity. Renaming the label or changing the host must not accidentally reuse another profile's secure-storage secret entries or orphan the profile's own secret entries.
 
-10. Passwords are never stored in the settings file and never synced to the cloud. A password entered in the profile dialog is stored only in the local OS secure storage entry associated with the profile's stable id.
+10. SSH secrets are never stored in the settings file and never synced to the cloud. A password entered in the profile dialog is stored only in a local OS secure-storage entry associated with the profile's stable id and explicit credential kind.
 
 11. The password field in the add/edit dialog is masked by default. The user can toggle visibility while the dialog is open, clear the stored password explicitly, or leave the field unchanged when editing. Closing the dialog by Save, Cancel, Escape, or backdrop close clears sensitive password editor state from the dialog.
 
@@ -72,7 +72,7 @@ Users who connect to the same SSH hosts many times per day currently need to typ
 
 16. Jump-host profile selection preserves both the selected source profile id and a structured metadata snapshot from the selected profile, including host, username, port, and identity file. In the first version, selecting a jump profile includes only that profile's direct host metadata, not that profile's own jump-host chain. If a user wants multiple hops, they select each hop explicitly in order. Connecting a profile with jump hosts chains through the selected direct-hop snapshots in order.
 
-17. If a selected jump profile is deleted later, any profiles that referenced its source profile id remove that stale jump-host reference rather than retaining an unreachable hidden dependency.
+17. If a selected jump profile is edited later, existing dependents retain their saved snapshot rather than mutating silently. The edit dialog should surface enough information for users to remove and re-add the jump host if they want to refresh the snapshot. If a selected jump profile is deleted later, any profiles that referenced its source profile id remove that stale jump-host reference rather than retaining an unreachable hidden dependency.
 
 18. When a profile uses one or more jump hosts, password auto-entry for the final target is disabled in the first version. SSH may still authenticate automatically through identity files, SSH agent, or user's existing SSH configuration; otherwise the user types prompts manually.
 
@@ -83,9 +83,9 @@ Users who connect to the same SSH hosts many times per day currently need to typ
 
 20. Profile storage is local to the user's Warp settings file and is marked private/non-cloud. A settings file containing profiles must not contain password material.
 
-21. Removing a profile removes its local password entry from secure storage when possible. Failure to remove a missing secure-storage entry must not block profile deletion.
+21. Removing a profile removes its local secure-storage secret entries when possible. Failure to remove a missing secure-storage entry must not block profile deletion.
 
-22. The feature should degrade safely when secure storage is unavailable or a password write fails. Users can still save non-password profile metadata and connect, but Warp shows a visible warning that the password was not saved, clears the password editor buffer, and disables password auto-entry for that profile until a password is successfully saved.
+22. The feature should degrade safely when secure storage is unavailable or a secret write fails. Users can still save non-secret profile metadata and connect, but Warp shows a visible warning that the secret was not saved, clears the password editor buffer, and disables password auto-entry for that profile until a compatible credential is successfully saved.
 
 23. The profile panel and dialog support light/dark themes and compact window sizes without text overlapping controls or action buttons escaping the modal body.
 
