@@ -1587,11 +1587,14 @@ impl Entity for CurrentPrompt {
 
 /// Cleans the raw `git branch` output that backs the `ShellGitBranch` chip's on-click menu.
 ///
-/// `git branch` prefixes the current branch with `*` and any branch checked out in another
-/// linked worktree with `+`. Either marker would otherwise be passed through to
-/// `git checkout <name>` and break the command, so we strip both. The current branch is
-/// promoted to the top of the list while the rest preserve their relative order
-/// (`git branch --sort=-committerdate` already orders by recency).
+/// `git branch` prefixes the current branch with `* ` and any branch checked out in another
+/// linked worktree with `+ `. Either marker would otherwise be passed through to
+/// `git checkout <name>` and break the command, so we strip both. The marker is always
+/// followed by a space, so we only strip `* ` / `+ ` rather than every leading `*` or `+`
+/// — branch names like `+foo` are valid in git and must be preserved.
+///
+/// The current branch is promoted to the top of the list while the rest preserve their
+/// relative order (`git branch --sort=-committerdate` already orders by recency).
 fn filter_git_branch_values(values: Vec<String>) -> Vec<String> {
     let mut trimmed: Vec<String> = values
         .into_iter()
@@ -1600,15 +1603,19 @@ fn filter_git_branch_values(values: Vec<String>) -> Vec<String> {
         .collect();
 
     trimmed.sort_by(|a, b| {
-        let a_is_current = a.starts_with('*');
-        let b_is_current = b.starts_with('*');
+        let a_is_current = a.starts_with("* ");
+        let b_is_current = b.starts_with("* ");
         b_is_current.cmp(&a_is_current)
     });
 
     trimmed
         .into_iter()
         .map(|s| {
-            s.trim_start_matches(['*', '+']).trim().to_string()
+            s.strip_prefix("* ")
+                .or_else(|| s.strip_prefix("+ "))
+                .unwrap_or(&s)
+                .trim()
+                .to_string()
         })
         .collect()
 }
@@ -1687,6 +1694,27 @@ mod filter_git_branch_values_tests {
             vec![
                 "main+with+plus".to_string(),
                 "feature/+nested".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_leading_plus_in_branch_name() {
+        // Git allows branch names that start with `+` (e.g. `+foo`). The marker is always
+        // followed by a space, so a name like `+foo` appears in `git branch` output as
+        // `  +foo` — never `+foo` directly. We must not strip the leading `+` from the
+        // actual name.
+        let input = vec![
+            "* main".to_string(),
+            "  +foo".to_string(),
+            "+ feature-in-worktree".to_string(),
+        ];
+        assert_eq!(
+            filter_git_branch_values(input),
+            vec![
+                "main".to_string(),
+                "+foo".to_string(),
+                "feature-in-worktree".to_string(),
             ]
         );
     }
