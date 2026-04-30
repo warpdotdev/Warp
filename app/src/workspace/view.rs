@@ -12263,24 +12263,24 @@ impl Workspace {
             view.reset(ctx);
         });
 
-        // Tabs data source setup must happen OUTSIDE ctrl_tab_palette.update() to avoid
-        // workspace borrow conflict: inside update_view the workspace view is temporarily
-        // removed from the app context, so WeakViewHandle::upgrade() returns None. Here
-        // we pass the WeakViewHandle directly — DataSource::run_query upgrades it later
-        // (after this action handler returns) when the workspace IS back in the context.
+        let mixer = self
+            .ctrl_tab_palette
+            .as_ref(ctx)
+            .search_bar
+            .as_ref(ctx)
+            .mixer()
+            .clone();
+        let data_source_store = self.ctrl_tab_palette.as_ref(ctx).data_source_store.clone();
+
         if query_filter == QueryFilter::Tabs {
-            let workspace_weak = ctx.handle();
             let window_id = ctx.window_id();
-            let mixer = self
-                .ctrl_tab_palette
-                .as_ref(ctx)
-                .search_bar
-                .as_ref(ctx)
-                .mixer()
-                .clone();
-            let data_source_store = self.ctrl_tab_palette.as_ref(ctx).data_source_store.clone();
+            let tabs = self.tab_navigation_data(window_id, ctx.as_ref());
             data_source_store.update(ctx, |store, ctx| {
-                store.reset_ctrl_tab_mixer(mixer, workspace_weak, window_id, ctx);
+                store.reset_ctrl_tab_mixer(mixer, tabs, ctx);
+            });
+        } else {
+            data_source_store.update(ctx, |store, ctx| {
+                store.restore_ctrl_tab_session_mixer(mixer, ctx);
             });
         }
 

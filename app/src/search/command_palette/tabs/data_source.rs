@@ -2,21 +2,25 @@ use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_palette::tabs::SearchItem;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};
-use crate::workspace::Workspace;
-use warpui::{AppContext, Entity, WeakViewHandle, WindowId};
+use crate::session_management::TabNavigationData;
+use warpui::{AppContext, Entity};
 
 /// Data source that produces tabs sorted by MRU order for the Ctrl+Tab palette.
+///
+/// Holds a pre-computed snapshot of tab data rather than a workspace handle,
+/// because the synchronous query runs while the workspace view is borrowed
+/// and a `WeakViewHandle::upgrade()` would fail.
 pub struct DataSource {
-    workspace: WeakViewHandle<Workspace>,
-    window_id: WindowId,
+    tabs: Vec<TabNavigationData>,
 }
 
 impl DataSource {
-    pub fn new(workspace: WeakViewHandle<Workspace>, window_id: WindowId) -> Self {
-        Self {
-            workspace,
-            window_id,
-        }
+    pub fn new() -> Self {
+        Self { tabs: vec![] }
+    }
+
+    pub fn set_tabs(&mut self, tabs: Vec<TabNavigationData>) {
+        self.tabs = tabs;
     }
 }
 
@@ -26,24 +30,18 @@ impl SyncDataSource for DataSource {
     fn run_query(
         &self,
         query: &Query,
-        ctx: &AppContext,
+        _ctx: &AppContext,
     ) -> Result<Vec<QueryResult<Self::Action>>, DataSourceRunErrorWrapper> {
-        let Some(workspace) = self.workspace.upgrade(ctx) else {
-            return Ok(vec![]);
-        };
-        let tabs = workspace
-            .as_ref(ctx)
-            .tab_navigation_data(self.window_id, ctx);
-
         let query_text = query.text.trim().to_lowercase();
 
-        let results = tabs
-            .into_iter()
+        let results = self
+            .tabs
+            .iter()
             .enumerate()
             .filter(|(_, tab)| {
                 query_text.is_empty() || tab.title.to_lowercase().contains(&query_text)
             })
-            .map(|(i, tab)| QueryResult::from(SearchItem::new(tab, i)))
+            .map(|(i, tab)| QueryResult::from(SearchItem::new(tab.clone(), i)))
             .collect();
 
         Ok(results)
