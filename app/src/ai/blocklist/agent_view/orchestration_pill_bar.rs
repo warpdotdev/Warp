@@ -795,8 +795,42 @@ fn render_hover_card(
     .with_clip(ClipConfig::ellipsis())
     .soft_wrap(false)
     .finish();
-    let status_badge = render_status_badge(conversation.status(), theme, appearance);
-    let header = Flex::row()
+    // The orchestrator's `ConversationStatus` reflects its own last
+    // exchange's outcome (often `Cancelled` after the user cancels to
+    // delegate to subagents, or `Success` once the orchestrator's own
+    // streaming finishes), which doesn't usefully describe the state of
+    // the orchestration as a whole. Until we plumb an aggregated
+    // child-status accessor we hide the badge for the orchestrator pill
+    // — child pills still show the (per-child accurate) badge.
+    let is_orchestrator = conversation.parent_conversation_id().is_none();
+    // Cap the badge at a fixed width so it can't shove the name out of
+    // the card. Slightly larger than the longest expected status label
+    // ("In progress") plus its icon and padding.
+    const STATUS_BADGE_MAX_WIDTH: f32 = 96.;
+    let status_badge: Option<Box<dyn Element>> = (!is_orchestrator).then(|| {
+        ConstrainedBox::new(render_status_badge(
+            conversation.status(),
+            theme,
+            appearance,
+        ))
+        .with_max_width(STATUS_BADGE_MAX_WIDTH)
+        .finish()
+    });
+    // Compute the name's max width by subtracting all of the surrounding
+    // chrome from the card width: card horizontal padding (12+12), the
+    // 16px avatar, the 8px avatar→name gap, an 8px name→badge gap, and
+    // the reserved badge slot when one is shown. Without this fixed
+    // budget, `MainAxisAlignment::SpaceBetween` would happily push the
+    // badge off the right edge of the card whenever the name is long
+    // enough to fill the available space (this happened on the
+    // orchestrator pill, whose title falls back to the conversation's
+    // multi-word title rather than a short agent name).
+    let name_max_width = if status_badge.is_some() {
+        HOVER_CARD_WIDTH - 24. - 16. - 8. - 8. - STATUS_BADGE_MAX_WIDTH
+    } else {
+        HOVER_CARD_WIDTH - 24. - 16. - 8.
+    };
+    let mut header_row = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
         .with_main_axis_size(MainAxisSize::Max)
         .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
@@ -808,13 +842,15 @@ fn render_hover_card(
                 .with_child(avatar)
                 .with_child(
                     ConstrainedBox::new(name_text)
-                        .with_max_width(HOVER_CARD_WIDTH - 110.)
+                        .with_max_width(name_max_width)
                         .finish(),
                 )
                 .finish(),
-        )
-        .with_child(status_badge)
-        .finish();
+        );
+    if let Some(status_badge) = status_badge {
+        header_row = header_row.with_child(status_badge);
+    }
+    let header = header_row.finish();
 
     // Working directory line: pulled from the root task's first exchange
     // when available, falling back to the most recent exchange. Hidden
