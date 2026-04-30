@@ -1217,11 +1217,21 @@ fn render_pill(
             // pill's own pill-shaped background and corner radius extend
             // visually past the trailing edge of the label. Extra left
             // gap keeps the button visually distinct from the label.
+            //
+            // The slot is always reserved (so the pill's width is stable
+            // and neighbouring pills don't shift on hover), but the dots
+            // glyph itself is only visible when the pill body is
+            // hovered or its 3-dot menu is currently open. This keeps the
+            // bar visually quieter at rest while still giving the user a
+            // clickable affordance whenever they're interacting with the
+            // pill.
+            let show_dots = hover_state.is_hovered() || menu_is_open_for_this;
             row = row.with_child(render_overflow_button(
                 overflow_mouse_state.clone(),
                 conversation_id,
                 text_color.into(),
                 theme,
+                show_dots,
             ));
         }
         let row = row.finish();
@@ -1314,14 +1324,30 @@ fn render_overflow_button(
     conversation_id: AIConversationId,
     text_color: Fill,
     theme: &WarpTheme,
+    visible: bool,
 ) -> Box<dyn Element> {
     let button = Hoverable::new(mouse_state, move |hover_state| {
-        let bg = if hover_state.is_hovered() || hover_state.is_clicked() {
+        // Background highlight only shows when the dots themselves are
+        // visible (i.e. the pill is being hovered): a bare highlight
+        // around an invisible icon would draw attention to the slot at
+        // rest and undo the point of hiding it.
+        let bg = if visible && (hover_state.is_hovered() || hover_state.is_clicked()) {
             Some(internal_colors::fg_overlay_1(theme))
         } else {
             None
         };
-        let icon = ConstrainedBox::new(Icon::DotsVertical.to_warpui_icon(text_color).finish())
+        // Always lay out the slot at the same size so the surrounding
+        // pill (and its siblings) don't reflow when hover state
+        // changes — just swap the icon for `Empty` when we don't want
+        // it visible. The button remains clickable in both cases; the
+        // user just won't see the glyph until they're already hovering
+        // the pill.
+        let glyph: Box<dyn Element> = if visible {
+            Icon::DotsVertical.to_warpui_icon(text_color).finish()
+        } else {
+            Empty::new().finish()
+        };
+        let icon = ConstrainedBox::new(glyph)
             .with_width(OVERFLOW_BUTTON_SIZE)
             .with_height(OVERFLOW_BUTTON_SIZE)
             .finish();
