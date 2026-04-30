@@ -164,6 +164,8 @@ fn render_subtext(text: String, appearance: &Appearance) -> Box<dyn Element> {
     .with_margin_left(8.)
     .finish()
 }
+
+/// Renders a custom button with icon and hover/click states for the Agent View Block.
 fn render_agent_view_block_button<F>(
     icon: Icon,
     icon_color: ColorU,
@@ -378,9 +380,7 @@ impl View for AgentViewEntryBlock {
                 .with_margin_right(8.)
                 .finish(),
         );
-        if !cfg!(target_family = "wasm") {
-            row.add_child(fork_button);
-        }
+        row.add_child(fork_button);
         let conversation_id = self.conversation_id;
         row.add_child(
             ConstrainedBox::new(render_agent_view_block_button(
@@ -431,6 +431,10 @@ impl View for AgentViewEntryBlock {
                     );
                     return;
                 };
+                // Subtract the block's origin so the position is expressed relative
+                // to the block element. OffsetPositioning::offset_from_save_position_element
+                // then offsets the menu from the saved block position, placing it at
+                // the exact mouse cursor location.
                 ctx.dispatch_typed_action(EnterAgentBlockAction::OpenConversationContextMenu {
                     conversation_id,
                     agent_view_entry_block_id: entry_block_id,
