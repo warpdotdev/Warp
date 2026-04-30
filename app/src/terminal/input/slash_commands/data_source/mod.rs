@@ -246,6 +246,13 @@ impl SlashCommandDataSource {
 
         let is_orchestration_enabled = AISettings::as_ref(ctx).is_orchestration_enabled(ctx);
 
+        // Hide /host when no default host is configured (env var or workspace setting).
+        let has_default_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .is_some()
+            || UserWorkspaces::as_ref(ctx).default_host_slug().is_some();
+
         #[cfg(not(target_family = "wasm"))]
         let active_conversation_is_cloud_oz = self.active_conversation_is_cloud_oz(ctx);
 
@@ -278,6 +285,10 @@ impl SlashCommandDataSource {
                         let _ = command;
                         true
                     }
+                })
+                // /host is only useful when a default self-hosted host is configured.
+                .filter(|(_, command)| {
+                    command.name != commands::HOST.name || has_default_host
                 })
                 // When CLI agent input is open, restrict to the explicit allowlist.
                 .filter(|(_, command)| {
