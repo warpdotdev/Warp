@@ -2,6 +2,7 @@ use super::{
     common::{
         add_command_xray_overlay, add_input_suggestions_overlays, add_voltron_overlay,
         add_workflow_info_overlay, should_show_terminal_input_message_bar,
+        wrap_input_with_prompt_context_menu_handler,
         wrap_input_with_terminal_padding_and_focus_handler,
     },
     Input, InputAction, InputDropTargetData,
@@ -146,6 +147,7 @@ impl Input {
             InputDropTargetData::new(self.weak_view_handle.clone()),
         )
         .finish();
+        let drop_target = wrap_input_with_prompt_context_menu_handler(self.view_id, drop_target);
 
         let hoverable_input = Hoverable::new(self.hoverable_handle.clone(), |_| drop_target)
             .on_hover(|is_hovered, ctx, _app, _position| {

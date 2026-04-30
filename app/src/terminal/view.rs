@@ -1464,6 +1464,7 @@ pub enum InputContextMenuAction {
     AskWarpAI,
     SaveAsWorkflow,
     ToggleInputHintText,
+    EditPrompt,
 }
 
 /// Where a user's question for AI originated. Handled by blocklist AI if the feature flag is
@@ -1549,6 +1550,7 @@ impl fmt::Debug for InputContextMenuAction {
             AskWarpAI => f.write_str("AskWarpAI"),
             SaveAsWorkflow => f.write_str("SaveAsWorkflow"),
             ToggleInputHintText => f.write_str("ToggleInputHintText"),
+            EditPrompt => f.write_str("EditPrompt"),
         }
     }
 }
@@ -15917,7 +15919,8 @@ impl TerminalView {
             ]);
         }
 
-        // Section 4: input hint text toggle
+        // Section 4: input customization
+        items.push(MenuItem::Separator);
         if !is_editor_disabled {
             let input_settings = InputSettings::as_ref(ctx);
             let inverse_action = if *input_settings.show_hint_text {
@@ -15925,7 +15928,6 @@ impl TerminalView {
             } else {
                 "Show"
             };
-            items.push(MenuItem::Separator);
             items.push(
                 MenuItemFields::new(format!("{inverse_action} input hint text"))
                     .with_on_select_action(TerminalAction::InputContextMenuItem(
@@ -15934,6 +15936,14 @@ impl TerminalView {
                     .into_item(),
             );
         }
+        items.push(
+            MenuItemFields::new("Edit prompt")
+                .with_on_select_action(TerminalAction::InputContextMenuItem(
+                    InputContextMenuAction::EditPrompt,
+                ))
+                .with_disabled(is_editor_disabled)
+                .into_item(),
+        );
         // Section 5: All Pane related
         let current_shell = model.shell_launch_state().available_shell();
         let pane_context_menu_items = self.pane_context_menu_items(current_shell, ctx);
@@ -23149,6 +23159,7 @@ impl TerminalView {
             ShowAICommandSearch => self.ai_command_search_from_input(ctx),
             SaveAsWorkflow => self.save_as_workflow_from_input(ctx),
             ToggleInputHintText => self.toggle_input_hint_text(ctx),
+            EditPrompt => self.edit_prompt(ctx),
         }
         self.close_context_menu(ctx, false);
     }
