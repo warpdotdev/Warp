@@ -1523,7 +1523,7 @@ impl TerminalManager {
                             move |_view, result, _ctx| {
                                 if let Err(e) = result {
                                     log::warn!(
-                                        "Failed to link shared session {session_id_for_link} to Oz task {task_id}: {e}"
+                                        "Failed to link shared session to Oz task: {e}"
                                     );
                                 }
                             },
