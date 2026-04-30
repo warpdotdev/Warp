@@ -10,6 +10,7 @@ resolver = "2"
 # tests against) and integration (since it is only used for testing).
 default-members = [
   "app",
+  "crates/agents",
   "crates/channel_versions",
   "crates/command",
   "crates/doppler",
@@ -31,6 +32,7 @@ publish = false
 
 [workspace.dependencies]
 # Local workspace crates. This lets us reference them in other crates without specifying a path.
+agents = { path = "crates/agents" }
 ai = { path = "crates/ai" }
 app-installation-detection = { path = "crates/app-installation-detection" }
 asset_cache = { path = "crates/asset_cache" }
