@@ -1,0 +1,39 @@
+[package]
+name = "agents"
+version = "0.1.0"
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+orchestrator = { workspace = true }
+async-trait.workspace = true
+async-stream.workspace = true
+chrono = { workspace = true }
+futures-core = "0.3.31"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror.workspace = true
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "process",
+    "sync",
+    "macros",
+    "io-util",
+] }
+tracing.workspace = true
+which = "4.4"
+
+[dev-dependencies]
+futures-util = { workspace = true }
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "process",
+    "time",
+    "test-util",
+] }
+tokio-test = "0.4"
+which = "4.4"
