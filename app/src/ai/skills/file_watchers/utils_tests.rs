@@ -1,8 +1,8 @@
 use repo_metadata::{
-    DirectoryWatcher, RepoMetadataModel,
     entry::{DirectoryEntry, Entry, FileMetadata},
     file_tree_store::FileTreeState,
     repositories::DetectedRepositories,
+    DirectoryWatcher, RepoMetadataModel,
 };
 use virtual_fs::{Stub, VirtualFS};
 use warpui::App;
@@ -725,7 +725,7 @@ fn find_skill_directories_in_tree_empty_repo() {
     });
 }
 
-/// Regression test for warpdotdev/warp#9486.
+/// Regression test for warpdotdev/warp#9486 — provider root is lazy-loaded.
 ///
 /// Skills inside a gitignored `.agents/` directory were not discovered because
 /// the indexed file tree represents gitignored directories as lazy-loaded entries
@@ -769,6 +769,83 @@ fn find_skill_directories_in_tree_finds_skills_in_lazy_loaded_provider_dir() {
             children: vec![agents_dir],
             ignored: false,
             loaded: true,
+        });
+        let root = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(&repo).unwrap(),
+            children: vec![sub_project],
+            ignored: false,
+            loaded: true,
+        });
+
+        App::test((), |mut app| async move {
+            let watcher = app.add_singleton_model(DirectoryWatcher::new);
+            app.add_singleton_model(|_| DetectedRepositories::default());
+            let repo_handle = watcher.update(&mut app, |w, ctx| {
+                w.add_directory(
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                        .unwrap(),
+                    ctx,
+                )
+                .unwrap()
+            });
+            let state = FileTreeState::new(root, vec![], Some(repo_handle));
+
+            let model_handle = app.add_singleton_model(RepoMetadataModel::new);
+            model_handle.update(&mut app, |model, ctx| {
+                let key =
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                        .unwrap();
+                model.insert_test_state(key, state, ctx);
+            });
+
+            model_handle.read(&app, |model, ctx| {
+                let skill_dirs = find_skill_directories_in_tree(&repo, model, ctx);
+                assert_eq!(skill_dirs.len(), 1);
+                assert!(skill_dirs.contains(&repo.join("sub-project/.agents/skills")));
+
+                let skills = read_skills_from_directories(skill_dirs);
+                assert_eq!(skills.len(), 1);
+                assert_eq!(skills[0].name, "sub-skill");
+            });
+        });
+    });
+}
+
+/// Regression test for warpdotdev/warp#9486 — parent of provider root is lazy-loaded.
+///
+/// When a subdirectory like `sub-project/` is itself gitignored, the tree contains
+/// it as a lazy-loaded entry with no children.  As a result, `.agents/` is never
+/// indexed at all, so Pass 2 (which previously only searched for lazy-loaded
+/// provider-named directories) could not find it.
+///
+/// The fix expands Pass 2 to also probe `{lazy_dir}/{provider_path}` for every
+/// known provider when the lazy-loaded directory is not itself a provider root.
+///
+/// This test constructs a tree where `sub-project/` has `loaded: false` (no
+/// children), while the real `sub-project/.agents/skills/` directory exists on disk.
+#[test]
+fn find_skill_directories_in_tree_finds_skills_when_parent_dir_is_lazy_loaded() {
+    VirtualFS::test("find_lazy_parent_skills", |dirs, mut vfs| {
+        let repo = dirs.tests().join("repo");
+
+        // Create the actual filesystem structure: sub-project/.agents/skills/sub-skill/SKILL.md
+        vfs.mkdir("repo/sub-project/.agents/skills/sub-skill")
+            .with_files(vec![Stub::FileWithContent(
+                "repo/sub-project/.agents/skills/sub-skill/SKILL.md",
+                "---\nname: sub-skill\ndescription: test\n---\n# sub-skill",
+            )]);
+
+        // Build a tree that mirrors what the indexer produces when `sub-project/` is
+        // gitignored: `sub-project/` appears with `loaded: false` and no children,
+        // so `.agents/` is entirely absent from the tree.
+        let sub_project = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(
+                &repo.join("sub-project"),
+            )
+            .unwrap(),
+            children: vec![], // lazy-loaded: children not indexed
+            ignored: true,
+            loaded: false,
         });
         let root = Entry::Directory(DirectoryEntry {
             path: warp_util::standardized_path::StandardizedPath::try_from_local(&repo).unwrap(),
