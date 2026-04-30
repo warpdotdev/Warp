@@ -359,6 +359,7 @@ impl FileTreeView {
             self.subscribe_to_repository_metadata(ctx);
             self.subscribe_to_active_file_model(ctx);
             self.subscribe_to_code_settings(ctx);
+            self.show_hidden_files = *CodeSettings::as_ref(ctx).show_hidden_files;
 
             // Catch up on any repository/file changes that happened while inactive.
             // Skip remote-backed roots — their data comes from server pushes,
@@ -1690,7 +1691,9 @@ impl FileTreeView {
         }
 
         // Filter hidden files/directories when show_hidden_files is disabled.
-        if !self.show_hidden_files {
+        // Only filter descendants (depth > 0), not the root entry itself,
+        // so that hidden workspace directories (e.g. ~/.config) are still shown.
+        if !self.show_hidden_files && depth > 0 {
             if let Some(name) = current_path.file_name() {
                 if name.starts_with('.') {
                     return (selected_item_index, removed_item);
