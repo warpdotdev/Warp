@@ -99,9 +99,7 @@ impl CommandPaletteItemAction {
             } => ItemSummary::Session {
                 pane_view_locator: *pane_view_locator,
             },
-            CommandPaletteItemAction::NavigateToTab {
-                pane_group_id, ..
-            } => ItemSummary::Tab {
+            CommandPaletteItemAction::NavigateToTab { pane_group_id, .. } => ItemSummary::Tab {
                 pane_group_id: *pane_group_id,
             },
             CommandPaletteItemAction::NavigateToConversation {

@@ -31,7 +31,9 @@ impl SyncDataSource for DataSource {
         let Some(workspace) = self.workspace.upgrade(ctx) else {
             return Ok(vec![]);
         };
-        let tabs = workspace.as_ref(ctx).tab_navigation_data(self.window_id, ctx);
+        let tabs = workspace
+            .as_ref(ctx)
+            .tab_navigation_data(self.window_id, ctx);
 
         let query_text = query.text.trim().to_lowercase();
 

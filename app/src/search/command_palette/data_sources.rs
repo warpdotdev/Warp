@@ -192,10 +192,7 @@ impl DataSourceStore {
         if let Some(tabs_data_source) = &self.tabs_data_source {
             mixer.update(ctx, |mixer, ctx| {
                 mixer.reset(ctx);
-                mixer.add_sync_source(
-                    tabs_data_source.clone(),
-                    HashSet::from([QueryFilter::Tabs]),
-                );
+                mixer.add_sync_source(tabs_data_source.clone(), HashSet::from([QueryFilter::Tabs]));
                 ctx.notify();
             });
         }

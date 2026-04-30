@@ -70,11 +70,7 @@ impl crate::search::item::SearchItem for SearchItem {
 
             let contents = Flex::column()
                 .with_child(title_text)
-                .with_child(
-                    Container::new(subtitle_text)
-                        .with_padding_top(4.)
-                        .finish(),
-                )
+                .with_child(Container::new(subtitle_text).with_padding_top(4.).finish())
                 .finish();
             ConstrainedBox::new(contents).with_height(50.).finish()
         } else {

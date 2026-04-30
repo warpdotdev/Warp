@@ -4793,13 +4793,25 @@ impl Workspace {
         &self.tab_mru_order
     }
 
-    pub fn activate_tab_by_pane_group_id(&mut self, pane_group_id: EntityId, ctx: &mut ViewContext<Self>) {
-        if let Some(index) = self.tabs.iter().position(|t| t.pane_group.id() == pane_group_id) {
+    pub fn activate_tab_by_pane_group_id(
+        &mut self,
+        pane_group_id: EntityId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if let Some(index) = self
+            .tabs
+            .iter()
+            .position(|t| t.pane_group.id() == pane_group_id)
+        {
             self.activate_tab(index, ctx);
         }
     }
 
-    pub fn tab_navigation_data(&self, window_id: WindowId, ctx: &AppContext) -> Vec<TabNavigationData> {
+    pub fn tab_navigation_data(
+        &self,
+        window_id: WindowId,
+        ctx: &AppContext,
+    ) -> Vec<TabNavigationData> {
         self.tab_mru_order
             .iter()
             .filter_map(|&pane_group_id| {
@@ -4808,14 +4820,18 @@ impl Workspace {
                     .iter()
                     .find(|t| t.pane_group.id() == pane_group_id)?;
                 let title = tab.pane_group.as_ref(ctx).display_title(ctx);
-                let subtitle = tab.pane_group.as_ref(ctx).active_session_path(ctx).map(|p| {
-                    if let Some(home) = dirs::home_dir() {
-                        if let Ok(stripped) = p.strip_prefix(&home) {
-                            return format!("~/{}", stripped.display());
+                let subtitle = tab
+                    .pane_group
+                    .as_ref(ctx)
+                    .active_session_path(ctx)
+                    .map(|p| {
+                        if let Some(home) = dirs::home_dir() {
+                            if let Ok(stripped) = p.strip_prefix(&home) {
+                                return format!("~/{}", stripped.display());
+                            }
                         }
-                    }
-                    p.display().to_string()
-                });
+                        p.display().to_string()
+                    });
                 Some(TabNavigationData {
                     pane_group_id,
                     title,
@@ -10915,8 +10931,7 @@ impl Workspace {
                     self.activate_tab_internal(self.tab_count() - 1, ctx);
                 } else {
                     let insert_idx = self.active_tab_index + 1;
-                    self.tabs
-                        .insert(insert_idx, TabData::new(new_pane_group));
+                    self.tabs.insert(insert_idx, TabData::new(new_pane_group));
                     self.tab_mru_order
                         .push(self.tabs[insert_idx].pane_group.id());
                     self.activate_tab_internal(insert_idx, ctx);
@@ -12263,22 +12278,25 @@ impl Workspace {
                 .as_ref(ctx)
                 .mixer()
                 .clone();
-            let data_source_store = self
-                .ctrl_tab_palette
-                .as_ref(ctx)
-                .data_source_store
-                .clone();
+            let data_source_store = self.ctrl_tab_palette.as_ref(ctx).data_source_store.clone();
             data_source_store.update(ctx, |store, ctx| {
                 store.reset_ctrl_tab_mixer(mixer, workspace_weak, window_id, ctx);
             });
         }
 
         self.ctrl_tab_palette.update(ctx, |view, ctx| {
-            // Set offset BEFORE filter: the tabs query is synchronous, so results
-            // arrive during set_active_query_filter. The offset must already be
-            // stored so on_mixer_results_changed picks it up.
-            view.set_initial_selection_offset(offset, ctx);
-            view.set_active_query_filter(query_filter, ctx);
+            if query_filter == QueryFilter::Tabs {
+                // Set offset BEFORE filter: the tabs query is synchronous, so results
+                // arrive during set_active_query_filter. The offset must already be
+                // stored so on_mixer_results_changed picks it up.
+                view.set_initial_selection_offset(offset, ctx);
+                view.set_active_query_filter(query_filter, ctx);
+            } else {
+                // Sessions (and other async sources): set filter first, then offset.
+                // The existing post-open select_next_item handles initial selection.
+                view.set_active_query_filter(query_filter, ctx);
+                view.set_initial_selection_offset(offset, ctx);
+            }
         });
 
         ctx.notify();
