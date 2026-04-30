@@ -1321,7 +1321,7 @@ fn render_overflow_button(
         } else {
             None
         };
-        let icon = ConstrainedBox::new(Icon::DotsHorizontal.to_warpui_icon(text_color).finish())
+        let icon = ConstrainedBox::new(Icon::DotsVertical.to_warpui_icon(text_color).finish())
             .with_width(OVERFLOW_BUTTON_SIZE)
             .with_height(OVERFLOW_BUTTON_SIZE)
             .finish();
