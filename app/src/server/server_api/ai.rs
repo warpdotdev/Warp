@@ -207,12 +207,11 @@ pub struct SpawnAgentRequest {
     pub referenced_attachments: Vec<String>,
 }
 
-// --- Orchestrations V2 messaging types ---
-
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RunFollowupRequest {
     pub message: String,
 }
+// --- Orchestrations V2 messaging types ---
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SendAgentMessageRequest {
@@ -661,6 +660,9 @@ pub(crate) fn build_list_agent_runs_url(limit: i32, filter: &TaskListFilter) -> 
 
     url
 }
+pub(crate) fn build_run_followup_url(run_id: &AmbientAgentTaskId) -> String {
+    format!("agent/runs/{run_id}/followups")
+}
 
 struct ListRunsResponse {
     runs: Vec<AmbientAgentTask>,
@@ -829,6 +831,11 @@ pub trait AIClient: 'static + Send + Sync {
         &self,
         task_id: &AmbientAgentTaskId,
     ) -> anyhow::Result<serde_json::Value, anyhow::Error>;
+    async fn submit_run_followup(
+        &self,
+        run_id: &AmbientAgentTaskId,
+        request: RunFollowupRequest,
+    ) -> anyhow::Result<(), anyhow::Error>;
 
     async fn get_scheduled_agent_history(
         &self,
@@ -909,12 +916,6 @@ pub trait AIClient: 'static + Send + Sync {
     ) -> anyhow::Result<Vec<TaskAttachment>, anyhow::Error>;
 
     // --- Orchestrations V2 messaging ---
-
-    async fn submit_run_followup(
-        &self,
-        run_id: &AmbientAgentTaskId,
-        request: RunFollowupRequest,
-    ) -> anyhow::Result<(), anyhow::Error>;
 
     async fn send_agent_message(
         &self,
@@ -1531,6 +1532,14 @@ impl AIClient for ServerApi {
             .await?;
         Ok(response)
     }
+    async fn submit_run_followup(
+        &self,
+        run_id: &AmbientAgentTaskId,
+        request: RunFollowupRequest,
+    ) -> anyhow::Result<(), anyhow::Error> {
+        self.post_public_api_unit(&build_run_followup_url(run_id), &request)
+            .await
+    }
 
     async fn get_scheduled_agent_history(
         &self,
@@ -1922,15 +1931,6 @@ impl AIClient for ServerApi {
     }
 
     // --- Orchestrations V2 messaging ---
-
-    async fn submit_run_followup(
-        &self,
-        run_id: &AmbientAgentTaskId,
-        request: RunFollowupRequest,
-    ) -> anyhow::Result<(), anyhow::Error> {
-        self.post_public_api_unit(&format!("agent/runs/{run_id}/followups"), &request)
-            .await
-    }
 
     async fn send_agent_message(
         &self,
@@ -2332,9 +2332,12 @@ fn convert_harness(harness: warp_graphql::ai::AgentHarness) -> AIAgentHarness {
         warp_graphql::ai::AgentHarness::Oz => AIAgentHarness::Oz,
         warp_graphql::ai::AgentHarness::ClaudeCode => AIAgentHarness::ClaudeCode,
         warp_graphql::ai::AgentHarness::Gemini => AIAgentHarness::Gemini,
-        warp_graphql::ai::AgentHarness::Other(value) => {
+        other => {
+            if format!("{other:?}") == "Codex" {
+                return AIAgentHarness::Codex;
+            }
             report_error!(anyhow!(
-                "Invalid AgentHarness '{value}'. Make sure to update client GraphQL types!"
+                "Invalid AgentHarness '{other:?}'. Make sure to update client GraphQL types!"
             ));
             AIAgentHarness::Unknown
         }

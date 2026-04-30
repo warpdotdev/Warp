@@ -213,6 +213,25 @@ const MINIMUM_PANE_SIZE: f32 = 50.;
 const MINIMUM_PANE_SIZE_UDI: f32 = 190.;
 const KEYBOARD_RESIZE_DELTA: f32 = 10.;
 
+type AmbientAgentViewModelHandle =
+    ModelHandle<crate::terminal::view::ambient_agent::AmbientAgentViewModel>;
+
+trait AmbientAgentViewModelHandleExt<'a> {
+    fn into_optional_handle(self) -> Option<&'a AmbientAgentViewModelHandle>;
+}
+
+impl<'a> AmbientAgentViewModelHandleExt<'a> for &'a AmbientAgentViewModelHandle {
+    fn into_optional_handle(self) -> Option<&'a AmbientAgentViewModelHandle> {
+        Some(self)
+    }
+}
+
+impl<'a> AmbientAgentViewModelHandleExt<'a> for Option<&'a AmbientAgentViewModelHandle> {
+    fn into_optional_handle(self) -> Option<&'a AmbientAgentViewModelHandle> {
+        self
+    }
+}
+
 fn get_minimum_pane_size(app: &AppContext) -> f32 {
     use crate::settings::InputSettings;
     if InputSettings::as_ref(app).is_universal_developer_input_enabled(app) {
@@ -3096,6 +3115,7 @@ impl PaneGroup {
                 self.insert_ambient_agent_pane_hidden_for_child_agent(parent_pane_id, ctx);
 
             if let Some(new_terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
+                let mut restored = false;
                 new_terminal_view.update(ctx, |terminal_view, ctx| {
                     terminal_view.restore_conversation_after_view_creation(
                         RestoredAIConversation::new(child_conversation),
@@ -3108,15 +3128,27 @@ impl PaneGroup {
                         AgentViewEntryOrigin::CloudAgent,
                         ctx,
                     );
-                    terminal_view
+                    let Some(ambient_agent_view_model) = terminal_view
                         .ambient_agent_view_model()
-                        .update(ctx, |model, ctx| {
-                            model.set_conversation_id(Some(child_id));
-                            model.enter_viewing_existing_session(task_id, ctx);
-                        });
+                        .into_optional_handle()
+                        .cloned()
+                    else {
+                        return;
+                    };
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        model.set_conversation_id(Some(child_id));
+                        model.enter_viewing_existing_session(task_id, ctx);
+                    });
+                    restored = true;
                 });
-
-                self.child_agent_panes.insert(child_id, new_pane_id.into());
+                if restored {
+                    self.child_agent_panes.insert(child_id, new_pane_id.into());
+                } else {
+                    log::error!(
+                        "Failed to restore remote child agent pane {child_id:?}: missing ambient agent view model"
+                    );
+                    self.discard_pane(new_pane_id.into(), ctx);
+                }
             } else {
                 log::error!("Failed to get terminal view for remote child agent pane {child_id:?}");
                 self.discard_pane(new_pane_id.into(), ctx);
@@ -3832,6 +3864,7 @@ impl PaneGroup {
                 let harness = match cli_conversation.metadata.harness {
                     AIAgentHarness::ClaudeCode => Some(Harness::Claude),
                     AIAgentHarness::Gemini => Some(Harness::Gemini),
+                    AIAgentHarness::Codex => Some(Harness::Codex),
                     AIAgentHarness::Oz => None,
                     AIAgentHarness::Unknown => Some(Harness::Unknown),
                 };
@@ -3844,11 +3877,15 @@ impl PaneGroup {
                     );
                     // Keep the viewer's AmbientAgentViewModel harness in sync with the loaded run.
                     if let Some(harness) = harness {
-                        view.ambient_agent_view_model()
-                            .clone()
-                            .update(ctx, |model, ctx| {
+                        if let Some(ambient_agent_view_model) = view
+                            .ambient_agent_view_model()
+                            .into_optional_handle()
+                            .cloned()
+                        {
+                            ambient_agent_view_model.update(ctx, |model, ctx| {
                                 model.set_harness(harness, ctx);
                             });
+                        }
                     }
                     // 3p runs have no materialized AIConversation, so enter agent view with a
                     // fresh vehicle conversation and retag the restored snapshot block onto it so
