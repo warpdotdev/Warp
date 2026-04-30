@@ -664,10 +664,12 @@ where
             item: display_fn(&item),
             mouse_state_handle,
             on_remove_action: on_remove_action(item),
+            is_disabled: !is_editable,
+            tooltip_mouse_state: None,
         })
         .collect();
 
-    let list = render_input_list(None, input_items, editor, !is_editable, appearance);
+    let list = render_input_list(None, input_items, editor, appearance);
     let list_element = if !is_editable {
         wrap_disabled_with_workspace_override_tooltip(list, tooltip_mouse_state, appearance)
     } else {
@@ -747,24 +749,58 @@ fn render_command_denylist_section(
     appearance: &Appearance,
     app: &warpui::AppContext,
 ) -> Box<dyn Element> {
-    let ai_settings = AISettings::as_ref(app);
-    let is_editable = ai_settings.is_command_denylist_editable(app);
+    use crate::ai::blocklist::BlocklistAIPermissions;
 
-    render_list_section(
+    let org_denylist = BlocklistAIPermissions::get_org_execute_commands_denylist(app);
+    let mut tooltip_idx = 0usize;
+
+    let input_items: Vec<InputListItem<ExecutionProfileEditorViewAction>> = profile_data
+        .command_denylist
+        .iter()
+        .cloned()
+        .zip(view.command_denylist_mouse_state_handles.iter().cloned())
+        .rev()
+        .map(|(predicate, mouse_state_handle)| {
+            let is_org = org_denylist.contains(&predicate);
+            let tooltip_mouse_state = if is_org {
+                let handle = view
+                    .command_denylist_tooltip_mouse_state_handles
+                    .get(tooltip_idx)
+                    .cloned();
+                tooltip_idx += 1;
+                handle
+            } else {
+                None
+            };
+            InputListItem {
+                item: predicate.to_string(),
+                mouse_state_handle,
+                on_remove_action: ExecutionProfileEditorViewAction::RemoveFromCommandDenylist {
+                    predicate,
+                },
+                is_disabled: is_org,
+                tooltip_mouse_state,
+            }
+        })
+        .collect();
+
+    let list = render_input_list(
+        None,
+        input_items,
+        Some(&view.command_denylist_editor),
+        appearance,
+    );
+
+    let mut column = Flex::column().with_child(create_section_header(
         "Command denylist",
         "Regular expressions to match commands that Oz should always ask permission to execute.",
-        &profile_data.command_denylist,
-        &view.command_denylist_mouse_state_handles,
-        Some(&view.command_denylist_editor),
-        None,
-        |predicate| ExecutionProfileEditorViewAction::RemoveFromCommandDenylist { predicate },
-        |item| item.to_string(),
         appearance,
-        is_editable,
-        view.tooltip_mouse_state_handles
-            .command_denylist_editor_tooltip_mouse_state
-            .clone(),
-    )
+    ));
+    column = column.with_child(list);
+
+    Container::new(column.finish())
+        .with_margin_bottom(16.)
+        .finish()
 }
 
 fn display_mcp_name(uuid: &Uuid, app: &AppContext) -> String {

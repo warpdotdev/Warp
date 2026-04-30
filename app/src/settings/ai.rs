@@ -1728,11 +1728,10 @@ impl AISettings {
     }
 
     pub fn is_command_denylist_editable(&self, app: &AppContext) -> bool {
-        let set_by_workspace = UserWorkspaces::as_ref(app)
-            .ai_autonomy_settings()
-            .has_override_for_execute_commands_denylist();
-
-        self.is_any_ai_enabled(app) && !set_by_workspace
+        // The denylist editor is always enabled when AI is on. Users can always
+        // add entries to make the denylist more restrictive, even when the org
+        // sets an override. Per-item removal is controlled at the row level.
+        self.is_any_ai_enabled(app)
     }
 
     pub fn is_command_allowlist_editable(&self, app: &AppContext) -> bool {
