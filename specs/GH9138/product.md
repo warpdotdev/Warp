@@ -64,20 +64,26 @@ Out of scope for this spec (tracked separately in #9138):
    and the structured-data limits (Behavior #4a) are the primary safeguards
    against excessive CPU use.
 
-4. If the block's output exceeds 5 MB of raw text, detection is skipped and the
-   block renders as raw text. No error or indicator is shown in this case.
+4. Input size limits — checked before any parsing, no error or indicator shown:
+   - JSON detection is skipped if the block's output exceeds **5 MB**.
+   - YAML detection is skipped if the block's output exceeds **1 MB** (stricter
+     cap to limit anchor/alias amplification risk before the parser runs).
+   - YAML detection is additionally skipped if the input contains YAML alias
+     syntax (a `*` character immediately followed by an ASCII letter or
+     underscore, e.g., `*ref`). Inputs with aliases are rejected pre-parse
+     as a conservative defense against amplification attacks.
 
-4a. Even within the 5 MB cap, detection is abandoned and the block renders as
-    raw text if the parsed structure would exceed 10,000 total nodes or 50 levels
-    of nesting. These limits prevent pathological inputs (e.g., a deeply nested
-    1 MB JSON) from producing a tree that is impractical to render or navigate.
+4a. Even within the size caps, detection is abandoned if the parsed structure
+    exceeds **10,000 total nodes** or **50 levels of nesting**. These limits
+    prevent pathological inputs from producing a tree that is impractical to
+    render. The post-parse walk that enforces these limits is an additional
+    safety check; the pre-parse limits in Behavior #4 are the primary defense.
 
-5. If `WARP_RICH_OUTPUT=0` is set in the **process environment** (e.g., exported
-   in the shell profile or set before launching Warp), detection is skipped for
-   all blocks in that session regardless of settings. This is a process-level
-   escape hatch, not a per-command override; inline usage such as
-   `WARP_RICH_OUTPUT=0 my-command` is not guaranteed to suppress detection for
-   that single command and is out of scope for this spec.
+5. If `WARP_RICH_OUTPUT=0` is set in the **process environment** (e.g.,
+   `export WARP_RICH_OUTPUT=0` in the shell profile, or set before launching
+   Warp), detection is skipped for all blocks in that session. This is a
+   process-level escape hatch. Inline per-command usage (`WARP_RICH_OUTPUT=0
+   my-command`) is not in scope and is not guaranteed to work.
 
 6. Detection is not retried after failing. If the output is not valid JSON or
    YAML, the block remains raw text.
@@ -154,6 +160,13 @@ Out of scope for this spec (tracked separately in #9138):
 19. Using the block's existing Copy button (in the hover toolbar) always copies
     the raw text of the entire block, regardless of tree view state, consistent
     with how the block's serialized form is preserved.
+
+19a. All copy affordances — including "Copy value", "Copy path", and the block
+     Copy button — operate on the **obfuscated** canonical text. If the block
+     contains redacted secrets (shown as `[SECRET]` or equivalent placeholders
+     by Warp's secret-redaction system), those placeholders are what the tree
+     displays and what is copied. The unobfuscated secret values are never
+     exposed through the tree view or its copy actions.
 
 ### Settings
 

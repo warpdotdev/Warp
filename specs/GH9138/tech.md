@@ -89,35 +89,34 @@ pub enum StructuredOutputKind {
 pub fn detect(canonical_text: &str) -> Option<StructuredOutputKind>
 ```
 
-**Limits:**
-- `MAX_DETECT_BYTES = 5 * 1024 * 1024` — input size cap for JSON (Behavior #4).
-  Checked before any parsing.
-- `MAX_YAML_BYTES = 1 * 1024 * 1024` — separate, stricter cap for YAML (1 MB).
-  Checked before calling `serde_yaml::from_str`. This is the primary pre-parse
-  defense against YAML anchor/alias amplification (see Security below).
-- `MAX_NODES = 10_000` — total node count across the parsed tree (Behavior #4a).
-  Counted with a post-parse walk; if exceeded, return `None`.
-- `MAX_DEPTH = 50` — maximum nesting level (Behavior #4a). Checked during the
-  post-parse walk.
+**Limits (all checked before any parser call, in order):**
+1. `MAX_DETECT_BYTES = 5 * 1024 * 1024` — JSON byte cap (Behavior #4).
+2. `MAX_YAML_BYTES = 1 * 1024 * 1024` — YAML byte cap, stricter (Behavior #4).
+3. YAML alias pre-scan: scan for `*` immediately followed by `[A-Za-z_]` using
+   a simple byte scan (not a full lex). If found, return `None` without calling
+   the parser. This rejects inputs with YAML aliases before any parse work
+   begins (Behavior #4).
+4. After parsing (JSON or YAML): post-parse walk counting nodes and depth;
+   return `None` if `MAX_NODES = 10_000` or `MAX_DEPTH = 50` is exceeded
+   (Behavior #4a).
 
 **Canonical text source:** `detect` receives the output of
-`BlockGrid::contents_to_string` (which already strips ANSI escape sequences as
-part of grid serialization), not the raw PTY byte stream. This is the same
-string used by the Copy button and Warp Drive serialization, so the detection
-input and the user-visible "raw" text are always identical.
+`BlockGrid::contents_to_string` (the default overload, which respects secret
+obfuscation — same as the Copy button and Warp Drive serialization). The
+detection input, the tree display values, and all copy affordances all use the
+same obfuscated string, so redacted secrets are never exposed through the tree
+(Behavior #19a).
 
 **CPU boundedness:** `serde_json::from_str` and `serde_yaml::from_str` are
-synchronous and cannot be externally cancelled once started. CPU work is bounded
-by the size checks before each parser call. There is no `tokio::time::timeout`
-wrapper because it would not interrupt a synchronous parse already running on a
-thread.
+synchronous. CPU work is bounded by the pre-parse checks (byte cap + alias
+scan) rather than a timeout, because a `tokio::time::timeout` wrapper would not
+interrupt a synchronous parse already running on a thread.
 
-**Security — YAML anchor/alias amplification:** `serde_yaml` 0.8 does not
-expose a built-in option to disable aliases. The `MAX_YAML_BYTES = 1 MB` pre-parse
-cap is the primary mitigation: even a maximally-amplified YAML document expands
-from at most 1 MB of source, which bounds the parse-time work. The `MAX_NODES`
-post-parse walk provides a secondary check that catches any parsed result that
-exceeds the safe rendering threshold regardless of how it was produced.
+**Security — YAML anchor/alias amplification:** `serde_yaml` 0.8 exposes no
+built-in option to disable aliases. The alias pre-scan (step 3 above) rejects
+any input containing aliases before `serde_yaml::from_str` is called, making
+amplification attacks impossible for YAML. JSON has no equivalent anchor
+mechanism; the byte cap alone is sufficient.
 
 **YAML bare-scalar guard (Behavior #2):** after `serde_yaml::from_str`
 succeeds, check that the root value is `Mapping` or `Sequence`; reject
@@ -128,14 +127,25 @@ succeeds, check that the root value is `Mapping` or `Sequence`; reject
 Add `StructuredDataBlock` to `RichContentType` in
 `app/src/terminal/model/rich_content.rs`.
 
-To support toggling, hiding, and enumerating structured-data views by their
-source block, add a `source_block_id: Option<BlockId>` field to
-`RichContentMetadata` in `app/src/terminal/view/rich_content.rs`. When
-inserting a `StructuredDataBlock` `RichContent`, set this field to
-`Some(block_id)`. This lets the settings-reversion handler (§2) enumerate all
-structured-data `RichContent` items by their associated block and lets the
-toggle handler (§7) identify which `RichContent` to show or hide for a given
-`BlockId`.
+Add a new variant to `RichContentMetadata` in
+`app/src/terminal/view/rich_content.rs`, following the existing pattern where
+each variant carries its view handle and associated metadata:
+
+```rust
+StructuredDataBlock {
+    source_block_id: BlockId,
+    view_handle: ViewHandle<StructuredDataBlockView>,
+},
+```
+
+`source_block_id` lets the toggle handler (§7) and the settings-reversion
+handler (§2) look up which `RichContent` items belong to which block.
+`view_handle` is stored for height recalculation: when the user expands or
+collapses a node, the view dispatches an action that calls
+`blocks_model.mark_rich_content_dirty(view_handle.id())`, which triggers
+`BlockList::update_block_height_indices` to recompute the height for that
+`RichContent` item. This is the same mechanism used by AI blocks and other
+variable-height `RichContent` items.
 
 ### 5. Tree view
 
@@ -199,9 +209,9 @@ Use `warpui::async::executor::Background` at both sites so detection does not
 block the UI thread.
 
 **`WARP_RICH_OUTPUT`:** Read via `std::env::var("WARP_RICH_OUTPUT")` at
-detection time. This reads the process environment (Behavior #5), not a
-per-command snapshot. Per-command `WARP_RICH_OUTPUT=0 cmd` is explicitly out of
-scope (product spec Behavior #5).
+startup (cache the result in `TerminalView` initialization) and check the
+cached value at each detection site. This reads the process environment
+(Behavior #5). Per-command `WARP_RICH_OUTPUT=0 cmd` is explicitly out of scope.
 
 **Grid suppression:** The raw block grid and the `StructuredDataBlock`
 `RichContent` are separate items in the blocklist. To avoid rendering both
