@@ -5,6 +5,7 @@ use crate::servers::go::GoPlsCandidate;
 use crate::servers::pyright::PyrightCandidate;
 use crate::servers::rust::RustAnalyzerCandidate;
 use crate::servers::typescript_language_server::TypeScriptLanguageServerCandidate;
+use crate::servers::vscode_json_language_server::VsCodeJsonLanguageServerCandidate;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::CommandBuilder;
 use crate::{LanguageId, LanguageServerCandidate};
@@ -42,6 +43,7 @@ pub enum LSPServerType {
     Pyright,
     TypeScriptLanguageServer,
     Clangd,
+    VsCodeJsonLanguageServer,
 }
 
 /// Provides server-specific configuration for each LSP server type.
@@ -109,6 +111,9 @@ impl LSPServerType {
                     binary_path: path,
                     prepend_args: vec![],
                 }),
+            LSPServerType::VsCodeJsonLanguageServer => {
+                VsCodeJsonLanguageServerCandidate::find_installed_binary_config(path_env_var).await
+            }
         }
     }
 
@@ -132,6 +137,7 @@ impl LSPServerType {
             LSPServerType::Pyright => "pyright-langserver",
             LSPServerType::TypeScriptLanguageServer => "typescript-language-server",
             LSPServerType::Clangd => "clangd",
+            LSPServerType::VsCodeJsonLanguageServer => "vscode-json-languageserver",
         }
     }
 
@@ -140,7 +146,9 @@ impl LSPServerType {
     fn args(&self) -> Vec<&'static str> {
         match self {
             LSPServerType::RustAnalyzer | LSPServerType::GoPls | LSPServerType::Clangd => vec![],
-            LSPServerType::Pyright | LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
+            LSPServerType::Pyright
+            | LSPServerType::TypeScriptLanguageServer
+            | LSPServerType::VsCodeJsonLanguageServer => vec!["--stdio"],
         }
     }
 
@@ -154,6 +162,7 @@ impl LSPServerType {
             LSPServerType::Pyright => vec!["--stdio"],
             LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
             LSPServerType::Clangd => vec![],
+            LSPServerType::VsCodeJsonLanguageServer => vec!["--stdio"],
         }
     }
 
@@ -172,6 +181,7 @@ impl LSPServerType {
                 ]
             }
             LSPServerType::Clangd => vec![LanguageId::C, LanguageId::Cpp],
+            LSPServerType::VsCodeJsonLanguageServer => vec![LanguageId::Json],
         }
     }
 
@@ -205,6 +215,9 @@ impl LSPServerType {
                 Box::new(TypeScriptLanguageServerCandidate::new(client))
             }
             LSPServerType::Clangd => Box::new(ClangdCandidate::new(client)),
+            LSPServerType::VsCodeJsonLanguageServer => {
+                Box::new(VsCodeJsonLanguageServerCandidate::new(client))
+            }
         }
     }
 

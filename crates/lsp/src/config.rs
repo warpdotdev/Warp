@@ -32,6 +32,7 @@ pub enum LanguageId {
     JavaScriptReact,
     C,
     Cpp,
+    Json,
 }
 
 impl LanguageId {
@@ -52,6 +53,9 @@ impl LanguageId {
             // compile_commands.json is present, clangd will use the correct language
             // regardless of the languageId we send.
             "h" | "H" | "hh" | "hpp" | "hxx" => Some(Self::Cpp),
+            // JSON. `.jsonc` is JSON-with-comments (used by VS Code config files
+            // like `tsconfig.json`); the JSON language server handles both.
+            "json" | "jsonc" => Some(Self::Json),
             _ => None,
         }
     }
@@ -69,6 +73,7 @@ impl LanguageId {
             LanguageId::JavaScriptReact => "javascriptreact",
             LanguageId::C => "c",
             LanguageId::Cpp => "cpp",
+            LanguageId::Json => "json",
         }
     }
 
@@ -83,6 +88,7 @@ impl LanguageId {
             | LanguageId::JavaScript
             | LanguageId::JavaScriptReact => LSPServerType::TypeScriptLanguageServer,
             LanguageId::C | LanguageId::Cpp => LSPServerType::Clangd,
+            LanguageId::Json => LSPServerType::VsCodeJsonLanguageServer,
         }
     }
 }

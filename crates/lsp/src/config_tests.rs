@@ -216,3 +216,73 @@ fn test_path_to_lsp_uri_rejects_relative_path() {
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("must be absolute"));
 }
+
+mod json_language_detection {
+    //! Regression tests for #9556 — JSON language support via the VS Code
+    //! JSON language server.
+
+    use super::*;
+    use crate::config::LanguageId;
+    use crate::supported_servers::LSPServerType;
+
+    #[test]
+    fn classifies_plain_json_files() {
+        assert_eq!(
+            LanguageId::from_path(&PathBuf::from("package.json")),
+            Some(LanguageId::Json)
+        );
+        assert_eq!(
+            LanguageId::from_path(&PathBuf::from("nested/dir/data.json")),
+            Some(LanguageId::Json)
+        );
+    }
+
+    #[test]
+    fn classifies_jsonc_files() {
+        // .jsonc is JSON-with-comments; the VS Code JSON server handles it.
+        assert_eq!(
+            LanguageId::from_path(&PathBuf::from(".vscode/settings.jsonc")),
+            Some(LanguageId::Json)
+        );
+    }
+
+    #[test]
+    fn json_routes_to_vscode_json_language_server() {
+        assert_eq!(
+            LanguageId::Json.server_type(),
+            LSPServerType::VsCodeJsonLanguageServer
+        );
+    }
+
+    #[test]
+    fn vscode_json_language_server_advertises_json_language() {
+        assert_eq!(
+            LSPServerType::VsCodeJsonLanguageServer.languages(),
+            vec![LanguageId::Json]
+        );
+    }
+
+    #[test]
+    fn vscode_json_language_server_uses_npm_binary_name() {
+        assert_eq!(
+            LSPServerType::VsCodeJsonLanguageServer.binary_name(),
+            "vscode-json-languageserver"
+        );
+    }
+
+    #[test]
+    fn vscode_json_language_server_appears_in_all() {
+        let all: Vec<LSPServerType> = LSPServerType::all().collect();
+        assert!(
+            all.contains(&LSPServerType::VsCodeJsonLanguageServer),
+            "LSPServerType::all() must yield VsCodeJsonLanguageServer; got {all:?}",
+        );
+    }
+
+    #[test]
+    fn json_lsp_language_identifier_matches_spec() {
+        // LSP spec uses "json" as the canonical languageId — VS Code, Zed,
+        // and Neovim all use this identifier when initialising the server.
+        assert_eq!(LanguageId::Json.lsp_language_identifier(), "json");
+    }
+}

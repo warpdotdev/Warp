@@ -3,3 +3,4 @@ pub mod go;
 pub mod pyright;
 pub mod rust;
 pub mod typescript_language_server;
+pub mod vscode_json_language_server;
