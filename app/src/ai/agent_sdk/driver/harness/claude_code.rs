@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,18 +8,14 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use shell_words::quote as shell_quote;
 use tempfile::NamedTempFile;
 use uuid::Uuid;
 use warp_cli::agent::Harness;
 use warpui::{ModelHandle, ModelSpawner};
 
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent_events::MessageHydrator;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::server::server_api::harness_support::{
-    upload_to_target, HarnessSupportClient, ResolvePromptRequest,
-};
+use crate::server::server_api::harness_support::{upload_to_target, HarnessSupportClient};
 use crate::server::server_api::ServerApi;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::session::ExecuteCommandOptions;
@@ -34,174 +29,32 @@ use super::claude_transcript::{
 };
 use super::json_utils::{read_json_file_or_default, write_json_file};
 use super::{
-    cli_agent_session_status, task_env_vars, write_temp_file, HarnessCleanupDisposition,
-    HarnessRunner, ManagedSecretValue, ResumePayload, SavePoint, ThirdPartyHarness,
+    cli_agent_session_status, write_temp_file, HarnessCleanupDisposition, HarnessRunner,
+    ManagedSecretValue, ResumePayload, SavePoint, ThirdPartyHarness,
 };
 mod parent_bridge;
+mod wake_driver;
 
 #[cfg(test)]
 use super::super::OZ_MESSAGE_LISTENER_STATE_ROOT_ENV;
-use parent_bridge::{
-    acknowledge_parent_bridge_hook_output, ensure_parent_bridge_state_dir,
-    parent_bridge_max_context_chars, parent_bridge_root, prepare_parent_bridge_hook_output,
-    stage_parent_bridge_message, MessageBridge, MessageBridgeCleanupDisposition,
-    MessageBridgeMessageRecord,
-};
 #[cfg(test)]
 use parent_bridge::{
+    acknowledge_parent_bridge_hook_output, ensure_parent_bridge_state_dir,
     parent_bridge_char_count, parent_bridge_event_cursor_file, parent_bridge_hook_output_ack_file,
-    parent_bridge_hook_output_file, parent_bridge_staged_message_path,
-    parent_bridge_surfaced_message_path, read_parent_bridge_event_cursor,
-    render_parent_bridge_message_block, write_parent_bridge_event_cursor, MessageBridgeHookOutput,
-    MESSAGE_BRIDGE_CONTEXT_PREAMBLE,
+    parent_bridge_hook_output_file, parent_bridge_root, parent_bridge_staged_message_path,
+    parent_bridge_surfaced_message_path, prepare_parent_bridge_hook_output,
+    read_parent_bridge_event_cursor, render_parent_bridge_message_block,
+    stage_parent_bridge_message, write_parent_bridge_event_cursor, MessageBridgeHookOutput,
+    MessageBridgeMessageRecord, MESSAGE_BRIDGE_CONTEXT_PREAMBLE,
 };
-
-#[derive(Debug, Clone)]
-pub(crate) struct ClaudeWakeMessage {
-    pub(crate) sequence: i64,
-    pub(crate) message_id: String,
-    pub(crate) sender_run_id: String,
-    pub(crate) subject: String,
-    pub(crate) body: String,
-    pub(crate) occurred_at: String,
-}
-
-impl From<ClaudeWakeMessage> for MessageBridgeMessageRecord {
-    fn from(value: ClaudeWakeMessage) -> Self {
-        Self {
-            sequence: value.sequence,
-            message_id: value.message_id,
-            sender_run_id: value.sender_run_id,
-            subject: value.subject,
-            body: value.body,
-            occurred_at: value.occurred_at,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct ClaudeWakeRemoteContext {
-    session_id: Uuid,
-    envelope: ClaudeTranscriptEnvelope,
-    wake_prompt: String,
-}
+use parent_bridge::{MessageBridge, MessageBridgeCleanupDisposition};
+#[cfg(test)]
+use shell_words::quote as shell_quote;
+pub(crate) use wake_driver::ClaudeWakeMessage;
+#[cfg(test)]
+use wake_driver::{ClaudeWakeRemoteContext, CLAUDE_WAKE_PROMPT_FILE_NAME};
 
 pub(crate) struct ClaudeHarness;
-
-impl ClaudeHarness {
-    pub(crate) async fn fetch_local_wake_remote_context(
-        task_id: AmbientAgentTaskId,
-        server_api: Arc<ServerApi>,
-    ) -> Result<ClaudeWakeRemoteContext> {
-        let resolved = server_api
-            .resolve_prompt_for_task(
-                &task_id,
-                ResolvePromptRequest {
-                    skill: None,
-                    attachments_dir: None,
-                },
-            )
-            .await
-            .with_context(|| format!("Failed to resolve Claude wake prompt for task {task_id}"))?;
-        let bytes = server_api
-            .fetch_transcript_for_task(&task_id)
-            .await
-            .with_context(|| format!("Failed to fetch Claude transcript for task {task_id}"))?;
-        let envelope: ClaudeTranscriptEnvelope =
-            serde_json::from_slice(&bytes).with_context(|| {
-                format!("Failed to deserialize Claude transcript for wake task {task_id}")
-            })?;
-        let wake_prompt = match resolved.resumption_prompt {
-            Some(resumption_prompt) if !resumption_prompt.is_empty() => {
-                format!(
-                    "{resumption_prompt}
-
-{CLAUDE_WAKE_PROMPT}"
-                )
-            }
-            _ => CLAUDE_WAKE_PROMPT.to_string(),
-        };
-        Ok(ClaudeWakeRemoteContext {
-            session_id: envelope.uuid,
-            envelope,
-            wake_prompt,
-        })
-    }
-
-    pub(crate) async fn prepare_local_wake_command(
-        server_api: Arc<ServerApi>,
-        task_id: AmbientAgentTaskId,
-        parent_run_id: Option<String>,
-        working_dir: Option<PathBuf>,
-        mut remote: ClaudeWakeRemoteContext,
-        pending_messages: Vec<ClaudeWakeMessage>,
-    ) -> Result<String> {
-        let working_dir = working_dir.unwrap_or_else(|| remote.envelope.cwd.clone());
-        prepare_claude_environment_config(&working_dir, &HashMap::new())
-            .context("Failed to prepare Claude environment for wake")?;
-
-        remote.envelope.cwd = working_dir.clone();
-        let config_root = claude_config_dir().context("Failed to resolve Claude config dir")?;
-        write_envelope(&remote.envelope, &config_root)
-            .context("Failed to rehydrate Claude transcript for wake")?;
-        if let Err(error) = write_session_index_entry(remote.session_id, &working_dir, &config_root)
-        {
-            log::warn!("Failed to update Claude sessions-index.json for wake: {error:#}");
-        }
-
-        let state_dir = parent_bridge_root()?.join(remote.session_id.to_string());
-        ensure_parent_bridge_state_dir(&state_dir)?;
-        let hydrator = MessageHydrator::for_task(server_api, task_id);
-        acknowledge_parent_bridge_hook_output(&hydrator, &state_dir).await?;
-        for record in pending_messages
-            .into_iter()
-            .map(MessageBridgeMessageRecord::from)
-        {
-            stage_parent_bridge_message(&state_dir, &record)?;
-        }
-        prepare_parent_bridge_hook_output(&hydrator, &state_dir, parent_bridge_max_context_chars())
-            .await?;
-
-        let prompt_path = state_dir.join(CLAUDE_WAKE_PROMPT_FILE_NAME);
-        std::fs::write(&prompt_path, remote.wake_prompt.as_bytes())
-            .with_context(|| format!("Failed to write {}", prompt_path.display()))?;
-
-        let command = claude_command(
-            CLIAgent::Claude.command_prefix(),
-            &remote.session_id,
-            &prompt_path.display().to_string(),
-            None,
-            true,
-        );
-        let env_vars = task_env_vars(Some(&task_id), parent_run_id.as_deref(), Harness::Claude);
-
-        Ok(prefix_command_with_env_vars(command, env_vars))
-    }
-}
-fn prefix_command_with_env_vars(command: String, env_vars: HashMap<OsString, OsString>) -> String {
-    if env_vars.is_empty() {
-        return command;
-    }
-
-    let mut env_pairs = env_vars
-        .into_iter()
-        .map(|(key, value)| {
-            (
-                key.to_string_lossy().into_owned(),
-                value.to_string_lossy().into_owned(),
-            )
-        })
-        .collect::<Vec<_>>();
-    env_pairs.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
-
-    let assignments = env_pairs
-        .into_iter()
-        .map(|(key, value)| format!("{key}={}", shell_quote(&value)))
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    format!("env {assignments} {command}")
-}
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl ThirdPartyHarness for ClaudeHarness {
@@ -310,9 +163,6 @@ impl ThirdPartyHarness for ClaudeHarness {
 const CLAUDE_CODE_FORMAT: &str = "claude_code_cli";
 /// Command used to exit claude.
 const CLAUDE_EXIT_COMMAND: &str = "/exit";
-const CLAUDE_WAKE_PROMPT: &str =
-    "New lead-agent messages are available. Read the latest lead-agent updates and continue the task accordingly.";
-const CLAUDE_WAKE_PROMPT_FILE_NAME: &str = "wake-turn-prompt.txt";
 
 /// Build the shell command that launches the Claude CLI for a given session and
 /// prompt file.

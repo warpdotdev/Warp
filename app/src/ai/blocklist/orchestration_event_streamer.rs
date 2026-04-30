@@ -52,6 +52,7 @@ struct SseForwardingConsumer {
     tx: mpsc::UnboundedSender<SseStreamItem>,
     self_run_id: String,
     hydrator: MessageHydrator,
+    hydrate_new_messages: bool,
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -61,10 +62,13 @@ impl AgentEventConsumer for SseForwardingConsumer {
         &mut self,
         event: AgentRunEvent,
     ) -> anyhow::Result<AgentEventConsumerControlFlow> {
-        let fetched_message = self
-            .hydrator
-            .hydrate_event_for_recipient(&event, &self.self_run_id)
-            .await;
+        let fetched_message = if self.hydrate_new_messages {
+            self.hydrator
+                .hydrate_event_for_recipient(&event, &self.self_run_id)
+                .await
+        } else {
+            None
+        };
 
         self.tx
             .unbounded_send(SseStreamItem {
@@ -636,10 +640,9 @@ impl OrchestrationEventStreamer {
         }
 
         // Track message IDs for server-side mark_delivered calls.
-        let message_ids: Vec<String> = events
+        let message_ids: Vec<String> = messages
             .iter()
-            .filter(|e| e.event_type == "new_message" && e.run_id == self_run_id)
-            .filter_map(|e| e.ref_id.clone())
+            .map(|message| message.message_id.clone())
             .collect();
         if !message_ids.is_empty() {
             self.pending_delivery
@@ -701,6 +704,9 @@ impl OrchestrationEventStreamer {
             .and_then(|c| c.run_id())
             .map(|s| s.to_string())
             .unwrap_or_default();
+        let hydrate_new_messages = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .is_some_and(|conversation| !conversation.is_remote_child());
 
         let (tx, rx) = mpsc::unbounded();
         let generation = self.next_sse_generation;
@@ -729,6 +735,7 @@ impl OrchestrationEventStreamer {
                     tx,
                     self_run_id,
                     hydrator,
+                    hydrate_new_messages,
                 };
                 run_agent_event_driver(source, config, &mut consumer).await
             },

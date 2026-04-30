@@ -31,10 +31,8 @@ use crate::ai::agent::{
 };
 use crate::ai::agent::{DocumentContentAttachmentSource, FileContext};
 #[cfg(not(target_family = "wasm"))]
-use crate::ai::agent_sdk::{ClaudeHarness, ClaudeWakeMessage, ClaudeWakeRemoteContext};
+use crate::ai::agent_sdk::{ClaudeHarness, ClaudeWakeMessage};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-#[cfg(not(target_family = "wasm"))]
-use crate::ai::ambient_agents::AmbientAgentTaskState;
 use crate::ai::document::ai_document_model::{
     AIDocumentId, AIDocumentModel, AIDocumentUserEditStatus,
 };
@@ -56,7 +54,6 @@ use crate::network::NetworkStatus;
 use crate::notebooks::editor::model::FileLinkResolutionContext;
 use crate::persistence::ModelEvent;
 use crate::search::slash_command_menu::static_commands::commands;
-use crate::server::server_api::ai::{AIClient, RunFollowupRequest};
 use crate::server::server_api::{AIApiError, ServerApiProvider};
 use crate::terminal::model::block::{
     formatted_terminal_contents_for_input, BlockId, CURSOR_MARKER,
@@ -72,7 +69,6 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{send_telemetry_from_ctx, server::telemetry::TelemetryEvent};
 use anyhow::anyhow;
 use chrono::{DateTime, Local};
-use futures::future::Either;
 use itertools::Itertools;
 use parking_lot::FairMutex;
 use pending_response_streams::PendingResponseStreams;
@@ -82,11 +78,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-#[cfg(not(target_family = "wasm"))]
-use warp_cli::agent::Harness;
 use warp_core::assertions::safe_assert;
-#[cfg(not(target_family = "wasm"))]
-use warp_graphql::ai::AgentTaskState;
 use warp_multi_agent_api::{message, Task, ToolType};
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 
@@ -94,8 +86,6 @@ use super::orchestration_events::{OrchestrationEventService, OrchestrationEventS
 #[cfg(not(target_family = "wasm"))]
 use super::orchestration_events::{PendingEvent, PendingEventDetail};
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
-
-const REMOTE_CHILD_WAKE_FOLLOWUP_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone)]
 pub struct SessionContext {
@@ -336,8 +326,6 @@ pub struct BlocklistAIController {
     /// Pending dormant Claude wake preparations for success-idle child conversations.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pending_local_claude_wakes: HashMap<AIConversationId, SpawnedFutureHandle>,
-    /// Pending remote child wake follow-up submissions.
-    pending_remote_child_wakes: HashMap<AIConversationId, SpawnedFutureHandle>,
     /// Passive conversations explicitly requested to follow up after actions complete.
     pending_passive_follow_ups: HashSet<AIConversationId>,
     /// Passive suggestion results that should be included with the next request
@@ -577,7 +565,6 @@ impl BlocklistAIController {
             attachments_download_dir: None,
             pending_auto_resume_handles: HashMap::new(),
             pending_local_claude_wakes: HashMap::new(),
-            pending_remote_child_wakes: HashMap::new(),
             pending_passive_follow_ups: HashSet::new(),
             pending_passive_suggestion_results: HashMap::new(),
         }
@@ -1587,126 +1574,64 @@ impl BlocklistAIController {
         ))
     }
 
-    fn remote_child_wake_candidate(
-        &self,
+    #[cfg(not(target_family = "wasm"))]
+    fn drain_remote_child_message_events(
+        &mut self,
         conversation_id: AIConversationId,
-        ctx: &ModelContext<Self>,
-    ) -> Option<AmbientAgentTaskId> {
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
         let Some(conversation) =
             BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id)
         else {
             log::info!(
                 "Skipping remote child wake candidate: conversation_id={conversation_id:?} reason=conversation_missing"
             );
-            return None;
-        };
-        if !conversation.is_remote_child() {
-            return None;
-        }
-        let Some(task_id) = conversation.task_id() else {
-            log::info!(
-                "Skipping remote child wake candidate: conversation_id={conversation_id:?} reason=missing_task_id"
-            );
-            return None;
-        };
-
-        Some(task_id)
-    }
-
-    fn remote_child_wake_followup_message(pending_message_count: usize) -> String {
-        format!(
-            "You have received {pending_message_count} new parent-agent message(s). \
-             Read all unread agent messages, treat the latest parent instructions as authoritative, \
-             continue from the current task state, and reply when appropriate."
-        )
-    }
-
-    fn maybe_submit_remote_child_wake(
-        &mut self,
-        conversation_id: AIConversationId,
-        ctx: &mut ModelContext<Self>,
-    ) -> bool {
-        if self
-            .pending_remote_child_wakes
-            .contains_key(&conversation_id)
-        {
-            log::info!("Remote child wake already pending: conversation_id={conversation_id:?}");
-            return true;
-        }
-
-        let Some(task_id) = self.remote_child_wake_candidate(conversation_id, ctx) else {
             return false;
         };
+        let is_remote_child = conversation.is_remote_child();
+        let task_id = conversation.task_id();
+        if !is_remote_child {
+            return false;
+        }
 
         let pending_message_events = OrchestrationEventService::handle(ctx)
             .update(ctx, |svc, _| {
                 svc.peek_pending_message_events(conversation_id)
             });
         if pending_message_events.is_empty() {
-            log::info!(
-                "Skipping generic pending-event injection for remote child with no pending message events: conversation_id={conversation_id:?} task_id={task_id}"
-            );
-            return true;
+            return false;
         }
 
         let pending_message_event_ids = pending_message_events
             .iter()
             .map(|event| event.event_id.clone())
             .collect_vec();
+        let removed_events = OrchestrationEventService::handle(ctx).update(ctx, |svc, _| {
+            svc.take_pending_events_by_id(conversation_id, &pending_message_event_ids)
+        });
         let pending_message_count = pending_message_event_ids.len();
-        let message = Self::remote_child_wake_followup_message(pending_message_count);
-        let server_api = ServerApiProvider::as_ref(ctx).get();
-        let handle = ctx.spawn(
-            async move {
-                log::info!(
-                    "Submitting remote child wake follow-up: conversation_id={conversation_id:?} task_id={task_id} pending_message_count={pending_message_count}"
-                );
-                let submit = Box::pin(
-                    server_api.submit_run_followup(&task_id, RunFollowupRequest { message }),
-                );
-                let timeout = Box::pin(Timer::after(REMOTE_CHILD_WAKE_FOLLOWUP_TIMEOUT));
-                match futures::future::select(submit, timeout).await {
-                    Either::Left((result, _)) => result,
-                    Either::Right((_, _)) => Err(anyhow!(
-                        "Timed out submitting remote child wake follow-up for task {task_id}"
-                    )),
-                }
-            },
-            move |me, result, ctx| {
-                me.pending_remote_child_wakes.remove(&conversation_id);
-                match result {
-                    Ok(()) => {
-                        let removed_events =
-                            OrchestrationEventService::handle(ctx).update(ctx, |svc, _| {
-                                svc.take_pending_events_by_id(
-                                    conversation_id,
-                                    &pending_message_event_ids,
-                                )
-                            });
-                        if removed_events.len() != pending_message_event_ids.len() {
-                            log::info!(
-                                "Remote child wake follow-up submitted but pending message set changed: conversation_id={conversation_id:?} task_id={task_id} expected_message_event_count={} actual_removed_event_count={}",
-                                pending_message_event_ids.len(),
-                                removed_events.len()
-                            );
-                        }
-                        log::info!(
-                            "Submitted remote child wake follow-up: conversation_id={conversation_id:?} task_id={task_id} message_count={pending_message_count}"
-                        );
-                        me.handle_pending_events_ready(conversation_id, ctx);
-                    }
-                    Err(err) => {
-                        log::warn!(
-                            "Failed to submit remote child wake follow-up for {conversation_id:?} task_id={task_id}: {err:#}"
-                        );
-                        me.schedule_pending_events_ready_retry(conversation_id, ctx);
-                    }
-                }
-            },
+        if removed_events.len() != pending_message_event_ids.len() {
+            log::info!(
+                "Remote child pending message set changed while draining local wake events: conversation_id={conversation_id:?} task_id={:?} expected_message_event_count={} actual_removed_event_count={}",
+                task_id,
+                pending_message_event_ids.len(),
+                removed_events.len()
+            );
+        }
+        log::info!(
+            "Drained remote child message events locally because server owns wakeups: conversation_id={conversation_id:?} task_id={:?} message_count={pending_message_count}",
+            task_id
         );
-        self.pending_remote_child_wakes
-            .insert(conversation_id, handle);
         true
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn drain_remote_child_message_events(
+        &mut self,
+        _conversation_id: AIConversationId,
+        _ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        false
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -1823,225 +1748,118 @@ impl BlocklistAIController {
             .iter()
             .map(|event| event.event_id.clone())
             .collect_vec();
-        let pending_message_count = pending_message_event_ids.len();
+        let removed_events = OrchestrationEventService::handle(ctx).update(ctx, |svc, _| {
+            svc.take_pending_events_by_id(conversation_id, &pending_message_event_ids)
+        });
+        if removed_events.len() != pending_message_event_ids.len() {
+            log::info!(
+                "Aborting dormant Claude wake because the pending message set changed: conversation_id={conversation_id:?} task_id={task_id} expected_message_event_count={} actual_removed_event_count={}",
+                pending_message_event_ids.len(),
+                removed_events.len()
+            );
+            if !removed_events.is_empty() {
+                OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                    svc.prepend_pending_events(conversation_id, removed_events, ctx);
+                });
+            }
+            return true;
+        }
+
+        let wake_messages = removed_events
+            .iter()
+            .filter_map(Self::pending_event_to_claude_wake_message)
+            .collect_vec();
+        if wake_messages.len() != removed_events.len() {
+            log::info!(
+                "Aborting dormant Claude wake because some removed events were not message events: conversation_id={conversation_id:?} task_id={task_id} removed_event_count={} wake_message_count={}",
+                removed_events.len(),
+                wake_messages.len()
+            );
+            OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                svc.prepend_pending_events(conversation_id, removed_events, ctx);
+            });
+            return true;
+        }
+        log::info!(
+            "Prepared dormant Claude wake messages: conversation_id={conversation_id:?} task_id={task_id} message_count={}",
+            wake_messages.len()
+        );
+        for wake_message in &wake_messages {
+            log::info!(
+                "Dormant Claude wake message: conversation_id={conversation_id:?} task_id={task_id} message_id={} sequence={} subject={:?} body_len={}",
+                wake_message.message_id,
+                wake_message.sequence,
+                wake_message.subject,
+                wake_message.body.chars().count()
+            );
+        }
+
+        let removed_events_for_retry = removed_events.clone();
         let server_api = ServerApiProvider::as_ref(ctx).get();
+        let wake_message_count = wake_messages.len();
         let handle = ctx.spawn(
             async move {
-                let task = server_api.get_ambient_agent_task(&task_id).await?;
-                let harness = task
-                    .agent_config_snapshot
-                    .as_ref()
-                    .and_then(|snapshot| snapshot.harness.as_ref())
-                    .map(|config| config.harness_type);
                 log::info!(
-                    "Evaluating dormant Claude wake: conversation_id={conversation_id:?} task_id={task_id} pending_message_count={pending_message_count} server_task_state={:?} harness={harness:?}",
-                    task.state
+                    "Preparing dormant Claude wake command: conversation_id={conversation_id:?} task_id={task_id} pending_message_count={wake_message_count}"
                 );
-                if task.state != AmbientAgentTaskState::Succeeded
-                    || harness != Some(Harness::Claude)
-                {
-                    log::info!(
-                        "Skipping dormant Claude wake: conversation_id={conversation_id:?} task_id={task_id} pending_message_count={pending_message_count} server_task_state={:?} harness={harness:?}",
-                        task.state
-                    );
-                    return Ok::<Option<ClaudeWakeRemoteContext>, anyhow::Error>(None);
-                }
-
-                ClaudeHarness::fetch_local_wake_remote_context(task_id, server_api.clone())
-                    .await
-                    .map(Some)
+                ClaudeHarness::wake_dormant_session(
+                    server_api.clone(),
+                    task_id,
+                    parent_run_id,
+                    working_dir,
+                    wake_messages,
+                )
+                .await
             },
             move |me, result, ctx| {
                 me.pending_local_claude_wakes.remove(&conversation_id);
-
-                let remote = match result {
-                    Ok(Some(remote)) => remote,
+                match result {
+                    Ok(Some(command)) => {
+                        log::info!(
+                            "Executing dormant Claude wake command: conversation_id={conversation_id:?} task_id={task_id}"
+                        );
+                        BlocklistAIHistoryModel::handle(ctx).update(
+                            ctx,
+                            |history_model, ctx| {
+                                history_model.update_conversation_status(
+                                    me.terminal_view_id,
+                                    conversation_id,
+                                    ConversationStatus::InProgress,
+                                    ctx,
+                                );
+                            },
+                        );
+                        ctx.emit(BlocklistAIControllerEvent::ExecuteLocalHarnessCommand {
+                            command,
+                        });
+                    }
                     Ok(None) => {
                         log::info!(
                             "Falling back to generic pending-event injection after dormant Claude wake eligibility check: conversation_id={conversation_id:?} task_id={task_id}"
                         );
+                        OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
+                            svc.prepend_pending_events(
+                                conversation_id,
+                                removed_events_for_retry.clone(),
+                                ctx,
+                            );
+                        });
                         me.inject_pending_events_for_request(conversation_id, ctx);
-                        return;
                     }
                     Err(err) => {
                         log::warn!(
-                            "Failed to prepare dormant Claude wake context for {conversation_id:?}: {err:#}"
+                            "Failed to prepare dormant Claude wake command for {conversation_id:?} task_id={task_id}: {err:#}"
                         );
-                        me.schedule_pending_events_ready_retry(conversation_id, ctx);
-                        return;
-                    }
-                };
-
-                if !me.conversation_ready_for_pending_events(conversation_id, ctx) {
-                    return;
-                }
-
-                let removed_events = OrchestrationEventService::handle(ctx).update(ctx, |svc, _| {
-                    svc.take_pending_events_by_id(conversation_id, &pending_message_event_ids)
-                });
-                if removed_events.len() != pending_message_event_ids.len() {
-                    log::info!(
-                        "Aborting dormant Claude wake because the pending message set changed: conversation_id={conversation_id:?} task_id={task_id} expected_message_event_count={} actual_removed_event_count={}",
-                        pending_message_event_ids.len(),
-                        removed_events.len()
-                    );
-                    if !removed_events.is_empty() {
                         OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-                            svc.prepend_pending_events(conversation_id, removed_events, ctx);
+                            svc.prepend_pending_events(
+                                conversation_id,
+                                removed_events_for_retry.clone(),
+                                ctx,
+                            );
                         });
+                        me.schedule_pending_events_ready_retry(conversation_id, ctx);
                     }
-                    return;
                 }
-
-                let wake_messages = removed_events
-                    .iter()
-                    .filter_map(Self::pending_event_to_claude_wake_message)
-                    .collect_vec();
-                if wake_messages.len() != removed_events.len() {
-                    log::info!(
-                        "Aborting dormant Claude wake because some removed events were not message events: conversation_id={conversation_id:?} task_id={task_id} removed_event_count={} wake_message_count={}",
-                        removed_events.len(),
-                        wake_messages.len()
-                    );
-                    OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-                        svc.prepend_pending_events(conversation_id, removed_events, ctx);
-                    });
-                    return;
-                }
-                log::info!(
-                    "Prepared dormant Claude wake messages: conversation_id={conversation_id:?} task_id={task_id} message_count={}",
-                    wake_messages.len()
-                );
-                for wake_message in &wake_messages {
-                    log::info!(
-                        "Dormant Claude wake message: conversation_id={conversation_id:?} task_id={task_id} message_id={} sequence={} subject={:?} body_len={}",
-                        wake_message.message_id,
-                        wake_message.sequence,
-                        wake_message.subject,
-                        wake_message.body.chars().count()
-                    );
-                }
-
-                let removed_events_for_retry = removed_events.clone();
-                let server_api = ServerApiProvider::as_ref(ctx).get();
-                let wake_message_count = wake_messages.len();
-                let handle = ctx.spawn(
-                    async move {
-                        log::info!(
-                            "Preparing dormant Claude wake command: conversation_id={conversation_id:?} task_id={task_id} pending_message_count={wake_message_count}"
-                        );
-                        let command = ClaudeHarness::prepare_local_wake_command(
-                            server_api.clone(),
-                            task_id,
-                            parent_run_id,
-                            working_dir,
-                            remote,
-                            wake_messages,
-                        )
-                        .await?;
-                        Ok::<_, anyhow::Error>(command)
-                    },
-                    move |me, result, ctx| {
-                        me.pending_local_claude_wakes.remove(&conversation_id);
-                        match result {
-                            Ok(command) => {
-                                if !me.conversation_ready_for_pending_events(conversation_id, ctx) {
-                                    log::info!(
-                                        "Requeueing dormant Claude wake messages because the conversation stopped being ready before execution: conversation_id={conversation_id:?} task_id={task_id}"
-                                    );
-                                    OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-                                        svc.prepend_pending_events(
-                                            conversation_id,
-                                            removed_events_for_retry.clone(),
-                                            ctx,
-                                        );
-                                    });
-                                    return;
-                                }
-
-                                let server_api = ServerApiProvider::as_ref(ctx).get();
-                                let removed_events_for_retry = removed_events_for_retry.clone();
-                                let handle = ctx.spawn(
-                                    async move {
-                                        log::info!(
-                                            "Reopening dormant Claude task before wake command: conversation_id={conversation_id:?} task_id={task_id}"
-                                        );
-                                        server_api
-                                            .update_agent_task(
-                                                task_id,
-                                                Some(AgentTaskState::InProgress),
-                                                None,
-                                                None,
-                                                None,
-                                            )
-                                            .await
-                                            .map_err(|err| {
-                                                anyhow!(
-                                                    "Failed to reopen dormant Claude task {task_id} before wake: {err:#}"
-                                                )
-                                            })?;
-                                        log::info!(
-                                            "Reopened dormant Claude task before wake command: conversation_id={conversation_id:?} task_id={task_id}"
-                                        );
-                                        Ok::<_, anyhow::Error>(command)
-                                    },
-                                    move |me, result, ctx: &mut ModelContext<Self>| {
-                                        me.pending_local_claude_wakes.remove(&conversation_id);
-                                        match result {
-                                            Ok(command) => {
-                                                log::info!(
-                                                    "Executing dormant Claude wake command: conversation_id={conversation_id:?} task_id={task_id}"
-                                                );
-                                                BlocklistAIHistoryModel::handle(ctx).update(
-                                                    ctx,
-                                                    |history_model, ctx| {
-                                                        history_model.update_conversation_status(
-                                                            me.terminal_view_id,
-                                                            conversation_id,
-                                                            ConversationStatus::InProgress,
-                                                            ctx,
-                                                        );
-                                                    },
-                                                );
-                                                ctx.emit(
-                                                    BlocklistAIControllerEvent::ExecuteLocalHarnessCommand {
-                                                        command,
-                                                    },
-                                                );
-                                            }
-                                            Err(err) => {
-                                                log::warn!(
-                                                    "Failed to reopen dormant Claude task for {conversation_id:?} task_id={task_id}: {err:#}"
-                                                );
-                                                OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-                                                    svc.prepend_pending_events(
-                                                        conversation_id,
-                                                        removed_events_for_retry.clone(),
-                                                        ctx,
-                                                    );
-                                                });
-                                            }
-                                        }
-                                    },
-                                );
-                                me.pending_local_claude_wakes.insert(conversation_id, handle);
-                            }
-                            Err(err) => {
-                                log::warn!(
-                                    "Failed to finalize dormant Claude wake for {conversation_id:?} task_id={task_id}: {err:#}"
-                                );
-                                OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-                                    svc.prepend_pending_events(
-                                        conversation_id,
-                                        removed_events_for_retry.clone(),
-                                        ctx,
-                                    );
-                                });
-                            }
-                        }
-                    },
-                );
-                me.pending_local_claude_wakes.insert(conversation_id, handle);
             },
         );
         self.pending_local_claude_wakes
@@ -2059,8 +1877,8 @@ impl BlocklistAIController {
         if !self.conversation_ready_for_pending_events(conversation_id, ctx) {
             return;
         }
-
-        if self.maybe_submit_remote_child_wake(conversation_id, ctx) {
+        if self.drain_remote_child_message_events(conversation_id, ctx) {
+            self.handle_pending_events_ready(conversation_id, ctx);
             return;
         }
 

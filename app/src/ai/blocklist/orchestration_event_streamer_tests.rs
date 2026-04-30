@@ -278,6 +278,30 @@ fn build_pending_events_preserves_message_sequence_and_timestamp() {
     assert_eq!(message_id, "message-123");
     assert_eq!(event_occurred_at, occurred_at);
 }
+
+#[tokio::test]
+async fn sse_forwarding_consumer_skips_message_hydration_when_disabled() {
+    use futures::StreamExt;
+
+    let (tx, mut rx) = futures::channel::mpsc::unbounded();
+    let mut ai_client = crate::server::server_api::ai::MockAIClient::new();
+    ai_client.expect_read_agent_message().times(0);
+    let ai_client: Arc<dyn AIClient> = Arc::new(ai_client);
+    let hydrator = MessageHydrator::new(ai_client);
+    let mut consumer = SseForwardingConsumer {
+        tx,
+        self_run_id: "child-run".to_string(),
+        hydrator,
+        hydrate_new_messages: false,
+    };
+    let event = make_run_event("new_message", "child-run", Some("message-123"));
+
+    consumer.on_event(event).await.unwrap();
+
+    let item = rx.next().await.expect("expected forwarded event");
+    assert_eq!(item.event.ref_id.as_deref(), Some("message-123"));
+    assert!(item.fetched_message.is_none());
+}
 #[test]
 fn finish_restore_fetch_uses_server_cursor_when_sqlite_is_absent() {
     use crate::ai::agent::conversation::AIConversation;
