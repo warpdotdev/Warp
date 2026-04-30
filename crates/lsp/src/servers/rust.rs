@@ -136,45 +136,33 @@ impl LanguageServerCandidate for RustAnalyzerCandidate {
         metadata: LanguageServerMetadata,
         _executor: &CommandBuilder,
     ) -> anyhow::Result<()> {
-        #[cfg(target_os = "freebsd")]
-        {
-            let _ = (&metadata, &self.client);
-            anyhow::bail!(
-                "rust-analyzer is not auto-installable on FreeBSD: upstream \
-                 GitHub releases publish no FreeBSD asset. Install it via \
-                 `rustup component add rust-analyzer` or `pkg install \
-                 rust-analyzer` and warp will pick it up off PATH."
-            );
-        }
-        #[cfg(not(target_os = "freebsd"))]
-        {
-            let asset_kind = AssetKind::from_filename(asset_name()).ok_or_else(|| {
-                anyhow::anyhow!("Unsupported archive format for asset: {}", asset_name())
-            })?;
-            install_from_github(&self.client, &metadata, SERVER_NAME, asset_kind, None).await?;
-            Ok(())
-        }
+        anyhow::ensure!(
+            !cfg!(target_os = "freebsd"),
+            "rust-analyzer is not auto-installable on FreeBSD: upstream \
+             GitHub releases publish no FreeBSD asset. Install it via \
+             `rustup component add rust-analyzer` or `pkg install \
+             rust-analyzer` and warp will pick it up off PATH."
+        );
+        let asset_kind = AssetKind::from_filename(asset_name()).ok_or_else(|| {
+            anyhow::anyhow!("Unsupported archive format for asset: {}", asset_name())
+        })?;
+        install_from_github(&self.client, &metadata, SERVER_NAME, asset_kind, None).await?;
+        Ok(())
     }
 
     async fn fetch_latest_server_metadata(&self) -> anyhow::Result<LanguageServerMetadata> {
-        #[cfg(target_os = "freebsd")]
-        {
-            let _ = &self.client;
-            anyhow::bail!(
-                "rust-analyzer release metadata is unavailable on FreeBSD: \
-                 upstream GitHub releases publish no FreeBSD asset."
-            );
-        }
-        #[cfg(not(target_os = "freebsd"))]
-        {
-            fetch_latest_metadata_from_github(
-                &self.client,
-                "rust-lang",
-                "rust-analyzer",
-                Some(asset_name()),
-            )
-            .await
-        }
+        anyhow::ensure!(
+            !cfg!(target_os = "freebsd"),
+            "rust-analyzer release metadata is unavailable on FreeBSD: \
+             upstream GitHub releases publish no FreeBSD asset."
+        );
+        fetch_latest_metadata_from_github(
+            &self.client,
+            "rust-lang",
+            "rust-analyzer",
+            Some(asset_name()),
+        )
+        .await
     }
 }
 
