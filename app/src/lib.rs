@@ -1997,7 +1997,7 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             let general_settings = GeneralSettings::as_ref(ctx);
             // On Linux or Windows, if we're about to close the final window, we should quit the app instead.
             // On Mac, we do this conditionally based on a user setting.
-            let quit_on_last_window_closed = cfg!(any(any(target_os = "linux", target_os = "freebsd"), windows))
+            let quit_on_last_window_closed = cfg!(any(target_os = "linux", target_os = "freebsd", windows))
                 || *general_settings.quit_on_last_window_closed;
             if ctx.window_ids().count() == 1 && quit_on_last_window_closed {
                 log::info!("No windows left, terminating app");

@@ -54,7 +54,7 @@ pub(crate) fn run() -> anyhow::Result<()> {
         }
     }
 
-    #[cfg(any(any(target_os = "linux", target_os = "freebsd"), windows))]
+    #[cfg(any(target_os = "linux", target_os = "freebsd", windows))]
     {
         use std::ops::Deref as _;
 

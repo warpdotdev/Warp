@@ -113,7 +113,7 @@ web-sys.workspace = true
 workspace = true
 features = ["fragile-send-sync-non-atomic-wasm", "webgl"]
 
-[target.'cfg(any(any(target_os = "linux", target_os = "freebsd"), target_os = "windows"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
 arboard = { workspace = true, features = [
     "wayland-data-control",
     "image-data",
