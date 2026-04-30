@@ -1089,6 +1089,7 @@ fn external_history_lines_append_new_tail_only() {
                         "d".to_owned(),
                         "e".to_owned(),
                     ],
+                    None,
                     ctx,
                 );
             });
@@ -1115,6 +1116,7 @@ fn external_history_lines_append_new_tail_only() {
                         "d".to_owned(),
                         "e".to_owned(),
                     ],
+                    None,
                     ctx,
                 );
             });
@@ -1183,6 +1185,7 @@ fn external_history_lines_emit_external_history_updated_event() {
                 history.apply_external_history_lines(
                     host.clone(),
                     vec!["a".to_owned(), "b".to_owned(), "c".to_owned()],
+                    None,
                     ctx,
                 );
             });

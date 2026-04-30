@@ -232,9 +232,30 @@ pub struct History {
     /// For live OS-shell-history sync (GH-3422). Map from histfile path to the
     /// set of hosts whose `history_file_commands` should be re-merged when
     /// that path changes on disk. Populated by [`Self::maybe_register_live_sync`]
-    /// at session init (only when the live-sync setting is on); consulted by
-    /// [`Self::handle_shell_history_watcher_event`] when watcher events arrive.
+    /// after the initial histfile load completes (only when the live-sync
+    /// setting is on); consulted by [`Self::handle_shell_history_watcher_event`]
+    /// when watcher events arrive.
     live_sync_paths: HashMap<PathBuf, HashSet<ShellHost>>,
+
+    /// One [`Arc<Session>`] per live-sync-enabled host, kept around so the
+    /// watcher's async re-read can route through the same `Session::read_history`
+    /// path the initial load uses — including the Windows PowerShell /
+    /// Kaspersky workaround in `read_powershell_history_contents`. Without
+    /// this, the live re-read would `async_fs::read` directly and bypass that
+    /// fallback. Any session for the host is fine; we just need *some*
+    /// `Session` whose `info` resolves the histfile and Kaspersky flag the
+    /// same way the initial read did.
+    live_sync_sessions: HashMap<ShellHost, Arc<Session>>,
+
+    /// Per-host generation counter incremented on every authoritative refresh
+    /// of `history_file_commands[host]` (initial load **and**
+    /// [`Self::apply_external_history_lines`]). The watcher's async re-read
+    /// snapshots the generation when it kicks off and only applies its result
+    /// if the generation still matches at completion time. Without this, two
+    /// watcher events firing close together can race: the second
+    /// (most-recent) read can complete first, then the first (older) read
+    /// completes and rolls history back.
+    live_sync_generation: HashMap<ShellHost, u64>,
 
     /// Set to `true` once [`Self::set_up_external_history_sync`] has installed
     /// the watcher subscription. The subscription is global and idempotent so
@@ -597,13 +618,6 @@ impl History {
         self.session_id_to_shell_host
             .insert(session_id, host.clone());
 
-        // GH-3422: when the user has opted into live shell-history sync and the
-        // session is local, register this session's histfile path(s) with
-        // `ShellHistoryWatcher` so subsequent changes by other terminals are
-        // merged into `history_file_commands`. No-op when the setting is off,
-        // when the session is remote (we only watch local files), or on wasm.
-        self.maybe_register_live_sync(&session, &host, ctx);
-
         match self.read_history_file_state.get_mut(&host) {
             None => {
                 let mut session_ids = HashSet::new();
@@ -616,6 +630,8 @@ impl History {
                     },
                 );
                 let host_clone = host.clone();
+                let host_for_live_sync = host.clone();
+                let session_for_live_sync = session.clone();
                 ctx.spawn(
                     read_history_file_future,
                     move |me, history_file_commands, ctx| {
@@ -645,6 +661,18 @@ impl History {
                             host,
                             ctx,
                         );
+                        // GH-3422: register the histfile with `ShellHistoryWatcher`
+                        // *after* the initial load is committed. Registering before
+                        // would race: a watcher event arriving between registration
+                        // and load-completion would kick off an async re-read whose
+                        // result could be overwritten by the still-pending initial
+                        // load. No-op when the setting is off, the session is
+                        // remote, or we're on wasm.
+                        me.maybe_register_live_sync(
+                            &session_for_live_sync,
+                            &host_for_live_sync,
+                            ctx,
+                        );
                     },
                 );
             }
@@ -664,14 +692,22 @@ impl History {
 
                 let mut session_ids = HashSet::new();
                 session_ids.insert(session_id);
+                let host_for_live_sync = host.clone();
                 self.initialize_session_start_and_skip_indices(
                     session_ids,
                     host,
                     session_start_index,
                     ctx,
-                )
+                );
+                // Initial load already happened on a prior session; safe to
+                // register live-sync now (idempotent for hosts where another
+                // session already registered this path).
+                self.maybe_register_live_sync(&session, &host_for_live_sync, ctx);
             }
             Some(ReadHistoryFileState::InProgress { session_ids, .. }) => {
+                // Another session for this host is mid-load. The deferred
+                // registration in that session's spawn closure covers this
+                // host already — no need to register again here.
                 session_ids.insert(session_id);
             }
         }
@@ -713,6 +749,11 @@ impl History {
             self.session_commands
                 .insert(host.clone(), session_commands_to_append);
         }
+
+        // Bump the live-sync generation so any in-flight async re-read started
+        // *before* this load completed sees a stale generation and drops its
+        // result instead of overwriting the freshly-loaded state. (GH-3422)
+        *self.live_sync_generation.entry(host.clone()).or_insert(0) += 1;
 
         self.initialize_session_start_and_skip_indices(session_ids, host, start_index, ctx);
     }
@@ -1036,14 +1077,19 @@ impl History {
 
     /// Handler for [`ShellHistoryWatcherEvent::HistfilesChanged`]. For each
     /// changed path that we registered in [`Self::maybe_register_live_sync`],
-    /// kick off an async re-read of the file and dispatch the parsed lines
-    /// to [`Self::apply_external_history_lines`].
+    /// kick off an async re-read **through the same `Session::read_history`
+    /// path the initial load uses** (so the Windows PowerShell / Kaspersky
+    /// workaround in `read_powershell_history_contents` is honored), snapshot
+    /// the host's live-sync generation, and dispatch the parsed lines to
+    /// [`Self::apply_external_history_lines`] only if the generation still
+    /// matches at completion time.
     #[cfg(not(target_family = "wasm"))]
     fn handle_shell_history_watcher_event(
         &mut self,
         event: &ShellHistoryWatcherEvent,
         ctx: &mut ModelContext<Self>,
     ) {
+        let is_kaspersky_running = Self::is_kaspersky_running(ctx);
         let ShellHistoryWatcherEvent::HistfilesChanged(fs_event) = event;
         for path in fs_event.added_or_updated_iter() {
             // Snapshot the host set under this path so we can drop the
@@ -1052,20 +1098,29 @@ impl History {
                 continue;
             };
             for host in hosts {
-                let path_for_read = path.clone();
-                let shell_type = host.shell_type;
+                // Need a `Session` for this host to route through
+                // `Session::read_history` (Kaspersky/PowerShell-aware on
+                // Windows). Stored in `live_sync_sessions` at registration.
+                let Some(session) = self.live_sync_sessions.get(&host).cloned() else {
+                    log::debug!(
+                        "GH-3422: watcher fired for {host:?} but no live_sync_sessions entry; \
+                         skipping (host probably already torn down)"
+                    );
+                    continue;
+                };
+                // Snapshot the generation so a stale completion can't roll
+                // back a newer apply that landed first.
+                let snapshot_gen = self.live_sync_generation.get(&host).copied().unwrap_or(0);
                 let host_for_apply = host.clone();
                 ctx.spawn(
-                    async move {
-                        async_fs::read(&path_for_read)
-                            .await
-                            .ok()
-                            .map(|bytes| shell_type.parse_history(&bytes))
-                    },
-                    move |me, lines_opt, ctx| {
-                        if let Some(lines) = lines_opt {
-                            me.apply_external_history_lines(host_for_apply, lines, ctx);
-                        }
+                    async move { session.read_history(is_kaspersky_running).await },
+                    move |me, lines, ctx| {
+                        me.apply_external_history_lines(
+                            host_for_apply,
+                            lines,
+                            Some(snapshot_gen),
+                            ctx,
+                        );
                     },
                 );
             }
@@ -1080,12 +1135,38 @@ impl History {
     /// resulting list is the user's most-recent recency view of the file).
     /// Shifts session-index bookkeeping by the size delta and emits
     /// [`HistoryEvent::ExternalHistoryUpdated`].
+    ///
+    /// **Generation check**: when `snapshot_gen` is `Some(n)`, n is the
+    /// live-sync generation at the time the async re-read kicked off. If
+    /// the host's current generation has moved on (because the initial
+    /// load completed in the meantime, or another live-sync update landed
+    /// first), we drop this stale read instead of overwriting newer state.
+    /// `None` skips the check (used by direct test callers).
+    ///
+    /// **session_commands dedupe**: when the same command appears in both
+    /// the freshly re-read histfile and `session_commands[host]` (the
+    /// commands this Warp session has executed), we drop the duplicate from
+    /// `session_commands` so the user sees it only once in autocomplete.
     fn apply_external_history_lines(
         &mut self,
         host: ShellHost,
         new_lines: Vec<String>,
+        snapshot_gen: Option<u64>,
         ctx: &mut ModelContext<Self>,
     ) {
+        // Stale-read guard: if the generation has moved on since this async
+        // re-read started, drop the result. Newer state has already landed.
+        if let Some(snap) = snapshot_gen {
+            let current_gen = self.live_sync_generation.get(&host).copied().unwrap_or(0);
+            if current_gen != snap {
+                log::debug!(
+                    "GH-3422: dropping stale live-sync read for {host:?} \
+                     (snapshot_gen={snap}, current_gen={current_gen})"
+                );
+                return;
+            }
+        }
+
         let new_deduped = dedupe_from_last(new_lines);
 
         // Cheap no-op short-circuit: if the new list is identical to the cache,
@@ -1122,20 +1203,59 @@ impl History {
             .unwrap_or(0);
         let new_history_file_len = new_entries.len();
 
+        // Build a set of commands now in the (replaced) history_file portion
+        // so we can drop matching entries from session_commands below — the
+        // user otherwise sees them twice in autocomplete (once from the
+        // re-read histfile, once from this Warp session's own log).
+        let new_history_command_set: HashSet<String> =
+            new_entries.iter().map(|e| e.command.clone()).collect();
+
         self.history_file_commands
             .insert(host.clone(), new_entries);
 
+        // Snapshot pre-dedupe session_commands length so we can compute how
+        // many entries get removed below.
+        let old_session_commands_len = self
+            .session_commands
+            .get(&host)
+            .map(|v| v.len())
+            .unwrap_or(0);
+
+        // Drop session_commands entries whose command string appears in the
+        // newly-replaced history_file_commands. This keeps each command
+        // visible exactly once in the rendered autocomplete list.
+        if let Some(session_cmds) = self.session_commands.get_mut(&host) {
+            session_cmds.retain(|entry| !new_history_command_set.contains(&entry.command));
+        }
+        let new_session_commands_len = self
+            .session_commands
+            .get(&host)
+            .map(|v| v.len())
+            .unwrap_or(0);
+        let session_commands_dropped = old_session_commands_len - new_session_commands_len;
+
+        // Bump the live-sync generation so any later in-flight read started
+        // before this apply ran sees a stale generation and drops its result.
+        *self.live_sync_generation.entry(host.clone()).or_insert(0) += 1;
+
         // The render-space history list for a host is
         //   history_file_commands[host] ++ session_commands[host]
-        // The boundary moved from `old_history_file_len` to
-        // `new_history_file_len`. For sessions on this host, indices that
-        // pointed into the session_commands portion (i.e. were
-        // `>= old_history_file_len`) need to shift by the same delta.
-        // Indices that pointed into the history_file portion are now stale
-        // because the file portion was replaced — drop them from
-        // `session_skip_indices` and clamp `session_start_indices` to the new
-        // boundary at minimum.
-        let delta: isize = new_history_file_len as isize - old_history_file_len as isize;
+        //
+        // The history_file boundary moved from `old_history_file_len` to
+        // `new_history_file_len` (delta_history). The session_commands
+        // portion shrank by `session_commands_dropped` (delta_session is
+        // negative). For sessions on this host:
+        //   * `session_start_indices` is positioned just past the snapshot
+        //     of history+session at session-start time. After this apply,
+        //     it must shift by the net delta so it still points to "where
+        //     this session's commands begin".
+        //   * `session_skip_indices` are absolute indices into the concat
+        //     list. Indices in the (now-replaced) history_file portion are
+        //     gone; indices in the session_commands portion shift by the
+        //     net delta and need to drop entries that were among the
+        //     deduped-out commands.
+        let delta_history: isize = new_history_file_len as isize - old_history_file_len as isize;
+        let net_delta: isize = delta_history - session_commands_dropped as isize;
         let on_host_session_ids: Vec<SessionId> = self
             .session_id_to_shell_host
             .iter()
@@ -1145,7 +1265,7 @@ impl History {
 
         for session_id in &on_host_session_ids {
             if let Some(start) = self.session_start_indices.get_mut(session_id) {
-                let shifted = (*start as isize + delta).max(new_history_file_len as isize);
+                let shifted = (*start as isize + net_delta).max(new_history_file_len as isize);
                 *start = shifted.max(0) as usize;
             }
             if let Some(skips) = self.session_skip_indices.get_mut(session_id) {
@@ -1153,8 +1273,8 @@ impl History {
                     .iter()
                     .filter_map(|&i| {
                         if i >= old_history_file_len {
-                            // index pointed into session_commands; shift by delta
-                            let shifted = i as isize + delta;
+                            // index pointed into session_commands; shift by net delta
+                            let shifted = i as isize + net_delta;
                             (shifted >= 0).then_some(shifted as usize)
                         } else {
                             // index pointed into the now-replaced history_file
@@ -1231,6 +1351,14 @@ impl History {
                 })
                 .collect()
         };
+
+        // Stash an `Arc<Session>` for this host so the watcher's async
+        // re-read can route through `Session::read_history` (Kaspersky/PowerShell-
+        // aware on Windows). One session per host is enough — they're
+        // equivalent for histfile-read purposes.
+        self.live_sync_sessions
+            .entry(host.clone())
+            .or_insert_with(|| session.clone());
 
         let watcher_handle = ShellHistoryWatcher::handle(ctx);
         for path in candidate_paths {
