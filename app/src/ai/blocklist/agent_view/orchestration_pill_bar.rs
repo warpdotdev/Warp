@@ -1662,7 +1662,14 @@ pub fn render_orchestration_breadcrumbs(
         theme.active_ui_detail().into(),
         ElementFill::None,
     )
-    .with_horizontal_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, false))
+    // Pass `true` for `overlaid_scrollbar` so the horizontal scrollbar
+    // paints on top of the row instead of stealing vertical space below
+    // it. Reserving space pushes the breadcrumbs upward (off-center)
+    // whenever the row overflows; overlaying keeps the row vertically
+    // centered in the title slot at the cost of the scrollbar briefly
+    // crossing through the bottom edge of the labels — which the user
+    // explicitly accepted as a fine trade-off.
+    .with_horizontal_scrollbar(ScrollableAppearance::new(ScrollbarWidth::Auto, true))
     .with_propagate_mousewheel_if_not_handled(true)
     .finish();
     Some(scrollable)
