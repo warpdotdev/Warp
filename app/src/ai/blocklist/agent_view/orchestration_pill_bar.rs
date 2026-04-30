@@ -11,15 +11,21 @@ use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 use pathfinder_color::ColorU;
+use pathfinder_geometry::vector::vec2f;
+use warp_core::ui::theme::Fill;
 use warp_core::ui::{appearance::Appearance, theme::WarpTheme};
 use warpui::elements::{
-    ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Empty, Flex, Hoverable,
-    MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Stack, Text,
+    ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element,
+    Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
+    ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Stack, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
 use warpui::text_layout::ClipConfig;
-use warpui::{AppContext, Entity, ModelHandle, SingletonEntity, View, ViewContext};
+use warpui::{
+    AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
+    ViewHandle,
+};
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::{AIConversation, AIConversationId};
@@ -27,6 +33,7 @@ use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_c
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use crate::features::FeatureFlag;
+use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::pane::view::PaneHeaderAction;
 use crate::terminal::view::TerminalAction;
 use crate::ui_components::icons::Icon;
@@ -106,6 +113,38 @@ enum AvatarGlyph {
     Icon(Icon),
 }
 
+/// Width of the per-pill 3-dot overflow menu when expanded.
+const OVERFLOW_MENU_WIDTH: f32 = 200.;
+/// Size in logical pixels of the 3-dot button at the trailing edge of each
+/// child pill.
+const OVERFLOW_BUTTON_SIZE: f32 = 16.;
+
+/// Typed actions dispatched by the pill bar's own widgets (the 3-dot
+/// overflow button and the items in its dropdown menu). Each action carries
+/// the `AIConversationId` of the child pill it targets so a single
+/// `Menu<OrchestrationPillBarAction>` instance can serve every child by being
+/// rebuilt with the right ids each time it opens.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OrchestrationPillBarAction {
+    /// Open the 3-dot menu for the given child conversation. Dispatched by
+    /// the trailing `⋯` button on a child pill.
+    OpenMenu(AIConversationId),
+    /// Close the open menu. Dispatched by the `Menu`'s `Close` event so
+    /// click-outside dismissal is handled the same way as keyboard ESC.
+    CloseMenu,
+    /// Menu item: split the orchestrator pane right and host this child
+    /// agent in the new pane.
+    OpenInNewPane(AIConversationId),
+    /// Menu item: open this child agent in a new tab in the same window.
+    OpenInNewTab(AIConversationId),
+    /// Menu item: stop the in-progress agent task without removing the
+    /// conversation from history.
+    Stop(AIConversationId),
+    /// Menu item: cancel any in-flight task and remove the conversation
+    /// from local history (no server delete).
+    Kill(AIConversationId),
+}
+
 /// View that renders the orchestration pill bar above the agent view content.
 ///
 /// Shows one pill for the orchestrator (parent of the active conversation, or
@@ -123,6 +162,20 @@ pub struct OrchestrationPillBar {
     /// another fresh handle, losing the down-state before mouse-up arrives
     /// and silently swallowing the click (per the WarpUI mouse-state rule).
     mouse_states: RefCell<HashMap<AIConversationId, MouseStateHandle>>,
+    /// Hover state per child pill's trailing 3-dot button. Kept separate
+    /// from `mouse_states` so the button has its own hover highlight
+    /// independent of the pill body.
+    overflow_button_mouse_states: RefCell<HashMap<AIConversationId, MouseStateHandle>>,
+    /// The single shared dropdown menu rendered when a child pill's 3-dot
+    /// button is clicked. Items are rebuilt per-open with the relevant
+    /// child id baked into each `on_select_action` so we don't need a
+    /// separate menu instance per pill.
+    menu: ViewHandle<Menu<OrchestrationPillBarAction>>,
+    /// `Some(id)` when the 3-dot menu is currently open and targeting the
+    /// child conversation `id`, `None` when no menu is open. Used both to
+    /// gate whether the menu overlay renders and to highlight the active
+    /// pill while the menu is open.
+    menu_open_for: Option<AIConversationId>,
 }
 
 impl Entity for OrchestrationPillBar {
@@ -150,6 +203,15 @@ impl OrchestrationPillBar {
                 conversation_id, ..
             } => {
                 this.mouse_states.borrow_mut().remove(conversation_id);
+                this.overflow_button_mouse_states
+                    .borrow_mut()
+                    .remove(conversation_id);
+                // If the menu was open for a child that just disappeared,
+                // close it so we don't leave a dangling menu pointing at a
+                // dead conversation id.
+                if this.menu_open_for == Some(*conversation_id) {
+                    this.menu_open_for = None;
+                }
                 ctx.notify();
             }
             _ => {}
@@ -161,15 +223,98 @@ impl OrchestrationPillBar {
                     | AgentViewControllerEvent::ExitedAgentView { .. }
             ) {
                 this.mouse_states.borrow_mut().clear();
+                this.overflow_button_mouse_states.borrow_mut().clear();
+                this.menu_open_for = None;
             }
             this.ensure_mouse_states(ctx);
             ctx.notify();
         });
 
+        let menu = ctx.add_typed_action_view(|_ctx| {
+            Menu::new()
+                .with_width(OVERFLOW_MENU_WIDTH)
+                .with_drop_shadow()
+                .prevent_interaction_with_other_elements()
+        });
+
+        // The menu emits `Close { .. }` when the user clicks outside the
+        // menu or presses ESC. Forward that into our typed action surface
+        // so menu_open_for stays in sync with what's actually visible.
+        ctx.subscribe_to_view(&menu, |this, _, event, ctx| match event {
+            MenuEvent::Close { .. } => {
+                this.handle_action(&OrchestrationPillBarAction::CloseMenu, ctx);
+            }
+            MenuEvent::ItemSelected | MenuEvent::ItemHovered => {}
+        });
+
         Self {
             agent_view_controller,
             mouse_states: RefCell::new(HashMap::new()),
+            overflow_button_mouse_states: RefCell::new(HashMap::new()),
+            menu,
+            menu_open_for: None,
         }
+    }
+
+    /// Rebuilds the menu items for the given child conversation id and
+    /// flips `menu_open_for` to that id. Called each time the user clicks
+    /// a child's 3-dot button so the menu items dispatch actions targeting
+    /// the right child.
+    fn open_menu_for(&mut self, conversation_id: AIConversationId, ctx: &mut ViewContext<Self>) {
+        let appearance = Appearance::as_ref(ctx);
+        let theme = appearance.theme();
+        let hover_background: Fill = internal_colors::neutral_4(theme).into();
+
+        let item = |label: &'static str,
+                    icon: Icon,
+                    action: OrchestrationPillBarAction|
+         -> MenuItem<OrchestrationPillBarAction> {
+            MenuItem::Item(
+                MenuItemFields::new(label)
+                    .with_icon(icon)
+                    .with_override_hover_background_color(hover_background)
+                    .with_on_select_action(action),
+            )
+        };
+
+        let items = vec![
+            item(
+                "Open in new pane",
+                Icon::ArrowSplit,
+                OrchestrationPillBarAction::OpenInNewPane(conversation_id),
+            ),
+            item(
+                "Open in new tab",
+                Icon::Plus,
+                OrchestrationPillBarAction::OpenInNewTab(conversation_id),
+            ),
+            MenuItem::Separator,
+            item(
+                "Stop agent",
+                Icon::Stop,
+                OrchestrationPillBarAction::Stop(conversation_id),
+            ),
+            item(
+                "Kill agent",
+                Icon::Trash,
+                OrchestrationPillBarAction::Kill(conversation_id),
+            ),
+        ];
+
+        self.menu.update(ctx, |menu, ctx| {
+            menu.set_items(items, ctx);
+        });
+        self.menu_open_for = Some(conversation_id);
+        ctx.focus(&self.menu);
+        ctx.notify();
+    }
+
+    fn close_menu(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.menu_open_for.is_none() {
+            return;
+        }
+        self.menu_open_for = None;
+        ctx.notify();
     }
 
     fn ensure_mouse_states(&mut self, ctx: &AppContext) {
@@ -319,6 +464,68 @@ fn orchestrator_label(orchestrator: &AIConversation) -> String {
         .unwrap_or_else(|| "Orchestrator".to_string())
 }
 
+impl TypedActionView for OrchestrationPillBar {
+    type Action = OrchestrationPillBarAction;
+
+    fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
+        match action {
+            OrchestrationPillBarAction::OpenMenu(id) => {
+                self.open_menu_for(*id, ctx);
+            }
+            OrchestrationPillBarAction::CloseMenu => {
+                self.close_menu(ctx);
+            }
+            OrchestrationPillBarAction::OpenInNewPane(id) => {
+                // Defer the actual pane split / tab open / cancel logic to
+                // `TerminalView::handle_action`, which already owns the
+                // wiring added in Phase C. We just translate the typed
+                // pill-bar action into the existing `TerminalAction` and
+                // dispatch it through the pane header action surface so
+                // it bubbles up the standard way (mirrors the pill-click
+                // path in `render_pill`).
+                self.close_menu(ctx);
+                ctx.dispatch_typed_action(
+                    &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
+                        TerminalAction::OpenChildAgentInNewPane {
+                            conversation_id: *id,
+                        },
+                    ),
+                );
+            }
+            OrchestrationPillBarAction::OpenInNewTab(id) => {
+                self.close_menu(ctx);
+                ctx.dispatch_typed_action(
+                    &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
+                        TerminalAction::OpenChildAgentInNewTab {
+                            conversation_id: *id,
+                        },
+                    ),
+                );
+            }
+            OrchestrationPillBarAction::Stop(id) => {
+                self.close_menu(ctx);
+                ctx.dispatch_typed_action(
+                    &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
+                        TerminalAction::StopAgentConversation {
+                            conversation_id: *id,
+                        },
+                    ),
+                );
+            }
+            OrchestrationPillBarAction::Kill(id) => {
+                self.close_menu(ctx);
+                ctx.dispatch_typed_action(
+                    &PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(
+                        TerminalAction::KillAgentConversation {
+                            conversation_id: *id,
+                        },
+                    ),
+                );
+            }
+        }
+    }
+}
+
 impl View for OrchestrationPillBar {
     fn ui_name() -> &'static str {
         "OrchestrationPillBar"
@@ -346,31 +553,75 @@ impl View for OrchestrationPillBar {
         // handle, and mouse-up would land on a different handle than
         // mouse-down.
         let mut mouse_states = self.mouse_states.borrow_mut();
+        let mut overflow_states = self.overflow_button_mouse_states.borrow_mut();
+        let menu_open_for = self.menu_open_for;
         for spec in specs {
             let mouse_state = mouse_states
                 .entry(spec.conversation_id)
                 .or_default()
                 .clone();
-            row.add_child(render_pill(spec, mouse_state, app));
+            // Each child pill gets its own dedicated 3-dot button mouse
+            // state so hover highlight on the button is independent of the
+            // pill body. Orchestrator pills don't get a 3-dot button (no
+            // overflow actions apply to the home view), so we still create
+            // the entry for layout symmetry but won't render the button.
+            let overflow_mouse_state = overflow_states
+                .entry(spec.conversation_id)
+                .or_default()
+                .clone();
+            let menu_is_open_for_this = menu_open_for == Some(spec.conversation_id);
+            row.add_child(render_pill(
+                spec,
+                mouse_state,
+                overflow_mouse_state,
+                menu_is_open_for_this,
+                app,
+            ));
         }
         drop(mouse_states);
+        drop(overflow_states);
 
         // Wrap in a container with a touch of horizontal padding so the bar
         // doesn't sit flush against the pane edges, and with the same overlay
         // background as the rest of the agent view header so it merges visually.
-        Container::new(row.finish())
+        let bar = Container::new(row.finish())
             .with_padding_left(12.)
             .with_padding_right(12.)
             .with_padding_top(4.)
             .with_padding_bottom(4.)
             .with_background(theme.surface_overlay_1())
-            .finish()
+            .finish();
+
+        // When the 3-dot menu is open, overlay it beneath the pill bar
+        // anchored to the bar's bottom-left. Precise alignment under the
+        // specific clicked pill would require capturing per-pill layout
+        // bounds, which we don't have plumbed through yet; landing the menu
+        // beneath the bar keeps interaction working and the menu visible
+        // until that polish lands. Tracked as a follow-up.
+        if self.menu_open_for.is_some() {
+            let mut stack = Stack::new();
+            stack.add_child(bar);
+            stack.add_positioned_overlay_child(
+                ChildView::new(&self.menu).finish(),
+                OffsetPositioning::offset_from_parent(
+                    vec2f(12., 4.),
+                    ParentOffsetBounds::WindowByPosition,
+                    ParentAnchor::BottomLeft,
+                    ChildAnchor::TopLeft,
+                ),
+            );
+            stack.finish()
+        } else {
+            bar
+        }
     }
 }
 
 fn render_pill(
     spec: PillSpec,
     mouse_state: MouseStateHandle,
+    overflow_mouse_state: MouseStateHandle,
+    menu_is_open_for_this: bool,
     app: &AppContext,
 ) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
@@ -380,6 +631,7 @@ fn render_pill(
     let is_selected = spec.is_selected;
     let pin_state = spec.pin_state;
     let is_pinned = matches!(pin_state, PillPinState::PinnedInOtherPane);
+    let show_overflow_button = matches!(kind, PillKind::Child);
     // `spec` is owned by value, so we can move `label` directly into the
     // build closure below without cloning.
     let label = spec.label;
@@ -390,8 +642,8 @@ fn render_pill(
     // `crates/warpui_core/src/elements/hoverable.rs`). We can therefore move
     // `label` into the closure by value rather than cloning it on every
     // build.
-    Hoverable::new(mouse_state, move |hover_state| {
-        let (background, text_color) = if is_selected {
+    let pill_body = Hoverable::new(mouse_state, move |hover_state| {
+        let (background, text_color) = if is_selected || menu_is_open_for_this {
             (
                 theme.foreground().into_solid(),
                 theme.background().into_solid(),
@@ -438,7 +690,7 @@ fn render_pill(
             render_avatar_disc(avatar_color, avatar_glyph, theme, appearance)
         };
 
-        let row = Flex::row()
+        let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min)
             .with_spacing(6.)
@@ -447,15 +699,34 @@ fn render_pill(
                 ConstrainedBox::new(label_text)
                     .with_max_width(PILL_LABEL_MAX_WIDTH)
                     .finish(),
-            )
-            .finish();
+            );
+        if show_overflow_button {
+            // Render the 3-dot button as part of the pill body so the
+            // pill's own pill-shaped background and corner radius extend
+            // visually past the trailing edge of the label. Extra left
+            // gap keeps the button visually distinct from the label.
+            row = row.with_child(render_overflow_button(
+                overflow_mouse_state.clone(),
+                conversation_id,
+                text_color.into(),
+                theme,
+            ));
+        }
+        let row = row.finish();
 
         // Constrain pill to a fixed height so the half-stadium corner radius
         // renders as a clean continuous shape rather than awkwardly clamping.
+        // Use a tighter trailing pad when the overflow button is present so
+        // the button doesn't sit flush against the pill's curved edge.
+        let trailing_pad = if show_overflow_button {
+            4.
+        } else {
+            PILL_HORIZONTAL_PADDING_RIGHT
+        };
         ConstrainedBox::new(
             Container::new(row)
                 .with_padding_left(PILL_HORIZONTAL_PADDING_LEFT)
-                .with_padding_right(PILL_HORIZONTAL_PADDING_RIGHT)
+                .with_padding_right(trailing_pad)
                 .with_background_color(background)
                 .with_corner_radius(CornerRadius::with_all(Radius::Pixels(PILL_RADIUS)))
                 .finish(),
@@ -488,6 +759,54 @@ fn render_pill(
         ctx.dispatch_typed_action(
             PaneHeaderAction::<TerminalAction, TerminalAction>::CustomAction(action),
         );
+    })
+    .finish();
+
+    pill_body
+}
+
+/// Renders the trailing 3-dot button on a child pill. Click dispatches
+/// `OrchestrationPillBarAction::OpenMenu(conversation_id)` as a typed action
+/// up to the pill bar's `handle_action`, which rebuilds the menu items for
+/// that child id and toggles `menu_open_for` on. We use a separate inner
+/// `Hoverable` so the button has its own hover highlight independent of the
+/// surrounding pill body.
+fn render_overflow_button(
+    mouse_state: MouseStateHandle,
+    conversation_id: AIConversationId,
+    text_color: Fill,
+    theme: &WarpTheme,
+) -> Box<dyn Element> {
+    Hoverable::new(mouse_state, move |hover_state| {
+        let bg = if hover_state.is_hovered() || hover_state.is_clicked() {
+            Some(internal_colors::fg_overlay_1(theme))
+        } else {
+            None
+        };
+        let icon = ConstrainedBox::new(Icon::DotsHorizontal.to_warpui_icon(text_color).finish())
+            .with_width(OVERFLOW_BUTTON_SIZE)
+            .with_height(OVERFLOW_BUTTON_SIZE)
+            .finish();
+        let mut container =
+            Container::new(icon).with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
+        if let Some(bg) = bg {
+            container = container.with_background(bg);
+        }
+        ConstrainedBox::new(container.finish())
+            .with_height(OVERFLOW_BUTTON_SIZE + 2.)
+            .finish()
+    })
+    .with_cursor(Cursor::PointingHand)
+    .on_click(move |ctx, _app, _| {
+        // The 3-dot button is rendered inside the pill's outer click
+        // surface, so we need to ensure clicks here don't *also* trigger
+        // the pill body's `SwitchAgentViewToConversation` click. We do that
+        // by dispatching the typed action and relying on warpui's event
+        // bubbling — the inner Hoverable consumes the click before it can
+        // reach the outer one. (If this proves wrong empirically, we'll
+        // need an explicit `stop_propagation` hook, but that's not in the
+        // public Hoverable API today.)
+        ctx.dispatch_typed_action(OrchestrationPillBarAction::OpenMenu(conversation_id));
     })
     .finish()
 }

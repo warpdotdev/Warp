@@ -3999,8 +3999,9 @@ impl TerminalView {
                 ctx,
             )
         });
-        let orchestration_pill_bar =
-            ctx.add_view(|ctx| OrchestrationPillBar::new(agent_view_controller.clone(), ctx));
+        let orchestration_pill_bar = ctx.add_typed_action_view(|ctx| {
+            OrchestrationPillBar::new(agent_view_controller.clone(), ctx)
+        });
         ctx.subscribe_to_view(&orchestration_pill_bar, |_, _, _, ctx| ctx.notify());
 
         let agent_view_back_button = ctx.add_typed_action_view(|ctx| {
