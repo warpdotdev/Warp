@@ -92,7 +92,9 @@ pub enum CLIAgentInputEntrypoint {
 
 impl CLIAgentSessionContext {
     pub(crate) fn display_title(&self) -> Option<String> {
-        self.latest_user_prompt().or_else(|| self.title_like_text())
+        self.latest_user_prompt()
+            .or_else(|| self.response_text())
+            .or_else(|| self.title_like_text())
     }
 
     pub(crate) fn latest_user_prompt(&self) -> Option<String> {
@@ -109,6 +111,16 @@ impl CLIAgentSessionContext {
             .as_deref()
             .map(str::trim)
             .filter(|summary| !summary.is_empty())
+            .map(str::to_owned)
+    }
+
+    /// Returns the agent's final response text, used as a fallback title
+    /// when no user prompt or summary is available.
+    pub(crate) fn response_text(&self) -> Option<String> {
+        self.response
+            .as_deref()
+            .map(str::trim)
+            .filter(|response| !response.is_empty())
             .map(str::to_owned)
     }
 }
@@ -176,6 +188,10 @@ impl CLIAgentSession {
             CLIAgentEventType::Stop => {
                 self.session_context.query = event.payload.query.clone();
                 self.session_context.response = event.payload.response.clone();
+                // Clear stale summary from previous PermissionRequest events
+                // so the tab title shows the agent's final response instead of
+                // the last permission request text.
+                self.session_context.summary = None;
                 CLIAgentSessionStatus::Success
             }
             CLIAgentEventType::PermissionRequest => {
