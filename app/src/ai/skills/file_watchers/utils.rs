@@ -5,11 +5,11 @@ use std::{
 };
 
 use ai::skills::{
-    home_skills_path, read_skills, ParsedSkill, SkillProvider, SKILL_PROVIDER_DEFINITIONS,
+    ParsedSkill, SKILL_PROVIDER_DEFINITIONS, SkillProvider, home_skills_path, read_skills,
 };
 use anyhow::Error;
 use regex::Regex;
-use repo_metadata::{local_model::GetContentsArgs, RepoContent, RepoMetadataModel};
+use repo_metadata::{RepoContent, RepoMetadataModel, local_model::GetContentsArgs};
 use warpui::AppContext;
 
 use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
@@ -17,32 +17,63 @@ use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
 /// Finds all skill directories in a repository by querying the RepoMetadataModel tree.
 ///
 /// Returns a list of paths to skill directories (e.g., `/repo/.agents/skills/`, `/repo/sub/.claude/skills/`).
+///
+/// Two passes are used to handle gitignored provider directories:
+///
+/// **Pass 1 — loaded skill dirs:** Standard tree traversal collecting directories that
+/// end with a known provider skills path (e.g. `.agents/skills`). Gitignored directories
+/// are skipped here because they are lazy-loaded with empty children in the tree.
+///
+/// **Pass 2 — lazy-loaded provider dirs:** Traversal with `include_ignored: true` to find
+/// directories that are lazy-loaded (`loaded: false`) and named like a provider root
+/// (`.agents`, `.claude`, …). For each one a single `is_dir()` check is made on disk
+/// for `{provider_dir}/skills`. This catches the case where `sub-project/.agents/` is
+/// gitignored so its children were not indexed, while remaining safe: only directories
+/// already registered in the tree are inspected, which prevents dependency trees such as
+/// `node_modules` from being reached (their parent is itself lazy-loaded, so their
+/// children never appear in the tree at all).
 pub fn find_skill_directories_in_tree(
     repo_path: &Path,
     repo_metadata: &RepoMetadataModel,
     ctx: &AppContext,
 ) -> Vec<PathBuf> {
-    // Collect provider skills paths (e.g., ".agents/skills", ".claude/skills")
-    let skill_path_suffixes: Vec<&Path> = SKILL_PROVIDER_DEFINITIONS
+    let Some(id) = repo_metadata::RepositoryIdentifier::try_local(repo_path) else {
+        return Vec::new();
+    };
+
+    // Collect provider skills paths (e.g. ".agents/skills", ".claude/skills") and the
+    // corresponding provider root names (e.g. ".agents", ".claude") for the second pass.
+    let skill_path_suffixes: Vec<String> = SKILL_PROVIDER_DEFINITIONS
         .iter()
-        .map(|p| p.skills_path.as_path())
+        .map(|p| p.skills_path.to_string_lossy().into_owned())
         .collect();
 
+    let provider_root_names: HashSet<String> = SKILL_PROVIDER_DEFINITIONS
+        .iter()
+        .filter_map(|p| {
+            p.skills_path
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|n| n.to_str())
+                .map(str::to_owned)
+        })
+        .collect();
+
+    // ── Pass 1: find fully-loaded skill directories ───────────────────────────
+    //
     // Filter during traversal: only collect directories that end with a skill provider path.
     // The filter rejects files and non-matching directories, avoiding intermediate allocations.
+    let suffixes_1 = skill_path_suffixes.clone();
     let args = GetContentsArgs::default().with_filter(move |content| {
         let RepoContent::Directory(dir) = content else {
             return false;
         };
-        skill_path_suffixes
+        suffixes_1
             .iter()
-            .any(|suffix| dir.path.ends_with(&suffix.to_string_lossy()))
+            .any(|suffix| dir.path.ends_with(suffix.as_str()))
     });
 
-    let Some(id) = repo_metadata::RepositoryIdentifier::try_local(repo_path) else {
-        return Vec::new();
-    };
-    repo_metadata
+    let mut result: Vec<PathBuf> = repo_metadata
         .get_repo_contents(&id, args, ctx)
         .unwrap_or_default()
         .into_iter()
@@ -52,7 +83,51 @@ pub fn find_skill_directories_in_tree(
             RepoContent::Directory(dir) => dir.path.to_local_path_lossy(),
             RepoContent::File(f) => f.path.to_local_path_lossy(),
         })
-        .collect()
+        .collect();
+
+    // ── Pass 2: check lazy-loaded provider directories ────────────────────────
+    //
+    // Gitignored provider dirs (e.g. `sub-project/.agents/`) are present in the tree
+    // but have no children because they were lazy-loaded. Re-traverse with
+    // `include_ignored: true` so we can see them, then do a single `is_dir()` check
+    // on disk for `{provider_dir}/skills`.
+    //
+    // This is safe: only directories already registered in the tree are inspected.
+    // Dependency subtrees like `node_modules` are themselves lazy-loaded, so their
+    // children (including any `.agents/` inside them) are never in the tree.
+    let result_set: HashSet<PathBuf> = result.iter().cloned().collect();
+    let args_lazy = GetContentsArgs::default()
+        .include_ignored()
+        .with_filter(move |content| {
+            let RepoContent::Directory(dir) = content else {
+                return false;
+            };
+            // Only unloaded provider-root directories need a disk check.
+            !dir.loaded
+                && dir
+                    .path
+                    .file_name()
+                    .is_some_and(|name| provider_root_names.contains(name))
+        });
+
+    let lazy_provider_dirs: Vec<PathBuf> = repo_metadata
+        .get_repo_contents(&id, args_lazy, ctx)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|content| match content {
+            RepoContent::Directory(dir) => dir.path.to_local_path_lossy(),
+            RepoContent::File(f) => f.path.to_local_path_lossy(),
+        })
+        .collect();
+
+    for provider_dir in lazy_provider_dirs {
+        let skills_path = provider_dir.join("skills");
+        if !result_set.contains(&skills_path) && skills_path.is_dir() {
+            result.push(skills_path);
+        }
+    }
+
+    result
 }
 
 /// Reads all skills from the given skill directories.

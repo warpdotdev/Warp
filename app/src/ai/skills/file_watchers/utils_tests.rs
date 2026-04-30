@@ -1,8 +1,8 @@
 use repo_metadata::{
+    DirectoryWatcher, RepoMetadataModel,
     entry::{DirectoryEntry, Entry, FileMetadata},
     file_tree_store::FileTreeState,
     repositories::DetectedRepositories,
-    DirectoryWatcher, RepoMetadataModel,
 };
 use virtual_fs::{Stub, VirtualFS};
 use warpui::App;
@@ -720,6 +720,92 @@ fn find_skill_directories_in_tree_empty_repo() {
             model_handle.read(&app, |model, ctx| {
                 let skill_dirs = find_skill_directories_in_tree(&repo, model, ctx);
                 assert!(skill_dirs.is_empty());
+            });
+        });
+    });
+}
+
+/// Regression test for warpdotdev/warp#9486.
+///
+/// Skills inside a gitignored `.agents/` directory were not discovered because
+/// the indexed file tree represents gitignored directories as lazy-loaded entries
+/// with empty children.  The fix performs a targeted `is_dir()` check for
+/// `{lazy_provider_dir}/skills` on disk for every unloaded provider directory
+/// found in the tree, without a broad filesystem walk.
+///
+/// This test constructs a tree where `sub-project/.agents/` is present but
+/// `loaded: false` (as it would be when gitignored), while the real
+/// `sub-project/.agents/skills/` directory exists on disk.
+#[test]
+fn find_skill_directories_in_tree_finds_skills_in_lazy_loaded_provider_dir() {
+    VirtualFS::test("find_lazy_loaded_skills", |dirs, mut vfs| {
+        let repo = dirs.tests().join("repo");
+
+        // Create the actual filesystem structure: sub-project/.agents/skills/sub-skill/SKILL.md
+        vfs.mkdir("repo/sub-project/.agents/skills/sub-skill")
+            .with_files(vec![Stub::FileWithContent(
+                "repo/sub-project/.agents/skills/sub-skill/SKILL.md",
+                "---\nname: sub-skill\ndescription: test\n---\n# sub-skill",
+            )]);
+
+        // Build a tree that mirrors what the indexer produces when .agents/ is gitignored:
+        // sub-project/ is fully loaded, but .agents/ inside it is lazy-loaded (loaded: false,
+        // children: []) because it is gitignored.  The skills/ subdirectory is absent from
+        // the tree, which is exactly the scenario that caused the original bug.
+        let agents_dir = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(
+                &repo.join("sub-project/.agents"),
+            )
+            .unwrap(),
+            children: vec![], // lazy-loaded: children not indexed
+            ignored: true,
+            loaded: false,
+        });
+        let sub_project = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(
+                &repo.join("sub-project"),
+            )
+            .unwrap(),
+            children: vec![agents_dir],
+            ignored: false,
+            loaded: true,
+        });
+        let root = Entry::Directory(DirectoryEntry {
+            path: warp_util::standardized_path::StandardizedPath::try_from_local(&repo).unwrap(),
+            children: vec![sub_project],
+            ignored: false,
+            loaded: true,
+        });
+
+        App::test((), |mut app| async move {
+            let watcher = app.add_singleton_model(DirectoryWatcher::new);
+            app.add_singleton_model(|_| DetectedRepositories::default());
+            let repo_handle = watcher.update(&mut app, |w, ctx| {
+                w.add_directory(
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                        .unwrap(),
+                    ctx,
+                )
+                .unwrap()
+            });
+            let state = FileTreeState::new(root, vec![], Some(repo_handle));
+
+            let model_handle = app.add_singleton_model(RepoMetadataModel::new);
+            model_handle.update(&mut app, |model, ctx| {
+                let key =
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                        .unwrap();
+                model.insert_test_state(key, state, ctx);
+            });
+
+            model_handle.read(&app, |model, ctx| {
+                let skill_dirs = find_skill_directories_in_tree(&repo, model, ctx);
+                assert_eq!(skill_dirs.len(), 1);
+                assert!(skill_dirs.contains(&repo.join("sub-project/.agents/skills")));
+
+                let skills = read_skills_from_directories(skill_dirs);
+                assert_eq!(skills.len(), 1);
+                assert_eq!(skills[0].name, "sub-skill");
             });
         });
     });
