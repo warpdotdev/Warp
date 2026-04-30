@@ -1,8 +1,11 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::pin::pin;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::ai::agent::conversation::ConversationStatus;
+use parking_lot::FairMutex;
 use warp_terminal::model::escape_sequences::{BRACKETED_PASTE_END, BRACKETED_PASTE_START};
 use warpui::{
     notification::UserNotification, platform::WindowStyle, Presenter, WindowInvalidation,
@@ -10,10 +13,11 @@ use warpui::{
 
 use crate::ai::agent::task::TaskId;
 use crate::ai::blocklist::block::cli_controller::UserTakeOverReason;
-use warpui::App;
+use warpui::{App, ReadModel};
 
 use crate::pane_group::focus_state::PaneGroupFocusState;
-use crate::pane_group::{BackingView, TerminalPaneId};
+use crate::pane_group::{pane::PaneStack, BackingView, TerminalPaneId};
+use crate::settings::import::model::ImportedConfigModel;
 use crate::terminal::model::grid::Dimensions as _;
 use crate::{
     terminal::alt_screen::should_intercept_mouse,
@@ -50,7 +54,7 @@ use crate::terminal::model::ansi::{BootstrappedValue, PreexecValue};
 use crate::terminal::model::blocks::{insert_block, TotalIndex};
 use crate::terminal::model::terminal_model::WithinBlock;
 
-use crate::terminal::MockTerminalManager;
+use crate::terminal::{MockTerminalManager, TerminalManager, TerminalModel};
 use crate::test_util::terminal::initialize_app_for_terminal_view;
 use crate::test_util::{add_window_with_terminal, assert_eventually};
 
@@ -62,6 +66,29 @@ fn add_window_with_cloud_mode_terminal(app: &mut App) -> ViewHandle<TerminalView
         TerminalView::new_for_test_with_cloud_mode(tips_model, None, true, ctx)
     });
     terminal
+}
+
+struct TestTerminalManager {
+    model: Arc<FairMutex<TerminalModel>>,
+    view: ViewHandle<TerminalView>,
+}
+
+impl TerminalManager for TestTerminalManager {
+    fn model(&self) -> Arc<FairMutex<TerminalModel>> {
+        self.model.clone()
+    }
+
+    fn view(&self) -> ViewHandle<TerminalView> {
+        self.view.clone()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 /// Test to verify that blocks created through normal execution
@@ -338,38 +365,101 @@ fn command_first_word_and_suffix_handles_alias_without_args() {
 }
 
 #[test]
+fn escape_pops_nested_cloud_agent_view_with_long_running_command() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+
+        let parent_terminal = add_window_with_terminal(&mut app, None);
+        let cloud_terminal = add_window_with_cloud_mode_terminal(&mut app);
+
+        let parent_view = parent_terminal.clone();
+        let cloud_view = cloud_terminal.clone();
+        let parent_model = parent_terminal.read(&app, |view, _| view.model.clone());
+        let cloud_model = cloud_terminal.read(&app, |view, _| view.model.clone());
+        let pane_stack = app.update(move |ctx| {
+            let parent_manager = ctx.add_model(|_| {
+                let manager: Box<dyn TerminalManager> = Box::new(TestTerminalManager {
+                    model: parent_model,
+                    view: parent_view.clone(),
+                });
+                manager
+            });
+            let cloud_manager = ctx.add_model(|_| {
+                let manager: Box<dyn TerminalManager> = Box::new(TestTerminalManager {
+                    model: cloud_model,
+                    view: cloud_view.clone(),
+                });
+                manager
+            });
+            let pane_stack = ctx.add_model(|ctx| PaneStack::new(parent_manager, parent_view, ctx));
+            pane_stack.update(ctx, |stack, ctx| {
+                stack.push(cloud_manager, cloud_view, ctx);
+            });
+            pane_stack
+        });
+
+        cloud_terminal.update(&mut app, |view, ctx| {
+            view.enter_agent_view_for_new_conversation(None, AgentViewEntryOrigin::CloudAgent, ctx);
+            view.model
+                .lock()
+                .simulate_long_running_block("sleep 10", "running");
+
+            assert!(view.can_pop_nested_cloud_agent_view(ctx));
+            assert_eq!(view.can_exit_agent_view_for_terminal_view(ctx), Ok(()));
+        });
+
+        assert_eq!(
+            app.read_model(&pane_stack, |stack, _| stack.active_view().id()),
+            cloud_terminal.id()
+        );
+
+        cloud_terminal.update(&mut app, |view, ctx| {
+            view.handle_input_event(&InputEvent::Escape, ctx);
+        });
+
+        assert_eq!(
+            app.read_model(&pane_stack, |stack, _| stack.active_view().id()),
+            parent_terminal.id()
+        );
+    })
+}
+
+#[test]
+fn escape_does_not_exit_local_agent_view_with_long_running_command() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.enter_agent_view_for_new_conversation(
+                None,
+                AgentViewEntryOrigin::Input {
+                    was_prompt_autodetected: false,
+                },
+                ctx,
+            );
+            view.model
+                .lock()
+                .simulate_long_running_block("sleep 10", "running");
+
+            assert!(matches!(
+                view.can_exit_agent_view_for_terminal_view(ctx),
+                Err(ExitAgentViewError::LongRunningCommand)
+            ));
+
+            view.handle_input_event(&InputEvent::Escape, ctx);
+
+            assert!(view.agent_view_controller().as_ref(ctx).is_active());
+        });
+    })
+}
+
+#[test]
 fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
-    use std::any::Any;
-    use std::sync::Arc;
-
-    use parking_lot::FairMutex;
-
-    use crate::pane_group::pane::PaneStack;
-    use crate::settings::import::model::ImportedConfigModel;
-    use crate::terminal::{TerminalManager, TerminalModel};
-
-    struct TestTerminalManager {
-        model: Arc<FairMutex<TerminalModel>>,
-        view: ViewHandle<TerminalView>,
-    }
-
-    impl TerminalManager for TestTerminalManager {
-        fn model(&self) -> Arc<FairMutex<TerminalModel>> {
-            self.model.clone()
-        }
-
-        fn view(&self) -> ViewHandle<TerminalView> {
-            self.view.clone()
-        }
-
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-
-        fn as_any_mut(&mut self) -> &mut dyn Any {
-            self
-        }
-    }
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         app.add_singleton_model(ImportedConfigModel::new);

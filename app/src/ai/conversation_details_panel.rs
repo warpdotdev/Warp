@@ -206,11 +206,11 @@ impl ConversationDetailsData {
     fn directory_for_task(task: &AmbientAgentTask, app: &AppContext) -> Option<String> {
         let history_model = BlocklistAIHistoryModel::as_ref(app);
         let conversation_id = history_model
-            .conversation_id_for_agent_id(&task.task_id.to_string())
+            .conversation_id_for_agent_id(&task.run_id().to_string())
             .or_else(|| {
-                task.conversation_id.as_ref().and_then(|conversation_id| {
+                task.conversation_id().and_then(|conversation_id| {
                     history_model.find_conversation_id_by_server_token(
-                        &ServerConversationToken::new(conversation_id.clone()),
+                        &ServerConversationToken::new(conversation_id.to_string()),
                     )
                 })
             })?;
@@ -325,7 +325,7 @@ impl ConversationDetailsData {
             .as_ref()
             .and_then(|config| config.environment_id.clone());
 
-        let credits = task.request_usage.as_ref().and_then(|u| {
+        let credits = task.active_run_execution().request_usage.and_then(|u| {
             Some(CreditsInfo::AmbientConversation {
                 inference: u.inference_cost? as f32,
                 compute: u.compute_cost? as f32,
@@ -348,12 +348,12 @@ impl ConversationDetailsData {
 
         ConversationDetailsData {
             mode: PanelMode::Task {
-                task_id: Some(task.task_id),
+                task_id: Some(task.run_id()),
                 directory: Self::directory_for_task(task, app),
                 display_status: Some(AgentRunDisplayStatus::from_task(task, app)),
                 error_message,
                 environment_id,
-                conversation_id: task.conversation_id.clone(),
+                conversation_id: task.conversation_id().map(str::to_string),
             },
             title: task.title.clone(),
             created_at: Some(task.created_at.with_timezone(&Local)),

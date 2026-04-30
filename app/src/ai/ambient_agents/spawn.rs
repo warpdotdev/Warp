@@ -31,13 +31,13 @@ pub struct SessionJoinInfo {
 
 impl SessionJoinInfo {
     pub fn from_task(task: &AmbientAgentTask) -> Option<Self> {
+        let run_execution = task.active_run_execution();
         // Prefer the server-provided session_link when available; it is a better signal
         // that a session-sharing link is ready to be shown to the user.
-        if let Some(link) = task.session_link.as_ref().filter(|l| !l.is_empty()) {
-            let session_id = task
+        if let Some(link) = run_execution.session_link {
+            let session_id = run_execution
                 .session_id
-                .as_deref()
-                .and_then(|s| SessionId::from_str(s).ok());
+                .and_then(|session_id| SessionId::from_str(session_id).ok());
             return Some(Self {
                 session_id,
                 session_link: link.to_string(),
@@ -45,8 +45,8 @@ impl SessionJoinInfo {
         }
 
         // Fallback to constructing a link from the session_id.
-        if let Some(session_id_str) = task.session_id.as_deref() {
-            if let Ok(session_id) = SessionId::from_str(session_id_str) {
+        if let Some(session_id) = run_execution.session_id {
+            if let Ok(session_id) = SessionId::from_str(session_id) {
                 return Some(Self {
                     session_id: Some(session_id),
                     session_link: shared_session::join_link(&session_id),

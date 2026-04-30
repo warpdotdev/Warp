@@ -167,6 +167,11 @@ pub enum AgentViewEntryOrigin {
     /// Entered agent view because a parent agent started this child agent via StartAgent.
     ChildAgent,
 
+    /// Entered agent view by clicking a pill / breadcrumb in the orchestration
+    /// pill bar (or breadcrumb row) to navigate the current pane to a sibling
+    /// or parent conversation in the same orchestration tree.
+    OrchestrationPillBar,
+
     /// Entered agent view after opening project from OS directory picker.
     ProjectEntry,
 

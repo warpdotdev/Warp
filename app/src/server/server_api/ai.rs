@@ -144,6 +144,7 @@ use warp_graphql::{
     },
 };
 
+pub use crate::ai::agent::UserQueryMode;
 // Re-export ambient agent types for backwards compatibility
 pub use crate::ai::ambient_agents::{
     task::{AttachmentInput, TaskAttachment},
@@ -156,6 +157,23 @@ const AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS: u64 = 30;
 pub struct TaskStatusUpdate {
     pub message: String,
     pub error_code: Option<PlatformErrorCode>,
+}
+fn public_api_user_query_mode(mode: UserQueryMode) -> &'static str {
+    match mode {
+        UserQueryMode::Normal => "normal",
+        UserQueryMode::Plan => "plan",
+        UserQueryMode::Orchestrate => "orchestrate",
+    }
+}
+
+fn serialize_user_query_mode_for_public_api<S>(
+    mode: &UserQueryMode,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(public_api_user_query_mode(*mode))
 }
 
 impl TaskStatusUpdate {
@@ -180,6 +198,9 @@ impl TaskStatusUpdate {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SpawnAgentRequest {
     pub prompt: String,
+    /// The public API accepts lowercase mode strings (`normal`, `plan`, or `orchestrate`).
+    #[serde(serialize_with = "serialize_user_query_mode_for_public_api")]
+    pub mode: UserQueryMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<AgentConfigSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -205,6 +226,11 @@ pub struct SpawnAgentRequest {
     /// Base64-encoded `warp.multi_agent.v1.Attachment` payloads to restore as referenced attachments.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub referenced_attachments: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RunFollowupRequest {
+    pub message: String,
 }
 
 // --- Orchestrations V2 messaging types ---
@@ -657,6 +683,10 @@ pub(crate) fn build_list_agent_runs_url(limit: i32, filter: &TaskListFilter) -> 
     url
 }
 
+pub(crate) fn build_run_followup_url(run_id: &AmbientAgentTaskId) -> String {
+    format!("agent/runs/{run_id}/followups")
+}
+
 struct ListRunsResponse {
     runs: Vec<AmbientAgentTask>,
 }
@@ -824,6 +854,12 @@ pub trait AIClient: 'static + Send + Sync {
         &self,
         task_id: &AmbientAgentTaskId,
     ) -> anyhow::Result<serde_json::Value, anyhow::Error>;
+
+    async fn submit_run_followup(
+        &self,
+        run_id: &AmbientAgentTaskId,
+        request: RunFollowupRequest,
+    ) -> anyhow::Result<(), anyhow::Error>;
 
     async fn get_scheduled_agent_history(
         &self,
@@ -1452,6 +1488,15 @@ impl AIClient for ServerApi {
             .get_public_api(&format!("agent/runs/{task_id}"))
             .await?;
         Ok(response)
+    }
+
+    async fn submit_run_followup(
+        &self,
+        run_id: &AmbientAgentTaskId,
+        request: RunFollowupRequest,
+    ) -> anyhow::Result<(), anyhow::Error> {
+        self.post_public_api_unit(&build_run_followup_url(run_id), &request)
+            .await
     }
 
     async fn get_scheduled_agent_history(
@@ -2256,6 +2301,7 @@ fn convert_harness(harness: warp_graphql::ai::AgentHarness) -> AIAgentHarness {
         warp_graphql::ai::AgentHarness::Oz => AIAgentHarness::Oz,
         warp_graphql::ai::AgentHarness::ClaudeCode => AIAgentHarness::ClaudeCode,
         warp_graphql::ai::AgentHarness::Gemini => AIAgentHarness::Gemini,
+        warp_graphql::ai::AgentHarness::Codex => AIAgentHarness::Codex,
         warp_graphql::ai::AgentHarness::Other(value) => {
             report_error!(anyhow!(
                 "Invalid AgentHarness '{value}'. Make sure to update client GraphQL types!"

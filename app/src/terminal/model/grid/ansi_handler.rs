@@ -1,3 +1,6 @@
+// The code in this file is adapted from the alacritty_terminal crate under the
+// Apache license; see: crates/warp_terminal/src/model/LICENSE-ALACRITTY.
+
 // path attribute needed due to current non-fs-based nesting of ansi_handler
 // under grid_handler.
 #[path = "ansi_handler/tab_stops.rs"]

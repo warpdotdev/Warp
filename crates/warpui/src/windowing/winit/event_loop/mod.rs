@@ -6,7 +6,7 @@ mod drag_drop_tests;
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::notification::RequestPermissionsOutcome;
 
 use futures_util::future::LocalBoxFuture;
@@ -544,7 +544,7 @@ impl EventLoop {
 
         match evt {
             Event::NewEvents(StartCause::Init) => {
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                 {
                     let windowing_system =
                         if winit::platform::x11::ActiveEventLoopExtX11::is_x11(window_target) {
@@ -563,7 +563,7 @@ impl EventLoop {
                 }
 
                 // Start listening for various platform events.
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                 {
                     super::linux::watch_suspend_resume_changes(
                         self.proxy.clone(),
@@ -755,13 +755,13 @@ impl EventLoop {
                 }
             }
             Event::UserEvent(CustomEvent::AboutToSleep) => {
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                 self.prepare_for_sleep_on_linux(window_target);
 
                 self.callbacks.cpu_will_sleep();
             }
             Event::UserEvent(CustomEvent::ResumedFromSleep) => {
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                 self.resume_from_sleep_on_linux();
 
                 self.callbacks.cpu_awakened();
@@ -987,7 +987,7 @@ impl EventLoop {
 
         let window = downcast_window(window.as_ref());
 
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         if crate::windowing::winit::linux::take_encountered_bad_match_from_dri3_fence_from_fd() {
             log::warn!("Encountered a DRI3FenceFromFd error, forcing use of the NVIDIA GPU and recreating resources...");
             self.downrank_non_nvidia_vulkan_adapters = true;
@@ -1409,7 +1409,7 @@ impl EventLoop {
                     )
                     .await;
 
-                    #[cfg(target_os = "linux")]
+                    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                     {
                         // On Linux, there is no concept of requesting notification permissions. This
                         // logic is hard-coded to always return an outcome of "Accepted".
@@ -1804,7 +1804,7 @@ impl EventLoop {
     ///
     /// To work around this, we drop all rendering resources pre-suspend, and
     /// re-create them post-resume.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     fn prepare_for_sleep_on_linux(&mut self, window_target: &ActiveEventLoop) {
         self.ui_app.update(|ctx| {
             for window_id in ctx.window_ids() {
@@ -1822,7 +1822,7 @@ impl EventLoop {
     ///
     /// See the [`Self::prepare_for_sleep_on_linux`] documentation for more
     /// details.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     fn resume_from_sleep_on_linux(&mut self) {
         self.ui_app.update(|ctx| {
             for window_id in ctx.window_ids() {

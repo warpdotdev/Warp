@@ -40,7 +40,7 @@ pub(crate) const GEMINI_BLUE: ColorU = ColorU {
 };
 
 /// OpenAI brand color (dark gray/black)
-const OPENAI_COLOR: ColorU = ColorU {
+pub(crate) const OPENAI_COLOR: ColorU = ColorU {
     r: 0,
     g: 0,
     b: 0,
@@ -103,7 +103,15 @@ const CURSOR_COLOR: ColorU = ColorU {
     a: 255,
 };
 
-/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor)
+/// Goose brand color (#101010, from Block's official Goose logo)
+const GOOSE_COLOR: ColorU = ColorU {
+    r: 16,
+    g: 16,
+    b: 16,
+    a: 255,
+};
+
+/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
     Claude,
@@ -116,6 +124,7 @@ pub enum CLIAgent {
     Pi,
     Auggie,
     CursorCli,
+    Goose,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -134,6 +143,7 @@ impl CLIAgent {
             CLIAgent::Pi => "pi",
             CLIAgent::Auggie => "auggie",
             CLIAgent::CursorCli => "agent",
+            CLIAgent::Goose => "goose",
             CLIAgent::Unknown => "",
         }
     }
@@ -164,6 +174,7 @@ impl CLIAgent {
             CLIAgent::Pi => "Pi",
             CLIAgent::Auggie => "Auggie",
             CLIAgent::CursorCli => "Cursor",
+            CLIAgent::Goose => "Goose",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -181,6 +192,7 @@ impl CLIAgent {
             CLIAgent::Pi => Some(Icon::PiLogo),
             CLIAgent::Auggie => Some(Icon::AuggieLogo),
             CLIAgent::CursorCli => Some(Icon::CursorLogo),
+            CLIAgent::Goose => Some(Icon::GooseLogo),
             CLIAgent::Unknown => None,
         }
     }
@@ -208,6 +220,7 @@ impl CLIAgent {
             CLIAgent::Pi => &[SkillProvider::Agents],
             CLIAgent::Auggie => &[SkillProvider::Agents],
             CLIAgent::CursorCli => &[SkillProvider::Agents],
+            CLIAgent::Goose => &[SkillProvider::Agents],
             CLIAgent::Unknown => &[],
         }
     }
@@ -247,6 +260,7 @@ impl CLIAgent {
             CLIAgent::Pi => Some(PI_COLOR),
             CLIAgent::Auggie => Some(AUGGIE_COLOR),
             CLIAgent::CursorCli => Some(CURSOR_COLOR),
+            CLIAgent::Goose => Some(GOOSE_COLOR),
             CLIAgent::Unknown => None,
         }
     }
@@ -507,6 +521,7 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Pi => CLIAgentType::Pi,
             CLIAgent::Auggie => CLIAgentType::Auggie,
             CLIAgent::CursorCli => CLIAgentType::Cursor,
+            CLIAgent::Goose => CLIAgentType::Goose,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }
     }

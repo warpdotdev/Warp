@@ -54,7 +54,8 @@ use crate::ai::blocklist::agent_view::{
     agent_view_bg_fill, AgentViewController, AgentViewControllerEvent, AgentViewDisplayMode,
     AgentViewEntryBlockParams, AgentViewEntryOrigin, AgentViewHeaderDisabledTheme,
     AgentViewHeaderTheme, AgentViewZeroStateBlock, AgentViewZeroStateEvent, EphemeralMessageModel,
-    ExitConfirmationTrigger, InlineAgentViewHeader, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
+    ExitAgentViewError, ExitConfirmationTrigger, InlineAgentViewHeader, OrchestrationPillBar,
+    ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
 use crate::ai::conversation_utils;
 use crate::ai::predict::prompt_suggestions::{
@@ -2294,6 +2295,8 @@ struct TerminalViewMouseStates {
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     open_in_warp_tooltip: MouseStateHandle,
+    #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+    show_in_file_explorer_tooltip: MouseStateHandle,
     jump_to_bottom_of_block_button: MouseStateHandle,
 
     // Mouse state for the pane header ambient agent indicator tooltip.
@@ -2734,6 +2737,10 @@ pub struct TerminalView {
 
     agent_view_controller: ModelHandle<AgentViewController>,
     agent_view_back_button: ViewHandle<ActionButton>,
+    /// Pill bar shown above the agent view header listing the orchestrator and
+    /// child agents. Gated by `FeatureFlag::OrchestrationPillBar`. The view is
+    /// always constructed; render-time guards control whether it draws anything.
+    orchestration_pill_bar: ViewHandle<OrchestrationPillBar>,
     is_using_conversation_for_pane_header_title: bool,
 
     ambient_agent_view_model: Option<ModelHandle<ambient_agent::AmbientAgentViewModel>>,
@@ -3992,6 +3999,10 @@ impl TerminalView {
                 ctx,
             )
         });
+        let orchestration_pill_bar =
+            ctx.add_view(|ctx| OrchestrationPillBar::new(agent_view_controller.clone(), ctx));
+        ctx.subscribe_to_view(&orchestration_pill_bar, |_, _, _, ctx| ctx.notify());
+
         let agent_view_back_button = ctx.add_typed_action_view(|ctx| {
             ActionButton::new("for terminal", AgentViewHeaderTheme)
                 .with_icon(icons::Icon::ArrowLeft)
@@ -4165,6 +4176,7 @@ impl TerminalView {
             use_agent_footer: use_agent_button_bar,
             agent_view_controller,
             agent_view_back_button,
+            orchestration_pill_bar,
             is_using_conversation_for_pane_header_title: false,
             ambient_agent_view_model,
             cloud_mode_details_panel,
@@ -4332,6 +4344,7 @@ impl TerminalView {
                         session_id,
                         result,
                         remote_platform,
+                        has_old_binary: _,
                     } => {
                         let (remote_os, remote_arch) = remote_platform
                             .as_ref()
@@ -4490,6 +4503,24 @@ impl TerminalView {
         }
 
         callback(self, ctx);
+    }
+
+    fn can_exit_agent_view_for_terminal_view(
+        &self,
+        ctx: &AppContext,
+    ) -> Result<(), ExitAgentViewError> {
+        match self.agent_view_controller.as_ref(ctx).can_exit_agent_view() {
+            Err(ExitAgentViewError::LongRunningCommand)
+                if self.can_pop_nested_cloud_agent_view(ctx) =>
+            {
+                Ok(())
+            }
+            result => result,
+        }
+    }
+
+    fn can_pop_nested_cloud_agent_view(&self, ctx: &AppContext) -> bool {
+        self.is_ambient_agent_session(ctx) && self.is_nested_cloud_mode(ctx)
     }
 
     /// Exits the active agent, either:
@@ -7355,6 +7386,14 @@ impl TerminalView {
             && !model.is_read_only()
     }
 
+    /// Returns `true` when an interactive SSH command has been detected at
+    /// preexec and the SSH block is still running (long-running). Used by
+    /// the workspace to derive `PendingRemoteSession` without storing
+    /// mutable state on the workspace itself.
+    pub fn has_pending_ssh_command(&self) -> bool {
+        self.warpify_state.get_pending_ssh_host().is_some() && self.is_long_running()
+    }
+
     /// Like `is_long_running`, but also requires the user to be in control of the command
     /// (i.e. the user ran it, or took it over from the agent). Returns `false` for commands
     /// that are currently being driven by the agent.
@@ -10067,9 +10106,7 @@ impl TerminalView {
     /// the user can exit agent mode, and shows a tooltip explaining when exiting is blocked.
     fn update_agent_view_back_button_state(&mut self, ctx: &mut ViewContext<Self>) {
         let disabled_reason = self
-            .agent_view_controller
-            .as_ref(ctx)
-            .can_exit_agent_view()
+            .can_exit_agent_view_for_terminal_view(ctx)
             .err()
             .map(|e| e.to_string());
 
@@ -10389,6 +10426,7 @@ impl TerminalView {
                                 self.warpify_state
                                     .set_pending_ssh_host(warpify_command.to_string(), ssh_host);
                                 self.model.lock().start_notify_on_end_of_ssh_login();
+                                ctx.emit(Event::TerminalViewStateChanged);
                             }
                         } else {
                             self.warpify_state.clear_pending_ssh_host();
@@ -11459,6 +11497,7 @@ impl TerminalView {
                         RemoteServerSetupState::Installing {
                             progress_percent: None,
                         } => "Installing...".to_string(),
+                        RemoteServerSetupState::Updating => "Updating...".to_string(),
                         RemoteServerSetupState::Initializing => "Initializing...".to_string(),
                         _ => "Starting shell...".to_string(),
                     })
@@ -19889,22 +19928,19 @@ impl TerminalView {
                     && self.agent_view_controller.as_ref(ctx).is_active()
                 {
                     // Disable escape completely for ambient agents without a parent terminal.
-                    if self
-                        .agent_view_controller
-                        .as_ref(ctx)
-                        .can_exit_agent_view()
-                        .is_err()
-                    {
+                    if self.can_exit_agent_view_for_terminal_view(ctx).is_err() {
                         return;
                     }
 
-                    if !self
+                    let is_long_running = self
                         .model
                         .lock()
                         .block_list()
                         .active_block()
-                        .is_active_and_long_running()
-                    {
+                        .is_active_and_long_running();
+                    if is_long_running && self.can_pop_nested_cloud_agent_view(ctx) {
+                        self.exit_agent_view(ctx);
+                    } else if !is_long_running {
                         // During first-time setup, always exit directly without confirmation
                         // since the setup overlay would obscure any confirmation dialog.
                         let is_in_setup = self
@@ -23213,7 +23249,7 @@ impl TerminalView {
 
                 // On Linux, immediately mark the request permission status as accepted since there's no concept of
                 // requesting desktop notification permissions.
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                 {
                     if let NotificationsDiscoveryBanner::Open {
                         request_outcome, ..
@@ -24450,6 +24486,7 @@ impl TypedActionView for TerminalView {
             | ExecuteRewindFromInlineMenu { .. }
             | ToggleUsageFooter
             | RevealChildAgent { .. }
+            | SwitchAgentViewToConversation { .. }
             | OpenCLIAgentRichInput
             | ToggleSessionRecording => Empty,
         }
@@ -25420,8 +25457,10 @@ impl TypedActionView for TerminalView {
                 ctx.notify();
             }
             ExitAgentView => {
-                self.exit_agent_view(ctx);
-                ctx.notify();
+                if self.can_exit_agent_view_for_terminal_view(ctx).is_ok() {
+                    self.exit_agent_view(ctx);
+                    ctx.notify();
+                }
             }
             EnterCloudAgentView => {
                 let mut draft_text = self.input.as_ref(ctx).buffer_text(ctx);
@@ -25476,6 +25515,14 @@ impl TypedActionView for TerminalView {
                 ctx.emit(Event::RevealChildAgent {
                     conversation_id: *conversation_id,
                 });
+            }
+            SwitchAgentViewToConversation { conversation_id } => {
+                self.enter_agent_view_for_conversation(
+                    None,
+                    AgentViewEntryOrigin::OrchestrationPillBar,
+                    *conversation_id,
+                    ctx,
+                );
             }
             ToggleSessionRecording => {
                 self.pty_recorder.update(ctx, |recorder, ctx| {

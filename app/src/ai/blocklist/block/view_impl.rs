@@ -19,6 +19,7 @@
 //! ```
 
 pub(super) mod common;
+pub(crate) use common::user_query_mode_prefix_highlight_len;
 pub use common::FindContext;
 mod comments;
 mod header;

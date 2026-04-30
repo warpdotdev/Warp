@@ -655,9 +655,7 @@ pub fn init(app: &mut AppContext) {
     )
     .with_custom_action(CustomAction::ScrollToTopOfSelectedBlocks)
     .with_context_predicate(
-        id!("Terminal")
-            & !id!("EditorFocused")
-            & ne!("TerminalView_BlockSelectionCardinality", "None"),
+        id!("Terminal") & ne!("TerminalView_BlockSelectionCardinality", "None"),
     )]);
     app.register_editable_bindings([EditableBinding::new(
         "terminal:scroll_to_bottom_of_selected_block",
@@ -666,9 +664,7 @@ pub fn init(app: &mut AppContext) {
     )
     .with_custom_action(CustomAction::ScrollToBottomOfSelectedBlocks)
     .with_context_predicate(
-        id!("Terminal")
-            & !id!("EditorFocused")
-            & ne!("TerminalView_BlockSelectionCardinality", "None"),
+        id!("Terminal") & ne!("TerminalView_BlockSelectionCardinality", "None"),
     )]);
 
     // Register a mac only keybinding for selecting all blocks that uses the "Select All" mac menu

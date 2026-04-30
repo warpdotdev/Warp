@@ -169,6 +169,10 @@ impl ModelSelector {
         self.is_menu_open
     }
 
+    pub fn open_menu(&mut self, ctx: &mut ViewContext<Self>) {
+        self.set_menu_visibility(true, ctx);
+    }
+
     fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
         if self.is_menu_open == is_open {
             return;

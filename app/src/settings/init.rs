@@ -99,7 +99,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     SameLinePromptBlockSettings::register(ctx);
     SemanticSelection::register(ctx);
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     super::LinuxAppConfiguration::register(ctx);
 
     #[cfg(feature = "local_fs")]
@@ -261,7 +261,7 @@ fn init_platform_native_preferences() -> user_preferences::Model {
     cfg_if::cfg_if! {
         if #[cfg(test)] {
             Box::<user_preferences::in_memory::InMemoryPreferences>::default()
-        } else if #[cfg(any(target_os = "linux", feature = "integration_tests"))] {
+        } else if #[cfg(any(target_os = "linux", target_os = "freebsd", feature = "integration_tests"))] {
             match user_preferences::file_backed::FileBackedUserPreferences::new(super::user_preferences_file_path()) {
                 Ok(prefs) => Box::new(prefs) as user_preferences::Model,
                 Err(err) => {

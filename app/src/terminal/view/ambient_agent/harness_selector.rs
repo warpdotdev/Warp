@@ -136,6 +136,22 @@ impl HarnessSelector {
         self.is_menu_open
     }
 
+    /// Programmatically opens the harness selector popover. No-op if already open.
+    pub fn open_menu(&mut self, ctx: &mut ViewContext<Self>) {
+        self.set_menu_visibility(true, ctx);
+    }
+
+    /// Highlights the currently-selected harness in the menu. Called when the menu
+    /// transitions from closed to open so the user has a clear starting point for arrow-key
+    /// navigation instead of an unselected list.
+    fn highlight_selected_harness(&mut self, ctx: &mut ViewContext<Self>) {
+        let harness = self.ambient_agent_model.as_ref(ctx).selected_harness();
+        let selected_action = HarnessSelectorAction::SelectHarness(harness);
+        self.menu.update(ctx, |menu, ctx| {
+            menu.set_selected_by_action(&selected_action, ctx);
+        });
+    }
+
     pub fn set_button_theme(
         &self,
         theme: impl ActionButtonTheme + 'static,
@@ -153,6 +169,7 @@ impl HarnessSelector {
         self.is_menu_open = is_open;
         if is_open {
             ctx.focus(&self.menu);
+            self.highlight_selected_harness(ctx);
         }
         ctx.emit(HarnessSelectorEvent::MenuVisibilityChanged { open: is_open });
         ctx.notify();
@@ -234,6 +251,7 @@ fn build_menu_items(
         item_for(Harness::Oz),
         item_for(Harness::Claude),
         item_for(Harness::Gemini),
+        item_for(Harness::Codex),
     ]
 }
 

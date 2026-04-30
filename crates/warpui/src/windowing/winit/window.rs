@@ -1,4 +1,4 @@
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 mod x11;
 
 #[cfg(windows)]
@@ -92,7 +92,7 @@ pub(crate) struct WindowManager {
     /// We assume this won't change throughout the life of the Warp process.
     os_window_manager_name: OnceCell<Option<String>>,
     /// This is a client for talking to the Xorg server directly instead of through winit.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     x11_manager: Option<x11::X11Manager>,
     display_handle: OwnedDisplayHandle,
 }
@@ -106,7 +106,7 @@ impl WindowManager {
             windows: Default::default(),
             event_loop_proxy,
             os_window_manager_name: Default::default(),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             x11_manager: match x11::X11Manager::new() {
                 Ok(x11_manager) => Some(x11_manager),
                 Err(err) => {
@@ -125,7 +125,7 @@ impl WindowManager {
     /// space. All our app's windows must be on the same screen, and hence will have the same scale
     /// factor. For more in-depth explanation:
     /// https://github.com/warpdotdev/warp-internal/pull/8431#discussion_r1460629912
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     fn get_x11_backing_scale_factor(&self) -> f32 {
         use crate::platform::WindowContext;
 
@@ -283,7 +283,7 @@ impl platform::WindowManager for WindowManager {
 
     fn active_display_bounds(&self) -> RectF {
         cfg_if::cfg_if! {
-            if #[cfg(target_os = "linux")] {
+            if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
                 self.x11_manager
                     .as_ref()
                     .and_then(|x11_manager| match x11_manager.get_active_monitor() {
@@ -305,7 +305,7 @@ impl platform::WindowManager for WindowManager {
 
     fn active_display_id(&self) -> DisplayId {
         cfg_if::cfg_if! {
-            if #[cfg(target_os = "linux")] {
+            if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
                 self.x11_manager
                     .as_ref()
                     .and_then(|x11_manager| match x11_manager.get_active_monitor() {
@@ -330,7 +330,7 @@ impl platform::WindowManager for WindowManager {
         // never invalidates the cache. We need to drop down to X11 directly to ensure we read a
         // fresh value.
         cfg_if::cfg_if! {
-            if #[cfg(target_os = "linux")] {
+            if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
                 self.x11_manager
                     .as_ref()
                     .and_then(|x11_manager| x11_manager.list_monitor_bounds().ok())
@@ -347,7 +347,7 @@ impl platform::WindowManager for WindowManager {
 
     fn bounds_for_display_idx(&self, display_idx: DisplayIdx) -> Option<RectF> {
         cfg_if::cfg_if! {
-            if #[cfg(target_os = "linux")] {
+            if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
                 let idx = match display_idx {
                     DisplayIdx::Primary => 0,
                     DisplayIdx::External(idx) => idx + 1,
@@ -392,7 +392,7 @@ impl platform::WindowManager for WindowManager {
         self.os_window_manager_name
             .get_or_init(|| {
                 cfg_if::cfg_if! {
-                    if #[cfg(target_os = "linux")] {
+                    if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
                         get_os_window_manager_name_internal(self.x11_manager.as_ref())
                     } else {
                         None
@@ -403,12 +403,12 @@ impl platform::WindowManager for WindowManager {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub fn get_os_window_manager_name() -> Option<String> {
     get_os_window_manager_name_internal(x11::X11Manager::new().ok().as_ref())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn get_os_window_manager_name_internal(x11_manager: Option<&x11::X11Manager>) -> Option<String> {
     super::linux::look_for_wayland_compositor()
         .or_else(|| x11_manager.and_then(|manager| manager.os_window_manager_name().ok()))
@@ -416,7 +416,7 @@ fn get_os_window_manager_name_internal(x11_manager: Option<&x11::X11Manager>) ->
 
 fn is_tiling_window_manager(name: &str) -> bool {
     cfg_if::cfg_if! {
-        if #[cfg(target_os = "linux")] {
+        if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             super::linux::is_tiling_window_manager(name)
         } else {
             let _ = name;
@@ -614,7 +614,7 @@ struct Inner {
     window: Arc<winit::window::Window>,
     #[cfg(windows)]
     is_cloaked: bool,
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     gpu_power_preference: GPUPowerPreference,
     backend_preference: Option<wgpu::Backend>,
     rendering_resources: Option<RenderingResources>,
@@ -838,7 +838,7 @@ impl Window {
     }
 
     /// Drops the window's renderer and all associated resources.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     pub fn drop_renderer(&self, display_handle: Box<dyn wgpu::wgt::WgpuHasDisplayHandle>) {
         let mut inner = self.inner.borrow_mut();
         let Some(inner) = inner.as_mut() else {
@@ -855,7 +855,7 @@ impl Window {
     }
 
     /// Recreates the window's renderer and all associated resources.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     pub fn recreate_renderer(&self, downrank_non_nvidia_vulkan_adapters: bool) {
         let mut inner = self.inner.borrow_mut();
         let Some(inner) = inner.as_mut() else {
@@ -1338,7 +1338,7 @@ fn create_window(
         FullscreenState::Normal => {}
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     if let Some(window_class) = _window_class.as_deref() {
         use winit::platform::x11::{WindowAttributesExtX11, WindowType};
 
@@ -1433,6 +1433,9 @@ fn create_window(
 ///
 /// Returns the vertical difference of the adjustment, or None.
 fn maybe_adjust_window_vertically(window: &winit::window::Window) -> Option<i32> {
+    if window.is_maximized() || window.fullscreen().is_some() {
+        return None;
+    }
     let window_position = window.outer_position().ok()?;
     let window_size = window.outer_size();
     let bottom_of_window = window_position.y + window_size.height as i32;

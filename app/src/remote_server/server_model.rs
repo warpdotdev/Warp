@@ -511,14 +511,18 @@ impl ServerModel {
     }
 
     /// Handles `Initialize` by returning the server version and host id.
+    ///
+    /// `server_version` is the release tag the daemon was built from
+    /// (`GIT_RELEASE_TAG`) or the empty string for `cargo run` / locally
+    /// deployed builds. The client treats an empty version as "unknown" and
+    /// skips strict version enforcement, which keeps the
+    /// `script/deploy_remote_server` developer workflow functional.
     fn handle_initialize(&mut self, msg: Initialize, request_id: &RequestId) -> HandlerOutcome {
         log::info!("Handling Initialize (request_id={request_id})");
         if !msg.auth_token.is_empty() {
             self.auth_token = Some(msg.auth_token);
         }
-        let server_version = ChannelState::app_version()
-            .unwrap_or(env!("CARGO_PKG_VERSION"))
-            .to_string();
+        let server_version = ChannelState::app_version().unwrap_or("").to_string();
         HandlerOutcome::Sync(server_message::Message::InitializeResponse(
             InitializeResponse {
                 server_version,

@@ -24,6 +24,16 @@ use std::collections::HashMap;
 /// could indicate an issue.
 const TOO_MANY_BUFFERED_EVENTS: usize = 50;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SharedSessionInitialLoadMode {
+    /// Replace the viewer's placeholder block list with the scrollback snapshot from the session
+    /// being joined.
+    ReplaceFromSessionScrollback,
+    /// Add only the new blocks from a follow-up session while preserving the existing shared
+    /// ambient-agent transcript.
+    AppendFollowupScrollback,
+}
+
 /// The event loop is used to process a stream of events
 /// originating from the sender.
 pub struct EventLoop {
@@ -67,13 +77,26 @@ impl EventLoop {
         window_size: WindowSize,
         scrollback: Scrollback,
         catching_up_to_event_no: Option<usize>,
+        load_mode: SharedSessionInitialLoadMode,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         let scrollback_blocks = decode_scrollback(&scrollback);
         let is_alt_screen_active = scrollback.is_alt_screen_active;
-        terminal_model
-            .lock()
-            .load_shared_session_scrollback(scrollback_blocks.as_slice(), is_alt_screen_active);
+        {
+            let mut terminal_model = terminal_model.lock();
+            match load_mode {
+                SharedSessionInitialLoadMode::ReplaceFromSessionScrollback => {
+                    terminal_model.load_shared_session_scrollback(scrollback_blocks.as_slice());
+                }
+                SharedSessionInitialLoadMode::AppendFollowupScrollback => {
+                    terminal_model
+                        .append_followup_shared_session_scrollback(scrollback_blocks.as_slice());
+                }
+            }
+            if is_alt_screen_active {
+                terminal_model.enter_alt_screen(true);
+            }
+        }
 
         // When we load scrollback, we might not actually complete a block (e.g. shared session started
         // without any scrollback except active block). In this case, we want to make sure the input
@@ -307,7 +330,7 @@ impl EventLoop {
                     {
                         // Role is set to the presence manager's role to stay as up-to-date as possible.
                         // This avoids a race condition if a viewer gets a new role before catching up,
-                        // by ensuring we're not overwritting the new role.
+                        // by ensuring we're not overwriting the new role.
                         if let Some(role) = presence_manager.as_ref(ctx).role() {
                             self.terminal_model.lock().set_shared_session_status(
                                 SharedSessionStatus::ActiveViewer { role },
