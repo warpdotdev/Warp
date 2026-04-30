@@ -216,3 +216,67 @@ fn test_path_to_lsp_uri_rejects_relative_path() {
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("must be absolute"));
 }
+
+mod php_language_detection {
+    //! Regression tests for #9168 — PHP language support via Intelephense.
+
+    use super::*;
+    use crate::config::LanguageId;
+    use crate::supported_servers::LSPServerType;
+
+    #[test]
+    fn classifies_plain_php_files() {
+        assert_eq!(
+            LanguageId::from_path(&PathBuf::from("src/Foo.php")),
+            Some(LanguageId::Php)
+        );
+    }
+
+    #[test]
+    fn classifies_phtml_files() {
+        // Legacy template extension still used by some frameworks.
+        assert_eq!(
+            LanguageId::from_path(&PathBuf::from("templates/header.phtml")),
+            Some(LanguageId::Php)
+        );
+    }
+
+    #[test]
+    fn classifies_blade_php_files_via_php_extension() {
+        // `Path::extension` returns only the final segment, so `foo.blade.php`
+        // is matched by the `php` arm — exactly what we want, since
+        // Intelephense handles the embedded PHP regions of Blade templates.
+        assert_eq!(
+            LanguageId::from_path(&PathBuf::from("resources/views/welcome.blade.php")),
+            Some(LanguageId::Php)
+        );
+    }
+
+    #[test]
+    fn php_routes_to_intelephense_server() {
+        assert_eq!(LanguageId::Php.server_type(), LSPServerType::Intelephense);
+    }
+
+    #[test]
+    fn intelephense_advertises_php_language() {
+        assert_eq!(
+            LSPServerType::Intelephense.languages(),
+            vec![LanguageId::Php]
+        );
+    }
+
+    #[test]
+    fn intelephense_uses_npm_binary_name() {
+        assert_eq!(LSPServerType::Intelephense.binary_name(), "intelephense");
+    }
+
+    #[test]
+    fn intelephense_appears_in_all() {
+        let all: Vec<LSPServerType> = LSPServerType::all().collect();
+        assert!(
+            all.contains(&LSPServerType::Intelephense),
+            "LSPServerType::all() must yield Intelephense so init_project and the \
+             settings page can offer PHP support; got {all:?}",
+        );
+    }
+}

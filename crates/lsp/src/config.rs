@@ -32,6 +32,7 @@ pub enum LanguageId {
     JavaScriptReact,
     C,
     Cpp,
+    Php,
 }
 
 impl LanguageId {
@@ -52,6 +53,10 @@ impl LanguageId {
             // compile_commands.json is present, clangd will use the correct language
             // regardless of the languageId we send.
             "h" | "H" | "hh" | "hpp" | "hxx" => Some(Self::Cpp),
+            // PHP. `.blade.php` (Laravel templates) is matched here too because
+            // `path.extension()` returns only the final segment ("php"), and
+            // Intelephense handles the embedded PHP regions of Blade templates.
+            "php" | "phtml" => Some(Self::Php),
             _ => None,
         }
     }
@@ -69,6 +74,7 @@ impl LanguageId {
             LanguageId::JavaScriptReact => "javascriptreact",
             LanguageId::C => "c",
             LanguageId::Cpp => "cpp",
+            LanguageId::Php => "php",
         }
     }
 
@@ -83,6 +89,7 @@ impl LanguageId {
             | LanguageId::JavaScript
             | LanguageId::JavaScriptReact => LSPServerType::TypeScriptLanguageServer,
             LanguageId::C | LanguageId::Cpp => LSPServerType::Clangd,
+            LanguageId::Php => LSPServerType::Intelephense,
         }
     }
 }

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::servers::clangd::ClangdCandidate;
 use crate::servers::go::GoPlsCandidate;
+use crate::servers::intelephense::IntelephenseCandidate;
 use crate::servers::pyright::PyrightCandidate;
 use crate::servers::rust::RustAnalyzerCandidate;
 use crate::servers::typescript_language_server::TypeScriptLanguageServerCandidate;
@@ -42,6 +43,7 @@ pub enum LSPServerType {
     Pyright,
     TypeScriptLanguageServer,
     Clangd,
+    Intelephense,
 }
 
 /// Provides server-specific configuration for each LSP server type.
@@ -109,6 +111,9 @@ impl LSPServerType {
                     binary_path: path,
                     prepend_args: vec![],
                 }),
+            LSPServerType::Intelephense => {
+                IntelephenseCandidate::find_installed_binary_config(path_env_var).await
+            }
         }
     }
 
@@ -132,6 +137,7 @@ impl LSPServerType {
             LSPServerType::Pyright => "pyright-langserver",
             LSPServerType::TypeScriptLanguageServer => "typescript-language-server",
             LSPServerType::Clangd => "clangd",
+            LSPServerType::Intelephense => "intelephense",
         }
     }
 
@@ -140,7 +146,9 @@ impl LSPServerType {
     fn args(&self) -> Vec<&'static str> {
         match self {
             LSPServerType::RustAnalyzer | LSPServerType::GoPls | LSPServerType::Clangd => vec![],
-            LSPServerType::Pyright | LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
+            LSPServerType::Pyright
+            | LSPServerType::TypeScriptLanguageServer
+            | LSPServerType::Intelephense => vec!["--stdio"],
         }
     }
 
@@ -154,6 +162,7 @@ impl LSPServerType {
             LSPServerType::Pyright => vec!["--stdio"],
             LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
             LSPServerType::Clangd => vec![],
+            LSPServerType::Intelephense => vec!["--stdio"],
         }
     }
 
@@ -172,6 +181,7 @@ impl LSPServerType {
                 ]
             }
             LSPServerType::Clangd => vec![LanguageId::C, LanguageId::Cpp],
+            LSPServerType::Intelephense => vec![LanguageId::Php],
         }
     }
 
@@ -205,6 +215,7 @@ impl LSPServerType {
                 Box::new(TypeScriptLanguageServerCandidate::new(client))
             }
             LSPServerType::Clangd => Box::new(ClangdCandidate::new(client)),
+            LSPServerType::Intelephense => Box::new(IntelephenseCandidate::new(client)),
         }
     }
 
