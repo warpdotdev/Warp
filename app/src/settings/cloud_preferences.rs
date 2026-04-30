@@ -68,7 +68,10 @@ impl Platform {
             return Self::Mac;
         }
 
-        if cfg!(all(not(target_family = "wasm"), any(target_os = "linux", target_os = "freebsd"))) {
+        if cfg!(all(
+            not(target_family = "wasm"),
+            any(target_os = "linux", target_os = "freebsd")
+        )) {
             return Self::Linux;
         }
 

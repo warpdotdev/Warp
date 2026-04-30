@@ -531,7 +531,10 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
                     context,
                     flags::ALLOW_NATIVE_WAYLAND,
                 )
-                .is_supported_on_current_platform(cfg!(any(target_os = "linux", target_os = "freebsd"))),
+                .is_supported_on_current_platform(cfg!(any(
+                    target_os = "linux",
+                    target_os = "freebsd"
+                ))),
             );
         }
     }
