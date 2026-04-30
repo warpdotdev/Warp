@@ -3673,7 +3673,7 @@ fn test_pending_conflict_correctly_clears_after_edits() {
             ModelEvent::UpsertNotebook { .. }
         ));
 
-        // While we still have edits in flight, recieve an RTC message, that has a TS before the object update
+        // While we still have edits in flight, receive an RTC message, that has a TS before the object update
         // response. This should put the notebook conflict status as pending
         let mocked_metadata = ServerMetadata {
             uid: server_id,
@@ -3805,7 +3805,7 @@ fn test_pending_conflict_correctly_stays_after_edits() {
             ModelEvent::UpsertNotebook { .. }
         ));
 
-        // While we still have edits in flight, recieve an RTC message, that has a TS after the object update
+        // While we still have edits in flight, receive an RTC message, that has a TS after the object update
         // response. This should put the notebook conflict status as pending
         let mocked_metadata = ServerMetadata {
             uid: server_id,

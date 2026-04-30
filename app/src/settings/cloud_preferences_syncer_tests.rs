@@ -339,7 +339,7 @@ fn test_sync_local_pref_to_cloud_after_initial_sync() {
             &mut server_api,
         ));
 
-        // Expect the creation of one or two cloud settings in seperate requests depending on the platform
+        // Expect the creation of one or two cloud settings in separate requests depending on the platform
         all_client_ids.append(&mut expect_bulk_create_generic_string_objects(
             &mut server_api,
             1,
