@@ -87,31 +87,39 @@ fn test_motd_emulation_is_not_gated_on_shell_type() {
         ("zsh_body.sh", ZSH_BODY),
         ("fish.sh", FISH_BODY),
     ] {
-        // Marker the heredoc uses to print MotD.
-        let motd_marker = "/etc/motd";
-        // Marker for the non-bash/non-zsh guard. Both `!= "bash" -a` and
-        // `!= \"bash\"` show up in the file as a string segment depending on
-        // the surrounding heredoc quoting, but the `!= "bash" -a` substring
-        // is stable across the three files.
+        // Marker for the actual MotD-print probe. We deliberately match the
+        // *executable* `test -f /etc/motd && test -r /etc/motd` line and not
+        // bare `/etc/motd`, because `/etc/motd` also appears in the
+        // surrounding explanatory comments — a pre-fix file that kept the
+        // comments but removed the executable probe would still pass a
+        // `body.find("/etc/motd")` check, defeating the test.
+        let motd_marker = "test -f /etc/motd && test -r /etc/motd";
+        // Marker for the non-bash/non-zsh guard. The `!= "bash" -a` substring
+        // is stable across the three heredocs.
         let guard_marker = "!= \"bash\" -a";
 
         let motd_idx = body.find(motd_marker).unwrap_or_else(|| {
-            panic!("{shell}: MotD-print block not found ({motd_marker:?}); was it removed?")
+            panic!(
+                "{shell}: executable MotD probe ({motd_marker:?}) not found. \
+                 If the probe structure changed, update this regression test \
+                 (and verify GH-1160 doesn't regress)."
+            )
         });
         let guard_idx = body.find(guard_marker).unwrap_or_else(|| {
             panic!(
-                "{shell}: non-bash/non-zsh guard ({guard_marker:?}) not found. If the heredoc \
-                 structure changed, update this regression test (and verify GH-1160 doesn't \
-                 regress)."
+                "{shell}: non-bash/non-zsh guard ({guard_marker:?}) not found. \
+                 If the heredoc structure changed, update this regression test \
+                 (and verify GH-1160 doesn't regress)."
             )
         });
 
         assert!(
             motd_idx < guard_idx,
-            "GH-1160: in `{shell}` the MotD block (offset {motd_idx}) must appear BEFORE the \
-             non-bash/non-zsh guard (offset {guard_idx}) so MotD prints for bash and zsh too. \
-             Putting the MotD block back inside the guard silently regresses GH-1160 (bash/zsh \
-             users will no longer see /etc/motd over Warp SSH)."
+            "GH-1160: in `{shell}` the executable MotD probe (offset {motd_idx}) \
+             must appear BEFORE the non-bash/non-zsh guard (offset {guard_idx}) \
+             so MotD prints for bash and zsh too. Putting the MotD block back \
+             inside the guard silently regresses GH-1160 (bash/zsh users will \
+             no longer see /etc/motd over Warp SSH)."
         );
     }
 }
