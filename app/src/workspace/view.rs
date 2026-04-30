@@ -2269,7 +2269,7 @@ impl Workspace {
 
     fn render_session_config_tab_config_chip(
         &self,
-        use_vertical: bool,
+        arrow_direction: CalloutArrowDirection,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
         let close_button = Hoverable::new(
@@ -2324,18 +2324,12 @@ impl Workspace {
             .with_padding_bottom(12.)
             .finish();
 
-        let (arrow_direction, arrow_position) = if use_vertical {
-            (CalloutArrowDirection::Left, CalloutArrowPosition::Center)
-        } else {
-            (CalloutArrowDirection::Up, CalloutArrowPosition::Center)
-        };
-
         render_callout_bubble(
             chip_content,
             &CalloutBubbleConfig {
                 width: SESSION_CONFIG_TAB_CONFIG_CHIP_WIDTH,
                 arrow_direction,
-                arrow_position,
+                arrow_position: CalloutArrowPosition::Center,
             },
             appearance,
         )
@@ -18947,6 +18941,33 @@ impl Workspace {
         }
     }
 
+    /// Positioning for the session-config tab-config chip shown next to the
+    /// vertical-tabs "+" button. Like the menu above, the chip expands inward
+    /// and points back at the "+" button from whichever side the panel occupies.
+    fn vertical_tabs_tab_config_chip_positioning(
+        tabs_side: PanelPosition,
+    ) -> (
+        Vector2F,
+        PositionedElementAnchor,
+        ChildAnchor,
+        CalloutArrowDirection,
+    ) {
+        match tabs_side {
+            PanelPosition::Left => (
+                vec2f(8., -20.),
+                PositionedElementAnchor::MiddleRight,
+                ChildAnchor::TopLeft,
+                CalloutArrowDirection::Left,
+            ),
+            PanelPosition::Right => (
+                vec2f(-8., -20.),
+                PositionedElementAnchor::MiddleLeft,
+                ChildAnchor::TopRight,
+                CalloutArrowDirection::Right,
+            ),
+        }
+    }
+
     /// Renders a configurable panel for the given toolbar item, if it is open.
     /// Returns `None` if the panel should not be rendered (item not available,
     /// panel not open, or item is not a panel type).
@@ -22478,20 +22499,30 @@ impl View for Workspace {
             let use_vertical = FeatureFlag::VerticalTabs.is_enabled()
                 && *TabSettings::as_ref(app).use_vertical_tabs
                 && self.vertical_tabs_panel_open;
-            let chip =
-                self.render_session_config_tab_config_chip(use_vertical, Appearance::as_ref(app));
             if use_vertical {
+                let tabs_side =
+                    Self::tabs_panel_side(&TabSettings::as_ref(app).header_toolbar_chip_selection);
+                let (offset, anchor, child_anchor, arrow_direction) =
+                    Self::vertical_tabs_tab_config_chip_positioning(tabs_side);
+                let chip = self.render_session_config_tab_config_chip(
+                    arrow_direction,
+                    Appearance::as_ref(app),
+                );
                 stack.add_positioned_overlay_child(
                     chip,
                     OffsetPositioning::offset_from_save_position_element(
                         vertical_tabs::VERTICAL_TABS_ADD_TAB_POSITION_ID,
-                        vec2f(8., -20.),
+                        offset,
                         PositionedElementOffsetBounds::WindowByPosition,
-                        PositionedElementAnchor::MiddleRight,
-                        ChildAnchor::TopLeft,
+                        anchor,
+                        child_anchor,
                     ),
                 );
             } else {
+                let chip = self.render_session_config_tab_config_chip(
+                    CalloutArrowDirection::Up,
+                    Appearance::as_ref(app),
+                );
                 let anchor_id = if FeatureFlag::ShellSelector.is_enabled() {
                     NEW_SESSION_MENU_BUTTON_POSITION_ID
                 } else {

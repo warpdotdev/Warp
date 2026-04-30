@@ -3029,3 +3029,22 @@ fn test_vertical_tabs_dropdown_anchors_match_panel_side() {
         (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight),
     ));
 }
+
+#[test]
+fn test_vertical_tabs_tab_config_chip_positioning_matches_panel_side() {
+    let (offset, anchor, child_anchor, arrow_direction) =
+        Workspace::vertical_tabs_tab_config_chip_positioning(PanelPosition::Left);
+    assert_eq!(offset.x(), 8.);
+    assert_eq!(offset.y(), -20.);
+    assert!(matches!(anchor, PositionedElementAnchor::MiddleRight));
+    assert!(matches!(child_anchor, ChildAnchor::TopLeft));
+    assert!(matches!(arrow_direction, CalloutArrowDirection::Left));
+
+    let (offset, anchor, child_anchor, arrow_direction) =
+        Workspace::vertical_tabs_tab_config_chip_positioning(PanelPosition::Right);
+    assert_eq!(offset.x(), -8.);
+    assert_eq!(offset.y(), -20.);
+    assert!(matches!(anchor, PositionedElementAnchor::MiddleLeft));
+    assert!(matches!(child_anchor, ChildAnchor::TopRight));
+    assert!(matches!(arrow_direction, CalloutArrowDirection::Right));
+}
