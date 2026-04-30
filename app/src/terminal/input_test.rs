@@ -36,6 +36,7 @@ use crate::server::server_api::ServerApiProvider;
 use crate::server::sync_queue::SyncQueue;
 
 use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
+use crate::settings::import::model::ImportedConfigModel;
 use crate::settings::{AliasExpansionSettings, AppEditorSettings, InputBoxType, PrivacySettings};
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 #[cfg(windows)]
@@ -86,7 +87,7 @@ use unindent::Unindent;
 #[cfg(feature = "voice_input")]
 use voice_input::VoiceInputToggledFrom;
 use warpui::platform::WindowStyle;
-use warpui::{App, ReadModel, UpdateView};
+use warpui::{App, ReadModel, UpdateView, WindowId};
 
 use crate::terminal::universal_developer_input::UniversalDeveloperInputButtonBarEvent;
 
@@ -114,6 +115,7 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| Prompt::mock());
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(CloudModel::mock);
+    app.add_singleton_model(ImportedConfigModel::new);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(TeamUpdateManager::mock);
@@ -258,6 +260,16 @@ pub async fn add_window_with_bootstrapped_terminal(
     history_file_commands: Option<Vec<String>>,
     session_info: Option<SessionInfo>,
 ) -> ViewHandle<TerminalView> {
+    add_window_with_bootstrapped_terminal_and_window_id(app, history_file_commands, session_info)
+        .await
+        .1
+}
+
+pub async fn add_window_with_bootstrapped_terminal_and_window_id(
+    app: &mut App,
+    history_file_commands: Option<Vec<String>>,
+    session_info: Option<SessionInfo>,
+) -> (WindowId, ViewHandle<TerminalView>) {
     let tips_model = app.add_model(|_| TipsCompleted::default());
 
     let shell_starter_source = ShellStarter::init(Default::default())
@@ -273,7 +285,7 @@ pub async fn add_window_with_bootstrapped_terminal(
         .with_shell_type(shell_type);
     let history_file_commands = history_file_commands.unwrap_or_default();
 
-    let (_, terminal) = app.add_window(WindowStyle::NotStealFocus, move |ctx| {
+    let (window_id, terminal) = app.add_window(WindowStyle::NotStealFocus, move |ctx| {
         TerminalView::new_for_test(tips_model, None, ctx)
     });
 
@@ -302,7 +314,7 @@ pub async fn add_window_with_bootstrapped_terminal(
     input.update(app, |input, ctx| {
         input.set_active_block_metadata(BlockMetadata::new(Some(session_id), None), false, ctx);
     });
-    terminal
+    (window_id, terminal)
 }
 
 /// Simulates being in a particular directory, for the purposes of completion
@@ -6433,5 +6445,70 @@ fn test_page_up_and_down_scroll_terminal_with_vim_mode_enabled() {
             scroll_position_after_page_down,
             scroll_position_after_page_up
         );
+    });
+}
+
+#[test]
+fn test_custom_terminal_page_scroll_binding_applies_when_prompt_is_focused() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let (window_id, terminal) =
+            add_window_with_bootstrapped_terminal_and_window_id(&mut app, None, None).await;
+        let (input, editor) = terminal.read(&app, |terminal, ctx| {
+            let input = terminal.input().clone();
+            let editor = input.as_ref(ctx).editor().clone();
+            (input, editor)
+        });
+
+        terminal.update(&mut app, |terminal, _| {
+            terminal
+                .model
+                .lock()
+                .simulate_block("ls", &"\n".repeat(1000));
+        });
+
+        app.update(|ctx| {
+            ctx.set_custom_trigger(
+                "terminal:scroll_up_one_page".to_owned(),
+                warpui::keymap::Trigger::Keystrokes(
+                    vec![Keystroke::parse("shift-pageup").unwrap()],
+                ),
+            );
+        });
+
+        let focus_path = [terminal.id(), input.id(), editor.id()];
+
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &focus_path,
+                &Keystroke::parse("pageup").unwrap(),
+                false,
+            )
+            .unwrap();
+        assert!(!handled);
+        terminal.read(&app, |terminal, _| {
+            assert_eq!(
+                terminal.scroll_position(),
+                ScrollPosition::FollowsBottomOfMostRecentBlock
+            );
+        });
+
+        let handled = app
+            .dispatch_keystroke(
+                window_id,
+                &focus_path,
+                &Keystroke::parse("shift-pageup").unwrap(),
+                false,
+            )
+            .unwrap();
+        assert!(handled);
+        terminal.read(&app, |terminal, _| {
+            assert!(matches!(
+                terminal.scroll_position(),
+                ScrollPosition::FixedAtPosition { .. }
+            ));
+        });
     });
 }

@@ -646,7 +646,10 @@ pub fn init(app: &mut AppContext) {
         )
         .with_key_binding("pageup")
         .with_context_predicate(
-            id!("Terminal") & !id!("IMEOpen") & id!("TerminalView_NonEmptyBlockList"),
+            id!("Terminal")
+                & !id!("IMEOpen")
+                & id!("TerminalView_NonEmptyBlockList")
+                & !id!("EditorFocused"),
         ),
         EditableBinding::new(
             "terminal:scroll_down_one_page",
@@ -655,7 +658,10 @@ pub fn init(app: &mut AppContext) {
         )
         .with_key_binding("pagedown")
         .with_context_predicate(
-            id!("Terminal") & !id!("IMEOpen") & id!("TerminalView_NonEmptyBlockList"),
+            id!("Terminal")
+                & !id!("IMEOpen")
+                & id!("TerminalView_NonEmptyBlockList")
+                & !id!("EditorFocused"),
         ),
     ]);
 
