@@ -198,6 +198,9 @@ impl CLIAgentSession {
                 self.session_context.summary = event.payload.summary.clone();
                 self.session_context.tool_name = event.payload.tool_name.clone();
                 self.session_context.tool_input_preview = event.payload.tool_input_preview.clone();
+                // Clear stale response from previous Stop events so the
+                // permission request summary is shown in the tab title.
+                self.session_context.response = None;
                 CLIAgentSessionStatus::Blocked {
                     message: event.payload.summary.clone(),
                 }
