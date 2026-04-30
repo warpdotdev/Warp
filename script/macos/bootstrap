@@ -72,7 +72,9 @@ if ! command -v yarn >/dev/null 2>&1; then
 fi
 
 # Verify yarn version is 4.x (Corepack-managed), not 1.x (Homebrew).
-YARN_VERSION="$(yarn --version 2>/dev/null)"
+# Check from the js crate directory where Corepack reads packageManager.
+JS_CRATE_DIR="$PWD/crates/command-signatures-v2/js"
+YARN_VERSION="$(cd "$JS_CRATE_DIR" && yarn --version 2>/dev/null)"
 YARN_MAJOR="$(echo "$YARN_VERSION" | cut -d. -f1)"
 if [ "$YARN_MAJOR" -lt 4 ] 2>/dev/null; then
     echo "Error: yarn $YARN_VERSION detected, but Yarn 4+ is required."
@@ -84,7 +86,7 @@ if [ "$YARN_MAJOR" -lt 4 ] 2>/dev/null; then
     exit 1
 fi
 
-echo "✅ Node.js $(node --version) and yarn $(yarn --version) detected."
+echo "✅ Node.js $(node --version) and yarn $YARN_VERSION detected."
 
 # Install various binaries through cargo.
 "$PWD"/script/install_cargo_test_deps
