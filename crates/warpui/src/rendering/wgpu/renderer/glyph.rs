@@ -2,23 +2,6 @@ use crate::fonts::SubpixelAlignment;
 use crate::rendering::atlas::{AtlasTextureKind, TextureId};
 use crate::rendering::wgpu::renderer::WGPUContext;
 use crate::rendering::wgpu::texture_with_bind_group::TextureWithBindGroup;
-
-fn format_for_kind(kind: AtlasTextureKind) -> wgpu::TextureFormat {
-    match kind {
-        // The generic atlas holds non-emoji grayscale coverage as a single
-        // unsigned-normalised byte per texel. R8Unorm is exactly the right
-        // shape for that: no wasted channels, no expansion at upload time.
-        AtlasTextureKind::Generic => wgpu::TextureFormat::R8Unorm,
-        // The subpixel atlas holds three independent coverage values per
-        // texel; the upload path swaps R and B on the CPU side so the
-        // shader can read .rgb and get logical RGB without a swizzle.
-        AtlasTextureKind::Subpixel => wgpu::TextureFormat::Bgra8Unorm,
-        // The polychrome atlas holds full RGBA emoji bitmaps; the upload
-        // path performs the same R<->B swap so the texture's BGRA storage
-        // ends up matching the shader's expected RGB read order.
-        AtlasTextureKind::Polychrome => wgpu::TextureFormat::Bgra8Unorm,
-    }
-}
 use crate::rendering::wgpu::{resources, shader_types};
 use crate::rendering::{GlyphCache, GlyphConfig};
 use crate::scene::{GlyphFade, Layer};
@@ -34,6 +17,17 @@ use wgpu::{
 };
 
 use super::util::create_buffer_init;
+
+fn format_for_kind(kind: AtlasTextureKind) -> wgpu::TextureFormat {
+    match kind {
+        // R8Unorm: one coverage byte per texel for non-emoji grayscale.
+        AtlasTextureKind::Generic => wgpu::TextureFormat::R8Unorm,
+        // Bgra8Unorm: three per-channel coverage values, sampled as .rgb.
+        AtlasTextureKind::Subpixel => wgpu::TextureFormat::Bgra8Unorm,
+        // Bgra8Unorm: full RGBA emoji bitmaps after a CPU R<->B swap on upload.
+        AtlasTextureKind::Polychrome => wgpu::TextureFormat::Bgra8Unorm,
+    }
+}
 
 pub(super) struct Pipeline {
     glyph_cache: GlyphCache<TextureWithBindGroup>,
