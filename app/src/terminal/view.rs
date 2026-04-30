@@ -51,9 +51,10 @@ use std::ops::Deref as _;
 
 use crate::ai::blocklist::agent_view::fork_from_last_known_good_state_exchange_id;
 use crate::ai::blocklist::agent_view::{
-    agent_view_bg_fill, AgentViewController, AgentViewControllerEvent, AgentViewDisplayMode,
-    AgentViewEntryBlockParams, AgentViewEntryOrigin, AgentViewHeaderDisabledTheme,
-    AgentViewHeaderTheme, AgentViewZeroStateBlock, AgentViewZeroStateEvent, EphemeralMessageModel,
+    agent_view_bg_fill, get_agent_view_entry_block_position_id, AgentViewController,
+    AgentViewControllerEvent, AgentViewDisplayMode, AgentViewEntryBlockParams,
+    AgentViewEntryOrigin, AgentViewHeaderDisabledTheme, AgentViewHeaderTheme,
+    AgentViewZeroStateBlock, AgentViewZeroStateEvent, EphemeralMessageModel,
     ExitAgentViewError, ExitConfirmationTrigger, InlineAgentViewHeader, OrchestrationPillBar,
     ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
@@ -1406,6 +1407,18 @@ pub enum ContextMenuAction {
     CopyServerRequestId {
         request_id: ServerConversationToken,
     },
+    // Copy the share link for a conversation in the blocklist.
+    CopyConversationShareLink {
+        conversation_id: AIConversationId,
+    },
+    // Copy the text of a conversation in the blocklist.
+    CopyConversationText {
+        conversation_id: AIConversationId,
+    },
+    // Fork a conversation in the blocklist into a new pane.
+    ForkAIConversation {
+        conversation_id: AIConversationId,
+    },
     /// Opens the sharing dialog for a conversation from the AI block context menu
     OpenConversationShareDialog {
         conversation_id: AIConversationId,
@@ -1524,6 +1537,9 @@ impl fmt::Debug for ContextMenuAction {
             CopyExternalDebuggingId { .. } => f.write_str("CopyExternalDebuggingId"),
             CopyConversationId { .. } => f.write_str("CopyConversationId"),
             CopyServerRequestId { .. } => f.write_str("CopyServerRequestId"),
+            CopyConversationShareLink { .. } => f.write_str("CopyConversationShareLink"),
+            CopyConversationText { .. } => f.write_str("CopyConversationText"),
+            ForkAIConversation { .. } => f.write_str("ForkAIConversation"),
             OpenConversationShareDialog { .. } => f.write_str("OpenConversationShareDialog"),
             ForkAIConversationFromBlock { .. } => f.write_str("ForkAIConversationFromBlock"),
             ForkAIConversationFromExactExchange { .. } => {
@@ -2043,6 +2059,11 @@ pub enum ContextMenuType {
     /// Shows the overflow menu with copy options for an AI block. The menu is opened by clicking
     /// on the overflow (three dots) button inside the AI block header.
     AIBlockOverflowMenu { ai_block_view_id: EntityId },
+    /// Shows the conversation actions menu for an Agent View entry block.
+    AgentViewEntryConversation {
+        agent_view_entry_block_id: EntityId,
+        position: Vector2F,
+    },
 }
 
 impl ContextMenuType {
@@ -2074,6 +2095,7 @@ impl ContextMenuType {
             ContextMenuType::Input { position } => Some(*position),
             ContextMenuType::AIBlockAttachedContext { .. } => None,
             ContextMenuType::AIBlockOverflowMenu { .. } => None,
+            ContextMenuType::AgentViewEntryConversation { .. } => None,
         }
     }
 }
@@ -2093,6 +2115,7 @@ impl ContextMenuInfo {
             ContextMenuType::AltScreen { .. } => "AltScreen",
             ContextMenuType::AIBlockAttachedContext { .. } => "AIBlockContextList",
             ContextMenuType::AIBlockOverflowMenu { .. } => "AIBlockOverflowMenu",
+            ContextMenuType::AgentViewEntryConversation { .. } => "AgentViewEntryConversation",
         }
     }
 
@@ -2113,6 +2136,7 @@ impl ContextMenuInfo {
             ContextMenuType::AltScreen { .. } => "AltScreen",
             ContextMenuType::AIBlockAttachedContext { .. } => "AIBlockAttachedBlockChipLeftClick",
             ContextMenuType::AIBlockOverflowMenu { .. } => "AIBlockOverflowMenuClick",
+            ContextMenuType::AgentViewEntryConversation { .. } => "RightClick",
         }
     }
 }
@@ -16370,6 +16394,15 @@ impl TerminalView {
             let history_model = BlocklistAIHistoryModel::as_ref(ctx);
             if history_model.can_conversation_be_shared(&ai_conversation_id) {
                 items.push(
+                    MenuItemFields::new("Copy share link")
+                        .with_on_select_action(TerminalAction::ContextMenu(
+                            ContextMenuAction::CopyConversationShareLink {
+                                conversation_id: ai_conversation_id,
+                            },
+                        ))
+                        .into_item(),
+                );
+                items.push(
                     MenuItemFields::new("Share conversation")
                         .with_on_select_action(TerminalAction::ContextMenu(
                             ContextMenuAction::OpenConversationShareDialog {
@@ -16392,6 +16425,118 @@ impl TerminalView {
         items
     }
 
+    fn conversation_text(&self, conversation_id: AIConversationId, ctx: &AppContext) -> String {
+        let Some(conversation) =
+            BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id)
+        else {
+            log::warn!("No conversation found for conversation ID {conversation_id}");
+            return String::new();
+        };
+
+        let mut result = Vec::new();
+        for exchange in conversation.root_task_exchanges() {
+            let formatted_exchange =
+                exchange.format_for_copy(Some(self.ai_action_model.as_ref(ctx)));
+            if !formatted_exchange.is_empty() {
+                result.push(formatted_exchange);
+            }
+        }
+
+        result.join("\n\n")
+    }
+
+    fn copy_conversation_text(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let conversation_text = self.conversation_text(conversation_id, ctx);
+        ctx.clipboard()
+            .write(ClipboardContent::plain_text(conversation_text));
+    }
+
+    fn fork_ai_conversation(
+        &self,
+        conversation_id: AIConversationId,
+        fork_from_exchange: Option<ForkFromExchange>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        ctx.dispatch_global_action(
+            "workspace:fork_ai_conversation",
+            ForkAIConversationParams {
+                conversation_id,
+                fork_from_exchange,
+                summarize_after_fork: false,
+                summarization_prompt: None,
+                initial_prompt: None,
+                destination: ForkedConversationDestination::SplitPane,
+            },
+        );
+    }
+
+    fn conversation_server_token(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &AppContext,
+    ) -> Option<ServerConversationToken> {
+        let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+        history_model
+            .conversation(&conversation_id)
+            .and_then(|conversation| {
+                conversation
+                    .server_conversation_token()
+                    .or_else(|| conversation.forked_from_server_conversation_token())
+                    .cloned()
+            })
+            .or_else(|| {
+                history_model
+                    .get_server_conversation_metadata(&conversation_id)
+                    .map(|metadata| metadata.server_conversation_token.clone())
+            })
+    }
+
+    fn conversation_debug_request_id(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &AppContext,
+    ) -> Option<ServerOutputId> {
+        BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .and_then(|conversation| conversation.root_task_exchanges().last())
+            .and_then(|exchange| exchange.output_status.server_output_id())
+    }
+
+    fn copy_debugging_menu_items(
+        &self,
+        conversation_token: ServerConversationToken,
+        server_output_id: Option<ServerOutputId>,
+    ) -> Vec<(String, ContextMenuAction)> {
+        let mut items = vec![(
+            "Copy debugging ID".to_string(),
+            ContextMenuAction::CopyExternalDebuggingId {
+                request_id: server_output_id.clone(),
+                conversation_id: conversation_token.clone(),
+            },
+        )];
+
+        if ChannelState::channel().is_dogfood() {
+            items.push((
+                "Copy debugging link".to_string(),
+                ContextMenuAction::CopyAIDebuggingLink {
+                    conversation_token: conversation_token.clone(),
+                    request_id: server_output_id,
+                },
+            ));
+            items.push((
+                "Copy conversation ID".to_string(),
+                ContextMenuAction::CopyConversationId {
+                    conversation_id: conversation_token,
+                },
+            ));
+        }
+
+        items
+    }
     fn create_copy_debugging_menu_item(
         &self,
         ai_exchange_id: AIAgentExchangeId,
@@ -16413,32 +16558,85 @@ impl TerminalView {
         let server_output_id = self
             .ai_block_for_exchange(&ai_exchange_id)
             .and_then(|ai_block_handle| ai_block_handle.as_ref(ctx).server_output_id(ctx));
+        self.copy_debugging_menu_items(conversation_token.clone(), server_output_id)
+    }
 
-        if ChannelState::channel().is_dogfood() {
-            vec![
-                (
-                    "Copy debugging link".to_string(),
-                    ContextMenuAction::CopyAIDebuggingLink {
-                        conversation_token: conversation_token.clone(),
-                        request_id: server_output_id,
-                    },
-                ),
-                (
-                    "Copy conversation ID".to_string(),
-                    ContextMenuAction::CopyConversationId {
-                        conversation_id: conversation_token.clone(),
-                    },
-                ),
-            ]
-        } else {
-            vec![(
-                "Copy debugging ID".to_string(),
-                ContextMenuAction::CopyExternalDebuggingId {
-                    request_id: server_output_id,
-                    conversation_id: conversation_token.clone(),
-                },
-            )]
+    fn conversation_menu_items(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) -> Vec<MenuItem<TerminalAction>> {
+        let mut items = Vec::new();
+
+        if ShareableObject::AIConversation(conversation_id)
+            .link(ctx)
+            .is_some()
+        {
+            items.push(
+                MenuItemFields::new("Copy share link")
+                    .with_on_select_action(TerminalAction::ContextMenu(
+                        ContextMenuAction::CopyConversationShareLink { conversation_id },
+                    ))
+                    .into_item(),
+            );
         }
+
+        items.push(
+            MenuItemFields::new("Copy conversation text")
+                .with_on_select_action(TerminalAction::ContextMenu(
+                    ContextMenuAction::CopyConversationText { conversation_id },
+                ))
+                .into_item(),
+        );
+
+        if !cfg!(target_family = "wasm") {
+            items.push(
+                MenuItemFields::new("Fork")
+                    .with_on_select_action(TerminalAction::ContextMenu(
+                        ContextMenuAction::ForkAIConversation { conversation_id },
+                    ))
+                    .into_item(),
+            );
+        }
+
+        if let Some(conversation_token) = self.conversation_server_token(conversation_id, ctx) {
+            let server_output_id = self.conversation_debug_request_id(conversation_id, ctx);
+            let debugging_items =
+                self.copy_debugging_menu_items(conversation_token, server_output_id);
+            if !debugging_items.is_empty() {
+                if !items.is_empty() {
+                    items.push(MenuItem::Separator);
+                }
+                for (button_text, action) in debugging_items {
+                    items.push(
+                        MenuItemFields::new(button_text)
+                            .with_on_select_action(TerminalAction::ContextMenu(action))
+                            .into_item(),
+                    );
+                }
+            }
+        }
+
+        items
+    }
+
+    fn open_agent_view_entry_context_menu(
+        &mut self,
+        conversation_id: AIConversationId,
+        agent_view_entry_block_id: EntityId,
+        position: Vector2F,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.show_context_menu(
+            ContextMenuState {
+                menu_type: ContextMenuType::AgentViewEntryConversation {
+                    agent_view_entry_block_id,
+                    position,
+                },
+            },
+            self.conversation_menu_items(conversation_id, ctx),
+            ctx,
+        );
     }
 
     fn open_ai_block_overflow_context_menu(
@@ -22878,16 +23076,13 @@ impl TerminalView {
                 }
             }
             CopyAIBlockConversation { ai_block_view_id } => {
-                // Copy the entire conversation by delegating to the AI block
-                for rich_content in self.rich_content_views.iter() {
-                    if let Some(ai_metadata) = rich_content.ai_block_metadata() {
-                        if ai_metadata.ai_block_handle.id() == *ai_block_view_id {
-                            ai_metadata.ai_block_handle.update(ctx, |block, ctx| {
-                                block.handle_action(&AIBlockAction::CopyConversation, ctx);
-                            });
-                            break;
-                        }
-                    }
+                let conversation_id = self.rich_content_views.iter().find_map(|rich_content| {
+                    let ai_metadata = rich_content.ai_block_metadata()?;
+                    (ai_metadata.ai_block_handle.id() == *ai_block_view_id)
+                        .then_some(ai_metadata.conversation_id)
+                });
+                if let Some(conversation_id) = conversation_id {
+                    self.copy_conversation_text(conversation_id, ctx);
                 }
             }
             CopyExternalDebuggingId {
@@ -22915,6 +23110,17 @@ impl TerminalView {
                 ctx.clipboard().write(ClipboardContent::plain_text(
                     request_id.as_str().to_string(),
                 ));
+            }
+            CopyConversationShareLink { conversation_id } => {
+                if let Some(link) = ShareableObject::AIConversation(*conversation_id).link(ctx) {
+                    ctx.clipboard().write(ClipboardContent::plain_text(link));
+                }
+            }
+            CopyConversationText { conversation_id } => {
+                self.copy_conversation_text(*conversation_id, ctx);
+            }
+            ForkAIConversation { conversation_id } => {
+                self.fork_ai_conversation(*conversation_id, None, ctx);
             }
             OpenConversationShareDialog { conversation_id } => {
                 // Set the shareable object and open the sharing dialog via the pane header
@@ -22965,19 +23171,13 @@ impl TerminalView {
                 exchange_id,
                 conversation_id,
             } => {
-                ctx.dispatch_global_action(
-                    "workspace:fork_ai_conversation",
-                    ForkAIConversationParams {
-                        conversation_id: *conversation_id,
-                        fork_from_exchange: Some(ForkFromExchange {
-                            exchange_id: *exchange_id,
-                            fork_from_exact_exchange: false,
-                        }),
-                        summarize_after_fork: false,
-                        summarization_prompt: None,
-                        initial_prompt: None,
-                        destination: ForkedConversationDestination::SplitPane,
-                    },
+                self.fork_ai_conversation(
+                    *conversation_id,
+                    Some(ForkFromExchange {
+                        exchange_id: *exchange_id,
+                        fork_from_exact_exchange: false,
+                    }),
+                    ctx,
                 );
             }
             ForkAIConversationFromExactExchange {
@@ -22985,19 +23185,13 @@ impl TerminalView {
                 exchange_id,
                 conversation_id,
             } => {
-                ctx.dispatch_global_action(
-                    "workspace:fork_ai_conversation",
-                    ForkAIConversationParams {
-                        conversation_id: *conversation_id,
-                        fork_from_exchange: Some(ForkFromExchange {
-                            exchange_id: *exchange_id,
-                            fork_from_exact_exchange: true,
-                        }),
-                        summarize_after_fork: false,
-                        summarization_prompt: None,
-                        initial_prompt: None,
-                        destination: ForkedConversationDestination::SplitPane,
-                    },
+                self.fork_ai_conversation(
+                    *conversation_id,
+                    Some(ForkFromExchange {
+                        exchange_id: *exchange_id,
+                        fork_from_exact_exchange: true,
+                    }),
+                    ctx,
                 );
             }
             SavePromptAsAgentModeWorkflow { ai_block_view_id } => {
@@ -25853,6 +26047,19 @@ impl View for TerminalView {
                         ChildAnchor::TopRight,
                     ),
                 ),
+            Some(ContextMenuType::AgentViewEntryConversation {
+                agent_view_entry_block_id,
+                position,
+            }) => stack.add_positioned_overlay_child(
+                ChildView::new(&self.context_menu).finish(),
+                OffsetPositioning::offset_from_save_position_element(
+                    get_agent_view_entry_block_position_id(*agent_view_entry_block_id),
+                    *position,
+                    PositionedElementOffsetBounds::WindowByPosition,
+                    PositionedElementAnchor::TopLeft,
+                    ChildAnchor::TopLeft,
+                ),
+            ),
             None => {}
         }
 

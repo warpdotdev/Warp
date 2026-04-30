@@ -5675,8 +5675,6 @@ pub enum AIBlockAction {
     /// Copy all AI output from the previous user query to the next user query.
     /// Note that this contains more than just this block, since from the user perspective everything after the user query appears like one block.
     CopyOutput,
-    /// Copy complete conversation history
-    CopyConversation,
     /// Copy the ai block's command
     CopyCommand,
     /// Store a command that was right-clicked for later copying
@@ -6124,34 +6122,6 @@ impl TypedActionView for AIBlock {
                 let combined_text = format!("{prompt_text}\n\n{output_text}");
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(combined_text));
-            }
-            AIBlockAction::CopyConversation => {
-                let conversation_text = {
-                    let history = BlocklistAIHistoryModel::handle(ctx);
-                    let Some(conversation) = history
-                        .as_ref(ctx)
-                        .conversation(&self.client_ids.conversation_id)
-                    else {
-                        log::warn!(
-                            "No conversation found for conversation ID {}",
-                            self.client_ids.conversation_id
-                        );
-                        return;
-                    };
-
-                    let mut result = Vec::new();
-                    for exchange in conversation.root_task_exchanges() {
-                        let formatted_exchange =
-                            exchange.format_for_copy(Some(self.action_model.as_ref(ctx)));
-                        if !formatted_exchange.is_empty() {
-                            result.push(formatted_exchange);
-                        }
-                    }
-
-                    result.join("\n\n")
-                };
-                ctx.clipboard()
-                    .write(ClipboardContent::plain_text(conversation_text));
             }
             AIBlockAction::CopyCommand => {
                 let command_text = if let Some(stored_command) = &self.last_right_clicked_command {
