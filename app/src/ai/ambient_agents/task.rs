@@ -92,6 +92,7 @@ pub(crate) fn harness_from_name(name: &str) -> Harness {
         "claude" => Harness::Claude,
         "opencode" => Harness::OpenCode,
         "gemini" => Harness::Gemini,
+        "codex" => Harness::Codex,
         "oz" => Harness::Oz,
         other => {
             log::warn!("Unknown harness config name: {other:?}; treating as Unknown");
