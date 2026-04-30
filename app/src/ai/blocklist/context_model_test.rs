@@ -2,9 +2,8 @@
 //!
 //! These tests deliberately bypass the production [`BlocklistAIContextModel::new`] constructor
 //! (which subscribes to several singletons) and instead use [`BlocklistAIContextModel::new_for_test`]
-//! together with [`super::agent_view::AgentViewController::new`] backed by
-//! [`crate::terminal::view::ambient_agent::AmbientAgentViewModel::new_for_test`]. That keeps the
-//! fixture small enough to focus on the lock logic without standing up `BlocklistAIHistoryModel`,
+//! together with [`super::agent_view::AgentViewController::new`]. That keeps the fixture small
+//! enough to focus on the lock logic without standing up `BlocklistAIHistoryModel`,
 //! `LLMPreferences`, `CloudModel`, `UpdateManager`, or `AppExecutionMode`.
 
 use std::sync::Arc;
@@ -20,7 +19,6 @@ use crate::terminal::color::{self, Colors};
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::test_utils::block_size;
 use crate::terminal::model::{BlockId, TerminalModel};
-use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
 
 /// Builds a [`BlocklistAIContextModel`] with stub dependencies. None of the dependencies are
 /// exercised by the methods under test; they only need to satisfy the struct's field types.
@@ -38,21 +36,12 @@ fn build_test_context_model(app: &mut App) -> ModelHandle<BlocklistAIContextMode
     )));
     let terminal_view_id = EntityId::new();
 
-    let ambient_agent_view_model = app.add_model(|ctx| {
-        AmbientAgentViewModel::new_for_test(
-            terminal_view_id,
-            false, /* has_parent_terminal */
-            ctx,
-        )
-    });
     let ephemeral_message_model = app.add_model(|_| EphemeralMessageModel::new());
-    let agent_view_controller = app.add_model(|ctx| {
+    let agent_view_controller = app.add_model(|_| {
         AgentViewController::new(
             terminal_model.clone(),
             terminal_view_id,
-            ambient_agent_view_model,
             ephemeral_message_model,
-            ctx,
         )
     });
 
