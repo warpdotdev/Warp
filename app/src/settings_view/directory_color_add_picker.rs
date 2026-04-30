@@ -26,8 +26,7 @@ use crate::{
     },
 };
 
-const ADD_DIRECTORY_LABEL: &str = "+ Add directory…";
-const BUTTON_LABEL: &str = "Add directory color";
+// Labels now come from i18n::t() at render time.
 const MENU_WIDTH: f32 = 340.;
 
 /// A dropdown used by the Directory tab colors settings widget, with a button fallback
@@ -110,7 +109,7 @@ impl DirectoryColorAddPicker {
         });
 
         let button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new(BUTTON_LABEL, SecondaryTheme)
+            ActionButton::new(i18n::t("settings.dir_color.add_button"), SecondaryTheme)
                 .with_icon(icons::Icon::Plus)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(DirectoryColorAddPickerAction::AddNewDirectory);
@@ -121,7 +120,7 @@ impl DirectoryColorAddPicker {
             let mut dropdown = FilterableDropdown::new(ctx);
             dropdown.set_top_bar_max_width(MENU_WIDTH);
             dropdown.set_menu_width(MENU_WIDTH, ctx);
-            dropdown.set_menu_header_to_static(BUTTON_LABEL);
+            dropdown.set_menu_header_to_static(i18n::t("settings.dir_color.add_button"));
             dropdown
         });
 
@@ -158,7 +157,7 @@ impl DirectoryColorAddPicker {
                                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                                     .with_child(
                                         Text::new_inline(
-                                            ADD_DIRECTORY_LABEL,
+                                            i18n::t("settings.dir_color.add_directory"),
                                             font_family,
                                             font_size,
                                         )

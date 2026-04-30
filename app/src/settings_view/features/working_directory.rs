@@ -311,7 +311,7 @@ fn init_top_level_dropdown(
     })
     .collect_vec();
     items.push(DropdownItem::new(
-        "Advanced".to_string(),
+        i18n::t("settings.features.advanced"),
         WorkingDirectoryAction::SetGlobalWorkingDirectoryMode(None),
     ));
     let advanced_item_index = items.len() - 1;
@@ -370,7 +370,7 @@ fn create_editor(
         };
         ctx.add_typed_action_view(|ctx| {
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text("Directory path", ctx);
+            editor.set_placeholder_text(i18n::t("settings.features.directory_path"), ctx);
             editor
         })
     };

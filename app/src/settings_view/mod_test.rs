@@ -637,16 +637,16 @@ fn realistic_nav_items() -> Vec<SettingsNavItem> {
     vec![
         SettingsNavItem::Page(SettingsSection::Account),
         SettingsNavItem::Umbrella(SettingsUmbrella::new(
-            "Agents",
+            "nav.agents",
             SettingsSection::ai_subpages().to_vec(),
         )),
         SettingsNavItem::Page(SettingsSection::BillingAndUsage),
         SettingsNavItem::Umbrella(SettingsUmbrella::new(
-            "Code",
+            "nav.code",
             SettingsSection::code_subpages().to_vec(),
         )),
         SettingsNavItem::Umbrella(SettingsUmbrella::new(
-            "Cloud platform",
+            "nav.cloud_platform",
             SettingsSection::cloud_platform_subpages().to_vec(),
         )),
         SettingsNavItem::Page(SettingsSection::Teams),

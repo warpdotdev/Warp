@@ -15,7 +15,7 @@ use crate::{
         pane::view, BackingView, Direction, PaneConfiguration, PaneEvent, SplitPaneState,
     },
     server::server_api::ServerApiProvider,
-    settings::{AISettings, BlockVisibilitySettings, SettingsFileError},
+    settings::{AISettings, BlockVisibilitySettings, LanguageSettings, SettingsFileError},
     settings_view::mcp_servers_page::MCPServersSettingsPageEvent,
     terminal::{model::blockgrid::BlockGrid, SizeInfo},
     ui_components::icons,
@@ -230,20 +230,32 @@ use std::fmt::{self, Display};
 impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SettingsSection::BillingAndUsage => write!(f, "Billing and usage"),
-            SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
-            SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
-            SettingsSection::MCPServers => write!(f, "MCP Servers"),
-            SettingsSection::WarpDrive => write!(f, "Warp Drive"),
-            SettingsSection::WarpAgent => write!(f, "Warp Agent"),
-            SettingsSection::AgentProfiles => write!(f, "Profiles"),
-            SettingsSection::AgentMCPServers => write!(f, "MCP servers"),
-            SettingsSection::Knowledge => write!(f, "Knowledge"),
-            SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
-            SettingsSection::CodeIndexing => write!(f, "Indexing and projects"),
-            SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
-            SettingsSection::CloudEnvironments => write!(f, "Environments"),
-            SettingsSection::OzCloudAPIKeys => write!(f, "Oz Cloud API Keys"),
+            SettingsSection::Account => write!(f, "{}", i18n::t("nav.account")),
+            SettingsSection::Appearance => write!(f, "{}", i18n::t("nav.appearance")),
+            SettingsSection::Features => write!(f, "{}", i18n::t("nav.features")),
+            SettingsSection::Keybindings => write!(f, "{}", i18n::t("nav.keybindings")),
+            SettingsSection::Privacy => write!(f, "{}", i18n::t("nav.privacy")),
+            SettingsSection::Teams => write!(f, "{}", i18n::t("nav.teams")),
+            SettingsSection::About => write!(f, "{}", i18n::t("nav.about")),
+            SettingsSection::BillingAndUsage => write!(f, "{}", i18n::t("nav.billing_and_usage")),
+            SettingsSection::SharedBlocks => write!(f, "{}", i18n::t("nav.shared_blocks")),
+            SettingsSection::MCPServers => write!(f, "{}", i18n::t("nav.mcp_servers")),
+            SettingsSection::WarpDrive => write!(f, "{}", i18n::t("nav.warp_drive")),
+            SettingsSection::WarpAgent => write!(f, "{}", i18n::t("nav.warp_agent")),
+            SettingsSection::AgentProfiles => write!(f, "{}", i18n::t("nav.agent_profiles")),
+            SettingsSection::AgentMCPServers => write!(f, "{}", i18n::t("nav.agent_mcp_servers")),
+            SettingsSection::Knowledge => write!(f, "{}", i18n::t("nav.knowledge")),
+            SettingsSection::ThirdPartyCLIAgents => {
+                write!(f, "{}", i18n::t("nav.third_party_cli_agents"))
+            }
+            SettingsSection::CodeIndexing => write!(f, "{}", i18n::t("nav.code_indexing")),
+            SettingsSection::EditorAndCodeReview => {
+                write!(f, "{}", i18n::t("nav.editor_and_code_review"))
+            }
+            SettingsSection::CloudEnvironments => {
+                write!(f, "{}", i18n::t("nav.cloud_environments"))
+            }
+            SettingsSection::OzCloudAPIKeys => write!(f, "{}", i18n::t("nav.oz_cloud_api_keys")),
             _ => write!(f, "{self:?}"),
         }
     }
@@ -1009,7 +1021,8 @@ pub struct SettingsView {
 
 impl SettingsView {
     pub fn new(page: Option<SettingsSection>, ctx: &mut ViewContext<Self>) -> Self {
-        let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new("Settings"));
+        let pane_configuration =
+            ctx.add_model(|_ctx| PaneConfiguration::new(i18n::t("settings.title")));
 
         let global_resource_handles = GlobalResourceHandlesProvider::as_ref(ctx).get().clone();
         // Main settings page with accounts info
@@ -1022,6 +1035,12 @@ impl SettingsView {
         let appearance_page_handle = ctx.add_typed_action_view(AppearanceSettingsPageView::new);
         ctx.subscribe_to_view(&appearance_page_handle, |me, _, event, ctx| {
             me.handle_appearance_page_event(event, ctx);
+        });
+        ctx.subscribe_to_model(&LanguageSettings::handle(ctx), |me, _, _, ctx| {
+            me.pane_configuration.update(ctx, |configuration, ctx| {
+                configuration.set_title(i18n::t("settings.title"), ctx);
+            });
+            ctx.notify();
         });
 
         // Features page
@@ -1142,8 +1161,15 @@ impl SettingsView {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text("Search", ctx);
+            editor.set_placeholder_text(i18n::t("settings.search"), ctx);
             editor
+        });
+
+        ctx.subscribe_to_model(&LanguageSettings::handle(ctx), |me, _, _, ctx| {
+            me.search_editor.update(ctx, |editor, ctx| {
+                editor.set_placeholder_text(i18n::t("settings.search"), ctx);
+            });
+            ctx.notify();
         });
 
         ctx.subscribe_to_view(&search_editor, Self::handle_search_editor_event);
@@ -1185,19 +1211,19 @@ impl SettingsView {
         let mut nav_items = vec![
             SettingsNavItem::Page(SettingsSection::Account),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Agents",
+                "nav.agents",
                 SettingsSection::ai_subpages().to_vec(),
             )),
             SettingsNavItem::Page(SettingsSection::BillingAndUsage),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Code",
+                "nav.code",
                 vec![
                     SettingsSection::CodeIndexing,
                     SettingsSection::EditorAndCodeReview,
                 ],
             )),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Cloud platform",
+                "nav.cloud_platform",
                 vec![
                     SettingsSection::CloudEnvironments,
                     SettingsSection::OzCloudAPIKeys,
@@ -2654,7 +2680,7 @@ impl BackingView for SettingsView {
         _ctx: &view::HeaderRenderContext<'_>,
         _app: &AppContext,
     ) -> view::HeaderContent {
-        view::HeaderContent::simple("Settings")
+        view::HeaderContent::simple(i18n::t("settings.title"))
     }
 
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {

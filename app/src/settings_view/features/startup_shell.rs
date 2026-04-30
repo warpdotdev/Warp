@@ -98,7 +98,7 @@ impl StartupShellView {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_placeholder_text("Executable path", ctx);
+            editor.set_placeholder_text(i18n::t("settings.features.executable_path"), ctx);
 
             if let Some(shell) = custom_shell_text.as_ref() {
                 editor.set_buffer_text(shell, ctx);
@@ -155,7 +155,7 @@ impl StartupShellView {
             });
 
             items.push(DropdownItem::new(
-                "Custom",
+                i18n::t("settings.features.custom"),
                 NewSessionShellAction::ShowCustomPathInput,
             ));
             let custom_index = items.len() - 1;

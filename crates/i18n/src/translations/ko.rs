@@ -1,0 +1,1174 @@
+use std::collections::HashMap;
+
+lazy_static::lazy_static! {
+    pub static ref TRANSLATIONS: HashMap<&'static str, &'static str> = {
+        let mut m = HashMap::new();
+
+        // Navigation sidebar
+        m.insert("nav.account", "\u{ACC4}\u{C815}");
+        m.insert("nav.appearance", "\u{BAA8}\u{C591}");
+        m.insert("nav.features", "\u{AE30}\u{B2A5}");
+        m.insert("nav.keybindings", "\u{D0A4}\u{BCF4}\u{B4DC} \u{B2E8}\u{CD95}\u{D0A4}");
+        m.insert("nav.privacy", "\u{AC1C}\u{C778} \u{C815}\u{BCF4}");
+        m.insert("nav.teams", "\u{D300}");
+        m.insert("nav.about", "Warp \u{C815}\u{BCF4}");
+        m.insert("nav.ai", "AI");
+        m.insert("nav.code", "\u{CF54}\u{B4DC}");
+        m.insert("nav.cloud_platform", "\u{ED07}\u{B4DC} \u{D50C}\u{B798}\u{D3FC}");
+        m.insert("nav.agents", "\u{C5D0}\u{C774}\u{C804}\u{D2B8}");
+        m.insert("nav.billing_and_usage", "\u{ACB0}\u{C81C} \u{BC0F} \u{C0AC}\u{C6A9}\u{B7C9}");
+        m.insert("nav.shared_blocks", "\u{ACF5}\u{C720} \u{BE14}\u{B85D}");
+        m.insert("nav.mcp_servers", "MCP \u{C11C}\u{BC84}");
+        m.insert("nav.warp_drive", "Warp Drive");
+        m.insert("nav.warp_agent", "Warp Agent");
+        m.insert("nav.agent_profiles", "\u{D504}\u{B85C}\u{D544}");
+        m.insert("nav.agent_mcp_servers", "MCP \u{C11C}\u{BC84}");
+        m.insert("nav.knowledge", "\u{C9C0}\u{C2DD}");
+        m.insert("nav.third_party_cli_agents", "\u{D0C0}\u{C0AC} CLI \u{C5D0}\u{C774}\u{C804}\u{D2B8}");
+        m.insert("nav.code_indexing", "\u{C778}\u{B371}\u{C2F1} \u{BC0F} \u{D504}\u{B85C}\u{C81D}\u{D2B8}");
+        m.insert("nav.editor_and_code_review", "\u{D3B8}\u{C9D1}\u{AE30} \u{BC0F} \u{CF54}\u{B4DC} \u{B9AC}\u{BDF0}");
+        m.insert("nav.cloud_environments", "\u{D658}\u{ACBD}");
+        m.insert("nav.oz_cloud_api_keys", "Oz Cloud API \u{D0A4}");
+
+        // Settings shell
+        m.insert("settings.title", "\u{C124}\u{C815}");
+        m.insert("settings.search", "\u{AC80}\u{C0C9}");
+        m.insert("settings.shell.split_right", "\u{C624}\u{B978}\u{CABD}\u{C73C}\u{B85C} \u{BD84}\u{D560}");
+        m.insert("settings.shell.split_left", "\u{C67C}\u{CABD}\u{C73C}\u{B85C} \u{BD84}\u{D560}");
+        m.insert("settings.shell.split_down", "\u{C544}\u{B798}\u{C73C}\u{B85C} \u{BD84}\u{D560}");
+        m.insert("settings.shell.split_up", "\u{C704}\u{B85C} \u{BD84}\u{D560}");
+        m.insert("settings.shell.close_pane", "\u{C704}\u{CE58} \u{B2EB}\u{AE30}");
+        m.insert("settings.shell.toggle.code_review_show", "\u{D0D1} \u{BC14}\u{C5D0} \u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{BC84}\u{D2BC} \u{D45C}\u{C2DC}");
+        m.insert("settings.shell.toggle.code_review_hide", "\u{D0D1} \u{BC14}\u{C5D0}\u{C11C} \u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{BC84}\u{D2BC} \u{C228}\u{AE30}\u{AE30}");
+        m.insert("settings.shell.toggle.init_block_show", "\u{CD08}\u{AE30}\u{D654} \u{BE14}\u{B85D} \u{D45C}\u{C2DC}");
+        m.insert("settings.shell.toggle.init_block_hide", "\u{CD08}\u{AE30}\u{D654} \u{BE14}\u{B85D} \u{C228}\u{AE30}\u{AE30}");
+        m.insert("settings.shell.toggle.in_band_show", "\u{BC34}\u{B4DC} \u{B0B4} \u{BA85}\u{B839} \u{BE14}\u{B85D} \u{D45C}\u{C2DC}");
+        m.insert("settings.shell.toggle.in_band_hide", "\u{BC34}\u{B4DC} \u{B0B4} \u{BA85}\u{B839} \u{BE14}\u{B85D} \u{C228}\u{AE30}\u{AE30}");
+        m.insert("settings.shell.toggle.tab_bar_show", "\u{D56D}\u{C0C1} \u{D0D1} \u{BC14} \u{D45C}\u{C2DC}");
+        m.insert("settings.shell.toggle.tab_bar_hide_fullscreen", "\u{D480}\u{C2A4}\u{D06C}\u{B9B0}\u{C5D0}\u{C11C} \u{D0D1} \u{BC14} \u{C228}\u{AE30}\u{AE30}");
+        m.insert("settings.shell.toggle.tab_bar_hover", "\u{D638}\u{BC84} \u{C2DC}\u{C5D0}\u{B9CC} \u{D0D1} \u{BC14} \u{D45C}\u{C2DC}");
+
+        // Appearance page - Language
+        m.insert("settings.appearance.language.label", "\u{C5B8}\u{C5B4}");
+        m.insert("settings.appearance.language.subtitle", "Warp \u{C778}\u{D130}\u{D398}\u{C774}\u{C2A4}\u{C758} \u{D45C}\u{C2DC} \u{C5B8}\u{C5B4}\u{B97C} \u{C124}\u{C815}\u{D569}\u{B2C8}\u{B2E4}.");
+
+        // Appearance page - Themes
+        m.insert("settings.appearance.themes", "\u{D14C}\u{B9C8}");
+        m.insert("settings.appearance.themes.create_custom", "\u{CEEC}\u{C2A4}\u{D140} \u{D14C}\u{B9C8} \u{B9CC}\u{B4E4}\u{AE30}");
+        m.insert("settings.appearance.themes.light", "\u{B77C}\u{C774}\u{D2B8}");
+        m.insert("settings.appearance.themes.dark", "\u{B2E4}\u{D06C}");
+        m.insert("settings.appearance.themes.current", "\u{D604}\u{C7AC} \u{D14C}\u{B9C8}");
+        m.insert("settings.appearance.themes.sync_with_os", "OS \u{B3D9}\u{AE30}\u{D654}");
+        m.insert("settings.appearance.themes.sync_with_os.description", "\u{C2DC}\u{C2A4}\u{D15C}\u{C774} \u{B77C}\u{C774}\u{D2B8} \u{BC0F} \u{B2E4}\u{D06C} \u{D14C}\u{B9C8}\u{B97C} \u{C804}\u{D658}\u{D560} \u{B54C} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{C804}\u{D658}\u{D569}\u{B2C8}\u{B2E4}.");
+
+        // Appearance page - Window
+        m.insert("settings.appearance.window", "\u{CC3D}");
+        m.insert("settings.appearance.icon", "\u{C544}\u{C774}\u{CF58}");
+        m.insert("settings.appearance.icon.customize", "\u{C560}\u{D50C} \u{C544}\u{C774}\u{CF58} \u{CEEC}\u{C2A4}\u{D140}\u{B9C8}\u{C774}\u{C988}");
+        m.insert("settings.appearance.icon.bundle_warning", "\u{C560}\u{D50C} \u{C544}\u{C774}\u{CF58}\u{C744} \u{BCC0}\u{ACBD}\u{D558}\u{B824}\u{BA74} \u{C560}\u{D50C}\u{C774} \u{BC34}\u{B4EC}\u{B418}\u{C5B4}\u{C57C} \u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.appearance.icon.restart_warning", "\u{C6F9} \u{C544}\u{C774}\u{CF58} \u{C2A4}\u{D0C0}\u{C77C}\u{C744} \u{C801}\u{C6A9}\u{D558}\u{B824}\u{BA74} Warp \u{B97C} \u{B2E4}\u{C2DC} \u{C2DC}\u{C791}\u{D574}\u{C57C} \u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.appearance.window.opacity", "\u{CC3D} \u{BD88}\u{D22C}\u{BA85}\u{B3C4}");
+        m.insert("settings.appearance.window.blur", "\u{BC31}\u{AC70}\u{B77C}\u{C6B4} \u{BAA8}\u{B978}\u{C81C}");
+        m.insert("settings.appearance.window.blur_texture", "\u{BC31}\u{AC70}\u{B77C}\u{C6B4} \u{BAA8}\u{B978}\u{C81C} \u{D14C}\u{C2A4}\u{CC98}");
+        m.insert("settings.appearance.window.custom_size", "\u{CEEC}\u{C2A4}\u{D140} \u{C0AC}\u{C774}\u{C988}\u{B85C} \u{C0C8} \u{CC3D} \u{C5F4}\u{AE30}");
+        m.insert("settings.appearance.window.columns", "\u{C5F4}");
+        m.insert("settings.appearance.window.rows", "\u{D589}");
+        m.insert("settings.appearance.window.opacity.label", "\u{CC3D} \u{BD88}\u{D22C}\u{BA85}\u{B3C4}:");
+        m.insert("settings.appearance.window.opacity.unsupported", "\u{ADF8}\u{B798}\u{D53D} \u{B4DC}\u{B77C}\u{C774}\u{BC84}\u{AC00} \u{D22C}\u{BA85}\u{B3C4}\u{B97C} \u{C9C0}\u{C6D0}\u{D558}\u{C9C0} \u{BABB}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.appearance.window.opacity.value", "\u{CC3D} \u{BD88}\u{D22C}\u{BA85}\u{B3C4}: {opacity_value}");
+        m.insert("settings.appearance.window.opacity.graphics_warning", "\u{C120}\u{D0DD}\u{D55C} \u{ADF8}\u{B798}\u{D53D} \u{C124}\u{C815}\u{C740} \u{D22C}\u{BA85} \u{CC3D} \u{B80C}\u{B354}\u{B9C1}\u{C744} \u{C9C0}\u{C6D0}\u{D558}\u{C9C0} \u{BABB}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.appearance.window.opacity.graphics_hint", " \u{AE30}\u{B2A5} > \u{C2DC}\u{C2A4}\u{D15C}\u{C5D0}\u{C11C} \u{ADF8}\u{B798}\u{D53D} \u{BC31}\u{C5D4}\u{B4DC} \u{B610}\u{B294} \u{D1B5}\u{D569} GPU \u{C124}\u{C815}\u{C744} \u{BCC0}\u{ACBD}\u{D574} \u{BCF4}\u{C138}\u{C694}.");
+        m.insert("settings.appearance.window.blur.value", "\u{CC3D} \u{BAA8}\u{B978}\u{C81C} \u{BC18}\u{AC90}: {blur_value}");
+        m.insert("settings.appearance.window.blur.use_acrylic", "\u{CC3D} \u{BAA8}\u{B978}\u{C81C} (\u{C544}\u{D06C}\u{B9AC}\u{B9AD} \u{D14C}\u{C2A4}\u{CC98}) \u{C0AC}\u{C6A9}");
+        m.insert("settings.appearance.window.blur.hardware_warning", "\u{C120}\u{D0DD}\u{D55C} \u{D558}\u{B4DC}\u{C6E8}\u{C5B4}\u{AC00} \u{D22C}\u{BA85} \u{CC3D} \u{B80C}\u{B354}\u{B9C1}\u{C744} \u{C9C0}\u{C6D0}\u{D558}\u{C9C0} \u{BABB}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+
+        // Appearance page - Input
+        m.insert("settings.appearance.input", "\u{C785}\u{B825}");
+        m.insert("settings.appearance.input.type", "\u{C785}\u{B825} \u{C720}\u{D615}");
+        m.insert("settings.appearance.input.mode", "\u{C785}\u{B825} \u{C704}\u{CE58}");
+        m.insert("settings.appearance.input.warp", "Warp");
+        m.insert("settings.appearance.input.shell_ps1", "Shell (PS1)");
+        m.insert("settings.appearance.input.mode.warp", "\u{D558}\u{B2E8}\u{C5D0} \u{ACE0}\u{C815} (Warp \u{BAA8}\u{B4DC})");
+        m.insert("settings.appearance.input.mode.reverse", "\u{C0C1}\u{B2E8}\u{C5D0} \u{ACE0}\u{C815} (\u{BCC0}\u{ACBD} \u{BAA8}\u{B4DC})");
+        m.insert("settings.appearance.input.mode.classic", "\u{C0C1}\u{B2E8}\u{C5D0}\u{C11C} \u{C2DC}\u{C791} (\u{D074}\u{B798}\u{C2DC}\u{CEF7} \u{BAA8}\u{B4DC})");
+
+        // Appearance page - Blocks
+        m.insert("settings.appearance.blocks", "\u{BE14}\u{B85D}");
+        m.insert("settings.appearance.blocks.jump_to_bottom", "\u{BE14}\u{B85D} \u{D558}\u{B2E8}\u{C73C}\u{B85C} \u{C810}\u{D504} \u{BC84}\u{D2BC} \u{D45C}\u{C2DC}");
+        m.insert("settings.appearance.blocks.dividers", "\u{BE14}\u{B85D} \u{AD6C}\u{BD84}\u{C120} \u{D45C}\u{C2DC}");
+        m.insert("settings.appearance.panes", "\u{D328}\u{C774}\u{B108}");
+        m.insert("settings.appearance.panes.consistent_tools", "\u{B3C4}\u{AD6C} \u{C704}\u{CE58}\u{D310} \u{AC00}\u{C2DC}\u{C131}\u{C740} \u{D0D1} \u{AC04}\u{C5D0} \u{C77C}\u{AD00}\u{B429}\u{B2C8}\u{B2E4}");
+        m.insert("settings.appearance.panes.dim_inactive", "\u{BE44}\u{D65C}\u{C131} \u{C704}\u{CE58} \u{C5B8}\u{B824}\u{C9C0}\u{AC8C}");
+        m.insert("settings.appearance.panes.focus_follows_mouse", "\u{D3EC}\u{CEE4}\u{C2A4}\u{B97C} \u{B9C8}\u{C6B0}\u{C2A4}\u{C5D0} \u{B530}\u{B77C}\u{AC00}\u{AE30}");
+        m.insert("settings.appearance.panes.compact_mode", "\u{CEF4}\u{D329}\u{D2B8} \u{BAA8}\u{B4DC}");
+        m.insert("settings.appearance.cursor", "\u{CEE4}\u{C11C}");
+        m.insert("settings.appearance.cursor.type", "\u{CEE4}\u{C11C} \u{C720}\u{D615}");
+        m.insert("settings.appearance.cursor.type.disabled_vim", "Vim \u{BAA8}\u{B4DC}\u{C5D0}\u{C11C}\u{B294} \u{CEE4}\u{C11C} \u{C720}\u{D615}\u{C774} \u{BE44}\u{D65C}\u{C131}\u{D654}\u{B429}\u{B2C8}\u{B2E4}");
+        m.insert("settings.appearance.cursor.blink", "\u{CEE4}\u{C11C} \u{BCC4}\u{B9C8}");
+
+        // Appearance page - Text
+        m.insert("settings.appearance.text", "\u{D14D}\u{C2A4}\u{D2B8}");
+        m.insert("settings.appearance.text.font_size", "\u{D3F0}\u{D2B8} \u{C0AC}\u{C774}\u{C988}");
+        m.insert("settings.appearance.text.font_family", "\u{D3F0}\u{D2B8} \u{AC00}\u{C871}");
+        m.insert("settings.appearance.text.agent_font", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{D3F0}\u{D2B8}");
+        m.insert("settings.appearance.text.match_terminal", "\u{D130}\u{BBF8}\u{B110}\u{ACFC} \u{BC14}\u{B978}\u{C801} \u{BC18}\u{C601}");
+        m.insert("settings.appearance.text.line_height", "\u{D589} \u{B192}\u{C774}");
+        m.insert("settings.appearance.text.reset_default", "\u{AE30}\u{BCF8}\u{C73C}\u{B85C} \u{B9AC}\u{C138}\u{D2B8}");
+        m.insert("settings.appearance.text.terminal_font", "\u{D130}\u{BBF8}\u{B110} \u{D3F0}\u{D2B8}");
+        m.insert("settings.appearance.text.view_system_fonts", "\u{BAA8}\u{B4E0} \u{C2DC}\u{C2A4}\u{D15C} \u{D3F0}\u{D2B8} \u{BCF4}\u{AE30}");
+        m.insert("settings.appearance.text.font_weight", "\u{D3F0}\u{D2B8} \u{AC70}\u{B984}");
+        m.insert("settings.appearance.text.font_size_px", "\u{D3F0}\u{D2B8} \u{C0AC}\u{C774}\u{C988} (px)");
+        m.insert("settings.appearance.text.notebook_font_size", "\u{B178}\u{D2B8}\u{BD81} \u{D3F0}\u{D2B8} \u{C0AC}\u{C774}\u{C988}");
+        m.insert("settings.appearance.text.thin_strokes", "\u{C587}\u{C740} \u{C2A4}\u{D2B8}\u{B85C}\u{D06C} \u{C0AC}\u{C6A9}");
+        m.insert("settings.appearance.text.min_contrast", "\u{CD5C}\u{C18C} \u{B300}\u{BE44} \u{AC16}\u{C744} \u{AC15}\u{C81C}");
+        m.insert("settings.appearance.text.ligatures", "\u{D130}\u{BBF8}\u{B110}\u{C5D0}\u{C11C} \u{B9AC}\u{AC70}\u{CC98} \u{D45C}\u{C2DC}");
+        m.insert("settings.appearance.text.ligatures.warning", "\u{B9AC}\u{AC70}\u{CC98}\u{B294} \u{D37C}\u{D3EC}\u{BA78}\u{C2A4}\u{C5D0} \u{C601}\u{D5A5}\u{C744} \u{BBF8}\u{CE58}\u{B294} \u{AC83}\u{C73C}\u{B85C} \u{C2E0}\u{AD6C}\u{B429}\u{B2C8}\u{B2E4}");
+
+        // Appearance page - Full-screen Apps
+        m.insert("settings.appearance.full_screen_apps", "\u{D480}\u{C2A4}\u{D06C}\u{B9B0} \u{C560}\u{D50C}\u{B9AC}\u{CF00}\u{C774}\u{C158}");
+
+        // Appearance page - Tabs
+        m.insert("settings.appearance.tabs", "\u{D0D1}");
+        m.insert("settings.appearance.tabs.close_position", "\u{D0D1} \u{B2EB}\u{AE30} \u{BC84}\u{D2BC} \u{C704}\u{CE58}");
+        m.insert("settings.appearance.tabs.indicators", "\u{D0D1} \u{C778}\u{B514}\u{CF00}\u{C774}\u{D130} \u{D45C}\u{C2DC}");
+        m.insert("settings.appearance.tabs.code_review_button", "\u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{BC84}\u{D2BC} \u{D45C}\u{C2DC}");
+        m.insert("settings.appearance.tabs.preserve_color", "\u{C0C8} \u{D0D1}\u{C5D0} \u{D65C}\u{C131} \u{D0D1} \u{C0C9}\u{C0C1} \u{C720}\u{C9C0}");
+        m.insert("settings.appearance.tabs.vertical_layout", "\u{C218}\u{C9C1} \u{D0D1} \u{B808}\u{C774}\u{C544}\u{C6C3} \u{C0AC}\u{C6A9}");
+        m.insert("settings.appearance.tabs.prompt_as_title", "\u{CD5C}\u{C2E0} \u{C0AC}\u{C6A9}\u{C790} \u{D504}\u{B860}\u{D504}\u{D2B8}\u{B97C} \u{D0D1} \u{C774}\u{B984}\u{C758} \u{B300}\u{D654} \u{C81C}\u{BAA9}\u{C73C}\u{B85C} \u{C0AC}\u{C6A9}");
+        m.insert("settings.appearance.tabs.prompt_as_title.description", "\u{C218}\u{C9C1} \u{D0D1}\u{C5D0}\u{C11C} Oz \u{BC0F} \u{C81C}\u{C0BC} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C138}\u{C158}\u{C5D0}\u{C11C} \u{BC1C}\u{C0DD}\u{B41C} \u{B300}\u{D654} \u{C81C}\u{BAA9} \u{B300}\u{C2E0} \u{CD5C}\u{C2E0} \u{C0AC}\u{C6A9}\u{C790} \u{D504}\u{B860}\u{D504}\u{D2B8}\u{B97C} \u{D45C}\u{C2DC}\u{D699}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.appearance.tabs.header_layout", "\u{D5E4}\u{B354} \u{D234}\u{BC14} \u{B808}\u{C774}\u{C544}\u{C6C3}");
+        m.insert("settings.appearance.tabs.directory_colors", "\u{B514}\u{B809}\u{D1A0}\u{B9AC} \u{D0D1} \u{C0C9}\u{C0C1}");
+        m.insert("settings.appearance.tabs.directory_colors.description", "\u{B2E4}\u{B8E8}\u{ACE0} \u{C788}\u{B294} \u{B514}\u{B809}\u{D1A0}\u{B9AC} \u{B610}\u{B294} \u{B808}\u{D3EC}\u{C9C0}\u{D2B8}\u{C5D0} \u{AE30}\u{BC18}\u{D574} \u{D0D1}\u{C744} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{C0C9}\u{C0C1}\u{C73C}\u{B85C} \u{BCC0}\u{ACBD}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.appearance.tabs.directory_colors.default", "\u{AE30}\u{BCF8}\u{C0C1} (\u{C0C9}\u{C0C1} \u{C5C6}\u{C74C})");
+        m.insert("settings.appearance.tabs.show_tab_bar", "\u{D0D1} \u{BC14} \u{D45C}\u{C2DC}");
+        m.insert("settings.appearance.tabs.alt_screen_padding", "\u{BF08}\u{D654}\u{BA74}\u{C5D0}\u{C11C} \u{CEEC}\u{C2A4}\u{D140} \u{D328}\u{B529} \u{C0AC}\u{C6A9}");
+        m.insert("settings.appearance.tabs.uniform_padding", "\u{B3D9}\u{C77C} \u{D328}\u{B529} (px)");
+
+        // Appearance page - Zoom
+        m.insert("settings.appearance.zoom", "\u{D655}\u{B300}/\u{CD95}\u{C18C}");
+        m.insert("settings.appearance.zoom.description", "\u{BAA8}\u{B4E0} \u{CC3D}\u{C758} \u{AE30}\u{BCF8} \u{D655}\u{B300} \u{B808}\u{BCA8}\u{C744} \u{C870}\u{C808}\u{D569}\u{B2C8}\u{B2E4}");
+
+        // Appearance page - Dropdown options
+        m.insert("settings.appearance.option.never", "\u{C808}\u{B304} \u{C548}\u{D568}");
+        m.insert("settings.appearance.option.always", "\u{D56D}\u{C0C1}");
+        m.insert("settings.appearance.option.left", "\u{C67C}\u{CABD}");
+        m.insert("settings.appearance.option.right", "\u{C624}\u{B978}\u{CABD}");
+        m.insert("settings.appearance.option.on_low_dpi", "\u{B0AE} DPI \u{B514}\u{C2A4}\u{D50C}\u{B808}\u{C774}\u{C5D0}\u{C11C}");
+        m.insert("settings.appearance.option.on_high_dpi", "\u{B192} DPI \u{B514}\u{C2A4}\u{D50C}\u{B808}\u{C774}\u{C5D0}\u{C11C}");
+        m.insert("settings.appearance.option.only_named_colors", "\u{BA85}\u{BA85}\u{B41C} \u{C0C9}\u{C0C1}\u{C5D0}\u{B9CC}");
+        m.insert("settings.appearance.option.when_windowed", "\u{CC3D} \u{BAA8}\u{B4DC}\u{C77C} \u{B54C}");
+        m.insert("settings.appearance.option.only_on_hover", "\u{D638}\u{BC84} \u{C2DC}\u{C5D0}\u{B9CC}");
+
+        // Appearance page - Input binding descriptions
+        m.insert("settings.appearance.input.binding.start_top", "\u{C785}\u{B825}\u{C744} \u{C0C1}\u{B2E8}\u{C5D0} \u{BC30}\u{CE58}");
+        m.insert("settings.appearance.input.binding.pin_top", "\u{C785}\u{B825}\u{C744} \u{C0C1}\u{B2E8}\u{C5D0} \u{ACE0}\u{C815}");
+        m.insert("settings.appearance.input.binding.pin_bottom", "\u{C785}\u{B825}\u{C744} \u{D558}\u{B2E8}\u{C5D0} \u{ACE0}\u{C815}");
+        m.insert("settings.appearance.input.binding.toggle", "\u{C785}\u{B825} \u{BAA8}\u{B4DC} \u{C804}\u{D658} (Warp/\u{D074}\u{B798}\u{C2DD})");
+
+        // Common buttons
+        m.insert("button.reset", "\u{B9AC}\u{C138}\u{D2B8}");
+        m.insert("button.add", "\u{CD94}\u{AC00}");
+        m.insert("button.remove", "\u{C81C}\u{AC70}");
+        m.insert("button.save", "\u{C800}\u{C7A5}");
+        m.insert("button.cancel", "\u{CDE8}\u{C18C}");
+        m.insert("button.close", "\u{B2EB}\u{AE30}");
+        m.insert("button.sign_up", "\u{AC00}\u{C785}");
+        m.insert("button.apply", "\u{C801}\u{C6A9}");
+
+        // Features page
+        m.insert("settings.features", "\u{AE30}\u{B2A5}");
+        m.insert("settings.features.copy_on_select", "\u{C120}\u{D0DD} \u{C2DC} \u{BCF5}\u{C0AC}");
+
+        // Features page - Categories
+        m.insert("settings.features.category.general", "\u{C77C}\u{BC18}");
+        m.insert("settings.features.category.session", "\u{C138}\u{C158}");
+        m.insert("settings.features.category.keys", "\u{D0A4}");
+        m.insert("settings.features.category.text_editing", "\u{D14D}\u{C2A4}\u{D2B8} \u{D3B8}\u{C9D1}");
+        m.insert("settings.features.category.terminal_input", "\u{D130}\u{BBF8}\u{B110} \u{C785}\u{B825}");
+        m.insert("settings.features.category.terminal", "\u{D130}\u{BBF8}\u{B110}");
+        m.insert("settings.features.category.notifications", "\u{C54C}\u{B9BC}");
+        m.insert("settings.features.category.workflows", "\u{C6CC}\u{D06C}\u{D50C}\u{B85C}\u{C6B0}");
+        m.insert("settings.features.category.system", "\u{C2DC}\u{C2A4}\u{D15C}");
+
+        // Features page - General
+        m.insert("settings.features.open_links_in_desktop_app", "\u{B370}\u{C2A4}\u{D06C}\u{D1B1} \u{C571}\u{C5D0}\u{C11C} \u{B9C1}\u{D06C} \u{C5F4}\u{AE30}");
+        m.insert("settings.features.open_links_in_desktop_app.description", "\u{AC00}\u{B2A5}\u{D55C} \u{B370}\u{C2A4}\u{D06C}\u{D1B1} \u{C571}\u{C5D0}\u{C11C} \u{B9C1}\u{D06C}\u{B97C} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{C5FD}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.features.restore_on_startup", "\u{C2DC}\u{C791} \u{C2DC} \u{CC3D}, \u{D0D1}, \u{C704}\u{CE58} \u{BCF5}\u{C6D0}");
+        m.insert("settings.features.wayland_positions_warning", "Wayland\u{C5D0}\u{C11C}\u{B294} \u{CC3D} \u{C704}\u{CE58}\u{AC00} \u{BCF5}\u{C6D0}\u{B418}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}. ");
+        m.insert("settings.features.see_docs", "\u{BB38}\u{C11C} \u{BCF4}\u{AE30}.");
+        m.insert("settings.features.sticky_command_header", "\u{ACE0}\u{C815} \u{BA85}\u{B839} \u{D5E4}\u{B354} \u{D45C}\u{C2DC}");
+        m.insert("settings.features.link_tooltip", "\u{B9C1}\u{D06C} \u{D074}\u{B9AD} \u{C2DC} \u{D234}\u{D305} \u{D45C}\u{C2DC}");
+        m.insert("settings.features.quit_warning", "\u{C885}\u{B8CC}/\u{B85C}\u{ADF8}\u{C544}\u{C6C3} \u{C804}\u{C5D0} \u{ACBD}\u{ACE0} \u{D45C}\u{C2DC}");
+        m.insert("settings.features.login_item_macos", "\u{B85C}\u{ADF8}\u{C778} \u{C2DC} Warp \u{C2DC}\u{C791} (macOS 13+ \u{D544}\u{C694})");
+        m.insert("settings.features.login_item", "\u{B85C}\u{ADF8}\u{C778} \u{C2DC} Warp \u{C2DC}\u{C791}");
+        m.insert("settings.features.quit_when_all_closed", "\u{BAA8}\u{B4E0} \u{CC3D} \u{B2EB}\u{AE30} \u{C2DC} \u{C885}\u{B8CC}");
+        m.insert("settings.features.changelog_after_updates", "\u{C5C5}\u{B370}\u{C774}\u{D2B8} \u{D6C4} \u{BCC0}\u{ACBD}\u{C0AC}\u{D56D} \u{D1A0}\u{C2A4}\u{D2B8} \u{D45C}\u{C2DC}");
+        m.insert("settings.features.mouse_scroll_interval", "\u{B9C8}\u{C6B0}\u{C2A4} \u{D720}\u{B85C} \u{C2A4}\u{D06C}\u{B864}\u{D558}\u{B294} \u{D589} \u{C218}");
+        m.insert("settings.features.mouse_scroll_interval.description", "1\u{ACFC} 20 \u{C0AC}\u{C774}\u{C758} \u{BD80}\u{B3D9} \u{C18C}\u{C218} \u{AC12}\u{C744} \u{C9C0}\u{C6D0}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.features.mouse_scroll_interval.allowed_values", "\u{D5C8}\u{C6A9} \u{AC12}: 1-20");
+        m.insert("settings.features.auto_open_code_review", "\u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{C704}\u{CE58}\u{D310} \u{C790}\u{B3D9} \u{C5F4}\u{AE30}");
+        m.insert("settings.features.auto_open_code_review.description", "\u{C774} \u{C124}\u{C815}\u{C774} \u{CF1C}\u{C838} \u{C788}\u{B294} \u{ACBD}\u{C6B0} \u{B300}\u{D654}\u{C5D0}\u{C11C} \u{CCAB} \u{BC88}\u{C9F8}\u{B85C} \u{BC1B}\u{C544}\u{B4E4}\u{C778} \u{BCC0}\u{ACBD} \u{C0AC}\u{D56D}\u{C5D0}\u{C11C} \u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{C704}\u{CE58}\u{D310}\u{C774} \u{C5F4}\u{B9BD}\u{B2C8}\u{B2E4}");
+        m.insert("settings.features.warp_is_default_terminal", "Warp\u{AC00} \u{AE30}\u{BCF8} \u{D130}\u{BBF8}\u{B110}\u{C785}\u{B2C8}\u{B2E4}");
+        m.insert("settings.features.make_default_terminal", "Warp를 \u{AE30}\u{BCF8} \u{D130}\u{BBF8}\u{B110}\u{B85C} \u{C124}\u{C815}");
+        m.insert("settings.features.max_rows", "\u{BE14}\u{B85D}\u{C758} \u{CD5C}\u{B300} \u{D589} \u{C218}");
+        m.insert("settings.features.max_rows.description", "\u{C81C}\u{D55C}\u{C744} 10\u{B9CC} \u{D589} \u{C774}\u{C0C1}\u{C73C}\u{B85C} \u{C124}\u{C815}\u{D558}\u{BA74} \u{D37C}\u{D3EC}\u{BA78}\u{C2A4}\u{C5D0} \u{C601}\u{D5A5}\u{C744} \u{BBF8}\u{CE58}\u{B294} \u{AC83}\u{C73C}\u{B85C} \u{C2E0}\u{AD6C}\u{B429}\u{B2C8}\u{B2E4}. \u{C9C0}\u{C6D0}\u{B418}\u{B294} \u{CD5C}\u{B300} \u{D589} \u{C218}\u{B294} {max_rows}\u{C785}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.features.ssh_wrapper", "Warp SSH \u{B791}\u{D37C}");
+        m.insert("settings.features.new_sessions_effect", "\u{C774} \u{BCC0}\u{ACBD} \u{C0AC}\u{D56D}\u{C740} \u{C0C8} \u{C138}\u{C158}\u{C5D0}\u{C11C} \u{BC1C}\u{D5A9}\u{D569}\u{B2C8}\u{B2E4}");
+        m.insert("settings.features.default", "\u{AE30}\u{BCF8}\u{AC12}");
+
+        // Features page - Notifications
+        m.insert("settings.features.desktop_notifications", "Warp에서 \u{B370}\u{C2A4}\u{D06C}\u{D1B1} \u{C54C}\u{B9BC} \u{BC1B}\u{AE30}");
+        m.insert("settings.features.notify_agent_task_completed", "\u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{C791}\u{C5C5}\u{C744} \u{C644}\u{B8CC}\u{D560} \u{B54C} \u{C54C}\u{B9BC}");
+        m.insert("settings.features.notify_needs_attention", "\u{BA85}\u{B839}\u{C774}\u{B098} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{ACC4}\u{C18D}\u{D558}\u{B3C4}\u{B85D} \u{C8FC}\u{C758}\u{AC00} \u{D544}\u{C694}\u{D560} \u{B54C} \u{C54C}\u{B9BC}");
+        m.insert("settings.features.notification_sounds", "\u{C54C}\u{B9BC} \u{C18C}\u{B9AC} \u{C7AC}\u{C0DD}");
+        m.insert("settings.features.in_app_agent_notifications", "\u{C571} \u{B0B4} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C54C}\u{B9BC} \u{D45C}\u{C2DC}");
+        m.insert("settings.features.toast_duration", "\u{D1A0}\u{C2A4}\u{D2B8} \u{C54C}\u{B9BC} \u{D45C}\u{C2DC} \u{C2DC}\u{AC04}");
+        m.insert("settings.features.seconds", "\u{CD08}");
+        m.insert("settings.features.command_longer_than", "\u{BA85}\u{B839} \u{C2E4}\u{D589}\u{C774}");
+        m.insert("settings.features.seconds_to_complete", "\u{CD08} \u{C774}\u{C0C1} \u{AC78}\u{B9AC}\u{BA74}");
+
+        // Features page - Session
+        m.insert("settings.features.default_shell", "\u{C0C8} \u{C138}\u{C158}\u{C758} \u{AE30}\u{BCF8} Shell");
+        m.insert("settings.features.working_directory", "\u{C0C8} \u{C138}\u{C158}\u{C758} \u{C791}\u{C5C5} \u{B514}\u{B809}\u{D1A0}\u{B9AC}");
+        m.insert("settings.features.confirm_close_shared", "\u{ACF5}\u{C720} \u{C138}\u{C158} \u{B2EB}\u{AE30} \u{C804} \u{D655}\u{C778}");
+        m.insert("settings.features.new_tab_placement", "\u{C0C8} \u{D0D1} \u{C704}\u{CE58}");
+        m.insert("settings.features.after_all_tabs", "\u{BAA8}\u{B4E0} \u{D0D1} \u{B4A4}\u{C5D0}");
+        m.insert("settings.features.after_current_tab", "\u{D604}\u{C7AC} \u{D0D1} \u{B4A4}\u{C5D0}");
+        m.insert("settings.features.default_session_mode", "\u{C0C8} \u{C138}\u{C158}\u{C758} \u{AE30}\u{BCF8} \u{BAA8}\u{B4DC}");
+        m.insert("settings.features.global_workflows", "\u{BA85}\u{B839} \u{AC80}\u{C0C9}\u{C5D0}\u{C11C} \u{C804}\u{C5ED} \u{C6CC}\u{D06C}\u{D50C}\u{B85C}\u{C6B0} \u{D45C}\u{C2DC} (ctrl-r)");
+
+        // Features page - Keys
+        m.insert("settings.features.global_hotkey", "\u{C804}\u{C5ED} \u{B2E8}\u{CD95}\u{D0A4}:");
+        m.insert("settings.features.configure_global_hotkey", "\u{C804}\u{C5ED} \u{B2E8}\u{CD95}\u{D0A4} \u{C124}\u{C815}");
+        m.insert("settings.features.wayland_not_supported", "Wayland\u{C5D0}\u{C11C}\u{B294} \u{C9C0}\u{C6D0}\u{B418}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}. ");
+        m.insert("settings.features.keybinding", "\u{D0A4} \u{BC14}\u{C778}\u{B529}");
+        m.insert("settings.features.click_to_set_hotkey", "\u{D074}\u{B9AD}\u{D558}\u{C5EC} \u{C804}\u{C5ED} \u{B2E8}\u{CD95}\u{D0A4} \u{C124}\u{C815}");
+        m.insert("settings.features.press_new_shortcut", "\u{C0C8} \u{D0A4}\u{BCF4}\u{B4DC} \u{B2E8}\u{CD95}\u{D0A4}\u{B97C} \u{B20C}\u{B7EC}\u{C8FC}\u{C138}\u{C694}");
+        m.insert("settings.features.change_keybinding", "\u{D0A4} \u{BC14}\u{C778}\u{B529} \u{BCC0}\u{ACBD}");
+        m.insert("settings.features.pin_to_top", "\u{C0C1}\u{B2E8}\u{C5D0} \u{ACE0}\u{C815}");
+        m.insert("settings.features.pin_to_bottom", "\u{D558}\u{B2E8}\u{C5D0} \u{ACE0}\u{C815}");
+        m.insert("settings.features.pin_to_left", "\u{C67C}\u{CABD}\u{C5D0} \u{ACE0}\u{C815}");
+        m.insert("settings.features.pin_to_right", "\u{C624}\u{B978}\u{CABD}\u{C5D0} \u{ACE0}\u{C815}");
+        m.insert("settings.features.active_screen", "\u{D65C}\u{C131} \u{D654}\u{BA74}");
+        m.insert("settings.features.width_percent", "\u{B108}\u{BE44} %");
+        m.insert("settings.features.height_percent", "\u{B192}\u{C774} %");
+        m.insert("settings.features.autohide_keyboard_focus", "\u{D0A4}\u{BCF4}\u{B4DC} \u{D3EC}\u{CEE4}\u{C2A4}\u{B97C} \u{C783}\u{C740} \u{B54C} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{C228}\u{AE30}\u{AE30}");
+        m.insert("settings.features.meta_key_left.option", "\u{C67C}\u{CABD} Option \u{D0A4}\u{B97C} Meta\u{B85C} \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.meta_key_right.option", "\u{C624}\u{B978}\u{CABD} Option \u{D0A4}\u{B97C} Meta\u{B85C} \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.meta_key_left.alt", "\u{C67C}\u{CABD} Alt \u{D0A4}\u{B97C} Meta\u{B85C} \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.meta_key_right.alt", "\u{C624}\u{B978}\u{CABD} Alt \u{D0A4}\u{B97C} Meta\u{B85C} \u{C0AC}\u{C6A9}");
+
+        // Features page - Text Editing
+        m.insert("settings.features.autocomplete_symbols", "\u{C778}\u{C6A9}\u{BD80}\u{D638}, \u{B300}\u{AD04}\u{D638}, \u{C18D} \u{B300}\u{AD04}\u{D638} \u{C790}\u{B3D9} \u{C644}\u{C131}");
+        m.insert("settings.features.error_underlining", "\u{BA85}\u{B839}\u{C5D0} \u{B300}\u{D55C} \u{C624}\u{B958} \u{BC11}\u{C904}");
+        m.insert("settings.features.syntax_highlighting", "\u{BA85}\u{B839}\u{C5D0} \u{B300}\u{D55C} \u{AD6C}\u{BB38} \u{AC15}\u{C870}");
+        m.insert("settings.features.completions_while_typing", "\u{C785}\u{B825} \u{C911}\u{C5D0} \u{C644}\u{C131} \u{BA54}\u{B274} \u{C5F4}\u{AE30}");
+        m.insert("settings.features.suggest_corrections", "\u{C218}\u{C815}\u{B41C} \u{BA85}\u{B839} \u{CD94}\u{CC9C}");
+        m.insert("settings.features.expand_aliases", "\u{C785}\u{B825} \u{C911}\u{C5D0} \u{C544}\u{B9AC}\u{C544}\u{C2A4} \u{C804}\u{AC1C}");
+        m.insert("settings.features.middle_click_paste", "\u{AC00}\u{C6B4}\u{B370} \u{D074}\u{B9AD}\u{C73C}\u{B85C} \u{BD99}\u{C5EC}\u{B123}\u{AE30}");
+        m.insert("settings.features.vim_mode", "Vim \u{D0A4} \u{BC14}\u{C778}\u{B529}\u{C73C}\u{B85C} \u{CF54}\u{B4DC}\u{C640} \u{BA85}\u{B839} \u{D3B8}\u{C9D1}");
+        m.insert("settings.features.vim_unnamed_clipboard", "\u{C774}\u{B984} \u{C5C6}\u{B294} \u{B808}\u{C9C0}\u{C2A4}\u{D130}\u{B97C} \u{C2DC}\u{C2A4}\u{D15C} \u{D074}\u{B9BD}\u{BCF4}\u{B4DC}\u{B85C} \u{C124}\u{C815}");
+        m.insert("settings.features.vim_status_bar", "Vim \u{C0C1}\u{D0DC} \u{BC14} \u{D45C}\u{C2DC}");
+
+        // Features page - Terminal Input
+        m.insert("settings.features.at_context_menu", "\u{D130}\u{BBF8}\u{B110} \u{BAA8}\u{B4DC}\u{C5D0}\u{C11C} '@' \u{CEE8}\u{D14D}\u{C2A4}\u{D2B8} \u{BA54}\u{B274} \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.slash_commands", "\u{D130}\u{BBF8}\u{B110} \u{BAA8}\u{B4DC}\u{C5D0}\u{C11C} \u{C2AC}\u{B798}\u{C26C} \u{BA85}\u{B839} \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.outline_codebase_symbols", "'@' \u{CEE8}\u{D14D}\u{C2A4}\u{D2B8} \u{BA54}\u{B274}\u{C758} \u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4} \u{AE30}\u{D638} \u{C694}\u{C57D}");
+        m.insert("settings.features.terminal_input_message", "\u{D130}\u{BBF8}\u{B110} \u{C785}\u{B825} \u{BA54}\u{C2DC}\u{C9C0} \u{D589} \u{D45C}\u{C2DC}");
+        m.insert("settings.features.autosuggestion_keybinding_hint", "\u{C790}\u{B3D9} \u{CD94}\u{CC9C} \u{D0A4} \u{BC14}\u{C778}\u{B529} \u{D78C}\u{D2B8} \u{D45C}\u{C2DC}");
+        m.insert("settings.features.autosuggestion_ignore_button", "\u{C790}\u{B3D9} \u{CD94}\u{CC9C} \u{BB34}\u{C2DC} \u{BC84}\u{D2BC} \u{D45C}\u{C2DC}");
+        m.insert("settings.features.tab_key_behavior", "Tab \u{D0A4} \u{B3D9}\u{C791}");
+        m.insert("settings.features.ctrl_tab_behavior", "Ctrl+Tab \u{B3D9}\u{C791}:");
+        m.insert("settings.features.arrow_accepts_autosuggestions", "\u{2192}\u{B85C} \u{C790}\u{B3D9} \u{CD94}\u{CC9C} \u{BC1B}\u{AE30}.");
+        m.insert("settings.features.keystroke_accepts_autosuggestions", "{keystroke}\u{B85C} \u{C790}\u{B3D9} \u{CD94}\u{CC9C} \u{BC1B}\u{AE30}.");
+        m.insert("settings.features.completions_open_as_you_type", "\u{C785}\u{B825} \u{C911}\u{C5D0} \u{C644}\u{C131}\u{C774} \u{C5FD}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.features.completions_open_as_you_type_or", "\u{C785}\u{B825} \u{C911}\u{C5D0} \u{C644}\u{C131}\u{C774} \u{C5FD}\u{B2C8}\u{B2E4} (\u{B610}\u{B294} {keystroke}).");
+        m.insert("settings.features.completion_menu_unbound", "\u{C644}\u{C131} \u{BA54}\u{B274} \u{C5F4}\u{AE30}\u{AC00} \u{BC14}\u{C778}\u{B529}\u{B418}\u{C5B4} \u{C788}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.features.keystroke_opens_completion_menu", "{keystroke}\u{B85C} \u{C644}\u{C131} \u{BA54}\u{B274}\u{B97C} \u{C5FD}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.features.accept_autosuggestion", "\u{C790}\u{B3D9} \u{CD94}\u{CC9C} \u{BC1B}\u{AE30}");
+        m.insert("settings.features.open_completions_menu", "\u{C644}\u{C131} \u{BA54}\u{B274} \u{C5F4}\u{AE30}");
+        m.insert("settings.features.word_char_config", "\u{B2E8}\u{C5B4}\u{C758} \u{C77C}\u{BD80}\u{B85C} \u{AC04}\u{C8FC}\u{B418}\u{B294} \u{BB38}\u{C790}");
+
+        // Features page - Terminal
+        m.insert("settings.features.mouse_reporting", "\u{B9C8}\u{C6B0}\u{C2A4} \u{B9AC}\u{D3EC}\u{D305} \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.scroll_reporting", "\u{C2A4}\u{D06C}\u{B864} \u{B9AC}\u{D3EC}\u{D305} \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.focus_reporting", "\u{D3EC}\u{CEE4}\u{C2A4} \u{B9AC}\u{D3EC}\u{D305} \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.audible_bell", "\u{C18C}\u{B9AC} \u{BCA0}\u{B974} \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.smart_selection", "\u{B354}\u{BE14} \u{D074}\u{B9AD} \u{C2A4}\u{BA4C}\u{D2B8} \u{C120}\u{D0DD}");
+        m.insert("settings.features.show_help_block", "\u{C0C8} \u{C138}\u{C158}\u{C5D0}\u{C11C} \u{B3C4}\u{C6C0} \u{BE14}\u{B85D} \u{D45C}\u{C2DC}");
+        m.insert("settings.features.linux_selection_clipboard", "Linux \u{C120}\u{D0DD} \u{D074}\u{B9BD}\u{BCF4}\u{B4DC} \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.linux_selection_clipboard.description", "Linux \u{AE30}\u{BCF8} \u{D074}\u{B9BD}\u{BCF4}\u{B4DC}\u{B97C} \u{C9C0}\u{C6D0}\u{D560}\u{C9C0} \u{C5EC}\u{BD80}\u{C785}\u{B2C8}\u{B2E4}.");
+
+        // Features page - System
+        m.insert("settings.features.prefer_low_power_gpu", "\u{D1B5}\u{D569} GPU로 \u{C0C8} \u{CC3D} \u{B80C}\u{B354}\u{B9C1} (\u{C800} \u{C804}\u{B825})");
+        m.insert("settings.features.changes_new_windows", "\u{BCC0}\u{ACBD} \u{C0AC}\u{D56D}\u{C740} \u{C0C8} \u{CC3D}\u{C5D0} \u{C801}\u{C6A9}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.features.wayland_window_management", "\u{CC3D} \u{AD00}\u{B9AC}\u{C5D0} Wayland \u{C0AC}\u{C6A9}");
+        m.insert("settings.features.wayland_window_management.description", "Wayland \u{C0AC}\u{C6A9}\u{C744} \u{D65C}\u{C131}\u{D654}");
+        m.insert("settings.features.wayland_hotkey_warning", "\u{C774} \u{C124}\u{C815}\u{C744} \u{D65C}\u{C131}\u{D654}\u{BA74} \u{C804}\u{C5ED} \u{B2E8}\u{CD95}\u{D0A4} \u{C9C0}\u{C6D0}\u{C774} \u{BE44}\u{D65C}\u{C131}\u{D654}\u{B429}\u{B2C8}\u{B2E4}. \u{BE44}\u{D65C}\u{C131}\u{D654}\u{C2DC} Wayland \u{CEF4}\u{D3EC}\u{C800}\u{AC00} \u{BD84}\u{C218} \u{C2A4}\u{CF00}\u{C77C}\u{B9C1} (\u{C608}: 125%)\u{C744} \u{C0AC}\u{C6A9}\u{D558}\u{BA74} \u{D14D}\u{C2A4}\u{D2B8}\u{AC00} \u{D770}\u{B9AC}\u{AC00} \u{B420} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.features.restart_warp_effect", "\u{BCC0}\u{ACBD} \u{C0AC}\u{D56D}\u{C744} \u{BC1C}\u{D5A9}\u{C2DC}\u{D0A4}\u{B3C4}\u{B85D} Warp를 \u{B2E4}\u{C2DC} \u{C2DC}\u{C791}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.features.preferred_graphics_backend", "\u{C120}\u{D638} \u{ADF8}\u{B798}\u{D53D} \u{BC31}\u{C5D4}\u{B4DC}");
+        m.insert("settings.features.current_backend", "\u{D604}\u{C7AC} \u{BC31}\u{C5D4}\u{B4DC}: {backend}");
+
+        // AI page
+        m.insert("settings.ai", "AI");
+        m.insert("settings.ai.warp_agent", "Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}");
+        m.insert("settings.ai.active_ai", "\u{D65C}\u{C131} AI");
+        m.insert("settings.ai.usage", "\u{C0AC}\u{C6A9}\u{B7C9}");
+        m.insert("settings.ai.credits", "\u{D06C}\u{B808}\u{B514}\u{D2B8}");
+        m.insert("settings.ai.unlimited", "\u{BB34}\u{D55C}");
+        m.insert("settings.ai.restricted_billing", "\u{ACC4}\u{C815} \u{BB38}\u{C81C}\u{B85C} \u{C81C}\u{D55C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.ai.resets", "\u{B9AC}\u{C138}\u{D2B8} {formatted_next_refresh_time}");
+        m.insert("settings.ai.credits_limit_description", "\u{C774}\u{AC83}\u{C740} \u{B2F4}\u{B2F9} \u{ACC4}\u{C815}\u{C758} AI \u{D06C}\u{B808}\u{B514}\u{D2B8} {0} \u{C81C}\u{D55C}\u{C785}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.upgrade", "\u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.ai.get_more_usage", "\u{B97C} \u{C218}\u{D589}\u{D558}\u{C5EC} \u{B354} \u{B9CE}\u{C740} AI \u{C0AC}\u{C6A9}\u{B7C9}\u{C744} \u{D655}\u{BCF4}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.ai.compare_plans", "\u{D50C}\u{B79C} \u{BE44}\u{AD50}");
+        m.insert("settings.ai.more_usage", "\u{B97C} \u{C218}\u{D589}\u{D558}\u{C5EC} \u{B354} \u{B9CE}\u{C740} AI \u{C0AC}\u{C6A9}\u{B7C9}\u{C744} \u{D655}\u{BCF4}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.ai.contact_support", "\u{C9C0}\u{C6D0}\u{C5D0} \u{BB38}\u{C758}");
+        m.insert("settings.ai.contact_sales", "\u{B9E4}\u{CD9C}\u{C5D0} \u{BB38}\u{C758}");
+        m.insert("settings.ai.enable_byo_enterprise", "\u{C740} \u{C5D1}\u{C2A4}\u{D134}\u{C988} \u{D50C}\u{B79C}\u{C5D0}\u{C11C} \u{AC1C}\u{C778} API \u{D0A4}\u{B97C} \u{C0AC}\u{C6A9}\u{D560} \u{C218} \u{C788}\u{AC8C} \u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.upgrade_build_plan", "Build \u{D50C}\u{B79C}\u{C73C}\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.ai.use_own_api_keys", "\u{C744} \u{C0AC}\u{C6A9}\u{D558}\u{C5EC} \u{AC1C}\u{C778} API \u{D0A4}\u{B97C} \u{C0AC}\u{C6A9}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.ai.ask_admin_upgrade", "\u{D300} \u{AD00}\u{B9AC}\u{C790}\u{C5D0}\u{AC8C} Build \u{D50C}\u{B79C}\u{C73C}\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}\u{C640} \u{AC1C}\u{C778} API \u{D0A4} \u{C0AC}\u{C6A9}\u{C744} \u{C694}\u{CCAD}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.ai.org_disallows_remote_ai", "\u{D604}\u{C7AC} \u{D30C}\u{C778}\u{C5D0} \u{C6D0}\u{ACA9} \u{C138}\u{C158} \u{B0B4}\u{C6A9}\u{C774} \u{D3EC}\u{D568}\u{B418}\u{C5B4} \u{C788}\u{C744} \u{B54C} \u{AD6C}\u{C870}\u{AC00} AI \u{C0AC}\u{C6A9}\u{C744} \u{D5C8}\u{C6A9}\u{D558}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.ai.create_account_prompt", "AI \u{AE30}\u{B2A5}\u{C744} \u{C0AC}\u{C6A9}\u{D558}\u{B824}\u{BA74} \u{ACC4}\u{C815}\u{C744} \u{B9CC}\u{B4E4}\u{C5B4} \u{C8FC}\u{C138}\u{C694}.");
+        m.insert("settings.ai.org_enforced_setting", "\u{C774} \u{C635}\u{C158}\u{C740} \u{AD6C}\u{C870} \u{C124}\u{C815}\u{C5D0} \u{C758}\u{D574} \u{AC15}\u{C81C}\u{B418}\u{BA70} \u{C0AC}\u{C6A9}\u{C790} \u{C815}\u{C758}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.learn_more", "\u{C790}\u{C138}\u{D788} \u{BCF4}\u{AE30}");
+        m.insert("settings.ai.agents", "\u{C5D0}\u{C774}\u{C804}\u{D2B8}");
+        m.insert("settings.ai.agents_description", "\u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C758} \u{C791}\u{B3D9} \u{ACB0}\u{ACAC}\u{C744} \u{C124}\u{C815}\u{D558}\u{C138}\u{C694}. \u{C561}\u{C138}\u{C2A4} \u{AC00}\u{B2A5}\u{D55C} \u{B0B4}\u{C6A9}\u{C744} \u{C120}\u{D0DD}\u{D558}\u{ACE0}, \u{C790}\u{C728}\u{C131} \u{B3C4}\u{ACC4}\u{B97C} \u{BC30}\u{C81C}\u{D558}\u{ACE0}, \u{C2B9}\u{B77D} \u{C694}\u{CCAD} \u{AC70}\u{B9AC}\u{C81C} \u{C810}\u{C744} \u{C124}\u{C815}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C790}\u{C5F0}\u{C5B4} \u{C785}\u{B825}, \u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4} \u{C778}\u{C2DD} \u{B4F1}\u{C758} \u{D589}\u{B3D9}\u{C744} \u{C138}\u{BD80}\u{D654}\u{D560} \u{C218}\u{B3C4} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.profiles", "\u{D504}\u{B85C}\u{D544}");
+        m.insert("settings.ai.profiles_description", "\u{D504}\u{B85C}\u{D544}\u{C740} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C758} \u{C791}\u{B3D9} \u{BC29}\u{BC95}\u{C744} \u{C815}\u{C758}\u{D569}\u{B2C8}\u{B2E4} \u{2014} \u{C218}\u{D589} \u{AC00}\u{B2A5}\u{D55C} \u{C561}\u{C158}\u{BC0F} \u{C2B9}\u{B77D} \u{D544}\u{C694} \u{C2DC}u{C810}, \u{CF54}\u{B529} \u{BC0F} \u{ACC4}\u{D68D} \u{B4F1}\u{C758} \u{C791}\u{C5C5}\u{C5D0} \u{C0AC}\u{C6A9}\u{B418}\u{B294} \u{BAA8}\u{B378} \u{AE4C}\u{C9C0}. \u{AC1C}\u{BCC4} \u{D504}\u{B85C}\u{C81D}\u{D2B8}\u{C5D0} \u{C2A4}\u{CF54}\u{D504}\u{D560} \u{C218}\u{B3C4} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.add_profile", "\u{D504}\u{B85C}\u{D544} \u{CD94}\u{AC00}");
+        m.insert("settings.ai.models", "\u{BAA8}\u{B378}");
+        m.insert("settings.ai.permissions", "\u{AD8C}\u{D55C}");
+        m.insert("settings.ai.apply_code_diffs", "\u{CF54}\u{B4DC} \u{BCC0}\u{ACBD} \u{C801}\u{C6A9}");
+        m.insert("settings.ai.read_files", "\u{D30C}\u{C77C} \u{C77D}\u{AE30}");
+        m.insert("settings.ai.execute_commands", "\u{BA85}\u{B839} \u{C2E4}\u{D589}");
+        m.insert("settings.ai.interact_with_running_commands", "\u{C2E4}\u{D589} \u{C911}\u{C778} \u{BA85}\u{B839}\u{ACFC} \u{C0C1}\u{D638}\u{C791}\u{C6A9}");
+        m.insert("settings.ai.workspace_managed_permissions", "\u{AD8C}\u{D55C} \u{BD80}\u{BD84}\u{C740} \u{C6CC}\u{D06C}\u{C2A4}\u{D398}\u{C774}\u{C2A4}\u{C5D0} \u{C758}\u{D574} \u{AD00}\u{B9AC}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.call_mcp_servers", "MCP \u{C11C}\u{BC84} \u{D638}\u{CD9C}");
+        m.insert("settings.ai.command_denylist", "\u{BA85}\u{B839} \u{AC70}\u{BD80}\u{BAA9}\u{B85D}");
+        m.insert("settings.ai.command_denylist.description", "Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{C2E4}\u{D589} \u{D5C8}\u{AC00}\u{B97C} \u{AE30}\u{BCF8}\u{C801}\u{C73C}\u{B85C} \u{C694}\u{CCAD}\u{D574}\u{C57C} \u{D558}\u{B294} \u{BA85}\u{B839}\u{C5D0} \u{B9DE}\u{B294} \u{C815}\u{ADDC} \u{D45C}\u{D604}\u{C2DD}\u{C785}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.command_allowlist", "\u{BA85}\u{B839} \u{D5C8}\u{C6A9}\u{BAA9}\u{B85D}");
+        m.insert("settings.ai.command_allowlist.description", "Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{C2E4}\u{D589}\u{D560} \u{C218} \u{C788}\u{B294} \u{BA85}\u{B839}\u{C5D0} \u{B9DE}\u{B294} \u{C815}\u{ADDC} \u{D45C}\u{D604}\u{C2DD}\u{C785}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.directory_allowlist", "\u{B514}\u{B809}\u{D1A0}\u{B9AC} \u{D5C8}\u{C6A9}\u{BAA9}\u{B85D}");
+        m.insert("settings.ai.directory_allowlist.description", "\u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C5D0}\u{AC8C} \u{D2B9}\u{C815} \u{B514}\u{B809}\u{D1A0}\u{B9AC}\u{C5D0} \u{B300}\u{D55C} \u{D30C}\u{C77C} \u{C561}\u{C138}\u{C2A4}\u{B97C} \u{D5C8}\u{C6A9}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.mcp_allowlist", "MCP \u{D5C8}\u{C6A9}\u{BAA9}\u{B85D}");
+        m.insert("settings.ai.mcp_allowlist.description", "Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{C774} MCP \u{C11C}\u{BC84}\u{B97C} \u{D638}\u{CD9C}\u{D558}\u{B294} \u{AC83}\u{C744} \u{D5C8}\u{C6A9}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.mcp_denylist", "MCP \u{AC70}\u{BD80}\u{BAA9}\u{B85D}");
+        m.insert("settings.ai.mcp_denylist.description", "Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{B294} \u{C774} \u{BAA9}\u{B85D}\u{C5D0} \u{C788}\u{B294} \u{BB34}\u{C5B4}\u{B5A0} \u{B098} MCP \u{C11C}\u{BC84}\u{B97C} \u{D638}\u{CD9C}\u{D558}\u{AE30} \u{C804}\u{C5D0} \u{D56D}\u{C0C1} \u{C2B9}\u{B77D}\u{C744} \u{AE30}\u{BCF8}\u{C801}\u{C73C}\u{B85C} \u{C694}\u{CCAD}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.mcp_zero_state_description", "\u{C544}\u{C9C1} MCP \u{C11C}\u{BC84}\u{B97C} \u{CD94}\u{AC00}\u{D558}\u{C9C0} \u{C54A}\u{C558}\u{C2B5}\u{B2C8}\u{B2E4}. \u{CD94}\u{AC00}\u{D558}\u{BA74} \u{ADF8}\u{B4E4}\u{ACFC} \u{C0C1}\u{D638}\u{C791}\u{C6A9}\u{D560} \u{B54C} Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C758} \u{C790}\u{C728}\u{C131}\u{C744} \u{C81C}\u{C5B4}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}. ");
+        m.insert("settings.ai.add_a_server", "\u{C11C}\u{BC84} \u{CD94}\u{AC00}");
+        m.insert("settings.ai.or", " \u{B610}\u{B294} ");
+        m.insert("settings.ai.learn_more_mcps", "MCP \u{C5D0} \u{B300}\u{D574} \u{B354} \u{C54C}\u{C544}\u{BCF4}\u{C138}\u{C694}.");
+        m.insert("settings.ai.show_model_picker_in_prompt", "\u{D504}\u{B861}\u{BF08}\u{D2B8}\u{C5D0} \u{BAA8}\u{B378} \u{C120}\u{D0DD}\u{AE30} \u{D45C}\u{C2DC}");
+        m.insert("settings.ai.base_model", "\u{AE30}\u{BCF8} \u{BAA8}\u{B378}");
+        m.insert("settings.ai.base_model.description", "\u{C774} \u{BAA8}\u{B378}\u{C740} Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C758} \u{AE30}\u{BCF8} \u{C5D4}\u{C9C4}\u{C73C}\u{B85C} \u{AE30}\u{B2A5}\u{D569}\u{B2C8}\u{B2E4}. \u{B300}\u{BD80}\u{BD84}\u{C758} \u{C0C1}\u{D638}\u{C791}\u{C6A9}\u{C5D0} \u{C0AC}\u{C6A9}\u{B418}\u{BA70} \u{D544}\u{C694}\u{D560} \u{B54C} \u{ACC4}\u{D68D} \u{B610}\u{B294} \u{CF54}\u{B4DC} \u{C0DD}\u{C131} \u{B4F1}\u{C758} \u{C791}\u{C5C5}\u{C744} \u{B2E4}\u{B978} \u{BAA8}\u{B378}\u{C5D0} \u{C704}\u{C784}\u{D569}\u{B2C8}\u{B2E4}. \u{BAA8}\u{B378} \u{C0AC}\u{C6A9} \u{AC00}\u{B2A5}\u{C131}\u{C774}\u{B098} \u{BCF4}\u{C870} \u{C791}\u{C5C5}\u{C5D0} \u{B530}\u{B77C} Warp\u{AC00} \u{B300}\u{CCB4} \u{BAA8}\u{B378}\u{B85C} \u{C790}\u{B3D9} \u{C804}\u{D658}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.codebase_context", "\u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4} \u{CEE8}\u{D14D}\u{C2A4}\u{D2B8}");
+        m.insert("settings.ai.codebase_context.description", "Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{CEE8}\u{D14D}\u{C2A4}\u{D2B8}\u{B85C} \u{C0AC}\u{C6A9}\u{D560} \u{C218} \u{C788}\u{B294} \u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4} \u{AC1C}\u{C694}\u{B97C} \u{C0DD}\u{C131}\u{D558}\u{B294} \u{AC83}\u{C744} \u{D5C8}\u{C6A9}\u{D569}\u{B2C8}\u{B2E4}. \u{CF54}\u{B4DC}\u{B294} \u{C808}\u{B300} \u{C11C}\u{BC84}\u{C5D0} \u{C800}\u{C7A5}\u{B418}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}. ");
+        m.insert("settings.ai.toolbar_layout", "\u{D234}\u{BC14} \u{B808}\u{C774}\u{C544}\u{C6C3}");
+        m.insert("settings.ai.option.agent_decides", "\u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{ACB0}\u{C815}");
+        m.insert("settings.ai.option.always_allow", "\u{D56D}\u{C0C1} \u{D5C8}\u{C6A9}");
+        m.insert("settings.ai.option.always_ask", "\u{D56D}\u{C0C1} \u{BB38}\u{C758}");
+        m.insert("settings.ai.option.ask_on_first_write", "\u{CC98}\u{C74C} \u{C4F0}\u{AE30} \u{C2DC} \u{BB38}\u{C758}");
+        m.insert("settings.ai.option.read_only", "\u{C77D}\u{AE30} \u{C804}\u{C6A9}");
+        m.insert("settings.ai.option.supervised", "\u{AD00}\u{B9AC} \u{BAA8}\u{B4DC}");
+        m.insert("settings.ai.option.allow_in_specific_directories", "\u{D2B9}\u{C815} \u{B514}\u{B809}\u{D1A0}\u{B9AC}\u{C5D0}\u{C11C} \u{D5C8}\u{C6A9}");
+        m.insert("settings.ai.option.new_tab", "\u{C0C8} \u{D0ED}");
+        m.insert("settings.ai.option.split_pane", "\u{D328}\u{B2C8} \u{BD84}\u{D560}");
+        m.insert("settings.ai.select_mcp_servers", "MCP \u{C11C}\u{BC84} \u{C120}\u{D0DD}");
+        m.insert("settings.ai.select_coding_agent", "\u{CF54}\u{B529} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C120}\u{D0DD}");
+        m.insert("settings.ai.next_command", "\u{B2E4}\u{C74C} \u{BA85}\u{B839}");
+        m.insert("settings.ai.next_command.description", "\u{BA85}\u{B839} \u{B9AC}\u{C2A4}\u{D2B8}, \u{CD9C}\u{B825}, \u{C77C}\u{BC18}\u{C801}\u{C778} \u{C6CC}\u{D06C}\u{D50C}\u{B85C}\u{C6B0}\u{C5D0} \u{AE30}\u{BCF8}\u{C73C}\u{B85C} AI\u{AC00} \u{B2E4}\u{C74C} \u{C2E4}\u{D589}\u{D560} \u{BA85}\u{B839}\u{C744} \u{CD94}\u{CC9C}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.prompt_suggestions", "\u{D504}\u{B861}\u{BF08}\u{D2B8} \u{CD94}\u{CC9C}");
+        m.insert("settings.ai.prompt_suggestions.description", "\u{CD5C}\u{ADFC} \u{BA85}\u{B839}\u{BC0F} \u{CD9C}\u{B825}\u{C5D0} \u{AE30}\u{BCF8}\u{C73C}\u{B85C} \u{C785}\u{B825}\u{C5D0} \u{B77C}\u{C778} \u{BC14}\u{B098} \u{D615}\u{D0DC}\u{B85C} AI\u{AC00} \u{C790}\u{C5F0}\u{C5B4} \u{D504}\u{B861}\u{BF08}\u{D2B8}\u{B97C} \u{CD94}\u{CC9C}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.suggested_code_banners", "\u{CF54}\u{B4DC} \u{CD94}\u{CC9C} \u{BC14}\u{B098}");
+        m.insert("settings.ai.suggested_code_banners.description", "\u{CD5C}\u{ADFC} \u{BA85}\u{B839}\u{BC0F} \u{CD9C}\u{B825}\u{C5D0} \u{AE30}\u{BCF8}\u{C73C}\u{B85C} \u{BE14}\u{B79D}\u{B9AC}\u{C2A4}\u{D2B8}\u{C5D0} \u{B77C}\u{C778} \u{BC14}\u{B098} \u{D615}\u{D0DC}\u{B85C} AI\u{AC00} \u{CF54}\u{B4DC} \u{BCC0}\u{ACBD} \u{BC0F} \u{CF00}\u{B9AC}\u{B97C} \u{CD94}\u{CC9C}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.natural_language_autosuggestions", "\u{C790}\u{C5F0}\u{C5B4} \u{C790}\u{B3D9} \u{CD94}\u{CC9C}");
+        m.insert("settings.ai.natural_language_autosuggestions.description", "\u{CD5C}\u{ADFC} \u{BA85}\u{B839}\u{BC0F} \u{CD9C}\u{B825}\u{C5D0} \u{AE30}\u{BCF8}\u{C73C}\u{B85C} AI\u{AC00} \u{C790}\u{C5F0}\u{C5B4} \u{C790}\u{B3D9} \u{C644}\u{C131}\u{C744} \u{CD94}\u{CC9C}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.shared_block_title_generation", "\u{ACF5}\u{C720} \u{BE14}\u{B79D} \u{C81C}\u{BAA9} \u{C0DD}\u{C131}");
+        m.insert("settings.ai.shared_block_title_generation.description", "\u{BA85}\u{B839}\u{BC0F} \u{CD9C}\u{B825}\u{C5D0} \u{AE30}\u{BCF8}\u{C73C}\u{B85C} AI\u{AC00} \u{ACF5}\u{C720} \u{BE14}\u{B79D}\u{C758} \u{C81C}\u{BAA9}\u{C744} \u{C0DD}\u{C131}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.commit_pull_request_generation", "\u{CEF4}\u{BBF9} \u{BC0F} \u{D480} \u{B9AC}\u{CFF0}\u{C2A4}\u{D2B8} \u{C0DD}\u{C131}");
+        m.insert("settings.ai.git_operations_autogen.description", "AI\u{AC00} \u{CEF4}\u{BBF9} \u{BA54}\u{C2DC}\u{C9C0}\u{C640} \u{D480} \u{B9AC}\u{CFF0}\u{C2A4}\u{D2B8} \u{C81C}\u{BAA9}\u{BC0F} \u{C124}\u{BA85}\u{C744} \u{C0DD}\u{C131}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.input", "\u{C785}\u{B825}");
+        m.insert("settings.ai.show_input_hint_text", "\u{C785}\u{B825} \u{D788}\u{D2B8} \u{D14D}\u{C2A4}\u{D2B8} \u{D45C}\u{C2DC}");
+        m.insert("settings.ai.show_agent_tips", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{D301} \u{D45C}\u{C2DC}");
+        m.insert("settings.ai.include_agent_commands_in_history", "\u{B9AC}\u{C2A4}\u{D2B8}\u{C5D0} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C2E4}\u{D589} \u{BA85}\u{B839} \u{D3EC}\u{D568}");
+        m.insert("settings.ai.natural_language_detection", "\u{C790}\u{C5F0}\u{C5B4} \u{AC10}\u{C9C0}");
+        m.insert("settings.ai.autodetect_agent_prompts", "\u{D130}\u{BBF8}\u{B110} \u{C785}\u{B825}\u{C5D0}\u{C11C} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{D504}\u{B861}\u{BF08}\u{D2B8} \u{C790}\u{B3D9} \u{AC10}\u{C9C0}");
+        m.insert("settings.ai.autodetect_terminal_commands", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C785}\u{B825}\u{C5D0}\u{C11C} \u{D130}\u{BBF8}\u{B110} \u{BA85}\u{B839} \u{C790}\u{B3D9} \u{AC10}\u{C9C0}");
+        m.insert("settings.ai.incorrect_detection", "\u{BD88}\u{D655}\u{C2E4}\u{D55C} \u{AC10}\u{C9C0}\u{AC00} \u{BC1C}\u{ACAC}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{AE4C}? ");
+        m.insert("settings.ai.incorrect_input_detection", " \u{BD88}\u{D655}\u{C2E4}\u{D55C} \u{C785}\u{B825} \u{AC10}\u{C9C0}\u{AC00} \u{BC1C}\u{ACAC}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{AE4C}? ");
+        m.insert("settings.ai.let_us_know", "\u{C54C}\u{B824} \u{C8FC}\u{C138}\u{C694}");
+        m.insert("settings.ai.nld_description", "\u{C790}\u{C5F0}\u{C5B4} \u{AC10}\u{C9C0}\u{B97C} \u{D65C}\u{C131}\u{D654}\u{D558}\u{BA74} \u{D130}\u{BBF8}\u{B110} \u{C785}\u{B825}\u{C5D0}\u{C11C} \u{C790}\u{C5F0}\u{C5B4}\u{AC00} \u{C4F0}\u{C774}\u{B294} \u{AC83}\u{C744} \u{AC10}\u{C9C0}\u{D558}\u{ACE0} AI \u{CF00}\u{B9AC}\u{C758} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{BAA8}\u{B4DC}\u{B85C} \u{C790}\u{B3D9} \u{C804}\u{D658}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.natural_language_denylist", "\u{C790}\u{C5F0}\u{C5B4} \u{AC70}\u{BD80}\u{BAA9}\u{B85D}");
+        m.insert("settings.ai.natural_language_denylist.description", "\u{C5EC}\u{AE30}\u{C5D0} \u{B9AC}\u{C2A4}\u{D2B8}\u{B41C} \u{BA85}\u{B839}\u{C740} \u{C790}\u{C5F0}\u{C5B4} \u{AC10}\u{C9C0}\u{B97C} \u{D2B8}\u{B9AC}\u{AC70}\u{D558}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.mcp_servers", "MCP \u{C11C}\u{BC84}");
+        m.insert("settings.ai.mcp_description", "MCP \u{C11C}\u{BC84}\u{B97C} \u{CD94}\u{AC00}\u{D558}\u{C5EC} Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C758} \u{AE30}\u{B2A5}\u{C744} \u{D655}\u{C7A5}\u{D558}\u{C138}\u{C694}. MCP \u{C11C}\u{BC84}\u{B294} \u{D45C}\u{C900}\u{D654}\u{B41C} \u{C778}\u{D130}\u{D398}\u{C774}\u{C2A4}\u{B97C} \u{D1B5}\u{D574} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C5D0}\u{AC8C} \u{B370}\u{C774}\u{D130} \u{C18C}\u{C2A4}\u{B098} \u{B3C4}\u{AD6C}\u{B97C} \u{B098}\u{B2C8}\u{BA74} \u{D50C}\u{B7EC}\u{ADF8}\u{C778}\u{CC98}\u{B7FC} \u{AE30}\u{B2A5}\u{D569}\u{B2C8}\u{B2E4}. ");
+        m.insert("settings.ai.auto_spawn_mcp_servers", "\u{14C} \u{D30C}\u{D2F0} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C5D0}\u{C11C} \u{C11C}\u{BC84} \u{C790}\u{B3D9} \u{C0DD}\u{C131}");
+        m.insert("settings.ai.auto_spawn_mcp.description", "\u{C804}\u{C5ED} \u{C2A4}\u{CF54}\u{D504}\u{C758} \u{14C} \u{D30C}\u{D2F0} AI \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C124}\u{C815} \u{D30C}\u{C77C}\u{C5D0}\u{C11C} MCP \u{C11C}\u{BC84}\u{B97C} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{AC10}\u{C9C0}\u{D558}\u{ACE0} \u{C0DD}\u{C131}\u{D569}\u{B2C8}\u{B2E4}. \u{B808}\u{D3EC}\u{C9C0}\u{D1A0}\u{B9AC}\u{C5D0}\u{C11C} \u{AC10}\u{C9C0}\u{B41C} \u{C11C}\u{BC84}\u{B294} \u{C790}\u{B3D9} \u{C0DD}\u{C131}\u{B418}\u{C9C0} \u{C54A}\u{ACE0} MCP \u{C124}\u{C815} \u{D398}\u{C774}\u{C9C0}\u{C5D0}\u{C11C} \u{AC1C}\u{BCC4}\u{C801}\u{C73C}\u{B85C} \u{D65C}\u{C131}\u{D654}\u{D574}\u{C57C} \u{D569}\u{B2C8}\u{B2E4}. ");
+        m.insert("settings.ai.see_supported_providers", "\u{C9C0}\u{C6D0}\u{B418}\u{B294} \u{D504}\u{B85C}\u{BC14}\u{C774}\u{B354} \u{BCF4}\u{AE30}.");
+        m.insert("settings.ai.manage_mcp_servers", "MCP \u{C11C}\u{BC84} \u{AD00}\u{B9AC}");
+        m.insert("settings.ai.knowledge", "\u{C9C0}\u{C2DD}");
+        m.insert("settings.ai.rules", "\u{B8E8}\u{C2A4}");
+        m.insert("settings.ai.rules.description", "\u{B8E8}\u{C2A4}\u{B294} \u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4}\u{B098} \u{D2B9}\u{C815} \u{C6CC}\u{D06C}\u{D50C}\u{B85C}\u{C6B0}\u{C5D0} \u{B300}\u{D55C} \u{BCF4}\u{D5E8}\u{C158}\u{C744} \u{C900}\u{C218}\u{D558}\u{B3C4}\u{B85D} Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{B97C} \u{B3C4}\u{C6C0}\u{C785}\u{B2C8}\u{B2E4}. ");
+        m.insert("settings.ai.suggested_rules", "\u{B8E8}\u{C2A4} \u{CD94}\u{CC9C}");
+        m.insert("settings.ai.suggested_rules.description", "\u{C0C1}\u{D638}\u{C791}\u{C6A9}\u{C5D0} \u{AE30}\u{BCF8}\u{C73C}\u{B85C} AI\u{AC00} \u{C800}\u{C7A5}\u{D560} \u{B8E8}\u{C2A4}\u{B97C} \u{CD94}\u{CC9C}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.manage_rules", "\u{B8E8}\u{C2A4} \u{AD00}\u{B9AC}");
+        m.insert("settings.ai.warp_drive_as_agent_context", "Warp Drive를 \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{CEE8}\u{D14D}\u{C2A4}\u{D2B8}\u{B85C}");
+        m.insert("settings.ai.warp_drive_context.description", "Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{B294} Warp Drive \u{B0B4}\u{C6A9}\u{C744} \u{D65C}\u{C6A9}\u{D558}\u{C5EC} \u{AC1C}\u{C778}\u{BC0F} \u{D300} \u{AC1C}\u{BC1C} \u{C6CC}\u{D06C}\u{D50C}\u{B85C}\u{C6B0}\u{BC0F} \u{D658}\u{ACBD}\u{C5D0} \u{B9DE}\u{B294} \u{B2F5}\u{C744} \u{B9CC}\u{B4E4} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C6CC}\u{D06C}\u{D50C}\u{B85C}\u{C6B0}, \u{B178}\u{D2B8}\u{BD81}, \u{D658}\u{ACBD} \u{BCC0}\u{C218}\u{AC00} \u{D3EC}\u{D568}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.voice", "\u{BCF4}\u{C774}\u{C2A4}");
+        m.insert("settings.ai.voice_input", "\u{BCF4}\u{C774}\u{C2A4} \u{C785}\u{B825}");
+        m.insert("settings.ai.voice_input.description", "\u{BCF4}\u{C774}\u{C2A4} \u{C785}\u{B825}\u{C740} \u{D130}\u{BBF8}\u{B110}\u{C5D0} \u{B2E4}\u{B974}\u{AC8C} \u{B9D0}\u{D558}\u{B294} \u{AC83}\u{C73C}\u{B85C} Warp \u{C744} \u{C81C}\u{C5B4}\u{D560} \u{C218} \u{C788}\u{B294} \u{AE30}\u{B2A5}\u{C785}\u{B2C8}\u{B2E4}(\u{D30C}\u{C6CC}\u{B4DC} \u{BC31}\u{C774} ");
+        m.insert("settings.ai.voice_input_key", "\u{BCF4}\u{C774}\u{C2A4} \u{C785}\u{B825} \u{D65C}\u{C131}\u{D654} \u{D0A4}");
+        m.insert("settings.ai.voice_input.press_hold", "\u{B20C}\u{B7EC} \u{B204}\u{B978} \u{C0C1}\u{D0DC}\u{C5D0}\u{C11C} \u{D65C}\u{C131}\u{D654}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.other", "\u{AE30}\u{D0C0}");
+        m.insert("settings.ai.show_oz_changelog", "\u{C0C8} \u{B300}\u{D654} \u{BCF4}\u{AE30}\u{C5D0}\u{C11C} Oz \u{BCC0}\u{ACBD} \u{B85D}\u{AD6C} \u{D45C}\u{C2DC}");
+        m.insert("settings.ai.show_use_agent_footer", "\u{201C}\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C0AC}\u{C6A9}\u{201D} \u{D46C}\u{D0C0} \u{D45C}\u{C2DC}");
+        m.insert("settings.ai.use_agent_footer.description", "\u{AE34} \u{C2DC}\u{AC04} \u{BA85}\u{B839}\u{C5D0}\u{C11C} \u{201C}\u{C644}\u{C804} \u{D130}\u{BBF8}\u{B110} \u{C0AC}\u{C6A9}\u{201D} \u{D65C}\u{C131}\u{D654} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C758} \u{D788}\u{D2B8}\u{B97C} \u{D45C}\u{C2DC}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.show_conversation_history", "\u{B3C4}\u{AD6C} \u{D310}\u{C5D0} \u{B300}\u{D654} \u{B9AC}\u{C2A4}\u{D2B8} \u{D45C}\u{C2DC}");
+        m.insert("settings.ai.agent_thinking_display", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C0AC}\u{ACE0} \u{D45C}\u{C2DC}");
+        m.insert("settings.ai.thinking_display.description", "\u{CD94}\u{B9AC}/\u{C0AC}\u{ACE0} \u{D2B8}\u{B808}\u{C774}\u{C2A4}\u{C758} \u{D45C}\u{C2DC} \u{BC29}\u{BC95}\u{C744} \u{C81C}\u{C5B4}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.preferred_conversation_layout", "\u{AE38} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{B300}\u{D654} \u{C5F4} \u{B54C} \u{AE30}\u{BCF8} \u{B808}\u{C774}\u{C544}\u{C6C3}");
+        m.insert("settings.ai.third_party_cli_agents", "\u{14C} \u{D30C}\u{D2F0} CLI \u{C5D0}\u{C774}\u{C804}\u{D2B8}");
+        m.insert("settings.ai.show_coding_agent_toolbar", "\u{CF54}\u{B529} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{D234}\u{BC14} \u{D45C}\u{C2DC}");
+        m.insert("settings.ai.coding_agent_toolbar.description", "\u{CF54}\u{B529} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C2E4}\u{D589} \u{C2DC} \u{BE60}\u{B978} \u{C561}\u{C158}\u{C774} \u{C788}\u{B294} \u{D234}\u{BC14}\u{B97C} \u{D45C}\u{C2DC}\u{D569}\u{B2C8}\u{B2E4}. \u{C608}: ");
+        m.insert("settings.ai.auto_toggle_rich_input", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C0C1}\u{D0DC}\u{C5D0} \u{B530}\u{B77C} \u{B9AC}\u{CE58} \u{C785}\u{B825} \u{C790}\u{B3D9} \u{D45C}\u{C2DC}/\u{C228}\u{AE30}");
+        m.insert("settings.ai.requires_warp_plugin", "\u{CF54}\u{B529} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C6A0} \u{D50C}\u{B7EC}\u{ADF8}\u{C778}\u{C774} \u{D544}\u{C694}\u{D569}\u{B2C8}\u{B2E4}");
+        m.insert("settings.ai.auto_open_rich_input", "\u{CF54}\u{B529} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C138}\u{C158} \u{C2DC}\u{C791} \u{C2DC} \u{B9AC}\u{CE58} \u{C785}\u{B825} \u{C790}\u{B3D9} \u{C5F4}\u{AE30}");
+        m.insert("settings.ai.auto_dismiss_rich_input", "\u{D504}\u{B861}\u{BF08}\u{D2B8} \u{C81C}\u{CD9C} \u{D6C4} \u{B9AC}\u{CE58} \u{C785}\u{B825} \u{C790}\u{B3D9} \u{B2EB}\u{AE30}");
+        m.insert("settings.ai.commands_enable_toolbar", "\u{D234}\u{BC14}\u{B97C} \u{D65C}\u{C131}\u{D654}\u{D558}\u{B294} \u{BA85}\u{B839}");
+        m.insert("settings.ai.toolbar_command_patterns.description", "\u{B9DE}\u{B294} \u{BA85}\u{B839}\u{C5D0} \u{CF54}\u{B529} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{D234}\u{BC14}\u{B97C} \u{D45C}\u{C2DC}\u{D558}\u{B294} \u{C815}\u{ADDC} \u{D45C}\u{D604}\u{C2DD} \u{D328}\u{D134}\u{C744} \u{CD94}\u{AC00}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.ai.agent_attribution", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{AE30}\u{C5C5}");
+        m.insert("settings.ai.enable_agent_attribution", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{AE30}\u{C5C5} \u{D65C}\u{C131}\u{D654}");
+        m.insert("settings.ai.agent_attribution.description", "Oz\u{AC00} \u{B9CC}\u{B4E0} \u{CEF4}\u{BBF9} \u{BA54}\u{C2DC}\u{C9C0}\u{C640} \u{D480} \u{B9AC}\u{CFF0}\u{C2A4}\u{D2B8}\u{C5D0} \u{AE30}\u{C5C5} \u{C815}\u{BCF4}\u{B97C} \u{CD94}\u{AC00}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.ai.experimental", "\u{C2E4}\u{D5D8}\u{C801}");
+        m.insert("settings.ai.computer_use_cloud_agents", "\u{D074}\u{B77C}\u{C6B0}\u{B4DC} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C5D0}\u{C11C} \u{CEF4}\u{D4E8}\u{D130} \u{C0AC}\u{C6A9}");
+        m.insert("settings.ai.computer_use.description", "Warp \u{C561}\u{C158}\u{C5D0}\u{C11C} \u{C2DC}\u{C791}\u{B41C} \u{D074}\u{B77C}\u{C6B0}\u{B4DC} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{B300}\u{D654}\u{C5D0}\u{C11C} \u{CEF4}\u{D4E8}\u{D130} \u{C0AC}\u{C6A9}\u{C744} \u{D65C}\u{C131}\u{D654}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.orchestration", "\u{C624}\u{CF58}\u{C2A4}\u{D2B8}\u{B808}\u{C774}\u{C158}");
+        m.insert("settings.ai.orchestration.description", "\u{B2E4}\u{C911} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C624}\u{CF58}\u{C2A4}\u{D2B8}\u{B808}\u{C774}\u{C158}\u{C744} \u{D65C}\u{C131}\u{D654}\u{D558}\u{C5EC} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{BCF1}\u{B82C} \u{C11C}\u{BE0C} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{B97C} \u{C0DD}\u{C131}\u{D558}\u{ACE0} \u{D611}\u{C5C5}\u{D558}\u{B294} \u{AC83}\u{C744} \u{D5C8}\u{C6A9}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.api_keys", "API \u{D0A4}");
+        m.insert("settings.ai.api_keys.description", "\u{BAA8}\u{B378} \u{D504}\u{B85C}\u{BC14}\u{C774}\u{B354}\u{C758} \u{AC1C}\u{C778} API \u{D0A4}\u{B97C} \u{C0AC}\u{C6A9}\u{D558}\u{C5EC} Warp \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C5D0}\u{AC8C} \u{C0AC}\u{C6A9}\u{D558}\u{AC8C} \u{D569}\u{B2C8}\u{B2E4}. API \u{D0A4}\u{B294} \u{B85C}\u{CEEC}\u{C5D0} \u{C800}\u{C7A5}\u{B418}\u{BA70} \u{D074}\u{B77C}\u{C6B0}\u{B4DC}\u{C5D0} \u{B3D9}\u{AE30}\u{B418}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C790}\u{B3D9} \u{BAA8}\u{B378}\u{B098} API \u{D0A4}\u{B97C} \u{C81C}\u{ACF5}\u{D558}\u{C9C0} \u{C54A}\u{B294} \u{D504}\u{B85C}\u{BC14}\u{C774}\u{B354}\u{C758} \u{BAA8}\u{B378}\u{C744} \u{C0AC}\u{C6A9}\u{D558}\u{BA74} Warp \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{AC00} \u{C18C}\u{BAA8}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.warp_credit_fallback", "Warp \u{D06C}\u{B808}\u{B514}\u{D2B8} \u{D3D8}\u{BAC0}");
+        m.insert("settings.ai.warp_credit_fallback.description", "\u{D65C}\u{C131}\u{D654}\u{B418}\u{BA74} \u{C624}\u{B958} \u{C2DC} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C694}\u{CCAD}\u{C774} Warp \u{BAA8}\u{B378}\u{C5D0} \u{B85C}\u{D2F0}\u{C784}\u{B420} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}. Warp\u{B294} Warp \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{BCF4}\u{B2E4} API \u{D0A4}\u{B97C} \u{C6B0}\u{C120}\u{C2DC}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.aws_bedrock", "AWS Bedrock");
+        m.insert("settings.ai.use_aws_bedrock_credentials", "AWS Bedrock \u{C778}\u{C99D} \u{C0AC}\u{C6A9}");
+        m.insert("settings.ai.aws_bedrock_credentials.description", "Warp\u{AC00} Bedrock \u{C9C0}\u{C6D0} \u{BAA8}\u{B378}\u{C744} \u{C704}\u{D55C} \u{B85C}\u{CEEC} AWS CLI \u{C778}\u{C99D} \u{C815}\u{BCF4}\u{B97C} \u{B85C}\u{B4DC}\u{D558}\u{ACE0} \u{BCF4}\u{B0B4}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.aws_bedrock_credentials.admin_description", "Warp\u{AC00} Bedrock \u{C9C0}\u{C6D0} \u{BAA8}\u{B378}\u{C744} \u{C704}\u{D55C} \u{B85C}\u{CEEC} AWS CLI \u{C778}\u{C99D} \u{C815}\u{BCF4}\u{B97C} \u{B85C}\u{B4DC}\u{D558}\u{ACE0} \u{BCF4}\u{B0B4}\u{B2C8}\u{B2E4}. \u{C774} \u{C124}\u{C815}\u{C740} \u{AD6C}\u{C870}\u{C5D0} \u{C758}\u{D574} \u{AD00}\u{B9AC}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.login_command", "\u{B85C}\u{ADF8}\u{C778} \u{BA85}\u{B839}");
+        m.insert("settings.ai.aws_profile", "AWS \u{D504}\u{B85C}\u{D544}");
+        m.insert("settings.ai.auto_run_login_command", "\u{B85C}\u{ADF8}\u{C778} \u{BA85}\u{B839} \u{C790}\u{B3D9} \u{C2E4}\u{D589}");
+        m.insert("settings.ai.auto_login.description", "\u{D65C}\u{C131}\u{D654}\u{B418}\u{BA74} AWS Bedrock \u{C778}\u{C99D} \u{C815}\u{BCF4}\u{AC00} \u{B9CC}\u{B8CC}\u{B420} \u{B54C} \u{B85C}\u{ADF8}\u{C778} \u{BA85}\u{B839}\u{C774} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{C2E4}\u{D589}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.ai.placeholder.code_repo", "\u{C608}: ~/code-repos/repo");
+        m.insert("settings.ai.placeholder.commands_comma", "\u{BA85}\u{B839}, \u{CEEC}\u{B9BC} \u{BD84}\u{B9AC}");
+        m.insert("settings.ai.placeholder.regex_ls", "\u{C608}: ls .*");
+        m.insert("settings.ai.placeholder.regex_rm", "\u{C608}: rm .*");
+        m.insert("settings.ai.placeholder.command_regex", "\u{BA85}\u{B839}(\u{C815}\u{ADDC} \u{D45C}\u{D604}\u{C2DD} \u{C9C0}\u{C6D0})");
+
+        // Code page
+        m.insert("settings.code.indexing.title", "\u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4} \u{C778}\u{B371}\u{C2F1}");
+        m.insert("settings.code.indexing.index_new_folder", "\u{C0C8} \u{D3F4}\u{B354} \u{C778}\u{B371}\u{C2F1}");
+        m.insert("settings.code.indexing.init_settings", "\u{CD08}\u{AE30}\u{D654} \u{C124}\u{C815}");
+        m.insert("settings.code.indexing.description", "Warp\u{B294} \u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4} \u{AC80}\u{C0C9} \u{BC0F} \u{CEE8}\u{D14D}\u{C2A4}\u{D2B8} \u{C778}\u{C2DD} \u{CD94}\u{CC9C} \u{AC19}\u{C740} AI \u{AE30}\u{B2A5}\u{C744} \u{C704}\u{D574} \u{CF54}\u{B4DC} \u{B9AC}\u{D3EC}\u{C9C0}\u{D1A0}\u{B9AC}\u{B97C} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{C778}\u{B371}\u{C2F1}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.code.indexing.exclude_description", "\u{D2B9}\u{C815} \u{D30C}\u{C77C} \u{B610}\u{B294} \u{B514}\u{B809}\u{D1A0}\u{B9AC}\u{B97C} \u{C778}\u{B371}\u{C2F1}\u{C5D0}\u{C11C} \u{C81C}\u{C678}\u{D558}\u{B824}\u{BA74} .warpindexignore \u{D30C}\u{C77C}\u{C5D0} \u{CD94}\u{AC00}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.code.indexing.index_new_folder.description", "\u{C774} \u{C124}\u{C815}\u{C744} true\u{B85C} \u{C124}\u{C815}\u{D558}\u{BA74} Warp\u{B294} \u{C0C8}\u{B85C} \u{BC1C}\u{ACAC}\u{B41C} \u{D3F4}\u{B354}\u{B97C} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{C778}\u{B371}\u{C2F1}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.code.indexing.disabled_by_admin", "\u{D300} \u{AD00}\u{B9AC}\u{C790}\u{AC00} \u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4} \u{C778}\u{B371}\u{C2F1}\u{C744} \u{BE44}\u{D65C}\u{C131}\u{D654}\u{C2DC}\u{CF18}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.code.indexing.enabled_by_admin", "\u{D300} \u{AD00}\u{B9AC}\u{C790}\u{AC00} \u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4} \u{C778}\u{B371}\u{C2F1}\u{C744} \u{D65C}\u{C131}\u{D654}\u{C2DC}\u{CF18}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.code.indexing.ai_required", "\u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4} \u{C778}\u{B371}\u{C2F1}\u{C744} \u{C0AC}\u{C6A9}\u{D558}\u{B824}\u{BA74} AI \u{AE30}\u{B2A5}\u{C774} \u{D65C}\u{C131}\u{D654}\u{B418}\u{C5B4} \u{C788}\u{C5B4}\u{C57C} \u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.code.indexing.max_indices", "\u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4} \u{C778}\u{B371}\u{C2F1} \u{CD5C}\u{B300} \u{C218}\u{C5D0} \u{B3C4}\u{B2EC}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C0C8}\u{B85C}\u{C6B4} \u{C778}\u{B371}\u{C2F1}\u{C744} \u{CD94}\u{AC00}\u{D558}\u{AE30} \u{C804}\u{C5D0} \u{AE30}\u{C874} \u{C778}\u{B371}\u{C2F1}\u{C744} \u{C0AD}\u{C81C}\u{D574} \u{C8FC}\u{C138}\u{C694}.");
+        m.insert("settings.code.indexing.initialized_folders", "\u{CD08}\u{AE30}\u{D654}\u{B428} / \u{C778}\u{B371}\u{C2F1}\u{B42C} \u{D3F4}\u{B354}");
+        m.insert("settings.code.indexing.no_folders", "\u{C544}\u{C9C1} \u{CD08}\u{AE30}\u{D654}\u{B41C} \u{D3F4}\u{B354}\u{AC00} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.code.indexing.open_project_rules", "\u{D504}\u{B85C}\u{C81D}\u{D2B8} \u{B808}\u{C77C} \u{C5F4}\u{AE30}");
+        m.insert("settings.code.indexing.status_label", "\u{C778}\u{B371}\u{C2F1}");
+        m.insert("settings.code.indexing.no_index", "\u{C778}\u{B371}\u{C2F1} \u{C548} \u{B9CC}\u{B4E4}\u{C5B4}\u{C84C}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.code.indexing.discovered_chunks", "{total_nodes}\u{AC1C}\u{C758} \u{CCAD}\u{D06C} \u{BC1C}\u{ACAC}");
+        m.insert("settings.code.indexing.syncing_progress", "\u{B3D9}\u{AE30}\u{D654} \u{C911} - {completed_nodes} / {total_nodes}");
+        m.insert("settings.code.indexing.syncing", "\u{B3D9}\u{AE30}\u{D654} \u{C911}...");
+        m.insert("settings.code.indexing.synced", "\u{B3D9}\u{AE30}\u{D654} \u{C644}\u{B8CC}");
+        m.insert("settings.code.indexing.too_large", "\u{CF54}\u{B4DC}\u{BCA0}\u{C774}\u{C2A4}\u{AC00} \u{B108}\u{BB34} \u{D07D}\u{B2C8}\u{B2E4}");
+        m.insert("settings.code.indexing.stale", "\u{C624}\u{B798}\u{B428}");
+        m.insert("settings.code.indexing.failed", "\u{C2E4}\u{D328}");
+        m.insert("settings.code.indexing.no_index_built", "\u{C778}\u{B371}\u{C2F1} \u{C548} \u{AD6C}\u{CD95}\u{B428}");
+        m.insert("settings.code.editor.title", "\u{D3B8}\u{C9D1}\u{AE30} \u{BC0F} \u{CF54}\u{B4DC} \u{B9AC}\u{BDF0}");
+        m.insert("settings.code.editor.category", "\u{CF54}\u{B4DC} \u{D3B8}\u{C9D1}\u{AE30} \u{BC0F} \u{B9AC}\u{BDF0}");
+        m.insert("settings.code.editor.default_app", "\u{AE30}\u{BCF8} \u{C560}\u{D50C}");
+        m.insert("settings.code.editor.layout.split_pane", "\u{BD84}\u{D560} \u{C704}\u{CE58}");
+        m.insert("settings.code.editor.layout.new_tab", "\u{C0C8} \u{D0D1}");
+        m.insert("settings.code.editor.open_file_links", "\u{D30C}\u{C77C} \u{B9C1}\u{D06C}\u{B97C} \u{C5F4} \u{D3B8}\u{C9D1}\u{AE30}\u{B97C} \u{C120}\u{D0DD}\u{D558}\u{C138}\u{C694}");
+        m.insert("settings.code.editor.open_code_panel_files", "\u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{C704}\u{CE58}\u{D310}\u{C5D0}\u{C11C} \u{D30C}\u{C77C}\u{C744} \u{C5F4} \u{D3B8}\u{C9D1}\u{AE30}\u{B97C} \u{C120}\u{D0DD}\u{D558}\u{C138}\u{C694}");
+        m.insert("settings.code.editor.open_files_layout", "Warp \u{C5D0}\u{C11C} \u{D30C}\u{C77C}\u{C744} \u{C5F4} \u{B808}\u{C774}\u{C544}\u{C6C3}\u{C744} \u{C120}\u{D0DD}\u{D558}\u{C138}\u{C694}");
+        m.insert("settings.code.editor.group_files", "\u{D30C}\u{C77C}\u{C744} \u{B2E8}\u{C77C} \u{D3B8}\u{C9D1}\u{AE30} \u{C704}\u{CE58}\u{B85C} \u{ADF8}\u{B8F9}\u{D654}");
+        m.insert("settings.code.editor.group_files.description", "\u{C774} \u{C124}\u{C815}\u{C774} \u{CF1C}\u{C838} \u{C788}\u{B294} \u{ACBD}\u{C6B0}\u{B97C} \u{B354}\u{D574} \u{B3D9}\u{C77C}\u{D55C} \u{D0D1}\u{C5D0}\u{C11C} \u{C5F4}\u{B9B0} \u{D30C}\u{C77C}\u{C740} \u{B2E8}\u{C77C} \u{D3B8}\u{C9D1}\u{AE30} \u{C704}\u{CE58}\u{B85C} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{ADF8}\u{B8F9}\u{D654}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.code.editor.open_markdown_in_viewer", "\u{AE30}\u{BCF8}\u{C801}\u{C73C}\u{B85C} Warp \u{C758} Markdown \u{BDF0}\u{C5B4}\u{C5D0}\u{C11C} Markdown \u{D30C}\u{C77C}\u{C744} \u{C5FD}\u{B2C8}\u{B2E4}");
+        m.insert("settings.code.editor.auto_open_code_review_panel", "\u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{C704}\u{CE58}\u{D310} \u{C790}\u{B3D9} \u{C5F4}\u{AE30}");
+        m.insert("settings.code.editor.auto_open_code_review_panel.description", "\u{C774} \u{C124}\u{C815}\u{C774} \u{CF1C}\u{C838} \u{C788}\u{B294} \u{ACBD}\u{C6B0}\u{B97C} \u{B354}\u{D574} \u{B300}\u{D654}\u{C5D0}\u{C11C} \u{CCAB} \u{BC88}\u{C9F8}\u{B85C} \u{BC1B}\u{C544}\u{B4E4}\u{C778} \u{BCC0}\u{ACBD} \u{C0AC}\u{D56D}\u{C5D0}\u{C11C} \u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{C704}\u{CE58}\u{D310}\u{C774} \u{C5F4}\u{B9BD}\u{B2C8}\u{B2E4}");
+        m.insert("settings.code.editor.show_code_review_button", "\u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{BC84}\u{D2BC} \u{D45C}\u{C2DC}");
+        m.insert("settings.code.editor.show_code_review_button.description", "\u{C704}\u{CE58}\u{D310} \u{C624}\u{B978}\u{CABD} \u{C704}\u{C5D0} \u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{C704}\u{CE58}\u{D310}\u{C744} \u{C804}\u{D658}\u{D558}\u{B294} \u{BC84}\u{D2BC}\u{C744} \u{D45C}\u{C2DC}\u{D699}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.code.editor.show_diff_stats", "\u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{BC84}\u{D2BC}\u{C5D0} \u{BCC0}\u{ACBD} \u{D1B5}\u{ACC4} \u{D45C}\u{C2DC}");
+        m.insert("settings.code.editor.show_diff_stats.description", "\u{CF54}\u{B4DC} \u{B9AC}\u{BDF0} \u{BC84}\u{D2BC}\u{C5D0} \u{CD94}\u{AC00}\u{B41C} \u{D589}\u{ACFC} \u{C0AD}\u{C81C}\u{B41C} \u{D589} \u{C218}\u{B97C} \u{D45C}\u{C2DC}\u{D699}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.code.editor.project_explorer", "\u{D504}\u{B85C}\u{C81D}\u{D2B8} \u{D0D0}\u{C0C9}\u{AE30}");
+        m.insert("settings.code.editor.project_explorer.description", "\u{C67C}\u{CABD} \u{B3C4}\u{AD6C} \u{C704}\u{CE58}\u{D310}\u{C5D0} IDE \u{C2A4}\u{D0C0}\u{C77C}\u{C758} \u{D504}\u{B85C}\u{C81D}\u{D2B8} \u{D0D0}\u{C0C9}\u{AE30} / \u{D30C}\u{C77C} \u{D2B8}\u{B9AC}\u{B97C} \u{CD94}\u{AC00}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.code.editor.global_file_search", "\u{C804}\u{C5ED} \u{D30C}\u{C77C} \u{AC80}\u{C0C9}");
+        m.insert("settings.code.editor.global_file_search.description", "\u{C67C}\u{CABD} \u{B3C4}\u{AD6C} \u{C704}\u{CE58}\u{D310}\u{C5D0} \u{C804}\u{C5ED} \u{D30C}\u{C77C} \u{AC80}\u{C0C9}\u{C744} \u{CD94}\u{AC00}\u{D569}\u{B2C8}\u{B2E4}.");
+
+        // Code page - LSP Servers
+        m.insert("settings.code.lsp.title", "LSP \u{C11C}\u{BC84}");
+        m.insert("settings.code.lsp.installed", "\u{C124}\u{CE58} \u{B428}");
+        m.insert("settings.code.lsp.installing", "\u{C124}\u{CE58} \u{C911}...");
+        m.insert("settings.code.lsp.checking", "\u{D655}\u{C778} \u{C911}...");
+        m.insert("settings.code.lsp.available_download", "\u{B2E4}\u{C6B4}\u{B85C}\u{B4DC} \u{AC00}\u{B2A5}");
+        m.insert("settings.code.lsp.restart", "\u{C11C}\u{BC84} \u{B2E4}\u{C2DC} \u{C2DC}\u{C791}");
+        m.insert("settings.code.lsp.view_logs", "\u{B85C}\u{ADF8} \u{BCF4}\u{AE30}");
+        m.insert("settings.code.lsp.status_available", "\u{C0AC}\u{C6A9} \u{AC00}\u{B2A5}");
+        m.insert("settings.code.lsp.status_busy", "\u{BC18}\u{B9AC}\u{BC29}");
+        m.insert("settings.code.lsp.status_failed", "\u{C2E4}\u{D328}");
+        m.insert("settings.code.lsp.status_stopped", "\u{C911}\u{C9C0}\u{B428}");
+        m.insert("settings.code.lsp.status_not_running", "\u{C2E4}\u{D589} \u{C548} \u{B428}");
+
+        // Keybindings page
+        m.insert("settings.keybindings", "\u{D0A4}\u{BCF4}\u{B4DC} \u{B2E8}\u{CD95}\u{D0A4}");
+        m.insert("settings.keybindings.search_placeholder", "\u{C774}\u{B984}\u{B610}\u{B294} \u{D0A4}\u{B85C} \u{AC80}\u{C0C9}\u{FF08}\u{C608}: \"cmd d\"\u{FF09}");
+        m.insert("settings.keybindings.conflict_warning", "\u{C774} \u{B2E8}\u{CD95}\u{D0A4}\u{B294} \u{B2E4}\u{B978} \u{D0A4} \u{BC14}\u{C778}\u{B529}\u{ACFC} \u{ACBD}\u{C7C1}\u{D569}\u{B2C8}\u{B2E4}");
+        m.insert("settings.keybindings.default", "\u{AE30}\u{BCF8}\u{AC12}");
+        m.insert("settings.keybindings.clear", "\u{C9C0}\u{C6B0}\u{AE30}");
+        m.insert("settings.keybindings.press_new_shortcut", "\u{C0C8} \u{D0A4}\u{BCF4}\u{B4DC} \u{B2E8}\u{CD95}\u{D0A4}\u{B97C} \u{B20C}\u{B7EC}\u{C8FC}\u{C138}\u{C694}");
+        m.insert("settings.keybindings.add_custom", "\u{C544}\u{B798}\u{C5D0} \u{AE30}\u{BCF8} \u{C560}\u{B155}\u{C158}\u{C5D0} \u{CEEC}\u{C2A4}\u{D140} \u{D0A4} \u{BC14}\u{C778}\u{B529}\u{C744} \u{CD94}\u{AC00}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.keybindings.use", "\u{C0AC}\u{C6A9}");
+        m.insert("settings.keybindings.not_synced", "\u{D0A4}\u{BCF4}\u{B4DC} \u{B2E8}\u{CD95}\u{D0A4}\u{B294} \u{ED07}\u{C5D0} \u{B3D9}\u{AE30}\u{D654}\u{B418}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.keybindings.configure", "\u{D0A4}\u{BCF4}\u{B4DC} \u{B2E8}\u{CD95}\u{D0A4} \u{C124}\u{C815}");
+        m.insert("settings.keybindings.command", "\u{BA85}\u{B839}\u{C5B4}");
+
+        // Privacy page
+        m.insert("settings.privacy", "\u{AC1C}\u{C778} \u{C815}\u{BCF4}");
+        m.insert("settings.privacy.safe_mode", "\u{BCF4}\u{C548} \u{B808}\u{B4DC}\u{B799}\u{C158}");
+        m.insert("settings.privacy.safe_mode.description", "\u{C774} \u{C124}\u{C815}\u{C744} \u{D65C}\u{C131}\u{D654}\u{D558}\u{BA74} Warp는 \u{BE14}\u{B85D}, Warp Drive \u{C624}\u{BE0C}\u{C81D}\u{D2B8}\u{C758} \u{B0B4}\u{C6A9} \u{BC0F} Oz \u{D504}\u{B860}\u{D504}\u{D2B8}\u{C5D0}\u{C11C} \u{C788}\u{B294} \u{AC00}\u{B2A5}\u{C131} \u{C788}\u{B294} \u{BC18}\u{B2C8} \u{C815}\u{BCF4}\u{B97C} \u{C2A4}\u{CE94}\u{D558}\u{ACE0} \u{C774} \u{B370}\u{C774}\u{D130}\u{B97C} \u{BCF4}\u{C874}\u{D558}\u{AC70}\u{B098} \u{C11C}\u{BC84}\u{C5D0} \u{BCF4}\u{B0B4}\u{B294} \u{AC83}\u{C744} \u{BC29}\u{C9C0}\u{D569}\u{B2C8}\u{B2E4}. \u{C815}\u{ADDC} \u{C2DD}\u{C73C}\u{B85C} \u{C774} \u{B9AC}\u{C2A4}\u{D2B8}\u{B97C} \u{CEEC}\u{C2A4}\u{D140}\u{B9C8}\u{C774}\u{C988}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.user_secret_regex", "\u{CEEC}\u{C2A4}\u{D140} \u{BCF4}\u{C548} \u{B808}\u{B4DC}\u{B799}\u{C158}");
+        m.insert("settings.privacy.user_secret_regex.description", "\u{C815}\u{ADDC} \u{C2DD}\u{C744} \u{C0AC}\u{C6A9}\u{D558}\u{C5EC} \u{B808}\u{B4DC}\u{B799}\u{C158}\u{D560} \u{CD94}\u{AC00} \u{BCF4}\u{C548} \u{B610}\u{B294} \u{B370}\u{C774}\u{D130}\u{B97C} \u{C815}\u{C758}\u{D558}\u{C138}\u{C694}. \u{C774} \u{BCC0}\u{ACBD} \u{C0AC}\u{D56D}\u{C740} \u{B2E4}\u{C74C} \u{BA85}\u{B839} \u{C2E4}\u{D589} \u{C2DC} \u{BC1C}\u{D5A9}\u{D569}\u{B2C8}\u{B2E4}. \u{C815}\u{ADDC} \u{C2DD}\u{C758} \u{C55E}\u{C5D0} (?i) \u{D50C}\u{B798}\u{ADF8}\u{B97C} \u{C0AC}\u{C6A9}\u{D558}\u{BA74} \u{B300}\u{C18C}\u{BB38}\u{C790}\u{B97C} \u{AD6C}\u{BD84}\u{D558}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.telemetry", "Warp \u{AC1C}\u{C120} \u{B3C4}\u{C6C0}");
+        m.insert("settings.privacy.telemetry.description", "\u{C571} \u{BD84}\u{C11D}\u{C740} \u{B2F9}\u{C2E0}\u{C5D0}\u{AC8C} \u{B354} \u{C88B}\u{C740} \u{C81C}\u{D488}\u{C744} \u{B9CC}\u{B4E4}\u{B294} \u{B370} \u{B3C4}\u{C6C0}\u{C774} \u{B429}\u{B2C8}\u{B2E4}. Warp \u{C758} AI \u{AE30}\u{B2A5} \u{AC1C}\u{C120}\u{C744} \u{C704}\u{D574} \u{BA85}\u{B839} \u{C0C1}\u{D638} \u{C791}\u{C6A9} \u{C911} \u{BA87} \u{AC00}\u{C9C0}\u{B97C} \u{C218}\u{C9D1}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.telemetry.description_old", "\u{C571} \u{BD84}\u{C11D}\u{C740} \u{B2F9}\u{C2E0}\u{C5D0}\u{AC8C} \u{B354} \u{C88B}\u{C740} \u{C81C}\u{D488}\u{C744} \u{B9CC}\u{B4E4}\u{B294} \u{B370} \u{B3C4}\u{C6C0}\u{C774} \u{B429}\u{B2C8}\u{B2E4}. \u{C571} \u{C0AC}\u{C6A9} \u{BA54}\u{D0C0}\u{B370}\u{C774}\u{D130}\u{B9CC} \u{C218}\u{C9D1}\u{D558}\u{ACE0} \u{BA85}\u{B839} \u{C785}\u{B825} \u{B610}\u{B294} \u{CD9C}\u{B825}\u{C740} \u{C218}\u{C9D1}\u{D558}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.telemetry.free_tier_note", "\u{BB34}\u{B8CC} \u{D2B0}\u{C5B4}\u{C5D0}\u{C11C}\u{B294} AI \u{AE30}\u{B2A5}\u{C744} \u{C0AC}\u{C6A9}\u{D558}\u{B824}\u{BA74} \u{BD84}\u{C11D}\u{C744} \u{D65C}\u{C131}\u{D654}\u{D574}\u{C57C} \u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.telemetry.read_more", "Warp \u{C758} \u{B370}\u{C774}\u{D130} \u{C0AC}\u{C6A9}\u{C5D0} \u{B300}\u{D574} \u{C790}\u{C138}\u{D788} \u{BCF4}\u{AE30}");
+        m.insert("settings.privacy.data_management", "\u{B370}\u{C774}\u{D130} \u{AD00}\u{B9AC}");
+        m.insert("settings.privacy.data_management.description", "\u{C5B8}\u{C81C}\u{B098} \u{BC18}\u{D658} \u{C5C6}\u{C774} Warp \u{ACC4}\u{C815}\u{C744} \u{C0AD}\u{C81C}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}. \u{ADF8}\u{B7EC}\u{BA74} Warp을 \u{B354} \u{C774}\u{C0C1} \u{C0AC}\u{C6A9}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.data_management.link", "\u{B370}\u{C774}\u{D130} \u{AD00}\u{B9AC} \u{D398}\u{C774}\u{C9C0} \u{BC29}\u{BB38}");
+        m.insert("settings.privacy.privacy_policy", "\u{AC1C}\u{C778} \u{C815}\u{BCF4} \u{BC95}\u{B960}");
+        m.insert("settings.privacy.privacy_policy.link", "Warp \u{AC1C}\u{C778} \u{C815}\u{BCF4} \u{BC95}\u{B960} \u{C77D}\u{AE30}");
+        m.insert("settings.privacy.personal", "\u{AC1C}\u{C778}");
+        m.insert("settings.privacy.enterprise", "\u{C5D4}\u{D130}\u{D504}\u{B77C}\u{C774}\u{C988}");
+        m.insert("settings.privacy.enterprise.cannot_modify", "\u{C5D4}\u{D130}\u{D504}\u{B77C}\u{C774}\u{C988} \u{BCF4}\u{C548} \u{B808}\u{B4DC}\u{B799}\u{C158}\u{C740} \u{BCF4}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.enterprise.no_regexes", "\u{C870}\u{C9C1}\u{C5D0}\u{C11C} \u{C5D4}\u{D130}\u{D504}\u{B77C}\u{C774}\u{C988} \u{C815}\u{ADDC} \u{C2DD}\u{C744} \u{C124}\u{C815}\u{D558}\u{C9C0} \u{C54A}\u{C558}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.managed_by_org", "\u{C870}\u{C9C1}\u{C5D0}\u{C11C} \u{D65C}\u{C131}\u{D654}\u{D558}\u{C600}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.managed_by_org.tooltip", "\u{C774} \u{C124}\u{C815}\u{C740} \u{C870}\u{C9C1}\u{C5D0}\u{C11C} \u{AD00}\u{B9AC}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.secret_visual_mode", "\u{BCF4}\u{C548} \u{BE44}\u{C8FC}\u{C5BC} \u{B808}\u{B4DC}\u{B799}\u{C158} \u{BAA8}\u{B4DC}");
+        m.insert("settings.privacy.secret_visual_mode.description", "\u{BE14}\u{B85D} \u{B9AC}\u{C2A4}\u{D2B8}\u{C5D0}\u{C11C} \u{AC80}\u{C0C9} \u{AC00}\u{B2A5}\u{D55C} \u{C0C1}\u{D0DC}\u{B97C} \u{C720}\u{C9C0}\u{D558}\u{BA74}\u{C11C} \u{BCF4}\u{C548} \u{B370}\u{C774}\u{D130}\u{C758} \u{BE44}\u{C8FC}\u{C5BC} \u{D45C}\u{C2DC} \u{BC29}\u{BC95}\u{C744} \u{C120}\u{D0DD}\u{D558}\u{C138}\u{C694}. \u{C774} \u{C124}\u{C815}\u{C740} \u{BE14}\u{B85D} \u{B9AC}\u{C2A4}\u{D2B8}\u{C5D0}\u{C11C} \u{BCF4}\u{C774}\u{B294} \u{B0B4}\u{C6A9}\u{C5D0}\u{B9CC} \u{C601}\u{D5A5}\u{C744} \u{BBF8}\u{CE5D}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.recommended", "\u{CD94}\u{CC9C}");
+        m.insert("settings.privacy.add_all", "\u{BAA8}\u{B450} \u{CD94}\u{AC00}");
+        m.insert("settings.privacy.add_regex", "\u{C815}\u{ADDC} \u{C2DD} \u{CD94}\u{AC00}");
+        m.insert("settings.privacy.add_regex_pattern", "\u{C815}\u{ADDC} \u{C2DD} \u{D328}\u{D134} \u{CD94}\u{AC00}");
+        m.insert("settings.privacy.send_crash_reports", "\u{C789}\u{D30C}\u{B808}\u{C774}\u{D2B8} \u{BCF4}\u{ACE0} \u{BCF4}\u{B0B4}\u{AE30}");
+        m.insert("settings.privacy.send_crash_reports.description", "\u{C789}\u{D30C}\u{B808}\u{C774}\u{D2B8} \u{BCF4}\u{ACE0}\u{B294} \u{B514}\u{BC84}\u{AE45} \u{BC0F} \u{C548}\u{C815}\u{C131} \u{AC1C}\u{C120}\u{C5D0} \u{B3C4}\u{C6C0}\u{C774} \u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.store_ai_conversations", "AI \u{B300}\u{D654} \u{ED07}\u{C5D0} \u{C800}\u{C7A5}");
+        m.insert("settings.privacy.store_ai_conversations.enabled_description", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{B300}\u{D654}\u{B294} \u{B2E4}\u{B978} \u{C0AC}\u{B78C}\u{ACFC} \u{ACF5}\u{C720}\u{D560} \u{C218} \u{C788}\u{ACE0} \u{B2E4}\u{B978} \u{B514}\u{BC14}\u{C774}\u{C2A4}\u{C5D0}\u{C11C} \u{B85C}\u{ADF8}\u{C778}\u{D560} \u{B54C} \u{C720}\u{C9C0}\u{B429}\u{B2C8}\u{B2E4}. \u{C774} \u{B370}\u{C774}\u{D130}\u{B294} \u{C81C}\u{D488} \u{AE30}\u{B2A5}\u{C5D0}\u{B9CC} \u{C800}\u{C7A5}\u{B418}\u{ACE0} Warp은 \u{BD84}\u{C11D}\u{C5D0} \u{C0AC}\u{C6A9}\u{D558}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.store_ai_conversations.disabled_description", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{B300}\u{D654}\u{B294} \u{B85C}\u{CEEC} \u{B9CC}\u{D0A4}\u{C5D0}\u{B9CC} \u{C800}\u{C7A5}\u{B418}\u{ACE0} \u{B85C}\u{ADF8}\u{C544}\u{C6C3} \u{C2DC} \u{C190}\u{C2E4}\u{B418}\u{BA70} \u{ACF5}\u{C720}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}. \u{CC38}\u{ACE0}: \u{C560}\u{BE44}\u{C5B8}\u{D2B8} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C758} \u{B300}\u{D654} \u{B370}\u{C774}\u{D130}\u{B294} \u{ED07}\u{C5D0} \u{C800}\u{C7A5}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.network_log_console", "\u{B124}\u{D2B8}\u{C6CC}\u{D06C} \u{B85C}\u{ADF8} \u{CF58}\u{C194}");
+        m.insert("settings.privacy.network_log_console.description", "Warp에\u{C11C} \u{C678}\u{BD80} \u{C11C}\u{BC84}\u{B85C}\u{C758} \u{BAA8}\u{B4E0} \u{D1B5}\u{C2E0}\u{C744} \u{BCFC} \u{C218} \u{C788}\u{B294} \u{B124}\u{C774}\u{D2F0}\u{BE0C} \u{CF58}\u{C194}\u{C744} \u{AD6C}\u{CD95}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B2F9}\u{C2E0}\u{C758} \u{B3D9}\u{C791}\u{C774} \u{D56D}\u{C0C1} \u{C548}\u{C804}\u{D558}\u{B2E4}\u{B294} \u{D655}\u{C2E0}\u{C744} \u{AC00}\u{C9C8} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.privacy.network_log_console.link", "\u{B124}\u{D2B8}\u{C6CC}\u{D06C} \u{B85C}\u{ADF8} \u{BCF4}\u{AE30}");
+        m.insert("settings.privacy.zero_data_retention", "\u{AD00}\u{B9AC}\u{C790}\u{AC00} \u{B2F9}\u{C2E0}\u{C758} \u{D300}\u{C5D0} \u{B300}\u{D55C} \u{C810}\u{B370}\u{C774}\u{D130} \u{BCF4}\u{C874}\u{C744} \u{D65C}\u{C131}\u{D654}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C0AC}\u{C6A9}\u{C790} \u{C0DD}\u{C131} \u{CF58}\u{D150}\u{CE20}\u{B294} \u{C218}\u{C9D1}\u{B418}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}.");
+
+        // About page
+        m.insert("settings.about", "Warp \u{C815}\u{BCF4}");
+
+        // Environments page
+        m.insert("settings.environments.title", "\u{D658}\u{ACBD}");
+        m.insert("settings.environments.description", "\u{D658}\u{ACBD}\u{C740} \u{C560}\u{BE44}\u{C5B8}\u{D2B8} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{C2E4}\u{D589}\u{B418}\u{B294} \u{ACF3}\u{C744} \u{C815}\u{C758}\u{D569}\u{B2C8}\u{B2E4}. GitHub(\u{CD94}\u{CC9C}), Warp \u{C124}\u{C815} \u{B3C4}\u{C6C0} \u{B610}\u{B294} \u{C218}\u{B3D9} \u{C124}\u{C815}\u{C73C}\u{B85C} \u{BA87} \u{BD84} \u{C548}\u{C5D0} \u{C124}\u{C815}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.environments.search_placeholder", "\u{D658}\u{ACBD} \u{AC80}\u{C0C9}...");
+        m.insert("settings.environments.no_matches", "\u{AC80}\u{C0C9}\u{C5D0} \u{B9DE}\u{B294} \u{D658}\u{ACBD}\u{C774} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.environments.section.personal", "\u{AC1C}\u{C778}");
+        m.insert("settings.environments.section.shared_by_team", "Warp \u{BC0F} {team_name}\u{ACFC} \u{ACF5}\u{C720}");
+        m.insert("settings.environments.section.shared_by_default", "Warp \u{BC0F} \u{D300}\u{ACFC} \u{ACF5}\u{C720}");
+        m.insert("settings.environments.empty.loading", "\u{B85C}\u{B4DC} \u{C911}...");
+        m.insert("settings.environments.empty.retry", "\u{B2E4}\u{C2DC} \u{C2DC}\u{B3C4}");
+        m.insert("settings.environments.empty.authorize", "\u{C778}\u{C99D}");
+        m.insert("settings.environments.empty.get_started", "\u{C2DC}\u{C791}\u{D558}\u{AE30}");
+        m.insert("settings.environments.empty.launch_agent", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C2DC}\u{C791}");
+        m.insert("settings.environments.empty.quick_setup", "\u{BE60}\u{B978} \u{C124}\u{C815}");
+        m.insert("settings.environments.empty.suggested", "\u{CD94}\u{CC9C}");
+        m.insert("settings.environments.empty.github_subtitle", "\u{C0AC}\u{C6A9}\u{D560} GitHub \u{B808}\u{D37C}\u{C800}\u{D2B8}\u{B9AC}\u{B97C} \u{C120}\u{D0DD}\u{D558}\u{BA74} \u{AE30}\u{BCF8} \u{C774}\u{BBF8}\u{C9C0}\u{C640} \u{C124}\u{C815}\u{C744} \u{CD94}\u{CC9C}\u{D569}\u{B2C8}\u{B2E4}");
+        m.insert("settings.environments.empty.use_agent", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C0AC}\u{C6A9}");
+        m.insert("settings.environments.empty.agent_subtitle", "\u{B85C}\u{CEEC}\u{C5D0} \u{C124}\u{C815}\u{B41C} \u{D504}\u{B85C}\u{C81D}\u{D2B8}\u{B97C} \u{C120}\u{D0DD}\u{D558}\u{BA74} \u{ADF8}\u{B97C} \u{AE30}\u{BC18}\u{C73C}\u{B85C} \u{D658}\u{ACBD}\u{C744} \u{C124}\u{C815}\u{D574} \u{B4DC}\u{B9BD}\u{B2C8}\u{B2E4}");
+        m.insert("settings.environments.empty.no_envs_header", "\u{C544}\u{C9C1} \u{D658}\u{ACBD}\u{C744} \u{C124}\u{C815}\u{D558}\u{C9C0} \u{BABB}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.environments.empty.no_envs_subheader", "\u{D658}\u{ACBD} \u{C124}\u{C815} \u{BC29}\u{BC95}\u{C744} \u{C120}\u{D0DD}\u{D574} \u{C8FC}\u{C138}\u{C694}\u{FF1A}");
+        m.insert("settings.environments.card.env_id", "\u{D658}\u{ACBD} ID: {env_id}");
+        m.insert("settings.environments.card.image", "\u{C774}\u{BBF8}\u{C9C0}: {image}");
+        m.insert("settings.environments.card.repos", "\u{B808}\u{D37C}\u{C800}\u{D2B8}\u{B9AC}: {repos}");
+        m.insert("settings.environments.card.setup_commands", "\u{C124}\u{C815} \u{BA85}\u{B839}: {commands}");
+        m.insert("settings.environments.card.view_runs", "\u{B0B4} \u{C2E4}\u{D589} \u{BCF4}\u{AE30}");
+        m.insert("settings.environments.card.share", "\u{ACF5}\u{C720}");
+        m.insert("settings.environments.card.edit", "\u{D3B8}\u{C9D1}");
+        m.insert("settings.environments.timestamp.last_edited", "\u{B9C8}\u{C9C0}\u{B9C9} \u{D3B8}\u{C9D1}: {duration}");
+        m.insert("settings.environments.timestamp.last_used", "\u{B9C8}\u{C9C0}\u{B9C9} \u{C0AC}\u{C6A9}: {duration}");
+        m.insert("settings.environments.timestamp.last_used_never", "\u{B9C8}\u{C9C0}\u{B9C9} \u{C0AC}\u{C6A9}: \u{C5C6}\u{C74C}");
+        m.insert("settings.environments.toast.updated", "\u{D658}\u{ACBD} \u{C5C5}\u{B370}\u{C774}\u{D2B8} \u{C131}\u{ACF5}");
+        m.insert("settings.environments.toast.created", "\u{D658}\u{ACBD} \u{C0DD}\u{C131} \u{C131}\u{ACF5}");
+        m.insert("settings.environments.toast.deleted", "\u{D658}\u{ACBD} \u{C0AD}\u{C81C} \u{C131}\u{ACF5}");
+        m.insert("settings.environments.toast.shared", "\u{D658}\u{ACBD} \u{ACF5}\u{C720} \u{C131}\u{ACF5}");
+        m.insert("settings.environments.toast.share_failed", "\u{D300}\u{ACFC} \u{D658}\u{ACBD} \u{ACF5}\u{C720} \u{C2E4}\u{D328}");
+        m.insert("settings.environments.toast.create_not_logged_in", "\u{D658}\u{ACBD}\u{C744} \u{C0DD}\u{C131}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}\u{FF1A} \u{B85C}\u{ADF8}\u{C778}\u{D558}\u{C9C0} \u{BABB}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.environments.toast.save_not_found", "\u{C800}\u{C7A5}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}\u{FF1A} \u{D658}\u{ACBD}\u{C774} \u{C874}\u{C7AC}\u{D558}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.environments.toast.share_no_team", "\u{D658}\u{ACBD}\u{C744} \u{ACF5}\u{C720}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}\u{FF1A} \u{D604}\u{C7AC} \u{D300}\u{C5D0} \u{C18D}\u{D558}\u{C9C0} \u{BABB}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.environments.toast.share_not_synced", "\u{D658}\u{ACBD}\u{C744} \u{ACF5}\u{C720}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}\u{FF1A} \u{D658}\u{ACBD}\u{C774} \u{C544}\u{C9C1} \u{B3D9}\u{AE30}\u{D654}\u{B418}\u{C9C0} \u{BABB}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}.");
+
+        // Environment modal
+        m.insert("settings.env_modal.title", "\u{D658}\u{ACBD}\u{C758} \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}\u{B97C} \u{C120}\u{D0DD}\u{D558}\u{C138}\u{C694}");
+        m.insert("settings.env_modal.description.indexed", "\u{B85C}\u{CEEC}\u{C5D0} \u{C778}\u{B354}\u{C2DC}\u{B41C} \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}\u{B97C} \u{C120}\u{D0DD}\u{D558}\u{C5EC} \u{D658}\u{ACBD} \u{C0DD}\u{C131} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C5D0} \u{CEF4}\u{D14D}\u{C2A4}\u{D2B8}\u{B97C} \u{C81C}\u{ACF5}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.env_modal.description.default", "\u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}\u{B97C} \u{C120}\u{D0DD}\u{D558}\u{C5EC} \u{D658}\u{ACBD} \u{C0DD}\u{C131} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C5D0} \u{CEF4}\u{D14D}\u{C2A4}\u{D2B8}\u{B97C} \u{C81C}\u{ACF5}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.env_modal.section.selected_repos", "\u{C120}\u{D0DD}\u{B41C} \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}");
+        m.insert("settings.env_modal.section.available_repos", "\u{C0AC}\u{C6A9} \u{AC00}\u{B2A5}\u{D55C} \u{C778}\u{B354}\u{C2DC}\u{B41C} \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}");
+        m.insert("settings.env_modal.empty.no_selected", "\u{C544}\u{C9C1} \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}\u{B97C} \u{C120}\u{D0DD}\u{D558}\u{C9C0} \u{C54A}\u{C558}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.env_modal.empty.all_selected", "\u{B85C}\u{CEEC}\u{C5D0} \u{C778}\u{B354}\u{C2DC}\u{B41C} \u{BAA8}\u{B4E0} \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}\u{AC00} \u{C774}\u{BBF8} \u{C120}\u{D0DD}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.env_modal.empty.no_indexed", "\u{B85C}\u{CEEC}\u{C5D0} \u{C778}\u{B354}\u{C2DC}\u{B41C} \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}\u{AC00} \u{BAB0}\u{B77C}\u{BCF4}\u{C774}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}\u{B97C} \u{C778}\u{B354}\u{C2DC}\u{D55C} \u{B2E4}\u{C74C}\u{C5D0} \u{B2E4}\u{C2DC} \u{C2DC}\u{B3C4}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.env_modal.empty.unavailable", "\u{C774} \u{BE4C}\u{B4DC}\u{C5D0}\u{C11C}\u{B294} \u{B85C}\u{CEEC} \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC} \u{C120}\u{D0DD}\u{C744} \u{C0AC}\u{C6A9}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.env_modal.loading", "\u{B85C}\u{CEEC}\u{C5D0} \u{C778}\u{B354}\u{C2DC}\u{B41C} \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}\u{B97C} \u{B85C}\u{B4DC} \u{C911}\u{2026}");
+        m.insert("settings.env_modal.button.add_repo", "\u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC} \u{CD94}\u{AC00}");
+        m.insert("settings.env_modal.button.create_environment", "\u{D658}\u{ACBD} \u{C0DD}\u{C131}");
+        m.insert("settings.env_modal.toast.not_git_repo", "\u{C120}\u{D0DD}\u{D55C} \u{D3F4}\u{B354}\u{AC00} Git \u{B808}\u{D3EC}\u{C9C0}\u{D130}\u{B9AC}\u{AC00} \u{C544}\u{B2D9}\u{B2C8}\u{B2E4}: {path}");
+
+        // Platform page
+        m.insert("settings.platform.new_api_key", "\u{C0C8} API \u{D0A4}");
+        m.insert("settings.platform.save_your_key", "\u{D0A4} \u{C800}\u{C7A5}");
+        m.insert("settings.platform.api_key_deleted", "API \u{D0A4}\u{AC00} \u{C0AD}\u{C81C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.platform.oz_cloud_api_keys", "Oz Cloud API \u{D0A4}");
+        m.insert("settings.platform.create_api_key", "+ API \u{D0A4} \u{B9CC}\u{B4E4}\u{AE30}");
+        m.insert("settings.platform.description", "\u{B2E4}\u{B978} Oz \u{D074}\u{B77C}\u{C6B0}\u{B4DC} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{AD00}\u{B9AC}\u{D558}\u{B294} Warp \u{ACC4}\u{C815}\u{C5D0} \u{C561}\u{C138}\u{C2A4}\u{D560} \u{C218} \u{C788}\u{B3C4}\u{B85D} API \u{D0A4}\u{B97C} \u{B9CC}\u{B4E4}\u{ACE0} \u{AD00}\u{B9AC}\u{D569}\u{B2C8}\u{B2E4}.\n\u{C790}\u{C138}\u{D55C} \u{B0B4}\u{C6A9}\u{C740} \u{B2E4}\u{C74C}\u{C744} \u{D655}\u{C778}\u{D574} \u{C8FC}\u{C2DC}\u{AE30} \u{BC14}\u{B78D}\u{B2C8}\u{B2E4} ");
+        m.insert("settings.platform.documentation", "\u{BB38}\u{C11C}.");
+        m.insert("settings.platform.header.name", "\u{C774}\u{B984}");
+        m.insert("settings.platform.header.key", "\u{D0A4}");
+        m.insert("settings.platform.header.scope", "\u{BC94}\u{C704}");
+        m.insert("settings.platform.header.created", "\u{B9CC}\u{B4E4}\u{AE30}");
+        m.insert("settings.platform.header.last_used", "\u{B9C8}\u{C9C0}\u{B9C9} \u{C0AC}\u{C6A9}");
+        m.insert("settings.platform.header.expires_at", "\u{B9CC}\u{AE30} \u{B0A0}\u{C9DC}");
+        m.insert("settings.platform.never", "\u{C5C6}\u{C74C}");
+        m.insert("settings.platform.scope.personal", "\u{AC1C}\u{C778}");
+        m.insert("settings.platform.scope.team", "\u{D300}");
+        m.insert("settings.platform.no_api_keys", "API \u{D0A4} \u{C5C6}\u{C74C}");
+        m.insert("settings.platform.no_api_keys_description", "Warp \u{C5D0} \u{B300}\u{D55C} \u{C678}\u{BD80} \u{C561}\u{C138}\u{C2A4}\u{B97C} \u{AD00}\u{B9AC}\u{D558}\u{B824}\u{BA74} \u{D0A4}\u{B97C} \u{B9CC}\u{B4E4}\u{C5B4} \u{C8FC}\u{C138}\u{C694}");
+
+        // MCP Servers page
+        m.insert("settings.mcp.page_title", "MCP \u{C11C}\u{BC84}");
+        m.insert("settings.mcp.logout_success_with_name", "{name} MCP \u{C11C}\u{BC84}\u{C5D0}\u{C11C} \u{B85C}\u{ADF8}\u{C544}\u{C6C3}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.mcp.logout_success", "MCP \u{C11C}\u{BC84}\u{C5D0}\u{C11C} \u{B85C}\u{ADF8}\u{C544}\u{C6C3}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.mcp.finish_current_install", "\u{D604}\u{C7AC} MCP \u{C124}\u{CE58}\u{B97C} \u{BA3C}\u{C800} \u{C644}\u{B8CC}\u{D558}\u{ACE0} \u{B2E4}\u{B978} \u{C124}\u{CE58} \u{B9C1}\u{D06C}\u{B97C} \u{C5F4}\u{C5B4} \u{C8FC}\u{C138}\u{C694}.");
+        m.insert("settings.mcp.unknown_server", "\u{C54C} \u{C218} \u{C5C6}\u{B294} MCP \u{C11C}\u{BC84} '{autoinstall_param}'");
+        m.insert("settings.mcp.cannot_install_from_link", "MCP \u{C11C}\u{BC84} '{gallery_title}'\u{C740}(\u{B294}) \u{C774} \u{B9C1}\u{D06C}\u{C5D0}\u{C11C} \u{C124}\u{CE58}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+
+        // Warpify page
+        m.insert("settings.warpify.title", "Warpify");
+        m.insert("settings.warpify.description", "Warp\u{AC00} \u{C77C}\u{BD80} shell에 \u{B300}\u{D574} \u{201c}Warpify\u{201D}(\u{BE14}\u{B85D}, \u{C785}\u{B825} \u{BAA8}\u{B4DC} \u{B4F1}\u{C758} \u{C9C0}\u{C6D0}\u{CD94}\u{AC00})\u{B97C} \u{C2DC}\u{B3C4}\u{D558}\u{B294}\u{C9C0} \u{C124}\u{C815}\u{D569}\u{B2C8}\u{B2E4}. ");
+        m.insert("settings.warpify.learn_more", "\u{C790}\u{C138}\u{D788} \u{BCF4}\u{AE30}");
+        m.insert("settings.warpify.subshells", "\u{C11C}\u{BE0C} \u{C178}");
+        m.insert("settings.warpify.subshells_description", "\u{C9C0}\u{C6D0}\u{B418}\u{B294} \u{C11C}\u{BE0C} \u{C178}: bash, zsh, fish.");
+        m.insert("settings.warpify.ssh", "SSH");
+        m.insert("settings.warpify.ssh_description", "\u{C0C1}\u{D638} \u{C791}\u{B3D9} SSH \u{C138}\u{C158}\u{C744} Warpify \u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.warpify.ssh_session_detection", "Warpification \u{C704}\u{D55C} SSH \u{C138}\u{C158} \u{AC10}\u{C9C0}");
+        m.insert("settings.warpify.placeholder_command", "\u{BA85}\u{B839}(\u{C815}\u{ADDC}\u{D45C}\u{D604}\u{C2DD} \u{C9C0}\u{C6D0})");
+        m.insert("settings.warpify.placeholder_host", "\u{D638}\u{C2A4}\u{D2B8}(\u{C815}\u{ADDC}\u{D45C}\u{D604}\u{C2DD} \u{C9C0}\u{C6D0})");
+        m.insert("settings.warpify.added_commands", "\u{CD94}\u{AC00}\u{B41C} \u{BA85}\u{B839}");
+        m.insert("settings.warpify.denylisted_commands", "\u{AC70}\u{BD80} \u{BAA9}\u{B85D} \u{BA85}\u{B839}");
+        m.insert("settings.warpify.warpify_ssh_sessions", "SSH \u{C138}\u{C158} Warpify");
+        m.insert("settings.warpify.install_ssh_extension", "SSH \u{D655}\u{C7A5} \u{C124}\u{CE58}");
+        m.insert("settings.warpify.ssh_extension_install_mode_description", "\u{C6D0}\u{ACA9} \u{D638}\u{C2A4}\u{D2B8}\u{C5D0} Warp SSH \u{D655}\u{C7A5}\u{C774} \u{C124}\u{CE58}\u{B418}\u{C5C4}\u{C5C8}\u{C744} \u{B54C} \u{C124}\u{CE58} \u{BC29}\u{BC95}\u{C744} \u{C81C}\u{D655}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.warpify.use_tmux_warpification", "Tmux Warpification \u{C0AC}\u{C6A9}");
+        m.insert("settings.warpify.ssh_tmux_warpification_description", "tmux ssh \u{B798}\u{D37C}\u{B294} \u{AE30}\u{BCF8} \u{B798}\u{D37C}\u{AC00} \u{B3D9}\u{C791}\u{D558}\u{C9C0} \u{BABB}\u{D558}\u{B294} \u{B9CE}\u{C740} \u{C0C1}\u{D669}\u{C5D0}\u{C11C} \u{B3D9}\u{C791}\u{D558}\u{C9C0}\u{B9CC}, \u{C6B0}\u{D53B}\u{D558}\u{AC8C} \u{BC84}\u{D2BC}\u{C744} \u{B204}\u{B974}\u{AC8C} \u{B420} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C0C8} \u{D0ED}\u{C5D0}\u{C11C} \u{BC18}\u{C601}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.warpify.denylisted_hosts", "\u{AC70}\u{BD80} \u{BAA9}\u{B85D} \u{D638}\u{C2A4}\u{D2B8}");
+
+        // Referrals page
+        m.insert("settings.referrals.header", "\u{CE5C}\u{AD6C}\u{B97C} Warp에 \u{CD08}\u{B300}");
+        m.insert("settings.referrals.anonymous_header", "Warp \u{CD94}\u{CC9C} \u{D504}\u{B85C}\u{ADF8}\u{B7A8}\u{C5D0} \u{CC38}\u{AC00}\u{D558}\u{B824}\u{BA74} \u{AC00}\u{C785}\u{D558}\u{C138}\u{C694}");
+        m.insert("settings.referrals.link_error", "\u{CD94}\u{CC9C} \u{CF54}\u{B4DC}\u{B97C} \u{BD88}\u{B7EC}\u{C624}\u{B294}\u{B370} \u{C2E4}\u{D328}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.referrals.copy_link", "\u{B9C1}\u{D06C} \u{BCF5}\u{C0AC}");
+        m.insert("settings.referrals.send_email", "\u{BCF4}\u{B0B4}\u{AE30}");
+        m.insert("settings.referrals.sending", "\u{BCF4}\u{B0BC} \u{C911}...");
+        m.insert("settings.referrals.loading", "\u{BD88}\u{B7EC}\u{C624}\u{B294} \u{C911}...");
+        m.insert("settings.referrals.link_copied", "\u{B9C1}\u{D06C}\u{AC00} \u{BCF5}\u{C0AC}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.referrals.email_success", "\u{BA54}\u{C77C}\u{C774} \u{BC1C}\u{C1A1}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.referrals.email_failure", "\u{BA54}\u{C77C} \u{BC1C}\u{C1A1}\u{C5D0} \u{C2E4}\u{D328}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B2E4}\u{C2DC} \u{C2DC}\u{B3C4}\u{D574} \u{C8FC}\u{C138}\u{C694}.");
+        m.insert("settings.referrals.reward_intro", "\u{CE5C}\u{AD6C}\u{B97C} \u{CD94}\u{CC9C}\u{D558}\u{BA74} Warp \u{D2B9}\u{BCC4} \u{AD6C}\u{BB3C}\u{C744} \u{BC1B}\u{C744} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}*");
+        m.insert("settings.referrals.terms_link", "\u{C77C}\u{BD80} \u{C81C}\u{D55C}\u{C774} \u{C801}\u{C6A9}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.referrals.terms_contact", " \u{CD94}\u{CC9C} \u{D504}\u{B85C}\u{ADF8}\u{B7A8}\u{C5D0} \u{B300}\u{D55C} \u{BB38}\u{C758}\u{C810}\u{C774} \u{C788}\u{C73C}\u{BA74} referrals@warp.dev로 \u{BB38}\u{C758}\u{D574} \u{C8FC}\u{C138}\u{C694}.");
+        m.insert("settings.referrals.current_referral_singular", "\u{D604}\u{C7AC} \u{CD94}\u{CC9C}");
+        m.insert("settings.referrals.current_referral_plural", "\u{D604}\u{C7AC} \u{CD94}\u{CC9C}");
+        m.insert("settings.referrals.link_label", "\u{B9C1}\u{D06C}");
+        m.insert("settings.referrals.email_label", "\u{BA54}\u{C77C}");
+        m.insert("settings.referrals.sign_up", "\u{AC00}\u{C785}");
+        m.insert("settings.referrals.enter_email_error", "\u{BA54}\u{C77C} \u{C8FC}\u{C18C}\u{B97C} \u{C785}\u{B825}\u{D574} \u{C8FC}\u{C138}\u{C694}.");
+        m.insert("settings.referrals.invalid_email_error", "\u{B2E4}\u{C74C} \u{BA54}\u{C77C} \u{C8FC}\u{C18C}\u{AC00} \u{C720}\u{D6A8}\u{D55C}\u{C9C0} \u{D655}\u{C778}\u{D574} \u{C8FC}\u{C138}\u{C694}: {invalid_email}");
+        m.insert("settings.referrals.reward_exclusive_theme", "\u{D2B9}\u{BCC4} \u{D14C}\u{B9C8}");
+        m.insert("settings.referrals.reward_keycaps_stickers", "\u{D0A4}\u{CEF5} + \u{C2A4}\u{D2F0}\u{CEE4}");
+        m.insert("settings.referrals.reward_tshirt", "T\u{C17D}");
+        m.insert("settings.referrals.reward_notebook", "\u{B178}\u{D2B8}\u{BD81}");
+        m.insert("settings.referrals.reward_baseball_cap", "\u{BC29}\u{C625}\u{BAA8}");
+        m.insert("settings.referrals.reward_hoodie", "\u{D6C8}\u{B4DC}\u{C758}");
+        m.insert("settings.referrals.reward_hydro_flask", "\u{D504}\u{B9AC}\u{BBF8}\u{C5C4} Hydro Flask");
+        m.insert("settings.referrals.reward_backpack", "\u{BC31}\u{D329}");
+
+        // Billing and usage page
+        m.insert("settings.billing.overage.admin_header", "\u{D504}\u{B80C}\u{BBF8}\u{C6C0} \u{BAA8}\u{B378} \u{C0AC}\u{C6A9}\u{B7C9} \u{CD08}\u{ACFC}\u{B97C} \u{D65C}\u{C131}\u{D654}");
+        m.insert("settings.billing.overage.user_header_enabled", "\u{D504}\u{B80C}\u{BBF8}\u{C6C0} \u{BAA8}\u{B378} \u{C0AC}\u{C6A9}\u{B7C9} \u{CD08}\u{ACFC}\u{AC00} \u{D65C}\u{C131}\u{D654}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.billing.overage.user_header_disabled", "\u{D504}\u{B80C}\u{BBF8}\u{C6C0} \u{BAA8}\u{B378} \u{C0AC}\u{C6A9}\u{B7C9} \u{CD08}\u{ACFC}\u{AC00} \u{D65C}\u{C131}\u{D654}\u{B418}\u{C9C0} \u{C54A}\u{C558}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.billing.overage.description", "\u{D504}\u{B79C}\u{C758} \u{C81C}\u{D55C}\u{C744} \u{B118}\u{C5B4} \u{D504}\u{B80C}\u{BBF8}\u{C6C0} \u{BAA8}\u{B378}\u{C744} \u{ACC4}\u{C18D} \u{C0AC}\u{C6A9}\u{D569}\u{B2C8}\u{B2E4}. \u{C0AC}\u{C6A9}\u{B7C9}\u{C740} $20 \u{B2E8}\u{C704}\u{B85C} \u{CCAD}\u{AD6C}\u{B418}\u{BA70}, \u{C18C}\u{BE44} \u{D55C}\u{B3C4}\u{AE4C}\u{C9C0} \u{B098}\u{BA38}\u{C9C0} \u{C794}\u{ACE0}\u{B294} \u{CCAD}\u{AD6C} \u{C77C}\u{C790}\u{C5D0} \u{CCB4}\u{ACB0}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.overage.user_description", "\u{D300} \u{AD00}\u{B9AC}\u{C790}\u{C5D0}\u{AC8C} \u{CD08}\u{ACFC}\u{B97C} \u{D65C}\u{C131}\u{D654}\u{D574} \u{B354} \u{B9CE}\u{C740}AI \u{C0AC}\u{C6A9}\u{B7C9}\u{C744} \u{BC1B}\u{C73C}\u{C138}\u{C694}.");
+        m.insert("settings.billing.overage.link_text", "\u{CD08}\u{ACFC} \u{C0AC}\u{C6A9}\u{B7C9} \u{C0C1}\u{C138} \u{BCF4}\u{AE30}");
+        m.insert("settings.billing.overage.monthly_spending_limit", "\u{C6D4}\u{BCC4} \u{CD08}\u{ACFC} \u{C18C}\u{BE44} \u{D55C}\u{B3C4}");
+        m.insert("settings.billing.overage.monthly_spending_limit.tooltip", "\u{D504}\u{B79C} \u{AE08}\u{C561}\u{C744} \u{B118}\u{B294} \u{C6D4}\u{BCC4} \u{CD08}\u{ACFC} \u{C18C}\u{BE44} \u{D55C}\u{B3C4}\u{B97C} \u{C124}\u{C815}\u{D569}\u{B2C8}\u{B2E4}");
+        m.insert("settings.billing.overage.not_set", "\u{C124}\u{C815} \u{C548}\u{B428}");
+        m.insert("settings.billing.overage.total", "\u{CD1D} \u{CD08}\u{ACFC}");
+        m.insert("settings.billing.overage.resets_on", "\u{C0AC}\u{C6A9}\u{B7C9}\u{C740} {date}\u{C5D0} \u{B9AC}\u{C138}\u{D2B8}\u{B429}\u{B2C8}\u{B2E4}");
+        m.insert("settings.billing.overage.one_credit", "1\u{D06C}\u{B808}\u{B514}\u{D2B8}");
+        m.insert("settings.billing.overage.credits", "{count}\u{D06C}\u{B808}\u{B514}\u{D2B8}");
+        m.insert("settings.billing.sort.a_to_z", "A\u{BD80}\u{D130} Z");
+        m.insert("settings.billing.sort.z_to_a", "Z\u{BD80}\u{D130} A");
+        m.insert("settings.billing.sort.ascending", "\u{C0AC}\u{C6A9}\u{B7C9} \u{C624}\u{B984}\u{CC28}\u{C21C}");
+        m.insert("settings.billing.sort.descending", "\u{C0AC}\u{C6A9}\u{B7C9} \u{B0B4}\u{B9BC}\u{CC28}\u{C21C}");
+        m.insert("settings.billing.sort.label", "\u{C815}\u{B82C} \u{BC29}\u{BC95}");
+        m.insert("settings.billing.auto_reload.exceed_limit_warning", "\u{B2E8}\u{B3D9} \u{B9AC}\u{B85C}\u{B4DC}\u{AC00} \u{C6D4}\u{BCC4} \u{C18C}\u{BE44} \u{D55C}\u{B3C4}\u{B97C} \u{B118}\u{AE30} \u{B54C}\u{BB38}\u{C5D0} \u{C790}\u{B3D9} \u{B9AC}\u{B85C}\u{B4DC}\u{AC00} \u{BE44}\u{D65C}\u{C131}\u{D654}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C790}\u{B3D9} \u{B9AC}\u{B85C}\u{B4DC}\u{B97C} \u{C0AC}\u{C6A9}\u{D558}\u{B824}\u{BA74} \u{D55C}\u{B3C4}\u{B97C} \u{B192}\u{C774}\u{C138}\u{C694}.");
+        m.insert("settings.billing.auto_reload.delinquent_warning", "\u{CCAD}\u{AD6C} \u{BB38}\u{C81C}\u{B85C} \u{C81C}\u{D55C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}. \u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{B97C} \u{AD6C}\u{B784}\u{D558}\u{B824}\u{BA74} \u{ACB0}\u{C81C} \u{BC29}\u{BC95}\u{C744} \u{C5C5}\u{B370}\u{C774}\u{D2B8}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.billing.auto_reload.restricted_warning", "\u{CD5C}\u{ADFC} \u{B9AC}\u{B85C}\u{B4DC} \u{C2E4}\u{D328}\u{B85C} \u{C790}\u{B3D9} \u{B9AC}\u{B85C}\u{B4DC}\u{AC00} \u{BE44}\u{D65C}\u{C131}\u{D654}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}. \u{ACB0}\u{C81C} \u{BC29}\u{BC95}\u{C744} \u{C5C5}\u{B370}\u{C774}\u{D2B8}\u{D558}\u{ACE0} \u{B2E4}\u{C2DC} \u{C2DC}\u{B3C4}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.billing.auto_reload.exceed_limit_with_link", "\u{B9AC}\u{B85C}\u{B4DC}\u{C2DC} \u{C6D4}\u{BCC4} \u{D55C}\u{B3C4}\u{B97C} \u{B118}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.auto_reload.increase_limit_link", "\u{D55C}\u{B3C4} \u{B192}\u{C774}\u{AE30}");
+        m.insert("settings.billing.auto_reload.to_continue", " \u{ACC4}\u{C18D}\u{D558}\u{B824}\u{BA74}.");
+        m.insert("settings.billing.restricted.billing_issue", "\u{CCAD}\u{AD6C} \u{BB38}\u{C81C}\u{B85C} \u{C81C}\u{D55C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.billing.tab.overview", "\u{AC1C}\u{C694}");
+        m.insert("settings.billing.tab.usage_history", "\u{C0AC}\u{C6A9}\u{B7C9} \u{B77C}\u{C774}\u{BE0C}\u{B7EC}\u{B9AC}");
+        m.insert("settings.billing.enterprise.callout_header", "\u{C0AC}\u{C6A9}\u{B7C9} \u{BCF4}\u{ACE0}\u{AC00} \u{D604}\u{C7AC} \u{C81C}\u{D55C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.billing.enterprise.callout_admin_prefix", "\u{C5D4}\u{D130}\u{D504}\u{B77C}\u{C774}\u{C988} \u{D06C}\u{B808}\u{B514}\u{D2B8} \u{C0AC}\u{C6A9}\u{B7C9}\u{C740} \u{C774} \u{BDF0}\u{C5D0}\u{C11C} \u{C644}\u{C804}\u{D788} \u{C0AC}\u{C6A9}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}. \u{AC00}\u{C7A5} \u{C815}\u{D655}\u{D55C} \u{C18C}\u{BE44} \u{D2B8}\u{B798}\u{D0B9}\u{C744} \u{C704}\u{D574}");
+        m.insert("settings.billing.enterprise.callout_admin_link", "\u{AD00}\u{B9AC} \u{D310}\u{B113} \u{BC29}\u{BB38}");
+        m.insert("settings.billing.enterprise.callout_admin_suffix", ".");
+        m.insert("settings.billing.enterprise.callout_non_admin", "\u{C5D4}\u{D130}\u{D504}\u{B77C}\u{C774}\u{C988} \u{D06C}\u{B808}\u{B514}\u{D2B8} \u{C0AC}\u{C6A9}\u{B7C9}\u{C740} \u{C774} \u{BDF0}\u{C5D0}\u{C11C} \u{C644}\u{C804}\u{D788} \u{C0AC}\u{C6A9}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C0C1}\u{C138}\u{D55C} \u{C0AC}\u{C6A9}\u{B7C9} \u{BCF4}\u{ACE0}\u{B97C} \u{C704}\u{D574} \u{D300} \u{AD00}\u{B9AC}\u{C790}\u{C5D0}\u{AC8C} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.billing.addon.title", "\u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8}");
+        m.insert("settings.billing.addon.description", "\u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{B294} \u{C0AC}\u{C804} \u{ACB0}\u{C81C} \u{D328}\u{D0A4}\u{C9C0}\u{B85C} \u{AD6C}\u{B784}\u{D558}\u{BA70}, \u{AC01} \u{CCAD}\u{AD6C} \u{C0AC}\u{C774}\u{D074}\u{B85C} \u{C774}\u{C6D0}\u{B418}\u{ACE0} 1\u{B144} \u{D6C4}\u{C5D0} \u{B9CC}\u{B8CC}\u{B429}\u{B2C8}\u{B2E4}. \u{AD6C}\u{B784}\u{B7C9}\u{C774} \u{B9CE}\u{C744}\u{C218}\u{B85D} \u{B2E8}\u{C704}\u{AC00} \u{B0AE}\u{C544}\u{C9D1}\u{B2C8}\u{B2E4}. \u{AE30}\u{BCF8} \u{D504}\u{B79C} \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{AC00} \u{C0AC}\u{C6A9}\u{B418}\u{BA74} \u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{AC00} \u{C18C}\u{BE44}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.addon.description_team", "\u{AD6C}\u{B784}\u{D55C} \u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{B294} \u{D300} \u{C804}\u{CCB4}\u{C5D0}\u{AC8C} \u{ACF5}\u{C720}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.addon.monthly_spend_limit", "\u{C6D4}\u{BCC4} \u{C18C}\u{BE44} \u{D55C}\u{B3C4}");
+        m.insert("settings.billing.addon.monthly_spend_limit.tooltip", "\u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{C758} \u{C6D4}\u{BCC4} \u{C18C}\u{BE44} \u{D55C}\u{B3C4}\u{B97C} \u{C124}\u{C815}\u{D569}\u{B2C8}\u{B2E4}");
+        m.insert("settings.billing.addon.purchased_this_month", "\u{C624}\u{B298} \u{AD6C}\u{B784}\u{D568}");
+        m.insert("settings.billing.addon.auto_reload", "\u{C790}\u{B3D9} \u{B9AC}\u{B85C}\u{B4DC}");
+        m.insert("settings.billing.addon.auto_reload.description", "\u{D65C}\u{C131}\u{D654}\u{B418}\u{BA74} \u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8} \u{C794}\u{ACE0}\u{AC00} 100\u{D06C}\u{B808}\u{B514}\u{D2B8}\u{C5D0} \u{B3C4}\u{B2E4}\u{B974}\u{BA74} {amount}\u{D06C}\u{B808}\u{B514}\u{D2B8}\u{B97C} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{AD6C}\u{B784}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.addon.one_time_purchase", "\u{C77C}\u{D68C}\u{C131} \u{AD6C}\u{B784}");
+        m.insert("settings.billing.addon.buy", "\u{AD6C}\u{B784}");
+        m.insert("settings.billing.addon.buying", "\u{AD6C}\u{B784} \u{C911}\u{2026}");
+        m.insert("settings.billing.addon.one_credit", "1\u{D06C}\u{B808}\u{B514}\u{D2B8}");
+        m.insert("settings.billing.addon.credits", "{count}\u{D06C}\u{B808}\u{B514}\u{D2B8}");
+        m.insert("settings.billing.addon.zero_credits", "0\u{D06C}\u{B808}\u{B514}\u{D2B8}");
+        m.insert("settings.billing.addon.contact_account_executive", "\u{B354} \u{B9CE}\u{C740} \u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{B97C} \u{C704}\u{D574} \u{ACC4}\u{C815} \u{B2E8}\u{B3C4}\u{C790}\u{C5D0}\u{AC8C} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.billing.addon.contact_admin", "\u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{B97C} \u{AD6C}\u{B784}\u{D558}\u{B824}\u{BA74} \u{D300} \u{AD00}\u{B9AC}\u{C790}\u{C5D0}\u{AC8C} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.billing.addon.switch_build", "Build \u{D504}\u{B79C}\u{C73C}\u{B85C} \u{C804}\u{D658}");
+        m.insert("settings.billing.addon.upgrade_build", "Build \u{D504}\u{B79C}\u{C73C}\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.billing.addon.to_purchase_suffix", "\u{D558}\u{C5EC} \u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{B97C} \u{AD6C}\u{B784}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.ambient_trial.title", "\u{ED07} \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{D2B8}\u{B77C}\u{C774}\u{C5BC}");
+        m.insert("settings.billing.ambient_trial.one_credit_remaining", "\u{B0AE}\u{AE30} 1\u{D06C}\u{B808}\u{B514}\u{D2B8}");
+        m.insert("settings.billing.ambient_trial.credits_remaining", "\u{B0AE}\u{AE30} {count}\u{D06C}\u{B808}\u{B514}\u{D2B8}");
+        m.insert("settings.billing.ambient_trial.new_agent", "\u{C0C8} \u{C5D0}\u{C774}\u{C804}\u{D2B8}");
+        m.insert("settings.billing.ambient_trial.buy_more", "\u{B354} \u{AD6C}\u{B784}");
+        m.insert("settings.billing.usage_history.last_30_days", "\u{CD5C}\u{ADFC} 30\u{C77C}");
+        m.insert("settings.billing.usage_history.load_more", "\u{B354} \u{B85C}\u{B4DC}");
+        m.insert("settings.billing.usage_history.empty_title", "\u{C0AC}\u{C6A9}\u{B7C9} \u{B77C}\u{C774}\u{BE0C}\u{B7EC}\u{B9AC} \u{C5C6}\u{C74C}");
+        m.insert("settings.billing.usage_history.empty_description", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{D0DC}\u{C2A4}\u{D06C}\u{B97C} \u{C2DC}\u{C791}\u{D558}\u{C5EC} \u{C5EC}\u{AE30}\u{C5D0}\u{C11C} \u{C0AC}\u{C6A9}\u{B7C9}\u{B97C} \u{D655}\u{C778}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.billing.usage.title", "\u{C0AC}\u{C6A9}\u{B7C9}");
+        m.insert("settings.billing.usage.credits", "\u{D06C}\u{B808}\u{B514}\u{D2B8}");
+        m.insert("settings.billing.usage.resets", "{time}\u{C5D0} \u{B9AC}\u{C138}\u{D2B8}");
+        m.insert("settings.billing.usage.limit_description", "\u{C774}\u{AC83}\u{C740} \u{B2F9}\u{C2E0}\u{C758} \u{ACC4}\u{C815} \u{C608}\u{C815} {duration}AI \u{D06C}\u{B808}\u{B514}\u{D2B8} \u{C81C}\u{D55C}\u{C785}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.usage.team_total", "\u{D300} \u{CD1D}\u{ACC4}");
+        m.insert("settings.billing.overage.modal_title", "\u{CD08}\u{ACFC} \u{C18C}\u{BE44} \u{D55C}\u{B3C4}");
+        m.insert("settings.billing.addon.modal_title", "\u{C6D4}\u{BCC4} \u{C18C}\u{BE44} \u{D55C}\u{B3C4}");
+        m.insert("settings.billing.prorated.tooltip_current_user", "\u{CCAD}\u{AD6C} \u{C0AC}\u{C774}\u{D074} \u{C911}\u{B2E8}\u{C5D0} \u{AC00}\u{C785}\u{D558}\u{C168}\u{AE30} \u{B54C}\u{BB38}\u{C5D0} \u{D06C}\u{B808}\u{B514}\u{D2B8} \u{C81C}\u{D55C}\u{C740} \u{C77C}\u{C694}\u{ACC4}\u{C0B0}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.prorated.tooltip_other_user", "\u{C774} \u{D06C}\u{B808}\u{B514}\u{D2B8} \u{C81C}\u{D55C}\u{C740} \u{C77C}\u{C694}\u{ACC4}\u{C0B0}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C774} \u{C0AC}\u{C6A9}\u{C790}\u{B294} \u{CCAD}\u{AD6C} \u{C0AC}\u{C774}\u{D074} \u{C911}\u{B2E8}\u{C5D0} \u{AC00}\u{C785}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.toast.update_settings_failed", "\u{C6CC}\u{D06C}\u{C2A4}\u{D398}\u{C774}\u{C2A4} \u{C124}\u{C815} \u{C5C5}\u{B370}\u{C774}\u{D2B8}\u{C5D0} \u{C2E4}\u{D328}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.billing.toast.purchase_success", "\u{BD80}\u{AC00} \u{D06C}\u{B808}\u{B514}\u{D2B8} \u{AD6C}\u{B784} \u{C131}\u{ACF5}");
+        m.insert("settings.billing.plan.title", "\u{D504}\u{B79C}");
+        m.insert("settings.billing.plan.free", "\u{BB34}\u{B8CC}");
+        m.insert("settings.billing.plan.sign_up", "\u{AC00}\u{C785}");
+        m.insert("settings.billing.plan.compare_plans", "\u{D504}\u{B79C} \u{BE44}\u{AD50}");
+        m.insert("settings.billing.plan.manage_billing", "\u{CCAD}\u{AD6C} \u{AD00}\u{B9AC}");
+        m.insert("settings.billing.plan.open_admin_panel", "\u{AD00}\u{B9AC}\u{C790} \u{D310}\u{B113} \u{C5F4}\u{AE30}");
+        m.insert("settings.billing.upgrade.manage_billing_regain", "\u{CCAD}\u{AD6C} \u{AD00}\u{B9AC}");
+        m.insert("settings.billing.upgrade.to_regain_access", "\u{D558}\u{C5EC} AI \u{AE30}\u{B2A5}\u{C5D0} \u{B300}\u{D55C} \u{C561}\u{C138}\u{C2A4}\u{B97C} \u{D68C}\u{BCF5}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.upgrade.contact_admin_billing", "\u{D300} \u{AD00}\u{B9AC}\u{C790}\u{C5D0}\u{AC8C} \u{CCAD}\u{AD6C} \u{BB38}\u{C81C}\u{B97C} \u{D574}\u{ACB0}\u{D558}\u{B824}\u{BA74} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.billing.upgrade.switch_build", "Build \u{D504}\u{B79C}\u{C73C}\u{B85C} \u{C804}\u{D658}");
+        m.insert("settings.billing.upgrade.for_flexible_pricing", " \u{B354} \u{C720}\u{C5ED}\u{D55C} \u{AC00}\u{ACA9} \u{BAA8}\u{B378}\u{C744} \u{D655}\u{B3D4}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.upgrade.upgrade_build", "Build \u{D504}\u{B79C}\u{C73C}\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.billing.upgrade.bring_your_own_key", "\u{BC18}\u{D658} \u{D0A4} \u{C0AC}\u{C6A9}");
+        m.insert("settings.billing.upgrade.or", " \u{B610}\u{B294} ");
+        m.insert("settings.billing.upgrade.for_increased_access", " \u{B354} \u{B9CE}\u{C740} AI \u{AE30}\u{B2A5}\u{C744} \u{D655}\u{B3D4}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.upgrade.to_turbo", "Turbo \u{D504}\u{B79C}\u{C73C}\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.billing.upgrade.to_lightspeed", "Lightspeed \u{D504}\u{B79C}\u{C73C}\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.billing.upgrade.generic", "\u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.billing.upgrade.to_get_more_usage", " \u{B354} \u{B9CE}\u{C740} AI \u{C0AC}\u{C6A9}\u{B7C9}\u{C744} \u{D655}\u{B3D4}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.upgrade.to_max", "Max\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.billing.upgrade.for_more_ai_credits", " \u{B354} \u{B9CE}\u{C740} AI \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{B97C} \u{D655}\u{B3D4}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.upgrade.switch_business", "Business\u{B85C} \u{C804}\u{D658}");
+        m.insert("settings.billing.upgrade.for_security_features", " SSO \u{B4F1} \u{BCF4}\u{C548} \u{AE30}\u{B2A5}\u{ACFC} \u{C790}\u{B3D9} \u{C801}\u{C6A9}\u{B418}\u{B294} \u{C810} \u{B370}\u{C774}\u{D130} \u{BCF4}\u{C874}\u{C744} \u{D655}\u{B3D4}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.upgrade.to_enterprise", "Enterprise\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.billing.upgrade.for_custom_limits", " \u{C0AC}\u{C6A9}\u{C790} \u{C81C}\u{D55C} \u{BC0F} \u{C804}\u{BB38} \u{C9C0}\u{C6D0}\u{C744} \u{D655}\u{B3D4}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.upgrade.contact_support", "\u{C9C0}\u{C6D0} \u{BB38}\u{C758}");
+        m.insert("settings.billing.upgrade.for_more_ai_usage_generic", " \u{B354} \u{B9CE}\u{C740} AI \u{C0AC}\u{C6A9}\u{B7C9}\u{C744} \u{D655}\u{B3D4}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.upgrade.for_more_credits_models", " \u{B354} \u{B9CE}\u{C740} \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{C640} \u{BAA8}\u{B378}\u{C744} \u{D655}\u{B3D4}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+
+        // settings.teams.*
+        m.insert("settings.teams.header", "\u{D300}");
+        m.insert("settings.teams.create.title", "\u{D300} \u{B9CC}\u{B4E4}\u{AE30}");
+        m.insert("settings.teams.create.description", "\u{D300}\u{C744} \u{B9CC}\u{B4E4}\u{BA74} \u{CE90}\u{B9DD} \u{B3D9}\u{C77C} \u{BC29}\u{BC95}, \u{D658}\u{ACBD}, \u{C790}\u{B3D9}\u{BC95}, \u{C544}\u{D2F0}\u{D39C}\u{C744} \u{ACF5}\u{C720}\u{D558}\u{C5EC} \u{D300} \u{BC18}\u{ACFC}\u{B97C} \u{D615}\u{C131}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.create.team_name_placeholder", "\u{D300} \u{C774}\u{B984}");
+        m.insert("settings.teams.create.button", "\u{B9CC}\u{B4E4}\u{AE30}");
+        m.insert("settings.teams.create.discoverable_checkbox_domain", "@{domain} \u{C774}\u{BA54}\u{C77C}\u{C744} \u{AC00}\u{C9C4} Warp \u{C0AC}\u{C6A9}\u{C790}\u{AC00} \u{D300}\u{C744} \u{CC3E}\u{ACE0} \u{AC00}\u{C785}\u{D560} \u{C218} \u{C788}\u{B3C4}\u{B85D} \u{D5C8}\u{C6A9}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.create.discoverable_checkbox_generic", "\u{B3D9}\u{C77C}\u{D55C} \u{C774}\u{BA54}\u{C77C} \u{B3C4}\u{BA54}\u{C778}\u{C744} \u{AC00}\u{C9C4} Warp \u{C0AC}\u{C6A9}\u{C790}\u{AC00} \u{D300}\u{C744} \u{CC3E}\u{ACE0} \u{AC00}\u{C785}\u{D560} \u{C218} \u{C788}\u{B3C4}\u{B85D} \u{D5C8}\u{C6A9}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.create.join_existing", "\u{B610}\u{B294} \u{D68C}\u{C0AC} \u{B0B4} \u{AE30}\u{C874} \u{D300}\u{C5D0} \u{AC00}\u{C785}\u{D558}\u{C138}\u{C694}");
+        m.insert("settings.teams.manage.leave_team", "\u{D300} \u{B098}\u{AC00}\u{AE30}");
+        m.insert("settings.teams.manage.delete_team", "\u{D300} \u{C0AD}\u{C81C}");
+        m.insert("settings.teams.manage.rename_placeholder", "\u{C0C8} \u{D300} \u{C774}\u{B984}");
+        m.insert("settings.teams.manage.transfer_ownership_title", "\u{D300} \u{C18C}\u{C720}\u{AD8C}\u{C744} \u{C804}\u{B2EC}\u{D558}\u{C2DC}\u{ACA0}\u{C2B5}\u{B2C8}\u{AE4C}?");
+        m.insert("settings.teams.manage.contact_support", "\u{C9C0}\u{C6D0} \u{BB38}\u{C758}");
+        m.insert("settings.teams.manage.manage_billing", "\u{ACB0}\u{C81C} \u{AD00}\u{B9AC}");
+        m.insert("settings.teams.manage.open_admin_panel", "\u{AD00}\u{B9AC}\u{C790} \u{D328}\u{B110} \u{C5F4}\u{AE30}");
+        m.insert("settings.teams.manage.manage_plan", "\u{D504}\u{B79C} \u{AD00}\u{B9AC}");
+        m.insert("settings.teams.invite.by_link", "\u{B9C1}\u{D06C}\u{B85C} \u{CD08}\u{B300}");
+        m.insert("settings.teams.invite.link_toggle_instructions", "\u{AD00}\u{B9AC}\u{C790}\u{B85C}\u{C11C} \u{D300} \u{BA64}\u{BC84}\u{AC00} \u{CD08}\u{B300} \u{B9C1}\u{D06C}\u{B97C} \u{D1B5}\u{D574} \u{B2E4}\u{B978} \u{C0AC}\u{B78C}\u{C744} \u{CD08}\u{B300}\u{D560} \u{C218} \u{C788}\u{B3C4}\u{B85D} \u{D560} \u{C9C0} \u{C548} \u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.invite.reset_links", "\u{B9C1}\u{D06C} \u{CD08}\u{AE30}\u{D654}");
+        m.insert("settings.teams.invite.restrict_by_domain", "\u{B3C4}\u{BA54}\u{C778}\u{C73C}\u{B85C} \u{C81C}\u{D55C}");
+        m.insert("settings.teams.invite.domain_restrictions_instructions", "\u{D2B9}\u{C815} \u{B3C4}\u{BA54}\u{C778}\u{C758} \u{C774}\u{BA54}\u{C77C}\u{C744} \u{AC00}\u{C9C4} \u{C0AC}\u{C6A9}\u{C790}\u{B9CC} \u{CD08}\u{B300} \u{B9C1}\u{D06C}\u{B97C} \u{D1B5}\u{D574} \u{D300}\u{C5D0} \u{AC00}\u{C785}\u{D560} \u{C218} \u{C788}\u{B3C4}\u{B85D} \u{D5C8}\u{C6A9}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.invite.domains_placeholder", "\u{B3C4}\u{BA54}\u{C778}, \u{CF64}\u{B9C8}\u{B85C} \u{AD6C}\u{BD84}");
+        m.insert("settings.teams.invite.set_button", "\u{C124}\u{C815}");
+        m.insert("settings.teams.invite.invalid_domains", "\u{C81C}\u{ACF5}\u{B41C} \u{B3C4}\u{BA54}\u{C778} \u{C911} \u{BD88}\u{BCF4}\u{D0C8}\u{D558}\u{AC70}\u{B098} \u{C774}\u{BBF8} \u{CD94}\u{AC00}\u{B41C} \u{AC83}\u{C774} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.invite.failed_load_link", "\u{CD08}\u{B300} \u{B9C1}\u{D06C}\u{B97C} \u{BD88}\u{B7EC}\u{C624}\u{B294}\u{B370} \u{C2E4}\u{D328}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.invite.by_email", "\u{C774}\u{BA54}\u{C77C}\u{B85C} \u{CD08}\u{B300}");
+        m.insert("settings.teams.invite.email_expiry_instructions", "\u{C774}\u{BA54}\u{C77C} \u{CD08}\u{B300}\u{B294} 7\u{C77C} \u{AC04} \u{C720}\u{D6A8}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.invite.emails_placeholder", "\u{C774}\u{BA54}\u{C77C}, \u{CF64}\u{B9C8}\u{B85C} \u{AD6C}\u{BD84}");
+        m.insert("settings.teams.invite.invite_button", "\u{CD08}\u{B300}");
+        m.insert("settings.teams.invite.invalid_emails", "\u{C81C}\u{ACF5}\u{B41C} \u{C774}\u{BA54}\u{C77C} \u{C8FC}\u{C18C} \u{C911} \u{BD88}\u{BCF4}\u{D0C8}\u{D558}\u{AC70}\u{B098}, \u{C774}\u{BBF8} \u{CD08}\u{B300}\u{B418}\u{C5C8}\u{AC70}\u{B098}, \u{D300} \u{BA64}\u{BC84}\u{C778} \u{AC83}\u{C774} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.members.header", "\u{D300} \u{BA64}\u{BC84}");
+        m.insert("settings.teams.members.cancel_invite", "\u{CD08}\u{B300} \u{CDE8}\u{C18C}");
+        m.insert("settings.teams.members.transfer_ownership", "\u{C18C}\u{C720}\u{AD8C} \u{C804}\u{B2EC}");
+        m.insert("settings.teams.members.demote_from_admin", "\u{AD00}\u{B9AC}\u{C790}\u{C5D0}\u{C11C} \u{D574}\u{C81C}");
+        m.insert("settings.teams.members.promote_to_admin", "\u{AD00}\u{B9AC}\u{C790}\u{B85C} \u{C9C4}\u{C2B9}");
+        m.insert("settings.teams.members.remove_from_team", "\u{D300}\u{C5D0}\u{C11C} \u{C81C}\u{AC70}");
+        m.insert("settings.teams.members.remove_domain", "\u{B3C4}\u{BA54}\u{C778} \u{C81C}\u{AC70}");
+        m.insert("settings.teams.badge.expired", "\u{B9CC}\u{B8CC}");
+        m.insert("settings.teams.badge.pending", "\u{B300}\u{AE30} \u{C911}");
+        m.insert("settings.teams.badge.owner", "\u{C18C}\u{C720}\u{C790}");
+        m.insert("settings.teams.badge.admin", "\u{AD00}\u{B9AC}\u{C790}");
+        m.insert("settings.teams.badge.past_due", "\u{ACB0}\u{C81C} \u{C9C0}\u{B2F4}");
+        m.insert("settings.teams.badge.unpaid", "\u{BBF8}\u{ACB0}\u{C81C}");
+        m.insert("settings.teams.plan.free_usage_limits", "\u{BB34}\u{B8CC} \u{D504}\u{B79C} \u{C0AC}\u{C6A9}\u{B7C9} \u{C81C}\u{D55C}");
+        m.insert("settings.teams.plan.usage_limits", "\u{D504}\u{B79C} \u{C0AC}\u{C6A9}\u{B7C9} \u{C81C}\u{D55C}");
+        m.insert("settings.teams.plan.shared_notebooks", "\u{ACF5}\u{C720} \u{B178}\u{D2B8}\u{BD81}");
+        m.insert("settings.teams.plan.shared_workflows", "\u{ACF5}\u{C720} \u{C6CC}\u{D06C}\u{D50C}\u{B85C}\u{C6B0}");
+        m.insert("settings.teams.limit.admin", "\u{D504}\u{B79C}\u{C758} \u{D300} \u{BA64}\u{BC84} \u{C81C}\u{D55C}\u{C5D0} \u{B3C4}\u{B2EC}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B354} \u{B9CE}\u{C740} \u{D300}\u{C6D0}\u{C744} \u{CD94}\u{AC00}\u{D558}\u{B824}\u{BA74} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.teams.limit.admin_not_upgradeable", "\u{D504}\u{B79C}\u{C758} \u{D300} \u{BA64}\u{BC84} \u{C81C}\u{D55C}\u{C5D0} \u{B3C4}\u{B2EC}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B354} \u{B9CE}\u{C740} \u{D300}\u{C6D0}\u{C744} \u{CD94}\u{AC00}\u{D558}\u{B824}\u{BA74} support@warp.dev\u{C5D0} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.teams.limit.non_admin", "\u{D504}\u{B79C}\u{C758} \u{D300} \u{BA64}\u{BC84} \u{C81C}\u{D55C}\u{C5D0} \u{B3C4}\u{B2EC}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B354} \u{B9CE}\u{C740} \u{D300}\u{C6D0}\u{C744} \u{CD94}\u{AC00}\u{D558}\u{B824}\u{BA74} \u{D300} \u{AD00}\u{B9AC}\u{C790}\u{C5D0}\u{AC8C} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.teams.limit_exceeded.admin_upgradeable", "\u{D504}\u{B79C}\u{C758} \u{D300} \u{BA64}\u{BC84} \u{C81C}\u{D55C}\u{C744} \u{CD08}\u{ACFC}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B354} \u{B9CE}\u{C740} \u{D300}\u{C6D0}\u{C744} \u{CD94}\u{AC00}\u{D558}\u{B824}\u{BA74} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.teams.limit_exceeded.admin_not_upgradeable", "\u{D504}\u{B79C}\u{C758} \u{D300} \u{BA64}\u{BC84} \u{C81C}\u{D55C}\u{C744} \u{CD08}\u{ACFC}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{D300}\u{C744} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}\u{D558}\u{B824}\u{BA74} support@warp.dev\u{C5D0} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.teams.limit_exceeded.non_admin", "\u{D504}\u{B79C}\u{C758} \u{D300} \u{BA64}\u{BC84} \u{C81C}\u{D55C}\u{C744} \u{CD08}\u{ACFC}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{D300}\u{C744} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}\u{D558}\u{B824}\u{BA74} \u{D300} \u{AD00}\u{B9AC}\u{C790}\u{C5D0}\u{AC8C} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.teams.delinquent.admin_non_self_serve", "\u{ACB0}\u{C81C} \u{BB38}\u{C81C}\u{B85C} \u{D300} \u{CD08}\u{B300}\u{AC00} \u{C81C}\u{D55C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C561}\u{C138}\u{C2A4}\u{B97C} \u{BCF5}\u{AD6C}\u{D558}\u{B824}\u{BA74} support@warp.dev\u{C5D0} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.teams.delinquent.non_admin", "\u{ACB0}\u{C81C} \u{BB38}\u{C81C}\u{B85C} \u{D300} \u{CD08}\u{B300}\u{AC00} \u{C81C}\u{D55C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C561}\u{C138}\u{C2A4}\u{B97C} \u{BCF5}\u{AD6C}\u{D558}\u{B824}\u{BA74} \u{D300} \u{AD00}\u{B9AC}\u{C790}\u{C5D0}\u{AC8C} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.teams.delinquent.admin_self_serve_line1", "\u{AD6C}\u{B3C5} \u{ACB0}\u{C81C} \u{BB38}\u{C81C}\u{B85C} \u{D300} \u{CD08}\u{B300}\u{AC00} \u{C81C}\u{D55C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.delinquent.admin_self_serve_line2_prefix", "");
+        m.insert("settings.teams.delinquent.admin_self_serve_line2_link", "\u{ACB0}\u{C81C} \u{C815}\u{BCF4}\u{B97C} \u{C5C5}\u{B85C}\u{B2E4}\u{ACE0}");
+        m.insert("settings.teams.delinquent.admin_self_serve_line2_suffix", " \u{C561}\u{C138}\u{C2A4}\u{B97C} \u{BCF5}\u{AD6C}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.teams.discoverable.header", "\u{D300} \u{AC80}\u{C0C9} \u{AC00}\u{B2A5} \u{D558}\u{AC8C} \u{B9CC}\u{B4E4}\u{AE30}");
+        m.insert("settings.teams.discoverable.allow_domain", "@{domain} \u{C774}\u{BA54}\u{C77C}\u{C744} \u{AC00}\u{C9C4} Warp \u{C0AC}\u{C6A9}\u{C790}\u{AC00} \u{D300}\u{C744} \u{CC3E}\u{ACE0} \u{AC00}\u{C785}\u{D560} \u{C218} \u{C788}\u{B3C4}\u{B85D} \u{D5C8}\u{C6A9}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.discoverable.allow_same_domain", "\u{B3D9}\u{C77C}\u{D55C} \u{C774}\u{BA54}\u{C77C} \u{B3C4}\u{BA54}\u{C778}\u{C744} \u{AC00}\u{C9C4} Warp \u{C0AC}\u{C6A9}\u{C790}\u{AC00} \u{D300}\u{C744} \u{CC3E}\u{ACE0} \u{AC00}\u{C785}\u{D560} \u{C218} \u{C788}\u{B3C4}\u{B85D} \u{D5C8}\u{C6A9}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.discovery.one_teammate", "\u{D300}\u{C6D0} 1\u{BA85}");
+        m.insert("settings.teams.discovery.multiple_teammates", "\u{D300}\u{C6D0} {count}\u{BA85}");
+        m.insert("settings.teams.discovery.join_description", "\u{C774} \u{D300}\u{C5D0} \u{AC00}\u{C785}\u{D558}\u{ACE0} \u{C6CC}\u{D06C}\u{D50C}\u{B85C}\u{C6B0}, \u{B178}\u{D2B8}\u{BD81} \u{B4F1}\u{C5D0} \u{B300}\u{D558}\u{C5EC} \u{D611}\u{C5C5}\u{C744} \u{C2DC}\u{C791}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.teams.discovery.join_button", "\u{AC00}\u{C785}");
+        m.insert("settings.teams.discovery.contact_admin", "\u{C561}\u{C138}\u{C2A4}\u{B97C} \u{C694}\u{CCAD}\u{D558}\u{B824}\u{BA74} \u{AD00}\u{B9AC}\u{C790}\u{C5D0}\u{AC8C} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}");
+        m.insert("settings.teams.pricing.team_members", "\u{D300} \u{BA64}\u{BC84}");
+        m.insert("settings.teams.pricing.prorated_admin", "\u{D300} \u{BA64}\u{BC84}\u{C758} Warp \u{C0AC}\u{C6A9}\u{B7C9} \u{BD84}\u{B2E8}\u{C5D0} \u{B300}\u{D574} \u{CCB4}\u{ACB0}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.pricing.prorated_member", "\u{AD00}\u{B9AC}\u{C790}\u{AC00} \u{D300} \u{BA64}\u{BC84}\u{C758} Warp \u{C0AC}\u{C6A9}\u{B7C9} \u{BD84}\u{B2E8}\u{C5D0} \u{B300}\u{D574} \u{CCB4}\u{ACB0}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.pricing.additional_members_with_cost", "\u{CD94}\u{AC00} \u{BA64}\u{BC84}\u{B294} \u{D504}\u{B79C}\u{C758} \u{C0AC}\u{B78C}\u{B2F9} \u{C694}\u{AE08}\u{C73C}\u{B85C} \u{CCB4}\u{ACB0}\u{B429}\u{B2C8}\u{B2E4}: \u{ACB0}\u{C81C} \u{AE30}\u{AC04}\u{C5D0} \u{B530}\u{B77C} \u{C6D4} ${monthly_cost}\u{B098} \u{B144} ${yearly_cost}\u{C785}\u{B2C8}\u{B2E4}. {prorated_message}");
+        m.insert("settings.teams.pricing.additional_members_no_cost", "\u{CD94}\u{AC00} \u{BA64}\u{BC84}\u{B294} \u{D504}\u{B79C}\u{C758} \u{C0AC}\u{B78C}\u{B2F9} \u{C694}\u{AE08}\u{C73C}\u{B85C} \u{CCB4}\u{ACB0}\u{B429}\u{B2C8}\u{B2E4}. {prorated_message}");
+        m.insert("settings.teams.upgrade.to_build", "Build\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.teams.upgrade.to_turbo", "Turbo \u{D504}\u{B79C}\u{C73C}\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.teams.upgrade.to_lightspeed", "Lightspeed \u{D504}\u{B79C}\u{C73C}\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.teams.upgrade.compare_plans", "\u{D504}\u{B79C} \u{BE44}\u{AD50}");
+        m.insert("settings.teams.tab.link", "\u{B9C1}\u{D06C}");
+        m.insert("settings.teams.tab.email", "\u{C774}\u{BA54}\u{C77C}");
+        m.insert("settings.teams.offline", "\u{C624}\u{D504}\u{B77C}\u{C778} \u{C0C1}\u{D0DC}\u{C785}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.teams.toast.failed_send_invite", "\u{CD08}\u{B300} \u{BC1C}\u{C1A1} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.joined_team", "\u{D300}\u{C5D0} \u{C131}\u{ACF5}\u{C801}\u{C73C}\u{B85C} \u{AC00}\u{C785}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.teams.toast.joined_team_named", "{team_name}\u{C5D0} \u{C131}\u{ACF5}\u{C801}\u{C73C}\u{B85C} \u{AC00}\u{C785}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.teams.toast.invite_sent", "\u{CD08}\u{B300}\u{AC00} \u{BC1C}\u{C1A1}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}!");
+        m.insert("settings.teams.toast.invites_sent", "\u{CD08}\u{B300} {count}\u{AC74}\u{C774} \u{BC1C}\u{C1A1}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}!");
+        m.insert("settings.teams.toast.deleted_invite", "\u{CD08}\u{B300}\u{AC00} \u{C0AD}\u{C81C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.teams.toast.invalid_domain_count", "\u{BD88}\u{BCF4}\u{D0C8}\u{D55C} \u{B3C4}\u{BA54}\u{C778}: {count}");
+        m.insert("settings.teams.toast.domains_added", "\u{B3C4}\u{BA54}\u{C778} \u{C81C}\u{D55C}\u{C774} \u{CD94}\u{AC00}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}: {count}");
+        m.insert("settings.teams.toast.invalid_email_count", "\u{BD88}\u{BCF4}\u{D0C8}\u{D55C} \u{C774}\u{BA54}\u{C77C}: {count}");
+        m.insert("settings.teams.toast.failed_join_team", "\u{D300} \u{AC00}\u{C785} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.left_team", "\u{D300}\u{C5D0}\u{C11C} \u{C131}\u{ACF5}\u{C801}\u{C73C}\u{B85C} \u{B098}\u{AC14}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.teams.toast.error_leaving_team", "\u{D300} \u{B098}\u{AC00}\u{AE30} \u{C624}\u{B958}");
+        m.insert("settings.teams.toast.renamed_team", "\u{D300} \u{C774}\u{B984}\u{C774} \u{C131}\u{ACF5}\u{C801}\u{C73C}\u{B85C} \u{BCC0}\u{ACBD}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.teams.toast.failed_rename_team", "\u{D300} \u{C774}\u{B984} \u{BCC0}\u{ACBD} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.link_copied", "\u{B9C1}\u{D06C}\u{AC00} \u{D074}\u{B9BD}\u{BCF4}\u{B4DC}\u{C5D0} \u{BCF5}\u{C0AC}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}!");
+        m.insert("settings.teams.toast.failed_delete_invite", "\u{CD08}\u{B300} \u{C0AD}\u{C81C} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.failed_reset_invite_links", "\u{CD08}\u{B300} \u{B9C1}\u{D06C} \u{CD08}\u{AE30}\u{D654} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.reset_invite_links", "\u{CD08}\u{B300} \u{B9C1}\u{D06C} \u{CD08}\u{AE30}\u{D654}");
+        m.insert("settings.teams.toast.toggled_discoverability", "\u{D300} \u{AC80}\u{C0C9} \u{AC00}\u{B2A5} \u{C804}\u{D658}");
+        m.insert("settings.teams.toast.failed_toggle_discoverability", "\u{D300} \u{AC80}\u{C0C9} \u{AC00}\u{B2A5} \u{C804}\u{D658} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.toggled_invite_links", "\u{CD08}\u{B300} \u{B9C1}\u{D06C} \u{C804}\u{D658}");
+        m.insert("settings.teams.toast.failed_toggle_invite_links", "\u{CD08}\u{B300} \u{B9C1}\u{D06C} \u{C804}\u{D658} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.failed_transfer_ownership", "\u{D300} \u{C18C}\u{C720}\u{AD8C} \u{C804}\u{B2EC} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.transferred_ownership", "\u{D300} \u{C18C}\u{C720}\u{AD8C}\u{C774} \u{C131}\u{ACF5}\u{C801}\u{C73C}\u{B85C} \u{C804}\u{B2EC}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.teams.toast.failed_update_member_role", "\u{D300} \u{BA64}\u{BC84} \u{C5ED}\u{D560} \u{C5C5}\u{B85C}\u{B2E4} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.updated_member_role", "\u{D300} \u{BA64}\u{BC84} \u{C5ED}\u{D560}\u{C774} \u{C131}\u{ACF5}\u{C801}\u{C73C}\u{B85C} \u{C5C5}\u{B85C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.teams.toast.failed_add_domain", "\u{B3C4}\u{BA54}\u{C778} \u{C81C}\u{D55C} \u{CD94}\u{AC00} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.failed_delete_domain", "\u{B3C4}\u{BA54}\u{C778} \u{C81C}\u{D55C} \u{C0AD}\u{C81C} \u{C2E4}\u{D328}");
+        m.insert("settings.teams.toast.failed_billing_link", "\u{ACB0}\u{C81C} \u{B9C1}\u{D06C} \u{C0DD}\u{C131} \u{C2E4}\u{D328}. feedback@warp.dev\u{C5D0} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}");
+        m.insert("settings.teams.toast.failed_upgrade_link", "\u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC} \u{B9C1}\u{D06C} \u{C0DD}\u{C131} \u{C2E4}\u{D328}. feedback@warp.dev\u{C5D0} \u{BB38}\u{C758}\u{D558}\u{C138}\u{C694}");
+
+        // settings.delete_env.*
+        m.insert("settings.delete_env.title", "\u{D658}\u{ACBD}\u{C744} \u{C0AD}\u{C81C}\u{D558}\u{C2DC}\u{ACA0}\u{C2B5}\u{B2C8}\u{AE4C}?");
+        m.insert("settings.delete_env.description", "{env_name} \u{D658}\u{ACBD}\u{C744} \u{C81C}\u{AC70}\u{D558}\u{C2DC}\u{ACA0}\u{C2B5}\u{B2C8}\u{AE4C}?");
+        m.insert("settings.delete_env.confirm", "\u{D658}\u{ACBD} \u{C0AD}\u{C81C}");
+
+        // settings.dir_color.*
+        m.insert("settings.dir_color.add_button", "\u{B514}\u{B809}\u{D1A0}\u{B9AC} \u{CEEC}\u{B7EC} \u{CD94}\u{AC00}");
+        m.insert("settings.dir_color.add_directory", "+ \u{B514}\u{B809}\u{D1A0}\u{B9AC} \u{CD94}\u{AC00}\u{2026}");
+
+        // settings.env_form.*
+        m.insert("settings.env_form.create_env", "\u{D658}\u{ACBD} \u{C0DD}\u{C131}");
+        m.insert("settings.env_form.edit_env", "\u{D658}\u{ACBD} \u{D3B8}\u{C9D1}");
+        m.insert("settings.env_form.save_env", "\u{D658}\u{ACBD} \u{C800}\u{C7A5}");
+        m.insert("settings.env_form.delete_env", "\u{D658}\u{ACBD} \u{C0AD}\u{C81C}");
+        m.insert("settings.env_form.name_placeholder", "\u{D658}\u{ACBD} \u{C774}\u{B984}");
+        m.insert("settings.env_form.description_label", "\u{C124}\u{BA85}");
+        m.insert("settings.env_form.docker_image_label", "Docker \u{C774}\u{BBF8}\u{C9C0} \u{CC38}\u{C870}");
+        m.insert("settings.env_form.repos_label", "\u{B9AC}\u{D3EC}");
+        m.insert("settings.env_form.no_repos_found", "\u{B9AC}\u{D3EC}\u{C9C0}\u{AC00} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.env_form.create", "\u{C0DD}\u{C131}");
+        m.insert("settings.env_form.save", "\u{C800}\u{C7A5}");
+        m.insert("settings.env_form.retry", "\u{B2E4}\u{C2DC} \u{C2DC}\u{B3C4}");
+        m.insert("settings.env_form.authenticate", "\u{C778}\u{C99D}");
+        m.insert("settings.env_form.auth_github", "GitHub\u{B85C} \u{C778}\u{C99D}");
+        m.insert("settings.env_form.configure_github", "GitHub\u{C5D0}\u{C11C} \u{C561}\u{C138}\u{C2A4} \u{C124}\u{C815}");
+        m.insert("settings.env_form.char_count", "{count} / {max} \u{BB38}\u{C790}");
+        m.insert("settings.env_form.grant_access_hint", "Docker \u{C774}\u{BBF8}\u{C9C0}\u{B97C} \u{CD94}\u{CC9C}\u{D558}\u{B824}\u{BA74} GitHub \u{B9AC}\u{D3EC}\u{C5D0} \u{B300}\u{D55C} \u{C561}\u{C138}\u{C2A4}\u{B97C} \u{D5C8}\u{C6A9}\u{D574}\u{C57C} \u{D569}\u{B2C8}\u{B2E4}");
+        m.insert("settings.env_form.launch_agent", "\u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C2DC}\u{C791}");
+        m.insert("settings.env_form.share_with_team", "\u{D300}\u{ACFC} \u{ACF5}\u{C720}");
+        m.insert("settings.env_form.share_warning", "\u{AC1C}\u{C778} \u{D658}\u{ACBD}\u{C740} \u{C678}\u{BD80} \u{C5F0}\u{B3D9}\u{B098} \u{D300} API \u{D0A4}\u{C640} \u{D568}\u{AED8} \u{C0AC}\u{C6A9}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}. \u{CD5C}\u{C0C1}\u{C758} \u{ACB0}\u{ACFC}\u{B97C} \u{C6D0}\u{D558}\u{BA74} \u{ACF5}\u{C720} \u{D658}\u{ACBD}\u{C744} \u{C0AC}\u{C6A9}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.env_form.suggest_image", "\u{C774}\u{BBF8}\u{C9C0} \u{CD94}\u{CC9C}");
+
+        // Footer
+        m.insert("settings.footer.open_file", "\u{D30C}\u{C77C} \u{C5F4}\u{AE30}");
+        m.insert("settings.footer.open_settings_file", "\u{C124}\u{C815} \u{D30C}\u{C77C} \u{C5F4}\u{AE30}");
+        m.insert("settings.footer.fix_with_oz", "Oz\u{B85C} \u{C218}\u{C815}");
+
+        // settings.execution_profile.*
+        m.insert("settings.execution_profile.permissions", "\u{AD8C}\u{D55C}");
+        m.insert("settings.execution_profile.models", "\u{BAA8}\u{B378}");
+        m.insert("settings.execution_profile.edit", "\u{D3B8}\u{C9D1}");
+        m.insert("settings.execution_profile.base_model", "\u{AE30}\u{BCF8} \u{BAA8}\u{B378}:");
+        m.insert("settings.execution_profile.always_allow", "\u{D56D}\u{C0C1} \u{D5C8}\u{C6A9}");
+        m.insert("settings.execution_profile.always_ask", "\u{D56D}\u{C0C1} \u{BB3B}\u{AE30}");
+        m.insert("settings.execution_profile.ask_unless_auto_approve", "\u{C790}\u{B3D9} \u{D5C8}\u{AC00}\u{AC00} \u{C544}\u{B2CC}\u{BA74} \u{BB3B}\u{AE30}");
+        m.insert("settings.execution_profile.never_ask", "\u{C808}\u{B300} \u{BB3B}\u{C9C0} \u{C54A}\u{AE30}");
+        m.insert("settings.execution_profile.agent_decides", "\u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{AC00} \u{ACB0}\u{C815}");
+        m.insert("settings.execution_profile.execute_commands", "\u{BA85}\u{B839} \u{C2E4}\u{D589}:");
+        m.insert("settings.execution_profile.apply_code_diffs", "\u{CF54}\u{B4DC} \u{BCC0}\u{ACBD} \u{C801}\u{C6A9}:");
+        m.insert("settings.execution_profile.read_files", "\u{D30C}\u{C77C} \u{C77D}\u{AE30}:");
+        m.insert("settings.execution_profile.interact_running", "\u{C2E4}\u{D589} \u{C911}\u{C778} \u{BA85}\u{B839}\u{ACFC} \u{C0C1}\u{D638} \u{C791}\u{C6A9}:");
+        m.insert("settings.execution_profile.full_terminal_use", "\u{C804}\u{CCB4} \u{D130}\u{BBF8}\u{B110} \u{C0AC}\u{C6A9}:");
+        m.insert("settings.execution_profile.computer_use", "\u{CEF4}\u{D4E8}\u{D130} \u{C0AC}\u{C6A9}:");
+        m.insert("settings.execution_profile.ask_questions", "\u{C9C8}\u{BB38}:");
+        m.insert("settings.execution_profile.call_mcp_servers", "MCP \u{C11C}\u{BC84} \u{D638}\u{CD9C}:");
+        m.insert("settings.execution_profile.call_web_tools", "Web \u{D234} \u{D638}\u{CD9C}:");
+        m.insert("settings.execution_profile.auto_sync_plans", "\u{D504}\u{B79C} Warp Drive\u{B85C} \u{C790}\u{B3D9} \u{B3D9}\u{AE30}\u{D654}:");
+        m.insert("settings.execution_profile.on", "\u{CF1C}\u{AE30}");
+        m.insert("settings.execution_profile.off", "\u{B044}\u{AE30}");
+        m.insert("settings.execution_profile.never", "\u{C808}\u{B300} \u{C54A}\u{AE30}");
+        m.insert("settings.execution_profile.none", "\u{C5C6}\u{C74C}");
+        m.insert("settings.execution_profile.unknown", "\u{BBF8}\u{D655}\u{C778}");
+        m.insert("settings.execution_profile.command_allowlist", "\u{BA85}\u{B839} \u{D5C8}\u{C6A9} \u{B9AC}\u{C2A4}\u{D2B8}:");
+        m.insert("settings.execution_profile.command_denylist", "\u{BA85}\u{B839} \u{AC70}\u{BD80} \u{B9AC}\u{C2A4}\u{D2B8}:");
+        m.insert("settings.execution_profile.directory_allowlist", "\u{B514}\u{B809}\u{D1A0}\u{B9AC} \u{D5C8}\u{C6A9} \u{B9AC}\u{C2A4}\u{D2B8}:");
+        m.insert("settings.execution_profile.mcp_allowlist", "MCP \u{D5C8}\u{C6A9} \u{B9AC}\u{C2A4}\u{D2B8}:");
+        m.insert("settings.execution_profile.mcp_denylist", "MCP \u{AC70}\u{BD80} \u{B9AC}\u{C2A4}\u{D2B8}:");
+        m.insert("settings.execution_profile.ask_on_first_write", "\u{CCAB} \u{C4F0}\u{AE30} \u{C2DC} \u{BB3B}\u{AE30}:");
+
+        // settings.main.*
+        m.insert("settings.main.version", "\u{BC84}\u{C804}");
+        m.insert("settings.main.check_updates", "\u{C5C5}\u{B85C}\u{B2E4}\u{ED2C} \u{D655}\u{C778}");
+        m.insert("settings.main.checking_update", "\u{C5C5}\u{B85C}\u{B2E4}\u{ED2C} \u{D655}\u{C778} \u{C911}...");
+        m.insert("settings.main.update_available", "\u{C5C5}\u{B85C}\u{B2E4}\u{ED2C} \u{C0AC}\u{C6A9} \u{AC00}\u{B2A5}");
+        m.insert("settings.main.downloading_update", "\u{C5C5}\u{B85C}\u{B2E4}\u{ED2C} \u{B2E4}\u{C6B4}\u{B85C}\u{B4DC} \u{C911}...");
+        m.insert("settings.main.updating", "\u{C5C5}\u{B85C}\u{B2E4}\u{C774}\u{D2B8} \u{C911}...");
+        m.insert("settings.main.installed_update", "\u{C5C5}\u{B85C}\u{B2E4}\u{C774}\u{D2B8} \u{C124}\u{CE58} \u{C644}\u{B8CC}");
+        m.insert("settings.main.up_to_date", "\u{CD5C}\u{C2E0} \u{BC84}\u{C804}");
+        m.insert("settings.main.update_unavailable", "\u{C0C8} Warp \u{BC84}\u{C804}\u{C774} \u{C0AC}\u{C6A9} \u{AC00}\u{B2A5}\u{D558}\u{C9C0}\u{B9CC} \u{C124}\u{CE58}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.main.update_launch_error", "\u{C0C8} Warp \u{BC84}\u{C804}\u{C774} \u{C124}\u{CE58}\u{B418}\u{C5C8}\u{C9C0}\u{B9CC} \u{C2DC}\u{C791}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.main.update_manually", "Warp \u{C218}\u{B3D9} \u{C5C5}\u{B85C}\u{B2E4}\u{C774}\u{D2B8}");
+        m.insert("settings.main.relaunch_warp", "Warp \u{B2E4}\u{C2DC} \u{C2DC}\u{C791}");
+        m.insert("settings.main.log_out", "\u{B85C}\u{ADF8}\u{C544}\u{C6C3}");
+        m.insert("settings.main.manage_billing", "\u{ACB0}\u{C81C} \u{AD00}\u{B9AC}");
+        m.insert("settings.main.compare_plans", "\u{D504}\u{B79C} \u{BE44}\u{AD50}");
+        m.insert("settings.main.upgrade_turbo", "Turbo \u{D504}\u{B79C}\u{C73C}\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.main.upgrade_lightspeed", "Lightspeed \u{D504}\u{B79C}\u{C73C}\u{B85C} \u{C5C5}\u{ADF8}\u{B808}\u{C774}\u{B4DC}");
+        m.insert("settings.main.free_plan", "\u{BB34}\u{B8CC}");
+        m.insert("settings.main.refer_friend", "\u{CE5C}\u{AD6C} \u{CD08}\u{B300}");
+        m.insert("settings.main.referral_cta", "\u{CE5C}\u{AD6C}\u{C640} \u{B3D9}\u{B8D8}\u{C5D0} Warp\u{C744} \u{ACF5}\u{C720}\u{D558}\u{ACE0} \u{B9AC}\u{C6CC}\u{B4DC}\u{B97C} \u{BC1B}\u{C73C}\u{C138}\u{C694}");
+        m.insert("settings.main.settings_sync", "\u{C124}\u{C815} \u{B3D9}\u{AE30}\u{D654}");
+        m.insert("settings.main.contact_support", "\u{C9C0}\u{C6D0} \u{BB38}\u{C758}");
+
+        // settings.show_blocks.*
+        m.insert("settings.show_blocks.copy_link", "\u{B9C1}\u{D06C} \u{BCF5}\u{C0AC}");
+        m.insert("settings.show_blocks.deleting", "\u{C0AD}\u{C81C} \u{C911}...");
+        m.insert("settings.show_blocks.executed_on", "\u{C2E4}\u{D589} \u{B0A0}\u{C9DC}: {timestamp}");
+        m.insert("settings.show_blocks.getting_blocks", "\u{BE14}\u{B85D} \u{BD88}\u{B7EC}\u{C624}\u{AE30} \u{C911}...");
+        m.insert("settings.show_blocks.link_copied", "\u{B9C1}\u{D06C}\u{AC00} \u{BCF5}\u{C0AC}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.show_blocks.load_failed", "\u{BE14}\u{B85D} \u{BD88}\u{B7EC}\u{C624}\u{AE30}\u{C5D0} \u{C2E4}\u{D328}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B2E4}\u{C2DC} \u{C2DC}\u{B3C4}\u{D574} \u{C8FC}\u{C138}\u{C694}.");
+        m.insert("settings.show_blocks.no_shared_blocks", "\u{C544}\u{C9C1} \u{ACF5}\u{C720}\u{B41C} \u{BE14}\u{B85D}\u{C774} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.show_blocks.unshare_title", "\u{BE14}\u{B85D} \u{ACF5}\u{C720} \u{D574}\u{C81C}");
+        m.insert("settings.show_blocks.unshare_confirm", "\u{C774} \u{BE14}\u{B85D}\u{C758} \u{ACF5}\u{C720}\u{B97C} \u{D574}\u{C81C}\u{D558}\u{C2DC}\u{ACA0}\u{C2B5}\u{B2C8}\u{AE4C}?\n\n\u{B9C1}\u{D06C}\u{B85C} \u{C561}\u{C138}\u{C2A4}\u{D560} \u{C218} \u{C5C6}\u{AC8C} \u{B418}\u{BA70} Warp \u{C11C}\u{BC84}\u{C5D0}\u{C11C} \u{C608}\u{C815}\u{C801}\u{C73C}\u{B85C} \u{C0AD}\u{C81C}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.show_blocks.unshare_success", "\u{BE14}\u{B85D}\u{C774} \u{C131}\u{ACF5}\u{C801}\u{C73C}\u{B85C} \u{ACF5}\u{C720} \u{D574}\u{C81C}\u{B418}\u{C5C8}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.show_blocks.unshare_failed", "\u{BE14}\u{B85D} \u{ACF5}\u{C720} \u{D574}\u{C81C}\u{C5D0} \u{C2E4}\u{D328}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B2E4}\u{C2DC} \u{C2DC}\u{B3C4}\u{D574} \u{C8FC}\u{C138}\u{C694}.");
+
+        // settings.transfer.*
+        m.insert("settings.transfer.button", "\u{C804}\u{B2EC}");
+        m.insert("settings.transfer.confirm_message", "{email}\u{C5D0}\u{AC8C} \u{D300} \u{C18C}\u{C720}\u{AD8C}\u{C744} \u{C804}\u{B2EC}\u{D558}\u{C2DC}\u{ACA0}\u{C2B5}\u{B2C8}\u{AE4C}? \u{C774} \u{B3D9}\u{C798}\u{C740} \u{B418}\u{B3CC}\u{B9AC}\u{BA74} \u{C548} \u{B429}\u{B2C8}\u{B2E4}. \u{AD00}\u{B9AC}\u{C790} \u{AD8C}\u{D55C}\u{C774} \u{C0AD}\u{C81C}\u{B429}\u{B2C8}\u{B2E4}.");
+
+        // settings.warp_drive.*
+        m.insert("settings.warp_drive.title", "Warp Drive");
+        m.insert("settings.warp_drive.description", "Warp Drive\u{B294} \u{D130}\u{BBF8}\u{B110}\u{C5D0}\u{C11C} \u{C6CC}\u{D06C}\u{D50C}\u{B85C}\u{C6B0}, \u{B178}\u{D2B8}\u{BD81}, \u{D504}\u{B860}\u{D504}\u{D2B8}, \u{D658}\u{ACBD} \u{BCC0}\u{C218}\u{B97C} \u{C800}\u{C7A5}\u{D558}\u{ACE0} \u{AC1C}\u{C778} \u{C0AC}\u{C6A9}\u{B098} \u{D300}\u{ACFC} \u{ACF5}\u{C720}\u{D560} \u{C218} \u{C788}\u{B294} \u{C6CC}\u{D06C}\u{C2A4}\u{D398}\u{C774}\u{C2A4}\u{C785}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.warp_drive.create_account_prompt", "Warp Drive\u{B97C} \u{C0AC}\u{C6A9}\u{D558}\u{B824}\u{BA74} \u{ACC4}\u{C815}\u{C744} \u{B9CC}\u{B4E4}\u{C5B4} \u{C8FC}\u{C138}\u{C694}.");
+
+        // About page
+        m.insert("settings.about.copyright", "Copyright 2026 Warp");
+
+        // Billing - overage limit modal
+        m.insert("settings.billing.overage.invalid_amount", "\u{C720}\u{D6A8}\u{D55C} \u{D1B5}\u{D654} \u{AE08}\u{C561}\u{C744} \u{C785}\u{B825}\u{D574} \u{C8FC}\u{C2DC}\u{AE30} \u{BC14}\u{B78D}\u{B2C8}\u{B2E4}");
+        m.insert("settings.billing.overage.limit_description", "\u{C774} \u{B2EC}\u{B7EC} \u{D55C}\u{B3C4}\u{C5D0} \u{B3C4}\u{B2EC}\u{D558}\u{BA74} Warp\u{AC00} \u{D504}\u{B9AC}\u{BBF8}\u{C6C0} \u{BAA8}\u{B378} \u{C0AC}\u{C6A9}\u{C744} \u{BC29}\u{C9C0}\u{D569}\u{B2C8}\u{B2E4}. \u{B9E4}\u{B2EC} \u{CD08}\u{AE30}\u{D654}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.overage.limit_note", "\u{C120}\u{D0DD}\u{D55C} \u{D55C}\u{B3C4}\u{C5D0} \u{AC00}\u{AE4C}\u{C6B4} AI \u{D06C}\u{B808}\u{B514}\u{D2B8}\u{B294} \u{BA87} \u{B2EC}\u{B7EC} \u{B118}\u{C5B4}\u{B0AC}\u{C744} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.billing.overage.price_range", "$0.01\u{BD80}\u{D130} $10,000,000 \u{C0AC}\u{C774}\u{C758} \u{AC08}\u{C561}\u{C744} \u{C785}\u{B825}\u{D574} \u{C8FC}\u{C2DC}\u{AE30} \u{BC14}\u{B78D}\u{B2C8}\u{B2E4}");
+        m.insert("settings.billing.overage.update", "\u{C5C5}\u{B370}\u{C774}\u{D2B8}");
+
+        // Environments
+        m.insert("settings.environments.new_environment", "\u{C0C8} \u{D658}\u{ACBD}");
+
+        // Features
+        m.insert("settings.features.advanced", "\u{ACE0}\u{AE09}");
+        m.insert("settings.features.custom", "\u{C0AC}\u{C6A9}\u{C790} \u{C815}\u{C758}");
+        m.insert("settings.features.directory_path", "\u{B514}\u{B809}\u{D1A0}\u{B9AC} \u{ACBD}\u{B85C}");
+        m.insert("settings.features.enable_reopen", "\u{B2EB}\u{D78C} \u{C138}\u{C158} \u{B2E4}\u{C2DC} \u{C5F4}\u{AE30} \u{D65C}\u{C131}\u{D654}");
+        m.insert("settings.features.executable_path", "\u{C2E4}\u{D589} \u{D30C}\u{C77C} \u{ACBD}\u{B85C}");
+        m.insert("settings.features.grace_period", "\u{C720}\u{D574} \u{AE30}\u{AC04} (\u{CD08}");
+        m.insert("settings.features.new_tab", "\u{C0C8} \u{D0ED}");
+        m.insert("settings.features.new_window", "\u{C0C8} \u{CC3D}");
+        m.insert("settings.features.split_pane", "\u{BD84}\u{D560} \u{C704}\u{C810}");
+
+        // MCP servers
+        m.insert("settings.mcp.a_team_member", "\u{D300} \u{BA54}\u{BA78}\u{BC84}");
+        m.insert("settings.mcp.add", "\u{CD94}\u{AC00}");
+        m.insert("settings.mcp.add_new_server", "\u{C0C8} MCP \u{C11C}\u{BC84} \u{CD94}\u{AC00}");
+        m.insert("settings.mcp.admin_only_edit", "\u{D300} \u{AD00}\u{B9AC}\u{C790}\u{C640} MCP \u{C11C}\u{BC84} \u{C791}\u{C131}\u{C790}\u{B9CC} MCP \u{C11C}\u{BC84}\u{B97C} \u{D3B8}\u{C9D1}\u{D560} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.mcp.another_device", "\u{B2E4}\u{B978} \u{AE30}\u{AE30}");
+        m.insert("settings.mcp.authenticating", "\u{C778}\u{C99D} \u{C911}...");
+        m.insert("settings.mcp.auto_spawn_description", "\u{C804}\u{C5ED} \u{BC94}\u{C704}\u{C758} \u{C81C}\u{3BC} \u{C57D} AI \u{C5D0}\u{C774}\u{C804}\u{D2B8} \u{C124}\u{C815} \u{D30C}\u{C77C}\u{C5D0}\u{C11C} MCP \u{C11C}\u{BC84}\u{B97C} \u{C790}\u{B3D9}\u{C73C}\u{B85C} \u{AC10}\u{C9C0}\u{D558}\u{ACE0} \u{C2E4}\u{D589}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.mcp.auto_spawn_label", "\u{C81C}\u{3BC} \u{C5D0}\u{C774}\u{C804}\u{D2B8}\u{C5D0}\u{C11C} \u{C11C}\u{BC84} \u{C790}\u{B3D9} \u{C0DD}\u{C131}");
+        m.insert("settings.mcp.available_to_install", "\u{C124}\u{CE58} \u{AC00}\u{B2A5}");
+        m.insert("settings.mcp.cancel", "\u{CDE8}\u{C18C}");
+        m.insert("settings.mcp.cannot_add_multiple", "\u{B2E8}\u{C77C} \u{C11C}\u{BC84}\u{B97C} \u{D3B8}\u{C9D1}\u{D558}\u{B294} \u{B3D9}\u{C548}\u{C5D0}\u{B294} \u{C5EC}\u{B7EC} MCP \u{C11C}\u{BC84}\u{B97C} \u{CD94}\u{AC00}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.mcp.delete_mcp", "MCP \u{C0AD}\u{C81C}");
+        m.insert("settings.mcp.delete_server_description", "\u{C774}\u{AC83}\u{C740} \u{BAA8}\u{B4E0} \u{AE30}\u{AE30}\u{C5D0}\u{C11C} \u{C774} MCP \u{C11C}\u{BC84}\u{B97C} \u{C5B8}\u{C2B9}\u{D558}\u{ACE0} \u{C81C}\u{AC70}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.mcp.delete_server_title", "MCP \u{C11C}\u{BC84}\u{B97C} \u{C0AD}\u{C81C}\u{D558}\u{C2DC}\u{ACA0}\u{C2B5}\u{B2C8}\u{AE4C}?");
+        m.insert("settings.mcp.delete_shared_description", "\u{C774}\u{AC83}\u{C740} \u{BC18}\u{B4DC}\u{C2DC} \u{C774} MCP \u{C11C}\u{BC84}\u{B97C} \u{C0AD}\u{C81C}\u{D558}\u{B294} \u{AC83}\u{B9CC} \u{C544}\u{B2C8}\u{B77C} Warp\u{C5D0}\u{C11C}\u{B3C4} \u{C5B8}\u{C2B9}\u{D558}\u{ACE0} \u{BAA8}\u{B4E0} \u{D300} \u{BA54}\u{BA78}\u{BC84}\u{C758} \u{AE30}\u{AE30}\u{C5D0}\u{C11C}\u{B3C4} \u{C81C}\u{AC70}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.mcp.delete_shared_title", "\u{ACF5}\u{C720} MCP \u{C11C}\u{BC84}\u{B97C} \u{C0AD}\u{C81C}\u{D558}\u{C2DC}\u{ACA0}\u{C2B5}\u{B2C8}\u{AE4C}?");
+        m.insert("settings.mcp.description", "MCP(\u{BAA8}\u{B378} \u{CEE4}\u{D2B8}\u{B974} \u{D504}\u{B85C}\u{D1A0}\u{CF5C}) \u{C11C}\u{BC84}\u{B294} Warp\u{C5D0} \u{CD94}\u{AC00} \u{B3C4}\u{AD6C}\u{C640} \u{AE30}\u{B2A5}\u{C744} \u{CD94}\u{AC00}\u{D560} \u{C218} \u{C788}\u{AC8C} \u{D569}\u{B2C8}\u{B2E4}. \u{B370}\u{C774}\u{D130}\u{BCA0}\u{C774}\u{C2A4}, API, \u{D30C}\u{C77C} \u{C2DC}\u{C2A4}\u{D150} \u{B4F1}\u{C5D0} \u{C561}\u{C138}\u{C2A4}\u{D560} \u{C218} \u{C788}\u{B3C4}\u{B85D} \u{C11C}\u{BC84}\u{B97C} \u{CD94}\u{AC00}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.mcp.detected_from", "{source}\u{C5D0}\u{C11C} \u{AC10}\u{C9C0}\u{B428}");
+        m.insert("settings.mcp.detected_from_config", "\u{C124}\u{C815} \u{D30C}\u{C77C}\u{C5D0}\u{C11C} \u{AC10}\u{C9C0}\u{B428}");
+        m.insert("settings.mcp.edit_config", "\u{C124}\u{C815} \u{D3B8}\u{C9D1}");
+        m.insert("settings.mcp.edit_server", "MCP \u{C11C}\u{BC84} \u{D3B8}\u{C9D1}");
+        m.insert("settings.mcp.edit_server_named", "{name} MCP \u{C11C}\u{BC84} \u{D3B8}\u{C9D1}");
+        m.insert("settings.mcp.edit_tooltip", "\u{D3B8}\u{C9D1}");
+        m.insert("settings.mcp.edit_variables", "\u{BCC0}\u{C218} \u{D3B8}\u{C9D1}");
+        m.insert("settings.mcp.empty_state", "MCP \u{C11C}\u{BC84}\u{B97C} \u{CD94}\u{AC00}\u{D558}\u{BA74} \u{C5EC}\u{AE30}\u{C5D0} \u{D45C}\u{C2DC}\u{B429}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.mcp.esc_hint", "ESC");
+        m.insert("settings.mcp.from_another_device", "\u{B2E4}\u{B978} \u{AE30}\u{AE30}\u{C5D0}\u{C11C}");
+        m.insert("settings.mcp.global", "\u{C804}\u{C5ED}");
+        m.insert("settings.mcp.install", "\u{C124}\u{CE58}");
+        m.insert("settings.mcp.install_named", "{name} \u{C124}\u{CE58}");
+        m.insert("settings.mcp.json_tab", "JSON");
+        m.insert("settings.mcp.learn_more", "\u{B354} \u{BC30}\u{C6B0}\u{AE30}.");
+        m.insert("settings.mcp.log_out", "\u{B85C}\u{ADF8}\u{C544}\u{C6C3}");
+        m.insert("settings.mcp.my_mcps", "\u{B0B4} MCP");
+        m.insert("settings.mcp.no_results", "\u{AC80}\u{C0C9} \u{ACB0}\u{ACFC}\u{AC00} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.mcp.no_server_selected", "MCP \u{C11C}\u{BC84}\u{AC00} \u{C120}\u{D0DD}\u{B418}\u{C9C0} \u{C54A}\u{C558}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.mcp.no_server_specified", "MCP \u{C11C}\u{BC84}\u{AC00} \u{C9C0}\u{C815}\u{B418}\u{C9C0} \u{C54A}\u{C558}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.mcp.no_tools", "\u{C0AC}\u{C6A9} \u{AC00}\u{B2A5}\u{D55C} \u{B3C4}\u{AD6C}\u{AC00} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.mcp.no_updates", "\u{C5C5}\u{B370}\u{C774}\u{D2B8}\u{AC00} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.mcp.offline", "\u{C624}\u{D504}\u{B77C}\u{C778}");
+        m.insert("settings.mcp.remove_from_team", "\u{D300}\u{C5D0}\u{C11C} \u{C81C}\u{AC70}");
+        m.insert("settings.mcp.remove_shared_description", "\u{C774}\u{AC83}\u{C740} Warp\u{C5D0}\u{C11C}\u{B3C4} \u{C5B8}\u{C2B9}\u{D558}\u{ACE0} \u{BAA8}\u{B4E0} \u{D300} \u{BA54}\u{BA78}\u{BC84}\u{C758} \u{AE30}\u{AE30}\u{C5D0}\u{C11C}\u{B3C4} \u{C81C}\u{AC70}\u{D569}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.mcp.remove_shared_title", "\u{D300}\u{C5D0}\u{C11C} \u{ACF5}\u{C720} MCP \u{C11C}\u{BC84}\u{B97C} \u{C81C}\u{AC70}\u{D558}\u{C2DC}\u{ACA0}\u{C2B5}\u{B2C8}\u{AE4C}?");
+        m.insert("settings.mcp.save", "\u{C800}\u{C7A5}");
+        m.insert("settings.mcp.search_placeholder", "MCP \u{C11C}\u{BC84} \u{AC80}\u{C0C9}");
+        m.insert("settings.mcp.secrets_warning", "\u{C774} MCP \u{C11C}\u{BC84}\u{C5D0}\u{B294} \u{BE44}\u{BC00}\u{C774} \u{D3EC}\u{D568}\u{B418}\u{C5B4} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}. \u{BE44}\u{BC00} \u{BC18}\u{CD9C} \u{C124}\u{C815}\u{C744} \u{BCF4}\u{B85C} \u{BA48}\u{AE30}\u{B824}\u{BA74} \u{C124}\u{C815} > \u{AE08}\u{C9C0} \u{C548}\u{C73C}\u{B85C} \u{C774}\u{B3D9}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.mcp.see_providers", "\u{C9C0}\u{C6D0}\u{B418}\u{B294} \u{C81C}\u{ACF5}\u{C790} \u{BCF4}\u{AE30}.");
+        m.insert("settings.mcp.server_fallback", "\u{C11C}\u{BC84}");
+        m.insert("settings.mcp.set_up", "\u{C124}\u{C815}");
+        m.insert("settings.mcp.share_server", "\u{C11C}\u{BC84} \u{ACF5}\u{C720}");
+        m.insert("settings.mcp.shared_by_creator", "\u{ACF5}\u{C720}\u{C790}: {creator}");
+        m.insert("settings.mcp.shared_by_team_member", "\u{D300} \u{BA54}\u{BA78}\u{BC84}\u{AC00} \u{ACF5}\u{C720}");
+        m.insert("settings.mcp.shared_by_warp_and_name", "Warp\u{C640} {name}\u{C774} \u{ACF5}\u{C720}");
+        m.insert("settings.mcp.shared_by_warp_and_other", "Warp\u{C640} \u{B2E4}\u{B978} \u{AE30}\u{AE30}\u{C5D0}\u{C11C} \u{ACF5}\u{C720}");
+        m.insert("settings.mcp.shared_from_team", "\u{D300}\u{C5D0}\u{C11C} \u{ACF5}\u{C720}\u{B428}");
+        m.insert("settings.mcp.shared_from_warp", "Warp\u{C5D0}\u{C11C} \u{ACF5}\u{C720}\u{B428}");
+        m.insert("settings.mcp.show_logs", "\u{B85C}\u{ADF8} \u{D45C}\u{C2DC}");
+        m.insert("settings.mcp.shutting_down", "\u{C885}\u{B8CC} \u{C911}...");
+        m.insert("settings.mcp.starting", "\u{C11C}\u{BC84} \u{C2DC}\u{C791} \u{C911}...");
+        m.insert("settings.mcp.tools_count", "{count}\u{AC1C}\u{C758} \u{B3C4}\u{AD6C} \u{C0AC}\u{C6A9} \u{AC00}\u{B2A5}");
+        m.insert("settings.mcp.update", "\u{C5C5}\u{B370}\u{C774}\u{D2B8}");
+        m.insert("settings.mcp.update_available", "\u{C11C}\u{BC84} \u{C5C5}\u{B370}\u{C774}\u{D2B8} \u{AC00}\u{B2A5}");
+        m.insert("settings.mcp.update_from", "{publisher}\u{C5D0}\u{C11C} \u{C5C5}\u{B370}\u{C774}\u{D2B8}");
+        m.insert("settings.mcp.update_named", "{name} \u{C5C5}\u{B370}\u{C774}\u{D2B8}");
+        m.insert("settings.mcp.updated", "MCP \u{C11C}\u{BC84}\u{AC00} \u{C5C5}\u{B370}\u{C774}\u{D2B8}\u{B428}");
+        m.insert("settings.mcp.updates_available", "\u{C774} \u{C11C}\u{BC84}\u{C5D0} {count}\u{AC1C}\u{C758} \u{C5C5}\u{B370}\u{C774}\u{D2B8}\u{AC00} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}. \u{C5B4}\u{B5BB}\u{AC8C} \u{C9C4}\u{D589}\u{D558}\u{C2DC}\u{ACA0}\u{C2B5}\u{B2C8}\u{AE4C}?");
+        m.insert("settings.mcp.version", "\u{BC84}\u{C804} {version}");
+        m.insert("settings.mcp.view_logs", "\u{B85C}\u{ADF8} \u{BCF4}\u{AE30}");
+
+        // Platform API keys
+        m.insert("settings.platform.api_key_personal_desc", "\u{C774} API \u{D0A4}\u{B294} \u{C0AC}\u{C6A9}\u{C790}\u{C5D0}\u{AC8C} \u{C5F0}\u{ACB0}\u{B418}\u{BA70} \u{AC1C}\u{C778} Warp \u{ACC4}\u{C815}\u{C5D0} \u{B300}\u{D574} \u{C694}\u{CCAD}\u{C744} \u{BC1B}\u{C744} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.platform.api_key_placeholder", "Warp API \u{D0A4}");
+        m.insert("settings.platform.api_key_team_desc", "\u{C774} API \u{D0A4}\u{B294} \u{D300}\u{C5D0}\u{AC8C} \u{C5F0}\u{ACB0}\u{B418}\u{BA70} \u{D300}\u{C744} \u{B300}\u{C2DC}\u{D574}\u{C11C} \u{C694}\u{CCAD}\u{C744} \u{BC1B}\u{C744} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.platform.cancel", "\u{CDE8}\u{C18C}");
+        m.insert("settings.platform.copied", "\u{BCF5}\u{C0AC}\u{B428}");
+        m.insert("settings.platform.copy", "\u{BCF5}\u{C0AC}");
+        m.insert("settings.platform.create_failed", "API \u{D0A4} \u{C0DD}\u{C131}\u{C5D0} \u{C2E4}\u{D328}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B2E4}\u{C2DC} \u{C2DC}\u{B3C4}\u{D574} \u{C8FC}\u{C2DC}\u{AE30} \u{BC14}\u{B78D}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.platform.create_key", "\u{D0A4} \u{C0DD}\u{C131}");
+        m.insert("settings.platform.creating", "\u{C0DD}\u{C131} \u{C911}...");
+        m.insert("settings.platform.delete_failed", "API \u{D0A4} \u{C0AD}\u{C81C}\u{C5D0} \u{C2E4}\u{D328}\u{D588}\u{C2B5}\u{B2C8}\u{B2E4}. \u{B2E4}\u{C2DC} \u{C2DC}\u{B3C4}\u{D574} \u{C8FC}\u{C2DC}\u{AE30} \u{BC14}\u{B78D}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.platform.done", "\u{C644}\u{B8CC}");
+        m.insert("settings.platform.expiration_label", "\u{B9CC}\u{AE30} \u{C77C}\u{C790}");
+        m.insert("settings.platform.expiry_1_day", "1\u{C77C}");
+        m.insert("settings.platform.expiry_30_days", "30\u{C77C}");
+        m.insert("settings.platform.expiry_90_days", "90\u{C77C}");
+        m.insert("settings.platform.expiry_never", "\u{C608}\u{C548} \u{C548} \u{D568}");
+        m.insert("settings.platform.name_label", "\u{C774}\u{B984}");
+        m.insert("settings.platform.no_team_error", "\u{D604}\u{C7AC} \u{D300}\u{C774} \u{C5C6}\u{C5B4} \u{D300} API \u{D0A4}\u{B97C} \u{C0DD}\u{C131}\u{D560} \u{C218} \u{C5C6}\u{C2B5}\u{B2C8}\u{B2E4}.");
+        m.insert("settings.platform.secret_copied", "\u{BE44}\u{BC00} \u{D0A4}\u{AC00} \u{BCF5}\u{C0AC}\u{B428}.");
+        m.insert("settings.platform.secret_warning", "\u{C774} \u{BE44}\u{BC00} \u{D0A4}\u{B294} \u{D55C} \u{BC88}\u{B9CC} \u{D45C}\u{C2DC}\u{B429}\u{B2C8}\u{B2E4}. \u{BCF5}\u{C0AC}\u{D558}\u{C5EC} \u{C548}\u{C804}\u{D558}\u{AC8C} \u{C800}\u{C7A5}\u{D558}\u{C138}\u{C694}.");
+        m.insert("settings.platform.type_label", "\u{C720}\u{D615}");
+        m.insert("settings.platform.type_personal", "\u{AC1C}\u{C778}");
+        m.insert("settings.platform.type_team", "\u{D300}");
+
+        // Privacy - regex modal
+        m.insert("settings.privacy.cancel", "\u{CDE8}\u{C18C}");
+        m.insert("settings.privacy.invalid_regex", "\u{C720}\u{D6A8}\u{D558}\u{C9C0} \u{C54A}\u{C740} \u{C815}\u{AD6C}\u{C2DD}");
+        m.insert("settings.privacy.name_optional", "\u{C774}\u{B984} (\u{C120}\u{D0DD}\u{C0AC}\u{D56D})");
+        m.insert("settings.privacy.regex_pattern", "\u{C815}\u{AD6C}\u{C2DD} \u{D328}\u{D134}");
+        m.insert("settings.privacy.regex_placeholder", "\u{C608}: \"Google API Key\"");
+
+        // Shared settings
+        m.insert("settings.shared.learn_more_tooltip", "\u{B204}\u{B974}\u{BA74} \u{BB38}\u{C11C}\u{C5D0}\u{C11C} \u{B354} \u{BC30}\u{C6B0}\u{AE30}");
+        m.insert("settings.shared.not_synced", "\u{C774} \u{C124}\u{C815}\u{C740} \u{B2E4}\u{B978} \u{AE30}\u{AE30}\u{C640} \u{B3D9}\u{AE30}\u{D654}\u{B418}\u{C9C0} \u{C54A}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.shared.reset_default", "\u{AE30}\u{BCF8} \u{AC12}\u{C73C}\u{B85C} \u{B9AC}\u{C14B}");
+
+        m
+    };
+}

@@ -1,0 +1,1186 @@
+use std::collections::HashMap;
+
+lazy_static::lazy_static! {
+    pub static ref TRANSLATIONS: HashMap<&'static str, &'static str> = {
+        let mut m = HashMap::new();
+
+        // Navigation sidebar
+        m.insert("nav.account", "\u{30A2}\u{30AB}\u{30A6}\u{30F3}\u{30C8}");
+        m.insert("nav.appearance", "\u{5916}\u{89B3}");
+        m.insert("nav.features", "\u{6A5F}\u{80FD}");
+        m.insert("nav.keybindings", "\u{30AD}\u{30FC}\u{30DC}\u{30FC}\u{30C9}\u{30B7}\u{30E7}\u{30FC}\u{30C8}\u{30AB}\u{30C3}\u{30C8}");
+        m.insert("nav.privacy", "\u{30D7}\u{30E9}\u{30A4}\u{30D0}\u{30B7}\u{30FC}");
+        m.insert("nav.teams", "\u{30C1}\u{30FC}\u{30E0}");
+        m.insert("nav.about", "Warp \u{306B}\u{3064}\u{3044}\u{3066}");
+        m.insert("nav.ai", "AI");
+        m.insert("nav.code", "\u{30B3}\u{30FC}\u{30C9}");
+        m.insert("nav.cloud_platform", "\u{30AF}\u{30E9}\u{30A6}\u{30C9}\u{30D7}\u{30E9}\u{30C3}\u{30C8}\u{30D5}\u{30A9}\u{30FC}\u{30E0}");
+        m.insert("nav.agents", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}");
+        m.insert("nav.billing_and_usage", "\u{8ACB}\u{6C42}\u{3068}\u{4F7F}\u{7528}\u{91CF}");
+        m.insert("nav.shared_blocks", "\u{5171}\u{6709}\u{30D6}\u{30ED}\u{30C3}\u{30AF}");
+        m.insert("nav.mcp_servers", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}");
+        m.insert("nav.warp_drive", "Warp Drive");
+        m.insert("nav.warp_agent", "Warp Agent");
+        m.insert("nav.agent_profiles", "\u{30D7}\u{30ED}\u{30D5}\u{30A1}\u{30A4}\u{30EB}");
+        m.insert("nav.agent_mcp_servers", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}");
+        m.insert("nav.knowledge", "\u{30CA}\u{30EC}\u{30C3}\u{30B8}");
+        m.insert("nav.third_party_cli_agents", "\u{30B5}\u{30FC}\u{30C9}\u{30D1}\u{30FC}\u{30C6}\u{30A3} CLI \u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}");
+        m.insert("nav.code_indexing", "\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3068}\u{30D7}\u{30ED}\u{30B8}\u{30A7}\u{30AF}\u{30C8}");
+        m.insert("nav.editor_and_code_review", "\u{30A8}\u{30C7}\u{30A3}\u{30BF}\u{30FC}\u{3068}\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}");
+        m.insert("nav.cloud_environments", "\u{74B0}\u{5883}");
+        m.insert("nav.oz_cloud_api_keys", "Oz Cloud API \u{30AD}\u{30FC}");
+
+        // Settings shell
+        m.insert("settings.title", "\u{8A2D}\u{5B9A}");
+        m.insert("settings.search", "\u{691C}\u{7D22}");
+        m.insert("settings.shell.split_right", "\u{53F3}\u{306B}\u{5206}\u{5272}");
+        m.insert("settings.shell.split_left", "\u{5DE6}\u{306B}\u{5206}\u{5272}");
+        m.insert("settings.shell.split_down", "\u{4E0B}\u{306B}\u{5206}\u{5272}");
+        m.insert("settings.shell.split_up", "\u{4E0A}\u{306B}\u{5206}\u{5272}");
+        m.insert("settings.shell.close_pane", "\u{30DA}\u{30A4}\u{30F3}\u{3092}\u{9589}\u{3058}\u{308B}");
+        m.insert("settings.shell.toggle.code_review_show", "\u{30BF}\u{30D6}\u{30D0}\u{30FC}\u{306B}\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30DC}\u{30BF}\u{30F3}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.shell.toggle.code_review_hide", "\u{30BF}\u{30D6}\u{30D0}\u{30FC}\u{306E}\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30DC}\u{30BF}\u{30F3}\u{3092}\u{96A0}\u{3059}");
+        m.insert("settings.shell.toggle.init_block_show", "\u{521D}\u{671F}\u{5316}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.shell.toggle.init_block_hide", "\u{521D}\u{671F}\u{5316}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{3092}\u{96A0}\u{3059}");
+        m.insert("settings.shell.toggle.in_band_show", "\u{30D0}\u{30F3}\u{30C9}\u{5185}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.shell.toggle.in_band_hide", "\u{30D0}\u{30F3}\u{30C9}\u{5185}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{3092}\u{96A0}\u{3059}");
+        m.insert("settings.shell.toggle.tab_bar_show", "\u{5E38}\u{306B}\u{30BF}\u{30D6}\u{30D0}\u{30FC}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.shell.toggle.tab_bar_hide_fullscreen", "\u{30D5}\u{30EB}\u{30B9}\u{30AF}\u{30EA}\u{30FC}\u{30F3}\u{6642}\u{306B}\u{30BF}\u{30D6}\u{30D0}\u{30FC}\u{3092}\u{96A0}\u{3059}");
+        m.insert("settings.shell.toggle.tab_bar_hover", "\u{30DB}\u{30D0}\u{30FC}\u{6642}\u{306B}\u{306E}\u{307F}\u{30BF}\u{30D6}\u{30D0}\u{30FC}\u{3092}\u{8868}\u{793A}");
+
+        // Appearance page - Language
+        m.insert("settings.appearance.language.label", "\u{8A00}\u{8A9E}");
+        m.insert("settings.appearance.language.subtitle", "Warp \u{30A4}\u{30F3}\u{30BF}\u{30FC}\u{30D5}\u{30A7}\u{30A4}\u{30B9}\u{306E}\u{8868}\u{793A}\u{8A00}\u{8A9E}\u{3092}\u{8A2D}\u{5B9A}\u{3057}\u{307E}\u{3059}\u{3002}");
+
+        // Appearance page - Themes
+        m.insert("settings.appearance.themes", "\u{30C6}\u{30FC}\u{30DE}");
+        m.insert("settings.appearance.themes.create_custom", "\u{30AB}\u{30B9}\u{30BF}\u{30E0}\u{30C6}\u{30FC}\u{30DE}\u{3092}\u{4F5C}\u{6210}");
+        m.insert("settings.appearance.themes.light", "\u{30E9}\u{30A4}\u{30C8}");
+        m.insert("settings.appearance.themes.dark", "\u{30C0}\u{30FC}\u{30AF}");
+        m.insert("settings.appearance.themes.current", "\u{73FE}\u{5728}\u{306E}\u{30C6}\u{30FC}\u{30DE}");
+        m.insert("settings.appearance.themes.sync_with_os", "OS \u{3068}\u{540C}\u{671F}");
+        m.insert("settings.appearance.themes.sync_with_os.description", "\u{30B7}\u{30B9}\u{30C6}\u{30E0}\u{306E}\u{5207}\u{308A}\u{66FF}\u{3048}\u{6642}\u{306B}\u{30E9}\u{30A4}\u{30C8}\u{3068}\u{30C0}\u{30FC}\u{30AF}\u{306E}\u{30C6}\u{30FC}\u{30DE}\u{3092}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{5207}\u{308A}\u{66FF}\u{3048}\u{307E}\u{3059}\u{3002}");
+
+        // Appearance page - Window
+        m.insert("settings.appearance.window", "\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}");
+        m.insert("settings.appearance.icon", "\u{30A2}\u{30A4}\u{30B3}\u{30F3}");
+        m.insert("settings.appearance.icon.customize", "\u{30A2}\u{30D7}\u{30EA}\u{30A2}\u{30A4}\u{30B3}\u{30F3}\u{3092}\u{30AB}\u{30B9}\u{30BF}\u{30DE}\u{30A4}\u{30BA}");
+        m.insert("settings.appearance.icon.bundle_warning", "\u{30A2}\u{30D7}\u{30EA}\u{30A2}\u{30A4}\u{30B3}\u{30F3}\u{306E}\u{5909}\u{66F4}\u{306B}\u{306F}\u{30A2}\u{30D7}\u{30EA}\u{306E}\u{30D0}\u{30F3}\u{30C9}\u{30EB}\u{304C}\u{5FC5}\u{8981}\u{3067}\u{3059}\u{3002}");
+        m.insert("settings.appearance.icon.restart_warning", "\u{5E0C}\u{671B}\u{306E}\u{30A2}\u{30A4}\u{30B3}\u{30F3}\u{30B9}\u{30BF}\u{30A4}\u{30EB}\u{3092}\u{9069}\u{7528}\u{3059}\u{308B}\u{306B}\u{306F} Warp \u{306E}\u{518D}\u{8D77}\u{52D5}\u{304C}\u{5FC5}\u{8981}\u{306B}\u{306A}\u{308B}\u{5834}\u{5408}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.appearance.window.opacity", "\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{306E}\u{4E0D}\u{900F}\u{660E}\u{5EA6}");
+        m.insert("settings.appearance.window.blur", "\u{80CC}\u{666F}\u{306E}\u{3076}\u{3089}\u{3057}");
+        m.insert("settings.appearance.window.blur_texture", "\u{80CC}\u{666F}\u{306E}\u{3076}\u{3089}\u{3057}\u{30C6}\u{30AF}\u{30B9}\u{30C1}\u{30E3}");
+        m.insert("settings.appearance.window.custom_size", "\u{30AB}\u{30B9}\u{30BF}\u{30E0}\u{30B5}\u{30A4}\u{30BA}\u{3067}\u{65B0}\u{898F}\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{3092}\u{958B}\u{304F}");
+        m.insert("settings.appearance.window.columns", "\u{5217}");
+        m.insert("settings.appearance.window.rows", "\u{884C}");
+        m.insert("settings.appearance.window.opacity.label", "\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{4E0D}\u{900F}\u{660E}\u{5EA6}:");
+        m.insert("settings.appearance.window.opacity.unsupported", "\u{304A}\u{4F7F}\u{3044}\u{306E}\u{30B0}\u{30E9}\u{30D5}\u{30A3}\u{30C3}\u{30AF}\u{30B9}\u{30C9}\u{30E9}\u{30A4}\u{30D0}\u{30FC}\u{306F}\u{900F}\u{660E}\u{5EA6}\u{3092}\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{3057}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.appearance.window.opacity.value", "\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{4E0D}\u{900F}\u{660E}\u{5EA6}: {opacity_value}");
+        m.insert("settings.appearance.window.opacity.graphics_warning", "\u{9078}\u{629E}\u{3055}\u{308C}\u{305F}\u{30B0}\u{30E9}\u{30D5}\u{30A3}\u{30C3}\u{30AF}\u{8A2D}\u{5B9A}\u{3067}\u{306F}\u{900F}\u{660E}\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{306E}\u{30EC}\u{30F3}\u{30C0}\u{30EA}\u{30F3}\u{30B0}\u{304C}\u{3067}\u{304D}\u{306A}\u{3044}\u{5834}\u{5408}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.appearance.window.opacity.graphics_hint", " \u{6A5F}\u{80FD} > \u{30B7}\u{30B9}\u{30C6}\u{30E0}\u{306E}\u{30B0}\u{30E9}\u{30D5}\u{30A3}\u{30C3}\u{30AF}\u{30D0}\u{30C3}\u{30AF}\u{30A8}\u{30F3}\u{30C9}\u{307E}\u{305F}\u{306F}\u{7D71}\u{5408} GPU \u{306E}\u{8A2D}\u{5B9A}\u{3092}\u{5909}\u{66F4}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.appearance.window.blur.value", "\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{3076}\u{3089}\u{3057}\u{534A}\u{5F84}: {blur_value}");
+        m.insert("settings.appearance.window.blur.use_acrylic", "\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{3076}\u{3089}\u{3057}\u{FF08}\u{30A2}\u{30AF}\u{30EA}\u{30EA}\u{30C3}\u{30AF}\u{30C6}\u{30AF}\u{30B9}\u{30C1}\u{30E3}\u{FF09}\u{3092}\u{4F7F}\u{7528}");
+        m.insert("settings.appearance.window.blur.hardware_warning", "\u{9078}\u{629E}\u{3055}\u{308C}\u{305F}\u{30CF}\u{30FC}\u{30C9}\u{30A6}\u{30A7}\u{30A2}\u{3067}\u{306F}\u{900F}\u{660E}\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{306E}\u{30EC}\u{30F3}\u{30C0}\u{30EA}\u{30F3}\u{30B0}\u{304C}\u{3067}\u{304D}\u{306A}\u{3044}\u{5834}\u{5408}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}");
+
+        // Appearance page - Input
+        m.insert("settings.appearance.input", "\u{5165}\u{529B}");
+        m.insert("settings.appearance.input.type", "\u{5165}\u{529B}\u{30BF}\u{30A4}\u{30D7}");
+        m.insert("settings.appearance.input.mode", "\u{5165}\u{529B}\u{4F4D}\u{7F6E}");
+        m.insert("settings.appearance.input.warp", "Warp");
+        m.insert("settings.appearance.input.shell_ps1", "Shell (PS1)");
+        m.insert("settings.appearance.input.mode.warp", "\u{4E0B}\u{90E8}\u{306B}\u{56FA}\u{5B9A} (Warp \u{30E2}\u{30FC}\u{30C9})");
+        m.insert("settings.appearance.input.mode.reverse", "\u{4E0A}\u{90E8}\u{306B}\u{56FA}\u{5B9A} (\u{30EA}\u{30D0}\u{30FC}\u{30B9}\u{30E2}\u{30FC}\u{30C9})");
+        m.insert("settings.appearance.input.mode.classic", "\u{4E0A}\u{90E8}\u{304B}\u{3089}\u{958B}\u{59CB} (\u{30AF}\u{30E9}\u{30B7}\u{30C3}\u{30AF}\u{30E2}\u{30FC}\u{30C9})");
+
+        // Appearance page - Blocks
+        m.insert("settings.appearance.blocks", "\u{30D6}\u{30ED}\u{30C3}\u{30AF}");
+        m.insert("settings.appearance.blocks.jump_to_bottom", "\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{306E}\u{4E0B}\u{90E8}\u{3078}\u{30B8}\u{30E3}\u{30F3}\u{30D7}\u{30DC}\u{30BF}\u{30F3}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.appearance.blocks.dividers", "\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{533A}\u{5207}\u{308A}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.appearance.panes", "\u{30DA}\u{30A4}\u{30F3}");
+        m.insert("settings.appearance.panes.consistent_tools", "\u{30C4}\u{30FC}\u{30EB}\u{30D1}\u{30CD}\u{30EB}\u{306E}\u{8868}\u{793A}\u{306F}\u{30BF}\u{30D6}\u{9593}\u{3067}\u{4E00}\u{5B9A}");
+        m.insert("settings.appearance.panes.dim_inactive", "\u{975E}\u{30A2}\u{30AF}\u{30C6}\u{30A3}\u{30D6}\u{306A}\u{30DA}\u{30A4}\u{30F3}\u{3092}\u{6697}\u{304F}\u{3059}\u{308B}");
+        m.insert("settings.appearance.panes.focus_follows_mouse", "\u{30D5}\u{30A9}\u{30FC}\u{30AB}\u{30B9}\u{3092}\u{30DE}\u{30A6}\u{30B9}\u{306B}\u{8FFD}\u{5F93}");
+        m.insert("settings.appearance.panes.compact_mode", "\u{30B3}\u{30F3}\u{30D1}\u{30AF}\u{30C8}\u{30E2}\u{30FC}\u{30C9}");
+        m.insert("settings.appearance.cursor", "\u{30AB}\u{30FC}\u{30BD}\u{30EB}");
+        m.insert("settings.appearance.cursor.type", "\u{30AB}\u{30FC}\u{30BD}\u{30EB}\u{30BF}\u{30A4}\u{30D7}");
+        m.insert("settings.appearance.cursor.type.disabled_vim", "Vim \u{30E2}\u{30FC}\u{30C9}\u{3067}\u{306F}\u{30AB}\u{30FC}\u{30BD}\u{30EB}\u{30BF}\u{30A4}\u{30D7}\u{306F}\u{7121}\u{52B9}\u{3067}\u{3059}");
+        m.insert("settings.appearance.cursor.blink", "\u{30AB}\u{30FC}\u{30BD}\u{30EB}\u{70B9}\u{706F}");
+
+        // Appearance page - Text
+        m.insert("settings.appearance.text", "\u{30C6}\u{30AD}\u{30B9}\u{30C8}");
+        m.insert("settings.appearance.text.font_size", "\u{30D5}\u{30A9}\u{30F3}\u{30C8}\u{30B5}\u{30A4}\u{30BA}");
+        m.insert("settings.appearance.text.font_family", "\u{30D5}\u{30A9}\u{30F3}\u{30C8}\u{30D5}\u{30A1}\u{30DF}\u{30EA}\u{30FC}");
+        m.insert("settings.appearance.text.agent_font", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30D5}\u{30A9}\u{30F3}\u{30C8}");
+        m.insert("settings.appearance.text.match_terminal", "\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{306B}\u{5408}\u{308F}\u{305B}\u{308B}");
+        m.insert("settings.appearance.text.line_height", "\u{884C}\u{9AD8}");
+        m.insert("settings.appearance.text.reset_default", "\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}\u{306B}\u{30EA}\u{30BB}\u{30C3}\u{30C8}");
+        m.insert("settings.appearance.text.terminal_font", "\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{30D5}\u{30A9}\u{30F3}\u{30C8}");
+        m.insert("settings.appearance.text.view_system_fonts", "\u{5229}\u{7528}\u{53EF}\u{80FD}\u{306A}\u{3059}\u{3079}\u{3066}\u{306E}\u{30B7}\u{30B9}\u{30C6}\u{30E0}\u{30D5}\u{30A9}\u{30F3}\u{30C8}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.appearance.text.font_weight", "\u{30D5}\u{30A9}\u{30F3}\u{30C8}\u{306E}\u{592A}\u{3055}");
+        m.insert("settings.appearance.text.font_size_px", "\u{30D5}\u{30A9}\u{30F3}\u{30C8}\u{30B5}\u{30A4}\u{30BA} (px)");
+        m.insert("settings.appearance.text.notebook_font_size", "\u{30CE}\u{30FC}\u{30C8}\u{30D6}\u{30C3}\u{30AF}\u{30D5}\u{30A9}\u{30F3}\u{30C8}\u{30B5}\u{30A4}\u{30BA}");
+        m.insert("settings.appearance.text.thin_strokes", "\u{7D30}\u{3044}\u{30B9}\u{30C8}\u{30ED}\u{30FC}\u{30AF}\u{3092}\u{4F7F}\u{7528}");
+        m.insert("settings.appearance.text.min_contrast", "\u{6700}\u{5C0F}\u{30B3}\u{30F3}\u{30C8}\u{30E9}\u{30B9}\u{30C8}\u{3092}\u{5F37}\u{5236}");
+        m.insert("settings.appearance.text.ligatures", "\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{3067}\u{30EA}\u{30AC}\u{30C1}\u{30E3}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.appearance.text.ligatures.warning", "\u{30EA}\u{30AC}\u{30C1}\u{30E3}\u{306F}\u{30D1}\u{30D5}\u{30A9}\u{30FC}\u{30DE}\u{30F3}\u{30B9}\u{3092}\u{4E0B}\u{3052}\u{308B}\u{5834}\u{5408}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}");
+
+        // Appearance page - Full-screen Apps
+        m.insert("settings.appearance.full_screen_apps", "\u{30D5}\u{30EB}\u{30B9}\u{30AF}\u{30EA}\u{30FC}\u{30F3}\u{30A2}\u{30D7}\u{30EA}");
+
+        // Appearance page - Tabs
+        m.insert("settings.appearance.tabs", "\u{30BF}\u{30D6}");
+        m.insert("settings.appearance.tabs.close_position", "\u{30BF}\u{30D6}\u{9589}\u{3058}\u{308B}\u{30DC}\u{30BF}\u{30F3}\u{306E}\u{4F4D}\u{7F6E}");
+        m.insert("settings.appearance.tabs.indicators", "\u{30BF}\u{30D6}\u{30A4}\u{30F3}\u{30C7}\u{30A3}\u{30B1}\u{30FC}\u{30BF}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.appearance.tabs.code_review_button", "\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30DC}\u{30BF}\u{30F3}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.appearance.tabs.preserve_color", "\u{65B0}\u{898F}\u{30BF}\u{30D6}\u{306B}\u{30A2}\u{30AF}\u{30C6}\u{30A3}\u{30D6}\u{306A}\u{30BF}\u{30D6}\u{306E}\u{8272}\u{3092}\u{4FDD}\u{6301}");
+        m.insert("settings.appearance.tabs.vertical_layout", "\u{7E26}\u{30BF}\u{30D6}\u{30EC}\u{30A4}\u{30A2}\u{30A6}\u{30C8}\u{3092}\u{4F7F}\u{7528}");
+        m.insert("settings.appearance.tabs.prompt_as_title", "\u{6700}\u{65B0}\u{306E}\u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{30D7}\u{30ED}\u{30F3}\u{30D7}\u{30C8}\u{3092}\u{30BF}\u{30D6}\u{540D}\u{306E}\u{4F1A}\u{8A71}\u{30BF}\u{30A4}\u{30C8}\u{30EB}\u{3068}\u{3057}\u{3066}\u{4F7F}\u{7528}");
+        m.insert("settings.appearance.tabs.prompt_as_title.description", "\u{7E26}\u{30BF}\u{30D6}\u{3067} Oz \u{304A}\u{3088}\u{3073}\u{30B5}\u{30FC}\u{30C9}\u{30D1}\u{30FC}\u{30C6}\u{30A3}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{3067}\u{3001}\u{751F}\u{6210}\u{3055}\u{308C}\u{305F}\u{4F1A}\u{8A71}\u{30BF}\u{30A4}\u{30C8}\u{30EB}\u{306E}\u{4EE3}\u{308F}\u{308A}\u{306B}\u{6700}\u{65B0}\u{306E}\u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{30D7}\u{30ED}\u{30F3}\u{30D7}\u{30C8}\u{3092}\u{8868}\u{793A}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.appearance.tabs.header_layout", "\u{30D8}\u{30C3}\u{30C0}\u{30FC}\u{30C4}\u{30FC}\u{30EB}\u{30D0}\u{30FC}\u{30EC}\u{30A4}\u{30A2}\u{30A6}\u{30C8}");
+        m.insert("settings.appearance.tabs.directory_colors", "\u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}\u{30BF}\u{30D6}\u{306E}\u{8272}");
+        m.insert("settings.appearance.tabs.directory_colors.description", "\u{4F5C}\u{696D}\u{4E2D}\u{306E}\u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}\u{307E}\u{305F}\u{306F}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{306B}\u{57FA}\u{3065}\u{3044}\u{3066}\u{30BF}\u{30D6}\u{3092}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{8272}\u{4ED8}\u{3051}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.appearance.tabs.directory_colors.default", "\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}\u{FF08}\u{8272}\u{306A}\u{3057}\u{FF09}");
+        m.insert("settings.appearance.tabs.show_tab_bar", "\u{30BF}\u{30D6}\u{30D0}\u{30FC}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.appearance.tabs.alt_screen_padding", "\u{30AA}\u{30EB}\u{30C6}\u{30CA}\u{30C6}\u{30A3}\u{30D6}\u{753B}\u{9762}\u{3067}\u{30AB}\u{30B9}\u{30BF}\u{30E0}\u{30D1}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{3092}\u{4F7F}\u{7528}");
+        m.insert("settings.appearance.tabs.uniform_padding", "\u{7D71}\u{4E00}\u{30D1}\u{30C7}\u{30A3}\u{30F3}\u{30B0} (px)");
+        m.insert("settings.appearance.zoom", "\u{30BA}\u{30FC}\u{30E0}");
+        m.insert("settings.appearance.zoom.description", "\u{3059}\u{3079}\u{3066}\u{306E}\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{306E}\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}\u{30BA}\u{30FC}\u{30E0}\u{30EC}\u{30D9}\u{30EB}\u{3092}\u{8ABF}\u{6574}");
+        m.insert("settings.appearance.option.never", "\u{4E00}\u{5EA6}\u{3068}\u{3082}");
+        m.insert("settings.appearance.option.always", "\u{5E38}\u{306B}");
+        m.insert("settings.appearance.option.left", "\u{5DE6}");
+        m.insert("settings.appearance.option.right", "\u{53F3}");
+        m.insert("settings.appearance.option.on_low_dpi", "\u{4F4E}DPI\u{30C7}\u{30A3}\u{30B9}\u{30D7}\u{30EC}\u{30A4}\u{3067}");
+        m.insert("settings.appearance.option.on_high_dpi", "\u{9AD8}DPI\u{30C7}\u{30A3}\u{30B9}\u{30D7}\u{30EC}\u{30A4}\u{3067}");
+        m.insert("settings.appearance.option.only_named_colors", "\u{540D}\u{524D}\u{4ED8}\u{304D}\u{8272}\u{306E}\u{307F}");
+        m.insert("settings.appearance.option.when_windowed", "\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{8868}\u{793A}\u{6642}");
+        m.insert("settings.appearance.option.only_on_hover", "\u{30DB}\u{30D0}\u{30FC}\u{6642}\u{306E}\u{307F}");
+
+        // Appearance page - Input binding descriptions
+        m.insert("settings.appearance.input.binding.start_top", "\u{5165}\u{529B}\u{3092}\u{884C}\u{306E}\u{5148}\u{982D}\u{306B}\u{914D}\u{7F6E}");
+        m.insert("settings.appearance.input.binding.pin_top", "\u{5165}\u{529B}\u{3092}\u{5148}\u{982D}\u{306B}\u{56FA}\u{5B9A}");
+        m.insert("settings.appearance.input.binding.pin_bottom", "\u{5165}\u{529B}\u{3092}\u{672B}\u{5C3E}\u{306B}\u{56FA}\u{5B9A}");
+        m.insert("settings.appearance.input.binding.toggle", "\u{5165}\u{529B}\u{30E2}\u{30FC}\u{30C9}\u{5207}\u{66FF}\u{FF08}Warp/\u{30AF}\u{30E9}\u{30B7}\u{30C3}\u{30AF}\u{FF09}");
+
+        // Common buttons
+        m.insert("button.reset", "\u{30EA}\u{30BB}\u{30C3}\u{30C8}");
+        m.insert("button.add", "\u{8FFD}\u{52A0}");
+        m.insert("button.remove", "\u{524A}\u{9664}");
+        m.insert("button.save", "\u{4FDD}\u{5B58}");
+        m.insert("button.cancel", "\u{30AD}\u{30E3}\u{30F3}\u{30BB}\u{30EB}");
+        m.insert("button.close", "\u{9589}\u{3058}\u{308B}");
+        m.insert("button.sign_up", "\u{767B}\u{9332}");
+        m.insert("button.apply", "\u{9069}\u{7528}");
+
+        // Features page
+        m.insert("settings.features", "\u{6A5F}\u{80FD}");
+        m.insert("settings.features.copy_on_select", "\u{9078}\u{629E}\u{6642}\u{306B}\u{30B3}\u{30D4}\u{30FC}");
+
+        // Features page - Categories
+        m.insert("settings.features.category.general", "\u{4E00}\u{822C}");
+        m.insert("settings.features.category.session", "\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}");
+        m.insert("settings.features.category.keys", "\u{30AD}\u{30FC}");
+        m.insert("settings.features.category.text_editing", "\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{7DE8}\u{96C6}");
+        m.insert("settings.features.category.terminal_input", "\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{5165}\u{529B}");
+        m.insert("settings.features.category.terminal", "\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}");
+        m.insert("settings.features.category.notifications", "\u{901A}\u{77E5}");
+        m.insert("settings.features.category.workflows", "\u{30EF}\u{30FC}\u{30AF}\u{30D5}\u{30ED}\u{30FC}");
+        m.insert("settings.features.category.system", "\u{30B7}\u{30B9}\u{30C6}\u{30E0}");
+
+        // Features page - General
+        m.insert("settings.features.open_links_in_desktop_app", "\u{30C7}\u{30B9}\u{30AF}\u{30C8}\u{30C3}\u{30D7}\u{30A2}\u{30D7}\u{30EA}\u{3067}\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{958B}\u{304F}");
+        m.insert("settings.features.open_links_in_desktop_app.description", "\u{53EF}\u{80FD}\u{306A}\u{9650}\u{308A}\u{30C7}\u{30B9}\u{30AF}\u{30C8}\u{30C3}\u{30D7}\u{30A2}\u{30D7}\u{30EA}\u{3067}\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{958B}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.features.restore_on_startup", "\u{8D77}\u{52D5}\u{6642}\u{306B}\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{3001}\u{30BF}\u{30D6}\u{3001}\u{30DA}\u{30A4}\u{30F3}\u{3092}\u{5FA9}\u{5143}");
+        m.insert("settings.features.wayland_positions_warning", "Wayland \u{3067}\u{306F}\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{4F4D}\u{7F6E}\u{306F}\u{5FA9}\u{5143}\u{3055}\u{308C}\u{307E}\u{305B}\u{3093}\u{3002} ");
+        m.insert("settings.features.see_docs", "\u{30C9}\u{30AD}\u{30E5}\u{30E1}\u{30F3}\u{30C8}\u{3092}\u{8868}\u{793A}\u{3002}");
+        m.insert("settings.features.sticky_command_header", "\u{30B9}\u{30C6}\u{30A3}\u{30C3}\u{30AD}\u{30FC}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{30D8}\u{30C3}\u{30C0}\u{30FC}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.features.link_tooltip", "\u{30EA}\u{30F3}\u{30AF}\u{30AF}\u{30EA}\u{30C3}\u{30AF}\u{6642}\u{306B}\u{30C4}\u{30FC}\u{30EB}\u{30C1}\u{30C3}\u{30D7}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.features.quit_warning", "\u{7D42}\u{4E86}/\u{30ED}\u{30B0}\u{30A2}\u{30A6}\u{30C8}\u{524D}\u{306B}\u{8B66}\u{544A}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.features.login_item_macos", "\u{30ED}\u{30B0}\u{30A4}\u{30F3}\u{6642}\u{306B} Warp \u{3092}\u{8D77}\u{52D5} (macOS 13+ \u{304C}\u{5FC5}\u{8981})");
+        m.insert("settings.features.login_item", "\u{30ED}\u{30B0}\u{30A4}\u{30F3}\u{6642}\u{306B} Warp \u{3092}\u{8D77}\u{52D5}");
+        m.insert("settings.features.quit_when_all_closed", "\u{3059}\u{3079}\u{3066}\u{306E}\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{3092}\u{9589}\u{3058}\u{308B}\u{3068}\u{7D42}\u{4E86}");
+        m.insert("settings.features.changelog_after_updates", "\u{30A2}\u{30C3}\u{30D7}\u{30C7}\u{30FC}\u{30C8}\u{5F8C}\u{306B}\u{30C1}\u{30A7}\u{30F3}\u{30B8}\u{30ED}\u{30B0}\u{30C8}\u{30FC}\u{30B9}\u{30C8}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.features.mouse_scroll_interval", "\u{30DE}\u{30A6}\u{30B9}\u{30DB}\u{30A4}\u{30FC}\u{30EB}\u{3067}\u{30B9}\u{30AF}\u{30ED}\u{30FC}\u{30EB}\u{3059}\u{308B}\u{884C}\u{6570}");
+        m.insert("settings.features.mouse_scroll_interval.description", "1 \u{304B}\u{3089} 20 \u{306E}\u{6D6E}\u{52D5}\u{5C0F}\u{6570}\u{70B9}\u{306E}\u{5024}\u{3092}\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{3057}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.features.mouse_scroll_interval.allowed_values", "\u{8A31}\u{53EF}\u{3055}\u{308C}\u{305F}\u{5024}: 1-20");
+        m.insert("settings.features.auto_open_code_review", "\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30D1}\u{30CD}\u{30EB}\u{3092}\u{81EA}\u{52D5}\u{3067}\u{958B}\u{304F}");
+        m.insert("settings.features.auto_open_code_review.description", "\u{3053}\u{306E}\u{8A2D}\u{5B9A}\u{304C}\u{30AA}\u{30F3}\u{306B}\u{306A}\u{308B}\u{3068}\u{3001}\u{4F1A}\u{8A71}\u{3067}\u{6700}\u{521D}\u{306B}\u{53D7}\u{5165}\u{308C}\u{305F}\u{5DEE}\u{5206}\u{306E}\u{5834}\u{6240}\u{3067}\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30D1}\u{30CD}\u{30EB}\u{304C}\u{958B}\u{304D}\u{307E}\u{3059}");
+        m.insert("settings.features.warp_is_default_terminal", "Warp \u{304C}\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}\u{306E}\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{3067}\u{3059}");
+        m.insert("settings.features.make_default_terminal", "Warp \u{3092}\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}\u{306E}\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.features.max_rows", "\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{306E}\u{6700}\u{5927}\u{884C}\u{6570}");
+        m.insert("settings.features.max_rows.description", "\u{5236}\u{9650}\u{3092}10\u{4E07}\u{884C}\u{4EE5}\u{4E0A}\u{306B}\u{8A2D}\u{5B9A}\u{3059}\u{308B}\u{3068}\u{30D1}\u{30D5}\u{30A9}\u{30FC}\u{30DE}\u{30F3}\u{30B9}\u{306B}\u{5F71}\u{97FF}\u{304C}\u{3042}\u{308B}\u{5834}\u{5408}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{3055}\u{308C}\u{308B}\u{6700}\u{5927}\u{884C}\u{6570}\u{306F} {max_rows} \u{3067}\u{3059}\u{3002}");
+        m.insert("settings.features.ssh_wrapper", "Warp SSH \u{30E9}\u{30C3}\u{30D1}\u{30FC}");
+        m.insert("settings.features.new_sessions_effect", "\u{3053}\u{306E}\u{5909}\u{66F4}\u{306F}\u{65B0}\u{3057}\u{3044}\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{3067}\u{6709}\u{52B9}\u{306B}\u{306A}\u{308A}\u{307E}\u{3059}");
+        m.insert("settings.features.default", "\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}");
+
+        // Features page - Notifications
+        m.insert("settings.features.desktop_notifications", "Warp \u{306E}\u{30C7}\u{30B9}\u{30AF}\u{30C8}\u{30C3}\u{30D7}\u{901A}\u{77E5}\u{3092}\u{53D7}\u{3051}\u{53D6}\u{308B}");
+        m.insert("settings.features.notify_agent_task_completed", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{304C}\u{30BF}\u{30B9}\u{30AF}\u{3092}\u{5B8C}\u{4E86}\u{3057}\u{305F}\u{6642}\u{306B}\u{901A}\u{77E5}");
+        m.insert("settings.features.notify_needs_attention", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{307E}\u{305F}\u{306F}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{304C}\u{7D9A}\u{884C}\u{306B}\u{3042}\u{306A}\u{305F}\u{306E}\u{6CE8}\u{610F}\u{3092}\u{5FC5}\u{8981}\u{3068}\u{3059}\u{308B}\u{6642}\u{306B}\u{901A}\u{77E5}");
+        m.insert("settings.features.notification_sounds", "\u{901A}\u{77E5}\u{97F3}\u{3092}\u{518D}\u{751F}");
+        m.insert("settings.features.in_app_agent_notifications", "\u{30A2}\u{30D7}\u{30EA}\u{5185}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{901A}\u{77E5}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.features.toast_duration", "\u{30C8}\u{30FC}\u{30B9}\u{30C8}\u{901A}\u{77E5}\u{306E}\u{8868}\u{793A}\u{6642}\u{9593}");
+        m.insert("settings.features.seconds", "\u{79D2}");
+        m.insert("settings.features.command_longer_than", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{306E}\u{5B9F}\u{884C}\u{304C}");
+        m.insert("settings.features.seconds_to_complete", "\u{79D2}\u{4EE5}\u{4E0A}\u{304B}\u{304B}\u{308B}\u{6642}");
+
+        // Features page - Session
+        m.insert("settings.features.default_shell", "\u{65B0}\u{3057}\u{3044}\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{306E}\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8} Shell");
+        m.insert("settings.features.working_directory", "\u{65B0}\u{3057}\u{3044}\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{306E}\u{4F5C}\u{696D}\u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}");
+        m.insert("settings.features.confirm_close_shared", "\u{5171}\u{6709}\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{3092}\u{9589}\u{3058}\u{308B}\u{524D}\u{306B}\u{78BA}\u{8A8D}");
+        m.insert("settings.features.new_tab_placement", "\u{65B0}\u{3057}\u{3044}\u{30BF}\u{30D6}\u{306E}\u{914D}\u{7F6E}");
+        m.insert("settings.features.after_all_tabs", "\u{3059}\u{3079}\u{3066}\u{306E}\u{30BF}\u{30D6}\u{306E}\u{5F8C}");
+        m.insert("settings.features.after_current_tab", "\u{73FE}\u{5728}\u{306E}\u{30BF}\u{30D6}\u{306E}\u{5F8C}");
+        m.insert("settings.features.default_session_mode", "\u{65B0}\u{3057}\u{3044}\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{306E}\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}\u{30E2}\u{30FC}\u{30C9}");
+        m.insert("settings.features.global_workflows", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{691C}\u{7D22}\u{3067}\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}\u{30EF}\u{30FC}\u{30AF}\u{30D5}\u{30ED}\u{30FC}\u{3092}\u{8868}\u{793A} (ctrl-r)");
+
+        // Features page - Keys
+        m.insert("settings.features.global_hotkey", "\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}\u{30DB}\u{30C3}\u{30C8}\u{30AD}\u{30FC}:");
+        m.insert("settings.features.configure_global_hotkey", "\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}\u{30DB}\u{30C3}\u{30C8}\u{30AD}\u{30FC}\u{3092}\u{8A2D}\u{5B9A}");
+        m.insert("settings.features.wayland_not_supported", "Wayland \u{3067}\u{306F}\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002} ");
+        m.insert("settings.features.keybinding", "\u{30AD}\u{30FC}\u{30D0}\u{30A4}\u{30F3}\u{30C7}\u{30A3}\u{30F3}\u{30B0}");
+        m.insert("settings.features.click_to_set_hotkey", "\u{30AF}\u{30EA}\u{30C3}\u{30AF}\u{3057}\u{3066}\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}\u{30DB}\u{30C3}\u{30C8}\u{30AD}\u{30FC}\u{3092}\u{8A2D}\u{5B9A}");
+        m.insert("settings.features.press_new_shortcut", "\u{65B0}\u{3057}\u{3044}\u{30AD}\u{30FC}\u{30DC}\u{30FC}\u{30C9}\u{30B7}\u{30E7}\u{30FC}\u{30C8}\u{30AB}\u{30C3}\u{30C8}\u{3092}\u{62BC}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}");
+        m.insert("settings.features.change_keybinding", "\u{30AD}\u{30FC}\u{30D0}\u{30A4}\u{30F3}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{3092}\u{5909}\u{66F4}");
+        m.insert("settings.features.pin_to_top", "\u{4E0A}\u{306B}\u{56FA}\u{5B9A}");
+        m.insert("settings.features.pin_to_bottom", "\u{4E0B}\u{306B}\u{56FA}\u{5B9A}");
+        m.insert("settings.features.pin_to_left", "\u{5DE6}\u{306B}\u{56FA}\u{5B9A}");
+        m.insert("settings.features.pin_to_right", "\u{53F3}\u{306B}\u{56FA}\u{5B9A}");
+        m.insert("settings.features.active_screen", "\u{30A2}\u{30AF}\u{30C6}\u{30A3}\u{30D6}\u{306A}\u{753B}\u{9762}");
+        m.insert("settings.features.width_percent", "\u{5E45} %");
+        m.insert("settings.features.height_percent", "\u{9AD8}\u{3055} %");
+        m.insert("settings.features.autohide_keyboard_focus", "\u{30AD}\u{30FC}\u{30DC}\u{30FC}\u{30C9}\u{30D5}\u{30A9}\u{30FC}\u{30AB}\u{30B9}\u{3092}\u{5931}\u{3063}\u{305F}\u{6642}\u{306B}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{96A0}\u{308C}\u{308B}");
+        m.insert("settings.features.meta_key_left.option", "\u{5DE6} Option \u{30AD}\u{30FC}\u{3092} Meta \u{3068}\u{3059}\u{308B}");
+        m.insert("settings.features.meta_key_right.option", "\u{53F3} Option \u{30AD}\u{30FC}\u{3092} Meta \u{3068}\u{3059}\u{308B}");
+        m.insert("settings.features.meta_key_left.alt", "\u{5DE6} Alt \u{30AD}\u{30FC}\u{3092} Meta \u{3068}\u{3059}\u{308B}");
+        m.insert("settings.features.meta_key_right.alt", "\u{53F3} Alt \u{30AD}\u{30FC}\u{3092} Meta \u{3068}\u{3059}\u{308B}");
+
+        // Features page - Text Editing
+        m.insert("settings.features.autocomplete_symbols", "\u{30AF}\u{30A9}\u{30FC}\u{30C6}\u{30FC}\u{30B7}\u{30E7}\u{30F3}\u{3001}\u{62EC}\u{5F27}\u{3001}\u{5927}\u{62EC}\u{5F27}\u{3092}\u{81EA}\u{52D5}\u{88DC}\u{5B8C}");
+        m.insert("settings.features.error_underlining", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{306E}\u{30A8}\u{30E9}\u{30FC}\u{4E0B}\u{7DDA}");
+        m.insert("settings.features.syntax_highlighting", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{306E}\u{30B7}\u{30F3}\u{30BF}\u{30C3}\u{30AF}\u{30B9}\u{30CF}\u{30A4}\u{30E9}\u{30A4}\u{30C8}");
+        m.insert("settings.features.completions_while_typing", "\u{5165}\u{529B}\u{4E2D}\u{306B}\u{88DC}\u{5B8C}\u{30E1}\u{30CB}\u{30E5}\u{30FC}\u{3092}\u{958B}\u{304F}");
+        m.insert("settings.features.suggest_corrections", "\u{4FEE}\u{6B63}\u{3055}\u{308C}\u{305F}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3092}\u{63D0}\u{6848}");
+        m.insert("settings.features.expand_aliases", "\u{5165}\u{529B}\u{4E2D}\u{306B}\u{30A8}\u{30A4}\u{30EA}\u{30A2}\u{30B9}\u{3092}\u{5C55}\u{958B}");
+        m.insert("settings.features.middle_click_paste", "\u{30DF}\u{30C9}\u{30EB}\u{30AF}\u{30EA}\u{30C3}\u{30AF}\u{3067}\u{8CBC}\u{308A}\u{4ED8}\u{3051}");
+        m.insert("settings.features.vim_mode", "Vim \u{30AD}\u{30FC}\u{30D0}\u{30A4}\u{30F3}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{3067}\u{30B3}\u{30FC}\u{30C9}\u{3068}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3092}\u{7DE8}\u{96C6}");
+        m.insert("settings.features.vim_unnamed_clipboard", "\u{7121}\u{540D}\u{30EC}\u{30B8}\u{30B9}\u{30BF}\u{3092}\u{30B7}\u{30B9}\u{30C6}\u{30E0}\u{30AF}\u{30EA}\u{30C3}\u{30D7}\u{30DC}\u{30FC}\u{30C9}\u{306B}\u{8A2D}\u{5B9A}");
+        m.insert("settings.features.vim_status_bar", "Vim \u{30B9}\u{30C6}\u{30FC}\u{30BF}\u{30B9}\u{30D0}\u{30FC}\u{3092}\u{8868}\u{793A}");
+
+        // Features page - Terminal Input
+        m.insert("settings.features.at_context_menu", "\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{30E2}\u{30FC}\u{30C9}\u{3067} '@' \u{30B3}\u{30F3}\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{30E1}\u{30CB}\u{30E5}\u{30FC}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.features.slash_commands", "\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{30E2}\u{30FC}\u{30C9}\u{3067}\u{30B9}\u{30E9}\u{30C3}\u{30B7}\u{30E5}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.features.outline_codebase_symbols", "'@' \u{30B3}\u{30F3}\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{30E1}\u{30CB}\u{30E5}\u{30FC}\u{306E}\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{30B7}\u{30F3}\u{30DC}\u{30EB}\u{3092}\u{30A2}\u{30A6}\u{30C8}\u{30E9}\u{30A4}\u{30F3}");
+        m.insert("settings.features.terminal_input_message", "\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{5165}\u{529B}\u{30E1}\u{30C3}\u{30BB}\u{30FC}\u{30B8}\u{884C}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.features.autosuggestion_keybinding_hint", "\u{30AA}\u{30FC}\u{30C8}\u{30B5}\u{30B8}\u{30A7}\u{30B9}\u{30C7}\u{30A3}\u{30E7}\u{30F3}\u{30AD}\u{30FC}\u{30D0}\u{30A4}\u{30F3}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{30D2}\u{30F3}\u{30C8}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.features.autosuggestion_ignore_button", "\u{30AA}\u{30FC}\u{30C8}\u{30B5}\u{30B8}\u{30A7}\u{30B9}\u{30C7}\u{30A3}\u{30E7}\u{30F3}\u{7121}\u{8996}\u{30DC}\u{30BF}\u{30F3}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.features.tab_key_behavior", "Tab \u{30AD}\u{30FC}\u{306E}\u{6312}\u{52D5}");
+        m.insert("settings.features.ctrl_tab_behavior", "Ctrl+Tab \u{306E}\u{6312}\u{52D5}:");
+        m.insert("settings.features.arrow_accepts_autosuggestions", "\u{2192} \u{3067}\u{30AA}\u{30FC}\u{30C8}\u{30B5}\u{30B8}\u{30A7}\u{30B9}\u{30C7}\u{30A3}\u{30E7}\u{30F3}\u{3092}\u{53D7}\u{5165}\u{308C}\u{308B}\u{3002}");
+        m.insert("settings.features.keystroke_accepts_autosuggestions", "{keystroke} \u{3067}\u{30AA}\u{30FC}\u{30C8}\u{30B5}\u{30B8}\u{30A7}\u{30B9}\u{30C7}\u{30A3}\u{30E7}\u{30F3}\u{3092}\u{53D7}\u{5165}\u{308C}\u{308B}\u{3002}");
+        m.insert("settings.features.completions_open_as_you_type", "\u{5165}\u{529B}\u{4E2D}\u{306B}\u{88DC}\u{5B8C}\u{304C}\u{958B}\u{304F}\u{3002}");
+        m.insert("settings.features.completions_open_as_you_type_or", "\u{5165}\u{529B}\u{4E2D}\u{306B}\u{88DC}\u{5B8C}\u{304C}\u{958B}\u{304F}\u{FF08}\u{307E}\u{305F}\u{306F} {keystroke}\u{FF09}\u{3002}");
+        m.insert("settings.features.completion_menu_unbound", "\u{88DC}\u{5B8C}\u{30E1}\u{30CB}\u{30E5}\u{30FC}\u{306E}\u{958B}\u{304D}\u{65B9}\u{306F}\u{30D0}\u{30A4}\u{30F3}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.features.keystroke_opens_completion_menu", "{keystroke} \u{3067}\u{88DC}\u{5B8C}\u{30E1}\u{30CB}\u{30E5}\u{30FC}\u{3092}\u{958B}\u{304F}\u{3002}");
+        m.insert("settings.features.accept_autosuggestion", "\u{30AA}\u{30FC}\u{30C8}\u{30B5}\u{30B8}\u{30A7}\u{30B9}\u{30C7}\u{30A3}\u{30E7}\u{30F3}\u{3092}\u{53D7}\u{5165}\u{308C}\u{308B}");
+        m.insert("settings.features.open_completions_menu", "\u{88DC}\u{5B8C}\u{30E1}\u{30CB}\u{30E5}\u{30FC}\u{3092}\u{958B}\u{304F}");
+        m.insert("settings.features.word_char_config", "\u{5358}\u{8A9E}\u{306E}\u{4E00}\u{90E8}\u{3068}\u{3057}\u{3066}\u{898B}\u{306A}\u{3055}\u{308C}\u{308B}\u{6587}\u{5B57}");
+
+        // Features page - Terminal
+        m.insert("settings.features.mouse_reporting", "\u{30DE}\u{30A6}\u{30B9}\u{30EC}\u{30DD}\u{30FC}\u{30C6}\u{30A3}\u{30F3}\u{30B0}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.features.scroll_reporting", "\u{30B9}\u{30AF}\u{30ED}\u{30FC}\u{30EB}\u{30EC}\u{30DD}\u{30FC}\u{30C6}\u{30A3}\u{30F3}\u{30B0}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.features.focus_reporting", "\u{30D5}\u{30A9}\u{30FC}\u{30AB}\u{30B9}\u{30EC}\u{30DD}\u{30FC}\u{30C6}\u{30A3}\u{30F3}\u{30B0}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.features.audible_bell", "\u{30AA}\u{30FC}\u{30C7}\u{30A3}\u{30D6}\u{30EB}\u{30D9}\u{30EB}\u{3092}\u{4F7F}\u{7528}");
+        m.insert("settings.features.smart_selection", "\u{30C0}\u{30D6}\u{30EB}\u{30AF}\u{30EA}\u{30C3}\u{30AF}\u{3067}\u{30B9}\u{30DE}\u{30FC}\u{30C8}\u{30BB}\u{30EC}\u{30AF}\u{30B7}\u{30E7}\u{30F3}");
+        m.insert("settings.features.show_help_block", "\u{65B0}\u{3057}\u{3044}\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{3067}\u{30D8}\u{30EB}\u{30D7}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.features.linux_selection_clipboard", "Linux \u{30BB}\u{30EC}\u{30AF}\u{30B7}\u{30E7}\u{30F3}\u{30AF}\u{30EA}\u{30C3}\u{30D7}\u{30DC}\u{30FC}\u{30C9}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.features.linux_selection_clipboard.description", "Linux \u{30D7}\u{30E9}\u{30A4}\u{30DE}\u{30EA}\u{30AF}\u{30EA}\u{30C3}\u{30D7}\u{30DC}\u{30FC}\u{30C9}\u{3092}\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{3059}\u{308B}\u{304B}\u{3069}\u{3046}\u{304B}\u{3002}");
+
+        // Features page - System
+        m.insert("settings.features.prefer_low_power_gpu", "\u{7D71}\u{5408} GPU \u{3067}\u{65B0}\u{3057}\u{3044}\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{3092}\u{30EC}\u{30F3}\u{30C0}\u{30EA}\u{30F3}\u{30B0}\u{3059}\u{308B}\u{3053}\u{3068}\u{3092}\u{512A}\u{5148} (\u{4F4E}\u{30D1}\u{30EF}\u{30FC})");
+        m.insert("settings.features.changes_new_windows", "\u{5909}\u{66F4}\u{306F}\u{65B0}\u{3057}\u{3044}\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{306B}\u{9069}\u{7528}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.features.wayland_window_management", "\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{7BA1}\u{7406}\u{306B} Wayland \u{3092}\u{4F7F}\u{7528}");
+        m.insert("settings.features.wayland_window_management.description", "Wayland \u{306E}\u{4F7F}\u{7528}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.features.wayland_hotkey_warning", "\u{3053}\u{306E}\u{8A2D}\u{5B9A}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{3068}\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}\u{30DB}\u{30C3}\u{30C8}\u{30AD}\u{30FC}\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{304C}\u{7121}\u{52B9}\u{306B}\u{306A}\u{308A}\u{307E}\u{3059}\u{3002}\u{7121}\u{52B9}\u{306B}\u{3059}\u{308B}\u{3068}\u{3001}Wayland \u{30B3}\u{30F3}\u{30DD}\u{30B8}\u{30BF}\u{304C}\u{5206}\u{6570}\u{30B9}\u{30B1}\u{30FC}\u{30EA}\u{30F3}\u{30B0} (\u{4F8B}: 125%) \u{3092}\u{4F7F}\u{7528}\u{3057}\u{3066}\u{3044}\u{308B}\u{5834}\u{5408}\u{3001}\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{304C}\u{3076}\u{3089}\u{3064}\u{304F}\u{5834}\u{5408}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.features.restart_warp_effect", "\u{5909}\u{66F4}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{306B}\u{306F} Warp \u{3092}\u{518D}\u{8D77}\u{52D5}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.features.preferred_graphics_backend", "\u{512A}\u{5148}\u{3059}\u{308B}\u{30B0}\u{30E9}\u{30D5}\u{30A3}\u{30C3}\u{30AF}\u{30D0}\u{30C3}\u{30AF}\u{30A8}\u{30F3}\u{30C9}");
+        m.insert("settings.features.current_backend", "\u{73FE}\u{5728}\u{306E}\u{30D0}\u{30C3}\u{30AF}\u{30A8}\u{30F3}\u{30C9}: {backend}");
+
+        // AI page
+        m.insert("settings.ai", "AI");
+        m.insert("settings.ai.warp_agent", "Warp Agent");
+        m.insert("settings.ai.active_ai", "\u{30A2}\u{30AF}\u{30C6}\u{30A3}\u{30D6} AI");
+        m.insert("settings.ai.usage", "\u{4F7F}\u{7528}\u{91CF}");
+        m.insert("settings.ai.credits", "\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}");
+        m.insert("settings.ai.unlimited", "\u{7121}\u{5236}\u{9650}");
+        m.insert("settings.ai.restricted_billing", "\u{8ACB}\u{6C42}\u{306E}\u{554F}\u{984C}\u{306B}\u{3088}\u{308A}\u{5236}\u{9650}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}");
+        m.insert("settings.ai.resets", "{formatted_next_refresh_time} \u{306B}\u{30EA}\u{30BB}\u{30C3}\u{30C8}");
+        m.insert("settings.ai.credits_limit_description", "\u{3053}\u{308C}\u{306F}\u{3042}\u{306A}\u{305F}\u{306E}\u{30A2}\u{30AB}\u{30A6}\u{30F3}\u{30C8}\u{306E}AI\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{306E} {0} \u{5236}\u{9650}\u{3067}\u{3059}\u{3002}");
+        m.insert("settings.ai.upgrade", "\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.ai.get_more_usage", " \u{3067}\u{66F4}\u{306B} AI \u{4F7F}\u{7528}\u{91CF}\u{3092}\u{53D6}\u{308B}\u{3002}");
+        m.insert("settings.ai.compare_plans", "\u{30D7}\u{30E9}\u{30F3}\u{3092}\u{6BD4}\u{8F03}");
+        m.insert("settings.ai.more_usage", " \u{3067}\u{66F4}\u{306B} AI \u{4F7F}\u{7528}\u{91CF}\u{3092}\u{53D6}\u{308B}\u{3002}");
+        m.insert("settings.ai.contact_support", "\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{306B}\u{9023}\u{7D61}");
+        m.insert("settings.ai.contact_sales", "\u{5546}\u{55B6}\u{306B}\u{9023}\u{7D61}");
+        m.insert("settings.ai.enable_byo_enterprise", " \u{3067} Enterprise \u{30D7}\u{30E9}\u{30F3}\u{3067}\u{306E}\u{30AA}\u{30EA}\u{30B8}\u{30CA}\u{30EB} API \u{30AD}\u{30FC}\u{306E}\u{4F7F}\u{7528}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.upgrade_build_plan", "Build \u{30D7}\u{30E9}\u{30F3}\u{306B}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.ai.use_own_api_keys", " \u{3067}\u{30AA}\u{30EA}\u{30B8}\u{30CA}\u{30EB} API \u{30AD}\u{30FC}\u{3092}\u{4F7F}\u{7528}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.ask_admin_upgrade", "\u{30C1}\u{30FC}\u{30E0}\u{306E}\u{7BA1}\u{7406}\u{8005}\u{306B} Build \u{30D7}\u{30E9}\u{30F3}\u{3078}\u{306E}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}\u{3092}\u{4F9D}\u{983C}\u{3057}\u{3066}\u{30AA}\u{30EA}\u{30B8}\u{30CA}\u{30EB} API \u{30AD}\u{30FC}\u{3092}\u{4F7F}\u{7528}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.org_disallows_remote_ai", "\u{30A2}\u{30AF}\u{30C6}\u{30A3}\u{30D6}\u{306A}\u{30DA}\u{30A4}\u{30F3}\u{306B}\u{30EA}\u{30E2}\u{30FC}\u{30C8}\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{306E}\u{30B3}\u{30F3}\u{30C6}\u{30F3}\u{30C4}\u{304C}\u{542B}\u{307E}\u{308C}\u{308B}\u{5834}\u{5408}\u{3001}\u{7D44}\u{7E54}\u{306F} AI \u{306E}\u{4F7F}\u{7528}\u{3092}\u{8A31}\u{53EF}\u{3057}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}");
+        m.insert("settings.ai.create_account_prompt", "AI \u{6A5F}\u{80FD}\u{3092}\u{4F7F}\u{7528}\u{3059}\u{308B}\u{306B}\u{306F}\u{3001}\u{30A2}\u{30AB}\u{30A6}\u{30F3}\u{30C8}\u{3092}\u{4F5C}\u{6210}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.ai.org_enforced_setting", "\u{3053}\u{306E}\u{30AA}\u{30D7}\u{30B7}\u{30E7}\u{30F3}\u{306F}\u{7D44}\u{7E54}\u{306E}\u{8A2D}\u{5B9A}\u{306B}\u{3088}\u{3063}\u{3066}\u{5F37}\u{5236}\u{3055}\u{308C}\u{3066}\u{304A}\u{308A}\u{3001}\u{30AB}\u{30B9}\u{30BF}\u{30DE}\u{30A4}\u{30BA}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.ai.learn_more", "\u{8A73}\u{7D30}");
+        m.insert("settings.ai.agents", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}");
+        m.insert("settings.ai.agents_description", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E}\u{64CD}\u{4F5C}\u{306E}\u{5883}\u{754C}\u{3092}\u{8A2D}\u{5B9A}\u{3057}\u{307E}\u{3059}\u{3002}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3067}\u{304D}\u{308B}\u{5185}\u{5BB9}\u{3001}\u{81EA}\u{52D5}\u{6027}\u{306E}\u{30EC}\u{30D9}\u{30EB}\u{3001}\u{627F}\u{8A8D}\u{3092}\u{6C42}\u{3081}\u{308B}\u{30BF}\u{30A4}\u{30DF}\u{30F3}\u{30B0}\u{3092}\u{9078}\u{629E}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}\u{307E}\u{305F}\u{3001}\u{81EA}\u{7136}\u{8A00}\u{8A9E}\u{5165}\u{529B}\u{3001}\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{306E}\u{8A8D}\u{8B58}\u{306A}\u{3069}\u{306E}\u{632F}\u{308B}\u{821E}\u{3044}\u{3092}\u{30D5}\u{30A1}\u{30A4}\u{30F3}\u{30C6}\u{30E5}\u{30FC}\u{30F3}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.profiles", "\u{30D7}\u{30ED}\u{30D5}\u{30A1}\u{30A4}\u{30EB}");
+        m.insert("settings.ai.profiles_description", "\u{30D7}\u{30ED}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{3067}\u{306F}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E}\u{64CD}\u{4F5C}\u{65B9}\u{6CD5}\u{3092}\u{5B9A}\u{7FA9}\u{3067}\u{304D}\u{307E}\u{3059} \u{2014} \u{5B9F}\u{884C}\u{3067}\u{304D}\u{308B}\u{30A2}\u{30AF}\u{30B7}\u{30E7}\u{30F3}\u{3001}\u{627F}\u{8A8D}\u{304C}\u{5FC5}\u{8981}\u{306A}\u{30BF}\u{30A4}\u{30DF}\u{30F3}\u{30B0}\u{3001}\u{30B3}\u{30FC}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{3084}\u{30D7}\u{30E9}\u{30F3}\u{30CB}\u{30F3}\u{30B0}\u{306A}\u{3069}\u{306E}\u{30BF}\u{30B9}\u{30AF}\u{306B}\u{4F7F}\u{7528}\u{3059}\u{308B}\u{30E2}\u{30C7}\u{30EB}\u{307E}\u{3067}\u{3002}\u{307E}\u{305F}\u{3001}\u{500B}\u{3005}\u{306E}\u{30D7}\u{30ED}\u{30B8}\u{30A7}\u{30AF}\u{30C8}\u{306B}\u{30B9}\u{30B3}\u{30FC}\u{30D7}\u{3059}\u{308B}\u{3053}\u{3068}\u{3082}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.add_profile", "\u{30D7}\u{30ED}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{3092}\u{8FFD}\u{52A0}");
+        m.insert("settings.ai.models", "\u{30E2}\u{30C7}\u{30EB}");
+        m.insert("settings.ai.permissions", "\u{8A31}\u{53EF}");
+        m.insert("settings.ai.apply_code_diffs", "\u{30B3}\u{30FC}\u{30C9}\u{5DEE}\u{5206}\u{3092}\u{9069}\u{7528}");
+        m.insert("settings.ai.read_files", "\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{3092}\u{8AAD}\u{307F}\u{53D6}\u{308A}");
+        m.insert("settings.ai.execute_commands", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3092}\u{5B9F}\u{884C}");
+        m.insert("settings.ai.interact_with_running_commands", "\u{5B9F}\u{884C}\u{4E2D}\u{306E}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3068}\u{76F4}\u{63A5}\u{5BFE}\u{8A71}");
+        m.insert("settings.ai.workspace_managed_permissions", "\u{4E00}\u{90E8}\u{306E}\u{8A31}\u{53EF}\u{306F}\u{30EF}\u{30FC}\u{30AF}\u{30B9}\u{30DA}\u{30FC}\u{30B9}\u{306B}\u{3088}\u{3063}\u{3066}\u{7BA1}\u{7406}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.call_mcp_servers", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{547C}\u{3073}\u{51FA}\u{3059}");
+        m.insert("settings.ai.command_denylist", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{62D2}\u{5426}\u{30EA}\u{30B9}\u{30C8}");
+        m.insert("settings.ai.command_denylist.description", "Warp Agent \u{304C}\u{5B9F}\u{884C}\u{306E}\u{8A31}\u{53EF}\u{3092}\u{5E38}\u{306B}\u{6C42}\u{3081}\u{308B}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3068}\u{30DE}\u{30C3}\u{30C1}\u{3059}\u{308B}\u{6B63}\u{5219}\u{8868}\u{73B0}\u{3002}");
+        m.insert("settings.ai.command_allowlist", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{8A31}\u{53EF}\u{30EA}\u{30B9}\u{30C8}");
+        m.insert("settings.ai.command_allowlist.description", "Warp Agent \u{304C}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{5B9F}\u{884C}\u{3067}\u{304D}\u{308B}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3068}\u{30DE}\u{30C3}\u{30C1}\u{3059}\u{308B}\u{6B63}\u{5219}\u{8868}\u{73B0}\u{3002}");
+        m.insert("settings.ai.directory_allowlist", "\u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}\u{8A31}\u{53EF}\u{30EA}\u{30B9}\u{30C8}");
+        m.insert("settings.ai.directory_allowlist.description", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306B}\u{7279}\u{5B9A}\u{306E}\u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}\u{3078}\u{306E}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3092}\u{8A8D}\u{3081}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.mcp_allowlist", "MCP \u{8A31}\u{53EF}\u{30EA}\u{30B9}\u{30C8}");
+        m.insert("settings.ai.mcp_allowlist.description", "Warp Agent \u{304C}\u{3053}\u{308C}\u{3089}\u{306E} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{547C}\u{3073}\u{51FA}\u{3059}\u{3053}\u{3068}\u{3092}\u{8A8D}\u{3081}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.mcp_denylist", "MCP \u{62D2}\u{5426}\u{30EA}\u{30B9}\u{30C8}");
+        m.insert("settings.ai.mcp_denylist.description", "Warp Agent \u{306F}\u{3053}\u{306E}\u{30EA}\u{30B9}\u{30C8}\u{306E} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{547C}\u{3073}\u{51FA}\u{3059}\u{524D}\u{306B}\u{5E38}\u{306B}\u{8A31}\u{53EF}\u{3092}\u{6C42}\u{3081}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.mcp_zero_state_description", "\u{307E}\u{3060} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{8FFD}\u{52A0}\u{3057}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002}\u{8FFD}\u{52A0}\u{3059}\u{308B}\u{3068}\u{3001}MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3068}\u{306E}\u{5BFE}\u{8A71}\u{6642}\u{306E} Warp Agent \u{306E}\u{81EA}\u{52D5}\u{6027}\u{3092}\u{5236}\u{5FA1}\u{3067}\u{304D}\u{308B}\u{3088}\u{3046}\u{306B}\u{306A}\u{308A}\u{307E}\u{3059}\u{3002} ");
+        m.insert("settings.ai.add_a_server", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{8FFD}\u{52A0}");
+        m.insert("settings.ai.or", " \u{307E}\u{305F}\u{306F} ");
+        m.insert("settings.ai.learn_more_mcps", "MCP \u{306B}\u{3064}\u{3044}\u{3066}\u{8A73}\u{7D30}\u{3092}\u{78BA}\u{8A8D}\u{3002}");
+        m.insert("settings.ai.show_model_picker_in_prompt", "\u{30D7}\u{30ED}\u{30F3}\u{30D7}\u{30C8}\u{3067}\u{30E2}\u{30C7}\u{30EB}\u{30D4}\u{30C3}\u{30AB}\u{30FC}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.ai.base_model", "\u{30D9}\u{30FC}\u{30B9}\u{30E2}\u{30C7}\u{30EB}");
+        m.insert("settings.ai.base_model.description", "\u{3053}\u{306E}\u{30E2}\u{30C7}\u{30EB}\u{306F} Warp Agent \u{306E}\u{4E3B}\u{8981}\u{306A}\u{30A8}\u{30F3}\u{30B8}\u{30F3}\u{3068}\u{3057}\u{3066}\u{6A5F}\u{80FD}\u{3057}\u{307E}\u{3059}\u{3002}\u{307B}\u{3068}\u{3093}\u{3069}\u{306E}\u{5BFE}\u{8A71}\u{3092}\u{51E6}\u{7406}\u{3057}\u{3001}\u{5FC5}\u{8981}\u{306B}\u{306A}\u{308B}\u{3068}\u{30D7}\u{30E9}\u{30F3}\u{30CB}\u{30F3}\u{30B0}\u{3084}\u{30B3}\u{30FC}\u{30C9}\u{751F}\u{6210}\u{306A}\u{3069}\u{306E}\u{30BF}\u{30B9}\u{30AF}\u{306B}\u{4ED6}\u{306E}\u{30E2}\u{30C7}\u{30EB}\u{3092}\u{547C}\u{3073}\u{51FA}\u{3057}\u{307E}\u{3059}\u{3002}Warp \u{306F}\u{30E2}\u{30C7}\u{30EB}\u{306E}\u{5229}\u{7528}\u{53EF}\u{80FD}\u{6027}\u{3084}\u{4F1A}\u{8A71}\u{306E}\u{8981}\u{7D04}\u{306A}\u{3069}\u{306E}\u{88DC}\u{52A9}\u{30BF}\u{30B9}\u{30AF}\u{306B}\u{57FA}\u{3065}\u{3044}\u{3066}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{4EE3}\u{66FF}\u{30E2}\u{30C7}\u{30EB}\u{306B}\u{5207}\u{308A}\u{66FF}\u{3048}\u{308B}\u{5834}\u{5408}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.codebase_context", "\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{30B3}\u{30F3}\u{30C6}\u{30AD}\u{30B9}\u{30C8}");
+        m.insert("settings.ai.codebase_context.description", "Warp Agent \u{304C}\u{30B3}\u{30F3}\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{3068}\u{3057}\u{3066}\u{4F7F}\u{7528}\u{3067}\u{304D}\u{308B}\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{306E}\u{30A2}\u{30A6}\u{30C8}\u{30E9}\u{30A4}\u{30F3}\u{3092}\u{751F}\u{6210}\u{3059}\u{308B}\u{3053}\u{3068}\u{3092}\u{8A8D}\u{3081}\u{307E}\u{3059}\u{3002}\u{30B3}\u{30FC}\u{30C9}\u{304C}\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{306B}\u{4FDD}\u{5B58}\u{3055}\u{308C}\u{308B}\u{3053}\u{3068}\u{306F}\u{3042}\u{308A}\u{307E}\u{305B}\u{3093}\u{3002} ");
+        m.insert("settings.ai.toolbar_layout", "\u{30C4}\u{30FC}\u{30EB}\u{30D0}\u{30FC}\u{30EC}\u{30A4}\u{30A2}\u{30A6}\u{30C8}");
+        m.insert("settings.ai.option.agent_decides", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{304C}\u{5224}\u{5B9A}");
+        m.insert("settings.ai.option.always_allow", "\u{5E38}\u{306B}\u{8A8D}\u{53EF}");
+        m.insert("settings.ai.option.always_ask", "\u{5E38}\u{306B}\u{78BA}\u{8A8D}");
+        m.insert("settings.ai.option.ask_on_first_write", "\u{521D}\u{56DE}\u{306E}\u{66F8}\u{304D}\u{8FBC}\u{307F}\u{6642}\u{306B}\u{78BA}\u{8A8D}");
+        m.insert("settings.ai.option.read_only", "\u{8AAD}\u{307F}\u{53D6}\u{308A}\u{5C02}\u{7528}");
+        m.insert("settings.ai.option.supervised", "\u{76E3}\u{7763}\u{4ED8}\u{304D}");
+        m.insert("settings.ai.option.allow_in_specific_directories", "\u{7279}\u{5B9A}\u{306E}\u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}\u{3067}\u{8A8D}\u{53EF}");
+        m.insert("settings.ai.option.new_tab", "\u{65B0}\u{898F}\u{30BF}\u{30D6}");
+        m.insert("settings.ai.option.split_pane", "\u{30DA}\u{30A4}\u{30F3}\u{5206}\u{5272}");
+        m.insert("settings.ai.select_mcp_servers", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{9078}\u{629E}");
+        m.insert("settings.ai.select_coding_agent", "\u{30B3}\u{30FC}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{3092}\u{9078}\u{629E}");
+        m.insert("settings.ai.next_command", "\u{6B21}\u{306E}\u{30B3}\u{30DE}\u{30F3}\u{30C9}");
+        m.insert("settings.ai.next_command.description", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{5C65}\u{6B74}\u{3001}\u{51FA}\u{529B}\u{3001}\u{4E00}\u{822C}\u{7684}\u{306A}\u{30EF}\u{30FC}\u{30AF}\u{30D5}\u{30ED}\u{30FC}\u{306B}\u{57FA}\u{3065}\u{3044}\u{3066} AI \u{306B}\u{6B21}\u{306B}\u{5B9F}\u{884C}\u{3059}\u{308B}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3092}\u{63D0}\u{6848}\u{3055}\u{305B}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.prompt_suggestions", "\u{30D7}\u{30ED}\u{30F3}\u{30D7}\u{30C8}\u{63D0}\u{6848}");
+        m.insert("settings.ai.prompt_suggestions.description", "\u{6700}\u{8FD1}\u{306E}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3068}\u{305D}\u{306E}\u{51FA}\u{529B}\u{306B}\u{57FA}\u{3065}\u{3044}\u{3066} AI \u{306B}\u{81EA}\u{7136}\u{8A00}\u{8A9E}\u{306E}\u{30D7}\u{30ED}\u{30F3}\u{30D7}\u{30C8}\u{3092}\u{30A4}\u{30F3}\u{30E9}\u{30A4}\u{30F3}\u{30D0}\u{30CA}\u{30FC}\u{3068}\u{3057}\u{3066}\u{63D0}\u{6848}\u{3055}\u{305B}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.suggested_code_banners", "\u{30B3}\u{30FC}\u{30C9}\u{63D0}\u{6848}\u{30D0}\u{30CA}\u{30FC}");
+        m.insert("settings.ai.suggested_code_banners.description", "\u{6700}\u{8FD1}\u{306E}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3068}\u{305D}\u{306E}\u{51FA}\u{529B}\u{306B}\u{57FA}\u{3065}\u{3044}\u{3066} AI \u{306B}\u{30B3}\u{30FC}\u{30C9}\u{5DEE}\u{5206}\u{3084}\u{30AF}\u{30A8}\u{30EA}\u{3092}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{30EA}\u{30B9}\u{30C8}\u{306E}\u{30A4}\u{30F3}\u{30E9}\u{30A4}\u{30F3}\u{30D0}\u{30CA}\u{30FC}\u{3068}\u{3057}\u{3066}\u{63D0}\u{6848}\u{3055}\u{305B}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.natural_language_autosuggestions", "\u{81EA}\u{7136}\u{8A00}\u{8A9E}\u{306E}\u{81EA}\u{52D5}\u{63D0}\u{6848}");
+        m.insert("settings.ai.natural_language_autosuggestions.description", "\u{6700}\u{8FD1}\u{306E}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3068}\u{305D}\u{306E}\u{51FA}\u{529B}\u{306B}\u{57FA}\u{3065}\u{3044}\u{3066} AI \u{306B}\u{81EA}\u{7136}\u{8A00}\u{8A9E}\u{306E}\u{81EA}\u{52D5}\u{63D0}\u{6848}\u{3092}\u{63D0}\u{6848}\u{3055}\u{305B}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.shared_block_title_generation", "\u{5171}\u{6709}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{30BF}\u{30A4}\u{30C8}\u{30EB}\u{751F}\u{6210}");
+        m.insert("settings.ai.shared_block_title_generation.description", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3068}\u{51FA}\u{529B}\u{306B}\u{57FA}\u{3065}\u{3044}\u{3066} AI \u{306B}\u{5171}\u{6709}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{306E}\u{30BF}\u{30A4}\u{30C8}\u{30EB}\u{3092}\u{751F}\u{6210}\u{3055}\u{305B}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.commit_pull_request_generation", "\u{30B3}\u{30DF}\u{30C3}\u{30C8} \u{2192} \u{30D7}\u{30EB}\u{30EA}\u{30AF}\u{30A8}\u{30B9}\u{30C8}\u{751F}\u{6210}");
+        m.insert("settings.ai.git_operations_autogen.description", "AI \u{306B}\u{30B3}\u{30DF}\u{30C3}\u{30C8}\u{30E1}\u{30C3}\u{30BB}\u{30FC}\u{30B8}\u{3084}\u{30D7}\u{30EB}\u{30EA}\u{30AF}\u{30A8}\u{30B9}\u{30C8}\u{306E}\u{30BF}\u{30A4}\u{30C8}\u{30EB}\u{3068}\u{8AAC}\u{660E}\u{3092}\u{751F}\u{6210}\u{3055}\u{305B}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.input", "\u{5165}\u{529B}");
+        m.insert("settings.ai.show_input_hint_text", "\u{5165}\u{529B}\u{30D2}\u{30F3}\u{30C8}\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.ai.show_agent_tips", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30C4}\u{30FC}\u{30EB}\u{30C1}\u{30C3}\u{30D7}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.ai.include_agent_commands_in_history", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{5B9F}\u{884C}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3092}\u{5C65}\u{6B74}\u{306B}\u{542B}\u{3081}\u{308B}");
+        m.insert("settings.ai.natural_language_detection", "\u{81EA}\u{7136}\u{8A00}\u{8A9E}\u{691C}\u{51FA}");
+        m.insert("settings.ai.autodetect_agent_prompts", "\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{5165}\u{529B}\u{3067}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30D7}\u{30ED}\u{30F3}\u{30D7}\u{30C8}\u{3092}\u{81EA}\u{52D5}\u{691C}\u{51FA}");
+        m.insert("settings.ai.autodetect_terminal_commands", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{5165}\u{529B}\u{3067}\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3092}\u{81EA}\u{52D5}\u{691C}\u{51FA}");
+        m.insert("settings.ai.incorrect_detection", "\u{8AA4}\u{3063}\u{305F}\u{691C}\u{51FA}\u{304C}\u{3042}\u{308A}\u{307E}\u{3057}\u{305F}\u{304B}\u{FF1F} ");
+        m.insert("settings.ai.incorrect_input_detection", " \u{8AA4}\u{3063}\u{305F}\u{5165}\u{529B}\u{691C}\u{51FA}\u{304C}\u{3042}\u{308A}\u{307E}\u{3057}\u{305F}\u{304B}\u{FF1F} ");
+        m.insert("settings.ai.let_us_know", "\u{304A}\u{77E5}\u{3089}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}");
+        m.insert("settings.ai.nld_description", "\u{81EA}\u{7136}\u{8A00}\u{8A9E}\u{691C}\u{51FA}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{3068}\u{3001}\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{5165}\u{529B}\u{306B}\u{81EA}\u{7136}\u{8A00}\u{8A9E}\u{304C}\u{66F8}\u{304B}\u{308C}\u{3066}\u{3044}\u{308B}\u{3053}\u{3068}\u{3092}\u{691C}\u{51FA}\u{3057}\u{3001}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30E2}\u{30FC}\u{30C9}\u{306B}\u{5207}\u{308A}\u{66FF}\u{3048}\u{3066} AI \u{30AF}\u{30A8}\u{30EA}\u{3092}\u{884C}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.natural_language_denylist", "\u{81EA}\u{7136}\u{8A00}\u{8A9E}\u{62D2}\u{5426}\u{30EA}\u{30B9}\u{30C8}");
+        m.insert("settings.ai.natural_language_denylist.description", "\u{3053}\u{3053}\u{306B}\u{6372}\u{3052}\u{305F}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{306F}\u{81EA}\u{7136}\u{8A00}\u{8A9E}\u{691C}\u{51FA}\u{3092}\u{30C8}\u{30EA}\u{30AC}\u{30FC}\u{3057}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.ai.mcp_servers", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}");
+        m.insert("settings.ai.mcp_description", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{8FFD}\u{52A0}\u{3057}\u{3066} Warp Agent \u{306E}\u{6A5F}\u{80FD}\u{3092}\u{62E1}\u{5F35}\u{3057}\u{307E}\u{3059}\u{3002}MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{306F}\u{6A19}\u{6E96}\u{5316}\u{3055}\u{308C}\u{305F}\u{30A4}\u{30F3}\u{30BF}\u{30FC}\u{30D5}\u{30A7}\u{30A4}\u{30B9}\u{3092}\u{901A}\u{3058}\u{3066}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306B}\u{30C7}\u{30FC}\u{30BF}\u{30BD}\u{30FC}\u{30B9}\u{3084}\u{30C4}\u{30FC}\u{30EB}\u{3092}\u{63B4}\u{9732}\u{3057}\u{307E}\u{3059}\u{3002}\u{672C}\u{8CEA}\u{7684}\u{306B}\u{30D7}\u{30E9}\u{30B0}\u{30A4}\u{30F3}\u{306E}\u{3088}\u{3046}\u{306B}\u{6A5F}\u{80FD}\u{3057}\u{307E}\u{3059}\u{3002} ");
+        m.insert("settings.ai.auto_spawn_mcp_servers", "\u{30B5}\u{30FC}\u{30C9}\u{30D1}\u{30FC}\u{30C6}\u{30A3}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{304B}\u{3089}\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{81EA}\u{52D5}\u{8D77}\u{52D5}");
+        m.insert("settings.ai.auto_spawn_mcp.description", "\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}\u{30B9}\u{30B3}\u{30FC}\u{30D7}\u{306E}\u{30B5}\u{30FC}\u{30C9}\u{30D1}\u{30FC}\u{30C6}\u{30A3} AI \u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{8A2D}\u{5B9A}\u{30D5}\u{30A1}\u{30A4}\u{30EB} (\u{4F8B}\u{3048}\u{3070}\u{30DB}\u{30FC}\u{30E0}\u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}\u{5185}) \u{304B}\u{3089} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{691C}\u{51FA}\u{3057}\u{3066}\u{8D77}\u{52D5}\u{3057}\u{307E}\u{3059}\u{3002}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{5185}\u{3067}\u{691C}\u{51FA}\u{3055}\u{308C}\u{305F}\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{306F}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{8D77}\u{52D5}\u{3055}\u{308C}\u{305A}\u{3001}MCP \u{8A2D}\u{5B9A}\u{30DA}\u{30FC}\u{30B8}\u{304B}\u{3089}\u{500B}\u{5225}\u{306B}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{5FC5}\u{8981}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002} ");
+        m.insert("settings.ai.see_supported_providers", "\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{3055}\u{308C}\u{3066}\u{3044}\u{308B}\u{30D7}\u{30ED}\u{30D0}\u{30A4}\u{30C0}\u{30FC}\u{3092}\u{78BA}\u{8A8D}\u{3002}");
+        m.insert("settings.ai.manage_mcp_servers", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{7BA1}\u{7406}");
+        m.insert("settings.ai.knowledge", "\u{30CA}\u{30EC}\u{30C3}\u{30B8}");
+        m.insert("settings.ai.rules", "\u{30EB}\u{30FC}\u{30EB}");
+        m.insert("settings.ai.rules.description", "\u{30EB}\u{30FC}\u{30EB}\u{306F}\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{3084}\u{7279}\u{5B9A}\u{306E}\u{30EF}\u{30FC}\u{30AF}\u{30D5}\u{30ED}\u{30FC}\u{306E}\u{305F}\u{3081}\u{306E}\u{6163}\u{7FD2}\u{3092} Warp Agent \u{304C}\u{5B88}\u{308B}\u{3053}\u{3068}\u{3092}\u{52A9}\u{3051}\u{307E}\u{3059}\u{3002} ");
+        m.insert("settings.ai.suggested_rules", "\u{63D0}\u{6848}\u{3055}\u{308C}\u{305F}\u{30EB}\u{30FC}\u{30EB}");
+        m.insert("settings.ai.suggested_rules.description", "\u{30A4}\u{30F3}\u{30BF}\u{30E9}\u{30AF}\u{30B7}\u{30E7}\u{30F3}\u{306B}\u{57FA}\u{3065}\u{3044}\u{3066} AI \u{306B}\u{4FDD}\u{5B58}\u{3059}\u{308B}\u{30EB}\u{30FC}\u{30EB}\u{3092}\u{63D0}\u{6848}\u{3055}\u{305B}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.manage_rules", "\u{30EB}\u{30FC}\u{30EB}\u{3092}\u{7BA1}\u{7406}");
+        m.insert("settings.ai.warp_drive_as_agent_context", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30B3}\u{30F3}\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{3068}\u{3057}\u{3066}\u{306E} Warp Drive");
+        m.insert("settings.ai.warp_drive_context.description", "Warp Agent \u{306F} Warp Drive \u{306E}\u{30B3}\u{30F3}\u{30C6}\u{30F3}\u{30C4}\u{3092}\u{6D3B}\u{7528}\u{3057}\u{3066}\u{3001}\u{500B}\u{4EBA}\u{3084}\u{30C1}\u{30FC}\u{30E0}\u{306E}\u{958B}\u{767A}\u{8005}\u{30EF}\u{30FC}\u{30AF}\u{30D5}\u{30ED}\u{30FC}\u{3068}\u{74B0}\u{5883}\u{306B}\u{5408}\u{308F}\u{305B}\u{305F}\u{5FDC}\u{7B54}\u{3092}\u{4F5C}\u{6210}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}\u{30EF}\u{30FC}\u{30AF}\u{30D5}\u{30ED}\u{30FC}\u{3001}\u{30CE}\u{30FC}\u{30C8}\u{30D6}\u{30C3}\u{30AF}\u{3001}\u{74B0}\u{5883}\u{5909}\u{6570}\u{306A}\u{3069}\u{304C}\u{542B}\u{307E}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.voice", "\u{30DC}\u{30A4}\u{30B9}");
+        m.insert("settings.ai.voice_input", "\u{30DC}\u{30A4}\u{30B9}\u{5165}\u{529B}");
+        m.insert("settings.ai.voice_input.description", "\u{30DC}\u{30A4}\u{30B9}\u{5165}\u{529B}\u{3092}\u{4F7F}\u{7528}\u{3059}\u{308B}\u{3068}\u{3001}\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{306B}\u{76F4}\u{63A5}\u{8A71}\u{3059}\u{3053}\u{3068}\u{3067} Warp \u{3092}\u{64CD}\u{4F5C}\u{3067}\u{304D}\u{307E}\u{3059} (");
+        m.insert("settings.ai.voice_input_key", "\u{30DC}\u{30A4}\u{30B9}\u{5165}\u{529B}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{30AD}\u{30FC}");
+        m.insert("settings.ai.voice_input.press_hold", "\u{9577}\u{62BC}\u{3057}\u{3067}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{3002}");
+        m.insert("settings.ai.other", "\u{305D}\u{306E}\u{4ED6}");
+        m.insert("settings.ai.show_oz_changelog", "\u{65B0}\u{898F}\u{4F1A}\u{8A71}\u{30D3}\u{30E5}\u{30FC}\u{3067} Oz \u{5909}\u{66F4}\u{30ED}\u{30B0}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.ai.show_use_agent_footer", "\u{300C}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{3092}\u{4F7F}\u{7528}\u{300D}\u{30D5}\u{30C3}\u{30BF}\u{30FC}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.ai.use_agent_footer.description", "\u{9577}\u{6642}\u{9593}\u{5B9F}\u{884C}\u{306E}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3067}\u{300C}\u{30D5}\u{30EB}\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{4F7F}\u{7528}\u{300D}\u{5BFE}\u{5FDC}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E}\u{30D2}\u{30F3}\u{30C8}\u{3092}\u{8868}\u{793A}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.show_conversation_history", "\u{30C4}\u{30FC}\u{30EB}\u{30D1}\u{30CD}\u{30EB}\u{306B}\u{4F1A}\u{8A71}\u{5C65}\u{6B74}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.ai.agent_thinking_display", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E}\u{601D}\u{8003}\u{8868}\u{793A}");
+        m.insert("settings.ai.thinking_display.description", "\u{63A8}\u{7406}/\u{601D}\u{8003}\u{30C8}\u{30EC}\u{30FC}\u{30B9}\u{306E}\u{8868}\u{793A}\u{65B9}\u{6CD5}\u{3092}\u{5236}\u{5FA1}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.preferred_conversation_layout", "\u{65E2}\u{5B58}\u{306E}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{4F1A}\u{8A71}\u{3092}\u{958B}\u{304F}\u{969B}\u{306E}\u{5E0C}\u{671B}\u{30EC}\u{30A4}\u{30A2}\u{30A6}\u{30C8}");
+        m.insert("settings.ai.third_party_cli_agents", "\u{30B5}\u{30FC}\u{30C9}\u{30D1}\u{30FC}\u{30C6}\u{30A3} CLI \u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}");
+        m.insert("settings.ai.show_coding_agent_toolbar", "\u{30B3}\u{30FC}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30C4}\u{30FC}\u{30EB}\u{30D0}\u{30FC}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.ai.coding_agent_toolbar.description", "\u{30B3}\u{30FC}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E}\u{5B9F}\u{884C}\u{6642}\u{306B}\u{30AF}\u{30A4}\u{30C3}\u{30AF}\u{30A2}\u{30AF}\u{30B7}\u{30E7}\u{30F3}\u{3064}\u{304D}\u{306E}\u{30C4}\u{30FC}\u{30EB}\u{30D0}\u{30FC}\u{3092}\u{8868}\u{793A}\u{3057}\u{307E}\u{3059} ");
+        m.insert("settings.ai.auto_toggle_rich_input", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E}\u{72B6}\u{614B}\u{306B}\u{5FDC}\u{3058}\u{3066}\u{30EA}\u{30C3}\u{30C1}\u{5165}\u{529B}\u{3092}\u{81EA}\u{52D5}\u{8868}\u{793A}/\u{96A0}\u{3059}");
+        m.insert("settings.ai.requires_warp_plugin", "\u{30B3}\u{30FC}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E} Warp \u{30D7}\u{30E9}\u{30B0}\u{30A4}\u{30F3}\u{304C}\u{5FC5}\u{8981}");
+        m.insert("settings.ai.auto_open_rich_input", "\u{30B3}\u{30FC}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{958B}\u{59CB}\u{6642}\u{306B}\u{30EA}\u{30C3}\u{30C1}\u{5165}\u{529B}\u{3092}\u{81EA}\u{52D5}\u{958B}\u{304F}");
+        m.insert("settings.ai.auto_dismiss_rich_input", "\u{30D7}\u{30ED}\u{30F3}\u{30D7}\u{30C8}\u{9001}\u{4FE1}\u{5F8C}\u{306B}\u{30EA}\u{30C3}\u{30C1}\u{5165}\u{529B}\u{3092}\u{81EA}\u{52D5}\u{9589}\u{3058}\u{308B}");
+        m.insert("settings.ai.commands_enable_toolbar", "\u{30C4}\u{30FC}\u{30EB}\u{30D0}\u{30FC}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{30B3}\u{30DE}\u{30F3}\u{30C9}");
+        m.insert("settings.ai.toolbar_command_patterns.description", "\u{4E00}\u{81F4}\u{3059}\u{308B}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{306B}\u{5BFE}\u{3057}\u{3066}\u{30B3}\u{30FC}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30C4}\u{30FC}\u{30EB}\u{30D0}\u{30FC}\u{3092}\u{8868}\u{793A}\u{3059}\u{308B}\u{30EA}\u{30B8}\u{30A7}\u{30AF}\u{30B9}\u{30D1}\u{30BF}\u{30FC}\u{30F3}\u{3092}\u{8FFD}\u{52A0}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.agent_attribution", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{5E45}\u{5F52}");
+        m.insert("settings.ai.enable_agent_attribution", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{5E45}\u{5F52}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.ai.agent_attribution.description", "Oz \u{306F}\u{4F5C}\u{6210}\u{3057}\u{305F}\u{30B3}\u{30DF}\u{30C3}\u{30C8}\u{30E1}\u{30C3}\u{30BB}\u{30FC}\u{30B8}\u{3084}\u{30D7}\u{30EB}\u{30EA}\u{30AF}\u{30A8}\u{30B9}\u{30C8}\u{306B}\u{5E45}\u{5F52}\u{3092}\u{8FFD}\u{52A0}\u{3067}\u{304D}\u{307E}\u{3059}");
+        m.insert("settings.ai.experimental", "\u{5B9F}\u{9A13}\u{7684}");
+        m.insert("settings.ai.computer_use_cloud_agents", "\u{30AF}\u{30E9}\u{30A6}\u{30C9}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E}\u{30B3}\u{30F3}\u{30D4}\u{30E5}\u{30FC}\u{30BF}\u{4F7F}\u{7528}");
+        m.insert("settings.ai.computer_use.description", "Warp \u{30A2}\u{30D7}\u{30EA}\u{304B}\u{3089}\u{958B}\u{59CB}\u{3055}\u{308C}\u{305F}\u{30AF}\u{30E9}\u{30A6}\u{30C9}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{4F1A}\u{8A71}\u{3067}\u{30B3}\u{30F3}\u{30D4}\u{30E5}\u{30FC}\u{30BF}\u{4F7F}\u{7528}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.orchestration", "\u{30AA}\u{30FC}\u{30B1}\u{30B9}\u{30C8}\u{30EC}\u{30FC}\u{30B7}\u{30E7}\u{30F3}");
+        m.insert("settings.ai.orchestration.description", "\u{30DE}\u{30EB}\u{30C1}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30AA}\u{30FC}\u{30B1}\u{30B9}\u{30C8}\u{30EC}\u{30FC}\u{30B7}\u{30E7}\u{30F3}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3057}\u{3001}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{304C}\u{4E26}\u{884C}\u{30B5}\u{30D6}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{3092}\u{8D77}\u{52D5}\u{3057}\u{3066}\u{5354}\u{8ABF}\u{3067}\u{304D}\u{308B}\u{3088}\u{3046}\u{306B}\u{306A}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.api_keys", "API \u{30AD}\u{30FC}");
+        m.insert("settings.ai.api_keys.description", "\u{30E2}\u{30C7}\u{30EB}\u{30D7}\u{30ED}\u{30D0}\u{30A4}\u{30C0}\u{30FC}\u{306E}\u{30AA}\u{30EA}\u{30B8}\u{30CA}\u{30EB} API \u{30AD}\u{30FC}\u{3092} Warp Agent \u{306B}\u{4F7F}\u{7528}\u{3055}\u{305B}\u{307E}\u{3059}\u{3002}API \u{30AD}\u{30FC}\u{306F}\u{30ED}\u{30FC}\u{30AB}\u{30EB}\u{306B}\u{4FDD}\u{5B58}\u{3055}\u{308C}\u{30AF}\u{30E9}\u{30A6}\u{30C9}\u{306B}\u{540C}\u{671F}\u{3055}\u{308C}\u{307E}\u{305B}\u{3093}\u{3002}\u{81EA}\u{52D5}\u{30E2}\u{30C7}\u{30EB}\u{3084} API \u{30AD}\u{30FC}\u{3092}\u{63D0}\u{4F9B}\u{3057}\u{3066}\u{3044}\u{306A}\u{3044}\u{30D7}\u{30ED}\u{30D0}\u{30A4}\u{30C0}\u{30FC}\u{306E}\u{30E2}\u{30C7}\u{30EB}\u{3092}\u{4F7F}\u{7528}\u{3059}\u{308B}\u{3068} Warp \u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{3092}\u{6D88}\u{8CBB}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.warp_credit_fallback", "Warp \u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{30D5}\u{30A9}\u{30FC}\u{30EB}\u{30D0}\u{30C3}\u{30AF}");
+        m.insert("settings.ai.warp_credit_fallback.description", "\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{3068}\u{3001}\u{30A8}\u{30E9}\u{30FC}\u{6642}\u{306B}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30EA}\u{30AF}\u{30A8}\u{30B9}\u{30C8}\u{304C} Warp \u{304C}\u{63D0}\u{4F9B}\u{3059}\u{308B}\u{30E2}\u{30C7}\u{30EB}\u{306E}\u{3044}\u{305A}\u{308C}\u{304B}\u{306B}\u{30EB}\u{30FC}\u{30C6}\u{30A3}\u{30F3}\u{30B0}\u{3055}\u{308C}\u{308B}\u{5834}\u{5408}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}Warp \u{306F} Warp \u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{3088}\u{308A}\u{3082} API \u{30AD}\u{30FC}\u{3092}\u{512A}\u{5148}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.aws_bedrock", "AWS Bedrock");
+        m.insert("settings.ai.use_aws_bedrock_credentials", "AWS Bedrock \u{8A8D}\u{8A3C}\u{60C5}\u{5831}\u{3092}\u{4F7F}\u{7528}");
+        m.insert("settings.ai.aws_bedrock_credentials.description", "Warp \u{306F} Bedrock \u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{30E2}\u{30C7}\u{30EB}\u{306E}\u{305F}\u{3081}\u{306E}\u{30ED}\u{30FC}\u{30AB}\u{30EB} AWS CLI \u{8A8D}\u{8A3C}\u{60C5}\u{5831}\u{3092}\u{8AAD}\u{307F}\u{8FBC}\u{307F}\u{9001}\u{4FE1}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.aws_bedrock_credentials.admin_description", "Warp \u{306F} Bedrock \u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{30E2}\u{30C7}\u{30EB}\u{306E}\u{305F}\u{3081}\u{306E}\u{30ED}\u{30FC}\u{30AB}\u{30EB} AWS CLI \u{8A8D}\u{8A3C}\u{60C5}\u{5831}\u{3092}\u{8AAD}\u{307F}\u{8FBC}\u{307F}\u{9001}\u{4FE1}\u{3057}\u{307E}\u{3059}\u{3002}\u{3053}\u{306E}\u{8A2D}\u{5B9A}\u{306F}\u{7D44}\u{7E54}\u{306B}\u{3088}\u{3063}\u{3066}\u{7BA1}\u{7406}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.login_command", "\u{30ED}\u{30B0}\u{30A4}\u{30F3}\u{30B3}\u{30DE}\u{30F3}\u{30C9}");
+        m.insert("settings.ai.aws_profile", "AWS \u{30D7}\u{30ED}\u{30D5}\u{30A1}\u{30A4}\u{30EB}");
+        m.insert("settings.ai.auto_run_login_command", "\u{30ED}\u{30B0}\u{30A4}\u{30F3}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3092}\u{81EA}\u{52D5}\u{5B9F}\u{884C}");
+        m.insert("settings.ai.auto_login.description", "\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{3068}\u{3001}AWS Bedrock \u{8A8D}\u{8A3C}\u{60C5}\u{5831}\u{304C}\u{671F}\u{9650}\u{5207}\u{308C}\u{306B}\u{306A}\u{308B}\u{3068}\u{30ED}\u{30B0}\u{30A4}\u{30F3}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{304C}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{5B9F}\u{884C}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.ai.placeholder.code_repo", "\u{4F8B}: ~/code-repos/repo");
+        m.insert("settings.ai.placeholder.commands_comma", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{3001}\u{30AB}\u{30F3}\u{30DE}\u{533A}\u{5207}\u{308A}");
+        m.insert("settings.ai.placeholder.regex_ls", "\u{4F8B}: ls .*");
+        m.insert("settings.ai.placeholder.regex_rm", "\u{4F8B}: rm .*");
+        m.insert("settings.ai.placeholder.command_regex", "\u{30B3}\u{30DE}\u{30F3}\u{30C9} (\u{6B63}\u{5219}\u{8868}\u{73B0}\u{30B5}\u{30DD}\u{30FC}\u{30C8})");
+
+        // Code page
+        m.insert("settings.code.indexing.title", "\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{306E}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}");
+        m.insert("settings.code.indexing.index_new_folder", "\u{65B0}\u{898F}\u{30D5}\u{30A9}\u{30EB}\u{30C0}\u{3092}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}");
+        m.insert("settings.code.indexing.init_settings", "\u{521D}\u{671F}\u{5316}\u{8A2D}\u{5B9A}");
+        m.insert("settings.code.indexing.description", "Warp \u{306F}\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{691C}\u{7D22}\u{3084}\u{30B3}\u{30F3}\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{611F}\u{77E5}\u{306E}\u{30B5}\u{30B8}\u{30A7}\u{30B9}\u{30C8}\u{306A}\u{3069}\u{306E} AI \u{6A5F}\u{80FD}\u{306E}\u{305F}\u{3081}\u{306B}\u{30B3}\u{30FC}\u{30C9}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{3092}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.code.indexing.exclude_description", "\u{7279}\u{5B9A}\u{306E}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{307E}\u{305F}\u{306F}\u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}\u{3092}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{304B}\u{3089}\u{9664}\u{5916}\u{3059}\u{308B}\u{306B}\u{306F}\u{3001}.warpindexignore \u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{306B}\u{8FFD}\u{52A0}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.code.indexing.index_new_folder.description", "\u{3053}\u{306E}\u{8A2D}\u{5B9A}\u{3092} true \u{306B}\u{3059}\u{308B}\u{3068}\u{3001}Warp \u{306F}\u{65B0}\u{3057}\u{304F}\u{767A}\u{898B}\u{3055}\u{308C}\u{305F}\u{30D5}\u{30A9}\u{30EB}\u{30C0}\u{3092}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.code.indexing.disabled_by_admin", "\u{30C1}\u{30FC}\u{30E0}\u{7BA1}\u{7406}\u{8005}\u{304C}\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3092}\u{7121}\u{52B9}\u{306B}\u{3057}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.code.indexing.enabled_by_admin", "\u{30C1}\u{30FC}\u{30E0}\u{7BA1}\u{7406}\u{8005}\u{304C}\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3057}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.code.indexing.ai_required", "\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3092}\u{4F7F}\u{7528}\u{3059}\u{308B}\u{306B}\u{306F} AI \u{6A5F}\u{80FD}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{5FC5}\u{8981}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.code.indexing.max_indices", "\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{306E}\u{6700}\u{5927}\u{6570}\u{306B}\u{9054}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}\u{65B0}\u{3057}\u{3044}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3092}\u{8FFD}\u{52A0}\u{3059}\u{308B}\u{524D}\u{306B}\u{65E2}\u{5B58}\u{306E}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3092}\u{524A}\u{9664}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.code.indexing.initialized_folders", "\u{521D}\u{671F}\u{5316}\u{6E08}\u{307F} / \u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{6E08}\u{307F}\u{30D5}\u{30A9}\u{30EB}\u{30C0}");
+        m.insert("settings.code.indexing.no_folders", "\u{307E}\u{3060}\u{30D5}\u{30A9}\u{30EB}\u{30C0}\u{304C}\u{521D}\u{671F}\u{5316}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.code.indexing.open_project_rules", "\u{30D7}\u{30ED}\u{30B8}\u{30A7}\u{30AF}\u{30C8}\u{30EB}\u{30FC}\u{30EB}\u{3092}\u{958B}\u{304F}");
+        m.insert("settings.code.indexing.status_label", "\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}");
+        m.insert("settings.code.indexing.no_index", "\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{672A}\u{4F5C}\u{6210}");
+        m.insert("settings.code.indexing.discovered_chunks", "{total_nodes} \u{30C1}\u{30E3}\u{30F3}\u{30AF}\u{3092}\u{767A}\u{898B}");
+        m.insert("settings.code.indexing.syncing_progress", "\u{540C}\u{671F}\u{4E2D} - {completed_nodes} / {total_nodes}");
+        m.insert("settings.code.indexing.syncing", "\u{540C}\u{671F}\u{4E2D}...");
+        m.insert("settings.code.indexing.synced", "\u{540C}\u{671F}\u{6E08}\u{307F}");
+        m.insert("settings.code.indexing.too_large", "\u{30B3}\u{30FC}\u{30C9}\u{30D9}\u{30FC}\u{30B9}\u{304C}\u{5927}\u{304D}\u{3059}\u{304E}\u{307E}\u{3059}");
+        m.insert("settings.code.indexing.stale", "\u{6709}\u{52B9}\u{671F}\u{9650}\u{5207}\u{308C}");
+        m.insert("settings.code.indexing.failed", "\u{5931}\u{6557}");
+        m.insert("settings.code.indexing.no_index_built", "\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{672A}\u{69CB}\u{7BC9}");
+        m.insert("settings.code.editor.title", "\u{30A8}\u{30C7}\u{30A3}\u{30BF}\u{3068}\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}");
+        m.insert("settings.code.editor.category", "\u{30B3}\u{30FC}\u{30C9}\u{30A8}\u{30C7}\u{30A3}\u{30BF}\u{3068}\u{30EC}\u{30D3}\u{30E5}\u{30FC}");
+        m.insert("settings.code.editor.default_app", "\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}\u{30A2}\u{30D7}\u{30EA}");
+        m.insert("settings.code.editor.layout.split_pane", "\u{30B9}\u{30D7}\u{30EA}\u{30C3}\u{30C8}\u{30DA}\u{30A4}\u{30F3}");
+        m.insert("settings.code.editor.layout.new_tab", "\u{65B0}\u{898F}\u{30BF}\u{30D6}");
+        m.insert("settings.code.editor.open_file_links", "\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{958B}\u{304F}\u{30A8}\u{30C7}\u{30A3}\u{30BF}\u{3092}\u{9078}\u{629E}");
+        m.insert("settings.code.editor.open_code_panel_files", "\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30D1}\u{30CD}\u{30EB}\u{3001}\u{30D7}\u{30ED}\u{30B8}\u{30A7}\u{30AF}\u{30C8}\u{30A8}\u{30AF}\u{30B9}\u{30D7}\u{30ED}\u{30FC}\u{30E9}\u{3001}\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}\u{691C}\u{7D22}\u{304B}\u{3089}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{3092}\u{958B}\u{304F}\u{30A8}\u{30C7}\u{30A3}\u{30BF}\u{3092}\u{9078}\u{629E}");
+        m.insert("settings.code.editor.open_files_layout", "Warp \u{3067}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{3092}\u{958B}\u{304F}\u{30EC}\u{30A4}\u{30A2}\u{30A6}\u{30C8}\u{3092}\u{9078}\u{629E}");
+        m.insert("settings.code.editor.group_files", "\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{3092}\u{5358}\u{4E00}\u{30A8}\u{30C7}\u{30A3}\u{30BF}\u{30DA}\u{30A4}\u{30F3}\u{306B}\u{30B0}\u{30EB}\u{30FC}\u{30D7}\u{5316}");
+        m.insert("settings.code.editor.group_files.description", "\u{3053}\u{306E}\u{8A2D}\u{5B9A}\u{304C}\u{30AA}\u{30F3}\u{306B}\u{306A}\u{308B}\u{3068}\u{3001}\u{540C}\u{3058}\u{30BF}\u{30D6}\u{3067}\u{958B}\u{304B}\u{308C}\u{305F}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{306F}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{5358}\u{4E00}\u{306E}\u{30A8}\u{30C7}\u{30A3}\u{30BF}\u{30DA}\u{30A4}\u{30F3}\u{306B}\u{30B0}\u{30EB}\u{30FC}\u{30D7}\u{5316}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.code.editor.open_markdown_in_viewer", "\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}\u{3067} Warp \u{306E} Markdown \u{30D3}\u{30E5}\u{30FC}\u{30A2}\u{3067} Markdown \u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{3092}\u{958B}\u{304F}");
+        m.insert("settings.code.editor.auto_open_code_review_panel", "\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30D1}\u{30CD}\u{30EB}\u{3092}\u{81EA}\u{52D5}\u{958B}\u{304F}");
+        m.insert("settings.code.editor.auto_open_code_review_panel.description", "\u{3053}\u{306E}\u{8A2D}\u{5B9A}\u{304C}\u{30AA}\u{30F3}\u{306B}\u{306A}\u{308B}\u{3068}\u{3001}\u{4F1A}\u{8A71}\u{3067}\u{6700}\u{521D}\u{306B}\u{53D7}\u{5165}\u{308C}\u{305F}\u{5DEE}\u{5206}\u{306E}\u{5834}\u{6240}\u{3067}\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30D1}\u{30CD}\u{30EB}\u{304C}\u{958B}\u{304D}\u{307E}\u{3059}");
+        m.insert("settings.code.editor.show_code_review_button", "\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30DC}\u{30BF}\u{30F3}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.code.editor.show_code_review_button.description", "\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}\u{306E}\u{53F3}\u{4E0A}\u{306B}\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30D1}\u{30CD}\u{30EB}\u{3092}\u{5207}\u{308A}\u{66FF}\u{3048}\u{308B}\u{30DC}\u{30BF}\u{30F3}\u{3092}\u{8868}\u{793A}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.code.editor.show_diff_stats", "\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30DC}\u{30BF}\u{30F3}\u{306B}\u{5DEE}\u{5206}\u{7D71}\u{8A08}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.code.editor.show_diff_stats.description", "\u{30B3}\u{30FC}\u{30C9}\u{30EC}\u{30D3}\u{30E5}\u{30FC}\u{30DC}\u{30BF}\u{30F3}\u{306B}\u{8FFD}\u{52A0}\u{3068}\u{524A}\u{9664}\u{3055}\u{308C}\u{305F}\u{884C}\u{6570}\u{3092}\u{8868}\u{793A}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.code.editor.project_explorer", "\u{30D7}\u{30ED}\u{30B8}\u{30A7}\u{30AF}\u{30C8}\u{30A8}\u{30AF}\u{30B9}\u{30D7}\u{30ED}\u{30FC}\u{30E9}\u{30FC}");
+        m.insert("settings.code.editor.project_explorer.description", "\u{5DE6}\u{5074}\u{306E}\u{30C4}\u{30FC}\u{30EB}\u{30D1}\u{30CD}\u{30EB}\u{306B} IDE \u{30B9}\u{30BF}\u{30A4}\u{30EB}\u{306E}\u{30D7}\u{30ED}\u{30B8}\u{30A7}\u{30AF}\u{30C8}\u{30A8}\u{30AF}\u{30B9}\u{30D7}\u{30ED}\u{30FC}\u{30E9}\u{30FC}/\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{30C4}\u{30EA}\u{30FC}\u{3092}\u{8FFD}\u{52A0}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.code.editor.global_file_search", "\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{691C}\u{7D22}");
+        m.insert("settings.code.editor.global_file_search.description", "\u{5DE6}\u{5074}\u{306E}\u{30C4}\u{30FC}\u{30EB}\u{30D1}\u{30CD}\u{30EB}\u{306B}\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{691C}\u{7D22}\u{3092}\u{8FFD}\u{52A0}\u{3057}\u{307E}\u{3059}\u{3002}");
+
+        // Code page - LSP Servers
+        m.insert("settings.code.lsp.title", "LSP \u{30B5}\u{30FC}\u{30D0}\u{30FC}");
+        m.insert("settings.code.lsp.installed", "\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}\u{6E08}\u{307F}");
+        m.insert("settings.code.lsp.installing", "\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}\u{4E2D}...");
+        m.insert("settings.code.lsp.checking", "\u{78BA}\u{8A8D}\u{4E2D}...");
+        m.insert("settings.code.lsp.available_download", "\u{30C0}\u{30A6}\u{30F3}\u{30ED}\u{30FC}\u{30C9}\u{53EF}\u{80FD}");
+        m.insert("settings.code.lsp.restart", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{518D}\u{8D77}\u{52D5}");
+        m.insert("settings.code.lsp.view_logs", "\u{30ED}\u{30B0}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.code.lsp.status_available", "\u{5229}\u{7528}\u{53EF}\u{80FD}");
+        m.insert("settings.code.lsp.status_busy", "\u{7E41}\u{5FD9}");
+        m.insert("settings.code.lsp.status_failed", "\u{5931}\u{6557}");
+        m.insert("settings.code.lsp.status_stopped", "\u{505C}\u{6B62}");
+        m.insert("settings.code.lsp.status_not_running", "\u{672A}\u{5B9F}\u{884C}");
+
+        // Keybindings page
+        m.insert("settings.keybindings", "\u{30AD}\u{30FC}\u{30DC}\u{30FC}\u{30C9}\u{30B7}\u{30E7}\u{30FC}\u{30C8}\u{30AB}\u{30C3}\u{30C8}");
+        m.insert("settings.keybindings.search_placeholder", "\u{540D}\u{524D}\u{307E}\u{305F}\u{306F}\u{30AD}\u{30FC}\u{3067}\u{691C}\u{7D22}\u{FF08}\u{4F8B} \"cmd d\"\u{FF09}");
+        m.insert("settings.keybindings.conflict_warning", "\u{3053}\u{306E}\u{30B7}\u{30E7}\u{30FC}\u{30C8}\u{30AB}\u{30C3}\u{30C8}\u{306F}\u{4ED6}\u{306E}\u{30AD}\u{30FC}\u{30D0}\u{30A4}\u{30F3}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{3068}\u{7AF6}\u{5408}\u{3057}\u{3066}\u{3044}\u{307E}\u{3059}");
+        m.insert("settings.keybindings.default", "\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}");
+        m.insert("settings.keybindings.clear", "\u{30AF}\u{30EA}\u{30A2}");
+        m.insert("settings.keybindings.press_new_shortcut", "\u{65B0}\u{3057}\u{3044}\u{30AD}\u{30FC}\u{30DC}\u{30FC}\u{30C9}\u{30B7}\u{30E7}\u{30FC}\u{30C8}\u{30AB}\u{30C3}\u{30C8}\u{3092}\u{62BC}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}");
+        m.insert("settings.keybindings.add_custom", "\u{4E0B}\u{8A18}\u{306E}\u{30A2}\u{30AF}\u{30B7}\u{30E7}\u{30F3}\u{306B}\u{30AB}\u{30B9}\u{30BF}\u{30E0}\u{30AD}\u{30FC}\u{30D0}\u{30A4}\u{30F3}\u{30C7}\u{30A3}\u{30F3}\u{30B0}\u{3092}\u{8FFD}\u{52A0}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.keybindings.use", "\u{4F7F}\u{7528}");
+        m.insert("settings.keybindings.not_synced", "\u{30AD}\u{30FC}\u{30DC}\u{30FC}\u{30C9}\u{30B7}\u{30E7}\u{30FC}\u{30C8}\u{30AB}\u{30C3}\u{30C8}\u{306F}\u{30AF}\u{30E9}\u{30A6}\u{30C9}\u{306B}\u{540C}\u{671F}\u{3055}\u{308C}\u{307E}\u{305B}\u{3093}");
+        m.insert("settings.keybindings.configure", "\u{30AD}\u{30FC}\u{30DC}\u{30FC}\u{30C9}\u{30B7}\u{30E7}\u{30FC}\u{30C8}\u{30AB}\u{30C3}\u{30C8}\u{3092}\u{8A2D}\u{5B9A}");
+        m.insert("settings.keybindings.command", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}");
+
+        // Privacy page
+        m.insert("settings.privacy", "\u{30D7}\u{30E9}\u{30A4}\u{30D0}\u{30B7}\u{30FC}");
+        m.insert("settings.privacy.safe_mode", "\u{30B7}\u{30FC}\u{30AF}\u{30EC}\u{30C3}\u{30C8}\u{30EA}\u{30C0}\u{30AF}\u{30B7}\u{30E7}\u{30F3}");
+        m.insert("settings.privacy.safe_mode.description", "\u{3053}\u{306E}\u{8A2D}\u{5B9A}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{3068}\u{3001}Warp \u{306F}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{3001}Warp Drive \u{30AA}\u{30D6}\u{30B8}\u{30A7}\u{30AF}\u{30C8}\u{306E}\u{5185}\u{5BB9}\u{3001}\u{304A}\u{3088}\u{3073} Oz \u{30D7}\u{30ED}\u{30F3}\u{30D7}\u{30C8}\u{5185}\u{306E}\u{6F5C}\u{5728}\u{7684}\u{306A}\u{611F}\u{5EA6}\u{60C5}\u{5831}\u{3092}\u{30B9}\u{30AD}\u{30E3}\u{30F3}\u{3057}\u{3001}\u{3053}\u{306E}\u{30C7}\u{30FC}\u{30BF}\u{306E}\u{4FDD}\u{5B58}\u{3084}\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3078}\u{306E}\u{9001}\u{4FE1}\u{3092}\u{9632}\u{6B62}\u{3057}\u{307E}\u{3059}\u{3002}\u{30EA}\u{30B8}\u{30E5}\u{30E9}\u{30A8}\u{30AF}\u{30B9}\u{30D7}\u{30EC}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{3067}\u{3053}\u{306E}\u{30EA}\u{30B9}\u{30C8}\u{3092}\u{30AB}\u{30B9}\u{30BF}\u{30DE}\u{30A4}\u{30BA}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.user_secret_regex", "\u{30AB}\u{30B9}\u{30BF}\u{30E0}\u{30B7}\u{30FC}\u{30AF}\u{30EC}\u{30C3}\u{30C8}\u{30EA}\u{30C0}\u{30AF}\u{30B7}\u{30E7}\u{30F3}");
+        m.insert("settings.privacy.user_secret_regex.description", "\u{6B63}\u{5219}\u{8868}\u{73B0}\u{3092}\u{4F7F}\u{7528}\u{3057}\u{3066}\u{3001}\u{30EA}\u{30C0}\u{30AF}\u{30C8}\u{3057}\u{305F}\u{3044}\u{8FFD}\u{52A0}\u{306E}\u{30B7}\u{30FC}\u{30AF}\u{30EC}\u{30C3}\u{30C8}\u{3084}\u{30C7}\u{30FC}\u{30BF}\u{3092}\u{5B9A}\u{7FA9}\u{3057}\u{307E}\u{3059}\u{3002}\u{3053}\u{306E}\u{5909}\u{66F4}\u{306F}\u{6B21}\u{306E}\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{5B9F}\u{884C}\u{6642}\u{306B}\u{6709}\u{52B9}\u{306B}\u{306A}\u{308A}\u{307E}\u{3059}\u{3002}\u{6B63}\u{5219}\u{8868}\u{73B0}\u{306E}\u{524D}\u{7F6E}\u{3068}\u{3057}\u{3066} (?i) \u{30D5}\u{30E9}\u{30B0}\u{3092}\u{4F7F}\u{7528}\u{3059}\u{308B}\u{3068}\u{3001}\u{5927}\u{5C0F}\u{6587}\u{5B57}\u{3092}\u{533A}\u{5225}\u{3057}\u{306A}\u{304F}\u{306A}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.telemetry", "Warp \u{306E}\u{6539}\u{5584}\u{306B}\u{5354}\u{529B}");
+        m.insert("settings.privacy.telemetry.description", "\u{30A2}\u{30D7}\u{30EA}\u{5206}\u{6790}\u{306F}\u{305D}\u{306A}\u{305F}\u{306B}\u{3068}\u{3063}\u{3066}\u{3088}\u{308A}\u{826F}\u{3044}\u{88FD}\u{54C1}\u{3092}\u{4F5C}\u{308B}\u{305F}\u{3081}\u{306B}\u{5F79}\u{7ACB}\u{3061}\u{307E}\u{3059}\u{3002}Warp \u{306E} AI \u{6A5F}\u{80FD}\u{3092}\u{6539}\u{5584}\u{3059}\u{308B}\u{305F}\u{3081}\u{306B}\u{3001}\u{7279}\u{5B9A}\u{306E}\u{30B3}\u{30F3}\u{30BD}\u{30FC}\u{30EB}\u{30A4}\u{30F3}\u{30BF}\u{30E9}\u{30AF}\u{30B7}\u{30E7}\u{30F3}\u{3092}\u{53CE}\u{96C6}\u{3059}\u{308B}\u{5834}\u{5408}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.telemetry.description_old", "\u{30A2}\u{30D7}\u{30EA}\u{5206}\u{6790}\u{306F}\u{305D}\u{306A}\u{305F}\u{306B}\u{3068}\u{3063}\u{3066}\u{3088}\u{308A}\u{826F}\u{3044}\u{88FD}\u{54C1}\u{3092}\u{4F5C}\u{308B}\u{305F}\u{3081}\u{306B}\u{5F79}\u{7ACB}\u{3061}\u{307E}\u{3059}\u{3002}\u{30A2}\u{30D7}\u{30EA}\u{306E}\u{4F7F}\u{7528}\u{30E1}\u{30BF}\u{30C7}\u{30FC}\u{30BF}\u{306E}\u{307F}\u{3092}\u{53CE}\u{96C6}\u{3057}\u{3001}\u{30B3}\u{30F3}\u{30BD}\u{30FC}\u{30EB}\u{306E}\u{5165}\u{529B}\u{3084}\u{51FA}\u{529B}\u{306F}\u{53CE}\u{96C6}\u{3057}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.privacy.telemetry.free_tier_note", "\u{7121}\u{6599}\u{30C6}\u{30A3}\u{30A2}\u{3067}\u{306F}\u{3001}AI \u{6A5F}\u{80FD}\u{3092}\u{4F7F}\u{7528}\u{3059}\u{308B}\u{306B}\u{306F}\u{5206}\u{6790}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{5FC5}\u{8981}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.telemetry.read_more", "Warp \u{306E}\u{30C7}\u{30FC}\u{30BF}\u{4F7F}\u{7528}\u{306B}\u{3064}\u{3044}\u{3066}\u{8A73}\u{3057}\u{304F}\u{306F}\u{3053}\u{3061}\u{3089}");
+        m.insert("settings.privacy.data_management", "\u{30C7}\u{30FC}\u{30BF}\u{306E}\u{7BA1}\u{7406}");
+        m.insert("settings.privacy.data_management.description", "\u{3044}\u{3064}\u{3067}\u{3082} Warp \u{30A2}\u{30AB}\u{30A6}\u{30F3}\u{30C8}\u{3092}\u{6C38}\u{7D9A}\u{7684}\u{306B}\u{524A}\u{9664}\u{3059}\u{308B}\u{3053}\u{3068}\u{304C}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}\u{305D}\u{306E}\u{5834}\u{5408}\u{3001}Warp \u{3092}\u{4F7F}\u{7528}\u{3067}\u{304D}\u{306A}\u{304F}\u{306A}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.data_management.link", "\u{30C7}\u{30FC}\u{30BF}\u{7BA1}\u{7406}\u{30DA}\u{30FC}\u{30B8}\u{3092}\u{8A2A}\u{554F}");
+        m.insert("settings.privacy.privacy_policy", "\u{30D7}\u{30E9}\u{30A4}\u{30D0}\u{30B7}\u{30FC}\u{30DD}\u{30EA}\u{30B7}\u{30FC}");
+        m.insert("settings.privacy.privacy_policy.link", "Warp \u{306E}\u{30D7}\u{30E9}\u{30A4}\u{30D0}\u{30B7}\u{30FC}\u{30DD}\u{30EA}\u{30B7}\u{30FC}\u{3092}\u{8AAD}\u{3080}");
+        m.insert("settings.privacy.personal", "\u{500B}\u{4EBA}");
+        m.insert("settings.privacy.enterprise", "\u{30A8}\u{30F3}\u{30BF}\u{30FC}\u{30D7}\u{30E9}\u{30A4}\u{30BA}");
+        m.insert("settings.privacy.enterprise.cannot_modify", "\u{30A8}\u{30F3}\u{30BF}\u{30FC}\u{30D7}\u{30E9}\u{30A4}\u{30BA}\u{306E}\u{30B7}\u{30FC}\u{30AF}\u{30EC}\u{30C3}\u{30C8}\u{30EA}\u{30C0}\u{30AF}\u{30B7}\u{30E7}\u{30F3}\u{306F}\u{5909}\u{66F4}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.privacy.enterprise.no_regexes", "\u{304A}\u{5C5E}\u{3055}\u{306E}\u{7D44}\u{7E54}\u{3067}\u{30A8}\u{30F3}\u{30BF}\u{30FC}\u{30D7}\u{30E9}\u{30A4}\u{30BA}\u{306E}\u{6B63}\u{5219}\u{8868}\u{73B0}\u{304C}\u{8A2D}\u{5B9A}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.privacy.managed_by_org", "\u{304A}\u{5C5E}\u{3055}\u{306E}\u{7D44}\u{7E54}\u{306B}\u{3088}\u{3063}\u{3066}\u{6709}\u{52B9}\u{306B}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.managed_by_org.tooltip", "\u{3053}\u{306E}\u{8A2D}\u{5B9A}\u{306F}\u{304A}\u{5C5E}\u{3055}\u{306E}\u{7D44}\u{7E54}\u{306B}\u{3088}\u{3063}\u{3066}\u{7BA1}\u{7406}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.secret_visual_mode", "\u{30B7}\u{30FC}\u{30AF}\u{30EC}\u{30C3}\u{30C8}\u{30D3}\u{30B8}\u{30E5}\u{30A2}\u{30EA}\u{30C0}\u{30AF}\u{30B7}\u{30E7}\u{30F3}\u{30E2}\u{30FC}\u{30C9}");
+        m.insert("settings.privacy.secret_visual_mode.description", "\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{30EA}\u{30B9}\u{30C8}\u{3067}\u{306E}\u{30B7}\u{30FC}\u{30AF}\u{30EC}\u{30C3}\u{30C8}\u{306E}\u{8868}\u{793A}\u{65B9}\u{6CD5}\u{3092}\u{9078}\u{62E7}\u{3057}\u{307E}\u{3059}\u{3002}\u{691C}\u{7D22}\u{53EF}\u{80FD}\u{306A}\u{72B6}\u{614B}\u{3092}\u{4FDD}\u{3061}\u{306A}\u{304C}\u{3089}\u{3001}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{30EA}\u{30B9}\u{30C8}\u{3067}\u{898B}\u{3048}\u{308B}\u{5185}\u{5BB9}\u{306E}\u{307F}\u{3092}\u{5F71}\u{97FF}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.recommended", "\u{304A}\u{3059}\u{3059}\u{3081}");
+        m.insert("settings.privacy.add_all", "\u{3059}\u{3079}\u{3066}\u{8FFD}\u{52A0}");
+        m.insert("settings.privacy.add_regex", "\u{6B63}\u{5219}\u{8868}\u{73B0}\u{3092}\u{8FFD}\u{52A0}");
+        m.insert("settings.privacy.add_regex_pattern", "\u{6B63}\u{5219}\u{8868}\u{73B0}\u{30D1}\u{30BF}\u{30FC}\u{30F3}\u{3092}\u{8FFD}\u{52A0}");
+        m.insert("settings.privacy.send_crash_reports", "\u{30AF}\u{30E9}\u{30C3}\u{30B7}\u{30E5}\u{30EC}\u{30DD}\u{30FC}\u{30C8}\u{3092}\u{9001}\u{4FE1}");
+        m.insert("settings.privacy.send_crash_reports.description", "\u{30AF}\u{30E9}\u{30C3}\u{30B7}\u{30E5}\u{30EC}\u{30DD}\u{30FC}\u{30C8}\u{306F}\u{30C7}\u{30D0}\u{30C3}\u{30B0}\u{3068}\u{5B89}\u{5B9A}\u{6027}\u{306E}\u{6539}\u{5584}\u{306B}\u{5F79}\u{7ACB}\u{3061}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.store_ai_conversations", "AI \u{4F1A}\u{8A71}\u{3092}\u{30AF}\u{30E9}\u{30A6}\u{30C9}\u{306B}\u{4FDD}\u{5B58}");
+        m.insert("settings.privacy.store_ai_conversations.enabled_description", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{4F1A}\u{8A71}\u{306F}\u{4ED6}\u{306E}\u{4EBA}\u{3068}\u{5171}\u{6709}\u{3067}\u{304D}\u{3001}\u{7570}\u{306A}\u{308B}\u{30C7}\u{30D0}\u{30A4}\u{30B9}\u{3067}\u{30ED}\u{30B0}\u{30A4}\u{30F3}\u{3057}\u{305F}\u{6642}\u{306B}\u{4FDD}\u{6301}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}\u{3053}\u{306E}\u{30C7}\u{30FC}\u{30BF}\u{306F}\u{88FD}\u{54C1}\u{6A5F}\u{80FD}\u{306E}\u{305F}\u{3081}\u{306B}\u{306E}\u{307F}\u{4FDD}\u{5B58}\u{3055}\u{308C}\u{3001}Warp \u{306F}\u{3053}\u{308C}\u{3092}\u{5206}\u{6790}\u{306B}\u{4F7F}\u{7528}\u{3057}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.privacy.store_ai_conversations.disabled_description", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{4F1A}\u{8A71}\u{306F}\u{30ED}\u{30FC}\u{30AB}\u{30EB}\u{30DE}\u{30B7}\u{30F3}\u{306B}\u{306E}\u{307F}\u{4FDD}\u{5B58}\u{3055}\u{308C}\u{3001}\u{30ED}\u{30B0}\u{30A2}\u{30A6}\u{30C8}\u{6642}\u{306B}\u{5931}\u{308F}\u{308C}\u{3001}\u{5171}\u{6709}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}\u{6CE8}\u{610F}\u{FF1A}\u{30A2}\u{30F3}\u{30D3}\u{30A8}\u{30F3}\u{30C8}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E}\u{4F1A}\u{8A71}\u{30C7}\u{30FC}\u{30BF}\u{306F}\u{5F15}\u{7D9A}\u{304D}\u{30AF}\u{30E9}\u{30A6}\u{30C9}\u{306B}\u{4FDD}\u{5B58}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.network_log_console", "\u{30CD}\u{30C3}\u{30C8}\u{30EF}\u{30FC}\u{30AF}\u{30ED}\u{30B0}\u{30B3}\u{30F3}\u{30BD}\u{30FC}\u{30EB}");
+        m.insert("settings.privacy.network_log_console.description", "Warp \u{304B}\u{3089}\u{5916}\u{90E8}\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3078}\u{306E}\u{3059}\u{3079}\u{3066}\u{306E}\u{901A}\u{4FE1}\u{3092}\u{78BA}\u{8A8D}\u{3067}\u{304D}\u{308B}\u{30CD}\u{30A4}\u{30C6}\u{30A3}\u{30D6}\u{30B3}\u{30F3}\u{30BD}\u{30FC}\u{30EB}\u{3092}\u{69CB}\u{7BC9}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}\u{3042}\u{306A}\u{305F}\u{306E}\u{4F5C}\u{696D}\u{304C}\u{5E38}\u{306B}\u{5B89}\u{5168}\u{3067}\u{3042}\u{308B}\u{3053}\u{3068}\u{3092}\u{78BA}\u{8A8D}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.privacy.network_log_console.link", "\u{30CD}\u{30C3}\u{30C8}\u{30EF}\u{30FC}\u{30AF}\u{30ED}\u{30B0}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.privacy.zero_data_retention", "\u{7BA1}\u{7406}\u{8005}\u{304C}\u{3042}\u{306A}\u{305F}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{3067}\u{30BC}\u{30ED}\u{30C7}\u{30FC}\u{30BF}\u{4FDD}\u{7559}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3057}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}\u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{751F}\u{6210}\u{30B3}\u{30F3}\u{30C6}\u{30F3}\u{30C4}\u{306F}\u{53CE}\u{96C6}\u{3055}\u{308C}\u{307E}\u{305B}\u{3093}\u{3002}");
+
+        // About page
+        m.insert("settings.about", "Warp \u{306B}\u{3064}\u{3044}\u{3066}");
+
+        // Environments page
+        m.insert("settings.environments.title", "\u{74B0}\u{5883}");
+        m.insert("settings.environments.description", "\u{74B0}\u{5883}\u{306F}\u{30A2}\u{30F3}\u{30D3}\u{30A8}\u{30F3}\u{30C8}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{304C}\u{5B9F}\u{884C}\u{3055}\u{308C}\u{308B}\u{5834}\u{6240}\u{3092}\u{5B9A}\u{7FA9}\u{3057}\u{307E}\u{3059}\u{3002}GitHub \u{FF08}\u{304A}\u{3059}\u{3059}\u{3081}\u{FF09}\u{3001}Warp \u{88C5}\u{5099}\u{30BB}\u{30C3}\u{30C8}\u{30A2}\u{30C3}\u{30D7}\u{307E}\u{305F}\u{306F}\u{624B}\u{52D5}\u{8A2D}\u{5B9A}\u{3067}\u{6570}\u{5206}\u{3067}\u{8A2D}\u{5B9A}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.environments.search_placeholder", "\u{74B0}\u{5883}\u{3092}\u{691C}\u{7D22}...");
+        m.insert("settings.environments.no_matches", "\u{691C}\u{7D22}\u{306B}\u{4E00}\u{81F4}\u{3059}\u{308B}\u{74B0}\u{5883}\u{304C}\u{3042}\u{308A}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.environments.section.personal", "\u{500B}\u{4EBA}");
+        m.insert("settings.environments.section.shared_by_team", "Warp \u{3068} {team_name} \u{306E}\u{5171}\u{6709}");
+        m.insert("settings.environments.section.shared_by_default", "Warp \u{3068}\u{30C1}\u{30FC}\u{30E0}\u{306E}\u{5171}\u{6709}");
+        m.insert("settings.environments.empty.loading", "\u{8AAD}\u{307F}\u{8FBC}\u{307F}\u{4E2D}...");
+        m.insert("settings.environments.empty.retry", "\u{518D}\u{8A66}\u{884C}");
+        m.insert("settings.environments.empty.authorize", "\u{8A8D}\u{8A3C}");
+        m.insert("settings.environments.empty.get_started", "\u{59CB}\u{3081}\u{308B}");
+        m.insert("settings.environments.empty.launch_agent", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{3092}\u{8D77}\u{52D5}");
+        m.insert("settings.environments.empty.quick_setup", "\u{30AF}\u{30A4}\u{30C3}\u{30AF}\u{30BB}\u{30C3}\u{30C8}\u{30A2}\u{30C3}\u{30D7}");
+        m.insert("settings.environments.empty.suggested", "\u{304A}\u{3059}\u{3059}\u{3081}");
+        m.insert("settings.environments.empty.github_subtitle", "\u{4F7F}\u{7528}\u{3057}\u{305F}\u{3044} GitHub \u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{3092}\u{9078}\u{629E}\u{3059}\u{308B}\u{3068}\u{3001}\u{30D9}\u{30FC}\u{30B9}\u{30A4}\u{30E1}\u{30FC}\u{30B8}\u{3068}\u{8A2D}\u{5B9A}\u{3092}\u{304A}\u{3059}\u{3059}\u{3081}\u{3057}\u{307E}\u{3059}");
+        m.insert("settings.environments.empty.use_agent", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{3092}\u{4F7F}\u{7528}");
+        m.insert("settings.environments.empty.agent_subtitle", "\u{30ED}\u{30FC}\u{30AB}\u{30EB}\u{3067}\u{8A2D}\u{5B9A}\u{3055}\u{308C}\u{305F}\u{30D7}\u{30ED}\u{30B8}\u{30A7}\u{30AF}\u{30C8}\u{3092}\u{9078}\u{629E}\u{3059}\u{308B}\u{3068}\u{3001}\u{305D}\u{308C}\u{306B}\u{57FA}\u{3065}\u{3044}\u{3066}\u{74B0}\u{5883}\u{3092}\u{8A2D}\u{5B9A}\u{3057}\u{307E}\u{3059}");
+        m.insert("settings.environments.empty.no_envs_header", "\u{307E}\u{3060}\u{74B0}\u{5883}\u{3092}\u{8A2D}\u{5B9A}\u{3057}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.environments.empty.no_envs_subheader", "\u{74B0}\u{5883}\u{306E}\u{8A2D}\u{5B9A}\u{65B9}\u{6CD5}\u{3092}\u{9078}\u{629E}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{FF1A}");
+        m.insert("settings.environments.card.env_id", "\u{74B0}\u{5883} ID: {env_id}");
+        m.insert("settings.environments.card.image", "\u{30A4}\u{30E1}\u{30FC}\u{30B8}: {image}");
+        m.insert("settings.environments.card.repos", "\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}: {repos}");
+        m.insert("settings.environments.card.setup_commands", "\u{30BB}\u{30C3}\u{30C8}\u{30A2}\u{30C3}\u{30D7}\u{30B3}\u{30DE}\u{30F3}\u{30C9}: {commands}");
+        m.insert("settings.environments.card.view_runs", "\u{5B9F}\u{884C}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.environments.card.share", "\u{5171}\u{6709}");
+        m.insert("settings.environments.card.edit", "\u{7DE8}\u{96C6}");
+        m.insert("settings.environments.timestamp.last_edited", "\u{6700}\u{7D42}\u{7DE8}\u{96C6}: {duration}");
+        m.insert("settings.environments.timestamp.last_used", "\u{6700}\u{7D42}\u{4F7F}\u{7528}: {duration}");
+        m.insert("settings.environments.timestamp.last_used_never", "\u{6700}\u{7D42}\u{4F7F}\u{7528}: \u{306A}\u{3057}");
+        m.insert("settings.environments.toast.updated", "\u{74B0}\u{5883}\u{306E}\u{66F4}\u{65B0}\u{306B}\u{6210}\u{529F}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.environments.toast.created", "\u{74B0}\u{5883}\u{306E}\u{4F5C}\u{6210}\u{306B}\u{6210}\u{529F}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.environments.toast.deleted", "\u{74B0}\u{5883}\u{304C}\u{524A}\u{9664}\u{3055}\u{308C}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.environments.toast.shared", "\u{74B0}\u{5883}\u{306E}\u{5171}\u{6709}\u{306B}\u{6210}\u{529F}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.environments.toast.share_failed", "\u{30C1}\u{30FC}\u{30E0}\u{3068}\u{306E}\u{74B0}\u{5883}\u{306E}\u{5171}\u{6709}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.environments.toast.create_not_logged_in", "\u{74B0}\u{5883}\u{3092}\u{4F5C}\u{6210}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{FF1A}\u{30ED}\u{30B0}\u{30A4}\u{30F3}\u{3057}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.environments.toast.save_not_found", "\u{4FDD}\u{5B58}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{FF1A}\u{74B0}\u{5883}\u{304C}\u{5B58}\u{5728}\u{3057}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.environments.toast.share_no_team", "\u{74B0}\u{5883}\u{3092}\u{5171}\u{6709}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{FF1A}\u{73FE}\u{5728}\u{30C1}\u{30FC}\u{30E0}\u{306B}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.environments.toast.share_not_synced", "\u{74B0}\u{5883}\u{3092}\u{5171}\u{6709}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{FF1A}\u{74B0}\u{5883}\u{304C}\u{307E}\u{3060}\u{540C}\u{671F}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002}");
+
+        // Environment modal
+        m.insert("settings.env_modal.title", "\u{74B0}\u{5883}\u{306E}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{3092}\u{9078}\u{629E}");
+        m.insert("settings.env_modal.description.indexed", "\u{30ED}\u{30FC}\u{30AB}\u{30EB}\u{3067}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3055}\u{308C}\u{305F}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{3092}\u{9078}\u{629E}\u{3057}\u{3066}\u{3001}\u{74B0}\u{5883}\u{4F5C}\u{6210}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306B}\u{30B3}\u{30F3}\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{3092}\u{63D0}\u{4F9B}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.env_modal.description.default", "\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{3092}\u{9078}\u{629E}\u{3057}\u{3066}\u{3001}\u{74B0}\u{5883}\u{4F5C}\u{6210}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306B}\u{30B3}\u{30F3}\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{3092}\u{63D0}\u{4F9B}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.env_modal.section.selected_repos", "\u{9078}\u{629E}\u{6E08}\u{307F}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}");
+        m.insert("settings.env_modal.section.available_repos", "\u{5229}\u{7528}\u{53EF}\u{80FD}\u{306A}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{6E08}\u{307F}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}");
+        m.insert("settings.env_modal.empty.no_selected", "\u{307E}\u{3060}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{3092}\u{9078}\u{629E}\u{3057}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}");
+        m.insert("settings.env_modal.empty.all_selected", "\u{30ED}\u{30FC}\u{30AB}\u{30EB}\u{3067}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3055}\u{308C}\u{305F}\u{3059}\u{3079}\u{3066}\u{306E}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{306F}\u{3059}\u{3067}\u{306B}\u{9078}\u{629E}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.env_modal.empty.no_indexed", "\u{30ED}\u{30FC}\u{30AB}\u{30EB}\u{3067}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3055}\u{308C}\u{305F}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{304C}\u{898B}\u{3064}\u{304B}\u{308A}\u{307E}\u{305B}\u{3093}\u{3002}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{3092}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3057}\u{3066}\u{304B}\u{3089}\u{3001}\u{3082}\u{3046}\u{4E00}\u{5EA6}\u{304A}\u{8A66}\u{3057}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.env_modal.empty.unavailable", "\u{3053}\u{306E}\u{30D3}\u{30EB}\u{30C9}\u{3067}\u{306F}\u{30ED}\u{30FC}\u{30AB}\u{30EB}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{9078}\u{629E}\u{306F}\u{5229}\u{7528}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.env_modal.loading", "\u{30ED}\u{30FC}\u{30AB}\u{30EB}\u{3067}\u{30A4}\u{30F3}\u{30C7}\u{30C3}\u{30AF}\u{30B9}\u{3055}\u{308C}\u{305F}\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{3092}\u{8AAD}\u{307F}\u{8FBC}\u{307F}\u{4E2D}\u{2026}");
+        m.insert("settings.env_modal.button.add_repo", "\u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{3092}\u{8FFD}\u{52A0}");
+        m.insert("settings.env_modal.button.create_environment", "\u{74B0}\u{5883}\u{3092}\u{4F5C}\u{6210}");
+        m.insert("settings.env_modal.toast.not_git_repo", "\u{9078}\u{629E}\u{3057}\u{305F}\u{30D5}\u{30A9}\u{30EB}\u{30C0}\u{306F} Git \u{30EA}\u{30DD}\u{30B8}\u{30C8}\u{30EA}\u{3067}\u{306F}\u{3042}\u{308A}\u{307E}\u{305B}\u{3093}\u{FF1A}{path}");
+
+        // Platform page
+        m.insert("settings.platform.new_api_key", "\u{65B0}\u{898F} API \u{30AD}\u{30FC}");
+        m.insert("settings.platform.save_your_key", "\u{30AD}\u{30FC}\u{3092}\u{4FDD}\u{5B58}");
+        m.insert("settings.platform.api_key_deleted", "API \u{30AD}\u{30FC}\u{3092}\u{524A}\u{9664}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.platform.oz_cloud_api_keys", "Oz Cloud API \u{30AD}\u{30FC}");
+        m.insert("settings.platform.create_api_key", "+ API \u{30AD}\u{30FC}\u{3092}\u{4F5C}\u{6210}");
+        m.insert("settings.platform.description", "\u{4ED6}\u{306E} Oz \u{30AF}\u{30E9}\u{30A6}\u{30C9}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{304C} Warp \u{30A2}\u{30AB}\u{30A6}\u{30F3}\u{30C8}\u{306B}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3067}\u{304D}\u{3088}\u{3046} API \u{30AD}\u{30FC}\u{3092}\u{4F5C}\u{6210}\u{3057}\u{7BA1}\u{7406}\u{3057}\u{307E}\u{3059}\u{3002}\n\u{8A73}\u{7D30}\u{306B}\u{3064}\u{3044}\u{306F}\u{3053}\u{3061}\u{3089}\u{3092}\u{3054}\u{89A7}\u{304F}\u{3060}\u{3055}\u{3044} ");
+        m.insert("settings.platform.documentation", "\u{30C9}\u{30AD}\u{30E5}\u{30E1}\u{30F3}\u{30C8}\u{3002}");
+        m.insert("settings.platform.header.name", "\u{540D}\u{524D}");
+        m.insert("settings.platform.header.key", "\u{30AD}\u{30FC}");
+        m.insert("settings.platform.header.scope", "\u{30B9}\u{30B3}\u{30FC}\u{30D7}");
+        m.insert("settings.platform.header.created", "\u{4F5C}\u{6210}\u{65E5}");
+        m.insert("settings.platform.header.last_used", "\u{6700}\u{7D42}\u{4F7F}\u{7528}\u{65E5}");
+        m.insert("settings.platform.header.expires_at", "\u{671F}\u{9650}\u{5207}\u{308C}");
+        m.insert("settings.platform.never", "\u{306A}\u{3057}");
+        m.insert("settings.platform.scope.personal", "\u{500B}\u{4EBA}");
+        m.insert("settings.platform.scope.team", "\u{30C1}\u{30FC}\u{30E0}");
+        m.insert("settings.platform.no_api_keys", "API \u{30AD}\u{30FC}\u{306A}\u{3057}");
+        m.insert("settings.platform.no_api_keys_description", "\u{30AD}\u{30FC}\u{3092}\u{4F5C}\u{6210}\u{3057}\u{3066} Warp \u{3078}\u{306E}\u{5916}\u{90E8}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3092}\u{7BA1}\u{7406}\u{3057}\u{307E}\u{3059}");
+
+        // MCP Servers page
+        m.insert("settings.mcp.page_title", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}");
+        m.insert("settings.mcp.logout_success_with_name", "{name} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{304B}\u{3089}\u{30ED}\u{30B0}\u{30A2}\u{30A6}\u{30C8}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.mcp.logout_success", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{304B}\u{3089}\u{30ED}\u{30B0}\u{30A2}\u{30A6}\u{30C8}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.mcp.finish_current_install", "\u{73FE}\u{5728}\u{306E} MCP \u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}\u{3092}\u{5B8C}\u{4E86}\u{3057}\u{3066}\u{304B}\u{3089}\u{5225}\u{306E}\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{958B}\u{3044}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.mcp.unknown_server", "\u{672A}\u{77E5}\u{306E} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC} '{autoinstall_param}'");
+        m.insert("settings.mcp.cannot_install_from_link", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC} '{gallery_title}' \u{306F}\u{3053}\u{306E}\u{30EA}\u{30F3}\u{30AF}\u{304B}\u{3089}\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}");
+
+        // Warpify page
+        m.insert("settings.warpify.title", "Warpify");
+        m.insert("settings.warpify.description", "Warp \u{304C}\u{7279}\u{5B9A}\u{306E} shell \u{3092} \u{201c}Warpify\u{201D}\u{FF08}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{3001}\u{5165}\u{529B}\u{30E2}\u{30FC}\u{30C9}\u{306A}\u{3069}\u{306E}\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{3092}\u{8FFD}\u{52A0}\u{FF09}\u{3059}\u{308B}\u{304B}\u{3069}\u{3046}\u{304B}\u{3092}\u{8A2D}\u{5B9A}\u{3057}\u{307E}\u{3059}\u{3002} ");
+        m.insert("settings.warpify.learn_more", "\u{8A73}\u{7D30}");
+        m.insert("settings.warpify.subshells", "\u{30B5}\u{30D6}\u{30B7}\u{30A7}\u{30EB}");
+        m.insert("settings.warpify.subshells_description", "\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{3055}\u{308C}\u{308B}\u{30B5}\u{30D6}\u{30B7}\u{30A7}\u{30EB}\u{FF1A}bash\u{3001}zsh\u{3001}fish\u{3002}");
+        m.insert("settings.warpify.ssh", "SSH");
+        m.insert("settings.warpify.ssh_description", "\u{30A4}\u{30F3}\u{30BF}\u{30E9}\u{30AF}\u{30C6}\u{30A3}\u{30D6} SSH \u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{3092} Warpify \u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.warpify.ssh_session_detection", "Warpification \u{306E}\u{305F}\u{3081}\u{306E} SSH \u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{691C}\u{51FA}");
+        m.insert("settings.warpify.placeholder_command", "\u{30B3}\u{30DE}\u{30F3}\u{30C9}\u{FF08}\u{6B63}\u{5219}\u{8868}\u{73B0}\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{FF09}");
+        m.insert("settings.warpify.placeholder_host", "\u{30DB}\u{30B9}\u{30C8}\u{FF08}\u{6B63}\u{5219}\u{8868}\u{73B0}\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{FF09}");
+        m.insert("settings.warpify.added_commands", "\u{8FFD}\u{52A0}\u{3055}\u{308C}\u{305F}\u{30B3}\u{30DE}\u{30F3}\u{30C9}");
+        m.insert("settings.warpify.denylisted_commands", "\u{62D2}\u{5426}\u{30EA}\u{30B9}\u{30C8}\u{306E}\u{30B3}\u{30DE}\u{30F3}\u{30C9}");
+        m.insert("settings.warpify.warpify_ssh_sessions", "SSH \u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{3092} Warpify");
+        m.insert("settings.warpify.install_ssh_extension", "SSH \u{30A8}\u{30AF}\u{30B9}\u{30C6}\u{30F3}\u{30B7}\u{30E7}\u{30F3}\u{3092}\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}");
+        m.insert("settings.warpify.ssh_extension_install_mode_description", "\u{30EA}\u{30E2}\u{30FC}\u{30C8}\u{30DB}\u{30B9}\u{30C8}\u{306B} Warp SSH \u{30A8}\u{30AF}\u{30B9}\u{30C6}\u{30F3}\u{30B7}\u{30E7}\u{30F3}\u{304C}\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}\u{3055}\u{308C}\u{3066}\u{3044}\u{306A}\u{3044}\u{5834}\u{5408}\u{306E}\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}\u{6321}\u{52E7}\u{3092}\u{5236}\u{5FA1}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.warpify.use_tmux_warpification", "Tmux Warpification \u{3092}\u{4F7F}\u{7528}");
+        m.insert("settings.warpify.ssh_tmux_warpification_description", "tmux ssh \u{30E9}\u{30C3}\u{30D1}\u{30FC}\u{306F}\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}\u{306E}\u{30E9}\u{30C3}\u{30D1}\u{30FC}\u{304C}\u{52D5}\u{304B}\u{306A}\u{3044}\u{591A}\u{304F}\u{306E}\u{5834}\u{5408}\u{3067}\u{6A5F}\u{80FD}\u{3057}\u{307E}\u{3059}\u{304C}\u{3001}warpify \u{3059}\u{308B}\u{306B}\u{306F}\u{30DC}\u{30BF}\u{30F3}\u{3092}\u{62BC}\u{3059}\u{5FC5}\u{8981}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}\u{65B0}\u{3057}\u{3044}\u{30BF}\u{30D6}\u{3067}\u{6709}\u{52B9}\u{306B}\u{306A}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.warpify.denylisted_hosts", "\u{62D2}\u{5426}\u{30EA}\u{30B9}\u{30C8}\u{306E}\u{30DB}\u{30B9}\u{30C8}");
+
+        // Referrals page
+        m.insert("settings.referrals.header", "\u{53CB}\u{9054}\u{3092} Warp \u{306B}\u{62DB}\u{5F85}");
+        m.insert("settings.referrals.anonymous_header", "Warp \u{306E}\u{30EA}\u{30D5}\u{30A1}\u{30E9}\u{30EB}\u{30D7}\u{30ED}\u{30B0}\u{30E9}\u{30E0}\u{306B}\u{53C2}\u{52A0}\u{3059}\u{308B}\u{306B}\u{306F}\u{30B5}\u{30A4}\u{30F3}\u{30A2}\u{30C3}\u{30D7}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}");
+        m.insert("settings.referrals.link_error", "\u{30EA}\u{30D5}\u{30A1}\u{30E9}\u{30EB}\u{30B3}\u{30FC}\u{30C9}\u{306E}\u{8AAD}\u{307F}\u{8FBC}\u{307F}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}");
+        m.insert("settings.referrals.copy_link", "\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{30B3}\u{30D4}\u{30FC}");
+        m.insert("settings.referrals.send_email", "\u{9001}\u{4FE1}");
+        m.insert("settings.referrals.sending", "\u{9001}\u{4FE1}\u{4E2D}...");
+        m.insert("settings.referrals.loading", "\u{8AAD}\u{307F}\u{8FBC}\u{307F}\u{4E2D}...");
+        m.insert("settings.referrals.link_copied", "\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{30B3}\u{30D4}\u{30FC}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}");
+        m.insert("settings.referrals.email_success", "\u{30E1}\u{30FC}\u{30EB}\u{306E}\u{9001}\u{4FE1}\u{306B}\u{6210}\u{529F}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}");
+        m.insert("settings.referrals.email_failure", "\u{30E1}\u{30FC}\u{30EB}\u{306E}\u{9001}\u{4FE1}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}\u{3082}\u{3046}\u{4E00}\u{5EA6}\u{304A}\u{8A66}\u{3057}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.referrals.reward_intro", "\u{53CB}\u{9054}\u{3092}\u{62DB}\u{5F85}\u{3059}\u{308B}\u{3068} Warp \u{304A}\u{3059}\u{3059}\u{3081}\u{30B0}\u{30C3}\u{30BA}\u{3092}\u{5F97}\u{3089}\u{308C}\u{307E}\u{3059}*");
+        m.insert("settings.referrals.terms_link", "\u{7279}\u{5B9A}\u{306E}\u{5236}\u{9650}\u{304C}\u{9069}\u{7528}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.referrals.terms_contact", " \u{30EA}\u{30D5}\u{30A1}\u{30E9}\u{30EB}\u{30D7}\u{30ED}\u{30B0}\u{30E9}\u{30E0}\u{306B}\u{3064}\u{3044}\u{3066}\u{3054}\u{8CEA}\u{554F}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3068}\u{304D}\u{306F} referrals@warp.dev \u{307E}\u{3067}\u{304A}\u{554F}\u{3044}\u{5408}\u{308F}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.referrals.current_referral_singular", "\u{73FE}\u{5728}\u{306E}\u{30EA}\u{30D5}\u{30A1}\u{30E9}\u{30EB}");
+        m.insert("settings.referrals.current_referral_plural", "\u{73FE}\u{5728}\u{306E}\u{30EA}\u{30D5}\u{30A1}\u{30E9}\u{30EB}");
+        m.insert("settings.referrals.link_label", "\u{30EA}\u{30F3}\u{30AF}");
+        m.insert("settings.referrals.email_label", "\u{30E1}\u{30FC}\u{30EB}");
+        m.insert("settings.referrals.sign_up", "\u{30B5}\u{30A4}\u{30F3}\u{30A2}\u{30C3}\u{30D7}");
+        m.insert("settings.referrals.enter_email_error", "\u{30E1}\u{30FC}\u{30EB}\u{30A2}\u{30C9}\u{30EC}\u{30B9}\u{3092}\u{5165}\u{529B}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.referrals.invalid_email_error", "\u{6B21}\u{306E}\u{30E1}\u{30FC}\u{30EB}\u{30A2}\u{30C9}\u{30EC}\u{30B9}\u{304C}\u{6709}\u{52B9}\u{304B}\u{3069}\u{3046}\u{304B}\u{78BA}\u{8A8D}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{FF1A}{invalid_email}");
+        m.insert("settings.referrals.reward_exclusive_theme", "\u{30A8}\u{30AF}\u{30B9}\u{30AF}\u{30EB}\u{30FC}\u{30B7}\u{30D6}\u{30C6}\u{30FC}\u{30DE}");
+        m.insert("settings.referrals.reward_keycaps_stickers", "\u{30AD}\u{30FC}\u{30AD}\u{30E3}\u{30C3}\u{30D7} + \u{30B9}\u{30C6}\u{30C3}\u{30AB}\u{30FC}");
+        m.insert("settings.referrals.reward_tshirt", "T\u{30B7}\u{30E3}\u{30C4}");
+        m.insert("settings.referrals.reward_notebook", "\u{30CE}\u{30FC}\u{30C8}\u{30D6}\u{30C3}\u{30AF}");
+        m.insert("settings.referrals.reward_baseball_cap", "\u{30D9}\u{30FC}\u{30B9}\u{30DC}\u{30FC}\u{30EB}\u{30AD}\u{30E3}\u{30C3}\u{30D7}");
+        m.insert("settings.referrals.reward_hoodie", "\u{30D5}\u{30FC}\u{30C7}\u{30A3}\u{30FC}");
+        m.insert("settings.referrals.reward_hydro_flask", "\u{30D7}\u{30EC}\u{30DF}\u{30A2}\u{30E0} Hydro Flask");
+        m.insert("settings.referrals.reward_backpack", "\u{30D0}\u{30C3}\u{30AF}\u{30D1}\u{30C3}\u{30AF}");
+
+        // Billing and usage page
+        m.insert("settings.billing.overage.admin_header", "\u{30D7}\u{30EC}\u{30DF}\u{30A2}\u{30E0}\u{30E2}\u{30C7}\u{30EB}\u{4F7F}\u{7528}\u{91CF}\u{306E}\u{8D85}\u{904E}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.billing.overage.user_header_enabled", "\u{30D7}\u{30EC}\u{30DF}\u{30A2}\u{30E0}\u{30E2}\u{30C7}\u{30EB}\u{4F7F}\u{7528}\u{91CF}\u{306E}\u{8D85}\u{904E}\u{306F}\u{6709}\u{52B9}\u{3067}\u{3059}");
+        m.insert("settings.billing.overage.user_header_disabled", "\u{30D7}\u{30EC}\u{30DF}\u{30A2}\u{30E0}\u{30E2}\u{30C7}\u{30EB}\u{4F7F}\u{7528}\u{91CF}\u{306E}\u{8D85}\u{904E}\u{306F}\u{6709}\u{52B9}\u{306B}\u{306A}\u{3063}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}");
+        m.insert("settings.billing.overage.description", "\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{5236}\u{9650}\u{3092}\u{8D85}\u{3048}\u{3066}\u{30D7}\u{30EC}\u{30DF}\u{30A2}\u{30E0}\u{30E2}\u{30C7}\u{30EB}\u{3092}\u{7D9A}\u{3051}\u{307E}\u{3059}\u{3002}\u{4F7F}\u{7528}\u{91CF}\u{306F} $20 \u{5358}\u{4F4D}\u{3067}\u{8ACB}\u{6C42}\u{3055}\u{308C}\u{3001}\u{6D88}\u{8CBB}\u{4E0A}\u{9650}\u{307E}\u{3067}\u{306E}\u{6B8B}\u{308A}\u{306F}\u{8ACB}\u{6C42}\u{65E5}\u{306B}\u{30C1}\u{30E3}\u{30FC}\u{30B8}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.overage.user_description", "\u{30C1}\u{30FC}\u{30E0}\u{7BA1}\u{7406}\u{8005}\u{306B}\u{8D85}\u{904E}\u{5206}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3057}\u{3066}\u{3082}\u{3089}\u{3046}\u{3053}\u{3068}\u{3067}\u{3001}\u{3088}\u{308A}\u{591A}\u{304F}AI\u{4F7F}\u{7528}\u{91CF}\u{3092}\u{5F97}\u{3089}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.overage.link_text", "\u{8D85}\u{904E}\u{5206}\u{306E}\u{4F7F}\u{7528}\u{91CF}\u{8A73}\u{7D30}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.billing.overage.monthly_spending_limit", "\u{6708}\u{6B21}\u{306E}\u{8D85}\u{904E}\u{6D88}\u{8CBB}\u{4E0A}\u{9650}");
+        m.insert("settings.billing.overage.monthly_spending_limit.tooltip", "\u{30D7}\u{30E9}\u{30F3}\u{984D}\u{3092}\u{8D85}\u{3048}\u{308B}\u{6708}\u{6B21}\u{306E}\u{8D85}\u{904E}\u{6D88}\u{8CBB}\u{4E0A}\u{9650}\u{3092}\u{8A2D}\u{5B9A}\u{3057}\u{307E}\u{3059}");
+        m.insert("settings.billing.overage.not_set", "\u{672A}\u{8A2D}\u{5B9A}");
+        m.insert("settings.billing.overage.total", "\u{8D85}\u{904E}\u{5408}\u{8A08}");
+        m.insert("settings.billing.overage.resets_on", "\u{4F7F}\u{7528}\u{91CF}\u{306F}{date}\u{306B}\u{30EA}\u{30BB}\u{30C3}\u{30C8}\u{3055}\u{308C}\u{307E}\u{3059}");
+        m.insert("settings.billing.overage.one_credit", "1\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}");
+        m.insert("settings.billing.overage.credits", "{count}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}");
+        m.insert("settings.billing.sort.a_to_z", "A\u{304B}\u{3089}Z");
+        m.insert("settings.billing.sort.z_to_a", "Z\u{304B}\u{3089}A");
+        m.insert("settings.billing.sort.ascending", "\u{4F7F}\u{7528}\u{91CF}\u{6607}\u{9806}");
+        m.insert("settings.billing.sort.descending", "\u{4F7F}\u{7528}\u{91CF}\u{964D}\u{9806}");
+        m.insert("settings.billing.sort.label", "\u{4E26}\u{3073}\u{66FF}\u{3048}");
+        m.insert("settings.billing.auto_reload.exceed_limit_warning", "\u{6B21}\u{56DE}\u{306E}\u{30EA}\u{30ED}\u{30FC}\u{30C9}\u{304C}\u{6708}\u{6B21}\u{6D88}\u{8CBB}\u{4E0A}\u{9650}\u{3092}\u{8D85}\u{3048}\u{308B}\u{305F}\u{3081}\u{3001}\u{81EA}\u{52D5}\u{30EA}\u{30ED}\u{30FC}\u{30C9}\u{306F}\u{7121}\u{52B9}\u{306B}\u{306A}\u{3063}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}\u{81EA}\u{52D5}\u{30EA}\u{30ED}\u{30FC}\u{30C9}\u{3092}\u{4F7F}\u{7528}\u{3059}\u{308B}\u{306B}\u{306F}\u{4E0A}\u{9650}\u{3092}\u{5897}\u{3084}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.billing.auto_reload.delinquent_warning", "\u{8ACB}\u{6C42}\u{554F}\u{984C}\u{306B}\u{3088}\u{308A}\u{5236}\u{9650}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{3092}\u{8CFC}\u{5165}\u{3059}\u{308B}\u{306B}\u{306F}\u{652F}\u{6255}\u{65B9}\u{6CD5}\u{3092}\u{66F4}\u{65B0}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.billing.auto_reload.restricted_warning", "\u{6700}\u{8FD1}\u{306E}\u{30EA}\u{30ED}\u{30FC}\u{30C9}\u{306B}\u{5931}\u{6557}\u{3057}\u{305F}\u{305F}\u{3081}\u{3001}\u{81EA}\u{52D5}\u{30EA}\u{30ED}\u{30FC}\u{30C9}\u{306F}\u{7121}\u{52B9}\u{306B}\u{306A}\u{3063}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}\u{652F}\u{6255}\u{65B9}\u{6CD5}\u{3092}\u{66F4}\u{65B0}\u{3057}\u{3066}\u{304A}\u{8A66}\u{3057}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.billing.auto_reload.exceed_limit_with_link", "\u{30EA}\u{30ED}\u{30FC}\u{30C9}\u{3067}\u{6708}\u{6B21}\u{4E0A}\u{9650}\u{3092}\u{8D85}\u{3048}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.auto_reload.increase_limit_link", "\u{4E0A}\u{9650}\u{3092}\u{5897}\u{3084}\u{3059}");
+        m.insert("settings.billing.auto_reload.to_continue", "\u{7D9A}\u{3051}\u{308B}\u{306B}\u{306F}\u{3002}");
+        m.insert("settings.billing.restricted.billing_issue", "\u{8ACB}\u{6C42}\u{554F}\u{984C}\u{306B}\u{3088}\u{308A}\u{5236}\u{9650}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}");
+        m.insert("settings.billing.tab.overview", "\u{6982}\u{8981}");
+        m.insert("settings.billing.tab.usage_history", "\u{4F7F}\u{7528}\u{5C65}\u{6B74}");
+        m.insert("settings.billing.enterprise.callout_header", "\u{4F7F}\u{7528}\u{91CF}\u{30EC}\u{30DD}\u{30FC}\u{30C8}\u{306F}\u{73FE}\u{5728}\u{5236}\u{9650}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}");
+        m.insert("settings.billing.enterprise.callout_admin_prefix", "\u{30A8}\u{30F3}\u{30BF}\u{30FC}\u{30D7}\u{30E9}\u{30A4}\u{30BA}\u{306E}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{4F7F}\u{7528}\u{91CF}\u{306F}\u{3053}\u{306E}\u{30D3}\u{30E5}\u{30FC}\u{3067}\u{306F}\u{5B8C}\u{5168}\u{306B}\u{5229}\u{7528}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}\u{6700}\u{3082}\u{6B63}\u{3057}\u{3044}\u{6D88}\u{8CBB}\u{30C8}\u{30E9}\u{30C3}\u{30AD}\u{30F3}\u{30B0}\u{306E}\u{305F}\u{3081}\u{3001}");
+        m.insert("settings.billing.enterprise.callout_admin_link", "\u{7BA1}\u{7406}\u{30D1}\u{30CD}\u{30EB}\u{3092}\u{8A2A}\u{554F}");
+        m.insert("settings.billing.enterprise.callout_admin_suffix", "\u{3002}");
+        m.insert("settings.billing.enterprise.callout_non_admin", "\u{30A8}\u{30F3}\u{30BF}\u{30FC}\u{30D7}\u{30E9}\u{30A4}\u{30BA}\u{306E}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{4F7F}\u{7528}\u{91CF}\u{306F}\u{3053}\u{306E}\u{30D3}\u{30E5}\u{30FC}\u{3067}\u{306F}\u{5B8C}\u{5168}\u{306B}\u{5229}\u{7528}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}\u{8A73}\u{7D30}\u{306A}\u{4F7F}\u{7528}\u{91CF}\u{30EC}\u{30DD}\u{30FC}\u{30C8}\u{306E}\u{305F}\u{3081}\u{306B}\u{30C1}\u{30FC}\u{30E0}\u{7BA1}\u{7406}\u{8005}\u{306B}\u{304A}\u{554F}\u{3044}\u{5408}\u{308F}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.billing.addon.title", "\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}");
+        m.insert("settings.billing.addon.description", "\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{306F}\u{524D}\u{6255}\u{3044}\u{30D1}\u{30C3}\u{30B1}\u{30FC}\u{30B8}\u{3067}\u{8CFC}\u{5165}\u{3057}\u{3001}\u{5404}\u{8ACB}\u{6C42}\u{30B5}\u{30A4}\u{30AF}\u{30EB}\u{3067}\u{7E70}\u{308A}\u{8D8A}\u{3057}\u{3001}1\u{5E74}\u{5F8C}\u{306B}\u{671F}\u{9650}\u{5207}\u{308C}\u{3068}\u{306A}\u{308A}\u{307E}\u{3059}\u{3002}\u{8CFC}\u{5165}\u{91CF}\u{304C}\u{591A}\u{3044}\u{307B}\u{3069}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{5358}\u{4FA1}\u{304C}\u{5B89}\u{304F}\u{306A}\u{308A}\u{307E}\u{3059}\u{3002}\u{57FA}\u{672C}\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{304C}\u{4F7F}\u{3044}\u{5207}\u{3089}\u{308C}\u{308B}\u{3068}\u{3001}\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{304C}\u{6D88}\u{8CBB}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.addon.description_team", "\u{8CFC}\u{5165}\u{3057}\u{305F}\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{306F}\u{30C1}\u{30FC}\u{30E0}\u{5168}\u{4F53}\u{3067}\u{5171}\u{6709}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.addon.monthly_spend_limit", "\u{6708}\u{6B21}\u{6D88}\u{8CBB}\u{4E0A}\u{9650}");
+        m.insert("settings.billing.addon.monthly_spend_limit.tooltip", "\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{306E}\u{6708}\u{6B21}\u{6D88}\u{8CBB}\u{4E0A}\u{9650}\u{3092}\u{8A2D}\u{5B9A}\u{3057}\u{307E}\u{3059}");
+        m.insert("settings.billing.addon.purchased_this_month", "\u{4ECA}\u{6708}\u{8CFC}\u{5165}\u{6E08}\u{307F}");
+        m.insert("settings.billing.addon.auto_reload", "\u{81EA}\u{52D5}\u{30EA}\u{30ED}\u{30FC}\u{30C9}");
+        m.insert("settings.billing.addon.auto_reload.description", "\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}\u{3068}\u{3001}\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{6B8B}\u{9AD8}\u{304C} 100 \u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{306B}\u{306A}\u{3063}\u{305F}\u{6642}\u{306B}\u{3001}{amount} \u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{3092}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{8CFC}\u{5165}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.addon.one_time_purchase", "\u{4E00}\u{56DE}\u{9650}\u{5B9A}\u{8CFC}\u{5165}");
+        m.insert("settings.billing.addon.buy", "\u{8CFC}\u{5165}");
+        m.insert("settings.billing.addon.buying", "\u{8CFC}\u{5165}\u{4E2D}\u{2026}");
+        m.insert("settings.billing.addon.one_credit", "1\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}");
+        m.insert("settings.billing.addon.credits", "{count}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}");
+        m.insert("settings.billing.addon.zero_credits", "0\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}");
+        m.insert("settings.billing.addon.contact_account_executive", "\u{30A2}\u{30AB}\u{30A6}\u{30F3}\u{30C8}\u{30A8}\u{30B0}\u{30B8}\u{30AD}\u{30E5}\u{30C6}\u{30A3}\u{30D6}\u{306B}\u{9023}\u{7D61}\u{3057}\u{3066}\u{3044}\u{304D}\u{305F}\u{3060}\u{304D}\u{307E}\u{3057}\u{305F}\u{3089}\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{3092}\u{8CFC}\u{5165}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.addon.contact_admin", "\u{30C1}\u{30FC}\u{30E0}\u{7BA1}\u{7406}\u{8005}\u{306B}\u{9023}\u{7D61}\u{3057}\u{3066}\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{3092}\u{8CFC}\u{5165}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.billing.addon.switch_build", "Build\u{30D7}\u{30E9}\u{30F3}\u{306B}\u{5207}\u{66FF}");
+        m.insert("settings.billing.addon.upgrade_build", "Build\u{30D7}\u{30E9}\u{30F3}\u{306B}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.billing.addon.to_purchase_suffix", "\u{3057}\u{3066}\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{3092}\u{8CFC}\u{5165}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.ambient_trial.title", "\u{30AF}\u{30E9}\u{30A6}\u{30C9}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30C8}\u{30E9}\u{30A4}\u{30A2}\u{30EB}");
+        m.insert("settings.billing.ambient_trial.one_credit_remaining", "\u{6B8B}\u{308A}1\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}");
+        m.insert("settings.billing.ambient_trial.credits_remaining", "\u{6B8B}\u{308A}{count}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}");
+        m.insert("settings.billing.ambient_trial.new_agent", "\u{65B0}\u{3057}\u{3044}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}");
+        m.insert("settings.billing.ambient_trial.buy_more", "\u{3082}\u{3063}\u{3068}\u{8CFC}\u{5165}");
+        m.insert("settings.billing.usage_history.last_30_days", "\u{76F4}\u{8FD1}30\u{65E5}");
+        m.insert("settings.billing.usage_history.load_more", "\u{3082}\u{3063}\u{3068}\u{8AAD}\u{307F}\u{8FBC}\u{3080}");
+        m.insert("settings.billing.usage_history.empty_title", "\u{4F7F}\u{7528}\u{5C65}\u{6B74}\u{306A}\u{3057}");
+        m.insert("settings.billing.usage_history.empty_description", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{30BF}\u{30B9}\u{30AF}\u{3092}\u{958B}\u{59CB}\u{3057}\u{3066}\u{3053}\u{3053}\u{306B}\u{4F7F}\u{7528}\u{5C65}\u{6B74}\u{3092}\u{8868}\u{793A}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.usage.title", "\u{4F7F}\u{7528}\u{91CF}");
+        m.insert("settings.billing.usage.credits", "\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}");
+        m.insert("settings.billing.usage.resets", "{time}\u{306B}\u{30EA}\u{30BB}\u{30C3}\u{30C8}");
+        m.insert("settings.billing.usage.limit_description", "\u{3053}\u{308C}\u{306F}\u{3042}\u{306A}\u{305F}\u{306E}\u{30A2}\u{30AB}\u{30A6}\u{30F3}\u{30C8}\u{306E}{duration}AI\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{5236}\u{9650}\u{3067}\u{3059}\u{3002}");
+        m.insert("settings.billing.usage.team_total", "\u{30C1}\u{30FC}\u{30E0}\u{5408}\u{8A08}");
+        m.insert("settings.billing.overage.modal_title", "\u{8D85}\u{904E}\u{6D88}\u{8CBB}\u{4E0A}\u{9650}");
+        m.insert("settings.billing.addon.modal_title", "\u{6708}\u{6B21}\u{6D88}\u{8CBB}\u{4E0A}\u{9650}");
+        m.insert("settings.billing.prorated.tooltip_current_user", "\u{3042}\u{306A}\u{305F}\u{306F}\u{8ACB}\u{6C42}\u{30B5}\u{30A4}\u{30AF}\u{30EB}\u{306E}\u{9014}\u{4E2D}\u{3067}\u{53C2}\u{52A0}\u{3057}\u{305F}\u{305F}\u{3081}\u{3001}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{5236}\u{9650}\u{306F}\u{65E5}\u{5272}\u{63A1}\u{7B97}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.prorated.tooltip_other_user", "\u{3053}\u{306E}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{5236}\u{9650}\u{306F}\u{65E5}\u{5272}\u{63A1}\u{7B97}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}\u{3053}\u{306E}\u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{306F}\u{8ACB}\u{6C42}\u{30B5}\u{30A4}\u{30AF}\u{30EB}\u{306E}\u{9014}\u{4E2D}\u{3067}\u{53C2}\u{52A0}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}");
+        m.insert("settings.billing.toast.update_settings_failed", "\u{30EF}\u{30FC}\u{30AF}\u{30B9}\u{30DA}\u{30FC}\u{30B9}\u{8A2D}\u{5B9A}\u{306E}\u{66F4}\u{65B0}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.billing.toast.purchase_success", "\u{30A2}\u{30C9}\u{30AA}\u{30F3}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{306E}\u{8CFC}\u{5165}\u{306B}\u{6210}\u{529F}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.billing.plan.title", "\u{30D7}\u{30E9}\u{30F3}");
+        m.insert("settings.billing.plan.free", "\u{7121}\u{6599}");
+        m.insert("settings.billing.plan.sign_up", "\u{30B5}\u{30A4}\u{30F3}\u{30A2}\u{30C3}\u{30D7}");
+        m.insert("settings.billing.plan.compare_plans", "\u{30D7}\u{30E9}\u{30F3}\u{6BD4}\u{8F03}");
+        m.insert("settings.billing.plan.manage_billing", "\u{8ACB}\u{6C42}\u{7BA1}\u{7406}");
+        m.insert("settings.billing.plan.open_admin_panel", "\u{7BA1}\u{7406}\u{30D1}\u{30CD}\u{30EB}\u{3092}\u{958B}\u{304F}");
+        m.insert("settings.billing.upgrade.manage_billing_regain", "\u{8ACB}\u{6C42}\u{7BA1}\u{7406}");
+        m.insert("settings.billing.upgrade.to_regain_access", "\u{3057}\u{3066}AI\u{6A5F}\u{80FD}\u{3078}\u{306E}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3092}\u{56DE}\u{5FA9}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.upgrade.contact_admin_billing", "\u{30C1}\u{30FC}\u{30E0}\u{7BA1}\u{7406}\u{8005}\u{306B}\u{9023}\u{7D61}\u{3057}\u{3066}\u{8ACB}\u{6C42}\u{554F}\u{984C}\u{3092}\u{89E3}\u{6C7A}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.billing.upgrade.switch_build", "Build\u{30D7}\u{30E9}\u{30F3}\u{306B}\u{5207}\u{66FF}");
+        m.insert("settings.billing.upgrade.for_flexible_pricing", "\u{3067}\u{3088}\u{308A}\u{67D4}\u{8EDF}\u{306A}\u{4FA1}\u{683C}\u{30E2}\u{30C7}\u{30EB}\u{3092}\u{5F97}\u{3089}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.upgrade.upgrade_build", "Build\u{30D7}\u{30E9}\u{30F3}\u{306B}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.billing.upgrade.bring_your_own_key", "\u{81EA}\u{5206}\u{306E}\u{30AD}\u{30FC}\u{3092}\u{4F7F}\u{7528}");
+        m.insert("settings.billing.upgrade.or", "\u{307E}\u{305F}\u{306F}");
+        m.insert("settings.billing.upgrade.for_increased_access", "\u{3067}\u{3088}\u{308A}\u{591A}\u{304F}AI\u{6A5F}\u{80FD}\u{3092}\u{5F97}\u{3089}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.upgrade.to_turbo", "Turbo\u{30D7}\u{30E9}\u{30F3}\u{306B}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.billing.upgrade.to_lightspeed", "Lightspeed\u{30D7}\u{30E9}\u{30F3}\u{306B}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.billing.upgrade.generic", "\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.billing.upgrade.to_get_more_usage", "\u{3067}\u{3088}\u{308A}\u{591A}\u{304F}AI\u{4F7F}\u{7528}\u{91CF}\u{3092}\u{5F97}\u{3089}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.upgrade.to_max", "Max\u{306B}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.billing.upgrade.for_more_ai_credits", "\u{3067}\u{3088}\u{308A}\u{591A}\u{304F}AI\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{3092}\u{5F97}\u{3089}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.upgrade.switch_business", "Business\u{306B}\u{5207}\u{66FF}");
+        m.insert("settings.billing.upgrade.for_security_features", "\u{3067}SSO\u{3084}\u{81EA}\u{52D5}\u{9069}\u{7528}\u{306E}\u{30BC}\u{30ED}\u{30C7}\u{30FC}\u{30BF}\u{4FDD}\u{7559}\u{306A}\u{3069}\u{306E}\u{30BB}\u{30AD}\u{30E5}\u{30EA}\u{30C6}\u{30A3}\u{6A5F}\u{80FD}\u{3092}\u{5F97}\u{3089}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.upgrade.to_enterprise", "Enterprise\u{306B}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.billing.upgrade.for_custom_limits", "\u{3067}\u{30AB}\u{30B9}\u{30BF}\u{30E0}\u{5236}\u{9650}\u{3068}\u{5C02}\u{5C5E}\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{3092}\u{5F97}\u{3089}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.upgrade.contact_support", "\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{306B}\u{9023}\u{7D61}");
+        m.insert("settings.billing.upgrade.for_more_ai_usage_generic", "\u{3067}\u{3088}\u{308A}\u{591A}\u{304F}AI\u{4F7F}\u{7528}\u{91CF}\u{3092}\u{5F97}\u{3089}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.upgrade.for_more_credits_models", "\u{3067}\u{3088}\u{308A}\u{591A}\u{304F}\u{306E}\u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{3068}\u{30E2}\u{30C7}\u{30EB}\u{3092}\u{5F97}\u{3089}\u{308C}\u{307E}\u{3059}\u{3002}");
+
+        // Teams page
+        m.insert("settings.teams.header", "\u{30C1}\u{30FC}\u{30E0}");
+        m.insert("settings.teams.create.title", "\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{4F5C}\u{6210}\u{3059}\u{308B}");
+        m.insert("settings.teams.create.description", "\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{4F5C}\u{6210}\u{3059}\u{308B}\u{3068}\u{3001}\u{30AF}\u{30E9}\u{30A6}\u{30C9}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E}\u{5B9F}\u{884C}\u{3001}\u{74B0}\u{5883}\u{3001}\u{81EA}\u{52D5}\u{5316}\u{3001}\u{6210}\u{679C}\u{7269}\u{3092}\u{5171}\u{6709}\u{3057}\u{3066}\u{3001}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{4E3B}\u{5C0E}\u{306E}\u{958B}\u{767A}\u{3067}\u{30B3}\u{30E9}\u{30DC}\u{30EC}\u{30FC}\u{30B7}\u{30E7}\u{30F3}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{3068}\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{306E}\u{305F}\u{3081}\u{306E}\u{5171}\u{6709}\u{30CA}\u{30EC}\u{30C3}\u{30B8}\u{30B9}\u{30C8}\u{30A2}\u{3092}\u{4F5C}\u{6210}\u{3059}\u{308B}\u{3053}\u{3068}\u{3082}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.teams.create.team_name_placeholder", "\u{30C1}\u{30FC}\u{30E0}\u{540D}");
+        m.insert("settings.teams.create.button", "\u{4F5C}\u{6210}");
+        m.insert("settings.teams.create.discoverable_checkbox_domain", "@{domain} \u{30E1}\u{30FC}\u{30EB}\u{306E} Warp \u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{304C}\u{3053}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{898B}\u{3064}\u{5BCC}\u{3066}\u{53C2}\u{52A0}\u{3067}\u{304D}\u{308B}\u{3088}\u{3046}\u{306B}\u{3059}\u{308B}\u{3002}");
+        m.insert("settings.teams.create.discoverable_checkbox_generic", "\u{540C}\u{3058}\u{30E1}\u{30FC}\u{30EB}\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{306E} Warp \u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{304C}\u{3053}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{898B}\u{3064}\u{5BCC}\u{3066}\u{53C2}\u{52A0}\u{3067}\u{304D}\u{308B}\u{3088}\u{3046}\u{306B}\u{3059}\u{308B}\u{3002}");
+        m.insert("settings.teams.create.join_existing", "\u{307E}\u{305F}\u{306F}\u{3001}\u{4F1A}\u{793E}\u{5185}\u{306E}\u{65E2}\u{5B58}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{306B}\u{53C2}\u{52A0}\u{3059}\u{308B}");
+        m.insert("settings.teams.manage.leave_team", "\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{96E2}\u{308C}\u{308B}");
+        m.insert("settings.teams.manage.delete_team", "\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{524A}\u{9664}");
+        m.insert("settings.teams.manage.rename_placeholder", "\u{65B0}\u{3057}\u{3044}\u{30C1}\u{30FC}\u{30E0}\u{540D}");
+        m.insert("settings.teams.manage.transfer_ownership_title", "\u{30C1}\u{30FC}\u{30E0}\u{306E}\u{6240}\u{6709}\u{6A29}\u{3092}\u{79FB}\u{8EE2}\u{3057}\u{307E}\u{3059}\u{304B}\u{FF1F}");
+        m.insert("settings.teams.manage.contact_support", "\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{306B}\u{9023}\u{7D61}");
+        m.insert("settings.teams.manage.manage_billing", "\u{8ACB}\u{6C42}\u{3092}\u{7BA1}\u{7406}");
+        m.insert("settings.teams.manage.open_admin_panel", "\u{7BA1}\u{7406}\u{30D1}\u{30CD}\u{30EB}\u{3092}\u{958B}\u{304F}");
+        m.insert("settings.teams.manage.manage_plan", "\u{30D7}\u{30E9}\u{30F3}\u{3092}\u{7BA1}\u{7406}");
+        m.insert("settings.teams.invite.by_link", "\u{30EA}\u{30F3}\u{30AF}\u{3067}\u{62DB}\u{5F85}");
+        m.insert("settings.teams.invite.link_toggle_instructions", "\u{7BA1}\u{7406}\u{8005}\u{3068}\u{3057}\u{3066}\u{3001}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{304C}\u{62DB}\u{5F85}\u{30EA}\u{30F3}\u{30AF}\u{3067}\u{4ED6}\u{8005}\u{3092}\u{62DB}\u{5F85}\u{3059}\u{308B}\u{6A5F}\u{80FD}\u{3092}\u{6709}\u{52B9}\u{307E}\u{305F}\u{306F}\u{7121}\u{52B9}\u{306B}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.teams.invite.reset_links", "\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{30EA}\u{30BB}\u{30C3}\u{30C8}");
+        m.insert("settings.teams.invite.restrict_by_domain", "\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{3067}\u{5236}\u{9650}");
+        m.insert("settings.teams.invite.domain_restrictions_instructions", "\u{7279}\u{5B9A}\u{306E}\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{306E}\u{30E1}\u{30FC}\u{30EB}\u{3092}\u{6301}\u{3064}\u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{306E}\u{307F}\u{304C}\u{62DB}\u{5F85}\u{30EA}\u{30F3}\u{30AF}\u{304B}\u{3089}\u{30C1}\u{30FC}\u{30E0}\u{306B}\u{53C2}\u{52A0}\u{3067}\u{304D}\u{308B}\u{3088}\u{3046}\u{306B}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.teams.invite.domains_placeholder", "\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{3001}\u{30AB}\u{30F3}\u{30DE}\u{533A}\u{5207}\u{308A}");
+        m.insert("settings.teams.invite.set_button", "\u{8A2D}\u{5B9A}");
+        m.insert("settings.teams.invite.invalid_domains", "\u{63D0}\u{4F9B}\u{3055}\u{308C}\u{305F}\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{306E}\u{4E00}\u{90E8}\u{304C}\u{7121}\u{52B9}\u{304B}\u{3001}\u{65E2}\u{306B}\u{8FFD}\u{52A0}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.teams.invite.failed_load_link", "\u{62DB}\u{5F85}\u{30EA}\u{30F3}\u{30AF}\u{306E}\u{8AAD}\u{307F}\u{8FBC}\u{307F}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}");
+        m.insert("settings.teams.invite.by_email", "\u{30E1}\u{30FC}\u{30EB}\u{3067}\u{62DB}\u{5F85}");
+        m.insert("settings.teams.invite.email_expiry_instructions", "\u{30E1}\u{30FC}\u{30EB}\u{62DB}\u{5F85}\u{306F}7\u{65E5}\u{9593}\u{6709}\u{52B9}\u{3067}\u{3059}\u{3002}");
+        m.insert("settings.teams.invite.emails_placeholder", "\u{30E1}\u{30FC}\u{30EB}\u{30A2}\u{30C9}\u{30EC}\u{30B9}\u{3001}\u{30AB}\u{30F3}\u{30DE}\u{533A}\u{5207}\u{308A}");
+        m.insert("settings.teams.invite.invite_button", "\u{62DB}\u{5F85}");
+        m.insert("settings.teams.invite.invalid_emails", "\u{63D0}\u{4F9B}\u{3055}\u{308C}\u{305F}\u{30E1}\u{30FC}\u{30EB}\u{30A2}\u{30C9}\u{30EC}\u{30B9}\u{306E}\u{4E00}\u{90E8}\u{304C}\u{7121}\u{52B9}\u{304B}\u{3001}\u{65E2}\u{306B}\u{62DB}\u{5F85}\u{6E08}\u{307F}\u{307E}\u{305F}\u{306F}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{3067}\u{3059}\u{3002}");
+        m.insert("settings.teams.members.header", "\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}");
+        m.insert("settings.teams.members.cancel_invite", "\u{62DB}\u{5F85}\u{3092}\u{30AD}\u{30E3}\u{30F3}\u{30BB}\u{30EB}");
+        m.insert("settings.teams.members.transfer_ownership", "\u{6240}\u{6709}\u{6A29}\u{3092}\u{79FB}\u{8EE2}");
+        m.insert("settings.teams.members.demote_from_admin", "\u{7BA1}\u{7406}\u{8005}\u{304B}\u{3089}\u{964D}\u{683C}");
+        m.insert("settings.teams.members.promote_to_admin", "\u{7BA1}\u{7406}\u{8005}\u{306B}\u{6607}\u{683C}");
+        m.insert("settings.teams.members.remove_from_team", "\u{30C1}\u{30FC}\u{30E0}\u{304B}\u{3089}\u{524A}\u{9664}");
+        m.insert("settings.teams.members.remove_domain", "\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{3092}\u{524A}\u{9664}");
+        m.insert("settings.teams.badge.expired", "\u{671F}\u{9650}\u{5207}\u{308C}");
+        m.insert("settings.teams.badge.pending", "\u{4FDD}\u{7559}\u{4E2D}");
+        m.insert("settings.teams.badge.owner", "\u{30AA}\u{30FC}\u{30CA}\u{30FC}");
+        m.insert("settings.teams.badge.admin", "\u{7BA1}\u{7406}\u{8005}");
+        m.insert("settings.teams.badge.past_due", "\u{652F}\u{6255}\u{671F}\u{9650}\u{8D85}\u{904E}");
+        m.insert("settings.teams.badge.unpaid", "\u{672A}\u{6255}\u{3044}");
+        m.insert("settings.teams.plan.free_usage_limits", "\u{7121}\u{6599}\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{4F7F}\u{7528}\u{5236}\u{9650}");
+        m.insert("settings.teams.plan.usage_limits", "\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{4F7F}\u{7528}\u{5236}\u{9650}");
+        m.insert("settings.teams.plan.shared_notebooks", "\u{5171}\u{6709}\u{30CE}\u{30FC}\u{30C8}\u{30D6}\u{30C3}\u{30AF}");
+        m.insert("settings.teams.plan.shared_workflows", "\u{5171}\u{6709}\u{30EF}\u{30FC}\u{30AF}\u{30D5}\u{30ED}\u{30FC}");
+        m.insert("settings.teams.limit.admin", "\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{4E0A}\u{9650}\u{306B}\u{9054}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}\u{8FFD}\u{52A0}\u{3059}\u{308B}\u{306B}\u{306F}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.teams.limit.admin_not_upgradeable", "\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{4E0A}\u{9650}\u{306B}\u{9054}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{3092}\u{8FFD}\u{52A0}\u{3059}\u{308B}\u{306B}\u{306F} support@warp.dev \u{306B}\u{304A}\u{554F}\u{3044}\u{5408}\u{308F}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.teams.limit.non_admin", "\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{4E0A}\u{9650}\u{306B}\u{9054}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{3092}\u{8FFD}\u{52A0}\u{3059}\u{308B}\u{306B}\u{306F}\u{30C1}\u{30FC}\u{30E0}\u{7BA1}\u{7406}\u{8005}\u{306B}\u{304A}\u{554F}\u{3044}\u{5408}\u{308F}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.teams.limit_exceeded.admin_upgradeable", "\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{4E0A}\u{9650}\u{3092}\u{8D85}\u{3048}\u{307E}\u{3057}\u{305F}\u{3002}\u{8FFD}\u{52A0}\u{3059}\u{308B}\u{306B}\u{306F}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.teams.limit_exceeded.admin_not_upgradeable", "\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{4E0A}\u{9650}\u{3092}\u{8D85}\u{3048}\u{307E}\u{3057}\u{305F}\u{3002}\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}\u{3059}\u{308B}\u{306B}\u{306F} support@warp.dev \u{306B}\u{304A}\u{554F}\u{3044}\u{5408}\u{308F}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.teams.limit_exceeded.non_admin", "\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{4E0A}\u{9650}\u{3092}\u{8D85}\u{3048}\u{307E}\u{3057}\u{305F}\u{3002}\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}\u{3059}\u{308B}\u{306B}\u{306F}\u{30C1}\u{30FC}\u{30E0}\u{7BA1}\u{7406}\u{8005}\u{306B}\u{304A}\u{554F}\u{3044}\u{5408}\u{308F}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.teams.delinquent.admin_non_self_serve", "\u{652F}\u{6255}\u{554F}\u{984C}\u{306E}\u{305F}\u{3081}\u{3001}\u{30C1}\u{30FC}\u{30E0}\u{62DB}\u{5F85}\u{304C}\u{5236}\u{9650}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3092}\u{56DE}\u{5FA9}\u{3059}\u{308B}\u{306B}\u{306F} support@warp.dev \u{306B}\u{304A}\u{554F}\u{3044}\u{5408}\u{308F}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.teams.delinquent.non_admin", "\u{652F}\u{6255}\u{554F}\u{984C}\u{306E}\u{305F}\u{3081}\u{3001}\u{30C1}\u{30FC}\u{30E0}\u{62DB}\u{5F85}\u{304C}\u{5236}\u{9650}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3092}\u{56DE}\u{5FA9}\u{3059}\u{308B}\u{306B}\u{306F}\u{30C1}\u{30FC}\u{30E0}\u{7BA1}\u{7406}\u{8005}\u{306B}\u{304A}\u{554F}\u{3044}\u{5408}\u{308F}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.teams.delinquent.admin_self_serve_line1", "\u{30B5}\u{30D6}\u{30B9}\u{30AF}\u{30EA}\u{30D7}\u{30B7}\u{30E7}\u{30F3}\u{306E}\u{652F}\u{6255}\u{554F}\u{984C}\u{306E}\u{305F}\u{3081}\u{3001}\u{30C1}\u{30FC}\u{30E0}\u{62DB}\u{5F85}\u{304C}\u{5236}\u{9650}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.teams.delinquent.admin_self_serve_line2_prefix", "");
+        m.insert("settings.teams.delinquent.admin_self_serve_line2_link", "\u{304A}\u{652F}\u{6255}\u{3044}\u{60C5}\u{5831}\u{3092}\u{66F4}\u{65B0}");
+        m.insert("settings.teams.delinquent.admin_self_serve_line2_suffix", "\u{3057}\u{3066}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3092}\u{56DE}\u{5FA9}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.teams.discoverable.header", "\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{691C}\u{51FA}\u{53EF}\u{80FD}\u{306B}\u{3059}\u{308B}");
+        m.insert("settings.teams.discoverable.allow_domain", "@{domain} \u{30E1}\u{30FC}\u{30EB}\u{306E} Warp \u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{304C}\u{3053}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{898B}\u{3064}\u{5BCC}\u{3066}\u{53C2}\u{52A0}\u{3067}\u{304D}\u{308B}\u{3088}\u{3046}\u{306B}\u{3059}\u{308B}\u{3002}");
+        m.insert("settings.teams.discoverable.allow_same_domain", "\u{540C}\u{3058}\u{30E1}\u{30FC}\u{30EB}\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{306E} Warp \u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{304C}\u{3053}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{898B}\u{3064}\u{5BCC}\u{3066}\u{53C2}\u{52A0}\u{3067}\u{304D}\u{308B}\u{3088}\u{3046}\u{306B}\u{3059}\u{308B}\u{3002}");
+        m.insert("settings.teams.discovery.one_teammate", "1\u{4EBA}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}");
+        m.insert("settings.teams.discovery.multiple_teammates", "{count}\u{4EBA}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}");
+        m.insert("settings.teams.discovery.join_description", "\u{3053}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{306B}\u{53C2}\u{52A0}\u{3057}\u{3066}\u{3001}\u{30EF}\u{30FC}\u{30AF}\u{30D5}\u{30ED}\u{30FC}\u{3084}\u{30CE}\u{30FC}\u{30C8}\u{30D6}\u{30C3}\u{30AF}\u{306A}\u{3069}\u{306E}\u{30B3}\u{30E9}\u{30DC}\u{30EC}\u{30FC}\u{30B7}\u{30E7}\u{30F3}\u{3092}\u{59CB}\u{3081}\u{307E}\u{3057}\u{3087}\u{3046}\u{3002}");
+        m.insert("settings.teams.discovery.join_button", "\u{53C2}\u{52A0}");
+        m.insert("settings.teams.discovery.contact_admin", "\u{7BA1}\u{7406}\u{8005}\u{306B}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3092}\u{30EA}\u{30AF}\u{30A8}\u{30B9}\u{30C8}");
+        m.insert("settings.teams.pricing.team_members", "\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}");
+        m.insert("settings.teams.pricing.prorated_admin", "\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{306E} Warp \u{4F7F}\u{7528}\u{6599}\u{306E}\u{4E00}\u{90E8}\u{304C}\u{8ACB}\u{6C42}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.teams.pricing.prorated_member", "\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{306E} Warp \u{4F7F}\u{7528}\u{6599}\u{306E}\u{4E00}\u{90E8}\u{304C}\u{7BA1}\u{7406}\u{8005}\u{306B}\u{8ACB}\u{6C42}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.teams.pricing.additional_members_with_cost", "\u{8FFD}\u{52A0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{306F}\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{5398}\u{4FA1}\u{3067}\u{8AB2}\u{91D1}\u{3055}\u{308C}\u{307E}\u{3059}\u{FF1A}\u{6708}\u{984D}{monthly_cost}\u{307E}\u{305F}\u{306F}\u{5E74}\u{984D}{yearly_cost}\u{FF08}\u{8ACB}\u{6C42}\u{30B5}\u{30A4}\u{30AF}\u{30EB}\u{306B}\u{3088}\u{308B}\u{FF09}\u{3002}{prorated_message}");
+        m.insert("settings.teams.pricing.additional_members_no_cost", "\u{8FFD}\u{52A0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{306F}\u{30D7}\u{30E9}\u{30F3}\u{306E}\u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{5398}\u{4FA1}\u{3067}\u{8AB2}\u{91D1}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}{prorated_message}");
+        m.insert("settings.teams.upgrade.to_build", "Build\u{306B}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.teams.upgrade.to_turbo", "Turbo\u{30D7}\u{30E9}\u{30F3}\u{306B}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.teams.upgrade.to_lightspeed", "Lightspeed\u{30D7}\u{30E9}\u{30F3}\u{306B}\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}");
+        m.insert("settings.teams.upgrade.compare_plans", "\u{30D7}\u{30E9}\u{30F3}\u{3092}\u{6BD4}\u{8F83}");
+        m.insert("settings.teams.tab.link", "\u{30EA}\u{30F3}\u{30AF}");
+        m.insert("settings.teams.tab.email", "\u{30E1}\u{30FC}\u{30EB}");
+        m.insert("settings.teams.offline", "\u{30AA}\u{30D5}\u{30E9}\u{30A4}\u{30F3}\u{3067}\u{3059}\u{3002}");
+        m.insert("settings.teams.toast.failed_send_invite", "\u{62DB}\u{5F85}\u{306E}\u{9001}\u{4FE1}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.toggled_invite_links", "\u{62DB}\u{5F85}\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{5207}\u{308A}\u{66FF}\u{3048}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_toggle_invite_links", "\u{62DB}\u{5F85}\u{30EA}\u{30F3}\u{30AF}\u{306E}\u{5207}\u{308A}\u{66FF}\u{3048}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.reset_invite_links", "\u{62DB}\u{5F85}\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{30EA}\u{30BB}\u{30C3}\u{30C8}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_reset_invite_links", "\u{62DB}\u{5F85}\u{30EA}\u{30F3}\u{30AF}\u{306E}\u{30EA}\u{30BB}\u{30C3}\u{30C8}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.deleted_invite", "\u{62DB}\u{5F85}\u{3092}\u{524A}\u{9664}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_delete_invite", "\u{62DB}\u{5F85}\u{306E}\u{524A}\u{9664}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_add_domain", "\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{5236}\u{9650}\u{306E}\u{8FFD}\u{52A0}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_delete_domain", "\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{5236}\u{9650}\u{306E}\u{524A}\u{9664}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_upgrade_link", "\u{30A2}\u{30C3}\u{30D7}\u{30B0}\u{30EC}\u{30FC}\u{30C9}\u{30EA}\u{30F3}\u{30AF}\u{306E}\u{751F}\u{6210}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}feedback@warp.dev \u{307E}\u{3067}\u{304A}\u{554F}\u{3044}\u{5408}\u{308F}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}");
+        m.insert("settings.teams.toast.failed_billing_link", "\u{8ACB}\u{6C42}\u{30EA}\u{30F3}\u{30AF}\u{306E}\u{751F}\u{6210}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}feedback@warp.dev \u{307E}\u{3067}\u{304A}\u{554F}\u{3044}\u{5408}\u{308F}\u{305B}\u{304F}\u{3060}\u{3055}\u{3044}");
+        m.insert("settings.teams.toast.toggled_discoverability", "\u{30C1}\u{30FC}\u{30E0}\u{306E}\u{691C}\u{51FA}\u{53EF}\u{80FD}\u{6027}\u{3092}\u{5207}\u{308A}\u{66FF}\u{3048}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_toggle_discoverability", "\u{30C1}\u{30FC}\u{30E0}\u{306E}\u{691C}\u{51FA}\u{53EF}\u{80FD}\u{6027}\u{306E}\u{5207}\u{308A}\u{66FF}\u{3048}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.joined_team", "\u{30C1}\u{30FC}\u{30E0}\u{3078}\u{306E}\u{53C2}\u{52A0}\u{306B}\u{6210}\u{529F}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.joined_team_named", "{team_name} \u{3078}\u{306E}\u{53C2}\u{52A0}\u{306B}\u{6210}\u{529F}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_join_team", "\u{30C1}\u{30FC}\u{30E0}\u{3078}\u{306E}\u{53C2}\u{52A0}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.transferred_ownership", "\u{30C1}\u{30FC}\u{30E0}\u{306E}\u{6240}\u{6709}\u{6A29}\u{3092}\u{6B63}\u{5E38}\u{306B}\u{79FB}\u{8EE2}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_transfer_ownership", "\u{30C1}\u{30FC}\u{30E0}\u{306E}\u{6240}\u{6709}\u{6A29}\u{306E}\u{79FB}\u{8EE2}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.updated_member_role", "\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{306E}\u{5F79}\u{5272}\u{3092}\u{6B63}\u{5E38}\u{306B}\u{66F4}\u{65B0}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_update_member_role", "\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{306E}\u{5F79}\u{5272}\u{306E}\u{66F4}\u{65B0}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.error_leaving_team", "\u{30C1}\u{30FC}\u{30E0}\u{96E2}\u{8131}\u{4E2D}\u{306B}\u{30A8}\u{30E9}\u{30FC}\u{304C}\u{767A}\u{751F}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.left_team", "\u{30C1}\u{30FC}\u{30E0}\u{3092}\u{6B63}\u{5E38}\u{306B}\u{96E2}\u{8131}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.renamed_team", "\u{30C1}\u{30FC}\u{30E0}\u{540D}\u{3092}\u{6B63}\u{5E38}\u{306B}\u{5909}\u{66F4}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.failed_rename_team", "\u{30C1}\u{30FC}\u{30E0}\u{540D}\u{306E}\u{5909}\u{66F4}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.teams.toast.link_copied", "\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{30AF}\u{30EA}\u{30C3}\u{30D7}\u{30DC}\u{30FC}\u{30C9}\u{306B}\u{30B3}\u{30D4}\u{30FC}\u{3057}\u{307E}\u{3057}\u{305F}\u{FF01}");
+        m.insert("settings.teams.toast.invalid_domain_count", "\u{7121}\u{52B9}\u{306A}\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{FF1A}{count}");
+        m.insert("settings.teams.toast.domains_added", "\u{30C9}\u{30E1}\u{30A4}\u{30F3}\u{5236}\u{9650}\u{3092}\u{8FFD}\u{52A0}\u{3057}\u{307E}\u{3057}\u{305F}\u{FF1A}{count}");
+        m.insert("settings.teams.toast.invalid_email_count", "\u{7121}\u{52B9}\u{306A}\u{30E1}\u{30FC}\u{30EB}\u{FF1A}{count}");
+        m.insert("settings.teams.toast.invite_sent", "\u{62DB}\u{5F85}\u{3092}\u{9001}\u{4FE1}\u{3057}\u{307E}\u{3057}\u{305F}\u{FF01}");
+        m.insert("settings.teams.toast.invites_sent", "{count}\u{4EF6}\u{306E}\u{62DB}\u{5F85}\u{3092}\u{9001}\u{4FE1}\u{3057}\u{307E}\u{3057}\u{305F}\u{FF01}");
+
+        // Delete environment dialog
+        m.insert("settings.delete_env.title", "\u{74B0}\u{5883}\u{3092}\u{524A}\u{9664}\u{3057}\u{307E}\u{3059}\u{304B}\u{FF1F}");
+        m.insert("settings.delete_env.description", "{env_name} \u{74B0}\u{5883}\u{3092}\u{524A}\u{9664}\u{3057}\u{3066}\u{3082}\u{3088}\u{308D}\u{3057}\u{3044}\u{3067}\u{3059}\u{304B}\u{FF1F}");
+        m.insert("settings.delete_env.confirm", "\u{74B0}\u{5883}\u{3092}\u{524A}\u{9664}");
+
+        // Directory color picker
+        m.insert("settings.dir_color.add_button", "\u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}\u{30AB}\u{30E9}\u{30FC}\u{3092}\u{8FFD}\u{52A0}");
+        m.insert("settings.dir_color.add_directory", "+ \u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}\u{3092}\u{8FFD}\u{52A0}\u{2026}");
+
+        // Environment form
+        m.insert("settings.env_form.create_env", "\u{74B0}\u{5883}\u{3092}\u{4F5C}\u{6210}");
+        m.insert("settings.env_form.edit_env", "\u{74B0}\u{5883}\u{3092}\u{7DE8}\u{96C6}");
+        m.insert("settings.env_form.save_env", "\u{74B0}\u{5883}\u{3092}\u{4FDD}\u{5B58}");
+        m.insert("settings.env_form.delete_env", "\u{74B0}\u{5883}\u{3092}\u{524A}\u{9664}");
+        m.insert("settings.env_form.name_placeholder", "\u{74B0}\u{5883}\u{540D}");
+        m.insert("settings.env_form.description_label", "\u{8AAC}\u{660E}");
+        m.insert("settings.env_form.docker_image_label", "Docker \u{30A4}\u{30E1}\u{30FC}\u{30B8}\u{53C2}\u{7167}");
+        m.insert("settings.env_form.repos_label", "\u{EA3C}\u{C788}\u{B2E4}");
+        m.insert("settings.env_form.no_repos_found", "\u{EA3C}\u{C788}\u{B2E4}");
+        m.insert("settings.env_form.create", "\u{4F5C}\u{6210}");
+        m.insert("settings.env_form.save", "\u{4FDD}\u{5B58}");
+        m.insert("settings.env_form.retry", "\u{518D}\u{8A66}\u{884C}");
+        m.insert("settings.env_form.authenticate", "\u{8A8D}\u{8A3C}");
+        m.insert("settings.env_form.auth_github", "GitHub \u{3067}\u{8A8D}\u{8A3C}");
+        m.insert("settings.env_form.configure_github", "GitHub \u{3067}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3092}\u{8A2D}\u{5B9A}");
+        m.insert("settings.env_form.char_count", "{count} / {max} \u{6587}\u{5B57}");
+        m.insert("settings.env_form.grant_access_hint", "Docker \u{30A4}\u{30E1}\u{30FC}\u{30B8}\u{3092}\u{63D0}\u{6848}\u{3059}\u{308B}\u{306B}\u{306F}\u{3001}GitHub \u{EA3C}\u{C788}\u{B2E4}\u{3078}\u{306E}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3092}\u{8A31}\u{53EF}\u{3059}\u{308B}\u{5FC5}\u{8981}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}");
+        m.insert("settings.env_form.launch_agent", "\u{30A8}\u{30FC}\u{30B8}\u{30A7}\u{30F3}\u{30C8}\u{3092}\u{8D77}\u{52D5}");
+        m.insert("settings.env_form.share_with_team", "\u{30C1}\u{30FC}\u{30E0}\u{3068}\u{5171}\u{6709}");
+        m.insert("settings.env_form.share_warning", "\u{500B}\u{4EBA}\u{74B0}\u{5883}\u{306F}\u{5916}\u{90E8}\u{7D71}\u{5408}\u{3084}\u{30C1}\u{30FC}\u{30E0}\u{7528}\u{5BC6}\u{9417}\u{3067}\u{306F}\u{4F7F}\u{7528}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}\u{6700}\u{9AD8}\u{306E}\u{4F53}\u{9A13}\u{306E}\u{305F}\u{3081}\u{306B}\u{3001}\u{5171}\u{6709}\u{74B0}\u{5883}\u{3092}\u{4F7F}\u{7528}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.env_form.suggest_image", "\u{30A4}\u{30E1}\u{30FC}\u{30B8}\u{3092}\u{63D0}\u{6848}");
+
+        // Execution profile
+        m.insert("settings.execution_profile.permissions", "\u{A078}\u{9650}");
+        m.insert("settings.execution_profile.models", "\u{30E2}\u{30C7}\u{30EB}");
+        m.insert("settings.execution_profile.edit", "\u{7DE8}\u{96C6}");
+        m.insert("settings.execution_profile.base_model", "\u{30D9}\u{30FC}\u{30B9}\u{30E2}\u{30C7}\u{30EB}\u{FF1A}");
+        m.insert("settings.execution_profile.always_allow", "\u{5E38}\u{306B}\u{8A31}\u{53EF}");
+        m.insert("settings.execution_profile.always_ask", "\u{5E38}\u{306B}\u{78BA}\u{8A8D}");
+        m.insert("settings.execution_profile.ask_unless_auto_approve", "\u{81EA}\u{52D5}\u{627F}\u{8A8D}\u{3067}\u{306A}\u{3051}\u{308C}\u{3070}\u{78BA}\u{8A8D}");
+        m.insert("settings.execution_profile.never_ask", "\u{78BA}\u{8A8D}\u{3057}\u{306A}\u{3044}");
+        m.insert("settings.execution_profile.agent_decides", "\u{AFC0}\u{BC97}\u{304C}\u{5224}\u{65AD}");
+        m.insert("settings.execution_profile.execute_commands", "\u{B300}\u{BB38}\u{C790} \u{ACB0}\u{D569}\u{B420} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.execution_profile.apply_code_diffs", "\u{30B3}\u{30FC}\u{30C9}\u{5DEE}\u{5206}\u{3092}\u{9069}\u{7528}\u{FF1A}");
+        m.insert("settings.execution_profile.read_files", "\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{8AAD}\u{307F}\u{53D6}\u{308A}\u{FF1A}");
+        m.insert("settings.execution_profile.interact_running", "\u{5B9F}\u{884C}\u{4E2D}\u{306E}\u{B300}\u{BB38}\u{C790} \u{ACB0}\u{D569}\u{B420} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.execution_profile.full_terminal_use", "\u{5B8C}\u{5168}\u{306A}\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{4F7F}\u{7528}\u{FF1A}");
+        m.insert("settings.execution_profile.computer_use", "\u{B300}\u{BB38}\u{C790} \u{ACB0}\u{D569}\u{B420} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.execution_profile.ask_questions", "\u{B300}\u{BB38}\u{C790} \u{ACB0}\u{D569}\u{B420} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.execution_profile.call_mcp_servers", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{547C}\u{3073}\u{51FA}\u{3059}\u{FF1A}");
+        m.insert("settings.execution_profile.call_web_tools", "Web \u{30C4}\u{30FC}\u{30EB}\u{3092}\u{547C}\u{3073}\u{51FA}\u{3059}\u{FF1A}");
+        m.insert("settings.execution_profile.auto_sync_plans", "\u{30D7}\u{30E9}\u{30F3}\u{3092}Warp Drive\u{306B}\u{81EA}\u{52D5}\u{540C}\u{671F}\u{FF1A}");
+        m.insert("settings.execution_profile.on", "\u{30AA}\u{30F3}");
+        m.insert("settings.execution_profile.off", "\u{30AA}\u{30D5}");
+        m.insert("settings.execution_profile.never", "\u{306A}\u{3057}");
+        m.insert("settings.execution_profile.none", "\u{306A}\u{3057}");
+        m.insert("settings.execution_profile.unknown", "\u{4E0D}\u{660E}");
+        m.insert("settings.execution_profile.command_allowlist", "\u{B300}\u{BB38}\u{C790} \u{ACB0}\u{D569}\u{B420} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.execution_profile.command_denylist", "\u{B300}\u{BB38}\u{C790} \u{ACB0}\u{D569}\u{B420} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.execution_profile.directory_allowlist", "\u{B300}\u{BB38}\u{C790} \u{ACB0}\u{D569}\u{B420} \u{C218} \u{C788}\u{C2B5}\u{B2C8}\u{B2E4}");
+        m.insert("settings.execution_profile.mcp_allowlist", "MCP \u{8A31}\u{53EF}\u{30EA}\u{30B9}\u{30C8}\u{FF1A}");
+        m.insert("settings.execution_profile.mcp_denylist", "MCP \u{62D2}\u{5426}\u{30EA}\u{30B9}\u{30C8}\u{FF1A}");
+        m.insert("settings.execution_profile.ask_on_first_write", "\u{6700}\u{521D}\u{306E}\u{66F8}\u{304D}\u{8FBC}\u{307F}\u{6642}\u{306B}\u{78BA}\u{8A8D}");
+
+        // Footer
+        m.insert("settings.footer.open_file", "\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{3092}\u{958B}\u{304F}");
+        m.insert("settings.footer.open_settings_file", "\u{8A2D}\u{5B9A}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{3092}\u{958B}\u{304F}");
+        m.insert("settings.footer.fix_with_oz", "Oz \u{3067}\u{4FEE}\u{6B63}");
+
+        // Main page
+        m.insert("settings.main.version", "\u{30D0}\u{30FC}\u{30B8}\u{30E7}\u{30F3}");
+        m.insert("settings.main.check_updates", "\u{66F4}\u{65B0}\u{306E}\u{78BA}\u{8A8D}");
+        m.insert("settings.main.checking_update", "\u{66F4}\u{65B0}\u{3092}\u{78BA}\u{8A8D}\u{4E2D}\u{2026}");
+        m.insert("settings.main.update_available", "\u{66F4}\u{65B0}\u{304C}\u{5229}\u{7528}\u{53EF}\u{80FD}\u{3067}\u{3059}");
+        m.insert("settings.main.downloading_update", "\u{66F4}\u{65B0}\u{3092}\u{30C0}\u{30A6}\u{30F3}\u{30ED}\u{30FC}\u{30C9}\u{4E2D}\u{2026}");
+        m.insert("settings.main.updating", "\u{66F4}\u{65B0}\u{4E2D}\u{2026}");
+        m.insert("settings.main.installed_update", "\u{66F4}\u{65B0}\u{3092}\u{A8B0}\u{B8CC}");
+        m.insert("settings.main.up_to_date", "\u{6700}\u{65B0}\u{7248}\u{3067}\u{3059}");
+        m.insert("settings.main.update_unavailable", "\u{65B0}\u{3057}\u{3044}\u{30D0}\u{30FC}\u{30B8}\u{30E7}\u{30F3}\u{304C}\u{5229}\u{7528}\u{53EF}\u{80FD}\u{3067}\u{3059}\u{304C}\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}");
+        m.insert("settings.main.update_launch_error", "\u{65B0}\u{3057}\u{3044}\u{30D0}\u{30FC}\u{30B8}\u{30E7}\u{30F3}\u{304C}\u{A8B0}\u{B8CC}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{304C}\u{3001}\u{8D77}\u{52D5}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.main.update_manually", "Warp \u{3092}\u{624B}\u{52D5}\u{3067}\u{66F4}\u{65B0}");
+        m.insert("settings.main.relaunch_warp", "Warp \u{3092}\u{518D}\u{8D77}\u{52D5}");
+        m.insert("settings.main.log_out", "\u{30ED}\u{30B0}\u{30A2}\u{30A6}\u{30C8}");
+        m.insert("settings.main.manage_billing", "\u{8ACB}\u{6C42}\u{7BA1}\u{7406}");
+        m.insert("settings.main.compare_plans", "\u{D504}\u{B79C}\u{3092}\u{6BD4}\u{8F03}");
+        m.insert("settings.main.upgrade_turbo", "Turbo \u{3078}\u{30A2}\u{C0C1}\u{7B49}");
+        m.insert("settings.main.upgrade_lightspeed", "Lightspeed \u{3078}\u{30A2}\u{C0C1}\u{7B49}");
+        m.insert("settings.main.free_plan", "\u{7121}\u{6599}");
+        m.insert("settings.main.refer_friend", "\u{53CB}\u{4EBA}\u{306B}\u{7D39}\u{4ECB}");
+        m.insert("settings.main.referral_cta", "Warp \u{3092}\u{53CB}\u{4EBA}\u{3084}\u{540C}\u{50DA}\u{3068}\u{5171}\u{6709}\u{3057}\u{3066}\u{30EA}\u{30EF}\u{30FC}\u{30C9}\u{3092}\u{5F97}\u{3088}\u{3046}");
+        m.insert("settings.main.settings_sync", "\u{8A2D}\u{5B9A}\u{306E}\u{540C}\u{671F}");
+        m.insert("settings.main.contact_support", "\u{30B5}\u{30DD}\u{30FC}\u{30C8}\u{306B}\u{9023}\u{7D61}");
+
+        // Show blocks
+        m.insert("settings.show_blocks.copy_link", "\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{30B3}\u{30D4}\u{30FC}");
+        m.insert("settings.show_blocks.deleting", "\u{524A}\u{9664}\u{4E2D}\u{2026}");
+        m.insert("settings.show_blocks.executed_on", "\u{5B9F}\u{884C}\u{65E5}\u{6642}\u{FF1A}{timestamp}");
+        m.insert("settings.show_blocks.getting_blocks", "\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{3092}\u{53D6}\u{5F97}\u{4E2D}\u{2026}");
+        m.insert("settings.show_blocks.link_copied", "\u{30EA}\u{30F3}\u{30AF}\u{3092}\u{30B3}\u{30D4}\u{30FC}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}");
+        m.insert("settings.show_blocks.load_failed", "\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{306E}\u{8AAD}\u{307F}\u{8FBC}\u{307F}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}\u{3082}\u{3046}\u{4E00}\u{5EA6}\u{304A}\u{8A66}\u{3057}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.show_blocks.no_shared_blocks", "\u{307E}\u{3060}\u{5171}\u{6709}\u{3055}\u{308C}\u{305F}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{304C}\u{3042}\u{308A}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.show_blocks.unshare_title", "\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{306E}\u{5171}\u{6709}\u{3092}\u{89E3}\u{9664}");
+        m.insert("settings.show_blocks.unshare_confirm", "\u{3053}\u{306E}\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{306E}\u{5171}\u{6709}\u{3092}\u{89E3}\u{9664}\u{3057}\u{3066}\u{3082}\u{3088}\u{308D}\u{3057}\u{3044}\u{3067}\u{3059}\u{304B}\u{FF1F}\n\n\u{30EA}\u{30F3}\u{30AF}\u{3067}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3067}\u{304D}\u{306A}\u{304F}\u{306A}\u{308A}\u{3001}Warp \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{304B}\u{3089}\u{5B8C}\u{5168}\u{306B}\u{524A}\u{9664}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.show_blocks.unshare_success", "\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{306E}\u{5171}\u{6709}\u{304C}\u{6B63}\u{5E38}\u{306B}\u{89E3}\u{9664}\u{3055}\u{308C}\u{307E}\u{3057}\u{305F}\u{3002}");
+        m.insert("settings.show_blocks.unshare_failed", "\u{30D6}\u{30ED}\u{30C3}\u{30AF}\u{306E}\u{5171}\u{6709}\u{89E3}\u{9664}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}\u{3082}\u{3046}\u{4E00}\u{5EA6}\u{304A}\u{8A66}\u{3057}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+
+        // Transfer ownership
+        m.insert("settings.transfer.button", "\u{8EE2}\u{9001}");
+        m.insert("settings.transfer.confirm_message", "{email}\u{306B}\u{30C1}\u{30FC}\u{30E0}\u{6240}\u{6709}\u{6A29}\u{3092}\u{8EE2}\u{9001}\u{3057}\u{3066}\u{3082}\u{3088}\u{308D}\u{3057}\u{3044}\u{3067}\u{3059}\u{304B}\u{FF1F}\u{3053}\u{306E}\u{64CD}\u{4F5C}\u{306F}\u{5143}\u{306B}\u{623B}\u{305B}\u{307E}\u{305B}\u{3093}\u{3002}\u{7BA1}\u{7406}\u{8005}\u{6A29}\u{9650}\u{304C}\u{5931}\u{308F}\u{308C}\u{307E}\u{3059}\u{3002}");
+
+        // Warp Drive
+        m.insert("settings.warp_drive.title", "Warp Drive");
+        m.insert("settings.warp_drive.description", "Warp Drive \u{306F}\u{3001}\u{30EF}\u{30FC}\u{30AF}\u{30D5}\u{30ED}\u{30FC}\u{3001}\u{30CE}\u{30FC}\u{30C8}\u{30D6}\u{30C3}\u{30AF}\u{3001}\u{30D7}\u{30ED}\u{30F3}\u{30D7}\u{30C8}\u{3001}\u{74B0}\u{5883}\u{5909}\u{6570}\u{3092}\u{4FDD}\u{5B58}\u{3057}\u{3066}\u{500B}\u{4EBA}\u{4F7F}\u{7528}\u{307E}\u{305F}\u{306F}\u{C790}\u{B3D9} \u{AC80}\u{C0C9}\u{3068}\u{5171}\u{6709}\u{3067}\u{304D}\u{308B}\u{30BF}\u{30FC}\u{30DF}\u{30CA}\u{30EB}\u{5185}\u{306E}\u{30EF}\u{30FC}\u{30AF}\u{30B9}\u{30DA}\u{30FC}\u{30B9}\u{3067}\u{3059}\u{3002}");
+        m.insert("settings.warp_drive.create_account_prompt", "Warp Drive \u{3092}\u{4F7F}\u{7528}\u{3059}\u{308B}\u{306B}\u{306F}\u{3001}\u{30A2}\u{30AB}\u{30A6}\u{30F3}\u{30C8}\u{3092}\u{4F5C}\u{6210}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+
+        // About page
+        m.insert("settings.about.copyright", "Copyright 2026 Warp");
+
+        // Billing - overage limit modal
+        m.insert("settings.billing.overage.invalid_amount", "\u{6709}\u{52B9}\u{306A}\u{901A}\u{8CA8}\u{984D}\u{3092}\u{5165}\u{529B}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}");
+        m.insert("settings.billing.overage.limit_description", "\u{3053}\u{306E}\u{30C9}\u{30EB}\u{9650}\u{984D}\u{306B}\u{9054}\u{3059}\u{308B}\u{3068}\u{3001}Warp \u{306F}\u{30D7}\u{30EC}\u{30DF}\u{30A2}\u{30E0}\u{30E2}\u{30C7}\u{30EB}\u{306E}\u{4F7F}\u{7528}\u{3092}\u{963B}\u{6B62}\u{3057}\u{307E}\u{3059}\u{3002}\u{6BCE}\u{6708}\u{30EA}\u{30BB}\u{30C3}\u{30C8}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.overage.limit_note", "\u{9078}\u{629E}\u{3057}\u{305F}\u{9650}\u{984D}\u{306B}\u{8FD1}\u{3044} AI \u{30AF}\u{30EC}\u{30B8}\u{30C3}\u{30C8}\u{306F}\u{3001}\u{6570}\u{30C9}\u{30EB}\u{8D85}\u{3048}\u{308B}\u{5834}\u{5408}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.billing.overage.price_range", "$0.01 \u{304B}\u{3089} $10,000,000 \u{306E}\u{9593}\u{306E}\u{4FA1}\u{683C}\u{3092}\u{5165}\u{529B}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}");
+        m.insert("settings.billing.overage.update", "\u{66F4}\u{65B0}");
+
+        // Environments
+        m.insert("settings.environments.new_environment", "\u{65B0}\u{898F}\u{74B0}\u{5883}");
+
+        // Features - working directory
+        m.insert("settings.features.new_window", "\u{65B0}\u{898F}\u{30A6}\u{30A3}\u{30F3}\u{30C9}\u{30A6}");
+        m.insert("settings.features.new_tab", "\u{65B0}\u{898F}\u{30BF}\u{30D6}");
+        m.insert("settings.features.split_pane", "\u{30DA}\u{30A4}\u{30F3}\u{3092}\u{5206}\u{5272}");
+        m.insert("settings.features.advanced", "\u{8A73}\u{7D30}\u{8A2D}\u{5B9A}");
+        m.insert("settings.features.directory_path", "\u{30C7}\u{30A3}\u{30EC}\u{30AF}\u{30C8}\u{30EA}\u{30D1}\u{30B9}");
+
+        // Features - startup shell
+        m.insert("settings.features.executable_path", "\u{5B9F}\u{884C}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{30D1}\u{30B9}");
+        m.insert("settings.features.default", "\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}");
+        m.insert("settings.features.custom", "\u{30AB}\u{30B9}\u{30BF}\u{30E0}");
+
+        // Features - undo close
+        m.insert("settings.features.grace_period", "\u{72B9}\u{4E88}\u{671F}\u{9593}\u{FF08}\u{79D2}\u{FF09}");
+        m.insert("settings.features.enable_reopen", "\u{9589}\u{3058}\u{305F}\u{30BB}\u{30C3}\u{30B7}\u{30E7}\u{30F3}\u{306E}\u{518D}\u{958B}\u{3092}\u{6709}\u{52B9}\u{306B}\u{3059}\u{308B}");
+
+        // MCP servers - list page
+        m.insert("settings.mcp.description", "MCP\u{FF08}\u{30E2}\u{30C7}\u{30EB}\u{30B3}\u{30F3}\u{30C6}\u{30AD}\u{30B9}\u{30C8}\u{30D7}\u{30ED}\u{30C8}\u{30B3}\u{30EB}\u{FF09}\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{306F}\u{3001}\u{8FFD}\u{52A0}\u{306E}\u{30C4}\u{30FC}\u{30EB}\u{3068}\u{6A5F}\u{80FD}\u{3067} Warp \u{3092}\u{62E1}\u{5F35}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{8FFD}\u{52A0}\u{3057}\u{3066}\u{3001}AI \u{5BFE}\u{8A71}\u{306B}\u{30C7}\u{30FC}\u{30BF}\u{30D9}\u{30FC}\u{30B9}\u{3001}API\u{3001}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{30B9}\u{30C6}\u{30E0}\u{3078}\u{306E}\u{30A2}\u{30AF}\u{30BB}\u{30B9}\u{3092}\u{4E8E}\u{3048}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.mcp.empty_state", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{8FFD}\u{52A0}\u{3059}\u{308B}\u{3068}\u{3001}\u{3053}\u{3053}\u{306B}\u{8868}\u{793A}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.mcp.no_results", "\u{691C}\u{7D22}\u{7D50}\u{679C}\u{304C}\u{3042}\u{308A}\u{307E}\u{305B}\u{3093}");
+        m.insert("settings.mcp.add", "\u{8FFD}\u{52A0}");
+        m.insert("settings.mcp.search_placeholder", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{691C}\u{7D22}");
+        m.insert("settings.mcp.available_to_install", "\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}\u{53EF}\u{80FD}");
+        m.insert("settings.mcp.updated", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{304C}\u{66F4}\u{65B0}\u{3055}\u{308C}\u{307E}\u{3057}\u{305F}");
+        m.insert("settings.mcp.auto_spawn_label", "\u{7B2C}\u{4E09}\u{8005}\u{5BFE}\u{8A71}\u{304B}\u{3089}\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{81EA}\u{52D5}\u{751F}\u{6210}");
+        m.insert("settings.mcp.auto_spawn_description", "\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}\u{7BC4}\u{5712}\u{306E}\u{7B2C}\u{4E09}\u{8005} AI \u{5BFE}\u{8A71}\u{8A2D}\u{5B9A}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{304B}\u{3089} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{81EA}\u{52D5}\u{7684}\u{306B}\u{691C}\u{51FA}\u{3057}\u{3066}\u{751F}\u{6210}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.mcp.see_providers", "\u{5BFE}\u{5FDC}\u{30D7}\u{30ED}\u{30D0}\u{30A4}\u{30C0}\u{30FC}\u{3092}\u{78BA}\u{8A8D}\u{3002}");
+        m.insert("settings.mcp.learn_more", "\u{8A73}\u{7D30}\u{3092}\u{78BA}\u{8A8D}\u{3002}");
+        m.insert("settings.mcp.my_mcps", "\u{79C1}\u{306E} MCP");
+        m.insert("settings.mcp.shared_by_warp_and_name", "Warp \u{3068} {name} \u{306E}\u{5171}\u{6709}");
+        m.insert("settings.mcp.shared_by_warp_and_other", "Warp \u{3068}\u{4ED6}\u{306E}\u{30C7}\u{30D0}\u{30A4}\u{30B9}\u{306E}\u{5171}\u{6709}");
+        m.insert("settings.mcp.shared_from_warp", "Warp \u{304B}\u{3089}\u{306E}\u{5171}\u{6709}");
+        m.insert("settings.mcp.detected_from", "{source} \u{304B}\u{3089}\u{691C}\u{51FA}");
+        m.insert("settings.mcp.global", "\u{30B0}\u{30ED}\u{30FC}\u{30D0}\u{30EB}");
+        m.insert("settings.mcp.detected_from_config", "\u{8A2D}\u{5B9A}\u{30D5}\u{30A1}\u{30A4}\u{30EB}\u{304B}\u{3089}\u{691C}\u{51FA}");
+        m.insert("settings.mcp.shared_by_creator", "\u{5171}\u{6709}\u{8005}: {creator}");
+        m.insert("settings.mcp.shared_by_team_member", "\u{81EA}\u{52D5} \u{691C}\u{7D22}");
+        m.insert("settings.mcp.from_another_device", "\u{4ED6}\u{306E}\u{30C7}\u{30D0}\u{30A4}\u{30B9}\u{304B}\u{3089}");
+        m.insert("settings.mcp.shared_from_team", "\u{30C1}\u{30FC}\u{30E0}\u{304B}\u{3089}\u{306E}\u{5171}\u{6709}");
+
+        // MCP servers - edit page
+        m.insert("settings.mcp.save", "\u{4FDD}\u{5B58}");
+        m.insert("settings.mcp.edit_variables", "\u{5909}\u{6570}\u{3092}\u{7DE8}\u{96C6}");
+        m.insert("settings.mcp.delete_mcp", "MCP \u{3092}\u{524A}\u{9664}");
+        m.insert("settings.mcp.remove_from_team", "\u{30C1}\u{30FC}\u{30E0}\u{304B}\u{3089}\u{524A}\u{9664}");
+        m.insert("settings.mcp.admin_only_edit", "\u{30C1}\u{30FC}\u{30E0}\u{7BA1}\u{7406}\u{8005}\u{3068} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{306E}\u{4F5C}\u{6210}\u{8005}\u{3060}\u{3051}\u{304C}\u{7DE8}\u{96C6}\u{3067}\u{304D}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.mcp.add_new_server", "\u{65B0}\u{898F} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{8FFD}\u{52A0}");
+        m.insert("settings.mcp.edit_server_named", "{name} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{7DE8}\u{96C6}");
+        m.insert("settings.mcp.edit_server", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{7DE8}\u{96C6}");
+        m.insert("settings.mcp.log_out", "\u{30ED}\u{30B0}\u{30A2}\u{30A6}\u{30C8}");
+        m.insert("settings.mcp.json_tab", "JSON");
+        m.insert("settings.mcp.secrets_warning", "\u{3053}\u{306E} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{306B}\u{306F}\u{30B7}\u{30FC}\u{30AF}\u{30EC}\u{30C3}\u{30C8}\u{304C}\u{542B}\u{307E}\u{308C}\u{3066}\u{3044}\u{307E}\u{3059}\u{3002}\u{8A2D}\u{5B9A} > \u{30D7}\u{30E9}\u{30A4}\u{30D0}\u{30B7}\u{30FC}\u{3092}\u{8A2A}\u{554F}\u{3057}\u{3066}\u{30B7}\u{30FC}\u{30AF}\u{30EC}\u{30C3}\u{30C8}\u{7DE8}\u{96C6}\u{8A2D}\u{5B9A}\u{3092}\u{5909}\u{66F4}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.mcp.no_server_specified", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{304C}\u{6307}\u{5B9A}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.mcp.cannot_add_multiple", "\u{5358}\u{4E00}\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{306E}\u{7DE8}\u{96C6}\u{4E2D}\u{306B}\u{8907}\u{6570}\u{306E} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{8FFD}\u{52A0}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}");
+
+        // MCP servers - server card
+        m.insert("settings.mcp.offline", "\u{30AA}\u{30D5}\u{30E9}\u{30A4}\u{30F3}");
+        m.insert("settings.mcp.starting", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{8D77}\u{52D5}\u{4E2D}\u{2026}");
+        m.insert("settings.mcp.authenticating", "\u{8A8D}\u{8A3C}\u{4E2D}\u{2026}");
+        m.insert("settings.mcp.shutting_down", "\u{30B7}\u{30E3}\u{30C3}\u{30C8}\u{30C0}\u{30A6}\u{30F3}\u{4E2D}\u{2026}");
+        m.insert("settings.mcp.no_tools", "\u{5229}\u{7528}\u{53EF}\u{80FD}\u{306A}\u{30C4}\u{30FC}\u{30EB}\u{304C}\u{3042}\u{308A}\u{307E}\u{305B}\u{3093}");
+        m.insert("settings.mcp.tools_count", "{count} \u{500B}\u{306E}\u{30C4}\u{30FC}\u{30EB}\u{304C}\u{5229}\u{7528}\u{53EF}\u{80FD}");
+        m.insert("settings.mcp.show_logs", "\u{30ED}\u{30B0}\u{3092}\u{8868}\u{793A}");
+        m.insert("settings.mcp.share_server", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{5171}\u{6709}");
+        m.insert("settings.mcp.edit_tooltip", "\u{7DE8}\u{96C6}");
+        m.insert("settings.mcp.view_logs", "\u{30ED}\u{30B0}\u{3092}\u{78BA}\u{8A8D}");
+        m.insert("settings.mcp.edit_config", "\u{8A2D}\u{5B9A}\u{3092}\u{7DE8}\u{96C6}");
+        m.insert("settings.mcp.set_up", "\u{8A2D}\u{5B9A}");
+        m.insert("settings.mcp.update_available", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{306E}\u{66F4}\u{65B0}\u{304C}\u{5229}\u{7528}\u{53EF}\u{80FD}\u{3067}\u{3059}");
+
+        // MCP servers - installation modal
+        m.insert("settings.mcp.install_named", "{name} \u{3092}\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}");
+        m.insert("settings.mcp.esc_hint", "ESC");
+        m.insert("settings.mcp.cancel", "\u{30AD}\u{30E3}\u{30F3}\u{30BB}\u{30EB}");
+        m.insert("settings.mcp.install", "\u{30A4}\u{30F3}\u{30B9}\u{30C8}\u{30FC}\u{30EB}");
+        m.insert("settings.mcp.no_server_selected", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{304C}\u{9078}\u{629E}\u{3055}\u{308C}\u{3066}\u{3044}\u{307E}\u{305B}\u{3093}");
+
+        // MCP servers - update modal
+        m.insert("settings.mcp.server_fallback", "\u{30B5}\u{30FC}\u{30D0}\u{30FC}");
+        m.insert("settings.mcp.update_named", "{name} \u{3092}\u{66F4}\u{65B0}");
+        m.insert("settings.mcp.updates_available", "\u{3053}\u{306E}\u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{306B}\u{306F} {count} \u{500B}\u{306E}\u{66F4}\u{65B0}\u{304C}\u{3042}\u{308A}\u{307E}\u{3059}\u{3002}\u{3069}\u{3061}\u{3089}\u{3092}\u{9032}\u{3081}\u{307E}\u{3059}\u{304B}\u{FF1F}");
+        m.insert("settings.mcp.another_device", "\u{4ED6}\u{306E}\u{30C7}\u{30D0}\u{30A4}\u{30B9}");
+        m.insert("settings.mcp.a_team_member", "\u{81EA}\u{52D5} \u{691C}\u{7D22}");
+        m.insert("settings.mcp.update_from", "{publisher} \u{304B}\u{3089}\u{66F4}\u{65B0}");
+        m.insert("settings.mcp.version", "\u{30D0}\u{30FC}\u{30B8}\u{30E7}\u{30F3} {version}");
+        m.insert("settings.mcp.update", "\u{66F4}\u{65B0}");
+        m.insert("settings.mcp.no_updates", "\u{5229}\u{7528}\u{53EF}\u{80FD}\u{306A}\u{66F4}\u{65B0}\u{304C}\u{3042}\u{308A}\u{307E}\u{305B}\u{3093}");
+
+        // MCP servers - destructive confirmation
+        m.insert("settings.mcp.delete_server_title", "MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{524A}\u{9664}\u{3057}\u{307E}\u{3059}\u{304B}\u{FF1F}");
+        m.insert("settings.mcp.delete_server_description", "\u{3053}\u{308C}\u{306B}\u{3088}\u{308A}\u{3001}\u{3042}\u{306A}\u{305F}\u{306E}\u{3059}\u{3079}\u{3066}\u{306E}\u{30C7}\u{30D0}\u{30A4}\u{30B9}\u{304B}\u{3089}\u{3053}\u{306E} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{304C}\u{5378}\u{8F7D}\u{3055}\u{308C}\u{3001}\u{524A}\u{9664}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.mcp.delete_shared_title", "\u{5171}\u{6709} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{524A}\u{9664}\u{3057}\u{307E}\u{3059}\u{304B}\u{FF1F}");
+        m.insert("settings.mcp.delete_shared_description", "\u{3053}\u{308C}\u{306F}\u{3001}\u{3042}\u{306A}\u{305F}\u{306E}\u{305F}\u{3081}\u{306B}\u{3053}\u{306E} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{524A}\u{9664}\u{3059}\u{308B}\u{3060}\u{3051}\u{3067}\u{306A}\u{304F}\u{3001}Warp \u{304A}\u{3088}\u{3073}\u{3042}\u{306A}\u{305F}\u{306E}\u{3059}\u{3079}\u{3066}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{306E}\u{30C7}\u{30D0}\u{30A4}\u{30B9}\u{304B}\u{3089}\u{5378}\u{8F7D}\u{3057}\u{3001}\u{524A}\u{9664}\u{3057}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.mcp.remove_shared_title", "\u{30C1}\u{30FC}\u{30E0}\u{304B}\u{3089}\u{5171}\u{6709} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{3092}\u{524A}\u{9664}\u{3057}\u{307E}\u{3059}\u{304B}\u{FF1F}");
+        m.insert("settings.mcp.remove_shared_description", "\u{3053}\u{308C}\u{306B}\u{3088}\u{308A}\u{3001}Warp \u{304A}\u{3088}\u{3073}\u{3042}\u{306A}\u{305F}\u{306E}\u{3059}\u{3079}\u{3066}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{30E1}\u{30F3}\u{30D0}\u{30FC}\u{306E}\u{30C7}\u{30D0}\u{30A4}\u{30B9}\u{304B}\u{3089}\u{3053}\u{306E} MCP \u{30B5}\u{30FC}\u{30D0}\u{30FC}\u{304C}\u{5378}\u{8F7D}\u{3055}\u{308C}\u{3001}\u{524A}\u{9664}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}");
+
+        // Platform - create API key modal
+        m.insert("settings.platform.api_key_personal_desc", "\u{3053}\u{306E} API \u{30AD}\u{30FC}\u{306F}\u{3042}\u{306A}\u{305F}\u{306E}\u{30E6}\u{30FC}\u{30B6}\u{30FC}\u{306B}\u{95A2}\u{9023}\u{4ED8}\u{3051}\u{3089}\u{308C}\u{3066}\u{304A}\u{308A}\u{3001}\u{3042}\u{306A}\u{305F}\u{306E} Warp \u{30A2}\u{30AB}\u{30A6}\u{30F3}\u{30C8}\u{306B}\u{5BFE}\u{3057}\u{3066}\u{30EA}\u{30AF}\u{30A8}\u{30B9}\u{30C8}\u{3092}\u{884C}\u{3048}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.platform.api_key_team_desc", "\u{3053}\u{306E} API \u{30AD}\u{30FC}\u{306F}\u{3042}\u{306A}\u{305F}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{306B}\u{95A2}\u{9023}\u{4ED8}\u{3051}\u{3089}\u{308C}\u{3066}\u{304A}\u{308A}\u{3001}\u{3042}\u{306A}\u{305F}\u{306E}\u{30C1}\u{30FC}\u{30E0}\u{306E}\u{4EE3}\u{7406}\u{3068}\u{3057}\u{3066}\u{30EA}\u{30AF}\u{30A8}\u{30B9}\u{30C8}\u{3092}\u{884C}\u{3048}\u{307E}\u{3059}\u{3002}");
+        m.insert("settings.platform.expiry_1_day", "1 \u{65E5}");
+        m.insert("settings.platform.expiry_30_days", "30 \u{65E5}");
+        m.insert("settings.platform.expiry_90_days", "90 \u{65E5}");
+        m.insert("settings.platform.expiry_never", "\u{7121}\u{671F}\u{9650}");
+        m.insert("settings.platform.api_key_placeholder", "Warp API \u{30AD}\u{30FC}");
+        m.insert("settings.platform.type_personal", "\u{500B}\u{4EBA}");
+        m.insert("settings.platform.type_team", "\u{30C1}\u{30FC}\u{30E0}");
+        m.insert("settings.platform.no_team_error", "\u{73FE}\u{5728}\u{30C1}\u{30FC}\u{30E0}\u{304C}\u{306A}\u{3044}\u{305F}\u{3081}\u{3001}\u{30C1}\u{30FC}\u{30E0} API \u{30AD}\u{30FC}\u{3092}\u{4F5C}\u{6210}\u{3067}\u{304D}\u{307E}\u{305B}\u{3093}\u{3002}");
+        m.insert("settings.platform.create_failed", "API \u{30AD}\u{30FC}\u{306E}\u{4F5C}\u{6210}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}\u{3082}\u{3046}\u{4E00}\u{5EA6}\u{304A}\u{8A66}\u{3057}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.platform.secret_warning", "\u{3053}\u{306E}\u{30B7}\u{30FC}\u{30AF}\u{30EC}\u{30C3}\u{30C8}\u{30AD}\u{30FC}\u{306F}\u{4E00}\u{5EA6}\u{3060}\u{3051}\u{8868}\u{793A}\u{3055}\u{308C}\u{307E}\u{3059}\u{3002}\u{30B3}\u{30D4}\u{30FC}\u{3057}\u{3066}\u{5B89}\u{5168}\u{306B}\u{4FDD}\u{5B58}\u{3057}\u{3066}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+        m.insert("settings.platform.copied", "\u{30B3}\u{30D4}\u{30FC}\u{6E08}\u{307F}");
+        m.insert("settings.platform.copy", "\u{30B3}\u{30D4}\u{30FC}");
+        m.insert("settings.platform.done", "\u{5B8C}\u{4E86}");
+        m.insert("settings.platform.name_label", "\u{540D}\u{524D}");
+        m.insert("settings.platform.cancel", "\u{30AD}\u{30E3}\u{30F3}\u{30BB}\u{30EB}");
+        m.insert("settings.platform.creating", "\u{4F5C}\u{6210}\u{4E2D}\u{2026}");
+        m.insert("settings.platform.create_key", "\u{30AD}\u{30FC}\u{3092}\u{4F5C}\u{6210}");
+        m.insert("settings.platform.type_label", "\u{30BF}\u{30A4}\u{30D7}");
+        m.insert("settings.platform.expiration_label", "\u{6709}\u{52B9}\u{671F}\u{9650}");
+        m.insert("settings.platform.secret_copied", "\u{30B7}\u{30FC}\u{30AF}\u{30EC}\u{30C3}\u{30C8}\u{30AD}\u{30FC}\u{304C}\u{30B3}\u{30D4}\u{30FC}\u{3055}\u{308C}\u{307E}\u{3057}\u{305F}\u{3002}");
+        m.insert("settings.platform.delete_failed", "API \u{30AD}\u{30FC}\u{306E}\u{524A}\u{9664}\u{306B}\u{5931}\u{6557}\u{3057}\u{307E}\u{3057}\u{305F}\u{3002}\u{3082}\u{3046}\u{4E00}\u{5EA6}\u{304A}\u{8A66}\u{3057}\u{304F}\u{3060}\u{3055}\u{3044}\u{3002}");
+
+        // Privacy - add regex modal
+        m.insert("settings.privacy.regex_placeholder", "\u{4F8B}: \"Google API Key\"");
+        m.insert("settings.privacy.name_optional", "\u{540D}\u{524D}\u{FF08}\u{4EFB}\u{610F}\u{FF09}");
+        m.insert("settings.privacy.regex_pattern", "\u{6B63}\u{898F}\u{8868}\u{73FE}\u{5F0F}\u{30D1}\u{30BF}\u{30FC}\u{30F3}");
+        m.insert("settings.privacy.add_regex", "\u{6B63}\u{898F}\u{8868}\u{73FE}\u{5F0F}\u{3092}\u{8FFD}\u{52A0}");
+        m.insert("settings.privacy.invalid_regex", "\u{7121}\u{52B9}\u{306A}\u{6B63}\u{898F}\u{8868}\u{73FE}\u{5F0F}");
+        m.insert("settings.privacy.cancel", "\u{30AD}\u{30E3}\u{30F3}\u{30BB}\u{30EB}");
+
+        // Settings page - shared
+        m.insert("settings.shared.learn_more_tooltip", "\u{30AF}\u{30EA}\u{30C3}\u{30AF}\u{3057}\u{3066}\u{30C9}\u{30AD}\u{30E5}\u{30E1}\u{30F3}\u{30C8}\u{3067}\u{8A73}\u{7D30}\u{3092}\u{78BA}\u{8A8D}");
+        m.insert("settings.shared.not_synced", "\u{3053}\u{306E}\u{8A2D}\u{5B9A}\u{306F}\u{4ED6}\u{306E}\u{30C7}\u{30D0}\u{30A4}\u{30B9}\u{306B}\u{540C}\u{671F}\u{3055}\u{308C}\u{307E}\u{305B}\u{3093}");
+        m.insert("settings.shared.reset_default", "\u{30C7}\u{30D5}\u{30A9}\u{30EB}\u{30C8}\u{306B}\u{623B}\u{3059}");
+
+        m
+    };
+}

@@ -22,7 +22,7 @@ const SUBPAGE_LEFT_MARGIN: f32 = NAV_ITEM_LEFT_MARGIN + 12.;
 
 /// A collapsible group of settings subpages in the sidebar.
 pub struct SettingsUmbrella {
-    pub label: &'static str,
+    pub label_key: &'static str,
     pub subpages: Vec<SettingsSection>,
     pub expanded: bool,
     /// Saved expanded state from before search began, restored when search is cleared.
@@ -32,10 +32,10 @@ pub struct SettingsUmbrella {
 }
 
 impl SettingsUmbrella {
-    pub fn new(label: &'static str, subpages: Vec<SettingsSection>) -> Self {
+    pub fn new(label_key: &'static str, subpages: Vec<SettingsSection>) -> Self {
         let subpage_count = subpages.len();
         Self {
-            label,
+            label_key,
             subpages,
             expanded: false,
             pre_search_expanded: None,
@@ -79,7 +79,7 @@ impl SettingsUmbrella {
             .button(ButtonVariant::Text, self.button_state_handle.clone())
             .with_text_and_icon_label(TextAndIcon::new(
                 TextAndIconAlignment::TextFirst,
-                self.label.to_string(),
+                i18n::t(self.label_key).to_string(),
                 chevron_icon.to_warpui_icon(text_color),
                 MainAxisSize::Max,
                 MainAxisAlignment::SpaceBetween,
