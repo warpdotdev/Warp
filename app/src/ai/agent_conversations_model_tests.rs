@@ -402,7 +402,6 @@ fn create_test_model() -> AgentConversationsModel {
         next_poll_abort_handle: None,
         active_data_consumers_per_window: HashMap::new(),
         has_finished_initial_load: false,
-        manually_opened_task_ids: Default::default(),
         task_fetch_state: Default::default(),
     }
 }

@@ -1239,6 +1239,7 @@ pub fn render_text_sections<V: View, A: Action>(
                         working_directory: props.current_working_directory,
                         open_code_block_action_factory: props.open_code_block_action_factory,
                         copy_code_action_factory: props.copy_code_action_factory,
+                        selectable: props.selectable,
                         #[cfg(feature = "local_fs")]
                         resolved_code_block_paths: props.resolved_code_block_paths,
                     },
@@ -2650,6 +2651,8 @@ pub struct CodeSectionProps<'a, A: 'static> {
     pub working_directory: Option<&'a String>,
     pub open_code_block_action_factory: Option<OpenCodeBlockActionFactory<A>>,
     pub copy_code_action_factory: Option<CopyCodeActionFactory<A>>,
+    /// Whether the code block text should be selectable within the parent SelectableArea.
+    pub selectable: bool,
     /// Pre-resolved code block file paths from the background detection task.
     /// Keyed by original path; value is the resolved absolute path (or None if unresolvable).
     #[cfg(feature = "local_fs")]
@@ -2851,6 +2854,7 @@ pub fn render_code_output_section<A: Action>(
                     footer_element: language_text,
                     mouse_handles: props.button_handles.cloned(),
                 },
+                props.selectable,
                 app,
                 source,
             )

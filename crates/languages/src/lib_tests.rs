@@ -1,4 +1,6 @@
-use crate::{load_language, SUPPORTED_LANGUAGES};
+use std::path::Path;
+
+use crate::{language_by_filename, load_language, SUPPORTED_LANGUAGES};
 
 /// Validate that every supported language can be loaded successfully.
 /// This catches invalid node types, syntax errors, and other issues in .scm query files
@@ -19,4 +21,16 @@ fn all_supported_languages_load_successfully() {
             .collect::<Vec<_>>()
             .join("\n")
     );
+}
+
+#[test]
+fn cpp_header_extensions_resolve_to_cpp_language() {
+    // Cover the common modern C++ header extensions (`.hpp`, `.hxx`),
+    // the older uppercase `.H` convention, and the rarer `.h++` form.
+    for filename in ["header.hpp", "header.hxx", "header.H", "header.h++"] {
+        let language = language_by_filename(Path::new(filename))
+            .unwrap_or_else(|| panic!("expected {filename} to resolve to C++"));
+
+        assert_eq!(language.display_name(), "C++");
+    }
 }

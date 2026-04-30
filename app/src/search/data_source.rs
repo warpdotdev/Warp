@@ -458,6 +458,10 @@ impl<T: Action + Clone> QueryResult<T> {
         self.item.accessibility_help_message()
     }
 
+    pub fn detail_data(&self) -> Option<crate::search::item::SearchItemDetail> {
+        self.item.detail_data()
+    }
+
     /// Returns an optional deduplication key for this item from the [`SearchItem`].
     pub fn dedup_key(&self) -> Option<String> {
         self.item.dedup_key()

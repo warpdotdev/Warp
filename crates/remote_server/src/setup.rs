@@ -37,10 +37,6 @@ impl RemoteServerSetupState {
             Self::Checking | Self::Installing { .. } | Self::Initializing
         )
     }
-
-    pub fn is_connecting(&self) -> bool {
-        matches!(self, Self::Installing { .. } | Self::Initializing)
-    }
 }
 
 /// Detected remote platform from `uname -sm` output.
