@@ -601,9 +601,20 @@ impl View for OrchestrationPillBar {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
+        // The row uses `MainAxisSize::Max` so the bar's intrinsic width
+        // is the parent's available width (i.e. the pane width passed in
+        // by the wrapping `Flex::column` in `pane_impl.rs`), not the sum
+        // of the children. With `MainAxisSize::Min` the row reports its
+        // full intrinsic width upward and the surrounding `Clipped`
+        // wrapper has nothing tighter to clip against, so the trailing
+        // pills paint into whichever pane sits to the right. Children
+        // remain left-packed via `MainAxisAlignment::Start`; any pills
+        // that overflow to the right of the available width get clipped
+        // by the `Clipped` element below.
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Min)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_spacing(PILL_GAP);
 
         // Resolve a persistent `MouseStateHandle` for each pill. If `ensure_mouse_states`
