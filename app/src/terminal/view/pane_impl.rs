@@ -1098,13 +1098,13 @@ impl TerminalView {
             session
                 .session_context
                 .latest_user_prompt()
-                .or_else(|| session.session_context.response_text())
                 .or_else(|| session.session_context.title_like_text())
+                .or_else(|| session.session_context.response_text())
         } else {
             session
                 .session_context
-                .response_text()
-                .or_else(|| session.session_context.title_like_text())
+                .title_like_text()
+                .or_else(|| session.session_context.response_text())
         }
     }
 }

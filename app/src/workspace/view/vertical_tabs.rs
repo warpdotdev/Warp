@@ -3080,8 +3080,8 @@ fn terminal_agent_text(terminal_view: &TerminalView, app: &AppContext) -> Termin
     if let Some(session) = cli_agent_session {
         agent_text.cli_agent_title = session
             .session_context
-            .response_text()
-            .or_else(|| session.session_context.title_like_text());
+            .title_like_text()
+            .or_else(|| session.session_context.response_text());
         agent_text.cli_agent_latest_user_prompt = session.session_context.latest_user_prompt();
     }
 

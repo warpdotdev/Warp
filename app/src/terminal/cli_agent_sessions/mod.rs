@@ -93,8 +93,8 @@ pub enum CLIAgentInputEntrypoint {
 impl CLIAgentSessionContext {
     pub(crate) fn display_title(&self) -> Option<String> {
         self.latest_user_prompt()
-            .or_else(|| self.response_text())
             .or_else(|| self.title_like_text())
+            .or_else(|| self.response_text())
     }
 
     pub(crate) fn latest_user_prompt(&self) -> Option<String> {
