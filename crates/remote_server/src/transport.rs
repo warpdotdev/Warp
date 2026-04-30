@@ -18,7 +18,7 @@ use async_channel::Receiver;
 use warpui::r#async::executor;
 
 use crate::client::{ClientEvent, RemoteServerClient};
-use crate::setup::RemotePlatform;
+use crate::setup::{PreinstallCheckResult, RemotePlatform};
 
 /// A successful return from [`RemoteTransport::connect`].
 ///
@@ -68,6 +68,24 @@ pub trait RemoteTransport: Send + Sync + std::fmt::Debug {
     fn detect_platform(
         &self,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<RemotePlatform, String>> + Send>>;
+
+    /// Runs the preinstall check script ([`crate::setup::PREINSTALL_CHECK_SCRIPT`])
+    /// over the existing connection and parses its structured stdout into
+    /// a [`PreinstallCheckResult`].
+    ///
+    /// This runs **before** any user-visible install affordance (the
+    /// install choice block, auto-install, auto-update, or connect) and
+    /// is the gate that decides whether to proceed with the install
+    /// pipeline or fall back to the legacy SSH flow.
+    ///
+    /// Returns `Ok(_)` on success (including when the script reported
+    /// `Unknown` — that's a parser-level outcome, not a transport-level
+    /// failure). Returns `Err(_)` only on SSH-level failure (timeout,
+    /// broken pipe, non-zero exit with no parseable summary), which the
+    /// caller treats as inconclusive (fail open).
+    fn run_preinstall_check(
+        &self,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<PreinstallCheckResult, String>> + Send>>;
 
     /// Checks whether the remote server binary is present on the remote host.
     ///

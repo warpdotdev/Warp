@@ -17,7 +17,9 @@ use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::session::{IsLegacySSHSession, SessionInfo};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::{send_telemetry_from_ctx, TelemetryEvent};
-use remote_server::setup::RemotePlatform;
+use remote_server::setup::{
+    PreinstallCheckResult, PreinstallStatus, RemoteLibc, RemotePlatform, UnsupportedReason,
+};
 
 use super::pty_controller::{EventLoopSender, PtyController};
 
@@ -75,6 +77,9 @@ pub struct RemoteServerController<T: EventLoopSender> {
     did_install: bool,
     /// Detected remote platform from the binary check phase, used for telemetry.
     remote_platform: Option<RemotePlatform>,
+    /// Outcome of the preinstall check from the binary check phase,
+    /// used for telemetry on the supported path.
+    preinstall_check: Option<PreinstallCheckResult>,
 }
 
 impl<T: EventLoopSender> Entity for RemoteServerController<T> {
@@ -106,10 +111,18 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 session_id,
                 result,
                 remote_platform,
+                preinstall_check,
                 has_old_binary,
             } => {
                 me.remote_platform = remote_platform.clone();
-                me.on_binary_check_complete(*session_id, result.clone(), *has_old_binary, ctx);
+                me.preinstall_check = preinstall_check.clone();
+                me.on_binary_check_complete(
+                    *session_id,
+                    result.clone(),
+                    preinstall_check.clone(),
+                    *has_old_binary,
+                    ctx,
+                );
             }
             RemoteServerManagerEvent::BinaryInstallComplete { session_id, result } => {
                 me.on_binary_install_complete(*session_id, result.clone(), ctx);
@@ -142,6 +155,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             state: SshInitState::Idle,
             did_install: false,
             remote_platform: None,
+            preinstall_check: None,
         }
     }
 
@@ -189,6 +203,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         let transport = SshTransport::new(socket_path, self.auth_context.clone());
         self.did_install = false;
         self.remote_platform = None;
+        self.preinstall_check = None;
         self.state = SshInitState::AwaitingCheck {
             session_info: info,
             transport: transport.clone(),
@@ -203,6 +218,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         &mut self,
         session_id: SessionId,
         result: Result<bool, String>,
+        preinstall_check: Option<PreinstallCheckResult>,
         has_old_binary: bool,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -224,6 +240,30 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         else {
             unreachable!("just matched AwaitingCheck above");
         };
+
+        // Preinstall gate. Runs **before** any user-visible install
+        // affordance: if the script positively classified the host as
+        // unsupported, skip the install/prompt entirely and fall back to
+        // the legacy ControlMaster-backed SSH flow.
+        let unsupported = preinstall_check
+            .as_ref()
+            .and_then(|check| match &check.status {
+                PreinstallStatus::Unsupported { reason } => Some((check, reason.clone())),
+                PreinstallStatus::Supported | PreinstallStatus::Unknown => None,
+            });
+        if let Some((check, reason)) = unsupported {
+            log::info!(
+                "Preinstall check classified {session_id:?} as unsupported \
+                 ({:?}); falling back to legacy SSH",
+                check.status
+            );
+            send_unsupported_telemetry(self.remote_platform.as_ref(), check, ctx);
+            RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
+                mgr.mark_setup_unsupported(session_id, reason, ctx);
+            });
+            self.flush_stashed_bootstrap(session_info, ctx);
+            return;
+        }
 
         match result {
             Ok(true) => {
@@ -369,12 +409,17 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 )
             })
             .unwrap_or((None, None));
+        let remote_libc = self
+            .preinstall_check
+            .as_ref()
+            .map(|check| describe_libc(&check.libc));
         send_telemetry_from_ctx!(
             TelemetryEvent::RemoteServerSetupDuration {
                 duration_ms,
                 installed_binary: self.did_install,
                 remote_os,
                 remote_arch,
+                remote_libc,
             },
             ctx
         );
@@ -477,4 +522,43 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             mgr.connect_session(session_id, transport, auth_context, ctx);
         });
     }
+}
+
+/// Describes a [`RemoteLibc`] as a short string for telemetry.
+fn describe_libc(libc: &RemoteLibc) -> String {
+    match libc {
+        RemoteLibc::Glibc(version) => format!("glibc {version}"),
+        RemoteLibc::NonGlibc { name } => name.clone(),
+        RemoteLibc::Unknown => "unknown".to_string(),
+    }
+}
+
+fn send_unsupported_telemetry<T: EventLoopSender>(
+    remote_platform: Option<&RemotePlatform>,
+    check: &PreinstallCheckResult,
+    ctx: &mut ModelContext<RemoteServerController<T>>,
+) {
+    let (remote_os, remote_arch) = remote_platform
+        .map(|p| {
+            (
+                Some(p.os.as_str().to_owned()),
+                Some(p.arch.as_str().to_owned()),
+            )
+        })
+        .unwrap_or((None, None));
+    let required_glibc = match &check.status {
+        remote_server::setup::PreinstallStatus::Unsupported {
+            reason: UnsupportedReason::GlibcTooOld { required, .. },
+        } => required.to_string(),
+        _ => String::new(),
+    };
+    send_telemetry_from_ctx!(
+        TelemetryEvent::RemoteServerHostUnsupported {
+            remote_os,
+            remote_arch,
+            detected_libc: describe_libc(&check.libc),
+            required_glibc,
+        },
+        ctx
+    );
 }
