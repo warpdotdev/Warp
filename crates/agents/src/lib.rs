@@ -8,7 +8,8 @@
 #![deny(missing_docs)]
 
 pub mod claude_code;
-// pub mod codex;   // TODO PDX-45
+pub mod codex;
 // pub mod ollama;  // TODO PDX-46
 
 pub use claude_code::{ClaudeCodeAgent, ClaudeModel};
+pub use codex::{CodexAgent, ReasoningEffort, ServiceTier};
