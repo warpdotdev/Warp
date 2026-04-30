@@ -6,6 +6,9 @@ set -e
 # don't do it (to avoid doing it more than once).
 sudo apt update -y
 
+# Check Node.js and Yarn 4+ prerequisites.
+source "$PWD/script/check_node_yarn_deps.sh"
+
 # Install all dependencies needed to build, run, and test Warp.
 "$PWD"/script/linux/install_test_deps
 

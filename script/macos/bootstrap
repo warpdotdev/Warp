@@ -59,6 +59,10 @@ if ! [ "$(command -v gcloud)" ]; then
     brew install google-cloud-sdk
 fi
 
+# Check Node.js and Yarn 4+ prerequisites.
+# macOS uses /bin/sh so we can't use source, use . instead
+. "$PWD/script/check_node_yarn_deps.sh"
+
 if [[ -z $(gcloud auth print-identity-token) ]]; then
     echo "gcloud CLI authentication missing.  Press enter to continue..."
     read var

@@ -41,6 +41,10 @@ Environment variables:
 - `./script/install_cargo_build_deps` - Install Cargo build dependencies
 - `./script/install_cargo_test_deps` - Install Cargo test dependencies
 
+### Prerequisites
+- **Node.js 18.14.1+** — Required by the `command-signatures-v2` crate, which compiles a TypeScript helper at build time using yarn.
+- **Yarn 4+ via Corepack** — Required by the `command-signatures-v2` build script. Enable via `corepack enable` after installing Node.js; avoid Yarn 1.x from package managers such as Homebrew.
+
 ## Architecture Overview
 
 This is a Rust-based terminal emulator with a custom UI framework called **WarpUI**.

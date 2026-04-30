@@ -59,6 +59,9 @@ else
   echo -e "⚠️  ${red}Unknown Linux distribution; necessary build dependencies may not be installed!${reset}"
 fi
 
+# Check Node.js and Yarn 4+ prerequisites.
+source "$PWD/script/check_node_yarn_deps.sh"
+
 # Install Rust.
 "$PWD"/script/install_rust
 
