@@ -5,12 +5,24 @@
 # destination directory. It is used by the Windows build script.
 #
 # Usage:
-#   prepare_bundled_resources.ps1 <destination_directory>
+#   prepare_bundled_resources.ps1 -DestinationDir <destination_directory> [-Channel <channel>] [-CargoProfile <profile>] [-CargoFeatures <features>] [-CargoTarget <target>]
 #
 # Arguments:
-#   destination_directory: The directory where resources should be installed.
-#                          Resources will be copied to subdirectories within
-#                          this path (e.g., $DEST_DIR\skills).
+#   DestinationDir:  The directory where resources should be installed.
+#                    Resources will be copied to subdirectories within this
+#                    path (e.g., $DEST_DIR\skills).
+#   Channel:         (Optional) Release channel. Used to include
+#                    channel-gated skills.
+#   CargoProfile:    (Optional) Cargo build profile to use when generating
+#                    the settings schema.
+#   CargoFeatures:   (Optional) Comma-separated cargo features to enable when
+#                    generating the settings schema. Should match the
+#                    features used to build the main binary so that cargo
+#                    can reuse the existing compilation artifacts.  Also
+#                    ensures that feature-gated settings are included in the
+#                    generated schema.
+#   CargoTarget:     (Optional) Rust target triple to pass via --target.
+#                    Should match the target used to build the main binary.
 
 Param(
     [Parameter(Mandatory = $true)]
@@ -20,7 +32,13 @@ Param(
     [String]$Channel = '',
 
     [Parameter(Mandatory = $false)]
-    [String]$CargoProfile = ''
+    [String]$CargoProfile = '',
+
+    [Parameter(Mandatory = $false)]
+    [String]$CargoFeatures = '',
+
+    [Parameter(Mandatory = $false)]
+    [String]$CargoTarget = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -164,11 +182,22 @@ if ($env:SKIP_SETTINGS_SCHEMA -ne '1') {
     $SchemaOutput = Join-Path $DestinationDir 'settings_schema.json'
     Write-Output "Generating settings schema at $SchemaOutput"
 
-    $SchemaCmd = @('run')
+    # Pass the same package, profile, features, and target as the main
+    # build so that cargo can reuse compilation artifacts (rather than
+    # recompiling any dependencies whose enabled features differ).  Also
+    # ensures that feature-gated settings are included in the generated
+    # schema.
+    $SchemaCmd = @('run', '--manifest-path', (Join-Path $RepoRoot 'Cargo.toml'), '-p', 'warp')
     if ($CargoProfile) {
         $SchemaCmd += @('--profile', $CargoProfile)
     }
-    $SchemaCmd += @('--manifest-path', (Join-Path $RepoRoot 'Cargo.toml'), '--bin', 'generate_settings_schema', '--')
+    if ($CargoFeatures) {
+        $SchemaCmd += @('--features', $CargoFeatures)
+    }
+    if ($CargoTarget) {
+        $SchemaCmd += @('--target', $CargoTarget)
+    }
+    $SchemaCmd += @('--bin', 'generate_settings_schema', '--')
     if ($Channel) {
         $SchemaCmd += @('--channel', $Channel)
     }
