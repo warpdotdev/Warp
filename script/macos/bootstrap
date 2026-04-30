@@ -29,6 +29,16 @@ if ! command -v cargo; then
     exit 1
 fi
 
+# Node + yarn are required to build the command-signatures-v2 crate.
+if ! command -v node >/dev/null 2>&1; then
+    echo "Build requires Node.js. See the 'Node.js setup' section in WARP.md."
+    exit 1
+fi
+if ! command -v yarn >/dev/null 2>&1; then
+    echo "Build requires yarn. Run \`corepack enable\` or see the 'Node.js setup' section in WARP.md."
+    exit 1
+fi
+
 # Install various binaries through cargo.
 "$PWD"/script/install_cargo_test_deps
 "$PWD"/script/install_cargo_release_deps

@@ -56,5 +56,15 @@ fi
 # Install Rust.
 "$PWD"/script/install_rust
 
+# Node + yarn are required to build the command-signatures-v2 crate.
+if ! command -v node >/dev/null 2>&1; then
+  echo -e "${red}Build requires Node.js. See the 'Node.js setup' section in WARP.md.${reset}"
+  exit 1
+fi
+if ! command -v yarn >/dev/null 2>&1; then
+  echo -e "${red}Build requires yarn. Run \`corepack enable\` (may need sudo for system Node) or see WARP.md.${reset}"
+  exit 1
+fi
+
 # Install various build-time dependencies through cargo.
 "$PWD"/script/install_cargo_build_deps

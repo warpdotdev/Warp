@@ -22,6 +22,16 @@ if (-not (Get-Command -Name cargo -Type Application -ErrorAction SilentlyContinu
     exit 1
 }
 
+# Node + yarn are required to build the command-signatures-v2 crate.
+if (-not (Get-Command -Name node -Type Application -ErrorAction SilentlyContinue)) {
+    Write-Error "Build requires Node.js. See the 'Node.js setup' section in WARP.md."
+    exit 1
+}
+if (-not (Get-Command -Name yarn -Type Application -ErrorAction SilentlyContinue)) {
+    Write-Error "Build requires yarn. Run ``corepack enable`` (may need admin) or see WARP.md."
+    exit 1
+}
+
 # A bash executable should come with Git for Windows
 & "$gitBinDir\bash.exe" "$PWD\script\install_cargo_test_deps"
 

@@ -41,6 +41,39 @@ Environment variables:
 - `./script/install_cargo_build_deps` - Install Cargo build dependencies
 - `./script/install_cargo_test_deps` - Install Cargo test dependencies
 
+### Node.js setup
+
+**Requirements:**
+
+- `node` >= 18.14.1 on PATH
+- `yarn` on PATH
+
+The `command-signatures-v2` crate compiles a small TypeScript helper at `cargo build` time, which is why these are needed.
+
+We deliberately do **not** auto-install Node for you; pick whatever toolchain manager you already use:
+
+- A version manager: nvm, fnm, volta, asdf, mise, etc.
+- A system package: `apt install nodejs npm` on recent Ubuntu, NodeSource, `brew install node` on macOS, `winget install OpenJS.NodeJS` on Windows.
+- Anything else that puts Node on PATH.
+
+Check whether `yarn` is already on PATH:
+
+```sh
+yarn --version
+```
+
+If that works, you're done — skip the rest of this step. Otherwise, enable yarn via corepack:
+
+```sh
+corepack enable
+```
+
+If Node was installed to a root-owned location (e.g. `apt install nodejs`, or system-wide on Windows), this may need `sudo` / an admin shell. Volta users can skip this — Volta manages yarn itself.
+
+Then re-run `./script/bootstrap`.
+
+If `yarn` is on PATH but `cargo build` still fails to find it, a brew-installed yarn may be shadowing corepack's shim. Run `brew uninstall yarn` and try again.
+
 ## Architecture Overview
 
 This is a Rust-based terminal emulator with a custom UI framework called **WarpUI**.
