@@ -29,6 +29,7 @@ $haveMsvcBuildTools = $false
 if (Test-Path $vswhere) {
     $vsInstall = & $vswhere -latest -products * `
         -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                  Microsoft.VisualStudio.Component.Windows11SDK.22621 `
         -property installationPath
     if ($vsInstall) { $haveMsvcBuildTools = $true }
 }
