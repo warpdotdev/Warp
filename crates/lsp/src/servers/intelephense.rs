@@ -220,6 +220,11 @@ impl LanguageServerCandidate for IntelephenseCandidate {
 /// On Windows we additionally try the standard executable extensions
 /// (`.exe`, `.cmd`, `.bat`) since intelephense is shipped via npm as a
 /// `.cmd` shim there.
+///
+/// On Unix the candidate must also have at least one executable mode bit
+/// set; otherwise a leftover `intelephense` source-tarball or stray text
+/// file in `~/bin/` would falsely advertise availability and Warp would
+/// later prefer the broken PATH entry over a working data_dir copy.
 #[cfg(feature = "local_fs")]
 fn binary_in_path(name: &str, path_env_var: Option<&str>) -> bool {
     let owned;
@@ -246,12 +251,36 @@ fn binary_in_path(name: &str, path_env_var: Option<&str>) -> bool {
         let dir_path = std::path::Path::new(dir);
         for ext in extensions {
             let candidate = dir_path.join(format!("{name}{ext}"));
-            if candidate.is_file() {
+            if is_executable_file(&candidate) {
                 return true;
             }
         }
     }
     false
+}
+
+/// Returns `true` iff `path` is a regular file *and* the OS would treat it
+/// as runnable. On Unix that means at least one of the executable mode
+/// bits (`0o111`) is set; on Windows we trust the extension match (the
+/// `.exe`/`.cmd`/`.bat` suffix added by the caller is what makes
+/// `CreateProcessW` willing to launch it).
+#[cfg(feature = "local_fs")]
+fn is_executable_file(path: &std::path::Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        match std::fs::metadata(path) {
+            Ok(meta) => meta.permissions().mode() & 0o111 != 0,
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -299,5 +328,26 @@ mod tests {
         // Leading empty segment must not blow up or short-circuit.
         let path_var = format!(":{}", tmp.path().display());
         assert!(binary_in_path("intelephense", Some(&path_var)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_non_executable_file_on_unix() {
+        // A regular text file at `~/bin/intelephense` (e.g. left over from
+        // unpacking a tarball) must not pretend to be an installed binary —
+        // otherwise Warp would prefer this broken PATH entry over a working
+        // data_dir copy.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("intelephense");
+        File::create(&path).expect("create non-exec file");
+        // Default permissions: 0o644 (no executable bits).
+        let perms = fs::metadata(&path).unwrap().permissions();
+        assert_eq!(
+            perms.mode() & 0o111,
+            0,
+            "test setup failed: file unexpectedly executable",
+        );
+        let path_var = tmp.path().display().to_string();
+        assert!(!binary_in_path("intelephense", Some(&path_var)));
     }
 }
