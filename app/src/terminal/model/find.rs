@@ -345,5 +345,68 @@ impl RegexDFAs {
 /// often false in the terminal context, which often contains emojis, box-drawing chars,
 /// international text, etc.
 fn replace_unicode_word_boundaries(pattern: &str) -> String {
-    pattern.replace("\\b", "(?-u:\\b)")
+    let mut result = String::with_capacity(pattern.len());
+    let mut chars = pattern.char_indices().peekable();
+    let mut in_character_class = false;
+
+    while let Some((index, c)) = chars.next() {
+        let is_escaped = count_preceding_backslashes(pattern, index) % 2 == 1;
+        if c == '[' && !is_escaped {
+            in_character_class = true;
+        } else if c == ']' && !is_escaped {
+            in_character_class = false;
+        }
+
+        if c == '\\'
+            && !in_character_class
+            && !is_escaped
+            && chars.peek().is_some_and(|(_, next)| *next == 'b')
+        {
+            result.push_str("(?-u:\\b)");
+            chars.next();
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
+fn count_preceding_backslashes(pattern: &str, index: usize) -> usize {
+    pattern[..index]
+        .chars()
+        .rev()
+        .take_while(|c| *c == '\\')
+        .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replace_unicode_word_boundaries;
+
+    #[test]
+    fn replaces_word_boundary_assertions() {
+        assert_eq!(
+            replace_unicode_word_boundaries(r"\bTOKEN\b"),
+            r"(?-u:\b)TOKEN(?-u:\b)"
+        );
+    }
+
+    #[test]
+    fn preserves_escaped_literal_backslash_b() {
+        assert_eq!(replace_unicode_word_boundaries(r"\\bTOKEN"), r"\\bTOKEN");
+    }
+
+    #[test]
+    fn preserves_backslash_b_in_character_classes() {
+        assert_eq!(replace_unicode_word_boundaries(r"[\b]TOKEN"), r"[\b]TOKEN");
+    }
+
+    #[test]
+    fn replaces_boundary_after_escaped_literal_backslash() {
+        assert_eq!(
+            replace_unicode_word_boundaries(r"\\\bTOKEN"),
+            r"\\(?-u:\b)TOKEN"
+        );
+    }
 }
