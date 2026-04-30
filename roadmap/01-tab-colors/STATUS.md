@@ -1,7 +1,7 @@
 # 01 — Tab color shortcuts
 
 **Phase:** spec-in-review
-**Spec PR:** [#1](https://github.com/timomak/twarp/pull/1)
+**Spec PR:** https://github.com/timomak/twarp/pull/2
 **Impl PR:** —
 
 ## Scope
