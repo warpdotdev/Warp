@@ -1,3 +1,0 @@
-# Don't include output or screenshot directories from testing.
-output/
-screenshots/

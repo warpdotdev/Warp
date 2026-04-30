@@ -1,1 +1,0 @@
-ALTER TABLE tabs ADD color TEXT;

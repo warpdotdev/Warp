@@ -77,15 +77,27 @@
 
      # Should be available to each precmd and preexec
      # functions, should they want it. $? and $_ are available as $? and $_, but
-     # $PIPESTATUS is available only in a copy, $BP_PIPESTATUS.
-     # TODO: Figure out how to restore PIPESTATUS before each precmd or preexec
-     # function.
+     # $PIPESTATUS is read-only and gets clobbered as soon as any command runs.
+     # We save the original PIPESTATUS to BP_PIPESTATUS which can be accessed via
+     # the __bp_get_pipestatus helper function (recommended approach).
+     # See __bp_get_pipestatus() below for usage.
      __bp_last_ret_value="$?"
      BP_PIPESTATUS=("${PIPESTATUS[@]}")
      __bp_last_argument_prev_command="$_"
 
      __bp_inside_precmd=0
      __bp_inside_preexec=0
+
+     # Helper function to access the saved PIPESTATUS array in precmd/preexec functions.
+     # Usage in a precmd/preexec function:
+     #   __bp_get_pipestatus my_status_array
+     #   if [[ ${my_status_array[0]} -ne 0 ]]; then
+     #       echo "First command in pipeline failed with ${my_status_array[0]}"
+     #   fi
+     __bp_get_pipestatus() {
+         local __bp_varname=${1:?'__bp_get_pipestatus: target variable name required'}
+         eval "$__bp_varname=(\"\${BP_PIPESTATUS[@]}\")"
+     }
 
      # Initial PROMPT_COMMAND string that is removed from PROMPT_COMMAND post __bp_install
      __bp_install_string=$'__bp_trap_string="$(trap -p DEBUG)"\ntrap - DEBUG\n__bp_install'

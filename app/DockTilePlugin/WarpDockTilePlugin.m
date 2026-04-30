@@ -6,6 +6,7 @@
 
 @synthesize iconChangedObserver;
 @synthesize defaultsObserver;
+@synthesize observedDockTile;
 
 - (void)logMessage:(NSString *)message {
     if (_logFileHandle) {
@@ -37,6 +38,13 @@
         }
     }
     return self;
+}
+
+- (void)removeDefaultsObserver {
+    if (self.defaultsObserver) {
+        [(NSUserDefaults *)self.defaultsObserver removeObserver:self forKeyPath:@"AppIcon"];
+        self.defaultsObserver = nil;
+    }
 }
 
 - (void)updateAppIcon:(NSDockTile *)tile {
@@ -143,6 +151,9 @@
     @try {
         [self logMessage:[NSString stringWithFormat:@"setDockTile called with tile: %@", dockTile ? @"valid" : @"nil"]];
         if (dockTile) {
+            [self removeDefaultsObserver];
+            self.observedDockTile = dockTile;
+
             // Get the bundle ID for setting up user defaults observation
             NSBundle *pluginBundle = [NSBundle bundleForClass:[WarpDockTilePlugIn class]];    
             NSString *path = [[pluginBundle bundlePath] stringByAppendingPathComponent:@"Contents/Info.plist"];
@@ -156,7 +167,7 @@
             [hostDefaults addObserver:self
                         forKeyPath:@"AppIcon"
                             options:NSKeyValueObservingOptionNew
-                            context:(__bridge void * _Nullable)(dockTile)];
+                            context:NULL];
             self.defaultsObserver = hostDefaults;
 
             [self logMessage:[NSString stringWithFormat:@"Host defaults: %@", hostDefaults]];
@@ -167,10 +178,8 @@
             [self logMessage:@"No docktile, clearing icon observer"];
             [[NSDistributedNotificationCenter defaultCenter] removeObserver:self.iconChangedObserver];
             self.iconChangedObserver = nil;
-            if (self.defaultsObserver) {
-                [(NSUserDefaults *)self.defaultsObserver removeObserver:self forKeyPath:@"AppIcon"];
-                self.defaultsObserver = nil;
-            }
+            [self removeDefaultsObserver];
+            self.observedDockTile = nil;
         }
     } @catch (NSException *exception) {
         [self logMessage:[NSString stringWithFormat:@"Exception in setDockTile: %@\nStack trace: %@\nDockTile: %@", 
@@ -187,10 +196,8 @@
             [[NSDistributedNotificationCenter defaultCenter] removeObserver:self.iconChangedObserver];
             self.iconChangedObserver = nil;
         }
-        if (self.defaultsObserver) {
-            [(NSUserDefaults *)self.defaultsObserver removeObserver:self forKeyPath:@"AppIcon"];
-            self.defaultsObserver = nil;
-        }
+        [self removeDefaultsObserver];
+        self.observedDockTile = nil;
         
         if (_logFileHandle) {
             [self logMessage:@"Closing log file"];
@@ -212,8 +219,7 @@
     @try {
         if ([keyPath isEqualToString:@"AppIcon"]) {
             [self logMessage:@"AppIcon value changed in user defaults"];
-            NSDockTile *dockTile = (__bridge NSDockTile *)context;
-            [self updateAppIcon:dockTile];
+            [self updateAppIcon:self.observedDockTile];
         }
     } @catch (NSException *exception) {
         [self logMessage:[NSString stringWithFormat:@"Exception in KVO handler: %@\nStack trace: %@\nKeyPath: %@\nObject: %@\nChange: %@", 

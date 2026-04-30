@@ -1,1 +1,0 @@
-ALTER TABLE pane_leaves ADD is_active BOOLEAN NOT NULL DEFAULT FALSE;
