@@ -709,6 +709,43 @@ impl Input {
                 // Open the skill selector menu for invocation - skill command will be inserted into buffer
                 self.open_invoke_skill_selector(ctx);
             }
+            host if command.name == commands::HOST.name => {
+                if !self.is_cloud_mode_input_v2_composing(ctx) {
+                    // Defensive: the command is registered only when the V2 flag is on and its
+                    // availability requires CLOUD_AGENT_V2, so this branch should be unreachable.
+                    return false;
+                }
+                self.suggestions_mode_model.update(ctx, |model, ctx| {
+                    model.set_mode(InputSuggestionsMode::Closed, ctx);
+                });
+                self.clear_buffer_and_reset_undo_stack(ctx);
+                self.open_v2_host_selector(ctx);
+                return true;
+            }
+            harness if command.name == commands::HARNESS.name => {
+                if !self.is_cloud_mode_input_v2_composing(ctx) {
+                    // Defensive: the command is registered only when the V2 flag is on and its
+                    // availability requires CLOUD_AGENT_V2, so this branch should be unreachable.
+                    return false;
+                }
+                self.suggestions_mode_model.update(ctx, |model, ctx| {
+                    model.set_mode(InputSuggestionsMode::Closed, ctx);
+                });
+                self.clear_buffer_and_reset_undo_stack(ctx);
+                self.open_v2_harness_selector(ctx);
+                return true;
+            }
+            environment if command.name == commands::ENVIRONMENT.name => {
+                if !self.is_cloud_mode_input_v2_composing(ctx) {
+                    return false;
+                }
+                self.suggestions_mode_model.update(ctx, |model, ctx| {
+                    model.set_mode(InputSuggestionsMode::Closed, ctx);
+                });
+                self.clear_buffer_and_reset_undo_stack(ctx);
+                self.open_v2_environment_selector(ctx);
+                return true;
+            }
             models if command.name == commands::MODEL.name => {
                 if self.is_cloud_mode_input_v2_composing(ctx) {
                     self.suggestions_mode_model.update(ctx, |model, ctx| {
