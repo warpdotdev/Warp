@@ -362,36 +362,67 @@ pub fn default_init_params(workspace_uri: &Path, client_name: String) -> Result<
     })
 }
 
-/// Returns `true` for paths whose final filename is a well-known JSON-with-comments
-/// config file. The VS Code JSON language server distinguishes `json` from `jsonc`
-/// and only allows comments under `jsonc`, but several Microsoft tools ship with
-/// `.json` extensions and JSONC contents (TypeScript's `tsconfig.json`,
-/// VS Code's own `settings.json`, etc.). Routing these by name keeps users
-/// from getting spurious "comments not allowed" diagnostics.
+/// Returns `true` for paths whose name (and, where ambiguous, parent
+/// directory) identify a well-known JSON-with-comments config file. The
+/// VS Code JSON language server distinguishes `json` from `jsonc` and only
+/// allows comments under `jsonc`, but several Microsoft tools ship with
+/// `.json` extensions and JSONC contents — routing these by name avoids
+/// spurious "comments not allowed" diagnostics.
+///
+/// Detection is split into two tiers to avoid relaxing validation for
+/// unrelated files that happen to share a common name:
+///
+/// 1. **Globally JSONC** — names that are unambiguous wherever they
+///    appear (`tsconfig.json` and its `.<variant>.json` siblings,
+///    `jsconfig.json` ditto, `devcontainer.json`, `typedoc.json`).
+///
+/// 2. **JSONC only when the parent directory is `.vscode/`** — VS Code's
+///    workspace/user files (`settings.json`, `launch.json`, `tasks.json`,
+///    `keybindings.json`, `extensions.json`). Outside `.vscode/` a file
+///    called `settings.json` is just as likely to be strict JSON in some
+///    unrelated project, so we leave those alone.
 fn filename_is_jsonc(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
-    // Exact filename matches that are always JSONC by convention.
-    const EXACT: &[&str] = &[
+
+    // Tier 1: globally JSONC by convention.
+    const ALWAYS_JSONC: &[&str] = &[
         "tsconfig.json",
         "jsconfig.json",
-        // VS Code workspace/user/folder settings files.
+        "devcontainer.json",
+        "typedoc.json",
+    ];
+    if ALWAYS_JSONC.contains(&name) {
+        return true;
+    }
+    // Variants like `tsconfig.build.json`, `tsconfig.app.json`,
+    // `jsconfig.app.json`, etc.
+    if (name.starts_with("tsconfig.") || name.starts_with("jsconfig.")) && name.ends_with(".json") {
+        return true;
+    }
+
+    // Tier 2: VS Code workspace files — only when the parent directory is
+    // exactly `.vscode/`. A `settings.json` somewhere else might be strict
+    // JSON in an unrelated project; we don't want to silently accept
+    // comments there.
+    const VSCODE_JSONC: &[&str] = &[
         "settings.json",
         "launch.json",
         "tasks.json",
         "keybindings.json",
         "extensions.json",
-        // Other editor configs that follow the same convention.
-        "devcontainer.json",
-        "typedoc.json",
     ];
-    if EXACT.contains(&name) {
-        return true;
+    if VSCODE_JSONC.contains(&name) {
+        let parent_is_vscode = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            == Some(".vscode");
+        return parent_is_vscode;
     }
-    // Variants like `tsconfig.build.json`, `tsconfig.app.json`, etc.
-    name.starts_with("tsconfig.") && name.ends_with(".json")
-        || name.starts_with("jsconfig.") && name.ends_with(".json")
+
+    false
 }
 
 #[cfg(test)]

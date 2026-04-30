@@ -292,6 +292,51 @@ mod json_language_detection {
     }
 
     #[test]
+    fn vscode_filenames_outside_dotvscode_stay_strict_json() {
+        // A `settings.json` (or `launch.json`, etc.) that lives outside a
+        // `.vscode/` directory could just as easily be strict JSON in an
+        // unrelated project. We must not relax validation for it just
+        // because the filename matches a VS Code convention.
+        for name in [
+            "settings.json",
+            "launch.json",
+            "tasks.json",
+            "keybindings.json",
+            "extensions.json",
+            "src/settings.json",
+            "config/launch.json",
+            "deeply/nested/extensions.json",
+        ] {
+            assert_eq!(
+                LanguageId::from_path(&PathBuf::from(name)),
+                Some(LanguageId::Json),
+                "{name} (no .vscode/ parent) should remain strict JSON",
+            );
+        }
+    }
+
+    #[test]
+    fn vscode_filenames_under_dotvscode_become_jsonc() {
+        // The same names *do* route to JSONC when the immediate parent is
+        // `.vscode/` — that's the canonical VS Code config layout.
+        for name in [
+            ".vscode/settings.json",
+            ".vscode/launch.json",
+            ".vscode/tasks.json",
+            ".vscode/keybindings.json",
+            ".vscode/extensions.json",
+            // Nested-project case: `frontend/.vscode/settings.json`.
+            "frontend/.vscode/settings.json",
+        ] {
+            assert_eq!(
+                LanguageId::from_path(&PathBuf::from(name)),
+                Some(LanguageId::Jsonc),
+                "{name} (under .vscode/) should be classified as JSONC",
+            );
+        }
+    }
+
+    #[test]
     fn both_json_and_jsonc_route_to_vscode_json_language_server() {
         assert_eq!(
             LanguageId::Json.server_type(),
