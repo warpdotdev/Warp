@@ -774,4 +774,8 @@ pub struct WorkspaceSettings {
     pub addon_credits_settings: AddonCreditsSettings,
     pub codebase_context_settings: CodebaseContextSettings,
     pub sandboxed_agent_settings: Option<SandboxedAgentSettings>,
+    /// The team-level agent attribution setting. When `Enable` or `Disable`, the
+    /// user toggle is locked. When `RespectUserSetting` (or absent), the user can choose.
+    #[serde(default)]
+    pub enable_warp_attribution: AdminEnablementSetting,
 }

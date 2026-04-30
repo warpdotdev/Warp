@@ -54,7 +54,8 @@ use crate::ai::blocklist::agent_view::{
     agent_view_bg_fill, AgentViewController, AgentViewControllerEvent, AgentViewDisplayMode,
     AgentViewEntryBlockParams, AgentViewEntryOrigin, AgentViewHeaderDisabledTheme,
     AgentViewHeaderTheme, AgentViewZeroStateBlock, AgentViewZeroStateEvent, EphemeralMessageModel,
-    ExitConfirmationTrigger, InlineAgentViewHeader, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
+    ExitAgentViewError, ExitConfirmationTrigger, InlineAgentViewHeader, OrchestrationPillBar,
+    ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
 use crate::ai::conversation_utils;
 use crate::ai::predict::prompt_suggestions::{
@@ -131,6 +132,9 @@ use crate::code_review::git_status_update::{
 };
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::projects::ProjectManagementModel;
+use crate::remote_server::manager::{
+    RemoteServerInitPhase, RemoteServerManager, RemoteServerManagerEvent,
+};
 use crate::settings::ai::FocusedTerminalInfo;
 use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
 use crate::terminal::cli_agent_sessions::event::{
@@ -155,7 +159,7 @@ use crate::terminal::view::ssh_remote_server_choice_view::{
     SshRemoteServerChoiceView, SshRemoteServerChoiceViewEvent,
 };
 use crate::terminal::view::ssh_remote_server_failed_banner::{
-    SshRemoteServerFailedBanner, SshRemoteServerFailedBannerEvent,
+    SshRemoteServerFailedBanner, SshRemoteServerFailedBannerEvent, SshRemoteServerFailureKind,
 };
 use crate::terminal::view::telemetry::PromptSuggestionFallbackReason;
 use crate::workspace::view::cloud_agent_capacity_modal::CloudAgentCapacityModalVariant;
@@ -2291,6 +2295,8 @@ struct TerminalViewMouseStates {
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     open_in_warp_tooltip: MouseStateHandle,
+    #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+    show_in_file_explorer_tooltip: MouseStateHandle,
     jump_to_bottom_of_block_button: MouseStateHandle,
 
     // Mouse state for the pane header ambient agent indicator tooltip.
@@ -2731,9 +2737,13 @@ pub struct TerminalView {
 
     agent_view_controller: ModelHandle<AgentViewController>,
     agent_view_back_button: ViewHandle<ActionButton>,
+    /// Pill bar shown above the agent view header listing the orchestrator and
+    /// child agents. Gated by `FeatureFlag::OrchestrationPillBar`. The view is
+    /// always constructed; render-time guards control whether it draws anything.
+    orchestration_pill_bar: ViewHandle<OrchestrationPillBar>,
     is_using_conversation_for_pane_header_title: bool,
 
-    ambient_agent_view_model: ModelHandle<ambient_agent::AmbientAgentViewModel>,
+    ambient_agent_view_model: Option<ModelHandle<ambient_agent::AmbientAgentViewModel>>,
 
     /// Cloud mode conversation details panel (side panel showing task metadata).
     cloud_mode_details_panel:
@@ -2846,6 +2856,27 @@ impl TerminalView {
     /// the state of this terminal. If this terminal view has an active input
     /// editor, other terminals should match those contents.
     /// Otherwise, they should just start syncing.
+    fn is_nested_cloud_mode(&self, app: &AppContext) -> bool {
+        if !self.is_ambient_agent_session(app) {
+            return false;
+        }
+
+        let Some(pane_stack) = self
+            .pane_stack
+            .as_ref()
+            .and_then(|handle| handle.upgrade(app))
+        else {
+            return false;
+        };
+
+        pane_stack
+            .as_ref(app)
+            .entries()
+            .iter()
+            .position(|(_, view)| view.id() == self.view_id)
+            .is_some_and(|index| index > 0)
+    }
+
     pub fn create_sync_event_based_on_terminal_state(&self, app_ctx: &AppContext) -> SyncEvent {
         if !matches!(
             self.model.lock().terminal_input_state(),
@@ -2946,35 +2977,25 @@ impl TerminalView {
         initial_input_config: Option<InputConfig>,
         conversation_restoration: Option<ConversationRestorationInNewPaneType>,
         inactive_pty_reads_rx: Option<async_broadcast::InactiveReceiver<Arc<Vec<u8>>>>,
+        is_cloud_mode: bool,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let terminal_view_id = ctx.view_id();
         let active_session = ctx.add_model(|ctx| {
             ActiveSession::new(sessions.clone(), model_events_handle.clone(), ctx)
         });
-
-        let ambient_agent_view_model = ctx.add_model(|ctx| {
-            ambient_agent::AmbientAgentViewModel::new(
-                terminal_view_id,
-                false, // New terminal views don't have parent by default
-                ctx,
-            )
+        let ambient_agent_view_model = is_cloud_mode.then(|| {
+            ctx.add_model(|ctx| ambient_agent::AmbientAgentViewModel::new(terminal_view_id, ctx))
         });
 
         let ephemeral_message_model = ctx.add_model(|_| EphemeralMessageModel::new());
 
-        let agent_view_controller = ctx.add_model(|ctx| {
+        let agent_view_controller = ctx.add_model(|_| {
             AgentViewController::new(
                 model.clone(),
                 terminal_view_id,
-                ambient_agent_view_model.clone(),
                 ephemeral_message_model.clone(),
-                ctx,
             )
-        });
-
-        ctx.subscribe_to_model(&ambient_agent_view_model, |me, _, event, ctx| {
-            me.handle_ambient_agent_event(event, ctx);
         });
 
         ctx.subscribe_to_model(&agent_view_controller, |me, _, event, ctx| {
@@ -3041,7 +3062,7 @@ impl TerminalView {
                                         *origin,
                                         me.agent_view_controller.clone(),
                                         &me.sessions,
-                                        &me.ambient_agent_view_model,
+                                        me.ambient_agent_view_model.as_ref(),
                                         me.model.clone(),
                                         &me.model_events_handle,
                                         should_show_init_callout,
@@ -3473,7 +3494,10 @@ impl TerminalView {
                 event,
                 BlocklistAIControllerEvent::FinishedReceivingOutput { .. }
             ) && me.is_cloud_mode_details_panel_open
-                && me.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                && me
+                    .ambient_agent_view_model
+                    .as_ref()
+                    .is_some_and(|model| model.as_ref(ctx).is_ambient_agent())
             {
                 me.fetch_and_update_cloud_mode_details_panel(ctx);
             }
@@ -3501,7 +3525,10 @@ impl TerminalView {
                 // Only refresh panel if it's currently open (avoids unnecessary work)
                 if should_refresh_details_panel
                     && me.is_cloud_mode_details_panel_open
-                    && me.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                    && me
+                        .ambient_agent_view_model
+                        .as_ref()
+                        .is_some_and(|model| model.as_ref(ctx).is_ambient_agent())
                 {
                     me.fetch_and_update_cloud_mode_details_panel(ctx);
                     ctx.notify();
@@ -3598,6 +3625,11 @@ impl TerminalView {
             }
             BlocklistAIStatusBarEvent::Stop => me.ctrl_c(ctx),
         });
+        if let Some(ambient_agent_view_model) = ambient_agent_view_model.as_ref() {
+            ctx.subscribe_to_model(ambient_agent_view_model, |me, _, event, ctx| {
+                me.handle_ambient_agent_event(event, ctx);
+            });
+        }
 
         let ai_render_context = Rc::new(RefCell::new(BlocklistAIRenderContext {
             block_ids: HashMap::from_iter([
@@ -3967,6 +3999,10 @@ impl TerminalView {
                 ctx,
             )
         });
+        let orchestration_pill_bar =
+            ctx.add_view(|ctx| OrchestrationPillBar::new(agent_view_controller.clone(), ctx));
+        ctx.subscribe_to_view(&orchestration_pill_bar, |_, _, _, ctx| ctx.notify());
+
         let agent_view_back_button = ctx.add_typed_action_view(|ctx| {
             ActionButton::new("for terminal", AgentViewHeaderTheme)
                 .with_icon(icons::Icon::ArrowLeft)
@@ -4140,6 +4176,7 @@ impl TerminalView {
             use_agent_footer: use_agent_button_bar,
             agent_view_controller,
             agent_view_back_button,
+            orchestration_pill_bar,
             is_using_conversation_for_pane_header_title: false,
             ambient_agent_view_model,
             cloud_mode_details_panel,
@@ -4168,219 +4205,243 @@ impl TerminalView {
 
         // Forward RemoteServerManager setup events into the terminal event stream
         // so the ModelEventDispatcher can gate session initialization on them.
-        if crate::features::FeatureFlag::SshRemoteServer.is_enabled() {
-            use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
+        if FeatureFlag::SshRemoteServer.is_enabled() {
             let mgr_handle = RemoteServerManager::handle(ctx);
-            ctx.subscribe_to_model(&mgr_handle, |me, _, event, ctx| match event {
-                RemoteServerManagerEvent::SetupStateChanged { session_id, state } => {
-                    me.model.lock().event_proxy.send_terminal_event(
-                        crate::terminal::event::Event::RemoteServerSetupStateChanged {
-                            session_id: *session_id,
-                            state: state.clone(),
-                        },
-                    );
-                }
-                RemoteServerManagerEvent::SessionConnected { session_id, .. } => {
-                    me.model.lock().event_proxy.send_terminal_event(
-                        crate::terminal::event::Event::RemoteServerReady {
-                            session_id: *session_id,
-                        },
-                    );
-                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                        .as_ref(ctx)
-                        .platform_for_session(*session_id)
-                        .map(|p| {
-                            (
-                                Some(p.os.as_str().to_owned()),
-                                Some(p.arch.as_str().to_owned()),
-                            )
-                        })
-                        .unwrap_or((None, None));
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::RemoteServerInitialization {
-                            phase: remote_server::manager::RemoteServerInitPhase::Initialize,
-                            error: None,
-                            remote_os,
-                            remote_arch,
-                        },
-                        ctx
-                    );
-                }
-                RemoteServerManagerEvent::SessionConnectionFailed {
-                    session_id,
-                    phase,
-                    error,
-                } => {
-                    me.model.lock().event_proxy.send_terminal_event(
-                        crate::terminal::event::Event::RemoteServerFailed {
-                            session_id: *session_id,
-                            error: error.clone(),
-                        },
-                    );
-                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                        .as_ref(ctx)
-                        .platform_for_session(*session_id)
-                        .map(|p| {
-                            (
-                                Some(p.os.as_str().to_owned()),
-                                Some(p.arch.as_str().to_owned()),
-                            )
-                        })
-                        .unwrap_or((None, None));
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::RemoteServerInitialization {
-                            phase: *phase,
-                            error: Some(error.clone()),
-                            remote_os,
-                            remote_arch,
-                        },
-                        ctx
-                    );
-                }
-                RemoteServerManagerEvent::SessionDisconnected { session_id, .. } => {
-                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                        .as_ref(ctx)
-                        .platform_for_session(*session_id)
-                        .map(|p| {
-                            (
-                                Some(p.os.as_str().to_owned()),
-                                Some(p.arch.as_str().to_owned()),
-                            )
-                        })
-                        .unwrap_or((None, None));
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::RemoteServerDisconnection {
-                            remote_os,
-                            remote_arch,
-                        },
-                        ctx
-                    );
-                }
-                RemoteServerManagerEvent::SessionDeregistered { session_id } => {
-                    // Clean up any stale SSH remote-server choice block if the
-                    // session disappears (e.g. network drop, Ctrl-C, `exit`)
-                    // before the user picks an option.
-                    me.remove_ssh_remote_server_choice_block(*session_id, ctx);
-                    me.remove_ssh_remote_server_failed_banner(*session_id, ctx);
-                }
-                RemoteServerManagerEvent::BinaryInstallComplete { session_id, result } => {
-                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                        .as_ref(ctx)
-                        .platform_for_session(*session_id)
-                        .map(|p| {
-                            (
-                                Some(p.os.as_str().to_owned()),
-                                Some(p.arch.as_str().to_owned()),
-                            )
-                        })
-                        .unwrap_or((None, None));
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::RemoteServerInstallation {
-                            error: result.as_ref().err().cloned(),
-                            remote_os,
-                            remote_arch,
-                        },
-                        ctx
-                    );
-                    if result.is_err() {
-                        me.show_ssh_remote_server_failed_banner(*session_id, ctx);
+            ctx.subscribe_to_model(&mgr_handle, |me, _, event, ctx| {
+                // `RemoteServerManager` is a singleton, so every `TerminalView` receives every event.
+                // Filter for session-scoped events that are specifically tracked by this view.
+                // Host-scoped variants return `None` and pass through unfiltered.
+                if let Some(sid) = event.session_id() {
+                    if !me.sessions.as_ref(ctx).tracks_session(sid) {
+                        return;
                     }
                 }
-                RemoteServerManagerEvent::BinaryCheckComplete {
-                    session_id,
-                    result,
-                    remote_platform,
-                } => {
-                    let (remote_os, remote_arch) = remote_platform
-                        .as_ref()
-                        .map(|p| {
-                            (
-                                Some(p.os.as_str().to_owned()),
-                                Some(p.arch.as_str().to_owned()),
-                            )
-                        })
-                        .unwrap_or((None, None));
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::RemoteServerBinaryCheck {
-                            found: matches!(result, Ok(true)),
-                            error: result.as_ref().err().cloned(),
-                            remote_os,
-                            remote_arch,
-                        },
-                        ctx
-                    );
-                    if result.is_err() {
-                        me.show_ssh_remote_server_failed_banner(*session_id, ctx);
+                match event {
+                    RemoteServerManagerEvent::SetupStateChanged { .. } => {
+                        // Sessions handles the state update directly via its own
+                        // subscription to the manager. Notify the view so the
+                        // loading footer re-renders with the updated message.
+                        ctx.notify();
                     }
-                }
-                RemoteServerManagerEvent::ClientRequestFailed {
-                    session_id,
-                    operation,
-                    error_kind,
-                } => {
-                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                        .as_ref(ctx)
-                        .platform_for_session(*session_id)
-                        .map(|p| {
-                            (
-                                Some(p.os.as_str().to_owned()),
-                                Some(p.arch.as_str().to_owned()),
-                            )
-                        })
-                        .unwrap_or((None, None));
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::RemoteServerClientRequestError {
-                            operation: *operation,
-                            error_type: *error_kind,
-                            remote_os,
-                            remote_arch,
-                        },
-                        ctx
-                    );
-                }
-                RemoteServerManagerEvent::ServerMessageDecodingError { session_id } => {
-                    let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
-                        .as_ref(ctx)
-                        .platform_for_session(*session_id)
-                        .map(|p| {
-                            (
-                                Some(p.os.as_str().to_owned()),
-                                Some(p.arch.as_str().to_owned()),
-                            )
-                        })
-                        .unwrap_or((None, None));
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::RemoteServerMessageDecodingError {
-                            remote_os,
-                            remote_arch,
-                        },
-                        ctx
-                    );
-                }
-                RemoteServerManagerEvent::NavigatedToDirectory {
-                    session_id: nav_session_id,
-                    host_id,
-                    indexed_path,
-                    ..
-                } => {
-                    // Check if this navigation belongs to our active session
-                    // using exact session_id match (no CWD heuristics).
-                    let is_relevant = me
-                        .active_block_session_id()
-                        .is_some_and(|sid| sid == *nav_session_id);
-                    if is_relevant {
-                        ctx.emit(Event::Pane(PaneEvent::RemoteRepoNavigated {
-                            host_id: host_id.clone(),
-                            indexed_path: indexed_path.clone(),
-                        }));
+                    RemoteServerManagerEvent::SessionConnected { session_id, .. } => {
+                        me.model.lock().event_proxy.send_terminal_event(
+                            crate::terminal::event::Event::RemoteServerReady {
+                                session_id: *session_id,
+                            },
+                        );
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerInitialization {
+                                phase: RemoteServerInitPhase::Initialize,
+                                error: None,
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
                     }
+                    RemoteServerManagerEvent::SessionConnectionFailed {
+                        session_id,
+                        phase,
+                        error,
+                    } => {
+                        me.model.lock().event_proxy.send_terminal_event(
+                            crate::terminal::event::Event::RemoteServerFailed {
+                                session_id: *session_id,
+                                error: error.clone(),
+                            },
+                        );
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerInitialization {
+                                phase: *phase,
+                                error: Some(error.clone()),
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                        me.show_ssh_remote_server_failed_banner(
+                            *session_id,
+                            SshRemoteServerFailureKind::Launch,
+                            error,
+                            ctx,
+                        );
+                    }
+                    RemoteServerManagerEvent::SessionDisconnected { session_id, .. } => {
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerDisconnection {
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                    }
+                    RemoteServerManagerEvent::SessionDeregistered { session_id } => {
+                        // Clean up any stale SSH remote-server choice block if the
+                        // session disappears (e.g. network drop, Ctrl-C, `exit`)
+                        // before the user picks an option.
+                        me.remove_ssh_remote_server_choice_block(*session_id, ctx);
+                        me.remove_ssh_remote_server_failed_banner(*session_id, ctx);
+                    }
+                    RemoteServerManagerEvent::BinaryInstallComplete { session_id, result } => {
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerInstallation {
+                                error: result.as_ref().err().cloned(),
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                        if let Err(error) = result {
+                            me.show_ssh_remote_server_failed_banner(
+                                *session_id,
+                                SshRemoteServerFailureKind::BinaryInstall,
+                                error,
+                                ctx,
+                            );
+                        }
+                    }
+                    RemoteServerManagerEvent::BinaryCheckComplete {
+                        session_id,
+                        result,
+                        remote_platform,
+                    } => {
+                        let (remote_os, remote_arch) = remote_platform
+                            .as_ref()
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerBinaryCheck {
+                                found: matches!(result, Ok(true)),
+                                error: result.as_ref().err().cloned(),
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                        if let Err(error) = result {
+                            me.show_ssh_remote_server_failed_banner(
+                                *session_id,
+                                SshRemoteServerFailureKind::BinaryCheck,
+                                error,
+                                ctx,
+                            );
+                        }
+                    }
+                    RemoteServerManagerEvent::ClientRequestFailed {
+                        session_id,
+                        operation,
+                        error_kind,
+                    } => {
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerClientRequestError {
+                                operation: *operation,
+                                error_type: *error_kind,
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                    }
+                    RemoteServerManagerEvent::ServerMessageDecodingError { session_id } => {
+                        let (remote_os, remote_arch) = RemoteServerManager::handle(ctx)
+                            .as_ref(ctx)
+                            .platform_for_session(*session_id)
+                            .map(|p| {
+                                (
+                                    Some(p.os.as_str().to_owned()),
+                                    Some(p.arch.as_str().to_owned()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        send_telemetry_from_ctx!(
+                            TelemetryEvent::RemoteServerMessageDecodingError {
+                                remote_os,
+                                remote_arch,
+                            },
+                            ctx
+                        );
+                    }
+                    RemoteServerManagerEvent::NavigatedToDirectory {
+                        session_id: nav_session_id,
+                        host_id,
+                        indexed_path,
+                        ..
+                    } => {
+                        // Check if this navigation belongs to our active session
+                        // using exact session_id match (no CWD heuristics).
+                        let is_relevant = me
+                            .active_block_session_id()
+                            .is_some_and(|sid| sid == *nav_session_id);
+                        if is_relevant {
+                            ctx.emit(Event::Pane(PaneEvent::RemoteRepoNavigated {
+                                host_id: host_id.clone(),
+                                indexed_path: indexed_path.clone(),
+                            }));
+                        }
+                    }
+                    RemoteServerManagerEvent::SessionConnecting { .. }
+                    | RemoteServerManagerEvent::SessionReconnected { .. }
+                    | RemoteServerManagerEvent::HostConnected { .. }
+                    | RemoteServerManagerEvent::HostDisconnected { .. }
+                    | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
+                    | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
+                    | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. } => {}
                 }
-                RemoteServerManagerEvent::SessionConnecting { .. }
-                | RemoteServerManagerEvent::HostConnected { .. }
-                | RemoteServerManagerEvent::HostDisconnected { .. }
-                | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
-                | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
-                | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. } => {}
             });
         }
         terminal_view.any_session_contains_restored_remote_blocks =
@@ -4443,6 +4504,24 @@ impl TerminalView {
         callback(self, ctx);
     }
 
+    fn can_exit_agent_view_for_terminal_view(
+        &self,
+        ctx: &AppContext,
+    ) -> Result<(), ExitAgentViewError> {
+        match self.agent_view_controller.as_ref(ctx).can_exit_agent_view() {
+            Err(ExitAgentViewError::LongRunningCommand)
+                if self.can_pop_nested_cloud_agent_view(ctx) =>
+            {
+                Ok(())
+            }
+            result => result,
+        }
+    }
+
+    fn can_pop_nested_cloud_agent_view(&self, ctx: &AppContext) -> bool {
+        self.is_ambient_agent_session(ctx) && self.is_nested_cloud_mode(ctx)
+    }
+
     /// Exits the active agent, either:
     /// * Exiting agent view for the selected conversation
     /// * Popping the current view off the navigation stack (for cloud mode agents)
@@ -4450,7 +4529,7 @@ impl TerminalView {
         // For ambient agent sessions (cloud mode), always pop from pane stack.
         // These sessions are pushed onto a nav stack and have no underlying terminal
         // to return to via the normal agent view exit path.
-        if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
+        if self.is_ambient_agent_session(ctx) {
             if let Some(pane_stack) = self.pane_stack.as_ref().and_then(|h| h.upgrade(ctx)) {
                 pane_stack.update(ctx, |stack, ctx| {
                     stack.pop(ctx);
@@ -5040,7 +5119,7 @@ impl TerminalView {
                     }
                 }
 
-                if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                if self.is_ambient_agent_session(ctx)
                     && self
                         .model
                         .lock()
@@ -5272,7 +5351,7 @@ impl TerminalView {
 
                 // Show AI credits modal for cloud-mode out-of-credits failures.
                 if FeatureFlag::CloudMode.is_enabled()
-                    && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+                    && self.is_ambient_agent_session(ctx)
                     && !self.model.lock().is_shared_ambient_agent_session()
                 {
                     if let Some(conversation) =
@@ -6571,8 +6650,10 @@ impl TerminalView {
             .active_conversation_id()
     }
 
-    pub fn ambient_agent_view_model(&self) -> &ModelHandle<ambient_agent::AmbientAgentViewModel> {
-        &self.ambient_agent_view_model
+    pub fn ambient_agent_view_model(
+        &self,
+    ) -> Option<&ModelHandle<ambient_agent::AmbientAgentViewModel>> {
+        self.ambient_agent_view_model.as_ref()
     }
 
     fn ambient_agent_task_id_for_details_panel_from_model(
@@ -6581,8 +6662,8 @@ impl TerminalView {
         app: &AppContext,
     ) -> Option<AmbientAgentTaskId> {
         self.ambient_agent_view_model
-            .as_ref(app)
-            .task_id()
+            .as_ref()
+            .and_then(|model| model.as_ref(app).task_id())
             .or_else(|| model.ambient_agent_task_id())
     }
     pub fn ambient_agent_task_id_for_details_panel(
@@ -6774,9 +6855,7 @@ impl TerminalView {
             return false;
         }
 
-        if model.shared_session_status().is_view_pending()
-            && !self.ambient_agent_view_model.as_ref(app).is_ambient_agent()
-        {
+        if model.shared_session_status().is_view_pending() && !self.is_ambient_agent_session(app) {
             return false;
         }
 
@@ -6785,7 +6864,7 @@ impl TerminalView {
         // rendered instead (see `TerminalView::render`).
         if !FeatureFlag::CloudModeSetupV2.is_enabled()
             && is_cloud_agent_pre_first_exchange(
-                &self.ambient_agent_view_model,
+                self.ambient_agent_view_model.as_ref(),
                 &self.agent_view_controller,
                 app,
             )
@@ -7172,7 +7251,7 @@ impl TerminalView {
         if self
             .agent_view_controller
             .as_ref(app)
-            .can_exit_agent_view(app)
+            .can_exit_agent_view()
             .is_err()
         {
             return false;
@@ -7304,6 +7383,14 @@ impl TerminalView {
             .active_block()
             .is_active_and_long_running()
             && !model.is_read_only()
+    }
+
+    /// Returns `true` when an interactive SSH command has been detected at
+    /// preexec and the SSH block is still running (long-running). Used by
+    /// the workspace to derive `PendingRemoteSession` without storing
+    /// mutable state on the workspace itself.
+    pub fn has_pending_ssh_command(&self) -> bool {
+        self.warpify_state.get_pending_ssh_host().is_some() && self.is_long_running()
     }
 
     /// Like `is_long_running`, but also requires the user to be in control of the command
@@ -10018,9 +10105,7 @@ impl TerminalView {
     /// the user can exit agent mode, and shows a tooltip explaining when exiting is blocked.
     fn update_agent_view_back_button_state(&mut self, ctx: &mut ViewContext<Self>) {
         let disabled_reason = self
-            .agent_view_controller
-            .as_ref(ctx)
-            .can_exit_agent_view(ctx)
+            .can_exit_agent_view_for_terminal_view(ctx)
             .err()
             .map(|e| e.to_string());
 
@@ -10340,6 +10425,7 @@ impl TerminalView {
                                 self.warpify_state
                                     .set_pending_ssh_host(warpify_command.to_string(), ssh_host);
                                 self.model.lock().start_notify_on_end_of_ssh_login();
+                                ctx.emit(Event::TerminalViewStateChanged);
                             }
                         } else {
                             self.warpify_state.clear_pending_ssh_host();
@@ -11358,18 +11444,34 @@ impl TerminalView {
         })
     }
 
-    /// Returns `true` when the pending session has a connecting remote-server setup state.
+    /// Returns `true` when the pending session has a connecting remote-server setup state
+    /// and no failure banner is already shown for that session.
     fn show_remote_server_loading_footer(&self, model: &TerminalModel, app: &AppContext) -> bool {
         if !FeatureFlag::SshRemoteServer.is_enabled() {
+            return false;
+        }
+        // Don't show the loading footer while the choice block is visible;
+        // the choice block replaces it.
+        if self.active_ssh_remote_server_choice_block().is_some() {
             return false;
         }
         let Some(pending_sid) = model.pending_session_id() else {
             return false;
         };
+        let has_failed_banner = self.rich_content_views.iter().any(|view| {
+            matches!(
+                view.metadata(),
+                Some(RichContentMetadata::SshRemoteServerFailedBanner { handle })
+                if handle.as_ref(app).session_id() == pending_sid
+            )
+        });
+        if has_failed_banner {
+            return false;
+        }
         self.sessions
             .as_ref(app)
             .remote_server_setup_state(pending_sid)
-            .is_some_and(|state| state.is_connecting())
+            .is_some_and(|state| state.is_in_progress())
     }
 
     /// Renders a shimmering loading footer in place of the input editor
@@ -11387,6 +11489,7 @@ impl TerminalView {
                     .as_ref(app)
                     .remote_server_setup_state(sid)
                     .map(|state| match state {
+                        RemoteServerSetupState::Checking => "Checking...".to_string(),
                         RemoteServerSetupState::Installing {
                             progress_percent: Some(p),
                         } => format!("Installing... ({p}%)"),
@@ -11416,6 +11519,8 @@ impl TerminalView {
     fn show_ssh_remote_server_failed_banner(
         &mut self,
         session_id: SessionId,
+        kind: SshRemoteServerFailureKind,
+        error: &str,
         ctx: &mut ViewContext<Self>,
     ) {
         let already_present = self.rich_content_views.iter().any(|view| {
@@ -11429,7 +11534,9 @@ impl TerminalView {
             return;
         }
 
-        let banner = ctx.add_typed_action_view(|_| SshRemoteServerFailedBanner::new(session_id));
+        let error = error.to_owned();
+        let banner = ctx
+            .add_typed_action_view(|_| SshRemoteServerFailedBanner::new(session_id, kind, error));
 
         ctx.subscribe_to_view(&banner, move |me, _, event, ctx| match event {
             SshRemoteServerFailedBannerEvent::Dismissed => {
@@ -12620,7 +12727,7 @@ impl TerminalView {
         // directly to the environment management pane
         if FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_active()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+            && self.is_ambient_agent_session(ctx)
         {
             self.open_environment_management_pane(ctx);
             return;
@@ -14838,13 +14945,13 @@ impl TerminalView {
         // Then check if there's selected text in the cloud mode error screen
         let error_selected_text = self
             .ambient_agent_view_model
-            .as_ref(ctx)
-            .ui_state
-            .error_selected_text
-            .clone();
-        if let Some(text) = error_selected_text.read().clone().filter(|t| !t.is_empty()) {
-            ctx.clipboard().write(ClipboardContent::plain_text(text));
-            return;
+            .as_ref()
+            .map(|model| model.as_ref(ctx).ui_state.error_selected_text.clone());
+        if let Some(error_selected_text) = error_selected_text {
+            if let Some(text) = error_selected_text.read().clone().filter(|t| !t.is_empty()) {
+                ctx.clipboard().write(ClipboardContent::plain_text(text));
+                return;
+            }
         }
 
         let semantic_selection = SemanticSelection::as_ref(ctx);
@@ -17416,7 +17523,7 @@ impl TerminalView {
     fn clear_buffer(&mut self, ctx: &mut ViewContext<Self>) {
         let agent_view_state = self.agent_view_controller.as_ref(ctx).agent_view_state();
         let is_fullscreen_agent_view = agent_view_state.is_fullscreen();
-        let is_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_ambient_agent = self.is_ambient_agent_session(ctx);
 
         // When in the modal agent view, "clear buffer" has special semantics.
         // Try to clear it specially, but if it wasn't successful, then clear normally.
@@ -19819,27 +19926,25 @@ impl TerminalView {
                     && self.agent_view_controller.as_ref(ctx).is_active()
                 {
                     // Disable escape completely for ambient agents without a parent terminal.
-                    if self
-                        .agent_view_controller
-                        .as_ref(ctx)
-                        .can_exit_agent_view(ctx)
-                        .is_err()
-                    {
+                    if self.can_exit_agent_view_for_terminal_view(ctx).is_err() {
                         return;
                     }
 
-                    if !self
+                    let is_long_running = self
                         .model
                         .lock()
                         .block_list()
                         .active_block()
-                        .is_active_and_long_running()
-                    {
+                        .is_active_and_long_running();
+                    if is_long_running && self.can_pop_nested_cloud_agent_view(ctx) {
+                        self.exit_agent_view(ctx);
+                    } else if !is_long_running {
                         // During first-time setup, always exit directly without confirmation
                         // since the setup overlay would obscure any confirmation dialog.
-                        let ambient_agent_view = self.ambient_agent_view_model.as_ref(ctx);
-                        let is_in_setup = ambient_agent_view.is_ambient_agent()
-                            && ambient_agent_view.is_in_setup();
+                        let is_in_setup = self
+                            .ambient_agent_view_model
+                            .as_ref()
+                            .is_some_and(|model| model.as_ref(ctx).is_in_setup());
                         if !is_in_setup && !self.input.as_ref(ctx).buffer_text(ctx).is_empty() {
                             self.agent_view_controller.update(ctx, |session, ctx| {
                                 session.exit_agent_view_with_required_confirmation(
@@ -24379,6 +24484,7 @@ impl TypedActionView for TerminalView {
             | ExecuteRewindFromInlineMenu { .. }
             | ToggleUsageFooter
             | RevealChildAgent { .. }
+            | SwitchAgentViewToConversation { .. }
             | OpenCLIAgentRichInput
             | ToggleSessionRecording => Empty,
         }
@@ -25349,8 +25455,10 @@ impl TypedActionView for TerminalView {
                 ctx.notify();
             }
             ExitAgentView => {
-                self.exit_agent_view(ctx);
-                ctx.notify();
+                if self.can_exit_agent_view_for_terminal_view(ctx).is_ok() {
+                    self.exit_agent_view(ctx);
+                    ctx.notify();
+                }
             }
             EnterCloudAgentView => {
                 let mut draft_text = self.input.as_ref(ctx).buffer_text(ctx);
@@ -25391,9 +25499,11 @@ impl TypedActionView for TerminalView {
                 ctx.notify();
             }
             CancelAmbientAgentTask => {
-                self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                    model.cancel_task(ctx);
-                });
+                if let Some(ambient_agent_view_model) = self.ambient_agent_view_model.as_ref() {
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        model.cancel_task(ctx);
+                    });
+                }
                 ctx.notify();
             }
             ToggleUsageFooter => {
@@ -25403,6 +25513,14 @@ impl TypedActionView for TerminalView {
                 ctx.emit(Event::RevealChildAgent {
                     conversation_id: *conversation_id,
                 });
+            }
+            SwitchAgentViewToConversation { conversation_id } => {
+                self.enter_agent_view_for_conversation(
+                    None,
+                    AgentViewEntryOrigin::OrchestrationPillBar,
+                    *conversation_id,
+                    ctx,
+                );
             }
             ToggleSessionRecording => {
                 self.pty_recorder.update(ctx, |recorder, ctx| {
@@ -25489,7 +25607,7 @@ impl View for TerminalView {
                         .with_child(column.finish())
                 } else {
                     let output_area = if (model.shared_session_status().is_view_pending()
-                        && !self.ambient_agent_view_model.as_ref(app).is_ambient_agent())
+                        && !self.is_ambient_agent_session(app))
                         || model.is_loading_conversation_transcript()
                     {
                         self.render_viewer_loading(app)
@@ -25519,7 +25637,7 @@ impl View for TerminalView {
                         column.add_child(self.render_input());
                     } else if !model.is_read_only()
                         && is_cloud_agent_pre_first_exchange(
-                            &self.ambient_agent_view_model,
+                            self.ambient_agent_view_model.as_ref(),
                             &self.agent_view_controller,
                             app,
                         )
@@ -25551,9 +25669,8 @@ impl View for TerminalView {
             // Show progress steps while waiting for an ambient agent to start.
             if self
                 .ambient_agent_view_model
-                .as_ref(app)
-                .agent_progress()
-                .is_some()
+                .as_ref()
+                .is_some_and(|model| model.as_ref(app).agent_progress().is_some())
             {
                 stack.add_child(self.render_ambient_agent_progress(appearance, app));
             }
@@ -25877,7 +25994,11 @@ impl View for TerminalView {
         }
 
         // Render first-time cloud agent setup view when in Setup status
-        if self.ambient_agent_view_model.as_ref(app).is_in_setup() {
+        if self
+            .ambient_agent_view_model
+            .as_ref()
+            .is_some_and(|model| model.as_ref(app).is_in_setup())
+        {
             stack.add_child(ChildView::new(&self.first_time_cloud_agent_setup_view).finish());
         }
 
@@ -26051,10 +26172,7 @@ impl View for TerminalView {
             }
         }
 
-        let ambient_agent_view_model = self.ambient_agent_view_model.as_ref(app);
-        if ambient_agent_view_model.is_ambient_agent()
-            && !ambient_agent_view_model.has_parent_terminal()
-        {
+        if self.is_ambient_agent_session(app) && !self.is_nested_cloud_mode(app) {
             context.set.insert(init::ROOT_CLOUD_MODE_PANE_KEY);
         }
 

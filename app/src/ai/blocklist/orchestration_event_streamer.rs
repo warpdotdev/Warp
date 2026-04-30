@@ -22,11 +22,9 @@ use warp_multi_agent_api as api;
 use warpui::r#async::Timer;
 use warpui::{Entity, ModelContext, SingletonEntity};
 
-/// Adaptive polling backoff: 1s, 2s, 5s, then 10s max. Resets to 1s when
-/// events are found.
-const POLL_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
-/// Keep each catch-up poll bounded so the event poller can drain backlog without overfetching.
-const EVENT_POLL_BATCH_LIMIT: i32 = 100;
+/// Backoff schedule (seconds) reused for the post-restore
+/// `get_ambient_agent_task` retry: 1s, 2s, 5s, then 10s max.
+const RESTORE_FETCH_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
 /// How often (milliseconds) the drain timer checks for SSE events.
 const SSE_DRAIN_INTERVAL_MS: u64 = 500;
 
@@ -78,35 +76,33 @@ impl AgentEventConsumer for SseForwardingConsumer {
     }
 }
 
-/// Async network coordinator for v2 orchestration event delivery.
-/// Owns polling, adaptive backoff, event cursors, watched run_ids,
-/// lifecycle reporting, delivery confirmation, and self-registration.
-///
-/// When the `OrchestrationEventPush` feature flag is enabled the poller
-/// opens a persistent SSE connection to the server instead of short-polling.
+/// Async network coordinator for v2 orchestration event delivery via SSE.
+/// Opens persistent SSE connections to the server and forwards events into
+/// the OrchestrationEventService. Owns watched run_ids, event cursors used
+/// for deduplication, lifecycle reporting, and delivery confirmation.
 /// SSE retries with exponential backoff on failure.
-pub struct OrchestrationEventPoller {
+pub struct OrchestrationEventStreamer {
     ai_client: Arc<dyn AIClient>,
     server_api: Arc<ServerApi>,
     watched_run_ids: HashMap<AIConversationId, HashSet<String>>,
     event_cursor: HashMap<AIConversationId, i64>,
-    poll_backoff_index: HashMap<AIConversationId, usize>,
     pending_delivery: HashMap<AIConversationId, PendingDeliveryConfirmation>,
     conversation_statuses: HashMap<AIConversationId, ConversationStatus>,
-    poll_in_flight: HashSet<AIConversationId>,
-    // ---- SSE state ----
     /// Active SSE connections keyed by conversation.
     sse_connections: HashMap<AIConversationId, SseConnectionState>,
     /// Monotonic counter for SSE connection generations. Ensures stale
     /// callbacks from replaced connections are discarded.
     next_sse_generation: u64,
+    /// Consecutive failure count for the post-restore `get_ambient_agent_task`
+    /// fetch (resets on success). Drives exponential backoff for retries.
+    restore_fetch_failures: HashMap<AIConversationId, usize>,
 }
 
-pub enum OrchestrationEventPollerEvent {
+pub enum OrchestrationEventStreamerEvent {
     // Reserved for future use (e.g., status signals to the controller).
 }
 
-impl OrchestrationEventPoller {
+impl OrchestrationEventStreamer {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let provider = ServerApiProvider::as_ref(ctx);
         let ai_client = provider.get_ai_client();
@@ -120,12 +116,37 @@ impl OrchestrationEventPoller {
             server_api,
             watched_run_ids: HashMap::new(),
             event_cursor: HashMap::new(),
-            poll_backoff_index: HashMap::new(),
             pending_delivery: HashMap::new(),
             conversation_statuses: HashMap::new(),
-            poll_in_flight: HashSet::new(),
             sse_connections: HashMap::new(),
             next_sse_generation: 0,
+            restore_fetch_failures: HashMap::new(),
+        }
+    }
+
+    /// Constructs a streamer wired to the supplied (mock) clients instead of
+    /// looking them up via `ServerApiProvider`. Lets unit tests inject a
+    /// `MockAIClient` while still subscribing to `BlocklistAIHistoryModel`.
+    #[cfg(test)]
+    pub(super) fn new_with_clients_for_test(
+        ai_client: Arc<dyn AIClient>,
+        server_api: Arc<ServerApi>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        let history_model = BlocklistAIHistoryModel::handle(ctx);
+        ctx.subscribe_to_model(&history_model, |me, event, ctx| {
+            me.handle_history_event(event, ctx);
+        });
+        Self {
+            ai_client,
+            server_api,
+            watched_run_ids: HashMap::new(),
+            event_cursor: HashMap::new(),
+            pending_delivery: HashMap::new(),
+            conversation_statuses: HashMap::new(),
+            sse_connections: HashMap::new(),
+            next_sse_generation: 0,
+            restore_fetch_failures: HashMap::new(),
         }
     }
 
@@ -183,12 +204,11 @@ impl OrchestrationEventPoller {
             } => {
                 self.watched_run_ids.remove(conversation_id);
                 self.event_cursor.remove(conversation_id);
-                self.poll_backoff_index.remove(conversation_id);
                 self.pending_delivery.remove(conversation_id);
                 self.conversation_statuses.remove(conversation_id);
-                self.poll_in_flight.remove(conversation_id);
-                // SSE cleanup
-                // task's next send to fail, which terminates the task.
+                self.restore_fetch_failures.remove(conversation_id);
+                // Dropping the SSE connection state closes the channel,
+                // causing the task's next send to fail and terminate.
                 self.sse_connections.remove(conversation_id);
             }
             BlocklistAIHistoryEvent::StartedNewConversation { .. }
@@ -202,9 +222,237 @@ impl OrchestrationEventPoller {
             | BlocklistAIHistoryEvent::UpdatedTodoList { .. }
             | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { .. }
             | BlocklistAIHistoryEvent::SplitConversation { .. }
-            | BlocklistAIHistoryEvent::RestoredConversations { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. } => {}
+            BlocklistAIHistoryEvent::RestoredConversations {
+                conversation_ids, ..
+            } => {
+                self.on_restored_conversations(conversation_ids.clone(), ctx);
+            }
+        }
+    }
+
+    /// Handles restoration of conversations on startup (or driver re-attach).
+    ///
+    /// Re-establishes orchestration event delivery state that is not persisted
+    /// directly in memory: watched run_ids, the per-conversation event cursor,
+    /// and — for `Success` parents with watched children — the SSE event loop.
+    fn on_restored_conversations(
+        &mut self,
+        conversation_ids: Vec<AIConversationId>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        // Orchestration v2 owns the events endpoints and the cursor model.
+        // V1 conversations may carry a run_id but the v2-only event APIs
+        // would return spurious 4xx responses, so skip restore entirely
+        // when V2 is disabled.
+        if !FeatureFlag::OrchestrationV2.is_enabled() {
+            return;
+        }
+
+        for conv_id in conversation_ids {
+            let (run_id, cursor, status, is_viewer) = {
+                let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+                let Some(conversation) = history_model.conversation(&conv_id) else {
+                    continue;
+                };
+                let is_viewer = conversation.is_viewing_shared_session();
+                let run_id = conversation.run_id();
+                let cursor = conversation.last_event_sequence().unwrap_or(0);
+                let status = conversation.status().clone();
+                (run_id, cursor, status, is_viewer)
+            };
+
+            // Shared-session viewers receive updates through session sharing;
+            // subscribing here would re-inject events the session has already
+            // processed.
+            if is_viewer {
+                continue;
+            }
+
+            // Initialize the in-memory cursor from the persisted SQLite value.
+            // A later server `GET /agent/runs/{run_id}` response may advance
+            // it to `max(SQLite, server)` before delivery starts.
+            //
+            // Note: a status transition arriving in the window before
+            // finish_restore_fetch completes may trigger
+            // start_event_delivery with only the SQLite cursor. This is
+            // acceptable — worst case is one extra batch of duplicate
+            // events.
+            self.event_cursor.insert(conv_id, cursor);
+            self.conversation_statuses.insert(conv_id, status.clone());
+
+            // Register the conversation's own run_id so lifecycle events for
+            // self are correctly filtered and the SSE loop has a set
+            // of run_ids to open against.
+            if let Some(ref own) = run_id {
+                self.watched_run_ids
+                    .entry(conv_id)
+                    .or_default()
+                    .insert(own.clone());
+            }
+
+            // No run_id means we can't query the server for children or for
+            // the canonical cursor. There's nothing more to do here; if a
+            // run_id gets assigned later the standard self-registration path
+            // will pick it up.
+            let Some(run_id) = run_id else {
+                self.maybe_start_delivery_after_restore(conv_id, &status, ctx);
+                continue;
+            };
+
+            let Ok(task_id) = run_id.parse::<crate::ai::ambient_agents::AmbientAgentTaskId>()
+            else {
+                log::warn!("could not parse run_id {run_id:?} for {conv_id:?}");
+                self.maybe_start_delivery_after_restore(conv_id, &status, ctx);
+                continue;
+            };
+
+            self.spawn_restore_fetch(conv_id, task_id, cursor, ctx);
+        }
+    }
+
+    /// Issues `GET /agent/runs/{task_id}` and routes the result through
+    /// `finish_restore_fetch`. Used both for the initial post-restore fetch
+    /// and for backoff-driven retries.
+    fn spawn_restore_fetch(
+        &mut self,
+        conv_id: AIConversationId,
+        task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
+        sqlite_cursor: i64,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let ai_client = self.ai_client.clone();
+        ctx.spawn(
+            async move { ai_client.get_ambient_agent_task(&task_id).await },
+            move |me, run_result, ctx| {
+                me.finish_restore_fetch(conv_id, task_id, sqlite_cursor, run_result, ctx);
+            },
+        );
+    }
+
+    /// Completes the post-restore async fetch by merging the server cursor,
+    /// installing the server-reported child run_ids, and — if the parent is
+    /// `Success` — starting event delivery. On a server-fetch failure,
+    /// schedules a retry with exponential backoff: V2 children always have a
+    /// server-side `ai_tasks` row, so the server is the authoritative source
+    /// for the watched run_id set, and any local fallback would be incomplete
+    /// anyway. Without network connectivity event delivery wouldn't function,
+    /// so retrying is the right behavior.
+    fn finish_restore_fetch(
+        &mut self,
+        conv_id: AIConversationId,
+        task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
+        sqlite_cursor: i64,
+        run_result: anyhow::Result<crate::ai::ambient_agents::task::AmbientAgentTask>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        match run_result {
+            Ok(task) => {
+                // If the conversation was removed while the fetch was in-flight,
+                // the removal handler already cleaned up all streamer state. Return
+                // early to avoid recreating watched_run_ids for a deleted conversation.
+                if !self.event_cursor.contains_key(&conv_id) {
+                    self.restore_fetch_failures.remove(&conv_id);
+                    return;
+                }
+
+                // Reset the retry counter on success.
+                self.restore_fetch_failures.remove(&conv_id);
+
+                // Merge the server cursor: use the max of SQLite and server
+                // values so we don't re-deliver events the client already
+                // acknowledged locally.
+                let server_seq = task.last_event_sequence.unwrap_or(0);
+                let merged = sqlite_cursor.max(server_seq);
+                self.event_cursor.insert(conv_id, merged);
+
+                // The server response includes `children` inline on
+                // `AmbientAgentTask`; this is the authoritative set of
+                // direct child run_ids for the parent.
+                //
+                // Insert children and reconnect SSE once if any new run_ids
+                // were added and a connection is already open (e.g. because a
+                // status transition raced with this fetch and opened SSE with
+                // only the parent's own run_id).
+                let had_sse = self.sse_connections.contains_key(&conv_id);
+                let watched = self.watched_run_ids.entry(conv_id).or_default();
+                let mut any_new_children = false;
+                for child in task.children {
+                    if watched.insert(child) {
+                        any_new_children = true;
+                    }
+                }
+                if any_new_children && had_sse {
+                    self.reconnect_sse(conv_id, ctx);
+                }
+
+                let status = BlocklistAIHistoryModel::as_ref(ctx)
+                    .conversation(&conv_id)
+                    .map(|c| c.status().clone())
+                    .unwrap_or(ConversationStatus::Success);
+                self.maybe_start_delivery_after_restore(conv_id, &status, ctx);
+            }
+            Err(err) => {
+                log::warn!("Restore: get_agent_run failed for {conv_id:?}: {err:#}; will retry");
+                self.start_restore_fetch_retry_timer(conv_id, task_id, sqlite_cursor, ctx);
+            }
+        }
+    }
+
+    /// Schedules a retry of the post-restore `get_ambient_agent_task` fetch
+    /// after an exponential backoff. The backoff schedule reuses
+    /// `RESTORE_FETCH_BACKOFF_STEPS` (1s, 2s, 5s, 10s capped) keyed on a
+    /// per-conversation failure counter. The counter resets on success.
+    fn start_restore_fetch_retry_timer(
+        &mut self,
+        conv_id: AIConversationId,
+        task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
+        sqlite_cursor: i64,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let failures = self
+            .restore_fetch_failures
+            .entry(conv_id)
+            .and_modify(|c| *c += 1)
+            .or_insert(1);
+        let step_index = failures
+            .saturating_sub(1)
+            .min(RESTORE_FETCH_BACKOFF_STEPS.len() - 1);
+        let backoff = Duration::from_secs(RESTORE_FETCH_BACKOFF_STEPS[step_index]);
+        ctx.spawn(
+            async move { Timer::after(backoff).await },
+            move |me, _, ctx| {
+                // The conversation may have been removed in the meantime;
+                // if so, drop the retry. Otherwise re-issue the fetch.
+                if !me.event_cursor.contains_key(&conv_id) {
+                    me.restore_fetch_failures.remove(&conv_id);
+                    return;
+                }
+                me.spawn_restore_fetch(conv_id, task_id, sqlite_cursor, ctx);
+            },
+        );
+    }
+
+    /// Starts event delivery for a restored conversation if the parent is
+    /// currently `Success` and has at least one watched run_id. `InProgress`
+    /// parents are deferred to `on_conversation_status_updated` once they
+    /// next transition to `Success`.
+    fn maybe_start_delivery_after_restore(
+        &mut self,
+        conv_id: AIConversationId,
+        status: &ConversationStatus,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let has_watched = self
+            .watched_run_ids
+            .get(&conv_id)
+            .is_some_and(|w| !w.is_empty());
+        if !has_watched {
+            return;
+        }
+        if matches!(status, ConversationStatus::Success) {
+            self.start_event_delivery(conv_id, ctx);
         }
     }
 
@@ -229,9 +477,8 @@ impl OrchestrationEventPoller {
         let became_success = matches!(&current_status, ConversationStatus::Success)
             && !matches!(previous_status.as_ref(), Some(ConversationStatus::Success));
 
-        // Trigger event delivery when a conversation with watched run_ids
-        // becomes idle. With the event-push flag this opens an SSE stream;
-        // otherwise it falls back to the existing polling loop.
+        // Open an SSE stream when a conversation with watched run_ids
+        // becomes idle.
         if became_success && self.watched_run_ids.contains_key(&conversation_id) {
             self.start_event_delivery(conversation_id, ctx);
         }
@@ -248,9 +495,9 @@ impl OrchestrationEventPoller {
             else {
                 return;
             };
-            // Shared session viewers must not poll for events — the actual
-            // agent handles event delivery. Polling here would re-inject
-            // events the session has already processed.
+            // Shared session viewers must not subscribe to events — the
+            // actual agent handles event delivery. Subscribing here would
+            // re-inject events the session has already processed.
             if conversation.is_viewing_shared_session() {
                 return;
             }
@@ -327,93 +574,10 @@ impl OrchestrationEventPoller {
         );
     }
 
-    /// Polls the server for events and feeds them into the service queue.
-    fn poll_and_inject(&mut self, conversation_id: AIConversationId, ctx: &mut ModelContext<Self>) {
-        if self.poll_in_flight.contains(&conversation_id) {
-            return;
-        }
-        let Some(watched) = self.watched_run_ids.get(&conversation_id) else {
-            return;
-        };
-        if watched.is_empty() {
-            return;
-        }
-        self.poll_in_flight.insert(conversation_id);
-        let watched: Vec<String> = watched.iter().cloned().collect();
-        let cursor = self
-            .event_cursor
-            .get(&conversation_id)
-            .copied()
-            .unwrap_or(0);
-
-        let ai_client = self.ai_client.clone();
-        let hydrator = MessageHydrator::new(ai_client.clone());
-
-        // Capture own run_id to filter out self-originated lifecycle events.
-        let self_run_id = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&conversation_id)
-            .and_then(|c| c.run_id())
-            .map(|s| s.to_string())
-            .unwrap_or_default();
-
-        struct PollResult {
-            events: Vec<crate::server::server_api::ai::AgentRunEvent>,
-            fetched_messages: Vec<ReceivedMessageInput>,
-        }
-
-        let self_run_id_clone = self_run_id.clone();
-        ctx.spawn(
-            async move {
-                let events = ai_client
-                    .poll_agent_events(&watched, cursor, EVENT_POLL_BATCH_LIMIT)
-                    .await?;
-
-                let mut fetched_messages = Vec::new();
-                for event in &events {
-                    if let Some(message) = hydrator
-                        .hydrate_event_for_recipient(event, &self_run_id)
-                        .await
-                    {
-                        fetched_messages.push(message);
-                    }
-                }
-
-                Ok::<_, anyhow::Error>(PollResult {
-                    events,
-                    fetched_messages,
-                })
-            },
-            move |me, result, ctx| {
-                me.poll_in_flight.remove(&conversation_id);
-                let self_run_id = self_run_id_clone;
-                let poll_result = match result {
-                    Ok(r) => r,
-                    Err(err) => {
-                        log::warn!("V2 event poll failed for {conversation_id:?}: {err:#}");
-                        me.start_idle_poll_timer(conversation_id, ctx);
-                        return;
-                    }
-                };
-
-                if poll_result.events.is_empty() {
-                    me.start_idle_poll_timer(conversation_id, ctx);
-                    return;
-                }
-
-                me.handle_poll_result(
-                    conversation_id,
-                    &self_run_id,
-                    cursor,
-                    poll_result.events,
-                    poll_result.fetched_messages,
-                    ctx,
-                );
-                me.start_idle_poll_timer(conversation_id, ctx);
-            },
-        );
-    }
-
-    fn handle_poll_result(
+    /// Feeds a batch of fetched events through the OrchestrationEventService,
+    /// updating the in-memory and persisted cursors and tracking message IDs
+    /// awaiting delivery confirmation.
+    fn handle_event_batch(
         &mut self,
         conversation_id: AIConversationId,
         self_run_id: &str,
@@ -428,6 +592,40 @@ impl OrchestrationEventPoller {
             .max()
             .unwrap_or(previous_cursor);
         self.event_cursor.insert(conversation_id, max_seq);
+
+        // Persist the cursor to SQLite so that after a restart we can resume
+        // event delivery from this sequence number without re-delivering
+        // events the parent has already acted on.
+        BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, ctx| {
+            model.update_event_sequence(conversation_id, max_seq, ctx);
+        });
+
+        // Also persist the cursor to the server so driver / cloud restarts
+        // can resume without local SQLite state. Fire-and-forget: log on
+        // failure, don't block event delivery. The server persists the
+        // cursor on `ai_tasks.last_event_sequence`.
+        let own_run_id = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .and_then(|c| c.run_id());
+        if let Some(run_id) = own_run_id {
+            // TODO: consider debouncing this server write (see
+            // specs/replay-agent-events-on-restore/TECH.md Risks).
+            let ai_client = self.ai_client.clone();
+            ctx.spawn(
+                async move {
+                    ai_client
+                        .update_event_sequence_on_server(&run_id, max_seq)
+                        .await
+                },
+                move |_, result, _| {
+                    if let Err(err) = result {
+                        log::warn!(
+                            "Failed to persist event cursor to server for {conversation_id:?}: {err:#}"
+                        );
+                    }
+                },
+            );
+        }
 
         // Track message IDs for server-side mark_delivered calls.
         let message_ids: Vec<String> = events
@@ -450,63 +648,21 @@ impl OrchestrationEventPoller {
             return;
         }
 
-        // Only reset backoff when events actually produce pending items.
-        self.poll_backoff_index.remove(&conversation_id);
-
         let pending = build_pending_events(messages, lifecycle_events);
         OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
-            svc.enqueue_polled_events(conversation_id, pending, ctx);
+            svc.enqueue_event_batch(conversation_id, pending, ctx);
         });
     }
 
-    /// Starts a background poll timer with adaptive backoff.
-    fn start_idle_poll_timer(
-        &mut self,
-        conversation_id: AIConversationId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if !self.watched_run_ids.contains_key(&conversation_id) {
-            return;
-        }
-
-        let index = self.poll_backoff_index.entry(conversation_id).or_insert(0);
-        let interval_secs = POLL_BACKOFF_STEPS[(*index).min(POLL_BACKOFF_STEPS.len() - 1)];
-        *index = (*index + 1).min(POLL_BACKOFF_STEPS.len() - 1);
-
-        ctx.spawn(
-            async move { Timer::after(Duration::from_secs(interval_secs)).await },
-            move |me, _, ctx| {
-                // Re-check that the conversation is still idle before polling.
-                let is_success = BlocklistAIHistoryModel::as_ref(ctx)
-                    .conversation(&conversation_id)
-                    .is_some_and(|c| matches!(c.status(), ConversationStatus::Success));
-                if is_success && me.watched_run_ids.contains_key(&conversation_id) {
-                    me.poll_and_inject(conversation_id, ctx);
-                }
-            },
-        );
-    }
-
-    // ---- SSE event-push methods ----
-
-    /// Chooses between SSE and polling based on the feature flag, then starts
-    /// the appropriate event delivery loop for the given conversation.
+    /// Opens an SSE connection for the given conversation if one isn't already active.
     fn start_event_delivery(
         &mut self,
         conversation_id: AIConversationId,
         ctx: &mut ModelContext<Self>,
     ) {
-        if self.should_use_sse() {
-            if !self.sse_connections.contains_key(&conversation_id) {
-                self.start_sse_connection(conversation_id, ctx);
-            }
-        } else {
-            self.poll_and_inject(conversation_id, ctx);
+        if !self.sse_connections.contains_key(&conversation_id) {
+            self.start_sse_connection(conversation_id, ctx);
         }
-    }
-
-    fn should_use_sse(&self) -> bool {
-        FeatureFlag::OrchestrationEventPush.is_enabled()
     }
 
     /// Opens a long-lived SSE connection for `conversation_id`. Events are
@@ -618,8 +774,8 @@ impl OrchestrationEventPoller {
         );
     }
 
-    /// Drains all buffered SSE events and feeds them through the normal
-    /// `handle_poll_result` path.
+    /// Drains all buffered SSE events and feeds them through the
+    /// `handle_event_batch` sink.
     fn drain_sse_events(
         &mut self,
         conversation_id: AIConversationId,
@@ -658,7 +814,7 @@ impl OrchestrationEventPoller {
             .map(|s| s.to_string())
             .unwrap_or_default();
 
-        self.handle_poll_result(conversation_id, &self_run_id, cursor, events, messages, ctx);
+        self.handle_event_batch(conversation_id, &self_run_id, cursor, events, messages, ctx);
     }
 
     /// Tears down the current SSE connection and opens a new one with the
@@ -675,11 +831,11 @@ impl OrchestrationEventPoller {
     }
 }
 
-impl Entity for OrchestrationEventPoller {
-    type Event = OrchestrationEventPollerEvent;
+impl Entity for OrchestrationEventStreamer {
+    type Event = OrchestrationEventStreamerEvent;
 }
 
-impl SingletonEntity for OrchestrationEventPoller {}
+impl SingletonEntity for OrchestrationEventStreamer {}
 
 fn parse_occurred_at(s: &str) -> prost_types::Timestamp {
     chrono::DateTime::parse_from_rfc3339(s)
@@ -778,5 +934,5 @@ fn build_pending_events(
 }
 
 #[cfg(test)]
-#[path = "orchestration_event_poller_tests.rs"]
+#[path = "orchestration_event_streamer_tests.rs"]
 mod tests;

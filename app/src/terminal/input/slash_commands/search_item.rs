@@ -90,7 +90,7 @@ impl SearchItem for InlineItem {
         };
 
         let name_element = if let Some(keystroke) = keystroke {
-            Flex::row()
+            let mut row = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(name_text.finish())
                 .with_child(
@@ -111,17 +111,23 @@ impl SearchItem for InlineItem {
                     ))
                     .with_margin_left(4.)
                     .finish(),
-                )
-                .with_child(Shrinkable::new(1., Empty::new().finish()).finish())
-                .finish()
+                );
+            if !self.compact_layout {
+                row = row.with_child(Shrinkable::new(1., Empty::new().finish()).finish());
+            }
+            row.finish()
         } else {
             name_text.finish()
         };
 
         row.add_child(if self.description.is_some() {
-            ConstrainedBox::new(name_element)
-                .with_width(inline_width_for_name_column(app))
-                .finish()
+            if self.compact_layout {
+                Container::new(name_element).with_margin_right(8.).finish()
+            } else {
+                ConstrainedBox::new(name_element)
+                    .with_width(inline_width_for_name_column(app))
+                    .finish()
+            }
         } else {
             name_element
         });

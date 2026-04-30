@@ -357,6 +357,42 @@ impl OrchestrationEventService {
             } => {
                 for conversation_id in conversation_ids {
                     self.sync_conversation_status(*conversation_id, ctx);
+                    // Under V1 local lifecycle dispatch, child status
+                    // transitions are forwarded to the parent via
+                    // `lifecycle_subscription_routes`. That map is not
+                    // persisted, so re-register subscriptions for each
+                    // restored child whose parent is loaded locally so that
+                    // child status transitions continue to propagate after
+                    // a restart. V2 uses the server event log and does not
+                    // need this.
+                    if !FeatureFlag::OrchestrationV2.is_enabled() {
+                        let parent_agent_id = {
+                            let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+                            let Some(child_conv) = history_model.conversation(conversation_id)
+                            else {
+                                continue;
+                            };
+                            if !child_conv.is_child_agent_conversation() {
+                                continue;
+                            }
+                            child_conv
+                                .parent_conversation_id()
+                                .and_then(|pid| history_model.conversation(&pid))
+                                .and_then(|p| p.server_conversation_token())
+                                .map(|t| t.as_str().to_string())
+                        };
+                        if let Some(parent_agent_id) = parent_agent_id {
+                            // `None` event-type filter = subscribe to all
+                            // lifecycle types. The original filter (if any)
+                            // is not persisted; subscribing broader than the
+                            // original is acceptable per the tech spec.
+                            self.register_lifecycle_subscription(
+                                *conversation_id,
+                                parent_agent_id,
+                                None,
+                            );
+                        }
+                    }
                 }
             }
             BlocklistAIHistoryEvent::RemoveConversation {
@@ -829,10 +865,10 @@ impl OrchestrationEventService {
         }
     }
 
-    /// Accepts pre-built events from the v2 poller and enqueues them
+    /// Accepts pre-built events from the v2 streamer and enqueues them
     /// for drain by the controller via the normal v1 path.
     /// Lifecycle events go through coalescing and cap enforcement.
-    pub fn enqueue_polled_events(
+    pub fn enqueue_event_batch(
         &mut self,
         conversation_id: AIConversationId,
         events: Vec<PendingEvent>,

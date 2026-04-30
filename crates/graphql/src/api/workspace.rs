@@ -44,6 +44,14 @@ pub struct RoutingHostConfig {
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]
+pub struct LlmContextWindow {
+    pub is_configurable: bool,
+    pub min: crate::scalars::Uint32,
+    pub max: crate::scalars::Uint32,
+    pub default: crate::scalars::Uint32,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone)]
 pub struct LlmInfo {
     pub display_name: String,
     pub base_model_name: String,
@@ -57,6 +65,7 @@ pub struct LlmInfo {
     pub provider: LlmProvider,
     pub host_configs: Vec<RoutingHostConfig>,
     pub pricing: LlmPricing,
+    pub context_window: LlmContextWindow,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]
@@ -121,6 +130,11 @@ pub struct CodebaseContextSettings {
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]
+pub struct AmbientAgentSettings {
+    pub enable_warp_attribution: AdminEnablementSetting,
+}
+
+#[derive(cynic::QueryFragment, Debug, Clone)]
 pub struct WorkspaceSettings {
     pub is_discoverable: bool,
     pub is_invite_link_enabled: bool,
@@ -136,6 +150,7 @@ pub struct WorkspaceSettings {
     pub addon_credits_settings: AddonCreditsSettings,
     pub codebase_context_settings: CodebaseContextSettings,
     pub sandboxed_agent_settings: Option<SandboxedAgentSettings>,
+    pub ambient_agent_settings: Option<AmbientAgentSettings>,
 }
 
 #[derive(cynic::QueryFragment, Debug, Clone)]

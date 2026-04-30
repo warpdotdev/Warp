@@ -185,10 +185,9 @@ impl AgentSource {
             AgentSource::Slack => "Slack",
             AgentSource::Cli => "CLI",
             AgentSource::ScheduledAgent => "Scheduled",
-            AgentSource::Interactive => "Warp (local agent)",
+            AgentSource::Interactive | AgentSource::CloudMode => "Warp App",
             AgentSource::WebApp => "Oz Web",
             AgentSource::GitHubAction => "GitHub Action",
-            AgentSource::CloudMode => "Warp (cloud agent)",
         }
     }
 
@@ -262,6 +261,28 @@ pub struct AmbientAgentTask {
     pub agent_config_snapshot: Option<AgentConfigSnapshot>,
     #[serde(default, deserialize_with = "deserialize_artifacts")]
     pub artifacts: Vec<Artifact>,
+
+    /// The last event sequence number recorded for this run by the server.
+    /// Used by orchestration event delivery to resume from the correct
+    /// cursor on restart. Populated by `GET /agent/runs/{run_id}` when the
+    /// server supports it; `None` on older servers.
+    #[serde(default)]
+    pub last_event_sequence: Option<i64>,
+
+    /// The server-recorded `run_id`s of direct children of this run. Used
+    /// by orchestration event-delivery restore to discover children whose
+    /// records may not exist locally (e.g. remote-worker children in the
+    /// driver case). Empty on older servers.
+    #[serde(default)]
+    pub children: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RunExecution<'a> {
+    pub session_id: Option<&'a str>,
+    pub session_link: Option<&'a str>,
+    pub request_usage: Option<&'a RequestUsage>,
+    pub is_sandbox_running: bool,
 }
 
 /// Represents a single attachment input from the client (e.g., file upload)
@@ -282,10 +303,27 @@ pub struct TaskAttachment {
 }
 
 impl AmbientAgentTask {
+    pub fn run_id(&self) -> AmbientAgentTaskId {
+        self.task_id
+    }
+
+    pub fn conversation_id(&self) -> Option<&str> {
+        self.conversation_id.as_deref()
+    }
+
+    pub fn active_run_execution(&self) -> RunExecution<'_> {
+        RunExecution {
+            session_id: self.session_id.as_deref(),
+            session_link: self.session_link.as_deref().filter(|link| !link.is_empty()),
+            request_usage: self.request_usage.as_ref(),
+            is_sandbox_running: self.is_sandbox_running,
+        }
+    }
+
     /// Total credits used (inference + compute).
     pub fn credits_used(&self) -> Option<f32> {
-        self.request_usage
-            .as_ref()
+        self.active_run_execution()
+            .request_usage
             .map(|u| (u.inference_cost.unwrap_or(0.0) + u.compute_cost.unwrap_or(0.0)) as f32)
     }
 
@@ -303,7 +341,7 @@ impl AmbientAgentTask {
 
     /// Returns true if the underlying session for the ambient agent is no longer running.
     pub fn is_no_longer_running(&self) -> bool {
-        !self.is_sandbox_running && !self.state.is_working()
+        !self.active_run_execution().is_sandbox_running && !self.state.is_working()
     }
 }
 

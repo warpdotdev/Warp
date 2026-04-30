@@ -85,7 +85,7 @@ impl FontHandle {
         }
     }
 
-    /// Validates the the [`FontHandle`] is a parseable font.
+    /// Validates the [`FontHandle`] is a parseable font.
     pub fn validate_font_data(&self) -> Result<(), Error> {
         self.data.validate()
     }

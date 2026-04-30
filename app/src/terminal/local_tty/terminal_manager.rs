@@ -388,6 +388,7 @@ impl TerminalManager {
                 initial_input_config,
                 conversation_restoration,
                 Some(inactive_pty_reads_rx.clone()),
+                false,
                 ctx,
             )
         });

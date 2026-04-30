@@ -75,9 +75,67 @@ async fn initialize_round_trip() {
         })
     });
 
-    let resp = client.initialize().await.unwrap();
+    let resp = client.initialize(None).await.unwrap();
     assert_eq!(resp.server_version, "test-0.1.0");
     assert_eq!(resp.host_id, "test-host-id");
+}
+
+#[tokio::test]
+async fn initialize_sends_empty_auth_token_when_none() {
+    let (client, _disconnect_rx, _executor) = setup_mock_client(|msg| {
+        match &msg.message {
+            Some(client_message::Message::Initialize(init)) => {
+                assert!(init.auth_token.is_empty());
+            }
+            other => panic!("Expected Initialize, got {other:?}"),
+        }
+        server_message::Message::InitializeResponse(InitializeResponse {
+            server_version: "test-0.1.0".to_string(),
+            host_id: "test-host-id".to_string(),
+        })
+    });
+
+    client.initialize(None).await.unwrap();
+}
+
+#[tokio::test]
+async fn initialize_sends_auth_token_when_provided() {
+    let (client, _disconnect_rx, _executor) = setup_mock_client(|msg| {
+        match &msg.message {
+            Some(client_message::Message::Initialize(init)) => {
+                assert_eq!(init.auth_token, "secret-token");
+            }
+            other => panic!("Expected Initialize, got {other:?}"),
+        }
+        server_message::Message::InitializeResponse(InitializeResponse {
+            server_version: "test-0.1.0".to_string(),
+            host_id: "test-host-id".to_string(),
+        })
+    });
+
+    client.initialize(Some("secret-token")).await.unwrap();
+}
+
+#[tokio::test]
+async fn authenticate_sends_fire_and_forget_message() {
+    let (client_stream, server_stream) = tokio::io::duplex(4096);
+    let (server_read, _server_write) = tokio::io::split(server_stream);
+    let (client_read, client_write) = tokio::io::split(client_stream);
+    let executor = executor::Background::default();
+    let (client, _event_rx) =
+        RemoteServerClient::new(client_read.compat(), client_write.compat_write(), &executor);
+
+    client.authenticate("rotated-secret");
+
+    let msg = protocol::read_client_message(&mut server_read.compat())
+        .await
+        .unwrap();
+    match msg.message {
+        Some(client_message::Message::Authenticate(auth)) => {
+            assert_eq!(auth.auth_token, "rotated-secret");
+        }
+        other => panic!("Expected Authenticate, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -92,7 +150,7 @@ async fn disconnected_on_closed_stream() {
         RemoteServerClient::new(client_read.compat(), client_write.compat_write(), &executor);
 
     // An initialize call on a dead stream must complete with an error rather than hang.
-    let result = client.initialize().await;
+    let result = client.initialize(None).await;
     assert!(result.is_err());
 
     // The reader task should detect EOF and emit a Disconnected event.
@@ -148,7 +206,9 @@ async fn concurrent_in_flight_requests() {
     for _ in 0..10 {
         let c = std::sync::Arc::clone(&client);
         handles.push(tokio::spawn(async move {
-            c.initialize().await.expect("concurrent initialize failed")
+            c.initialize(None)
+                .await
+                .expect("concurrent initialize failed")
         }));
     }
 

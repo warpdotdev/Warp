@@ -250,9 +250,17 @@ elif [[ $RELEASE_CHANNEL = "local" || $RELEASE_CHANNEL = "dev" ]]; then
   # For dev bundles, we want to enable debug assertions to
   # catch violations that would otherwise silently pass in
   # a normal release build (e.g. in stable).
-  CARGO_PROFILE="release-lto-debug_assertions"
+  if [[ "$ARTIFACT" == "cli" ]]; then
+    CARGO_PROFILE="release-cli-debug_assertions"
+  else
+    CARGO_PROFILE="release-lto-debug_assertions"
+  fi
 else
-  CARGO_PROFILE="release-lto"
+  if [[ "$ARTIFACT" == "cli" ]]; then
+    CARGO_PROFILE="release-cli"
+  else
+    CARGO_PROFILE="release-lto"
+  fi
 fi
 
 TARGET_PROFILE_DIR="$CARGO_PROFILE"

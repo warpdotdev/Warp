@@ -2892,6 +2892,13 @@ impl View for FileTreeView {
             return self.render_error_state(DISABLED_TEXT.to_string(), app);
         }
 
+        if matches!(
+            self.enablement,
+            CodingPanelEnablementState::PendingRemoteSession
+        ) {
+            return self.render_loading_state(app);
+        }
+
         if self.displayed_directories.is_empty() {
             if let CodingPanelEnablementState::RemoteSession { has_remote_server } = self.enablement
             {

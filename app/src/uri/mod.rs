@@ -7,7 +7,6 @@ pub mod browser_url_handler;
 
 use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
 use crate::ai::agent::api::ServerConversationToken;
-use crate::auth::AuthStateProvider;
 use crate::drive::OpenWarpDriveObjectSettings;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::linear::{LinearAction, LinearIssueWork};
@@ -658,6 +657,13 @@ fn find_matching_config_name<'a>(
         .find(|&config| config.name.to_lowercase() == target_name_lower)
 }
 
+/// Extract the `path` query parameter, expanding a leading `~` to the
+/// user's home directory.
+fn parse_tab_path(url: &Url) -> Option<PathBuf> {
+    let raw = url.query_pairs().find(|(k, _)| k == "path")?.1;
+    Some(PathBuf::from(shellexpand::tilde(&raw).into_owned()))
+}
+
 #[derive(Debug)]
 enum Action {
     NewTab,
@@ -707,11 +713,7 @@ impl Action {
                 } else {
                     None
                 };
-                let Some(Ok(path)) = url
-                    .query_pairs()
-                    .find(|(k, _v)| k == "path")
-                    .map(|(_, path)| PathBuf::from_str(&path))
-                else {
+                let Some(path) = parse_tab_path(url) else {
                     log::warn!("Could not parse path to open a new tab/window");
                     return;
                 };
@@ -1008,11 +1010,6 @@ fn get_primary_window(
 /// * For other files, open a new session at the parent directory path, then possibly execute the
 ///   file.
 fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
-    let auth_state = AuthStateProvider::as_ref(ctx).get();
-    // Don't open files if we're not logged in.
-    if !auth_state.is_logged_in() {
-        return;
-    }
     let primary_window_and_view = window_id.and_then(|window_id| {
         ctx.root_view_id(window_id)
             .map(|view_id| (window_id, view_id))
@@ -1231,8 +1228,7 @@ fn find_cloud_mode_terminal_in_workspace(
                     terminal_view
                         .as_ref(ctx)
                         .ambient_agent_view_model()
-                        .as_ref(ctx)
-                        .is_ambient_agent()
+                        .is_some()
                         .then_some(terminal_view.id())
                 });
 

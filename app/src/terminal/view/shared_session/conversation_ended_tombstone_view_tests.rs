@@ -44,6 +44,8 @@ fn task_with_run_time_and_credits() -> AmbientAgentTask {
         agent_config_snapshot: None,
         artifacts: vec![],
         is_sandbox_running: false,
+        last_event_sequence: None,
+        children: vec![],
     }
 }
 

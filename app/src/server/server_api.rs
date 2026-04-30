@@ -54,6 +54,7 @@ use parking_lot::{Mutex, RwLock};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -355,7 +356,7 @@ cfg_if::cfg_if! {
 /// An event related to the server API itself (and not a particular API call).
 /// Most errors should be handled in callbacks to individual APIs, rather than sent over the
 /// server API channel.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ServerApiEvent {
     /// We made a staging API call that was blocked, which may indicate a firewall misconfiguration.
     StagingAccessBlocked,
@@ -364,6 +365,25 @@ pub enum ServerApiEvent {
     NeedsReauth,
     /// The user's account has been disabled.
     UserAccountDisabled,
+    /// The current bearer token was refreshed.
+    AccessTokenRefreshed {
+        #[cfg_attr(target_family = "wasm", allow(dead_code))]
+        token: String,
+    },
+}
+
+impl fmt::Debug for ServerApiEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::StagingAccessBlocked => f.write_str("StagingAccessBlocked"),
+            Self::NeedsReauth => f.write_str("NeedsReauth"),
+            Self::UserAccountDisabled => f.write_str("UserAccountDisabled"),
+            Self::AccessTokenRefreshed { .. } => f
+                .debug_struct("AccessTokenRefreshed")
+                .field("token", &"<redacted>")
+                .finish(),
+        }
+    }
 }
 
 /// An API wrapper struct with methods to requests to warp-server.
@@ -789,6 +809,39 @@ impl ServerApi {
     {
         self.post_public_api_response(path, body).await?;
         Ok(())
+    }
+
+    /// Sends a PATCH request to a public API endpoint that returns no response body.
+    async fn patch_public_api_unit<B>(&self, path: &str, body: &B) -> Result<()>
+    where
+        B: Serialize,
+    {
+        let auth_token = self
+            .get_or_refresh_access_token()
+            .await
+            .context("Failed to get access token for API request")?;
+
+        let url = format!("{}/api/v1/{}", ChannelState::server_root_url(), path);
+
+        let mut request = self.client.patch(&url).json(body);
+        if let Some(token) = auth_token.as_bearer_token() {
+            request = request.bearer_auth(token);
+        }
+
+        for (name, value) in self.ambient_agent_headers().await? {
+            request = request.header(name, value);
+        }
+
+        let response = request
+            .send()
+            .await
+            .with_context(|| format!("Failed to send API request to {url}"))?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            Err(Self::error_from_response(response).await)
+        }
     }
 
     /// Sends an authenticated empty POST request to /client/login, which signals to the server

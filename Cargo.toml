@@ -304,7 +304,7 @@ version-compare = "0.1"
 vte = { git = "https://github.com/warpdotdev/vte.git", rev = "4b399c87b63ba88f45709edaa6383fc519f6c900", default-features = false }
 walkdir = "2"
 warp-workflows = { git = "https://github.com/warpdotdev/workflows", rev = "793a98ddda6ef19682aed66364faebd2829f0e01" }
-warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "78a78f21a75432bf0141e396fb318bf1694e47f0" }
+warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "aa2f9cde164a5b48ac01087d417d1188771f9b6d" }
 wasm-bindgen = "0.2.89"
 wasm-bindgen-futures = "0.4.42"
 web-sys = { version = "0.3.69", features = [
@@ -378,12 +378,15 @@ derivative = "2.2.0"
 parquet = { version = "55.0.0", features = ["arrow"] }
 rmcp = { git = "https://github.com/warpdotdev/rmcp.git", rev = "c0f65dc441af7d714b9c453ac5e7ef641451abe3" }
 
-# Comment this to disable building with debug symbols
-# Building with debug symbols generates a dsym which we can use to get
-# better stack traces in sentry. But there is a cost of about 20% binary size
-# increase.
 [profile.release]
-debug = true
+# Use line-tables-only (debug = 1) rather than full debuginfo (debug = 2 /
+# `true`). Line tables are enough to symbolicate panics and Sentry stack
+# traces with file/line info, but they omit the per-variable/type DWARF that
+# dominates DWARF size. Dropping the type info significantly reduces rustc's
+# peak memory during ThinLTO + codegen (which was OOM-killing release builds
+# on CI), at the cost of not being able to inspect locals/types when
+# attaching a debugger to a release binary.
+debug = 1
 # Force the rust compiler to create a dSYM. Starting in 1.53 the default on MacOS is "unpacked".
 split-debuginfo = "packed"
 
@@ -452,6 +455,21 @@ debug-assertions = true
 # compiler errors. We use a shorthand to get around these issues.
 [profile.rltoda]
 inherits = "release-lto-debug_assertions"
+
+# A profile tuned for the `oz` CLI tarball. The CLI is shipped over the network
+# and run headlessly, so we trade some compile time and a small amount of
+# runtime perf for a smaller binary by mirroring the size-leaning settings used
+# by `release-wasm`.
+[profile.release-cli]
+inherits = "release-lto"
+opt-level = "s"
+codegen-units = 1
+
+# A custom CLI release-like profile that forces debug assertions on, used for
+# dev/local channel CLI bundles.
+[profile.release-cli-debug_assertions]
+inherits = "release-cli"
+debug-assertions = true
 
 [profile.release-wasm]
 inherits = "release"
