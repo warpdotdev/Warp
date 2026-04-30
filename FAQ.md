@@ -60,6 +60,7 @@ Contributors with several merged PRs may be invited to become collaborators. The
 
 Yes. Use whatever you like — Warp's built-in agent, Claude Code, Codex, Gemini CLI, Cursor, others, or no agent at all. The repo ships agent-readable context (skills under [`.agents/skills/`](.agents/skills/), specs under [`specs/`](specs/), and [`WARP.md`](WARP.md)) that any harness supporting these formats can pick up.
 
+<<<<<<< HEAD
 ### Can I use Codex or Claude models with my existing subscriptions in Warp, or submit a PR to add that?
 
 Not today. Warp's built-in agent harness runs server-side and isn't open in this repo today.
@@ -68,6 +69,8 @@ That said, we plan to support [ACP (agent client protocol)](https://agentclientp
 
 [This is tracked on our roadmap](https://github.com/warpdotdev/warp/issues/9233), and we will update the community as we explore this.
 
+=======
+>>>>>>> 406f4746 (curr)
 ### How can I get Oz to implement an issue for me?
 
 Mention **@oss-maintainers** on any issue with a readiness label and ask. Approved requests run on **complimentary Oz credits** — you don't need to set up your own Oz account or pay for compute.
