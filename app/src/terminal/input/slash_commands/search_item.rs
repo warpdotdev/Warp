@@ -7,6 +7,7 @@ use warpui::prelude::{ConstrainedBox, Container, CrossAxisAlignment, Empty, Flex
 use warpui::{AppContext, Element, SingletonEntity};
 
 use crate::ai::blocklist::agent_view::shortcuts::render_keystroke_with_color_overrides;
+use crate::search::item::SearchItemDetail;
 use crate::search::slash_command_menu::static_commands::commands::COMMAND_REGISTRY;
 use crate::search::{ItemHighlightState, SearchItem};
 use crate::terminal::input::inline_menu::styles as inline_styles;
@@ -176,5 +177,13 @@ impl SearchItem for InlineItem {
 
     fn accessibility_label(&self) -> String {
         format!("{:?}", self.action)
+    }
+
+    fn detail_data(&self) -> Option<SearchItemDetail> {
+        Some(SearchItemDetail {
+            title: self.name.clone(),
+            description: self.description.clone(),
+            title_font_family: self.font_family,
+        })
     }
 }
