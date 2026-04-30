@@ -1522,9 +1522,9 @@ impl TerminalManager {
                             },
                             move |_view, result, _ctx| {
                                 if let Err(e) = result {
-                                    log::warn!(
-                                        "Failed to link shared session to Oz task: {e}"
-                                    );
+                                    // Don't log the session_id or task_id — these can
+                                    // end up in uploaded logs.
+                                    log::warn!("Failed to link shared session to Oz task: {e}");
                                 }
                             },
                         );
