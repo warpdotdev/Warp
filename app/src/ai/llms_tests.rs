@@ -54,6 +54,77 @@ fn llm_info_deserializes_host_configs_as_vec() {
 }
 
 #[test]
+fn available_harness_models_info_for_id_finds_match() {
+    let models = AvailableHarnessModels {
+        default_model_id: "opus".to_owned(),
+        models: vec![
+            HarnessModelInfo {
+                id: "opus".to_owned(),
+                display_name: "Claude Opus".to_owned(),
+            },
+            HarnessModelInfo {
+                id: "sonnet".to_owned(),
+                display_name: "Claude Sonnet".to_owned(),
+            },
+        ],
+    };
+
+    assert_eq!(
+        models
+            .info_for_id("sonnet")
+            .map(|m| m.display_name.as_str()),
+        Some("Claude Sonnet"),
+    );
+    assert!(models.info_for_id("haiku").is_none());
+}
+
+#[test]
+fn available_harness_models_default_falls_back_to_first() {
+    // When the configured default id isn't in the model list, the helper should fall back
+    // to the first available model so callers can still render *something*.
+    let models = AvailableHarnessModels {
+        default_model_id: "missing".to_owned(),
+        models: vec![HarnessModelInfo {
+            id: "sonnet".to_owned(),
+            display_name: "Claude Sonnet".to_owned(),
+        }],
+    };
+
+    assert_eq!(
+        models.default_model_info().map(|m| m.id.as_str()),
+        Some("sonnet"),
+    );
+}
+
+#[test]
+fn available_harness_models_default_is_empty_when_no_models() {
+    let models = AvailableHarnessModels::default();
+    assert!(models.default_model_info().is_none());
+}
+
+#[test]
+fn available_harness_models_round_trip_serde() {
+    // Cache write/read path serializes to JSON; ensure round-trip preserves values.
+    let models = AvailableHarnessModels {
+        default_model_id: "opus".to_owned(),
+        models: vec![
+            HarnessModelInfo {
+                id: "opus".to_owned(),
+                display_name: "Claude Opus".to_owned(),
+            },
+            HarnessModelInfo {
+                id: "sonnet".to_owned(),
+                display_name: "Claude Sonnet".to_owned(),
+            },
+        ],
+    };
+    let serialized = serde_json::to_string(&models).expect("should serialize");
+    let round_tripped: AvailableHarnessModels =
+        serde_json::from_str(&serialized).expect("should deserialize");
+    assert_eq!(models, round_tripped);
+}
+
+#[test]
 fn llm_info_round_trip_serializes_and_deserializes() {
     // Start with wire format (Vec)
     let wire_json = r#"{

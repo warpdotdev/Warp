@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use pathfinder_geometry::vector::vec2f;
+use warp_cli::agent::Harness;
 use warpui::{
     elements::{
         Border, ChildAnchor, ChildView, Container, OffsetPositioning, ParentAnchor,
         ParentElement as _, ParentOffsetBounds, Stack,
     },
-    AppContext, Element, Entity, EntityId, SingletonEntity, TypedActionView, View, ViewContext,
-    ViewHandle,
+    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View,
+    ViewContext, ViewHandle,
 };
 
 use warp_core::ui::appearance::Appearance;
@@ -15,6 +16,7 @@ use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::Fill;
 
 use crate::ai::blocklist::agent_view::agent_input_footer::AgentInputButtonTheme;
+use crate::ai::harness_display::icon_for as harness_icon_for;
 use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpEscapeKey, PropagateAndNoOpNavigationKeys,
@@ -22,6 +24,7 @@ use crate::editor::{
 };
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields, MenuVariant};
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
+use crate::terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, ButtonSize};
 use warp_editor::editor::NavigationKey;
@@ -58,7 +61,14 @@ const NO_RESULTS_LABEL: &str = "No results";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ModelSelectorAction {
     ToggleMenu,
+    /// Select an Oz Agent Mode model.
     SelectModel(crate::ai::llms::LLMId),
+    /// Select a model for a third-party harness, identified by the harness config name and
+    /// opaque model id (e.g. `"opus"`).
+    SelectHarnessModel {
+        harness: Harness,
+        model_id: String,
+    },
 }
 
 pub enum ModelSelectorEvent {
@@ -73,12 +83,17 @@ pub struct ModelSelector {
     is_menu_open: bool,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     terminal_view_id: EntityId,
+    /// Optional handle to the ambient agent view model, used to determine the
+    /// active execution harness in cloud mode v2. When `None`, the selector
+    /// always renders Oz Agent Mode models.
+    ambient_agent_model: Option<ModelHandle<AmbientAgentViewModel>>,
 }
 
 impl ModelSelector {
     pub fn new(
         menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
         terminal_view_id: EntityId,
+        ambient_agent_model: Option<ModelHandle<AmbientAgentViewModel>>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let button = ctx.add_typed_action_view(|_ctx| {
@@ -139,7 +154,9 @@ impl ModelSelector {
             &LLMPreferences::handle(ctx),
             |me, _, event, ctx| match event {
                 LLMPreferencesEvent::UpdatedActiveAgentModeLLM
-                | LLMPreferencesEvent::UpdatedAvailableLLMs => {
+                | LLMPreferencesEvent::UpdatedAvailableLLMs
+                | LLMPreferencesEvent::UpdatedHarnessModels
+                | LLMPreferencesEvent::UpdatedActiveHarnessModel => {
                     me.refresh_button(ctx);
                     me.refresh_menu(ctx);
                 }
@@ -151,6 +168,24 @@ impl ModelSelector {
             me.refresh_menu(ctx);
         });
 
+        // When the user switches harness in cloud mode v2, the data source for the
+        // model selector flips between Oz LLMs and per-harness model lists. Subscribe
+        // so the menu/button reflect the new harness immediately.
+        if let Some(ambient_agent_model) = ambient_agent_model.as_ref() {
+            ctx.subscribe_to_model(ambient_agent_model, |me, model, event, ctx| {
+                if let AmbientAgentViewModelEvent::HarnessSelected = event {
+                    let harness = model.as_ref(ctx).selected_harness();
+                    if !matches!(harness, Harness::Oz | Harness::Unknown) {
+                        LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
+                            prefs.fetch_harness_models(harness, ctx);
+                        });
+                    }
+                    me.refresh_button(ctx);
+                    me.refresh_menu(ctx);
+                }
+            });
+        }
+
         let mut me = Self {
             button,
             menu,
@@ -159,10 +194,29 @@ impl ModelSelector {
             is_menu_open: false,
             menu_positioning_provider,
             terminal_view_id,
+            ambient_agent_model,
         };
+
+        // Kick off an initial fetch of harness models if the harness is already non-Oz
+        // when the selector is first constructed (e.g. user reloads with Claude selected).
+        if let Some(harness) = me.active_harness(ctx) {
+            if !matches!(harness, Harness::Oz | Harness::Unknown) {
+                LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
+                    prefs.fetch_harness_models(harness, ctx);
+                });
+            }
+        }
+
         me.refresh_button(ctx);
         me.refresh_menu(ctx);
         me
+    }
+
+    /// Returns the active harness, if there's an associated [`AmbientAgentViewModel`].
+    fn active_harness(&self, app: &AppContext) -> Option<Harness> {
+        self.ambient_agent_model
+            .as_ref()
+            .map(|m| m.as_ref(app).selected_harness())
     }
 
     pub fn is_menu_open(&self) -> bool {
@@ -229,12 +283,22 @@ impl ModelSelector {
     }
 
     fn refresh_button(&mut self, ctx: &mut ViewContext<Self>) {
-        let active = LLMPreferences::as_ref(ctx)
-            .get_active_base_model(ctx, Some(self.terminal_view_id))
-            .display_name
-            .clone();
+        let active_label = match self.active_harness(ctx) {
+            Some(harness) if !matches!(harness, Harness::Oz | Harness::Unknown) => {
+                // For third-party harnesses, show the harness model display name (or fall
+                // back to a placeholder if we haven't fetched the model list yet).
+                LLMPreferences::as_ref(ctx)
+                    .get_active_harness_model(self.terminal_view_id, harness)
+                    .map(|info| info.display_name.clone())
+                    .unwrap_or_else(|| "default".to_string())
+            }
+            _ => LLMPreferences::as_ref(ctx)
+                .get_active_base_model(ctx, Some(self.terminal_view_id))
+                .display_name
+                .clone(),
+        };
         self.button.update(ctx, |button, ctx| {
-            button.set_label(active, ctx);
+            button.set_label(active_label, ctx);
         });
     }
 
@@ -244,19 +308,57 @@ impl ModelSelector {
         let border = Border::all(1.).with_border_color(internal_colors::neutral_4(theme));
         let hover_background: Fill = internal_colors::fg_overlay_2(theme);
 
+        let query = self.search_query.trim().to_lowercase();
+
+        // Branch on harness: third-party harnesses show their own model list (e.g. opus,
+        // sonnet, haiku), while Oz / no-harness fall back to the Agent Mode LLM list.
+        let (mut items, selected_action): (
+            Vec<MenuItem<ModelSelectorAction>>,
+            ModelSelectorAction,
+        ) = match self.active_harness(ctx) {
+            Some(harness) if !matches!(harness, Harness::Oz | Harness::Unknown) => {
+                self.build_harness_menu_items(harness, &query, hover_background, ctx)
+            }
+            _ => self.build_oz_menu_items(&query, hover_background, ctx),
+        };
+
+        if items.is_empty() {
+            let no_results_text_color = internal_colors::text_sub(theme, theme.surface_2());
+            items.push(MenuItem::Item(
+                MenuItemFields::new(NO_RESULTS_LABEL)
+                    .with_font_size_override(ITEM_FONT_SIZE)
+                    .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                    .with_override_text_color(no_results_text_color)
+                    .with_no_interaction_on_hover(),
+            ));
+        }
+
+        self.menu.update(ctx, |menu, ctx| {
+            menu.set_border(Some(border));
+            menu.set_items(items, ctx);
+            menu.set_selected_by_action(&selected_action, ctx);
+        });
+    }
+
+    /// Builds menu items for the Oz Agent Mode model list and the action that should be
+    /// pre-selected for the current view's active model.
+    fn build_oz_menu_items(
+        &self,
+        query: &str,
+        hover_background: Fill,
+        ctx: &AppContext,
+    ) -> (Vec<MenuItem<ModelSelectorAction>>, ModelSelectorAction) {
         let llm_preferences = LLMPreferences::as_ref(ctx);
         let active_llm_id = llm_preferences
             .get_active_base_model(ctx, Some(self.terminal_view_id))
             .id
             .clone();
 
-        let query = self.search_query.trim().to_lowercase();
-
-        let mut items: Vec<MenuItem<ModelSelectorAction>> = llm_preferences
+        let items: Vec<MenuItem<ModelSelectorAction>> = llm_preferences
             .get_base_llm_choices_for_agent_mode()
             .filter_map(|llm| {
                 let display_name = llm.menu_display_name();
-                if !query.is_empty() && !display_name.to_lowercase().contains(&query) {
+                if !query.is_empty() && !display_name.to_lowercase().contains(query) {
                     return None;
                 }
                 let icon = llm.provider.icon().unwrap_or(Icon::Oz);
@@ -273,22 +375,53 @@ impl ModelSelector {
             })
             .collect();
 
-        if items.is_empty() {
-            let no_results_text_color = internal_colors::text_sub(theme, theme.surface_2());
-            items.push(MenuItem::Item(
-                MenuItemFields::new(NO_RESULTS_LABEL)
-                    .with_font_size_override(ITEM_FONT_SIZE)
-                    .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
-                    .with_override_text_color(no_results_text_color)
-                    .with_no_interaction_on_hover(),
-            ));
-        }
+        (items, ModelSelectorAction::SelectModel(active_llm_id))
+    }
 
-        self.menu.update(ctx, |menu, ctx| {
-            menu.set_border(Some(border));
-            menu.set_items(items, ctx);
-            menu.set_selected_by_action(&ModelSelectorAction::SelectModel(active_llm_id), ctx);
-        });
+    /// Builds menu items for a third-party harness's model list (e.g. opus, sonnet, haiku
+    /// for Claude). The pre-selected action targets the user's active harness model.
+    fn build_harness_menu_items(
+        &self,
+        harness: Harness,
+        query: &str,
+        hover_background: Fill,
+        ctx: &AppContext,
+    ) -> (Vec<MenuItem<ModelSelectorAction>>, ModelSelectorAction) {
+        let llm_preferences = LLMPreferences::as_ref(ctx);
+        let active_id = llm_preferences
+            .get_active_harness_model_id(self.terminal_view_id, harness)
+            .unwrap_or_default();
+        let icon = harness_icon_for(harness);
+
+        let items: Vec<MenuItem<ModelSelectorAction>> = llm_preferences
+            .get_harness_llm_choices(harness)
+            .filter_map(|model| {
+                let display_name = model.display_name.clone();
+                if !query.is_empty() && !display_name.to_lowercase().contains(query) {
+                    return None;
+                }
+                Some(MenuItem::Item(
+                    MenuItemFields::new(display_name)
+                        .with_icon(icon)
+                        .with_icon_size_override(ITEM_ICON_SIZE)
+                        .with_font_size_override(ITEM_FONT_SIZE)
+                        .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
+                        .with_override_hover_background_color(hover_background)
+                        .with_on_select_action(ModelSelectorAction::SelectHarnessModel {
+                            harness,
+                            model_id: model.id.clone(),
+                        }),
+                ))
+            })
+            .collect();
+
+        (
+            items,
+            ModelSelectorAction::SelectHarnessModel {
+                harness,
+                model_id: active_id,
+            },
+        )
     }
 
     fn menu_positioning(&self, app: &AppContext) -> OffsetPositioning {
@@ -345,6 +478,15 @@ impl TypedActionView for ModelSelector {
                 let id_for_update = llm_id.clone();
                 LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
                     prefs.update_preferred_agent_mode_llm(&id_for_update, terminal_view_id, ctx);
+                });
+                self.set_menu_visibility(false, ctx);
+            }
+            ModelSelectorAction::SelectHarnessModel { harness, model_id } => {
+                let terminal_view_id = self.terminal_view_id;
+                let harness = *harness;
+                let model_id = model_id.clone();
+                LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
+                    prefs.update_preferred_harness_model(terminal_view_id, harness, &model_id, ctx);
                 });
                 self.set_menu_visibility(false, ctx);
             }

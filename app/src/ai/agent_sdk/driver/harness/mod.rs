@@ -313,6 +313,34 @@ pub(crate) fn task_env_vars(
     task_env_vars_for_harness_name(task_id, parent_run_id, selected_harness)
 }
 
+/// Returns environment variables that configure the model for a third-party harness.
+/// Returns an empty map for Oz or when no model is specified.
+pub(crate) fn harness_model_env_vars(
+    selected_harness: Harness,
+    harness_model_id: Option<&str>,
+) -> HashMap<OsString, OsString> {
+    let mut env_vars = HashMap::new();
+    let Some(model_id) = harness_model_id.filter(|id| !id.is_empty() && *id != "default") else {
+        return env_vars;
+    };
+
+    // Use exhaustive matching here so adding new harness variants (e.g. OpenCode, Gemini)
+    // requires us to consider whether they need their own model env var.
+    #[allow(clippy::single_match)]
+    match selected_harness {
+        Harness::Claude => {
+            env_vars.insert(OsString::from("ANTHROPIC_MODEL"), OsString::from(model_id));
+        }
+        Harness::Oz
+        | Harness::OpenCode
+        | Harness::Gemini
+        | Harness::Codex
+        | Harness::Unknown => {}
+    }
+
+    env_vars
+}
+
 /// Indicates when the harness conversation is being saved.
 /// Implementations may use this to customize the saved data, such as
 /// recording additional metadata on completion.

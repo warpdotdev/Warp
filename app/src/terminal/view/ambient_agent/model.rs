@@ -482,10 +482,28 @@ impl AmbientAgentViewModel {
 
         let harness_override =
             (self.harness != Harness::Oz).then(|| HarnessConfig::from_harness_type(self.harness));
+        let default_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
+            .ok()
+            .filter(|s| !s.is_empty());
+
+        let (harness_override, effective_model_id) = if self.harness != Harness::Oz {
+            // For non-Oz harnesses, the model goes on HarnessConfig, not top-level model_id.
+            // Pull the user's per-(terminal, harness) selection from LLMPreferences;
+            // falls back to the harness's default when no override is set.
+            let harness_model_id = LLMPreferences::as_ref(ctx)
+                .get_active_harness_model_id(self.terminal_view_id, self.harness);
+            let harness_config = HarnessConfig {
+                harness_type: self.harness,
+                model_id: harness_model_id,
+            };
+            (Some(harness_config), None)
+        } else {
+            (None, Some(model_id))
+        };
 
         let config = Some(AgentConfigSnapshot {
             environment_id: self.environment_id.as_ref().map(|id| id.to_string()),
-            model_id: Some(model_id),
+            model_id: effective_model_id,
             computer_use_enabled,
             worker_host: self.worker_host.clone(),
             harness: harness_override,

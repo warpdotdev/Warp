@@ -56,7 +56,6 @@ use crate::{
     workspaces::user_workspaces::UserWorkspaces,
 };
 use toolbar_item::AgentToolbarItemKind;
-use warp_cli::agent::Harness;
 
 use std::sync::Arc;
 
@@ -722,8 +721,14 @@ impl AgentInputFooter {
         });
 
         let v2_model_selector = if FeatureFlag::CloudModeInputV2.is_enabled() {
+            let ambient_agent_view_model_for_selector = ambient_agent_view_model.clone();
             let view = ctx.add_typed_action_view(|ctx| {
-                ModelSelector::new(menu_positioning_provider.clone(), terminal_view_id, ctx)
+                ModelSelector::new(
+                    menu_positioning_provider.clone(),
+                    terminal_view_id,
+                    ambient_agent_view_model_for_selector,
+                    ctx,
+                )
             });
             ctx.subscribe_to_view(&view, |_, _, event, ctx| match event {
                 ModelSelectorEvent::MenuVisibilityChanged { open } => {
@@ -861,18 +866,8 @@ impl AgentInputFooter {
 
         right = right.with_child(ChildView::new(&self.file_button).finish());
 
-        // The V2 model selector is Oz-specific; hide it for other harnesses
-        // until they support model selection.
-        let is_oz_harness =
-            self.ambient_agent_view_model
-                .as_ref()
-                .is_some_and(|ambient_agent_model| {
-                    ambient_agent_model.as_ref(app).selected_harness() == Harness::Oz
-                });
-        if is_oz_harness {
-            if let Some(model_selector) = self.v2_model_selector.as_ref() {
-                right = right.with_child(ChildView::new(model_selector).finish());
-            }
+        if let Some(model_selector) = self.v2_model_selector.as_ref() {
+            right = right.with_child(ChildView::new(model_selector).finish());
         }
 
         Flex::row()

@@ -4,6 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, OnceLock},
 };
+use warp_cli::agent::Harness;
 use warp_core::ui::icons::Icon;
 use warp_core::user_preferences::GetUserPreferences;
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
@@ -45,6 +46,38 @@ pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -
 /// Note: this key used to store a single [`AvailableLLMs`]
 /// but was migrated to store a full [`ModelsByFeature`].
 pub const MODELS_BY_FEATURE_CACHE_KEY: &str = "AvailableLLMs";
+
+/// Key for cached harness models in user preferences.
+/// Stores a serialized `HashMap<String, AvailableHarnessModels>` keyed by harness config name.
+pub const HARNESS_MODELS_CACHE_KEY: &str = "HarnessModels";
+
+/// Metadata about a single model supported by a third-party harness.
+///
+/// Unlike [`LLMInfo`], this is a thin shape — harness models are simple opaque IDs
+/// (e.g. `"opus"`, `"sonnet"`) that the harness CLI interprets directly.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HarnessModelInfo {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// The set of models available for a particular third-party harness.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AvailableHarnessModels {
+    pub default_model_id: String,
+    pub models: Vec<HarnessModelInfo>,
+}
+
+impl AvailableHarnessModels {
+    pub fn info_for_id(&self, id: &str) -> Option<&HarnessModelInfo> {
+        self.models.iter().find(|m| m.id == id)
+    }
+
+    pub fn default_model_info(&self) -> Option<&HarnessModelInfo> {
+        self.info_for_id(&self.default_model_id)
+            .or_else(|| self.models.first())
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LLMUsageMetadata {
@@ -524,6 +557,14 @@ pub struct LLMPreferences {
     // from the base LLM for the active profile. This means that if the user selects the
     // profile's default model and changes their profile, the model will update to that profile's default.
     base_llm_for_terminal_view: HashMap<EntityId, LLMId>,
+    /// Models supported by each third-party harness, keyed by harness config name (e.g. `"claude"`).
+    /// Populated lazily as the user opens the harness model selector.
+    harness_models: HashMap<String, AvailableHarnessModels>,
+    /// Per-(terminal, harness-name) model selection.
+    /// Storing only explicit overrides means changing the server-side default still flows through automatically.
+    selected_harness_model_for_terminal_view: HashMap<(EntityId, String), String>,
+    /// Set of (harness-name) for which a fetch is in-flight, to dedupe redundant requests.
+    inflight_harness_model_fetches: HashSet<String>,
 }
 
 impl LLMPreferences {
@@ -556,11 +597,15 @@ impl LLMPreferences {
         });
 
         let base_llm_for_terminal_view = HashMap::new();
+        let harness_models = get_cached_harness_models(ctx).unwrap_or_default();
 
         let me = Self {
             models_by_feature,
             last_update: None,
             base_llm_for_terminal_view,
+            harness_models,
+            selected_harness_model_for_terminal_view: HashMap::new(),
+            inflight_harness_model_fetches: HashSet::new(),
         };
 
         // In agent mode eval builds, eagerly kick off a fetch of the model list from the server
@@ -1055,6 +1100,157 @@ impl LLMPreferences {
             ctx.emit(LLMPreferencesEvent::UpdatedActiveAgentModeLLM);
         }
     }
+
+    /// Returns the choices to display in the cloud model selector for a third-party harness.
+    pub fn get_harness_llm_choices(
+        &self,
+        harness: Harness,
+    ) -> impl Iterator<Item = &HarnessModelInfo> {
+        self.harness_models
+            .get(&harness.to_string())
+            .into_iter()
+            .flat_map(|m| m.models.iter())
+    }
+
+    /// Returns the active harness model for a (terminal, harness) pair, falling back to the
+    /// harness's default if no override is set.
+    pub fn get_active_harness_model(
+        &self,
+        terminal_view_id: EntityId,
+        harness: Harness,
+    ) -> Option<&HarnessModelInfo> {
+        let harness_key = harness.to_string();
+        let available = self.harness_models.get(&harness_key)?;
+
+        if let Some(selected_id) = self
+            .selected_harness_model_for_terminal_view
+            .get(&(terminal_view_id, harness_key))
+        {
+            if let Some(info) = available.info_for_id(selected_id) {
+                return Some(info);
+            }
+        }
+
+        available.default_model_info()
+    }
+
+    /// Returns the model id to send to a third-party harness for a (terminal, harness) pair.
+    /// Returns `None` if no models are known for this harness yet.
+    pub fn get_active_harness_model_id(
+        &self,
+        terminal_view_id: EntityId,
+        harness: Harness,
+    ) -> Option<String> {
+        self.get_active_harness_model(terminal_view_id, harness)
+            .map(|info| info.id.clone())
+    }
+
+    /// Updates the user's preferred model for a (terminal, harness) pair.
+    /// If the chosen model id matches the harness's default, the override is cleared instead
+    /// so future default changes flow through.
+    pub fn update_preferred_harness_model(
+        &mut self,
+        terminal_view_id: EntityId,
+        harness: Harness,
+        model_id: &str,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let harness_key = harness.to_string();
+        let key = (terminal_view_id, harness_key.clone());
+
+        let default_id = self
+            .harness_models
+            .get(&harness_key)
+            .map(|m| m.default_model_id.clone());
+
+        let changed = if Some(model_id.to_string()) == default_id {
+            self.selected_harness_model_for_terminal_view
+                .remove(&key)
+                .is_some()
+        } else {
+            self.selected_harness_model_for_terminal_view
+                .insert(key, model_id.to_string());
+            true
+        };
+
+        if changed {
+            ctx.emit(LLMPreferencesEvent::UpdatedActiveHarnessModel);
+        }
+    }
+
+    /// Fetches the list of harness models from the server and caches them.
+    /// No-op for `Harness::Oz` and `Harness::Unknown`. Dedupes overlapping in-flight requests.
+    pub fn fetch_harness_models(&mut self, harness: Harness, ctx: &mut ModelContext<Self>) {
+        if matches!(harness, Harness::Oz | Harness::Unknown) {
+            return;
+        }
+        // Don't try to fetch if the user is not logged in yet.
+        if !AuthStateProvider::as_ref(ctx).get().is_logged_in() {
+            return;
+        }
+
+        let harness_key = harness.to_string();
+        if !self
+            .inflight_harness_model_fetches
+            .insert(harness_key.clone())
+        {
+            return;
+        }
+
+        let ai_api_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+        let harness_for_request = harness_key.clone();
+        ctx.spawn(
+            async move { ai_api_client.get_harness_models(&harness_for_request).await },
+            move |me, result, ctx| {
+                me.inflight_harness_model_fetches.remove(&harness_key);
+                match result {
+                    Ok(response) => {
+                        let new_value = AvailableHarnessModels {
+                            default_model_id: response.default_model_id,
+                            models: response
+                                .models
+                                .into_iter()
+                                .map(|m| HarnessModelInfo {
+                                    id: m.id,
+                                    display_name: m.display_name,
+                                })
+                                .collect(),
+                        };
+                        let changed = me
+                            .harness_models
+                            .get(&harness_key)
+                            .is_none_or(|existing| existing != &new_value);
+                        if changed {
+                            me.harness_models.insert(harness_key.clone(), new_value);
+                            me.persist_harness_models(ctx);
+                            ctx.emit(LLMPreferencesEvent::UpdatedHarnessModels);
+                        }
+                    }
+                    Err(e) => {
+                        report_error!(
+                            e.context(format!("Failed to fetch harness models for {harness_key}"))
+                        );
+                    }
+                }
+            },
+        );
+    }
+
+    fn persist_harness_models(&self, ctx: &mut ModelContext<Self>) {
+        match serde_json::to_string(&self.harness_models) {
+            Ok(serialized) => {
+                if let Err(e) = ctx
+                    .private_user_preferences()
+                    .write_value(HARNESS_MODELS_CACHE_KEY, serialized)
+                {
+                    log::error!("Failed to cache harness models: {e}");
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to serialize harness models for cache: {e}");
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1062,6 +1258,10 @@ pub enum LLMPreferencesEvent {
     UpdatedAvailableLLMs,
     UpdatedActiveAgentModeLLM,
     UpdatedActiveCodingLLM,
+    /// Emitted when the cached models for a third-party harness change.
+    UpdatedHarnessModels,
+    /// Emitted when the user picks a different model for a third-party harness.
+    UpdatedActiveHarnessModel,
 }
 
 impl Entity for LLMPreferences {
@@ -1108,6 +1308,24 @@ fn get_cached_models(app: &mut AppContext) -> Option<ModelsByFeature> {
                     None
                 }
             }
+        }
+    }
+}
+
+/// Loads the per-harness model cache from disk.
+fn get_cached_harness_models(
+    app: &mut AppContext,
+) -> Option<HashMap<String, AvailableHarnessModels>> {
+    let value = app
+        .private_user_preferences()
+        .read_value(HARNESS_MODELS_CACHE_KEY)
+        .ok()
+        .flatten()?;
+    match serde_json::from_str::<HashMap<String, AvailableHarnessModels>>(value.as_str()) {
+        Ok(cached) => Some(cached),
+        Err(e) => {
+            log::warn!("Failed to deserialize cached harness models: {e}");
+            None
         }
     }
 }

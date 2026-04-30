@@ -515,6 +515,20 @@ pub struct CreateFileArtifactUploadResponse {
     pub upload_target: FileArtifactUploadTargetInfo,
 }
 
+/// Public API response for harness model listings.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct HarnessModelInfo {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// Public API response for `GET /api/v1/agent/harness-models`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ListHarnessModelsResponse {
+    pub default_model_id: String,
+    pub models: Vec<HarnessModelInfo>,
+}
+
 /// Filter parameters for listing ambient agent tasks.
 #[derive(Clone, Debug, Default)]
 pub struct TaskListFilter {
@@ -780,6 +794,13 @@ pub trait AIClient: 'static + Send + Sync {
     async fn get_request_limit_info(&self) -> Result<RequestUsageInfo, anyhow::Error>;
 
     async fn get_feature_model_choices(&self) -> Result<ModelsByFeature, anyhow::Error>;
+
+    /// Fetches the list of models supported by a third-party harness (e.g. "claude").
+    /// Returns an empty response when the harness is not recognized by the server.
+    async fn get_harness_models(
+        &self,
+        harness: &str,
+    ) -> Result<ListHarnessModelsResponse, anyhow::Error>;
 
     /// Fetches the free-tier available models without requiring authentication.
     /// Used during pre-login onboarding so logged-out users see an accurate model list
@@ -1201,6 +1222,18 @@ impl AIClient for ServerApi {
                 Err(anyhow!("failed to get request limit info"))
             }
         }
+    }
+
+    async fn get_harness_models(
+        &self,
+        harness: &str,
+    ) -> Result<ListHarnessModelsResponse, anyhow::Error> {
+        let path = format!(
+            "agent/harness-models?harness={}",
+            urlencoding::encode(harness)
+        );
+        let response: ListHarnessModelsResponse = self.get_public_api(&path).await?;
+        Ok(response)
     }
 
     async fn get_feature_model_choices(&self) -> Result<ModelsByFeature, anyhow::Error> {

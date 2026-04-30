@@ -343,15 +343,28 @@ fn build_merged_config_and_task(
         None => (None, None),
     };
 
+    // When a non-Oz harness is active, --model targets the harness rather than the Oz model.
+    let harness_model_id = if args.harness != Harness::Oz {
+        args.model.model.clone()
+    } else {
+        None
+    };
     let harness_override = (args.harness != Harness::Oz).then_some(HarnessConfig {
         harness_type: args.harness,
+        model_id: harness_model_id,
     });
+
+    let oz_model = if args.harness == Harness::Oz {
+        args.model.model.clone().or(file_merged.model_id)
+    } else {
+        None
+    };
 
     let mut merged_config = AgentConfigSnapshot {
         // CLI name > skill name > file name
         name: args.name.clone().or(skill_name).or(file_merged.name),
         environment_id: args.environment.clone().or(file_merged.environment_id),
-        model_id: args.model.model.clone().or(file_merged.model_id),
+        model_id: oz_model,
         // Skill base_prompt takes precedence over file base_prompt
         base_prompt: runtime_base_prompt.clone().or(file_merged.base_prompt),
         mcp_servers: config_file::merge_mcp_servers(file_merged.mcp_servers, cli_mcp_servers),
@@ -371,9 +384,11 @@ fn build_merged_config_and_task(
         None => Vec::new(),
     };
 
+    // Only validate the model ID as an Oz LLM when the Oz harness is active.
     let model_override: Option<LLMId> = merged_config
         .model_id
         .as_deref()
+        .filter(|_| args.harness == Harness::Oz)
         .map(|model_id| common::validate_agent_mode_base_model_id(model_id, ctx))
         .transpose()?;
 
@@ -420,15 +435,25 @@ fn build_server_side_task(
         None => Vec::new(),
     };
 
-    let model_override: Option<LLMId> = args
-        .model
-        .model
-        .as_deref()
-        .map(|model_id| common::validate_agent_mode_base_model_id(model_id, ctx))
-        .transpose()?;
+    // When a non-Oz harness is active, --model targets the harness rather than the Oz model.
+    let harness_model_id = if args.harness != Harness::Oz {
+        args.model.model.clone()
+    } else {
+        None
+    };
+    let model_override: Option<LLMId> = if args.harness == Harness::Oz {
+        args.model
+            .model
+            .as_deref()
+            .map(|model_id| common::validate_agent_mode_base_model_id(model_id, ctx))
+            .transpose()?
+    } else {
+        None
+    };
 
     let harness_override = (args.harness != Harness::Oz).then_some(HarnessConfig {
         harness_type: args.harness,
+        model_id: harness_model_id,
     });
 
     let skill_name = resolved_skill.as_ref().map(|s| s.name.clone());
@@ -784,6 +809,10 @@ impl AgentDriverRunner {
                 let should_share = (args.share.is_shared() || args.task_id.is_some())
                     && FeatureFlag::AgentSharedSessions.is_enabled();
 
+                let harness_model_id = merged_config
+                    .harness
+                    .as_ref()
+                    .and_then(|h| h.model_id.clone());
                 let driver_options = driver::AgentDriverOptions {
                     working_dir: working_dir.clone(),
                     task_id,
@@ -795,6 +824,7 @@ impl AgentDriverRunner {
                     cloud_providers: Vec::new(),
                     environment: None,
                     selected_harness: args.harness,
+                    harness_model_id,
                     snapshot_disabled: args.snapshot.no_snapshot.then_some(true),
                     snapshot_upload_timeout: args
                         .snapshot
