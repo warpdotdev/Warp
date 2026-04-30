@@ -1433,6 +1433,9 @@ fn create_window(
 ///
 /// Returns the vertical difference of the adjustment, or None.
 fn maybe_adjust_window_vertically(window: &winit::window::Window) -> Option<i32> {
+    if window.is_maximized() || window.fullscreen().is_some() {
+        return None;
+    }
     let window_position = window.outer_position().ok()?;
     let window_size = window.outer_size();
     let bottom_of_window = window_position.y + window_size.height as i32;
