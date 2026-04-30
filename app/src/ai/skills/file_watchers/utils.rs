@@ -4,6 +4,47 @@ use std::{
     sync::LazyLock,
 };
 
+/// Well-known dependency/cache directory names that should never be probed as
+/// potential workspace roots in Pass 2 Case (b). Skills inside these trees are
+/// not authored by the repo owner and must not be auto-loaded.
+static DEPENDENCY_DIR_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    [
+        // JavaScript / Node
+        "node_modules",
+        "bower_components",
+        "jspm_packages",
+        ".yarn",
+        ".pnp",
+        // Rust
+        "target",
+        // Go
+        "vendor",
+        // Python
+        "__pycache__",
+        ".venv",
+        "venv",
+        "env",
+        ".eggs",
+        "site-packages",
+        // Java / Kotlin / Gradle
+        ".gradle",
+        ".m2",
+        // iOS / macOS
+        "Pods",
+        "DerivedData",
+        // Ruby
+        "gems",
+        // Generic build / dist artefacts
+        "dist",
+        "build",
+        ".build",
+        "out",
+        ".cache",
+        ".tmp",
+    ]
+    .into()
+});
+
 use ai::skills::{
     home_skills_path, read_skills, ParsedSkill, SkillProvider, SKILL_PROVIDER_DEFINITIONS,
 };
@@ -34,12 +75,14 @@ use crate::warp_managed_paths_watcher::warp_managed_skill_dirs;
 /// - **Case (b) — parent of provider root is lazy:** The lazy dir is not a provider
 ///   root but could be a parent of one, e.g. `sub-project/` is gitignored so `.agents/`
 ///   is never in the tree at all. For each known provider, `{dir}/{provider_path}` is
-///   checked with `is_dir()`.
+///   checked with `is_dir()`. Directories whose names appear in `DEPENDENCY_DIR_NAMES`
+///   (e.g. `node_modules`, `target`, `vendor`) are skipped to prevent loading untrusted
+///   skills from dependency trees.
 ///
 /// In both cases only directories already registered in the tree are examined, keeping
-/// the scope bounded and preventing accidental traversal of dependency subtrees: when
-/// `node_modules/` is itself lazy-loaded its children never appear in the tree, so they
-/// cannot be reached by this pass.
+/// the scope bounded. Additionally, Case (b) explicitly skips well-known
+/// dependency/cache directory names so that gitignored package trees (e.g.
+/// `node_modules/`) cannot be used to inject untrusted skills.
 pub fn find_skill_directories_in_tree(
     repo_path: &Path,
     repo_metadata: &RepoMetadataModel,
@@ -139,10 +182,14 @@ pub fn find_skill_directories_in_tree(
                 result_set.insert(skills_path.clone());
                 result.push(skills_path);
             }
-        } else {
+        } else if !DEPENDENCY_DIR_NAMES.contains(dir_name) {
             // Case (b): the lazy dir is a parent of a potential provider root
             // (e.g. `sub-project/` is gitignored, so `.agents/` was never
             // indexed). Probe `{dir}/{provider_path}` for every known provider.
+            //
+            // Dependency/cache directories (node_modules, target, vendor, …) are
+            // excluded via DEPENDENCY_DIR_NAMES: skills inside those trees are not
+            // authored by the repo owner and must not be auto-loaded.
             for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
                 let skills_path = lazy_dir.join(&provider.skills_path);
                 if !result_set.contains(&skills_path) && skills_path.is_dir() {
