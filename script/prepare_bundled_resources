@@ -84,6 +84,7 @@ fi
 # When adding a new third-party component to the bundle, add its license file
 # to the repo alongside the component and add an entry here.
 ADDITIONAL_LICENSES=(
+    "Alacritty (alacritty_terminal)|Apache-2.0|crates/warp_terminal/src/model/LICENSE-ALACRITTY"
     "Hack Font|MIT|app/assets/bundled/fonts/hack/LICENSE.md"
     "Roboto Font|SIL Open Font License|app/assets/bundled/fonts/roboto/LICENSE.txt"
     "bash-preexec|MIT|app/assets/bundled/bootstrap/bash-preexec-LICENSE.md"
