@@ -280,9 +280,7 @@ impl OrchestrationPillBar {
                 .agent_name()
                 .filter(|n| !n.is_empty())
                 .unwrap_or("Agent");
-            let pin_state = match active_views
-                .terminal_view_id_for_conversation(child.id(), app)
-            {
+            let pin_state = match active_views.terminal_view_id_for_conversation(child.id(), app) {
                 Some(view_id) if view_id != this_terminal_view_id => {
                     PillPinState::PinnedInOtherPane
                 }
@@ -582,10 +580,7 @@ const CRUMB_HORIZONTAL_PADDING: f32 = 6.;
 /// switches in place to a child, the parent is no longer the active
 /// conversation in any pane, so this returns `false` and the pill bar keeps
 /// rendering with the active child highlighted.
-pub fn is_split_off_child(
-    agent_view_controller: &AgentViewController,
-    app: &AppContext,
-) -> bool {
+pub fn is_split_off_child(agent_view_controller: &AgentViewController, app: &AppContext) -> bool {
     let Some(active_id) = agent_view_controller
         .agent_view_state()
         .active_conversation_id()
@@ -599,8 +594,8 @@ pub fn is_split_off_child(
     let Some(parent_id) = parent_conversation_id(active_conversation, app) else {
         return false;
     };
-    let Some(parent_view_id) = ActiveAgentViewsModel::as_ref(app)
-        .terminal_view_id_for_conversation(parent_id, app)
+    let Some(parent_view_id) =
+        ActiveAgentViewsModel::as_ref(app).terminal_view_id_for_conversation(parent_id, app)
     else {
         return false;
     };
