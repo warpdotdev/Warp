@@ -412,7 +412,7 @@ pub enum TerminalAction {
     EnterCloudAgentView,
     StartNewAgentConversation,
     /// Toggle the cloud mode conversation details panel
-    ToggleCloudModeDetailsPanel,
+    ToggleConversationDetailsPanel,
     /// Cancel the ambient agent task while it's loading
     CancelAmbientAgentTask,
     OpenInlineHistoryMenu,
@@ -694,7 +694,7 @@ impl fmt::Debug for TerminalAction {
             ExitAgentView => write!(f, "ExitAgentView"),
             EnterCloudAgentView => write!(f, "EnterCloudAgentView"),
             StartNewAgentConversation => write!(f, "StartNewAgentConversation"),
-            ToggleCloudModeDetailsPanel => write!(f, "ToggleCloudModeDetailsPanel"),
+            ToggleConversationDetailsPanel => write!(f, "ToggleConversationDetailsPanel"),
             CancelAmbientAgentTask => write!(f, "CancelAmbientAgentTask"),
             OpenInlineHistoryMenu => write!(f, "OpenInlineHistoryMenu"),
             OpenModelSelector => write!(f, "OpenModelSelector"),

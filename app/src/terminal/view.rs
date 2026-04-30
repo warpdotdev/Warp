@@ -2741,18 +2741,21 @@ pub struct TerminalView {
 
     ambient_agent_view_model: Option<ModelHandle<ambient_agent::AmbientAgentViewModel>>,
 
-    /// Cloud mode conversation details panel (side panel showing task metadata).
-    cloud_mode_details_panel:
+    /// Conversation details panel (side panel showing conversation/task metadata).
+    /// Available for cloud Oz runs and for any active local AI conversation.
+    conversation_details_panel:
         ViewHandle<crate::ai::conversation_details_panel::ConversationDetailsPanel>,
-    /// Whether the cloud mode details panel is currently open.
-    is_cloud_mode_details_panel_open: bool,
+    /// Whether the conversation details panel is currently open.
+    is_conversation_details_panel_open: bool,
     /// Whether we've already auto-opened the panel when the agent started running.
-    /// This prevents re-opening the panel if the user manually closes it.
-    has_auto_opened_cloud_mode_details_panel: bool,
-    /// Mouse state handle for the cloud mode details panel toggle button in the pane header.
+    /// This prevents re-opening the panel if the user manually closes it. Only set
+    /// by the cloud-mode auto-open path; local conversations require the user to
+    /// click the pane-header toggle button to open the panel.
+    has_auto_opened_conversation_details_panel: bool,
+    /// Mouse state handle for the conversation details panel toggle button in the pane header.
     /// Only available on non-WASM platforms (WASM uses a per-window button instead).
     #[cfg(not(target_arch = "wasm32"))]
-    cloud_mode_details_panel_toggle_mouse_state: warpui::elements::MouseStateHandle,
+    conversation_details_panel_toggle_mouse_state: warpui::elements::MouseStateHandle,
     /// Mouse state handle for the ambient agent cancel button in the pane header.
     ambient_agent_cancel_mouse_state: warpui::elements::MouseStateHandle,
 
@@ -3491,9 +3494,9 @@ impl TerminalView {
             if matches!(
                 event,
                 BlocklistAIControllerEvent::FinishedReceivingOutput { .. }
-            ) && me.is_cloud_mode_details_panel_open
+            ) && me.is_conversation_details_panel_open
             {
-                me.fetch_and_update_cloud_mode_details_panel(ctx);
+                me.fetch_and_update_conversation_details_panel(ctx);
             }
         });
 
@@ -3518,13 +3521,13 @@ impl TerminalView {
                 );
                 // Only refresh panel if it's currently open (avoids unnecessary work)
                 if should_refresh_details_panel
-                    && me.is_cloud_mode_details_panel_open
+                    && me.is_conversation_details_panel_open
                     && me
                         .ambient_agent_view_model
                         .as_ref()
                         .is_some_and(|model| model.as_ref(ctx).is_ambient_agent())
                 {
-                    me.fetch_and_update_cloud_mode_details_panel(ctx);
+                    me.fetch_and_update_conversation_details_panel(ctx);
                     ctx.notify();
                 }
             },
@@ -4015,19 +4018,19 @@ impl TerminalView {
                 })
         });
 
-        // Cloud mode conversation details panel
-        let cloud_mode_details_panel = ctx.add_typed_action_view(|ctx| {
+        // Conversation details panel (cloud Oz runs and any active local AI conversation).
+        let conversation_details_panel = ctx.add_typed_action_view(|ctx| {
             crate::ai::conversation_details_panel::ConversationDetailsPanel::new(
                 false, // don't show "Open" button since we're already viewing the conversation
                 320.0, // initial width
                 ctx,
             )
         });
-        ctx.subscribe_to_view(&cloud_mode_details_panel, |me, _, event, ctx| {
+        ctx.subscribe_to_view(&conversation_details_panel, |me, _, event, ctx| {
             use crate::ai::conversation_details_panel::ConversationDetailsPanelEvent;
             match event {
                 ConversationDetailsPanelEvent::Close => {
-                    me.is_cloud_mode_details_panel_open = false;
+                    me.is_conversation_details_panel_open = false;
                     ctx.notify();
                 }
                 ConversationDetailsPanelEvent::OpenPlanNotebook { notebook_uid } => {
@@ -4168,11 +4171,11 @@ impl TerminalView {
             agent_view_back_button,
             is_using_conversation_for_pane_header_title: false,
             ambient_agent_view_model,
-            cloud_mode_details_panel,
-            is_cloud_mode_details_panel_open: false,
-            has_auto_opened_cloud_mode_details_panel: false,
+            conversation_details_panel,
+            is_conversation_details_panel_open: false,
+            has_auto_opened_conversation_details_panel: false,
             #[cfg(not(target_arch = "wasm32"))]
-            cloud_mode_details_panel_toggle_mouse_state: Default::default(),
+            conversation_details_panel_toggle_mouse_state: Default::default(),
             ambient_agent_cancel_mouse_state: Default::default(),
             active_init_project_model: None,
             is_pending_aws_login: false,
@@ -5079,7 +5082,7 @@ impl TerminalView {
         // artifacts, exchanges, or metadata change. Mirrors the WASM transcript
         // panel refresh logic in `Workspace::handle_history_model_event` for
         // APP-3595.
-        if self.is_cloud_mode_details_panel_open
+        if self.is_conversation_details_panel_open
             && matches!(
                 event,
                 BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
@@ -5091,7 +5094,7 @@ impl TerminalView {
                     | BlocklistAIHistoryEvent::RestoredConversations { .. }
             )
         {
-            self.fetch_and_update_cloud_mode_details_panel(ctx);
+            self.fetch_and_update_conversation_details_panel(ctx);
         }
         match event {
             BlocklistAIHistoryEvent::AppendedExchange {
@@ -6682,7 +6685,10 @@ impl TerminalView {
         self.ambient_agent_task_id_for_details_panel_from_model(&model, app)
     }
 
-    fn can_show_cloud_mode_details_ui_for_task_id(task_id: Option<AmbientAgentTaskId>) -> bool {
+    /// Cloud-Oz-specific predicate: the conversation details panel can be auto-
+    /// opened (and rendered without an active local conversation) when this
+    /// view is backed by an `AmbientAgentTask` and `CloudMode` is enabled.
+    fn can_show_conversation_details_ui_for_task_id(task_id: Option<AmbientAgentTaskId>) -> bool {
         FeatureFlag::CloudMode.is_enabled() && task_id.is_some()
     }
 
@@ -6701,7 +6707,7 @@ impl TerminalView {
     /// (existing behavior) and for any terminal view with an active local AI
     /// conversation.
     fn can_show_conversation_details_ui(&self, app: &AppContext) -> bool {
-        Self::can_show_cloud_mode_details_ui_for_task_id(
+        Self::can_show_conversation_details_ui_for_task_id(
             self.ambient_agent_task_id_for_details_panel(app),
         ) || self.has_active_local_ai_conversation(app)
     }
@@ -24487,7 +24493,7 @@ impl TypedActionView for TerminalView {
             | ExitAgentView
             | EnterCloudAgentView
             | StartNewAgentConversation
-            | ToggleCloudModeDetailsPanel
+            | ToggleConversationDetailsPanel
             | CancelAmbientAgentTask
             | OpenInlineHistoryMenu
             | OpenModelSelector
@@ -25502,11 +25508,11 @@ impl TypedActionView for TerminalView {
             AwsCliNotInstalledBanner(action) => {
                 self.handle_aws_cli_not_installed_banner_action(*action, ctx);
             }
-            ToggleCloudModeDetailsPanel => {
-                let will_open = !self.is_cloud_mode_details_panel_open;
-                self.is_cloud_mode_details_panel_open = will_open;
+            ToggleConversationDetailsPanel => {
+                let will_open = !self.is_conversation_details_panel_open;
+                self.is_conversation_details_panel_open = will_open;
                 if will_open {
-                    self.fetch_and_update_cloud_mode_details_panel(ctx);
+                    self.fetch_and_update_conversation_details_panel(ctx);
                 }
                 ctx.notify();
             }
@@ -26043,15 +26049,15 @@ impl View for TerminalView {
         // Available for cloud Oz runs (existing behavior) and for any
         // active local AI conversation in this terminal view (APP-3595).
         let should_show_panel = !cfg!(target_family = "wasm")
-            && self.is_cloud_mode_details_panel_open
-            && (Self::can_show_cloud_mode_details_ui_for_task_id(
+            && self.is_conversation_details_panel_open
+            && (Self::can_show_conversation_details_ui_for_task_id(
                 ambient_agent_task_id_for_details_panel,
             ) || self.has_active_local_ai_conversation(app));
 
         if should_show_panel {
             // Wrap panel with agent view background for visual consistency
             let panel_with_background =
-                Container::new(ChildView::new(&self.cloud_mode_details_panel).finish())
+                Container::new(ChildView::new(&self.conversation_details_panel).finish())
                     .with_background(agent_view_bg_fill(app))
                     .finish();
 

@@ -663,7 +663,7 @@ impl TerminalView {
         if FeatureFlag::CloudMode.is_enabled()
             && matches!(source_type, SessionSourceType::AmbientAgent { .. })
         {
-            self.maybe_auto_open_cloud_mode_details_panel(ctx);
+            self.maybe_auto_open_conversation_details_panel(ctx);
         }
 
         send_telemetry_from_ctx!(

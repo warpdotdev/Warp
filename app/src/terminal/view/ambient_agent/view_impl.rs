@@ -188,7 +188,7 @@ impl TerminalView {
             AmbientAgentViewModelEvent::SessionReady { .. }
             | AmbientAgentViewModelEvent::FollowupSessionReady { .. } => {
                 // Auto-open details panel for local cloud mode once the session is ready.
-                self.maybe_auto_open_cloud_mode_details_panel(ctx);
+                self.maybe_auto_open_conversation_details_panel(ctx);
                 // Re-render to hide the loading screen now that the session is ready.
                 ctx.notify();
             }
@@ -214,8 +214,8 @@ impl TerminalView {
                     ctx,
                 );
                 // Refresh the details panel to show failed status
-                if self.is_cloud_mode_details_panel_open {
-                    self.fetch_and_update_cloud_mode_details_panel(ctx);
+                if self.is_conversation_details_panel_open {
+                    self.fetch_and_update_conversation_details_panel(ctx);
                 }
                 // Re-render to show the error state in the footer.
                 ctx.notify();
@@ -263,8 +263,8 @@ impl TerminalView {
                     ctx,
                 );
                 // Refresh the details panel to show cancelled status
-                if self.is_cloud_mode_details_panel_open {
-                    self.fetch_and_update_cloud_mode_details_panel(ctx);
+                if self.is_conversation_details_panel_open {
+                    self.fetch_and_update_conversation_details_panel(ctx);
                 }
                 // Re-render to show the cancelled state in the footer.
                 ctx.notify();
@@ -812,7 +812,7 @@ impl TerminalView {
     /// associated task ID. Otherwise falls back to populating the panel from
     /// the active local `AIConversation`, so the same panel can surface
     /// conversation metadata for non-cloud Warp Agent runs (APP-3595).
-    pub(in crate::terminal::view) fn fetch_and_update_cloud_mode_details_panel(
+    pub(in crate::terminal::view) fn fetch_and_update_conversation_details_panel(
         &mut self,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -826,7 +826,7 @@ impl TerminalView {
                 .as_ref()
                 .map(|task| ConversationDetailsData::from_task(task, None, None, ctx))
                 .unwrap_or_else(|| ConversationDetailsData::from_task_id(task_id));
-            self.cloud_mode_details_panel.update(ctx, |panel, ctx| {
+            self.conversation_details_panel.update(ctx, |panel, ctx| {
                 panel.set_conversation_details(data, ctx);
             });
             return;
@@ -841,24 +841,26 @@ impl TerminalView {
             .map(|conversation| ConversationDetailsData::from_conversation(conversation, ctx));
 
         if let Some(data) = data {
-            self.cloud_mode_details_panel.update(ctx, |panel, ctx| {
+            self.conversation_details_panel.update(ctx, |panel, ctx| {
                 panel.set_conversation_details(data, ctx);
             });
         }
     }
 
-    /// Auto-opens the cloud mode details panel once.
-    /// This is used for local cloud mode sessions (after SessionReady) and shared ambient sessions (after join).
-    pub(in crate::terminal::view) fn maybe_auto_open_cloud_mode_details_panel(
+    /// Auto-opens the conversation details panel once for cloud mode runs.
+    /// This is used for local cloud mode sessions (after `SessionReady`) and
+    /// shared ambient sessions (after join). Local non-cloud conversations
+    /// require an explicit user click on the pane-header toggle button.
+    pub(in crate::terminal::view) fn maybe_auto_open_conversation_details_panel(
         &mut self,
         ctx: &mut ViewContext<Self>,
     ) {
-        if self.has_auto_opened_cloud_mode_details_panel {
+        if self.has_auto_opened_conversation_details_panel {
             return;
         }
-        self.is_cloud_mode_details_panel_open = true;
-        self.has_auto_opened_cloud_mode_details_panel = true;
-        self.fetch_and_update_cloud_mode_details_panel(ctx);
+        self.is_conversation_details_panel_open = true;
+        self.has_auto_opened_conversation_details_panel = true;
+        self.fetch_and_update_conversation_details_panel(ctx);
         ctx.notify();
     }
 }

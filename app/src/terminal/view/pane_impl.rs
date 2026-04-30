@@ -403,7 +403,7 @@ impl TerminalView {
         } else if self.can_show_conversation_details_ui(app) {
             #[cfg(not(target_arch = "wasm32"))]
             {
-                Some(self.render_cloud_mode_details_toggle_button(app))
+                Some(self.render_conversation_details_toggle_button(app))
             }
             #[cfg(target_arch = "wasm32")]
             {
@@ -709,13 +709,13 @@ impl TerminalView {
         .finish()
     }
 
-    /// Render the info button for toggling the cloud mode details panel.
+    /// Render the info button for toggling the conversation details panel.
     /// Only available on non-WASM platforms (WASM uses a per-window button instead).
     #[cfg(not(target_arch = "wasm32"))]
-    fn render_cloud_mode_details_toggle_button(&self, app: &AppContext) -> Box<dyn Element> {
+    fn render_conversation_details_toggle_button(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-        let is_open = self.is_cloud_mode_details_panel_open;
+        let is_open = self.is_conversation_details_panel_open;
         let ui_builder = appearance.ui_builder().clone();
 
         // Use main text color when panel is open (hover-like appearance), sub color when closed
@@ -729,7 +729,7 @@ impl TerminalView {
             appearance,
             icons::Icon::Info,
             is_open, // show active background when panel is open
-            self.cloud_mode_details_panel_toggle_mouse_state.clone(),
+            self.conversation_details_panel_toggle_mouse_state.clone(),
             icon_color,
         );
 
@@ -755,7 +755,7 @@ impl TerminalView {
             .build()
             .on_click(|ctx, _, _| {
                 ctx.dispatch_typed_action::<PaneHeaderAction<TerminalAction, TerminalAction>>(
-                    PaneHeaderAction::CustomAction(TerminalAction::ToggleCloudModeDetailsPanel),
+                    PaneHeaderAction::CustomAction(TerminalAction::ToggleConversationDetailsPanel),
                 );
             })
             .finish()
