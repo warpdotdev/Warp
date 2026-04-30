@@ -62,7 +62,7 @@ Users who connect to the same SSH hosts many times per day currently need to typ
 
 11. The password field in the add/edit dialog is masked by default. The user can toggle visibility while the dialog is open, clear the stored password explicitly, or leave the field unchanged when editing. Closing the dialog by Save, Cancel, Escape, or backdrop close clears sensitive password editor state from the dialog.
 
-12. When a direct, non-jump profile has a stored password and the SSH process displays a strict OpenSSH password or key-passphrase prompt during login, Warp enters the stored secret once. Warp must not enter the same secret again after a failed password attempt or after login has completed.
+12. Stored SSH secrets have an explicit credential kind. The first version supports at least a host account password kind; if key passphrase auto-entry is implemented, it must be stored as a distinct key-passphrase kind tied to the matching identity file. Warp enters a stored secret only when the login prompt type matches the stored credential kind: host passwords go only to strict OpenSSH `user@host's password:` prompts, and key passphrases go only to matching `Enter passphrase for key ...:` prompts. Warp must not enter the same secret again after a failed password attempt or after login has completed.
 
 13. Password auto-entry is guarded against non-SSH prompts. Prompts such as `[sudo] password for ...`, generic `Password:`, host trust prompts, and arbitrary command prompts must not receive stored profile passwords.
 
@@ -70,9 +70,9 @@ Users who connect to the same SSH hosts many times per day currently need to typ
 
 15. Profiles can use jump hosts by selecting from the user's other saved profiles. The add/edit dialog's jump-host dropdown excludes the profile being edited and excludes already selected profiles. Selected jump hosts render as removable chips.
 
-16. Jump-host profile selection preserves structured metadata from the selected profile, including host, username, port, and identity file. Connecting a profile with jump hosts chains through the selected profiles in order.
+16. Jump-host profile selection preserves both the selected source profile id and a structured metadata snapshot from the selected profile, including host, username, port, and identity file. Connecting a profile with jump hosts chains through the selected profiles in order using the saved snapshot.
 
-17. If a selected jump profile is deleted later, any profiles that referenced it remove that stale jump-host reference rather than retaining an unreachable hidden dependency.
+17. If a selected jump profile is deleted later, any profiles that referenced its source profile id remove that stale jump-host reference rather than retaining an unreachable hidden dependency.
 
 18. When a profile uses one or more jump hosts, password auto-entry for the final target is disabled in the first version. SSH may still authenticate automatically through identity files, SSH agent, or user's existing SSH configuration; otherwise the user types prompts manually.
 
@@ -85,7 +85,7 @@ Users who connect to the same SSH hosts many times per day currently need to typ
 
 21. Removing a profile removes its local password entry from secure storage when possible. Failure to remove a missing secure-storage entry must not block profile deletion.
 
-22. The feature should degrade safely when secure storage is unavailable. Users can still save non-password profile metadata and connect; password auto-entry simply does not occur.
+22. The feature should degrade safely when secure storage is unavailable or a password write fails. Users can still save non-password profile metadata and connect, but Warp shows a visible warning that the password was not saved, clears the password editor buffer, and disables password auto-entry for that profile until a password is successfully saved.
 
 23. The profile panel and dialog support light/dark themes and compact window sizes without text overlapping controls or action buttons escaping the modal body.
 

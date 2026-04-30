@@ -27,13 +27,14 @@ The proposed feature should add a new profile surface without changing the behav
 Add `SshHostProfile` and `SshJumpHost` to `app/src/terminal/ssh/util.rs` or a sibling `profile.rs` under `terminal/ssh`. The model should include:
 
 - `SshHostProfile { id: Uuid, name, host, user, port, identity_file, jump_hosts, tags }`
-- `SshJumpHost { host, user, port, identity_file }`
+- `SshJumpHost { source_profile_id: Uuid, host, user, port, identity_file }`
 
 The profile id is immutable after creation and is the key for local password storage. Use serde defaults to migrate profiles created before ids or ports existed:
 
 - missing/nil/duplicate ids get a new UUID
 - zero/missing ports normalize to 22
 - jump-host ports normalize the same way
+- jump-host entries created before `source_profile_id` existed are treated as legacy snapshots: preserve them for connection rendering, but do not rely on metadata matching for future deletion pruning
 
 Add `saved_ssh_host_profiles: Vec<SshHostProfile>` to `SshSettings` in `app/src/settings/ssh.rs` with:
 
@@ -59,6 +60,8 @@ The renderer should:
 - use `ProxyCommand` chaining when any jump host needs an identity file, so per-jump `-i` and `-p` can be honored
 - add `--` before the final target to prevent option injection
 - quote every argument through the repo's existing shell quoting crate/pattern
+- render nested `ProxyCommand` values from their own argv vectors before inserting them into the outer ssh argv; do not build the nested command through ad hoc string concatenation
+- treat OpenSSH `%` expansion as a separate context from shell quoting: only renderer-owned tokens such as `%h:%p` may remain unescaped, and user-controlled values that can enter a ProxyCommand must either reject `%` tokens or escape them according to OpenSSH's `%%` literal rules before the outer argument is quoted
 
 ### 3. Toolbar and panel integration
 Add an SSH Profiles item to `HeaderToolbarItemKind` with a globe/server-style icon and a label of "SSH Profiles". Mark it as a panel item and include it in the default left toolbar only if product/review agrees it should be shown by default; otherwise make it configurable but not default.
@@ -104,7 +107,7 @@ Jump-host dropdown behavior:
 - candidates come from other saved profiles
 - exclude the current profile and already selected targets
 - render selected hosts as removable chips
-- when saving, snapshot the selected profile's host/user/port/identity metadata into `SshJumpHost`
+- when saving, snapshot the selected profile's `id` as `source_profile_id` plus its host/user/port/identity metadata into `SshJumpHost`
 
 ### 5. Profile save/delete and secure storage
 On submit, update `SshSettings::saved_ssh_host_profiles` and separately handle `PasswordIntent`:
@@ -117,9 +120,13 @@ On profile removal:
 
 - remove the profile metadata
 - remove its secure-storage password key, ignoring `NotFound`
-- remove matching jump-host references from remaining profiles
+- remove jump-host references from remaining profiles by matching `SshJumpHost::source_profile_id`, not by comparing mutable host metadata
 
-Use `Zeroizing<String>` for password values that pass through Rust-owned application memory. Do not log password contents.
+Store credential metadata separately from the secret value. At minimum, the secure-storage key/value path must distinguish host account passwords from private-key passphrases, for example by including a credential kind in the key or by storing a small typed secure-storage payload. Auto-entry must check the prompt type before reading or writing the secret: host account passwords are used only for strict OpenSSH account password prompts, and key passphrases only for prompts that identify the matching profile identity file.
+
+If secure storage is unavailable or a password write fails, keep the profile metadata save path independent: save the metadata, show a visible warning/toast or inline form error that the password was not saved, clear the password editor buffer, and leave no in-memory pending password intent. Subsequent connections should behave as if no password is saved.
+
+Use `Zeroizing<String>` for password values that pass through Rust-owned application memory where current APIs allow it. Do not present this as an end-to-end memory guarantee: editor buffers, secure-storage backends, and PTY write APIs may still create non-zeroized copies unless those APIs are changed. Do not log password contents.
 
 ### 6. Connect flow and Warpify behavior
 `WorkspaceAction::ConnectSshProfile` should:
@@ -154,13 +161,14 @@ Activation:
 - arm only for direct profiles with no jump hosts
 - match the active block command against the profile command, allowing expected wrapper normalization
 - bind to that block id before any password lookup
+- carry the expected credential kind from the profile state so prompt matching and secret lookup use the same kind
 
 Polling or output-triggered check:
 
 - inspect only a bounded tail of the active block output
-- require `is_ssh_password_prompt_strict`
+- require a strict SSH prompt parser that returns a prompt kind rather than a boolean
 - set `attempted = true` before secure-storage lookup
-- read the password by profile id
+- read the secret by profile id and credential kind only after the prompt kind matches
 - write password + carriage return directly to the PTY path, not through shared-session/user-input broadcasting paths
 - immediately disarm after the write
 
@@ -183,9 +191,10 @@ Map product invariants to tests:
   - default and non-default port rendering
   - `-J` rendering for simple jump chains
   - `ProxyCommand` rendering for jump chains with per-jump identity files
+  - `ProxyCommand` percent-token escaping or validation for user-controlled values
   - password key includes stable UUID
   - normalization migrates missing/duplicate ids and zero ports
-  - strict prompt detection accepts OpenSSH password/passphrase prompts and rejects sudo/generic prompts
+  - strict prompt detection classifies OpenSSH account-password prompts separately from key-passphrase prompts and rejects sudo/generic prompts
 
 - Auto-inject unit tests in `app/src/terminal/ssh/auto_inject.rs`:
   - command matching across wrapper normalization
@@ -200,7 +209,7 @@ Map product invariants to tests:
   - `SshProfilesPanelView` and modal can layout in light/dark theme without panic
   - invalid form disables Save
   - jump-host candidates exclude self and selected profiles
-  - removing a profile prunes stale jump references
+  - removing a profile prunes stale jump references by `source_profile_id`
 
 - Integration tests under `crates/integration`:
   - add a profile, save it, reopen panel, and see it listed
