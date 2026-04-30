@@ -116,14 +116,13 @@ fn vs_main(
     var size: vec2<f32> = glyph.bounds.zw;
     var pixel_pos: vec2<f32> = glyph.vertex_position * size + origin;
 
-    // Use floor here to vertically align the glyph to the pixel grid.
-    // If it's not aligned to the grid, the fragment shader will do its
-    // own interpolation, which makes it so we don't use the anti-aliasing
-    // from core text, which is what we want.  We don't force the glyph to a
-    // horizontal pixel position because we rasterize the glyph at multiple
-    // subpixel positions, and so the very slight linear interpolation here
-    // won't produce a fuzzy glyph, just a correctly-positioned one.
-    pixel_pos = vec2(pixel_pos.x, floor(pixel_pos.y));
+    // No flooring needed here. The Rust side already snaps glyph quad
+    // origins to integer physical pixels at scene-build time, so both
+    // bounds.xy and bounds.zw arrive as whole numbers; the multiply-add
+    // above produces integer pixel_pos at the vertices and integer-stepped
+    // values at fragment centres. Flooring again would either be a no-op
+    // or shift the quad by less than one pixel and reintroduce the very
+    // sub-pixel mismatch the upstream pre-floor was meant to fix.
 
     // Evaluating the glyphs fade effect. Note that the fade may go in two different directions:
     // - Right to left (default) - where the opaque side is on the right, and transparent on the left

@@ -292,10 +292,20 @@ impl Pipeline {
                         Some(GlyphFade::Horizontal { start, end }) => (start, end),
                     };
 
-                    // Adjust the horizontal position by the subpixel alignment
-                    // so that we only shift the glyph over by the amount that
-                    // isn't accounted for in the subpixel-rasterized glyph.
-                    let glyph_position = glyph_position - subpixel_alignment.to_offset();
+                    // Snap the quad origin to an integer physical pixel.
+                    // The rasterizer has already baked the subpixel offset
+                    // for this bucket into the cached bitmap, so the quad
+                    // does not need to carry the fractional remainder; an
+                    // integer-aligned quad maps fragment centres exactly to
+                    // texel centres, which is what makes Linear sampling
+                    // equivalent to Nearest and frees the vertex shader
+                    // from having to floor anything itself.
+                    //
+                    // Bucket quantisation introduces at most 1/(2*STEPS)
+                    // pixels of horizontal positioning error; a future
+                    // commit raises STEPS from 3 to 4 to halve that error
+                    // and match Zed's resolution.
+                    let glyph_position = glyph_position.floor();
 
                     // Make sure to pass the glyph size in the atlas
                     // Not the size of the render bounds (which may be smaller)
