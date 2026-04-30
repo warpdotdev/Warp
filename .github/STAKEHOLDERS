@@ -76,9 +76,17 @@
 /crates/onboarding/ @kevinchevalier
 
 # MCP and skills
-/app/src/ai/mcp/ @peicodes
-/app/src/ai/skills/ @peicodes
-/crates/mcp/ @peicodes
+/app/src/ai/mcp/ @peicodes @vkodithala
+/app/src/ai/skills/ @peicodes @vkodithala
+/crates/mcp/ @peicodes @vkodithala
+
+# File-based MCP (overrides MCP and skills above)
+/app/src/ai/mcp/file_based_manager.rs @vkodithala
+/app/src/ai/mcp/file_based_manager_tests.rs @vkodithala
+/app/src/ai/mcp/file_mcp_watcher.rs @vkodithala
+/app/src/ai/mcp/file_mcp_watcher_tests.rs @vkodithala
+/app/src/ai/mcp/dummy_file_based_manager.rs @vkodithala
+/app/src/ai/mcp/dummy_file_mcp_watcher.rs @vkodithala
 
 # Conversation management / credit usage footer / input UI / natural-language detection
 /app/src/ai/active_agent_views_model.rs @harryalbert
@@ -145,6 +153,9 @@
 
 # Grep tool call UI
 /app/src/ai/blocklist/action_model/execute/grep.rs @vkodithala
+
+# Long-running shell commands
+/app/src/ai/blocklist/action_model/execute/shell_command.rs @vkodithala
 
 ###########################################################################
 # Team: Platform
