@@ -17,10 +17,10 @@ use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::Fill;
 use warp_core::ui::{appearance::Appearance, theme::WarpTheme};
 use warpui::elements::{
-    AnchorPair, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element,
-    Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, OffsetPositioning,
-    OffsetType, ParentElement, PositionedElementOffsetBounds, PositioningAxis, Radius,
-    SavePosition, Stack, Text, XAxisAnchor, YAxisAnchor,
+    AnchorPair, ChildView, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+    Element, Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+    OffsetPositioning, OffsetType, ParentElement, PositionedElementOffsetBounds, PositioningAxis,
+    Radius, SavePosition, Stack, Text, XAxisAnchor, YAxisAnchor,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
@@ -646,13 +646,25 @@ impl View for OrchestrationPillBar {
         // Wrap in a container with a touch of horizontal padding so the bar
         // doesn't sit flush against the pane edges, and with the same overlay
         // background as the rest of the agent view header so it merges visually.
-        let bar = Container::new(row.finish())
-            .with_padding_left(12.)
-            .with_padding_right(12.)
-            .with_padding_top(4.)
-            .with_padding_bottom(4.)
-            .with_background(theme.surface_overlay_1())
-            .finish();
+        //
+        // Wrap the whole thing in a `Clipped` so when the orchestrator's
+        // pane is narrower than the natural width of the pill row
+        // (orchestrator + N child pills), the pills get clipped at the pane
+        // boundary instead of bleeding into whichever pane sits to the
+        // right. Without this clip the row's `MainAxisSize::Min` reports
+        // its full intrinsic width upward and the parent doesn't enforce
+        // a horizontal bound, so the trailing pills paint outside the
+        // pane (visible in split layouts).
+        let bar = Clipped::new(
+            Container::new(row.finish())
+                .with_padding_left(12.)
+                .with_padding_right(12.)
+                .with_padding_top(4.)
+                .with_padding_bottom(4.)
+                .with_background(theme.surface_overlay_1())
+                .finish(),
+        )
+        .finish();
 
         // When the 3-dot menu is open, overlay it directly beneath the
         // clicked pill's overflow button. We anchor to the saved position id
