@@ -482,7 +482,7 @@ pub struct TerminalModel {
     /// `CSI ? 996 n` (color scheme query) and to emit unsolicited `CSI ? 997 ; Ps n`
     /// notifications when `CSI ? 2031 h` (dark/light notifications) is enabled.
     ///
-    /// Initialised to `true` (dark) as a safe default; the view overwrites this on
+    /// Initialized to `true` (dark) as a safe default; the view overwrites this on
     /// the first `AppearanceEvent::ThemeChanged` subscription fire, which happens
     /// before any running process is likely to query or subscribe.
     is_dark_mode: bool,

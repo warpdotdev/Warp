@@ -44,9 +44,9 @@ model level and updated from the view on every theme change.  The model-level fi
 is accessed by the `report_color_scheme` override without delegation, matching how
 non-grid state is handled elsewhere.
 
-The field is initialised to `true` (dark mode) on construction; the view calls
+The field is initialized to `true` (dark mode) on construction; the view calls
 `set_color_scheme` on the very first `AppearanceEvent::ThemeChanged` subscription
-fire (or on construction if we add an eager call there), so the initialisation value
+fire (or on construction if we add an eager call there), so the initialization value
 is only visible if a query arrives before the first theme event.
 
 ### Query response (`CSI ? 996 n`)
