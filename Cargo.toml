@@ -19,6 +19,7 @@ default-members = [
   "crates/markdown_parser",
   "crates/orchestrator",
   "crates/sum_tree",
+  "crates/symphony",
   "crates/warpui",
   "crates/warp_completer",
   "crates/warp_terminal",
@@ -68,6 +69,7 @@ settings_value_derive = { path = "crates/settings_value_derive" }
 simple_logger = { path = "crates/simple_logger" }
 string-offset = { path = "crates/string-offset" }
 sum_tree = { path = "crates/sum_tree" }
+symphony = { path = "crates/symphony" }
 syntax_tree = { path = "crates/syntax_tree" }
 ui_components = { path = "crates/ui_components" }
 vim = { path = "crates/vim" }

@@ -1,0 +1,52 @@
+[package]
+name = "symphony"
+version = "0.1.0"
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "symphony"
+path = "src/main.rs"
+
+[dependencies]
+orchestrator = { workspace = true }
+agents = { workspace = true }
+doppler = { workspace = true }
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "process",
+    "fs",
+    "sync",
+    "time",
+    "io-util",
+    "signal",
+] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+liquid = "0.26"
+reqwest = { workspace = true }
+clap = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { workspace = true }
+uuid = { workspace = true }
+async-trait = { workspace = true }
+futures-util = { workspace = true }
+tokio-stream = "0.1"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+mockall = "0.13"
+tokio-test = "0.4"
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+    "test-util",
+] }
