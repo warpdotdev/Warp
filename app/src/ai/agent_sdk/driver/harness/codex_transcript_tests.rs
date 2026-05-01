@@ -13,7 +13,7 @@ fn read_envelope(
     session_id: Uuid,
     sessions_root: &Path,
 ) -> Result<Option<CodexTranscriptEnvelope>> {
-    let Some(path) = find_session_file(sessions_root, session_id)? else {
+    let Some(path) = find_session_file(sessions_root, session_id) else {
         return Ok(None);
     };
     let entries = read_jsonl(&path)?;
@@ -64,7 +64,7 @@ fn find_session_file_walks_yyyy_mm_dd_tree() {
     let file = day.join(format!("rollout-ignored-ts-{uuid}.jsonl"));
     fs::write(&file, "").unwrap();
 
-    let found = find_session_file(tmp.path(), uuid).unwrap();
+    let found = find_session_file(tmp.path(), uuid);
     assert_eq!(found, Some(file));
 }
 
@@ -79,19 +79,13 @@ fn find_session_file_returns_none_when_no_match() {
     )
     .unwrap();
 
-    assert!(find_session_file(tmp.path(), Uuid::new_v4())
-        .unwrap()
-        .is_none());
+    assert!(find_session_file(tmp.path(), Uuid::new_v4()).is_none());
 }
 
 #[test]
 fn find_session_file_returns_none_when_root_missing() {
     let tmp = TempDir::new().unwrap();
-    assert!(
-        find_session_file(&tmp.path().join("missing"), Uuid::new_v4())
-            .unwrap()
-            .is_none()
-    );
+    assert!(find_session_file(&tmp.path().join("missing"), Uuid::new_v4()).is_none());
 }
 
 #[test]

@@ -26,8 +26,7 @@ use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
 use super::claude_transcript::read_jsonl;
 use super::codex_transcript::{
-    codex_sessions_root, find_session_file, parse_session_meta, CodexSessionMetadata,
-    CodexTranscriptEnvelope,
+    codex_sessions_root, find_session_file, parse_session_meta, CodexTranscriptEnvelope,
 };
 use super::json_utils::read_json_file_or_default;
 use super::{write_temp_file, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness};
@@ -122,9 +121,6 @@ struct CodexHarnessRunner {
     /// successful [`find_session_file`] walk so that subsequent saves skip the YYYY/MM/DD
     /// directory walk and read the JSONL file directly.
     transcript_path: OnceLock<PathBuf>,
-    /// Cached parse of the rollout's `SessionMeta` line. Codex writes this once at session
-    /// start, so subsequent saves reuse it instead of reparsing the first JSONL entry.
-    session_metadata: OnceLock<CodexSessionMetadata>,
 }
 
 impl CodexHarnessRunner {
@@ -147,7 +143,6 @@ impl CodexHarnessRunner {
             state: Mutex::new(CodexRunnerState::Preexec),
             session_id: OnceLock::new(),
             transcript_path: OnceLock::new(),
-            session_metadata: OnceLock::new(),
         })
     }
 
@@ -158,13 +153,12 @@ impl CodexHarnessRunner {
             return Some(cached.clone());
         }
         let session_id = self.session_id.get().copied()?;
-        let resolved = tokio::task::spawn_blocking(move || -> Result<Option<PathBuf>> {
-            let root = codex_sessions_root().context("Failed to resolve codex sessions root")?;
+        let resolved = tokio::task::spawn_blocking(move || -> Option<PathBuf> {
+            let root = codex_sessions_root().ok()?;
             find_session_file(&root, session_id)
         })
         .await
         .ok()
-        .and_then(|r| r.ok())
         .flatten()?;
         let _ = self.transcript_path.set(resolved.clone());
         Some(resolved)
@@ -275,10 +269,10 @@ impl HarnessRunner for CodexHarnessRunner {
 
         let session_id = self.session_id.get().copied();
         let rollout_path = self.resolve_transcript_path().await;
-        let cached_metadata = self.session_metadata.get().cloned();
         let client = self.client.as_ref();
 
-        let (_, parsed_metadata) = futures::try_join!(
+        let is_final = matches!(save_point, SavePoint::Final);
+        futures::try_join!(
             super::upload_current_block_snapshot(
                 foreground,
                 &self.terminal_driver,
@@ -286,68 +280,56 @@ impl HarnessRunner for CodexHarnessRunner {
                 conversation_id,
                 block_id,
             ),
-            upload_transcript(
-                client,
-                conversation_id,
-                session_id,
-                rollout_path,
-                cached_metadata,
-            ),
+            upload_transcript(client, conversation_id, session_id, rollout_path, is_final),
         )?;
-        if let Some(meta) = parsed_metadata {
-            let _ = self.session_metadata.set(meta);
-        }
         Ok(())
     }
 }
 
 /// Upload the codex session transcript to the server. No-ops if the session UUID hasn't
 /// been captured yet or no rollout file is on disk yet.
-///
-/// `cached_metadata` is the previously-parsed `SessionMeta` if any, which is read from the first
-///  line of the transcript.
 async fn upload_transcript(
     client: &dyn HarnessSupportClient,
     conversation_id: AIConversationId,
     session_id: Option<Uuid>,
     transcript_path: Option<PathBuf>,
-    cached_metadata: Option<CodexSessionMetadata>,
-) -> Result<Option<CodexSessionMetadata>> {
+    is_final: bool,
+) -> Result<()> {
     let Some(session_id) = session_id else {
-        log::debug!("Codex session id not yet known; skipping transcript upload");
-        return Ok(None);
+        if is_final {
+            log::warn!(
+                "Codex session id still unknown at final save; transcript was never uploaded"
+            );
+        } else {
+            log::debug!("Codex session id not yet known; skipping transcript upload");
+        }
+        return Ok(());
     };
     let Some(transcript_path) = transcript_path else {
-        log::debug!("No codex rollout file yet for session {session_id}");
-        return Ok(None);
+        if is_final {
+            log::warn!("No codex rollout file found at final save for session {session_id}; transcript was never uploaded");
+        } else {
+            log::debug!("No codex rollout file yet for session {session_id}");
+        }
+        return Ok(());
     };
     log::info!("Uploading codex transcript to conversation {conversation_id}");
 
-    let (body, parsed_metadata) =
-        tokio::task::spawn_blocking(move || -> Result<(Vec<u8>, Option<CodexSessionMetadata>)> {
-            let entries = read_jsonl(&transcript_path)?;
-            // If we have cached metadata, use it, otherwise parse the transcript for it.
-            let (metadata, metadata_to_save) = match cached_metadata {
-                Some(m) => (m, None),
-                None => {
-                    let parsed = parse_session_meta(entries.first());
-                    (parsed.clone().unwrap_or_default(), parsed)
-                }
-            };
-            let envelope = CodexTranscriptEnvelope::new(session_id, metadata, entries);
-            let body =
-                serde_json::to_vec(&envelope).context("Failed to serialize codex transcript")?;
-            Ok((body, metadata_to_save))
-        })
-        .await
-        .context("read_envelope task panicked")??;
+    let body = tokio::task::spawn_blocking(move || -> Result<Vec<u8>> {
+        let entries = read_jsonl(&transcript_path)?;
+        let metadata = parse_session_meta(entries.first()).unwrap_or_default();
+        let envelope = CodexTranscriptEnvelope::new(session_id, metadata, entries);
+        serde_json::to_vec(&envelope).context("Failed to serialize codex transcript")
+    })
+    .await
+    .context("read_envelope task panicked")??;
 
     let target = client
         .get_transcript_upload_target(&conversation_id)
         .await
         .with_context(|| format!("Failed to get transcript upload target for {conversation_id}"))?;
     upload_to_target(client.http_client(), &target, body).await?;
-    Ok(parsed_metadata)
+    Ok(())
 }
 
 const CODEX_CONFIG_DIR: &str = ".codex";

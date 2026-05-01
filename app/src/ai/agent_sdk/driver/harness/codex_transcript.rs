@@ -6,10 +6,8 @@
 //!   with Codex's own `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` layout
 //!   (codex `rollout/src/recorder.rs`).
 use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -48,8 +46,7 @@ impl CodexTranscriptEnvelope {
     }
 }
 
-/// Session-level metadata pulled from the rollout's `SessionMeta` line. Codex writes this
-/// line once at session start, so callers cache it and skip reparsing on subsequent saves.
+/// Session-level metadata pulled from the rollout's `SessionMeta` line.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct CodexSessionMetadata {
     pub(crate) cwd: PathBuf,
@@ -57,7 +54,7 @@ pub(crate) struct CodexSessionMetadata {
 }
 
 /// Resolve the codex sessions root, honoring `$CODEX_HOME` then falling back to `~/.codex`.
-pub(crate) fn codex_sessions_root() -> Result<PathBuf> {
+pub(crate) fn codex_sessions_root() -> anyhow::Result<PathBuf> {
     let home = if let Ok(dir) = std::env::var(CODEX_HOME_ENV) {
         PathBuf::from(dir)
     } else {
@@ -70,20 +67,15 @@ pub(crate) fn codex_sessions_root() -> Result<PathBuf> {
 
 /// Walk `<sessions_root>/YYYY/MM/DD/` looking for a `rollout-*-<session_id>.jsonl`.
 ///
-/// Returns `Ok(None)` if `sessions_root` doesn't exist yet or no matching file is found.
-pub(crate) fn find_session_file(sessions_root: &Path, session_id: Uuid) -> Result<Option<PathBuf>> {
+/// Returns `None` if `sessions_root` doesn't exist yet or no matching file is found.
+pub(crate) fn find_session_file(sessions_root: &Path, session_id: Uuid) -> Option<PathBuf> {
     if !sessions_root.exists() {
-        return Ok(None);
+        return None;
     }
     let suffix = format!("-{session_id}.jsonl");
-    for year_dir in read_subdirs(sessions_root).with_context(|| {
-        format!(
-            "Failed to read codex sessions root {}",
-            sessions_root.display()
-        )
-    })? {
-        for month_dir in read_subdirs(&year_dir).unwrap_or_default() {
-            for day_dir in read_subdirs(&month_dir).unwrap_or_default() {
+    for year_dir in read_subdirs(sessions_root) {
+        for month_dir in read_subdirs(&year_dir) {
+            for day_dir in read_subdirs(&month_dir) {
                 let entries = match fs::read_dir(&day_dir) {
                     Ok(e) => e,
                     Err(_) => continue,
@@ -94,28 +86,26 @@ pub(crate) fn find_session_file(sessions_root: &Path, session_id: Uuid) -> Resul
                         continue;
                     };
                     if name.starts_with("rollout-") && name.ends_with(&suffix) {
-                        return Ok(Some(path));
+                        return Some(path);
                     }
                 }
             }
         }
     }
-    Ok(None)
+    None
 }
 
-fn read_subdirs(parent: &Path) -> io::Result<Vec<PathBuf>> {
-    let mut subs = Vec::new();
-    for entry in fs::read_dir(parent)? {
-        let entry = entry?;
-        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            subs.push(entry.path());
-        }
-    }
-    Ok(subs)
+fn read_subdirs(parent: &Path) -> impl Iterator<Item = PathBuf> {
+    fs::read_dir(parent)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            entry.file_type().ok()?.is_dir().then(|| entry.path())
+        })
 }
 
-/// Pull `cwd` and `cli_version` out of the first JSONL line if it's a `SessionMeta`. The
-/// result is constant for the lifetime of a session, so callers cache it.
+/// Pull `cwd` and `cli_version` out of the first JSONL line if it's a `SessionMeta`.
 pub(crate) fn parse_session_meta(first: Option<&Value>) -> Option<CodexSessionMetadata> {
     let entry = first?;
     if entry.get("type").and_then(|v| v.as_str()) != Some("session_meta") {

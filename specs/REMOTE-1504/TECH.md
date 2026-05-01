@@ -27,7 +27,6 @@ Reuses `read_jsonl` from `claude_transcript` for the actual JSONL parsing.
 Three `OnceLock` fields added for lazy, set-once caching:
 - `session_id: OnceLock<Uuid>` — captured from `CLIAgentSessionsModel` when hooks emit `SessionStart`
 - `transcript_path: OnceLock<PathBuf>` — resolved by `find_session_file` on first save, cached thereafter
-- `session_metadata: OnceLock<CodexSessionMetadata>` — parsed from JSONL first line, cached thereafter
 
 This caching pattern differs from Claude Code, which re-reads the config dir every save. Done here for consistency with the immutable-once-set nature of Codex's `SessionMeta` line, and because the `YYYY/MM/DD` dir walk is more expensive than Claude's direct path lookup.
 
