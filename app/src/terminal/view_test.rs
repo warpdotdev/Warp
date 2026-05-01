@@ -2972,6 +2972,24 @@ fn test_prompt_context_menu_items_for_no_context_chips() {
 }
 
 #[test]
+fn test_input_context_menu_items_include_edit_prompt() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            let labels = view
+                .input_context_menu_items(ctx)
+                .into_iter()
+                .filter_map(|item| item.fields().map(|fields| fields.label().to_owned()))
+                .collect::<Vec<_>>();
+
+            assert!(labels.contains(&"Edit prompt".to_owned()));
+        });
+    })
+}
+
+#[test]
 fn test_prompt_context_menu_items_for_agent_toolbelt_flag() {
     let _agent_view_guard = FeatureFlag::AgentView.override_enabled(true);
     App::test((), |mut app| async move {
