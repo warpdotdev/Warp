@@ -252,6 +252,45 @@ impl LinearClient {
         }
         Ok(out)
     }
+
+    /// Post a comment to a Linear issue. Used by the orchestrator's
+    /// post-run handler to write back agent completion / failure summaries
+    /// without requiring an agent-side `linear_graphql` tool.
+    ///
+    /// Spec §11.5 boundary: Symphony writes only when configured to (via
+    /// `WORKFLOW.md`'s `agent.comment_on_completion`). State transitions
+    /// remain agent-driven (or manual) per spec.
+    pub async fn add_comment(
+        &self,
+        issue_id: &str,
+        body: &str,
+    ) -> Result<(), TrackerError> {
+        let payload = serde_json::json!({
+            "query": comment_create_mutation(),
+            "variables": {
+                "input": {
+                    "issueId": issue_id,
+                    "body": body,
+                }
+            }
+        });
+        let resp = self
+            .http
+            .post_graphql(&self.endpoint, self.api_key.expose(), payload)
+            .await?;
+        check_graphql_errors(&resp)?;
+        // Linear's commentCreate returns { success: bool, comment: { ... } }.
+        let success = resp
+            .pointer("/data/commentCreate/success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !success {
+            return Err(TrackerError::GraphQl(
+                "commentCreate returned success=false".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 fn check_graphql_errors(resp: &serde_json::Value) -> Result<(), TrackerError> {
@@ -301,6 +340,17 @@ fn candidate_query() -> &'static str {
         }
       }
     }
+  }
+}
+"#
+}
+
+/// GraphQL mutation for posting a comment on an issue.
+fn comment_create_mutation() -> &'static str {
+    r#"mutation Comment($input: CommentCreateInput!) {
+  commentCreate(input: $input) {
+    success
+    comment { id }
   }
 }
 "#

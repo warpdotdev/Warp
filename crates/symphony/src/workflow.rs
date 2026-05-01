@@ -134,6 +134,11 @@ pub struct AgentConfig {
     /// Linear label that must be present on an issue before it is dispatched.
     #[serde(default = "default_agent_label_required")]
     pub agent_label_required: String,
+    /// Whether Symphony posts a comment back to the Linear issue when an
+    /// agent run completes (success or failure). Default `true`. Set to
+    /// `false` to operate purely in audit-log mode without ticket writes.
+    #[serde(default = "default_comment_on_completion")]
+    pub comment_on_completion: bool,
 }
 
 impl Default for AgentConfig {
@@ -143,8 +148,13 @@ impl Default for AgentConfig {
             max_diff_lines: default_max_diff_lines(),
             max_turns: default_max_turns(),
             agent_label_required: default_agent_label_required(),
+            comment_on_completion: default_comment_on_completion(),
         }
     }
+}
+
+fn default_comment_on_completion() -> bool {
+    true
 }
 
 fn default_tracker_kind() -> String {
