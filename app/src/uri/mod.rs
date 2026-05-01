@@ -1423,12 +1423,9 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
 /// (e.g. some `file://` URLs on certain platforms); the literal `-` is used
 /// as a placeholder in that case so the formatter never panics.
 fn safe_url_log_fields(url: &Url) -> String {
-    format!(
-        "scheme={} host={} path={}",
-        url.scheme(),
-        url.host_str().unwrap_or("-"),
-        url.path(),
-    )
+    let host = url.host_str().unwrap_or("-");
+    let path = if host == "pane" { "[redacted]" } else { url.path() };
+    format!("scheme={} host={} path={}", url.scheme(), host, path)
 }
 
 fn decode_uuid_hex(hex: &str) -> Option<Vec<u8>> {
