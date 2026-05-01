@@ -217,7 +217,7 @@ async fn followup_without_previous_session_id_accepts_joinable_session() {
             Ok(task_with(
                 AmbientAgentTaskState::InProgress,
                 Some(session_id.to_string()),
-                None,
+                Some("https://example.com/session/joinable".to_string()),
             ))
         });
 
@@ -252,6 +252,10 @@ async fn followup_without_previous_session_id_accepts_joinable_session() {
         panic!("Expected SessionStarted event");
     };
     assert_eq!(session_join_info.session_id, Some(expected_session_id));
+    assert_eq!(
+        session_join_info.session_link,
+        "https://example.com/session/joinable"
+    );
     assert!(stream.next().await.is_none());
 }
 
