@@ -1904,10 +1904,8 @@ impl AISettingsPageView {
             .collect();
 
         let org_denylist = BlocklistAIPermissions::get_org_execute_commands_denylist(ctx);
-        self.command_denylist_tooltip_mouse_state_handles = org_denylist
-            .iter()
-            .map(|_| Default::default())
-            .collect();
+        self.command_denylist_tooltip_mouse_state_handles =
+            org_denylist.iter().map(|_| Default::default()).collect();
 
         self.command_allowlist_mouse_state_handles = blocklist_permissions
             .get_execute_commands_allowlist(ctx, None)
@@ -4496,7 +4494,7 @@ impl AgentsWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let ai_disabled = !ai_settings.is_command_denylist_editable(app);
+        let ai_disabled = !ai_settings.is_any_ai_enabled(app);
         let org_denylist = BlocklistAIPermissions::get_org_execute_commands_denylist(app);
         let mut tooltip_idx = 0usize;
         let list = render_input_list(
