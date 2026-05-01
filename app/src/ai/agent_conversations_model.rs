@@ -101,6 +101,25 @@ pub enum StatusFilter {
     Failed,
 }
 
+impl StatusFilter {
+    /// Returns `true` if a status transition from `prev_bucket` to `new_bucket` flips
+    /// whether an item is included by this filter. `All` matches every bucket so it
+    /// is never crossed; the other variants are crossed when exactly one of the buckets
+    /// equals this filter.
+    pub(crate) fn is_membership_crossed(
+        self,
+        prev_bucket: StatusFilter,
+        new_bucket: StatusFilter,
+    ) -> bool {
+        match self {
+            StatusFilter::All => false,
+            StatusFilter::Working | StatusFilter::Done | StatusFilter::Failed => {
+                (prev_bucket == self) != (new_bucket == self)
+            }
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum SourceFilter {
     #[default]
@@ -1407,7 +1426,7 @@ impl AgentConversationsModel {
     /// We first match using the orchestration agent ID (task ID / run ID under v2), and fall back
     /// to the server conversation token for cases where the task only carries conversation identity
     /// through `conversation_id`.
-    fn conversation_id_shadowed_by_task(
+    pub(crate) fn conversation_id_shadowed_by_task(
         task: &AmbientAgentTask,
         history_model: &BlocklistAIHistoryModel,
     ) -> Option<AIConversationId> {
