@@ -1003,6 +1003,13 @@ fn file_tree_refreshes_after_file_move_operations() {
         let canonical_repo_root =
             warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo_root)
                 .unwrap();
+        
+        // Test with a lazy-loaded subdirectory, not the repository root itself
+        // This tests the actual regression - lazy-loaded directories not refreshing
+        let src_dir = repo_root.join("src");
+        let canonical_src_dir =
+            warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&src_dir)
+                .unwrap();
 
         App::test((), |mut app| async move {
             let (detected_repositories, repository_metadata_model) = initialize_app(&mut app);
@@ -1015,19 +1022,20 @@ fn file_tree_refreshes_after_file_move_operations() {
 
             file_tree_view.update(&mut app, |view, ctx| {
                 view.set_is_active(true, ctx);
-                view.set_root_directories(vec![repo_root.clone()], ctx);
+                // Display the lazy-loaded subdirectory, not the repo root
+                view.set_root_directories(vec![src_dir.clone()], ctx);
             });
 
             // Wait for initial indexing to complete
             file_tree_view.update(&mut app, |view, ctx| {
-                view.update_directory_contents(&[canonical_repo_root.clone()], false, ctx);
+                view.update_directory_contents(&[canonical_src_dir.clone()], false, ctx);
             });
 
             // Verify initial state - files should be in src/
             file_tree_view.read(&app, |view, _ctx| {
                 let flattened_items = view.flattened_items();
-                let main_rs_path = canonical_repo_root.join("src/main.rs");
-                let utils_rs_path = canonical_repo_root.join("src/utils.rs");
+                let main_rs_path = canonical_src_dir.join("main.rs");
+                let utils_rs_path = canonical_src_dir.join("utils.rs");
                 
                 assert!(flattened_items.iter().any(|item| item.id.path == main_rs_path));
                 assert!(flattened_items.iter().any(|item| item.id.path == utils_rs_path));
@@ -1083,18 +1091,20 @@ fn file_tree_refreshes_after_file_move_operations() {
             // Verify that the file tree refreshed and files are no longer in the old location
             file_tree_view.read(&app, |view, _ctx| {
                 let flattened_items = view.flattened_items();
-                let old_main_rs_path = canonical_repo_root.join("src/main.rs");
-                let old_utils_rs_path = canonical_repo_root.join("src/utils.rs");
-                let new_main_rs_path = canonical_repo_root.join("new_dir/main.rs");
-                let new_utils_rs_path = canonical_repo_root.join("new_dir/utils.rs");
+                let old_main_rs_path = canonical_src_dir.join("main.rs");
+                let old_utils_rs_path = canonical_src_dir.join("utils.rs");
                 
-                // Files should NOT be in the old location
+                // Files should NOT be in the old location (src directory)
                 assert!(!flattened_items.iter().any(|item| item.id.path == old_main_rs_path));
                 assert!(!flattened_items.iter().any(|item| item.id.path == old_utils_rs_path));
                 
-                // Files should be in the new location
-                assert!(flattened_items.iter().any(|item| item.id.path == new_main_rs_path));
-                assert!(flattened_items.iter().any(|item| item.id.path == new_utils_rs_path));
+                // The lazy-loaded src directory should be refreshed with the new repository state
+                // Since we're displaying src as a lazy-loaded directory, it should now be empty
+                // because the files were moved out of it in the updated repository state
+                let src_items: Vec<_> = flattened_items.iter()
+                    .filter(|item| item.id.path.starts_with(&canonical_src_dir))
+                    .collect();
+                assert!(src_items.is_empty(), "src directory should be empty after files were moved");
             });
         });
     });

@@ -542,10 +542,26 @@ impl FileTreeView {
                 let affected_root_paths: Vec<StandardizedPath> = self
                     .root_directories
                     .iter()
-                    .filter(|(_, root_dir)| {
+                    .filter(|(root_path, root_dir)| {
                         // Check if this root directory is within the updated repository
                         let root_dir_path = root_dir.entry.root_directory();
-                        **root_dir_path == *std_path || root_dir_path.starts_with(std_path)
+                        
+                        // Exact matching for repository-backed roots (to avoid contaminating nested repos)
+                        if **root_dir_path == *std_path {
+                            return true;
+                        }
+                        
+                        // Prefix matching only for lazy-loaded roots (to handle moved/deleted directories)
+                        #[cfg(feature = "local_fs")]
+                        {
+                            self.registered_lazy_loaded_paths.contains(root_path) 
+                                && root_dir_path.starts_with(std_path)
+                        }
+                        
+                        #[cfg(not(feature = "local_fs"))]
+                        {
+                            false
+                        }
                     })
                     .map(|(root_path, _)| root_path.clone())
                     .collect();
@@ -560,10 +576,13 @@ impl FileTreeView {
                                 if **root_dir.entry.root_directory() == *std_path {
                                     root_dir.entry = state.entry.clone();
                                 } else {
-                                    // For subdirectories, we need to refresh the specific directory
-                                    // from the updated repository state
-                                    if state.entry.contains(root_path) {
-                                        root_dir.entry = state.entry.clone();
+                                    // For lazy-loaded subdirectories, always update to clear stale entries
+                                    // even if the directory was moved or deleted (contains() would be false)
+                                    #[cfg(feature = "local_fs")]
+                                    {
+                                        if self.registered_lazy_loaded_paths.contains(root_path) {
+                                            root_dir.entry = state.entry.clone();
+                                        }
                                     }
                                 }
                             }
