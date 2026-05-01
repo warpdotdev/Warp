@@ -53,7 +53,7 @@
             owner = "warpdotdev";
             repo = "workflows";
             rev = "793a98ddda6ef19682aed66364faebd2829f0e01";
-            hash = "sha256-ICgkxlUUIfyhr0agZEk3KtGHX0uNRlRCKtz0iF2jd7o=";
+            hash = "sha256-yRTtgiNpYjpQWHhqGSm9qP7zUtQhuxZfee2ThWRVR/A=";
           };
           cargoDeps = pkgs.runCommand "warp-terminal-${version}-vendor" { } ''
             cp -R ${
