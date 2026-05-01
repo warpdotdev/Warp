@@ -145,6 +145,14 @@ impl AppearanceManager {
         // wallpaper visibly dominates and the gate is worth its cost).
         // AppearanceManager is registered before any window is created,
         // so the initial seed below lands ahead of the first frame.
+        //
+        // TODO: this is one bit per window. Local opaque regions inside a
+        // translucent window (the active block's row background, modal
+        // scrims, etc.) still fall through to the mono path even though
+        // the rect immediately under the glyph is opaque and LCD would be
+        // safe there. A per-glyph route based on the underlying rect's
+        // alpha would fix it, but Scene::draw_glyph has no view of which
+        // rect sits behind a given glyph today.
         const LCD_GATE_OPACITY_THRESHOLD: u8 = 70;
         ctx.subscribe_to_model(&WindowSettings::handle(ctx), move |_, event, ctx| {
             if matches!(event, WindowSettingsChangedEvent::BackgroundOpacity { .. }) {
