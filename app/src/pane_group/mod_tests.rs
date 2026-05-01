@@ -1389,7 +1389,7 @@ fn test_focused_pane_is_synchronized_with_application_focus() {
             // Second, emit an event on the pane group to trigger assertion
             // logic in the FocusDetectionView.  This event effect is enqueued after
             // the focus effect but before the focus effect is processed, meaning
-            // it will observe any changes that occured synchronously as part
+            // it will observe any changes that occurred synchronously as part
             // of the focus effect but will _not_ observe any changes that result
             // from events dispatched during focus handling.
             //

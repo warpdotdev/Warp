@@ -387,6 +387,7 @@ use std::time::Duration;
 #[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
 use warp_core::context_flag::ContextFlag;
+use warp_core::execution_mode::AppExecutionMode;
 use warp_core::semantic_selection::SemanticSelection;
 use warp_util::path::{user_friendly_path, LineAndColumnArg};
 use warpui::fonts::Weight;
@@ -2815,10 +2816,16 @@ impl Workspace {
         if FeatureFlag::SshRemoteServer.is_enabled() {
             ctx.subscribe_to_model(
                 &RemoteServerManager::handle(ctx),
-                |me, _handle, event, ctx| {
-                    if matches!(event, RemoteServerManagerEvent::SessionConnected { .. }) {
+                |me, _handle, event, ctx| match event {
+                    RemoteServerManagerEvent::SessionConnected { .. } => {
                         me.update_active_session(ctx);
                     }
+                    RemoteServerManagerEvent::SetupStateChanged { state, .. }
+                        if state.is_failed() =>
+                    {
+                        me.update_active_session(ctx);
+                    }
+                    _ => {}
                 },
             );
         }
@@ -6694,6 +6701,12 @@ impl Workspace {
     }
 
     fn should_trigger_get_started_onboarding(&self, ctx: &mut ViewContext<Self>) -> bool {
+        // Onboarding requires a real user to interact with it; suppress when
+        // running in a headless mode like the SDK/CLI.
+        if !AppExecutionMode::as_ref(ctx).can_show_onboarding() {
+            return false;
+        }
+
         if !FeatureFlag::GetStartedTab.is_enabled() {
             return false;
         }
@@ -6726,6 +6739,12 @@ impl Workspace {
     /// If the user is new and therefore has not seen the in app onboarding,
     /// triggers the welcome block to be shown after bootstrapping is completed.
     fn check_and_trigger_onboarding(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        // Onboarding requires a real user to interact with it; suppress when
+        // running in a headless mode like the SDK/CLI.
+        if !AppExecutionMode::as_ref(ctx).can_show_onboarding() {
+            return false;
+        }
+
         if !self.auth_state.is_onboarded().unwrap_or_default() {
             if self.should_show_agent_onboarding(ctx) {
                 // If the user is anonymous, we shouldn't trigger agent onboarding.
@@ -11539,6 +11558,14 @@ impl Workspace {
             }
         });
 
+        // True when the fork is paired with a follow-up that fires immediately after restore
+        // (a prompt to send, or a `/summarize` triggered by `summarize_after_fork`).
+        // Used to suppress the `couldn't find original conversation directory` ephemeral hint
+        // for cloud-to-local forks, which would otherwise mask the warping indicator while the
+        // agent processes the follow-up. See `BlocklistAIStatusBar::render`'s
+        // `ephemeral_message_model.current_message().is_none()` gate.
+        let has_initial_query = summarize_after_fork || initial_prompt.is_some();
+
         // Load the conversation data asynchronously
         let future = history_model
             .as_ref(ctx)
@@ -11631,6 +11658,7 @@ impl Workspace {
                     None,
                     Some(ConversationRestorationInNewPaneType::Forked {
                         conversation: forked_conversation,
+                        has_initial_query,
                     }),
                     false,
                     ctx,
@@ -11677,6 +11705,7 @@ impl Workspace {
                     None, /* chosen_shell */
                     Some(ConversationRestorationInNewPaneType::Forked {
                         conversation: forked_conversation.clone(),
+                        has_initial_query,
                     }),
                     ctx,
                 );
@@ -13067,7 +13096,10 @@ impl Workspace {
             pane_group::Event::SyncInput(input_type) => {
                 self.process_sync_event_for_all_synced_pane_groups(input_type, ctx);
             }
-            pane_group::Event::TerminalViewStateChanged => ctx.notify(),
+            pane_group::Event::TerminalViewStateChanged => {
+                self.update_active_session(ctx);
+                ctx.notify();
+            }
             pane_group::Event::OnboardingTutorialCompleted => {
                 self.pending_session_config_tab_config_chip = false;
                 self.show_session_config_tab_config_chip = false;
@@ -14333,24 +14365,33 @@ impl Workspace {
 
         if let Some(terminal_handle) = pane_group_handle.as_ref(ctx).active_session_view(ctx) {
             #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
-            let (session, path_if_local, is_local, is_wsl_session, session_id, pwd) =
-                terminal_handle.read(ctx, |terminal, ctx| {
-                    let active_session_id = terminal.active_block_session_id();
-                    let session = active_session_id
-                        .and_then(|id| terminal.sessions_model().as_ref(ctx).get(id));
-                    let path_if_local = terminal.active_session_path_if_local(ctx);
-                    let is_local = terminal.active_session_is_local(ctx);
-                    let is_wsl_session = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
-                    let pwd = terminal.pwd();
-                    (
-                        session,
-                        path_if_local,
-                        is_local,
-                        is_wsl_session,
-                        active_session_id,
-                        pwd,
-                    )
-                });
+            let (
+                session,
+                path_if_local,
+                is_local,
+                is_wsl_session,
+                session_id,
+                pwd,
+                has_pending_ssh,
+            ) = terminal_handle.read(ctx, |terminal, ctx| {
+                let active_session_id = terminal.active_block_session_id();
+                let session =
+                    active_session_id.and_then(|id| terminal.sessions_model().as_ref(ctx).get(id));
+                let path_if_local = terminal.active_session_path_if_local(ctx);
+                let is_local = terminal.active_session_is_local(ctx);
+                let is_wsl_session = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
+                let pwd = terminal.pwd();
+                let has_pending_ssh = terminal.has_pending_ssh_command();
+                (
+                    session,
+                    path_if_local,
+                    is_local,
+                    is_wsl_session,
+                    active_session_id,
+                    pwd,
+                    has_pending_ssh,
+                )
+            });
 
             let window_id = ctx.window_id();
             let working_directory_clone = path_if_local.clone();
@@ -14380,8 +14421,9 @@ impl Workspace {
             // `connect_session` was called at `InitShell` time.
             let has_remote_server = is_remote
                 && FeatureFlag::SshRemoteServer.is_enabled()
-                && session_id
-                    .is_some_and(|sid| RemoteServerManager::as_ref(ctx).session(sid).is_some());
+                && session_id.is_some_and(|sid| {
+                    RemoteServerManager::as_ref(ctx).is_session_potentially_active(sid)
+                });
 
             // When the session has a remote server, tell it about the current
             // directory so it can start indexing and push repo metadata back.
@@ -14400,6 +14442,18 @@ impl Workspace {
                 is_unsupported_session,
                 has_remote_server,
             );
+
+            // When an SSH command is running (pending host set + block
+            // still long-running), the old local session is still active
+            // so the enablement computes as `Enabled`. Override to
+            // `PendingRemoteSession` so the file tree shows loading
+            // instead of the stale local tree.
+            let enablement =
+                if has_pending_ssh && matches!(enablement, CodingPanelEnablementState::Enabled) {
+                    CodingPanelEnablementState::PendingRemoteSession
+                } else {
+                    enablement
+                };
 
             self.left_panel_view.update(ctx, |left_panel, ctx| {
                 left_panel.update_coding_panel_enablement(enablement, ctx);
@@ -18190,7 +18244,7 @@ impl Workspace {
         let mut main_content = Flex::row();
 
         // In horizontal tabs mode, config-driven panels render inside this row
-        // so they share the same background/corner-radius wrapper from render_main_panel.
+        // alongside the terminal area.
         // In vertical tabs mode, panels are rendered in render_panels instead.
         if !vertical_tabs_active {
             let config = TabSettings::as_ref(app)
@@ -18755,23 +18809,6 @@ impl Workspace {
         container.finish()
     }
 
-    fn render_main_panel(
-        &self,
-        app: &AppContext,
-        terminal_view: Box<dyn Element>,
-    ) -> Box<dyn Element> {
-        if FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(app).use_vertical_tabs {
-            Shrinkable::new(1.0, terminal_view).finish()
-        } else {
-            let main_content = Container::new(terminal_view)
-                .with_background(util::get_terminal_background_fill(self.window_id, app))
-                .with_corner_radius(*PANEL_CORNER_RADIUS)
-                .finish();
-
-            Shrinkable::new(1.0, main_content).finish()
-        }
-    }
-
     fn render_panel_separator(app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         ConstrainedBox::new(
@@ -18815,8 +18852,7 @@ impl Workspace {
             && *TabSettings::as_ref(app).use_vertical_tabs;
 
         // In vertical tabs mode, config-driven panels are rendered here.
-        // In horizontal tabs mode, they're rendered inside render_banner_and_active_tab
-        // so they share the same background/corner-radius wrapper.
+        // In horizontal tabs mode, they're rendered inside render_banner_and_active_tab.
         if vertical_tabs_active {
             let config = TabSettings::as_ref(app)
                 .header_toolbar_chip_selection
@@ -18852,7 +18888,9 @@ impl Workspace {
         if prev_panel_added {
             panels_view.add_child(Self::render_panel_separator(app));
         }
-        panels_view = panels_view.with_child(self.render_main_panel(app, terminal_view));
+        // The outer workspace container in `render` already paints the terminal
+        // background fill, so don't paint it again here (see APP-4328).
+        panels_view = panels_view.with_child(Shrinkable::new(1.0, terminal_view).finish());
         prev_panel_added = true;
 
         if vertical_tabs_active {
@@ -21106,12 +21144,6 @@ impl TypedActionView for Workspace {
                 session_id,
                 task_id,
             } => {
-                // Mark task as manually opened so it appears in the conversation list
-                // even if its source is not user-initiated.
-                AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                    model.mark_task_as_manually_opened(*task_id, ctx);
-                });
-
                 // Check if there's already a terminal viewing this task.
                 if let Some(tab_index) =
                     self.find_tab_with_ambient_agent_conversation(*task_id, ctx)
@@ -21125,14 +21157,6 @@ impl TypedActionView for Workspace {
                 conversation_id,
                 ambient_agent_task_id,
             } => {
-                // Mark task as manually opened so it appears in the conversation list
-                // even if its source is not user-initiated.
-                if let Some(task_id) = ambient_agent_task_id {
-                    AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                        model.mark_task_as_manually_opened(*task_id, ctx);
-                    });
-                }
-
                 // Check if there's already a terminal viewing this conversation's task.
                 if let Some(task_id) = ambient_agent_task_id {
                     if let Some(tab_index) =
@@ -21929,7 +21953,9 @@ impl View for Workspace {
             // Hide the vertical tab rail for simplified WASM views (notebooks, shared sessions, etc.)
             let panels_row = self.render_panels(app, Shrinkable::new(1.0, content).finish(), true);
             outer_column.add_child(Shrinkable::new(1.0, panels_row).finish());
-            outer_column.finish()
+            Container::new(outer_column.finish())
+                .with_background(util::get_terminal_background_fill(self.window_id, app))
+                .finish()
         } else {
             let mut outer_column = Flex::column();
             if tab_bar_mode == ShowTabBar::Stacked {

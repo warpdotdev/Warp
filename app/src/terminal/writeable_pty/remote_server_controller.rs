@@ -2,22 +2,24 @@ use crate::auth::auth_state::AuthStateProvider;
 use crate::remote_server::auth_context::server_api_auth_context;
 use instant::Instant;
 use remote_server::auth::RemoteServerAuthContext;
-use settings::Setting;
 use std::path::PathBuf;
 use std::sync::Arc;
 use warp_core::SessionId;
 use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle};
 
-use crate::terminal::warpify::settings::SshExtensionInstallMode;
+use settings::Setting;
+
+use crate::terminal::warpify::settings::{SshExtensionInstallMode, WarpifySettings};
 
 use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
 use crate::remote_server::ssh_transport::SshTransport;
 use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::session::{IsLegacySSHSession, SessionInfo};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::terminal::warpify::settings::WarpifySettings;
 use crate::{send_telemetry_from_ctx, TelemetryEvent};
-use remote_server::setup::RemotePlatform;
+use remote_server::setup::{
+    PreinstallCheckResult, PreinstallStatus, RemoteLibc, RemotePlatform, UnsupportedReason,
+};
 
 use super::pty_controller::{EventLoopSender, PtyController};
 
@@ -42,11 +44,15 @@ enum SshInitState {
         setup_start: Instant,
     },
     /// Stash held, `install_binary` in flight.
+    /// `for_update` is `true` when reinstalling over an existing install
+    /// (auto-update path) and `false` for a fresh install.
     AwaitingInstall {
         session_id: SessionId,
         session_info: SessionInfo,
         transport: SshTransport,
         setup_start: Instant,
+        #[allow(dead_code)]
+        for_update: bool,
     },
     /// Stash held, `connect_session` in flight. Bootstrap is flushed only
     /// once `SessionConnected` arrives (or on connection failure).
@@ -71,6 +77,9 @@ pub struct RemoteServerController<T: EventLoopSender> {
     did_install: bool,
     /// Detected remote platform from the binary check phase, used for telemetry.
     remote_platform: Option<RemotePlatform>,
+    /// Outcome of the preinstall check from the binary check phase,
+    /// used for telemetry on the supported path.
+    preinstall_check: Option<PreinstallCheckResult>,
 }
 
 impl<T: EventLoopSender> Entity for RemoteServerController<T> {
@@ -102,9 +111,18 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 session_id,
                 result,
                 remote_platform,
+                preinstall_check,
+                has_old_binary,
             } => {
                 me.remote_platform = remote_platform.clone();
-                me.on_binary_check_complete(*session_id, result.clone(), ctx);
+                me.preinstall_check = preinstall_check.clone();
+                me.on_binary_check_complete(
+                    *session_id,
+                    result.clone(),
+                    preinstall_check.clone(),
+                    *has_old_binary,
+                    ctx,
+                );
             }
             RemoteServerManagerEvent::BinaryInstallComplete { session_id, result } => {
                 me.on_binary_install_complete(*session_id, result.clone(), ctx);
@@ -137,6 +155,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             state: SshInitState::Idle,
             did_install: false,
             remote_platform: None,
+            preinstall_check: None,
         }
     }
 
@@ -184,6 +203,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         let transport = SshTransport::new(socket_path, self.auth_context.clone());
         self.did_install = false;
         self.remote_platform = None;
+        self.preinstall_check = None;
         self.state = SshInitState::AwaitingCheck {
             session_info: info,
             transport: transport.clone(),
@@ -198,6 +218,8 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         &mut self,
         session_id: SessionId,
         result: Result<bool, String>,
+        preinstall_check: Option<PreinstallCheckResult>,
+        has_old_binary: bool,
         ctx: &mut ModelContext<Self>,
     ) {
         let SshInitState::AwaitingCheck {
@@ -219,6 +241,30 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             unreachable!("just matched AwaitingCheck above");
         };
 
+        // Preinstall gate. Runs **before** any user-visible install
+        // affordance: if the script positively classified the host as
+        // unsupported, skip the install/prompt entirely and fall back to
+        // the legacy ControlMaster-backed SSH flow.
+        let unsupported = preinstall_check
+            .as_ref()
+            .and_then(|check| match &check.status {
+                PreinstallStatus::Unsupported { reason } => Some((check, reason.clone())),
+                PreinstallStatus::Supported | PreinstallStatus::Unknown => None,
+            });
+        if let Some((check, reason)) = unsupported {
+            log::info!(
+                "Preinstall check classified {session_id:?} as unsupported \
+                 ({:?}); falling back to legacy SSH",
+                check.status
+            );
+            send_unsupported_telemetry(self.remote_platform.as_ref(), check, ctx);
+            RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
+                mgr.mark_setup_unsupported(session_id, reason, ctx);
+            });
+            self.flush_stashed_bootstrap(session_info, ctx);
+            return;
+        }
+
         match result {
             Ok(true) => {
                 let socket_path = transport.socket_path().clone();
@@ -228,6 +274,21 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                     setup_start,
                 };
                 self.connect_session_for_current_identity(session_id, socket_path, ctx);
+            }
+            Ok(false) if has_old_binary => {
+                // Auto-update: a prior install exists, so skip the modal
+                // and reinstall.
+                self.did_install = true;
+                self.state = SshInitState::AwaitingInstall {
+                    session_id,
+                    session_info,
+                    transport: transport.clone(),
+                    setup_start,
+                    for_update: true,
+                };
+                RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
+                    mgr.install_binary(session_id, transport, true, ctx);
+                });
             }
             Ok(false) => {
                 let install_mode = *WarpifySettings::as_ref(ctx)
@@ -251,9 +312,10 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                             session_info,
                             transport: transport.clone(),
                             setup_start,
+                            for_update: false,
                         };
                         RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-                            mgr.install_binary(session_id, transport, ctx);
+                            mgr.install_binary(session_id, transport, false, ctx);
                         });
                     }
                     SshExtensionInstallMode::NeverInstall => {
@@ -287,15 +349,20 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             unreachable!("just matched AwaitingUserChoice above");
         };
 
+        // Reaching this path implies the user explicitly confirmed a
+        // fresh install from the modal. Auto-update flows (with an old
+        // binary detected) skip the modal entirely and go through
+        // `on_binary_check_complete` with `is_update: true`.
         self.did_install = true;
         self.state = SshInitState::AwaitingInstall {
             session_id,
             session_info,
             transport: transport.clone(),
             setup_start,
+            for_update: false,
         };
         RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-            mgr.install_binary(session_id, transport, ctx);
+            mgr.install_binary(session_id, transport, false, ctx);
         });
     }
 
@@ -342,12 +409,17 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 )
             })
             .unwrap_or((None, None));
+        let remote_libc = self
+            .preinstall_check
+            .as_ref()
+            .map(|check| describe_libc(&check.libc));
         send_telemetry_from_ctx!(
             TelemetryEvent::RemoteServerSetupDuration {
                 duration_ms,
                 installed_binary: self.did_install,
                 remote_os,
                 remote_arch,
+                remote_libc,
             },
             ctx
         );
@@ -403,26 +475,24 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         result: Result<(), String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let SshInitState::AwaitingInstall {
-            session_id: expected,
-            ..
-        } = &self.state
-        else {
-            return;
+        let expected = match &self.state {
+            SshInitState::AwaitingInstall { session_id, .. } => *session_id,
+            _ => return,
         };
-        if *expected != session_id {
+        if expected != session_id {
             return;
         }
 
-        let SshInitState::AwaitingInstall {
-            session_info,
-            transport,
-            setup_start,
-            ..
-        } = std::mem::replace(&mut self.state, SshInitState::Idle)
-        else {
-            unreachable!("just matched AwaitingInstall above");
-        };
+        let (session_info, transport, setup_start) =
+            match std::mem::replace(&mut self.state, SshInitState::Idle) {
+                SshInitState::AwaitingInstall {
+                    session_info,
+                    transport,
+                    setup_start,
+                    ..
+                } => (session_info, transport, setup_start),
+                _ => unreachable!("just matched AwaitingInstall above"),
+            };
         match result {
             Ok(()) => {
                 let socket_path = transport.socket_path().clone();
@@ -452,4 +522,43 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             mgr.connect_session(session_id, transport, auth_context, ctx);
         });
     }
+}
+
+/// Describes a [`RemoteLibc`] as a short string for telemetry.
+fn describe_libc(libc: &RemoteLibc) -> String {
+    match libc {
+        RemoteLibc::Glibc(version) => format!("glibc {version}"),
+        RemoteLibc::NonGlibc { name } => name.clone(),
+        RemoteLibc::Unknown => "unknown".to_string(),
+    }
+}
+
+fn send_unsupported_telemetry<T: EventLoopSender>(
+    remote_platform: Option<&RemotePlatform>,
+    check: &PreinstallCheckResult,
+    ctx: &mut ModelContext<RemoteServerController<T>>,
+) {
+    let (remote_os, remote_arch) = remote_platform
+        .map(|p| {
+            (
+                Some(p.os.as_str().to_owned()),
+                Some(p.arch.as_str().to_owned()),
+            )
+        })
+        .unwrap_or((None, None));
+    let required_glibc = match &check.status {
+        remote_server::setup::PreinstallStatus::Unsupported {
+            reason: UnsupportedReason::GlibcTooOld { required, .. },
+        } => required.to_string(),
+        _ => String::new(),
+    };
+    send_telemetry_from_ctx!(
+        TelemetryEvent::RemoteServerHostUnsupported {
+            remote_os,
+            remote_arch,
+            detected_libc: describe_libc(&check.libc),
+            required_glibc,
+        },
+        ctx
+    );
 }

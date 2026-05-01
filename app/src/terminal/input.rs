@@ -75,7 +75,8 @@ use crate::terminal::input::rewind::{RewindMenuEvent, RewindMenuView};
 use crate::terminal::input::skills::{InlineSkillSelectorEvent, InlineSkillSelectorView};
 use crate::terminal::input::slash_command_model::{SlashCommandEntryState, SlashCommandModel};
 use crate::terminal::input::slash_commands::{
-    InlineSlashCommandView, SlashCommandDataSource, SlashCommandTrigger,
+    CloudModeV2SlashCommandView, InlineSlashCommandView, SlashCommandDataSource,
+    SlashCommandTrigger,
 };
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
@@ -220,7 +221,7 @@ use crate::{
         ForkedConversationDestination, InitContent, RestoreConversationLayout, ToastStack,
         WorkspaceAction,
     },
-    workspaces::user_workspaces::UserWorkspaces,
+    workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
     AgentModeEntrypoint, ServerApiProvider,
 };
 
@@ -344,7 +345,9 @@ use super::{
 use crate::ai::blocklist::agent_view::{
     AgentInputFooter, AgentInputFooterEvent, AgentViewController,
 };
-use crate::terminal::view::ambient_agent::{HarnessSelector, HostSelector, NakedHeaderButtonTheme};
+use crate::terminal::view::ambient_agent::{
+    HarnessSelector, HarnessSelectorEvent, HostSelector, HostSelectorEvent, NakedHeaderButtonTheme,
+};
 use async_channel::Sender;
 use futures::stream::AbortHandle;
 use parking_lot::FairMutex;
@@ -1127,6 +1130,8 @@ pub enum InputAction {
     /// Opens the inline history menu for cycling through past commands and conversations.
     OpenInlineHistoryMenu,
 
+    DismissCloudModeV2SlashCommandsMenu,
+
     /// Opens the model selector menu.
     OpenModelSelector,
 
@@ -1607,6 +1612,7 @@ pub struct Input {
     prompt_suggestions_view: ViewHandle<PromptSuggestionsView>,
 
     inline_slash_commands_view: ViewHandle<InlineSlashCommandView>,
+    cloud_mode_v2_slash_commands_view: Option<ViewHandle<CloudModeV2SlashCommandView>>,
     slash_command_data_source: ModelHandle<SlashCommandDataSource>,
 
     /// Inline conversation menu for selecting AI conversations.
@@ -2197,12 +2203,96 @@ impl Input {
                                 selector.set_button_theme(NakedHeaderButtonTheme, ctx);
                             });
                         }
+                        // Mirror the V2 model selector / host selector refocus path: when the
+                        // harness selector menu closes (item picked or dismissed via Esc /
+                        // click-outside), restore focus to the input editor so typing resumes
+                        // immediately. This powers the "input is focused after the harness
+                        // selector closes" UX for the `/harness` slash command.
+                        ctx.subscribe_to_view(&harness_selector, |me, _, event, ctx| {
+                            let HarnessSelectorEvent::MenuVisibilityChanged { open } = event;
+                            if !*open {
+                                me.focus_input_box(ctx);
+                            }
+                        });
                         harness_selector
                     },
                     host_selector: if FeatureFlag::CloudModeInputV2.is_enabled() {
-                        Some(ctx.add_typed_action_view(|ctx| {
+                        let view = ctx.add_typed_action_view(|ctx| {
                             HostSelector::new(menu_positioning_provider.clone(), ctx)
-                        }))
+                        });
+                        // Env var takes priority over workspace setting for developer testing.
+                        let effective_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
+                            .ok()
+                            .filter(|s| !s.is_empty())
+                            .or_else(|| {
+                                UserWorkspaces::as_ref(ctx)
+                                    .default_host_slug()
+                                    .map(String::from)
+                            });
+                        if let Some(slug) = &effective_host {
+                            view.update(ctx, |selector, ctx| {
+                                selector.set_default_host(slug.clone(), ctx);
+                            });
+                        }
+                        if let Some(slug) = effective_host {
+                            view_model.update(ctx, |model, _ctx| {
+                                model.set_worker_host(Some(slug));
+                            });
+                        }
+                        // When the host selector menu closes (item picked or dismissed via
+                        // Esc / click-outside), restore focus to the input editor so typing
+                        // resumes immediately.
+                        ctx.subscribe_to_view(&view, |me, _, event, ctx| {
+                            if matches!(
+                                event,
+                                HostSelectorEvent::MenuVisibilityChanged { open: false }
+                            ) {
+                                me.focus_input_box(ctx);
+                            }
+                        });
+                        // Propagate host selection changes to the view model when a host is
+                        // explicitly selected, rather than on menu close, to avoid a race
+                        // where the menu closes before the selection updates.
+                        let vm_for_host = view_model.clone();
+                        ctx.subscribe_to_view(&view, move |_me, handle, event, ctx| {
+                            if matches!(event, HostSelectorEvent::HostSelected) {
+                                let selected = handle.as_ref(ctx).selected().clone();
+                                vm_for_host.update(ctx, |model, _ctx| {
+                                    model.set_worker_host(selected.worker_host_value());
+                                });
+                            }
+                        });
+                        // Keep the host selector and view model in sync when workspace
+                        // metadata refreshes (e.g. admin changes default_host_slug).
+                        let view_for_ws = view.clone();
+                        let vm_for_ws = view_model.clone();
+                        ctx.subscribe_to_model(
+                            &UserWorkspaces::handle(ctx),
+                            move |_me, _, event, ctx| {
+                                if !matches!(event, UserWorkspacesEvent::TeamsChanged) {
+                                    return;
+                                }
+                                let effective_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
+                                    .ok()
+                                    .filter(|s| !s.is_empty())
+                                    .or_else(|| {
+                                        UserWorkspaces::as_ref(ctx)
+                                            .default_host_slug()
+                                            .map(String::from)
+                                    });
+                                if let Some(slug) = &effective_host {
+                                    view_for_ws.update(ctx, |selector, ctx| {
+                                        selector.set_default_host(slug.clone(), ctx);
+                                    });
+                                }
+                                if let Some(slug) = effective_host {
+                                    vm_for_ws.update(ctx, |model, _ctx| {
+                                        model.set_worker_host(Some(slug));
+                                    });
+                                }
+                            },
+                        );
+                        Some(view)
                     } else {
                         None
                     },
@@ -2244,8 +2334,8 @@ impl Input {
                 AgentInputFooterEvent::ModelSelectorOpened => {
                     me.close_overlays(false, ctx);
                 }
-                AgentInputFooterEvent::ModelSelectorClosed => {
-                    // When the model selector menu closes (model was selected), focus the input field
+                AgentInputFooterEvent::ModelSelectorClosed
+                | AgentInputFooterEvent::EnvironmentSelectorClosed => {
                     me.focus_input_box(ctx);
                 }
                 AgentInputFooterEvent::ToggleInlineModelSelector { initial_tab } => {
@@ -2602,6 +2692,9 @@ impl Input {
         });
         if FeatureFlag::InlineHistoryMenu.is_enabled() {
             ctx.subscribe_to_view(&inline_history_menu_view, |me, _, event, ctx| {
+                if me.is_cloud_mode_input_v2_composing(ctx) {
+                    return;
+                }
                 me.handle_inline_history_menu_event(event, ctx);
             });
         }
@@ -2626,6 +2719,9 @@ impl Input {
             });
             if FeatureFlag::InlineHistoryMenu.is_enabled() {
                 ctx.subscribe_to_view(&view, |me, _, event, ctx| {
+                    if !me.is_cloud_mode_input_v2_composing(ctx) {
+                        return;
+                    }
                     me.handle_inline_history_menu_event(event, ctx);
                 });
             }
@@ -2958,16 +3054,26 @@ impl Input {
         });
 
         let slash_command_data_source = ctx.add_model(|ctx| {
-            SlashCommandDataSource::new(
-                slash_commands::DataSourceArgs {
-                    active_session: active_session.clone(),
-                    agent_view_controller: agent_view_controller.clone(),
-                    cli_subagent_controller: cli_subagent_controller.clone(),
-                    terminal_view_id,
-                },
-                ctx,
-            )
+            let args = slash_commands::DataSourceArgs {
+                active_session: active_session.clone(),
+                agent_view_controller: agent_view_controller.clone(),
+                cli_subagent_controller: cli_subagent_controller.clone(),
+                terminal_view_id,
+            };
+            SlashCommandDataSource::new(args, ctx)
         });
+
+        let v2_slash_command_data_source = if FeatureFlag::CloudModeInputV2.is_enabled() {
+            let args = slash_commands::DataSourceArgs {
+                active_session: active_session.clone(),
+                agent_view_controller: agent_view_controller.clone(),
+                cli_subagent_controller: cli_subagent_controller.clone(),
+                terminal_view_id,
+            };
+            Some(ctx.add_model(|ctx| SlashCommandDataSource::for_cloud_mode_v2(args, ctx)))
+        } else {
+            None
+        };
         let slash_command_model = ctx.add_model(|ctx| {
             SlashCommandModel::new(
                 &buffer_model,
@@ -3129,6 +3235,25 @@ impl Input {
             me.handle_slash_commands_menu_event(event, ctx);
         });
 
+        let cloud_mode_v2_slash_commands_view =
+            if let Some(v2_data_source) = v2_slash_command_data_source {
+                let view = ctx.add_typed_action_view(|ctx| {
+                    CloudModeV2SlashCommandView::new(
+                        &slash_command_model,
+                        v2_data_source,
+                        suggestions_mode_model.clone(),
+                        buffer_model.clone(),
+                        ctx,
+                    )
+                });
+                ctx.subscribe_to_view(&view, |me, _, event, ctx| {
+                    me.handle_slash_commands_menu_event(event, ctx);
+                });
+                Some(view)
+            } else {
+                None
+            };
+
         ctx.subscribe_to_model(&ai_input_model, move |me, _, event, ctx| {
             match event {
                 BlocklistAIInputEvent::InputTypeChanged { .. }
@@ -3265,6 +3390,7 @@ impl Input {
             prompt_suggestions_view,
             slash_command_model,
             inline_slash_commands_view,
+            cloud_mode_v2_slash_commands_view,
             inline_conversation_menu_view,
             inline_plan_menu_view,
             inline_repos_menu_view,
@@ -3374,6 +3500,32 @@ impl Input {
         self.ambient_agent_view_state
             .as_ref()
             .and_then(|state| state.host_selector.as_ref())
+    }
+
+    /// Opens the V2 cloud-mode host selector popover, if the feature is enabled and the
+    /// selector is constructed. No-op otherwise. Used by the `/host` slash command to
+    /// programmatically open the same popover that the V2 footer's host button toggles.
+    pub(super) fn open_v2_host_selector(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(host_selector) = self.host_selector().cloned() else {
+            return;
+        };
+        host_selector.update(ctx, |selector, ctx| selector.open_menu(ctx));
+    }
+
+    /// Opens the V2 cloud-mode harness selector popover, if the feature is enabled and the
+    /// selector is constructed. No-op otherwise. Used by the `/harness` slash command to
+    /// programmatically open the same popover that the V2 footer's harness button toggles.
+    pub(super) fn open_v2_harness_selector(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(harness_selector) = self.harness_selector().cloned() else {
+            return;
+        };
+        harness_selector.update(ctx, |selector, ctx| selector.open_menu(ctx));
+    }
+
+    pub(super) fn open_v2_environment_selector(&mut self, ctx: &mut ViewContext<Self>) {
+        self.agent_input_footer
+            .clone()
+            .update(ctx, |footer, ctx| footer.open_v2_environment_selector(ctx));
     }
 
     /// Update the at button's disabled state based on whether AI context menu should render
@@ -7563,9 +7715,17 @@ impl Input {
                 true
             }
             InputSuggestionsMode::SlashCommands => {
-                self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                    view.select_up(ctx);
-                });
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                        view.update(ctx, |view, ctx| {
+                            view.select_up(ctx);
+                        });
+                    }
+                } else {
+                    self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                        view.select_up(ctx);
+                    });
+                }
                 true
             }
             InputSuggestionsMode::ConversationMenu => {
@@ -7766,6 +7926,9 @@ impl Input {
             // Handle AI context menu escape specifically to ensure proper state reset
             self.close_ai_context_menu(ctx);
         } else if self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
+            if self.maybe_clear_v2_slash_section_filter(ctx) {
+                return;
+            }
             self.slash_command_model
                 .update(ctx, |model, ctx| model.disable(ctx));
             self.suggestions_mode_model.update(ctx, |model, ctx| {
@@ -7916,9 +8079,17 @@ impl Input {
                 true
             }
             InputSuggestionsMode::SlashCommands => {
-                self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                    view.select_down(ctx);
-                });
+                if self.is_cloud_mode_input_v2_composing(ctx) {
+                    if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                        view.update(ctx, |view, ctx| {
+                            view.select_down(ctx);
+                        });
+                    }
+                } else {
+                    self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                        view.select_down(ctx);
+                    });
+                }
                 true
             }
             InputSuggestionsMode::ConversationMenu => {
@@ -11774,9 +11945,17 @@ impl Input {
                 .update(ctx, |view, ctx| view.accept_selected_item(ctx));
             return;
         } else if self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
-            self.inline_slash_commands_view.update(ctx, |view, ctx| {
-                view.accept_selected_item(false, ctx);
-            });
+            if self.is_cloud_mode_input_v2_composing(ctx) {
+                if let Some(view) = self.cloud_mode_v2_slash_commands_view.clone() {
+                    view.update(ctx, |view, ctx| {
+                        view.accept_selected_item(false, ctx);
+                    });
+                }
+            } else {
+                self.inline_slash_commands_view.update(ctx, |view, ctx| {
+                    view.accept_selected_item(false, ctx);
+                });
+            }
             return;
         } else if self.maybe_queue_input_for_in_progress_conversation(ctx)
             || self.maybe_handle_enter_for_slash_command(ctx)
@@ -12903,10 +13082,16 @@ impl Input {
 
         // When AgentView is enabled, reverting to AI mode in an active agent view with an empty
         // buffer should unlock (re-enable autodetection) - semantically like clearing the "!".
+        //
+        // If there is a pending image / file attachment or block, do NOT unlock. The user's
+        // intent is unambiguously "talk to the agent"; letting the classifier flip the input
+        // back to shell mode would be a bug.
+        let has_locking_attachment = self.ai_context_model.as_ref(ctx).has_locking_attachment();
         let should_unlock = FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen()
             && is_input_buffer_empty
-            && AISettings::as_ref(ctx).is_ai_autodetection_enabled(ctx);
+            && AISettings::as_ref(ctx).is_ai_autodetection_enabled(ctx)
+            && !has_locking_attachment;
 
         if should_unlock {
             self.ai_input_model.update(ctx, |ai_input_model, ctx| {
@@ -14112,6 +14297,13 @@ impl TypedActionView for Input {
             InputAction::OpenInlineHistoryMenu => {
                 self.open_inline_history_menu(ctx);
             }
+            InputAction::DismissCloudModeV2SlashCommandsMenu => {
+                if self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
+                    self.slash_command_model
+                        .update(ctx, |model, ctx| model.disable(ctx));
+                    self.close_slash_commands_menu(ctx);
+                }
+            }
             InputAction::OpenModelSelector => {
                 self.open_model_selector(ctx);
             }
@@ -14245,9 +14437,22 @@ impl View for Input {
             .agent_input_footer
             .as_ref(app)
             .is_v2_model_selector_open(app);
+        let is_v2_host_selector_open = self
+            .host_selector()
+            .is_some_and(|view| view.as_ref(app).is_menu_open());
+        let is_v2_harness_selector_open = self
+            .harness_selector()
+            .is_some_and(|view| view.as_ref(app).is_menu_open());
+        let is_v2_environment_selector_open = self
+            .agent_input_footer
+            .as_ref(app)
+            .is_v2_environment_selector_open(app);
         if is_profile_model_selector_open
             || is_agent_footer_model_selector_open
             || is_v2_model_selector_open
+            || is_v2_host_selector_open
+            || is_v2_harness_selector_open
+            || is_v2_environment_selector_open
         {
             ctx.set.insert("ProfileModelSelectorOpen");
         }

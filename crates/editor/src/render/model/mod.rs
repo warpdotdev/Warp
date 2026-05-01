@@ -438,7 +438,7 @@ pub struct RenderState {
     /// The render-related content version the model is managing.
     buffer_version: RefCell<RenderBufferVersion>,
 
-    /// Wether we are performing a lazy layout.
+    /// Whether we are performing a lazy layout.
     lazy_layout: bool,
 
     pending_edits: Mutex<Vec<PendingLayout>>,
