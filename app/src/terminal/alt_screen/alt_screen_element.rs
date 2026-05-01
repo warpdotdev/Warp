@@ -721,6 +721,9 @@ impl Element for AltScreenElement {
         let obfuscate_secrets =
             get_secret_obfuscation_mode(app).and(&grid.get_secret_obfuscation());
 
+        let mut sampler = model.alt_screen().bg_color_sampler.lock();
+        sampler.reset();
+
         // Render grid cells. Since the alt screen has no scrollback we can always start at index 0.
         record_trace_event!("alt_screen_element:paint:preparing_to_render_grid");
         let start_row = self.scroll_top.as_f64();
@@ -759,7 +762,7 @@ impl Element for AltScreenElement {
             cursor_visible.then(|| model.alt_screen().cursor_style().shape),
             RespectDisplayedOutput::Yes,
             &model.image_id_to_metadata,
-            None,
+            Some(&mut sampler),
             self.grid_render_params.hide_cursor_cell,
             ctx,
             app,
