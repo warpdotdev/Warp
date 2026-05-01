@@ -635,8 +635,11 @@ fn is_pacman_signing_key_installed() -> bool {
 
     // Field index 1 = validity: 'f' (full), 'u' (ultimate) are valid;
     // 'e' (expired), 'r' (revoked), '-', 'q' = invalid
-    let validity = fields.get(1).copied().unwrap_or("");
-    if !matches!(validity, "f" | "u") {
+    let validity = fields
+        .get(1)
+        .and_then(|field| field.chars().next())
+        .unwrap_or('\0');
+    if !matches!(validity, 'f' | 'u') {
         return false; // Force key reconfiguration
     }
 
