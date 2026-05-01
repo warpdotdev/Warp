@@ -1062,7 +1062,9 @@ where
                     };
                     match SelectedTabColor::from_arg(value) {
                         Some(color) => self.handler.set_tab_color(color),
-                        None => debug!("OSC 1337 SetTabColor: unknown value {value:?}"),
+                        // Don't log the raw value — PTY output is untrusted
+                        // and could contain secrets (e.g. echoed passwords).
+                        None => debug!("OSC 1337 SetTabColor: unknown value"),
                     }
                     return;
                 }
