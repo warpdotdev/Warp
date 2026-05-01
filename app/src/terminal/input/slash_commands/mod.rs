@@ -711,8 +711,13 @@ impl Input {
             }
             host if command.name == commands::HOST.name => {
                 if !self.is_cloud_mode_input_v2_composing(ctx) {
-                    // Defensive: the command is registered only when the V2 flag is on and its
-                    // availability requires CLOUD_AGENT_V2, so this branch should be unreachable.
+                    return false;
+                }
+                // Only open the host selector when a default host is configured.
+                if self
+                    .host_selector()
+                    .is_none_or(|h| !h.as_ref(ctx).has_default_host())
+                {
                     return false;
                 }
                 self.suggestions_mode_model.update(ctx, |model, ctx| {
