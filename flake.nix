@@ -274,8 +274,9 @@
                 let
                   appName = "WarpOss";
                   releaseChannel = "oss";
+                  cargoTarget = pkgs.stdenv.hostPlatform.rust.rustcTarget;
                   cargoBundleFeatures = lib.concatStringsSep "," buildFeatures;
-                  appBundle = "target/release/bundle/osx/${appName}.app";
+                  appBundle = "target/${cargoTarget}/release/bundle/osx/${appName}.app";
                   resourcesDir = "${appBundle}/Contents/Resources";
                 in
                 ''
@@ -287,6 +288,7 @@
                   pushd app
                   CARGO_BUNDLE_SKIP_BUILD=1 cargo bundle \
                     --profile release \
+                    --target "${cargoTarget}" \
                     --bin warp-oss \
                     --features "${cargoBundleFeatures}"
                   popd
