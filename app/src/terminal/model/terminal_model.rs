@@ -2683,6 +2683,15 @@ impl ansi::Handler for TerminalModel {
             return;
         }
 
+        // DarkLightNotifications is scoped to the active grid: an application that opts
+        // in from the alt screen should not cause the main-grid session (which never
+        // opted in) to receive theme notifications after the alt screen exits.
+        if matches!(mode, ansi::Mode::DarkLightNotifications) {
+            delegate!(self.set_mode(mode));
+            self.emit_handler_event(HandlerEvent::SetMode { mode });
+            return;
+        }
+
         self.alt_screen.set_mode(mode);
         self.block_list.set_mode(mode);
         self.emit_handler_event(HandlerEvent::SetMode { mode });
@@ -2699,6 +2708,12 @@ impl ansi::Handler for TerminalModel {
             ansi::Mode::SyncOutput => {
                 // When synchronized output is turned off, we should redraw.
                 self.event_proxy.send_wakeup_event();
+            }
+            // DarkLightNotifications is scoped to the active grid only; see set_mode.
+            ansi::Mode::DarkLightNotifications => {
+                delegate!(self.unset_mode(mode));
+                self.emit_handler_event(HandlerEvent::UnsetMode { mode });
+                return;
             }
             _ => {}
         }
