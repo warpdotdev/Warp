@@ -4,8 +4,8 @@ use settings::Setting;
 use warp_core::ui::{appearance::Appearance, Icon};
 use warpui::{
     elements::{
-        ConstrainedBox, Container, CrossAxisAlignment, Empty, Flex, Hoverable, MainAxisSize,
-        MouseStateHandle, ParentElement, SavePosition, Shrinkable, Text,
+        ConstrainedBox, Container, CrossAxisAlignment, Empty, Expanded, Flex, Hoverable,
+        MainAxisSize, MouseStateHandle, ParentElement, SavePosition, Shrinkable, Text,
     },
     fonts::{Properties, Style, Weight::Bold},
     platform::Cursor,
@@ -288,47 +288,6 @@ impl View for AgentViewEntryBlock {
             }
         };
 
-        let mut row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_child(
-                Container::new(
-                    ConstrainedBox::new(status_icon.finish())
-                        .with_height(16.)
-                        .with_width(16.)
-                        .finish(),
-                )
-                .with_uniform_padding(2.)
-                .with_background_color(status_icon_bg)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-                .with_margin_right(8.)
-                .finish(),
-            )
-            .with_child(
-                Shrinkable::new(
-                    1.,
-                    Text::new(
-                        conversation
-                            .title()
-                            .unwrap_or("Untitled conversation".to_string()),
-                        appearance.ui_font_family(),
-                        appearance.monospace_font_size(),
-                    )
-                    .with_color(blended_colors::text_main(
-                        appearance.theme(),
-                        appearance.theme().background(),
-                    ))
-                    .with_style(Properties {
-                        weight: Bold,
-                        ..Default::default()
-                    })
-                    .soft_wrap(false)
-                    .with_clip(ClipConfig::ellipsis())
-                    .finish(),
-                )
-                .finish(),
-            );
-
         let is_active =
             ActiveAgentViewsModel::as_ref(app).is_conversation_open(self.conversation_id, app);
         let is_active_in_this_pane = self
@@ -355,9 +314,39 @@ impl View for AgentViewEntryBlock {
             None
         };
 
+        // Build the title+subtext section. Wrapping it in Expanded causes it
+        // to fill all remaining horizontal space, pinning the action buttons
+        // to the far right edge of the banner.
+        let mut title_section = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Shrinkable::new(
+                    1.,
+                    Text::new(
+                        conversation
+                            .title()
+                            .unwrap_or("Untitled conversation".to_string()),
+                        appearance.ui_font_family(),
+                        appearance.monospace_font_size(),
+                    )
+                    .with_color(blended_colors::text_main(
+                        appearance.theme(),
+                        appearance.theme().background(),
+                    ))
+                    .with_style(Properties {
+                        weight: Bold,
+                        ..Default::default()
+                    })
+                    .soft_wrap(false)
+                    .with_clip(ClipConfig::ellipsis())
+                    .finish(),
+                )
+                .finish(),
+            );
         if let Some(subtext) = subtext {
-            row.add_child(render_subtext(subtext.to_string(), appearance));
+            title_section.add_child(render_subtext(subtext.to_string(), appearance));
         }
+
         let conversation_id = self.conversation_id;
         let icon_color = blended_colors::text_sub(theme, theme.background());
         let fork_button = ConstrainedBox::new(render_agent_view_block_button(
@@ -375,29 +364,41 @@ impl View for AgentViewEntryBlock {
         .with_width(20.)
         .finish();
 
-        row.add_child(
-            Container::new(Empty::new().finish())
+        let chevron_button = ConstrainedBox::new(render_agent_view_block_button(
+            Icon::ChevronRight,
+            icon_color,
+            self.state_handles.chevron_button.clone(),
+            appearance,
+            move |ctx, _, _| {
+                ctx.dispatch_typed_action(EnterAgentBlockAction::EnterAgentMode {
+                    conversation_id,
+                });
+            },
+        ))
+        .with_height(20.)
+        .with_width(20.)
+        .finish();
+
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_child(
+                Container::new(
+                    ConstrainedBox::new(status_icon.finish())
+                        .with_height(16.)
+                        .with_width(16.)
+                        .finish(),
+                )
+                .with_uniform_padding(2.)
+                .with_background_color(status_icon_bg)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
                 .with_margin_right(8.)
                 .finish(),
-        );
-        row.add_child(fork_button);
-        let conversation_id = self.conversation_id;
-        row.add_child(
-            ConstrainedBox::new(render_agent_view_block_button(
-                Icon::ChevronRight,
-                icon_color,
-                self.state_handles.chevron_button.clone(),
-                appearance,
-                move |ctx, _, _| {
-                    ctx.dispatch_typed_action(EnterAgentBlockAction::EnterAgentMode {
-                        conversation_id,
-                    });
-                },
-            ))
-            .with_height(20.)
-            .with_width(20.)
-            .finish(),
-        );
+            )
+            // Expanded fills all remaining space, pushing buttons to the right.
+            .with_child(Expanded::new(1., title_section.finish()).finish())
+            .with_child(Container::new(fork_button).with_margin_left(8.).finish())
+            .with_child(chevron_button);
 
         let origin = self.origin;
         let entry_block_id = self.view_id;

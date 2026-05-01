@@ -16958,7 +16958,6 @@ impl TerminalView {
         &self,
         conversation_id: AIConversationId,
         fork_from_exchange: Option<ForkFromExchange>,
-        destination: ForkedConversationDestination,
         ctx: &mut ViewContext<Self>,
     ) {
         ctx.dispatch_global_action(
@@ -16969,7 +16968,7 @@ impl TerminalView {
                 summarize_after_fork: false,
                 summarization_prompt: None,
                 initial_prompt: None,
-                destination,
+                destination: ForkedConversationDestination::SplitPane,
             },
         );
     }
@@ -23737,15 +23736,7 @@ impl TerminalView {
                 self.copy_conversation_text(*conversation_id, ctx);
             }
             ForkAIConversation { conversation_id } => {
-                // Forking from the blocklist opens the conversation in the current pane
-                // (replacing the existing view), since the user is already in this pane
-                // and a split would be unexpected from a non-agent-view context.
-                self.fork_ai_conversation(
-                    *conversation_id,
-                    None,
-                    ForkedConversationDestination::CurrentPane,
-                    ctx,
-                );
+                self.fork_ai_conversation(*conversation_id, None, ctx);
             }
             OpenConversationShareDialog { conversation_id } => {
                 // Set the shareable object and open the sharing dialog via the pane header
@@ -23802,7 +23793,6 @@ impl TerminalView {
                         exchange_id: *exchange_id,
                         fork_from_exact_exchange: false,
                     }),
-                    ForkedConversationDestination::SplitPane,
                     ctx,
                 );
             }
@@ -23817,7 +23807,6 @@ impl TerminalView {
                         exchange_id: *exchange_id,
                         fork_from_exact_exchange: true,
                     }),
-                    ForkedConversationDestination::SplitPane,
                     ctx,
                 );
             }
