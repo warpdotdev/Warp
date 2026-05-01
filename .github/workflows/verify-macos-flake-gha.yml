@@ -120,3 +120,97 @@ jobs:
             echo "warp-oss neither stayed alive briefly nor wrote a log file" >&2
             exit 1
           fi
+
+      - name: Package DMG
+        id: package
+        run: |
+          set -euxo pipefail
+          out="${{ steps.build.outputs.out }}"
+          app="$out/Applications/WarpOss.app"
+          dmg_dir="$RUNNER_TEMP/warp-dmg"
+          staging="$RUNNER_TEMP/warp-dmg-staging"
+          dmg="$dmg_dir/WarpOss-${{ matrix.system }}.dmg"
+
+          rm -rf "$dmg_dir" "$staging"
+          mkdir -p "$dmg_dir"
+          mkdir -p "$staging"
+          ditto "$app" "$staging/WarpOss.app"
+          ln -s /Applications "$staging/Applications"
+
+          hdiutil create \
+            -volname "WarpOss ${{ matrix.system }}" \
+            -srcfolder "$staging" \
+            -ov \
+            -format UDZO \
+            "$dmg"
+          ls -lh "$dmg"
+          echo "dmg=$dmg" >> "$GITHUB_OUTPUT"
+
+      - name: Validate DMG contents and launch
+        env:
+          HOME: ${{ runner.temp }}/warp-dmg-home
+        run: |
+          set -euxo pipefail
+          dmg="${{ steps.package.outputs.dmg }}"
+          mount="$RUNNER_TEMP/warp-dmg-mount"
+          stdout="$RUNNER_TEMP/warp-oss-dmg.stdout"
+          stderr="$RUNNER_TEMP/warp-oss-dmg.stderr"
+          log="$HOME/Library/Logs/warp-oss.log"
+
+          rm -rf "$mount"
+          mkdir -p "$mount"
+          mkdir -p "$HOME/Library/Logs"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
+          trap 'hdiutil detach "$mount" || true' EXIT
+
+          app="$mount/WarpOss.app"
+          binary="$app/Contents/MacOS/warp-oss"
+          test -d "$app"
+          test -x "$binary"
+          test -s "$app/Contents/Info.plist"
+          test -s "$app/Contents/Resources/settings_schema.json"
+
+          "$binary" >"$stdout" 2>"$stderr" &
+          pid="$!"
+          echo "Started DMG warp-oss with pid $pid"
+
+          runtime_ok=0
+          for _ in $(seq 1 20); do
+            if kill -0 "$pid" 2>/dev/null; then
+              runtime_ok=1
+              if [ -s "$log" ]; then
+                break
+              fi
+              sleep 1
+            else
+              break
+            fi
+          done
+
+          if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" || true
+          fi
+          wait "$pid" || true
+
+          echo "=== DMG warp-oss stdout ==="
+          sed -n '1,200p' "$stdout" || true
+          echo "=== DMG warp-oss stderr ==="
+          sed -n '1,200p' "$stderr" || true
+          echo "=== DMG warp-oss log ==="
+          if [ -s "$log" ]; then
+            tail -n 200 "$log"
+          else
+            echo "No warp-oss.log was written."
+          fi
+
+          if [ "$runtime_ok" -ne 1 ] && [ ! -s "$log" ]; then
+            echo "DMG warp-oss neither stayed alive briefly nor wrote a log file" >&2
+            exit 1
+          fi
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: warp-oss-dmg-${{ matrix.system }}
+          path: ${{ steps.package.outputs.dmg }}
+          if-no-files-found: error
