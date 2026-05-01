@@ -304,6 +304,8 @@
                   cargoBundleFeatures = lib.concatStringsSep "," buildFeatures;
                   appBundle = "target/${cargoTarget}/release/bundle/osx/${appName}.app";
                   resourcesDir = "${appBundle}/Contents/Resources";
+                  installedAppBundle = "$out/Applications/${appName}.app";
+                  installedResourcesDir = "${installedAppBundle}/Contents/Resources";
                 in
                 ''
                   patchShebangs \
@@ -335,16 +337,16 @@
                   ./script/compile_icon "${releaseChannel}" "${appBundle}"
 
                   mkdir -p "$out/Applications" "$out/bin"
-                  mv "${appBundle}" "$out/Applications/${appName}.app"
+                  mv "${appBundle}" "${installedAppBundle}"
 
                   rm -f "$out/bin/warp-oss" "$out/bin/generate_settings_schema"
-                  ln -s "$out/Applications/${appName}.app/Contents/MacOS/warp-oss" "$out/bin/warp-oss"
-                  ln -s "$out/Applications/${appName}.app/Contents/MacOS/warp-oss" "$out/bin/warp-terminal"
+                  ln -s "${installedAppBundle}/Contents/MacOS/warp-oss" "$out/bin/warp-oss"
+                  ln -s "${installedAppBundle}/Contents/MacOS/warp-oss" "$out/bin/warp-terminal"
 
                   install -Dm644 LICENSE-AGPL "$out/share/licenses/warp-terminal/LICENSE-AGPL"
                   install -Dm644 LICENSE-MIT "$out/share/licenses/warp-terminal/LICENSE-MIT"
                   install -Dm644 \
-                    "${resourcesDir}/THIRD_PARTY_LICENSES.txt" \
+                    "${installedResourcesDir}/THIRD_PARTY_LICENSES.txt" \
                     "$out/share/licenses/warp-terminal/THIRD_PARTY_LICENSES.txt"
                 ''
               else
