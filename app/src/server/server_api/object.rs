@@ -1,3 +1,10 @@
+// PDX-79: when `warp_hosted` is off the bulk of this file's imports
+// (GraphQL operation builders, channel/state plumbing) are only consumed
+// by the hosted `impl ObjectClient for ServerApi` block, which itself is
+// `#[cfg(feature = "warp_hosted")]`. Mirror PDX-31's `auth.rs` and silence
+// the resulting unused-import warnings for the offline build.
+#![cfg_attr(not(feature = "warp_hosted"), allow(unused_imports))]
+
 use crate::{
     ai::{
         ambient_agents::scheduled::ScheduledAmbientAgent,
@@ -331,6 +338,12 @@ pub trait ObjectClient: 'static + Send + Sync {
     ) -> Result<HashMap<String, DateTime<Utc>>>;
 }
 
+// PDX-79: The Warp-hosted `ObjectClient` implementation talks to Warp's
+// GraphQL endpoint to create / update / share / delete cloud objects (the
+// Warp Drive sync surface). With `warp_hosted` disabled the client must
+// not emit any of those mutations; the offline stub below is supplied
+// instead. This mirrors the PDX-31 `AuthClient` pattern in `auth.rs`.
+#[cfg(feature = "warp_hosted")]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl ObjectClient for ServerApi {
@@ -1628,6 +1641,251 @@ impl ObjectClient for ServerApi {
             )),
         }
     }
+}
+
+/// PDX-79: stub `ObjectClient` implementation used when the `warp_hosted`
+/// feature is disabled. Read-style methods return empty defaults; every
+/// write-style method (create / update / share / delete / move) returns an
+/// `unsupported_offline_object` error. No GraphQL request leaves the
+/// process — no `send_graphql_request` call site below.
+#[cfg(not(feature = "warp_hosted"))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+impl ObjectClient for ServerApi {
+    async fn create_workflow(
+        &self,
+        _request: CreateObjectRequest,
+    ) -> Result<CreateCloudObjectResult> {
+        Err(unsupported_offline_object("create_workflow"))
+    }
+
+    async fn update_workflow(
+        &self,
+        _workflow_id: WorkflowId,
+        _data: SerializedModel,
+        _revision: Option<Revision>,
+    ) -> Result<UpdateCloudObjectResult<ServerWorkflow>> {
+        Err(unsupported_offline_object("update_workflow"))
+    }
+
+    async fn bulk_create_generic_string_objects(
+        &self,
+        _owner: Owner,
+        _objects: &[BulkCreateGenericStringObjectsRequest],
+    ) -> Result<BulkCreateCloudObjectResult> {
+        Err(unsupported_offline_object("bulk_create_generic_string_objects"))
+    }
+
+    async fn create_generic_string_object(
+        &self,
+        _format: GenericStringObjectFormat,
+        _uniqueness_key: Option<GenericStringObjectUniqueKey>,
+        _request: CreateObjectRequest,
+    ) -> Result<CreateCloudObjectResult> {
+        Err(unsupported_offline_object("create_generic_string_object"))
+    }
+
+    async fn create_notebook(
+        &self,
+        _request: CreateObjectRequest,
+    ) -> Result<CreateCloudObjectResult> {
+        Err(unsupported_offline_object("create_notebook"))
+    }
+
+    async fn update_notebook(
+        &self,
+        _notebook_id: NotebookId,
+        _title: Option<String>,
+        _data: Option<SerializedModel>,
+        _revision: Option<Revision>,
+    ) -> Result<UpdateCloudObjectResult<ServerNotebook>> {
+        Err(unsupported_offline_object("update_notebook"))
+    }
+
+    async fn create_folder(
+        &self,
+        _request: CreateObjectRequest,
+    ) -> Result<CreateCloudObjectResult> {
+        Err(unsupported_offline_object("create_folder"))
+    }
+
+    async fn update_folder(
+        &self,
+        _folder_id: FolderId,
+        _name: SerializedModel,
+    ) -> Result<UpdateCloudObjectResult<ServerFolder>> {
+        Err(unsupported_offline_object("update_folder"))
+    }
+
+    async fn update_generic_string_object(
+        &self,
+        _object_id: GenericStringObjectId,
+        _model: SerializedModel,
+        _revision: Option<Revision>,
+    ) -> Result<UpdateCloudObjectResult<Box<dyn ServerObject>>> {
+        Err(unsupported_offline_object("update_generic_string_object"))
+    }
+
+    async fn grab_notebook_edit_access(
+        &self,
+        _notebook_id: NotebookId,
+    ) -> Result<ServerMetadata> {
+        Err(unsupported_offline_object("grab_notebook_edit_access"))
+    }
+
+    async fn give_up_notebook_edit_access(
+        &self,
+        _notebook_id: NotebookId,
+    ) -> Result<ServerMetadata> {
+        Err(unsupported_offline_object("give_up_notebook_edit_access"))
+    }
+
+    async fn get_warp_drive_updates(
+        &self,
+        _message_sender: Sender<ObjectUpdateMessage>,
+        _stream_ready_sender: Sender<()>,
+    ) -> Result<()> {
+        // Offline build has no Warp Drive subscription stream. Drop the
+        // channels and return Ok so listeners simply observe "no updates".
+        Ok(())
+    }
+
+    async fn fetch_changed_objects(
+        &self,
+        _objects_to_update: ObjectsToUpdate,
+        _force_refresh: bool,
+    ) -> Result<InitialLoadResponse> {
+        Ok(InitialLoadResponse::default())
+    }
+
+    async fn fetch_single_cloud_object(
+        &self,
+        _id: ServerId,
+    ) -> Result<GetCloudObjectResponse> {
+        Err(unsupported_offline_object("fetch_single_cloud_object"))
+    }
+
+    async fn transfer_notebook_owner(
+        &self,
+        _notebook_id: NotebookId,
+        _owner: Owner,
+    ) -> Result<bool> {
+        Err(unsupported_offline_object("transfer_notebook_owner"))
+    }
+
+    async fn transfer_workflow_owner(
+        &self,
+        _workflow_id: WorkflowId,
+        _owner: Owner,
+    ) -> Result<bool> {
+        Err(unsupported_offline_object("transfer_workflow_owner"))
+    }
+
+    async fn transfer_generic_string_object_owner(
+        &self,
+        _workflow_id: GenericStringObjectId,
+        _owner: Owner,
+    ) -> Result<bool> {
+        Err(unsupported_offline_object("transfer_generic_string_object_owner"))
+    }
+
+    async fn trash_object(&self, _id: ServerId) -> Result<bool> {
+        Err(unsupported_offline_object("trash_object"))
+    }
+
+    async fn untrash_object(
+        &self,
+        _id: ServerId,
+    ) -> Result<ObjectMetadataUpdateResult> {
+        Err(unsupported_offline_object("untrash_object"))
+    }
+
+    async fn delete_object(&self, _id: ServerId) -> Result<ObjectDeleteResult> {
+        Err(unsupported_offline_object("delete_object"))
+    }
+
+    async fn empty_trash(&self, _owner: Owner) -> Result<ObjectDeleteResult> {
+        Err(unsupported_offline_object("empty_trash"))
+    }
+
+    async fn move_object(
+        &self,
+        _id: ServerId,
+        _folder_id: Option<FolderId>,
+        _owner: Owner,
+        _object_type: ObjectType,
+    ) -> Result<bool> {
+        Err(unsupported_offline_object("move_object"))
+    }
+
+    async fn record_object_action(
+        &self,
+        _id: ServerId,
+        _action_type: ObjectActionType,
+        _timestamp: DateTime<Utc>,
+        _data: Option<String>,
+    ) -> Result<ObjectActionHistory> {
+        Err(unsupported_offline_object("record_object_action"))
+    }
+
+    async fn leave_object(&self, _id: ServerId) -> Result<ObjectDeleteResult> {
+        Err(unsupported_offline_object("leave_object"))
+    }
+
+    async fn set_object_link_permissions(
+        &self,
+        _object_id: ServerId,
+        _access_level: SharingAccessLevel,
+    ) -> Result<ObjectPermissionUpdateResult> {
+        Err(unsupported_offline_object("set_object_link_permissions"))
+    }
+
+    async fn remove_object_link_permissions(
+        &self,
+        _object_id: ServerId,
+    ) -> Result<ObjectPermissionUpdateResult> {
+        Err(unsupported_offline_object("remove_object_link_permissions"))
+    }
+
+    async fn add_object_guests(
+        &self,
+        _object_id: ServerId,
+        _guest_emails: Vec<String>,
+        _access_level: AccessLevel,
+    ) -> Result<ObjectPermissionsUpdateData> {
+        Err(unsupported_offline_object("add_object_guests"))
+    }
+
+    async fn update_object_guests(
+        &self,
+        _object_id: ServerId,
+        _guest_emails: Vec<String>,
+        _access_level: AccessLevel,
+    ) -> Result<ServerPermissions> {
+        Err(unsupported_offline_object("update_object_guests"))
+    }
+
+    async fn remove_object_guest(
+        &self,
+        _object_id: ServerId,
+        _guest: GuestIdentifier,
+    ) -> Result<ServerPermissions> {
+        Err(unsupported_offline_object("remove_object_guest"))
+    }
+
+    async fn fetch_environment_last_task_run_timestamps(
+        &self,
+    ) -> Result<HashMap<String, DateTime<Utc>>> {
+        Ok(HashMap::new())
+    }
+}
+
+#[cfg(not(feature = "warp_hosted"))]
+fn unsupported_offline_object(method: &'static str) -> anyhow::Error {
+    anyhow!(
+        "ObjectClient::{} is not supported when the `warp_hosted` feature is disabled",
+        method
+    )
 }
 
 /// Parse the serialized model for a GSO and add it to the format-specific entry in `map`,

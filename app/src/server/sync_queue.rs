@@ -413,9 +413,20 @@ impl SyncQueue {
         self.should_dequeue = false
     }
 
+    // PDX-79: When `warp_hosted` is off, the offline `ObjectClient` stub
+    // returns `unsupported_offline` for every mutation, so dequeueing
+    // would just drive the spawn-with-retry loop forever. Skip the
+    // dequeue entirely; items can still be enqueued in-process for
+    // bookkeeping but no GraphQL request leaves the client.
+    #[cfg(feature = "warp_hosted")]
     pub fn start_dequeueing(&mut self, ctx: &mut ModelContext<Self>) {
         self.should_dequeue = true;
         self.dequeue(ctx)
+    }
+
+    #[cfg(not(feature = "warp_hosted"))]
+    pub fn start_dequeueing(&mut self, _ctx: &mut ModelContext<Self>) {
+        // Intentionally a no-op: see PDX-79.
     }
 
     // Clear the SyncQueue. This is used during Logout.
