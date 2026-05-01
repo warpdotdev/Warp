@@ -111,6 +111,14 @@ const GOOSE_COLOR: ColorU = ColorU {
     a: 255,
 };
 
+/// Hermes brand color (Nous Research purple #7C3AED)
+const HERMES_PURPLE: ColorU = ColorU {
+    r: 124,
+    g: 58,
+    b: 237,
+    a: 255,
+};
+
 /// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
@@ -125,6 +133,7 @@ pub enum CLIAgent {
     Auggie,
     CursorCli,
     Goose,
+    Hermes,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -144,6 +153,7 @@ impl CLIAgent {
             CLIAgent::Auggie => "auggie",
             CLIAgent::CursorCli => "agent",
             CLIAgent::Goose => "goose",
+            CLIAgent::Hermes => "hermes",
             CLIAgent::Unknown => "",
         }
     }
@@ -175,6 +185,7 @@ impl CLIAgent {
             CLIAgent::Auggie => "Auggie",
             CLIAgent::CursorCli => "Cursor",
             CLIAgent::Goose => "Goose",
+            CLIAgent::Hermes => "Hermes",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -193,6 +204,7 @@ impl CLIAgent {
             CLIAgent::Auggie => Some(Icon::AuggieLogo),
             CLIAgent::CursorCli => Some(Icon::CursorLogo),
             CLIAgent::Goose => Some(Icon::GooseLogo),
+            CLIAgent::Hermes => None,
             CLIAgent::Unknown => None,
         }
     }
@@ -221,6 +233,7 @@ impl CLIAgent {
             CLIAgent::Auggie => &[SkillProvider::Agents],
             CLIAgent::CursorCli => &[SkillProvider::Agents],
             CLIAgent::Goose => &[SkillProvider::Agents],
+            CLIAgent::Hermes => &[SkillProvider::Agents],
             CLIAgent::Unknown => &[],
         }
     }
@@ -261,6 +274,7 @@ impl CLIAgent {
             CLIAgent::Auggie => Some(AUGGIE_COLOR),
             CLIAgent::CursorCli => Some(CURSOR_COLOR),
             CLIAgent::Goose => Some(GOOSE_COLOR),
+            CLIAgent::Hermes => Some(HERMES_PURPLE),
             CLIAgent::Unknown => None,
         }
     }
@@ -522,6 +536,7 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Auggie => CLIAgentType::Auggie,
             CLIAgent::CursorCli => CLIAgentType::Cursor,
             CLIAgent::Goose => CLIAgentType::Goose,
+            CLIAgent::Hermes => CLIAgentType::Hermes,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }
     }
