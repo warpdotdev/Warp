@@ -10010,6 +10010,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "prompts"
+version = "0.1.0"
+dependencies = [
+ "orchestrator",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "prost"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

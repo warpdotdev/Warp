@@ -18,6 +18,7 @@ default-members = [
   "crates/graphql",
   "crates/markdown_parser",
   "crates/orchestrator",
+  "crates/prompts",
   "crates/sum_tree",
   "crates/symphony",
   "crates/warpui",
@@ -62,6 +63,7 @@ onboarding = { path = "crates/onboarding" }
 orchestrator = { path = "crates/orchestrator" }
 persistence = { path = "crates/persistence" }
 prevent_sleep = { path = "crates/prevent_sleep" }
+prompts = { path = "crates/prompts" }
 repo_metadata = { path = "crates/repo_metadata" }
 settings = { path = "crates/settings" }
 settings_value = { path = "crates/settings_value", default-features = false }
