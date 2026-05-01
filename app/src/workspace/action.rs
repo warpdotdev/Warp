@@ -81,6 +81,15 @@ pub enum TabContextMenuAnchor {
     VerticalTabsKebab,
 }
 
+#[derive(Clone, Debug)]
+pub struct VerticalTabDragContext {
+    pub visual_above_index: Option<usize>,
+    pub visual_below_index: Option<usize>,
+    pub current_group_indices: Vec<usize>,
+    pub visual_above_group_indices: Option<Vec<usize>>,
+    pub visual_below_group_indices: Option<Vec<usize>>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum VerticalTabsPaneContextMenuTarget {
     ClickedPane(PaneViewLocator),
@@ -245,6 +254,7 @@ pub enum WorkspaceAction {
     DragTab {
         tab_index: usize,
         tab_position: RectF,
+        vertical_context: Option<VerticalTabDragContext>,
     },
     DropTab,
     /// Toggles the left panel. In Code Mode V1 this toggles Warp Drive.
@@ -271,6 +281,7 @@ pub enum WorkspaceAction {
     SetVerticalTabsCompactSubtitle(VerticalTabsCompactSubtitle),
     ToggleVerticalTabsShowPrLink,
     ToggleVerticalTabsShowDiffStats,
+    ToggleVerticalTabsGroupByProject,
     ToggleVerticalTabsShowDetailsOnHover,
     /// Closes the focused panel. This happens as an explicit action from the user.
     ClosePanel,
@@ -833,6 +844,7 @@ impl WorkspaceAction {
             | SetVerticalTabsCompactSubtitle(_)
             | ToggleVerticalTabsShowPrLink
             | ToggleVerticalTabsShowDiffStats
+            | ToggleVerticalTabsGroupByProject
             | ToggleVerticalTabsShowDetailsOnHover
             | ToggleWelcomeTips
             | CopyTextToClipboard(_)

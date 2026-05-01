@@ -153,6 +153,10 @@ impl CodeView {
         None
     }
 
+    pub fn local_paths(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+
     pub fn focus(&self, _ctx: &mut ViewContext<Self>) {}
 
     pub fn pane_configuration(&self) -> ModelHandle<PaneConfiguration> {

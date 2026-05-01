@@ -418,7 +418,7 @@ use crate::editor::{
 use crate::persistence::ModelEvent;
 
 use super::action::{
-    InitContent, RestoreConversationLayout, TabContextMenuAnchor,
+    InitContent, RestoreConversationLayout, TabContextMenuAnchor, VerticalTabDragContext,
     VerticalTabsPaneContextMenuTarget, WorkspaceAction,
 };
 use super::close_session_confirmation_dialog::{
@@ -593,6 +593,65 @@ const NEW_SESSION_SIDECAR_SEARCH_BOX_HORIZONTAL_PADDING: f32 = 12.;
 const NEW_SESSION_SIDECAR_SEARCH_BOX_VERTICAL_PADDING: f32 = 6.;
 const NEW_SESSION_SIDECAR_FOOTER_HORIZONTAL_PADDING: f32 = 16.;
 const NEW_SESSION_SIDECAR_FOOTER_VERTICAL_PADDING: f32 = 8.;
+
+#[derive(Clone, Copy)]
+enum TabDragDirection {
+    Above,
+    Below,
+}
+
+fn reordered_group_indices(
+    group_indices: &[usize],
+    current_index: usize,
+    target_index: usize,
+    direction: TabDragDirection,
+) -> Vec<usize> {
+    let mut reordered: Vec<usize> = group_indices
+        .iter()
+        .copied()
+        .filter(|index| *index != current_index)
+        .collect();
+    let target_position = reordered
+        .iter()
+        .position(|index| *index == target_index)
+        .unwrap_or(reordered.len());
+    let insertion_position = match direction {
+        TabDragDirection::Above => target_position,
+        TabDragDirection::Below => target_position.saturating_add(1),
+    };
+    reordered.insert(insertion_position.min(reordered.len()), current_index);
+    reordered
+}
+
+fn is_valid_tab_permutation(order: &[usize], len: usize) -> bool {
+    if order.len() != len {
+        return false;
+    }
+    let mut seen = vec![false; len];
+    for &index in order {
+        if index >= len || seen[index] {
+            return false;
+        }
+        seen[index] = true;
+    }
+    true
+}
+
+fn visual_tab_order_rewrite(
+    order: &[usize],
+    len: usize,
+    active_index: usize,
+) -> Option<(Vec<usize>, usize)> {
+    if !is_valid_tab_permutation(order, len) {
+        return None;
+    }
+    let new_active_index = order
+        .iter()
+        .position(|index| *index == active_index)
+        .unwrap_or(active_index.min(len.saturating_sub(1)));
+    Some((order.to_vec(), new_active_index))
+}
+
 const SESSION_CONFIG_TAB_CONFIG_CHIP_TEXT: &str = "Access your tab configs here.";
 const SESSION_CONFIG_TAB_CONFIG_CHIP_WIDTH: f32 = 206.;
 const SHOW_SETTINGS_KEYBINDING_NAME: &str = "workspace:show_settings";
@@ -3494,7 +3553,8 @@ impl Workspace {
                 ..
             }
             | TabSettingsChangedEvent::VerticalTabsShowPrLink { .. }
-            | TabSettingsChangedEvent::VerticalTabsShowDiffStats { .. } => {
+            | TabSettingsChangedEvent::VerticalTabsShowDiffStats { .. }
+            | TabSettingsChangedEvent::VerticalTabsGroupByProject { .. } => {
                 ctx.notify();
             }
             TabSettingsChangedEvent::VerticalTabsShowDetailsOnHover { .. } => {
@@ -10899,6 +10959,46 @@ impl Workspace {
         }
     }
 
+    fn normalize_vertical_tab_drop_insertion_index(
+        &mut self,
+        insertion_index: usize,
+        visual_tab_order: Option<&[usize]>,
+        ctx: &mut ViewContext<Self>,
+    ) -> usize {
+        let Some(visual_tab_order) = visual_tab_order else {
+            return insertion_index.min(self.tabs.len());
+        };
+        let tabs_len = self.tabs.len();
+        if !FeatureFlag::VerticalTabs.is_enabled()
+            || !*TabSettings::as_ref(ctx).use_vertical_tabs
+            || !*TabSettings::as_ref(ctx)
+                .vertical_tabs_group_by_project
+                .value()
+        {
+            return insertion_index.min(tabs_len);
+        }
+        let Some((visual_tab_order, new_active_index)) =
+            visual_tab_order_rewrite(visual_tab_order, tabs_len, self.active_tab_index)
+        else {
+            return insertion_index.min(tabs_len);
+        };
+
+        let active_index = self.active_tab_index;
+        let tabs = std::mem::take(&mut self.tabs);
+        let mut tabs_by_old_index: Vec<Option<TabData>> = tabs.into_iter().map(Some).collect();
+        self.tabs = visual_tab_order
+            .iter()
+            .filter_map(|index| tabs_by_old_index[*index].take())
+            .collect();
+        debug_assert_eq!(self.tabs.len(), tabs_len);
+        if new_active_index != active_index {
+            self.set_active_tab_index(new_active_index, ctx);
+        }
+        ctx.notify();
+
+        insertion_index.min(tabs_len)
+    }
+
     pub fn add_tab_for_cloud_notebook(
         &mut self,
         notebook_id: SyncId,
@@ -11861,6 +11961,195 @@ impl Workspace {
         });
     }
 
+    fn move_tabs_to_insertion_index(
+        &mut self,
+        mut moving_indices: Vec<usize>,
+        insertion_index: usize,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let tabs_len = self.tabs.len();
+        let mut moving_order = Vec::new();
+        for index in moving_indices.drain(..) {
+            if index < tabs_len && !moving_order.contains(&index) {
+                moving_order.push(index);
+            }
+        }
+        let mut moving_indices = moving_order.clone();
+        moving_indices.sort_unstable();
+        if moving_indices.is_empty() {
+            return;
+        }
+
+        let insertion_index = insertion_index.min(tabs_len);
+        let active_index = self.active_tab_index;
+        let tabs = std::mem::take(&mut self.tabs);
+        let mut moving_tabs = Vec::new();
+        let mut remaining_tabs = Vec::new();
+        for (index, tab) in tabs.into_iter().enumerate() {
+            if moving_indices.binary_search(&index).is_ok() {
+                moving_tabs.push((index, tab));
+            } else {
+                remaining_tabs.push((index, tab));
+            }
+        }
+        let mut ordered_moving_tabs = Vec::new();
+        for moving_index in moving_order {
+            if let Some(position) = moving_tabs
+                .iter()
+                .position(|(index, _)| *index == moving_index)
+            {
+                ordered_moving_tabs.push(moving_tabs.remove(position));
+            }
+        }
+
+        let adjusted_insertion_index = remaining_tabs
+            .iter()
+            .take_while(|(index, _)| *index < insertion_index)
+            .count();
+        let mut reordered_tabs = remaining_tabs;
+        reordered_tabs.splice(
+            adjusted_insertion_index..adjusted_insertion_index,
+            ordered_moving_tabs,
+        );
+
+        let new_order: Vec<usize> = reordered_tabs.iter().map(|(index, _)| *index).collect();
+        if new_order.iter().copied().eq(0..tabs_len) {
+            // `self.tabs` was moved out above; restore it before returning from a no-op reorder.
+            self.tabs = reordered_tabs.into_iter().map(|(_, tab)| tab).collect();
+            return;
+        }
+
+        let new_active_index = new_order
+            .iter()
+            .position(|index| *index == active_index)
+            .unwrap_or(active_index.min(tabs_len.saturating_sub(1)));
+        self.tabs = reordered_tabs.into_iter().map(|(_, tab)| tab).collect();
+        if new_active_index != active_index {
+            self.set_active_tab_index(new_active_index, ctx);
+        }
+        ctx.notify();
+    }
+
+    fn calculate_updated_tab_insertion_vertical(
+        &self,
+        current_index: usize,
+        drag_position: RectF,
+        vertical_context: Option<&VerticalTabDragContext>,
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<(Vec<usize>, usize)> {
+        if let Some(vertical_context) = vertical_context {
+            if vertical_context
+                .current_group_indices
+                .contains(&current_index)
+            {
+                return self.calculate_updated_tab_insertion_from_visual_context(
+                    current_index,
+                    drag_position,
+                    vertical_context,
+                    ctx,
+                );
+            }
+            debug_assert!(
+                false,
+                "vertical tab drag context must include the current tab index"
+            );
+        }
+
+        let new_index =
+            self.calculate_updated_tab_index_vertical(current_index, drag_position, ctx);
+        if new_index != current_index {
+            let insertion_index = if new_index > current_index {
+                new_index + 1
+            } else {
+                new_index
+            };
+            return Some((vec![current_index], insertion_index));
+        }
+        None
+    }
+
+    fn calculate_updated_tab_insertion_from_visual_context(
+        &self,
+        current_index: usize,
+        drag_position: RectF,
+        vertical_context: &VerticalTabDragContext,
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<(Vec<usize>, usize)> {
+        let midpoint_drag_y = (drag_position.min_y() + drag_position.max_y()) / 2.;
+
+        if let Some(tab_index) = vertical_context.visual_above_index {
+            if let Some(tab_position) = ctx.element_position_by_id(tab_position_id(tab_index)) {
+                let neighbor_midpoint_y = (tab_position.min_y() + tab_position.max_y()) / 2.;
+                if midpoint_drag_y < neighbor_midpoint_y {
+                    let same_group = vertical_context.current_group_indices.contains(&tab_index);
+                    let (moving_indices, insertion_index) = if same_group {
+                        (
+                            reordered_group_indices(
+                                &vertical_context.current_group_indices,
+                                current_index,
+                                tab_index,
+                                TabDragDirection::Above,
+                            ),
+                            vertical_context
+                                .current_group_indices
+                                .iter()
+                                .min()
+                                .copied()
+                                .unwrap_or(current_index),
+                        )
+                    } else {
+                        (
+                            vertical_context.current_group_indices.clone(),
+                            vertical_context
+                                .visual_above_group_indices
+                                .as_ref()
+                                .and_then(|indices| indices.iter().min().copied())
+                                .unwrap_or(tab_index),
+                        )
+                    };
+                    return Some((moving_indices, insertion_index));
+                }
+            }
+        }
+
+        if let Some(tab_index) = vertical_context.visual_below_index {
+            if let Some(tab_position) = ctx.element_position_by_id(tab_position_id(tab_index)) {
+                let neighbor_midpoint_y = (tab_position.min_y() + tab_position.max_y()) / 2.;
+                if midpoint_drag_y > neighbor_midpoint_y {
+                    let same_group = vertical_context.current_group_indices.contains(&tab_index);
+                    let (moving_indices, insertion_index) = if same_group {
+                        (
+                            reordered_group_indices(
+                                &vertical_context.current_group_indices,
+                                current_index,
+                                tab_index,
+                                TabDragDirection::Below,
+                            ),
+                            vertical_context
+                                .current_group_indices
+                                .iter()
+                                .min()
+                                .copied()
+                                .unwrap_or(current_index),
+                        )
+                    } else {
+                        (
+                            vertical_context.current_group_indices.clone(),
+                            vertical_context
+                                .visual_below_group_indices
+                                .as_ref()
+                                .and_then(|indices| indices.iter().max().copied())
+                                .map(|index| index + 1)
+                                .unwrap_or(tab_index + 1),
+                        )
+                    };
+                    return Some((moving_indices, insertion_index));
+                }
+            }
+        }
+
+        None
+    }
     // Move tab, given tab index, left or right
     fn move_tab(&mut self, index: usize, direction: TabMovement, ctx: &mut ViewContext<Self>) {
         let tabs_len = self.tabs.len();
@@ -13414,7 +13703,11 @@ impl Workspace {
             }
             #[cfg(not(feature = "local_fs"))]
             pane_group::Event::RemoteRepoNavigated { .. } => {}
-            pane_group::Event::DroppedOnTabBar { origin, pane_id } => {
+            pane_group::Event::DroppedOnTabBar {
+                origin,
+                pane_id,
+                visual_tab_order,
+            } => {
                 if let Some(hovered_tab_index) = self.hovered_tab_index {
                     match hovered_tab_index {
                         TabBarHoverIndex::BeforeTab(workspace_tab_index) => {
@@ -13436,6 +13729,12 @@ impl Workspace {
                             };
 
                             if let Some(pane) = pane {
+                                let workspace_tab_index = self
+                                    .normalize_vertical_tab_drop_insertion_index(
+                                        workspace_tab_index,
+                                        visual_tab_order.as_deref(),
+                                        ctx,
+                                    );
                                 self.add_tab_from_existing_pane(pane, workspace_tab_index, ctx);
 
                                 // If the setting is enabled, preserve the color of the original pane's
@@ -20517,6 +20816,22 @@ impl TypedActionView for Workspace {
                 );
                 ctx.notify();
             }
+            ToggleVerticalTabsGroupByProject => {
+                let new_value = TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let new_value = !*settings.vertical_tabs_group_by_project.value();
+                    let _ = settings
+                        .vertical_tabs_group_by_project
+                        .set_value(new_value, ctx);
+                    new_value
+                });
+                send_telemetry_from_ctx!(
+                    VerticalTabsTelemetryEvent::DisplayOptionChanged(
+                        VerticalTabsDisplayOption::GroupByProject(new_value),
+                    ),
+                    ctx
+                );
+                ctx.notify();
+            }
             ToggleVerticalTabsShowDetailsOnHover => {
                 let new_value = TabSettings::handle(ctx).update(ctx, |settings, ctx| {
                     let new_value = !*settings.vertical_tabs_show_details_on_hover.value();
@@ -20659,7 +20974,8 @@ impl TypedActionView for Workspace {
             DragTab {
                 tab_index,
                 tab_position,
-            } => self.on_tab_drag(*tab_index, *tab_position, ctx),
+                vertical_context,
+            } => self.on_tab_drag(*tab_index, *tab_position, vertical_context.as_ref(), ctx),
             DropTab => {
                 let is_cross_window = CrossWindowTabDrag::as_ref(ctx).is_active();
                 let handed_off_tab_index =
@@ -23486,6 +23802,7 @@ impl Workspace {
         &mut self,
         current_index: usize,
         position: RectF,
+        vertical_context: Option<&VerticalTabDragContext>,
         ctx: &mut ViewContext<Self>,
     ) {
         const DETACH_SENSITIVITY: f32 = 10.0;
@@ -23643,13 +23960,21 @@ impl Workspace {
             return;
         }
 
-        let new_index = if FeatureFlag::VerticalTabs.is_enabled()
-            && *TabSettings::as_ref(ctx).use_vertical_tabs
-        {
-            self.calculate_updated_tab_index_vertical(current_index, position, ctx)
-        } else {
-            self.calculate_updated_tab_index(current_index, position, ctx)
-        };
+        if FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs {
+            if let Some((moving_indices, insertion_index)) = self
+                .calculate_updated_tab_insertion_vertical(
+                    current_index,
+                    position,
+                    vertical_context,
+                    ctx,
+                )
+            {
+                self.move_tabs_to_insertion_index(moving_indices, insertion_index, ctx);
+            }
+            return;
+        }
+
+        let new_index = self.calculate_updated_tab_index(current_index, position, ctx);
 
         if new_index != current_index {
             self.tabs.swap(new_index, current_index);
