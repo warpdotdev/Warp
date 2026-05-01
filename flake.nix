@@ -15,6 +15,10 @@
     extra-sandbox-paths = [
       "/Applications?"
       "/Library/Developer/CommandLineTools?"
+      "/usr/bin/xcode-select?"
+      "/usr/bin/xcodebuild?"
+      "/usr/bin/xcrun?"
+      "/var/db/xcode_select_link?"
     ];
   };
 
@@ -48,6 +52,32 @@
             cargo = rustToolchain;
             rustc = rustToolchain;
           };
+          xcodeXcrunWrapper = pkgs.writeShellScriptBin "xcrun" ''
+            set -euo pipefail
+
+            developerDir="''${DEVELOPER_DIR:-}"
+            if [ -z "$developerDir" ] && [ -x /usr/bin/xcode-select ]; then
+              selectedDeveloperDir="$(/usr/bin/xcode-select -p 2>/dev/null || true)"
+              if [ -n "$selectedDeveloperDir" ] && [ -d "$selectedDeveloperDir" ]; then
+                developerDir="$selectedDeveloperDir"
+              fi
+            fi
+
+            if [ -z "$developerDir" ]; then
+              for candidate in /Applications/Xcode_16.4.app/Contents/Developer /Applications/Xcode.app/Contents/Developer /Applications/Xcode*.app/Contents/Developer /Library/Developer/CommandLineTools; do
+                if [ -d "$candidate" ]; then
+                  developerDir="$candidate"
+                  break
+                fi
+              done
+            fi
+
+            if [ -n "$developerDir" ]; then
+              export DEVELOPER_DIR="$developerDir"
+            fi
+
+            exec /usr/bin/xcrun "$@"
+          '';
 
           appCargoToml = builtins.fromTOML (builtins.readFile ./app/Cargo.toml);
           version = "${appCargoToml.package.version}+${self.shortRev or "dirty"}";
@@ -202,19 +232,8 @@
             };
 
             preBuild = lib.optionalString pkgs.stdenv.isDarwin ''
-              for developerDir in /Applications/Xcode*.app/Contents/Developer /Library/Developer/CommandLineTools; do
-                if [ -d "$developerDir" ]; then
-                  export DEVELOPER_DIR="$developerDir"
-                  break
-                fi
-              done
-
-              if [ -z "''${DEVELOPER_DIR:-}" ]; then
-                echo "could not locate an Xcode developer directory inside the sandbox" >&2
-                exit 1
-              fi
-
-              echo "Using DEVELOPER_DIR=$DEVELOPER_DIR"
+              export PATH="${xcodeXcrunWrapper}/bin:$PATH"
+              echo "Using xcrun wrapper: $(command -v xcrun)"
               xcrun --sdk macosx --find metal
               xcrun --sdk macosx --find metallib
             '';
