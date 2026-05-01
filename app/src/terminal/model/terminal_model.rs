@@ -2069,6 +2069,13 @@ impl TerminalModel {
             .grid_handler_mut()
             .reset_keyboard_mode_state();
 
+        // Clear DarkLightNotifications opt-in so a previous alt-screen session
+        // that set ?2031 without unsetting it doesn't cause the next unrelated
+        // alt-screen app to receive unsolicited theme notifications.
+        self.alt_screen
+            .grid_handler_mut()
+            .unset_mode(ansi::Mode::DarkLightNotifications);
+
         if save_cursor_and_clear_screen {
             // Drop information about the primary screen's saved cursor.
             self.block_list
