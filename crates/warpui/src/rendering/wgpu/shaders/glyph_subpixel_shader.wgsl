@@ -16,12 +16,11 @@ struct SubpixelFragmentOutput {
 
 @fragment
 fn fs_subpixel_main(in: GlyphVertexShaderOutput) -> SubpixelFragmentOutput {
-    // Read the three subpixel coverages from BGRA storage and reorder to
-    // logical RGB. The non-emoji upload path deliberately skips the CPU
-    // R<->B swap because swash's subpixel layout into Bgra8Unorm storage
-    // already produces the channel order this swizzle expects.
-    let coverage_bgr = textureSample(glyphAtlasTexture, glyphAtlasSampler, in.texture_coordinate).rgb;
-    let coverage = coverage_bgr.bgr;
+    // Read the three subpixel coverages as logical RGB. The upload path
+    // (texture_with_bind_group.rs) swaps swash's RGBA-ordered bytes into
+    // canonical BGRA before write_texture, so a Bgra8Unorm sample yields
+    // (R-cov, G-cov, B-cov) directly with no swizzle.
+    let coverage = textureSample(glyphAtlasTexture, glyphAtlasSampler, in.texture_coordinate).rgb;
 
     // Stage 1: brightness-modulated contrast boost. The subpixel base factor
     // is half the grayscale one because per-channel coverage already

@@ -79,19 +79,20 @@ impl TextureWithBindGroup {
         queue: &Queue,
     ) {
         // Convert the rasterizer's RGBA32 canvas into the destination
-        // texture's layout. Three cases:
+        // texture's layout. Two cases:
         //
         //   R8Unorm (Generic): extract the alpha byte. The rasterizer
         //   replicates the A8 mask into RGBA32, so the first byte of each
         //   four-byte group is the original coverage.
         //
-        //   Bgra8Unorm + emoji (Polychrome): swash returns RGBA but the
-        //   texture stores BGRA, so swap R and B per pixel.
-        //
-        //   Bgra8Unorm + subpixel non-emoji: swash's subpixel byte order
-        //   already matches the Bgra8Unorm upload + .rgb sample combo. A
-        //   swap here would re-break the ordering. Kept as a separate arm
-        //   so the format alone cannot silently apply the emoji swap.
+        //   Bgra8Unorm (Polychrome emoji and Subpixel non-emoji): swash's
+        //   Color and SubpixelMask outputs are both RGBA-ordered in memory.
+        //   The Subpixel case looks BGRA from its Format::subpixel_bgra
+        //   name but zeno actually writes byte 0 = R-coverage and byte 2 =
+        //   B-coverage (zeno mask.rs render() with sample offsets
+        //   [+0.3, 0, -0.3]). Swap R and B per pixel so the texture's bytes
+        //   match its declared BGRA layout, mirroring zed's gpui_wgpu
+        //   cosmic_text_system.rs which calls out the same swash quirk.
         let pixel_count = (region.pixel_region.width() * region.pixel_region.height()) as usize;
         let upload_bytes: std::borrow::Cow<'_, [u8]>;
         let bytes_per_row = match self.format {
@@ -103,16 +104,12 @@ impl TextureWithBindGroup {
                 upload_bytes = std::borrow::Cow::Owned(compact);
                 region.pixel_region.width() as u32
             }
-            TextureFormat::Bgra8Unorm if glyph.is_emoji => {
+            TextureFormat::Bgra8Unorm => {
                 let mut swapped = glyph.canvas.pixels.clone();
                 for pixel in swapped.chunks_exact_mut(4) {
                     pixel.swap(0, 2);
                 }
                 upload_bytes = std::borrow::Cow::Owned(swapped);
-                4 * region.pixel_region.width() as u32
-            }
-            TextureFormat::Bgra8Unorm => {
-                upload_bytes = std::borrow::Cow::Borrowed(glyph.canvas.pixels.as_slice());
                 4 * region.pixel_region.width() as u32
             }
             other => {
