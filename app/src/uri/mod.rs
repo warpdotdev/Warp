@@ -1432,13 +1432,18 @@ fn safe_url_log_fields(url: &Url) -> String {
 }
 
 fn decode_uuid_hex(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() == 32 {
-        (0..16)
-            .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok())
-            .collect()
-    } else {
-        None
+    let hex = hex.as_bytes();
+    if hex.len() != 32 {
+        return None;
     }
+
+    hex.chunks_exact(2)
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16)?;
+            let low = (pair[1] as char).to_digit(16)?;
+            Some(((high << 4) | low) as u8)
+        })
+        .collect()
 }
 
 #[cfg(test)]
