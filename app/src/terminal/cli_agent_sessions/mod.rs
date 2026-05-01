@@ -141,6 +141,12 @@ pub struct CLIAgentSession {
     /// the first word of the command (the binary/alias the user typed).
     /// Used to customize plugin instructions and force manual install mode.
     pub custom_command_prefix: Option<String>,
+    /// Set to `true` when a `Stop` event is received; consumed (reset to `false`) by the
+    /// immediately following `IdlePrompt`. This lets us distinguish the natural
+    /// post-task idle (Stop → IdlePrompt) from an explicit reset like `/clear`
+    /// (IdlePrompt without a preceding Stop), so we only clear the tab title in
+    /// the latter case.
+    pending_idle_after_stop: bool,
 }
 
 impl CLIAgentSession {
@@ -165,6 +171,7 @@ impl CLIAgentSession {
             CLIAgentEventType::PromptSubmit => {
                 self.session_context.query = event.payload.query.clone();
                 self.session_context.response = None;
+                self.pending_idle_after_stop = false;
                 CLIAgentSessionStatus::InProgress
             }
             CLIAgentEventType::ToolComplete => {
@@ -176,6 +183,7 @@ impl CLIAgentSession {
             CLIAgentEventType::Stop => {
                 self.session_context.query = event.payload.query.clone();
                 self.session_context.response = event.payload.response.clone();
+                self.pending_idle_after_stop = true;
                 CLIAgentSessionStatus::Success
             }
             CLIAgentEventType::PermissionRequest => {
@@ -201,13 +209,20 @@ impl CLIAgentSession {
             }
             // IdlePrompt means the agent is sitting at its prompt waiting for input.
             // This should not affect status — otherwise it would override Success after a Stop event.
-            // Clear title-contributing fields so the tab name resets (e.g. after /clear).
+            // Only clear title fields when this is NOT the natural post-Stop idle: the first
+            // IdlePrompt after a Stop is the agent returning to its prompt after completing a
+            // task (preserve the title so the user can see what ran). Any subsequent IdlePrompt
+            // without an intervening Stop is an explicit reset like `/clear`.
             CLIAgentEventType::IdlePrompt => {
-                self.session_context.query = None;
-                self.session_context.response = None;
-                self.session_context.summary = None;
-                self.session_context.tool_name = None;
-                self.session_context.tool_input_preview = None;
+                if self.pending_idle_after_stop {
+                    self.pending_idle_after_stop = false;
+                } else {
+                    self.session_context.query = None;
+                    self.session_context.response = None;
+                    self.session_context.summary = None;
+                    self.session_context.tool_name = None;
+                    self.session_context.tool_input_preview = None;
+                }
                 return None;
             }
             CLIAgentEventType::SessionStart => {
@@ -372,6 +387,7 @@ impl CLIAgentSessionsModel {
                 remote_host,
                 draft_text: None,
                 custom_command_prefix: None,
+                pending_idle_after_stop: false,
             },
             ctx,
         );
@@ -398,6 +414,8 @@ impl CLIAgentSessionsModel {
         };
 
         let event_type = &event.event;
+        let is_idle_reset = matches!(event_type, CLIAgentEventType::IdlePrompt)
+            && !session.pending_idle_after_stop;
         if let Some(new_status) = session.apply_event(event) {
             let agent = session.agent;
             ctx.emit(CLIAgentSessionsModelEvent::StatusChanged {
@@ -413,8 +431,8 @@ impl CLIAgentSessionsModel {
             CLIAgentEventType::SessionStart
                 | CLIAgentEventType::PromptSubmit
                 | CLIAgentEventType::ToolComplete
-                | CLIAgentEventType::IdlePrompt
-        ) {
+        ) || is_idle_reset
+        {
             ctx.emit(CLIAgentSessionsModelEvent::SessionUpdated {
                 terminal_view_id,
                 agent: session.agent,

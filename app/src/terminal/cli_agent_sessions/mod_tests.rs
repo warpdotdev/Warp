@@ -243,6 +243,7 @@ fn apply_event_preserves_input_session() {
         plugin_version: None,
         draft_text: None,
         custom_command_prefix: None,
+        pending_idle_after_stop: false,
     };
 
     let event = CLIAgentEvent {
@@ -276,6 +277,7 @@ fn is_remote_returns_true_when_remote_host_is_set() {
         draft_text: None,
         remote_host: Some("user@devbox".to_owned()),
         custom_command_prefix: None,
+        pending_idle_after_stop: false,
     };
     assert!(session.is_remote());
 }
@@ -293,6 +295,7 @@ fn is_remote_returns_false_when_remote_host_is_none() {
         plugin_version: None,
         draft_text: None,
         custom_command_prefix: None,
+        pending_idle_after_stop: false,
     };
     assert!(!session.is_remote());
 }
@@ -361,6 +364,7 @@ fn session_start_sets_plugin_version() {
         draft_text: None,
         remote_host: None,
         custom_command_prefix: None,
+        pending_idle_after_stop: false,
     };
 
     let event = CLIAgentEvent {
@@ -393,6 +397,7 @@ fn session_start_without_plugin_version_leaves_none() {
         draft_text: None,
         remote_host: None,
         custom_command_prefix: None,
+        pending_idle_after_stop: false,
     };
 
     let event = CLIAgentEvent {
@@ -409,9 +414,8 @@ fn session_start_without_plugin_version_leaves_none() {
     assert_eq!(session.plugin_version, None);
 }
 
-#[test]
-fn idle_prompt_clears_title_context() {
-    let mut session = CLIAgentSession {
+fn make_session_with_title() -> CLIAgentSession {
+    CLIAgentSession {
         agent: CLIAgent::Claude,
         status: CLIAgentSessionStatus::Success,
         session_context: CLIAgentSessionContext {
@@ -431,9 +435,12 @@ fn idle_prompt_clears_title_context() {
         draft_text: None,
         remote_host: None,
         custom_command_prefix: None,
-    };
+        pending_idle_after_stop: false,
+    }
+}
 
-    let event = CLIAgentEvent {
+fn idle_prompt_event() -> CLIAgentEvent {
+    CLIAgentEvent {
         v: 1,
         agent: CLIAgent::Claude,
         event: CLIAgentEventType::IdlePrompt,
@@ -441,22 +448,49 @@ fn idle_prompt_clears_title_context() {
         cwd: None,
         project: None,
         payload: CLIAgentEventPayload::default(),
-    };
+    }
+}
 
-    let result = session.apply_event(&event);
+#[test]
+fn idle_prompt_clears_title_context() {
+    // IdlePrompt without a preceding Stop (e.g. /clear during or after a task)
+    // should wipe all title-contributing fields.
+    let mut session = make_session_with_title();
+    session.pending_idle_after_stop = false;
 
-    // Status must not change (would override Success after a Stop)
+    let result = session.apply_event(&idle_prompt_event());
+
     assert_eq!(session.status, CLIAgentSessionStatus::Success);
     assert!(result.is_none());
-
-    // Title-contributing fields cleared
     assert!(session.session_context.query.is_none());
     assert!(session.session_context.response.is_none());
     assert!(session.session_context.summary.is_none());
     assert!(session.session_context.tool_name.is_none());
     assert!(session.session_context.tool_input_preview.is_none());
-
-    // Non-title fields preserved
     assert_eq!(session.session_context.cwd.as_deref(), Some("/tmp"));
     assert_eq!(session.session_context.project.as_deref(), Some("proj"));
+}
+
+#[test]
+fn idle_prompt_after_stop_preserves_title() {
+    // The natural Stop → IdlePrompt sequence after a completed task must NOT
+    // clear the title — users should still see what ran in the tab.
+    let mut session = make_session_with_title();
+    session.pending_idle_after_stop = true;
+
+    let result = session.apply_event(&idle_prompt_event());
+
+    assert_eq!(session.status, CLIAgentSessionStatus::Success);
+    assert!(result.is_none());
+    assert_eq!(
+        session.session_context.query.as_deref(),
+        Some("fix the bug")
+    );
+    assert_eq!(session.session_context.response.as_deref(), Some("done"));
+    assert_eq!(
+        session.session_context.summary.as_deref(),
+        Some("Fixing bug")
+    );
+    // Flag consumed — a subsequent IdlePrompt (from /clear) will clear the title.
+    assert!(!session.pending_idle_after_stop);
 }
