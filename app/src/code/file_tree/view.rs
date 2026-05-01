@@ -1533,15 +1533,38 @@ impl FileTreeView {
         // When the file tree is active, index the lazy-loaded path through the
         // model so that a file watcher is started.
         if self.is_active && !self.registered_lazy_loaded_paths.contains(path) {
-            // Check if this path appears to be a git repository by looking for .git directory
-            // or .git file (used by worktrees/submodules). We trigger detection and let
-            // the async detection validate the git entry properly (including handling
-            // gitfile content for worktrees/submodules).
+            // Check if this path appears to be a valid git repository by looking for .git directory
+            // or .git file (used by worktrees/submodules). For .git files, we need to parse the
+            // gitdir path and verify the actual git directory has a valid HEAD.
             let has_git_entry = path
                 .to_local_path()
                 .map(|p| {
-                    let git_path = p.join(".git");
-                    git_path.exists() // directory or file (symlink counts as exists)
+                    let git_entry = p.join(".git");
+                    if git_entry.is_dir() {
+                        // Standard .git directory - verify HEAD exists
+                        git_entry.join("HEAD").is_file()
+                    } else if git_entry.is_file() {
+                        // .git file (worktree/submodule) - read gitdir path and verify HEAD there
+                        std::fs::read_to_string(&git_entry)
+                            .ok()
+                            .and_then(|contents| {
+                                contents
+                                    .trim()
+                                    .strip_prefix("gitdir:")
+                                    .map(|gitdir| PathBuf::from(gitdir.trim()))
+                            })
+                            .map(|gitdir| {
+                                let gitdir = if gitdir.is_absolute() {
+                                    gitdir
+                                } else {
+                                    p.join(gitdir)
+                                };
+                                gitdir.join("HEAD").is_file()
+                            })
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    }
                 })
                 .unwrap_or(false);
 
