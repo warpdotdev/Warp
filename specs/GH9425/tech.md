@@ -66,15 +66,22 @@ through to the `unhandled!()` macro.
 Inside `TerminalView::handle_theme_change`:
 
 1. Compute `is_dark` from `appearance.theme().inferred_color_scheme()`.
-2. Lock the model, call `update_colors` and `set_color_scheme`, then check
-   `is_term_mode_set(TermMode::DARK_LIGHT_NOTIFICATIONS)` — the result is stored in
-   a local `bool`.
-3. Release the lock.
-4. If notifications are enabled, emit `Event::WriteBytesToPty` with the appropriate
-   `CSI ? 997 ; Ps n` sequence via `self.write_to_pty(...)`.
+2. Lock the model, call `update_colors`, then call `set_color_scheme` and capture
+   whether the dark/light classification changed in a local
+   `classification_changed` `bool`.
+3. While still holding the lock, check
+   `is_term_mode_set(TermMode::DARK_LIGHT_NOTIFICATIONS)` and store that result in a
+   local `bool`.
+4. Release the lock.
+5. Only if notifications are enabled *and* `classification_changed` is true, emit
+   `Event::WriteBytesToPty` with the appropriate `CSI ? 997 ; Ps n` sequence via
+   `self.write_to_pty(...)`.
 
 The lock is released before calling `write_to_pty` to avoid a potential deadlock
-(other `write_to_pty` callsites also do not hold the model lock).
+(other `write_to_pty` callsites also do not hold the model lock).  The
+`classification_changed` check avoids sending unsolicited notifications for theme
+changes that do not alter the terminal's dark/light classification, which matches
+the behavior described in the overview.
 
 ### Dark/light classification
 
