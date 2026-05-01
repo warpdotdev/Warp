@@ -2836,6 +2836,9 @@ impl AIBlock {
                 }
                 CodeDiffViewEvent::Rejected => {
                     me.cancel_action(&action_id_clone, ctx);
+                    ctx.emit(AIBlockEvent::RefineRequestedDiff {
+                        conversation_id: me.client_ids.conversation_id,
+                    });
                 }
                 CodeDiffViewEvent::EditModeChanged { enabled } => {
                     if *enabled {
@@ -5506,6 +5509,13 @@ pub enum AIBlockEvent {
     },
     /// Emitted when the continue conversation button is clicked
     ContinueConversation {
+        conversation_id: AIConversationId,
+    },
+    /// Emitted when the user clicks "Refine" (or hits ctrl-c) on a requested code diff. The
+    /// diff is already cancelled by the existing `Rejected` flow; this additionally signals
+    /// that the terminal view should enter agent view with `AgentViewEntryOrigin::RefineDiff`
+    /// so the input is force-locked to AI mode.
+    RefineRequestedDiff {
         conversation_id: AIConversationId,
     },
     /// Emitted when a passive code diff should be injected into an agent context.

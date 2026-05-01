@@ -181,6 +181,11 @@ pub enum AgentViewEntryOrigin {
     /// Entered agent view by clearing the buffer (Cmd+K) while already in agent view.
     ClearBuffer,
 
+    /// Entered agent view by clicking the "Refine" button on a requested code diff (or hitting
+    /// the equivalent ctrl-c keybinding). The user has rejected the proposed edit and wants to
+    /// iterate on it with the agent.
+    RefineDiff,
+
     // The variants below actually correspond to callsites where the selected conversation is
     // updated, but don't actually correspond to entering the agent view. They exist so we can
     // continue to call `set_pending_query_state_for_(new|existing)_conversation`, but you'll find

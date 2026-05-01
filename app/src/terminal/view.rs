@@ -18919,6 +18919,15 @@ impl TerminalView {
             AIBlockEvent::ContinueConversation { conversation_id } => {
                 self.handle_continue_conversation(conversation_id, ctx);
             }
+            AIBlockEvent::RefineRequestedDiff { conversation_id } => {
+                self.enter_agent_view_for_conversation(
+                    None,
+                    AgentViewEntryOrigin::RefineDiff,
+                    *conversation_id,
+                    ctx,
+                );
+                self.redetermine_global_focus(ctx);
+            }
             AIBlockEvent::ContinuePassiveCodeDiffWithAgent {
                 conversation_id,
                 trigger_block_id,
