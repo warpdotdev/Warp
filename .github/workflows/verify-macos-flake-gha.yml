@@ -74,52 +74,9 @@ jobs:
         env:
           HOME: ${{ runner.temp }}/warp-home
         run: |
-          set -euxo pipefail
-          out="${{ steps.build.outputs.out }}"
-          app="$out/Applications/WarpOss.app"
-          binary="$app/Contents/MacOS/warp-oss"
-          stdout="$RUNNER_TEMP/warp-oss.stdout"
-          stderr="$RUNNER_TEMP/warp-oss.stderr"
-          log="$HOME/Library/Logs/warp-oss.log"
-
-          mkdir -p "$HOME/Library/Logs"
-          "$binary" >"$stdout" 2>"$stderr" &
-          pid="$!"
-          echo "Started warp-oss with pid $pid"
-
-          runtime_ok=0
-          for _ in $(seq 1 20); do
-            if kill -0 "$pid" 2>/dev/null; then
-              runtime_ok=1
-              if [ -s "$log" ]; then
-                break
-              fi
-              sleep 1
-            else
-              break
-            fi
-          done
-
-          if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" || true
-          fi
-          wait "$pid" || true
-
-          echo "=== warp-oss stdout ==="
-          sed -n '1,200p' "$stdout" || true
-          echo "=== warp-oss stderr ==="
-          sed -n '1,200p' "$stderr" || true
-          echo "=== warp-oss log ==="
-          if [ -s "$log" ]; then
-            tail -n 200 "$log"
-          else
-            echo "No warp-oss.log was written."
-          fi
-
-          if [ "$runtime_ok" -ne 1 ] && [ ! -s "$log" ]; then
-            echo "warp-oss neither stayed alive briefly nor wrote a log file" >&2
-            exit 1
-          fi
+          bash .github/scripts/smoke-warp-macos-app.sh \
+            "${{ steps.build.outputs.out }}/Applications/WarpOss.app" \
+            "warp-oss"
 
       - name: Package DMG
         id: package
@@ -132,8 +89,7 @@ jobs:
           dmg="$dmg_dir/WarpOss-${{ matrix.system }}.dmg"
 
           rm -rf "$dmg_dir" "$staging"
-          mkdir -p "$dmg_dir"
-          mkdir -p "$staging"
+          mkdir -p "$dmg_dir" "$staging"
           ditto "$app" "$staging/WarpOss.app"
           ln -s /Applications "$staging/Applications"
 
@@ -153,60 +109,15 @@ jobs:
           set -euxo pipefail
           dmg="${{ steps.package.outputs.dmg }}"
           mount="$RUNNER_TEMP/warp-dmg-mount"
-          stdout="$RUNNER_TEMP/warp-oss-dmg.stdout"
-          stderr="$RUNNER_TEMP/warp-oss-dmg.stderr"
-          log="$HOME/Library/Logs/warp-oss.log"
 
           rm -rf "$mount"
           mkdir -p "$mount"
-          mkdir -p "$HOME/Library/Logs"
           hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
           trap 'hdiutil detach "$mount" || true' EXIT
 
-          app="$mount/WarpOss.app"
-          binary="$app/Contents/MacOS/warp-oss"
-          test -d "$app"
-          test -x "$binary"
-          test -s "$app/Contents/Info.plist"
-          test -s "$app/Contents/Resources/settings_schema.json"
-
-          "$binary" >"$stdout" 2>"$stderr" &
-          pid="$!"
-          echo "Started DMG warp-oss with pid $pid"
-
-          runtime_ok=0
-          for _ in $(seq 1 20); do
-            if kill -0 "$pid" 2>/dev/null; then
-              runtime_ok=1
-              if [ -s "$log" ]; then
-                break
-              fi
-              sleep 1
-            else
-              break
-            fi
-          done
-
-          if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" || true
-          fi
-          wait "$pid" || true
-
-          echo "=== DMG warp-oss stdout ==="
-          sed -n '1,200p' "$stdout" || true
-          echo "=== DMG warp-oss stderr ==="
-          sed -n '1,200p' "$stderr" || true
-          echo "=== DMG warp-oss log ==="
-          if [ -s "$log" ]; then
-            tail -n 200 "$log"
-          else
-            echo "No warp-oss.log was written."
-          fi
-
-          if [ "$runtime_ok" -ne 1 ] && [ ! -s "$log" ]; then
-            echo "DMG warp-oss neither stayed alive briefly nor wrote a log file" >&2
-            exit 1
-          fi
+          bash .github/scripts/smoke-warp-macos-app.sh \
+            "$mount/WarpOss.app" \
+            "DMG warp-oss"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
