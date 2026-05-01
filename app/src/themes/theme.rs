@@ -1,9 +1,9 @@
 use super::default_themes::*;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::iter::FromIterator;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use warp_core::ui::color::pick_foreground_color;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::{
@@ -148,6 +148,15 @@ impl ThemeKind {
         let theme_name = format!("{self}").to_lowercase();
         theme_name.contains(&query.to_lowercase())
     }
+
+    pub(crate) fn is_custom_theme_reference_syncable(&self) -> bool {
+        match self {
+            ThemeKind::Custom(custom_theme) | ThemeKind::CustomBase16(custom_theme) => {
+                custom_theme_path_is_portable(&custom_theme.path, &crate::user_config::themes_dir())
+            }
+            _ => true,
+        }
+    }
 }
 
 #[derive(
@@ -161,14 +170,116 @@ impl ThemeKind {
     PartialOrd,
     Ord,
     schemars::JsonSchema,
-    settings_value::SettingsValue,
 )]
 #[schemars(description = "A user-provided custom theme.")]
 pub struct CustomTheme {
     #[schemars(description = "The display name of the custom theme.")]
     name: String,
+    #[serde(
+        deserialize_with = "deserialize_custom_theme_path",
+        serialize_with = "serialize_custom_theme_path"
+    )]
     #[schemars(description = "The file path to the custom theme definition.")]
     path: PathBuf,
+}
+
+impl settings_value::SettingsValue for CustomTheme {
+    fn to_file_value(&self) -> serde_json::Value {
+        serde_json::json!({
+            "name": &self.name,
+            "path": custom_theme_path_for_storage(&self.path, &crate::user_config::themes_dir()),
+        })
+    }
+
+    fn from_file_value(value: &serde_json::Value) -> Option<Self> {
+        #[derive(Deserialize)]
+        struct FileValue {
+            name: String,
+            path: PathBuf,
+        }
+
+        let value = serde_json::from_value::<FileValue>(value.clone()).ok()?;
+        Some(Self {
+            name: value.name,
+            path: custom_theme_path_from_storage(&value.path, &crate::user_config::themes_dir()),
+        })
+    }
+}
+
+fn serialize_custom_theme_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    custom_theme_path_for_storage(path, &crate::user_config::themes_dir()).serialize(serializer)
+}
+
+fn deserialize_custom_theme_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let path = PathBuf::deserialize(deserializer)?;
+    Ok(custom_theme_path_from_storage(
+        &path,
+        &crate::user_config::themes_dir(),
+    ))
+}
+
+pub(crate) fn custom_theme_path_for_storage(path: &Path, theme_root: &Path) -> PathBuf {
+    if path.is_relative() {
+        return path.to_path_buf();
+    }
+
+    path.strip_prefix(theme_root)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|_| path.to_path_buf())
+}
+
+pub(crate) fn custom_theme_path_from_storage(path: &Path, theme_root: &Path) -> PathBuf {
+    if path.is_relative() {
+        return theme_root.join(path);
+    }
+
+    if let Ok(relative) = path.strip_prefix(theme_root) {
+        return theme_root.join(relative);
+    }
+
+    if let Some(relative) = legacy_theme_root_relative_path(path) {
+        let candidate = theme_root.join(relative);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+
+    path.to_path_buf()
+}
+
+pub(crate) fn custom_theme_path_is_portable(path: &Path, theme_root: &Path) -> bool {
+    path.is_relative() || path.starts_with(theme_root)
+}
+
+fn legacy_theme_root_relative_path(path: &Path) -> Option<PathBuf> {
+    let components = path
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(value) => value.to_str(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    relative_path_after_marker(&components, &[".warp", "themes"])
+        .or_else(|| relative_path_after_marker(&components, &["warp-terminal", "themes"]))
+}
+
+fn relative_path_after_marker(components: &[&str], marker: &[&str]) -> Option<PathBuf> {
+    let start = components
+        .windows(marker.len())
+        .position(|window| window == marker)?;
+    let relative = &components[start + marker.len()..];
+    if relative.is_empty() {
+        return None;
+    }
+
+    Some(relative.iter().collect())
 }
 
 impl CustomTheme {
