@@ -300,6 +300,24 @@ impl TypedActionView for AmbientAgentEntryBlock {
                     },
                     ctx
                 );
+                // If the run ended in a pre-first-exchange terminal state (cancelled, failed,
+                // or auth-required), re-entering via this entry block should land the user back
+                // on a usable composer so they can start a new run with the same environment
+                // and harness. Without this reset the cloud-mode view stays in its terminal
+                // state, which leaves the input UI in a half-broken layout (the cloud-mode v2
+                // composing input only renders when the model is in `Composing`, so the
+                // regular block list + input chrome takes over against a deferred terminal
+                // session that has nothing to run).
+                if let Some(view_model) = self
+                    .terminal_view
+                    .as_ref(ctx)
+                    .ambient_agent_view_model()
+                    .cloned()
+                {
+                    view_model.update(ctx, |model, ctx| {
+                        let _ = model.reset_to_composing_after_terminal_state(ctx);
+                    });
+                }
                 if let Some(stack) = self.pane_stack.upgrade(ctx) {
                     stack.update(ctx, |stack, ctx| {
                         stack.push(
