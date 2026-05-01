@@ -75,11 +75,7 @@ impl super::UserPreferences for UserDefaultsPreferencesStorage {
                     // 'c' = signed char (BOOL on x86_64); 'B' = C++ bool (BOOL on arm64).
                     if encoding == b"c" || encoding == b"B" {
                         let b: bool = msg_send![raw, boolValue];
-                        return Ok(Some(if b {
-                            "true".to_owned()
-                        } else {
-                            "false".to_owned()
-                        }));
+                        return Ok(Some(b.to_string()));
                     }
                 }
             }
