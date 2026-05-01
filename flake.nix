@@ -20,6 +20,8 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
     in
@@ -93,7 +95,7 @@
                 'for entry in WalkDir::new("${warpWorkflows}/specs") {'
           '';
 
-          runtimeLibraries = with pkgs; [
+          linuxRuntimeLibraries = with pkgs; [
             alsa-lib
             curl
             dbus
@@ -120,6 +122,20 @@
             zlib
           ];
 
+          darwinBuildInputs = with pkgs; [
+            apple-sdk_15
+            libiconv
+            (darwinMinVersionHook "10.14")
+          ];
+
+          buildFeatures = [
+            "release_bundle"
+            "gui"
+            "nld_improvements"
+          ] ++ lib.optionals pkgs.stdenv.isDarwin [
+            "extern_plist"
+          ];
+
           warp-terminal = rustPlatform.buildRustPackage {
             pname = "warp-terminal";
             inherit version;
@@ -127,20 +143,30 @@
             src = self;
             inherit cargoDeps;
 
-            nativeBuildInputs = with pkgs; [
-              brotli
-              cargo-about
-              clang
-              cmake
-              jq
-              makeWrapper
-              patchelf
-              pkg-config
-              protobuf
-              python3
-            ];
+            nativeBuildInputs =
+              with pkgs;
+              [
+                brotli
+                cargo-about
+                clang
+                cmake
+                jq
+                pkg-config
+                protobuf
+                python3
+              ]
+              ++ lib.optionals pkgs.stdenv.isLinux [
+                makeWrapper
+                patchelf
+              ]
+              ++ lib.optionals pkgs.stdenv.isDarwin [
+                cargo-bundle
+                perl
+              ];
 
-            buildInputs = runtimeLibraries;
+            buildInputs =
+              lib.optionals pkgs.stdenv.isLinux linuxRuntimeLibraries
+              ++ lib.optionals pkgs.stdenv.isDarwin darwinBuildInputs;
 
             cargoBuildFlags = [
               "-p"
@@ -150,11 +176,7 @@
               "--bin"
               "generate_settings_schema"
             ];
-            buildFeatures = [
-              "release_bundle"
-              "gui"
-              "nld_improvements"
-            ];
+            inherit buildFeatures;
 
             # The application test suite is large and GUI/integration-heavy; this
             # flake's package check is the Nix build plus a launch smoke test.
@@ -166,64 +188,116 @@
               PROTOC = "${pkgs.protobuf}/bin/protoc";
               PROTOC_INCLUDE = "${pkgs.protobuf}/include";
               CARGO_PROFILE_RELEASE_DEBUG = "false";
+            } // lib.optionalAttrs pkgs.stdenv.isDarwin {
+              MACOSX_DEPLOYMENT_TARGET = "10.14";
             };
 
             postInstall =
-              let
-                installDir = "$out/opt/warpdotdev/warp-terminal";
-                resourcesDir = "${installDir}/resources";
-                releaseChannel = "stable";
-                libraryPath = lib.makeLibraryPath runtimeLibraries;
-                executablePath = lib.makeBinPath (with pkgs; [ xdg-utils ]);
-              in
-              ''
-                install -Dm755 "$out/bin/warp-oss" "${installDir}/warp-oss"
-                rm -f "$out/bin/warp-oss"
+              if pkgs.stdenv.isDarwin then
+                let
+                  appName = "WarpOss";
+                  releaseChannel = "oss";
+                  cargoBundleFeatures = lib.concatStringsSep "," buildFeatures;
+                  appBundle = "target/release/bundle/osx/${appName}.app";
+                  resourcesDir = "${appBundle}/Contents/Resources";
+                in
+                ''
+                  patchShebangs \
+                    ./script/prepare_bundled_resources \
+                    ./script/copy_conditional_skills \
+                    ./script/compile_icon
 
-                patchShebangs \
-                  ./script/prepare_bundled_resources \
-                  ./script/copy_conditional_skills
+                  pushd app
+                  CARGO_BUNDLE_SKIP_BUILD=1 cargo bundle \
+                    --profile release \
+                    --bin warp-oss \
+                    --features "${cargoBundleFeatures}"
+                  popd
 
-                SKIP_SETTINGS_SCHEMA=1 ./script/prepare_bundled_resources \
-                  "${resourcesDir}" \
-                  "${releaseChannel}" \
-                  release
+                  export WARP_SCHEME_NAME=warposs
+                  export WARP_PLIST_PATH="${appBundle}/Contents/Info.plist"
+                  ./script/update_plist
 
-                "$out/bin/generate_settings_schema" \
-                  --channel "${releaseChannel}" \
-                  "${resourcesDir}/settings_schema.json"
-                rm -f "$out/bin/generate_settings_schema"
+                  SKIP_SETTINGS_SCHEMA=1 ./script/prepare_bundled_resources \
+                    "${resourcesDir}" \
+                    "${releaseChannel}" \
+                    release
 
-                install -Dm644 \
-                  "${resourcesDir}/THIRD_PARTY_LICENSES.txt" \
-                  "$out/share/licenses/warp-terminal/THIRD_PARTY_LICENSES.txt"
+                  "$out/bin/generate_settings_schema" \
+                    --channel "${releaseChannel}" \
+                    "${resourcesDir}/settings_schema.json"
 
-                install -Dm644 LICENSE-AGPL "$out/share/licenses/warp-terminal/LICENSE-AGPL"
-                install -Dm644 LICENSE-MIT "$out/share/licenses/warp-terminal/LICENSE-MIT"
+                  ./script/compile_icon "${releaseChannel}" "${appBundle}"
 
-                install -Dm644 app/channels/oss/dev.warp.WarpOss.desktop \
-                  "$out/share/applications/dev.warp.WarpOss.desktop"
-                substituteInPlace "$out/share/applications/dev.warp.WarpOss.desktop" \
-                  --replace-fail "Exec=warp-oss %U" "Exec=warp-terminal %U"
+                  mkdir -p "$out/Applications" "$out/bin"
+                  mv "${appBundle}" "$out/Applications/${appName}.app"
 
-                for size in 16x16 32x32 64x64 128x128 256x256 512x512; do
-                  icon="app/channels/oss/icon/no-padding/$size.png"
-                  if [ -f "$icon" ]; then
-                    install -Dm644 "$icon" \
-                      "$out/share/icons/hicolor/$size/apps/dev.warp.WarpOss.png"
-                  fi
-                done
+                  rm -f "$out/bin/warp-oss" "$out/bin/generate_settings_schema"
+                  ln -s "$out/Applications/${appName}.app/Contents/MacOS/warp-oss" "$out/bin/warp-oss"
+                  ln -s "$out/Applications/${appName}.app/Contents/MacOS/warp-oss" "$out/bin/warp-terminal"
 
-                wrapProgram "${installDir}/warp-oss" \
-                  --prefix LD_LIBRARY_PATH : "${libraryPath}" \
-                  --prefix PATH : "${executablePath}"
+                  install -Dm644 LICENSE-AGPL "$out/share/licenses/warp-terminal/LICENSE-AGPL"
+                  install -Dm644 LICENSE-MIT "$out/share/licenses/warp-terminal/LICENSE-MIT"
+                  install -Dm644 \
+                    "${resourcesDir}/THIRD_PARTY_LICENSES.txt" \
+                    "$out/share/licenses/warp-terminal/THIRD_PARTY_LICENSES.txt"
+                ''
+              else
+                let
+                  installDir = "$out/opt/warpdotdev/warp-terminal";
+                  resourcesDir = "${installDir}/resources";
+                  releaseChannel = "stable";
+                  libraryPath = lib.makeLibraryPath linuxRuntimeLibraries;
+                  executablePath = lib.makeBinPath (with pkgs; [ xdg-utils ]);
+                in
+                ''
+                  install -Dm755 "$out/bin/warp-oss" "${installDir}/warp-oss"
+                  rm -f "$out/bin/warp-oss"
 
-                mkdir -p "$out/bin"
-                ln -s "${installDir}/warp-oss" "$out/bin/warp-oss"
-                ln -s "${installDir}/warp-oss" "$out/bin/warp-terminal"
-              '';
+                  patchShebangs \
+                    ./script/prepare_bundled_resources \
+                    ./script/copy_conditional_skills
 
-            postFixup = ''
+                  SKIP_SETTINGS_SCHEMA=1 ./script/prepare_bundled_resources \
+                    "${resourcesDir}" \
+                    "${releaseChannel}" \
+                    release
+
+                  "$out/bin/generate_settings_schema" \
+                    --channel "${releaseChannel}" \
+                    "${resourcesDir}/settings_schema.json"
+                  rm -f "$out/bin/generate_settings_schema"
+
+                  install -Dm644 \
+                    "${resourcesDir}/THIRD_PARTY_LICENSES.txt" \
+                    "$out/share/licenses/warp-terminal/THIRD_PARTY_LICENSES.txt"
+
+                  install -Dm644 LICENSE-AGPL "$out/share/licenses/warp-terminal/LICENSE-AGPL"
+                  install -Dm644 LICENSE-MIT "$out/share/licenses/warp-terminal/LICENSE-MIT"
+
+                  install -Dm644 app/channels/oss/dev.warp.WarpOss.desktop \
+                    "$out/share/applications/dev.warp.WarpOss.desktop"
+                  substituteInPlace "$out/share/applications/dev.warp.WarpOss.desktop" \
+                    --replace-fail "Exec=warp-oss %U" "Exec=warp-terminal %U"
+
+                  for size in 16x16 32x32 64x64 128x128 256x256 512x512; do
+                    icon="app/channels/oss/icon/no-padding/$size.png"
+                    if [ -f "$icon" ]; then
+                      install -Dm644 "$icon" \
+                        "$out/share/icons/hicolor/$size/apps/dev.warp.WarpOss.png"
+                    fi
+                  done
+
+                  wrapProgram "${installDir}/warp-oss" \
+                    --prefix LD_LIBRARY_PATH : "${libraryPath}" \
+                    --prefix PATH : "${executablePath}"
+
+                  mkdir -p "$out/bin"
+                  ln -s "${installDir}/warp-oss" "$out/bin/warp-oss"
+                  ln -s "${installDir}/warp-oss" "$out/bin/warp-terminal"
+                '';
+
+            postFixup = lib.optionalString pkgs.stdenv.isLinux ''
               wrapped="/opt/warpdotdev/warp-terminal/.warp-oss-wrapped"
               if [ -e "$out$wrapped" ] && ! patchelf --print-needed "$out$wrapped" | grep -q '^libfontconfig\.so\.1$'; then
                 patchelf --add-needed libfontconfig.so.1 "$out$wrapped"
@@ -255,46 +329,60 @@
           };
           lib = pkgs.lib;
           rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-          nativeBuildInputs = with pkgs; [
-            brotli
-            cargo-about
-            cargo-nextest
-            clang
-            cmake
-            jq
-            lld
-            pkg-config
-            protobuf
-            python3
-            rustToolchain
-            rust-analyzer
-          ];
-          buildInputs = with pkgs; [
-            alsa-lib
-            curl
-            dbus
-            expat
-            fontconfig
-            freetype
-            libGL
-            libgit2
-            libxkbcommon
-            openssl
-            stdenv.cc.cc.lib
-            udev
-            vulkan-loader
-            wayland
-            libx11
-            libxscrnsaver
-            libxcursor
-            libxext
-            libxfixes
-            libxi
-            libxrandr
-            libxrender
-            libxcb
-            zlib
-          ];
+          nativeBuildInputs =
+            with pkgs;
+            [
+              brotli
+              cargo-about
+              cargo-nextest
+              clang
+              cmake
+              jq
+              lld
+              pkg-config
+              protobuf
+              python3
+              rustToolchain
+              rust-analyzer
+            ]
+            ++ lib.optionals pkgs.stdenv.isDarwin [
+              cargo-bundle
+            ];
+          buildInputs =
+            with pkgs;
+            [
+              curl
+              fontconfig
+              freetype
+              libgit2
+              openssl
+              zlib
+            ]
+            ++ lib.optionals pkgs.stdenv.isLinux [
+              alsa-lib
+              dbus
+              expat
+              libGL
+              libxkbcommon
+              stdenv.cc.cc.lib
+              udev
+              vulkan-loader
+              wayland
+              libx11
+              libxscrnsaver
+              libxcursor
+              libxext
+              libxfixes
+              libxi
+              libxrandr
+              libxrender
+              libxcb
+            ]
+            ++ lib.optionals pkgs.stdenv.isDarwin [
+              apple-sdk_15
+              libiconv
+              (darwinMinVersionHook "10.14")
+            ];
         in
         {
           default = pkgs.mkShell {
@@ -303,7 +391,8 @@
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
             PROTOC = "${pkgs.protobuf}/bin/protoc";
             PROTOC_INCLUDE = "${pkgs.protobuf}/include";
-            LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
+            LD_LIBRARY_PATH = lib.optionalString pkgs.stdenv.isLinux (lib.makeLibraryPath buildInputs);
+            MACOSX_DEPLOYMENT_TARGET = lib.optionalString pkgs.stdenv.isDarwin "10.14";
           };
         }
       );

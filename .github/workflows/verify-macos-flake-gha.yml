@@ -1,0 +1,121 @@
+name: Verify macOS Warp flake
+
+on:
+  push:
+    branches:
+      - verify-macos-flake-gha
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-launch:
+    name: Build and launch ${{ matrix.system }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            system: aarch64-darwin
+          - runner: macos-15-intel
+            system: x86_64-darwin
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Show macOS toolchain
+        run: |
+          set -euxo pipefail
+          sw_vers
+          xcodebuild -version
+          xcrun --sdk macosx --find metal
+          xcrun --sdk macosx --find metallib
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@02a151ada4993995686f9ed4f1be7cfbb229e56f # v31.7.0
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Warp macOS app
+        id: build
+        run: |
+          set -euxo pipefail
+          nix --version
+          nix config show system
+          out="$(nix build ".#packages.${{ matrix.system }}.warp-terminal" --print-out-paths -L --accept-flake-config)"
+          echo "out=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect app bundle
+        run: |
+          set -euxo pipefail
+          out="${{ steps.build.outputs.out }}"
+          app="$out/Applications/WarpOss.app"
+          binary="$app/Contents/MacOS/warp-oss"
+
+          test -d "$app"
+          test -x "$binary"
+          test -s "$app/Contents/Info.plist"
+          test -s "$app/Contents/Resources/settings_schema.json"
+
+          file "$binary"
+          plutil -p "$app/Contents/Info.plist"
+          otool -L "$binary" | sed -n '1,160p'
+
+      - name: Launch app binary briefly
+        env:
+          HOME: ${{ runner.temp }}/warp-home
+        run: |
+          set -euxo pipefail
+          out="${{ steps.build.outputs.out }}"
+          app="$out/Applications/WarpOss.app"
+          binary="$app/Contents/MacOS/warp-oss"
+          stdout="$RUNNER_TEMP/warp-oss.stdout"
+          stderr="$RUNNER_TEMP/warp-oss.stderr"
+          log="$HOME/Library/Logs/warp-oss.log"
+
+          mkdir -p "$HOME/Library/Logs"
+          "$binary" >"$stdout" 2>"$stderr" &
+          pid="$!"
+          echo "Started warp-oss with pid $pid"
+
+          runtime_ok=0
+          for _ in $(seq 1 20); do
+            if kill -0 "$pid" 2>/dev/null; then
+              runtime_ok=1
+              if [ -s "$log" ]; then
+                break
+              fi
+              sleep 1
+            else
+              break
+            fi
+          done
+
+          if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" || true
+          fi
+          wait "$pid" || true
+
+          echo "=== warp-oss stdout ==="
+          sed -n '1,200p' "$stdout" || true
+          echo "=== warp-oss stderr ==="
+          sed -n '1,200p' "$stderr" || true
+          echo "=== warp-oss log ==="
+          if [ -s "$log" ]; then
+            tail -n 200 "$log"
+          else
+            echo "No warp-oss.log was written."
+          fi
+
+          if [ "$runtime_ok" -ne 1 ] && [ ! -s "$log" ]; then
+            echo "warp-oss neither stayed alive briefly nor wrote a log file" >&2
+            exit 1
+          fi
