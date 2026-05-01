@@ -18,14 +18,14 @@ Figma: none provided.
 
 2. **Closing.** A new opening sequence implicitly closes any previous open hyperlink — there is never more than one active hyperlink at a time. An explicit close (`ESC ] 8 ; ; ST`) clears the active hyperlink.
 
-3. **Params.** The `params` field is a colon-separated list of `key=value` pairs. The `id` key is honored: hyperlinks that share the same non-empty `id` are treated as one logical link for hover and click, even when the on-screen cells are not contiguous (e.g. wrapped across two lines, or split by other output). Unknown keys are ignored, never cause the sequence to be discarded.
+3. **Params.** The `params` field is a colon-separated list of `key=value` pairs. Unknown keys are ignored, never cause the sequence to be discarded. The `id` key is parsed and tracked, but treated as a hint only — same-`id` grouping across non-contiguous runs is **out of scope** for this iteration; see invariant 5 and the follow-ups in `tech.md`.
 
 4. **Visible text.** The visible characters between the opening and closing sequence render exactly as they would without OSC 8 — same characters, same SGR styling (color, bold, italic, underline, etc.). The hyperlink does not change the rendered glyphs or insert any visible decoration of its own beyond what (5) describes.
 
 5. **Hover affordance.** When the cursor moves over any cell in a hyperlink span:
    - The mouse cursor changes to the same pointer/hand shape used today for auto-detected URLs.
    - The full URI is shown in the same hover tooltip currently used for auto-detected URLs ("Open link"), with the URI itself displayed so the user can see where they would be navigating before clicking.
-   - When the hyperlink span is not contiguous (same `id` across non-adjacent cells), hovering any cell highlights every cell in the span, not just the hovered run.
+   - The highlighted span covers the full **contiguous run** of cells written between one `OSC 8` open and its corresponding close (including across soft wraps within a block, per (10)). Cross-run grouping by `id` (e.g. two emissions sharing `id=foo` separated by other output) is out of scope.
 
 6. **Click to open.** Cmd+click (macOS) / Ctrl+click (Linux/Windows) on any cell in a hyperlink span opens the URI in the user's default browser, using the same `open_url` path used today for auto-detected URL links — so default-browser routing, telemetry, and "open with" behavior match. Plain (un-modified) click on a hyperlinked cell behaves like a plain click on any other terminal cell (selection / cursor placement); the modifier is required, matching today's URL link UX.
 
@@ -48,7 +48,7 @@ Figma: none provided.
     - Restoring a session from history / Warp Drive / shared session preserves the URI on hyperlink spans so they remain clickable in the restored block.
     - Searching within a block matches against the visible text, not the URI.
 
-13. **Sharing a block.** When a block is shared (Warp Drive, shared link, copy as markdown), hyperlink spans are preserved as markdown-style links — `[visible text](URI)` — so the recipient sees a clickable link with the same destination. Plain "copy block" preserves the original output bytes (including the OSC 8 sequences) so a paste into another OSC-8-aware terminal renders the same link.
+13. **Sharing a block.** When a block is shared (Warp Drive, shared link, copy as markdown), hyperlink spans are preserved as markdown-style links — `[visible text](URI)` — so the recipient sees a clickable link with the same destination. Plain "copy block" emits **semantically equivalent** OSC 8 bytes around the visible text (`ESC ] 8 ; ; URI ESC \` … visible text … `ESC ] 8 ; ; ESC \`), so a paste into another OSC-8-aware terminal renders a clickable link to the same URI. The reconstructed bytes need not match the originating program's exact params — Warp normalizes to the canonical form (no `id`, ESC-`\` terminator).
 
 14. **AI / agent context.** Block content fed to the AI assistant or agents includes the URI for any OSC 8 hyperlink span, in a form the model can use (e.g. inline as `visible text (URI)` or markdown link), so an agent reading the output of `wizcli` can act on the URI rather than only seeing "Click to view scan report".
 
