@@ -176,16 +176,6 @@ impl Resources {
             .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
     }
 
-    /// Whether the surface composites with anything other than opaque alpha.
-    /// `Inherit` is treated as transparent because wgpu documents it as
-    /// platform-defined and therefore not safe to assume opaque.
-    pub fn surface_is_transparent(&self) -> bool {
-        !matches!(
-            self.surface_config.borrow().alpha_mode,
-            CompositeAlphaMode::Opaque
-        )
-    }
-
     pub fn configure_render_pass<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,

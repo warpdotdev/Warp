@@ -659,16 +659,22 @@ impl Scene {
         font_size: f32,
         color: ColorU,
     ) -> &mut Glyph {
-        // Subpixel rasterisation is gated on the renderer having actually
-        // built the dual-source-blend pipeline. The other half of the
-        // historical concern (per-channel coverage corrupting the
-        // compositor's alpha on transparent surfaces) is already handled
-        // one layer down: the subpixel render pipeline declares
-        // `wgpu::ColorWrites::COLOR`, so the per-channel pass writes RGB
-        // only and never touches the framebuffer's alpha. Whatever alpha
-        // the background pass wrote is what the compositor reads,
-        // regardless of the swapchain's `CompositeAlphaMode`.
-        let lcd_subpixel = self.rendering_config.lcd_subpixel_supported;
+        // Subpixel rasterisation is gated on two conditions: the renderer
+        // built the dual-source-blend pipeline, and the window background
+        // is not heavily translucent. The strongly translucent case has
+        // to be excluded because the subpixel pipeline declares
+        // `ColorWrites::COLOR`, which preserves whatever alpha the
+        // background quad wrote; when that alpha is well below 1.0 the
+        // compositor blends the desktop into the glyph strokes
+        // themselves. Routing those glyphs through the mono pipeline
+        // (its `ColorWrites::all()` plus ALPHA_BLENDING drives
+        // framebuffer alpha to 1.0 at covered pixels) avoids the bleed
+        // at the cost of edge sharpness; the gate threshold (defined in
+        // the app layer) keeps mild translucency on the LCD path so most
+        // users do not pay that cost. Inspired by zed's
+        // `should_use_subpixel_rendering` gate.
+        let lcd_subpixel = self.rendering_config.lcd_subpixel_supported
+            && !self.rendering_config.transparent_background;
 
         // TODO: Support hit testing on glyphs?
         let layer = self.active_layer();

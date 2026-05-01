@@ -617,6 +617,13 @@ pub struct AppContext {
     /// borrowing the AppContext, since the callback is invoked synchronously
     /// from inside the GPU resource creation path.
     gpu_supports_lcd_subpixel: Arc<AtomicBool>,
+    /// Latched bit reporting whether the user has configured a translucent
+    /// window background (the `appearance.window.override_opacity` setting
+    /// is below 100%). Updated from the app layer's `WindowSettings`
+    /// observer; consumed in `rendering_config()` to gate the LCD subpixel
+    /// path. Atomic so the observer can write without a mutable
+    /// AppContext borrow.
+    transparent_background_active: Arc<AtomicBool>,
     global_actions: HashMap<String, Vec<Box<GlobalActionCallback>>>,
     keystroke_matcher: Matcher,
     next_task_id: usize,
@@ -779,6 +786,7 @@ impl AppContext {
             presenters: Default::default(),
             rendering_config: Default::default(),
             gpu_supports_lcd_subpixel: Arc::new(AtomicBool::new(false)),
+            transparent_background_active: Arc::new(AtomicBool::new(false)),
             keystroke_matcher: Default::default(),
             disabled_key_bindings_windows: Default::default(),
             next_task_id: 0,
@@ -935,7 +943,18 @@ impl AppContext {
         // Stored separately because the on_gpu_device_info_reported
         // callback that sets them runs without a mutable AppContext borrow.
         config.lcd_subpixel_supported = self.gpu_supports_lcd_subpixel.load(Ordering::Acquire);
+        config.transparent_background = self.transparent_background_active.load(Ordering::Acquire);
         config
+    }
+
+    /// Update the latched window-translucency bit consumed by
+    /// `rendering_config()`. Called by the app layer when
+    /// `WindowSettings::background_opacity` changes (and once at startup
+    /// to seed the initial value). `&self` because the underlying field
+    /// is an `Arc<AtomicBool>`; no exclusive borrow needed.
+    pub fn set_transparent_background(&self, transparent: bool) {
+        self.transparent_background_active
+            .store(transparent, Ordering::Release);
     }
 
     pub fn update_rendering_config<U>(&mut self, update_fn: U)
