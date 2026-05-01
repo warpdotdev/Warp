@@ -73,10 +73,14 @@ Out of scope:
 
 8. The Kiro agent entry appears in the "Third party CLI agents" settings page
    under Settings → Agents → Third party CLI agents, alongside Claude Code,
-   Codex, Gemini, and the other supported agents. The entry shows the Kiro logo
-   and name. A documentation link is not included in the initial implementation
-   because the current settings UI does not render per-agent documentation links
-   for any agent; adding that capability is a follow-up item.
+   Codex, Gemini, and the other supported agents, when
+   `FeatureFlag::KiroCLIAgent` is enabled. The entry shows the Kiro logo and
+   name. When the flag is disabled, Kiro is hidden from the selector, and any
+   persisted command mapping to Kiro is displayed as "Other" in the settings UI
+   (without exposing Kiro as a selectable option) until the flag is re-enabled.
+   A documentation link is not included in the initial implementation because
+   the current settings UI does not render per-agent documentation links for any
+   agent; adding that capability is a follow-up item.
 
 9. Session start, status changes, and session end are reported to telemetry
    using the same `CLIAgentType` telemetry event structure used by other agents,

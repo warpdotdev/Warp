@@ -34,8 +34,11 @@ Relevant files:
   implementation for a simple plugin manager (no auto-install, manual steps
   only). New `kiro.rs` follows this pattern.
 - `app/src/server/telemetry/events.rs` — `CLIAgentType` enum at line 491.
-- `crates/warp_core/src/features.rs` — `FeatureFlag` enum. New feature flag
-  gates the Kiro variant until the plugin is ready for general availability.
+- `crates/warp_features/src/lib.rs` — `FeatureFlag` enum and rollout lists
+  (`DOGFOOD_FLAGS`, `PREVIEW_FLAGS`, `RELEASE_FLAGS`). New feature flag gates
+  the Kiro variant until the plugin is ready for general availability.
+- `app/src/features.rs` — re-export used by app code (`pub use
+  warp_core::features::*;`) when importing `FeatureFlag`.
 - `app/src/ui_components/icons.rs` (or the equivalent icon registry) — `Icon`
   enum. A `KiroLogo` variant is needed.
 - `app/src/settings_view/ai_page.rs` — the file that renders the "Third party
@@ -49,11 +52,11 @@ Relevant files:
   ("a link to the Kiro CLI documentation") therefore cannot be satisfied by the
   current settings UI without a UI change. **Resolution**: the documentation
   link requirement is deferred to a follow-up; the initial implementation adds
-  Kiro to the dropdown only (consistent with all other agents). No explicit
-  change to this file is needed beyond the enum addition, but the page must be
-  verified to render the new entry correctly in the dropdown and to exclude
-  `CLIAgent::Kiro` when the feature flag is disabled (see feature flag section
-  below).
+  Kiro to the dropdown only (consistent with all other agents). This file needs
+  two explicit behavior guards: exclude `CLIAgent::Kiro` from dropdown items
+  when the feature flag is disabled, and coerce persisted `CLIAgent::Kiro`
+  assignments to "Other" in the selected label when the flag is disabled (see
+  feature flag section below).
 
 ## Proposed changes
 
@@ -130,7 +133,7 @@ map `CLIAgent::Kiro => CLIAgentType::Kiro`.
 
 ### 4. Add a feature flag
 
-In `crates/warp_core/src/features.rs`, add:
+In `crates/warp_features/src/lib.rs`, add:
 
 ```rust
 pub enum FeatureFlag {
@@ -147,8 +150,9 @@ initially.
 
 **Important — all enum-iteration surfaces must be gated, not just command
 detection.** Adding `CLIAgent::Kiro` to the enum automatically exposes it
-through every consumer of `enum_iterator::all::<CLIAgent>()`. There are two
-additional surfaces that must be gated:
+through every consumer of `enum_iterator::all::<CLIAgent>()`. There are three
+additional enum-iteration surfaces that must be gated, plus the plugin-manager
+factory:
 
 1. **`CLIAgent::detect()` in `app/src/terminal/cli_agent.rs`** — the
    `enum_iterator::all::<CLIAgent>()` loop that matches commands. Add a
@@ -166,7 +170,8 @@ additional surfaces that must be gated:
 
 2. **Settings dropdown in `app/src/settings_view/ai_page.rs`** — the
    `for agent in all::<CLIAgent>()` loop at line ~2121 that populates the
-   agent-assignment dropdown. Add the same guard:
+   agent-assignment dropdown. Add the same guard and disabled-state selection
+   fallback:
 
    ```rust
    for agent in all::<CLIAgent>() {
@@ -178,9 +183,32 @@ additional surfaces that must be gated:
        }
        // ... existing item construction
    }
+   let selected_name = if matches!(current_agent, CLIAgent::Unknown)
+       || (matches!(current_agent, CLIAgent::Kiro)
+           && !FeatureFlag::KiroCLIAgent.is_enabled())
+   {
+       "Other"
+   } else {
+       current_agent.display_name()
+   };
    ```
 
-3. **`plugin_manager_for_with_shell()` in
+3. **`resolve_agent()` in `app/src/terminal/cli_agent_sessions/event/v1.rs`**
+   — plugin event parsing also iterates `all::<CLIAgent>()`. Apply the same
+   feature-flag guard so disabled variants do not resolve from incoming event
+   payloads:
+
+   ```rust
+   enum_iterator::all::<CLIAgent>()
+       .filter(|agent| !matches!(agent, CLIAgent::Unknown))
+       .filter(|agent| {
+           !matches!(agent, CLIAgent::Kiro)
+               || FeatureFlag::KiroCLIAgent.is_enabled()
+       })
+       .find(|agent| agent.command_prefix() == incoming_agent_name)
+   ```
+
+4. **`plugin_manager_for_with_shell()` in
    `app/src/terminal/cli_agent_sessions/plugin_manager/mod.rs`** — the factory
    match already uses per-agent feature flag guards (e.g.
    `CLIAgent::Codex if FeatureFlag::CodexNotifications.is_enabled() && ...`).
@@ -366,7 +394,7 @@ Behavior-to-verification mapping (from `product.md`):
 | #3, #4 — rich input | Press Ctrl-G; type a prompt; confirm it is sent to the PTY. |
 | #5 — status tracking | With the plugin installed and emitting events, confirm the footer status updates. |
 | #6, #7 — install/update instructions | With the plugin absent or outdated, confirm the instructions pane renders with the correct steps. |
-| #8 — settings page | Open Settings → Agents → Third party CLI agents; confirm Kiro appears in the list. |
+| #8 — settings page | Open Settings → Agents → Third party CLI agents; with the flag enabled confirm Kiro appears in the list, and with the flag disabled confirm Kiro is hidden and persisted Kiro mappings display as "Other". |
 | #9 — telemetry | Confirm `CLIAgentType::Kiro` events are emitted on session start/end. |
 | #11 — shared sessions | Confirm `CLIAgent::Kiro.to_serialized_name() == "Kiro"` and `CLIAgent::from_serialized_name("Kiro") == CLIAgent::Kiro`. |
 | #12 — not Unknown | Confirm `kiro` does not fall through to `CLIAgent::Unknown`. |
