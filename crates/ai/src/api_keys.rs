@@ -162,17 +162,15 @@ impl ApiKeyManager {
             .then(|| self.keys.open_router.clone())
             .flatten()
             .unwrap_or_default();
-        // TODO: Wire minimax, moonshot, and zai keys into the protobuf request
-        // once warp-proto-apis adds support for these providers.
-        let _minimax = include_byo_keys
+        let minimax = include_byo_keys
             .then(|| self.keys.minimax.clone())
             .flatten()
             .unwrap_or_default();
-        let _moonshot = include_byo_keys
+        let moonshot = include_byo_keys
             .then(|| self.keys.moonshot.clone())
             .flatten()
             .unwrap_or_default();
-        let _zai = include_byo_keys
+        let zai = include_byo_keys
             .then(|| self.keys.zai.clone())
             .flatten()
             .unwrap_or_default();
@@ -196,6 +194,9 @@ impl ApiKeyManager {
             && openai.is_empty()
             && google.is_empty()
             && open_router.is_empty()
+            && minimax.is_empty()
+            && moonshot.is_empty()
+            && zai.is_empty()
             && aws_credentials.is_none()
         {
             None
@@ -205,6 +206,9 @@ impl ApiKeyManager {
                 openai,
                 google,
                 open_router,
+                minimax,
+                moonshot,
+                zai,
                 allow_use_of_warp_credits: false,
                 aws_credentials,
             })
