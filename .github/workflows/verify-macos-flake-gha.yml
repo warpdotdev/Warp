@@ -36,6 +36,7 @@ jobs:
           set -euxo pipefail
           sw_vers
           xcodebuild -version
+          xcode-select -p
           xcrun --sdk macosx --find metal
           xcrun --sdk macosx --find metallib
 

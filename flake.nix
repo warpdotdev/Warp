@@ -9,6 +9,15 @@
     };
   };
 
+  nixConfig = {
+    # Warp's macOS build scripts shell out to `xcrun` for `metal` and
+    # `metallib`, so the Darwin sandbox must see the host Xcode installation.
+    extra-sandbox-paths = [
+      "/Applications?"
+      "/Library/Developer/CommandLineTools?"
+    ];
+  };
+
   outputs =
     {
       self,
@@ -191,6 +200,24 @@
             } // lib.optionalAttrs pkgs.stdenv.isDarwin {
               MACOSX_DEPLOYMENT_TARGET = "10.14";
             };
+
+            preBuild = lib.optionalString pkgs.stdenv.isDarwin ''
+              for developerDir in /Applications/Xcode*.app/Contents/Developer /Library/Developer/CommandLineTools; do
+                if [ -d "$developerDir" ]; then
+                  export DEVELOPER_DIR="$developerDir"
+                  break
+                fi
+              done
+
+              if [ -z "''${DEVELOPER_DIR:-}" ]; then
+                echo "could not locate an Xcode developer directory inside the sandbox" >&2
+                exit 1
+              fi
+
+              echo "Using DEVELOPER_DIR=$DEVELOPER_DIR"
+              xcrun --sdk macosx --find metal
+              xcrun --sdk macosx --find metallib
+            '';
 
             postInstall =
               if pkgs.stdenv.isDarwin then
