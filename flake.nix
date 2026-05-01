@@ -42,7 +42,7 @@
 
           appCargoToml = builtins.fromTOML (builtins.readFile ./app/Cargo.toml);
           version = "${appCargoToml.package.version}+${self.shortRev or "dirty"}";
-          cargoVendorHash = "sha256-TzYSC82HVRhCxBHLmHw8BIZ4hJKCZfp+s/mfbeAjdQ4=";
+          cargoVendorHash = "sha256-Pqxzek7hAuj/mlhiaipq+TsufWOsfuabj8T4O70oluw=";
           warpProtoApis = pkgs.fetchFromGitHub {
             owner = "warpdotdev";
             repo = "warp-proto-apis";
