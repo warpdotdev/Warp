@@ -117,12 +117,12 @@ fn read_subdirs(parent: &Path) -> io::Result<Vec<PathBuf>> {
 /// Pull `cwd` and `cli_version` out of the first JSONL line if it's a `SessionMeta`. The
 /// result is constant for the lifetime of a session, so callers cache it.
 pub(crate) fn parse_session_meta(first: Option<&Value>) -> Option<CodexSessionMetadata> {
-    let payload = first?.get("payload")?;
-    let cwd = payload
-        .get("cwd")
-        .and_then(|v| v.as_str())
-        .map(PathBuf::from)
-        .unwrap_or_default();
+    let entry = first?;
+    if entry.get("type").and_then(|v| v.as_str()) != Some("session_meta") {
+        return None;
+    }
+    let payload = entry.get("payload")?;
+    let cwd = PathBuf::from(payload.get("cwd").and_then(|v| v.as_str())?);
     let codex_version = payload
         .get("cli_version")
         .and_then(|v| v.as_str())
