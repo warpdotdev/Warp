@@ -32,6 +32,11 @@ const BADGE_ICON_RATIO: f32 = 0.34;
 const CLOUD_RATIO: f32 = 0.57;
 const STATUS_IN_CLOUD_RATIO: f32 = 0.285;
 
+// Neutral variants have no overlay, so they fill the full `total_size` bounding box. The
+// inner glyph occupies `NEUTRAL_GLYPH_RATIO * total_size`, matching the old sizing where
+// a 24px container held a 16px glyph (16/24 ≈ 0.667).
+const NEUTRAL_GLYPH_RATIO: f32 = 16.0 / 24.0;
+
 fn circle_size(total: f32) -> f32 {
     total * CIRCLE_RATIO
 }
@@ -131,12 +136,12 @@ pub(crate) fn render_icon_with_status(
     let sub_text = theme.sub_text_color(theme.background());
 
     match variant {
-        IconWithStatusVariant::Neutral { icon, icon_color } => render_circle(
+        IconWithStatusVariant::Neutral { icon, icon_color } => render_neutral_circle(
             icon.to_warpui_icon(icon_color).finish(),
             internal_colors::fg_overlay_2(theme),
             total_size,
         ),
-        IconWithStatusVariant::NeutralElement { icon_element } => render_circle(
+        IconWithStatusVariant::NeutralElement { icon_element } => render_neutral_circle(
             icon_element,
             internal_colors::fg_overlay_2(theme),
             total_size,
@@ -205,6 +210,8 @@ pub(crate) fn render_icon_with_status(
 /// Builds the brand-circle container around `icon_element`. The circle's diameter is
 /// `circle_size(total)` and the icon glyph is `icon_size(total)`, with the rest going
 /// to symmetric padding around the glyph.
+/// The returned element is `circle_size(total)` wide; agent callers wrap it via
+/// `attach_status_overlay` to occupy the full `total_size` footprint.
 fn render_circle(
     icon_element: Box<dyn Element>,
     background: WarpThemeFill,
@@ -222,6 +229,28 @@ fn render_circle(
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
             circle_size(total_size) / 2.,
         )))
+        .finish()
+}
+
+/// Builds the neutral circle: a full-`total_size` container with the glyph at
+/// `NEUTRAL_GLYPH_RATIO * total_size`. Used for non-agent surfaces (plain terminal,
+/// code, file tabs, etc.) which have no status overlay and therefore should fill the
+/// requested bounding box rather than shrinking to `circle_size(total)`.
+fn render_neutral_circle(
+    icon_element: Box<dyn Element>,
+    background: WarpThemeFill,
+    total_size: f32,
+) -> Box<dyn Element> {
+    let glyph = total_size * NEUTRAL_GLYPH_RATIO;
+    let padding = (total_size - glyph) / 2.;
+    let inner = ConstrainedBox::new(icon_element)
+        .with_width(glyph)
+        .with_height(glyph)
+        .finish();
+    Container::new(inner)
+        .with_uniform_padding(padding)
+        .with_background(background)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(total_size / 2.)))
         .finish()
 }
 
@@ -335,7 +364,13 @@ fn render_with_optional_status_badge(
     badge_ring_background: WarpThemeFill,
 ) -> Box<dyn Element> {
     let Some(status) = status else {
-        return circle;
+        // No status badge: still occupy the full `total_size` footprint so the agent
+        // circle (which is only `circle_size(total)` wide) sits centered in the box
+        // the caller reserved.
+        return ConstrainedBox::new(circle)
+            .with_width(total_size)
+            .with_height(total_size)
+            .finish();
     };
     let (icon, color) = status.status_icon_and_color(theme);
     let badge_icon_diameter = badge_icon_size(total_size);

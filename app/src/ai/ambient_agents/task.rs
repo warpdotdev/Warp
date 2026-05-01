@@ -89,11 +89,10 @@ fn serialize_harness<S: Serializer>(harness: &Harness, serializer: S) -> Result<
 
 fn deserialize_harness<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Harness, D::Error> {
     let name = String::deserialize(deserializer)?;
-    let harness = Harness::from_config_name(&name);
-    if matches!(harness, Harness::Unknown) && name != Harness::Unknown.config_name() {
+    Ok(Harness::from_config_name(&name).unwrap_or_else(|| {
         log::warn!("Unknown harness config name: {name:?}; treating as Unknown");
-    }
-    Ok(harness)
+        Harness::Unknown
+    }))
 }
 
 /// Authentication secrets for third-party harnesses.

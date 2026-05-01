@@ -13,17 +13,22 @@ fn harness_config_name_round_trips_for_known_variants() {
     ] {
         assert_eq!(
             Harness::from_config_name(harness.config_name()),
-            harness,
+            Some(harness),
             "round-trip failed for {harness:?}",
         );
     }
 }
 
 #[test]
-fn harness_from_config_name_falls_back_to_unknown() {
-    assert_eq!(Harness::from_config_name(""), Harness::Unknown);
+fn harness_from_config_name_returns_none_for_unrecognized() {
+    assert_eq!(Harness::from_config_name(""), None);
+    assert_eq!(Harness::from_config_name("not-a-real-harness"), None);
+}
+
+#[test]
+fn harness_from_config_name_round_trips_unknown() {
     assert_eq!(
-        Harness::from_config_name("not-a-real-harness"),
-        Harness::Unknown
+        Harness::from_config_name(Harness::Unknown.config_name()),
+        Some(Harness::Unknown),
     );
 }

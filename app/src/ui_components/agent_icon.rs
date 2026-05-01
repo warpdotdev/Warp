@@ -45,8 +45,7 @@ pub(crate) fn terminal_view_agent_icon_variant(
         }),
         ambient_selected_third_party_cli_agent: terminal_view
             .ambient_agent_view_model()
-            .as_ref(app)
-            .selected_third_party_cli_agent(),
+            .and_then(|model| model.as_ref(app).selected_third_party_cli_agent()),
         selected_conversation_status: terminal_view.selected_conversation_status_for_display(app),
         has_selected_conversation: terminal_view
             .selected_conversation_display_title(app)
@@ -114,8 +113,8 @@ fn agent_icon_variant_from_terminal_inputs(
         .as_ref()
         .filter(|s| !matches!(s.agent, CLIAgent::Unknown))
     {
-        let status = (session.has_listener && session.supports_rich_status)
-            .then(|| session.status.clone());
+        let status =
+            (session.has_listener && session.supports_rich_status).then(|| session.status.clone());
         return Some(IconWithStatusVariant::CLIAgent {
             agent: session.agent,
             status,

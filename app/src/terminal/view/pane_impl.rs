@@ -949,10 +949,10 @@ impl TerminalView {
     /// exchange yet). In either case the run is committed and we want the UI to read as busy.
     fn is_in_cloud_agent_setup_phase(&self, ctx: &AppContext) -> bool {
         self.ambient_agent_view_model
-            .as_ref(ctx)
-            .is_waiting_for_session()
+            .as_ref()
+            .is_some_and(|model| model.as_ref(ctx).is_waiting_for_session())
             || is_cloud_agent_pre_first_exchange(
-                &self.ambient_agent_view_model,
+                self.ambient_agent_view_model.as_ref(),
                 &self.agent_view_controller,
                 ctx,
             )
@@ -1001,7 +1001,9 @@ impl TerminalView {
         ctx: &AppContext,
     ) -> Option<ConversationStatus> {
         let status = self.selected_conversation_status(ctx)?;
-        if matches!(status, ConversationStatus::InProgress) || !self.selected_conversation_is_empty(ctx) {
+        if matches!(status, ConversationStatus::InProgress)
+            || !self.selected_conversation_is_empty(ctx)
+        {
             Some(status)
         } else {
             None

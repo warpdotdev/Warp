@@ -172,18 +172,20 @@ impl Harness {
 
     /// Parses a harness config-name string (the lowercase name written into
     /// `HarnessConfig::harness_type` by the spawner, e.g. `"claude"`, `"gemini"`, `"oz"`)
-    /// into a [`Harness`] variant. Inverse of [`Harness::config_name`]. Unrecognized
-    /// names fall back to [`Harness::Unknown`] so a future-server harness is not silently
-    /// misrepresented as Oz; UI surfaces should treat `Unknown` as a non-Oz, non-runnable
-    /// harness.
-    pub fn from_config_name(name: &str) -> Self {
+    /// into a [`Harness`] variant. Inverse of [`Harness::config_name`]. Returns `None` for
+    /// unrecognized names so callers can distinguish a future-server harness from a
+    /// round-tripped [`Harness::Unknown`]; callers that want to fall back to `Unknown`
+    /// should `.unwrap_or(Harness::Unknown)`. UI surfaces should treat `Unknown` as a
+    /// non-Oz, non-runnable harness.
+    pub fn from_config_name(name: &str) -> Option<Self> {
         match name {
-            "oz" => Harness::Oz,
-            "claude" => Harness::Claude,
-            "opencode" => Harness::OpenCode,
-            "gemini" => Harness::Gemini,
-            "codex" => Harness::Codex,
-            _ => Harness::Unknown,
+            "oz" => Some(Harness::Oz),
+            "claude" => Some(Harness::Claude),
+            "opencode" => Some(Harness::OpenCode),
+            "gemini" => Some(Harness::Gemini),
+            "codex" => Some(Harness::Codex),
+            "unknown" => Some(Harness::Unknown),
+            _ => None,
         }
     }
 
