@@ -62,8 +62,8 @@ pub(super) struct State {
     /// `_px` variants preserve the fractional input so CSI 14t / 16t
     /// can multiply by `scale_factor` before rounding and report the
     /// correct physical-pixel cell size on fractional-DPI displays.
-    pub cell_width_px: warpui_core::units::Pixels,
-    pub cell_height_px: warpui_core::units::Pixels,
+    pub cell_width_px: warpui::units::Pixels,
+    pub cell_height_px: warpui::units::Pixels,
     pub scale_factor: f32,
 
     /// Mode flags.
