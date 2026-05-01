@@ -55,6 +55,10 @@ void warp_marked_text_cleared(WarpHostView *);
 
     // Whether we're in the middle of a call to interpretKeyEvents.
     BOOL interpretingKeyEvents;
+
+    // The selectedRange of the most recent setMarkedText: call, kept so we
+    // can re-dispatch the marked text after a commit (see keyDownImpl:).
+    NSRange lastMarkedSelectedRange;
 }
 
 - (BOOL)acceptsFirstResponder {
@@ -180,9 +184,29 @@ void warp_marked_text_cleared(WarpHostView *);
     }
 
     // Dispatch TypedCharacter event after KeyDown has been dispatched.
-    if ([textToInsert length] > 0 && !handled) {
+    // If the key event committed previously-composed marked text (wasComposing),
+    // dispatch the committed text even when `handled` is true — it represents
+    // the user's already-typed input (e.g. the last Korean syllable being
+    // committed by an Arrow/Enter key), not text produced by the keybinding.
+    if ([textToInsert length] > 0 && (!handled || wasComposing)) {
+        // Korean (and other CJK) IMEs can both commit the previous syllable
+        // AND start a new composition in the same keyDown — e.g. typing 'ㅏ'
+        // after '간' produces commit '가' + new marked '나'. By the time we
+        // get here, setMarkedText: has already placed the new marked text as
+        // a selection in the input field's buffer. Inserting the committed
+        // text would then overwrite that selection (losing the next
+        // character). Workaround: temporarily clear the marked text,
+        // dispatch the commit, then re-apply the marked text.
+        BOOL hasNewMarked = [self hasMarkedText];
+        if (hasNewMarked) {
+            warp_marked_text_cleared(self);
+            warp_update_ime_state(self, NO);
+        }
         warp_handle_insert_text(self, (NSString *)textToInsert);
-        [self unmarkText];
+        if (hasNewMarked) {
+            warp_marked_text_updated(self, markedText.string, lastMarkedSelectedRange);
+            warp_update_ime_state(self, YES);
+        }
     }
 
     return handled;
@@ -470,6 +494,8 @@ void warp_marked_text_cleared(WarpHostView *);
         markedText = [[NSMutableAttributedString alloc] initWithAttributedString:string];
     else
         markedText = [[NSMutableAttributedString alloc] initWithString:string];
+
+    lastMarkedSelectedRange = selectedRange;
 
     if (self.readyForWarp) {
         warp_marked_text_updated(self, markedText.string, selectedRange);
