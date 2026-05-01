@@ -29,7 +29,16 @@ install_dir="${install_dir/#\~/"$HOME"}"
 mkdir -p "$install_dir"
 
 tmpdir=$(mktemp -d "$install_dir/.install.XXXXXX")
-trap 'rm -rf "$tmpdir"' EXIT
+# Best-effort cleanup of the staging directory. A failure here (e.g.
+# EBUSY or "Directory not empty" races on some filesystems/mounts)
+# must not fail the install: by the time this fires the binary has
+# either already been moved into its final location, or the script
+# has already failed for an unrelated reason that we want to surface
+# instead of clobbering with the cleanup's exit code.
+cleanup() {
+  rm -rf "$tmpdir" 2>/dev/null || true
+}
+trap cleanup EXIT
 
 curl -fSL "{download_base_url}?package=tar&os=$os_name&arch=$arch_name&channel={channel}{version_query}" \
   -o "$tmpdir/oz.tar.gz"
