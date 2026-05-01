@@ -3244,7 +3244,7 @@ impl PaneGroup {
             match item.get_open_action(None, ctx) {
                 Some(WorkspaceAction::OpenAmbientAgentSession {
                     session_id,
-                    task_id,
+                    task_id: _,
                 }) => {
                     let (view, terminal_manager) = Self::create_shared_session_viewer(
                         session_id,
@@ -3260,24 +3260,15 @@ impl PaneGroup {
                         ctx,
                     );
                     self.replace_pane(pane_id, new_pane, false, ctx);
-
-                    AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                        model.mark_task_as_manually_opened(task_id, ctx);
-                    });
                 }
                 Some(WorkspaceAction::OpenConversationTranscriptViewer {
                     conversation_id,
-                    ambient_agent_task_id,
+                    ambient_agent_task_id: _,
                 }) => {
                     let loaded =
                         self.terminal_view_from_pane_id(pane_id, ctx)
                             .is_some_and(|target_view| {
-                                Self::fetch_and_load_transcript(
-                                    target_view,
-                                    conversation_id,
-                                    ambient_agent_task_id,
-                                    ctx,
-                                )
+                                Self::fetch_and_load_transcript(target_view, conversation_id, ctx)
                             });
                     if !loaded {
                         self.pending_ambient_agent_conversation_restorations
@@ -3299,15 +3290,8 @@ impl PaneGroup {
     fn fetch_and_load_transcript(
         target_view: ViewHandle<TerminalView>,
         server_conversation_token: ServerConversationToken,
-        ambient_agent_task_id: Option<AmbientAgentTaskId>,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        if let Some(task_id) = ambient_agent_task_id {
-            AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                model.mark_task_as_manually_opened(task_id, ctx);
-            });
-        }
-
         let history_model_handle = BlocklistAIHistoryModel::handle(ctx);
         let ai_conversation_id = history_model_handle
             .as_ref(ctx)
@@ -3779,6 +3763,7 @@ impl PaneGroup {
                 let harness = match cli_conversation.metadata.harness {
                     AIAgentHarness::ClaudeCode => Some(Harness::Claude),
                     AIAgentHarness::Gemini => Some(Harness::Gemini),
+                    AIAgentHarness::Codex => Some(Harness::Codex),
                     AIAgentHarness::Oz => None,
                     AIAgentHarness::Unknown => Some(Harness::Unknown),
                 };
@@ -3791,11 +3776,13 @@ impl PaneGroup {
                     );
                     // Keep the viewer's AmbientAgentViewModel harness in sync with the loaded run.
                     if let Some(harness) = harness {
-                        view.ambient_agent_view_model()
-                            .clone()
-                            .update(ctx, |model, ctx| {
+                        if let Some(ambient_agent_view_model) =
+                            view.ambient_agent_view_model().cloned()
+                        {
+                            ambient_agent_view_model.update(ctx, |model, ctx| {
                                 model.set_harness(harness, ctx);
                             });
+                        }
                     }
                     // 3p runs have no materialized AIConversation, so enter agent view with a
                     // fresh vehicle conversation and retag the restored snapshot block onto it so

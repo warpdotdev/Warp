@@ -6,8 +6,10 @@ use warpui::{
 };
 
 use crate::{
+    ai::agent::display_user_query_with_mode,
     ai::blocklist::block::view_impl::{
-        query::render_query, WithContentItemSpacing, CONTENT_VERTICAL_PADDING,
+        query::render_query, user_query_mode_prefix_highlight_len, WithContentItemSpacing,
+        CONTENT_VERTICAL_PADDING,
     },
     auth::AuthStateProvider,
     terminal::view::ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent},
@@ -51,12 +53,24 @@ impl View for CloudModeInitialUserQuery {
             return Empty::new().finish();
         };
 
-        render_user_query(&request.prompt, &self.view_model, app)
+        // `request.prompt` was stripped of any `/plan` or `/orchestrate` prefix when the
+        // spawn request was built. Reconstruct the displayed prompt from `request.mode`
+        // so the cloud-mode bubble matches what the user typed (and what the local-mode
+        // path renders via `AIAgentInput::user_query`).
+        let display_prompt = display_user_query_with_mode(request.mode, &request.prompt);
+        let query_prefix_highlight_len = user_query_mode_prefix_highlight_len(request.mode);
+        render_user_query(
+            &display_prompt,
+            query_prefix_highlight_len,
+            &self.view_model,
+            app,
+        )
     }
 }
 
 fn render_user_query(
     prompt: &str,
+    query_prefix_highlight_len: Option<usize>,
     view_model: &ModelHandle<AmbientAgentViewModel>,
     app: &AppContext,
 ) -> Box<dyn Element> {
@@ -77,7 +91,7 @@ fn render_user_query(
             &Default::default(),
             &Default::default(),
             0,
-            None,
+            query_prefix_highlight_len,
             false,
             true,
             &[],

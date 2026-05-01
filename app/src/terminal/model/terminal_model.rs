@@ -1461,20 +1461,22 @@ impl TerminalModel {
     // TODO: we should be doing this in the constructor of the
     // terminal model for the viewers so that we're guaranteed that
     // loading scrollback is the first thing that we do.
-    pub fn load_shared_session_scrollback(
-        &mut self,
-        scrollback: &[SerializedBlock],
-        is_alt_screen_active: bool,
-    ) {
+    pub fn load_shared_session_scrollback(&mut self, scrollback: &[SerializedBlock]) {
         debug_assert!(self.shared_session_status().is_viewer());
 
         self.block_list_mut()
             .load_shared_session_scrollback(scrollback);
-        if is_alt_screen_active {
-            self.enter_alt_screen(true);
-        }
 
         // The scrollback contains the prompt for the active block, and the terminal view needs to be notified to render it.
+        self.event_proxy.send_wakeup_event();
+    }
+
+    pub fn append_followup_shared_session_scrollback(&mut self, scrollback: &[SerializedBlock]) {
+        debug_assert!(self.shared_session_status().is_viewer());
+
+        self.block_list_mut()
+            .append_followup_shared_session_scrollback(scrollback);
+
         self.event_proxy.send_wakeup_event();
     }
 
@@ -2016,7 +2018,7 @@ impl TerminalModel {
     ///
     /// If the alternate screen is already active, this will not re-initialize
     /// it.
-    fn enter_alt_screen(&mut self, save_cursor_and_clear_screen: bool) {
+    pub(crate) fn enter_alt_screen(&mut self, save_cursor_and_clear_screen: bool) {
         if self.alt_screen_active {
             log::info!("Tried to enter the alternate screen, but it was already active");
             return;

@@ -118,6 +118,7 @@ pub fn render_code_block_plain(
     code: &str,
     find_highlight_ranges: impl Iterator<Item = HighlightedRange>,
     options: CodeBlockOptions,
+    selectable: bool,
     app: &AppContext,
     source: Option<CodeSource>,
 ) -> Box<dyn Element> {
@@ -131,7 +132,7 @@ pub fn render_code_block_plain(
     )
     .with_color(blended_colors::text_main(theme, theme.surface_1()))
     .with_highlights(find_highlight_ranges)
-    .with_selectable(true)
+    .with_selectable(selectable)
     .finish();
 
     render_code_block_internal(code, code_element, options, app, source, false)
@@ -171,6 +172,7 @@ pub fn render_runnable_code_snippet(
             mouse_handles,
             file_path: None,
         },
+        true,
         app,
         None,
     )

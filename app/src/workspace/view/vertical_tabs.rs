@@ -1449,23 +1449,11 @@ fn render_vertical_tabs_panel(
         .with_child(Shrinkable::new(1., scrollable_groups).finish())
         .finish();
 
-    let panel_with_popup: Box<dyn Element> = if state.show_settings_popup {
-        let popup = render_settings_popup(state, app);
-        let mut stack = Stack::new().with_child(panel_content);
-        stack.add_positioned_overlay_child(
-            popup,
-            OffsetPositioning::offset_from_save_position_element(
-                VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
-                vec2f(0., 4.),
-                PositionedElementOffsetBounds::WindowByPosition,
-                PositionedElementAnchor::BottomLeft,
-                ChildAnchor::TopLeft,
-            ),
-        );
-        stack.finish()
-    } else {
-        panel_content
-    };
+    // The settings popup is rendered at the workspace level (with Dismiss for click-outside-
+    // to-close). Rendering it here again shares MouseStateHandle instances across two Hoverable
+    // trees; click_count.take() is consumed by this copy first, leaving the workspace copy
+    // with None and silently dropping all clicks on the popup items.
+    let panel_with_popup: Box<dyn Element> = panel_content;
 
     let drag_side = match side {
         super::PanelPosition::Left => DragBarSide::Right,

@@ -669,7 +669,7 @@ impl OperatingSystem {
         cfg_if::cfg_if! {
             if #[cfg(target_family = "wasm")] {
                 wasm::current_platform()
-            } else if #[cfg(target_os = "linux")] {
+            } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
                 OperatingSystem::Linux
             } else if #[cfg(target_os = "macos")] {
                 OperatingSystem::Mac

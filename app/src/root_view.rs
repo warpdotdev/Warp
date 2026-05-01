@@ -100,7 +100,9 @@ use warpui::keymap::{EditableBinding, FixedBinding};
 use warpui::windowing::WindowManager;
 
 use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
-use crate::ai::onboarding::{build_onboarding_models, current_onboarding_auth_state};
+use crate::ai::onboarding::{
+    apply_free_tier_default_model_override, build_onboarding_models, current_onboarding_auth_state,
+};
 use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
 use warp_graphql::billing::StripeSubscriptionPlan;
 
@@ -1995,8 +1997,10 @@ impl RootView {
 
         let themes = onboarding_theme_picker_themes();
         let onboarding_view = ctx.add_typed_action_view(move |ctx| {
-            let llm_preferences = LLMPreferences::as_ref(ctx);
-            let (models, default_model_id) = build_onboarding_models(llm_preferences);
+            let (mut models, default_model_id) =
+                build_onboarding_models(LLMPreferences::as_ref(ctx));
+            let default_model_id =
+                apply_free_tier_default_model_override(&mut models, default_model_id, ctx);
 
             let workspace_enforces_autonomy = UserWorkspaces::as_ref(ctx)
                 .ai_autonomy_settings()
@@ -2039,8 +2043,10 @@ impl RootView {
             &LLMPreferences::handle(ctx),
             move |_, llm_preferences, event, ctx| match event {
                 LLMPreferencesEvent::UpdatedAvailableLLMs => {
-                    let (models, default_model_id) =
+                    let (mut models, default_model_id) =
                         build_onboarding_models(llm_preferences.as_ref(ctx));
+                    let default_model_id =
+                        apply_free_tier_default_model_override(&mut models, default_model_id, ctx);
                     onboarding_view_clone.update(ctx, |onboarding_view, ctx| {
                         onboarding_view.set_onboarding_models(models, default_model_id, ctx);
                     })

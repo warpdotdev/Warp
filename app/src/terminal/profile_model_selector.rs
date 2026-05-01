@@ -171,7 +171,7 @@ pub struct ProfileModelSelector {
     is_blurred: bool,
     new_model_popup: ViewHandle<FeaturePopup>,
     input_model: ModelHandle<BlocklistAIInputModel>,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
+    ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
     render_compact: bool,
     hovered_llm_info: Option<LLMInfo>,
     manage_api_key_button: ViewHandle<ActionButton>,
@@ -230,7 +230,7 @@ impl ProfileModelSelector {
         menu_positioning_provider: Arc<dyn crate::terminal::input::MenuPositioningProvider>,
         terminal_view_id: EntityId,
         input_model: ModelHandle<BlocklistAIInputModel>,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
+        ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         controller: Option<ModelHandle<BlocklistAIController>>,
         ctx: &mut ViewContext<Self>,
@@ -1366,10 +1366,14 @@ impl ProfileModelSelector {
 
         // Allow editing if composing an ambient agent query, or if the user has edit access
         // in a shared session (i.e., not a viewer, or is an executor).
-        let is_composing_ambient_agent = self
-            .ambient_agent_view_model
-            .as_ref(app)
-            .is_configuring_ambient_agent();
+        let is_composing_ambient_agent =
+            self.ambient_agent_view_model
+                .as_ref()
+                .is_some_and(|ambient_agent_model| {
+                    ambient_agent_model
+                        .as_ref(app)
+                        .is_configuring_ambient_agent()
+                });
         let terminal_model = self.terminal_model.lock();
         let has_edit_access = is_composing_ambient_agent
             || !terminal_model.shared_session_status().is_viewer()
@@ -1825,7 +1829,7 @@ impl TypedActionView for ProfileModelSelector {
             ProfileModelSelectorAction::ManageProfiles => {
                 self.set_profile_menu_visibility(false, ctx);
                 ctx.emit(ProfileModelSelectorEvent::OpenSettings(
-                    SettingsSection::WarpAgent,
+                    SettingsSection::AgentProfiles,
                 ));
             }
             ProfileModelSelectorAction::ToggleProfileMenu => {

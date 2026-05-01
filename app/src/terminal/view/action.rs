@@ -426,6 +426,13 @@ pub enum TerminalAction {
     RevealChildAgent {
         conversation_id: AIConversationId,
     },
+    /// Switch the active terminal view's agent view to display the given
+    /// conversation in place, without spawning or revealing a separate pane.
+    /// Used by the orchestration pill bar to navigate the current pane to a
+    /// sibling/parent conversation.
+    SwitchAgentViewToConversation {
+        conversation_id: AIConversationId,
+    },
     /// Toggle PTY recording for this session.
     ToggleSessionRecording,
     /// Open the rich input editor for composing a prompt to send to a CLI agent.
@@ -703,6 +710,7 @@ impl fmt::Debug for TerminalAction {
             AwsCliNotInstalledBanner(action) => write!(f, "AwsCliNotInstalledBanner({action:?})"),
             ToggleUsageFooter => write!(f, "ToggleUsageFooter"),
             RevealChildAgent { .. } => write!(f, "RevealChildAgent"),
+            SwitchAgentViewToConversation { .. } => write!(f, "SwitchAgentViewToConversation"),
             ToggleSessionRecording => write!(f, "ToggleSessionRecording"),
             OpenCLIAgentRichInput => write!(f, "OpenCLIAgentRichInput"),
         }

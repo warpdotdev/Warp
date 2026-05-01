@@ -213,14 +213,22 @@ fn addr_of(s: &str) -> usize {
     s.as_ptr() as usize
 }
 
-/// Given a word with no whitespace in it, returns all the possible file paths within the word
-/// from longest to shortest. File paths within a word can be split by a list of FILE_LINK_SEPARATORS,
-/// and those separators may be part of file paths themselves.
-/// Possible file paths begin after a separator and end before a separator.
-/// For example, given /path/to/file:16:hello, it will return
-/// ["/path/to/file:16:hello", "/path/to/file:16", "/path/to/file", "16:hello", "hello"]
+/// Maximum byte length of a token to search for file paths in. Used as a guard against scanning huge non-path tokens.
+/// - Linux PATH_MAX: 4096 bytes.
+/// - macOS PATH_MAX: 1024 bytes.
+/// - Windows long-path cap: 32,767 UTF-16 units = 98,301 bytes.
+const MAX_WORD_LEN_FOR_FILE_PATH: usize = 96 * 1024;
+/// Maximum [`FILE_LINK_SEPARATORS`] characters per token, to bound candidate substrings.
+/// 256 keeps per-token allocations under ~1 MiB and is far above any real path.
+const MAX_SEPARATORS_PER_WORD: usize = 256;
+
+/// Returns separator byte indices in `word`, framed by virtual separators at
+/// -1 and `word.len()`. Returns empty if either safety cap is exceeded.
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-fn possible_file_paths_in_word(word: &str) -> impl Iterator<Item = &str> {
+fn separator_byte_indices_for_file_path_search(word: &str) -> Vec<i32> {
+    if word.len() > MAX_WORD_LEN_FOR_FILE_PATH {
+        return Vec::new();
+    }
     // To include any substrings starting at the beginning of the word, we
     // pretend there's a separator before the first character.
     let mut separator_byte_indices = vec![-1];
@@ -228,6 +236,9 @@ fn possible_file_paths_in_word(word: &str) -> impl Iterator<Item = &str> {
     // rather than chars().enumerate() would give char indices.
     for (i, c) in word.char_indices() {
         if FILE_LINK_SEPARATORS.contains(&c) {
+            if separator_byte_indices.len() > MAX_SEPARATORS_PER_WORD {
+                return Vec::new();
+            }
             separator_byte_indices.push(i as i32);
         }
     }
@@ -242,6 +253,21 @@ fn possible_file_paths_in_word(word: &str) -> impl Iterator<Item = &str> {
     // To include any substrings ending at the end of the word, we pretend there's
     // a separator after the last character.
     separator_byte_indices.push(word.len() as i32);
+    separator_byte_indices
+}
+
+/// Given a word with no whitespace in it, returns all the possible file paths within the word
+/// from longest to shortest. File paths within a word can be split by a list of FILE_LINK_SEPARATORS,
+/// and those separators may be part of file paths themselves.
+/// Possible file paths begin after a separator and end before a separator.
+/// For example, given /path/to/file:16:hello, it will return
+/// ["/path/to/file:16:hello", "/path/to/file:16", "/path/to/file", "16:hello", "hello"]
+///
+/// Tokens exceeding [`MAX_WORD_LEN_FOR_FILE_PATH`] or [`MAX_SEPARATORS_PER_WORD`]
+/// yield no candidates to bound the substring enumeration.
+#[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
+fn possible_file_paths_in_word(word: &str) -> impl Iterator<Item = &str> {
+    let separator_byte_indices = separator_byte_indices_for_file_path_search(word);
     let mut possible_path_byte_ranges = vec![];
     for (i, start_index) in separator_byte_indices.iter().cloned().enumerate() {
         for end_index in separator_byte_indices.iter().skip(i + 1).cloned() {

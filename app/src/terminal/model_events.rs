@@ -117,13 +117,6 @@ impl ModelEventDispatcher {
                     is_subshell,
                 })
             }
-            Event::RemoteServerSetupStateChanged { session_id, state } => {
-                self.sessions.update(ctx, |sessions, ctx| {
-                    sessions.set_remote_server_setup_state(session_id, state.clone());
-                    ctx.notify();
-                });
-                return;
-            }
             Event::RemoteServerReady { session_id } => {
                 log::info!("Remote server ready for session {session_id:?}");
                 return;

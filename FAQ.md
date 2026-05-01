@@ -60,6 +60,14 @@ Contributors with several merged PRs may be invited to become collaborators. The
 
 Yes. Use whatever you like — Warp's built-in agent, Claude Code, Codex, Gemini CLI, Cursor, others, or no agent at all. The repo ships agent-readable context (skills under [`.agents/skills/`](.agents/skills/), specs under [`specs/`](specs/), and [`WARP.md`](WARP.md)) that any harness supporting these formats can pick up.
 
+### Can I use Codex or Claude models with my existing subscriptions in Warp, or submit a PR to add that?
+
+Not today. Warp's built-in agent harness runs server-side and isn't open in this repo today.
+
+That said, we plan to support [ACP (agent client protocol)](https://agentclientprotocol.com/) in Warp, so you could connect other models or subscriptions directly and get a native Warp experience for your coding agent of choice.
+
+[This is tracked on our roadmap](https://github.com/warpdotdev/warp/issues/9233), and we will update the community as we explore this.
+
 ### How can I get Oz to implement an issue for me?
 
 Mention **@oss-maintainers** on any issue with a readiness label and ask. Approved requests run on **complimentary Oz credits** — you don't need to set up your own Oz account or pay for compute.
@@ -128,7 +136,7 @@ Yes — that's what AGPL is for. The license prevents fully-proprietary relaunch
 
 - The [Warp docs](https://docs.warp.dev/) for using the product.
 - [GitHub Issues](https://github.com/warpdotdev/warp/issues) for bug reports and feature requests.
-- The [Slack community](https://go.warp.dev/join-preview) for general questions and discussion.
+- The [Slack community](https://go.warp.dev/join-preview) for general questions and discussion — contributors chat with each other and the Warp team in [`#oss-contributors`](https://warpcommunity.slack.com/archives/C0B0LM8N4DB).
 - Mention **@oss-maintainers** on an issue or PR to escalate to the team.
 
 ### How do I report a security vulnerability?

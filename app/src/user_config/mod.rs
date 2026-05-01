@@ -17,6 +17,8 @@ use std::path::PathBuf;
 use warp_core::ui::theme::WarpTheme;
 use warpui::{Entity, ModelContext, SingletonEntity};
 
+#[cfg(test)]
+pub(crate) use imp::load_tab_configs;
 #[cfg(feature = "local_fs")]
 pub use imp::load_workflows;
 pub use imp::{load_launch_configs, load_theme_configs};

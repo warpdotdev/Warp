@@ -296,7 +296,7 @@ integration_tests! {
     test_restored_ai_block_renders_mermaid_and_local_images,
 
     // Middle-click-paste is only implemented for Linux right now.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     test_middle_click_paste,
     test_agent_mode_pane_minimum_size,
 

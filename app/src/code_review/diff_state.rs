@@ -30,8 +30,8 @@ use crate::features::FeatureFlag;
 #[cfg(feature = "local_fs")]
 use crate::util::git::get_pr_for_branch;
 use crate::util::git::{
-    detect_current_branch, detect_main_branch, detect_parent_branch_with_context,
-    get_unpushed_commits, run_git_command, Commit, PrInfo,
+    detect_current_branch, detect_main_branch, get_unpushed_commits, run_git_command, Commit,
+    PrInfo,
 };
 
 use super::diff_size_limits::compute_diff_size;
@@ -341,7 +341,6 @@ struct DiffsWithBaseContent {
 struct DiffMetadata {
     main_branch_name: String,
     current_branch_name: String,
-    parent_branch_name: Option<String>,
     against_head: DiffMetadataAgainstBase,
     against_base_branch: Option<DiffMetadataAgainstBase>,
     has_head_commit: bool,
@@ -512,14 +511,6 @@ impl DiffStateModel {
         self.metadata
             .as_ref()
             .map(|metadata| metadata.main_branch_name.clone())
-    }
-
-    /// Closest-ancestor branch of the current branch, falling back to main.
-    /// Cached on `DiffMetadata`; `None` until metadata has loaded.
-    pub fn get_parent_branch_name(&self) -> Option<String> {
-        self.metadata
-            .as_ref()
-            .and_then(|metadata| metadata.parent_branch_name.clone())
     }
 
     /// Converts an optional base branch name into a `DiffMode`.
@@ -1386,7 +1377,7 @@ impl DiffStateModel {
             None
         };
 
-        let (unpushed_commits, upstream_ref, parent_branch_name) =
+        let (unpushed_commits, upstream_ref) =
             if FeatureFlag::GitOperationsInCodeReview.is_enabled() {
                 let upstream_branch = run_git_command(
                     &repo_path,
@@ -1394,26 +1385,23 @@ impl DiffStateModel {
                 )
                 .await
                 .ok()
-                .map(|s| s.trim().to_string());
-                // Reuse already-detected values to avoid redundant subprocess spawns.
-                let parent = detect_parent_branch_with_context(
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+                let unpushed = get_unpushed_commits(
                     &repo_path,
                     Some(current_branch_name.as_str()),
                     upstream_branch.as_deref(),
-                    Ok(main_branch_name.clone()),
                 )
                 .await
-                .ok();
-                let unpushed = get_unpushed_commits(&repo_path).await.unwrap_or_default();
-                (unpushed, upstream_branch, parent)
+                .unwrap_or_default();
+                (unpushed, upstream_branch)
             } else {
-                (Vec::new(), None, None)
+                (Vec::new(), None)
             };
 
         Ok(DiffMetadata {
             main_branch_name,
             current_branch_name,
-            parent_branch_name,
             against_head: diff_against_head,
             against_base_branch: diff_against_base_branch,
             has_head_commit,

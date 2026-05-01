@@ -218,14 +218,14 @@ fn finish_restore_fetch_uses_server_cursor_when_sqlite_is_absent() {
         let server_api = ServerApiProvider::new_for_test().get();
 
         let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
         });
 
-        // Seed event_cursor as on_restored_conversations would before spawning
-        // the async fetch. Without this the guard that detects mid-flight
-        // conversation deletion would fire and return early.
+        // Seed a stream entry as on_restored_conversations would before
+        // spawning the async fetch. Without this the guard that detects
+        // mid-flight conversation deletion would fire and return early.
         poller.update(&mut app, |me, _| {
-            me.event_cursor.insert(conversation_id, 0);
+            me.streams.entry(conversation_id).or_default();
         });
 
         let task_id: crate::ai::ambient_agents::AmbientAgentTaskId =
@@ -241,104 +241,16 @@ fn finish_restore_fetch_uses_server_cursor_when_sqlite_is_absent() {
         });
 
         poller.read(&app, |me, _| {
-            assert_eq!(me.event_cursor.get(&conversation_id).copied(), Some(42));
-        });
-    });
-}
-
-#[test]
-fn restored_inprogress_parent_defers_delivery_until_success() {
-    use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
-    use crate::server::server_api::ai::MockAIClient;
-    use crate::server::server_api::ServerApiProvider;
-    use std::sync::Arc;
-    use warpui::App;
-
-    App::test((), |mut app| async move {
-        let _v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
-
-        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
-
-        let mut conversation = AIConversation::new(false);
-        // Use a parsable UUID-shaped run_id so the poller can construct
-        // an `AmbientAgentTaskId` for the (mocked) server fetch.
-        conversation.set_run_id("550e8400-e29b-41d4-a716-446655440100".to_string());
-        let conversation_id: AIConversationId = conversation.id();
-        let terminal_view_id = warpui::EntityId::new();
-        history_model.update(&mut app, |model, ctx| {
-            model.restore_conversations(terminal_view_id, vec![conversation], ctx);
-            // The default status after restore is `InProgress` for live
-            // conversations, but assert it explicitly to make the test
-            // self-documenting.
-            model.update_conversation_status(
-                terminal_view_id,
-                conversation_id,
-                ConversationStatus::InProgress,
-                ctx,
-            );
-        });
-
-        let mut mock = MockAIClient::new();
-        // The async restore fetch may or may not complete during the test;
-        // a permissive expectation prevents spurious panics either way.
-        mock.expect_get_ambient_agent_task()
-            .returning(|_| Ok(make_ambient_task_with_event_seq(None)));
-        mock.expect_poll_agent_events()
-            .returning(|_, _, _| Ok(vec![]));
-        mock.expect_update_event_sequence_on_server()
-            .returning(|_, _| Ok(()));
-        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
-        let server_api = ServerApiProvider::new_for_test().get();
-
-        let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
-        });
-
-        // Synchronous part of `on_restored_conversations`: cursor seeded,
-        // own run_id watched. No event delivery yet because parent is
-        // InProgress.
-        poller.update(&mut app, |me, ctx| {
-            me.on_restored_conversations(vec![conversation_id], ctx);
-        });
-        poller.read(&app, |me, _| {
-            assert_eq!(me.event_cursor.get(&conversation_id).copied(), Some(0));
-            assert!(
-                me.watched_run_ids
-                    .get(&conversation_id)
-                    .is_some_and(|w| !w.is_empty()),
-                "own run_id should have been registered as watched"
-            );
-            assert!(
-                !me.poll_in_flight.contains(&conversation_id),
-                "InProgress parent must not start polling"
-            );
-            assert!(
-                me.sse_connections.is_empty(),
-                "InProgress parent must not open SSE"
-            );
-        });
-
-        // Transitioning the conversation to Success should trigger event
-        // delivery (poll_and_inject in the non-SSE default path).
-        history_model.update(&mut app, |model, ctx| {
-            model.update_conversation_status(
-                terminal_view_id,
-                conversation_id,
-                ConversationStatus::Success,
-                ctx,
-            );
-        });
-        poller.read(&app, |me, _| {
-            assert!(
-                me.poll_in_flight.contains(&conversation_id),
-                "Success transition with watched run_ids should start delivery"
+            assert_eq!(
+                me.streams.get(&conversation_id).map(|s| s.event_cursor),
+                Some(42)
             );
         });
     });
 }
 
 #[test]
-fn handle_poll_result_persists_max_seq_to_history_model() {
+fn handle_event_batch_persists_max_seq_to_history_model() {
     use crate::ai::agent::conversation::{AIConversation, AIConversationId};
     use crate::persistence::ModelEvent;
     use crate::server::server_api::ai::MockAIClient;
@@ -378,7 +290,7 @@ fn handle_poll_result_persists_max_seq_to_history_model() {
         let server_api = ServerApiProvider::new_for_test().get();
 
         let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
         });
 
         // Build a poll batch with max sequence = 42. Use an unrecognized
@@ -405,7 +317,7 @@ fn handle_poll_result_persists_max_seq_to_history_model() {
         ];
 
         poller.update(&mut app, |me, ctx| {
-            me.handle_poll_result(
+            me.handle_event_batch(
                 conversation_id,
                 /* self_run_id */ "some-other-run",
                 /* previous_cursor */ 0,
@@ -436,9 +348,9 @@ fn handle_poll_result_persists_max_seq_to_history_model() {
 #[test]
 fn finish_restore_fetch_no_ops_when_conversation_deleted_mid_flight() {
     // If the conversation is removed while the async fetch is in-flight, the
-    // RemoveConversation handler clears event_cursor. finish_restore_fetch
-    // uses the missing cursor as a sentinel and must not re-populate
-    // watched_run_ids or event_cursor for the deleted conversation.
+    // RemoveConversation handler removes the streams entry. finish_restore_fetch
+    // uses the missing entry as a sentinel and must not re-populate
+    // streamer state for the deleted conversation.
     use crate::ai::agent::conversation::AIConversation;
     use crate::server::server_api::ai::MockAIClient;
     use crate::server::server_api::ServerApiProvider;
@@ -463,19 +375,18 @@ fn finish_restore_fetch_no_ops_when_conversation_deleted_mid_flight() {
         let server_api = ServerApiProvider::new_for_test().get();
 
         let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
         });
 
-        // Seed cursor as on_restored_conversations would.
+        // Seed a stream entry as on_restored_conversations would.
         poller.update(&mut app, |me, _| {
-            me.event_cursor.insert(conversation_id, 0);
+            me.streams.entry(conversation_id).or_default();
         });
 
         // Simulate the RemoveConversation handler firing while the fetch is
-        // in-flight: it clears event_cursor (and all other state).
+        // in-flight: it drops the conversation's streamer state.
         poller.update(&mut app, |me, _| {
-            me.watched_run_ids.remove(&conversation_id);
-            me.event_cursor.remove(&conversation_id);
+            me.streams.remove(&conversation_id);
         });
 
         // The in-flight fetch now completes — with children.
@@ -495,12 +406,137 @@ fn finish_restore_fetch_no_ops_when_conversation_deleted_mid_flight() {
 
         poller.read(&app, |me, _| {
             assert!(
-                !me.watched_run_ids.contains_key(&conversation_id),
-                "watched_run_ids must not be repopulated for a deleted conversation"
+                !me.streams.contains_key(&conversation_id),
+                "streamer state must not be repopulated for a deleted conversation"
             );
+        });
+    });
+}
+
+#[test]
+fn finish_restore_fetch_err_does_not_resurrect_deleted_conversation() {
+    // Mirror image of `finish_restore_fetch_no_ops_when_conversation_deleted_mid_flight`
+    // but for the Err arm: a transient fetch failure on a conversation that
+    // was just removed must not resurrect a streams entry (which would then
+    // defeat the deletion sentinel inside the retry timer and cause an
+    // indefinite retry loop).
+    use crate::ai::agent::conversation::AIConversation;
+    use crate::server::server_api::ai::MockAIClient;
+    use crate::server::server_api::ServerApiProvider;
+    use std::sync::Arc;
+    use warpui::App;
+
+    App::test((), |mut app| async move {
+        let _v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+
+        let mut conversation = AIConversation::new(false);
+        conversation.set_run_id("550e8400-e29b-41d4-a716-446655440500".to_string());
+        let conversation_id = conversation.id();
+        let terminal_view_id = warpui::EntityId::new();
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![conversation], ctx);
+        });
+
+        let mock = MockAIClient::new();
+        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
+        let server_api = ServerApiProvider::new_for_test().get();
+
+        let poller = app.add_singleton_model(|ctx| {
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
+        });
+
+        // Seed the entry as on_restored_conversations would, then drop it
+        // (simulates the RemoveConversation handler firing while the fetch
+        // is in-flight).
+        poller.update(&mut app, |me, _| {
+            me.streams.entry(conversation_id).or_default();
+            me.streams.remove(&conversation_id);
+        });
+
+        // The in-flight fetch now completes with an error.
+        let task_id: crate::ai::ambient_agents::AmbientAgentTaskId =
+            "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
+        poller.update(&mut app, |me, ctx| {
+            me.finish_restore_fetch(
+                conversation_id,
+                task_id,
+                /* sqlite_cursor */ 0,
+                Err(anyhow::anyhow!("transient network failure")),
+                ctx,
+            );
+        });
+
+        poller.read(&app, |me, _| {
             assert!(
-                !me.event_cursor.contains_key(&conversation_id),
-                "event_cursor must not be repopulated for a deleted conversation"
+                !me.streams.contains_key(&conversation_id),
+                "Err retry must not resurrect a streams entry for a deleted conversation"
+            );
+        });
+    });
+}
+
+#[test]
+fn on_conversation_removed_prunes_stale_child_run_id_from_parent() {
+    // Regression for the case where a child conversation is deleted: the
+    // parent's `watched_run_ids` set must be pruned of that child's run_id
+    // so subsequent SSE reconnects do not include the dead run_id in the
+    // filter. Previously the streamer looked up the run_id from the history
+    // model after the removal, which always returned `None` because the
+    // history model emits `RemoveConversation` after dropping the record.
+    use crate::ai::agent::conversation::AIConversation;
+    use crate::server::server_api::ai::MockAIClient;
+    use crate::server::server_api::ServerApiProvider;
+    use std::sync::Arc;
+    use warpui::App;
+
+    App::test((), |mut app| async move {
+        let _v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+
+        let parent_id = AIConversation::new(false).id();
+        let mut child_conversation = AIConversation::new(false);
+        let child_run_id = "550e8400-e29b-41d4-a716-446655440600".to_string();
+        child_conversation.set_run_id(child_run_id.clone());
+        let child_id = child_conversation.id();
+        let terminal_view_id = warpui::EntityId::new();
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![child_conversation], ctx);
+        });
+
+        let mock = MockAIClient::new();
+        let ai_client: Arc<dyn AIClient> = Arc::new(mock);
+        let server_api = ServerApiProvider::new_for_test().get();
+
+        let poller = app.add_singleton_model(|ctx| {
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
+        });
+
+        // Seed the parent's watched set with the child's run_id, as
+        // `register_watched_run_id` would have done after the child got
+        // its server token.
+        poller.update(&mut app, |me, _| {
+            me.streams
+                .entry(parent_id)
+                .or_default()
+                .watched_run_ids
+                .insert(child_run_id.clone());
+        });
+
+        // Now invoke the removal handler with the run_id (mirroring the
+        // event payload that history_model emits with the captured run_id).
+        poller.update(&mut app, |me, ctx| {
+            me.on_conversation_removed(child_id, Some(child_run_id.clone()), ctx);
+        });
+
+        poller.read(&app, |me, _| {
+            assert!(
+                me.streams
+                    .get(&parent_id)
+                    .is_some_and(|s| !s.watched_run_ids.contains(&child_run_id)),
+                "parent's watched_run_ids must be pruned of the removed child's run_id"
             );
         });
     });
@@ -542,26 +578,27 @@ fn finish_restore_fetch_reconnects_sse_when_children_added_to_open_connection() 
         let server_api = ServerApiProvider::new_for_test().get();
 
         let poller = app.add_singleton_model(|ctx| {
-            OrchestrationEventPoller::new_with_clients_for_test(ai_client, server_api, ctx)
+            OrchestrationEventStreamer::new_with_clients_for_test(ai_client, server_api, ctx)
         });
 
         // Seed the state on_restored_conversations would have set up, then
         // inject a fake open SSE connection (generation 0) simulating the
-        // race: a status transition fired before the restore fetch completed.
+        // race: a consumer registered before the restore fetch completed.
+        // The dummy `EntityId` stands in for any local consumer (e.g. an
+        // open agent view); without it the eligibility predicate would
+        // bail and reconnect_sse would tear the connection down instead
+        // of opening a new one.
         let (_, rx) = futures::channel::mpsc::unbounded::<SseStreamItem>();
+        let consumer_id = warpui::EntityId::new();
         poller.update(&mut app, |me, _| {
-            me.event_cursor.insert(conversation_id, 0);
-            me.watched_run_ids
-                .entry(conversation_id)
-                .or_default()
-                .insert(own_run_id.to_string());
-            me.sse_connections.insert(
-                conversation_id,
-                SseConnectionState {
-                    event_receiver: rx,
-                    generation: 0,
-                },
-            );
+            let stream = me.streams.entry(conversation_id).or_default();
+            stream.event_cursor = 0;
+            stream.watched_run_ids.insert(own_run_id.to_string());
+            stream.consumers.insert(consumer_id);
+            stream.sse_connection = Some(SseConnectionState {
+                event_receiver: rx,
+                generation: 0,
+            });
             me.next_sse_generation = 1;
         });
 
@@ -582,17 +619,18 @@ fn finish_restore_fetch_reconnects_sse_when_children_added_to_open_connection() 
 
         poller.read(&app, |me, _| {
             assert!(
-                me.watched_run_ids
+                me.streams
                     .get(&conversation_id)
-                    .is_some_and(|w| w.contains("child-run-1")),
+                    .is_some_and(|s| s.watched_run_ids.contains("child-run-1")),
                 "child run_id must be in watched set"
             );
             // The old generation-0 connection must have been replaced by a
             // new one with a higher generation, proving SSE was reconnected.
             let gen = me
-                .sse_connections
+                .streams
                 .get(&conversation_id)
-                .map(|s| s.generation);
+                .and_then(|s| s.sse_connection.as_ref())
+                .map(|c| c.generation);
             assert!(
                 gen.is_some_and(|g| g > 0),
                 "SSE must be reconnected (new generation) after children are discovered; got gen={gen:?}"

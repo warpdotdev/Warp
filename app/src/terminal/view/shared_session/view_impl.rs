@@ -606,7 +606,7 @@ impl TerminalView {
         });
 
         // Mark this terminal as a viewer for chips and AI context menu once on join
-        let is_ambient = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_ambient = self.is_ambient_agent_session(ctx);
         self.input().update(ctx, |input, ctx| {
             input
                 .prompt_render_helper
@@ -704,7 +704,7 @@ impl TerminalView {
         }
 
         // For ambient agent tasks, preserve the shareable object so the share dialog remains visible
-        let is_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_ambient_agent = self.is_ambient_agent_session(ctx);
         let shareable_object_to_keep = if is_ambient_agent {
             self.shared_session
                 .as_ref()
