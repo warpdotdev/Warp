@@ -1041,15 +1041,24 @@ impl CurrentPrompt {
                 }
                 RefreshConfig::Periodically { .. } => {
                     if self.is_updated_externally(chip_kind) {
-                        let initial_gen = chip_kind.initial_value_generator();
-                        let generator = initial_gen.as_ref().unwrap_or(chip.generator());
-                        self.fetch_chip_value_once(
-                            chip_kind,
-                            generator,
-                            chip.on_click_generator().cloned(),
-                            true,
-                            ctx,
-                        );
+                        // The chip is being kept up to date by an external source (e.g. the
+                        // filesystem-watching `GitRepoStatusModel`). Only run an initial fetch
+                        // here when the chip provides a contextual `initial_value_generator`
+                        // — those compute their value from `PromptContext` and can't disagree
+                        // with the external source. Falling back to `chip.generator()` would
+                        // run the chip's shell command (e.g. `git diff --shortstat HEAD` for
+                        // `GitDiffStats`), which can produce a different value than the
+                        // external source and cause a brief flicker before the next external
+                        // update overwrites it (see issue #9228).
+                        if let Some(initial_gen) = chip_kind.initial_value_generator() {
+                            self.fetch_chip_value_once(
+                                chip_kind,
+                                &initial_gen,
+                                chip.on_click_generator().cloned(),
+                                true,
+                                ctx,
+                            );
+                        }
                     } else {
                         self.fetch_chip_value_at_interval(
                             chip_kind,
@@ -1427,51 +1436,72 @@ impl CurrentPrompt {
                 self.git_repo_status = Some(weak);
                 ctx.subscribe_to_model(&strong, |me, event, ctx| match event {
                     GitRepoStatusEvent::MetadataChanged => {
-                        let metadata = me
-                            .git_repo_status
-                            .as_ref()
-                            .and_then(|w| w.upgrade(ctx))
-                            .and_then(|h| h.as_ref(ctx).metadata().cloned());
-
-                        let Some(metadata) = metadata else {
-                            return;
-                        };
-
-                        // Update ShellGitBranch.
-                        let new_branch = ChipValue::Text(metadata.current_branch_name.clone());
-                        let current_branch = me
-                            .latest_chip_value(&ContextChipKind::ShellGitBranch)
-                            .cloned();
-                        if current_branch.as_ref() != Some(&new_branch) {
-                            me.update_chip_value(
-                                &ContextChipKind::ShellGitBranch,
-                                Some(new_branch),
-                            );
-                            // Refresh the branch dropdown so it stays in sync.
-                            let chip_kind = ContextChipKind::ShellGitBranch;
-                            if let Some(chip) = chip_kind.to_chip() {
-                                if let Some(on_click_gen) = chip.on_click_generator().cloned() {
-                                    me.refresh_on_click_values(&chip_kind, on_click_gen, ctx);
-                                }
-                            }
-                        }
-
-                        // Update GitDiffStats with structured data directly.
-                        let new_diff_stats = ChipValue::GitDiffStats(
-                            GitLineChanges::from_diff_stats(&metadata.stats_against_head),
-                        );
-                        let current_diff_stats = me
-                            .latest_chip_value(&ContextChipKind::GitDiffStats)
-                            .cloned();
-                        if current_diff_stats.as_ref() != Some(&new_diff_stats) {
-                            me.update_chip_value(
-                                &ContextChipKind::GitDiffStats,
-                                Some(new_diff_stats),
-                            );
-                        }
+                        me.apply_git_repo_status_metadata(ctx);
                     }
                 });
+
+                // The model may already have metadata when we attach (e.g. when
+                // a session re-binds to a long-lived `GitRepoStatusModel`). No
+                // `MetadataChanged` event fires from subscribing alone, so apply
+                // any existing metadata once up front; otherwise the chips would
+                // stay empty until the next file event.
+                self.apply_git_repo_status_metadata(ctx);
             }
+        }
+    }
+
+    /// Pulls the current metadata from `git_repo_status` (if any) and pushes it
+    /// into the `ShellGitBranch` and `GitDiffStats` chip values. Used both as
+    /// the body of the `MetadataChanged` subscription callback and as the
+    /// initial-state hydration call from `set_git_repo_status`.
+    ///
+    /// When metadata is unavailable (e.g. a freshly-attached
+    /// `GitRepoStatusModel` whose async fetch hasn't completed yet), clears
+    /// both chip values rather than preserving them. Without this, chips
+    /// would keep displaying the previous repo's branch and diff stats until
+    /// the async refresh emits `MetadataChanged` — a stale-data window that
+    /// is especially visible when switching repos in the same session.
+    #[cfg(feature = "local_fs")]
+    fn apply_git_repo_status_metadata(&mut self, ctx: &mut ModelContext<Self>) {
+        let Some(metadata) = self
+            .git_repo_status
+            .as_ref()
+            .and_then(|w| w.upgrade(ctx))
+            .and_then(|h| h.as_ref(ctx).metadata().cloned())
+        else {
+            // No metadata available yet — clear any stale values from a
+            // previous repo so nothing visibly carries over while the new
+            // model populates asynchronously.
+            self.update_chip_value(&ContextChipKind::ShellGitBranch, None);
+            self.update_chip_value(&ContextChipKind::GitDiffStats, None);
+            return;
+        };
+
+        // Update ShellGitBranch.
+        let new_branch = ChipValue::Text(metadata.current_branch_name.clone());
+        let current_branch = self
+            .latest_chip_value(&ContextChipKind::ShellGitBranch)
+            .cloned();
+        if current_branch.as_ref() != Some(&new_branch) {
+            self.update_chip_value(&ContextChipKind::ShellGitBranch, Some(new_branch));
+            // Refresh the branch dropdown so it stays in sync.
+            let chip_kind = ContextChipKind::ShellGitBranch;
+            if let Some(chip) = chip_kind.to_chip() {
+                if let Some(on_click_gen) = chip.on_click_generator().cloned() {
+                    self.refresh_on_click_values(&chip_kind, on_click_gen, ctx);
+                }
+            }
+        }
+
+        // Update GitDiffStats with structured data directly.
+        let new_diff_stats = ChipValue::GitDiffStats(GitLineChanges::from_diff_stats(
+            &metadata.stats_against_head,
+        ));
+        let current_diff_stats = self
+            .latest_chip_value(&ContextChipKind::GitDiffStats)
+            .cloned();
+        if current_diff_stats.as_ref() != Some(&new_diff_stats) {
+            self.update_chip_value(&ContextChipKind::GitDiffStats, Some(new_diff_stats));
         }
     }
 
