@@ -1,19 +1,23 @@
 # Orchestration Conversation Restore — Tech Spec
 
 ## Context
+
 See `PRODUCT.md` for user-visible behavior.
 
 ### Current restore path
+
 On startup, `AgentConversation` records are read from SQLite and converted to `AIConversation` via `new_restored` (`app/src/ai/agent/conversation.rs (281-451)`). These are placed in the `RestoredAgentConversations` singleton. When a terminal view opens, `restore_conversations_on_view_creation` calls `BlocklistAIHistoryModel::restore_conversations`, which loads conversations into memory and emits `BlocklistAIHistoryEvent::RestoredConversations`.
 
 For the driver case, `AgentDriver::new` (`app/src/ai/agent_sdk/driver.rs (474-608)`) accepts a `ConversationRestorationInNewPaneType::Historical` conversation pre-loaded from the server. It flows through `restore_conversation_after_view_creation` → `restore_conversations_from_block_params` → `BlocklistAIHistoryModel::restore_conversations`, emitting the same `RestoredConversations` event.
 
 ### What is correctly restored today
+
 - `parent_agent_id`, `parent_conversation_id`, `run_id` — persisted in `AgentConversationData` JSON, restored via `new_restored`.
 - `children_by_parent` index — rebuilt at startup from all local DB conversations in `initialize_historical_conversations` (`conversation_loader.rs (430-588)`).
 - `agent_id_to_conversation_id` routing index — populated in `restore_conversations` for each loaded conversation.
 
 ### What is NOT restored (the three gaps)
+
 1. **`OrchestrationEventPoller.watched_run_ids`** (`orchestration_event_poller.rs:65`) — the set of child run_ids to poll per parent conversation. Populated only when `start_agent` runs at runtime. `handle_history_event` explicitly ignores `RestoredConversations` (line 183). After restart, no SSE/poll loop opens and no events arrive.
 2. **`OrchestrationEventPoller.event_cursor`** (`orchestration_event_poller.rs:66`) — per-conversation i64 sequence number. Always initializes to 0; `AgentConversationData` has no cursor field. All historical events are re-fetched on the first poll.
 3. **`OrchestrationEventService.lifecycle_subscription_routes`** (`orchestration_events.rs:101`) — maps child conversation_id → parent agent_id for V1 local lifecycle dispatch. Not restored; V1 parents miss child status transitions.
@@ -191,5 +195,6 @@ When non-Oz parents become supported, they can reuse the server-side `last_event
 **Child run_id discovery for non-Oz parents**: The two synchronous fallback sources used today (`children_by_parent` DB index and `child_run_ids_from_task_messages`) both depend on Oz's structured task messages and will not apply to non-Oz parents. The primary path — `GET /agent/runs/{parent_run_id}/children` — is already harness-agnostic (the `ai_tasks` table stores `parent_run_id` regardless of harness) and will cover non-Oz parents without any additional changes.
 
 ## Follow-ups
+
 - Consider scanning V1 `StartAgent` tool results (`ToolCallResultType::StartAgent`) alongside `StartAgentV2` once V1 orchestration is fully deprecated, for completeness.
 - When non-Oz event delivery is fully implemented, wire `persist_cursor` in the non-Oz parent bridge to also call the server-side `last_event_sequence` update, mirroring the Oz path.

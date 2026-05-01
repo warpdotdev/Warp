@@ -1,6 +1,7 @@
 # StandardizedPath Tech Spec
 
 ## Problem Statement
+
 The codebase currently uses `CanonicalizedPath` (a wrapper around `PathBuf` that calls `dunce::canonicalize`) and raw `PathBuf` to represent file paths in coding features (file tree, editor tabs, repo metadata, AI context). This has three fundamental issues:
 
 1. **`PathBuf` assumes local OS** — `std::path::PathBuf` uses the host platform's path encoding. A macOS client cannot represent a `/home/user/project/main.rs` path from a remote Linux session as a native `PathBuf` without conflating path separators or case-sensitivity rules.
@@ -10,6 +11,7 @@ The codebase currently uses `CanonicalizedPath` (a wrapper around `PathBuf` that
 ## Current State
 
 ### `CanonicalizedPath` (repo_metadata/src/lib.rs)
+
 - Wraps `PathBuf`, constructed via `dunce::canonicalize`.
 - Implements `Display`, `Hash`, `Eq`, `Borrow<Path>`, `Borrow<PathBuf>`.
 - Four `TryFrom` impls (`PathBuf`, `&Path`, `&PathBuf`, `&str`), all call `dunce::canonicalize`.
@@ -19,14 +21,17 @@ The codebase currently uses `CanonicalizedPath` (a wrapper around `PathBuf` that
 - Used in `DetectedRepositories` for repo root tracking.
 
 ### `RemoteRepositoryIdentifier` (repo_metadata/src/repository_identifier.rs)
+
 - Uses raw `PathBuf` for the remote path (cannot canonicalize remotely).
 - Pairs with `SessionId` for disambiguation.
 
 ### `typed-path` crate (v0.10.0, already a workspace dependency)
+
 - Already used in `warp_util::path` for MSYS2/WSL path conversion and in `ai::paths` for cross-platform path joining and normalization.
 - Provides `TypedPathBuf` (enum over Unix/Windows path buffers), `TypedPath`, `.normalize()` (removes `.` and `..` without I/O), and platform-aware path operations.
 
 ### Path usage in coding features
+
 - **File tree**: `FileTreeEntry` stores `Arc<Path>` for root and per-entry paths. `FileTreeEntryState` variants hold `Arc<Path>` per node.
 - **Editor tabs**: `CodeSource` variants hold `PathBuf`. `CodeManager` deduplicates via `HashMap<CodeSource, CodePaneData>` keyed on path equality.
 - **Editor events**: `CodeViewEvent::FileOpened { file_path: PathBuf }`, `TabChanged { file_path: Option<PathBuf> }`.
@@ -34,6 +39,7 @@ The codebase currently uses `CanonicalizedPath` (a wrapper around `PathBuf` that
 ## Proposed Changes
 
 ### 1. Introduce `StandardizedPath`
+
 New struct in `warp_util::path` (or a new `warp_util::standardized_path` module), wrapping `TypedPathBuf`:
 
 ```rust
@@ -47,6 +53,7 @@ pub struct StandardizedPath(TypedPathBuf);
 ```
 
 #### Construction APIs
+
 All constructors enforce that the path is absolute and return `Result` so callers don't need to pre-validate input.
 
 ```rust
@@ -126,6 +133,7 @@ impl From<CanonicalizedPath> for StandardizedPath { ... }
 ```
 
 #### Display safety — UNC prefix handling
+
 `Display` delegates to `TypedPathBuf::to_string_lossy()`. UNC prefixes (`\\?\`) are handled as follows:
 
 - Non-canonicalizing constructors (`try_new`, `try_with_encoding`, `try_from_local`) use `TypedPathBuf::normalize()` — pure string manipulation that never introduces UNC prefixes.
@@ -135,9 +143,11 @@ impl From<CanonicalizedPath> for StandardizedPath { ... }
 To ensure `Display` never emits UNC prefixes, `from_local_canonicalized` will call `dunce::simplified` on the canonicalized path before feeding it into `TypedPathBuf`. This strips the UNC prefix whenever safe. For the rare cases where `dunce::simplified` cannot strip it (path >260 chars, reserved names), the UNC prefix will remain — this is correct behavior, as such paths require the extended-length prefix to be valid on Windows.
 
 #### Serde support
+
 Serialize as the string representation; deserialize by normalizing.
 
 ### 2. `StandardizedPath` does NOT encode local vs remote
+
 `StandardizedPath` is agnostic to whether the path refers to a local or remote file. Remote context is handled by a separate wrapper at the model layer:
 
 ```rust
@@ -156,6 +166,7 @@ Rationale:
 - The model layer decides whether `StandardizedPath` or `RemotePath` is appropriate for each context.
 
 ### 3. Shell boundary canonicalization
+
 When the app receives a path from the shell (e.g. via `cwd` reporting, file link clicks, CLI args), convert it using `StandardizedPath::from_local_canonicalized()`. This is the only place where I/O-based canonicalization occurs.
 
 For remote paths received over the wire, infer the encoding from the remote OS and use `StandardizedPath::try_with_encoding(path, path_type)` — no I/O possible.
@@ -198,6 +209,7 @@ Filesystem operations (`std::fs::read`, `std::fs::write`, `notify` watchers) req
 `StandardizedPath` does not perform case-folding. On macOS (case-insensitive HFS+/APFS), two paths differing only in case will not be equal under `StandardizedPath`. This matches the behavior of `TypedPathBuf` and avoids platform-specific equality semantics leaking into the type. If case-insensitive deduplication is needed (e.g. for file tree keys on macOS), it should be handled at the call site or via a separate wrapper/comparator.
 
 ## Resolved Questions
+
 1. **`Borrow<TypedPath>` — no, use `as_typed_path()` instead.** `TypedPath<'a>` is a sized enum, not an unsized type like `std::path::Path`, so `Borrow::borrow()` cannot return `&TypedPath<'_>` (the value is a temporary from `TypedPathBuf::as_path()`). The `CanonicalizedPath` → `Borrow<Path>` precedent does not transfer. Use the `as_typed_path()` method for access to the underlying `TypedPath`.
 2. **Arc wrapping — `Arc<StandardizedPath>`.** File tree entries will use `Arc<StandardizedPath>` to match the current `Arc<Path>` sharing pattern between parent-child nodes.
 3. **Case sensitivity — not handled by `StandardizedPath`.** `StandardizedPath` does not perform case-folding. On case-insensitive filesystems (e.g. macOS HFS+/APFS), callers relying on `from_local_canonicalized` will get OS-canonical casing, but other constructors preserve input casing. Case-insensitive deduplication is a call-site concern.

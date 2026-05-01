@@ -19,9 +19,7 @@
 </p>
 
 > [!NOTE]
-> OpenAI is the founding sponsor of the new, open-source Warp repository, and the new agentic management workflows are powered by GPT models.
-
-<h1></h1>
+OpenAI is the founding sponsor of the new, open-source Warp repository, and the new agentic management workflows are powered by GPT models.
 
 ## About
 

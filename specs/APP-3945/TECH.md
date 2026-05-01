@@ -1,6 +1,7 @@
 # APP-3945: Channel-aware Warp home watching Technical Spec
 
 ## Problem
+
 Warp's hot-reload behavior for user-managed files depends on several consumers observing filesystem changes from the current channel's Warp home. This work centralizes those updates behind `WarpDataDirectoryWatcher`, but it must also preserve a platform-specific requirement: public settings live under `config_local_dir()` while most other Warp home content lives under `data_dir()`.
 
 The technical problem is to keep one Warp-specific watcher abstraction while:
@@ -10,6 +11,7 @@ The technical problem is to keep one Warp-specific watcher abstraction while:
 - avoiding new generic filtering APIs in `repo_metadata::DirectoryWatcher`
 
 ## Relevant code
+
 - `app/src/warp_data_directory_watcher.rs` — Warp-specific singleton watcher that owns a `BulkFilesystemWatcher`, registers Warp home roots, and emits `WarpDataDirectoryWatcherEvent::FilesChanged`.
 - `app/src/lib.rs` — startup wiring that prepares the Warp watch roots before registering `WarpDataDirectoryWatcher`.
 - `app/src/user_config/native.rs` — `WarpConfig` subscription that maps watcher updates to `Themes`, `Workflows`, `LaunchConfigs`, `TabConfigs`, and `Settings` events.
@@ -23,6 +25,7 @@ The technical problem is to keep one Warp-specific watcher abstraction while:
 - `crates/integration/src/test/settings_file_hot_reload.rs` — end-to-end settings hot-reload coverage.
 
 ## Current state
+
 `WarpDataDirectoryWatcher` is a Warp-specific singleton that owns its own `BulkFilesystemWatcher`, similar to `HomeDirectoryWatcher`. It does not depend on `DirectoryWatcher`, and it does not require any per-directory filter plumbing in `repo_metadata`.
 
 At startup:
@@ -44,6 +47,7 @@ Because Warp home skills now live under the channel-aware `data_dir()/skills`, h
 ## Chosen design
 
 ### 1. Dedicated Warp watcher ownership
+
 `WarpDataDirectoryWatcher` owns a `BulkFilesystemWatcher` directly instead of layering on top of `DirectoryWatcher`.
 
 This keeps the abstraction boundary simple:
@@ -53,6 +57,7 @@ This keeps the abstraction boundary simple:
 That separation avoids broadening the generic repo watcher API for a Warp-specific use case.
 
 ### 2. Watch root preparation and registration
+
 Each Warp-owned root is prepared before watcher registration, but that preparation happens outside the watcher constructor:
 - call `create_dir_all()` during startup/setup
 - keep watcher registration separate from root creation
@@ -63,6 +68,7 @@ Each Warp-owned root is prepared before watcher registration, but that preparati
 `config_local_dir()` is registered with `WatchFilter::accept_all()` when it is distinct from `data_dir()`.
 
 ### 3. Update normalization
+
 `BulkFilesystemWatcherEvent` is converted into `RepositoryUpdate` so existing subscribers can keep using the same helper logic and event vocabulary.
 
 `filter_repository_update()` is retained as a downstream helper to:
@@ -70,6 +76,7 @@ Each Warp-owned root is prepared before watcher registration, but that preparati
 - convert cross-boundary moves into add/delete updates when a move crosses the watched prefix boundary
 
 ### 4. Downstream consumers
+
 `WarpConfig` remains subscription-based and does not reintroduce a direct `notify` watcher.
 
 It continues to:
@@ -84,12 +91,14 @@ It continues to:
 `SkillWatcher` subscribes to Warp watcher events for `data_dir()/skills` and keeps the existing logic for non-Warp home providers and project repositories. The Warp home initialization path and repository scan path share the same helper for reading skill directories and emitting updates.
 
 ### 5. Channel-aware helper paths
+
 The helper path logic is updated so Warp home skills and MCP config resolve through the active channel's data directory:
 - Warp MCP home config resolves to `warp_data_mcp_config_file_path()`
 - Warp home skills resolve to `data_dir()/skills`
 - provider and scope classification recognize those paths as Warp home paths rather than project paths
 
 ## End-to-end flow
+
 1. Warp startup prepares `data_dir()` and, when distinct, `config_local_dir()` before constructing `WarpDataDirectoryWatcher`.
 2. `WarpDataDirectoryWatcher` registers `data_dir()` with a watcher-level filter that excludes `<data_dir>/worktrees`.
 3. If `config_local_dir()` differs from `data_dir()`, `WarpDataDirectoryWatcher` registers that root with no extra filter.
@@ -100,6 +109,7 @@ The helper path logic is updated so Warp home skills and MCP config resolve thro
 8. For `settings.toml`, `WarpConfig` emits `WarpConfigUpdateEvent::Settings`, and `settings::init()` reloads public settings from disk.
 
 ## Risks and mitigations
+
 - Distinct-root platforms regress settings hot reload.
   - Mitigation: register `config_local_dir()` separately when it differs from `data_dir()`.
 - Worktree events leak back into Warp home consumers.
@@ -112,6 +122,7 @@ The helper path logic is updated so Warp home skills and MCP config resolve thro
   - Mitigation: centralize Warp-home path handling in the MCP and skills helper utilities.
 
 ## Testing and validation
+
 - `cargo test -p warp --lib filter_repository_update_by_prefix_keeps_only_matching_paths`
   - validates the downstream filtering helper that skills consumers rely on
 - `cargo test -p integration --test integration settings_file_hot_reload -- --nocapture`
@@ -124,5 +135,6 @@ The helper path logic is updated so Warp home skills and MCP config resolve thro
   - Warp home MCP and skill helpers resolve through the channel-aware data directory
 
 ## Follow-ups
+
 - Add a focused test for `WarpDataDirectoryWatcher` root registration when `data_dir()` and `config_local_dir()` differ.
 - Consider whether the remaining Warp-home helper changes in the MCP and skills layers can be reduced further without regressing path classification.

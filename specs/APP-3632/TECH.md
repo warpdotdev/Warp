@@ -1,14 +1,17 @@
 # APP-3632: Code Review Header UI Refactor
 
 ## Problem
+
 The updated Figma designs for the code review panel introduce git operation buttons (commit, push, create PR) in the inner header. The existing header layout doesn't have room for these — it already contains the branch name, diff stats, discard button, add-context button, and diff mode dropdown. This PR clears space by relocating contextual info upward and consolidating actions into the overflow menu.
 
 ## Feature Flag
+
 All UI changes are gated behind `FeatureFlag::GitOperationsInCodeReview`. The flag is **not** in `DOGFOOD_FLAGS` — it is off everywhere by default. Both the inner header (`code_review_header.rs`) and the right panel header (`right_panel.rs`) maintain legacy render paths that match master when the flag is off.
 
 To test locally: `cargo run --features git_operations_in_code_review`
 
 ## Overview of Changes
+
 When the flag is **on**, this PR restructures the code review header into two layers:
 
 1. **Right panel header** (top-level): shows repo context — repo path, branch name, and diff stats
@@ -21,6 +24,7 @@ When the flag is **off**, both headers render identically to master.
 ## File-by-File Changes
 
 ### `app/src/workspace/view/right_panel.rs`
+
 **Purpose**: Redesign the panel header to show contextual git info (flag-gated).
 
 - Call site dispatches to `render_header` (flag on) or `render_header_legacy` (flag off)
@@ -32,6 +36,7 @@ When the flag is **off**, both headers render identically to master.
 - **Legacy layout** preserves the "Code review" title with `PANE_HEADER_HEIGHT` and `HEADER_EDGE_PADDING`
 
 ### `app/src/code_review/code_review_header.rs`
+
 **Purpose**: Simplify the inner header to only layout concerns, with legacy fallback.
 
 - Master's code (`render`, `render_wide_layout`, `render_compact_layout`, and all helpers) is **untouched** — zero deletions from master's version aside from adding `FilterableDropdown` to imports.
@@ -39,6 +44,7 @@ When the flag is **off**, both headers render identically to master.
 - `render_header` in `CodeReviewView` checks the flag and calls `render_new` or `render`
 
 ### `app/src/code_review/code_review_view.rs`
+
 **Purpose**: Restyle the dropdown, relocate buttons, consolidate menu items.
 
 - **File navigation button**: `ViewHandle<ActionButton>` with `PaneHeaderTheme`, created once in `new()`. Passed to the header via `CodeReviewHeaderFields.file_nav_button` so both wide and compact layouts can render it. Tooltip updates dynamically when sidebar state changes.
@@ -50,14 +56,17 @@ When the flag is **off**, both headers render identically to master.
 - **`render_file_navigation_button`**: public function retained from master (used by legacy right panel header)
 
 ### `app/src/pane_group/working_directories.rs`
+
 **Purpose**: Expose diff state for the panel header to read.
 
 - Adds `get_diff_state_model(&self, repo_path: &Path) -> Option<ModelHandle<DiffStateModel>>`
 
 ### `app/src/lib.rs`
+
 - Wired `git_operations_in_code_review` cargo feature to `FeatureFlag::GitOperationsInCodeReview` runtime flag
 
 ### `crates/warp_features/src/lib.rs`
+
 - `GitOperationsInCodeReview` removed from `DOGFOOD_FLAGS` (flag is off everywhere by default)
 
 ## Design Decisions

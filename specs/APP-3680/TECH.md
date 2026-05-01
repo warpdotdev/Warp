@@ -192,6 +192,7 @@ When either flag is off (old onboarding), the existing path (`start_agent_onboar
 ## Testing and Validation
 
 ### `build_tab_config` (unit tests)
+
 These enforce the TOML generation rules from the product spec:
 - Terminal + directory, no worktree → `TabConfig` with `cwd` set, empty commands, no params.
 - CLI agent (Claude) + directory, no worktree → commands = `["claude"]`, no params.
@@ -202,10 +203,12 @@ These enforce the TOML generation rules from the product spec:
 - Directory path is always absolute in `panes[0].cwd`.
 
 ### TOML round-trip (unit tests)
+
 - For each `build_tab_config` output, serialize via `toml::to_string_pretty`, deserialize back as `TabConfig`, verify all fields match.
 - Validates that `Serialize` on `TabConfig` produces TOML that the existing `Deserialize` path can read — catches any drift between the two.
 
 ### `write_tab_config` (unit tests with temp dir)
+
 - Write to an empty temp dir → file is `startup_config.toml`.
 - Write again → file is `startup_config_1.toml`.
 - Write a third time → file is `startup_config_2.toml`.
@@ -213,33 +216,39 @@ These enforce the TOML generation rules from the product spec:
 - Directory is created if it doesn't exist.
 
 ### `SessionType` helpers (unit tests)
+
 - `SessionType::Terminal.command_prefix()` → `None`.
 - `SessionType::Oz.command_prefix()` → `None`.
 - `SessionType::CliAgent(CLIAgent::Claude).command_prefix()` → `Some("claude")`.
 - Display names and icons return the expected values for each variant.
 
 ### `render_tab_config` integration (unit tests)
+
 These verify the full pipeline from `build_tab_config` → `render_tab_config` produces the correct `PaneTemplateType`:
 - Terminal + directory → `PaneTemplate` with correct `cwd`, empty commands.
 - CLI agent + directory → `PaneTemplate` with correct `cwd`, commands = `["claude"]`.
 - Worktree config with default param values → commands have `"my-feature-branch"` substituted in.
 
 ### Git repo detection (unit tests with temp dir)
+
 - Create a temp dir with `.git/` → `is_git_repo` returns true.
 - Temp dir without `.git/` → returns false.
 - Switching from a git dir to a non-git dir forces `enable_worktree` to false.
 
 ### DefaultSessionMode (unit test or integration)
+
 - Selecting Oz sets `DefaultSessionMode::Agent`.
 - Selecting Terminal sets `DefaultSessionMode::Terminal`.
 - Selecting a CLI agent sets `DefaultSessionMode::Terminal`.
 - When `OpenWarpNewSettingsModes` is off, `DefaultSessionMode` is not touched by this code path.
 
 ### Feature flag gating (integration)
+
 - When either `OpenWarpNewSettingsModes` or `TabConfigs` is off, `OnboardingCompleted` follows the old tutorial path — modal is never shown.
 - When both `OpenWarpNewSettingsModes` and `TabConfigs` are on, `OnboardingCompleted` dispatches `ShowSessionConfigModal`.
 
 ### UI verification
+
 - Compare rendered modal against Figma mock.
 - Verify worktree checkbox is visually disabled when directory is not a git repo.
 

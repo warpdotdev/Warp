@@ -11,11 +11,13 @@ The entire feature is gated behind `FeatureFlag::ConfigurableToolbar` (enabled b
 ## Relevant code
 
 ### Panel rendering (two-layer system that needs unification)
+
 - `app/src/workspace/view.rs:16993` — `render_panels`: outer layer composing `VTabs | theme chooser | Main | right panels`.
 - `app/src/workspace/view.rs:16545` — `render_banner_and_active_tab`: inner layer composing `LeftPanel(tools) | Terminal | RightPanel(code review)`.
 - `app/src/workspace/view/vertical_tabs.rs:1120` — `render_vertical_tabs_panel`: renders the vertical tabs sidebar with a `Resizable` wrapper and `DragBarSide::Right`.
 
 ### Panel toggle state
+
 - `app/src/pane_group/mod.rs:843` — `PaneGroup::left_panel_open: bool` (tools panel)
 - `app/src/pane_group/mod.rs:845` — `PaneGroup::right_panel_open: bool` (code review)
 - `app/src/workspace/view.rs` — `Workspace::vertical_tabs_panel_open: bool`
@@ -23,28 +25,34 @@ The entire feature is gated behind `FeatureFlag::ConfigurableToolbar` (enabled b
 - `app/src/workspace/view.rs` — `WorkspaceState::is_notification_mailbox_open: bool` (popover)
 
 ### Panel toggle logic
+
 - `app/src/workspace/view.rs:6711` — `toggle_left_panel`: tools panel open/close
 - `app/src/workspace/view.rs:6947` — `toggle_right_panel`: code review open/close
 - `app/src/workspace/view.rs:6669` — `toggle_vertical_tabs_panel`
 - `app/src/workspace/view.rs:18256` — `ToggleNotificationMailbox` handler
 
 ### Notification toast positioning
+
 - `app/src/workspace/view.rs:20265` — mailbox popover anchors to `NOTIFICATIONS_MAILBOX_POSITION_ID` (follows button naturally).
 - `app/src/workspace/view.rs:20342` — notification toasts anchor to `TAB_BAR_POSITION_ID` at `BottomRight`. This needs to become dynamic.
 
 ### Toolbar button rendering (current hardcoded layout)
+
 - `app/src/workspace/view.rs:15417` — `render_tab_bar_contents`: left-side buttons at 15522–15535, right-side via `add_right_side_tab_bar_controls` at 15543.
 - `app/src/workspace/view.rs:15639` — `add_right_side_tab_bar_controls`
 
 ### Existing chip configurator infrastructure
+
 - `app/src/chip_configurator/mod.rs` — `ChipConfigurator` with `LeftRightZones` layout.
 - `app/src/ai/blocklist/agent_view/agent_input_footer/editor.rs` — `AgentToolbarEditorModal` (template for our modal).
 
 ### Existing footer chip selection settings (pattern to follow)
+
 - `app/src/terminal/session_settings.rs:82` — `ToolbarChipSelection` trait, `AgentToolbarChipSelection` enum.
 - `app/src/terminal/session_settings.rs:277` — `agent_footer_chip_selection` setting.
 
 ### Onboarding
+
 - `app/src/settings/onboarding.rs:62` — `apply_ui_customization_settings`
 
 ## Current state

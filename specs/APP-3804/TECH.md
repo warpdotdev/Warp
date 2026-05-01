@@ -11,32 +11,38 @@ This spec covers the foundation: a shared protocol layer, a minimal request/resp
 ## 2. Relevant Code
 
 ### remote_server crate (current state)
+
 - `remote_server/Cargo.toml` — current deps: `prost`, `tokio`, `prost-build`
 - `remote_server/src/lib.rs` — library target re-exporting generated prost types
 - `remote_server/proto/remote_server.proto` — `ClientMessage`/`ServerMessage` envelopes with `Initialize`/`InitializeResponse`
 - `remote_server/build.rs` — prost codegen for the proto
 
 ### Headless warpui App infrastructure
+
 - `crates/warpui/src/platform/app.rs:68-80` — `AppBuilder::new_headless(callbacks, assets, test_driver)` constructor
 - `crates/warpui/src/platform/app.rs:107-155` — `AppBuilder::run(init_fn)` wraps init_fn and enters the event loop
 - `crates/warpui/src/platform/headless/app.rs` — `App::run()` creates mpsc channel, marks main thread, enters `event_loop::run()`
 - `crates/warpui/src/platform/headless/event_loop.rs` — blocking `for event in receiver.iter()` loop processing `RunTask`, `RunCallback`, `Terminate`; includes Ctrl-C handler via `ctrlc::set_handler`
 
 ### Entity/Model system
+
 - `ui/src/core/entity.rs:39-54` — `Entity` trait (has `type Event`) and `SingletonEntity` trait (provides `handle()` and `as_ref()`)
 - `ui/src/core/app.rs:2060-2077` — `AppContext::add_singleton_model(build_model)` registers a singleton
 - `ui/src/core/app.rs:845-847` — `AppContext::background_executor()` returns `&Arc<Background>`
 
 ### ModelSpawner
+
 - `ui/src/core/model/context.rs:442-466` — `ModelContext::spawner()` creates a `ModelSpawner<T>` (Send + Clone)
 - `ui/src/core/model/context.rs:592-624` — `ModelSpawner<T>` definition; `spawn(work).await` dispatches `work` to main thread and returns the result
 - `app/src/ai/agent_sdk/driver.rs:890-1027` — `AgentDriver::run_internal`: long async workflow using `ModelSpawner` to step into the model at specific points
 - `app/src/workspace/view/global_search/model.rs:77-178` — `GlobalSearch`: background ripgrep task pushing result batches via `ModelSpawner`
 
 ### No-op asset provider
+
 - `ui/src/assets/mod.rs:5-11` — `impl AssetProvider for ()` returns errors for all lookups
 
 ### App termination
+
 - `ui/src/core/app.rs:3998-4012` — `AppContext::terminate_app(mode, result)` delegates to platform
 - `ui/src/platform/mod.rs:282-292` — `TerminationMode` enum: `Cancellable`, `ForceTerminate`, `ContentTransferred`
 

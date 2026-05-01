@@ -13,12 +13,14 @@ Add a fixed control bar at the top of the vertical tabs panel containing a searc
 ## Behavior
 
 ### Search Input
+
 - Visually resembles a standard search field: magnifying glass icon on the left, placeholder text, themed background/border consistent with the panel.
 - The field is **inert** — clicking it does nothing (no focus, no cursor, no text entry).
 - On hover, a tooltip appears with the text **"Not yet implemented"**.
 - The search input stretches to fill all available horizontal space to the left of the plus button.
 
 ### Plus Button
+
 - Renders as a small icon button with a `+` icon.
 - **Left-click**: Creates a new tab (same as the existing `AddTab` action — opens a welcome tab or terminal tab depending on feature flags).
 - **Right-click**: Opens the new session dropdown menu, anchored below the plus button at the bottom edge of the control bar.
@@ -26,6 +28,7 @@ Add a fixed control bar at the top of the vertical tabs panel containing a searc
 - The dropdown menu contains the same items as the existing new session menu (shell options, launch configs, tab configs).
 
 ### Layout
+
 - The control bar is a horizontal row at the top of the vertical tabs panel, above the scrollable tab group list.
 - It is **not scrollable** — it stays fixed at the top as tab groups scroll.
 - It has horizontal padding consistent with the rest of the panel (12px).

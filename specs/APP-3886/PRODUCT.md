@@ -4,18 +4,22 @@ Linear: [APP-3886](https://linear.app/warpdotdev/issue/APP-3886/sidecars-for-tab
 Figma: [House of Agents – sidecar design](https://www.figma.com/design/CsBdBW4YoLgSAbr5eSkwV6/House-of-Agents?node-id=7877-45160&m=dev)
 
 ## Summary
+
 Add a sidecar panel to every actionable item in the tab configs menu that exposes per-item actions: **Make default**, **Edit config**, and **Remove** (**Edit config** and **Remove** will not be shown for non-user-created tab-configs (i.e. terminal & agent)). Unify the "Make default" choice with the existing "Default mode for new sessions" setting so there is a single source of truth for what Cmd+T does. Flatten the Windows-only Terminal shell submenu into top-level menu items so every item can have a sidecar.
 
 ## Problem
+
 Users can create tab configs but have no lightweight way to manage them from the menu. Editing requires manually navigating to `~/.warp/tab_configs/`, there is no way to delete a config from the UI, and there is no way to set a tab config as the default Cmd+T action. The "Default mode for new sessions" setting only offers Terminal and Agent, with no way to select a tab config.
 
 ## Goals
+
 - Surface "Make default", "Edit config", and "Remove" actions via a sidecar on menu items.
 - Extend the "Default mode for new sessions" setting to include all tab configs, creating a single source of truth for what Cmd+T opens.
 - Flatten the Windows Terminal shell submenu into top-level items so every item gets uniform sidecar treatment.
 - Respect the correct editor setting (`open_code_panels_file_editor`) when opening tab config files.
 
 ## Non-goals
+
 - Inline editing of tab config TOML content from within the sidecar.
 - Drag-to-reorder tab configs in the menu.
 - A new UI for creating tab configs (the existing "New Tab Config" and "New worktree config" flows remain).
@@ -25,6 +29,7 @@ Users can create tab configs but have no lightweight way to manage them from the
 ## User experience
 
 ### Menu structure changes
+
 The tab configs menu items become:
 
 1. **Agent** (if AI enabled)
@@ -39,11 +44,13 @@ The tab configs menu items become:
 Items 1–5 each get the new action sidecar. Items 7–8 do not.
 
 ### Sidecar trigger
+
 When a user hovers over an actionable item (items 1–5 above), a sidecar panel appears to the right of the menu, following the existing sidecar positioning and safe-zone pattern. The sidecar replaces itself as the user moves between items.
 
 When the user hovers over a separator, "New worktree config", or "New Tab Config", the action sidecar hides. "New worktree config" continues to show its own repo-list sidecar as it does today.
 
 ### Sidecar layout
+
 The sidecar panel contains:
 1. **Title**: The item name (e.g., "Terminal", "PowerShell", "Oz", or the tab config's `name` field).
 2. **Subtitle**: For user tab configs, the full path to the `.toml` source file displayed in a subdued/secondary text style (e.g., `~/.warp/tab_configs/my_config.toml`). For built-in items, no subtitle.
@@ -60,6 +67,7 @@ The sidecar panel contains:
 - "Remove" (destructive/red styling)
 
 ### "Make default" behavior
+
 Sets the selected item as the action triggered by Cmd+T (`workspace:new_tab` keybinding).
 
 This directly writes the **"Default mode for new sessions"** setting (see below). The sidecar choice and the settings page dropdown are always in sync — changing one updates the other.
@@ -76,6 +84,7 @@ When Cmd+T fires:
 - If default is a tab config → open that config using the same flow as clicking it in the menu (params modal if it has params, direct open if not).
 
 ### Extending "Default mode for new sessions"
+
 The existing `DefaultSessionMode` enum (`Terminal | Agent`) is extended to also include a tab-config variant that references a config by source file path. The settings dropdown in the AI/session settings page lists:
 - Terminal
 - Agent
@@ -86,9 +95,11 @@ Selecting a tab config from the dropdown sets it as the Cmd+T default, same as c
 If the selected tab config is deleted (file removed from disk), the setting falls back to `Terminal` (or whatever `DefaultSessionMode`'s default is).
 
 ### Visual indicator for current default
+
 The menu item that is currently the default shows a **Cmd+T keybinding indicator** (matching the Figma design). This is the same keybinding hint pattern used elsewhere in the menu. Only one item displays this indicator at a time — whichever item is the current default.
 
 ### "Edit config" behavior
+
 Opens the tab config `.toml` file in the user's configured editor, respecting the **"Choose an editor to open files from the code review panel, project explorer, and global search"** setting (`open_code_panels_file_editor`), **not** the "Choose an editor to open file links" setting (`open_file_editor`).
 
 When the editor resolves to Warp, the file opens in a new tab with the file tree open and focused on the config file.
@@ -98,6 +109,7 @@ This editor-setting fix also applies to:
 - The **"Open file"** action from tab config error toasts (`OpenTabConfigErrorFile`).
 
 ### "Remove" behavior
+
 1. A Warp modal (following existing modal prior art, e.g., the close-session confirmation dialog) appears asking the user to confirm deletion, indicating the config name and that the file will be permanently deleted.
 2. On confirm, the `.toml` file is deleted from disk.
 3. The filesystem watcher picks up the deletion and removes the config from the menu.
@@ -105,6 +117,7 @@ This editor-setting fix also applies to:
 5. On cancel, nothing happens.
 
 ### Edge cases
+
 - **Default config file deleted externally**: When Cmd+T fires and the stored config path no longer exists, clear the default silently and fall through to `Terminal` behavior. The next watcher event will also clean up the settings dropdown.
 - **Config parse error after edit**: Handled by the existing error toast mechanism. The sidecar does not need special handling.
 - **Menu keyboard navigation**: Arrow keys update the sidecar to reflect the currently-selected item, matching the existing sidecar behavior.
@@ -113,6 +126,7 @@ This editor-setting fix also applies to:
 - **Windows Terminal flattening**: Removing the Terminal submenu means `NewSessionSidecarKind::Terminal` and `configure_terminal_new_session_sidecar` are no longer needed. The shell items become regular top-level menu entries.
 
 ## Success criteria
+
 1. Hovering over any actionable item (Terminal, shell variants, Oz, user tab configs) in the tab configs menu shows a sidecar.
 2. The sidecar for user tab configs shows the config name, file path, and three buttons (Make default, Edit config, Remove).
 3. The sidecar for built-in items shows only "Make default".
@@ -128,6 +142,7 @@ This editor-setting fix also applies to:
 13. On Windows, Terminal shell variants appear as individual top-level items instead of a submenu.
 
 ## Validation
+
 - **Unit tests**: `DefaultSessionMode` extension stores and retrieves tab config paths correctly. Falls back to `Terminal` when the stored path doesn't exist. `resolve_file_target` for tab config files uses `open_code_panels_file_editor`.
 - **Manual / computer-use verification**: Open the tab configs menu, hover over items, verify sidecar appears with correct content. Exercise Make default, Edit config, and Remove. Verify Cmd+T behavior changes. Verify settings dropdown stays in sync. Verify Cmd+T reverts after removing the default config.
 - **Regression**: Existing "New worktree config" sidecar behavior is unaffected. Existing Cmd+T behavior is unchanged when no custom default is set.

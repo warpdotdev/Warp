@@ -64,6 +64,7 @@ In `handle_new_session_menu_event`, on `MenuEvent::ItemHovered` or `MenuEvent::I
 6. If hovered is None (mouse left menu, possibly onto sidecar): keep current state.
 7. Read the sidecar panel's rect from the previous frame via `element_position_by_id_at_last_frame(window_id, "new_session_sidecar")`.
 8. Set `main_menu.set_safe_zone_target(sidecar_rect)` and `main_menu.set_submenu_being_shown_for_item_index(Some(hovered_index))`.
+
 ### 5. Worktree search row and filtering
 
 The worktree sidecar owns three new pieces of state on `Workspace`:
@@ -87,12 +88,14 @@ The worktree sidecar owns three new pieces of state on `Workspace`:
 The search row is part of the normal scrollable menu content rather than a pinned header, so it scrolls away with the repo list. Repo rows are filtered by checking whether the lowercased repo path contains the lowercased trimmed query string.
 
 ### 6. Sidecar rendering
+
 ### 5. Sidecar rendering
 
 When `show_new_session_sidecar` is true, the workspace render adds a positioned overlay child:
 - Anchored to the hovered item's `SavePosition` (each `MenuItemFields` wraps its element in `SavePosition(label)` at render time).
 - Wrapped in `SavePosition("new_session_sidecar")` so the safe zone rect can be read on the next frame.
 - Positioned at TopRight → TopLeft with 4px gap.
+
 ### 7. Pinned footer and menu layout tweaks
 
 The worktree sidecar keeps "Add new repo" visible via `set_pinned_footer_builder(...)` on the sidecar menu. The repo list scrolls independently above it.
@@ -106,6 +109,7 @@ To match the current design:
 Supporting this required a small `Menu` enhancement in `app/src/menu.rs` to allow depth-0 content top/bottom padding overrides in addition to the existing per-item padding overrides.
 
 ### 8. Sidecar event handling
+
 ### 6. Sidecar event handling
 
 On `MenuEvent::Close { via_select_item: true }`: item clicked in sidecar → also close the main menu.

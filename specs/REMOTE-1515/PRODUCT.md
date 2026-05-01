@@ -3,6 +3,7 @@
 Linear: REMOTE-1515. Figma: none provided.
 
 ## Summary
+
 Add a `/continue-locally` slash command that forks the active cloud Oz agent conversation into a local Warp conversation from the input. It is a parity entrypoint for the existing "Continue locally" affordances on the conversation-ended tombstone (`app/src/terminal/view/shared_session/conversation_ended_tombstone_view.rs:485-491`) and on the conversation details panel (`app/src/ai/conversation_details_panel.rs:512-520`).
 
 ## Behavior
@@ -26,5 +27,6 @@ Add a `/continue-locally` slash command that forks the active cloud Oz agent con
 9. Telemetry: a successful invocation emits `AgentManagementTelemetryEvent::ConversationForked` (matching `/fork`) plus a new `AgentManagementTelemetryEvent::SlashCommandContinueLocally` event so cloud-to-local handoffs from the slash command can be measured separately from the tombstone and details-panel buttons. Existing `TombstoneContinueLocally` and `DetailsPanelContinueLocally` events are unchanged.
 
 ## Non-goals
+
 - Surfacing this command in completed conversation transcript viewers, where input is hidden by design. The existing tombstone button remains the only entrypoint there.
 - Adding a `/continue-locally` button to wasm. Like `ContinueConversationLocally` itself, the command is `cfg(not(target_family = "wasm"))`.

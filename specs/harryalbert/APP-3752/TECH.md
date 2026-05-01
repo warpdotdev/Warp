@@ -1,11 +1,13 @@
 # Notification Toast & Mailbox UI Updates — Tech Spec
 
 ## Problem
+
 The notification toast and mailbox UI need visual updates to match new Figma designs. The changes span container sizing, a new branch context row, line-clamped text with expand affordances, shared avatar rendering with vertical tabs, and various padding/spacing adjustments. See `specs/harryalbert/APP-3752/PRODUCT.md` for the full product spec.
 
 ## Relevant Code
 
 ### Notification module
+
 - `app/src/ai/agent_management/notifications/mod.rs` — module root, re-exports
 - `app/src/ai/agent_management/notifications/item.rs` — `NotificationItem`, `NotificationItems`, `NotificationCategory`, `NotificationSourceAgent`
 - `app/src/ai/agent_management/notifications/item_rendering.rs` — shared rendering: `render_notification_item_content`, `render_agent_avatar`
@@ -13,40 +15,50 @@ The notification toast and mailbox UI need visual updates to match new Figma des
 - `app/src/ai/agent_management/notifications/view.rs` — `NotificationMailboxView`, header, filter bar, item rendering
 
 ### Avatar rendering (vertical tabs)
+
 - `app/src/ui_components/icon_with_status.rs` — `IconWithStatusVariant`, `IconWithStatusSizing`, `render_icon_with_status`
 - `app/src/workspace/view/vertical_tabs.rs:84-240` — vertical-tab sizing presets and `render_pane_icon_with_status`
 - `app/src/workspace/view/vertical_tabs.rs:1227-1327` — `resolve_icon_with_status_variant` (maps pane types to avatar variants)
 
 ### Status icons
+
 - `app/src/ai/agent/conversation.rs:3531-3538` — `ConversationStatus::status_icon_and_color`
 - `app/src/ai/conversation_status_ui.rs` — `render_status_element` (used by agent management views)
 
 ### Notification creation
+
 - `app/src/ai/agent_management/agent_management_model.rs:287-408` — `handle_history_event_for_mailbox`, `add_notification` (where Oz conversation notifications are created)
 - `app/src/ai/agent_management/agent_management_model.rs:123-191` — `handle_cli_agent_session_event` (where CLI session notifications are created)
 
 ### CLI session context
+
 - `app/src/terminal/cli_agent_sessions/mod.rs:39-48` — `CLIAgentSessionContext` (cwd, project, query, etc. — no branch field currently)
 
 ### Existing text primitives
+
 - `warp_core/src/ui/builder.rs:826-840` — `wrappable_text` (the text component used in notifications)
 - No existing max-lines / line-clamp primitive in the UI framework.
 
 ## Current State
 
 ### Notification items
+
 `NotificationItem` (`item.rs:64-78`) holds: `id`, `origin`, `title`, `message`, `category`, `agent`, `is_read`, `created_at`, `terminal_view_id`, `artifacts`. No branch context.
 
 ### Shared rendering
+
 `render_notification_item_content` (`item_rendering.rs:62-164`) is used by both toasts and the mailbox. It renders: avatar + title row (title | timestamp + unread dot) + message + optional artifact buttons. The title and message text wrap freely with no line limits.
 
 ### Avatar rendering
+
 Notifications use `render_agent_avatar` (`item_rendering.rs:166-236`) which has its own icon/color logic. Vertical tabs use `render_pane_icon_with_status` with `IconWithStatusVariant` (`vertical_tabs.rs:108-240`) which has better styling: proper CLI brand colors, cutout rings on status badges, and background color matching the panel. These two implementations are independent and visually inconsistent.
 
 ### Toast
+
 `render_toast` (`toast_stack.rs:347-435`): 360px wide, 10v/16h padding, 6px radius, default shadow. Close button at top-right via `OffsetPositioning`. Keybinding hint on newest toast.
 
 ### Mailbox
+
 `NotificationMailboxView::render` (`view.rs:340-408`): 420px wide, 500px max height. Header has "Notifications" (semibold) + X close button. Filter bar has 4px button gap, 16px horizontal padding. "All" filter doesn't show a count. Items use 12v/16h padding.
 
 ## Proposed Changes
@@ -232,12 +244,14 @@ In both rich and simple item layouts, change timestamp font size from `14.` → 
 ## End-to-End Flow
 
 ### Notification creation
+
 1. Conversation status changes or CLI agent session event fires.
 2. `AgentNotificationsModel::add_notification` is called with the new `branch` parameter.
 3. `NotificationItem` is created with `branch: Option<String>`.
 4. `AgentManagementEvent::NotificationAdded` is emitted.
 
 ### Toast rendering
+
 1. `AgentNotificationToastStack` receives the event, creates a `NotificationToastItem`.
 2. `render_toast` builds the toast container with updated sizing (420px, 12px padding, 8px radius, no drop shadow).
 3. `render_notification_item_content` is called with `NotificationRenderContext::Toast`.
@@ -247,6 +261,7 @@ In both rich and simple item layouts, change timestamp font size from `14.` → 
 7. Close button positioned at top-left with border.
 
 ### Mailbox rendering
+
 1. `NotificationMailboxView::render` builds the popup with updated container (4px top padding, no drop shadow).
 2. Header renders with regular-weight title + close button.
 3. Filter bar renders with 2px gap, count on "All", updated padding.

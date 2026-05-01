@@ -1,10 +1,17 @@
 # APP-3773: Image attachments in the feedback skill
+
 Linear: https://linear.app/warpdotdev/issue/APP-3773/add-support-for-image-uploads-in-the-feedback-skill
+
 ## Summary
+
 When a user runs `/feedback` with one or more image attachments, the drafted GitHub issue reflects what's in those images, and the user is led through a simple flow that results in the images rendering inline on the filed issue. The first phase of this feature does not upload images from Warp itself; it uses the GitHub web UI's native drag-and-drop upload as the delivery path. Later phases may adopt first-party `gh` CLI attachment support or a Warp-hosted persistent image service. See "Future delivery paths" for what changes for the user under each alternative.
+
 ## Problem
+
 Today, attaching an image to a slash-command invocation silently drops the image before the skill's agent runs. The `/feedback` skill therefore files issues that make no reference to screenshots the user tried to attach, even though in-app feedback about visual bugs is one of the highest-value attachment use cases. Fixing this has two parts: the attachments must reach the skill's agent at all, and the drafted issue must end up with the images actually rendered on GitHub.
+
 ## Behavior
+
 1. When the user invokes the feedback skill (for example via `/feedback`) with one or more pending image attachments, the agent receiving the skill context sees those images as multimodal input, exactly as it would in a non-skill query.
 2. The agent uses what it can see in the attached images when drafting the issue. At minimum, it describes the relevant visual content in the issue body (for example, in a "Problem" or "Actual behavior" section) so the report is coherent even if no image is attached to the final GitHub issue.
 3. When one or more images are attached, the skill chooses the browser-based filing path over the `gh issue create` path, regardless of whether `gh` is installed and authenticated. This is the only behavior that differs from the no-attachments case at the filing step.
@@ -25,21 +32,29 @@ Today, attaching an image to a slash-command invocation silently drops the image
 18. The user-visible outcome — an issue filed to `warpdotdev/warp-external` whose attached images render inline on the final issue — is stable across delivery paths. The issue's title format, body structure, classification, label (`in-app-feedback`), target repository, and duplicate-detection behavior do not change if the underlying delivery path changes in a later phase.
 19. When a later delivery path removes the need for a manual drag-and-drop step, the agent's final response stops instructing the user to drop images, the drafted body stops containing placeholder lines, and image-bearing feedback completes in a single agent turn. The user is never asked to do work that a later delivery path has made unnecessary.
 20. Selection between available delivery paths is not user-visible and does not require user configuration. When more than one path is available, the feature uses whichever completes filing with the fewest user actions. The user is not asked to pick a delivery path, and no Warp setting governs the choice.
+
 ## Future delivery paths
+
 The current drag-and-drop design is a deliberate phase-1 choice. It exists because there is no first-party GitHub API for attaching images to issues via `gh`, and Warp's existing server-side image storage (ambient-agent inputs, AI conversation artifacts) uses private GCS buckets with short-lived presigned URLs and task-scoped authorization — none of which are suitable for permanent embedding in public GitHub issues. Two alternative delivery paths are anticipated for later phases. Each preserves the invariants in Behavior and only changes how the image reaches GitHub.
+
 ### First-party `gh` CLI attachment support
+
 If GitHub later exposes a public API for attaching images during issue creation (for example, a `gh issue create --attach <path>` flag) or equivalent coverage in the GitHub MCP server, the feedback skill should use that path in place of the forced browser flow.
 User-visible effects under this path:
 - No browser is opened for image-bearing feedback; filing completes in a single agent turn, matching today's text-only happy path.
 - The drafted body contains no placeholder lines for images.
 - The agent's final response reports the filed issue URL directly and does not instruct the user to paste or drop anything.
 - The filed issue's attached images render the same way they do today in drag-and-drop-authored issues (standard `user-attachments` URLs or whatever shape the new API produces), so existing issues remain indistinguishable from new ones visually.
+
 ### Warp-hosted persistent image service
+
 If Warp later stands up a public, long-lived, unauthenticated image-hosting service distinct from today's ambient-agent and conversation-artifact buckets — one that returns stable URLs suitable for GitHub markdown embedding — the skill should upload each attached image through that service and embed `![alt](<persistent-url>)` directly in the drafted issue body before filing.
 User-visible effects under this path:
 - Filing completes in a single agent turn. No browser is opened, no drag-and-drop is required, and the drafted body contains rendered image references rather than placeholders.
 - The filed issue shows rendered images on first load without any user action beyond running `/feedback`.
 - If the hosted service later removes or expires an image, the filed issue will degrade to a broken image reference. The service must be designed with retention that matches or exceeds GitHub issue longevity to satisfy invariant 18 (stable user-visible outcome); any tighter retention is a regression relative to today's `user-attachments` lifetime and is out of scope for this feature.
 - Users are not asked to opt in to their images being uploaded to a Warp-hosted service; the skill's privacy posture and user-visible consent flow for feedback submission remains the same as it is for text-only `/feedback` today. Any consent or review step added here applies uniformly, not only to image-bearing feedback.
+
 ### Cross-path invariants
+
 Across all current and future delivery paths, the feedback workflow — classification, clarifying questions, grounded references, duplicate detection, issue structure, and the `in-app-feedback` label on `warpdotdev/warp-external` — is unchanged. Only the final filing step and the corresponding final user-visible message differ. If any path cannot deliver the image to the filed issue for any reason, the failure is surfaced explicitly to the user rather than silently producing an image-less issue that claims success (invariant 10 continues to hold: when the browser cannot be opened, the fallback to `gh issue create` files the text-only issue and explicitly tells the user the images were not uploaded).

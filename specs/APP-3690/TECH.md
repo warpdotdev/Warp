@@ -182,6 +182,7 @@ For Claude (which has `can_auto_install() == true`), this check is skipped — C
 ## 5. End-to-End Flow
 
 ### Install
+
 1. User starts OpenCode in Warp. Command detection creates a `CLIAgentSession`. The footer's `Started` subscription fires, spawning a debounce timer (`plugin_chip_ready` starts `false`).
 2. Footer renders. `plugin_chip_kind()` finds `plugin_manager_for(OpenCode)` = `Some`. No listener. `can_auto_install()` is `false`. `plugin_chip_ready` is `false` → returns `None`. No chip.
 3. If plugin is installed: `SessionStart` arrives within ~1s, listener is created, `plugin_version` is set, `plugin_chip_ready` reset to `false`. Footer re-renders. Chip never appears.
@@ -190,6 +191,7 @@ For Claude (which has `can_auto_install() == true`), this check is skipped — C
 6. User follows steps, restarts OpenCode. Plugin connects, sends `SessionStart`. Chip disappears.
 
 ### Update
+
 1. We bump `MINIMUM_PLUGIN_VERSION` in `opencode.rs` to `"0.2.0"`.
 2. Plugin connects with `plugin_version: "0.1.0"`.
 3. `plugin_chip_kind()`: listener present, `compare_versions("0.1.0", "0.2.0")` is `Less` → `Update`.
@@ -198,6 +200,7 @@ For Claude (which has `can_auto_install() == true`), this check is skipped — C
 6. User follows steps. On restart, Bun re-resolves `opencode-warp` from npm (cache was cleared), installs latest. Plugin connects with `"0.2.0"`. Chip disappears.
 
 ## 6. Risks and Mitigations
+
 **Risk: `PluginInstructionStep.command` contains JSON, not a shell command.**
 **Risk: `PluginInstructionStep.command` contains JSON, not a shell command.** The install modal's copy button copies the `command` field to clipboard. For OpenCode install, this will be a JSON snippet. **Mitigation:** Already fine — the modal copies any string. A JSON snippet is useful to copy even if it's not a terminal command.
 
@@ -206,22 +209,26 @@ For Claude (which has `can_auto_install() == true`), this check is skipped — C
 ## 7. Testing and Validation
 
 ### Unit tests (`plugin_manager/opencode_tests.rs`)
+
 - `opencode_manager_can_auto_install_is_false`
 - `opencode_manager_returns_install_instructions` — non-empty steps
 - `opencode_manager_returns_update_instructions` — non-empty steps
 - `opencode_manager_minimum_version` — returns expected value
 
 ### Unit tests (`plugin_manager/mod_tests.rs`)
+
 - Update `returns_none_for_unsupported_agents` — remove `CLIAgent::OpenCode` from assertion
 - Add `returns_manager_for_opencode`
 - Move `compare_versions` tests here from `claude_tests.rs`
 
 ### Unit tests (`plugin_manager/claude_tests.rs`)
+
 - Remove `compare_versions` tests (moved)
 - Add `claude_manager_can_auto_install_is_true`
 - Add `claude_manager_minimum_version`
 
 ### Manual testing
+
 - Start an OpenCode session → install chip appears after ~3s debounce (not immediately)
 - If plugin is installed: chip never appears (plugin connects before debounce)
 - Click install chip → modal opens with correct OpenCode-specific instructions

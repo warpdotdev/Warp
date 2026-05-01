@@ -57,21 +57,30 @@ Script (lives at `crates/remote_server/src/preinstall_check.sh`):
 
 ```sh
 #!/usr/bin/env bash
+
 # Preinstall check for the Warp remote-server binary.
+
 #
+
 # Emits a structured key=value summary on stdout. Exits 0 on success.
+
 # A non-zero exit indicates a probe-level failure; the client treats
+
 # those as `status=unknown` (fail open).
 
 set -u
 
 # The minimum glibc the prebuilt Linux CLI requires. The Linux CLI is
+
 # built on Ubuntu 20.04 (see `.github/workflows/create_release.yml`),
+
 # which ships glibc 2.31. Bump this when the runner image is bumped.
+
 required_glibc="2.31"
 echo "required_glibc=${required_glibc}"
 
 # 1. Detect libc family and (when glibc) its version.
+
 libc_family="unknown"
 libc_version=""
 
@@ -97,6 +106,7 @@ echo "libc_family=${libc_family}"
 [ -n "$libc_version" ] && echo "libc_version=${libc_version}"
 
 # 2. Decide status from the gathered facts.
+
 status="unknown"
 reason=""
 

@@ -1,6 +1,7 @@
 # TECH.md — Preseed Gemini CLI config to skip onboarding
 
 ## 1. Context
+
 When a cloud agent run uses the Gemini harness, we launch `gemini --yolo -i "$(cat <prompt>)"` in a non-interactive terminal. On a fresh machine Gemini CLI prompts twice before accepting input:
 
 1. An auth-type picker (`Login with Google`, `Gemini API key`, `Vertex AI`, …), driven by `security.auth.selectedType` in `~/.gemini/settings.json`.
@@ -17,10 +18,13 @@ Relevant files:
 - `app/src/ai/agent_sdk/driver.rs:1471-1476` — where `prepare_environment_config` is invoked.
 
 ## 2. Proposed changes
+
 ### 2a. Extract shared JSON helpers
+
 Move `read_json_file_or_default` and `write_json_file` out of `claude_code.rs` into a new `app/src/ai/agent_sdk/driver/harness/json_utils.rs`, declared from `harness/mod.rs`. Claude's impl already uses the exact same read → parse-or-default → pretty-write idiom Gemini needs; a second per-harness copy would drift. Visibility stays `pub(super)` so the helpers are shared by sibling harness modules but not public API.
 
 ### 2b. Implement `GeminiHarness::prepare_environment_config`
+
 Take `working_dir` (was `_working_dir`), resolve `~/.gemini` via `dirs::home_dir()`, and call two focused helpers:
 
 - `prepare_gemini_settings(path)` — read `settings.json` into a typed `GeminiSettings { security: Option<GeminiSecurity { auth: Option<GeminiAuth { selected_type, .. }> }>, .. }`, set `security.auth.selectedType = "gemini-api-key"`, write back pretty JSON. Each level uses `#[serde(flatten)] extra: Map<String, Value>` so unrelated keys at every nesting level round-trip verbatim.
@@ -31,11 +35,13 @@ Constants (`GEMINI_API_KEY_AUTH_TYPE = "gemini-api-key"`, `GEMINI_TRUST_LEVEL_FO
 Errors bubble up through `anyhow::Result` and are converted at the `ThirdPartyHarness` boundary into `HarnessConfigSetupFailed { harness: "gemini", error }`, matching Claude.
 
 ### 2c. Design notes
+
 - **Typed structs vs `serde_json::Value`** for `settings.json`: typed wins because we only touch one field and want compile-time safety on the path; the `flatten` extras map gives us lossless round-trip of everything else without hand-written merge logic.
 - **Why not `HashMap<String, Value>` for settings too**: Gemini's config is nested; a flat map would require either walking by string key at each level or silently clobbering siblings. The typed path makes the invariant "only `security.auth.selectedType` is ours" explicit.
 - **Surfacing malformed JSON as an error** (rather than overwriting) is deliberate: the file is user-owned and may contain hand edits; silently clobbering it on a parse error would be a footgun. Tests lock this in.
 
 ## 3. Testing and validation
+
 All tests live in `app/src/ai/agent_sdk/driver/harness/gemini_tests.rs`. Each invariant below maps to one or more tests against a `TempDir`-backed path.
 
 - **Fresh install produces the expected settings** — `prepare_gemini_settings_creates_file_with_api_key_auth`: from a missing file, the helper writes `security.auth.selectedType = "gemini-api-key"`.
@@ -51,10 +57,12 @@ Unit tests cover the helpers directly; `prepare_environment_config` itself is a 
 Manual validation (one-off, not automated): run a cloud agent with the Gemini harness on a fresh environment and confirm the TUI boots directly into the prompt with no auth / trust prompts. Presubmit (`./script/presubmit`) covers fmt + clippy + the new tests.
 
 ## 4. Risks and mitigations
+
 - **Gemini changes the discriminant strings** (`"gemini-api-key"`, `"TRUST_FOLDER"`). Mitigation: constants are documented with links to the upstream files so a Gemini CLI upgrade that changes them is a grep away; a broken run would surface as the prompt returning, which is noisy and catchable during bring-up.
 - **`trustedFolders.json` uses a flat `HashMap<String, String>`**, so a future schema change to an object per entry would silently fail parse. We'd see `HarnessConfigSetupFailed` immediately — same error path as malformed user JSON — which is the right signal.
 - **`~/.gemini` is shared with a user's local Gemini CLI**. The selected-type patch is harmless (users can change it back in-UI) and the trusted-folder write is strictly additive for the current working dir; no existing keys are removed.
 
 ## 5. Follow-ups
+
 - REMOTE-1407 — pipe the agent system prompt into Gemini (TODO in `GeminiHarnessRunner::new`).
 - REMOTE-1408 — upload the Gemini conversation transcript in `save_conversation`, alongside the block snapshot we already upload.

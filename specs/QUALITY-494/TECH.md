@@ -1,6 +1,7 @@
 # SettingsValue: Custom Settings File Serialization
 
 ## Problem
+
 Settings values are serialized to the TOML settings file using their serde representations, which aren't always human-friendly. Duration values render as `{ nanos = 0, secs = 30 }` instead of `30`, and `AgentModeCommandExecutionPredicate` values render as opaque regex objects instead of plain strings. The current `file_serialize`/`file_deserialize` hooks on the settings macros address this per-setting, but the approach doesn't compose — nested types like Duration inside a struct require the parent to manually handle the transformation.
 
 ## Changes
@@ -81,5 +82,6 @@ A test in the app crate (`app/src/settings/schema_validation_tests.rs`) validate
 - All other types are unchanged (serde-delegating impls produce the same output as before)
 
 ## Follow-ups
+
 - Snake_case serialization for enum variants in the TOML file (e.g. `ShowAndCollapse` → `show_and_collapse`) via the derive macro's enum arm — branch 2 (`daniel/snake-case-enums`).
 - Recursive data-carrying variant support in the enum derive (requires all inner types to impl `SettingsValue`) — also branch 2.

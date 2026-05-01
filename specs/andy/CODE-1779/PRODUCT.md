@@ -6,6 +6,7 @@ Upstream: https://github.com/warpdotdev/warp/issues/6191
 Figma: none provided (no visual design — the change is purely in which string lands in the input buffer)
 
 ## Summary
+
 When a Warp tab is attached to a Unix-like shell on Windows — WSL, or MSYS2 / Git Bash — dragging a file or folder from Windows Explorer onto Warp should insert a path in that shell's native form, not a Windows-native path. For WSL that's `/mnt/c/Users/andy/Downloads`; for Git Bash that's `/c/Users/andy/Downloads`. WSL already works correctly on the terminal grid when a long-running command is active; this spec covers the input editor (broken for both WSL and Git Bash today) and adds matching behavior for Git Bash.
 
 ## Behavior

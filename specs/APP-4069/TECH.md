@@ -1,6 +1,9 @@
 # APP-4069 — SSH Initialization UX
+
 Linear: [APP-4069 — Initialization UX](https://linear.app/warpdotdev/issue/APP-4069/initialization-ux)
+
 ## 1. Problem
+
 When a user SSHes into a remote host, we want to introduce a choice block for users to choose between (1) installing and connecting to the remote server (2) falling back to the existing warpify behaviour.
 
 To do so, we'll need to block the current bootstrap and connect server flow. Today, the client has a race where: `PtyController` writes the legacy bootstrap script to the PTY synchronously on `InitShell`, while `TerminalView` in parallel kicks off an async background task in `RemoteServerManager` that checks for the remote-server binary, installs it if missing, and initializes the server. Because the bootstrap is written before the check completes, we cannot defer or cancel warpification based on the check result — by the time we know whether the remote server is available, the legacy warpification has already taken effect.
@@ -13,6 +16,7 @@ This spec covers the following two sections:
 - **Part 2 — Rendering.** How `RemoteServerController` signals `TerminalView` via `ModelEventDispatcher` to render the two-option dialog, and how the view forwards the user's decision back.
 
 ## 2. Relevant code
+
 - `crates/remote_server/src/manager.rs:168–284` — `RemoteServerManager::connect_session` orchestrates check → install → launch → handshake as a single background task.
 - `crates/remote_server/src/manager.rs:599–667` — `ensure_binary_installed` free function; where we split the check phase from the install phase.
 - `app/src/terminal/writeable_pty/pty_controller.rs:122–210` — `PtyController::new` constructor and subscription to `ModelEventDispatcher`, where `InitShell` is handled today.
@@ -26,16 +30,22 @@ This spec covers the following two sections:
 - `app/src/terminal/model/session.rs:511–514` — `IsLegacySSHSession` enum used to distinguish sessions we can engage.
 - `crates/warp_features/src/lib.rs:806` — `FeatureFlag::SshRemoteServer`.
 - `app/src/ai/blocklist/inline_action/ask_user_question_view.rs` — existing block-based dialog we draw visual inspiration from; `HeaderConfig` + `NumberShortcutButtons` are the reusable primitives.
+
 ## 3. Current state
+
 Two subscribers react synchronously to `ModelEvent::Handler(AnsiHandlerEvent::InitShell)`:
 - `PtyController` (in `pty_controller.rs:126–129`) calls `initialize_shell`, which unconditionally writes the bootstrap script to the PTY via `write_bootstrap_script_to_shell`.
 - `TerminalView` (in `view.rs:10813–10836`) spawns `RemoteServerManager::connect_session`, which runs check + install + launch + handshake in a single background task.
 Because both subscribers fire on the same tick but the view's work is async, the bootstrap is already written by the time the check result is known. This is the core race.
 `RemoteServerManager::connect_session` today is monolithic: it emits `SetupStateChanged(Checking)` → runs the check → on "not installed" emits `SetupStateChanged(Installing)` and runs the install → on success emits `SetupReady` and proceeds to launch + handshake. There is no way to observe the binary-presence result without also triggering the install.
 `ModelEventDispatcher` already has a stash-and-wait gate that waits for both `Bootstrapped` (from the remote shell sourcing the bootstrap script) and `RemoteServerReady` (forwarded today from `RemoteServerManager::SetupReady`) before calling `complete_bootstrapped_session`. The gate logic itself is unchanged, but its success-signal source moves: today `SetupReady` fires after the install decision but before `start_remote_server` and `client.initialize()` have run, so it is optimistic — launch or handshake can still fail after the gate has already resolved with `ready=true` (because `Bootstrapped` typically arrives while the handshake is still in flight), at which point the session has been committed to the warpified path against a manager that has no connected client. §4.2.1 sources the gate's success signal from `SessionConnected` (emitted only after handshake succeeds at `manager.rs:535`) to fix this.
+
 ## 4. Proposed changes
+
 ### Part 1: Blocking and wiring
+
 #### 4.1 `RemoteServerController` — per-pane orchestrator
+
 A new per-pane `Entity` model, `RemoteServerController`, owns the block-and-bootstrap state machine. `PtyController` stays a byte writer: it exposes `initialize_shell` as `pub(crate)` so the controller can flush the deferred bootstrap. `TerminalView` no longer initiates anything — it only renders the dialog (Part 2) and forwards clicks to the controller.
 **Construction.** Constructed alongside `PtyController` in `init_pty_controller_model` (`app/src/terminal/writeable_pty/terminal_manager_util.rs:120`). Generic over `T: EventLoopSender` so it can hold `WeakModelHandle<PtyController<T>>`. Dropped with the PTY (no special `Drop` behaviour — by the time the controller is dropped, the PTY is gone, so there is nothing to initialize).
 **Fields.**
@@ -273,7 +283,9 @@ fn on_binary_install_complete(
 ```
 The prompt view dispatches `SshRemoteServerChoiceViewAction::Install` / `::Skip` (see §4.5) which `TerminalView` forwards to the corresponding `RemoteServerController` methods (see §4.4).
 **PtyController change (minimal).** `initialize_shell` is promoted to `pub(crate)`. `PtyController` gains no new fields, subscriptions, or manager knowledge. A `debug_assert!(self.bootstrap_file.is_none())` at the top of `initialize_shell` catches accidental double-calls during development.
+
 #### 4.1.1 Event-split at the emission site
+
 `ModelEventDispatcher::handle_terminal_model_event` (`app/src/terminal/model_events.rs:95–104`) is the single place where `Event::Handler(HandlerEvent::InitShell)` is converted into a `ModelEvent`. That branch is extended to emit a distinct variant when the session is legacy SSH and the feature flag is on:
 ```rust
 Event::Handler(HandlerEvent::InitShell { pending_session_info }) => {
@@ -301,6 +313,7 @@ pub enum ModelEvent {
 Rationale: every subscriber only sees events it owns. `PtyController` keeps its synchronous `InitShell` handler and never runs for deferred SSH sessions. `RemoteServerController` subscribes only to `SshInitShell` and never races `PtyController`. Double-flush is prevented by construction — no subscription ordering dependency, no shared event. Centralizing the branch at this single emission site prevents drift: there is exactly one place to keep in sync, and any new code path that wants to emit `InitShell` is forced to go through this helper.
 
 #### 4.2 `RemoteServerManager` — three public phases; gate on `SessionConnected`
+
 The current `ensure_binary_installed` is split into two public entry points on `RemoteServerManager` — `check_binary` and `install_binary` — and `connect_session` drops its install responsibility entirely. Each phase emits a distinct terminal event so the caller (`RemoteServerController`) can decide independently what to do between phases and so install-phase failure can be surfaced differently from launch/handshake failure without having to infer the phase from session state.
 The three phases and their terminal events:
 - `check_binary(session_id, socket_path)` → emits `SetupStateChanged(Checking)`, then `BinaryCheckComplete { result: Result<bool, String> }` where `Ok(true)` = installed, `Ok(false)` = definitively not installed, `Err(_)` = check itself failed (e.g. SSH timeout/unreachable).
@@ -458,6 +471,7 @@ impl RemoteServerManager {
 ```
 
 #### 4.2.1 Gate release signal: `SessionConnected` instead of `SetupReady`
+
 As described in §3, `SetupReady` is optimistic — it fires before launch/handshake. We fix this by sourcing the gate's success signal from `SessionConnected` instead (`mark_session_connected` at `manager.rs:535`), which fires only after `client.initialize()` succeeds. By that point the `RemoteServerClient` is wired up and `client_for_session(session_id)` returns `Some`.
 Bridge change in `view.rs:4129–4161`: replace the `SetupReady` arm with a `SessionConnected` arm forwarded as `Event::RemoteServerReady`. The `SetupFailed` arm is renamed to `SessionConnectionFailed`, and the `SetupStateChanged` arm is unchanged.
 ```rust
@@ -477,8 +491,11 @@ RemoteServerManagerEvent::SessionConnected { session_id, host_id: _ } => {
 `SessionConnected` and `SessionConnectionFailed` are mutually exclusive per session. The specific emission branches are disjoint:
 - `SessionConnected` ← `mark_session_connected`, which runs only on the `Ok(client.initialize())` branch in `connect_session`.
 - `SessionConnectionFailed` ← `start_remote_server` Err branch / handshake Err branch. Install failure is not in this set — it emits `BinaryInstallComplete { result: Err(_) }` instead, which `RemoteServerController` routes through `mark_remote_server_skipped` to release the gate with `ready=false`. (`deregister_session` is currently dead code with no callers; if it gains callers in the future, it should also emit `SessionConnectionFailed` for sessions in `Connecting`/`Initializing` state to prevent the gate from hanging.)
+
 ### Part 2: Rendering
+
 #### 4.3 `ModelEventDispatcher` — dialog signaling primitives
+
 Only "show" crosses the model→view boundary. Dismissal is owned by `TerminalView` (on click or `SessionDeregistered`).
 **New `ModelEvent` variant**:
 ```rust
@@ -502,6 +519,7 @@ impl ModelEventDispatcher {
 ```
 
 #### 4.4 `TerminalView` — dialog render + choice forwarding
+
 Delete the `RemoteServerManager::connect_session` call in the `InitShell` handler (`view.rs:10816–10836`). The view no longer initiates the check; that responsibility has moved to `RemoteServerController`.
 Add one match arm for the new `ModelEvent` variant that shows the `SshRemoteServerChoiceView` block (see §4.5). Dismissal is handled inline by the click handlers below, not via a match arm:
 ```rust
@@ -542,7 +560,9 @@ RemoteServerManagerEvent::SessionDeregistered { session_id } => {
 }
 ```
 The `SetupFailed` arm is renamed to `SessionConnectionFailed`, and the `SetupStateChanged` arm is unchanged. The subscription continues to feed `ModelEventDispatcher`'s two-condition gate via `Event::RemoteServerReady` / `Event::RemoteServerFailed`.
+
 #### 4.5 `SshRemoteServerChoiceView` — the two-option dialog view
+
 New file: `app/src/terminal/view/ssh_remote_server_choice_view.rs` (final location TBD alongside existing inline block views).
 A standalone `View` composed of existing block primitives. We don't extract a shared `ChoiceBlockView` abstraction: this is the only two-option choice block in the blocklist today, and `HeaderConfig` + `NumberShortcutButtons` compose cleanly into the view without further factoring. If a second consumer with similar structure arrives, the abstraction can be lifted at that point.
 Structure:
@@ -563,8 +583,11 @@ pub enum SshRemoteServerChoiceViewAction {
 Click handlers dispatch `SshRemoteServerChoiceViewAction::Install` / `::Skip` via `dispatch_typed_action`. TerminalView subscribes to the prompt view and maps each action to `handle_ssh_remote_server_install` / `handle_ssh_remote_server_skip`. The dialog does not own any state about the stash, the socket path, or the manager — it is a pure renderer + user-input forwarder.
 `1` / `2` keyboard shortcuts come for free from `NumberShortcutButtons`. No AI action model coupling.
 The view matches `AskUserQuestionView`'s visual style (header + description + numbered buttons + rounded-corner border) so the block feels at home in the blocklist.
+
 ## 5. End-to-end flow
+
 ### Happy path (binary present — no dialog)
+
 ```mermaid
 sequenceDiagram
     participant Shell as Remote shell
@@ -587,7 +610,9 @@ sequenceDiagram
     Shell->>TM: Bootstrapped DCS
     MED->>MED: complete_bootstrapped_session<br/>(existing two-condition gate)
 ```
+
 ### Install path (binary missing → user picks Install)
+
 ```mermaid
 sequenceDiagram
     participant User
@@ -622,7 +647,9 @@ sequenceDiagram
     Shell->>TM: Bootstrapped DCS
     MED->>MED: complete_bootstrapped_session<br/>(both conditions met)
 ```
+
 ### Skip path (binary missing → user picks Skip)
+
 ```mermaid
 sequenceDiagram
     participant User
@@ -643,7 +670,9 @@ sequenceDiagram
     TM->>MED: Event::Bootstrapped
     MED->>MED: release two-condition gate<br/>complete_bootstrapped_session(ready=false)<br/>→ ControlMaster fallback engages
 ```
+
 ### Failure path (install failure after Install was picked)
+
 ```mermaid
 sequenceDiagram
     participant Shell as Remote shell
@@ -659,7 +688,9 @@ sequenceDiagram
     TM->>MED: Event::Bootstrapped
     MED->>MED: release two-condition gate<br/>complete_bootstrapped_session(ready=false)<br/>→ ControlMaster fallback engages
 ```
+
 ### Failure path (launch or handshake failure after Install was picked)
+
 ```mermaid
 sequenceDiagram
     participant Shell as Remote shell

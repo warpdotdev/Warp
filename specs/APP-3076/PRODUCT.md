@@ -1,11 +1,14 @@
 # Block List Markdown Table Rendering — Product Spec
+
 Linear: none provided
 Figma: House of Agents — https://www.figma.com/design/CsBdBW4YoLgSAbr5eSkwV6/House-of-Agents?node-id=7451-99490&t=NvrWl7bhDEC5kpKF-1
 
 ## Summary
+
 Render valid GitHub Flavored Markdown tables in AI block list responses as formatted inline tables instead of raw pipe-delimited text. The rendered table should appear directly in the response flow, match the table rendering capabilities already supported in notebooks, and preserve correct text selection behavior.
 
 ## Problem
+
 AI responses often include Markdown tables to compare options, summarize data, or present structured results. In the AI block list, those tables are currently much harder to read because the response is shown as plain text table markup rather than as a formatted table. That makes scanning difficult, weakens visual hierarchy, and creates an inconsistent experience with notebooks, where tables already support richer rendering behavior.
 
 This is especially problematic when table cells include inline Markdown such as bold text, inline code, strikethrough, or links. When those constructs are not rendered as formatted content inside the table, the response becomes noisy and less useful.
@@ -13,6 +16,7 @@ This is especially problematic when table cells include inline Markdown such as 
 Selection behavior is also critical. Users need to be able to select text from rendered tables naturally, including partial selections, cross-cell selections, and selections that begin before or after the table in surrounding prose.
 
 ## Goals
+
 - Render valid GFM pipe tables inline within AI block list responses.
 - Make rendered block list tables visually and behaviorally consistent with the Markdown table primitives already supported in notebooks.
 - Support the same inline formatting features inside table cells that notebook tables support.
@@ -21,6 +25,7 @@ Selection behavior is also critical. Users need to be able to select text from r
 - Fall back gracefully to normal text rendering when the content is not a valid table.
 
 ## Non-goals
+
 - Adding table editing capabilities to the AI block list.
 - Supporting non-GFM table syntaxes.
 - Expanding notebook table feature support as part of this work.
@@ -30,6 +35,7 @@ Selection behavior is also critical. Users need to be able to select text from r
 ## User Experience
 
 ### Scope
+
 This feature applies to Markdown-formatted AI responses rendered in the AI block list.
 
 If a response contains a valid GitHub Flavored Markdown pipe table, that table should render inline as a formatted table in the response body. Content before and after the table should continue to render as normal Markdown text in the same response.
@@ -40,6 +46,7 @@ This behavior applies equally to:
 - transcript or restored views that display the same block list content
 
 ### Table detection
+
 A response section should render as a table only when it is a valid GFM pipe table.
 
 A valid table must:
@@ -52,6 +59,7 @@ If content does not form a valid table, it should remain plain Markdown text. Th
 Tables inside fenced code blocks must continue to render as code, not as tables.
 
 ### Inline rendering behavior
+
 When a valid table is detected, it should render as a formatted table directly in the AI block list rather than as a raw text block containing `|` characters and alignment markers.
 
 The rendered table should behave as part of the normal response flow:
@@ -69,6 +77,7 @@ Wide tables should have their own horizontal scrollbar so users can scroll sidew
 Tall tables should not introduce a separate vertical scrollbar. Vertical movement through table content should happen through the normal block list scroll behavior so the table remains part of the surrounding response flow rather than becoming a nested vertically scrolling region.
 
 ### Visual design requirements
+
 Inline AI block list tables should match the House of Agents design:
 - the table renders directly in the response flow rather than inside a card-like container
 - there is no rounded outer container and no filled table background
@@ -82,6 +91,7 @@ Inline AI block list tables should match the House of Agents design:
 These presentation rules do not change the underlying Markdown, copy-response behavior, or the supported inline Markdown formatting inside cells.
 
 ### Rendering parity with notebooks
+
 Rendered block list tables should support the same table rendering primitives already supported in notebooks. The block list should not invent a reduced or alternate table dialect.
 
 At minimum, if notebooks support these constructs within table cells, the AI block list should render them the same way:
@@ -101,6 +111,7 @@ More generally, the user-visible rule is:
 If a piece of Markdown table content is supported and rendered in notebooks, it should render equivalently in the AI block list unless there is a clear product reason not to. This spec assumes parity is the default.
 
 ### Links inside table cells
+
 Links inside table cells should render as links, using the same interaction model users already get for links in other AI Markdown output.
 
 Single-click behavior should match normal link behavior in the block list.
@@ -110,6 +121,7 @@ Text selection must still work correctly in cells that contain links:
 - selecting across linked and non-linked text should behave the same as selection elsewhere in the response
 
 ### Selection behavior
+
 Rendered tables must support normal text selection. This is a core requirement, not a best-effort enhancement.
 
 Selection should work for:
@@ -127,6 +139,7 @@ When text is copied from a rendered table selection, the copied result should re
 This feature should not regress existing selection behavior elsewhere in the block list.
 
 ### Streaming behavior
+
 Because AI responses stream into the block list over time, table rendering should behave predictably during streaming.
 
 The intended experience is:
@@ -138,6 +151,7 @@ The intended experience is:
 If the response later stops matching a valid table boundary, subsequent content should render as normal response content after the table rather than corrupting the rendered table.
 
 ### Multiple tables and surrounding content
+
 A single AI response may contain:
 - multiple tables
 - prose before, between, and after tables
@@ -147,6 +161,7 @@ A single AI response may contain:
 Each table should render independently in the correct place within the response. Non-table content should continue to use its existing rendering behavior.
 
 ### Invalid or malformed table content
+
 If a candidate table is malformed, ambiguous, or incomplete, the UI should fall back to rendering the original content as ordinary Markdown text rather than attempting a degraded table rendering.
 
 Examples of content that should not render as a formatted table include:
@@ -157,6 +172,7 @@ Examples of content that should not render as a formatted table include:
 When a valid table ends, the next non-table content should resume normal rendering immediately after it.
 
 ### Large and wide tables
+
 Some AI responses will contain wide tables or cells with long text.
 
 For these cases:
@@ -167,11 +183,13 @@ For these cases:
 - wide content should not break surrounding layout or cause the rest of the response to render incorrectly
 
 ### Interaction model
+
 Rendered tables in the block list are read-only presentation of AI output.
 
 Users should not be able to directly edit the rendered table in place. Existing higher-level actions on the AI response should continue to behave as they do today unless explicitly changed by a follow-up spec.
 
 ### Copy behavior
+
 Block-level “copy response” behavior should copy the original Markdown source for the AI response, not a rendered or reformatted table export.
 
 This means:
@@ -180,6 +198,7 @@ This means:
 - manual text selection and copy from the rendered output may still copy the selected rendered text content, but response-level copy should preserve the original Markdown source
 
 ## Success Criteria
+
 - A valid GFM table in an AI response renders inline in the block list as a formatted table instead of raw pipe-delimited text.
 - Column alignment in the block list matches the alignment expressed by the Markdown and matches notebook table behavior.
 - Inline Markdown that notebooks support inside table cells also renders correctly inside block list tables.
@@ -194,6 +213,7 @@ This means:
 - Streamed responses and restored responses render the same table content consistently.
 
 ## Validation
+
 - Manual validation with a simple two-column GFM table in an AI response.
 - Manual validation with alignment coverage: left, center, and right aligned columns in the same table.
 - Manual validation with cell formatting coverage: bold, italic, bold-italic, inline code, strikethrough, links, and escaped pipes.

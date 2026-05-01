@@ -12,11 +12,13 @@ The remote server binary (`crates/remote_server`) currently only handles `Initia
 ## Current State
 
 ### Remote server (`crates/remote_server`)
+
 - `ServerModel` singleton handles stdin/stdout protobuf I/O
 - `run()` boots a headless warpui app with only `ServerModel`
 - Proto schema has only `Initialize`/`InitializeResponse`
 
 ### repo_metadata crate
+
 - `LocalRepoMetadataModel` — indexes repos, subscribes to `DetectedRepositories` for auto-indexing, has `emit_incremental_updates: bool` field and emits `IncrementalUpdateReady` when enabled
 - `DetectedRepositories` singleton — runs async git detection via `detect_possible_git_repo()`, emits `DetectedGitRepo` events. Uses `DirectoryWatcher` to register watch directories.
 - `DirectoryWatcher` singleton — manages filesystem watchers and routes changes to `Repository` subscribers via a `TaskQueue`
@@ -24,6 +26,7 @@ The remote server binary (`crates/remote_server`) currently only handles `Initia
 - The incremental update types (`RepoMetadataUpdate`, `FileTreeEntryUpdate`, etc.) already exist in `file_tree_update.rs`
 
 ### Key insight on two separate watchers
+
 `DirectoryWatcher` and `LocalRepoMetadataModel` each own their own `BulkFilesystemWatcher`. `DirectoryWatcher`'s watcher feeds the `Repository` model (git status, etc.), while `LocalRepoMetadataModel`'s watcher feeds the file tree. Both need to be running on the server.
 
 ## Proposed Changes

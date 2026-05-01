@@ -1,9 +1,11 @@
 # CLI Agent Rich Input: /skills Technical Spec
 
 ## Summary
+
 This spec covers implementing `/skills` support in the CLI agent rich input composer. The approach filters the existing slash command menu and skill data sources to show only natively supported skills, and passes through the selected skill name to the CLI agent via PTY write.
 
 ## Relevant Code
+
 - `app/src/terminal/input/slash_commands/data_source/mod.rs` — `SlashCommandDataSource`, `recompute_active_commands()`
 - `app/src/terminal/input/slash_commands/mod.rs` — `handle_slash_commands_menu_event()`, skill selection handling
 - `app/src/terminal/input/slash_commands/view.rs` — `InlineSlashCommandView`, mixer with 3 data sources
@@ -15,6 +17,7 @@ This spec covers implementing `/skills` support in the CLI agent rich input comp
 - `app/src/terminal/cli_agent.rs` — `CLIAgent` enum
 
 ## Current State
+
 The CLI agent rich input (opened via Ctrl-G or the Compose button) is a plain text editor that writes its buffer to the PTY on submit. It reuses the same `Input` view and editor as the normal Warp input, but in a constrained mode. On enter, `input_enter()` detects `CLIAgentSessionsModel::is_input_open()` and emits `Event::SubmitCLIAgentInput` with the raw buffer text, which is written to the PTY.
 
 The slash commands menu and skill selector already exist and work in the normal Warp input. The slash menu (`InlineSlashCommandView`) uses a `SearchMixer` with three data sources:
@@ -58,6 +61,7 @@ The `SkillSelectorDataSource` and `SlashCommandDataSource` (which also surfaces 
 **Selection behavior**: No branching needed — all skills in the menu are natively supported, so the existing behavior of inserting `/{skill-name} ` works as-is.
 
 ## End-to-End Flow
+
 1. User types `/` in CLI agent rich input.
 2. Slash commands menu opens, showing only `/skills` command and natively supported skills (static commands filtered out).
 3. User selects a skill whose provider matches the active CLI agent.
@@ -67,12 +71,15 @@ The `SkillSelectorDataSource` and `SlashCommandDataSource` (which also surfaces 
 ## Risks and Mitigations
 
 ### Skills not appearing for a CLI agent
+
 If the `CLIAgent → SkillProvider` mapping is wrong or incomplete, users won't see their skills. Mitigation: the mapping is derived from existing `SkillProvider` and `SKILL_PROVIDER_DEFINITIONS` which are already used for skill discovery. Keep the mapping in sync with `skill_provider.rs`.
 
 ### `/skills` command filtered out
+
 The `/skills` command must be allowlisted when filtering static commands. If accidentally removed, users lose the skill browsing entry point. Mitigation: explicit allowlist check in `recompute_active_commands()`.
 
 ## Testing and Validation
+
 - Verify `/` opens the menu with only `/skills` and natively supported skills (no `/agent`, `/new`, etc.).
 - Verify only natively supported skills appear (e.g., `.claude/` skills for Claude Code, `.agents/` skills for Codex).
 - Verify non-native skills (including bundled Warp skills) are hidden from the CLI agent input menu.
@@ -81,4 +88,5 @@ The `/skills` command must be allowlisted when filtering static commands. If acc
 - Verify no regressions in normal Warp agent input (slash menu and skills still work as before).
 
 ## Follow-ups
+
 - Surface native CLI agent slash commands (e.g., Claude Code's `/compact`, `/model`) in the menu (APP-3641).

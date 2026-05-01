@@ -1,7 +1,10 @@
 # Run Warp at startup (Windows) — Tech Spec
+
 Linear: [CODE-1786](https://linear.app/warpdotdev/issue/CODE-1786/windows-run-warp-at-startup)
 See `PRODUCT.md` for user-visible behavior.
+
 ## Context
+
 The macOS "Start Warp at login" feature is already plumbed end-to-end. This ticket extends that plumbing to Windows by adding a new registration backend and broadening the existing setting/UI's platform gate; no new user-visible surface is being designed.
 Relevant code today:
 - `app/src/terminal/general_settings.rs:36-55` — `add_app_as_login_item` (`LoginItem`) and `app_added_as_login_item` (`AppAddedAsLoginItem`), both gated on `SupportedPlatforms::MAC` with defaults `true` / `false` respectively. The second setting is the "already registered" bookkeeping that prevents clobbering a manual unregister.
@@ -15,11 +18,16 @@ Relevant code today:
 - `crates/settings/src/lib.rs:161-219` — `SupportedPlatforms` enum and `matches_current_platform`. Supports `OR(…, …)` so `MAC` + `WINDOWS` can be expressed without adding a new variant.
 - `crates/warp_core/src/channel/state.rs:119-125, 40` — `ChannelState::app_id()` returns the current channel's `AppId` (e.g. `dev.openwarp.OpenWarp`, `dev.warp.Warp`, `dev.warp.WarpPreview`, `dev.warp.WarpDev`). We can reuse `application_name()` for the channel-specific registry value name on Windows.
 - `app/Cargo.toml:356-377` — Windows-only dependency block. `winreg`, `windows-registry`, and `windows` are already pulled in and available for a new module. `winreg` is already used for reading registry values (`crates/warpui/src/windowing/winit/windows/registry.rs`), so we should follow that pattern for consistency.
+
 ## Proposed changes
+
 ### 1. Loosen the setting's platform gate
+
 Change both settings in `app/src/terminal/general_settings.rs` from `SupportedPlatforms::MAC` to `SupportedPlatforms::OR(Box::new(SupportedPlatforms::MAC), Box::new(SupportedPlatforms::WINDOWS))`. Defaults stay the same (`true` / `false`). The `toml_path` / description stay unchanged since the TOML key is already platform-neutral (`general.login_item`).
 No migration is required: for existing Windows users, the setting simply starts populating with its default value the next time preferences are loaded.
+
 ### 2. Add a Windows registration backend
+
 Create `app/src/login_item/mod.rs` (or reuse an existing "platform adapters" spot — see "Module placement" below) to own the cross-platform entry point, replacing the current macOS-only free function.
 ```rust path=null start=null
 // app/src/login_item/mod.rs
@@ -74,9 +82,13 @@ Add `login_item/windows.rs` with the Windows implementation:
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` is the user-scope per-login key; it does not require admin, and is what Windows 10/11's **Settings → Apps → Startup** and **Task Manager → Startup apps** surface. This satisfies Behavior invariants 3–4, 7, 11.
 - The per-channel value name from `application_name()` keeps Dev/Preview/Stable isolated (Behavior 7): `Warp`, `WarpPreview`, `WarpDev`, `OpenWarp`.
 - Behavior 10 ("moving the install") is partially covered: the short-circuit `add_app_as_login_item && app_added_as_login_item` intentionally prevents re-registration on every launch, so a moved install keeps the stale path until the user toggles the setting off and back on (which rewrites against the new `current_exe()`). Automatic detection + rewrite when the stored path differs is tracked as a follow-up.
+
 ### 3. Rewire startup
+
 Replace the existing `#[cfg(target_os = "macos")]` block in `app/src/lib.rs:2229-2239` with a block gated on `cfg(any(target_os = "macos", target_os = "windows"))`, calling the new cross-platform `login_item::maybe_register_app_as_login_item`. The subscription to `GeneralSettingsChangedEvent::LoginItem` stays identical. Delete the old `maybe_register_app_as_login_item` body from `lib.rs:2279-2362`.
+
 ### 4. Update the Features page UI
+
 Two tiny changes in `app/src/settings_view/features_page.rs`:
 - `LoginItemWidget::render` (~l4509): change the hard-coded label to a platform-dependent string, e.g.
   ```rust path=null start=null
@@ -87,9 +99,13 @@ Two tiny changes in `app/src/settings_view/features_page.rs`:
   ```
   Anything else — action enum, telemetry, handler, and widget-registration path — already flows through `is_supported_on_current_platform()` on the setting itself, so broadening the setting in step 1 automatically turns the toggle on for Windows.
 - Update `search_terms` for the widget (~l4497) to keep the macOS keyword but add "windows", so the settings search surface finds it on both OSes.
+
 ### Module placement
+
 We don't have an existing `login_item` module. A new `app/src/login_item/{mod,macos,windows}.rs` layout is the smallest, most obvious split and matches other OS-sharded areas (`app/src/terminal/local_tty/windows/*`, `app/src/util/file/external_editor/{mod,windows}.rs`, `app/src/antivirus/windows.rs`, `app/src/terminal/audible_bell/{mod,windows}.rs`). Add `mod login_item;` in `app/src/lib.rs` and re-export `maybe_register_app_as_login_item` there.
+
 ## Testing and validation
+
 Verification maps back to the numbered invariants in `PRODUCT.md`.
 Unit tests (Windows, gated with `#[cfg(target_os = "windows")]`):
 - **Invariant 3 (enable registers).** Drive `register()` against a temporary `HKCU` subkey (or wrap the subkey path in a trait and use a fake in tests) and assert the value is `"\"<path>\""` under the expected name.
@@ -109,12 +125,16 @@ Manual validation (Windows):
 6. **Invariant 8.** Run `cargo run` from a dev checkout with the toggle on; confirm no registry value is written and the preference updates still persist.
 7. **Invariant 10.** Move/rename the install directory, relaunch Warp, toggle off+on; confirm the registry value points at the new path.
 Telemetry (**Invariant 12**): filter the dashboard for `FeaturesPageAction { action: "ToggleLoginItem" }` and confirm Windows events arrive alongside macOS ones post-rollout.
+
 ## Risks and mitigations
+
 - **Silently re-enabling a user's manual removal.** Mitigated by reusing the existing `app_added_as_login_item` bookkeeping contract — Windows code *must* respect it the same way macOS does. Covered by Invariant 5 and the relevant manual test.
 - **Path quoting bugs.** Windows start entries are fragile with paths containing spaces. Store the value as a single quoted string, and add a regression test for a path with spaces.
 - **Verbatim path prefix.** `std::fs::canonicalize` returns `\\?\`-prefixed paths on Windows, which render oddly in Settings → Apps → Startup and confuse some third-party launchers. Use `dunce::canonicalize` so the stored `Run` value is a plain drive-letter path for the common case, while still tolerating real UNC / long paths.
 - **Shared registry key across tests/processes.** Use injectable subkey paths in unit tests so the real `Run` key is never touched by CI.
 - **Dev-build regressions.** Gate actual registry I/O on `ChannelState::is_release_bundle()` to avoid developer machines auto-launching random `target/debug/warp.exe` artifacts.
+
 ## Follow-ups
+
 - Linux autostart (`~/.config/autostart/warp.desktop`) is a natural next step with the same setting and the same UX, but is out of scope for this ticket.
 - Optional future polish: automatically rewrite the stored path when `current_exe()` differs from the registered value, so users never need to re-toggle after a move.

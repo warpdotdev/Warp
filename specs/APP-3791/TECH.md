@@ -21,24 +21,30 @@ Triggering `RemoteServerManager.connect_session()` is handled in a separate flow
 ## 2. Relevant Code
 
 ### Protocol
+
 - `app/proto/remote_server.proto` — `ClientMessage`/`ServerMessage` envelopes, `RunCommandRequest` (field 7 on `ClientMessage`), `RunCommandResponse` (field 8 on `ServerMessage`)
 - `app/src/remote_server/protocol.rs` — length-delimited protobuf read/write helpers, `RequestId` newtype
 
 ### Server-side
+
 - `app/src/remote_server/server_model.rs` — `ServerModel` dispatches `handle_message` on the main thread; `RunCommand` arm delegates to `LocalCommandExecutor` via `ctx.spawn_abortable`, sends `RunCommandResponse` back through `response_tx`
 
 ### Client-side
+
 - `app/src/remote_server/client.rs` — `RemoteServerClient` with `run_command()`, `initialize()`, background reader/writer tasks, `ClientError` enum, `ClientEvent::Disconnected`
 
 ### Remote server manager
+
 - `app/src/remote_server/manager.rs` — `RemoteServerManager` singleton with per-session state (`RemoteSessionState` enum: `Connecting` → `Initializing` → `Connected` → `Disconnected`), `connect_session`, `client_for_session`, `deregister_session`, session-scoped events (`SessionConnected`, `SessionDisconnected`) and host-scoped events (`HostConnected`, `HostDisconnected`)
 - `app/src/lib.rs:1202` — singleton registration at app startup
 
 ### Command executor framework
+
 - `app/src/terminal/model/session/command_executor.rs` — `CommandExecutor` trait (`execute_command`, `supports_parallel_command_execution`), `new_command_executor_for_session` dispatch
 - `app/src/terminal/model/session.rs (199-309)` — `Sessions::initialize_bootstrapped_session()` creates the command executor for each session
 
 ### Existing SSH executor (being replaced)
+
 - `app/src/terminal/model/session/command_executor/remote_command_executor.rs` — `RemoteCommandExecutor` opens a one-off SSH session per command via `ControlMaster`/`ControlPath`. Limited by `MaxSessions`, does not support parallel execution.
 
 ## 3. Current State

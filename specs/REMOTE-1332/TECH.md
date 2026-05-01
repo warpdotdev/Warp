@@ -1,7 +1,9 @@
 # End-of-Run Snapshot Upload and Client-Side Snapshot Hydration — Tech Spec
+
 Product spec: `specs/REMOTE-1332/PRODUCT.md`
 
 ## Problem
+
 Cloud agent runs using third-party harnesses (e.g. Claude Code) produce workspace changes and terminal output, but neither is available to the Warp client after the run completes. The client needs two capabilities:
 
 1. **Workspace snapshot upload**: a driver-managed end-of-run step that captures git diffs and arbitrary files from the agent environment and uploads them to GCS via presigned URLs, keyed by run and execution. Immediately before reading the declarations file, the driver invokes a bash generator script (`snapshot-declarations.sh`, shipped in `warp-agent-docker`) that enumerates all git repositories under the agent's workspace and emits JSONL `repo` entries into the declarations file.
@@ -12,27 +14,32 @@ Both features span the agent SDK driver, the server's public API, GCS storage, a
 ## Relevant Code
 
 ### Client — end-of-run snapshot upload
+
 - `app/src/ai/agent_sdk/driver.rs` — `AgentDriver::run()` invokes `run_snapshot_upload()` after `run_internal` returns and before signaling the caller; `run_snapshot_upload()` calls `run_declarations_script()` + `upload_snapshot_from_declarations()` before provider cleanup.
 - `app/src/ai/agent_sdk/driver/snapshot.rs` — end-of-run snapshot pipeline: declarations-file generation, parsing, repo patching, manifest generation, presigned upload flow.
 - `app/src/ai/agent_sdk/retry.rs` — shared retry primitives (`with_bounded_retry`, `is_transient_http_error`, classification constants) used by both upload and download.
 - `app/src/server/server_api/harness_support.rs` — `SnapshotUploadRequest`, `SnapshotUploadResponse` (a `Vec<UploadTarget>` aligned by index with the request's `files`), `get_snapshot_upload_targets()`, `upload_to_target()` helper.
 
 ### Declarations-file generation and local-dev plumbing
+
 - `../warp-agent-docker/snapshot-declarations.sh` (new) — bash generator invoked at the start of the snapshot step. Walks `$PWD` (the Rust driver sets this via `Command::current_dir` to the agent's `working_dir`) or colon-separated `OZ_SNAPSHOT_SCAN_ROOTS`, finds `.git` directories with `find -type d -name .git -prune`, and appends JSONL `{\"version\":1,\"kind\":\"repo\",\"path\":\"<abs-path>\"}` lines to `$OZ_SNAPSHOT_DECLARATIONS_FILE`. The file path env var is required so standalone invocations cannot clobber a shared fallback. The file is never truncated; dedup is seeded from matching JSONL repo lines already emitted by the script so repeated invocations within a run stay additive.
 - `../warp-agent-docker/entrypoint.sh:13` — exports `AGENT_INSTALL_ROOT=...` for existing installation-root consumers and `OZ_SNAPSHOT_DECLARATIONS_SCRIPT=$AGENT_INSTALL_ROOT/snapshot-declarations.sh` so child processes (including the warp agent binary) can invoke the helper by explicit path.
 - `../warp-agent-docker/Dockerfile` and `../warp-agent-docker/Dockerfile.local` — new `COPY snapshot-declarations.sh /snapshot-declarations.sh` directive next to the existing `COPY entrypoint.sh`.
 - `../warp-server/script/oz-local` — new `--docker-dir <dir>` flag that validates `<dir>/snapshot-declarations.sh` exists, resolves `<dir>` to an absolute path, and appends `OZ_SNAPSHOT_DECLARATIONS_SCRIPT=<abs>/snapshot-declarations.sh` to `WORKER_ENV_FLAGS`, which plumbs through `oz-agent-worker`'s `-e` handling into `DirectBackendConfig.Env` and onto the oz process env.
 
 ### Client — handoff snapshot attachment download
+
 - `app/src/ai/agent_sdk/driver/attachments.rs` — `fetch_and_download_handoff_snapshot_attachments()` returns `Option<String>` (the attachments dir iff at least one file landed on disk); per-file outcomes are aggregated into a single INFO/WARN log line. Downloads share the `download_attachment` primitive with `fetch_and_download_attachments`, so both go through the `with_bounded_retry` helper.
 - `app/src/server/server_api/ai.rs` — `get_handoff_snapshot_attachments()` on `AIClient`: `GET /agent/tasks/:task_id/snapshot-attachments`, deserializes the list of `HandoffSnapshotAttachmentInfo`
 
 ### Client — block snapshot upload during harness run
+
 - `app/src/ai/agent_sdk/driver/harness/mod.rs:168-187` — `upload_block_snapshot()` helper: serializes `SerializedBlock` to JSON, uploads to presigned target
 - `app/src/ai/agent_sdk/driver/harness/claude_code.rs:274-288` — Claude Code runner's `save_conversation()` calls `upload_block_snapshot()`
 - `app/src/server/server_api/harness_support.rs:110-114` — `get_block_snapshot_upload_target()` on `HarnessSupportClient` trait
 
 ### Client — block snapshot hydration
+
 - `app/src/ai/blocklist/history_model/conversation_loader.rs:32-49` — `CLIAgentConversation`, `CloudConversationData::CLIAgent` variant
 - `app/src/ai/blocklist/history_model/conversation_loader.rs:96-172` — `load_conversation_from_server()`: dispatches on `AIAgentHarness::ClaudeCode`, fetches block snapshot
 - `app/src/server/server_api/ai.rs:557-560` — `get_block_snapshot()` on `AIClient` trait
@@ -44,6 +51,7 @@ Both features span the agent SDK driver, the server's public API, GCS storage, a
 - `app/src/pane_group/mod.rs` — pane creation wiring for `HistoricalCLIAgent`
 
 ### Server
+
 - `router/handlers/public_api/harness_support.go:248-324` — `UploadSnapshotHandler`: validates request, calls `PrepareHandoffSnapshotUpload`, returns presigned URLs
 - `router/handlers/public_api/harness_support.go:208-246` — `GetBlockSnapshotUploadTargetHandler`: presigned upload target for block snapshot slot
 - `router/handlers/public_api/conversation.go` — `GetBlockSnapshotHandler`: `GET /agent/conversations/:conversation_id/block-snapshot`, redirects to signed GCS download URL
@@ -53,6 +61,7 @@ Both features span the agent SDK driver, the server's public API, GCS storage, a
 ## Current State
 
 ### Before this work
+
 - Third-party harness conversations have a `ClaudeCode` harness type in server metadata, but the client ignores them when loading conversation history.
 - `AgentDriver::cleanup()` only tears down cloud providers — there is no workspace snapshot step at end of run.
 - The `harness-support` CLI has `ping` and `report-artifact` subcommands; no workspace snapshot capability exists anywhere in the client.
@@ -64,6 +73,7 @@ Both features span the agent SDK driver, the server's public API, GCS storage, a
 - The terminal view restoration path has no `HistoricalCLIAgent` variant.
 
 ### Server state before this work
+
 - The harness-support route group exists with endpoints for external-conversation creation, transcript upload, and prompt resolution.
 - GCS storage for conversation data is already wired via `gcs.GetConversationDataStore()`.
 - No endpoint exists for uploading workspace snapshots or downloading block snapshots.
@@ -262,6 +272,7 @@ placed next to the existing `COPY entrypoint.sh /entrypoint.sh`.
 ## End-to-End Flow
 
 ### End-of-run snapshot upload (driver → server)
+
 ```mermaid
 sequenceDiagram
     participant Driver as AgentDriver::run
@@ -295,6 +306,7 @@ sequenceDiagram
 ```
 
 ### Block snapshot upload (during harness run)
+
 ```mermaid
 sequenceDiagram
     participant Driver as Agent Driver
@@ -310,6 +322,7 @@ sequenceDiagram
 ```
 
 ### Block snapshot hydration (server → client)
+
 ```mermaid
 sequenceDiagram
     participant User as User
@@ -331,6 +344,7 @@ sequenceDiagram
 ## Risks and Mitigations
 
 ### Risk: large repo diffs producing oversized snapshots
+
 A repo with many uncommitted binary changes could produce a very large patch file.
 
 Mitigation:
@@ -338,6 +352,7 @@ Mitigation:
 - Follow-up work can add client-side size checks before uploading.
 
 ### Risk: runaway declaration counts bloat the run-tail upload
+
 A pathological agent run (many repos, many operator-declared files, or a future tool-call tracker that over-collects) could produce hundreds of blobs, stretching the end-of-run upload well past the driver's configured timeout.
 
 Mitigation:
@@ -346,6 +361,7 @@ Mitigation:
 - The whole upload pipeline remains wrapped in `--snapshot-upload-timeout` so even a capped-but-still-large batch can't wedge cleanup.
 
 ### Risk: retries lengthen run tail wall-clock time for long-failing uploads
+
 Retrying transient failures means a genuinely broken upload takes longer to surface as a failure than a single-attempt design would, and that time is spent after the harness completes but before the caller is signaled.
 
 Mitigation:
@@ -355,6 +371,7 @@ Mitigation:
 - Upload failures never block the driver: cleanup completes and the process exits even if every upload fails.
 
 ### Risk: manifest upload succeeds but reports uploads that actually failed
+
 If a non-manifest upload fails after the manifest is serialized but before the manifest itself is uploaded, the manifest needs to reflect that.
 
 Mitigation:
@@ -362,6 +379,7 @@ Mitigation:
 - Each manifest entry carries an `uploaded: bool` (or `null` for clean/unattempted) so consumers can tell intent from reality without re-diffing GCS.
 
 ### Risk: block snapshot deserialization failures
+
 The `SerializedBlock` format could drift between client versions, causing `from_json()` to fail when downloading a snapshot produced by a different version.
 
 Mitigation:
@@ -369,6 +387,7 @@ Mitigation:
 - Download failures are logged and handled gracefully — the conversation still shows metadata, just without inline terminal output.
 
 ### Risk: race between snapshot upload and conversation metadata
+
 If the block snapshot upload completes but the conversation metadata hasn't propagated, the client might try to download a snapshot that doesn't exist yet.
 
 Mitigation:
@@ -376,6 +395,7 @@ Mitigation:
 - The metadata merge flow already handles timing gaps via fallback server fetch.
 
 ### Risk: partial handoff download blocks workspace rehydration
+
 A patch file failing to download means the rehydration prompt references a path that isn't on disk. The next-execution LLM will try `git apply` and fail.
 
 Mitigation:
@@ -387,16 +407,19 @@ Mitigation:
 ## Testing and Validation
 
 ### Unit tests
+
 - `serialized_block_tests.rs` — round-trip fidelity for `to_json()`/`from_json()` with various block states.
 - `snapshot_tests.rs` at `app/src/ai/agent_sdk/driver/snapshot_tests.rs` — end-to-end pipeline coverage via `mockito::Server` + real `http_client::Client` (no mocks below the trait boundary): happy path including repo metadata in the manifest, clean/dirty/gather_failed repos, read_failed files, 5xx retry → success, permanent 4xx fails fast, retry exhaustion, manifest-upload failure, `get_snapshot_upload_targets` failure, missing-target `skipped`, multi-repo mixed, per-run cap drops excess blobs as `skipped` across chunked presigned-URL calls.
   - Declarations-file coverage: missing file returns early with WARN, empty file returns early, blank lines are skipped, malformed JSONL lines are skipped with WARN (without aborting the rest), missing or unsupported declaration versions are skipped, duplicate entries are deduped, `OZ_SNAPSHOT_DECLARATIONS_FILE` override is honored.
 - `attachments_tests.rs` — end-to-end handoff download coverage mirroring the upload-side pattern: happy path, transient 5xx retry → success, permanent 4xx fails fast, retry exhaustion, partial success (mix of OK + failure), empty attachment list, `get_handoff_snapshot_attachments` failure.
 
 ### Server tests
+
 - `agent_conversations_test.go` — block snapshot upload and download round-trip.
 - `harness_support.go` — upload-snapshot endpoint with valid/invalid payloads.
 
 ### Integration validation
+
 - End-to-end test: cloud agent run with Claude Code harness → declarations file present → driver uploads snapshot before signaling completion → open conversation in client → verify inline terminal output.
 - Verify handoff snapshot files download into the next execution's attachments directory without local repo switching.
 - Verify feature flag gating: all snapshot/handoff paths are inert when `OzHandoff` is disabled (independently of `AgentHarness`).
@@ -405,6 +428,7 @@ Mitigation:
 - Verify a run with no declarations file completes normally with only a WARN log and no upload.
 
 ## Follow-ups
+
 - Tool-call-based file tracking: hook `RequestFileEdits` execution (in `app/src/ai/blocklist/action_model/execute/request_file_edits.rs`) to record absolute paths of files the agent creates/edits, writing them to a companion file that `snapshot-declarations.sh` merges into its output as JSONL `file` entries (dedup against emitted repos). This captures files outside any git repo that would otherwise be missed by the `repo` pipeline. Shell-driven writes (`cat >`, `echo >>`, etc.) remain out of scope because parsing shell commands is brittle.
 - Client-side patch application: download the workspace snapshot manifest and `.patch` files, apply them to the local checkout to resume from the agent's state.
 - Size limits and validation: enforce per-file and total payload size limits in the driver before uploading.

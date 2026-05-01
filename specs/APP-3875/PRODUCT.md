@@ -362,4 +362,5 @@ This means a tab can match the search query even if the matching branch or work 
 - Verify tab headers, drag-and-drop, rename, close, and hover-sidecar behavior are unchanged while Summary mode is selected.
 
 ## Open questions
+
 None.

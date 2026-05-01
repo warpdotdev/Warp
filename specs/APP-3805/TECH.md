@@ -63,14 +63,18 @@ Key pieces of today's behaviour the diagram elides:
 ## 4. Proposed solution
 
 Encode the client's expected version into the installed binary's filename, so version drift turns into a missing-file miss that naturally re-triggers the existing install flow. Layer a handshake-level version check on top as a safety net, and reserve the unversioned filename for `Channel::Local` and `Channel::Oss`.
+
 ### 4.1 Channel-keyed binary paths
+
 In `crates/remote_server/src/setup.rs`, the path resolution is keyed strictly off [`Channel`]:
 - `remote_server_binary()`:
   - When `ChannelState::channel()` is `Channel::Local` or `Channel::Oss` → `{dir}/{binary_name}` (the unversioned `deploy_remote_server` slot; `Oss` has no release-pinned CDN artifact and follows the same convention).
   - For every other channel (`Stable`, `Preview`, `Dev`, `Integration`) → `{dir}/{binary_name}-{v}`, where `v = ChannelState::app_version().unwrap_or(env!("CARGO_PKG_VERSION"))`.
 - `binary_check_command()` keeps the single `test -x {remote_server_binary()}` contract. Because the version is part of the filename on every versioned channel, any drift resolves to a miss on the existing code path and re-runs `install_script`.
 The `CARGO_PKG_VERSION` fallback is intentionally not expected to point at a real release artifact; see §4.4 for the failure shape on versioned-channel + no-tag builds.
+
 ### 4.2 Install script pins the exact version (or latest, for Local/Oss)
+
 `warp-server`'s `/download/cli` already honours a `version=` query parameter (pins the redirect to the exact versioned artifact when present; falls back to latest-for-channel when absent), so no server-side change is needed.
 In `install_remote_server.sh`, add `{version_query}` and `{version_suffix}` placeholders used in two places:
 - Download URL query string: `...&channel={channel}{version_query}` (e.g. `&version=v0.…`, or empty).
@@ -94,6 +98,7 @@ In `crates/remote_server/src/manager.rs::connect_session`, immediately after `cl
 Factor the comparison into a pure helper (`fn version_is_compatible(client: Option<&str>, server: &str) -> bool`) so it's unit-testable without wiring up a client.
 
 ### 4.4 Unversioned channels (Local / Oss) and versioned-channel-without-tag
+
 `Channel::Local` (the default `cargo run`) and `Channel::Oss` take the unversioned branch of `remote_server_binary()` / `install_script()` (see §4.1, §4.2). Concretely:
 - If `script/deploy_remote_server` has put a binary at the unversioned path, `binary_check_command` succeeds and we connect without touching the CDN.
 - If the unversioned binary is missing but the install directory exists (e.g. a previous install ran here), the controller's auto-update branch fires and `install_script` runs with empty `version_query`/`version_suffix` — i.e. it pulls latest-for-channel and installs at the same unversioned path. Future `deploy_remote_server` runs simply overwrite this in place.

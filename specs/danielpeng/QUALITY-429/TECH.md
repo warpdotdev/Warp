@@ -133,15 +133,18 @@ sequenceDiagram
 ## Testing and validation
 
 ### Unit tests (`crates/settings/src/mod_tests.rs`)
+
 - `test_reload_returns_failed_keys_for_invalid_values` — reload with bad value returns the key
 - `test_reload_returns_empty_vec_on_success` — reload with valid values returns empty
 - `test_validate_detects_invalid_values` — startup validation catches bad values
 - `test_validate_returns_empty_when_all_valid` — startup validation passes for good values
 
 ### Unit tests (`crates/warpui_extras/src/user_preferences/toml_backed_tests.rs`)
+
 - `test_new_with_invalid_toml_returns_error_and_recovers_on_reload` — parse failure → recovery
 
 ### Integration tests (`crates/integration/src/test/settings_file_errors.rs`)
+
 - `test_settings_error_banner_on_startup_with_invalid_toml` — startup banner for broken file
 - `test_settings_error_banner_on_startup_with_invalid_value` — startup banner for bad value
 - `test_settings_error_banner_on_reload_with_invalid_toml` — reload banner + auto-clear on fix

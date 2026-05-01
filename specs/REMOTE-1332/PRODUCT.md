@@ -1,11 +1,14 @@
 # End-of-Run Snapshot Upload and Client-Side Snapshot Hydration — Product Spec
+
 Linear: [REMOTE-1332](https://linear.app/warpdotdev/issue/REMOTE-1332)
 Figma: none provided
 
 ## Summary
+
 Enable workspace state handoff between cloud agent runs and the local Warp client. At the end of every cloud agent run, the Warp client automatically captures its workspace state (git repository diffs and arbitrary files) before signaling completion and uploads it to the server, and the Warp client can download and display the terminal output snapshot of a third-party harness conversation when a user opens it.
 
 ## Problem
+
 When a cloud agent completes work using a third-party harness (e.g. Claude Code), the user has no way to see what the agent did or resume from the agent's workspace state. The conversation history only shows metadata — the terminal output and workspace changes are lost. This makes the handoff from cloud to local feel like starting over rather than continuing a unit of work.
 
 Two capabilities are needed to close this gap:
@@ -13,12 +16,14 @@ Two capabilities are needed to close this gap:
 2. A mechanism for the Warp client to download and display the terminal output of a third-party harness conversation so the user can see what happened during the cloud agent run.
 
 ## Goals
+
 - Automatically capture workspace state (git repo diffs and arbitrary files) at the end of every cloud agent run and upload it to the server.
 - Allow the Warp client to download and display the terminal output snapshot of a third-party harness conversation.
 - Make opening a cloud agent conversation that used a third-party harness feel equivalent to opening an Oz-native cloud conversation for viewing — the user sees the terminal output inline.
 - Anchor workspace snapshot capture and handoff download to the cloud agent run's assigned workspace. Snapshot upload and handoff download operate inside the run's workspace and do not perform local repo switching or directory reconciliation.
 
 ## Non-goals
+
 - Automatically applying the uploaded workspace patch to the user's local checkout. The snapshot captures state; applying it is a separate follow-up.
 - Rendering the raw transcript of a third-party harness conversation inline. Only the block snapshot (terminal TUI state) is displayed.
 - Resuming a third-party harness conversation via `--conversation`. This spec covers displaying saved block snapshots in the client and handing off workspace snapshots; Claude Code `--conversation` resumption is separate follow-up work.
@@ -30,6 +35,7 @@ Two capabilities are needed to close this gap:
 ## User Experience
 
 ### End-of-run snapshot upload
+
 At the end of every cloud agent run, `AgentDriver` reads a declarations file describing workspace paths to snapshot and uploads the gathered state to the server. The upload runs automatically after agent execution finishes and before the caller is signaled, with no user or agent intervention.
 
 **Trigger:** Invoked during the `AgentDriver` run tail on every driver shutdown. The upload is skipped when:
@@ -85,9 +91,11 @@ Blank lines are ignored. Malformed lines (invalid JSON, missing fields, missing 
 - The uploaded manifest remains the authoritative on-GCS record regardless of what appears in the logs.
 
 ### Block snapshot upload during harness run
+
 While a third-party harness is running, the Oz agent driver periodically captures a `SerializedBlock` snapshot of the terminal TUI state and uploads it to the server. This happens at save points (periodic, post-turn, final) and is transparent to the user.
 
 ### Client-side conversation viewer restoration and snapshot hydration
+
 When a user opens a cloud agent conversation in the Warp client, the client uses shared restoration plumbing and dispatches by harness type. This path restores saved conversation output for viewing; it does not resume the third-party harness process or make `--conversation` continue a Claude Code session.
 
 1. The client fetches conversation metadata and identifies the harness type (e.g. `ClaudeCode`).
@@ -99,6 +107,7 @@ When a user opens a cloud agent conversation in the Warp client, the client uses
 Existing conversation-viewer directory handling (e.g. `cd`-ing into the saved working directory when it exists) is unchanged and is not part of the snapshot handoff contract.
 
 ### Handoff snapshot attachment download
+
 When a subsequent execution of the same cloud agent run starts, the embedded Warp client downloads the handoff snapshot files that the prior execution uploaded so the server-side rehydration prompt's `{attachments_dir}/handoff/<filename>` references resolve to real files on disk. This includes `snapshot_state.json` when present. The agent on the new execution reads the rehydration prompt, inspects the manifest for repo name, branch, and HEAD metadata, and then applies the downloaded patches (`git apply`), so download reliability directly affects whether the new run can pick up from where the old one left off.
 
 The handoff download does not perform local directory reconciliation. The next execution is prepared in the same cloud-agent workspace shape, and the downloaded artifacts are placed under that run's attachments directory for the rehydration prompt to consume.
@@ -118,12 +127,14 @@ The handoff download does not perform local directory reconciliation. The next e
 - If the server call to list handoff snapshot attachments fails (e.g. 5xx at the API layer), the download step is aborted and the error is logged. The next execution still proceeds — rehydration from the snapshot is best-effort; the conversation history remains the authoritative record.
 
 ### Gating
+
 All snapshot/handoff functionality is gated behind `FeatureFlag::OzHandoff`, which is independent of `FeatureFlag::AgentHarness` (which only gates third-party agent CLIs like the `--harness` flag and `harness-support` subcommand). When `OzHandoff` is disabled:
 - End-of-run snapshot upload is skipped during the driver run tail.
 - Handoff snapshot attachments are not downloaded on subsequent executions.
 - Block snapshots are not fetched or displayed when opening a CLI agent conversation.
 
 ## Success Criteria
+
 - At the end of every cloud agent run, `AgentDriver` reads the declarations file and uploads the manifest and all declared repos/files to presigned URLs before signaling completion.
 - A repo with uncommitted changes produces a `.patch` file that captures both tracked and untracked changes.
 - A clean repo is recorded in the manifest with `"status": "clean"` and no patch file.
@@ -149,6 +160,7 @@ All snapshot/handoff functionality is gated behind `FeatureFlag::OzHandoff`, whi
 - All snapshot/handoff behavior is gated behind `FeatureFlag::OzHandoff` and is inert when the flag is disabled.
 
 ## Validation
+
 - Manual validation that a cloud agent run with a dirty repo entry in the declarations file produces a patch and uploads it.
 - Manual validation that a clean repo entry records `"status": "clean"` and no patch file in the manifest.
 - Manual validation that repo entries in `snapshot_state.json` include `repo_name`, `branch` when available, and `head_sha` when available.
@@ -174,6 +186,7 @@ All snapshot/handoff functionality is gated behind `FeatureFlag::OzHandoff`, whi
 - Manual validation that disabling `FeatureFlag::OzHandoff` prevents all snapshot/handoff behavior (upload, download, hydration).
 
 ## Open Questions
+
 - Should the client eventually apply the uploaded workspace patch automatically, or should that always be a user-initiated action?
 - Should there be a size limit on individual files or the total snapshot payload?
 - Should snapshot download failures surface a user-visible error, or silently fall back to showing metadata only?

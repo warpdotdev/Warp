@@ -1,24 +1,31 @@
 # Integration tests in Warp
+
 This is a short guide into writing integration tests in Warp.
 
 ## When to add a new integration test?
+
 Our general philosophy around how we see unit vs integration testing can be summarized as follows:
+
 ### Write unit tests when:
-* Testing a single function;
-* Function has minimal deps and no pty deps;
-* Can run purely in rust, e.g. a parser.
+
+- Testing a single function;
+- Function has minimal deps and no pty deps;
+- Can run purely in rust, e.g. a parser.
 
 ### Integration testing can help:
-* Test some use-case from the user perspective;
-* In scenarios that are slower or require a shell.
+
+- Test some use-case from the user perspective;
+- In scenarios that are slower or require a shell.
 
 ## What makes a good integration test?
+
 Test typically has the format:
-* Setup some state in the app;
-* Simulate a user action (e.g. type or click);
-* Verify that the app is in the expected state.
+- Setup some state in the app;
+- Simulate a user action (e.g. type or click);
+- Verify that the app is in the expected state.
 
 ## How to add a new integration test?
+
 Our integration tests currently require you to work with **3** files: [integration/tests/integration.rs](integration.rs), [integration/src/bin/integration.rs](../src/bin/integration.rs), and [integration/src/test.rs](../src/test.rs). (Most tests live in `test.rs` today, but you might want to write yours in a separate file.)
 
 Let's start with writing a *new integration test* for your feature. To do that, simply add a new method to [integration/src/bin/integration.rs](../src/bin/integration.rs). It should take **0 arguments** and **return `TestDriver`** object. You should also register it in `register_tests()` method in the same file, and later on (to ensure it's being executed) adding it to [integration/tests/integration.rs](integration.rs) in the `integration_tests!` macro. As a convention, each test method name starts with `test_` prefix (note, however, that it doesn't require the `#[test]` annotation like usual unit tests in Rust).
@@ -64,6 +71,7 @@ fn test_simple_example() -> TestDriver {
 I find `with_keystrokes` and `with_input_string` most helpful methods, so far. You can check the implementation (and expand it!) in [ui/src/integration/test_driver.rs](../../ui/src/integration/test_driver.ts).
 
 ## When to use `assert!` vs `async_assert!`
+
 The former will fail the test the first time it's false. The latter will fail the test if we don't ever see a success in the timeout. If you don't specify a timeout, the default timeout is used.
 
 In our UI framework, dispatching events and actions are generally synchronous. Concurrency comes mainly from the event loop.
@@ -102,11 +110,13 @@ This has helped us catch a lot of existing bugs in the system.
 Note that for `async_assert` to actually work, the `set_assertion` needs to **return** with the `async_assert`.
 
 ## How to add a sqlite snapshot?
-* You can copy over a warp.sqlite file from ~/Library/Application\ Support/{warp, dev.warp.Warp-(Dev|Preview|Stable)} directly
-* You may want to sanitize some info that is specific to you (i.e. cwd https://staging.warp.dev/block/FNBafyVtxvjmdNIx6HxUM5)
+
+- You can copy over a warp.sqlite file from ~/Library/Application\ Support/{warp, dev.warp.Warp-(Dev|Preview|Stable)} directly
+- You may want to sanitize some info that is specific to you (i.e. cwd https://staging.warp.dev/block/FNBafyVtxvjmdNIx6HxUM5)
 
 
 ### How to run integration tests?
+
 To run a specific integration test you can use:
 ```
   WARPUI_USE_REAL_DISPLAY_IN_INTEGRATION_TESTS="1" cargo run --bin integration -- test_simple_example
@@ -115,9 +125,10 @@ To run a specific integration test you can use:
 The `WARPUI_USE_REAL_DISPLAY_IN_INTEGRATION_TESTS="1"` will force the new terminal window to open, which helps a lot when iterating on your integration test implementation!
 
 ### Known issues / limitations
-* To determine (from the `TestStep`) which shell is used for the test, you can try checking `WARP_SHELL_PATH` environment variable (that works within the CI on github) or check the passwd for the user (for local runs).
-* Similarly you can run the test with a specific shell by setting the `WARP_SHELL_PATH` and then running the test. Note that if you're running with fish, you also need to pass in `--features fish_shell` until that feature flag is removed. For example: `WARP_SHELL_PATH=/usr/local/bin/fish`, then `cargo run --bin integration --features fish_shell -- test_simple_example`
-* Bindings aren't exposed by default in integration tests, add them in the file of the original binding. Example from `editor/view.rs`:
+
+- To determine (from the `TestStep`) which shell is used for the test, you can try checking `WARP_SHELL_PATH` environment variable (that works within the CI on github) or check the passwd for the user (for local runs).
+- Similarly you can run the test with a specific shell by setting the `WARP_SHELL_PATH` and then running the test. Note that if you're running with fish, you also need to pass in `--features fish_shell` until that feature flag is removed. For example: `WARP_SHELL_PATH=/usr/local/bin/fish`, then `cargo run --bin integration --features fish_shell -- test_simple_example`
+- Bindings aren't exposed by default in integration tests, add them in the file of the original binding. Example from `editor/view.rs`:
 
 ```rust
 if ChannelState::channel() == Channel::Integration {

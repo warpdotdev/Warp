@@ -69,14 +69,18 @@ That's fine for interactive use but awkward in CI, sandboxes, or remote environm
 ## Example invocations
 
 ```
+
 # Pull just the task IDs of failed runs from the last day.
+
 oz run list --state failed --updated-after 2026-04-20T00:00:00Z \
   --jq '.runs[].task_id'
 
 # Get a single field from a run.
+
 oz run get 01HX... --jq '.state'
 
 # Compose with other flags; --jq runs after server-side filters.
+
 oz run list --source CLI --limit 100 \
   --jq '[.runs[] | select(.harness == "claude")] | length'
 ```

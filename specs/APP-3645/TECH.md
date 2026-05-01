@@ -1,9 +1,11 @@
 # CLI Agent Composer Auto-Show & Auto-Dismiss — Tech Spec
 
 ## Problem
+
 The PRODUCT.md spec requires three new settings that control the visibility lifecycle of the CLI agent rich input composer. The implementation spans settings definitions, the settings UI, the session model, and the terminal view's subscription to CLI agent session status changes.
 
 ## Relevant Code
+
 - `app/src/settings/ai.rs (492–1144)` — `AISettings` group where new settings will be added, near the existing `should_render_cli_agent_footer` setting.
 - `app/src/settings_view/ai_page.rs (4949–5067)` — `CLIAgentWidget` that renders the "Coding Agents" section in Settings > AI.
 - `app/src/terminal/cli_agent_sessions/mod.rs` — `CLIAgentSessionsModel` singleton, `CLIAgentSession`, `CLIAgentSessionStatus`, `CLIAgentInputState`.
@@ -12,6 +14,7 @@ The PRODUCT.md spec requires three new settings that control the visibility life
 - `app/src/terminal/view/use_agent_footer/mod.rs:527–574` — `open_cli_agent_rich_input()` which opens the composer.
 
 ## Current State
+
 - The composer is opened manually via Ctrl-G or the footer button (`open_cli_agent_rich_input`).
 - After the user submits a prompt, `submit_cli_agent_rich_input` always calls `close_cli_agent_rich_input`.
 - `handle_cli_agent_sessions_event` only handles `StatusChanged` for desktop notifications when the user is navigated away — it does not drive any composer visibility logic.
@@ -79,10 +82,12 @@ Added to `cli_agent_sessions/mod.rs` to distinguish auto-opens from manual opens
 ## End-to-End Flow
 
 ### Auto-open on session start (Setting 2 enabled):
+
 1. CLI agent command detected → session created with `should_auto_toggle_input = true`.
 2. `maybe_auto_open_cli_agent_composer` fires → composer opens via `AutoShow` entrypoint.
 
 ### Auto-hide on blocked, auto-show on resume (Setting 1 enabled, plugin present):
+
 1. CLI agent runs and enters `PermissionRequest` → `CLIAgentSession::apply_event` sets status to `Blocked`.
 2. `CLIAgentSessionsModel` emits `StatusChanged { status: Blocked }`.
 3. `TerminalView::handle_cli_agent_sessions_event` checks: setting on, plugin present, `should_auto_toggle_input` true → calls `close_cli_agent_rich_input` (preserves flag).
@@ -90,23 +95,28 @@ Added to `cli_agent_sessions/mod.rs` to distinguish auto-opens from manual opens
 5. Agent resumes → status changes to `InProgress` → handler calls `open_cli_agent_rich_input(AutoShow)`.
 
 ### Manual dismiss breaks auto-toggle cycle:
+
 1. During auto-toggle, user presses Escape → `close_cli_agent_rich_input_and_disable_auto_toggle` sets `should_auto_toggle_input = false`.
 2. Subsequent status changes no longer trigger auto-open/close for this session.
 3. User manually re-opens with Ctrl-G → `open_input` sets `should_auto_toggle_input = true` → auto-toggle resumes.
 
 ### Auto-dismiss on submit (Setting 3 enabled, no plugin):
+
 1. User manually opens composer with Ctrl-G.
 2. User submits text → `maybe_close_composer_after_submit` checks: no plugin (or `should_auto_toggle_input` false), setting 3 is on → closes the composer.
 
 ## Risks and Mitigations
+
 - **Flicker from rapid status transitions**: If a CLI agent rapidly transitions Blocked→InProgress→Blocked, the composer could flicker open/close. Mitigation: unlikely in practice since permission requests have user-gated responses. Can add a debounce later if needed.
 - **Race with manual open**: If the user manually opens the composer just before auto-close fires, it could feel jarring. Mitigation: the auto-close only fires on status transitions, not on a timer, so it maps to genuine agent state.
 
 ## Testing and Validation
+
 - Add unit tests in `cli_agent_sessions/mod_tests.rs` verifying that `StatusChanged` events propagate correctly.
 - Add integration test scenarios exercising auto-show on blocked and auto-dismiss on submit.
 - Manual testing with and without the plugin to verify both settings behave correctly.
 
 ## Follow-ups
+
 - Add telemetry for auto-show/auto-dismiss to track adoption.
 - Consider debounce/delay on auto-show if rapid transitions prove to be an issue.

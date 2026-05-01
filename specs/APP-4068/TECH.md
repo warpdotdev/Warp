@@ -26,6 +26,7 @@ SSH-ing to the same host each spin up a separate server process.
 - `app/src/remote_server/ssh_transport.rs` — `SshTransport` implements `RemoteTransport`
 - `crates/remote_server/src/transport.rs` — `RemoteTransport` trait
 - `crates/remote_server/src/manager.rs` — session lifecycle, host deduplication
+
 ## Current State
 
 `manager.rs` runs `ssh ... {binary} remote-server` and wires `RemoteServerClient`
