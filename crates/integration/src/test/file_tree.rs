@@ -339,17 +339,14 @@ pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
             new_step_with_default_assertions("Open file tree panel")
                 .with_action(|app, _, _| open_file_tree_panel(app)),
         )
+        // Verify the file tree loaded the repo - if it stayed in lazy-load mode,
+        // the items won't be discoverable and this click will fail
         .with_step(
-            new_step_with_default_assertions("Verify full tree loads (not lazy-loaded)")
-                .add_assertion(|app, window_id| {
-                    let pane_group = pane_group_view(app, window_id, 0);
-                    pane_group.read(app, |_pane_group, _ctx| {
-                        // The key assertion is that the file tree loaded properly.
-                        // In the old buggy behavior, this would show a shallow tree
-                        // or fail to load. With the fix, proper detection triggers.
-                        // We verify the file tree panel is visible and has content.
-                        async_assert!(true, "File tree loaded for git repo")
-                    })
-                }),
+            new_step_with_default_assertions("Verify README.md is visible in file tree")
+                .with_click_on_saved_position("file_tree_item:README.md"),
+        )
+        .with_step(
+            new_step_with_default_assertions("Verify src directory is visible in file tree")
+                .with_click_on_saved_position("file_tree_item:src"),
         )
 }
