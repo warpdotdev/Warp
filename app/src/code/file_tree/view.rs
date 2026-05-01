@@ -16,7 +16,7 @@ use std::sync::Arc;
 use warp_util::path::LineAndColumnArg;
 use warp_util::standardized_path::StandardizedPath;
 
-use repo_metadata::repositories::DetectedRepositories;
+use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
 use warp_core::send_telemetry_from_ctx;
 use warpui::elements::{
     AcceptedByDropTarget, Align, Clipped, ConstrainedBox, Container, Dismiss, Draggable,
@@ -1533,24 +1533,49 @@ impl FileTreeView {
         // When the file tree is active, index the lazy-loaded path through the
         // model so that a file watcher is started.
         if self.is_active && !self.registered_lazy_loaded_paths.contains(path) {
-            let index_result = self
-                .repository_metadata_model
-                .update(ctx, |model: &mut RepoMetadataModel, ctx| {
-                    model.index_lazy_loaded_path(path, ctx)
+            // Check if this path is a valid git repository by looking for both .git directory
+            // and a valid HEAD file inside it. This avoids treating stale/invalid .git folders
+            // as repos (which would cause detection to fail and leave the tree empty).
+            let is_valid_git_repo = path
+                .to_local_path()
+                .map(|p| {
+                    let git_dir = p.join(".git");
+                    git_dir.exists() && git_dir.join("HEAD").is_file()
+                })
+                .unwrap_or(false);
+
+            if is_valid_git_repo {
+                // Trigger git repo detection - this will properly index the repo and emit
+                // events that update the file tree once complete.
+                DetectedRepositories::handle(ctx).update(ctx, |repos, ctx| {
+                    repos.detect_possible_git_repo(
+                        &path.to_string(),
+                        RepoDetectionSource::TerminalNavigation,
+                        ctx,
+                    )
                 });
-            if matches!(
-                index_result,
-                Err(repo_metadata::RepoMetadataError::BuildTree(
-                    repo_metadata::BuildTreeError::ExceededMaxFileLimit,
-                ))
-            ) {
-                Self::show_exceeded_file_limit_toast(ctx);
-            }
-            if let Err(error) = &index_result {
-                log::warn!("Failed to index lazy-loaded path {path}: {error}");
-            }
-            if RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(path, ctx) {
-                self.registered_lazy_loaded_paths.insert(path.clone());
+            } else {
+                // Not a valid git repo - use lazy-loading for regular directories or
+                // invalid .git folders
+                let index_result = self
+                    .repository_metadata_model
+                    .update(ctx, |model: &mut RepoMetadataModel, ctx| {
+                        model.index_lazy_loaded_path(path, ctx)
+                    });
+                if matches!(
+                    index_result,
+                    Err(repo_metadata::RepoMetadataError::BuildTree(
+                        repo_metadata::BuildTreeError::ExceededMaxFileLimit,
+                    ))
+                ) {
+                    Self::show_exceeded_file_limit_toast(ctx);
+                }
+                if let Err(error) = &index_result {
+                    log::warn!("Failed to index lazy-loaded path {path}: {error}");
+                }
+                if RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(path, ctx) {
+                    self.registered_lazy_loaded_paths.insert(path.clone());
+                }
             }
         }
 
