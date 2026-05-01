@@ -705,10 +705,10 @@ impl DisplayChip {
                         me.close_node_version_popup(ctx);
                         ctx.focus_self();
                     }
-                    NodeVersionPopupEvent::SelectVersion { version } => {
-                        ctx.emit(PromptDisplayChipEvent::TryExecuteCommand(format!(
-                            "nvm use {version}"
-                        )));
+                    NodeVersionPopupEvent::SelectVersion { version: _, switch_command } => {
+                        ctx.emit(PromptDisplayChipEvent::TryExecuteCommand(
+                            switch_command.clone(),
+                        ));
                         me.close_node_version_popup(ctx);
                         ctx.focus_self();
                     }
@@ -724,9 +724,15 @@ impl DisplayChip {
                         }));
                         me.close_node_version_popup(ctx);
                     }
-                    NodeVersionPopupEvent::InstallLatestNodeVersion => {
+                    NodeVersionPopupEvent::InstallMise => {
+                        ctx.emit(PromptDisplayChipEvent::RunAgentQuery(
+                            "Install mise-en-place for me".to_string(),
+                        ));
+                        me.close_node_version_popup(ctx);
+                    }
+                    NodeVersionPopupEvent::InstallLatestNodeVersion { command } => {
                         ctx.emit(PromptDisplayChipEvent::TryExecuteCommand(
-                            "nvm install node".to_string(),
+                            command.clone(),
                         ));
                         me.close_node_version_popup(ctx);
                     }
