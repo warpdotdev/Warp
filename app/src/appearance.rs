@@ -145,7 +145,7 @@ impl AppearanceManager {
         // wallpaper visibly dominates and the gate is worth its cost).
         // AppearanceManager is registered before any window is created,
         // so the initial seed below lands ahead of the first frame.
-        const LCD_GATE_OPACITY_THRESHOLD: u8 = 30;
+        const LCD_GATE_OPACITY_THRESHOLD: u8 = 70;
         ctx.subscribe_to_model(&WindowSettings::handle(ctx), move |_, event, ctx| {
             if matches!(event, WindowSettingsChangedEvent::BackgroundOpacity { .. }) {
                 let opacity = *WindowSettings::as_ref(ctx).background_opacity.value();
