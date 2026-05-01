@@ -370,6 +370,10 @@ struct MouseStateHandles {
 #[derive(Default, Debug, PartialEq, Eq)]
 enum OpenOverlay {
     OverflowMenu,
+    // PDX-80: SharingDialog state is constructed only by the warp_hosted code
+    // path in pane_group/pane/view/header/sharing.rs; the variant remains so
+    // match coverage is symmetric across feature configurations.
+    #[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
     SharingDialog,
     #[default]
     None,
@@ -529,6 +533,11 @@ impl<P: BackingView> PaneHeader<P> {
                 }
             }
             OpenOverlay::SharingDialog => {
+                // PDX-80: Sharing dialog overlay is a warp_hosted-only UI surface.
+                // The variant remains defined for symmetric match coverage and so
+                // pre-existing state transitions still typecheck, but the dialog
+                // never reaches the render stack when the hosted backend is off.
+                #[cfg(feature = "warp_hosted")]
                 if self.is_sharing_dialog_enabled(app) {
                     stack.add_positioned_overlay_child(
                         ChildView::new(self.sharing_dialog()).finish(),
@@ -540,6 +549,8 @@ impl<P: BackingView> PaneHeader<P> {
                         ),
                     );
                 }
+                #[cfg(not(feature = "warp_hosted"))]
+                let _ = app;
             }
             OpenOverlay::None => {}
         }

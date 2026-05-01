@@ -197,6 +197,8 @@ pub enum SharingDialogAction {
     SetTeamPermissions(Option<SharingAccessLevel>),
 }
 
+// PDX-80: Only invoked from app/src/lib.rs under #[cfg(feature = "warp_hosted")].
+#[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
 pub fn init(app: &mut AppContext) {
     use warpui::keymap::macros::*;
 

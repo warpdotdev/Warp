@@ -672,10 +672,14 @@ impl LeftPanelView {
                 );
             }
             ToolPanelView::WarpDrive => {
-                ctx.focus(&self.warp_drive_view);
-                self.warp_drive_view.update(ctx, |view, ctx| {
-                    view.reset_focused_index_in_warp_drive(true, ctx);
-                });
+                // PDX-80: Warp Drive focus is hosted-only.
+                #[cfg(feature = "warp_hosted")]
+                {
+                    ctx.focus(&self.warp_drive_view);
+                    self.warp_drive_view.update(ctx, |view, ctx| {
+                        view.reset_focused_index_in_warp_drive(true, ctx);
+                    });
+                }
             }
             ToolPanelView::ConversationListView => {
                 self.conversation_list_view.update(ctx, |view, ctx| {
@@ -1072,7 +1076,11 @@ impl View for LeftPanelView {
                         ctx.focus(&view);
                     }
                 }
-                ToolPanelView::WarpDrive => ctx.focus(&self.warp_drive_view),
+                ToolPanelView::WarpDrive => {
+                    // PDX-80: Warp Drive focus is hosted-only.
+                    #[cfg(feature = "warp_hosted")]
+                    ctx.focus(&self.warp_drive_view);
+                }
                 ToolPanelView::ConversationListView => ctx.focus(&self.conversation_list_view),
             }
         }
@@ -1135,6 +1143,13 @@ impl View for LeftPanelView {
                     Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
                 }
             }
+            // PDX-80: The Warp Drive panel content is hosted-only UI. The
+            // warp_drive_view field stays present to keep WorkspaceView's
+            // update_warp_drive_view/warp_drive_view() helpers compiling for
+            // forbidden-dir callers, but the panel is never rendered when
+            // warp_hosted is off. Falls through to an empty container if the
+            // active view somehow lands on WarpDrive (e.g. stale snapshot).
+            #[cfg(feature = "warp_hosted")]
             ToolPanelView::WarpDrive => Shrinkable::new(
                 1.0,
                 Container::new(ChildView::new(&self.warp_drive_view).finish())
@@ -1143,6 +1158,10 @@ impl View for LeftPanelView {
                     .finish(),
             )
             .finish(),
+            #[cfg(not(feature = "warp_hosted"))]
+            ToolPanelView::WarpDrive => {
+                Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
+            }
             ToolPanelView::ConversationListView => {
                 Shrinkable::new(1.0, ChildView::new(&self.conversation_list_view).finish()).finish()
             }

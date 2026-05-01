@@ -3,30 +3,39 @@
 //! This is tightly coupled to the pane header so that different overlays (context menus, the
 //! sharing dialog, and so on) are correctly displayed.
 
-use warp_core::{features::FeatureFlag, ui::appearance::Appearance};
+use warp_core::features::FeatureFlag;
+use warp_core::ui::appearance::Appearance;
 use warpui::{
     elements::{MouseStateHandle, ParentElement},
-    platform::Cursor,
-    ui_components::components::UiComponent,
-    AppContext, Element, ViewContext, ViewHandle,
+    AppContext, ViewContext, ViewHandle,
 };
+#[cfg(feature = "warp_hosted")]
+use warpui::{platform::Cursor, ui_components::components::UiComponent, Element};
 
 use warp_core::ui::theme::Fill;
+#[cfg(feature = "warp_hosted")]
 use warpui::elements::ConstrainedBox;
 
+#[cfg(feature = "warp_hosted")]
 use crate::{
-    drive::sharing::{
-        dialog::{SharingDialog, SharingDialogEvent},
-        ContentEditability, ShareableObject,
-    },
-    pane_group::BackingView,
-    server::telemetry::SharingDialogSource,
+    drive::sharing::ContentEditability,
     ui_components::buttons::{icon_button, icon_button_with_color},
     ui_components::icons::Icon,
 };
+use crate::{
+    drive::sharing::{
+        dialog::{SharingDialog, SharingDialogEvent},
+        ShareableObject,
+    },
+    pane_group::BackingView,
+    server::telemetry::SharingDialogSource,
+};
 
-use super::{Event, OpenOverlay, PaneHeader, PaneHeaderAction};
+#[cfg(feature = "warp_hosted")]
+use super::{Event, OpenOverlay, PaneHeaderAction};
+use super::PaneHeader;
 
+#[cfg(feature = "warp_hosted")]
 const UNSHARABLE_CONVERSATION_TOOLTIP: &str =
     "This conversation cannot be shared because it is not \
     stored in the cloud.\nTo sync to cloud and share, enable the setting under Settings > Privacy, \
@@ -39,9 +48,11 @@ pub struct SharedPaneContent {
     /// Mouse state handle for the primary sharing action.
     /// * If the object is view-only, this is a "copy link" button
     /// * Otherwise, this is a "share" button
+    #[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
     primary_button_handle: MouseStateHandle,
 
     /// Mouse state for the secondary view-only indicator.
+    #[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
     view_only_icon_handle: MouseStateHandle,
 }
 
@@ -102,45 +113,55 @@ impl<P: BackingView> PaneHeader<P> {
         source: SharingDialogSource,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !self.is_sharing_dialog_enabled(ctx) {
-            return;
-        }
-
-        if !self
-            .sharing_dialog()
-            .as_ref(ctx)
-            .editability(ctx)
-            .can_edit()
+        // PDX-80: Sharing UI is hosted-only. Method signature is preserved so
+        // callers in terminal/, ai/, notebooks/, workflows/, env_vars/ still
+        // compile; the action is a no-op when warp_hosted is off.
+        #[cfg(feature = "warp_hosted")]
         {
-            self.sharing_dialog()
-                .update(ctx, |dialog, ctx| dialog.copy_link(ctx));
-            return;
+            if !self.is_sharing_dialog_enabled(ctx) {
+                return;
+            }
+
+            if !self
+                .sharing_dialog()
+                .as_ref(ctx)
+                .editability(ctx)
+                .can_edit()
+            {
+                self.sharing_dialog()
+                    .update(ctx, |dialog, ctx| dialog.copy_link(ctx));
+                return;
+            }
+
+            let dialog_opened = match self.open_overlay {
+                OpenOverlay::OverflowMenu => {
+                    self.open_overlay = OpenOverlay::SharingDialog;
+                    ctx.emit(Event::PaneHeaderOverflowMenuToggled(false));
+                    ctx.focus(&self.shared_content.sharing_dialog);
+                    true
+                }
+                OpenOverlay::SharingDialog => {
+                    self.close_overlay(ctx);
+                    false
+                }
+                OpenOverlay::None => {
+                    self.open_overlay = OpenOverlay::SharingDialog;
+                    ctx.focus(&self.shared_content.sharing_dialog);
+                    true
+                }
+            };
+
+            if dialog_opened {
+                self.sharing_dialog()
+                    .update(ctx, |dialog, ctx| dialog.report_open(source, ctx));
+            }
+
+            ctx.notify();
         }
-
-        let dialog_opened = match self.open_overlay {
-            OpenOverlay::OverflowMenu => {
-                self.open_overlay = OpenOverlay::SharingDialog;
-                ctx.emit(Event::PaneHeaderOverflowMenuToggled(false));
-                ctx.focus(&self.shared_content.sharing_dialog);
-                true
-            }
-            OpenOverlay::SharingDialog => {
-                self.close_overlay(ctx);
-                false
-            }
-            OpenOverlay::None => {
-                self.open_overlay = OpenOverlay::SharingDialog;
-                ctx.focus(&self.shared_content.sharing_dialog);
-                true
-            }
-        };
-
-        if dialog_opened {
-            self.sharing_dialog()
-                .update(ctx, |dialog, ctx| dialog.report_open(source, ctx));
+        #[cfg(not(feature = "warp_hosted"))]
+        {
+            let _ = (source, ctx);
         }
-
-        ctx.notify();
     }
 
     fn handle_sharing_dialog_event(
@@ -165,120 +186,137 @@ impl<P: BackingView> PaneHeader<P> {
         button_size_override: Option<f32>,
         app: &AppContext,
     ) {
-        if !self.is_sharing_dialog_enabled(app) {
-            return;
-        }
-
-        let is_unsharable_conversation = self
-            .sharing_dialog()
-            .as_ref(app)
-            .is_unsharable_conversation(app);
-        let editability = self.sharing_dialog().as_ref(app).editability(app);
-
-        let (primary_button_icon, primary_button_active, primary_tooltip_text) =
-            if is_unsharable_conversation {
-                (
-                    Icon::Share,
-                    false,
-                    UNSHARABLE_CONVERSATION_TOOLTIP.to_string(),
-                )
-            } else if editability.can_edit() {
-                (
-                    Icon::Share,
-                    self.open_overlay == OpenOverlay::SharingDialog,
-                    "Share".to_string(),
-                )
-            } else {
-                (Icon::Link, false, "Copy link".to_string())
-            };
-
-        let ui_builder = appearance.ui_builder().clone();
-        let theme = appearance.theme();
-
-        // When disabled, use the disabled text color for the icon
-        let icon_color = if is_unsharable_conversation {
-            Fill::Solid(theme.disabled_text_color(theme.background()).into())
-        } else {
-            icon_color_override
-                .unwrap_or_else(|| Fill::Solid(theme.main_text_color(theme.background()).into()))
-        };
-
-        let button_builder = icon_button_with_color(
-            appearance,
-            primary_button_icon,
-            primary_button_active,
-            self.shared_content.primary_button_handle.clone(),
-            icon_color,
-        )
-        .with_tooltip(move || {
-            ConstrainedBox::new(ui_builder.tool_tip(primary_tooltip_text).build().finish())
-                .with_max_width(400.)
-                .finish()
-        });
-
-        let mut primary_button = button_builder.build();
-        if !is_unsharable_conversation {
-            primary_button = primary_button.on_click(|ctx, _, _| {
-                ctx.dispatch_typed_action(
-                    PaneHeaderAction::<P::PaneHeaderOverflowMenuAction, P::CustomAction>::ShareContents,
-                )
-            });
-        }
-        let primary_button = primary_button
-            .with_cursor(if is_unsharable_conversation {
-                Cursor::Arrow
-            } else {
-                Cursor::PointingHand
-            })
-            .finish();
-
-        let primary_button = if let Some(size) = button_size_override {
-            ConstrainedBox::new(primary_button)
-                .with_width(size)
-                .with_height(size)
-                .finish()
-        } else {
-            primary_button
-        };
-        element.add_child(primary_button);
-
-        if !editability.can_edit() {
-            let mut tooltip_text = String::from("Read-only");
-            if matches!(editability, ContentEditability::RequiresLogin) {
-                tooltip_text.push_str(". Sign in to edit");
+        // PDX-80: Sharing controls are a hosted-only UI surface. The full
+        // implementation is feature-gated; with warp_hosted off, no buttons are
+        // added to the parent element. Method signature is preserved so callers
+        // in pane_group/, ai/, terminal/, etc. continue to compile.
+        #[cfg(feature = "warp_hosted")]
+        {
+            if !self.is_sharing_dialog_enabled(app) {
+                return;
             }
+
+            let is_unsharable_conversation = self
+                .sharing_dialog()
+                .as_ref(app)
+                .is_unsharable_conversation(app);
+            let editability = self.sharing_dialog().as_ref(app).editability(app);
+
+            let (primary_button_icon, primary_button_active, primary_tooltip_text) =
+                if is_unsharable_conversation {
+                    (
+                        Icon::Share,
+                        false,
+                        UNSHARABLE_CONVERSATION_TOOLTIP.to_string(),
+                    )
+                } else if editability.can_edit() {
+                    (
+                        Icon::Share,
+                        self.open_overlay == OpenOverlay::SharingDialog,
+                        "Share".to_string(),
+                    )
+                } else {
+                    (Icon::Link, false, "Copy link".to_string())
+                };
 
             let ui_builder = appearance.ui_builder().clone();
-            let view_only_button = if let Some(icon_color) = icon_color_override {
-                icon_button_with_color(
-                    appearance,
-                    Icon::Eye,
-                    false,
-                    self.shared_content.view_only_icon_handle.clone(),
-                    icon_color,
-                )
-            } else {
-                icon_button(
-                    appearance,
-                    Icon::Eye,
-                    false,
-                    self.shared_content.view_only_icon_handle.clone(),
-                )
-            }
-            .with_tooltip(move || ui_builder.tool_tip(tooltip_text).build().finish())
-            .build()
-            .with_cursor(Cursor::PointingHand)
-            .finish();
+            let theme = appearance.theme();
 
-            let view_only_button = if let Some(size) = button_size_override {
-                ConstrainedBox::new(view_only_button)
+            // When disabled, use the disabled text color for the icon
+            let icon_color = if is_unsharable_conversation {
+                Fill::Solid(theme.disabled_text_color(theme.background()).into())
+            } else {
+                icon_color_override
+                    .unwrap_or_else(|| Fill::Solid(theme.main_text_color(theme.background()).into()))
+            };
+
+            let button_builder = icon_button_with_color(
+                appearance,
+                primary_button_icon,
+                primary_button_active,
+                self.shared_content.primary_button_handle.clone(),
+                icon_color,
+            )
+            .with_tooltip(move || {
+                ConstrainedBox::new(ui_builder.tool_tip(primary_tooltip_text).build().finish())
+                    .with_max_width(400.)
+                    .finish()
+            });
+
+            let mut primary_button = button_builder.build();
+            if !is_unsharable_conversation {
+                primary_button = primary_button.on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(
+                        PaneHeaderAction::<P::PaneHeaderOverflowMenuAction, P::CustomAction>::ShareContents,
+                    )
+                });
+            }
+            let primary_button = primary_button
+                .with_cursor(if is_unsharable_conversation {
+                    Cursor::Arrow
+                } else {
+                    Cursor::PointingHand
+                })
+                .finish();
+
+            let primary_button = if let Some(size) = button_size_override {
+                ConstrainedBox::new(primary_button)
                     .with_width(size)
                     .with_height(size)
                     .finish()
             } else {
-                view_only_button
+                primary_button
             };
-            element.add_child(view_only_button);
+            element.add_child(primary_button);
+
+            if !editability.can_edit() {
+                let mut tooltip_text = String::from("Read-only");
+                if matches!(editability, ContentEditability::RequiresLogin) {
+                    tooltip_text.push_str(". Sign in to edit");
+                }
+
+                let ui_builder = appearance.ui_builder().clone();
+                let view_only_button = if let Some(icon_color) = icon_color_override {
+                    icon_button_with_color(
+                        appearance,
+                        Icon::Eye,
+                        false,
+                        self.shared_content.view_only_icon_handle.clone(),
+                        icon_color,
+                    )
+                } else {
+                    icon_button(
+                        appearance,
+                        Icon::Eye,
+                        false,
+                        self.shared_content.view_only_icon_handle.clone(),
+                    )
+                }
+                .with_tooltip(move || ui_builder.tool_tip(tooltip_text).build().finish())
+                .build()
+                .with_cursor(Cursor::PointingHand)
+                .finish();
+
+                let view_only_button = if let Some(size) = button_size_override {
+                    ConstrainedBox::new(view_only_button)
+                        .with_width(size)
+                        .with_height(size)
+                        .finish()
+                } else {
+                    view_only_button
+                };
+                element.add_child(view_only_button);
+            }
+        }
+        #[cfg(not(feature = "warp_hosted"))]
+        {
+            let _ = (
+                element,
+                appearance,
+                icon_color_override,
+                button_size_override,
+                app,
+            );
         }
     }
 }
