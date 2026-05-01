@@ -1732,27 +1732,8 @@ impl BlockList {
             }
             None => Lines::zero(),
         };
-        let block_height = if let Some(block) = self.block_at(block_index) {
-            let height: Lines = block.height(&self.agent_view_state).into();
-
-            // When the CapActiveBlockHeight feature flag is enabled and the block
-            // is still executing (active), cap its reported height to the viewport
-            // rows. This prevents expensive SumTree/BiMap rebuilds on every frame
-            // when long-running commands produce large amounts of output (e.g.
-            // git clone with progress bars).
-            //
-            // The full output is still stored in FlatStorage for scrollback; only
-            // the block_heights SumTree entry is capped. When the block finishes,
-            // the final height is computed from the full grid contents.
-            if FeatureFlag::CapActiveBlockHeight.is_enabled()
-                && !block.finished()
-                && block.is_executing()
-            {
-                let viewport_rows = self.size.rows().into_lines();
-                height.min(viewport_rows)
-            } else {
-                height
-            }
+        let block_height: BlockHeight = if let Some(block) = self.block_at(block_index) {
+            block.height(&self.agent_view_state).into()
         } else {
             log::error!(
                 "Tried to update height of block at {block_index:?}, but no such block exists"
@@ -1770,11 +1751,11 @@ impl BlockList {
             let is_active_executing = self
                 .block_at(block_index)
                 .is_some_and(|block| !block.finished() && block.is_executing());
-            if is_active_executing && self.last_active_block_height == Some(block_height) {
+            if is_active_executing && self.last_active_block_height == Some(block_height.0) {
                 return;
             }
             if is_active_executing {
-                self.last_active_block_height = Some(block_height);
+                self.last_active_block_height = Some(block_height.0);
             } else {
                 self.last_active_block_height = None;
             }
@@ -1784,7 +1765,7 @@ impl BlockList {
             let mut cursor = self.block_heights.cursor::<BlockIndex, ()>();
             let next_index = block_index + BlockIndex(1);
             let mut tree_before_last_block = cursor.slice(&next_index, SeekBias::Left);
-            tree_before_last_block.push(BlockHeightItem::Block(BlockHeight(block_height)));
+            tree_before_last_block.push(BlockHeightItem::Block(block_height));
 
             // Advance the cursor past the current block and take the suffix to get all the items
             // after the active block.
@@ -2047,10 +2028,8 @@ impl BlockList {
     pub fn resize(&mut self, size_update: &SizeUpdate, update_old_blocks: bool) {
         let size = size_update.new_size;
         self.size = size;
-        // Invalidate the cached active block height on resize, since the
-        // viewport row count may have changed (affecting the
-        // CapActiveBlockHeight cap) and block heights may change due to
-        // reflow.
+        // Invalidate the cached active block height on resize, since block
+        // heights may change due to reflow.
         self.last_active_block_height = None;
         if size_update.rows_or_columns_changed() {
             self.clear_selection();

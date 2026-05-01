@@ -459,8 +459,9 @@ pub enum FeatureFlag {
     FileAndDiffSetComments,
 
     /// Caps the displayed height of the active (still-running) block to the
-    /// viewport size, preventing expensive SumTree/BiMap rebuilds on every
-    /// frame when commands produce large amounts of output (e.g. git clone).
+    /// viewport size. Currently unused — retained as a placeholder for future
+    /// optimizations that apply the cap at the rendering/viewport layer
+    /// rather than the stored block height, to avoid scroll math disagreement.
     CapActiveBlockHeight,
 
     /// Compacts carriage-return progress lines (e.g. from git clone) by
@@ -928,7 +929,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::HOANotifications,
     FeatureFlag::OrchestrationV2,
     FeatureFlag::GeminiNotifications,
-    FeatureFlag::CapActiveBlockHeight,
     FeatureFlag::CompactProgressLines,
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
