@@ -12199,6 +12199,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "skills"
+version = "0.1.0"
+dependencies = [
+ "orchestrator",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "walkdir",
+]
+
+[[package]]
 name = "skrifa"
 version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

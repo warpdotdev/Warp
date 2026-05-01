@@ -1,0 +1,20 @@
+[package]
+name = "skills"
+version = "0.1.0"
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+orchestrator = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "rt"] }
+tracing = { workspace = true }
+walkdir = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
