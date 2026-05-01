@@ -387,7 +387,7 @@ impl UserWorkspaces {
     /// Returns `true` if active AI is allowed for the current workspace, based on billing config.
     ///
     /// In the future, we should store active AI enablement on the policy directly. For now, we
-    /// proxy whether active AI by checking if prompt suggestions, next command, or code suggestions are enabled.
+    /// proxy whether active AI by checking whether any active AI feature is enabled.
     pub fn is_active_ai_allowed(&self) -> bool {
         self.current_team().is_none_or(|team| {
             team.billing_metadata
@@ -397,6 +397,7 @@ impl UserWorkspaces {
                     policy.is_prompt_suggestions_toggleable
                         || policy.is_next_command_enabled
                         || policy.is_code_suggestions_toggleable
+                        || policy.is_git_operations_ai_enabled
                 })
         })
     }
@@ -451,6 +452,19 @@ impl UserWorkspaces {
                     .tier
                     .warp_ai_policy
                     .is_some_and(|policy| policy.is_next_command_enabled)
+            })
+    }
+
+    /// Whether Git Operations AI is enabled for the current user, based on the active policies.
+    /// Note that the value may be incorrect if called before the team's billing metadata has been fetched.
+    pub fn is_git_operations_ai_enabled(&self) -> bool {
+        self.current_team()
+            // If the user has no team, they can toggle Git Operations AI (no restrictions).
+            .is_none_or(|team| {
+                team.billing_metadata
+                    .tier
+                    .warp_ai_policy
+                    .is_some_and(|policy| policy.is_git_operations_ai_enabled)
             })
     }
 
