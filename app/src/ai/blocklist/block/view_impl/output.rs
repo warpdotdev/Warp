@@ -230,7 +230,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                 // when the entire response is complete to avoid intermediate states.
                 let mut should_render_references_section = is_complete && request_type.is_active();
                 let mut should_render_suggestions = is_complete
-                    && props.model.is_latest_non_passive_exchange_in_root_task(app)
+                    && props.model.is_latest_visible_exchange_in_root_task(app)
                     && !is_conversation_in_progress
                     && !is_output_for_static_prompt_suggestions
                     && request_type.is_active();
@@ -240,7 +240,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                     request_type.is_passive_code_diff() && props.has_accepted_edits;
 
                 let mut should_render_footer =
-                    (props.model.is_latest_non_passive_exchange_in_root_task(app)
+                    (props.model.is_latest_visible_exchange_in_root_task(app)
                         || requires_special_footer)
                         && !is_output_for_static_prompt_suggestions
                         && !is_conversation_in_progress
@@ -1082,7 +1082,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                 .finish(),
             );
 
-            if props.model.is_latest_non_passive_exchange_in_root_task(app)
+            if props.model.is_latest_visible_exchange_in_root_task(app)
                 && !props.model.is_restored()
                 && !error.is_invalid_api_key()
             {

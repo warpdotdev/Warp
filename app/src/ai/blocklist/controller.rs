@@ -2170,15 +2170,45 @@ impl BlocklistAIController {
         self.pending_passive_suggestion_results
             .remove(&conversation_id);
 
-        if !self
+        let did_cancel_stream = self
             .in_flight_response_streams
-            .try_cancel_streams_for_conversation(conversation_id, reason, ctx)
+            .try_cancel_streams_for_conversation(conversation_id, reason, ctx);
+        if did_cancel_stream {
+            return;
+        }
+
+        // Otherwise, cancel pending actions and update the input state.
+        self.action_model.update(ctx, |action_model, ctx| {
+            action_model.cancel_all_pending_actions(conversation_id, Some(reason), ctx);
+        });
+        self.set_input_mode_for_cancellation(ctx);
+
+        if reason.is_follow_up_for_same_conversation() {
+            return;
+        }
+
+        if !self
+            .action_model
+            .as_ref(ctx)
+            .has_unfinished_actions_for_conversation(conversation_id)
         {
-            // Otherwise, cancel pending actions and update the input state.
-            self.action_model.update(ctx, |action_model, ctx| {
-                action_model.cancel_all_pending_actions(conversation_id, Some(reason), ctx);
+            // In the action-only cancellation path, there may be no response stream left to
+            // emit the final conversation status. Leaving the conversation `InProgress`
+            // suppresses stopped-task and response footers. Natural CLI-subagent completion
+            // should remain a success, while user-driven cancellation should render stopped UI.
+            let status = if reason.is_lrc_command_completed() {
+                ConversationStatus::Success
+            } else {
+                ConversationStatus::Cancelled
+            };
+            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                history_model.update_conversation_status(
+                    self.terminal_view_id,
+                    conversation_id,
+                    status,
+                    ctx,
+                );
             });
-            self.set_input_mode_for_cancellation(ctx);
         }
     }
 
