@@ -165,13 +165,29 @@ bootstrap context:
   This trust boundary is the same one Warp's existing shell-integration
   hooks already implicitly rely on. The nonce makes that boundary
   explicit and raises the bar above pure-output spoofing.
-- Payloads exceeding a fixed total size cap (256 KiB across all
-  keymaps combined) are rejected and logged. Individual binding
-  entries exceeding a per-key cap (4 KiB) are dropped from the
-  payload before parsing.
-- Schema validation is strict: any field type mismatch, unknown
-  `schema_version`, or malformed Keystroke string causes the entire
-  payload to be discarded — partial application is never attempted.
+- **Validation order, single rule.** Validation runs in three
+  strictly ordered phases on the receive side, each of which rejects
+  the entire payload on failure:
+  1. **Pre-decode byte cap.** The DCS frame's hex-decoded byte length
+     is checked against the 256 KiB total cap *before* JSON
+     deserialization runs. Frames exceeding the cap are dropped at
+     the framing layer and logged; no allocation for parsed structures
+     happens. This bounds memory and CPU before untrusted data
+     reaches `serde_json`.
+  2. **Schema decode.** JSON is decoded into the `ShellBindings`
+     struct. Any field type mismatch, unknown `schema_version`, or
+     malformed `Keystroke` string discards the entire payload — no
+     partial application. There is no per-entry "drop one and keep
+     the rest" branch.
+  3. **Post-decode bounds.** After successful decode, the parsed
+     structure is checked against the per-entry caps (max 4 KiB
+     per binding entry, max 16 keymaps, max 8192 bindings total).
+     Any violation discards the entire payload.
+
+  The previous draft's "drop oversized entries before parsing"
+  language is retired; the rule is uniform — every validation
+  failure is whole-payload rejection so the app never applies a
+  partial table.
 - The same nonce check applies to the binding-hash field on the
   existing `Precmd` hook; an unsigned or mismatched hash leaves the
   previous binding table in place.
@@ -261,7 +277,25 @@ pub struct ShellBinding {
     pub raw_widget_name: String,        // for telemetry/debug UI
 }
 
-pub enum KeymapMode { Emacs, ViInsert, ViCommand, ViVisual, Other(String) }
+pub enum KeymapMode {
+    Emacs,
+    ViInsert,
+    ViCommand,
+    ViVisual,
+    ViReplace,           // overwrite mode (zsh `vi-replace`,
+                         // bash `vi-replace-mode`, fish `replace_one`/
+                         // `replace`).
+    ViOperatorPending,   // post-operator state for vi (`d`, `c`, `y`,
+                         // etc., awaiting motion) — zsh `viopp`,
+                         // and the equivalent transient state in
+                         // bash/fish. Required for the dispatch
+                         // transitions in the open-questions
+                         // vi-mode section below.
+    Other(String),       // user-defined zsh keymaps from `bindkey -N`,
+                         // surfaced verbatim. The matcher consults
+                         // these only when the active keymap reported
+                         // by the shell matches the same name.
+}
 ```
 
 Mutation flows through a new `ModelEvent::ShellBindingsUpdated { tab_id,
@@ -350,7 +384,7 @@ shell-binding state per tab and writes through this API:
 1. On `ShellBindingsUpdated(tab_id, bindings)`, translates each
    `ShellBinding`'s widget into an `InputAction` (or `Macro` injection
    / `Unsupported` sentinel) via `shell/widget_dispatch.rs`, then
-   builds `Vec<Binding>` with `BindingOrigin::Shell` tags and a
+   builds `Vec<Binding>` with `BindingOrigin::Contextual` tags and a
    regular `ContextPredicate` matching "input editor focused".
 2. Calls `keymap.set_contextual(ScopeKey { category: "shell", id:
    tab_id }, bindings)`.
@@ -359,18 +393,42 @@ shell-binding state per tab and writes through this API:
    scopes).
 4. On tab close, calls `keymap.clear_contextual(...)`.
 
-`BindingOrigin::Shell` is a tag carried on each `Binding` so the
-debug view (PRODUCT #25) and precedence ordering can distinguish it
-from `Fixed` and `Editable` origins. The matcher applies the
-PRODUCT #14 ordering by walking bindings in
-editable-first → shell-second → fixed-last order within each scope's
-candidate set.
+`BindingOrigin` is a generic, shell-free enum that lives in
+`warpui_core` alongside the existing `Binding` struct, because the
+matcher needs to know about it to enforce precedence:
 
-This keeps `warpui_core` free of any shell concept and confines the
-new types (`ShellBinding`, `ShellWidget`, `BindingOrigin::Shell`) to
-the terminal/app layer. The matcher's resolution order (PRODUCT #14)
-is enforced by the predicate evaluation order plus the origin tag,
-not by a new tier-typed Vec.
+```rust
+// crates/warpui_core/src/keymap.rs
+pub enum BindingOrigin {
+    Fixed,        // built-in defaults
+    Editable,     // user customizations from settings
+    Contextual,   // installed via set_contextual; tier slotted
+                  // between Editable and Fixed in the matcher
+}
+
+pub struct Binding {
+    // existing fields …
+    pub origin: BindingOrigin,
+}
+```
+
+`Contextual` is the generic name for the tier — `warpui_core` does not
+know what populates it (shells, plugins, anything that wants
+short-lived scope-keyed bindings). The terminal/app layer is the only
+caller that uses it for shell bindings today; future callers
+(e.g. plugin-provided bindings) reuse the same tier without any
+further `warpui_core` changes.
+
+The matcher walks candidates in
+Editable → Contextual → Fixed order within each active scope's set,
+which is the exact PRODUCT #14 ordering (reserved infrastructure keys
+sit above all of these and are handled at the terminal layer before
+the matcher sees the keystroke at all). The terminal layer's
+shell-specific types (`ShellBinding`, `ShellWidget`, the
+shell-vocabulary widget allowlist, the `keymap_bridge`) stay confined
+to the terminal/app crate; they are translated into core
+`Binding { origin: Contextual, … }` instances before being handed to
+`Keymap::set_contextual`.
 
 Effective resolution order for a keystroke in the active tab
 (PRODUCT #14, enforced by origin-tag ordering within
@@ -379,7 +437,7 @@ Effective resolution order for a keystroke in the active tab
 1. Reserved infrastructure keys for the tab's shell.
 2. Bindings tagged `BindingOrigin::Editable` (user Warp overrides)
    whose context predicate matches.
-3. Bindings tagged `BindingOrigin::Shell` from the active tab's
+3. Bindings tagged `BindingOrigin::Contextual` from the active tab's
    contextual scope.
 4. Bindings tagged `BindingOrigin::Fixed` (Warp defaults).
 
@@ -419,12 +477,33 @@ abandoned by a non-matching keystroke. Concrete change:
   old "single key, no match, drop pending" semantics — preserving
   current behavior for surfaces that don't want replay.
 
+**Ambiguity timeout (PRODUCT #8).** When the accumulated keys both
+match a complete binding *and* prefix a longer one, the matcher
+returns `Pending` and the dispatcher arms a 500 ms timer. If the
+timer fires before another key arrives, the dispatcher tells the
+matcher to commit the shorter binding (`Matcher::commit_pending()`,
+new) and dispatches that action. If a key arrives first that
+extends the prefix, the timer is canceled and matching continues. If
+a key arrives that does *not* extend the prefix, the matcher returns
+`AbandonedPrefix` and the dispatcher follows the replay path (above).
+The timer lives on the dispatcher side so the matcher itself stays
+synchronous; this also keeps the timeout out of the matcher's pure
+match logic. Pure-prefix accumulation (no complete-binding ambiguity)
+arms no timer — Warp waits indefinitely for the next key, matching
+readline / ZLE.
+
+**Focus-loss abandonment (PRODUCT #8).** Window blur, modal-overlay
+open, and tab switch each call `Matcher::abandon_pending()`, which
+returns the buffered keys for the dispatcher to drop on the floor
+(no replay, since the input editor no longer has focus to receive
+them).
+
 ### 5. Settings, feature flag, debug surface
 
 - New boolean setting in `app/src/terminal/keys_settings.rs` via
   `define_settings_group!`: `honor_shell_bindkeys` (default `true`)
   with `toml_path: "terminal.input.honor_shell_bindkeys"`. The matcher
-  short-circuits the `BindingOrigin::Shell` tier when this is off (PRODUCT
+  short-circuits the `BindingOrigin::Contextual` tier when this is off (PRODUCT
   #24). Because re-queries are shell-side (bootstrap + `precmd`
   driven), turning the toggle back on does not actively re-query — it
   resumes matching against the most recent table the bootstrap emitted,
@@ -490,7 +569,7 @@ abandoned by a non-matching keystroke. Concrete change:
     would require an invisible-exec primitive (we don't have one) or
     block on the PTY (violates PRODUCT #26).
 - **#22 (AI prompt input)** — v1: not honored. The matcher's tab-scoped
-  `BindingOrigin::Shell` tier only activates on tabs whose focus is the shell
+  `BindingOrigin::Contextual` tier only activates on tabs whose focus is the shell
   command input editor, not on the AI prompt input.
 - **#23 (rollout)** — gated by `FeatureFlag::HonorShellBindkeys` (above).
 

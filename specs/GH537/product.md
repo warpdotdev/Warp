@@ -98,19 +98,48 @@ Out of scope for this spec:
 ### Honoring bindings in the input editor
 
 7. While the user is typing in the shell command input editor, every key
-   press is matched against the user's binding table for the active keymap
-   first. If a match is found and the bound action has a Warp equivalent,
-   Warp performs that action and consumes the keystroke. Otherwise the
-   keystroke falls through to Warp's default handling (see #14 for the
-   precedence list).
+   press is resolved against the precedence ladder defined in #14
+   (reserved infrastructure keys → user-customized Warp keybindings →
+   user shell bindings for the active keymap → Warp's default
+   keybindings → default character insertion). Shell bindings are
+   consulted only after the two higher tiers have been checked and have
+   not produced a match. When the matched action is a shell binding and
+   the bound widget has a Warp equivalent, Warp performs that action
+   and consumes the keystroke. When the bound widget is unsupported
+   (#11), the keystroke continues down the ladder to Warp's defaults.
 
-8. Multi-key sequences (`^X^E`, `^[f`, `gg`, fish `\\cx\\ce`) are honored as
-   a single action. While Warp is mid-sequence (one or more matching prefix
-   keys received but the sequence is not yet uniquely resolved), no action
-   fires and no character is inserted; the sequence either completes (action
-   fires) or is abandoned by a non-matching keystroke (in which case Warp
-   handles all the buffered keys as it would have without the binding —
-   matching readline / ZLE behavior).
+8. Multi-key sequences (`^X^E`, `^[f`, `gg`, fish `\\cx\\ce`) are honored
+   as a single action. Resolution rules:
+
+   - **Mid-sequence buffering.** While Warp has received one or more
+     keys that match a prefix of a longer binding but not yet a complete
+     binding, no action fires and no character is inserted; Warp waits
+     for the next key.
+   - **Ambiguous bindings (prefix is also a complete binding).** When
+     a key sequence matches both a complete binding and a prefix of a
+     longer binding (the canonical example: `^[` is `vi-cmd-mode` *and*
+     a prefix of `^[f`), Warp uses a 500 ms ambiguity timeout. If
+     another key arrives within 500 ms that extends the prefix, the
+     longer match wins. If no key arrives within the timeout, the
+     complete short binding fires.
+   - **Pure-prefix timeout.** When a sequence matches a prefix but no
+     complete binding (e.g. partial `^X` of `^X^E`), pending keys are
+     held without timeout — readline / ZLE both wait indefinitely on
+     pure prefixes. The user pressing any non-extending key abandons
+     the prefix immediately (next rule).
+   - **Abandonment.** When a non-matching key arrives mid-sequence,
+     the prefix is abandoned: Warp replays the buffered keys plus the
+     just-received key through normal handling, in arrival order. Any
+     of those replayed keys may itself trigger a single-key binding;
+     none of them re-enter prefix accumulation until the replay
+     finishes. This matches readline / ZLE behavior.
+   - **No keystroke is ever silently dropped.** Either a binding fires,
+     or the buffered keys are replayed.
+   - **Focus loss / window blur** mid-sequence abandons the prefix
+     (replay path); on refocus, accumulation starts fresh.
+
+   The 500 ms ambiguity timeout is the standard readline default; it
+   may be made configurable in a follow-up but is fixed for v1.
 
 9. "Insert literal string" bindings (e.g. zsh `bindkey -s '^X' 'echo hi\n'`,
    readline `"\C-x": "echo hi\n"`) inject the bound text into the input
