@@ -477,6 +477,12 @@ pub struct TerminalModel {
     /// Default colors to render characters.
     colors: color::List,
 
+    /// Whether the current Warp theme is dark mode (`true`) or light mode (`false`).
+    /// Updated by the view whenever the active theme changes. Used to respond to
+    /// `CSI ? 996 n` (color scheme query) and to emit unsolicited `CSI ? 997 ; Ps n`
+    /// notifications when `CSI ? 2031 h` (dark/light notifications) is enabled.
+    is_dark_mode: bool,
+
     /// Color overrides set via escape sequence. If a color is not set here, the view determines the
     /// color based on the theme.
     override_colors: color::OverrideList,
@@ -1135,6 +1141,7 @@ impl TerminalModel {
             title: None,
             custom_title: None,
             colors,
+            is_dark_mode: true,
             override_colors: color::OverrideList::empty(),
             event_proxy,
             pending_legacy_ssh_session: None,
@@ -1877,6 +1884,13 @@ impl TerminalModel {
         self.colors = colors;
     }
 
+    /// Updates the stored dark/light mode state.
+    /// Called by the view whenever the active Warp theme changes.
+    /// `is_dark` should be `true` when the theme has a dark background.
+    pub fn set_color_scheme(&mut self, is_dark: bool) {
+        self.is_dark_mode = is_dark;
+    }
+
     pub fn raw_grid_for_ref_tests(&self) -> &GridHandler {
         if self.alt_screen_active {
             self.alt_screen.grid_handler()
@@ -2503,6 +2517,15 @@ impl ansi::Handler for TerminalModel {
 
     fn device_status<W: std::io::Write>(&mut self, writer: &mut W, arg: usize) {
         delegate!(self.device_status(writer, arg));
+    }
+
+    fn report_color_scheme<W: std::io::Write>(&mut self, writer: &mut W) {
+        log::trace!("Reporting color scheme: is_dark={}", self.is_dark_mode);
+        // CSI ? 997 ; 1 n  → dark mode
+        // CSI ? 997 ; 2 n  → light mode
+        let code: u8 = if self.is_dark_mode { 1 } else { 2 };
+        let response = format!("\x1b[?997;{code}n");
+        let _ = writer.write_all(response.as_bytes());
     }
 
     fn move_forward(&mut self, columns: usize) {

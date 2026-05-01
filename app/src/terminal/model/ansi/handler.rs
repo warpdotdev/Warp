@@ -66,6 +66,12 @@ pub trait Handler {
     /// Report device status.
     fn device_status<W: io::Write>(&mut self, _: &mut W, _: usize);
 
+    /// Report color scheme in response to `CSI ? 996 n`.
+    /// Writes `CSI ? 997 ; 1 n` for dark mode or `CSI ? 997 ; 2 n` for light mode.
+    /// Default implementation is a no-op; override in the top-level handler that has
+    /// access to the current color scheme.
+    fn report_color_scheme<W: io::Write>(&mut self, _: &mut W) {}
+
     /// Move cursor forward `cols`.
     fn move_forward(&mut self, _: usize);
 

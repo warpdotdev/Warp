@@ -430,6 +430,7 @@ use warpui::{windowing, CursorInfo, EntityId, EventContext, ModelAsRef, Singleto
 
 use crate::ai_assistant::{AskAIType, ASK_AI_ASSISTANT_TEXT};
 use crate::appearance::{Appearance, AppearanceEvent};
+use warp_core::ui::theme::ColorScheme;
 use crate::banner::{
     Banner, BannerAction, BannerEvent, BannerState, BannerTextButton, BannerTextContent,
     DismissalType,
@@ -21273,9 +21274,21 @@ impl TerminalView {
     fn handle_theme_change(&mut self, ctx: &mut ViewContext<Self>) {
         let appearance = Appearance::as_ref(ctx);
         let colors = color::List::from(&appearance.theme().clone().into());
-        let mut model = self.model.lock();
-        model.update_colors(colors);
+        // LightOnDark = light foreground on dark background = dark mode.
+        let is_dark = appearance.theme().inferred_color_scheme() == ColorScheme::LightOnDark;
+        let should_notify = {
+            let mut model = self.model.lock();
+            model.update_colors(colors);
+            model.set_color_scheme(is_dark);
+            model.is_term_mode_set(TermMode::DARK_LIGHT_NOTIFICATIONS)
+        };
         self.colors = colors;
+        if should_notify {
+            // CSI ? 997 ; 1 n = dark mode, CSI ? 997 ; 2 n = light mode
+            let code: u8 = if is_dark { 1 } else { 2 };
+            let notification = format!("\x1b[?997;{code}n");
+            self.write_to_pty(notification.into_bytes(), ctx);
+        }
         ctx.notify();
     }
 

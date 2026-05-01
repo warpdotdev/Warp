@@ -63,6 +63,12 @@ bitflags! {
             | Self::KEYBOARD_REPORT_ALL_AS_ESCAPE.bits()
             | Self::KEYBOARD_REPORT_ASSOCIATED_TEXT.bits();
 
+        /// Whether to send unsolicited dark/light theme change notifications (?2031).
+        /// When set (via `CSI ? 2031 h`), the terminal sends `CSI ? 997 ; 1 n` or
+        /// `CSI ? 997 ; 2 n` whenever the active theme changes between dark and light mode.
+        /// See https://contour-terminal.org/vt-extensions/color-palette-update-notifications/
+        const DARK_LIGHT_NOTIFICATIONS = 0b1000_0000_0000_0000_0000_0000;
+
         const ANY                 = u32::MAX;
     }
 }
