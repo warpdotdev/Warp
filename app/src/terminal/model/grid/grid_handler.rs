@@ -343,6 +343,10 @@ pub struct GridHandler {
     /// `bottommost_visible_content_row` via backward scan. Set by the owning
     /// `BlockGrid` when `trim_trailing_blank_rows` is active.
     track_content_length: bool,
+
+    /// Treat primary-screen full clears and resizes as live frame updates
+    /// instead of preserving the current visible rows into scrollback.
+    clear_screen_in_place_for_frame_redraws: bool,
 }
 
 impl GridHandler {
@@ -391,6 +395,7 @@ impl GridHandler {
             marked_text: None,
             bottommost_visible_content_row: None,
             track_content_length: false,
+            clear_screen_in_place_for_frame_redraws: false,
         }
     }
 
@@ -439,6 +444,15 @@ impl GridHandler {
             // back to the full max_cursor_point-based height.
             self.bottommost_visible_content_row = self.bottommost_visible_content_row_backward();
         }
+    }
+
+    pub fn set_clear_screen_in_place_for_frame_redraws(&mut self, clear_in_place: bool) {
+        self.clear_screen_in_place_for_frame_redraws = clear_in_place;
+    }
+
+    #[cfg(test)]
+    pub fn clear_screen_in_place_for_frame_redraws(&self) -> bool {
+        self.clear_screen_in_place_for_frame_redraws
     }
 
     pub(crate) fn set_supports_emoji_presentation_selector(
@@ -517,6 +531,7 @@ impl GridHandler {
             marked_text: None,
             bottommost_visible_content_row: None,
             track_content_length: false,
+            clear_screen_in_place_for_frame_redraws: false,
         };
 
         // Scan the full grid for secrets.  This is less performant than

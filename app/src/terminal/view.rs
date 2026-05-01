@@ -11809,23 +11809,21 @@ impl TerminalView {
             CLIAgentSessionsModelEvent::Started {
                 terminal_view_id, ..
             } if *terminal_view_id == self.view_id => {
+                let mut model = self.model.lock();
+                let active_block = model.block_list_mut().active_block_mut();
+                active_block.set_clear_screen_in_place_for_frame_redraws(true);
                 if FeatureFlag::TrimTrailingBlankLines.is_enabled() {
-                    self.model
-                        .lock()
-                        .block_list_mut()
-                        .active_block_mut()
-                        .set_trim_trailing_blank_rows(true);
+                    active_block.set_trim_trailing_blank_rows(true);
                 }
             }
             CLIAgentSessionsModelEvent::Ended {
                 terminal_view_id, ..
             } if *terminal_view_id == self.view_id => {
+                let mut model = self.model.lock();
+                let active_block = model.block_list_mut().active_block_mut();
+                active_block.set_clear_screen_in_place_for_frame_redraws(false);
                 if FeatureFlag::TrimTrailingBlankLines.is_enabled() {
-                    self.model
-                        .lock()
-                        .block_list_mut()
-                        .active_block_mut()
-                        .set_trim_trailing_blank_rows(false);
+                    active_block.set_trim_trailing_blank_rows(false);
                 }
             }
             _ => {}

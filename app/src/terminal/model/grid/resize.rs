@@ -62,10 +62,12 @@ impl GridHandler {
         use std::cmp::min;
 
         // If this is the alt screen, we can skip reflowing the grid and simply
-        // adjust the size of rows.
-        if self.ansi_handler_state.is_alt_screen {
+        // adjust the size of rows. We also do this for frame redraws for CLI
+        // agent TUIs so pane resizes don't append old frames into block scrollback
+        // before the app redraws (GH #9838).
+        if self.ansi_handler_state.is_alt_screen || self.clear_screen_in_place_for_frame_redraws {
             // We should never finish the alt screen grid.
-            debug_assert!(!self.finished);
+            debug_assert!(!self.ansi_handler_state.is_alt_screen || !self.finished);
             // We can delegate to the old grid resizing logic, as there's no
             // flat storage for the alt screen.
             self.grid.resize(false, num_rows, num_cols, self.finished);

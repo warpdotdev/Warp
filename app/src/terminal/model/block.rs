@@ -1102,6 +1102,11 @@ impl Block {
         self.output_grid.set_trim_trailing_blank_rows(trim);
     }
 
+    pub fn set_clear_screen_in_place_for_frame_redraws(&mut self, clear_in_place: bool) {
+        self.output_grid
+            .set_clear_screen_in_place_for_frame_redraws(clear_in_place);
+    }
+
     pub fn set_restored_block_was_local(&mut self, was_local: bool) {
         debug_assert!(
             self.bootstrap_stage == BootstrapStage::RestoreBlocks,

@@ -31,6 +31,29 @@ pub fn test_finish_truncates_grid_basic() {
 }
 
 #[test]
+pub fn test_finish_clears_frame_redraw_clear_mode() {
+    let size = SizeInfo::new_without_font_metrics(10, 7);
+    let mut block_grid = BlockGrid::new(
+        size,
+        1000, /* max_scroll_limit */
+        ChannelEventListener::new_for_test(),
+        ObfuscateSecrets::No,
+        PerformResetGridChecks::default(),
+    );
+
+    block_grid.set_clear_screen_in_place_for_frame_redraws(true);
+    assert!(block_grid
+        .grid_handler()
+        .clear_screen_in_place_for_frame_redraws());
+
+    block_grid.finish();
+
+    assert!(!block_grid
+        .grid_handler()
+        .clear_screen_in_place_for_frame_redraws());
+}
+
+#[test]
 pub fn test_finish_truncates_grid_cursor_at_bottom() {
     let size = SizeInfo::new_without_font_metrics(10, 7);
     let mut block_grid = BlockGrid::new(

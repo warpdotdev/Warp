@@ -290,6 +290,7 @@ impl BlockGrid {
         self.started = true;
         self.finished = true;
         self.trim_trailing_blank_rows = false;
+        self.set_clear_screen_in_place_for_frame_redraws(false);
 
         self.grid_handler_mut().finish();
     }
@@ -297,6 +298,13 @@ impl BlockGrid {
     pub fn set_trim_trailing_blank_rows(&mut self, trim: bool) {
         self.trim_trailing_blank_rows = trim;
         self.grid_handler.set_track_content_length(trim);
+    }
+
+    /// Controls whether primary-screen frame redraw operations should mutate the
+    /// visible grid instead of preserving the current frame in scrollback.
+    pub fn set_clear_screen_in_place_for_frame_redraws(&mut self, clear_in_place: bool) {
+        self.grid_handler
+            .set_clear_screen_in_place_for_frame_redraws(clear_in_place);
     }
 
     /// Returns a freshly-computed value of rightmost_nonempty_cell if this grid isn't
