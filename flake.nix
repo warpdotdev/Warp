@@ -50,23 +50,59 @@
             cargo = rustToolchain;
             rustc = rustToolchain;
           };
+          hostXcodeSelection = ''
+            select_host_xcode_developer_dir() {
+              local developerDir=""
+
+              case "''${DEVELOPER_DIR:-}" in
+                /nix/store/*) ;;
+                *)
+                  if [ -n "''${DEVELOPER_DIR:-}" ] && [ -d "''${DEVELOPER_DIR:-}" ]; then
+                    developerDir="''${DEVELOPER_DIR:-}"
+                  fi
+                  ;;
+              esac
+
+              if [ -z "$developerDir" ]; then
+                for candidate in /Applications/Xcode_16.4.app/Contents/Developer /Applications/Xcode.app/Contents/Developer /Applications/Xcode*.app/Contents/Developer /Library/Developer/CommandLineTools; do
+                  if [ -d "$candidate" ]; then
+                    developerDir="$candidate"
+                    break
+                  fi
+                done
+              fi
+
+              printf '%s' "$developerDir"
+            }
+          '';
+          xcodeSelectWrapper = pkgs.writeShellScriptBin "xcode-select" ''
+            set -euo pipefail
+
+            ${hostXcodeSelection}
+
+            if [ "''${1:-}" = "-p" ] || [ "''${1:-}" = "--print-path" ]; then
+              developerDir="$(select_host_xcode_developer_dir)"
+              if [ -n "$developerDir" ]; then
+                printf '%s\n' "$developerDir"
+                exit 0
+              fi
+            fi
+
+            unset DEVELOPER_DIR
+            exec /usr/bin/xcode-select "$@"
+          '';
           xcodeXcrunWrapper = pkgs.writeShellScriptBin "xcrun" ''
             set -euo pipefail
 
-            developerDir="''${DEVELOPER_DIR:-}"
+            ${hostXcodeSelection}
 
-            if [ -z "$developerDir" ]; then
-              for candidate in /Applications/Xcode_16.4.app/Contents/Developer /Applications/Xcode.app/Contents/Developer /Applications/Xcode*.app/Contents/Developer /Library/Developer/CommandLineTools; do
-                if [ -d "$candidate" ]; then
-                  developerDir="$candidate"
-                  break
-                fi
-              done
-            fi
-
+            developerDir="$(select_host_xcode_developer_dir)"
             if [ -n "$developerDir" ]; then
               export DEVELOPER_DIR="$developerDir"
               echo "xcrun wrapper using DEVELOPER_DIR=$DEVELOPER_DIR" >&2
+            else
+              unset DEVELOPER_DIR
+              echo "xcrun wrapper could not locate a host Xcode developer dir; falling back to system xcrun" >&2
             fi
 
             exec /usr/bin/xcrun "$@"
@@ -225,7 +261,9 @@
             };
 
             preBuild = lib.optionalString pkgs.stdenv.isDarwin ''
-              export PATH="${xcodeXcrunWrapper}/bin:$PATH"
+              export PATH="${xcodeSelectWrapper}/bin:${xcodeXcrunWrapper}/bin:$PATH"
+              echo "Using xcode-select wrapper: $(command -v xcode-select)"
+              xcode-select -p
               echo "Using xcrun wrapper: $(command -v xcrun)"
               xcrun --sdk macosx --find metal
               xcrun --sdk macosx --find metallib
