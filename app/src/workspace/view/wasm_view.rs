@@ -11,7 +11,8 @@ use super::PanelPosition;
 
 use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::conversation_details_panel::{
-    ConversationDetailsData, ConversationDetailsPanel, ConversationDetailsPanelEvent,
+    run_time_from_conversation_exchanges, ConversationDetailsData, ConversationDetailsPanel,
+    ConversationDetailsPanelEvent,
 };
 use crate::terminal::TerminalView;
 use crate::ui_components::icons;
@@ -189,7 +190,20 @@ impl Workspace {
                     conversations_model.get_or_async_fetch_task_data(&task_id, ctx)
                 });
                 if let Some(task) = task {
-                    let details = ConversationDetailsData::from_task(&task, None, None, ctx);
+                    let mut details = ConversationDetailsData::from_task(&task, None, None, ctx);
+                    // Override run_time with exchange-based calculation when available.
+                    // The exchange-based time is more accurate than task.updated_at
+                    // because updated_at is a generic last-modified timestamp that can
+                    // be inflated by post-completion server updates. See REMOTE-1551.
+                    let history_model = BlocklistAIHistoryModel::handle(ctx).as_ref(ctx);
+                    if let Some(conversation) = history_model.active_conversation(terminal_view_id)
+                    {
+                        if let Some(exchange_run_time) =
+                            run_time_from_conversation_exchanges(conversation)
+                        {
+                            details.set_run_time(Some(exchange_run_time));
+                        }
+                    }
                     panel.set_conversation_details(details, ctx);
                     ctx.notify();
                     return;

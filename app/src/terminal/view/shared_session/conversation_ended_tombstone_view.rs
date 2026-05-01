@@ -150,8 +150,17 @@ impl TombstoneDisplayData {
         // We update to use the task values when we have them, which includes
         // the full credit cost (inference + compute). This matches what we show in
         // the details panel.
-        if let Some(run_time) = task.run_time() {
-            self.run_time = Some(human_readable_precise_duration(run_time));
+        //
+        // However, we only override run_time from the task when we don't already
+        // have an exchange-based value. The exchange-based time (computed from
+        // first/last conversation exchanges) is more accurate because
+        // `task.updated_at` is a generic last-modified timestamp that can be
+        // inflated by post-completion server updates (e.g. cleanup, credit
+        // calculations). See REMOTE-1551.
+        if self.run_time.is_none() {
+            if let Some(run_time) = task.run_time() {
+                self.run_time = Some(human_readable_precise_duration(run_time));
+            }
         }
         if let Some(credits) = task.credits_used() {
             self.credits = Some(format_credits(credits));

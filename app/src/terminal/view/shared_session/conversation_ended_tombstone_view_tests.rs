@@ -74,16 +74,18 @@ fn pr_artifact(branch: &str) -> Artifact {
 }
 
 #[test]
-fn task_overrides_run_time_and_credits_when_present() {
+fn task_preserves_exchange_run_time_but_overrides_credits() {
     let task = task_with_run_time_and_credits();
     let mut data = data_with_conversation_values();
 
     data.enrich_from_task(task);
 
-    let expected_run_time =
-        human_readable_precise_duration(Duration::seconds(RUN_DURATION_SECONDS));
+    // Exchange-based run_time should be preserved because it is more accurate
+    // than task.updated_at - task.started_at (REMOTE-1551).
+    assert_eq!(data.run_time.as_deref(), Some("conv run time"));
+    // Credits should still be overridden from the task because the task value
+    // includes the full credit cost (inference + compute).
     let expected_credits = format_credits((INFERENCE_COST + COMPUTE_COST) as f32);
-    assert_eq!(data.run_time, Some(expected_run_time));
     assert_eq!(data.credits, Some(expected_credits));
 }
 

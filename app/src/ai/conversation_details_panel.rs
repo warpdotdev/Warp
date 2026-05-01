@@ -28,7 +28,6 @@ use warpui::{
 };
 
 use crate::ai::agent::api::ServerConversationToken;
-#[cfg(target_family = "wasm")]
 use crate::ai::agent::conversation::AIConversation;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::agent_conversations_model::AgentRunDisplayStatus;
@@ -202,7 +201,23 @@ pub struct ConversationDetailsData {
     harness: Option<Harness>,
 }
 
+/// Compute the run time from conversation exchange data.
+/// This is more accurate than using `task.updated_at - task.started_at` because
+/// `updated_at` is a generic last-modified timestamp that can be inflated by
+/// post-completion server updates.
+pub fn run_time_from_conversation_exchanges(conversation: &AIConversation) -> Option<Duration> {
+    let first = conversation.first_exchange()?;
+    let last = conversation.latest_exchange()?;
+    let finish_time = last.finish_time?;
+    let duration = finish_time.signed_duration_since(first.start_time);
+    (duration.num_seconds() >= 0).then_some(duration)
+}
+
 impl ConversationDetailsData {
+    /// Override the run_time with a more accurate value (e.g. from conversation exchanges).
+    pub fn set_run_time(&mut self, run_time: Option<Duration>) {
+        self.run_time = run_time;
+    }
     fn directory_for_task(task: &AmbientAgentTask, app: &AppContext) -> Option<String> {
         let history_model = BlocklistAIHistoryModel::as_ref(app);
         let conversation_id = history_model

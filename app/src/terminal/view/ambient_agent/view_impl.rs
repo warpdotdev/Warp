@@ -830,10 +830,27 @@ impl TerminalView {
                 model.get_or_async_fetch_task_data(&task_id, ctx)
             });
 
-        let data = task
+        let mut data = task
             .as_ref()
             .map(|task| ConversationDetailsData::from_task(task, None, None, ctx))
             .unwrap_or_else(|| ConversationDetailsData::from_task_id(task_id));
+
+        // Override run_time with exchange-based calculation when available.
+        // The exchange-based time is more accurate than task.updated_at
+        // because updated_at is a generic last-modified timestamp that can
+        // be inflated by post-completion server updates. See REMOTE-1551.
+        let terminal_view_id = ctx.view_id();
+        let history_model = crate::ai::blocklist::BlocklistAIHistoryModel::handle(ctx).as_ref(ctx);
+        if let Some(conversation) = history_model.active_conversation(terminal_view_id) {
+            if let Some(exchange_run_time) =
+                crate::ai::conversation_details_panel::run_time_from_conversation_exchanges(
+                    conversation,
+                )
+            {
+                data.set_run_time(Some(exchange_run_time));
+            }
+        }
+
         self.cloud_mode_details_panel.update(ctx, |panel, ctx| {
             panel.set_conversation_details(data, ctx);
         });
