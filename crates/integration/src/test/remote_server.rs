@@ -14,12 +14,15 @@ use warp::{
             enter_ssh_command, enter_ssh_password, setup_gcloud_sdk, wait_for_password_prompt,
         },
         terminal::{
-            execute_command_for_single_terminal_in_tab,
+            execute_command_for_single_terminal_in_tab, run_completer,
             util::{current_shell_starter_and_version, ExpectedExitStatus},
             wait_until_bootstrapped_single_pane_for_tab,
         },
     },
-    terminal::{shell::ShellType, warpify::settings::SshExtensionInstallMode},
+    terminal::{
+        shell::ShellType,
+        warpify::settings::{SshExtensionInstallMode, SshExtensionInstallModeSetting},
+    },
 };
 
 use super::{new_builder, Builder};
@@ -37,7 +40,7 @@ fn remote_server_builder() -> Builder {
             starter.shell_type() != ShellType::PowerShell
         })
         .with_user_defaults(HashMap::from([(
-            SshExtensionInstallMode::storage_key().to_owned(),
+            SshExtensionInstallModeSetting::storage_key().to_owned(),
             serde_json::to_string(&SshExtensionInstallMode::AlwaysInstall)
                 .expect("Can serialize SshExtensionInstallMode"),
         )]))
@@ -104,17 +107,16 @@ pub fn test_remote_server_navigate_to_repo() -> Builder {
             ExpectedExitStatus::Success,
             (),
         ))
-        // Assert the remote server received the navigate request and has
-        // a host_id for the session (which is set after the handshake).
+        // Assert the remote server received a successful navigation response
+        // for the expected repo path.
         .with_step(
             new_step_with_default_assertions(
                 "Assert remote server has navigated to directory",
             )
             .set_timeout(Duration::from_secs(15))
-            .add_assertion(assert_remote_server_has_navigated(0)),
+            .add_assertion(assert_remote_server_has_navigated(0, "/tmp/warp-test-repo")),
         )
-        // Verify the RepoMetadataSnapshot was received by checking that the
-        // session has a host_id with sessions tracked for it.
+        // Verify the connection is still healthy after navigation.
         .with_step(
             new_step_with_default_assertions(
                 "Assert host has tracked sessions after navigation",
@@ -133,13 +135,16 @@ pub fn test_remote_server_navigate_to_repo() -> Builder {
 pub fn test_remote_server_completions() -> Builder {
     let builder = with_ssh_connect_steps(remote_server_builder(), "bash");
     builder
-        // Run a simple command to trigger completions loading.
         .with_step(execute_command_for_single_terminal_in_tab(
             0,
-            "echo hello".into(),
+            "touch /tmp/warp-rs-completion-target".into(),
             ExpectedExitStatus::Success,
             (),
         ))
+        // Trigger the actual tab-completion request path for a remote file.
+        .with_step(
+            run_completer(0, "cat /tmp/warp-rs-completion-t").set_timeout(Duration::from_secs(15)),
+        )
         // Verify the executor is still the remote server executor after
         // completions have been triggered.
         .with_step(
@@ -189,7 +194,7 @@ pub fn test_remote_server_lazy_load_directory() -> Builder {
                 "Wait for navigation to complete",
             )
             .set_timeout(Duration::from_secs(15))
-            .add_assertion(assert_remote_server_has_navigated(0)),
+            .add_assertion(assert_remote_server_has_navigated(0, "/tmp/warp-lazy-repo")),
         )
         // Trigger lazy-load of the subdirectory via the proto API.
         .with_step(

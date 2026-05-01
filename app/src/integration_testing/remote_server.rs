@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use warpui::{
-    async_assert,
+    async_assert, async_assert_eq,
     integration::{AssertionCallback, AssertionOutcome, TestStep},
     SingletonEntity,
 };
@@ -157,9 +157,13 @@ pub fn load_repo_metadata_directory_via_remote_server(
     })
 }
 
-/// Asserts that `RemoteServerManager` has a `last_navigated_path` recorded
-/// for the active session, indicating that `navigate_to_directory` was called.
-pub fn assert_remote_server_has_navigated(tab_idx: usize) -> AssertionCallback {
+/// Asserts that `RemoteServerManager` has a successful navigation response
+/// recorded for the active session and that it matches `expected_path`.
+pub fn assert_remote_server_has_navigated(
+    tab_idx: usize,
+    expected_path: impl Into<String>,
+) -> AssertionCallback {
+    let expected_path = expected_path.into();
     Box::new(move |app, window_id| {
         let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
         terminal_view.read(app, |view, ctx| {
@@ -175,16 +179,16 @@ pub fn assert_remote_server_has_navigated(tab_idx: usize) -> AssertionCallback {
                     "Session not in Connected state".into(),
                 );
             }
-            // Verify the host has sessions tracked (which implies navigation
-            // infrastructure is wired up). The actual NavigatedToDirectory
-            // response is verified by checking that the manager has a
-            // host_id_for_session, which is only set after the initialize
-            // handshake — the navigate call itself is async and we verify
-            // its effect through the CWD change in the shell.
-            let has_host = mgr.host_id_for_session(session_id).is_some();
-            async_assert!(
-                has_host,
-                "Expected host_id to be present for session {session_id:?}"
+            let Some(navigated_path) = mgr.last_successful_navigation_path_for_session(session_id)
+            else {
+                return AssertionOutcome::PreconditionFailed(
+                    "No successful navigation path recorded for session".into(),
+                );
+            };
+            async_assert_eq!(
+                navigated_path,
+                expected_path.as_str(),
+                "Expected remote server to navigate session {session_id:?} to {expected_path}"
             )
         })
     })
