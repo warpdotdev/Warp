@@ -1471,7 +1471,14 @@ impl Session {
                 // strip both so command corrections operate on the bare names.
                 let res = output_string
                     .lines()
-                    .map(|s| s.trim().trim_start_matches(['*', '+']).trim().to_string())
+                    .map(|s| {
+                        let s = s.trim();
+                        s.strip_prefix("* ")
+                            .or_else(|| s.strip_prefix("+ "))
+                            .unwrap_or(s)
+                            .trim()
+                            .to_string()
+                    })
                     .filter(|s| !s.is_empty())
                     .collect();
                 res
