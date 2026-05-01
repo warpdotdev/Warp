@@ -36,11 +36,13 @@
 #![deny(missing_docs)]
 
 pub mod budget;
+pub mod router;
 
 pub use budget::{
     evaluate_charge, Budget, BudgetError, BudgetSnapshot, BudgetTier, Cap, CustomProviderId,
     Provider,
 };
+pub use router::{AgentRegistration, Router, RouterError};
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
