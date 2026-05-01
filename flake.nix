@@ -15,6 +15,7 @@
     extra-sandbox-paths = [
       "/Applications?"
       "/Library/Developer/CommandLineTools?"
+      "/usr/bin/plutil?"
       "/usr/bin/xcodebuild?"
       "/usr/bin/xcrun?"
     ];
