@@ -54,9 +54,13 @@ fn light_on_dark_contrast(enhanced_contrast: f32, color: vec3<f32>) -> f32 {
 
 struct Uniforms {
     viewport_size: vec2<f32>,
-    // 1 if the surface composites with premultiplied alpha, 0 otherwise.
-    premultiplied_alpha: u32,
-    _padding0: u32,
+    // Eight bytes of padding so gamma_ratios lands at offset 16. Earlier
+    // versions used these bytes for a premultiplied_alpha flag, but the
+    // ALPHA_BLENDING pipeline blend already produces a pre-multiplied
+    // framebuffer from a straight-alpha source (src_factor=SrcAlpha
+    // multiplies by alpha at the blend stage), so the shader does not
+    // need to pre-multiply on its side.
+    _padding_after_viewport: vec2<u32>,
     // ClearType / DirectWrite gamma-correction polynomial coefficients.
     gamma_ratios: vec4<f32>,
     // Stage 1 contrast factor for the grayscale path. Default 1.0.
@@ -64,15 +68,6 @@ struct Uniforms {
     // Stage 1 contrast factor for the subpixel path. Default 0.5.
     subpixel_enhanced_contrast: f32,
     _padding1: vec2<u32>,
-}
-
-// On premultiplied-alpha surfaces, scale RGB by the final alpha so the
-// compositor reads the framebuffer correctly. For Opaque surfaces the flag
-// stays zero and RGB passes through unchanged (the multiplication would
-// just darken edge pixels for no reason).
-fn blend_color(color: vec3<f32>, alpha: f32, premultiplied_alpha: u32) -> vec4<f32> {
-    let multiplier = select(1.0, alpha, premultiplied_alpha != 0u);
-    return vec4<f32>(color * multiplier, alpha);
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -165,5 +160,10 @@ fn fs_main(in: GlyphVertexShaderOutput) -> @location(0) vec4<f32> {
     // Apply the fade.
     color.a *= saturate(in.fade_alpha);
 
-    return blend_color(color.rgb, color.a, uniforms.premultiplied_alpha);
+    // Emit straight-alpha RGBA. The pipeline's BlendState::ALPHA_BLENDING
+    // applies SrcAlpha at the blend stage, which converts this straight
+    // source into the pre-multiplied framebuffer the PreMultiplied
+    // compositor expects. Pre-multiplying here would double-apply alpha
+    // and darken AA edges by a factor of alpha.
+    return color;
 }

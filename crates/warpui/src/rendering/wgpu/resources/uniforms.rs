@@ -66,19 +66,16 @@ impl Uniforms {
         drawable_size: Vector2F,
         resources: &Resources,
     ) {
-        // CompositeAlphaMode tells us whether the compositor expects the
-        // framebuffer's RGB to be already multiplied by alpha; pass that
-        // through so blend_color in glyph_shader.wgsl can apply the multiply.
-        let premultiplied_alpha = matches!(
-            resources.surface_config.borrow().alpha_mode,
-            wgpu::CompositeAlphaMode::PreMultiplied,
-        );
         // Gamma and Stage 1 contrast factors are cached on Resources but
         // re-uploaded per-frame so the uniform buffer's payload stays
-        // self-contained.
+        // self-contained. The CompositeAlphaMode is intentionally not
+        // sampled here: the pipeline's BlendState::ALPHA_BLENDING
+        // already converts straight-alpha shader output into the
+        // pre-multiplied framebuffer that the PreMultiplied compositor
+        // expects, so the shader does not need to pre-multiply on its
+        // side.
         let uniforms = shader_types::Uniforms::new(
             drawable_size,
-            premultiplied_alpha,
             resources.gamma_ratios,
             resources.grayscale_enhanced_contrast,
             resources.subpixel_enhanced_contrast,

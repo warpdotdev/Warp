@@ -218,11 +218,10 @@ impl RectData {
 #[derive(Debug, Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 pub(super) struct Uniforms {
     viewport_size: Vector2F,
-    /// 1 when the surface composites with premultiplied alpha, 0 otherwise.
-    /// Drives whether the glyph shader pre-multiplies RGB by alpha; wrong
-    /// values let glyph colour bleed through transparent windows.
-    premultiplied_alpha: u32,
-    _padding0: u32,
+    /// Eight bytes of padding so `gamma_ratios` lands at offset 16 to
+    /// match the `vec4<f32>` alignment WGSL requires. The shader-side
+    /// `Uniforms` struct mirrors this layout.
+    _padding_after_viewport: [u32; 2],
     /// ClearType / DirectWrite gamma-correction polynomial coefficients,
     /// applied in Stage 2 of the alpha-correction formula.
     gamma_ratios: Vector4F,
@@ -240,15 +239,13 @@ pub(super) struct Uniforms {
 impl Uniforms {
     pub(super) fn new(
         size: pathfinder_geometry::vector::Vector2F,
-        premultiplied_alpha: bool,
         gamma_ratios: [f32; 4],
         grayscale_enhanced_contrast: f32,
         subpixel_enhanced_contrast: f32,
     ) -> Self {
         Self {
             viewport_size: size.into(),
-            premultiplied_alpha: if premultiplied_alpha { 1 } else { 0 },
-            _padding0: 0,
+            _padding_after_viewport: [0; 2],
             gamma_ratios: vec4f(
                 gamma_ratios[0],
                 gamma_ratios[1],
