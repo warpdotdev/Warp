@@ -2338,7 +2338,7 @@ impl View for CodeEditorView {
     fn active_cursor_position(&self, ctx: &ViewContext<Self>) -> Option<CursorInfo> {
         let render_state = self.model.as_ref(ctx).render_state().as_ref(ctx);
         let cursor_id = render_state.saved_positions().cursor_id();
-        let font_size = Appearance::as_ref(ctx).monospace_font_size();
+        let font_size = render_state.styles().base_text.font_size;
 
         ctx.element_position_by_id(cursor_id.as_str()).map(|position| CursorInfo { position, font_size })
     }
