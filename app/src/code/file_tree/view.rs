@@ -536,6 +536,13 @@ impl FileTreeView {
             RepoMetadataEvent::FileTreeEntryUpdated {
                 id: RepositoryIdentifier::Local(std_path),
             } => {
+                // Actions to perform after ending mutable borrow
+                #[derive(Debug)]
+                enum Action {
+                    RemoveLazyLoaded,
+                    RefreshLazyLoaded,
+                }
+                
                 // Find all displayed directories that belong to the updated repository.
                 // This handles both direct repository root updates and updates to subdirectories
                 // within the repository (e.g., after file move operations).
@@ -569,6 +576,9 @@ impl FileTreeView {
                 if !affected_root_paths.is_empty() {
                     let id = RepositoryIdentifier::Local(std_path.clone());
                     if let Some(state) = RepoMetadataModel::as_ref(ctx).get_repository(&id, ctx) {
+                        // Collect actions to perform after ending the mutable borrow
+                        let mut actions_to_perform = Vec::new();
+                        
                         // Update all affected root directories with the new repository state
                         for root_path in &affected_root_paths {
                             if let Some(root_dir) = self.root_directories.get_mut(root_path) {
@@ -585,21 +595,36 @@ impl FileTreeView {
                                             if state.entry.contains(root_path) {
                                                 // Path exists in repo - promote to repo-backed state
                                                 root_dir.entry = state.entry.clone();
-                                                self.remove_lazy_loaded_entry(root_path, ctx);
+                                                actions_to_perform.push((root_path.clone(), Action::RemoveLazyLoaded));
                                             } else {
                                                 // Path doesn't exist in repo - could be moved/deleted or ignored/excluded
                                                 // Check if the path still exists on filesystem to determine action
                                                 if root_path.to_local_path_lossy().exists() {
                                                     // Path exists but not in repo (likely ignored/excluded) - keep lazy-loaded
                                                     // Refresh the lazy-loaded entry to get current filesystem state
-                                                    self.register_and_refresh_lazy_loaded_directory(root_path, ctx);
+                                                    actions_to_perform.push((root_path.clone(), Action::RefreshLazyLoaded));
                                                 } else {
                                                     // Path doesn't exist on filesystem (moved/deleted) - clear the entry
                                                     root_dir.entry = state.entry.clone();
-                                                    self.remove_lazy_loaded_entry(root_path, ctx);
+                                                    actions_to_perform.push((root_path.clone(), Action::RemoveLazyLoaded));
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Perform the collected actions after ending the mutable borrow
+                        #[cfg(feature = "local_fs")]
+                        {
+                            for (path, action) in actions_to_perform {
+                                match action {
+                                    Action::RemoveLazyLoaded => {
+                                        self.remove_lazy_loaded_entry(&path, ctx);
+                                    }
+                                    Action::RefreshLazyLoaded => {
+                                        self.register_and_refresh_lazy_loaded_directory(&path, ctx);
                                     }
                                 }
                             }
