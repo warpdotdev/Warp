@@ -102,23 +102,30 @@ impl SelectedTabColor {
 
     /// Parses the color argument from `OSC 1337 ; SetTabColor=<value> ST`.
     /// Whitespace is trimmed and matching is case-insensitive. Returns `None`
-    /// for unknown values.
+    /// for unknown values, for ANSI colors outside the tab palette, and for
+    /// unsupported aliases.
     ///
-    /// Not used by the `/set-tab-color` slash command — that surface accepts a
-    /// narrower set of inputs (named colors plus `none`) and produces its own
-    /// error toast for unknown values.
+    /// Not used by the `/set-tab-color` slash command. The slash surface
+    /// intentionally only exposes named colors and `none` — programs (the
+    /// callers of the OSC) need finer control to either suppress a directory
+    /// default (`none`/`clear` → `Cleared`) or restore it (`default`/`reset`
+    /// → `Unset`), whereas a human typing a slash command does not.
     pub fn from_arg(arg: &str) -> Option<Self> {
-        match arg.trim().to_ascii_lowercase().as_str() {
-            "red" => Some(Self::Color(AnsiColorIdentifier::Red)),
-            "green" => Some(Self::Color(AnsiColorIdentifier::Green)),
-            "yellow" => Some(Self::Color(AnsiColorIdentifier::Yellow)),
-            "blue" => Some(Self::Color(AnsiColorIdentifier::Blue)),
-            "magenta" => Some(Self::Color(AnsiColorIdentifier::Magenta)),
-            "cyan" => Some(Self::Color(AnsiColorIdentifier::Cyan)),
-            "none" | "clear" => Some(Self::Cleared),
-            "default" | "reset" => Some(Self::Unset),
-            _ => None,
+        let trimmed = arg.trim();
+        // Aliases — checked first so we don't depend on `AnsiColorIdentifier`
+        // ever growing a `None`-shaped variant.
+        match trimmed.to_ascii_lowercase().as_str() {
+            "none" | "clear" => return Some(Self::Cleared),
+            "default" | "reset" => return Some(Self::Unset),
+            _ => {}
         }
+        // Reuse the strum `FromStr` (case-insensitive) and filter to the same
+        // palette the slash command and tab UI accept.
+        trimmed
+            .parse::<AnsiColorIdentifier>()
+            .ok()
+            .filter(|c| TAB_COLOR_OPTIONS.contains(c))
+            .map(Self::Color)
     }
 }
 
@@ -1795,5 +1802,14 @@ mod tests {
         assert_eq!(SelectedTabColor::from_arg("   "), None);
         assert_eq!(SelectedTabColor::from_arg("purple"), None);
         assert_eq!(SelectedTabColor::from_arg("rgb(1,2,3)"), None);
+    }
+
+    #[test]
+    fn from_arg_rejects_ansi_colors_outside_tab_palette() {
+        // `AnsiColorIdentifier` parses these, but they are not in
+        // `TAB_COLOR_OPTIONS`, so the OSC path must reject them — same
+        // behavior as `/set-tab-color`.
+        assert_eq!(SelectedTabColor::from_arg("black"), None);
+        assert_eq!(SelectedTabColor::from_arg("white"), None);
     }
 }

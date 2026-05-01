@@ -38,6 +38,7 @@ use crate::server::server_api::ServerApiProvider;
 use crate::settings::{AISettings, DefaultSessionMode, PaneSettings};
 use crate::settings_view::SettingsSection;
 use crate::shell_indicator::ShellIndicatorType;
+use crate::tab::SelectedTabColor;
 use crate::terminal::available_shells::{AvailableShell, AvailableShells};
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::PluginModalKind;
@@ -487,7 +488,7 @@ pub enum Event {
     /// Programmatic tab color change requested by `OSC 1337 ; SetTabColor=...`
     /// from a terminal in this pane group. The workspace updates the tab that
     /// owns this pane group (which may not be the active tab).
-    SetTabColor(crate::tab::SelectedTabColor),
+    SetTabColor(SelectedTabColor),
     OpenSettings(SettingsSection),
     OpenAutoReloadModal {
         purchased_credits: i32,
