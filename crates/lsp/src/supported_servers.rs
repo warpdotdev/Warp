@@ -5,6 +5,7 @@ use crate::servers::go::GoPlsCandidate;
 use crate::servers::pyright::PyrightCandidate;
 use crate::servers::rust::RustAnalyzerCandidate;
 use crate::servers::typescript_language_server::TypeScriptLanguageServerCandidate;
+use crate::servers::yaml::YamlLanguageServerCandidate;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::CommandBuilder;
 use crate::{LanguageId, LanguageServerCandidate};
@@ -42,6 +43,7 @@ pub enum LSPServerType {
     Pyright,
     TypeScriptLanguageServer,
     Clangd,
+    Yaml,
 }
 
 /// Provides server-specific configuration for each LSP server type.
@@ -109,6 +111,10 @@ impl LSPServerType {
                     binary_path: path,
                     prepend_args: vec![],
                 }),
+            LSPServerType::Yaml => {
+                // yaml-language-server doesn't support custom installation yet
+                None
+            }
         }
     }
 
@@ -132,6 +138,7 @@ impl LSPServerType {
             LSPServerType::Pyright => "pyright-langserver",
             LSPServerType::TypeScriptLanguageServer => "typescript-language-server",
             LSPServerType::Clangd => "clangd",
+            LSPServerType::Yaml => "yaml-language-server",
         }
     }
 
@@ -141,6 +148,7 @@ impl LSPServerType {
         match self {
             LSPServerType::RustAnalyzer | LSPServerType::GoPls | LSPServerType::Clangd => vec![],
             LSPServerType::Pyright | LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
+            LSPServerType::Yaml => vec!["--stdio"],
         }
     }
 
@@ -154,6 +162,7 @@ impl LSPServerType {
             LSPServerType::Pyright => vec!["--stdio"],
             LSPServerType::TypeScriptLanguageServer => vec!["--stdio"],
             LSPServerType::Clangd => vec![],
+            LSPServerType::Yaml => vec!["--stdio"],
         }
     }
 
@@ -172,6 +181,7 @@ impl LSPServerType {
                 ]
             }
             LSPServerType::Clangd => vec![LanguageId::C, LanguageId::Cpp],
+            LSPServerType::Yaml => vec![LanguageId::Yaml],
         }
     }
 
@@ -205,6 +215,7 @@ impl LSPServerType {
                 Box::new(TypeScriptLanguageServerCandidate::new(client))
             }
             LSPServerType::Clangd => Box::new(ClangdCandidate::new(client)),
+            LSPServerType::Yaml => Box::new(YamlLanguageServerCandidate::new()),
         }
     }
 
