@@ -1,6 +1,8 @@
 mod unescape;
 
 use std::collections::{HashMap, HashSet};
+use std::fs::{self, OpenOptions};
+use std::io::{self, BufRead, BufReader, Write};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
@@ -961,6 +963,140 @@ fn zsh_unmetafy(content: &[u8]) -> String {
             String::from_utf8_lossy(&unmetafied).into()
         }
     }
+}
+
+/// Error type for shell history sync operations.
+#[derive(Debug, thiserror::Error)]
+pub enum ShellHistorySyncError {
+    #[error("IO error: {0}")]
+    Io(#[from] io::Error),
+    #[error("Failed to expand path: {0}")]
+    PathExpansion(String),
+}
+
+/// Expands a tilde path to the user's home directory.
+fn expand_tilde_path(path: &str) -> Result<PathBuf, ShellHistorySyncError> {
+    if path.starts_with("~/") {
+        let home = dirs::home_dir().ok_or_else(|| {
+            ShellHistorySyncError::PathExpansion("Cannot determine home directory".to_string())
+        })?;
+        Ok(home.join(path.trim_start_matches("~/")))
+    } else {
+        Ok(PathBuf::from(path))
+    }
+}
+
+/// Reads shell history from the standard history file and returns unique commands.
+///
+/// This function reads from the shell's history file (e.g., `~/.bash_history`,
+/// `~/.zsh_history`) and returns a deduplicated list of commands. Commands already
+/// present in `existing_commands` are excluded to avoid duplicates when merging
+/// with Warp's own history.
+pub fn read_shell_history(
+    shell_type: ShellType,
+    existing_commands: &HashSet<String>,
+) -> Result<Vec<String>, ShellHistorySyncError> {
+    let history_files = shell_type.history_files();
+    let mut all_commands: Vec<String> = Vec::new();
+
+    for history_file_path in history_files {
+        let path = match expand_tilde_path(&history_file_path) {
+            Ok(p) => p,
+            Err(e) => {
+                log::debug!("Skipping history file '{}': {}", history_file_path, e);
+                continue;
+            }
+        };
+
+        if !path.exists() {
+            log::debug!("History file does not exist: {:?}", path);
+            continue;
+        }
+
+        let file = match fs::File::open(&path) {
+            Ok(f) => f,
+            Err(e) => {
+                log::warn!("Failed to open history file {:?}: {}", path, e);
+                continue;
+            }
+        };
+
+        let reader = BufReader::new(file);
+        let mut seen: HashSet<String> = HashSet::new();
+
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(e) => {
+                    log::debug!("Failed to read line from {:?}: {}", path, e);
+                    continue;
+                }
+            };
+
+            let trimmed = line.trim().to_string();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if seen.contains(&trimmed) {
+                continue;
+            }
+            seen.insert(trimmed.clone());
+
+            if existing_commands.contains(&trimmed) {
+                continue;
+            }
+
+            all_commands.push(trimmed);
+        }
+    }
+
+    Ok(all_commands)
+}
+
+/// Writes a command to the shell's history file.
+///
+/// This allows Warp's command history to be shared with other terminal sessions.
+/// The command is appended to the history file in the format expected by the shell.
+pub fn write_command_to_shell_history(
+    shell_type: ShellType,
+    command: &str,
+) -> Result<(), ShellHistorySyncError> {
+    let history_files = shell_type.history_files();
+    let first_history_file = history_files
+        .into_iter()
+        .next()
+        .ok_or_else(|| ShellHistorySyncError::PathExpansion("No history file configured".to_string()))?;
+
+    let path = expand_tilde_path(&first_history_file)?;
+    write_command_to_shell_history_to_path(shell_type, command, &path)
+}
+
+/// Writes a command to a specific history file path.
+/// This is useful for testing with temporary files.
+pub fn write_command_to_shell_history_to_path(
+    shell_type: ShellType,
+    command: &str,
+    path: &Path,
+) -> Result<(), ShellHistorySyncError> {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+
+    let line = match shell_type {
+        ShellType::Zsh => {
+            format!(": {}:0;{}\n", chrono::Utc::now().timestamp(), command)
+        }
+        ShellType::Bash | ShellType::Fish | ShellType::PowerShell => {
+            format!("{}\n", command)
+        }
+    };
+
+    file.write_all(line.as_bytes())?;
+    file.flush()?;
+
+    Ok(())
 }
 
 #[cfg(test)]

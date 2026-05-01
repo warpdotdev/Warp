@@ -11,7 +11,9 @@ bitflags.workspace = true
 bitflags-serde-legacy.workspace = true
 cfg-if.workspace = true
 channel_versions.workspace = true
+chrono.workspace = true
 command-corrections.workspace = true
+dirs.workspace = true
 enum-iterator.workspace = true
 get-size.workspace = true
 itertools.workspace = true
@@ -37,6 +39,7 @@ warpui.workspace = true
 
 [dev-dependencies]
 unicode-segmentation = "1.11.0"
+tempfile = "3.8"
 
 [features]
 test-util = []

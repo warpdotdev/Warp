@@ -1,13 +1,68 @@
+use std::collections::HashSet;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 
+use lazy_static::lazy_static;
 use parking_lot::FairMutex;
+use warp_terminal::shell::{read_shell_history, write_command_to_shell_history, ShellType};
 use warpui::{AppContext, ModelHandle, SingletonEntity};
 
 use crate::persistence::StartedCommandMetadata;
+use crate::terminal::model::session::SessionId;
 use crate::terminal::{view::ExecuteCommandEvent, TerminalModel};
 use crate::terminal::{History, HistoryEntry};
 use crate::{persistence::ModelEvent, terminal::model::session::Sessions};
+
+lazy_static! {
+    static ref SHELL_HISTORY_SYNC_INITIALIZED: std::sync::Mutex<HashSet<String>> =
+        std::sync::Mutex::new(HashSet::new());
+}
+
+pub fn ensure_shell_history_synced(session_id: SessionId, shell_type: ShellType, ctx: &mut AppContext) {
+    let key = format!("{:?}-{:?}", session_id, shell_type);
+
+    let mut initialized = SHELL_HISTORY_SYNC_INITIALIZED.lock().unwrap();
+    if initialized.contains(&key) {
+        return;
+    }
+    initialized.insert(key.clone());
+    drop(initialized);
+
+    let existing_commands: HashSet<String> = {
+        let history = History::handle(ctx);
+        history
+            .commands_shared(session_id)
+            .map(|commands| {
+                commands
+                    .iter()
+                    .map(|c| c.command.clone())
+                    .collect::<HashSet<_>>()
+            })
+            .unwrap_or_default()
+    };
+
+    match read_shell_history(shell_type, &existing_commands) {
+        Ok(shell_commands) => {
+            if !shell_commands.is_empty() {
+                log::info!(
+                    "Syncing {} commands from shell history for session {:?}",
+                    shell_commands.len(),
+                    session_id
+                );
+                History::handle(ctx).update(ctx, move |history, _| {
+                    let entries: Vec<HistoryEntry> = shell_commands
+                        .into_iter()
+                        .map(HistoryEntry::command_only)
+                        .collect();
+                    history.append_commands(session_id, entries);
+                });
+            }
+        }
+        Err(e) => {
+            log::debug!("Could not read shell history: {}", e);
+        }
+    }
+}
 
 pub fn update_command_history(
     event: &ExecuteCommandEvent,
@@ -66,11 +121,20 @@ pub fn update_command_history(
         };
         ctx.background_executor()
             .spawn(async move {
-                // Sending over a sync sender can block the current thread, so we do this async.
                 if let Err(e) = sender_clone.send(insert_command_event) {
                     log::error!("Error sending ModelEvent: {e:?}");
                 }
             })
             .detach();
     }
+
+    let shell_type = session.shell().shell_type();
+    let command = event.command.to_string();
+    ctx.background_executor()
+        .spawn(async move {
+            if let Err(e) = write_command_to_shell_history(shell_type, &command) {
+                log::debug!("Failed to write command to shell history: {}", e);
+            }
+        })
+        .detach();
 }
