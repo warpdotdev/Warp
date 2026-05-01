@@ -68,10 +68,22 @@ impl DiffGuard {
             .await
             .map_err(|e| DiffGuardError::GitFailed(e.to_string()))?;
         if !output.status.success() {
-            // No HEAD is also an error here; treat as zero-diff so we don't
-            // block the very first run before anything has been committed.
+            // Treat the following as zero-diff (no false-positive guard hits):
+            // - No HEAD yet (workspace has no commits).
+            // - Workspace isn't a git repo at all (no `git init` in hooks).
+            // The orchestrator records the situation in the audit log via
+            // tracing, so operators can still notice if it's unexpected.
             let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("unknown revision") || stderr.contains("ambiguous argument") {
+            let stderr_lower = stderr.to_lowercase();
+            if stderr_lower.contains("unknown revision")
+                || stderr_lower.contains("ambiguous argument")
+                || stderr_lower.contains("not a git repository")
+            {
+                tracing::debug!(
+                    workspace = %workspace_path.display(),
+                    stderr = %stderr.trim(),
+                    "diff guard: non-repo or no-HEAD workspace; treating as zero-diff"
+                );
                 return Ok(DiffStat {
                     insertions: 0,
                     deletions: 0,
@@ -163,5 +175,32 @@ mod tests {
     fn empty_input_zero() {
         let stat = parse_shortstat("");
         assert_eq!(stat.total(), 0);
+    }
+
+    #[tokio::test]
+    async fn non_git_workspace_returns_zero_diff() {
+        let tmp = tempfile::tempdir().unwrap();
+        let guard = DiffGuard::new(500);
+        let stat = guard.check(tmp.path()).await.expect("non-git should no-op");
+        assert_eq!(stat, DiffStat { insertions: 0, deletions: 0 });
+    }
+
+    #[tokio::test]
+    async fn fresh_git_repo_no_head_returns_zero_diff() {
+        let tmp = tempfile::tempdir().unwrap();
+        // git init but no commits yet
+        let _ = tokio::process::Command::new("git")
+            .arg("-C")
+            .arg(tmp.path())
+            .arg("init")
+            .arg("-q")
+            .output()
+            .await;
+        let guard = DiffGuard::new(500);
+        let stat = guard
+            .check(tmp.path())
+            .await
+            .expect("no-HEAD should no-op");
+        assert_eq!(stat, DiffStat { insertions: 0, deletions: 0 });
     }
 }
