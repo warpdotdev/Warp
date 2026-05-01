@@ -2170,18 +2170,16 @@ impl BlocklistAIController {
         self.pending_passive_suggestion_results
             .remove(&conversation_id);
 
-        let did_cancel_stream = self
+        if !self
             .in_flight_response_streams
-            .try_cancel_streams_for_conversation(conversation_id, reason, ctx);
-        if did_cancel_stream {
-            return;
+            .try_cancel_streams_for_conversation(conversation_id, reason, ctx)
+        {
+            // Otherwise, cancel pending actions and update the input state.
+            self.action_model.update(ctx, |action_model, ctx| {
+                action_model.cancel_all_pending_actions(conversation_id, Some(reason), ctx);
+            });
+            self.set_input_mode_for_cancellation(ctx);
         }
-
-        // Otherwise, cancel pending actions and update the input state.
-        self.action_model.update(ctx, |action_model, ctx| {
-            action_model.cancel_all_pending_actions(conversation_id, Some(reason), ctx);
-        });
-        self.set_input_mode_for_cancellation(ctx);
     }
 
     /// Clears finished action results for a conversation. Used when reverting.

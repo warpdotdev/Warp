@@ -3066,7 +3066,7 @@ impl AIBlock {
                 let view = ctx.add_typed_action_view(|ctx| {
                     let mut view = RequestedCommandView::new(
                         action_id.clone(),
-                        self.client_ids.conversation_id,
+                        self.client_ids.clone(),
                         RequestedActionViewType::Command,
                         self.model.clone(),
                         &self.action_model,
@@ -3200,7 +3200,7 @@ impl AIBlock {
                 let view = ctx.add_typed_action_view(|ctx| {
                     let mut view = RequestedCommandView::new(
                         action_id.clone(),
-                        self.client_ids.conversation_id,
+                        self.client_ids.clone(),
                         RequestedActionViewType::McpTool,
                         self.model.clone(),
                         &self.action_model,

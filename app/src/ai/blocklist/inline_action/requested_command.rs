@@ -23,7 +23,7 @@ use warpui::{
     ViewContext, ViewHandle,
 };
 
-use crate::ai::agent::{conversation::AIConversationId, AIAgentActionResult, AIAgentActionType};
+use crate::ai::agent::{AIAgentActionResult, AIAgentActionType};
 use warpui::{EntityId, EventContext};
 
 use crate::ai::agent::RequestCommandOutputResult;
@@ -34,7 +34,9 @@ use crate::ai::blocklist::block::cli_controller::{
 use crate::ai::blocklist::block::view_impl::output::action_icon;
 use crate::ai::blocklist::inline_action::inline_action_header::RightClickConfig;
 use crate::ai::blocklist::model::{AIBlockModel, AIBlockModelHelper};
-use crate::ai::blocklist::{AIBlock, BlocklistAIActionEvent, BlocklistAIHistoryModel};
+use crate::ai::blocklist::{
+    AIBlock, BlocklistAIActionEvent, BlocklistAIHistoryModel, ClientIdentifiers,
+};
 use crate::ai::{
     agent::{AIAgentActionId, AIAgentCitation, AIAgentOutputMessageType, CallMCPToolResult},
     blocklist::{
@@ -227,6 +229,7 @@ pub struct RequestedCommandView {
     position_id_prefix: String,
 
     action_id: AIAgentActionId,
+    client_ids: ClientIdentifiers,
     action_type: RequestedActionViewType,
     autonomy_setting_speedbump: AutonomySettingSpeedbump,
 
@@ -254,7 +257,7 @@ impl RequestedCommandView {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         action_id: AIAgentActionId,
-        conversation_id: AIConversationId,
+        client_ids: ClientIdentifiers,
         action_type: RequestedActionViewType,
         block_model: Rc<dyn AIBlockModel<View = AIBlock>>,
         action_model: &ModelHandle<BlocklistAIActionModel>,
@@ -422,6 +425,7 @@ impl RequestedCommandView {
                 };
             });
 
+            let conversation_id = client_ids.conversation_id;
             ctx.subscribe_to_model(
                 &BlocklistAIHistoryModel::handle(ctx),
                 move |_me, _, event, ctx| {
@@ -463,6 +467,7 @@ impl RequestedCommandView {
             is_accept_split_button_menu_open: false,
             accept_split_button_menu: accept_menu,
             action_id: action_id.clone(),
+            client_ids,
             action_type,
             is_editing: false,
             autonomy_setting_speedbump,
@@ -1477,9 +1482,33 @@ impl View for RequestedCommandView {
             theme.surface_2()
         };
 
-        // Remove the bottom margin only when the command details are rendered as the regular
-        // command block immediately below, so the expanded card remains visually connected.
-        let should_remove_bottom_margin = is_rendered_above_expanded_command_block;
+        // If the requested command state is completed and input isn't pinned to the top, we're
+        // going to have a regular block directly below this one with the output of the executed
+        // command. Since we can't control the top padding of the AI block that comes _after_ the
+        // subsequent regular block, we'll simply need to eliminate the bottom margin on this block
+        // and have the next AI block take care of the vertical spacing. Moreover, having a non-zero
+        // bottom margin while expanded will cause the body to look disconnected from the header.
+        let should_remove_bottom_margin = is_rendered_above_expanded_command_block
+            || ((self.action_type.is_requested_command() || self.action_type.is_mcp_tool())
+                && is_last_output_message_in_output
+                && BlocklistAIHistoryModel::as_ref(app)
+                    .conversation(&self.client_ids.conversation_id)
+                    .is_some_and(|conversation| {
+                        let mut exchanges = conversation.root_task_exchanges();
+                        while let Some(exchange) = exchanges.next() {
+                            if exchange.id == self.client_ids.client_exchange_id {
+                                // If the next exchange doesn't contain a user query, don't render bottom margin for continuity.
+                                return exchanges.next().is_some_and(|exchange| {
+                                    !exchange
+                                        .input
+                                        .iter()
+                                        .any(|input| input.user_query().is_some())
+                                });
+                            }
+                        }
+                        false
+                    })
+                && !is_input_pinned_to_top);
 
         let container = Container::new(content.finish())
             .with_margin_left(if is_rendered_above_expanded_command_block {

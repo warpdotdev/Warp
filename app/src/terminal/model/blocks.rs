@@ -1829,18 +1829,6 @@ impl BlockList {
         })
     }
 
-    pub fn has_active_user_controlled_long_running_command_for_conversation(
-        &self,
-        conversation_id: AIConversationId,
-    ) -> bool {
-        let active_block = self.active_block();
-        active_block.is_active_and_long_running()
-            && active_block.ai_conversation_id() == Some(conversation_id)
-            && active_block
-                .long_running_control_state()
-                .is_some_and(|state| state.is_user_in_control())
-    }
-
     /// Scans the block at `block_index` for secrets.
     pub fn scan_block_for_secrets(&mut self, block_index: BlockIndex) {
         if let Some(block) = self.blocks.get_mut(block_index.0) {

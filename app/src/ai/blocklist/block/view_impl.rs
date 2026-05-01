@@ -1036,11 +1036,6 @@ impl View for AIBlock {
         let terminal_model = self.terminal_model.lock();
         let shared_session_status = terminal_model.shared_session_status().clone();
         let is_conversation_transcript_viewer = terminal_model.is_conversation_transcript_viewer();
-        let has_active_user_controlled_long_running_command = terminal_model
-            .block_list()
-            .has_active_user_controlled_long_running_command_for_conversation(
-                self.conversation_id(),
-            );
         drop(terminal_model);
 
         contents.add_child(output::render(
@@ -1092,7 +1087,6 @@ impl View for AIBlock {
                 current_todo_list: self.current_todo_list(app),
                 finish_reason: self.finish_reason.as_ref(),
                 is_usage_footer_expanded: self.is_usage_footer_expanded,
-                has_active_user_controlled_long_running_command,
                 shared_session_status: &shared_session_status,
                 terminal_view_id: self.terminal_view_id,
                 is_conversation_transcript_viewer,
