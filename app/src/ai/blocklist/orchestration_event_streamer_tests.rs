@@ -226,16 +226,8 @@ fn restored_conversations_skip_v2_streaming_when_orchestration_v2_disabled() {
 
         streamer.read(&app, |me, _| {
             assert!(
-                !me.event_cursor.contains_key(&conversation_id),
-                "V2-disabled restore must not initialize event cursors"
-            );
-            assert!(
-                !me.watched_run_ids.contains_key(&conversation_id),
-                "V2-disabled restore must not register watched run ids"
-            );
-            assert!(
-                me.sse_connections.is_empty(),
-                "V2-disabled restore must not open SSE connections"
+                me.streams.is_empty(),
+                "V2-disabled restore must not initialize stream state"
             );
         });
     });

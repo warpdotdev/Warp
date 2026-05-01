@@ -287,7 +287,10 @@ fn ambient_child_session_state(
         .expect("child pane should have a terminal view");
     let terminal_view_ref = terminal_view.as_ref(ctx);
     let active_conversation_id = terminal_view_ref.active_conversation_id(ctx);
-    let ambient_model = terminal_view_ref.ambient_agent_view_model().as_ref(ctx);
+    let ambient_model = terminal_view_ref
+        .ambient_agent_view_model()
+        .expect("child pane should have an ambient agent model")
+        .as_ref(ctx);
 
     (
         ambient_model.task_id(),
