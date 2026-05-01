@@ -541,6 +541,14 @@ define_settings_group!(TabSettings, settings: [
     directory_tab_colors: DirectoryTabColors,
 ]);
 
+/// Which side of the terminal the vertical tabs panel is displayed on.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum VerticalTabsPanelSide {
+    #[default]
+    Left,
+    Right,
+}
+
 #[cfg(test)]
 #[path = "tab_settings_tests.rs"]
 mod tests;

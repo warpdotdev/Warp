@@ -41,9 +41,10 @@ use crate::util::bindings::keybinding_name_to_display_string;
 use crate::util::color::Opacity;
 use crate::workspace::action::WorkspaceAction;
 use crate::workspace::hoa_onboarding::HoaOnboardingStep;
+use crate::workspace::header_toolbar_item::HeaderToolbarItemKind;
 use crate::workspace::tab_settings::{
     TabSettings, VerticalTabsCompactSubtitle, VerticalTabsDisplayGranularity,
-    VerticalTabsPrimaryInfo, VerticalTabsTabItemMode, VerticalTabsViewMode,
+    VerticalTabsPanelSide, VerticalTabsPrimaryInfo, VerticalTabsTabItemMode, VerticalTabsViewMode,
 };
 use crate::workspace::{
     PaneViewLocator, TabBarLocation, TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget,
@@ -594,6 +595,8 @@ pub(super) struct VerticalTabsPanelState {
     show_pr_link_info_tooltip_mouse_state: MouseStateHandle,
     show_diff_stats_mouse_state: MouseStateHandle,
     show_details_on_hover_mouse_state: MouseStateHandle,
+    panel_side_left_mouse_state: MouseStateHandle,
+    panel_side_right_mouse_state: MouseStateHandle,
     pub(super) show_settings_popup: bool,
 }
 
@@ -629,6 +632,8 @@ impl Default for VerticalTabsPanelState {
             show_pr_link_info_tooltip_mouse_state: Default::default(),
             show_diff_stats_mouse_state: Default::default(),
             show_details_on_hover_mouse_state: Default::default(),
+            panel_side_left_mouse_state: Default::default(),
+            panel_side_right_mouse_state: Default::default(),
             show_settings_popup: false,
         }
     }
@@ -4669,6 +4674,81 @@ pub(super) fn render_settings_popup(
         appearance,
         theme,
     ));
+
+    let current_panel_side =
+        if TabSettings::as_ref(app)
+            .header_toolbar_chip_selection
+            .left_items()
+            .contains(&HeaderToolbarItemKind::TabsPanel)
+        {
+            VerticalTabsPanelSide::Left
+        } else {
+            VerticalTabsPanelSide::Right
+        };
+
+    let position_header = Container::new(
+        Text::new_inline(
+            "Position".to_string(),
+            appearance.ui_font_family(),
+            SETTINGS_POPUP_MENU_ITEM_FONT_SIZE,
+        )
+        .with_color(sub_text.into())
+        .finish(),
+    )
+    .with_horizontal_padding(16.)
+    .with_margin_bottom(4.)
+    .finish();
+
+    let position_segmented_control = Container::new(
+        Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Expanded::new(
+                    1.,
+                    render_popup_panel_side_segment(
+                        "Left",
+                        matches!(current_panel_side, VerticalTabsPanelSide::Left),
+                        state.panel_side_left_mouse_state.clone(),
+                        VerticalTabsPanelSide::Left,
+                        appearance,
+                        theme,
+                    ),
+                )
+                .finish(),
+            )
+            .with_child(
+                Expanded::new(
+                    1.,
+                    render_popup_panel_side_segment(
+                        "Right",
+                        matches!(current_panel_side, VerticalTabsPanelSide::Right),
+                        state.panel_side_right_mouse_state.clone(),
+                        VerticalTabsPanelSide::Right,
+                        appearance,
+                        theme,
+                    ),
+                )
+                .finish(),
+            )
+            .finish(),
+    )
+    .with_uniform_padding(4.)
+    .with_background(internal_colors::fg_overlay_2(theme))
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+        SETTINGS_POPUP_CORNER_RADIUS,
+    )))
+    .finish();
+
+    popup_col.add_child(make_divider(theme));
+    popup_col.add_child(position_header);
+    popup_col.add_child(
+        Container::new(position_segmented_control)
+            .with_horizontal_padding(16.)
+            .with_padding_bottom(4.)
+            .finish(),
+    );
+
     EventHandler::new(
         ConstrainedBox::new(
             Container::new(popup_col.finish())
@@ -5021,6 +5101,46 @@ fn render_popup_text_segment(
         ctx.dispatch_typed_action(WorkspaceAction::SetVerticalTabsDisplayGranularity(
             granularity,
         ));
+    })
+    .with_cursor(Cursor::PointingHand)
+    .finish()
+}
+
+fn render_popup_panel_side_segment(
+    label: &str,
+    is_selected: bool,
+    mouse_state: MouseStateHandle,
+    side: VerticalTabsPanelSide,
+    appearance: &Appearance,
+    theme: &WarpTheme,
+) -> Box<dyn Element> {
+    let label = label.to_string();
+    let main_text = theme.main_text_color(theme.background());
+    let sub_text = theme.sub_text_color(theme.background());
+    Hoverable::new(mouse_state, move |hover_state| {
+        let background = if is_selected {
+            internal_colors::fg_overlay_3(theme)
+        } else if hover_state.is_hovered() {
+            internal_colors::fg_overlay_1(theme)
+        } else {
+            ThemeFill::Solid(ColorU::transparent_black())
+        };
+
+        Container::new(
+            Align::new(
+                Text::new_inline(label.clone(), appearance.ui_font_family(), 14.)
+                    .with_color(if is_selected { main_text } else { sub_text }.into())
+                    .finish(),
+            )
+            .finish(),
+        )
+        .with_background(background)
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .with_vertical_padding(2.)
+        .finish()
+    })
+    .on_click(move |ctx, _, _| {
+        ctx.dispatch_typed_action(WorkspaceAction::SetVerticalTabsPanelSide(side));
     })
     .with_cursor(Cursor::PointingHand)
     .finish()

@@ -40,8 +40,8 @@ use warpui::{EntityId, WeakViewHandle, WindowId};
 
 use super::global_actions::{ForkFromExchange, ForkedConversationDestination};
 use super::tab_settings::{
-    VerticalTabsCompactSubtitle, VerticalTabsDisplayGranularity, VerticalTabsPrimaryInfo,
-    VerticalTabsTabItemMode, VerticalTabsViewMode,
+    VerticalTabsCompactSubtitle, VerticalTabsDisplayGranularity, VerticalTabsPanelSide,
+    VerticalTabsPrimaryInfo, VerticalTabsTabItemMode, VerticalTabsViewMode,
 };
 use super::view::{OnboardingTutorial, WorkspaceBanner};
 
@@ -278,6 +278,8 @@ pub enum WorkspaceAction {
     SetVerticalTabsViewMode(VerticalTabsViewMode),
     SetVerticalTabsPrimaryInfo(VerticalTabsPrimaryInfo),
     SetVerticalTabsCompactSubtitle(VerticalTabsCompactSubtitle),
+    /// Moves the vertical tabs panel to the specified side of the terminal.
+    SetVerticalTabsPanelSide(VerticalTabsPanelSide),
     ToggleVerticalTabsShowPrLink,
     ToggleVerticalTabsShowDiffStats,
     ToggleVerticalTabsShowDetailsOnHover,
@@ -843,6 +845,7 @@ impl WorkspaceAction {
             | SetVerticalTabsViewMode(_)
             | SetVerticalTabsPrimaryInfo(_)
             | SetVerticalTabsCompactSubtitle(_)
+            | SetVerticalTabsPanelSide(_)
             | ToggleVerticalTabsShowPrLink
             | ToggleVerticalTabsShowDiffStats
             | ToggleVerticalTabsShowDetailsOnHover

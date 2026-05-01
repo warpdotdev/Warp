@@ -433,7 +433,7 @@ use super::{ActiveSession, TabBarDropTargetData, TabBarLocation};
 
 use super::tab_settings::{
     HeaderToolbarChipSelection, NewTabPlacement, TabSettings, TabSettingsChangedEvent,
-    VerticalTabsDisplayGranularity, WorkspaceDecorationVisibility,
+    VerticalTabsDisplayGranularity, VerticalTabsPanelSide, WorkspaceDecorationVisibility,
 };
 use super::util::{
     PaneViewLocator, TabMovement, TerminalSessionFallbackBehavior, WelcomeTipsViewState,
@@ -20483,6 +20483,40 @@ impl TypedActionView for Workspace {
                     ),
                     ctx
                 );
+                ctx.notify();
+            }
+            SetVerticalTabsPanelSide(side) => {
+                let side = *side;
+                let config = TabSettings::as_ref(ctx)
+                    .header_toolbar_chip_selection
+                    .clone();
+                let mut left_items = config.left_items();
+                let mut right_items = config.right_items();
+                left_items.retain(|i| i != &HeaderToolbarItemKind::TabsPanel);
+                right_items.retain(|i| i != &HeaderToolbarItemKind::TabsPanel);
+                match side {
+                    VerticalTabsPanelSide::Left => {
+                        left_items.insert(0, HeaderToolbarItemKind::TabsPanel);
+                    }
+                    VerticalTabsPanelSide::Right => {
+                        right_items.insert(0, HeaderToolbarItemKind::TabsPanel);
+                    }
+                }
+                let selection = if left_items == HeaderToolbarItemKind::default_left()
+                    && right_items == HeaderToolbarItemKind::default_right()
+                {
+                    HeaderToolbarChipSelection::Default
+                } else {
+                    HeaderToolbarChipSelection::Custom {
+                        left: left_items,
+                        right: right_items,
+                    }
+                };
+                TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .header_toolbar_chip_selection
+                        .set_value(selection, ctx));
+                });
                 ctx.notify();
             }
             ToggleVerticalTabsShowPrLink => {
