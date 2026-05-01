@@ -627,6 +627,8 @@ default = [
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
 # substantially slow down program execution.
+cap_active_block_height = []
+compact_progress_lines = []
 dhat_heap_profiling = ["dep:dhat"]
 dynamic_workflow_enums = []
 editable_markdown_mermaid = []

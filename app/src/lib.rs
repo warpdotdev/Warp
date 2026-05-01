@@ -2883,6 +2883,10 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ConfigurableContextWindow,
         #[cfg(feature = "handoff_cloud_cloud")]
         FeatureFlag::HandoffCloudCloud,
+        #[cfg(feature = "cap_active_block_height")]
+        FeatureFlag::CapActiveBlockHeight,
+        #[cfg(feature = "compact_progress_lines")]
+        FeatureFlag::CompactProgressLines,
     ]);
 
     flags

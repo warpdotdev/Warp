@@ -7927,10 +7927,20 @@ impl TerminalView {
         }
 
         // For simplicity, we simply rescan the entire block for block filter matches.
-        self.model
-            .lock()
-            .block_list_mut()
-            .maybe_refilter_active_block_output();
+        // We also update block heights in the same lock acquisition to reduce
+        // FairMutex contention with the PTY reader thread.
+        {
+            let mut model = self.model.lock();
+            model.block_list_mut().maybe_refilter_active_block_output();
+
+            // The active block height could have changed since the last time it was calculated, as
+            // one cause of the Wakeup signal is the long-running process timer. Make sure that the
+            // model is up-to-date with the current height information.
+            if !model.is_alt_screen_active() {
+                model.block_list_mut().update_background_block_height();
+                model.block_list_mut().update_active_block_height();
+            }
+        }
 
         // If the block filter editor is open on an active block we update the
         // number of line matches.
@@ -7948,14 +7958,6 @@ impl TerminalView {
             }
         }
 
-        // The active block height could have changed since the last time it was calculated, as
-        // one cause of the Wakeup signal is the long-running process timer. Make sure that the
-        // model is up-to-date with the current height information.
-        if !self.model.lock().is_alt_screen_active() {
-            let mut model = self.model.lock();
-            model.block_list_mut().update_background_block_height();
-            model.block_list_mut().update_active_block_height();
-        }
         self.maybe_emit_terminal_view_state_changed_for_long_running_block(ctx);
         self.use_agent_footer.update(ctx, |footer, ctx| {
             footer.notify_and_notify_children(ctx);

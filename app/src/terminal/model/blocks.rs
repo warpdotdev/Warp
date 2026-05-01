@@ -351,6 +351,13 @@ pub struct BlockList {
     /// removed and re-appended so it stays last.
     pinned_to_bottom: Option<EntityId>,
     is_executing_oz_environment_startup_commands: bool,
+
+    /// Cache of the last computed active block height. When
+    /// `CompactProgressLines` is enabled, `update_live_block_height`
+    /// will skip the SumTree rebuild if the height hasn't changed.
+    /// This avoids O(log N) tree operations per frame during
+    /// CR-based progress output where the block height is stable.
+    last_active_block_height: Option<Lines>,
 }
 
 #[cfg(debug_assertions)]
@@ -646,7 +653,7 @@ impl BlockList {
             agent_view_state: AgentViewState::Inactive,
             pinned_to_bottom: None,
             is_executing_oz_environment_startup_commands: false,
-        }
+            last_active_block_height: None,
     }
 
     /// Must be called before the model is used. Even if no blocks are to be restored,
@@ -1725,13 +1732,52 @@ impl BlockList {
             None => Lines::zero(),
         };
         let block_height = if let Some(block) = self.block_at(block_index) {
-            block.height(&self.agent_view_state).into()
+            let height: Lines = block.height(&self.agent_view_state).into();
+
+            // When the CapActiveBlockHeight feature flag is enabled and the block
+            // is still executing (active), cap its reported height to the viewport
+            // rows. This prevents expensive SumTree/BiMap rebuilds on every frame
+            // when long-running commands produce large amounts of output (e.g.
+            // git clone with progress bars).
+            //
+            // The full output is still stored in FlatStorage for scrollback; only
+            // the block_heights SumTree entry is capped. When the block finishes,
+            // the final height is computed from the full grid contents.
+            if FeatureFlag::CapActiveBlockHeight.is_enabled()
+                && !block.finished()
+                && block.is_executing()
+            {
+                let viewport_rows = self.size.rows().into_lines();
+                height.min(viewport_rows)
+            } else {
+                height
+            }
         } else {
             log::error!(
                 "Tried to update height of block at {block_index:?}, but no such block exists"
             );
             return;
         };
+
+        // When the CompactProgressLines feature flag is enabled and the
+        // block is still executing, skip the expensive SumTree rebuild if
+        // the height hasn't changed since the last update. This is the
+        // common case during CR-based progress output (e.g. git clone),
+        // where carriage returns overwrite the same line in-place without
+        // adding rows.
+        if FeatureFlag::CompactProgressLines.is_enabled() {
+            let is_active_executing = self
+                .block_at(block_index)
+                .is_some_and(|block| !block.finished() && block.is_executing());
+            if is_active_executing && self.last_active_block_height == Some(block_height) {
+                return;
+            }
+            if is_active_executing {
+                self.last_active_block_height = Some(block_height);
+            } else {
+                self.last_active_block_height = None;
+            }
+        }
 
         self.block_heights = {
             let mut cursor = self.block_heights.cursor::<BlockIndex, ()>();
