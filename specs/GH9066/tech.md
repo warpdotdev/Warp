@@ -1,0 +1,366 @@
+# TECH.md — Support Kiro CLI Agent Integration in Warp
+
+Issue: https://github.com/warpdotdev/warp/issues/9066
+Product spec: `specs/GH9066/product.md`
+
+## Context
+
+Warp's CLI agent integration is built around the `CLIAgent` enum
+(`app/src/terminal/cli_agent.rs`). Every supported agent is a variant of that
+enum. The enum drives:
+
+- Command detection (matching the first token of a terminal command against
+  `command_prefix()`).
+- Display (logo icon, brand color, display name).
+- Plugin management (install/update instructions, version checks, auto-install).
+- Skill support (which `SkillProvider` variants are shown in the rich input
+  slash menu).
+- Telemetry (`CLIAgentType` in `app/src/server/telemetry/events.rs`).
+- Shared session serialization (`to_serialized_name` / `from_serialized_name`).
+
+Adding a new agent requires touching a fixed set of files, all following the
+same pattern established by Claude, Codex, Gemini, Amp, and the others. No
+changes to the session model, event system, rich input, or footer rendering are
+needed — those are generic over `CLIAgent`.
+
+Relevant files:
+
+- `app/src/terminal/cli_agent.rs` — `CLIAgent` enum and all its `impl` blocks.
+  Lines 116–350 (approximately). Every `match self` arm must be extended.
+- `app/src/terminal/cli_agent_sessions/plugin_manager/mod.rs` — factory that
+  maps `CLIAgent` variants to `CliAgentPluginManager` trait objects. Lines 1–30
+  (module declarations) and the factory `match` (lines ~60–80).
+- `app/src/terminal/cli_agent_sessions/plugin_manager/codex.rs` — reference
+  implementation for a simple plugin manager (no auto-install, manual steps
+  only). New `kiro.rs` follows this pattern.
+- `app/src/server/telemetry/events.rs` — `CLIAgentType` enum at line 491.
+- `crates/warp_core/src/features.rs` — `FeatureFlag` enum. New feature flag
+  gates the Kiro variant until the plugin is ready for general availability.
+- `app/src/ui_components/icons.rs` (or the equivalent icon registry) — `Icon`
+  enum. A `KiroLogo` variant is needed.
+- `app/src/settings_view/ai_page.rs` — the file that renders the "Third party
+  CLI agents" subpage (navigated to via Settings → Agents → Third party CLI
+  agents in the UI; the sidebar umbrella label is "Agents", defined in
+  `app/src/settings_view/mod.rs`). The agent-assignment dropdown is populated by
+  iterating `all::<CLIAgent>()` (via `enum_iterator::Sequence`) at line ~2121,
+  filtering out `CLIAgent::Unknown`. There is no per-agent documentation link
+  rendered in this UI; entries are driven entirely by `agent.display_name()` and
+  `agent.icon()`. No explicit change to this file is needed beyond the enum
+  addition, but the page must be verified to render the new entry correctly in
+  the dropdown and to exclude `CLIAgent::Kiro` when the feature flag is disabled
+  (see feature flag section below).
+
+## Proposed changes
+
+### 1. Add `CLIAgent::Kiro` to the enum and implement all match arms
+
+In `app/src/terminal/cli_agent.rs`:
+
+```rust
+pub enum CLIAgent {
+    Claude,
+    Gemini,
+    Codex,
+    // ... existing variants ...
+    Kiro,   // ← new
+    Unknown,
+}
+```
+
+Implement every exhaustive `match self` arm (exhaustive matching is required by
+the codebase's coding standards — no `_` wildcards):
+
+| Method | Value |
+|--------|-------|
+| `command_prefix` | `"kiro"` |
+| `display_name` | `"Kiro"` |
+| `icon` | `Some(Icon::KiroLogo)` |
+| `brand_color` | `Some(KIRO_COLOR)` — see color note below |
+| `brand_icon_color` | `ColorU::white()` (default) |
+| `supported_skill_providers` | `&[SkillProvider::Agents]` |
+| `skill_command_prefix` | `"/"` (default, no arm needed if using `_`) — but add explicit arm per exhaustive-match rule |
+| `supports_bash_mode` | `false` (not confirmed supported; add to the `matches!` list if confirmed later) |
+
+**Brand color**: Kiro's brand uses a blue-purple (`#5B4FE8` approximately, from
+kiro.dev). Define a constant:
+
+```rust
+const KIRO_COLOR: ColorU = ColorU {
+    r: 91,
+    g: 79,
+    b: 232,
+    a: 255,
+};
+```
+
+Confirm the exact hex against the Kiro brand guide before merging; the value
+above is a reasonable starting point from the kiro.dev website.
+
+### 2. Add `Icon::KiroLogo` to the icon registry
+
+In `app/src/ui_components/icons.rs` (or wherever `Icon` is defined), add:
+
+```rust
+KiroLogo,
+```
+
+The icon asset (SVG or bundled image) must be added to `app/assets/` following
+the same pattern as `ClaudeLogo`, `GeminiLogo`, etc. The asset path and
+embedding macro call follow the existing pattern in the icon registry.
+
+### 3. Add `CLIAgentType::Kiro` to the telemetry enum
+
+In `app/src/server/telemetry/events.rs`, extend `CLIAgentType`:
+
+```rust
+pub enum CLIAgentType {
+    // ... existing variants ...
+    Kiro,
+}
+```
+
+Update the conversion from `CLIAgent` to `CLIAgentType` (wherever that mapping
+lives — typically a `From<CLIAgent>` impl or a match in the telemetry module) to
+map `CLIAgent::Kiro => CLIAgentType::Kiro`.
+
+### 4. Add a feature flag
+
+In `crates/warp_core/src/features.rs`, add:
+
+```rust
+pub enum FeatureFlag {
+    // ... existing variants ...
+    KiroCLIAgent,
+}
+```
+
+Gate the `CLIAgent::Kiro` variant's detection in the command-matching path
+behind `FeatureFlag::KiroCLIAgent.is_enabled()`. This allows the feature to be
+enabled in dogfood/preview before stable release, consistent with how other
+agents were rolled out. Add `FeatureFlag::KiroCLIAgent` to `DOGFOOD_FLAGS`
+initially.
+
+**Important — all enum-iteration surfaces must be gated, not just command
+detection.** Adding `CLIAgent::Kiro` to the enum automatically exposes it
+through every consumer of `enum_iterator::all::<CLIAgent>()`. There are two
+additional surfaces that must be gated:
+
+1. **`CLIAgent::detect()` in `app/src/terminal/cli_agent.rs`** — the
+   `enum_iterator::all::<CLIAgent>()` loop that matches commands. Add a
+   `.filter()` step to exclude `CLIAgent::Kiro` when the flag is off:
+
+   ```rust
+   enum_iterator::all::<CLIAgent>()
+       .filter(|agent| !matches!(agent, CLIAgent::Unknown))
+       .filter(|agent| {
+           !matches!(agent, CLIAgent::Kiro)
+               || FeatureFlag::KiroCLIAgent.is_enabled()
+       })
+       .find(|agent| { ... })
+   ```
+
+2. **Settings dropdown in `app/src/settings_view/ai_page.rs`** — the
+   `for agent in all::<CLIAgent>()` loop at line ~2121 that populates the
+   agent-assignment dropdown. Add the same guard:
+
+   ```rust
+   for agent in all::<CLIAgent>() {
+       if matches!(agent, CLIAgent::Unknown) {
+           continue;
+       }
+       if matches!(agent, CLIAgent::Kiro) && !FeatureFlag::KiroCLIAgent.is_enabled() {
+           continue;
+       }
+       // ... existing item construction
+   }
+   ```
+
+3. **`plugin_manager_for_with_shell()` in
+   `app/src/terminal/cli_agent_sessions/plugin_manager/mod.rs`** — the factory
+   match already uses per-agent feature flag guards (e.g.
+   `CLIAgent::Codex if FeatureFlag::CodexNotifications.is_enabled() && ...`).
+   Follow the same pattern for Kiro:
+
+   ```rust
+   CLIAgent::Kiro if FeatureFlag::KiroCLIAgent.is_enabled() => {
+       Some(Box::new(kiro::KiroPluginManager))
+   }
+   ```
+
+   The catch-all `CLIAgent::Kiro` arm (flag disabled) falls through to `None`,
+   consistent with how other agents behave when their flag is off.
+
+### 5. Add the Kiro plugin manager
+
+Create `app/src/terminal/cli_agent_sessions/plugin_manager/kiro.rs`:
+
+```rust
+use std::sync::LazyLock;
+
+use async_trait::async_trait;
+
+use super::{CliAgentPluginManager, PluginInstructionStep, PluginInstructions};
+
+pub(super) struct KiroPluginManager;
+
+#[async_trait]
+impl CliAgentPluginManager for KiroPluginManager {
+    fn minimum_plugin_version(&self) -> &'static str {
+        "0.0.0"  // Update when the Warp plugin for Kiro is published
+    }
+
+    fn can_auto_install(&self) -> bool {
+        false  // Manual install until the plugin is stable
+    }
+
+    fn supports_update(&self) -> bool {
+        false
+    }
+
+    fn install_instructions(&self) -> &'static PluginInstructions {
+        &INSTALL_INSTRUCTIONS
+    }
+
+    fn update_instructions(&self) -> &'static PluginInstructions {
+        &EMPTY_INSTRUCTIONS
+    }
+}
+
+static INSTALL_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| {
+    PluginInstructions {
+        title: "Enable Warp Integration for Kiro",
+        subtitle: "Install the Kiro CLI and enable Warp integration to get real-time status tracking while you work.",
+        steps: &[
+            PluginInstructionStep {
+                description: "Install the Kiro CLI. Follow the instructions on the Kiro download page.",
+                command: "",
+                executable: false,
+                link: Some("https://kiro.dev/downloads/"),
+            },
+            PluginInstructionStep {
+                description: "Verify the installation.",
+                command: "kiro --version",
+                executable: true,
+                link: None,
+            },
+        ],
+        post_install_notes: &[
+            "Restart your terminal session after installation.",
+        ],
+    }
+});
+
+static EMPTY_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| {
+    PluginInstructions {
+        title: "",
+        subtitle: "",
+        steps: &[],
+        post_install_notes: &[],
+    }
+});
+```
+
+Create the corresponding test file
+`app/src/terminal/cli_agent_sessions/plugin_manager/kiro_tests.rs` following
+the pattern in `codex_tests.rs`.
+
+In `app/src/terminal/cli_agent_sessions/plugin_manager/mod.rs`, add:
+
+```rust
+pub(crate) mod kiro;
+```
+
+And extend the factory `match` that maps `CLIAgent` to a `Box<dyn
+CliAgentPluginManager>` to include:
+
+```rust
+CLIAgent::Kiro => Box::new(kiro::KiroPluginManager),
+```
+
+**Note on the Warp plugin protocol**: The Kiro CLI must emit structured JSON
+events to stdout (the same `SessionStart`, `PromptSubmit`, `Stop`,
+`PermissionRequest`, `QuestionAsked`, `PermissionReplied`, `ToolComplete`,
+`IdlePrompt` event types defined in
+`app/src/terminal/cli_agent_sessions/event/`) for status tracking to work. If
+Kiro CLI does not yet support this protocol, the plugin manager should set
+`can_auto_install = false` and `minimum_plugin_version = "0.0.0"` (as above),
+and the install instructions should be updated once the protocol is supported.
+The footer and rich input work without the plugin; only status tracking requires
+it.
+
+## End-to-end flow
+
+1. User runs `kiro` in a Warp terminal pane.
+2. `FeatureFlag::KiroCLIAgent.is_enabled()` → true (in dogfood/preview).
+3. Command detection matches `"kiro"` → `CLIAgent::Kiro`.
+4. `CLIAgentSessionsModel::set_session` creates a new session with
+   `agent: CLIAgent::Kiro`, `status: InProgress`.
+5. The terminal view renders the Kiro-branded footer (logo from `Icon::KiroLogo`,
+   brand color `KIRO_COLOR`).
+6. If the Warp plugin is installed and emitting events, `CLIAgentSessionListener`
+   parses them and calls `CLIAgentSessionsModel::update_from_event`, updating
+   status in real time.
+7. If the plugin is not installed, the footer shows the install instructions
+   pane from `KiroPluginManager::install_instructions()`.
+8. Ctrl-G opens the rich input composer; submitting sends the prompt to the PTY.
+9. When `kiro` exits, `remove_session` is called and the footer disappears.
+
+## Testing and validation
+
+- `cargo fmt` and `cargo clippy --workspace --all-targets --all-features --tests
+  -- -D warnings` must pass.
+- `cargo nextest run --no-fail-fast --workspace --exclude command-signatures-v2`
+  must pass. In particular:
+  - `CLIAgent::Kiro` must be covered by any existing exhaustive-match tests in
+    `app/src/terminal/cli_agent_tests.rs` (if present) or
+    `app/src/terminal/cli_agent_sessions/mod_tests.rs`.
+  - `kiro_tests.rs` must include at minimum a smoke test that
+    `KiroPluginManager::install_instructions()` returns a non-empty title and at
+    least one step, mirroring `codex_tests.rs`.
+  - The `CLIAgentType` conversion test (if one exists) must cover `Kiro`.
+
+Behavior-to-verification mapping (from `product.md`):
+
+| Behavior | Verification |
+|----------|-------------|
+| #1 — detection | Run `kiro` in a Warp pane with the feature flag enabled; confirm `CLIAgentSessionsModel` has an active session. |
+| #2 — footer | Confirm the Kiro logo and brand color appear in the footer. |
+| #3, #4 — rich input | Press Ctrl-G; type a prompt; confirm it is sent to the PTY. |
+| #5 — status tracking | With the plugin installed and emitting events, confirm the footer status updates. |
+| #6, #7 — install/update instructions | With the plugin absent or outdated, confirm the instructions pane renders with the correct steps. |
+| #8 — settings page | Open Settings → Agents → Third party CLI agents; confirm Kiro appears in the list. |
+| #9 — telemetry | Confirm `CLIAgentType::Kiro` events are emitted on session start/end. |
+| #11 — shared sessions | Confirm `CLIAgent::Kiro.to_serialized_name() == "Kiro"` and `CLIAgent::from_serialized_name("Kiro") == CLIAgent::Kiro`. |
+| #12 — not Unknown | Confirm `kiro` does not fall through to `CLIAgent::Unknown`. |
+| #13 — no regressions | Run the full test suite; confirm no existing agent tests fail. |
+
+## Risks and mitigations
+
+- **Plugin protocol not yet supported by Kiro CLI**: The footer and rich input
+  work without the plugin. Status tracking degrades gracefully to "no status"
+  rather than breaking. The install instructions pane is shown but can be
+  dismissed. This is the same degraded-mode behavior as other agents before
+  their plugins were available.
+- **Brand color accuracy**: The `KIRO_COLOR` constant should be confirmed
+  against the official Kiro brand guide before the PR is merged. An incorrect
+  color is a cosmetic issue only and does not affect functionality.
+- **Exhaustive match compile errors**: Adding `CLIAgent::Kiro` will cause
+  compile errors at every `match self` that lacks a `Kiro` arm. This is
+  intentional — the compiler enforces completeness. All arms must be added
+  before the build passes.
+- **Feature flag rollout**: Starting in `DOGFOOD_FLAGS` means the feature is
+  only visible to internal users until explicitly promoted to `PREVIEW_FLAGS`
+  and then `RELEASE_FLAGS`. This is the standard rollout path.
+
+## Follow-ups
+
+- Once the Kiro CLI publishes a Warp plugin that emits the structured event
+  protocol, update `minimum_plugin_version`, `can_auto_install`, and
+  `install_instructions` in `kiro.rs` to enable auto-install and real-time
+  status tracking.
+- Promote `FeatureFlag::KiroCLIAgent` from `DOGFOOD_FLAGS` to `PREVIEW_FLAGS`
+  and then `RELEASE_FLAGS` once the integration is validated.
+- If Kiro CLI adds support for bash mode (`!` prefix in rich input), add
+  `CLIAgent::Kiro` to the `supports_bash_mode` match arm.
+- Consider adding `SkillProvider::Kiro` if Kiro CLI develops a native skill
+  format distinct from the generic `SkillProvider::Agents` format.
