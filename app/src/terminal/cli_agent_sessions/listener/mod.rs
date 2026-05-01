@@ -54,10 +54,10 @@ pub fn is_agent_supported(agent: &CLIAgent) -> bool {
 fn create_handler(agent: &CLIAgent) -> Option<Box<dyn CLIAgentSessionHandler>> {
     match agent {
         // Pi and Auggie are supported via community-maintained plugins, such as
-        // auggie-warp (https://github.com/augmentmoogi/auggie-warp), which emit
-        // the same structured OSC 777 events as the first-party
-        // Claude/OpenCode/Gemini plugins. We don't ship install flows for them —
-        // we just listen.
+        // auggie-warp (https://github.com/augmentmoogi/auggie-warp) and pi-mono
+        // (https://github.com/badlogic/pi-mono), which emit the same structured
+        // OSC 777 events as the first-party Claude/OpenCode/Gemini plugins. We
+        // don't ship install flows for them — we just listen.
         CLIAgent::Claude
         | CLIAgent::OpenCode
         | CLIAgent::Gemini
