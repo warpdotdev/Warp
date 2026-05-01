@@ -2933,7 +2933,7 @@ impl Workspace {
                 // Update transcript details if task or conversation data is updated
                 AgentConversationsModelEvent::NewTasksReceived
                 | AgentConversationsModelEvent::TasksUpdated
-                | AgentConversationsModelEvent::ConversationUpdated
+                | AgentConversationsModelEvent::ConversationUpdated { .. }
                 | AgentConversationsModelEvent::ConversationArtifactsUpdated { .. } => {
                     me.update_transcript_details_panel_data(ctx);
                 }

@@ -869,9 +869,34 @@ pub enum AgentConversationsModelEvent {
     /// Existing task data may have been updated (e.g., state changes).
     TasksUpdated,
     /// Conversation status data was updated
-    ConversationUpdated,
+    ConversationUpdated {
+        conversation_id: AIConversationId,
+        kind: ConversationUpdateKind,
+    },
     /// Conversation artifacts were updated (plans, PRs, etc.)
     ConversationArtifactsUpdated { conversation_id: AIConversationId },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversationUpdateKind {
+    /// The conversation was re-loaded into a terminal view.
+    Restored,
+    /// The conversation's status was set.
+    StatusSet {
+        prev_filter: StatusFilter,
+        new_filter: StatusFilter,
+    },
+}
+
+/// Maps a `ConversationStatus` to its `StatusFilter` bucket.
+pub(crate) fn conversation_status_filter(status: &ConversationStatus) -> StatusFilter {
+    match status {
+        ConversationStatus::InProgress => StatusFilter::Working,
+        ConversationStatus::Success => StatusFilter::Done,
+        ConversationStatus::Error
+        | ConversationStatus::Cancelled
+        | ConversationStatus::Blocked { .. } => StatusFilter::Failed,
+    }
 }
 
 impl Entity for AgentConversationsModel {
@@ -1435,8 +1460,30 @@ impl AgentConversationsModel {
             }
 
             // Status changes - just trigger re-render since status is looked up at render time
-            BlocklistAIHistoryEvent::UpdatedConversationStatus { .. } => {
-                ctx.emit(AgentConversationsModelEvent::ConversationUpdated);
+            BlocklistAIHistoryEvent::UpdatedConversationStatus {
+                conversation_id,
+                is_restored,
+                prev_status,
+                new_status,
+                ..
+            } => {
+                let kind = if *is_restored {
+                    ConversationUpdateKind::Restored
+                } else {
+                    let new_filter = conversation_status_filter(new_status);
+                    let prev_filter = prev_status
+                        .as_ref()
+                        .map(conversation_status_filter)
+                        .unwrap_or(new_filter);
+                    ConversationUpdateKind::StatusSet {
+                        prev_filter,
+                        new_filter,
+                    }
+                };
+                ctx.emit(AgentConversationsModelEvent::ConversationUpdated {
+                    conversation_id: *conversation_id,
+                    kind,
+                });
             }
 
             // Artifact changes - sync live artifacts into the cached task and notify.

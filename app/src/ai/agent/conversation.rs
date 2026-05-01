@@ -673,11 +673,15 @@ impl AIConversation {
         } else {
             None
         };
+        let prev_status = self.status.clone();
+        let new_status = status.clone();
         self.status = status;
         ctx.emit(BlocklistAIHistoryEvent::UpdatedConversationStatus {
             conversation_id: self.id,
             terminal_view_id,
             is_restored: false,
+            prev_status: Some(prev_status),
+            new_status,
         });
     }
 

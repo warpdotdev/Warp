@@ -682,6 +682,7 @@ impl BlocklistAIHistoryModel {
                 }
             }
 
+            let new_status = conversation.status().clone();
             self.conversations_by_id
                 .insert(conversation_id, conversation);
 
@@ -691,6 +692,8 @@ impl BlocklistAIHistoryModel {
                 conversation_id,
                 terminal_view_id,
                 is_restored: true,
+                prev_status: None,
+                new_status,
             });
         }
 
@@ -2107,6 +2110,11 @@ pub enum BlocklistAIHistoryEvent {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,
         is_restored: bool,
+        /// The conversation's status before this update, if known.
+        /// Restoration events do not have a previous status.
+        prev_status: Option<ConversationStatus>,
+        /// The conversation's status after this update.
+        new_status: ConversationStatus,
     },
 
     /// The active conversation was set to another conversation in the history.

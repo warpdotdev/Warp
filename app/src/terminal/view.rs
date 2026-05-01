@@ -3519,7 +3519,7 @@ impl TerminalView {
                     event,
                     AgentConversationsModelEvent::TasksUpdated
                         | AgentConversationsModelEvent::NewTasksReceived
-                        | AgentConversationsModelEvent::ConversationUpdated
+                        | AgentConversationsModelEvent::ConversationUpdated { .. }
                         | AgentConversationsModelEvent::ConversationArtifactsUpdated { .. }
                 );
                 // Only refresh panel if it's currently open (avoids unnecessary work)

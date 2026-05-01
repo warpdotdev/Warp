@@ -251,6 +251,7 @@ impl AgentNotificationsModel {
             conversation_id,
             // We shouldn't trigger toasts when restoring conversations on startup.
             is_restored: false,
+            ..
         } = event
         else {
             return;
