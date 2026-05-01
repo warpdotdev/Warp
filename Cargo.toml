@@ -10,11 +10,14 @@ resolver = "2"
 # tests against) and integration (since it is only used for testing).
 default-members = [
   "app",
+  "crates/agents",
   "crates/channel_versions",
   "crates/command",
+  "crates/doppler",
   "crates/editor",
   "crates/graphql",
   "crates/markdown_parser",
+  "crates/orchestrator",
   "crates/sum_tree",
   "crates/warpui",
   "crates/warp_completer",
@@ -29,6 +32,7 @@ publish = false
 
 [workspace.dependencies]
 # Local workspace crates. This lets us reference them in other crates without specifying a path.
+agents = { path = "crates/agents" }
 ai = { path = "crates/ai" }
 app-installation-detection = { path = "crates/app-installation-detection" }
 asset_cache = { path = "crates/asset_cache" }
@@ -37,6 +41,7 @@ channel_versions = { path = "crates/channel_versions", default-features = false 
 command = { path = "crates/command" }
 command-signatures-v2 = { path = "crates/command-signatures-v2" }
 computer_use = { path = "crates/computer_use" }
+doppler = { path = "crates/doppler" }
 field_mask = { path = "crates/field_mask" }
 firebase = { path = "crates/firebase" }
 fuzzy_match = { path = "crates/fuzzy_match" }
@@ -53,6 +58,7 @@ markdown_parser = { path = "crates/markdown_parser" }
 natural_language_detection = { path = "crates/natural_language_detection" }
 node_runtime = { path = "crates/node_runtime" }
 onboarding = { path = "crates/onboarding" }
+orchestrator = { path = "crates/orchestrator" }
 persistence = { path = "crates/persistence" }
 prevent_sleep = { path = "crates/prevent_sleep" }
 repo_metadata = { path = "crates/repo_metadata" }

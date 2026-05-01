@@ -81,6 +81,9 @@ pub fn init_global_actions(app: &mut AppContext) {
         "workspace:toggle_debug_network_status",
         toggle_debug_network_status,
     );
+    // PDX-31: only register the debug action when the hosted backend is wired
+    // up. Without `warp_hosted` there is nothing for it to call.
+    #[cfg(feature = "warp_hosted")]
     app.add_global_action(
         "workspace:debug_create_anonymous_user",
         create_anonymous_user,
@@ -157,6 +160,7 @@ fn toggle_debug_network_status(_: &(), ctx: &mut AppContext) {
     });
 }
 
+#[cfg(feature = "warp_hosted")]
 fn create_anonymous_user(_: &(), ctx: &mut AppContext) {
     log::info!("Creating anonymous user");
     let anonymous_user_type = AnonymousUserType::NativeClientAnonymousUser;

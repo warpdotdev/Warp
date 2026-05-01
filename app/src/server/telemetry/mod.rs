@@ -3,9 +3,15 @@ mod context;
 pub mod context_provider;
 mod events;
 mod macros;
+// Rudder serialization types are kept compiled even when `warp_hosted` is off (PDX-33)
+// because telemetry events are still serialized to disk for the local
+// `SendTelemetryToFile` developer feature flag. With `warp_hosted` off, several variants
+// and helpers become unused.
+#[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
 pub mod rudder_message;
 pub mod secret_redaction;
 
+#[cfg(feature = "warp_hosted")]
 use chrono::Utc;
 pub use collector::*;
 pub use context::telemetry_context;
@@ -13,21 +19,28 @@ pub use events::*;
 
 use crate::auth::UserUid;
 use crate::features::FeatureFlag;
+#[cfg(feature = "warp_hosted")]
 use crate::server::telemetry::context::AttachContext;
 use crate::server::telemetry_ext::TelemetryExt;
 use crate::settings::PrivacySettingsSnapshot;
 use crate::ChannelState;
 use anyhow::Result;
 use futures::FutureExt;
-use rudder_message::{
-    Batch as RudderBatch, BatchMessage as RudderBatchMessageWithMetadata,
-    BatchMessageItem as RudderBatchMessage, Message as RudderMessage,
-};
+#[cfg(feature = "warp_hosted")]
+use rudder_message::{Batch as RudderBatch, Message as RudderMessage};
+#[cfg(feature = "warp_hosted")]
+use rudder_message::BatchMessage as RudderBatchMessageWithMetadata;
+// `RudderBatchMessage` (the `BatchMessageItem` enum) is the on-disk format for
+// the local `SendTelemetryToFile` developer path and is also referenced by
+// telemetry tests, so it stays available even without `warp_hosted`.
+#[allow(unused_imports)]
+use rudder_message::BatchMessageItem as RudderBatchMessage;
 use std::fs::File;
 #[cfg(not(target_family = "wasm"))]
 use std::fs::OpenOptions;
 use std::future::Future;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "warp_hosted")]
 use warp_core::channel::RudderStackDestination;
 use warpui::telemetry::Event;
 
@@ -90,7 +103,14 @@ impl TelemetryApi {
 
     // Batches up telemetry events from the global queue and sends a Message to the Rudderstack API.
     // Returns the number of events that were flushed.
-    pub async fn flush_events(&self, settings_snapshot: PrivacySettingsSnapshot) -> Result<usize> {
+    //
+    // When the `warp_hosted` feature is disabled (PDX-33), the global queue is still drained
+    // (so it doesn't grow unbounded) but no network call is made.
+    #[cfg_attr(not(feature = "warp_hosted"), allow(unused_variables))]
+    pub async fn flush_events(
+        &self,
+        settings_snapshot: PrivacySettingsSnapshot,
+    ) -> Result<usize> {
         let events = warpui::telemetry::flush_events();
         let event_count = events.len();
 
@@ -99,6 +119,7 @@ impl TelemetryApi {
             self.persist_events_to_telemetry_log_file(events.clone())?;
         }
 
+        #[cfg(feature = "warp_hosted")]
         if ChannelState::is_release_bundle() || FeatureFlag::WithSandboxTelemetry.is_enabled() {
             self.send_batch_messages_to_rudder(
                 events
@@ -115,11 +136,15 @@ impl TelemetryApi {
 
     /// Flushes events directly to Rudder that were previously written into a file at `path`
     /// (likely via a call to `write_events_to_disk`).
+    ///
+    /// When the `warp_hosted` feature is disabled (PDX-33), this is a no-op.
+    #[cfg_attr(not(feature = "warp_hosted"), allow(unused_variables))]
     pub async fn flush_persisted_events_to_rudder(
         &self,
         path: &Path,
         settings_snapshot: PrivacySettingsSnapshot,
     ) -> Result<()> {
+        #[cfg(feature = "warp_hosted")]
         if path.exists() {
             let file = File::open(path)?;
             let events: Vec<RudderBatchMessage> = serde_json::from_reader(file)?;
@@ -250,35 +275,46 @@ impl TelemetryApi {
                 self.persist_events_to_telemetry_log_file(vec![event.clone()])?;
             }
 
-            if !(ChannelState::is_release_bundle()
-                || FeatureFlag::WithSandboxTelemetry.is_enabled())
+            // PDX-33: When the `warp_hosted` feature is disabled, never make outbound
+            // analytics network calls regardless of channel/feature-flag state.
+            #[cfg(not(feature = "warp_hosted"))]
             {
+                let _ = event;
                 return Result::Ok(());
             }
 
-            let rudder_batch = vec![event.to_rudder_batch_message()];
+            #[cfg(feature = "warp_hosted")]
+            {
+                if !(ChannelState::is_release_bundle()
+                    || FeatureFlag::WithSandboxTelemetry.is_enabled())
+                {
+                    return Result::Ok(());
+                }
 
-            let result = self
-                .send_batch_messages_to_rudder(rudder_batch, settings_snapshot)
-                .await;
+                let rudder_batch = vec![event.to_rudder_batch_message()];
 
-            // This is only conditionally compiled because `is_connect` is not
-            // available on wasm.  If additional checks are made against the
-            // `reqwest::Error`, this condition should be performed specifically
-            // against `is_connect` and not the whole loop.
-            #[cfg(not(target_family = "wasm"))]
-            if let Err(error) = &result {
-                for cause in error.chain() {
-                    if let Some(err) = cause.downcast_ref::<reqwest::Error>() {
-                        if err.is_connect() {
-                            log::warn!("Failed to send telemetry event: {error}");
-                            return Ok(());
+                let result = self
+                    .send_batch_messages_to_rudder(rudder_batch, settings_snapshot)
+                    .await;
+
+                // This is only conditionally compiled because `is_connect` is not
+                // available on wasm.  If additional checks are made against the
+                // `reqwest::Error`, this condition should be performed specifically
+                // against `is_connect` and not the whole loop.
+                #[cfg(not(target_family = "wasm"))]
+                if let Err(error) = &result {
+                    for cause in error.chain() {
+                        if let Some(err) = cause.downcast_ref::<reqwest::Error>() {
+                            if err.is_connect() {
+                                log::warn!("Failed to send telemetry event: {error}");
+                                return Ok(());
+                            }
                         }
                     }
                 }
-            }
 
-            result
+                result
+            }
         };
 
         // On WASM, the work future is non-Send, because the HTTP request future contains a reference to a JS
@@ -298,6 +334,9 @@ impl TelemetryApi {
     /// use it for a few reasons:
     /// 1. It only supports a blocking HTTP client instead of an async one
     /// 2. We want to use our own HTTP client which has before/after request logging hooks
+    ///
+    /// Only compiled with the `warp_hosted` feature (PDX-33).
+    #[cfg(feature = "warp_hosted")]
     #[cfg_attr(target_family = "wasm", allow(clippy::question_mark))]
     async fn send_batch_messages_to_rudder(
         &self,
@@ -376,6 +415,9 @@ impl TelemetryApi {
     }
 
     /// Sends a POST request to the RudderStack HTTP API.
+    ///
+    /// Only compiled with the `warp_hosted` feature (PDX-33).
+    #[cfg(feature = "warp_hosted")]
     async fn send_rudder_request(
         &self,
         mut msg: RudderMessage,

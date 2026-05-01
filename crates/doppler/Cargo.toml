@@ -1,0 +1,22 @@
+[package]
+name = "doppler"
+version = "0.1.0"
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "process", "sync", "macros"] }
+tracing.workspace = true
+which = "4.4"
+zeroize = "1.8"
+
+[dev-dependencies]
+async-trait.workspace = true
+mockall = "0.13"
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "process", "time", "test-util"] }
+tokio-test = "0.4"

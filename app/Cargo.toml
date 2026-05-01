@@ -93,6 +93,7 @@ diesel.workspace = true
 difflib = { git = "https://github.com/warpdotdev/difflib.git", rev = "114177e7d8e1f8017baca397f943e11644b14d63" }
 directories.workspace = true
 dirs.workspace = true
+doppler.workspace = true
 dunce.workspace = true
 email_address = { git = "https://github.com/warpdotdev/rust-email_address", branch = "main" }
 embed_plist = "1.2"
@@ -458,6 +459,7 @@ creating_shared_sessions = []
 cross_repo_context = []
 codebase_index_persistence = ["full_source_code_embedding"]
 default = [
+    "warp_hosted",
     "agent_mode",
     "viewing_shared_sessions",
     "render_continuous_block_selections_with_single_border",
@@ -754,6 +756,15 @@ sequential_storage = []
 session_sharing = []
 session_sharing_acls = []
 skip_login = []
+# Gate every code path that talks to Warp's hosted backend: Firebase /
+# OAuth device flow, warp-server GraphQL mutations (auth + privacy
+# settings sync), RudderStack product-analytics telemetry, and the
+# hardcoded warp.dev / oz.warp.dev / identitytoolkit.googleapis.com
+# URLs. ON by default to preserve upstream behavior; the Helm minimal
+# build opts out via `--no-default-features` (PDX-31, PDX-33).
+# Crash reporting (Sentry) is gated separately via `crash_reporting`
+# and is unaffected by this flag (PDX-78 territory).
+warp_hosted = ["warp_core/warp_hosted"]
 # This feature should only be enabled when building a self-contained binary with the bundle script.
 standalone = []
 prompt_suggestions_via_maa = []

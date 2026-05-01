@@ -42,11 +42,28 @@ pub struct WarpServerConfig {
 
 impl WarpServerConfig {
     pub fn production() -> Self {
-        Self {
-            server_root_url: "https://app.warp.dev".into(),
-            rtc_server_url: "wss://rtc.app.warp.dev/graphql/v2".into(),
-            session_sharing_server_url: Some("wss://sessions.app.warp.dev".into()),
-            firebase_auth_api_key: "AIzaSyBdy3O3S9hrdayLJxJ7mriBR4qgUaUygAs".into(),
+        // PDX-31: when `warp_hosted` is disabled, these endpoints must not point
+        // at Warp's hosted backend. We return empty strings so that any
+        // accidentally-reachable consumer will fail-closed rather than silently
+        // contact Warp infrastructure. Code paths that legitimately need these
+        // values are themselves gated behind `warp_hosted` and will not run.
+        #[cfg(not(feature = "warp_hosted"))]
+        {
+            Self {
+                server_root_url: "".into(),
+                rtc_server_url: "".into(),
+                session_sharing_server_url: None,
+                firebase_auth_api_key: "".into(),
+            }
+        }
+        #[cfg(feature = "warp_hosted")]
+        {
+            Self {
+                server_root_url: "https://app.warp.dev".into(),
+                rtc_server_url: "wss://rtc.app.warp.dev/graphql/v2".into(),
+                session_sharing_server_url: Some("wss://sessions.app.warp.dev".into()),
+                firebase_auth_api_key: "AIzaSyBdy3O3S9hrdayLJxJ7mriBR4qgUaUygAs".into(),
+            }
         }
     }
 }
@@ -64,9 +81,22 @@ pub struct OzConfig {
 
 impl OzConfig {
     pub fn production() -> Self {
-        Self {
-            oz_root_url: "https://oz.warp.dev".into(),
-            workload_audience_url: None,
+        // PDX-31: see WarpServerConfig::production above. When `warp_hosted` is
+        // off, return an empty URL so callers fail-closed instead of contacting
+        // oz.warp.dev. The Oz/ambient-agent feature itself is gated upstream.
+        #[cfg(not(feature = "warp_hosted"))]
+        {
+            Self {
+                oz_root_url: "".into(),
+                workload_audience_url: None,
+            }
+        }
+        #[cfg(feature = "warp_hosted")]
+        {
+            Self {
+                oz_root_url: "https://oz.warp.dev".into(),
+                workload_audience_url: None,
+            }
         }
     }
 }

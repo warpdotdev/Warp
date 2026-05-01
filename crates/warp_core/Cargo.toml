@@ -11,6 +11,11 @@ integration_tests = []
 local_fs = []
 release_bundle = []
 test-util = ["dep:mockito", "warp_features/test-util"]
+# Gate hardcoded Firebase/Oz endpoint defaults that point to Warp's hosted
+# infrastructure. With this OFF, the production() configs return empty URLs
+# and any code that tries to call them will fail closed instead of leaking
+# traffic to warp.dev/identitytoolkit.googleapis.com.
+warp_hosted = []
 
 [dependencies]
 anyhow.workspace = true

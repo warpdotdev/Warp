@@ -54,6 +54,11 @@ impl TelemetryContext {
 }
 
 /// Extension trait used to attach a telemetry context.
+///
+/// Only consumed by the RudderStack send path which is gated on the
+/// `warp_hosted` feature (PDX-33). Without that feature we keep the trait
+/// definition for source-shape compatibility but allow it to be unused.
+#[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
 pub(super) trait AttachContext {
     /// Attaches a context to the given object.
     fn attach_context(&mut self);
