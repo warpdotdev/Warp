@@ -258,7 +258,7 @@ impl UriHost {
                 // For folder links, we expect an additional query parameter primary_object_id which refers to the id object
                 // that should be opened
                 // When the user is directed here via the request access flow, we expect an additional query parameter invitee_email
-                // If this paramter is present, we will open the sharing dialog with the email filled in.
+                // If this parameter is present, we will open the sharing dialog with the email filled in.
                 let object_type = url
                     .path_segments()
                     .into_iter()

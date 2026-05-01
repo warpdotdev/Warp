@@ -165,7 +165,7 @@ function warp_preexec --on-event fish_preexec
     # If this preexec is called for user command, kill ongoing generator command jobs.
     if test (! string match -q "warp_run_generator_command*" $argv[1])
         for pid in $_warp_generator_pids
-            # Surpress stderr output; kill writes to stderr if any of the given
+            # Suppress stderr output; kill writes to stderr if any of the given
             # PIDS are not running (which might rarely be the case due to race
             # conditions in checking which PIDS to cancel and this kill command.
             kill -9 $pids >/dev/null 2>/dev/null
@@ -401,7 +401,7 @@ function warp_precmd --on-event fish_prompt --on-event fish_posterror
     warp_update_prompt_vars
     # This is used solely for prompt previews, when we're using prompt markers with combined grid.
     # We need to use this since fish does not have a way to ignore printable characters for cursor
-    # positioning (unlike zsh/bash), so we need a separate mechansim to send the prompt to Warp
+    # positioning (unlike zsh/bash), so we need a separate mechanism to send the prompt to Warp
     # in the case of Warp prompt (for previewing the PS1). We send an escaped version of the raw prompt
     # bytes via a hex string (in a JSON payload) to Warp.
     # Note that we are CALLING the `warp_original_fish_prompt` function on the next line and assigning the

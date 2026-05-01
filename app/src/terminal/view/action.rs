@@ -222,7 +222,7 @@ pub enum TerminalAction {
     },
     InputContextMenuItem(InputContextMenuAction),
     /// Open the menu on the specified [`crate::ai::blocklist::AIBlock`] that lists the blocks that
-    /// were attached to the query in the specifed [`crate::ai::blocklist::AIAgentExchange`] which
+    /// were attached to the query in the specified [`crate::ai::blocklist::AIAgentExchange`] which
     /// is part of the specified [`crate::ai::blocklist::AIConversation`].
     OpenAIBlockAttachedBlocksMenu {
         ai_block_view_id: EntityId,
