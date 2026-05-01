@@ -11,7 +11,8 @@
 #
 # Prerequisites (same as script/deploy_remote_server):
 #   macOS: brew install filosottile/musl-cross/musl-cross hudochenkov/sshpass/sshpass
-#   Linux: sudo apt-get install musl-tools sshpass
+#   Linux: install an x86_64 musl cross toolchain that includes gcc and g++
+#          (CI uses cross-tools/musl-cross) and sudo apt-get install sshpass
 #   rustup target add x86_64-unknown-linux-musl
 #   gcloud CLI authenticated for the warp-ssh-integration-testing project
 #
@@ -48,7 +49,7 @@ install_musl_help() {
       echo "Install it with: brew install filosottile/musl-cross/musl-cross" >&2
       ;;
     Linux)
-      echo "Install it with: sudo apt-get install musl-tools" >&2
+      echo "Install a musl cross toolchain that includes gcc and g++." >&2
       ;;
     *)
       echo "Install an x86_64 musl C compiler for $TARGET." >&2
@@ -61,6 +62,10 @@ detect_musl_linker() {
     echo "x86_64-linux-musl-gcc"
     return
   fi
+  if command -v x86_64-unknown-linux-musl-gcc &>/dev/null; then
+    echo "x86_64-unknown-linux-musl-gcc"
+    return
+  fi
 
   if command -v musl-gcc &>/dev/null; then
     echo "musl-gcc"
@@ -68,6 +73,27 @@ detect_musl_linker() {
   fi
 
   echo "Error: no musl linker found." >&2
+  install_musl_help
+  exit 1
+}
+detect_musl_cxx() {
+  local linker_cxx="${MUSL_LINKER%gcc}g++"
+  if [[ "$linker_cxx" != "$MUSL_LINKER" ]] && command -v "$linker_cxx" &>/dev/null; then
+    echo "$linker_cxx"
+    return
+  fi
+
+  if command -v x86_64-linux-musl-g++ &>/dev/null; then
+    echo "x86_64-linux-musl-g++"
+    return
+  fi
+
+  if command -v x86_64-unknown-linux-musl-g++ &>/dev/null; then
+    echo "x86_64-unknown-linux-musl-g++"
+    return
+  fi
+
+  echo "Error: no musl C++ compiler found." >&2
   install_musl_help
   exit 1
 }
@@ -85,6 +111,7 @@ app_version() {
 # ── Preflight checks ──────────────────────────────────────────────
 
 MUSL_LINKER="$(detect_musl_linker)"
+MUSL_CXX="$(detect_musl_cxx)"
 
 if ! rustup target list --installed 2>/dev/null | grep -q "$TARGET"; then
   echo "Error: $TARGET target not installed." >&2
@@ -104,6 +131,8 @@ echo "==> Building Oz CLI for $TARGET (profile=$CARGO_PROFILE)"
 
 CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="$MUSL_LINKER" \
 CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C symbol-mangling-version=v0" \
+CC_x86_64_unknown_linux_musl="$MUSL_LINKER" \
+CXX_x86_64_unknown_linux_musl="$MUSL_CXX" \
   cargo build \
     -p warp \
     --bin "$WARP_BIN" \
