@@ -637,7 +637,13 @@ impl CurrentPrompt {
             // `git checkout + <name>`.
             trimmed
                 .into_iter()
-                .map(|s| s.trim_start_matches(['*', '+']).trim().to_string())
+                .map(|s| {
+                    s.strip_prefix("* ")
+                        .or_else(|| s.strip_prefix("+ "))
+                        .unwrap_or(s.as_str())
+                        .trim()
+                        .to_string()
+                })
                 .collect()
         })
     }
