@@ -43,12 +43,17 @@ Relevant files:
   agents in the UI; the sidebar umbrella label is "Agents", defined in
   `app/src/settings_view/mod.rs`). The agent-assignment dropdown is populated by
   iterating `all::<CLIAgent>()` (via `enum_iterator::Sequence`) at line ~2121,
-  filtering out `CLIAgent::Unknown`. There is no per-agent documentation link
-  rendered in this UI; entries are driven entirely by `agent.display_name()` and
-  `agent.icon()`. No explicit change to this file is needed beyond the enum
-  addition, but the page must be verified to render the new entry correctly in
-  the dropdown and to exclude `CLIAgent::Kiro` when the feature flag is disabled
-  (see feature flag section below).
+  filtering out `CLIAgent::Unknown`. The current settings UI does not render a
+  per-agent documentation link — entries are driven entirely by
+  `agent.display_name()` and `agent.icon()`. The product spec behavior #8
+  ("a link to the Kiro CLI documentation") therefore cannot be satisfied by the
+  current settings UI without a UI change. **Resolution**: the documentation
+  link requirement is deferred to a follow-up; the initial implementation adds
+  Kiro to the dropdown only (consistent with all other agents). No explicit
+  change to this file is needed beyond the enum addition, but the page must be
+  verified to render the new entry correctly in the dropdown and to exclude
+  `CLIAgent::Kiro` when the feature flag is disabled (see feature flag section
+  below).
 
 ## Proposed changes
 
@@ -214,7 +219,7 @@ impl CliAgentPluginManager for KiroPluginManager {
     }
 
     fn supports_update(&self) -> bool {
-        false
+        true
     }
 
     fn install_instructions(&self) -> &'static PluginInstructions {
@@ -222,14 +227,14 @@ impl CliAgentPluginManager for KiroPluginManager {
     }
 
     fn update_instructions(&self) -> &'static PluginInstructions {
-        &EMPTY_INSTRUCTIONS
+        &UPDATE_INSTRUCTIONS
     }
 }
 
 static INSTALL_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| {
     PluginInstructions {
         title: "Enable Warp Integration for Kiro",
-        subtitle: "Install the Kiro CLI and enable Warp integration to get real-time status tracking while you work.",
+        subtitle: "Install the Kiro CLI and enable the Warp plugin to get real-time status tracking while you work.",
         steps: &[
             PluginInstructionStep {
                 description: "Install the Kiro CLI. Follow the instructions on the Kiro download page.",
@@ -238,10 +243,10 @@ static INSTALL_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| {
                 link: Some("https://kiro.dev/downloads/"),
             },
             PluginInstructionStep {
-                description: "Verify the installation.",
-                command: "kiro --version",
-                executable: true,
-                link: None,
+                description: "Enable the Warp plugin in your Kiro configuration so that Kiro emits structured status events that Warp can display. See the Kiro documentation for the exact config key.",
+                command: "",
+                executable: false,
+                link: Some("https://kiro.dev/docs/"),
             },
         ],
         post_install_notes: &[
@@ -250,12 +255,21 @@ static INSTALL_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| {
     }
 });
 
-static EMPTY_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| {
+static UPDATE_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| {
     PluginInstructions {
-        title: "",
-        subtitle: "",
-        steps: &[],
-        post_install_notes: &[],
+        title: "Update Warp Integration for Kiro",
+        subtitle: "Update the Kiro CLI to the latest version to restore real-time status tracking.",
+        steps: &[
+            PluginInstructionStep {
+                description: "Update the Kiro CLI. Follow the update instructions on the Kiro download page.",
+                command: "",
+                executable: false,
+                link: Some("https://kiro.dev/downloads/"),
+            },
+        ],
+        post_install_notes: &[
+            "Restart your terminal session after updating.",
+        ],
     }
 });
 ```
@@ -270,11 +284,33 @@ In `app/src/terminal/cli_agent_sessions/plugin_manager/mod.rs`, add:
 pub(crate) mod kiro;
 ```
 
-And extend the factory `match` that maps `CLIAgent` to a `Box<dyn
-CliAgentPluginManager>` to include:
+And extend the factory `match` in `plugin_manager_for_with_shell()` to include
+the Kiro arms, following the same pattern as Codex and Gemini (feature-flag
+guard on the enabled arm; the disabled arm falls through to the existing
+catch-all `None` list):
 
 ```rust
-CLIAgent::Kiro => Box::new(kiro::KiroPluginManager),
+CLIAgent::Kiro if FeatureFlag::KiroCLIAgent.is_enabled() => {
+    Some(Box::new(kiro::KiroPluginManager))
+}
+```
+
+Add `CLIAgent::Kiro` to the existing catch-all `None` arm alongside the other
+agents that return `None` when their flag is off:
+
+```rust
+CLIAgent::OpenCode
+| CLIAgent::Codex
+| CLIAgent::Gemini
+| CLIAgent::Amp
+| CLIAgent::Droid
+| CLIAgent::Copilot
+| CLIAgent::Pi
+| CLIAgent::Auggie
+| CLIAgent::CursorCli
+| CLIAgent::Goose
+| CLIAgent::Kiro      // ← add here (flag-disabled fallthrough)
+| CLIAgent::Unknown => None,
 ```
 
 **Note on the Warp plugin protocol**: The Kiro CLI must emit structured JSON
@@ -314,9 +350,11 @@ it.
   - `CLIAgent::Kiro` must be covered by any existing exhaustive-match tests in
     `app/src/terminal/cli_agent_tests.rs` (if present) or
     `app/src/terminal/cli_agent_sessions/mod_tests.rs`.
-  - `kiro_tests.rs` must include at minimum a smoke test that
+  - `kiro_tests.rs` must include at minimum smoke tests that
     `KiroPluginManager::install_instructions()` returns a non-empty title and at
-    least one step, mirroring `codex_tests.rs`.
+    least one step, that `KiroPluginManager::update_instructions()` returns a
+    non-empty title and at least one step, and that `supports_update()` returns
+    `true`, mirroring `codex_tests.rs`.
   - The `CLIAgentType` conversion test (if one exists) must cover `Kiro`.
 
 Behavior-to-verification mapping (from `product.md`):
