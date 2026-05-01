@@ -215,13 +215,19 @@ factory:
    Follow the same pattern for Kiro:
 
    ```rust
-   CLIAgent::Kiro if FeatureFlag::KiroCLIAgent.is_enabled() => {
+   CLIAgent::Kiro
+       if FeatureFlag::KiroCLIAgent.is_enabled()
+           && FeatureFlag::HOANotifications.is_enabled() =>
+   {
        Some(Box::new(kiro::KiroPluginManager))
    }
    ```
 
-   The catch-all `CLIAgent::Kiro` arm (flag disabled) falls through to `None`,
-   consistent with how other agents behave when their flag is off.
+   Both guards are required: `HOANotifications` is the global kill switch that
+   disables all non-Claude notification plugin managers (see `mod.rs` — every
+   agent except Claude checks `FeatureFlag::HOANotifications.is_enabled()`).
+   The catch-all `CLIAgent::Kiro` arm (either flag disabled) falls through to
+   `None`, consistent with how other agents behave when their flag is off.
 
 ### 5. Add the Kiro plugin manager
 
@@ -247,7 +253,10 @@ impl CliAgentPluginManager for KiroPluginManager {
     }
 
     fn supports_update(&self) -> bool {
-        true
+        // No Warp plugin for Kiro exists yet; no version to detect or compare.
+        // Set to true and add is_installed()/needs_update() overrides once
+        // the Kiro CLI publishes a versioned Warp plugin.
+        false
     }
 
     fn install_instructions(&self) -> &'static PluginInstructions {
@@ -255,7 +264,7 @@ impl CliAgentPluginManager for KiroPluginManager {
     }
 
     fn update_instructions(&self) -> &'static PluginInstructions {
-        &UPDATE_INSTRUCTIONS
+        &EMPTY_INSTRUCTIONS
     }
 }
 
@@ -283,23 +292,13 @@ static INSTALL_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| {
     }
 });
 
-static UPDATE_INSTRUCTIONS: LazyLock<PluginInstructions> = LazyLock::new(|| {
-    PluginInstructions {
-        title: "Update Warp Integration for Kiro",
-        subtitle: "Update the Kiro CLI to the latest version to restore real-time status tracking.",
-        steps: &[
-            PluginInstructionStep {
-                description: "Update the Kiro CLI. Follow the update instructions on the Kiro download page.",
-                command: "",
-                executable: false,
-                link: Some("https://kiro.dev/downloads/"),
-            },
-        ],
-        post_install_notes: &[
-            "Restart your terminal session after updating.",
-        ],
-    }
-});
+static EMPTY_INSTRUCTIONS: LazyLock<PluginInstructions> =
+    LazyLock::new(|| PluginInstructions {
+        title: "",
+        subtitle: "",
+        steps: &[],
+        post_install_notes: &[],
+    });
 ```
 
 Create the corresponding test file
@@ -313,12 +312,15 @@ pub(crate) mod kiro;
 ```
 
 And extend the factory `match` in `plugin_manager_for_with_shell()` to include
-the Kiro arms, following the same pattern as Codex and Gemini (feature-flag
-guard on the enabled arm; the disabled arm falls through to the existing
-catch-all `None` list):
+the Kiro arms, following the same pattern as Codex and Gemini (both the
+agent-specific flag and the HOA kill switch must be enabled; the disabled arm
+falls through to the existing catch-all `None` list):
 
 ```rust
-CLIAgent::Kiro if FeatureFlag::KiroCLIAgent.is_enabled() => {
+CLIAgent::Kiro
+    if FeatureFlag::KiroCLIAgent.is_enabled()
+        && FeatureFlag::HOANotifications.is_enabled() =>
+{
     Some(Box::new(kiro::KiroPluginManager))
 }
 ```
@@ -380,9 +382,8 @@ it.
     `app/src/terminal/cli_agent_sessions/mod_tests.rs`.
   - `kiro_tests.rs` must include at minimum smoke tests that
     `KiroPluginManager::install_instructions()` returns a non-empty title and at
-    least one step, that `KiroPluginManager::update_instructions()` returns a
-    non-empty title and at least one step, and that `supports_update()` returns
-    `true`, mirroring `codex_tests.rs`.
+    least one step, that `supports_update()` returns `false`, and that
+    `update_instructions()` returns empty content — mirroring `codex_tests.rs`.
   - The `CLIAgentType` conversion test (if one exists) must cover `Kiro`.
 
 Behavior-to-verification mapping (from `product.md`):
@@ -393,7 +394,9 @@ Behavior-to-verification mapping (from `product.md`):
 | #2 — footer | Confirm the Kiro logo and brand color appear in the footer. |
 | #3, #4 — rich input | Press Ctrl-G; type a prompt; confirm it is sent to the PTY. |
 | #5 — status tracking | With the plugin installed and emitting events, confirm the footer status updates. |
-| #6, #7 — install/update instructions | With the plugin absent or outdated, confirm the instructions pane renders with the correct steps. |
+| #6 — install instructions | With the plugin absent (local session), confirm the install instructions pane renders with the correct steps. |
+| #7 — update instructions | `supports_update()` is `false`; confirm the update chip is never shown. |
+| #10 — remote session | In a remote SSH pane, confirm the footer appears but the install/update instructions pane is not shown. |
 | #8 — settings page | Open Settings → Agents → Third party CLI agents; with the flag enabled confirm Kiro appears in the list, and with the flag disabled confirm Kiro is hidden and persisted Kiro mappings display as "Other". |
 | #9 — telemetry | Confirm `CLIAgentType::Kiro` events are emitted on session start/end. |
 | #11 — shared sessions | Confirm `CLIAgent::Kiro.to_serialized_name() == "Kiro"` and `CLIAgent::from_serialized_name("Kiro") == CLIAgent::Kiro`. |

@@ -86,9 +86,14 @@ Out of scope:
    using the same `CLIAgentType` telemetry event structure used by other agents,
    with `CLIAgentType::Kiro` as the agent discriminant.
 
-10. The Kiro footer and rich input are not shown when the terminal pane is in a
-    remote SSH session where the Warp plugin cannot be confirmed as installed,
-    consistent with the behavior of other agents in that context.
+10. In a remote SSH terminal pane, the Kiro footer and rich input still appear
+    when a `kiro` command is detected (via command detection, same as local),
+    but plugin install and update instructions are not shown because the Warp
+    plugin cannot be installed remotely. If the Warp plugin is already running
+    on the remote system and emitting events, real-time status tracking works
+    normally. If it is not, the footer appears in degraded mode (no status,
+    no install instructions pane) — consistent with how other agents behave in
+    remote sessions.
 
 11. Kiro sessions are included in shared session state sync (the `cli_agent`
     field in the shared session protocol) using the serialized name `"Kiro"`.
