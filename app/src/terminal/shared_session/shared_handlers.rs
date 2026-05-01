@@ -392,6 +392,7 @@ pub(crate) fn apply_cli_agent_state_update(
                             // Viewer input is managed by the sync protocol,
                             // not local status-change auto-toggle.
                             should_auto_toggle_input: false,
+                            pending_idle_after_stop: false,
                         },
                         ctx,
                     );
