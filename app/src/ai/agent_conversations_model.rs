@@ -870,7 +870,9 @@ pub enum AgentConversationsModelEvent {
     TasksUpdated,
     /// Conversation status data was updated
     ConversationUpdated {
+        #[allow(dead_code)]
         conversation_id: AIConversationId,
+        #[allow(dead_code)]
         kind: ConversationUpdateKind,
     },
     /// Conversation artifacts were updated (plans, PRs, etc.)
