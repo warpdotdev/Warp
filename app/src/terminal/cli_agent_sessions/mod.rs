@@ -146,7 +146,7 @@ pub struct CLIAgentSession {
     /// post-task idle (Stop → IdlePrompt) from an explicit reset like `/clear`
     /// (IdlePrompt without a preceding Stop), so we only clear the tab title in
     /// the latter case.
-    pending_idle_after_stop: bool,
+    pub(crate) pending_idle_after_stop: bool,
 }
 
 impl CLIAgentSession {
