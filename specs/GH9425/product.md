@@ -22,7 +22,7 @@ Many terminal applications (editors like Neovim and Helix, shells that show colo
 - Emitting unsolicited notifications for programs that have not sent `CSI ? 2031 h`.
 - Changing the palette query/update protocol (`CSI ? 2 $ p`, OSC 10/11, etc.).
 - Supporting this feature in embedded/hosted sessions over SSH; this tracks mode in the local terminal grid only.
-- Persisting the opt-in across process restarts or across alt-screen swaps.
+- Persisting the opt-in across process restarts, or propagating it between the main and alt screens.
 
 ## Behaviour
 
