@@ -10,8 +10,8 @@
   };
 
   nixConfig = {
-    # Warp's macOS build scripts shell out to `xcrun` for `metal` and
-    # `metallib`, so the Darwin sandbox must see the host Xcode installation.
+    # Warp's macOS build scripts shell out to host Xcode tools for Metal and
+    # bundle metadata, so the Darwin sandbox must see the host tool stubs.
     extra-sandbox-paths = [
       "/Applications?"
       "/Library/Developer/CommandLineTools?"
@@ -75,6 +75,25 @@
 
               printf '%s' "$developerDir"
             }
+          '';
+          hostPlutilWrapper = pkgs.writeShellScriptBin "plutil" ''
+            set -euo pipefail
+
+            exec /usr/bin/plutil "$@"
+          '';
+          xcodeBuildWrapper = pkgs.writeShellScriptBin "xcodebuild" ''
+            set -euo pipefail
+
+            ${hostXcodeSelection}
+
+            developerDir="$(select_host_xcode_developer_dir)"
+            if [ -n "$developerDir" ]; then
+              export DEVELOPER_DIR="$developerDir"
+            else
+              unset DEVELOPER_DIR
+            fi
+
+            exec /usr/bin/xcodebuild "$@"
           '';
           xcodeSelectWrapper = pkgs.writeShellScriptBin "xcode-select" ''
             set -euo pipefail
@@ -230,7 +249,11 @@
               ]
               ++ lib.optionals pkgs.stdenv.isDarwin [
                 cargo-bundle
+                hostPlutilWrapper
                 perl
+                xcodeBuildWrapper
+                xcodeSelectWrapper
+                xcodeXcrunWrapper
               ];
 
             buildInputs =
@@ -262,7 +285,9 @@
             };
 
             preBuild = lib.optionalString pkgs.stdenv.isDarwin ''
-              export PATH="${xcodeSelectWrapper}/bin:${xcodeXcrunWrapper}/bin:$PATH"
+              export PATH="${hostPlutilWrapper}/bin:${xcodeBuildWrapper}/bin:${xcodeSelectWrapper}/bin:${xcodeXcrunWrapper}/bin:$PATH"
+              echo "Using plutil wrapper: $(command -v plutil)"
+              echo "Using xcodebuild wrapper: $(command -v xcodebuild)"
               echo "Using xcode-select wrapper: $(command -v xcode-select)"
               xcode-select -p
               echo "Using xcrun wrapper: $(command -v xcrun)"
