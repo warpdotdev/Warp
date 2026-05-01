@@ -140,41 +140,59 @@ pub(crate) async fn sorted_directories_relative_to(
         .collect()
 }
 
-/// Like `sorted_directories_relative_to` but also surfaces directories from
-/// the shell's `$CDPATH` so `cd <Tab>` matches the resolution `cd` itself does.
+/// Like `sorted_directories_relative_to`, but iterates `$CDPATH` in shell
+/// order (empty/`.` entry = pwd at that position; pwd appended as fallback if
+/// no such entry) so completions surface in the order `cd` would resolve them.
 pub(crate) async fn sorted_cd_directories(
     path: &ParsedToken,
     matcher: MatchStrategy,
     ctx: &dyn PathCompletionContext,
 ) -> Vec<MatchedSuggestion> {
-    let mut results = sorted_directories_relative_to(path, matcher, ctx).await;
-
     if !is_cdpath_eligible_token(path.as_str()) {
-        return results;
+        return sorted_directories_relative_to(path, matcher, ctx).await;
     }
 
     let Some(cdpath) = ctx.cdpath() else {
-        return results;
+        return sorted_directories_relative_to(path, matcher, ctx).await;
     };
 
-    let mut seen: HashSet<String> = results
-        .iter()
-        .map(|s| s.suggestion.display.to_string())
-        .collect();
+    let mut results: Vec<MatchedSuggestion> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut pwd_searched = false;
 
-    // `.` is already handled by the pwd-relative pass above; empty entries are
-    // shell-equivalent to `.` so skip those too.
-    for entry in cdpath.split(':').filter(|e| !e.is_empty() && *e != ".") {
-        let override_ctx = CdpathOverrideContext {
-            inner: ctx,
-            cdpath_pwd: resolve_cdpath_entry(entry, ctx),
-        };
-        let extra = sorted_directories_relative_to(path, matcher, &override_ctx).await;
-        for suggestion in extra {
-            if seen.insert(suggestion.suggestion.display.to_string()) {
-                results.push(suggestion);
+    let push_unique = |suggestions: Vec<MatchedSuggestion>,
+                       results: &mut Vec<MatchedSuggestion>,
+                       seen: &mut HashSet<String>| {
+        for s in suggestions {
+            if seen.insert(s.suggestion.display.to_string()) {
+                results.push(s);
             }
         }
+    };
+
+    for entry in cdpath.split(':') {
+        if entry.is_empty() || entry == "." {
+            if pwd_searched {
+                continue;
+            }
+            let pwd = sorted_directories_relative_to(path, matcher, ctx).await;
+            push_unique(pwd, &mut results, &mut seen);
+            pwd_searched = true;
+        } else {
+            let override_ctx = CdpathOverrideContext {
+                inner: ctx,
+                cdpath_pwd: resolve_cdpath_entry(entry, ctx),
+            };
+            let extra = sorted_directories_relative_to(path, matcher, &override_ctx).await;
+            push_unique(extra, &mut results, &mut seen);
+        }
+    }
+
+    // Shell falls back to pwd when no `$CDPATH` entry matches. If no `.`/empty
+    // entry positioned pwd already, append pwd matches now.
+    if !pwd_searched {
+        let pwd = sorted_directories_relative_to(path, matcher, ctx).await;
+        push_unique(pwd, &mut results, &mut seen);
     }
 
     results

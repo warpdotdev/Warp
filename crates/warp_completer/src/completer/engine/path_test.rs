@@ -516,7 +516,10 @@ pub fn test_sorted_cd_directories_includes_cdpath_entries() {
     .map(|m| m.suggestion.display.to_string())
     .collect();
 
-    assert_eq!(displays, vec!["local-only/", "shared/", "extra-dir/"]);
+    // CDPATH entries first (in order), pwd appended as fallback. `shared`
+    // appears in both, so the first occurrence (the CDPATH one) wins. Within
+    // each directory, listings are sorted alphabetically.
+    assert_eq!(displays, vec!["extra-dir/", "shared/", "local-only/"]);
 }
 
 #[cfg(unix)]
@@ -567,7 +570,7 @@ pub fn test_sorted_cd_directories_skips_dot_entry_in_cdpath() {
 #[cfg(unix)]
 #[test]
 pub fn test_sorted_cd_directories_resolves_relative_cdpath_against_pwd() {
-    // CDPATH=src — must resolve to <pwd>/src, not be passed raw.
+    // CDPATH=src must resolve to <pwd>/src, not be passed raw.
     let ctx = MockPathCompletionContext::new(TypedPathBuf::from("/work/proj"))
         .with_entries_in_pwd([dir_entry("local-only")])
         .with_entries(
@@ -584,13 +587,13 @@ pub fn test_sorted_cd_directories_resolves_relative_cdpath_against_pwd() {
     .into_iter()
     .map(|m| m.suggestion.display.to_string())
     .collect();
-    assert_eq!(displays, vec!["local-only/", "inner-mod/"]);
+    assert_eq!(displays, vec!["inner-mod/", "local-only/"]);
 }
 
 #[cfg(unix)]
 #[test]
 pub fn test_sorted_cd_directories_resolves_parent_relative_cdpath() {
-    // CDPATH=.. — must resolve to <pwd>/.. so siblings of pwd are reachable.
+    // CDPATH=.. must resolve to <pwd>/.. so siblings of pwd are reachable.
     let ctx = MockPathCompletionContext::new(TypedPathBuf::from("/work/proj"))
         .with_entries_in_pwd([dir_entry("local-only")])
         .with_entries(
@@ -607,13 +610,13 @@ pub fn test_sorted_cd_directories_resolves_parent_relative_cdpath() {
     .into_iter()
     .map(|m| m.suggestion.display.to_string())
     .collect();
-    assert_eq!(displays, vec!["local-only/", "sibling-dir/"]);
+    assert_eq!(displays, vec!["sibling-dir/", "local-only/"]);
 }
 
 #[cfg(unix)]
 #[test]
 pub fn test_sorted_cd_directories_expands_tilde_in_cdpath() {
-    // CDPATH=~/code — tilde must expand to the shell's home dir.
+    // Tilde-prefixed CDPATH=~/code must expand to the shell's home dir.
     let ctx = MockPathCompletionContext::new(TypedPathBuf::from("/work/proj"))
         .with_home_directory("/home/me".to_owned())
         .with_entries_in_pwd([dir_entry("local-only")])
@@ -631,5 +634,50 @@ pub fn test_sorted_cd_directories_expands_tilde_in_cdpath() {
     .into_iter()
     .map(|m| m.suggestion.display.to_string())
     .collect();
-    assert_eq!(displays, vec!["local-only/", "from-home/"]);
+    assert_eq!(displays, vec!["from-home/", "local-only/"]);
+}
+
+#[cfg(unix)]
+#[test]
+pub fn test_sorted_cd_directories_pwd_at_dot_position_is_first() {
+    // CDPATH=":/srv/projects": the empty leading entry means pwd is searched
+    // before /srv/projects, matching shell semantics.
+    let ctx = MockPathCompletionContext::new(TypedPathBuf::from("/work/proj"))
+        .with_entries_in_pwd([dir_entry("local-only"), dir_entry("shared")])
+        .with_entries(
+            TypedPathBuf::from("/srv/projects"),
+            [dir_entry("shared"), dir_entry("extra-dir")],
+        )
+        .with_cdpath(":/srv/projects".to_owned());
+
+    let displays: Vec<String> = warpui::r#async::block_on(sorted_cd_directories(
+        &ParsedToken::empty(),
+        MatchStrategy::CaseInsensitive,
+        &ctx,
+    ))
+    .into_iter()
+    .map(|m| m.suggestion.display.to_string())
+    .collect();
+    assert_eq!(displays, vec!["local-only/", "shared/", "extra-dir/"]);
+}
+
+#[cfg(unix)]
+#[test]
+pub fn test_sorted_cd_directories_pwd_at_dot_in_middle() {
+    // CDPATH="/srv/a:.:/srv/b": pwd appears between the two CDPATH entries.
+    let ctx = MockPathCompletionContext::new(TypedPathBuf::from("/work/proj"))
+        .with_entries_in_pwd([dir_entry("from-pwd")])
+        .with_entries(TypedPathBuf::from("/srv/a"), [dir_entry("from-a")])
+        .with_entries(TypedPathBuf::from("/srv/b"), [dir_entry("from-b")])
+        .with_cdpath("/srv/a:.:/srv/b".to_owned());
+
+    let displays: Vec<String> = warpui::r#async::block_on(sorted_cd_directories(
+        &ParsedToken::empty(),
+        MatchStrategy::CaseInsensitive,
+        &ctx,
+    ))
+    .into_iter()
+    .map(|m| m.suggestion.display.to_string())
+    .collect();
+    assert_eq!(displays, vec!["from-a/", "from-pwd/", "from-b/"]);
 }
