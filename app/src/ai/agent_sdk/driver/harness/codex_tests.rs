@@ -172,7 +172,7 @@ fn prepare_codex_config_toml_writes_fresh_config() {
     let working_dir = tmp.path().join("workspace/proj");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, None).unwrap();
 
     let canonical = working_dir.canonicalize().unwrap();
     let key = canonical.to_string_lossy().into_owned();
@@ -196,7 +196,8 @@ fn prepare_codex_config_toml_preserves_unrelated_keys() {
     )
     .unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir).unwrap();
+    // Pass `None` for the model id so the helper preserves the user's existing `model = ...`.
+    prepare_codex_config_toml(&config_path, &working_dir, None).unwrap();
 
     let canonical = working_dir.canonicalize().unwrap();
     let key = canonical.to_string_lossy().into_owned();
@@ -219,9 +220,9 @@ fn prepare_codex_config_toml_is_idempotent() {
     let working_dir = tmp.path().join("workspace");
     fs::create_dir_all(&working_dir).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, None).unwrap();
     let after_first = fs::read_to_string(&config_path).unwrap();
-    prepare_codex_config_toml(&config_path, &working_dir).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, None).unwrap();
     let after_second = fs::read_to_string(&config_path).unwrap();
 
     assert_eq!(after_first, after_second);
@@ -250,7 +251,7 @@ fn prepare_codex_config_toml_upgrades_untrusted_entry() {
     )
     .unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, None).unwrap();
 
     let cfg = read_codex_config(&config_path);
     assert_eq!(
@@ -269,7 +270,7 @@ fn prepare_codex_config_toml_trusts_multiple_child_repos() {
     fs::create_dir_all(repo_a.join(".git")).unwrap();
     fs::create_dir_all(repo_b.join(".git")).unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, None).unwrap();
 
     let cfg = read_codex_config(&config_path);
     let projects = cfg["projects"].as_table().unwrap();
@@ -297,10 +298,94 @@ fn prepare_codex_config_toml_overwrites_stale_openai_base_url() {
     )
     .unwrap();
 
-    prepare_codex_config_toml(&config_path, &working_dir).unwrap();
+    prepare_codex_config_toml(&config_path, &working_dir, None).unwrap();
 
     let cfg = read_codex_config(&config_path);
     assert_eq!(cfg["openai_base_url"].as_str(), Some(CODEX_OPENAI_BASE_URL));
+}
+
+#[test]
+fn prepare_codex_config_toml_writes_model_when_specified() {
+    // A non-default model id is written to the top-level `model` key so Codex pins it
+    // for new sessions launched from this `~/.codex/config.toml`. Even for the
+    // current target model, we stamp a self-referential migration entry so the
+    // upgrade prompt is suppressed regardless of what the user selected.
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("config.toml");
+    let working_dir = tmp.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+
+    prepare_codex_config_toml(&config_path, &working_dir, Some("gpt-5.5")).unwrap();
+
+    let cfg = read_codex_config(&config_path);
+    assert_eq!(cfg["model"].as_str(), Some("gpt-5.5"));
+    assert_eq!(
+        cfg["notice"]["model_migrations"]["gpt-5.5"].as_str(),
+        Some(CODEX_MODEL_MIGRATIONS_TARGET),
+    );
+}
+
+#[test]
+fn prepare_codex_config_toml_writes_model_migration_for_older_model() {
+    // For an older model id, the migration entry maps it to the current target
+    // so Codex's "choose a newer model" prompt is suppressed at session launch.
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("config.toml");
+    let working_dir = tmp.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+
+    prepare_codex_config_toml(&config_path, &working_dir, Some("gpt-5.2")).unwrap();
+
+    let cfg = read_codex_config(&config_path);
+    assert_eq!(cfg["model"].as_str(), Some("gpt-5.2"));
+    assert_eq!(
+        cfg["notice"]["model_migrations"]["gpt-5.2"].as_str(),
+        Some(CODEX_MODEL_MIGRATIONS_TARGET),
+    );
+}
+
+#[test]
+fn prepare_codex_config_toml_skips_model_for_default_sentinel() {
+    // The literal "default" sentinel means "let Codex pick its own default model";
+    // we should NOT write a `model` key (or a migration entry) in that case.
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("config.toml");
+    let working_dir = tmp.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+
+    prepare_codex_config_toml(&config_path, &working_dir, Some("default")).unwrap();
+
+    let cfg = read_codex_config(&config_path);
+    assert!(
+        cfg.get("model").is_none(),
+        "`model` should not be written for the default sentinel"
+    );
+    assert!(
+        cfg.get("notice").is_none(),
+        "`[notice]` table should not be written without a pinned model id"
+    );
+}
+
+#[test]
+fn prepare_codex_config_toml_skips_model_when_none() {
+    // No model id supplied means the user didn't pick one; we should not write a
+    // `model` key or any `[notice.model_migrations]` entries.
+    let tmp = TempDir::new().unwrap();
+    let config_path = tmp.path().join("config.toml");
+    let working_dir = tmp.path().join("workspace");
+    fs::create_dir_all(&working_dir).unwrap();
+
+    prepare_codex_config_toml(&config_path, &working_dir, None).unwrap();
+
+    let cfg = read_codex_config(&config_path);
+    assert!(
+        cfg.get("model").is_none(),
+        "`model` should not be written when no override is supplied"
+    );
+    assert!(
+        cfg.get("notice").is_none(),
+        "`[notice]` table should not be written without a pinned model id"
+    );
 }
 
 #[test]
