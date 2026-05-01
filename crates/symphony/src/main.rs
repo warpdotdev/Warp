@@ -47,11 +47,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let api_key = resolve_api_key(&workflow.config.tracker.api_key).await?;
 
-    let tracker = LinearClient::new(
-        workflow.config.tracker.endpoint.clone(),
-        api_key,
-        workflow.config.tracker.project_slug.clone(),
-    )?;
+    let tracker = match &workflow.config.tracker.team_key {
+        Some(team_key) => LinearClient::new_with_team(
+            workflow.config.tracker.endpoint.clone(),
+            api_key,
+            workflow.config.tracker.project_slug.clone(),
+            team_key.clone(),
+        )?,
+        None => LinearClient::new(
+            workflow.config.tracker.endpoint.clone(),
+            api_key,
+            workflow.config.tracker.project_slug.clone(),
+        )?,
+    };
 
     let workspaces = Arc::new(WorkspaceManager::new(
         workflow.config.workspace.root.clone(),

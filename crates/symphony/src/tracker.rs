@@ -4,6 +4,7 @@
 //! private functions so schema drift only requires updating one place.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -11,6 +12,20 @@ use chrono::{DateTime, Utc};
 use doppler::SecretValue;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::RwLock;
+
+/// One Linear workflow state (e.g. "Todo", "In Progress", "Done").
+/// Cached per LinearClient on first lookup so state-transition calls
+/// only require one mutation per transition rather than two.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkflowState {
+    /// Linear internal id (uuid).
+    pub id: String,
+    /// State name (case-sensitive in queries).
+    pub name: String,
+    /// State type bucket: `backlog`, `unstarted`, `started`, `completed`, `canceled`, `triage`.
+    pub state_type: String,
+}
 
 /// Reference to another issue that blocks the holder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,7 +149,14 @@ pub struct LinearClient {
     endpoint: String,
     api_key: SecretValue,
     project_slug: String,
+    /// Optional team key (e.g. "PDX") used to scope state lookups when
+    /// transitioning issues. Required only if `agent.handoff_state_on_*`
+    /// is configured in WORKFLOW.md.
+    team_key: Option<String>,
     http: Box<dyn TrackerHttp>,
+    /// Lazily-populated state cache: state name → WorkflowState.
+    /// Populated on first `transition_issue` call within the session.
+    state_cache: Arc<RwLock<Option<HashMap<String, WorkflowState>>>>,
 }
 
 impl LinearClient {
@@ -149,6 +171,24 @@ impl LinearClient {
             endpoint,
             api_key,
             project_slug,
+            None,
+            Box::new(transport),
+        ))
+    }
+
+    /// Construct a new client with an explicit team key (for state transitions).
+    pub fn new_with_team(
+        endpoint: String,
+        api_key: SecretValue,
+        project_slug: String,
+        team_key: String,
+    ) -> Result<Self, TrackerError> {
+        let transport = ReqwestTransport::new()?;
+        Ok(Self::with_transport(
+            endpoint,
+            api_key,
+            project_slug,
+            Some(team_key),
             Box::new(transport),
         ))
     }
@@ -158,13 +198,16 @@ impl LinearClient {
         endpoint: String,
         api_key: SecretValue,
         project_slug: String,
+        team_key: Option<String>,
         http: Box<dyn TrackerHttp>,
     ) -> Self {
         Self {
             endpoint,
             api_key,
             project_slug,
+            team_key,
             http,
+            state_cache: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -251,6 +294,93 @@ impl LinearClient {
             }
         }
         Ok(out)
+    }
+
+    /// Look up a workflow state ID by name, populating the cache on first
+    /// call. Requires `team_key` to have been set on the client (i.e. via
+    /// `new_with_team`). Returns `None` when no matching state is found
+    /// after a successful fetch.
+    pub async fn resolve_state_id(
+        &self,
+        state_name: &str,
+    ) -> Result<Option<String>, TrackerError> {
+        // Fast path: cache hit.
+        if let Some(cache) = &*self.state_cache.read().await {
+            return Ok(cache.get(state_name).map(|s| s.id.clone()));
+        }
+        // Slow path: fetch + populate.
+        let team_key = self.team_key.as_ref().ok_or_else(|| {
+            TrackerError::GraphQl(
+                "tracker.team_key not configured; required for state transitions".to_string(),
+            )
+        })?;
+        let payload = serde_json::json!({
+            "query": team_states_query(),
+            "variables": { "teamKey": team_key }
+        });
+        let resp = self
+            .http
+            .post_graphql(&self.endpoint, self.api_key.expose(), payload)
+            .await?;
+        check_graphql_errors(&resp)?;
+        let nodes = resp
+            .pointer("/data/workflowStates/nodes")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut map: HashMap<String, WorkflowState> = HashMap::new();
+        for n in nodes {
+            let id = n.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let name = n.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let state_type = n.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if !id.is_empty() && !name.is_empty() {
+                map.insert(name.clone(), WorkflowState { id, name, state_type });
+            }
+        }
+        let lookup = map.get(state_name).map(|s| s.id.clone());
+        *self.state_cache.write().await = Some(map);
+        Ok(lookup)
+    }
+
+    /// Transition an issue to the named state. No-ops with a tracing warn
+    /// if the state name doesn't resolve in the configured team.
+    pub async fn transition_issue(
+        &self,
+        issue_id: &str,
+        target_state_name: &str,
+    ) -> Result<(), TrackerError> {
+        let state_id = match self.resolve_state_id(target_state_name).await? {
+            Some(id) => id,
+            None => {
+                tracing::warn!(
+                    target = target_state_name,
+                    "state not found in team; skipping transition"
+                );
+                return Ok(());
+            }
+        };
+        let payload = serde_json::json!({
+            "query": issue_update_state_mutation(),
+            "variables": {
+                "id": issue_id,
+                "stateId": state_id,
+            }
+        });
+        let resp = self
+            .http
+            .post_graphql(&self.endpoint, self.api_key.expose(), payload)
+            .await?;
+        check_graphql_errors(&resp)?;
+        let success = resp
+            .pointer("/data/issueUpdate/success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !success {
+            return Err(TrackerError::GraphQl(
+                "issueUpdate returned success=false".to_string(),
+            ));
+        }
+        Ok(())
     }
 
     /// Post a comment to a Linear issue. Used by the orchestrator's
@@ -340,6 +470,27 @@ fn candidate_query() -> &'static str {
         }
       }
     }
+  }
+}
+"#
+}
+
+/// GraphQL query for all workflow states in a team. Cached per-session.
+fn team_states_query() -> &'static str {
+    r#"query TeamStates($teamKey: String!) {
+  workflowStates(filter: { team: { key: { eq: $teamKey } } }, first: 100) {
+    nodes { id name type }
+  }
+}
+"#
+}
+
+/// GraphQL mutation for transitioning an issue to a new state.
+fn issue_update_state_mutation() -> &'static str {
+    r#"mutation TransitionIssue($id: String!, $stateId: String!) {
+  issueUpdate(id: $id, input: { stateId: $stateId }) {
+    success
+    issue { id state { id name } }
   }
 }
 "#

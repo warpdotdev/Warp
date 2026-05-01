@@ -51,6 +51,16 @@ pub trait IssueSource: Send + Sync {
     ) -> Result<(), TrackerError> {
         Ok(())
     }
+
+    /// Transition an issue to a named state. Default no-op so mock
+    /// implementations don't have to provide one.
+    async fn transition_issue(
+        &self,
+        _issue_id: &str,
+        _target_state_name: &str,
+    ) -> Result<(), TrackerError> {
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -68,6 +78,14 @@ impl IssueSource for crate::tracker::LinearClient {
         body: &str,
     ) -> Result<(), TrackerError> {
         crate::tracker::LinearClient::add_comment(self, issue_id, body).await
+    }
+
+    async fn transition_issue(
+        &self,
+        issue_id: &str,
+        target_state_name: &str,
+    ) -> Result<(), TrackerError> {
+        crate::tracker::LinearClient::transition_issue(self, issue_id, target_state_name).await
     }
 }
 
@@ -472,6 +490,31 @@ impl Orchestrator {
                     "failed to post Linear comment; continuing"
                 );
                 // Comment failures don't fail the run — observability only.
+            }
+        }
+
+        // Optional state transition. Successful runs go to
+        // handoff_state_on_success (e.g. "In Review"); failures go to
+        // handoff_state_on_failure (e.g. "Backlog") if configured.
+        let target = if outcome.success {
+            self.workflow.config.agent.handoff_state_on_success.as_deref()
+        } else {
+            self.workflow.config.agent.handoff_state_on_failure.as_deref()
+        };
+        if let Some(target_state) = target {
+            if let Err(e) = self.tracker.transition_issue(&issue.id, target_state).await {
+                tracing::warn!(
+                    issue = %issue.identifier,
+                    target = target_state,
+                    error = %e,
+                    "failed to transition Linear state; continuing"
+                );
+            } else {
+                tracing::info!(
+                    issue = %issue.identifier,
+                    target = target_state,
+                    "transitioned Linear state"
+                );
             }
         }
 

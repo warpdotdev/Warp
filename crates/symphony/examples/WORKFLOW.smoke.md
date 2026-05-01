@@ -3,6 +3,7 @@ tracker:
   kind: linear
   api_key: $LINEAR_API_KEY
   project_slug: symphony-sandbox-4c92d5ea8f4c
+  team_key: PDX
   active_states: ["Todo", "In Progress"]
 polling:
   interval_ms: 30000
@@ -15,6 +16,9 @@ agent:
   max_diff_lines: 500
   max_turns: 3
   agent_label_required: "agent:claude"
+  comment_on_completion: true
+  handoff_state_on_success: "Done"
+  handoff_state_on_failure: "Backlog"
 ---
 
 You are a coding agent working on Linear issue {{ issue.identifier }}: {{ issue.title }}.

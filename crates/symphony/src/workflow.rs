@@ -54,6 +54,11 @@ pub struct TrackerConfig {
     pub api_key: String,
     /// Linear project slug to filter issues by.
     pub project_slug: String,
+    /// Team key (e.g. `"PDX"`) used to scope WorkflowState lookups for
+    /// state transitions. Optional; required only when
+    /// `agent.handoff_state_on_*` is configured.
+    #[serde(default)]
+    pub team_key: Option<String>,
     /// Issue states considered active for polling.
     #[serde(default = "default_active_states")]
     pub active_states: Vec<String>,
@@ -139,6 +144,16 @@ pub struct AgentConfig {
     /// `false` to operate purely in audit-log mode without ticket writes.
     #[serde(default = "default_comment_on_completion")]
     pub comment_on_completion: bool,
+    /// Optional state name to transition the issue to when the agent run
+    /// completes successfully (e.g. `"In Review"`). Requires
+    /// `tracker.team_key` to be set. None disables the transition.
+    #[serde(default)]
+    pub handoff_state_on_success: Option<String>,
+    /// Optional state name to transition the issue to on agent failure
+    /// (e.g. `"Backlog"`). Requires `tracker.team_key` to be set.
+    /// None leaves the issue in its current state for manual triage.
+    #[serde(default)]
+    pub handoff_state_on_failure: Option<String>,
 }
 
 impl Default for AgentConfig {
@@ -149,6 +164,8 @@ impl Default for AgentConfig {
             max_turns: default_max_turns(),
             agent_label_required: default_agent_label_required(),
             comment_on_completion: default_comment_on_completion(),
+            handoff_state_on_success: None,
+            handoff_state_on_failure: None,
         }
     }
 }
