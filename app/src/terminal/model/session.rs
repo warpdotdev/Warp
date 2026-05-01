@@ -1413,8 +1413,8 @@ impl Session {
     /// Returns a reference to the session's command executor for integration
     /// test assertions (e.g. to verify `RemoteServerCommandExecutor` is wired).
     #[cfg(any(test, feature = "integration_tests"))]
-    pub fn command_executor(&self) -> &dyn CommandExecutor {
-        self.command_executor.as_ref()
+    pub fn command_executor(&self) -> Arc<dyn CommandExecutor> {
+        self.command_executor.read().clone()
     }
 
     pub async fn execute_command(

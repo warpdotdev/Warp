@@ -93,11 +93,12 @@ jobs:
       # Federation provider is configured to only trust the base repository.
       # We skip the auth + gcloud install steps in those runs and exclude SSH
       # integration tests (which require gcloud to tunnel into a GCP test VM)
-      # via the filter suffix below. Tests that need gcloud all have `_ssh_`
-      # in their name. Fork PRs lose SSH integration test coverage; those
-      # tests still run post-merge against `master`.
+      # via the filter suffix below. Tests that need gcloud either have
+      # `_ssh_` in their name or exercise the remote-server SSH path. Fork PRs
+      # lose SSH integration test coverage; those tests still run post-merge
+      # against `master`.
       HAS_GCP_AUTH: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-      EXCLUDE_SSH_TESTS_FILTER: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && ' and not test(/_ssh_/)' || '' }}
+      EXCLUDE_SSH_TESTS_FILTER: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && ' and not test(/(_ssh_|remote_server)/)' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -243,16 +244,19 @@ jobs:
           brew: vim
           apt: vim
 
-      - name: Install musl cross-compilation toolchain for remote server tests
-        if: runner.os == 'macos'
-        continue-on-error: true
+      - name: Install remote server deploy dependencies
+        if: env.HAS_GCP_AUTH == 'true' && matrix.os != 'windows'
+        shell: bash
         run: |
-          brew install filosottile/musl-cross/musl-cross hudochenkov/sshpass/sshpass
+          if [[ "${{ matrix.os }}" == "macos" ]]; then
+            brew install filosottile/musl-cross/musl-cross hudochenkov/sshpass/sshpass
+          elif [[ "${{ matrix.os }}" == "linux" ]]; then
+            sudo apt-get install -y musl-tools sshpass
+          fi
           rustup target add x86_64-unknown-linux-musl
 
       - name: Deploy remote server binary to test VM
-        if: runner.os == 'macos'
-        continue-on-error: true
+        if: env.HAS_GCP_AUTH == 'true' && matrix.os != 'windows'
         run: script/deploy_remote_server_to_test_vm
 
       - name: Compile tests
