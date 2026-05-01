@@ -51,11 +51,25 @@ const BYTE_ORDER_MARK: &str = "\u{FEFF}";
 ///
 /// We use RC-file based bootstrap for MSYS2 because it has slow PTY throughput.
 #[cfg(feature = "local_fs")]
+pub fn is_container_subshell(session_info: &SessionInfo) -> bool {
+    session_info.subshell_info.as_ref().is_some_and(|info| {
+        let cmd = info.spawning_command.as_str();
+        cmd.starts_with("docker ") || cmd.starts_with("podman ")
+    })
+}
+
+#[cfg(feature = "local_fs")]
 pub fn should_use_rc_file_bootstrap_method(
     shell_type: ShellType,
     session_info: &SessionInfo,
 ) -> bool {
     use super::ShellLaunchData;
+
+    // Container subshells cannot access host temp files, so the RC-file
+    // method is never viable for them.
+    if is_container_subshell(session_info) {
+        return false;
+    }
 
     let session_type = &session_info.session_type;
     match session_type {
