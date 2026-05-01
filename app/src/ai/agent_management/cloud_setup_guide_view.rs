@@ -32,7 +32,13 @@ use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewCon
 const DOCS_URL: &str = "https://docs.warp.dev/agent-platform/cloud-agents/overview";
 const ENV_DOCS_URL: &str =
     "https://docs.warp.dev/reference/cli/integration-setup#creating-an-environment";
+// PDX-34: the Oz dashboard is part of Warp's hosted cloud agent platform
+// (`warp_hosted` feature). When the feature is off the URL is empty so the
+// "Visit Oz" action becomes a no-op (callers fail-closed).
+#[cfg(feature = "warp_hosted")]
 const OZ_URL: &str = "https://oz.warp.dev";
+#[cfg(not(feature = "warp_hosted"))]
+const OZ_URL: &str = "";
 
 const CONTENT_MAX_WIDTH: f32 = 720.;
 

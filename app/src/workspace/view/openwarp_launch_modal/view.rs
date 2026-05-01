@@ -26,6 +26,9 @@ const HERO_HEIGHT: f32 = 92.;
 const HERO_IMAGE_PATH: &str = "async/png/onboarding/openwarp_launch_banner.png";
 const REPO_URL: &str = "https://github.com/warpdotdev/warp";
 const CONTRIBUTING_URL: &str = "https://github.com/warpdotdev/warp/blob/master/CONTRIBUTING.md";
+// PDX-34: the hosted Oz orchestration platform is part of the `warp_hosted` feature.
+// When the feature is off, we do not advertise an external Oz URL.
+#[cfg(feature = "warp_hosted")]
 const OZ_URL: &str = "https://oz.warp.dev";
 
 struct InlineLink {
@@ -41,6 +44,10 @@ struct FeatureItem {
     inline_link: Option<InlineLink>,
 }
 
+// PDX-34: the Oz "Open Automated Development" entry is only shown when the
+// `warp_hosted` feature is on, because it advertises Warp's hosted agent
+// orchestration platform.
+#[cfg(feature = "warp_hosted")]
 const FEATURE_ITEMS: &[FeatureItem] = &[
     FeatureItem {
         icon: Icon::HeartHand,
@@ -58,6 +65,25 @@ const FEATURE_ITEMS: &[FeatureItem] = &[
         inline_link: Some(InlineLink {
             text: "Oz",
             url: OZ_URL,
+        }),
+    },
+    FeatureItem {
+        icon: Icon::MessageChatSquare,
+        title: "Introducing 'auto (open-weights)'",
+        description: "We've added a new auto model that picks the best open weight model for a task, like Kimi or MiniMax.",
+        inline_link: None,
+    },
+];
+
+#[cfg(not(feature = "warp_hosted"))]
+const FEATURE_ITEMS: &[FeatureItem] = &[
+    FeatureItem {
+        icon: Icon::HeartHand,
+        title: "Contribute",
+        description: "Warp's client code is now open source. Get started by using the /feedback skill to open an issue, and follow the contribution guidelines here.",
+        inline_link: Some(InlineLink {
+            text: "here",
+            url: CONTRIBUTING_URL,
         }),
     },
     FeatureItem {
