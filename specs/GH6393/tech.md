@@ -38,7 +38,7 @@ Add a `Hyperlink { id: Option<String>, uri: String }` value type, a `HyperlinkPa
 1. **Field layout.** Treat the first slice element as the params field. Treat **all subsequent slice elements rejoined with `b";"`** as the URI field. This explicit rejoin is the parser's single most important rule: real-world URIs contain `;` (matrix params, query separators in some encodings, jsessionid, percent-encoded payloads), and the vte parser will split such URIs across multiple `params` entries. The contract — URI is always the rejoin of `params[1..]` — guarantees those URIs are reconstructed correctly by every implementation. Implementations that follow only the "two-field" mental shortcut **will silently drop valid URIs** and must not pass review.
 2. **Close form.** `params == []`, or `params == [b""]`, or the rejoined URI field is empty → `Ok(None)`. Three accepted shapes because real emitters send all three.
 3. **Open form.** Rejoined URI field is non-empty → parse the params field and return `Ok(Some(Hyperlink {...}))`. The params field is split on `:`; recognized keys are `id=...`, all others ignored. A params entry without `=` is `Err(MalformedParam)`.
-4. **Error cases.** Non-UTF-8 bytes in the URI → `Err(InvalidUtf8)`. URI exceeding the registry's max byte length (see §3) → `Err(InvalidUtf8)` (the parser doesn't import the registry's cap; the dispatcher checks length and treats over-long as malformed). Empty params slice with no opening byte at all isn't reachable because `osc_dispatch` already guards against `params.is_empty()`.
+4. **Error cases.** Non-UTF-8 bytes in the URI → `Err(InvalidUtf8)`. URI exceeding `MAX_URI_BYTES` (a `pub const` defined in this module — see §3) → `Err(InvalidUtf8)`, **checked on the raw `&[u8]` rejoin before allocating the URI `String`**, so a 1 GB OSC 8 sequence never produces a 1 GB allocation. Empty params slice with no opening byte at all isn't reachable because `osc_dispatch` already guards against `params.is_empty()`.
 
 **Parser unit tests** live next to the type in a `#[cfg(test)] mod hyperlink_parse_tests`. The required ones:
 
@@ -79,7 +79,13 @@ The implementation needs a deduplicated registry keyed by an opaque small-intege
 pub struct HyperlinkId(NonZeroU32);
 pub struct HyperlinkRegistry { /* HashMap<Hyperlink, HyperlinkId> + Vec<Hyperlink> */ }
 impl HyperlinkRegistry {
-    pub fn intern(&mut self, h: Hyperlink) -> HyperlinkId;
+    /// Returns `Some(id)` for a successful intern, `None` if the
+    /// distinct-entries cap is hit. The URI byte length cap is
+    /// enforced earlier — in `parse_osc_params` (§1) — so a too-long
+    /// URI never reaches `intern`. That keeps the failure-modes per
+    /// caller simple: parse-time gives `Err(InvalidUtf8)`, intern-time
+    /// gives `None`.
+    pub fn intern(&mut self, h: Hyperlink) -> Option<HyperlinkId>;
     pub fn get(&self, id: HyperlinkId) -> Option<&Hyperlink>;
 }
 ```
@@ -90,25 +96,60 @@ Two storage variants need wiring:
 
 **3b. `Cell` / `Row` (alt-screen and other row-based grids).** Extend `CellExtra` (`crates/warp_terminal/src/model/grid/cell.rs:113`) with `hyperlink_id: Option<HyperlinkId>` and add accessors `Cell::hyperlink_id() / Cell::set_hyperlink_id()`. The 24→24 byte budget for `Cell` itself is preserved because the new field lives in the boxed extra. Resetting a cell preserves `EndOfPromptMarker`; preserve `hyperlink_id` only while the cell still has content.
 
-**3c. State on grid handlers.** `GridHandler`, `BlockGrid`, `Block`, and `AltScreen` each get an `active_hyperlink_id: Option<HyperlinkId>` field plus a per-grid `HyperlinkRegistry`. They override `set_hyperlink`:
+**3c. Single owner for active id and registry (delegation path).** Active hyperlink state and the registry both live in **one place**, the same place that `input(c: char)` stamps cells with attributes. That's `GridHandler` for `BlockList` flow and `AltScreen`'s own grid for the alt-screen flow. `BlockGrid` and `Block` do **not** carry independent copies; they delegate `set_hyperlink` (and cell stamping) to the inner `GridHandler`. Concretely:
+
+| Type | Owns `active_hyperlink_id`? | Owns `HyperlinkRegistry`? | `set_hyperlink` impl |
+| --- | --- | --- | --- |
+| `GridHandler` (`grid/ansi_handler.rs:159`) | yes | yes | updates own state, interns into own registry |
+| `BlockGrid` (`blockgrid.rs:704`) | no | no | forwards to `self.grid_handler.set_hyperlink(...)` (matches existing delegation pattern for `terminal_attribute`, `input`, etc.) |
+| `Block` (`block.rs:2906`) | no | no | forwards via `BlockGrid` to the inner `GridHandler` |
+| `AltScreen` (`alt_screen.rs:371`) | yes | yes | parallel to `GridHandler`, owns its own state because alt-screen doesn't share a grid with the block list |
+| `EarlyOutputHandler` (`early_output.rs:298`) | no | no | inherits the default `Handler::set_hyperlink` no-op; OSC 8 in early-output is safely dropped |
+
+This makes `set_hyperlink` and the cell-stamping path read the same field. The risk the reviewer flagged — `set_hyperlink` updating one copy while `input` reads another — is closed by ownership, not by careful synchronization.
 
 ```rust
+// In GridHandler (and AltScreen with the same shape):
 fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
-    self.active_hyperlink_id = hyperlink.map(|h| self.hyperlink_registry.intern(h));
+    self.active_hyperlink_id = hyperlink.and_then(|h| self.hyperlink_registry.intern(h));
+}
+
+// In BlockGrid and Block:
+fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
+    self.grid_handler.set_hyperlink(hyperlink);
 }
 ```
 
+The `and_then` (vs `map`) is the second half of finding 3: when `intern` returns `None` because the registry is full, `active_hyperlink_id` stays `None` and the visible text from the OSC 8 sequence renders as plain non-clickable cells — there is no path where a cell's `hyperlink_id` references an entry that doesn't exist.
+
 The grid's `input(&mut self, c: char)` path stamps `self.active_hyperlink_id` into each newly-written cell, in the same place SGR styling is applied today.
 
-**Block boundaries (product invariant 10).** `BlockList` clears `active_hyperlink_id` on prompt-marker block transitions (`prompt_marker` handler) and on `clear`/`reset_state`. `AltScreen` clears on its own reset.
+**3d. Behavior under cell-mutating operations.** OSC 8 makes `hyperlink_id` a per-cell attribute, so every operation that changes cell content has to make an explicit choice about it. The rule, applied uniformly:
 
-**Bounded registry, no reclamation (security: DoS resistance).** Terminal output is untrusted and a hostile or buggy process can emit unlimited unique URIs. The registry is bounded along three axes, all enforced at `intern` time, and **uses a no-reclaim model**: entries are never freed while the registry is alive. The registry's lifetime is the grid's lifetime — when the grid (block, alt-screen, etc.) is dropped or replaced, the entire registry goes with it.
-
-| Cap | Default | Behavior on hit |
+| Operation | What happens to existing `hyperlink_id` on touched cells | Implementation note |
 | --- | --- | --- |
-| Max URI byte length | 4096 | Sequence is dropped: `intern` returns `None`; `set_hyperlink` is treated as if the OSC 8 had been malformed. The visible text continues to render (per product invariant 15). |
-| Max distinct entries per registry | 4096 | New entries are not inserted; `intern` returns `None`. Existing entries stay valid; old links remain clickable. A `log::warn!` fires once per cap hit per session. |
-| Max referencing cells per entry | unbounded | Bounded indirectly by the grid's row cap. |
+| `input(c)` (write a char to cursor) | replaced with `self.active_hyperlink_id` (which may be `None`) | same place SGR is applied; never inherits the previous cell's id |
+| `erase_chars(n)` | cleared to `None` along with all other cell attrs | erased cells render as default-state blanks; **must not** stay clickable |
+| `clear_line(LineClearMode::*)` | cleared to `None` for the affected range | same |
+| `clear_screen(ClearMode::*)` | cleared to `None` for the affected range | same |
+| `delete_chars(n)` | cells are *removed* and following cells shift left; surviving cells keep their ids | id moves with the cell; the trailing inserted blanks have `None` |
+| `insert_blank(n)` | newly inserted blanks have `None`; following cells shift right with their ids intact | the active id is **not** stamped onto the inserted blanks — `input` is the only writer that does that |
+| `delete_lines(n)` / `insert_blank_lines(n)` | analogous: surviving rows keep ids; new blank rows have all `None` | |
+| `scroll_up` / `scroll_down` | scrolled-out rows are dropped (their ids stop being referenced); newly exposed rows have all `None` | the registry itself does not shrink — see no-reclaim §3 |
+| `reverse_index` (RI) | like `scroll_down` for boundary cases; otherwise cell content is preserved with its id | |
+| `decaln` (DECALN — fill screen with `E`) | ids cleared along with content reset | |
+| `reset_state` | `active_hyperlink_id = None`; **all cell ids cleared as a side effect of cell reset**; registry left intact (no-reclaim is fine here) | parallels how `terminal_attribute(Attr::Reset)` behaves, except scoped to the whole grid |
+| Block boundary (`prompt_marker` start) | `active_hyperlink_id = None`; the previous block's cell ids are unchanged (block is now scrollback) | see invariant 10 |
+
+Without this section, an implementer could plausibly leave erased blanks with stale ids (clickable empty space) or stamp the active id onto inserted blanks (a "Click to view scan report" link suddenly extending into the blank insert region). The table is the contract that prevents both.
+
+**Bounded registry, no reclamation (security: DoS resistance).** Terminal output is untrusted and a hostile or buggy process can emit unlimited unique URIs. Two caps, enforced at different layers, and **a no-reclaim model**: entries are never freed while the registry is alive. The registry's lifetime is the grid's lifetime — when the grid (block, alt-screen, etc.) is dropped or replaced, the entire registry goes with it.
+
+| Cap | Default | Enforced where | Behavior on hit |
+| --- | --- | --- | --- |
+| Max URI byte length | 4096 | `parse_osc_params` (§1) — checked before allocating the `String`, so a 1 GB OSC 8 sequence never produces a 1 GB allocation | parser returns `Err(InvalidUtf8)`; dispatcher passes the OSC to `unhandled(params)`; `set_hyperlink` is **not** called. The visible text continues to render (invariant 15). |
+| Max distinct entries per registry | 4096 | `HyperlinkRegistry::intern` | returns `None`; `set_hyperlink` lands `active_hyperlink_id = None`; the still-active OSC 8 span renders as plain non-clickable cells. Existing entries stay valid; old links remain clickable. A `log::warn!` fires once per cap hit per registry. |
+| Max referencing cells per entry | unbounded | n/a | bounded indirectly by the grid's row cap. |
 
 **Why no reclamation.** A reclamation model would need consistent reference-count accounting across cell overwrites (replace `hyperlink_id`, dec/inc), row eviction from scrollback, RLE run splits and merges in `FlatStorage`, reflow on resize (rows rebuilt from underlying spans), and deserialization (incoming cells must bump counts on the loaded registry). Getting any one of those wrong leaks entries (memory creep) or under-counts (use-after-free of an `id` that still appears in some cell). For a feature where the steady-state working set per block is small (single-digit URLs in real-world output) and the cap (4096 entries × ~1 KB average ≈ 4 MB) is already small, the simpler "registry grows monotonically until grid is dropped" model is the right tradeoff — and trivially correct under all of the above transitions because the only mutation is "append at intern time."
 
@@ -116,12 +157,14 @@ The grid's `input(&mut self, c: char)` path stamps `self.active_hyperlink_id` in
 
 **Caps are `pub const`** in the registry module so tests can override them via `#[cfg(test)] const MAX_DISTINCT_ENTRIES: usize = 4;` in a test-only build.
 
-Tests (in `hyperlink_registry_tests.rs`):
-- `intern` returns `None` for a URI exceeding the byte cap.
-- 4097 distinct interns: the first 4096 succeed, the 4097th returns `None`, the first 4096 stay valid.
-- Cells overwritten with new content do **not** cause the registry to shrink — `len_for_test()` does not decrease, only `Drop` of the registry frees memory. Documented as the intended behavior, not a bug.
-- A 1 MB OSC 8 sequence does not OOM the process; the parser drops it via the URI byte cap.
-- Dropping a `BlockList` block drops its registry (asserted via a `Weak`/Drop counter in tests).
+Tests (in `hyperlink_registry_tests.rs` and `parse_osc_params` parser tests):
+- **Parser** (`parse_osc_params`): a URI exceeding `MAX_URI_BYTES` returns `Err(InvalidUtf8)`. **The parser does not allocate the URI `String` before checking length** — verified by a test that supplies `&[u8]` of length `MAX_URI_BYTES + 1` and asserts the function returns `Err` synchronously without holding a `String` of that size on the heap.
+- **Registry intern**: `intern` returns `Some(id)` up to `MAX_DISTINCT_ENTRIES` distinct interns; the first call past the cap returns `None`, all earlier ids stay valid. The cap-hit `log::warn!` fires exactly once.
+- **`set_hyperlink` glue**: when `intern` returns `None`, `active_hyperlink_id` is `None` and subsequent `input(c)` writes plain non-clickable cells.
+- **No-reclaim under churn**: overwrite all cells in a row that referenced a hyperlink; assert `registry.len_for_test()` does not decrease. Documented as the intended behavior, not a bug.
+- **1 MB OSC 8 doesn't OOM**: feed a 1 MB OSC 8 sequence; assert no allocation of comparable size occurs (memory-tracked test allocator) and the visible text falls through to the next valid sequence.
+- **Drop = free**: dropping a `BlockList` block drops its registry (asserted via a `Weak`/Drop counter in tests).
+- **3d behavior table**: one test per row of the §3d table — write text under an active link, apply the operation, assert `hyperlink_id` matches the table.
 
 ### 4. Lookup helpers — model layer
 
@@ -149,39 +192,73 @@ The existing `Link` (`grid_handler.rs:143`) is a single `RangeInclusive<Point>` 
 
 ### 5a. Centralized scheme allow-list (security)
 
-Terminal output is untrusted, OSC 8 carries arbitrary URIs, and `ctx.open_url` is a thin wrapper that hands the string to the platform — it is **not** itself a validator. We add a single chokepoint that every path must call. The validator takes the URI as a `&str` (not a parsed `Url`) so it never forces the caller to throw away a URI that happens to be unparseable — that matters for hover/copy on malformed input (product invariant 15).
+Terminal output is untrusted, OSC 8 carries arbitrary URIs, and `ctx.open_url` is a thin wrapper that hands the string to the platform — it is **not** itself a validator. We add a single chokepoint that every open path must call. The validator takes the URI as a `&str` (not a parsed `Url`) so it never forces the caller to throw away a URI that happens to be unparseable — that matters for hover/copy on malformed input (product invariant 15) — and is parameterized by `LinkSource` so OSC 8 can be conservative without regressing the existing auto-detected URL behavior (product invariant 18).
 
 ```rust
 // New module: app/src/terminal/view/link_security.rs
+
+/// What pipeline produced the URI we're about to open. Determines
+/// which allow-list applies. See product invariant 16.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum LinkSource {
+    /// URI was emitted by the program via OSC 8. URI is decoupled
+    /// from visible text and entirely attacker-controlled.
+    OscHyperlink,
+    /// URI was extracted from the visible cell text by the existing
+    /// urlocator-based scanner. The user could already see and copy
+    /// it by hand.
+    AutoDetected,
+}
+
 pub enum SchemeCheck {
     Allowed,
     Rejected { reason: SchemeRejectReason },
 }
 
 pub enum SchemeRejectReason {
-    /// URI failed to parse as a URL (e.g. spaces, no scheme, garbage).
     Unparseable,
-    /// URI parsed but the scheme isn't on the allow-list.
     DisallowedScheme { scheme: String },
 }
 
 /// Returns Allowed iff the URI parses as a URL whose scheme is in the
-/// allow-list for opening untrusted links. Called by every code path
-/// that opens a URI coming from terminal output (OSC 8 hyperlinks and
-/// auto-detected URLs).
-pub fn check_open_scheme(uri: &str) -> SchemeCheck;
+/// allow-list for `source`. Called by every code path that opens a
+/// URI coming from terminal output.
+pub fn check_open_scheme(uri: &str, source: LinkSource) -> SchemeCheck;
 
-/// Convenience: validate then call ctx.open_url. Returns the
-/// SchemeCheck so the click/menu path can pick a tooltip and decide
-/// whether to fire OpenLink telemetry.
-pub fn open_validated(ctx: &mut impl AppContextLike, uri: &str) -> SchemeCheck;
+/// Convenience: validate then call ctx.open_url. Returns SchemeCheck
+/// so the caller can pick a tooltip and decide whether to fire
+/// OpenLink telemetry.
+pub fn open_validated(
+    ctx: &mut impl AppContextLike,
+    uri: &str,
+    source: LinkSource,
+) -> SchemeCheck;
 ```
 
-The allow-list is `http`, `https`, `mailto`, and `ftp` (matching product invariant 16, which makes this the single source of truth across click / context menu / shared markdown / copy-as-bytes / AI context). It is a `const &[&str]`, not a runtime config, to keep the boundary auditable.
+**Allow-lists, both compile-time `const &[&str]`** so the boundary is auditable. Product invariant 16 is the source of truth.
 
-**Compatibility with the existing auto-detected URL flow.** Today, no explicit scheme allow-list exists for auto-detected URLs — but the detection regex only matches `http` and `https`. Routing the auto-detected click path through `check_open_scheme` is therefore not a behavior regression: every URL the regex matches is `http`/`https`, both pre- and post-PR are openable. `mailto` and `ftp` are additions only relevant to OSC 8 (the auto-detect regex doesn't produce them today). Any future expansion of the auto-detect regex to additional schemes must update this `const` allow-list in lockstep.
+```rust
+const OSC8_ALLOWED_SCHEMES: &[&str] = &["http", "https", "mailto", "ftp"];
 
-**Rollout / migration.** The auto-detected URL flow gains validation in this PR. Telemetry: emit a `LinkRejectedScheme` event on every `Rejected` outcome, partitioned by source (`AutoDetected` vs `OscHyperlink`); we should see ≈0 `AutoDetected` rejections in production after rollout. If any do appear, the allow-list constant is the one place to revisit. No data migration is needed because the allow-list is compile-time only.
+// Mirrors what `urlocator` (the existing auto-detect scanner) emits today.
+// We codify it as a `const` rather than asking the validator to ask
+// urlocator at runtime — `LinkSource::AutoDetected` URIs always pass through
+// urlocator first, so any scheme that reaches `check_open_scheme` from this
+// source is already in this set. Locking it down as a `const` lets us
+// detect drift if urlocator (or our use of it) ever expands what it emits.
+const AUTO_DETECTED_ALLOWED_SCHEMES: &[&str] =
+    &["http", "https", "ftp", "ftps", "file", "git", "ssh", "mailto", "news", "gopher"];
+```
+
+**Why two lists, not one.**
+- *OSC 8* is attacker-chosen output that the user has not yet seen written out as a URL — it could be hidden behind any visible text. Conservative by default.
+- *Auto-detected* extracts URIs that already exist as visible text in the block; the user could highlight and copy them by hand. Tightening that path beyond what `urlocator` already produces would be a regression on invariant 18 (notably, `file:` and `ssh:` links from `git status` / `ls -F` output). That regression risk is not introduced by this PR and shouldn't be silently fixed by it; the discussion of whether to drop `file:` from auto-detect is a separate spec.
+
+**Migration / rollout.**
+- The auto-detected URL flow gains validation in this PR. Because `AUTO_DETECTED_ALLOWED_SCHEMES` mirrors what urlocator emits today, validation is a no-op on the happy path; what it *does* prevent is bypass attacks where a URI sourced from another path (e.g. a custom rich-content link) is fed into the auto-detected open path with an unexpected scheme.
+- Telemetry: emit `LinkRejectedScheme { source, scheme }` on every `Rejected` outcome. We expect ≈0 `AutoDetected` rejections post-rollout. Any non-zero count flags drift between `AUTO_DETECTED_ALLOWED_SCHEMES` and what urlocator now emits — both lists must change in lockstep.
+- If urlocator ever expands its detected schemes (or we adopt a different scanner), `AUTO_DETECTED_ALLOWED_SCHEMES` is the one place that must change to preserve invariant 18.
+- No data migration is needed because both lists are compile-time only.
 
 **Hover, copy, and click semantics for malformed/disallowed URIs** (product invariant 15):
 - The hyperlink span on the cells is unaffected by validity: hover always works, the tooltip always shows the literal URI, and right-click "Copy link" always copies the literal URI to the clipboard regardless of `SchemeCheck`. Validation only gates *opening* the URI.
@@ -302,7 +379,7 @@ sequenceDiagram
     View->>View: cursor=PointingHand, tooltip="Open link" + uri
 
     Note over View: User Cmd-clicks
-    View->>Validator: open_validated(ctx, "https://x")
+    View->>Validator: open_validated(ctx, "https://x", LinkSource::OscHyperlink)
     Validator->>Validator: parse + scheme allow-list check
     alt Allowed
         Validator->>Browser: ctx.open_url("https://x")
