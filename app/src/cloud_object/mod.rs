@@ -1681,6 +1681,10 @@ impl From<Owner> for WorkflowSource {
             // TODO(ben): Represent shared objects in telemetry.
             Owner::User { .. } => Self::PersonalCloud,
             Owner::Team { team_uid } => Self::Team { team_uid },
+            // PDX-82: Local objects map to PersonalCloud for telemetry
+            // categorization purposes (closest analogue to "owned by me").
+            #[cfg(not(feature = "warp_hosted"))]
+            Owner::Local { .. } => Self::PersonalCloud,
         }
     }
 }

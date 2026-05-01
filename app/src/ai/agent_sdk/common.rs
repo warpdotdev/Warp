@@ -186,6 +186,9 @@ pub fn format_owner(owner: &Owner) -> &'static str {
     match owner {
         Owner::User { .. } => "Personal",
         Owner::Team { .. } => "Team",
+        // PDX-82: Local-only objects display as "Personal" in the CLI.
+        #[cfg(not(feature = "warp_hosted"))]
+        Owner::Local { .. } => "Personal",
     }
 }
 

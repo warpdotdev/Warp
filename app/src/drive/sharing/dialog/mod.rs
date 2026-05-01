@@ -594,6 +594,9 @@ impl SharingDialog {
                             team_uid: match object.permissions().owner {
                                 Owner::Team { team_uid, .. } => Some(team_uid),
                                 Owner::User { .. } => None,
+                                // PDX-82: Local owners have no team UID.
+                                #[cfg(not(feature = "warp_hosted"))]
+                                Owner::Local { .. } => None,
                             },
                         }),
                         session_id: None,

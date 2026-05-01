@@ -54,6 +54,11 @@ pub fn upsert_cloud_object(
         match cloud_object_permissions.owner {
             Owner::User { user_uid } => ("USER", Some(user_uid.to_string()), user_uid.to_string()),
             Owner::Team { team_uid } => ("TEAM", None, team_uid.to_string()),
+            // PDX-82: Synthesize a stable subject row for the local owner so the
+            // hydration filter in `read_sqlite_data` can recognize the object on
+            // restart without consulting any cloud user.
+            #[cfg(not(feature = "warp_hosted"))]
+            Owner::Local { local_id } => ("LOCAL", None, local_id.to_string()),
         };
     let permissions_ts = cloud_object_permissions
         .permissions_last_updated_ts
@@ -92,6 +97,23 @@ pub fn upsert_cloud_object(
         .as_ref()
         .map(|r| r.timestamp_micros());
     let has_pending_content_changes = cloud_object_metadata.has_pending_content_changes();
+
+    // PDX-82: When the object has a local owner, the cloud sync code that
+    // would normally seed `revision_ts` and `metadata_last_updated_ts` is
+    // never run. Synthesize sensible defaults so the row has the same shape
+    // as a cloud-sourced one and `read_sqlite_data` can hydrate it.
+    #[cfg(not(feature = "warp_hosted"))]
+    let is_local_owner = matches!(cloud_object_permissions.owner, Owner::Local { .. });
+    #[cfg(feature = "warp_hosted")]
+    let is_local_owner = false;
+    let now_micros = chrono::Utc::now().timestamp_micros();
+    let revision = if is_local_owner {
+        // Start synthetic revisions at 1 micro past the epoch so the column is
+        // non-null and the row sorts before any future cloud-sourced revision.
+        Some(revision.unwrap_or(1))
+    } else {
+        revision
+    };
 
     // Filter to find metadata row.
     // The diesel types for `filter`s are dependent on the columns being filtered
@@ -185,7 +207,9 @@ pub fn upsert_cloud_object(
 
                 metadata_last_updated_ts: cloud_object_metadata
                     .metadata_last_updated_ts
-                    .map(|ts| ts.timestamp_micros()),
+                    .map(|ts| ts.timestamp_micros())
+                    // PDX-82: Local owners have no cloud-sourced timestamp.
+                    .or_else(|| if is_local_owner { Some(now_micros) } else { None }),
 
                 trashed_ts: cloud_object_metadata
                     .trashed_ts

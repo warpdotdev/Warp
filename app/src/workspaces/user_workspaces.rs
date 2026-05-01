@@ -661,6 +661,9 @@ impl UserWorkspaces {
                     Space::Shared
                 }
             }
+            // PDX-82: Local-only objects map to the personal space.
+            #[cfg(not(feature = "warp_hosted"))]
+            Owner::Local { .. } => Space::Personal,
         }
     }
 

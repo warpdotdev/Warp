@@ -764,7 +764,7 @@ skip_login = []
 # build opts out via `--no-default-features` (PDX-31, PDX-33).
 # Crash reporting (Sentry) is gated separately via `crash_reporting`
 # and is unaffected by this flag (PDX-78 territory).
-warp_hosted = ["warp_core/warp_hosted"]
+warp_hosted = ["warp_core/warp_hosted", "warp_server_client/warp_hosted"]
 # This feature should only be enabled when building a self-contained binary with the bundle script.
 standalone = []
 prompt_suggestions_via_maa = []

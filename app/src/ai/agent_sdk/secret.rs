@@ -241,6 +241,10 @@ fn create_secret_with_input(
                 Owner::Team { team_uid } => SecretOwner::Team {
                     team_uid: team_uid.uid(),
                 },
+                // PDX-82: Local-only owners aren't reachable here (the agent
+                // SDK requires cloud auth). Defensive map to CurrentUser.
+                #[cfg(not(feature = "warp_hosted"))]
+                Owner::Local { .. } => SecretOwner::CurrentUser,
             };
 
             let create_future = manager.create_secret(
@@ -293,6 +297,10 @@ fn delete_secret(ctx: &mut AppContext, args: DeleteSecretArgs) -> Result<()> {
                 Owner::Team { team_uid } => SecretOwner::Team {
                     team_uid: team_uid.uid(),
                 },
+                // PDX-82: Local-only owners aren't reachable here (the agent
+                // SDK requires cloud auth). Defensive map to CurrentUser.
+                #[cfg(not(feature = "warp_hosted"))]
+                Owner::Local { .. } => SecretOwner::CurrentUser,
             };
 
             if !force {
@@ -309,6 +317,9 @@ fn delete_secret(ctx: &mut AppContext, args: DeleteSecretArgs) -> Result<()> {
                 let scope = match owner {
                     Owner::User { .. } => "personal",
                     Owner::Team { .. } => "team",
+                    // PDX-82: Local-only owners are CLI-displayed as "personal".
+                    #[cfg(not(feature = "warp_hosted"))]
+                    Owner::Local { .. } => "personal",
                 };
 
                 let should_delete = match Confirm::new(&format!("Delete {scope} secret '{name}'?"))
@@ -397,6 +408,10 @@ fn update_secret(ctx: &mut AppContext, args: UpdateSecretArgs) -> Result<()> {
                 Owner::Team { team_uid } => SecretOwner::Team {
                     team_uid: team_uid.uid(),
                 },
+                // PDX-82: Local-only owners aren't reachable here (the agent
+                // SDK requires cloud auth). Defensive map to CurrentUser.
+                #[cfg(not(feature = "warp_hosted"))]
+                Owner::Local { .. } => SecretOwner::CurrentUser,
             };
 
             if let Some(secret_value) = secret_value {

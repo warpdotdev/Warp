@@ -1,5 +1,15 @@
 # Local SQLite persistence (notebooks + workflows)
 
+> **PDX-82 [A1.2.4] -- RESOLVED 2026-04-30.** All four PDX-81 gaps are now
+> closed. The application-layer hydration path no longer requires a cloud
+> account: a new `Owner::Local { local_id: Uuid }` variant lets
+> `upsert_cloud_object` synthesize the `object_metadata` + `object_permissions`
+> sidecar rows that `read_sqlite_data` joins against, and
+> `to_cloud_object_permissions` knows how to reconstitute `Owner::Local` from
+> a `subject_type = 'LOCAL'` row without consulting any cloud user. See
+> [Resolution](#pdx-82-resolution) at the end of this document for code
+> references.
+
 PDX-81 [A1.2.3]: verifies the PDX-35 audit assertion *"Local-only storage via
 SQLite (already exists in codebase)."* This document is the result of the
 verification pass plus the gaps discovered while writing
@@ -254,3 +264,66 @@ fixed.
 In short: the **store** is local-ready; the **load** is not. Fixing the four
 gaps above is the work that PDX-81's audit was implicitly punting to a
 follow-up.
+
+## PDX-82 resolution
+
+PDX-82 [A1.2.4] closed all four gaps above by adding an `Owner::Local`
+variant and teaching the existing sidecar-write/sidecar-read code paths how
+to handle it. No new tables, no schema changes -- only a new owner kind that
+flows through the existing `object_metadata` + `object_permissions` plumbing.
+
+The variant itself is feature-gated:
+
+```rust
+// crates/warp_server_client/src/cloud_object/mod.rs
+pub enum Owner {
+    User { user_uid: UserUid },
+    Team { team_uid: ServerId },
+    #[cfg(not(feature = "warp_hosted"))]
+    Local { local_id: Uuid },
+}
+```
+
+That keeps the cloud-side build (`warp_hosted` ON) unchanged: the existing
+exhaustive matches against `Owner::User` / `Owner::Team` stay exhaustive,
+and `Owner::Local` literally does not exist as a variant the cloud-sync code
+can construct or pattern-match. With `warp_hosted` OFF, the variant becomes
+visible and a small set of cascade arms in cloud-side files (sharing,
+telemetry) become reachable as `unreachable!()` or sensible defaults.
+
+| Gap | File:line where the fix landed | Notes |
+| --- | --- | --- |
+| **Gap 1** -- `read_sqlite_data` filters out objects without an `object_metadata` row | `crates/warp_server_client/src/persistence/mod.rs:33` | `upsert_cloud_object` now writes a synthetic `object_metadata` row when `Owner::Local`, with `revision_ts >= 1` and `metadata_last_updated_ts = now`. The existing JOIN in `app/src/persistence/sqlite.rs:2832` therefore matches on local rows without modification. |
+| **Gap 2** -- write path requires `Owner::User` / `Owner::Team` | `crates/warp_server_client/src/persistence/mod.rs:55` | Added an `Owner::Local { local_id }` arm that maps to `("LOCAL", None, local_id.to_string())` for the `subject_type` / `subject_id` / `subject_uid` columns. |
+| **Gap 3** -- `to_cloud_object_permissions` returns `None` for `Owner::User` without `current_user_id` | `app/src/persistence/sqlite.rs:3354` (`owner_for_permissions`) | Added a `"LOCAL" =>` arm that recovers the synthetic UUID from `subject_uid` and returns `Owner::Local { local_id }`. No cloud user lookup needed. |
+| **Gap 4** -- `notebook_panes.local_path` is populated but hydration keys off cloud `notebook_id` | Subsumed by Gaps 1-3 | Once the notebook itself rehydrates with `Owner::Local`, the existing `notebook_panes` -> `notebook_id` join in `read_sqlite_data` resolves correctly because the synthetic `object_metadata.client_id` (a hashed `Client-<uuid>`) matches what the pane row was given at create time. The `local_path` column remains a session-restoration optimization for file-backed notebooks; it is not the primary key the hydration follows. |
+
+### Cascade boundary decisions
+
+Adding `Owner::Local` cascades into a small number of exhaustive `match`
+sites in cloud-side files. Per the PDX-79 inline-feature-gate playbook, each
+cascade was closed with a single `#[cfg(not(feature = "warp_hosted"))]` arm
+that is either an `unreachable!()` (for cloud-only code that genuinely can
+never see a local owner -- e.g. GraphQL conversion, Drive sharing) or a
+sensible local-default mapping (for code that does run offline -- e.g.
+telemetry classifies local notebooks as `PersonalCloud`, the CLI displays
+`Owner::Local` as "Personal", `is_embed_accessible` rejects local objects
+from team spaces).
+
+### Verification
+
+`app/tests/local_notebook_persistence.rs` test #3 -- previously named
+`notebook_and_workflow_inserted_locally_have_no_object_metadata` and used
+to *pin the gap* -- was renamed to
+`local_notebook_and_workflow_get_synthetic_object_metadata` and now
+*verifies the fix*: it calls `upsert_cloud_object` with `Owner::Local` for
+both a notebook and a workflow, simulates a process restart, and asserts
+that the sidecar rows survive with the right shape (`subject_type='LOCAL'`,
+`subject_uid` round-trips the UUID, `revision_ts >= 1`,
+`metadata_last_updated_ts` is non-null).
+
+Run with:
+
+```sh
+cargo test -p warp --no-default-features --test local_notebook_persistence
+```

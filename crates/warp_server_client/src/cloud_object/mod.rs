@@ -19,6 +19,9 @@ use warpui_core::{
     ui_components::components::UiComponent,
 };
 
+#[cfg(not(feature = "warp_hosted"))]
+use uuid::Uuid;
+
 use crate::{
     auth::UserUid,
     drive::sharing::{SharingAccessLevel, Subject, TeamKind, UserKind},
@@ -296,6 +299,13 @@ pub enum Owner {
     User { user_uid: UserUid },
     /// The owner of the object is a team (the object is in a team drive).
     Team { team_uid: ServerId },
+    /// PDX-82: The object is owned locally (no cloud account).
+    /// Only constructed when `warp_hosted` is OFF; identifies a row whose
+    /// `object_metadata` sidecar was synthesized client-side rather than
+    /// sourced from the cloud. The `local_id` is a stable client-generated
+    /// UUID used as the synthetic owner UID in `object_permissions`.
+    #[cfg(not(feature = "warp_hosted"))]
+    Local { local_id: Uuid },
 }
 
 impl Owner {
@@ -315,6 +325,9 @@ impl From<Owner> for Option<ServerId> {
         match owner {
             Owner::User { .. } => None,
             Owner::Team { team_uid, .. } => Some(team_uid),
+            // PDX-82: A locally-owned object has no server-side container.
+            #[cfg(not(feature = "warp_hosted"))]
+            Owner::Local { .. } => None,
         }
     }
 }
@@ -993,6 +1006,14 @@ impl From<Owner> for warp_graphql::object_permissions::Owner {
                 type_: OwnerType::Team,
                 uid: Some(cynic::Id::new(team_uid)),
             },
+            // PDX-82: This impl is only reachable on cloud-sync code paths,
+            // which never run with `warp_hosted` OFF. A local-only Owner
+            // never round-trips through GraphQL.
+            #[cfg(not(feature = "warp_hosted"))]
+            Owner::Local { .. } => unreachable!(
+                "Owner::Local is only constructed when warp_hosted is OFF \
+                 and never crosses the GraphQL boundary"
+            ),
         }
     }
 }

@@ -1,25 +1,33 @@
-//! PDX-81 [A1.2.3] - verifies that local SQLite persistence of notebooks and
+//! PDX-82 [A1.2.4] - verifies that local SQLite persistence of notebooks and
 //! workflows survives a simulated app restart while the `warp_hosted` feature
-//! is OFF.
+//! is OFF, AND that the application-layer hydration path
+//! (`object_metadata` + `object_permissions` sidecars) is wired up correctly
+//! through `upsert_cloud_object` with the new `Owner::Local` variant.
 //!
-//! The test exercises the schema and the migration set embedded in the
-//! `persistence` crate -- the same artifacts the real `app::persistence`
-//! module loads at startup. It bypasses the higher-level cloud-object
-//! plumbing (which requires an `AppContext`) and instead inserts directly
-//! through the public diesel models, which is the most that can be exercised
-//! without the full Warp runtime.
+//! Test #3 used to be a *gap-documenting* assertion (it asserted that
+//! `object_metadata` was empty for local-only rows); PDX-82 flipped it to a
+//! *fix-verifying* assertion: the sidecar rows are now populated by the
+//! application-layer write path even with no cloud account.
 //!
-//! Findings about the schema, plus the gaps in the "local-only" claim, are
+//! Findings about the schema, plus the fixes for the four PDX-81 gaps, are
 //! documented in `docs/storage/local-persistence.md`.
 
 #![cfg(not(feature = "warp_hosted"))]
 
 use diesel::{
-    BoolExpressionMethods, Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnection,
+    Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnection,
 };
 use diesel_migrations::MigrationHarness;
 use persistence::{MIGRATIONS, model, schema};
 use tempfile::TempDir;
+use uuid::Uuid;
+
+use warp_server_client::cloud_object::{
+    CloudObjectMetadata, CloudObjectPermissions, CloudObjectStatuses, CloudObjectSyncStatus,
+    ObjectType, Owner,
+};
+use warp_server_client::ids::{ClientId, SyncId};
+use warp_server_client::persistence::upsert_cloud_object;
 
 /// Opens a SQLite connection at `path`, applies WAL + FK pragmas, and runs all
 /// embedded migrations. Mirrors what `app::persistence::sqlite::setup_database`
@@ -36,6 +44,42 @@ fn open_with_migrations(path: &std::path::Path) -> SqliteConnection {
     conn.run_pending_migrations(MIGRATIONS)
         .expect("embedded migrations should apply cleanly");
     conn
+}
+
+/// Builds a `CloudObjectMetadata` with all-`None` cloud fields, mirroring how
+/// a brand-new local notebook would look at create time (no revision, no
+/// editor, no folder).
+fn local_only_metadata() -> CloudObjectMetadata {
+    CloudObjectMetadata {
+        revision: None,
+        current_editor_uid: None,
+        metadata_last_updated_ts: None,
+        pending_changes_statuses: CloudObjectStatuses {
+            content_sync_status: CloudObjectSyncStatus::NoLocalChanges,
+            has_pending_permissions_change: false,
+            has_pending_metadata_change: false,
+            pending_untrash: false,
+            pending_delete: false,
+        },
+        trashed_ts: None,
+        folder_id: None,
+        is_welcome_object: false,
+        last_editor_uid: None,
+        creator_uid: None,
+        last_task_run_ts: None,
+    }
+}
+
+/// Builds a `CloudObjectPermissions` whose owner is `Owner::Local` --
+/// the new PDX-82 variant that lets a local notebook/workflow round-trip
+/// through `upsert_cloud_object` without a cloud user/team.
+fn local_only_permissions(local_id: Uuid) -> CloudObjectPermissions {
+    CloudObjectPermissions {
+        owner: Owner::Local { local_id },
+        permissions_last_updated_ts: None,
+        guests: Vec::new(),
+        anyone_with_link: None,
+    }
 }
 
 #[test]
@@ -109,52 +153,145 @@ fn workflow_round_trips_across_restart() {
     }
 }
 
-/// PDX-81 explicit gap check: confirms that the read path used by
-/// `app::persistence::sqlite::read_sqlite_data` (which joins `notebooks` /
-/// `workflows` against `object_metadata` and silently filters out anything
-/// without a metadata row) returns *zero* objects when only the local row
-/// exists. This is the divergence between "data persists at the row level"
-/// (true) and "the running app can see it after restart" (false), which the
-/// PDX-35 audit's claim glosses over.
+/// PDX-82 fix-verification: the application-layer write path
+/// (`upsert_cloud_object`) MUST populate a synthetic `object_metadata` row
+/// + `object_permissions` row when called with `Owner::Local`. Before PDX-82
+/// this was the gap that left local-only notebooks invisible after restart;
+/// after PDX-82 it is the mechanism that makes them visible.
 #[test]
-fn notebook_and_workflow_inserted_locally_have_no_object_metadata() {
+fn local_notebook_and_workflow_get_synthetic_object_metadata() {
     let tmp = TempDir::new().expect("tempdir");
     let db = tmp.path().join("warp.sqlite");
 
-    let mut conn = open_with_migrations(&db);
-    diesel::insert_into(schema::notebooks::table)
-        .values(model::NewNotebook {
-            title: Some("local-only".to_string()),
-            data: Some("{}".to_string()),
-            ai_document_id: None,
-        })
-        .execute(&mut conn)
-        .unwrap();
-    diesel::insert_into(schema::workflows::table)
-        .values(model::NewWorkflow {
-            data: "{}".to_string(),
-        })
-        .execute(&mut conn)
-        .unwrap();
+    let local_owner_id = Uuid::new_v4();
+    let notebook_sync_id = SyncId::ClientId(ClientId::new());
+    let workflow_sync_id = SyncId::ClientId(ClientId::new());
 
-    // `object_metadata` rows are normally written by
-    // `warp_server_client::persistence::upsert_cloud_object`, which is only
-    // invoked by the cloud-sync path. With `warp_hosted` OFF, no caller
-    // currently produces those rows, which means the join in
-    // `read_sqlite_data` filters every local-only notebook and workflow out
-    // even though the row data itself persists fine.
-    let metadata_rows: i64 = schema::object_metadata::table
-        .filter(
-            schema::object_metadata::object_type
-                .eq("NOTEBOOK")
-                .or(schema::object_metadata::object_type.eq("WORKFLOW")),
+    // First "session": create a notebook and a workflow via the same
+    // application-layer entry point (`upsert_cloud_object`) the real app uses,
+    // both owned by `Owner::Local`.
+    {
+        let mut conn = open_with_migrations(&db);
+
+        // Notebook.
+        upsert_cloud_object(
+            &mut conn,
+            ObjectType::Notebook,
+            notebook_sync_id,
+            local_only_metadata(),
+            local_only_permissions(local_owner_id),
+            Box::new(|c| {
+                diesel::insert_into(schema::notebooks::table)
+                    .values(model::NewNotebook {
+                        title: Some("local-only".to_string()),
+                        data: Some("{}".to_string()),
+                        ai_document_id: None,
+                    })
+                    .execute(c)?;
+                schema::notebooks::table
+                    .select(schema::notebooks::id)
+                    .order(schema::notebooks::id.desc())
+                    .first(c)
+            }),
+            Box::new(|_, _| Ok(())),
         )
-        .count()
-        .get_result(&mut conn)
-        .unwrap();
-    assert_eq!(
-        metadata_rows, 0,
-        "no code path produces object_metadata rows in local-only mode; \
-         see docs/storage/local-persistence.md for the follow-up gap"
-    );
+        .expect("upsert_cloud_object for a local notebook should succeed");
+
+        // Workflow.
+        upsert_cloud_object(
+            &mut conn,
+            ObjectType::Workflow,
+            workflow_sync_id,
+            local_only_metadata(),
+            local_only_permissions(local_owner_id),
+            Box::new(|c| {
+                diesel::insert_into(schema::workflows::table)
+                    .values(model::NewWorkflow {
+                        data: r#"{"name":"local-wf"}"#.to_string(),
+                    })
+                    .execute(c)?;
+                schema::workflows::table
+                    .select(schema::workflows::id)
+                    .order(schema::workflows::id.desc())
+                    .first(c)
+            }),
+            Box::new(|_, _| Ok(())),
+        )
+        .expect("upsert_cloud_object for a local workflow should succeed");
+    }
+
+    // Second "session": reopen and verify the sidecar rows survive the
+    // simulated restart with the right shape.
+    {
+        let mut conn = open_with_migrations(&db);
+
+        // Sidecar rows exist for both objects.
+        let metadata_rows: Vec<model::ObjectMetadata> = schema::object_metadata::table
+            .load::<model::ObjectMetadata>(&mut conn)
+            .expect("re-reading object_metadata should succeed");
+        assert_eq!(
+            metadata_rows.len(),
+            2,
+            "PDX-82 fix: upsert_cloud_object must write object_metadata sidecars \
+             for both Owner::Local notebook and workflow"
+        );
+
+        // Both rows carry a non-null synthetic revision (>= 1) so the
+        // hydration filter in `read_sqlite_data` doesn't drop them.
+        for m in &metadata_rows {
+            assert!(
+                m.revision_ts.is_some_and(|ts| ts >= 1),
+                "expected synthetic revision >= 1, got {:?} for {}",
+                m.revision_ts,
+                m.object_type
+            );
+            assert!(
+                m.metadata_last_updated_ts.is_some(),
+                "expected synthetic metadata_last_updated_ts, got None for {}",
+                m.object_type
+            );
+            assert!(
+                !m.is_pending,
+                "no in-flight content changes were declared, so is_pending must be false"
+            );
+        }
+
+        // Permissions rows exist for both sidecars and carry the LOCAL owner
+        // tag plus the original UUID we passed in -- this is what
+        // `to_cloud_object_permissions` reads to reconstruct `Owner::Local`
+        // on hydration without consulting any cloud user.
+        let permission_rows: Vec<model::ObjectPermissions> = schema::object_permissions::table
+            .load::<model::ObjectPermissions>(&mut conn)
+            .expect("re-reading object_permissions should succeed");
+        assert_eq!(permission_rows.len(), 2);
+        for p in &permission_rows {
+            assert_eq!(
+                p.subject_type, "LOCAL",
+                "PDX-82: Owner::Local must serialize as subject_type='LOCAL'"
+            );
+            assert_eq!(
+                p.subject_uid,
+                local_owner_id.to_string(),
+                "subject_uid round-trips the Owner::Local UUID"
+            );
+            assert!(
+                p.subject_id.is_none(),
+                "Owner::Local has no cloud user_uid, so subject_id stays NULL"
+            );
+        }
+
+        // Notebook + workflow data themselves still round-trip through their
+        // per-type tables -- this is the original PDX-81 invariant.
+        let notebook_rows = schema::notebooks::table
+            .load::<model::Notebook>(&mut conn)
+            .expect("re-reading notebooks should succeed");
+        assert_eq!(notebook_rows.len(), 1);
+        assert_eq!(notebook_rows[0].title.as_deref(), Some("local-only"));
+
+        let workflow_rows = schema::workflows::table
+            .load::<model::Workflow>(&mut conn)
+            .expect("re-reading workflows should succeed");
+        assert_eq!(workflow_rows.len(), 1);
+        assert_eq!(workflow_rows[0].data, r#"{"name":"local-wf"}"#);
+    }
 }

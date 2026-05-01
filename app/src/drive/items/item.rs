@@ -455,6 +455,9 @@ impl<'a> WarpDriveRow<'a> {
                     .team_from_uid(team_uid)
                     .map_or("unknown team", |team| &team.name),
             ),
+            // PDX-82: Local-only objects display as "this device".
+            #[cfg(not(feature = "warp_hosted"))]
+            Owner::Local { .. } => owner_label.push_str("this device"),
         }
 
         let background = appearance.theme().surface_1();

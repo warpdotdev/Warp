@@ -171,6 +171,15 @@ impl Subject {
         match owner {
             Owner::User { user_uid } => Subject::User(UserKind::Account(user_uid)),
             Owner::Team { team_uid } => Subject::Team(TeamKind::Team { team_uid }),
+            // PDX-82: Sharing is a cloud-only concept; this conversion is
+            // only reachable on cloud-sync code paths, which never run with
+            // `warp_hosted` OFF. A locally-owned object never participates
+            // in Drive sharing, so we treat it as having no UID.
+            #[cfg(not(feature = "warp_hosted"))]
+            Owner::Local { .. } => unreachable!(
+                "Owner::Local cannot be converted to a sharing Subject; \
+                 sharing is gated behind the warp_hosted feature"
+            ),
         }
     }
 
