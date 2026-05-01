@@ -216,7 +216,7 @@ where
 }
 
 pub(crate) fn custom_theme_path_for_storage(path: &Path, theme_root: &Path) -> PathBuf {
-    if path.is_relative() {
+    if !path_is_absolute_or_foreign_absolute(path) {
         return path.to_path_buf();
     }
 
@@ -228,39 +228,33 @@ pub(crate) fn custom_theme_path_for_storage(path: &Path, theme_root: &Path) -> P
 }
 
 pub(crate) fn custom_theme_path_from_storage(path: &Path, theme_root: &Path) -> PathBuf {
-    if path.is_relative() {
-        return if theme_root_relative_path_is_safe(path) {
-            theme_root.join(path)
+    if path_is_absolute_or_foreign_absolute(path) {
+        return if let Ok(relative) = path.strip_prefix(theme_root) {
+            if theme_root_relative_path_is_safe(relative) {
+                theme_root.join(relative)
+            } else {
+                path.to_path_buf()
+            }
         } else {
             path.to_path_buf()
         };
     }
 
-    if let Ok(relative) = path.strip_prefix(theme_root) {
-        return if theme_root_relative_path_is_safe(relative) {
-            theme_root.join(relative)
-        } else {
-            path.to_path_buf()
-        };
+    if theme_root_relative_path_is_safe(path) {
+        theme_root.join(path)
+    } else {
+        path.to_path_buf()
     }
-
-    if let Some(relative) = legacy_theme_root_relative_path(path) {
-        let candidate = theme_root.join(relative);
-        if candidate.exists() {
-            return candidate;
-        }
-    }
-
-    path.to_path_buf()
 }
 
 pub(crate) fn custom_theme_path_is_portable(path: &Path, theme_root: &Path) -> bool {
-    if path.is_relative() {
-        return theme_root_relative_path_is_safe(path);
+    if path_is_absolute_or_foreign_absolute(path) {
+        return path
+            .strip_prefix(theme_root)
+            .is_ok_and(theme_root_relative_path_is_safe);
     }
 
-    path.strip_prefix(theme_root)
-        .is_ok_and(theme_root_relative_path_is_safe)
+    theme_root_relative_path_is_safe(path)
 }
 
 fn theme_root_relative_path_is_safe(path: &Path) -> bool {
@@ -270,37 +264,26 @@ fn theme_root_relative_path_is_safe(path: &Path) -> bool {
             .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 
-fn legacy_theme_root_relative_path(path: &Path) -> Option<PathBuf> {
-    let components = path.components().collect::<Vec<_>>();
-
-    relative_path_after_marker(&components, &[".warp", "themes"])
-        .or_else(|| relative_path_after_marker(&components, &["warp-terminal", "themes"]))
+fn path_is_absolute_or_foreign_absolute(path: &Path) -> bool {
+    path.has_root() || path_looks_like_foreign_windows_absolute(path)
 }
 
-fn relative_path_after_marker(components: &[Component<'_>], marker: &[&str]) -> Option<PathBuf> {
-    let start = components
-        .windows(marker.len())
-        .position(|window| components_match_marker(window, marker))?;
-    let relative = components[start + marker.len()..]
-        .iter()
-        .map(|component| match component {
-            Component::Normal(value) => Some(PathBuf::from(value)),
-            Component::CurDir => Some(PathBuf::from(".")),
-            _ => None,
-        })
-        .collect::<Option<PathBuf>>()?;
-    if relative.as_os_str().is_empty() {
-        return None;
+fn path_looks_like_foreign_windows_absolute(path: &Path) -> bool {
+    if path.has_root() {
+        return false;
     }
 
-    Some(relative)
-}
+    let Some(path) = path.as_os_str().to_str() else {
+        return false;
+    };
 
-fn components_match_marker(components: &[Component<'_>], marker: &[&str]) -> bool {
-    components
-        .iter()
-        .zip(marker)
-        .all(|(component, marker)| matches!(component, Component::Normal(value) if value == marker))
+    let bytes = path.as_bytes();
+    let starts_with_drive_root = bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/');
+
+    starts_with_drive_root || path.starts_with(r"\\")
 }
 
 impl CustomTheme {
