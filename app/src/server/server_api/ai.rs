@@ -2193,7 +2193,7 @@ impl From<warp_graphql::queries::get_feature_model_choices::LlmProvider> for LLM
                 LLMProvider::Unknown
             }
             warp_graphql::queries::get_feature_model_choices::LlmProvider::Other(value) => {
-                match value.as_str() {
+                match value.to_lowercase().as_str() {
                     "minimax" => LLMProvider::MiniMax,
                     "moonshot" => LLMProvider::Moonshot,
                     "zai" => LLMProvider::Zai,
@@ -2218,7 +2218,7 @@ impl From<warp_graphql::workspace::LlmProvider> for LLMProvider {
             warp_graphql::workspace::LlmProvider::Xai => LLMProvider::Xai,
             warp_graphql::workspace::LlmProvider::Unknown => LLMProvider::Unknown,
             warp_graphql::workspace::LlmProvider::Other(value) => {
-                match value.as_str() {
+                match value.to_lowercase().as_str() {
                     "minimax" => LLMProvider::MiniMax,
                     "moonshot" => LLMProvider::Moonshot,
                     "zai" => LLMProvider::Zai,
