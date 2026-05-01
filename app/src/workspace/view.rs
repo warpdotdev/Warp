@@ -20490,6 +20490,17 @@ impl TypedActionView for Workspace {
                 let config = TabSettings::as_ref(ctx)
                     .header_toolbar_chip_selection
                     .clone();
+                let already_on_side = match side {
+                    VerticalTabsPanelSide::Left => {
+                        config.left_items().contains(&HeaderToolbarItemKind::TabsPanel)
+                    }
+                    VerticalTabsPanelSide::Right => {
+                        config.right_items().contains(&HeaderToolbarItemKind::TabsPanel)
+                    }
+                };
+                if already_on_side {
+                    return;
+                }
                 let mut left_items = config.left_items();
                 let mut right_items = config.right_items();
                 left_items.retain(|i| i != &HeaderToolbarItemKind::TabsPanel);
