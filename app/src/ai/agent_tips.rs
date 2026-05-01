@@ -410,6 +410,12 @@ impl AITip for AgentTip {
                 .get_codebase_index_status_for_path(root, app)
                 .is_none();
         }
+        // Tips whose description references a keybinding placeholder should only be shown
+        // when the keybinding is actually configured, so we never display the raw
+        // "<keybinding>" string to users.
+        if self.description.contains("<keybinding>") && self.keystroke(app).is_none() {
+            return false;
+        }
         true
     }
 }
