@@ -143,12 +143,8 @@ impl AmbientAgentViewModel {
             task_id: None,
             conversation_id: None,
             harness: Harness::default(),
-<<<<<<< HEAD
             worker_host: None,
-||||||| parent of 12aa088 (Some refactoring, things work)
-=======
             harness_model_id: None,
->>>>>>> 12aa088 (Some refactoring, things work)
             has_inserted_cloud_mode_user_query_block: false,
             harness_command_started: false,
         }
@@ -252,11 +248,10 @@ impl AmbientAgentViewModel {
         ctx.emit(AmbientAgentViewModelEvent::HarnessSelected);
     }
 
-<<<<<<< HEAD
     pub fn set_worker_host(&mut self, worker_host: Option<String>) {
         self.worker_host = worker_host;
-||||||| parent of 12aa088 (Some refactoring, things work)
-=======
+    }
+
     pub fn selected_harness_model_id(&self) -> Option<&str> {
         self.harness_model_id.as_deref()
     }
@@ -271,7 +266,6 @@ impl AmbientAgentViewModel {
         }
         self.harness_model_id = harness_model_id;
         ctx.emit(AmbientAgentViewModelEvent::HarnessModelSelected);
->>>>>>> 12aa088 (Some refactoring, things work)
     }
 
     /// True when the run is configured to use a non-Oz execution harness and the
@@ -502,12 +496,6 @@ impl AmbientAgentViewModel {
             ComputerUsePermission::resolve_cloud_agent_state(ctx);
         let computer_use_enabled = Some(enabled);
 
-        let harness_override =
-            (self.harness != Harness::Oz).then(|| HarnessConfig::from_harness_type(self.harness));
-        let default_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
-            .ok()
-            .filter(|s| !s.is_empty());
-
         let oz_model = (self.harness == Harness::Oz).then(|| {
             LLMPreferences::as_ref(ctx)
                 .get_active_base_model(ctx, Some(self.terminal_view_id))
@@ -523,16 +511,8 @@ impl AmbientAgentViewModel {
             environment_id: self.environment_id.as_ref().map(|id| id.to_string()),
             model_id: oz_model,
             computer_use_enabled,
-<<<<<<< HEAD
             worker_host: self.worker_host.clone(),
-            harness: harness_override,
-||||||| parent of 74f3632 (self review)
-            worker_host: default_host,
-            harness: harness_override,
-=======
-            worker_host: default_host,
             harness: third_party_harness,
->>>>>>> 74f3632 (self review)
             ..Default::default()
         });
 
@@ -983,14 +963,10 @@ pub enum AmbientAgentViewModelEvent {
     Cancelled,
     /// The selected execution harness (Oz / Claude Code) changed.
     HarnessSelected,
-<<<<<<< HEAD
     /// The selected worker host changed via the HostSelector.
     HostSelected,
-||||||| parent of 12aa088 (Some refactoring, things work)
-=======
     /// The selected third-party harness model id changed (e.g. user picked `"opus"` for Claude).
     HarnessModelSelected,
->>>>>>> 12aa088 (Some refactoring, things work)
     /// The harness CLI (for non-oz runs) has started executing in the shared session.
     /// Fires once per run and signals the transition out of the pre-first-exchange phase
     /// for claude / gemini / other third-party harnesses.
