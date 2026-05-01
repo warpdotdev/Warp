@@ -2312,7 +2312,7 @@ fn is_supported_blocklist_image_source(source: &str) -> bool {
         .map(|ext| {
             matches!(
                 ext.to_ascii_lowercase().as_str(),
-                "jpg" | "jpeg" | "png" | "gif" | "webp" | "svg"
+                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "tif" | "webp" | "ico" | "svg"
             )
         })
         .unwrap_or(false)
