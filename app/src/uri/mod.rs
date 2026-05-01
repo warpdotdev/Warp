@@ -663,7 +663,14 @@ fn find_matching_config_name<'a>(
 /// user's home directory.
 fn parse_tab_path(url: &Url) -> Option<PathBuf> {
     let raw = url.query_pairs().find(|(k, _)| k == "path")?.1;
-    Some(PathBuf::from(shellexpand::tilde(&raw).into_owned()))
+    let expanded = shellexpand::tilde(&raw).into_owned();
+    // Trim whitespace that may be appended by Windows shell variable expansion
+    // (e.g. `%1` or `%V` can carry trailing spaces/newlines in some configurations).
+    let trimmed = expanded.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(trimmed))
 }
 
 #[derive(Debug)]
