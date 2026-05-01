@@ -200,6 +200,6 @@ fn write_envelope_falls_back_to_today_when_timestamp_missing() {
 
     // Path should still be under sessions_root and findable by uuid.
     assert!(path.starts_with(tmp.path()));
-    let found = find_session_file(tmp.path(), uuid).unwrap();
+    let found = find_session_file(tmp.path(), uuid);
     assert_eq!(found, Some(path));
 }

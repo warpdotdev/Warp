@@ -52,6 +52,7 @@ use gemini::GeminiHarness;
 /// Each variant carries the data a specific harness needs to rehydrate state before its CLI
 /// launches. Harnesses match on the variant they produce and ignore others; new CLIs that
 /// want resume support add a new variant and override [`ThirdPartyHarness::fetch_resume_payload`].
+#[derive(Debug)]
 pub(crate) enum ResumePayload {
     /// Claude Code session state fetched from the server's transcript endpoint.
     Claude(ClaudeResumeInfo),
