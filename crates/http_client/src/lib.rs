@@ -555,6 +555,16 @@ impl<'a> RequestBuilder<'a> {
         }
     }
 
+    /// Attach a `multipart/form-data` body.
+    /// Not available on wasm because reqwest's multipart builder API is native-only.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn multipart(self, form: reqwest::multipart::Form) -> RequestBuilder<'a> {
+        Self {
+            wrapped: self.wrapped.multipart(form),
+            ..self
+        }
+    }
+
     /// Prevents the system from sleeping due to idle while this request is in progress.
     ///
     /// The provided reason will be used in user-visible logging, so make sure it is
