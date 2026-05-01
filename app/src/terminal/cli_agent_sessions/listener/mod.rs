@@ -1,10 +1,10 @@
 use warpui::{EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use super::{CLIAgentEvent, CLIAgentSessionsModel};
+use crate::terminal::CLIAgent;
 use crate::terminal::cli_agent_sessions::event::parse_event;
 use crate::terminal::cli_agent_sessions::event::{CLIAgentEventPayload, CLIAgentEventType};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::terminal::CLIAgent;
 
 /// Per-agent handler that filters and transforms parsed CLI agent events.
 /// Each CLI agent can have a different implementation depending on which events
@@ -46,6 +46,7 @@ pub fn is_agent_supported(agent: &CLIAgent) -> bool {
             | CLIAgent::Codex
             | CLIAgent::Gemini
             | CLIAgent::Auggie
+            | CLIAgent::Vibe
     )
 }
 
@@ -56,9 +57,11 @@ fn create_handler(agent: &CLIAgent) -> Option<Box<dyn CLIAgentSessionHandler>> {
         // (https://github.com/augmentmoogi/auggie-warp), which emits the same
         // structured OSC 777 events as the first-party Claude/OpenCode/Gemini
         // plugins. We don't ship an install flow for it — we just listen.
-        CLIAgent::Claude | CLIAgent::OpenCode | CLIAgent::Gemini | CLIAgent::Auggie => {
-            Some(Box::new(DefaultSessionListener))
-        }
+        CLIAgent::Claude
+        | CLIAgent::OpenCode
+        | CLIAgent::Gemini
+        | CLIAgent::Auggie
+        | CLIAgent::Vibe => Some(Box::new(DefaultSessionListener)),
         CLIAgent::Codex => Some(Box::new(CodexSessionHandler)),
         CLIAgent::Amp
         | CLIAgent::Droid
@@ -235,9 +238,11 @@ mod tests {
     #[test]
     fn codex_try_parse_ignores_titled_notifications() {
         let handler = CodexSessionHandler;
-        assert!(handler
-            .try_parse(Some("some-title"), "Agent turn complete")
-            .is_none());
+        assert!(
+            handler
+                .try_parse(Some("some-title"), "Agent turn complete")
+                .is_none()
+        );
     }
 
     #[test]
@@ -255,6 +260,16 @@ mod tests {
     #[test]
     fn auggie_uses_default_handler_with_rich_status() {
         assert!(agent_supports_rich_status(&CLIAgent::Auggie));
+    }
+
+    #[test]
+    fn vibe_is_supported() {
+        assert!(is_agent_supported(&CLIAgent::Vibe));
+    }
+
+    #[test]
+    fn vibe_uses_default_handler_with_rich_status() {
+        assert!(agent_supports_rich_status(&CLIAgent::Vibe));
     }
 
     #[test]

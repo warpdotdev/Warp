@@ -498,6 +498,7 @@ pub enum CLIAgentType {
     Copilot,
     Pi,
     Auggie,
+    Vibe,
     Cursor,
     Unknown,
 }

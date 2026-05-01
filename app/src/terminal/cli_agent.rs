@@ -39,6 +39,14 @@ pub(crate) const GEMINI_BLUE: ColorU = ColorU {
     a: 255,
 };
 
+/// Mistral brand orange (#FA520F)
+pub(crate) const MISTRAL_ORANGE: ColorU = ColorU {
+    r: 250,
+    g: 82,
+    b: 15,
+    a: 255,
+};
+
 /// OpenAI brand color (dark gray/black)
 const OPENAI_COLOR: ColorU = ColorU {
     r: 0,
@@ -116,6 +124,7 @@ pub enum CLIAgent {
     Pi,
     Auggie,
     CursorCli,
+    Vibe,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -134,6 +143,7 @@ impl CLIAgent {
             CLIAgent::Pi => "pi",
             CLIAgent::Auggie => "auggie",
             CLIAgent::CursorCli => "agent",
+            CLIAgent::Vibe => "vibe",
             CLIAgent::Unknown => "",
         }
     }
@@ -164,6 +174,7 @@ impl CLIAgent {
             CLIAgent::Pi => "Pi",
             CLIAgent::Auggie => "Auggie",
             CLIAgent::CursorCli => "Cursor",
+            CLIAgent::Vibe => "Mistral Vibe",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -181,6 +192,7 @@ impl CLIAgent {
             CLIAgent::Pi => Some(Icon::PiLogo),
             CLIAgent::Auggie => Some(Icon::AuggieLogo),
             CLIAgent::CursorCli => Some(Icon::CursorLogo),
+            CLIAgent::Vibe => None,
             CLIAgent::Unknown => None,
         }
     }
@@ -206,6 +218,7 @@ impl CLIAgent {
             CLIAgent::Copilot => &[SkillProvider::Agents, SkillProvider::Copilot],
             CLIAgent::Droid => &[SkillProvider::Droid, SkillProvider::Agents],
             CLIAgent::Pi => &[SkillProvider::Agents],
+            CLIAgent::Vibe => &[SkillProvider::Agents],
             CLIAgent::Auggie => &[SkillProvider::Agents],
             CLIAgent::CursorCli => &[SkillProvider::Agents],
             CLIAgent::Unknown => &[],
@@ -247,6 +260,7 @@ impl CLIAgent {
             CLIAgent::Pi => Some(PI_COLOR),
             CLIAgent::Auggie => Some(AUGGIE_COLOR),
             CLIAgent::CursorCli => Some(CURSOR_COLOR),
+            CLIAgent::Vibe => Some(MISTRAL_ORANGE),
             CLIAgent::Unknown => None,
         }
     }
@@ -506,6 +520,7 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Copilot => CLIAgentType::Copilot,
             CLIAgent::Pi => CLIAgentType::Pi,
             CLIAgent::Auggie => CLIAgentType::Auggie,
+            CLIAgent::Vibe => CLIAgentType::Vibe,
             CLIAgent::CursorCli => CLIAgentType::Cursor,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }

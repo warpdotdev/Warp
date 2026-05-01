@@ -3,14 +3,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::Local;
+use pathfinder_color::ColorU;
 use smol_str::SmolStr;
 use warp_editor::render::model::LineCount;
 use warp_util::path::EscapeChar;
 use warpui::App;
 
 use super::{
-    build_diff_hunk_prompt, build_review_prompt, build_selection_line_range_prompt,
-    build_selection_substring_prompt, CLIAgent, UBER_TEAM_UID,
+    CLIAgent, UBER_TEAM_UID, build_diff_hunk_prompt, build_review_prompt,
+    build_selection_line_range_prompt, build_selection_substring_prompt,
 };
 use crate::ai::agent::{AgentReviewCommentBatch, DiffSetHunk};
 use crate::code::editor::line::EditorLineLocation;
@@ -257,6 +258,7 @@ fn test_detect_known_agents() {
                 ("droid", CLIAgent::Droid),
                 ("opencode", CLIAgent::OpenCode),
                 ("copilot", CLIAgent::Copilot),
+                ("vibe", CLIAgent::Vibe),
                 ("agent", CLIAgent::CursorCli),
             ] {
                 assert_eq!(
@@ -265,6 +267,18 @@ fn test_detect_known_agents() {
                     "failed to detect {command}",
                 );
             }
+        });
+    });
+}
+
+#[test]
+fn test_vibe_brand_color() {
+    App::test((), |mut app| async move {
+        app.update(|_| {
+            assert_eq!(
+                CLIAgent::Vibe.brand_color(),
+                Some(ColorU::new(250, 82, 15, 255)),
+            );
         });
     });
 }
