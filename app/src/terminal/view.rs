@@ -430,7 +430,6 @@ use warpui::{windowing, CursorInfo, EntityId, EventContext, ModelAsRef, Singleto
 
 use crate::ai_assistant::{AskAIType, ASK_AI_ASSISTANT_TEXT};
 use crate::appearance::{Appearance, AppearanceEvent};
-use warp_core::ui::theme::ColorScheme;
 use crate::banner::{
     Banner, BannerAction, BannerEvent, BannerState, BannerTextButton, BannerTextContent,
     DismissalType,
@@ -513,6 +512,7 @@ use crate::terminal::{
 use crate::view_components::find::{Event as FindEvent, Find, FindDirection, FindWithinBlockState};
 use settings::{Setting, ToggleableSetting};
 use warp_core::semantic_selection::SemanticSelection;
+use warp_core::ui::theme::ColorScheme;
 use warpui::text::SelectionType;
 
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
