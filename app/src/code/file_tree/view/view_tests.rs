@@ -1033,12 +1033,13 @@ fn file_tree_refreshes_after_file_move_operations() {
 
             // Verify initial state - files should be in src/
             file_tree_view.read(&app, |view, _ctx| {
-                let flattened_items = view.flattened_items();
+                let root_dir = view.root_directories.get(&canonical_src_dir).unwrap();
+                let items = &root_dir.items;
                 let main_rs_path = canonical_src_dir.join("main.rs");
                 let utils_rs_path = canonical_src_dir.join("utils.rs");
                 
-                assert!(flattened_items.iter().any(|item| item.id.path == main_rs_path));
-                assert!(flattened_items.iter().any(|item| item.id.path == utils_rs_path));
+                assert!(items.iter().any(|item| item.path() == &main_rs_path));
+                assert!(items.iter().any(|item| item.path() == &utils_rs_path));
             });
 
             // Simulate a file move operation by updating the repository state
@@ -1090,19 +1091,20 @@ fn file_tree_refreshes_after_file_move_operations() {
 
             // Verify that the file tree refreshed and files are no longer in the old location
             file_tree_view.read(&app, |view, _ctx| {
-                let flattened_items = view.flattened_items();
+                let root_dir = view.root_directories.get(&canonical_src_dir).unwrap();
+                let items = &root_dir.items;
                 let old_main_rs_path = canonical_src_dir.join("main.rs");
                 let old_utils_rs_path = canonical_src_dir.join("utils.rs");
                 
                 // Files should NOT be in the old location (src directory)
-                assert!(!flattened_items.iter().any(|item| item.id.path == old_main_rs_path));
-                assert!(!flattened_items.iter().any(|item| item.id.path == old_utils_rs_path));
+                assert!(!items.iter().any(|item| item.path() == &old_main_rs_path));
+                assert!(!items.iter().any(|item| item.path() == &old_utils_rs_path));
                 
                 // The lazy-loaded src directory should be refreshed with the new repository state
                 // Since we're displaying src as a lazy-loaded directory, it should now be empty
                 // because the files were moved out of it in the updated repository state
-                let src_items: Vec<_> = flattened_items.iter()
-                    .filter(|item| item.id.path.starts_with(&canonical_src_dir))
+                let src_items: Vec<_> = items.iter()
+                    .filter(|item| item.path().starts_with(&canonical_src_dir))
                     .collect();
                 assert!(src_items.is_empty(), "src directory should be empty after files were moved");
             });
