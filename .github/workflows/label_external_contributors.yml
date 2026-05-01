@@ -1,0 +1,96 @@
+# ======================================================================================
+# Workflow: Label External Contributors
+# ======================================================================================
+# Usage:
+#   - Runs whenever a pull request is opened.
+#   - Adds the `external-contributor` label to the PR if either of the following is
+#     true (logical OR), and the PR is not authored by a bot:
+#       1. The PR author is not a member of the `warpdotdev` GitHub organization.
+#       2. The PR head repository is a fork (i.e. it does not belong to the same
+#          repository as the base).
+#
+# Notes:
+#   - The workflow triggers on `pull_request_target` rather than `pull_request` so
+#     that it has the `pull-requests: write` permission needed to apply labels even
+#     when the PR is opened from a fork. Because we never check out the PR's code
+#     and only read the event payload, this trigger is safe.
+#   - Org membership is determined via the GitHub REST API. We fall back to the
+#     PR's `author_association` field when the API call cannot be performed (for
+#     example, when the GITHUB_TOKEN lacks org-membership context for private
+#     members).
+# ======================================================================================
+
+name: Label External Contributors
+
+on:
+  pull_request_target:
+    types: [opened]
+
+# Default to a read-only token. The job below widens permissions explicitly.
+permissions:
+  contents: read
+
+jobs:
+  label-external-contributor:
+    name: Label external-contributor PRs
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Determine and apply external-contributor label
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+
+            // Ignore PRs authored by bots.
+            if (pr.user.type === 'Bot' || author.endsWith('[bot]')) {
+              console.log(`Skipping bot user: ${author}`);
+              return;
+            }
+
+            // The PR comes from a fork if its head repo differs from its base repo.
+            const isFork =
+              !pr.head.repo ||
+              pr.head.repo.full_name !== pr.base.repo.full_name;
+
+            // Check whether the author is a member of the warpdotdev org. The
+            // membership API requires the requester to be a member of the org.
+            // When it cannot return a definitive result, fall back to the PR's
+            // author_association field, which GitHub computes based on the
+            // author's relationship to the repository.
+            let isOrgMember =
+              pr.author_association === 'MEMBER' ||
+              pr.author_association === 'OWNER';
+            try {
+              await github.rest.orgs.checkMembershipForUser({
+                org: 'warpdotdev',
+                username: author,
+              });
+              isOrgMember = true;
+            } catch (error) {
+              console.log(
+                `checkMembershipForUser failed (${error.status}); ` +
+                  `falling back to author_association="${pr.author_association}"`,
+              );
+            }
+
+            const isExternal = !isOrgMember || isFork;
+            console.log(
+              `PR #${pr.number} by ${author}: ` +
+                `isFork=${isFork}, isOrgMember=${isOrgMember}, ` +
+                `isExternal=${isExternal}`,
+            );
+
+            if (!isExternal) {
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              labels: ['external-contributor'],
+            });
+            console.log(`Labeled PR #${pr.number} as external-contributor`);
