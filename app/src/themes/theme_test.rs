@@ -42,6 +42,32 @@ fn custom_theme_relative_parent_dir_path_is_not_portable() {
 }
 
 #[test]
+fn custom_theme_absolute_parent_dir_path_under_theme_root_is_preserved() {
+    let root = PathBuf::from("/Users/ivan/.warp/themes");
+    let stored = root.join("../outside.yml");
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_absolute_parent_dir_path_under_theme_root_is_not_portable() {
+    let root = PathBuf::from("/Users/ivan/.warp/themes");
+
+    assert!(!custom_theme_path_is_portable(
+        &root.join("../outside.yml"),
+        &root
+    ));
+}
+
+#[test]
+fn custom_theme_parent_dir_path_under_theme_root_does_not_serialize_relative() {
+    let root = PathBuf::from("/Users/ivan/.warp/themes");
+    let path = root.join("../outside.yml");
+
+    assert_eq!(custom_theme_path_for_storage(&path, &root), path);
+}
+
+#[test]
 fn custom_theme_legacy_macos_path_resolves_by_theme_root_suffix_when_local_file_exists() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("warp-terminal/themes");
