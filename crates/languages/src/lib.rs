@@ -153,7 +153,7 @@ pub fn language_by_filename(path: &Path) -> Option<Arc<Language>> {
         "ts" | "cts" | "mts" => language_by_name("typescript"),
         "java" | "groovy" | "gvy" | "gy" | "gsh" => language_by_name("java"),
         "cpp" | "cxx" | "cc" | "h" | "hh" | "hpp" | "hxx" | "H" | "h++" => language_by_name("cpp"),
-        "sh" | "zsh" | "bash" => language_by_name("shell"),
+        "sh" | "zsh" | "bash" | "command" => language_by_name("shell"),
         "cs" => language_by_name("csharp"),
         "html" | "htm" => language_by_name("html"),
         "css" => language_by_name("css"),
