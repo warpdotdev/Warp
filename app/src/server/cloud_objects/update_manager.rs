@@ -625,9 +625,13 @@ impl UpdateManager {
                 object.set_pending_content_changes_status(CloudObjectSyncStatus::InFlight(
                     NumInFlightRequests(1),
                 ));
+                // PDX-79: hosted-only — Warp Drive sync upload skipped offline.
+                #[cfg(feature = "warp_hosted")]
                 SyncQueue::handle(ctx).update(ctx, |sync_queue, ctx| {
                     sync_queue.enqueue(queue_item, ctx);
                 });
+                #[cfg(not(feature = "warp_hosted"))]
+                let _ = queue_item;
             }
         });
     }
@@ -1660,9 +1664,13 @@ impl UpdateManager {
                             InitiatedBy::User,
                         )
                         .unwrap_or(object.update_object_queue_item(None));
+                    // PDX-79: hosted-only — Warp Drive sync upload skipped offline.
+                    #[cfg(feature = "warp_hosted")]
                     SyncQueue::handle(ctx).update(ctx, |sync_queue, ctx| {
                         sync_queue.enqueue(queue_item, ctx);
                     });
+                    #[cfg(not(feature = "warp_hosted"))]
+                    let _ = queue_item;
                 }
             });
         } else {
@@ -3575,6 +3583,8 @@ impl UpdateManager {
         )]);
 
         // Populate sync queue with a single bulk request
+        // PDX-79: hosted-only — Warp Drive sync upload skipped offline.
+        #[cfg(feature = "warp_hosted")]
         SyncQueue::handle(ctx).update(ctx, |sync_queue, ctx| {
             sync_queue.enqueue(
                 QueueItem::BulkCreateGenericStringObjects {
@@ -3584,6 +3594,8 @@ impl UpdateManager {
                 ctx,
             )
         });
+        #[cfg(not(feature = "warp_hosted"))]
+        let _ = (owner, sync_queue_objects);
     }
 
     /// Generic function for creating a new cloud object with a given model.
@@ -3637,6 +3649,8 @@ impl UpdateManager {
         }
 
         // Populate sync queue.
+        // PDX-79: hosted-only — Warp Drive sync upload skipped offline.
+        #[cfg(feature = "warp_hosted")]
         SyncQueue::handle(ctx).update(ctx, |sync_queue, ctx| {
             let cloud_model = CloudModel::as_ref(ctx);
             if let Some(object) = cloud_model.get_object_of_type::<K, M>(&object_id) {
@@ -3646,6 +3660,8 @@ impl UpdateManager {
                 }
             };
         });
+        #[cfg(not(feature = "warp_hosted"))]
+        let _ = (entrypoint, initiated_by);
     }
 
     /// Create a new cloud object as an online-only operation.
@@ -3932,12 +3948,16 @@ impl UpdateManager {
         };
 
         // Populate sync queue.
+        // PDX-79: hosted-only — Warp Drive sync upload skipped offline.
+        #[cfg(feature = "warp_hosted")]
         SyncQueue::handle(ctx).update(ctx, |sync_queue, ctx| {
             let cloud_model = CloudModel::as_ref(ctx);
             if let Some(object) = cloud_model.get_object_of_type::<K, M>(&object_id) {
                 sync_queue.enqueue(object.update_object_queue_item(revision_ts), ctx);
             };
         });
+        #[cfg(not(feature = "warp_hosted"))]
+        let _ = revision_ts;
     }
 
     // Takes a generic SyncId and records the action.
@@ -3967,6 +3987,8 @@ impl UpdateManager {
         self.save_to_db([ModelEvent::InsertObjectAction { object_action }]);
 
         // Populate sync queue.
+        // PDX-79: hosted-only — Warp Drive sync upload skipped offline.
+        #[cfg(feature = "warp_hosted")]
         SyncQueue::handle(ctx).update(ctx, |sync_queue, ctx| {
             sync_queue.enqueue(
                 QueueItem::RecordObjectAction {
@@ -3978,6 +4000,8 @@ impl UpdateManager {
                 ctx,
             );
         });
+        #[cfg(not(feature = "warp_hosted"))]
+        let _ = (id_and_type, action_type, data, action_timestamp);
     }
 
     /// After a call to RecordObjectAction returns, we remove whichever pending action caused the call from the model.
