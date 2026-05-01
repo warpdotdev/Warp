@@ -35,6 +35,13 @@
 
 #![deny(missing_docs)]
 
+pub mod budget;
+
+pub use budget::{
+    evaluate_charge, Budget, BudgetError, BudgetSnapshot, BudgetTier, Cap, CustomProviderId,
+    Provider,
+};
+
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
