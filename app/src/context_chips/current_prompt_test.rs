@@ -1206,19 +1206,6 @@ fn test_externally_driven_chip_skips_periodic_timer() {
 #[cfg(feature = "local_fs")]
 #[test]
 fn test_externally_driven_git_diff_stats_does_not_run_shell_command() {
-    // Regression test for #9228. When `GitRepoStatusModel` is providing
-    // `GitDiffStats` values, the chip should not also run its shell-command
-    // generator (`git diff --shortstat HEAD`) — the shell command excludes
-    // untracked files and produces a value that races with the watcher's
-    // value, causing a visible flicker on every block completion.
-    //
-    // The session is bootstrapped with `git` in its external command list so
-    // the chip is `Enabled` (otherwise `fetch_chip_value_once` would short-
-    // circuit on availability and the test wouldn't actually exercise the
-    // shell-fallback path). `latest_context` is also populated for the same
-    // reason — without it `fetch_chip_value_once` would still proceed past
-    // availability checks but the test wouldn't model how the chip is
-    // refreshed in production.
     App::test((), |mut app| async move {
         let session_id = SessionId::from(7228);
         app.add_singleton_model(|_| {
@@ -1267,10 +1254,6 @@ fn test_externally_driven_git_diff_stats_does_not_run_shell_command() {
         let git_status =
             app.add_model(move |_| GitRepoStatusModel::new_for_test(repo_handle, None));
 
-        // The first executor response satisfies `load_external_commands` (so
-        // `git` becomes a known executable on the session); the second is
-        // what the pre-fix code would have consumed when running the
-        // `git diff --shortstat HEAD` shell fallback.
         let executor = Arc::new(RecordingCommandExecutor::with_success_responses([
             "git\n", "",
         ]));
@@ -1337,11 +1320,6 @@ fn test_externally_driven_git_diff_stats_does_not_run_shell_command() {
 #[cfg(feature = "local_fs")]
 #[test]
 fn test_set_git_repo_status_applies_existing_metadata() {
-    // When `set_git_repo_status` attaches a model that already has metadata
-    // computed (e.g. a re-bind to a long-lived `GitRepoStatusModel`), no
-    // `MetadataChanged` event fires from the subscription itself — so the
-    // chip values must be hydrated from `metadata()` immediately, otherwise
-    // they stay empty until the next file event.
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| {
             Prompt::mock_with(
@@ -1390,9 +1368,6 @@ fn test_set_git_repo_status_applies_existing_metadata() {
         let sessions = app.add_model(|_| Sessions::new_for_test());
         let current_prompt = app.add_model(move |ctx| CurrentPrompt::new(sessions, ctx));
 
-        // Create chip states first so `update_chip_value` has somewhere to write.
-        // In production this matches the order: chips are running before the
-        // view re-binds the prompt to a `GitRepoStatusModel`.
         current_prompt.update(&mut app, |cp, ctx| {
             cp.update_states_with_new_context(ctx);
             cp.set_git_repo_status(Some(git_status.downgrade()), ctx);
@@ -1405,15 +1380,104 @@ fn test_set_git_repo_status_applies_existing_metadata() {
                 Some(&crate::context_chips::ChipValue::Text(
                     "feature-x".to_string()
                 )),
-                "ShellGitBranch should be hydrated from existing metadata on subscribe"
             );
-            assert!(
-                matches!(
-                    cp.latest_chip_value(&ContextChipKind::GitDiffStats),
-                    Some(crate::context_chips::ChipValue::GitDiffStats(_))
-                ),
-                "GitDiffStats should be hydrated from existing metadata on subscribe"
+            assert!(matches!(
+                cp.latest_chip_value(&ContextChipKind::GitDiffStats),
+                Some(crate::context_chips::ChipValue::GitDiffStats(_))
+            ));
+        });
+    });
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
+fn test_set_git_repo_status_clears_stale_chip_values_when_new_model_has_no_metadata() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| {
+            Prompt::mock_with(
+                [
+                    ContextChipKind::ShellGitBranch,
+                    ContextChipKind::GitDiffStats,
+                ],
+                false,
+                WarpPromptSeparator::None,
+            )
+        });
+        app.add_singleton_model(SessionSettings::new_with_defaults);
+        app.add_singleton_model(|_ctx| {
+            settings::PublicPreferences::new(
+                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
+            )
+        });
+        app.add_singleton_model(|_| {
+            settings::PrivatePreferences::new(
+                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
+            )
+        });
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let watcher_handle = app.add_singleton_model(DirectoryWatcher::new_for_testing);
+        let repo_handle = watcher_handle.update(&mut app, |watcher, ctx| {
+            watcher
+                .add_directory(
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                        temp_dir.path(),
+                    )
+                    .unwrap(),
+                    ctx,
+                )
+                .unwrap()
+        });
+
+        let prev_metadata = GitStatusMetadata {
+            current_branch_name: "feature-x".to_string(),
+            main_branch_name: "main".to_string(),
+            stats_against_head: DiffStats::default(),
+        };
+        let prev_git_status = app
+            .add_model(move |_| GitRepoStatusModel::new_for_test(repo_handle, Some(prev_metadata)));
+
+        let temp_dir_b = tempfile::TempDir::new().unwrap();
+        let repo_handle_b = watcher_handle.update(&mut app, |watcher, ctx| {
+            watcher
+                .add_directory(
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                        temp_dir_b.path(),
+                    )
+                    .unwrap(),
+                    ctx,
+                )
+                .unwrap()
+        });
+        let new_git_status =
+            app.add_model(move |_| GitRepoStatusModel::new_for_test(repo_handle_b, None));
+
+        let sessions = app.add_model(|_| Sessions::new_for_test());
+        let current_prompt = app.add_model(move |ctx| CurrentPrompt::new(sessions, ctx));
+
+        current_prompt.update(&mut app, |cp, ctx| {
+            cp.update_states_with_new_context(ctx);
+            cp.set_git_repo_status(Some(prev_git_status.downgrade()), ctx);
+        });
+
+        app.read(|ctx| {
+            let cp = current_prompt.as_ref(ctx);
+            assert_eq!(
+                cp.latest_chip_value(&ContextChipKind::ShellGitBranch),
+                Some(&crate::context_chips::ChipValue::Text(
+                    "feature-x".to_string()
+                )),
             );
+        });
+
+        current_prompt.update(&mut app, |cp, ctx| {
+            cp.set_git_repo_status(Some(new_git_status.downgrade()), ctx);
+        });
+
+        app.read(|ctx| {
+            let cp = current_prompt.as_ref(ctx);
+            assert_eq!(cp.latest_chip_value(&ContextChipKind::ShellGitBranch), None);
+            assert_eq!(cp.latest_chip_value(&ContextChipKind::GitDiffStats), None);
         });
     });
 }
