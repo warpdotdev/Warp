@@ -61,6 +61,29 @@ impl super::UserPreferences for UserDefaultsPreferencesStorage {
     fn read_value(&self, key: &str) -> Result<Option<String>, super::Error> {
         unsafe {
             let key = util::make_nsstring(key);
+
+            // Check for NSNumber-typed booleans before calling stringForKey:. When a value
+            // is written via `defaults write -bool false`, it is stored as NSNumber(BOOL).
+            // stringForKey: coerces that to "0"/"1", which serde_json cannot parse as bool
+            // and silently falls back to the setting's default. Return canonical JSON instead.
+            let raw: id = msg_send![*self.user_defaults, objectForKey: *key];
+            if raw != nil {
+                let is_number: bool = msg_send![raw, isKindOfClass: class!(NSNumber)];
+                if is_number {
+                    let obj_c_type: *const std::os::raw::c_char = msg_send![raw, objCType];
+                    let encoding = std::ffi::CStr::from_ptr(obj_c_type).to_bytes();
+                    // 'c' = signed char (BOOL on x86_64); 'B' = C++ bool (BOOL on arm64).
+                    if encoding == b"c" || encoding == b"B" {
+                        let b: bool = msg_send![raw, boolValue];
+                        return Ok(Some(if b {
+                            "true".to_owned()
+                        } else {
+                            "false".to_owned()
+                        }));
+                    }
+                }
+            }
+
             let value: id = msg_send![*self.user_defaults, stringForKey: *key];
             if value != nil {
                 Ok(Some(
