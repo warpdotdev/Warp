@@ -1103,8 +1103,11 @@ fn file_tree_refreshes_after_file_move_operations() {
                 // The lazy-loaded src directory should be refreshed with the new repository state
                 // Since we're displaying src as a lazy-loaded directory, it should now be empty
                 // because the files were moved out of it in the updated repository state
-                let src_items: Vec<_> = items.iter()
-                    .filter(|item| item.path().starts_with(&canonical_src_dir))
+                let src_items: Vec<_> = items
+                    .iter()
+                    .filter(|item| {
+                        item.path() != &canonical_src_dir && item.path().starts_with(&canonical_src_dir)
+                    })
                     .collect();
                 assert!(src_items.is_empty(), "src directory should be empty after files were moved");
             });

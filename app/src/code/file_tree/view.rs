@@ -582,6 +582,10 @@ impl FileTreeView {
                                     {
                                         if self.registered_lazy_loaded_paths.contains(root_path) {
                                             root_dir.entry = state.entry.clone();
+                                            // When promoting a lazy-loaded root to repository-backed state,
+                                            // unregister the standalone lazy-loaded path to avoid
+                                            // obsolete watcher/model registrations
+                                            self.remove_lazy_loaded_entry(root_path, ctx);
                                         }
                                     }
                                 }
