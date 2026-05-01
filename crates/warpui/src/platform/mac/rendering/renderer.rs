@@ -59,5 +59,11 @@ fn get_gpu_device_info(device: &metal::Device) -> GPUDeviceInfo {
         driver_name: String::new(),
         driver_info: String::new(),
         backend: GPUBackend::Metal,
+        // The Metal renderer does not feed the LCD subpixel pipeline that
+        // consumes this flag, so it is reported off here. Required to make
+        // the Mac-only build (and the dead-code arm of the wgpu-on-Mac
+        // build) compile after `supports_dual_source_blending` was added
+        // to `GPUDeviceInfo` for the wgpu rendering path.
+        supports_dual_source_blending: false,
     }
 }
