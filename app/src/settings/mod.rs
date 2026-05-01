@@ -20,6 +20,7 @@ mod input;
 mod input_mode;
 #[cfg(target_os = "linux")]
 mod linux;
+pub mod locale_settings;
 pub mod macros;
 pub mod manager;
 pub mod native_preference;

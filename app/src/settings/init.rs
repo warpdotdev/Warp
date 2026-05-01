@@ -1,5 +1,6 @@
 use settings::{Setting as _, SettingsManager};
 use warp_core::features::FeatureFlag;
+use warp_i18n;
 use warpui::{rendering::GPUPowerPreference, AppContext, SingletonEntity};
 use warpui_extras::user_preferences;
 
@@ -34,12 +35,12 @@ use warp_core::semantic_selection::SemanticSelection;
 use super::{
     app_icon::AppIconSettings, app_installation_detection::UserAppInstallDetectionSettings,
     cloud_preferences::CloudPreferencesSettings, initializer::SettingsInitializer,
-    native_preference::NativePreferenceSettings, AISettings, AccessibilitySettings,
-    AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings, ChangelogSettings,
-    CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent,
-    GPUSettings, InputBoxType, InputModeSettings, InputSettings, PaneSettings,
-    SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings, ThemeSettings,
-    VimBannerSettings, WarpDrivePrivacySettings,
+    locale_settings::LocaleSettings, native_preference::NativePreferenceSettings, AISettings,
+    AccessibilitySettings, AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings,
+    ChangelogSettings, CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings,
+    FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings, InputSettings,
+    PaneSettings, SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings,
+    ThemeSettings, VimBannerSettings, WarpDrivePrivacySettings,
 };
 
 pub struct UserDefaultsOnStartup {
@@ -91,6 +92,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     AltScreenReporting::register(ctx);
     UndoCloseSettings::register(ctx);
     SshSettings::register(ctx);
+    LocaleSettings::register(ctx);
     VimBannerSettings::register(ctx);
     SharedSessionSettings::register(ctx);
     WarpDriveSettings::register(ctx);
@@ -200,6 +202,22 @@ pub fn init(
     );
 
     appearance::register(ctx);
+
+    // Initialize i18n bundle from persisted locale setting.
+    let locale = *LocaleSettings::as_ref(ctx).locale.value();
+    warp_i18n::init_bundle(locale);
+
+    // Re-initialize bundle and refresh UI when locale changes.
+    ctx.subscribe_to_model(
+        &LocaleSettings::handle(ctx),
+        |_locale_settings, event: &LocaleSettingsChangedEvent, ctx| {
+            if matches!(event, LocaleSettingsChangedEvent::Locale { .. }) {
+                let new_locale = *LocaleSettings::as_ref(ctx).locale.value();
+                warp_i18n::init_bundle(new_locale);
+                ctx.refresh_all_windows();
+            }
+        },
+    );
 
     // Set up hot-reload for the settings file. When the WarpConfig watcher
     // detects a change to settings.toml, reload preferences from disk and

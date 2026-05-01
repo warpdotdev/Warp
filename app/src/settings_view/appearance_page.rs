@@ -28,6 +28,7 @@ use crate::server::telemetry::InputUXChangeOrigin;
 use crate::settings::{
     active_theme_kind,
     app_icon::{AppIcon, AppIconSettings},
+    locale_settings::{LocaleSettings, LocaleSettingsChangedEvent},
     respect_system_theme, AIFontName, AppEditorSettings, CursorBlink, CursorBlinkEnabled,
     EnforceMinimumContrast, FocusPaneOnHover, FontSettings, FontSettingsChangedEvent, InputBoxType,
     InputModeSettings, InputModeState, MonospaceFontName, PaneSettings, ShouldDimInactivePanes,
@@ -75,6 +76,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use warp_core::ui::theme::color::internal_colors;
+use warp_i18n::{tr, Locale};
 use warp_util::path::user_friendly_path;
 use warpui::elements::{
     Clipped, Empty, FormattedTextElement, MainAxisAlignment, MainAxisSize, Text, Wrap,
@@ -480,6 +482,7 @@ pub enum AppearancePageAction {
     RemoveDefaultDirectoryTabColor {
         path: PathBuf,
     },
+    SetLocale(Locale),
 }
 
 pub struct AppearanceSettingsPageView {
@@ -508,6 +511,7 @@ pub struct AppearanceSettingsPageView {
     tab_close_button_position_dropdown: ViewHandle<Dropdown<AppearancePageAction>>,
     zoom_level_dropdown: ViewHandle<Dropdown<AppearancePageAction>>,
     zoom_reset_button_mouse_state: MouseStateHandle,
+    locale_dropdown: ViewHandle<Dropdown<AppearancePageAction>>,
     available_families: HashMap<String, (Option<FamilyId>, FontType)>,
     view_font_type: FontType,
     alt_screen_padding_editor: ViewHandle<EditorView>,
@@ -676,6 +680,12 @@ impl TypedActionView for AppearanceSettingsPageView {
                         .value()
                         .with_color(&path, DirectoryTabColor::Suppressed);
                     let _ = settings.directory_tab_colors.set_value(new_value, ctx);
+                });
+                ctx.notify();
+            }
+            SetLocale(locale) => {
+                LocaleSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.locale.set_value(*locale, ctx));
                 });
                 ctx.notify();
             }
@@ -1193,6 +1203,21 @@ impl AppearanceSettingsPageView {
             me.handle_alt_screen_padding_editor_event(event, ctx);
         });
 
+        // Initialize the locale dropdown
+        let locale_dropdown = Self::build_locale_dropdown(ctx);
+
+        // Subscribe to locale changes to keep the dropdown in sync
+        ctx.subscribe_to_model(&LocaleSettings::handle(ctx), |me, event, ctx| {
+            if let LocaleSettingsChangedEvent::Locale { .. } = event {
+                let new_locale = *LocaleSettings::as_ref(ctx).locale.value();
+                me.locale_dropdown.update(ctx, |dropdown, ctx| {
+                    dropdown
+                        .set_selected_by_action(AppearancePageAction::SetLocale(new_locale), ctx);
+                });
+            }
+            ctx.notify();
+        });
+
         // Initialize the input type radio state
         let input_type = InputSettings::as_ref(ctx).input_type(ctx);
         let input_type_radio_state = RadioButtonStateHandle::default();
@@ -1226,6 +1251,7 @@ impl AppearanceSettingsPageView {
             ),
             tab_close_button_position_dropdown: Self::build_tab_close_button_position_dropdown(ctx),
             zoom_level_dropdown: Self::build_zoom_level_dropdown(ctx),
+            locale_dropdown,
             zoom_reset_button_mouse_state: MouseStateHandle::default(),
             available_families: Default::default(),
             view_font_type: Default::default(),
@@ -1411,6 +1437,11 @@ impl AppearanceSettingsPageView {
         categories.push(Category::new(
             "Full-screen Apps",
             vec![Box::new(AltScreenPaddingWidget::default())],
+        ));
+
+        categories.push(Category::new(
+            "Language",
+            vec![Box::new(LocaleWidget::default())],
         ));
 
         PageType::new_categorized(categories, None)
@@ -2455,6 +2486,37 @@ impl AppearanceSettingsPageView {
 
             let current_value = *WindowSettings::as_ref(ctx).zoom_level.value();
             dropdown.set_selected_by_action(AppearancePageAction::SetZoomLevel(current_value), ctx);
+
+            dropdown
+        })
+    }
+
+    fn build_locale_dropdown(
+        ctx: &mut ViewContext<Self>,
+    ) -> ViewHandle<Dropdown<AppearancePageAction>> {
+        ctx.add_typed_action_view(|ctx| {
+            let mut dropdown = Dropdown::new(ctx);
+
+            let values = Locale::all();
+            let current_value = *LocaleSettings::as_ref(ctx).locale.value();
+            let selected_index = values
+                .iter()
+                .position(|val| *val == current_value)
+                .unwrap_or(0);
+
+            dropdown.add_items(
+                values
+                    .into_iter()
+                    .map(|val| {
+                        DropdownItem::new(
+                            val.display_name().to_owned(),
+                            AppearancePageAction::SetLocale(val),
+                        )
+                    })
+                    .collect(),
+                ctx,
+            );
+            dropdown.set_selected_by_index(selected_index, ctx);
 
             dropdown
         })
@@ -5149,6 +5211,56 @@ impl SettingsWidget for ZoomLevelWidget {
             ),
             None,
             &view.zoom_level_dropdown,
+        )
+    }
+}
+
+struct LocaleWidget;
+
+impl SettingsWidget for LocaleWidget {
+    type View = AppearanceSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "language locale 语言"
+    }
+
+    fn render(
+        &self,
+        view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        use crate::settings::locale_settings::LocaleSetting;
+
+        let current_locale = *LocaleSettings::as_ref(app).locale.value();
+        let changed_from_default = current_locale != Locale::default();
+
+        let reset_button = build_reset_button(
+            appearance,
+            MouseStateHandle::default(),
+            changed_from_default,
+        )
+        .build()
+        .on_click(move |ctx, _, _| {
+            LocaleSettings::handle(ctx).update(ctx, |settings, ctx| {
+                report_if_error!(settings.locale.clear_value(ctx));
+            });
+        })
+        .finish();
+
+        render_dropdown_item(
+            appearance,
+            &tr!("locale-label"),
+            None,
+            Some(reset_button),
+            LocalOnlyIconState::for_setting(
+                LocaleSetting::storage_key(),
+                LocaleSetting::sync_to_cloud(),
+                &mut view.local_only_icon_tooltip_states.borrow_mut(),
+                app,
+            ),
+            None,
+            &view.locale_dropdown,
         )
     }
 }
