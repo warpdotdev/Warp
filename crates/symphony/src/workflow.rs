@@ -154,6 +154,20 @@ pub struct AgentConfig {
     /// None leaves the issue in its current state for manual triage.
     #[serde(default)]
     pub handoff_state_on_failure: Option<String>,
+    /// How long an agent run can go without emitting any event before the
+    /// orchestrator considers it stalled and aborts it. Default 5 minutes
+    /// per Symphony spec §5.3.6 codex.stall_timeout_ms. 0 disables stall
+    /// detection entirely (useful for tests).
+    #[serde(default = "default_stall_timeout_ms")]
+    pub stall_timeout_ms: u64,
+    /// Cap on exponential retry backoff (Symphony §8.4
+    /// `agent.max_retry_backoff_ms`). Default 5 minutes.
+    #[serde(default = "default_max_retry_backoff_ms")]
+    pub max_retry_backoff_ms: u64,
+    /// Cap on retry attempts before the orchestrator gives up and leaves
+    /// the issue in its current state. Default 3.
+    #[serde(default = "default_max_retry_attempts")]
+    pub max_retry_attempts: u32,
 }
 
 impl Default for AgentConfig {
@@ -166,12 +180,27 @@ impl Default for AgentConfig {
             comment_on_completion: default_comment_on_completion(),
             handoff_state_on_success: None,
             handoff_state_on_failure: None,
+            stall_timeout_ms: default_stall_timeout_ms(),
+            max_retry_backoff_ms: default_max_retry_backoff_ms(),
+            max_retry_attempts: default_max_retry_attempts(),
         }
     }
 }
 
 fn default_comment_on_completion() -> bool {
     true
+}
+
+fn default_stall_timeout_ms() -> u64 {
+    300_000
+}
+
+fn default_max_retry_backoff_ms() -> u64 {
+    300_000
+}
+
+fn default_max_retry_attempts() -> u32 {
+    3
 }
 
 fn default_tracker_kind() -> String {

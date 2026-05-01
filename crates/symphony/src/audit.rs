@@ -33,6 +33,15 @@ pub enum AuditEventKind {
     DiffGuardExceeded,
     /// Workflow tick boundary.
     Tick,
+    /// An in-flight agent run exceeded `agent.stall_timeout_ms` since
+    /// last event and was aborted by the reconciler.
+    Stalled,
+    /// A failed (or stalled) run was scheduled for retry with a delay.
+    RetryScheduled,
+    /// A retry timer fired and the issue was re-dispatched.
+    RetryDispatched,
+    /// Retry attempts exhausted; the issue is left in its current state.
+    RetryGivenUp,
 }
 
 /// Single audit-log entry.

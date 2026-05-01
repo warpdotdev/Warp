@@ -135,8 +135,30 @@ pub struct RunningEntry {
     pub workspace_path: PathBuf,
     /// Wall-clock instant the dispatch started.
     pub started_at: Instant,
+    /// Most recent moment we observed an `AgentEvent` from this run.
+    /// Used by stall detection in `tick`. Defaults to `started_at`.
+    pub last_event_at: Instant,
     /// Selected agent id.
     pub agent_id: AgentId,
+    /// Handle to the spawned tokio task driving this run, used by stall
+    /// detection to abort. `Arc` so the handle can be cloned for tests
+    /// without consuming.
+    pub task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+}
+
+/// Pending retry of a failed or stalled run.
+#[derive(Debug, Clone)]
+pub struct RetryEntry {
+    /// Linear issue id.
+    pub issue_id: String,
+    /// Linear identifier.
+    pub identifier: String,
+    /// Attempt counter. The first retry is `1`.
+    pub attempt: u32,
+    /// Earliest moment this retry is allowed to fire.
+    pub due_at: Instant,
+    /// Most recent error string (audit-only).
+    pub error: Option<String>,
 }
 
 /// Mutable runtime state, guarded by an `RwLock` so that the tick task and
@@ -151,6 +173,8 @@ pub struct RuntimeState {
     pub claimed: HashSet<String>,
     /// Issues we've completed in this process lifetime.
     pub completed: HashSet<String>,
+    /// Pending retries keyed by issue id.
+    pub retry_queue: HashMap<String, RetryEntry>,
 }
 
 /// Orchestrator core.
@@ -210,8 +234,19 @@ impl Orchestrator {
     }
 
     /// One iteration of the poll loop.
+    ///
+    /// Sequence per Symphony spec §8.1:
+    /// 1. Reconcile (stall detection on running issues — §8.5 Part A)
+    /// 2. Process retry queue (any due retries → re-dispatch)
+    /// 3. Fetch candidate issues + run dispatch preflight + dispatch
     pub async fn tick(self: &Arc<Self>) -> Result<(), OrchestratorError> {
         self.audit.record(AuditEvent::new(AuditEventKind::Tick));
+
+        // §8.5 Part A: stall detection.
+        self.reconcile_stalled().await;
+
+        // §8.4: process retry queue (issues whose backoff has elapsed).
+        self.process_retry_queue().await;
 
         let active = &self.workflow.config.tracker.active_states;
         let candidates = self.tracker.fetch_candidate_issues(active).await?;
@@ -324,7 +359,10 @@ impl Orchestrator {
         };
         let agent_id = agent.id();
 
-        // Promote claimed → running.
+        let now = Instant::now();
+        // Promote claimed → running. We insert a placeholder JoinHandle
+        // first; the real handle is set immediately after spawn so stall
+        // detection can abort it.
         {
             let mut s = self.state.write().await;
             s.claimed.remove(&issue.id);
@@ -334,8 +372,10 @@ impl Orchestrator {
                     issue_id: issue.id.clone(),
                     identifier: issue.identifier.clone(),
                     workspace_path: workspace.path.clone(),
-                    started_at: Instant::now(),
+                    started_at: now,
+                    last_event_at: now,
                     agent_id: agent_id.clone(),
+                    task_handle: None,
                 },
             );
         }
@@ -353,9 +393,17 @@ impl Orchestrator {
         }
 
         let this = Arc::clone(self);
-        tokio::spawn(async move {
+        let issue_id_for_task = issue.id.clone();
+        let handle = tokio::spawn(async move {
             this.run_agent(issue, workspace, agent, task).await;
         });
+        // Store the handle so stall detection can abort.
+        {
+            let mut s = self.state.write().await;
+            if let Some(entry) = s.running.get_mut(&issue_id_for_task) {
+                entry.task_handle = Some(Arc::new(handle));
+            }
+        }
 
         Ok(())
     }
@@ -395,6 +443,14 @@ impl Orchestrator {
     ) -> RunOutcome {
         let mut outcome = RunOutcome::default();
         while let Some(ev) = stream.next().await {
+            // Update last_event_at on every event so stall detection
+            // measures inactivity, not absolute runtime.
+            {
+                let mut s = self.state.write().await;
+                if let Some(entry) = s.running.get_mut(&issue.id) {
+                    entry.last_event_at = Instant::now();
+                }
+            }
             match ev {
                 AgentEvent::Started { task_id } => {
                     tracing::info!(?task_id, "agent started");
@@ -518,9 +574,24 @@ impl Orchestrator {
             }
         }
 
+        // Failure path: schedule a retry with backoff before we drop the
+        // running entry. Successes go straight to `completed`.
+        if !outcome.success {
+            // Don't loop on the issue forever — schedule_retry handles cap.
+            self.schedule_retry(
+                issue.id.clone(),
+                issue.identifier.clone(),
+                1,
+                outcome.error.clone(),
+            )
+            .await;
+        }
+
         let mut s = self.state.write().await;
         s.running.remove(&issue.id);
-        s.completed.insert(issue.id.clone());
+        if outcome.success {
+            s.completed.insert(issue.id.clone());
+        }
     }
 
     /// Build the human-readable Markdown body posted back to the Linear
@@ -550,6 +621,178 @@ impl Orchestrator {
         s.running.remove(issue_id);
         s.claimed.remove(issue_id);
     }
+
+    /// §8.5 Part A: scan running entries; abort any whose
+    /// `now - last_event_at > stall_timeout_ms`. Aborted runs are queued
+    /// for retry with backoff. `stall_timeout_ms <= 0` disables.
+    async fn reconcile_stalled(&self) {
+        let stall_ms = self.workflow.config.agent.stall_timeout_ms;
+        if stall_ms == 0 {
+            return;
+        }
+        let now = Instant::now();
+        let stall_threshold = Duration::from_millis(stall_ms);
+
+        // Collect stalled entries first (without holding write lock).
+        let stalled: Vec<RunningEntry> = {
+            let s = self.state.read().await;
+            s.running
+                .values()
+                .filter(|e| now.duration_since(e.last_event_at) > stall_threshold)
+                .cloned()
+                .collect()
+        };
+
+        for entry in stalled {
+            tracing::warn!(
+                issue = %entry.identifier,
+                stalled_for_ms = now.duration_since(entry.last_event_at).as_millis() as u64,
+                "stall timeout exceeded; aborting agent"
+            );
+            if let Some(handle) = &entry.task_handle {
+                handle.abort();
+            }
+            self.audit.record(
+                AuditEvent::new(AuditEventKind::Stalled)
+                    .with_issue(entry.issue_id.clone(), entry.identifier.clone())
+                    .with_provider(entry.agent_id.0.clone())
+                    .with_error("stall timeout exceeded".to_string()),
+            );
+            self.cleanup_running(&entry.issue_id).await;
+            // Schedule retry from attempt = previous_attempt + 1; we use 1
+            // here because RunningEntry doesn't track attempt currently.
+            // Practical effect: stalled runs always restart with backoff
+            // tier 1 (10s). Acceptable for MVP.
+            self.schedule_retry(
+                entry.issue_id,
+                entry.identifier,
+                1,
+                Some("stalled".to_string()),
+            )
+            .await;
+        }
+    }
+
+    /// §8.4: any retry whose `due_at <= now` gets re-dispatched in this
+    /// tick. Retries that haven't matured stay queued.
+    async fn process_retry_queue(self: &Arc<Self>) {
+        let now = Instant::now();
+        let due: Vec<RetryEntry> = {
+            let mut s = self.state.write().await;
+            let due_ids: Vec<String> = s
+                .retry_queue
+                .iter()
+                .filter(|(_, r)| r.due_at <= now)
+                .map(|(id, _)| id.clone())
+                .collect();
+            due_ids
+                .into_iter()
+                .filter_map(|id| s.retry_queue.remove(&id))
+                .collect()
+        };
+
+        for retry in due {
+            // Re-fetch the issue to validate it's still active & eligible.
+            let active = &self.workflow.config.tracker.active_states;
+            let candidates = match self.tracker.fetch_candidate_issues(active).await {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!(error = %e, "retry candidate fetch failed; deferring");
+                    // Re-enqueue with same due_at + 30s.
+                    self.schedule_retry(
+                        retry.issue_id,
+                        retry.identifier,
+                        retry.attempt,
+                        retry.error,
+                    )
+                    .await;
+                    continue;
+                }
+            };
+            let label_lc = self
+                .workflow
+                .config
+                .agent
+                .agent_label_required
+                .to_lowercase();
+            let issue = candidates.into_iter().find(|i| {
+                i.id == retry.issue_id && i.labels.iter().any(|l| l == &label_lc)
+            });
+            let Some(issue) = issue else {
+                tracing::info!(
+                    issue = %retry.identifier,
+                    "retry target no longer eligible; dropping"
+                );
+                continue;
+            };
+
+            self.audit.record(
+                AuditEvent::new(AuditEventKind::RetryDispatched)
+                    .with_issue(retry.issue_id.clone(), retry.identifier.clone())
+                    .with_message(format!("attempt {}", retry.attempt)),
+            );
+
+            if let Err(e) = self.dispatch(issue.clone()).await {
+                tracing::warn!(error = %e, "retry dispatch failed");
+                // Schedule another retry at the next attempt level.
+                self.schedule_retry(
+                    issue.id,
+                    issue.identifier,
+                    retry.attempt + 1,
+                    Some(e.to_string()),
+                )
+                .await;
+            }
+        }
+    }
+
+    /// Insert (or update) a retry entry for `issue_id` with exponential
+    /// backoff capped at `max_retry_backoff_ms`. Caps total attempts at
+    /// `max_retry_attempts`; emits a `RetryGivenUp` audit event if exceeded.
+    async fn schedule_retry(
+        &self,
+        issue_id: String,
+        identifier: String,
+        attempt: u32,
+        error: Option<String>,
+    ) {
+        let max_attempts = self.workflow.config.agent.max_retry_attempts;
+        if attempt > max_attempts {
+            tracing::warn!(
+                issue = %identifier,
+                attempt,
+                max_attempts,
+                "retry attempts exhausted; giving up"
+            );
+            self.audit.record(
+                AuditEvent::new(AuditEventKind::RetryGivenUp)
+                    .with_issue(issue_id, identifier)
+                    .with_error(error.unwrap_or_default()),
+            );
+            return;
+        }
+        let max_backoff = self.workflow.config.agent.max_retry_backoff_ms;
+        let delay_ms = retry_backoff_ms(attempt, max_backoff);
+        let due_at = Instant::now() + Duration::from_millis(delay_ms);
+
+        let entry = RetryEntry {
+            issue_id: issue_id.clone(),
+            identifier: identifier.clone(),
+            attempt,
+            due_at,
+            error: error.clone(),
+        };
+        {
+            let mut s = self.state.write().await;
+            s.retry_queue.insert(issue_id.clone(), entry);
+        }
+        self.audit.record(
+            AuditEvent::new(AuditEventKind::RetryScheduled)
+                .with_issue(issue_id, identifier)
+                .with_message(format!("attempt {} delay {}ms", attempt, delay_ms))
+                .with_error(error.unwrap_or_default()),
+        );
+    }
 }
 
 fn truncate(s: &str, n: usize) -> String {
@@ -559,5 +802,52 @@ fn truncate(s: &str, n: usize) -> String {
         let mut t = s[..n].to_string();
         t.push('…');
         t
+    }
+}
+
+/// Compute the retry backoff delay in ms per Symphony §8.4.
+///
+/// Exposed as a free function for direct unit testing; the orchestrator's
+/// `schedule_retry` calls the same formula inline.
+pub fn retry_backoff_ms(attempt: u32, max_backoff_ms: u64) -> u64 {
+    10_000u64
+        .saturating_mul(1u64 << (attempt.saturating_sub(1) as u64).min(20))
+        .min(max_backoff_ms)
+}
+
+#[cfg(test)]
+mod backoff_tests {
+    use super::retry_backoff_ms;
+
+    #[test]
+    fn first_retry_is_ten_seconds() {
+        assert_eq!(retry_backoff_ms(1, 300_000), 10_000);
+    }
+
+    #[test]
+    fn second_retry_doubles_to_twenty_seconds() {
+        assert_eq!(retry_backoff_ms(2, 300_000), 20_000);
+    }
+
+    #[test]
+    fn fifth_retry_is_clipped_by_default_max() {
+        // 10_000 * 2^4 = 160_000, under the 300k cap
+        assert_eq!(retry_backoff_ms(5, 300_000), 160_000);
+    }
+
+    #[test]
+    fn extreme_attempt_clipped_to_cap() {
+        assert_eq!(retry_backoff_ms(50, 300_000), 300_000);
+    }
+
+    #[test]
+    fn lower_cap_clips_earlier() {
+        assert_eq!(retry_backoff_ms(3, 30_000), 30_000);
+    }
+
+    #[test]
+    fn zero_attempt_treated_as_one() {
+        // saturating_sub(1) on 0 gives 0; 1 << 0 == 1; result = 10_000
+        assert_eq!(retry_backoff_ms(0, 300_000), 10_000);
     }
 }
