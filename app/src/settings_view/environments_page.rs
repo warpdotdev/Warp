@@ -1138,6 +1138,10 @@ impl EnvironmentsPageWidget {
                     match owner {
                         Owner::User { .. } => personal_environments.push(env),
                         Owner::Team { .. } => team_environments.push(env),
+                        // PDX-82: Local-only environments are listed alongside
+                        // personal environments in this view.
+                        #[cfg(not(feature = "warp_hosted"))]
+                        Owner::Local { .. } => personal_environments.push(env),
                     }
                 }
 

@@ -242,6 +242,9 @@ impl From<Owner> for NotebookLocation {
         match owner {
             Owner::User { .. } => NotebookLocation::PersonalCloud,
             Owner::Team { .. } => NotebookLocation::Team,
+            // PDX-82: Local notebooks bucket as PersonalCloud for telemetry.
+            #[cfg(not(feature = "warp_hosted"))]
+            Owner::Local { .. } => NotebookLocation::PersonalCloud,
         }
     }
 }

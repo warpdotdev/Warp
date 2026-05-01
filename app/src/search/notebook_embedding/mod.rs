@@ -26,5 +26,8 @@ fn is_embed_accessible(embedding_space: Space, object_owner: Owner) -> bool {
         ) => notebook_team_uid == workflow_team_uid,
         // Private objects will not be accessible to all members of a team.
         (Space::Team { .. }, Owner::User { .. }) => false,
+        // PDX-82: Locally-owned objects are not accessible to team members.
+        #[cfg(not(feature = "warp_hosted"))]
+        (Space::Team { .. }, Owner::Local { .. }) => false,
     }
 }

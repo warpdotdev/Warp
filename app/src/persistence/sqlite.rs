@@ -3366,6 +3366,16 @@ fn owner_for_permissions(
         "TEAM" => Some(Owner::Team {
             team_uid: ServerId::from_string_lossy(&permissions.subject_uid),
         }),
+        // PDX-82: Local owner. Recover the synthetic UUID that
+        // `upsert_cloud_object` wrote into `subject_uid`. Falls back to
+        // a fresh UUID if the row was malformed (e.g. an old build wrote
+        // an empty string) so hydration still succeeds.
+        #[cfg(not(feature = "warp_hosted"))]
+        "LOCAL" => {
+            let local_id = uuid::Uuid::parse_str(&permissions.subject_uid)
+                .unwrap_or_else(|_| uuid::Uuid::new_v4());
+            Some(Owner::Local { local_id })
+        }
         _ => None,
     }
 }

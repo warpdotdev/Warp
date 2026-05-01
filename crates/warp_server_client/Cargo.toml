@@ -8,6 +8,9 @@ license.workspace = true
 
 [features]
 test-util = []
+# PDX-82: Mirror of the workspace `warp_hosted` flag so this crate can
+# feature-gate cloud-only Owner variants and cloud-side conversions.
+warp_hosted = ["warp_core/warp_hosted"]
 
 [dependencies]
 anyhow.workspace = true
