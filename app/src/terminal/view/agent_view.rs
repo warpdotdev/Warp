@@ -24,7 +24,7 @@ use crate::{
         TerminalView,
     },
     view_components::DismissibleToast,
-    workspace::{ForkedConversationDestination, ToastStack},
+    workspace::ToastStack,
     TelemetryEvent,
 };
 
@@ -329,14 +329,7 @@ impl TerminalView {
                 ctx,
             ),
             AgentViewEntryBlockEvent::ForkConversation { conversation_id } => {
-                // Fork from a blocklist row opens in the current pane so the
-                // user stays in the same terminal context.
-                me.fork_ai_conversation(
-                    *conversation_id,
-                    None,
-                    ForkedConversationDestination::CurrentPane,
-                    ctx,
-                );
+                me.fork_ai_conversation(*conversation_id, None, ctx);
             }
         });
         self.insert_rich_content(
