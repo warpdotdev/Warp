@@ -95,21 +95,26 @@ The grid's `input(&mut self, c: char)` path stamps `self.active_hyperlink_id` in
 
 **Block boundaries (product invariant 10).** `BlockList` clears `active_hyperlink_id` on prompt-marker block transitions (`prompt_marker` handler) and on `clear`/`reset_state`. `AltScreen` clears on its own reset.
 
-**Bounded registry (security: DoS resistance).** Terminal output is untrusted and a hostile or buggy process can emit unlimited unique URIs. The registry is bounded along three axes, all enforced at `intern` time:
+**Bounded registry, no reclamation (security: DoS resistance).** Terminal output is untrusted and a hostile or buggy process can emit unlimited unique URIs. The registry is bounded along three axes, all enforced at `intern` time, and **uses a no-reclaim model**: entries are never freed while the registry is alive. The registry's lifetime is the grid's lifetime — when the grid (block, alt-screen, etc.) is dropped or replaced, the entire registry goes with it.
 
 | Cap | Default | Behavior on hit |
 | --- | --- | --- |
 | Max URI byte length | 4096 | Sequence is dropped: `intern` returns `None`; `set_hyperlink` is treated as if the OSC 8 had been malformed. The visible text continues to render (per product invariant 15). |
-| Max distinct entries per registry | 4096 | New entries are not inserted; `intern` returns `None`. Existing entries (still referenced by visible cells) are unaffected — old links remain clickable. A `log::warn!` fires once per cap hit per session. |
-| Max referencing cells per entry | unbounded | Bounded indirectly by the grid's own row cap. |
+| Max distinct entries per registry | 4096 | New entries are not inserted; `intern` returns `None`. Existing entries stay valid; old links remain clickable. A `log::warn!` fires once per cap hit per session. |
+| Max referencing cells per entry | unbounded | Bounded indirectly by the grid's row cap. |
 
-Reference counting on `intern` / cell drop ensures registry entries are reclaimed when the last referencing cell is overwritten or scrolled out of the block's max-rows window. Caps are `pub const` in the registry module so tests can override them via `#[cfg(test)] const MAX_DISTINCT_ENTRIES: usize = 4;` in a test-only build.
+**Why no reclamation.** A reclamation model would need consistent reference-count accounting across cell overwrites (replace `hyperlink_id`, dec/inc), row eviction from scrollback, RLE run splits and merges in `FlatStorage`, reflow on resize (rows rebuilt from underlying spans), and deserialization (incoming cells must bump counts on the loaded registry). Getting any one of those wrong leaks entries (memory creep) or under-counts (use-after-free of an `id` that still appears in some cell). For a feature where the steady-state working set per block is small (single-digit URLs in real-world output) and the cap (4096 entries × ~1 KB average ≈ 4 MB) is already small, the simpler "registry grows monotonically until grid is dropped" model is the right tradeoff — and trivially correct under all of the above transitions because the only mutation is "append at intern time."
+
+**Block-grid lifetime.** Per product invariant 10, a `BlockList` block is the natural unit of registry ownership: hyperlinks are reset on prompt-marker boundaries, and when a block is fully evicted from scrollback the whole block (including its registry) is dropped. So the working set is bounded by the *current* block's distinct URLs, not the session's. `AltScreen` registries are cleared on screen reset.
+
+**Caps are `pub const`** in the registry module so tests can override them via `#[cfg(test)] const MAX_DISTINCT_ENTRIES: usize = 4;` in a test-only build.
 
 Tests (in `hyperlink_registry_tests.rs`):
 - `intern` returns `None` for a URI exceeding the byte cap.
 - 4097 distinct interns: the first 4096 succeed, the 4097th returns `None`, the first 4096 stay valid.
-- After the cell holding the only reference to entry N is overwritten, a subsequent `intern` of a *different* URI succeeds (entry N was reclaimed).
+- Cells overwritten with new content do **not** cause the registry to shrink — `len_for_test()` does not decrease, only `Drop` of the registry frees memory. Documented as the intended behavior, not a bug.
 - A 1 MB OSC 8 sequence does not OOM the process; the parser drops it via the URI byte cap.
+- Dropping a `BlockList` block drops its registry (asserted via a `Weak`/Drop counter in tests).
 
 ### 4. Lookup helpers — model layer
 
@@ -137,27 +142,42 @@ The existing `Link` (`grid_handler.rs:143`) is a single `RangeInclusive<Point>` 
 
 ### 5a. Centralized scheme allow-list (security)
 
-Terminal output is untrusted, OSC 8 carries arbitrary URIs, and `ctx.open_url` is a thin wrapper that hands the string to the platform — it is **not** itself a validator. We add a single chokepoint that every path must call:
+Terminal output is untrusted, OSC 8 carries arbitrary URIs, and `ctx.open_url` is a thin wrapper that hands the string to the platform — it is **not** itself a validator. We add a single chokepoint that every path must call. The validator takes the URI as a `&str` (not a parsed `Url`) so it never forces the caller to throw away a URI that happens to be unparseable — that matters for hover/copy on malformed input (product invariant 15).
 
 ```rust
 // New module: app/src/terminal/view/link_security.rs
 pub enum SchemeCheck {
     Allowed,
-    Rejected { scheme: String },
+    Rejected { reason: SchemeRejectReason },
 }
 
-/// Returns Allowed iff `url`'s scheme is in the allow-list for opening
-/// untrusted links. Used by every code path that opens a URL coming
-/// from terminal output (auto-detected URLs and OSC 8 hyperlinks).
-pub fn check_open_scheme(url: &Url) -> SchemeCheck;
+pub enum SchemeRejectReason {
+    /// URI failed to parse as a URL (e.g. spaces, no scheme, garbage).
+    Unparseable,
+    /// URI parsed but the scheme isn't on the allow-list.
+    DisallowedScheme { scheme: String },
+}
 
-/// Convenience: validate then call ctx.open_url. Returns true iff the
-/// URL was opened. The boolean is used by the click/menu paths to
-/// decide whether to fire telemetry / tooltips.
-pub fn open_validated(ctx: &mut impl AppContextLike, url: &Url) -> bool;
+/// Returns Allowed iff the URI parses as a URL whose scheme is in the
+/// allow-list for opening untrusted links. Called by every code path
+/// that opens a URI coming from terminal output (OSC 8 hyperlinks and
+/// auto-detected URLs).
+pub fn check_open_scheme(uri: &str) -> SchemeCheck;
+
+/// Convenience: validate then call ctx.open_url. Returns the
+/// SchemeCheck so the click/menu path can pick a tooltip and decide
+/// whether to fire OpenLink telemetry.
+pub fn open_validated(ctx: &mut impl AppContextLike, uri: &str) -> SchemeCheck;
 ```
 
 The allow-list is `http`, `https`, `mailto`, and `ftp`. Any other scheme — `javascript:`, `data:`, `file:`, `vbscript:`, `about:`, `chrome:`, custom protocol handlers, etc. — is rejected. The list is a `const &[&str]`, not a runtime config, to keep the boundary auditable.
+
+**Hover, copy, and click semantics for malformed/disallowed URIs** (product invariant 15):
+- The hyperlink span on the cells is unaffected by validity: hover always works, the tooltip always shows the literal URI, and right-click "Copy link" always copies the literal URI to the clipboard regardless of `SchemeCheck`. Validation only gates *opening* the URI.
+- Click ("Open link") paths call `open_validated` and switch on the result:
+  - `Allowed` → URI was opened; tooltip is "Open link".
+  - `Rejected { Unparseable }` → click was a no-op; tooltip is "Cannot open: URI is malformed".
+  - `Rejected { DisallowedScheme { scheme } }` → click was a no-op; tooltip is "Scheme not allowed: <scheme>".
 
 Required call sites (each one becomes a "must call `open_validated` / `check_open_scheme`" bullet in code review):
 
@@ -168,14 +188,20 @@ Required call sites (each one becomes a "must call `open_validated` / `check_ope
 - Any future code path that opens a URL that originated in terminal output. Lint rule (custom clippy or grep-based presubmit check) flags raw `ctx.open_url` calls inside `app/src/terminal/view/`; existing call sites that open *Warp-internal* URLs (settings deep links, docs URLs) are explicitly allow-listed in the lint.
 
 Tests live in `link_security_tests.rs`:
-- `http`, `https`, `mailto`, `ftp` → `Allowed`.
-- `javascript`, `data`, `file`, `vbscript`, `about`, empty scheme → `Rejected`.
+- `http://x`, `https://x`, `mailto:a@b`, `ftp://x` → `Allowed`.
+- `javascript:alert(1)`, `data:text/html,…`, `file:///etc/passwd`, `vbscript:`, `about:blank`, empty scheme → `Rejected { DisallowedScheme }`.
 - Mixed-case (`HTTP://`, `JavaScript:`) is canonicalized — case-insensitive scheme match.
+- Garbage strings (`"hello world"`, `""`, `"://"`) → `Rejected { Unparseable }`.
 - A click test for OSC 8 with `javascript:alert(1)` confirms `ctx.open_url` is **never** called and the tooltip shows the rejection reason.
+- A hover test for an unparseable URI confirms the tooltip still shows the literal URI and "Copy link" still copies it.
 
 ### 6. Feature flag
 
-Behind `FeatureFlag::OscHyperlinks` (added per `WARP.md`'s feature-flag guide, defaulted on for dogfood). All five layers gate on the flag at the dispatch boundary in (2): when off, `osc_dispatch`'s `b"8"` arm calls `unhandled(params)` and the rest of the pipeline never sees an OSC 8 hyperlink. This lets each layer land independently and be reverted in one place if a regression appears.
+`FeatureFlag::OscHyperlinks` (added per `WARP.md`'s feature-flag guide, defaulted on for dogfood) gates **OSC 8 specific** behavior only: when off, `osc_dispatch`'s `b"8"` arm calls `unhandled(params)` and the rest of layers (3)–(5)/(6a)/(7) never sees an OSC 8 hyperlink.
+
+Layer (5a) — the scheme allow-list — is **deliberately not** gated by this flag. Validation is a hardening change to the existing auto-detected URL click path that benefits users regardless of OSC 8. Disabling `OscHyperlinks` must not regress security on the URL flow. The flag's compile-time wiring is restricted to the `b"8"` arm and the layer (5) `Hyperlink` variant of `GridHighlightedLink`; layer (5a) lives outside the flag and is on for everyone the moment its layer ships.
+
+This split lets each layer land independently and lets the team revert OSC 8 in one place if a regression appears, without losing the hardening of the auto-detected URL flow.
 
 ### 6a. Session persistence (Warp Drive, history, shared sessions)
 
@@ -212,6 +238,7 @@ sequenceDiagram
     participant Registry as HyperlinkRegistry
     participant Storage as FlatStorage / Cell+Row
     participant View as TerminalView
+    participant Validator as link_security
     participant Browser
 
     PTY->>Processor: ESC ] 8 ; id=foo ; https://x ESC \ "Click me" ESC ] 8 ; ; ESC \
@@ -232,7 +259,15 @@ sequenceDiagram
     View->>View: cursor=PointingHand, tooltip="Open link" + uri
 
     Note over View: User Cmd-clicks
-    View->>Browser: ctx.open_url("https://x")
+    View->>Validator: open_validated(ctx, "https://x")
+    Validator->>Validator: parse + scheme allow-list check
+    alt Allowed
+        Validator->>Browser: ctx.open_url("https://x")
+        Validator-->>View: SchemeCheck::Allowed
+    else Rejected (Unparseable / DisallowedScheme)
+        Validator-->>View: SchemeCheck::Rejected{...}
+        View->>View: tooltip explains why click is inert
+    end
 ```
 
 ## Testing and validation
@@ -249,25 +284,26 @@ Each numbered item below maps to a product invariant from `product.md`.
 - Empty-URI close after open clears → invariant 2.
 
 **Unit tests — registry + cell stamping** (new `hyperlink_registry_tests.rs`, plus extension of `cell_test.rs`).
-- `intern` deduplicates: same `Hyperlink{id:"foo", uri:"x"}` returns the same `HyperlinkId`. → invariant 5.
-- Different URIs with the same `id` produce different `HyperlinkId`s (`id` is a hint, not a key — `(id, uri)` is the key).
+- `intern` deduplicates: same `Hyperlink{id:"foo", uri:"x"}` returns the same `HyperlinkId`. (Used internally so adjacent runs with the same `(id, uri)` share a slot — *not* a behavior the lookup layer exposes; see Follow-ups for cross-run grouping.)
+- Different URIs (regardless of `id`) produce different `HyperlinkId`s — `(id, uri)` is the registry key.
 - `Cell::set_hyperlink_id`/`hyperlink_id` round-trip; `CellExtra` allocation only occurs when first set; cell reset clears the slot.
 
 **Unit tests — `FlatStorage`** (`flat_storage/mod_tests.rs`).
 - Writing 100 cells under one active id RLE-collapses to one `AttributeMap` entry.
 - Removing a row that ended a span doesn't bleed the active id into later writes.
 
-**Unit tests — model lookups.** `hyperlink_at_point` returns the full contiguous run of cells that share the same `HyperlinkId`, including across non-adjacent cells when their `id` matches → invariants 5, 10.
+**Unit tests — model lookups.** `hyperlink_at_point` returns the contiguous run of cells around `point` that share the same `HyperlinkId`, expanding left and right while the next cell is adjacent and carries the same id → invariants 5, 10. The lookup explicitly does **not** jump across non-adjacent cells even when `HyperlinkId` matches; cross-run grouping is out of scope.
 
 **Integration tests** (`crates/integration/`, following the patterns in the `warp-integration-test` skill).
 - **`osc8_open_close.rs`** — pipe an OSC 8 open + visible text + close to a fake PTY, assert the cells carry a hyperlink, hover one, observe `PointingHand` cursor and tooltip showing the URI → invariants 1, 5, 17.
-- **`osc8_cmd_click_opens_url.rs`** — same setup, simulate Cmd+click on a hyperlinked cell, assert `ctx.open_url` was called with the URI; simulate plain click and assert it was *not* called → invariants 6, 7.
+- **`osc8_cmd_click_opens_url.rs`** — same setup, simulate Cmd+click on a hyperlinked cell, assert `ctx.open_url` was called with the URI (via the validated path) and that telemetry fired; simulate plain click and assert it was *not* called → invariants 6, 7.
 - **`osc8_implicit_close_at_block_boundary.rs`** — open a hyperlink before a `precmd` / new prompt, assert the next block's cells do not carry the hyperlink → invariant 10.
-- **`osc8_split_id_grouping.rs`** — open with `id=foo`, write text, close, open again with `id=foo` and the same URI, write more text, close. Hover the second run; assert highlight covers both runs → invariant 5.
+- **`osc8_soft_wrap_keeps_one_span.rs`** — open a hyperlink whose visible text crosses a soft wrap; assert hover on either wrapped row highlights the full contiguous span and a single Cmd+click anywhere on the span opens the URI → invariants 5, 10. (Replaces the dropped non-contiguous `id` grouping test, which is moved to Follow-ups.)
 - **`osc8_copy_text_vs_link.rs`** — select across a hyperlink and copy: clipboard contains visible text. Right-click → "Copy link": clipboard contains the URI → invariant 8.
 - **`osc8_share_as_markdown.rs`** — share/copy-as-markdown produces `[visible](uri)` → invariant 13.
-- **`osc8_disallowed_scheme_inert.rs`** — an OSC 8 span with `javascript:` URI does not navigate on click; tooltip shows literal URI → invariant 16.
-- **`osc8_no_regression_on_url_autodetect.rs`** — output without OSC 8 still hyperlinks via auto-detection → invariant 18.
+- **`osc8_disallowed_scheme_inert.rs`** — an OSC 8 span with `javascript:` URI does not navigate on click; tooltip shows "Scheme not allowed: javascript". Right-click → "Copy link" still copies the literal URI → invariants 15, 16.
+- **`osc8_unparseable_uri_inert.rs`** — an OSC 8 span with a URI that fails URL parsing (e.g. `not a url`) is hoverable, copyable, and inert on click; tooltip shows "Cannot open: URI is malformed" → invariant 15.
+- **`osc8_no_regression_on_url_autodetect.rs`** — output without OSC 8 still hyperlinks via auto-detection, and the auto-detected click also goes through `open_validated` (regression test for layer 5a) → invariant 18.
 
 **Manual verification (recorded in PR description with a short clip).**
 - Run `printf '\e]8;;https://warp.dev\e\\Open Warp\e]8;;\e\\\n'` in a Warp block; hover, observe pointer; Cmd+click, observe browser open.
@@ -277,7 +313,7 @@ Each numbered item below maps to a product invariant from `product.md`.
 
 ## Risks and mitigations
 
-- **Memory / DoS from the registry.** Designed in, not deferred — see "Bounded registry" in (3). Three caps (URI byte length, distinct entries per registry, refcounted reclamation) plus tests for each. The earlier framing of this as "spec it later" was the pre-revision version of the plan.
+- **Memory / DoS from the registry.** Designed in, not deferred — see "Bounded registry, no reclamation" in (3). The cap (4096 distinct entries × 4096-byte max URI ≈ 16 MB worst-case per block) plus the bounded URI byte length plus the registry's grid-scoped lifetime put a hard ceiling on the working set. Adopting no-reclaim avoids a class of refcount/use-after-free bugs across cell overwrite, RLE split/merge, scrollback eviction, reflow, and deserialization.
 - **Cell-size budget.** `cell.rs:122` is explicit that growing `Cell` past 24 bytes is a 33% memory hit. The `HyperlinkId` lives in `CellExtra` exactly to avoid this; the only `Cell`-shaped change is to `CellExtra`'s box, which is already optional and pays only when present.
 - **Security: `javascript:` / `data:` / unexpected schemes.** Centralized in (5a) — every code path that can be reached from terminal output goes through `check_open_scheme` / `open_validated` before any platform open call. The plan also closes the same gap for the existing auto-detected URL flow.
 - **URIs containing `;`.** The vte parser splits OSC params on `;`; a URI with literal `;` arrives as multiple params. Mitigation: when more than two params follow `b"8"`, rejoin params from index 2 onward with `;` before parsing. Documented as part of (1).
