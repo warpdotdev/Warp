@@ -44,10 +44,12 @@ model level and updated from the view on every theme change.  The model-level fi
 is accessed by the `report_color_scheme` override without delegation, matching how
 non-grid state is handled elsewhere.
 
-The field is initialized to `true` (dark mode) on construction; the view calls
-`set_color_scheme` on the very first `AppearanceEvent::ThemeChanged` subscription
-fire (or on construction if we add an eager call there), so the initialization value
-is only visible if a query arrives before the first theme event.
+In the normal app construction path, `create_terminal_model` initializes the field
+eagerly from the current `Appearance`, so `report_color_scheme` reflects the active
+Warp theme immediately, even before any `AppearanceEvent::ThemeChanged` is delivered.
+For direct `TerminalModel::new` construction, the field still starts at its default
+`true` (dark mode) value until `set_color_scheme` is called, so that fallback value
+is only visible for those callers.
 
 ### Query response (`CSI ? 996 n`)
 
