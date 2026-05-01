@@ -51,6 +51,7 @@ use crate::view_components::find::FindWithinBlockState;
 
 use crate::terminal::model::ansi::{self, InitShellValue};
 use crate::terminal::model::ansi::{BootstrappedValue, PreexecValue};
+use crate::terminal::model::blockgrid::CursorDisplayPoint;
 use crate::terminal::model::blocks::{insert_block, TotalIndex};
 use crate::terminal::model::terminal_model::WithinBlock;
 
@@ -647,6 +648,54 @@ impl TerminalView {
     ) -> Lines {
         let viewport = self.viewport_state(model.block_list(), input_mode, app);
         viewport.scroll_top_in_lines()
+    }
+
+    fn active_output_cursor_row_in_lines(
+        &self,
+        model: &TerminalModel,
+        input_mode: InputMode,
+        app: &AppContext,
+    ) -> Option<Lines> {
+        let active_block = model.block_list().active_block();
+        let cursor_display_point = active_block.output_grid().cursor_display_point()?;
+        let cursor_row = match cursor_display_point {
+            CursorDisplayPoint::Visible(point) | CursorDisplayPoint::HiddenCache(point) => {
+                point.row
+            }
+        };
+        let viewport = self.viewport_state(model.block_list(), input_mode, app);
+
+        Some(
+            viewport.top_of_block_in_lines(model.block_list().active_block_index())
+                + active_block.output_grid_offset()
+                + (cursor_row as f32).into_lines(),
+        )
+    }
+
+    fn active_output_cursor_has_bottom_buffer(
+        &self,
+        model: &TerminalModel,
+        input_mode: InputMode,
+        app: &AppContext,
+    ) -> bool {
+        let Some(cursor_row) = self.active_output_cursor_row_in_lines(model, input_mode, app)
+        else {
+            return false;
+        };
+
+        let scroll_top = self.scroll_top_in_lines(model, input_mode, app);
+        let visible_rows = self.content_element_height_lines(app);
+        cursor_row >= scroll_top && cursor_row < scroll_top + visible_rows - 1.0.into_lines()
+    }
+
+    fn effective_scrollable_height_in_lines(
+        &self,
+        model: &TerminalModel,
+        input_mode: InputMode,
+        app: &AppContext,
+    ) -> Lines {
+        self.viewport_state(model.block_list(), input_mode, app)
+            .effective_scrollable_height_in_lines()
     }
 
     fn is_vertically_scrollable(&self, app: &AppContext) -> bool {
@@ -1553,6 +1602,287 @@ fn test_stable_scrolling_during_grid_truncation() {
                     assert_eq!(scroll_top_before_newlines, new_scroll_top);
                 }
             }
+        });
+    })
+}
+
+fn run_interactive_long_running_scroll_follow_test(input_mode: InputMode) {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            InputModeSettings::handle(ctx).update(ctx, |input_mode_settings, ctx| {
+                let _ = input_mode_settings.input_mode.set_value(input_mode, ctx);
+            });
+
+            {
+                let mut model = view.model.lock();
+                model.simulate_block("ls", "foo");
+                model.simulate_long_running_block("aws configure sso", "");
+                for _ in 0..100 {
+                    model.process_bytes("\n");
+                }
+                model.process_bytes("\x1b[1;1HSSO session name");
+            }
+
+            assert_eq!(
+                view.scroll_position(),
+                ScrollPosition::FollowsBottomOfMostRecentBlock
+            );
+
+            view.write_user_bytes_to_pty(vec![b'a'], ctx);
+
+            let model = view.model.lock();
+            assert_eq!(
+                view.scroll_position(),
+                ScrollPosition::FollowsInteractiveCursor
+            );
+            assert!(view.active_output_cursor_has_bottom_buffer(&model, input_mode, ctx));
+        });
+    });
+}
+
+#[test]
+fn test_interactive_long_running_input_keeps_cursor_visible_pinned_to_bottom() {
+    run_interactive_long_running_scroll_follow_test(InputMode::PinnedToBottom);
+}
+
+#[test]
+fn test_interactive_long_running_input_keeps_cursor_visible_pinned_to_top() {
+    run_interactive_long_running_scroll_follow_test(InputMode::PinnedToTop);
+}
+
+#[test]
+fn test_long_running_prompt_output_switches_to_interactive_follow_before_typing() {
+    App::test((), |mut app| async move {
+        const INPUT_MODE: InputMode = InputMode::PinnedToBottom;
+
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            {
+                let mut model = view.model.lock();
+                model.simulate_block("ls", "foo");
+                model.simulate_long_running_block("aws configure sso", "");
+                for _ in 0..100 {
+                    model.process_bytes("\n");
+                }
+                model.process_bytes("\x1b[1;1HSSO session name");
+            }
+
+            assert_eq!(
+                view.scroll_position(),
+                ScrollPosition::FollowsBottomOfMostRecentBlock
+            );
+
+            view.handle_terminal_wakeup((), ctx);
+
+            let model = view.model.lock();
+            assert_eq!(
+                view.scroll_position(),
+                ScrollPosition::FollowsInteractiveCursor
+            );
+            assert!(view.active_output_cursor_has_bottom_buffer(&model, INPUT_MODE, ctx));
+        });
+    })
+}
+
+#[test]
+fn test_interactive_long_running_prompt_does_not_expose_blank_scroll_area() {
+    App::test((), |mut app| async move {
+        const INPUT_MODE: InputMode = InputMode::PinnedToBottom;
+
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            {
+                let mut model = view.model.lock();
+                model.simulate_block("ls", "foo");
+                model.simulate_long_running_block("aws configure sso", "");
+                for _ in 0..100 {
+                    model.process_bytes("\n");
+                }
+                model.process_bytes("\x1b[1;1HSSO session name");
+            }
+
+            view.handle_terminal_wakeup((), ctx);
+
+            let scroll_top_before_scroll_down = {
+                let model = view.model.lock();
+                let full_blocklist_height = model.block_list().block_heights().summary().height;
+                let effective_scrollable_height =
+                    view.effective_scrollable_height_in_lines(&model, INPUT_MODE, ctx);
+
+                assert_eq!(
+                    view.scroll_position(),
+                    ScrollPosition::FollowsInteractiveCursor
+                );
+                assert!(effective_scrollable_height < full_blocklist_height);
+                view.scroll_top_in_lines(&model, INPUT_MODE, ctx)
+            };
+
+            view.scroll(Lines::zero() - 100.0.into_lines(), ctx);
+
+            {
+                let model = view.model.lock();
+                assert_eq!(
+                    view.scroll_position(),
+                    ScrollPosition::FollowsInteractiveCursor
+                );
+                assert_eq!(
+                    view.scroll_top_in_lines(&model, INPUT_MODE, ctx),
+                    scroll_top_before_scroll_down
+                );
+
+                let viewport = view.viewport_state(model.block_list(), INPUT_MODE, ctx);
+                assert_eq!(
+                    viewport.next_scroll_position(ScrollPositionUpdate::AfterPageDown, ctx),
+                    ScrollPosition::FollowsInteractiveCursor
+                );
+                assert_eq!(
+                    viewport.next_scroll_position(ScrollPositionUpdate::AfterEnd, ctx),
+                    ScrollPosition::FollowsInteractiveCursor
+                );
+            }
+
+            view.scroll(1.0.into_lines(), ctx);
+            assert!(matches!(
+                view.scroll_position(),
+                ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. }
+            ));
+
+            {
+                let model = view.model.lock();
+                let full_blocklist_height = model.block_list().block_heights().summary().height;
+                let effective_scrollable_height =
+                    view.effective_scrollable_height_in_lines(&model, INPUT_MODE, ctx);
+                assert!(effective_scrollable_height < full_blocklist_height);
+            }
+
+            view.scroll(Lines::zero() - 100.0.into_lines(), ctx);
+
+            let model = view.model.lock();
+            assert_eq!(
+                view.scroll_position(),
+                ScrollPosition::FollowsInteractiveCursor
+            );
+            assert_eq!(
+                view.scroll_top_in_lines(&model, INPUT_MODE, ctx),
+                scroll_top_before_scroll_down
+            );
+        });
+    })
+}
+
+#[test]
+fn test_interactive_long_running_prompt_keeps_boundary_after_small_scroll_up() {
+    App::test((), |mut app| async move {
+        const INPUT_MODE: InputMode = InputMode::PinnedToBottom;
+
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            {
+                let mut model = view.model.lock();
+                for _ in 0..100 {
+                    model.simulate_block("history", "previous output");
+                }
+                model.simulate_long_running_block("aws configure sso", "");
+                for _ in 0..100 {
+                    model.process_bytes("\n");
+                }
+                model.process_bytes("\x1b[1;1HSSO session name");
+            }
+
+            view.handle_terminal_wakeup((), ctx);
+
+            let scroll_top_at_prompt = {
+                let model = view.model.lock();
+                assert_eq!(
+                    view.scroll_position(),
+                    ScrollPosition::FollowsInteractiveCursor
+                );
+                view.scroll_top_in_lines(&model, INPUT_MODE, ctx)
+            };
+
+            view.scroll(1.0.into_lines(), ctx);
+            assert!(matches!(
+                view.scroll_position(),
+                ScrollPosition::FixedAtInteractivePosition { .. }
+                    | ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. }
+            ));
+
+            {
+                let model = view.model.lock();
+                let full_blocklist_height = model.block_list().block_heights().summary().height;
+                let effective_scrollable_height =
+                    view.effective_scrollable_height_in_lines(&model, INPUT_MODE, ctx);
+                assert!(effective_scrollable_height < full_blocklist_height);
+            }
+
+            view.scroll(Lines::zero() - 100.0.into_lines(), ctx);
+
+            let model = view.model.lock();
+            assert_eq!(
+                view.scroll_position(),
+                ScrollPosition::FollowsInteractiveCursor
+            );
+            assert_eq!(
+                view.scroll_top_in_lines(&model, INPUT_MODE, ctx),
+                scroll_top_at_prompt
+            );
+        });
+    })
+}
+
+#[test]
+fn test_manual_scroll_away_is_respected_during_interactive_long_running_input() {
+    App::test((), |mut app| async move {
+        const INPUT_MODE: InputMode = InputMode::PinnedToBottom;
+
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            {
+                let mut model = view.model.lock();
+                model.simulate_block("ls", "foo");
+                model.simulate_long_running_block("aws configure sso", "");
+                for _ in 0..100 {
+                    model.process_bytes("\n");
+                }
+            }
+
+            view.write_user_bytes_to_pty(vec![b'a'], ctx);
+            assert_eq!(
+                view.scroll_position(),
+                ScrollPosition::FollowsInteractiveCursor
+            );
+
+            view.scroll(1.0.into_lines(), ctx);
+            let scroll_position_after_manual_scroll = view.scroll_position();
+            assert!(matches!(
+                scroll_position_after_manual_scroll,
+                ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. }
+            ));
+
+            let scroll_top_after_manual_scroll = {
+                let model = view.model.lock();
+                view.scroll_top_in_lines(&model, INPUT_MODE, ctx)
+            };
+
+            view.write_to_pty_for_syncing_long_running_commands(vec![b'b'], ctx);
+
+            let model = view.model.lock();
+            assert_eq!(view.scroll_position(), scroll_position_after_manual_scroll);
+            assert_eq!(
+                view.scroll_top_in_lines(&model, INPUT_MODE, ctx),
+                scroll_top_after_manual_scroll
+            );
         });
     })
 }

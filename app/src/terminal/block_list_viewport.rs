@@ -145,6 +145,11 @@ pub enum ScrollPosition {
     /// In terms of scroll_top, this implies scrolling stays locked to max_scroll_top.
     FollowsBottomOfMostRecentBlock,
 
+    /// The scrolling follows the active cursor row of an interactive long-running block.
+    /// This keeps the current input line visible with a small buffer beneath it until the
+    /// user manually scrolls away.
+    FollowsInteractiveCursor,
+
     /// The scrolling follows the bottom of the most recently executed block,
     /// similar to FollowsBottomOfMostRecentBlock, but because there can be a gap
     /// below the most recent block, the scroll_top is not necessarily max_scroll_top.
@@ -155,6 +160,10 @@ pub enum ScrollPosition {
     /// of the block list)
     FixedAtPosition { scroll_lines: ScrollLines },
 
+    /// Like [`ScrollPosition::FixedAtPosition`], but the effective bottom remains
+    /// the live cursor row of an interactive prompt rather than the bottom of the backing grid.
+    FixedAtInteractivePosition { scroll_lines: ScrollLines },
+
     /// The scrolling follows an offset within a long-running block and
     /// adjusts for output grid truncation.
     ///
@@ -162,6 +171,18 @@ pub enum ScrollPosition {
     /// a particular line and have the scroll follow that line even while the
     /// output grid is being truncated at head (until the line itself is truncated).
     FixedWithinLongRunningBlock {
+        /// The absolute scroll offset.
+        /// This is equivalent to [`ScrollPosition::FixedAtPosition::scroll_lines`].
+        scroll_lines: ScrollLines,
+
+        /// The number of lines truncated from the output grid
+        /// at the time that the scroll position was set.
+        num_output_lines_truncated: u64,
+    },
+
+    /// Like [`ScrollPosition::FixedWithinLongRunningBlock`], but the effective bottom remains
+    /// the live cursor row of an interactive prompt rather than the bottom of the backing grid.
+    FixedWithinInteractiveLongRunningBlock {
         /// The absolute scroll offset.
         /// This is equivalent to [`ScrollPosition::FixedAtPosition::scroll_lines`].
         scroll_lines: ScrollLines,
@@ -199,6 +220,7 @@ pub enum ScrollPositionUpdate {
     AfterKeydownOnTerminal,
     AfterTypedCharacters,
     AfterWriteUserBytesToPty,
+    AfterInteractiveLongRunningPtyInput,
     AfterScrollEvent {
         scroll_delta: Lines,
     },
@@ -655,8 +677,14 @@ impl<'a> ViewportState<'a> {
                 ScrollPosition::FollowsBottomOfMostRecentBlock
                 | ScrollPosition::WaterfallGapFollowsBottomOfMostRecentBlock { .. },
             ) => self.max_scroll_top_in_lines(),
+            (InputMode::PinnedToBottom, ScrollPosition::FollowsInteractiveCursor) => {
+                self.interactive_cursor_scroll_top_in_lines()
+            }
             (InputMode::Waterfall, ScrollPosition::FollowsBottomOfMostRecentBlock) => {
                 self.max_scroll_top_in_lines()
+            }
+            (InputMode::Waterfall, ScrollPosition::FollowsInteractiveCursor) => {
+                self.interactive_cursor_scroll_top_in_lines()
             }
             (
                 InputMode::Waterfall,
@@ -710,12 +738,21 @@ impl<'a> ViewportState<'a> {
                     .map(|height| height - self.content_element_height_lines())
                     .unwrap_or(Lines::zero())
             }
-            (_, ScrollPosition::FixedAtPosition { scroll_lines }) => {
-                scroll_lines.scroll_top(self.block_list, self.content_element_height_lines())
+            (_, ScrollPosition::FollowsInteractiveCursor) => {
+                self.interactive_cursor_scroll_top_in_lines()
             }
             (
                 _,
+                ScrollPosition::FixedAtPosition { scroll_lines }
+                | ScrollPosition::FixedAtInteractivePosition { scroll_lines },
+            ) => scroll_lines.scroll_top(self.block_list, self.content_element_height_lines()),
+            (
+                _,
                 ScrollPosition::FixedWithinLongRunningBlock {
+                    scroll_lines,
+                    num_output_lines_truncated,
+                }
+                | ScrollPosition::FixedWithinInteractiveLongRunningBlock {
                     scroll_lines,
                     num_output_lines_truncated,
                 },
@@ -740,7 +777,7 @@ impl<'a> ViewportState<'a> {
             }
         }
         .max(Lines::zero())
-        .min(self.max_scroll_top_in_lines())
+        .min(self.effective_max_scroll_top_in_lines())
     }
 
     /// How far the view is scrolled from the top of all blocks in pixels
@@ -774,7 +811,9 @@ impl<'a> ViewportState<'a> {
                     && matches!(
                         self.scroll_position,
                         ScrollPosition::FixedAtPosition { .. }
+                            | ScrollPosition::FixedAtInteractivePosition { .. }
                             | ScrollPosition::FixedWithinLongRunningBlock { .. }
+                            | ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. }
                     )
                 {
                     return self.scroll_position;
@@ -789,21 +828,27 @@ impl<'a> ViewportState<'a> {
                 // as executing a command.
                 self.scroll_position_after_command_execution(app)
             }
+            ScrollPositionUpdate::AfterInteractiveLongRunningPtyInput => {
+                self.scroll_position_for_interactive_long_running_input()
+            }
             ScrollPositionUpdate::AfterScrollEvent { scroll_delta } => {
                 self.scroll_position_for_delta(scroll_delta)
             }
             ScrollPositionUpdate::AfterResize => {
-                let max_scroll_top = self.max_scroll_top_in_lines();
+                let max_scroll_top = self.effective_max_scroll_top_in_lines();
 
                 // When resizing, the number of rows might "shrink" as the wrapped-around lines
                 // are rendered in one line. This changes the value of maximum scroll top and could
                 // make the previous scroll position invalid. Thus we add an additional check here
                 // to change the scroll position to stick to the bottom if previous scroll top is invalid.
-                if let ScrollPosition::FixedAtPosition { scroll_lines } = self.scroll_position {
+                if let ScrollPosition::FixedAtPosition { scroll_lines }
+                | ScrollPosition::FixedAtInteractivePosition { scroll_lines } =
+                    self.scroll_position
+                {
                     if scroll_lines.scroll_top(self.block_list, self.content_element_height_lines())
                         > max_scroll_top
                     {
-                        return ScrollPosition::FollowsBottomOfMostRecentBlock;
+                        return self.bottom_follow_position();
                     }
                 }
                 self.scroll_position
@@ -836,13 +881,13 @@ impl<'a> ViewportState<'a> {
                 }
             }
             ScrollPositionUpdate::AfterPageDown => {
-                let total_block_heights = self.block_list.block_heights().summary().height;
+                let total_block_heights = self.effective_scrollable_height_in_lines();
                 let visible_rows = self.content_element_height_lines();
                 let current_position = self.scroll_top_in_lines();
                 if current_position + visible_rows - 1.0.into_lines()
                     > (total_block_heights - visible_rows).max(Lines::zero())
                 {
-                    ScrollPosition::FollowsBottomOfMostRecentBlock
+                    self.bottom_follow_position()
                 } else {
                     let new_scroll_top = current_position + visible_rows - 1.0.into_lines();
                     ScrollPosition::FixedAtPosition {
@@ -858,7 +903,7 @@ impl<'a> ViewportState<'a> {
                     self.input_mode,
                     InputMode::PinnedToBottom | InputMode::Waterfall
                 ) {
-                    ScrollPosition::FollowsBottomOfMostRecentBlock
+                    self.bottom_follow_position()
                 } else {
                     ScrollPosition::FixedAtPosition {
                         scroll_lines: self
@@ -910,6 +955,7 @@ impl<'a> ViewportState<'a> {
         if matches!(
             self.scroll_position,
             ScrollPosition::FollowsBottomOfMostRecentBlock
+                | ScrollPosition::FollowsInteractiveCursor
                 | ScrollPosition::WaterfallGapFollowsBottomOfMostRecentBlock { .. }
         ) {
             return self.scroll_position;
@@ -981,6 +1027,7 @@ impl<'a> ViewportState<'a> {
         if matches!(
             self.scroll_position,
             ScrollPosition::FollowsBottomOfMostRecentBlock
+                | ScrollPosition::FollowsInteractiveCursor
                 | ScrollPosition::WaterfallGapFollowsBottomOfMostRecentBlock { .. }
         ) {
             return self.scroll_position;
@@ -1217,6 +1264,58 @@ impl<'a> ViewportState<'a> {
         }
     }
 
+    fn interactive_cursor_row_in_lines(&self) -> Option<Lines> {
+        let active_block_index = self.block_list.active_block_index();
+        let active_block = self.block_list.active_block();
+        let cursor_display_point = active_block.output_grid().cursor_display_point()?;
+        let cursor_row = match cursor_display_point {
+            crate::terminal::model::blockgrid::CursorDisplayPoint::Visible(point)
+            | crate::terminal::model::blockgrid::CursorDisplayPoint::HiddenCache(point) => {
+                point.row
+            }
+        };
+
+        Some(
+            self.top_of_block_in_lines(active_block_index)
+                + active_block.output_grid_offset()
+                + (cursor_row as f32).into_lines(),
+        )
+    }
+
+    fn interactive_cursor_bottom_buffer_lines(&self) -> Lines {
+        if self.content_element_height_lines() > 1.0.into_lines() {
+            1.0.into_lines()
+        } else {
+            Lines::zero()
+        }
+    }
+
+    fn interactive_cursor_scroll_top_in_lines(&self) -> Lines {
+        let Some(cursor_row) = self.interactive_cursor_row_in_lines() else {
+            return self.max_scroll_top_in_lines();
+        };
+
+        let visible_rows = self.content_element_height_lines();
+        let bottom_buffer = self.interactive_cursor_bottom_buffer_lines();
+        let preferred_scroll_top = cursor_row - (visible_rows - 1.0.into_lines() - bottom_buffer);
+
+        preferred_scroll_top
+            .max(Lines::zero())
+            .min(self.max_scroll_top_in_lines())
+    }
+
+    fn scroll_position_for_interactive_long_running_input(&self) -> ScrollPosition {
+        match self.scroll_position {
+            ScrollPosition::FollowsBottomOfMostRecentBlock
+            | ScrollPosition::FollowsInteractiveCursor => ScrollPosition::FollowsInteractiveCursor,
+            ScrollPosition::WaterfallGapFollowsBottomOfMostRecentBlock { .. }
+            | ScrollPosition::FixedAtPosition { .. }
+            | ScrollPosition::FixedAtInteractivePosition { .. }
+            | ScrollPosition::FixedWithinLongRunningBlock { .. }
+            | ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. } => self.scroll_position,
+        }
+    }
+
     // Returns whether the input is rendered exactly at the bottom of its pane.
     fn is_input_rendered_at_bottom_of_pane(&self, app: &AppContext) -> bool {
         match self.input_mode {
@@ -1296,9 +1395,34 @@ impl<'a> ViewportState<'a> {
         }
     }
 
+    fn bottom_follow_position(&self) -> ScrollPosition {
+        if matches!(
+            self.scroll_position,
+            ScrollPosition::FollowsInteractiveCursor
+                | ScrollPosition::FixedAtInteractivePosition { .. }
+                | ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. }
+        ) {
+            ScrollPosition::FollowsInteractiveCursor
+        } else {
+            ScrollPosition::FollowsBottomOfMostRecentBlock
+        }
+    }
+
+    fn has_interactive_cursor_boundary(&self) -> bool {
+        matches!(
+            self.input_mode,
+            InputMode::PinnedToBottom | InputMode::Waterfall
+        ) && matches!(
+            self.scroll_position,
+            ScrollPosition::FollowsInteractiveCursor
+                | ScrollPosition::FixedAtInteractivePosition { .. }
+                | ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. }
+        )
+    }
+
     /// Calculates the next scroll position for the given viewport state and scroll delta.
     fn scroll_position_for_delta(&self, delta: Lines) -> ScrollPosition {
-        let max_scroll_top = self.max_scroll_top_in_lines();
+        let max_scroll_top = self.effective_max_scroll_top_in_lines();
         let current_top = self.scroll_top_in_lines();
 
         let new_top = (current_top - delta).max(Lines::zero()).min(max_scroll_top);
@@ -1309,7 +1433,7 @@ impl<'a> ViewportState<'a> {
             );
 
         if fix_to_bottom {
-            ScrollPosition::FollowsBottomOfMostRecentBlock
+            self.bottom_follow_position()
         } else if self.block_list.active_block().is_active_and_long_running()
             && self.does_block_exceed_viewport(self.block_list.active_block_index(), new_top)
         {
@@ -1317,18 +1441,30 @@ impl<'a> ViewportState<'a> {
             // the viewport. If there are other block items in the viewport, we don't want
             // truncation to affect the scroll position because the user might want to have
             // their scroll position fixed between different blocks.
-            ScrollPosition::FixedWithinLongRunningBlock {
-                scroll_lines: self.scroll_lines_from_scroll_top(new_top),
-                num_output_lines_truncated: self
-                    .block_list
-                    .active_block()
-                    .output_grid()
-                    .grid_handler()
-                    .num_lines_truncated(),
+            let scroll_lines = self.scroll_lines_from_scroll_top(new_top);
+            let num_output_lines_truncated = self
+                .block_list
+                .active_block()
+                .output_grid()
+                .grid_handler()
+                .num_lines_truncated();
+            if self.has_interactive_cursor_boundary() {
+                ScrollPosition::FixedWithinInteractiveLongRunningBlock {
+                    scroll_lines,
+                    num_output_lines_truncated,
+                }
+            } else {
+                ScrollPosition::FixedWithinLongRunningBlock {
+                    scroll_lines,
+                    num_output_lines_truncated,
+                }
             }
         } else {
-            ScrollPosition::FixedAtPosition {
-                scroll_lines: self.scroll_lines_from_scroll_top(new_top),
+            let scroll_lines = self.scroll_lines_from_scroll_top(new_top);
+            if self.has_interactive_cursor_boundary() {
+                ScrollPosition::FixedAtInteractivePosition { scroll_lines }
+            } else {
+                ScrollPosition::FixedAtPosition { scroll_lines }
             }
         }
     }
@@ -1410,8 +1546,40 @@ impl<'a> ViewportState<'a> {
     }
 
     pub fn max_scroll_top_px(&self) -> Pixels {
-        self.max_scroll_top_in_lines()
+        self.effective_max_scroll_top_in_lines()
             .to_pixels(self.size_info.cell_height_px)
+    }
+
+    pub fn effective_scrollable_height_in_lines(&self) -> Lines {
+        self.effective_max_scroll_top_in_lines() + self.content_element_height_lines()
+    }
+
+    fn effective_max_scroll_top_in_lines(&self) -> Lines {
+        match (self.input_mode, self.scroll_position) {
+            (
+                InputMode::PinnedToBottom | InputMode::Waterfall,
+                ScrollPosition::FollowsInteractiveCursor
+                | ScrollPosition::FixedAtInteractivePosition { .. }
+                | ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. },
+            ) => self.interactive_cursor_scroll_top_in_lines(),
+            (
+                InputMode::PinnedToTop,
+                ScrollPosition::FollowsInteractiveCursor
+                | ScrollPosition::FollowsBottomOfMostRecentBlock
+                | ScrollPosition::WaterfallGapFollowsBottomOfMostRecentBlock { .. }
+                | ScrollPosition::FixedAtPosition { .. }
+                | ScrollPosition::FixedAtInteractivePosition { .. }
+                | ScrollPosition::FixedWithinLongRunningBlock { .. }
+                | ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. },
+            )
+            | (
+                InputMode::PinnedToBottom | InputMode::Waterfall,
+                ScrollPosition::FollowsBottomOfMostRecentBlock
+                | ScrollPosition::WaterfallGapFollowsBottomOfMostRecentBlock { .. }
+                | ScrollPosition::FixedAtPosition { .. }
+                | ScrollPosition::FixedWithinLongRunningBlock { .. },
+            ) => self.max_scroll_top_in_lines(),
+        }
     }
 
     /// Returns the max possible value in lines for scroll_top (how far from the top of the
