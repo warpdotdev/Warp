@@ -79,9 +79,14 @@ impl VersionManager {
 pub struct NodeVersionPopupView {
     install_nvm_button: ViewHandle<ActionButton>,
     install_mise_button: ViewHandle<ActionButton>,
-    install_latest_node_button: ViewHandle<ActionButton>,
+    /// Install-latest button for nvm ("nvm install node")
+    install_latest_nvm_button: ViewHandle<ActionButton>,
+    /// Install-latest button for mise ("mise install node@latest")
+    install_latest_mise_button: ViewHandle<ActionButton>,
     has_nvm: bool,
     has_mise: bool,
+    /// Whether both managers are installed (cached for convenience).
+    has_both_managers: bool,
     active_manager: VersionManager,
     versions: Vec<String>,
     current_version: Option<String>,
@@ -167,11 +172,16 @@ impl NodeVersionPopupView {
             Vec::new()
         };
 
-        let install_latest_node_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new(
-                active_manager.install_latest_command(),
-                SecondaryTheme,
-            )
+        let install_latest_nvm_button = ctx.add_typed_action_view(|_ctx| {
+            ActionButton::new("nvm install node", SecondaryTheme)
+                .with_icon(icons::Icon::Terminal)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(NodeVersionPopupAction::InstallLatestNodeVersion);
+                })
+        });
+
+        let install_latest_mise_button = ctx.add_typed_action_view(|_ctx| {
+            ActionButton::new("mise install node@latest", SecondaryTheme)
                 .with_icon(icons::Icon::Terminal)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(NodeVersionPopupAction::InstallLatestNodeVersion);
@@ -183,7 +193,7 @@ impl NodeVersionPopupView {
                 let mut menu = Menu::new().with_width(MENU_WIDTH);
                 menu.set_items(Self::menu_items(&versions, current_version.as_deref(), has_nvm && has_mise, active_manager), ctx);
                 let selected_index =
-                    get_selected_version_index(&versions, current_version.as_deref());
+                    get_menu_selected_index(&versions, current_version.as_deref(), has_nvm && has_mise);
                 menu.set_selected_by_index(selected_index, ctx);
                 menu
             });
@@ -206,12 +216,16 @@ impl NodeVersionPopupView {
             _ => {}
         });
 
+        let has_both_managers = has_nvm && has_mise;
+
         Self {
             install_nvm_button,
             install_mise_button,
-            install_latest_node_button,
+            install_latest_nvm_button,
+            install_latest_mise_button,
             has_nvm,
             has_mise,
+            has_both_managers,
             active_manager,
             versions,
             current_version,
@@ -321,6 +335,12 @@ impl NodeVersionPopupView {
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Max);
 
+        // Show manager toggle when both are available, even in empty state
+        // (Fix: otherwise users with versions only in the other manager can't switch)
+        if let Some(toggle) = self.render_version_manager_toggle(app) {
+            col.add_child(toggle);
+        }
+
         col.add_child(
             Container::new(
                 ConstrainedBox::new(
@@ -366,8 +386,13 @@ impl NodeVersionPopupView {
             .finish(),
         );
 
-        // Button
-        col.add_child(ChildView::new(&self.install_latest_node_button).finish());
+        // Button — label is dynamically rendered from active_manager
+        // Button — always reflects the active manager's install command
+        let install_latest_button = match self.active_manager {
+            VersionManager::Nvm => &self.install_latest_nvm_button,
+            VersionManager::Mise => &self.install_latest_mise_button,
+        };
+        col.add_child(ChildView::new(install_latest_button).finish());
 
         ConstrainedBox::new(col.finish())
             .with_max_width(MENU_WIDTH)
@@ -520,6 +545,7 @@ impl NodeVersionPopupView {
     pub fn refresh(&mut self, ctx: &mut ViewContext<Self>) {
         self.has_nvm = detect_nvm_installed();
         self.has_mise = detect_mise_installed();
+        self.has_both_managers = self.has_nvm && self.has_mise;
 
         // Update active manager if the current one is no longer available
         if self.active_manager == VersionManager::Nvm && !self.has_nvm && self.has_mise {
@@ -541,7 +567,7 @@ impl NodeVersionPopupView {
                     ctx,
                 );
                 let selected_index =
-                    get_selected_version_index(&self.versions, self.current_version.as_deref());
+                    get_menu_selected_index(&self.versions, self.current_version.as_deref(), self.has_both_managers);
                 menu.set_selected_by_index(selected_index, ctx);
             });
         }
@@ -642,7 +668,7 @@ impl TypedActionView for NodeVersionPopupView {
                             ctx,
                         );
                         let selected_index =
-                            get_selected_version_index(&self.versions, self.current_version.as_deref());
+                            get_menu_selected_index(&self.versions, self.current_version.as_deref(), self.has_both_managers);
                         menu.set_selected_by_index(selected_index, ctx);
                     });
                 }
@@ -744,57 +770,25 @@ fn detect_nvm_installed() -> bool {
     }
 }
 
-/// Cross-OS detection of mise-en-place availability
+/// Cross-OS detection of mise-en-place availability.
+///
+/// Requires a runnable `mise` binary to be present. Data directories alone are
+/// insufficient — after an uninstall or stale config, the binary may be absent while
+/// directories remain, and emitting commands would fail with `mise: command not found`.
 fn detect_mise_installed() -> bool {
-    use std::env;
-    use std::path::Path;
-
-    // 1) Check MISE_DATA_DIR env var
-    if let Ok(mise_data_dir) = env::var("MISE_DATA_DIR") {
-        let dir = Path::new(&mise_data_dir);
-        if dir.is_dir() {
-            return true;
-        }
-    }
-
-    // 2) Check for mise binary in PATH
+    // The primary check: is the `mise` executable available in PATH?
     if in_path("mise") {
         return true;
     }
 
     #[cfg(not(windows))]
     {
-        if let Some(home) = dirs::home_dir() {
-            // Default mise data directory: ~/.local/share/mise
-            if home.join(".local/share/mise").is_dir() {
-                return true;
-            }
+        use std::path::Path;
 
-            // Alternative: ~/.mise (older installations or mise < v2024.x)
-            if home.join(".mise").is_dir() {
-                return true;
-            }
-
-            // Homebrew installations
-            let brew_paths: &[&str] = &["/opt/homebrew/bin/mise", "/usr/local/bin/mise"];
-            for path in brew_paths {
-                if Path::new(path).is_file() {
-                    return true;
-                }
-            }
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        // Windows: check APPDATA and LOCALAPPDATA
-        if let Ok(appdata) = env::var("APPDATA") {
-            if Path::new(&appdata).join("mise").is_dir() {
-                return true;
-            }
-        }
-        if let Ok(local_appdata) = env::var("LOCALAPPDATA") {
-            if Path::new(&local_appdata).join("mise").is_dir() {
+        // Also check well-known Homebrew locations that may not be on PATH yet
+        let brew_paths: &[&str] = &["/opt/homebrew/bin/mise", "/usr/local/bin/mise"];
+        for path in brew_paths {
+            if Path::new(path).is_file() {
                 return true;
             }
         }
@@ -983,4 +977,21 @@ fn get_selected_version_index(versions: &[String], current_version: Option<&str>
         .iter()
         .position(|v| is_current_version(v, current_version))
         .unwrap_or(0)
+}
+
+/// Returns the menu index for the currently active version, accounting for the
+/// prepended "Switch to ..." row when both version managers are installed.
+fn get_menu_selected_index(
+    versions: &[String],
+    current_version: Option<&str>,
+    has_both_managers: bool,
+) -> usize {
+    let version_index = get_selected_version_index(versions, current_version);
+    // When both managers are available, the first menu item is "Switch to ...",
+    // so version items are offset by 1.
+    if has_both_managers {
+        version_index + 1
+    } else {
+        version_index
+    }
 }
