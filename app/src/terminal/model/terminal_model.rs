@@ -481,6 +481,10 @@ pub struct TerminalModel {
     /// Updated by the view whenever the active theme changes. Used to respond to
     /// `CSI ? 996 n` (color scheme query) and to emit unsolicited `CSI ? 997 ; Ps n`
     /// notifications when `CSI ? 2031 h` (dark/light notifications) is enabled.
+    ///
+    /// Initialised to `true` (dark) as a safe default; the view overwrites this on
+    /// the first `AppearanceEvent::ThemeChanged` subscription fire, which happens
+    /// before any running process is likely to query or subscribe.
     is_dark_mode: bool,
 
     /// Color overrides set via escape sequence. If a color is not set here, the view determines the
@@ -1889,6 +1893,11 @@ impl TerminalModel {
     /// `is_dark` should be `true` when the theme has a dark background.
     pub fn set_color_scheme(&mut self, is_dark: bool) {
         self.is_dark_mode = is_dark;
+    }
+
+    /// Returns `true` when the current stored theme is dark mode.
+    pub fn is_dark_mode(&self) -> bool {
+        self.is_dark_mode
     }
 
     pub fn raw_grid_for_ref_tests(&self) -> &GridHandler {

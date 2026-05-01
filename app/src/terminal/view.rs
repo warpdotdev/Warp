@@ -21278,9 +21278,13 @@ impl TerminalView {
         let is_dark = appearance.theme().inferred_color_scheme() == ColorScheme::LightOnDark;
         let should_notify = {
             let mut model = self.model.lock();
+            let classification_changed = model.is_dark_mode() != is_dark;
             model.update_colors(colors);
             model.set_color_scheme(is_dark);
-            model.is_term_mode_set(TermMode::DARK_LIGHT_NOTIFICATIONS)
+            // Only notify if the dark/light classification changed. Switching between
+            // two themes that are both dark (or both light) does not warrant a
+            // notification.
+            classification_changed && model.is_term_mode_set(TermMode::DARK_LIGHT_NOTIFICATIONS)
         };
         self.colors = colors;
         if should_notify {
