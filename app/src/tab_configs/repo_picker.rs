@@ -136,19 +136,13 @@ impl RepoPicker {
                     .on_click(|ctx, _, _| {
                         ctx.dispatch_typed_action(RepoPickerAction::AddNewRepo);
                     })
-                    .on_hover(|ctx, is_hovering, _| {
+                    .on_hover(|is_hovering, ctx, _, _| {
                         if is_hovering {
                             // Clear the menu's hovered row so repo list items
                             // don't show hover state while footer is hovered.
-                            // Depth 0 is the main repo picker menu.
-                            ctx.dispatch_typed_action(
-                                crate::menu::MenuAction::ClearHover(0),
-                            );
+                            ctx.dispatch_typed_action(MenuAction::ClearHover(0))
                         } else {
-                            // Clear the suppress flag when pointer leaves the footer.
-                            ctx.dispatch_typed_action(
-                                crate::menu::MenuAction::ClearHoverDone(0),
-                            );
+                            ctx.dispatch_typed_action(MenuAction::ClearHoverDone(0))
                         }
                     })
                     .with_cursor(Cursor::PointingHand)
