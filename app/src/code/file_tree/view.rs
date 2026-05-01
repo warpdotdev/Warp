@@ -1533,26 +1533,33 @@ impl FileTreeView {
         // When the file tree is active, index the lazy-loaded path through the
         // model so that a file watcher is started.
         if self.is_active && !self.registered_lazy_loaded_paths.contains(path) {
-            // Check if this path is a valid git repository by looking for both .git directory
-            // and a valid HEAD file inside it. This avoids treating stale/invalid .git folders
-            // as repos (which would cause detection to fail and leave the tree empty).
-            let is_valid_git_repo = path
+            // Check if this path appears to be a git repository by looking for .git directory
+            // or .git file (used by worktrees/submodules). We trigger detection and let
+            // the async detection validate the git entry properly (including handling
+            // gitfile content for worktrees/submodules).
+            let has_git_entry = path
                 .to_local_path()
                 .map(|p| {
-                    let git_dir = p.join(".git");
-                    git_dir.exists() && git_dir.join("HEAD").is_file()
+                    let git_path = p.join(".git");
+                    git_path.exists() // directory or file (symlink counts as exists)
                 })
                 .unwrap_or(false);
 
-            if is_valid_git_repo {
+            // Check if this repo has already been attempted and failed. If so, fallback
+            // to lazy-loading to avoid repeatedly retrying failed detection.
+            let repo_id = repo_metadata::RepositoryIdentifier::local(path.clone());
+            let repo_state = RepoMetadataModel::as_ref(ctx).repository_state(&repo_id, ctx);
+            let previously_failed = matches!(repo_state, Some(IndexedRepoState::Failed(_)));
+
+            if has_git_entry && !previously_failed {
                 // Trigger git repo detection - this will properly index the repo and emit
                 // events that update the file tree once complete.
                 DetectedRepositories::handle(ctx).update(ctx, |repos, ctx| {
-                    repos.detect_possible_git_repo(
+                    std::mem::drop(repos.detect_possible_git_repo(
                         &path.to_string(),
                         RepoDetectionSource::TerminalNavigation,
                         ctx,
-                    )
+                    ));
                 });
             } else {
                 // Not a valid git repo - use lazy-loading for regular directories or
