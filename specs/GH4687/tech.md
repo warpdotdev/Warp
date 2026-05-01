@@ -13,7 +13,7 @@ Warp already has the main pieces needed for provider-specific BYOK:
 - model-picker BYOK affordances
 - request-time API key payloads sent with Warp Agent requests
 
-The missing piece for issue #4687 is a custom endpoint model entry that carries a user-provided base URL and model ID, instead of requiring the model to exist in Warp's server-approved model list.
+The missing piece for issue #4687 is a custom endpoint model entry that carries a user-provided base URL and model ID, instead of requiring the model to exist in Warp's server-approved model list. V1 is limited to backend-reachable HTTPS endpoints because this spec preserves Warp's current backend-routed BYOK request architecture.
 
 Relevant code in the current client:
 
@@ -74,12 +74,13 @@ Save behavior:
 
 - On blur or Enter, persist the full config via `ApiKeyManager`.
 - Empty base URL, API key, or model ID keeps the config incomplete.
-- If BYOK is disabled for the workspace, clear/disable the endpoint editors using the same `UserWorkspacesEvent::TeamsChanged` handling as the fixed provider key fields.
+- If BYOK is disabled for the workspace, preserve the stored endpoint config but disable endpoint editing and model selection using the same `UserWorkspacesEvent::TeamsChanged` handling as the fixed provider key fields. Do not clear the stored config unless the user explicitly deletes it.
 
 Validation:
 
 - Parse base URL with `url::Url`.
-- Accept only `http` and `https` schemes.
+- Accept only absolute `https` URLs in V1.
+- Reject obvious local/private hosts client-side, including `localhost`, loopback IPs, and missing hosts.
 - Do not send a validation request to the provider while saving settings.
 
 ### 3. Add a synthetic custom model choice
@@ -99,22 +100,9 @@ The least surprising model-picker behavior is to inject the synthetic choice at 
 
 ### 4. Extend request payloads with endpoint metadata
 
-The selected model ID alone is not enough; the request layer must also know base URL and API key. There are two viable server contracts:
+The selected model ID alone is not enough; the request layer must also know base URL and API key. Use a distinct request settings field instead of overloading fixed provider API keys.
 
-Option A: extend `warp_multi_agent_api::request::settings::ApiKeys`:
-
-```protobuf
-message OpenAICompatibleEndpoint {
-  string label = 1;
-  string base_url = 2;
-  string api_key = 3;
-  string model_id = 4;
-}
-```
-
-and include it as an optional field under `ApiKeys`.
-
-Option B: add a distinct request settings field:
+Add an optional `custom_model_endpoint` payload to the agent request settings:
 
 ```protobuf
 message CustomModelEndpoint {
@@ -123,11 +111,22 @@ message CustomModelEndpoint {
   string api_key = 3;
   string model_id = 4;
 }
+
+message Settings {
+  // Existing fields...
+  optional CustomModelEndpoint custom_model_endpoint = <next_available_field_number>;
+}
 ```
 
-and send it independently from fixed provider keys.
+This is clearer than extending `ApiKeys` because the custom endpoint is routing metadata, not only a credential. It also avoids overloading fixed provider-key semantics.
 
-Option B is clearer because this is not only an API key; it is routing metadata. It also avoids overloading fixed provider-key semantics.
+Versioning and compatibility:
+
+- The field is optional and absent for all existing request paths.
+- Older clients continue sending the existing settings payload without `custom_model_endpoint`.
+- The backend must deploy support for the optional field before the client starts sending it.
+- The client only sends `custom_model_endpoint` when the selected active model is the synthetic custom endpoint model and BYOK is enabled for the workspace.
+- If the backend does not support the field or rejects the endpoint, it should return a user-facing custom endpoint error instead of falling back silently to Warp credits.
 
 In the client:
 
@@ -135,7 +134,24 @@ In the client:
 - Populate it from `ApiKeyManager` only when the active model is the custom endpoint model.
 - Serialize it in `app/src/ai/agent/api/impl.rs` alongside existing `settings.model_config` and `settings.api_keys`.
 
-### 5. Error handling and display
+### 5. Add backend egress and logging safeguards
+
+Because Warp's backend would route requests to a user-provided URL, syntax-only client validation is insufficient. Backend validation must run before every outbound request, including redirects.
+
+Required backend safeguards:
+
+- Allow only `https` endpoints in V1.
+- Reject URLs with embedded credentials, fragments, or query parameters in the configured base URL.
+- Resolve the hostname server-side and reject private, loopback, link-local, multicast, carrier-grade NAT, documentation/test, and otherwise non-public IP ranges for both IPv4 and IPv6.
+- Explicitly reject cloud metadata endpoints such as `169.254.169.254` and IPv6 link-local metadata equivalents.
+- Reject `localhost`, `.local`, and direct IP literals that resolve to non-public ranges.
+- Prevent DNS rebinding by pinning the validated address for the outbound connection or re-validating the resolved address immediately before connect.
+- Disable redirects by default, or re-run the full validation policy on every redirect target before following it.
+- Enforce short connection and total request timeouts, response-size limits, and streaming idle timeouts.
+- Redact API keys, authorization headers, and any configured endpoint URL from logs, traces, telemetry, error reporting, and Oz/agent-visible debug output. If an error needs to name the endpoint, use the provider label and model ID instead of the full URL.
+- Emit structured, non-secret error categories for invalid endpoint, blocked endpoint, authentication failure, endpoint timeout, and unsupported response shape.
+
+### 6. Error handling and display
 
 Existing invalid-key handling maps provider names for fixed providers in `app/src/ai/blocklist/controller.rs`. Add a custom endpoint path that can show the configured label when available.
 
@@ -145,7 +161,7 @@ Expected user-facing behavior:
 - Provider/model failure: endpoint-specific error that names the configured label/model ID when possible.
 - Plan/BYOK disabled: existing BYOK upgrade/disabled behavior.
 
-### 6. Keep #9253 compatible
+### 7. Keep #9253 compatible
 
 If #9253 lands first, keep its OpenRouter fixed-provider support as a separate convenience path. The generic endpoint should not depend on `LLMProvider::OpenRouter` or server-approved OpenRouter model IDs.
 
@@ -175,6 +191,7 @@ sequenceDiagram
     User->>Picker: Select custom model
     Agent->>Keys: Read endpoint config for active model
     Agent->>Server: Send model ID + endpoint metadata
+    Server->>Server: Validate endpoint egress policy
     Server->>Provider: Route OpenAI-compatible request
     Provider-->>Server: Model response
     Server-->>Agent: Stream Warp Agent response events
@@ -196,13 +213,22 @@ Product behavior mapping:
 5. Existing provider-key behavior is unchanged.
    - Existing `ApiKeyManager::api_keys_for_request` behavior should keep returning fixed provider keys.
    - Add regression coverage that OpenAI/Anthropic/Google/OpenRouter keys are not cleared when custom endpoint config changes.
-6. Base URL validation rejects invalid or non-HTTP(S) values.
+6. Base URL validation rejects invalid or non-HTTPS values.
    - Unit test accepted examples:
      - `https://openrouter.ai/api/v1`
-     - `http://localhost:11434/v1`
+     - `https://gateway.example.com/v1`
    - Unit test rejected examples:
      - `not a url`
+     - `http://localhost:11434/v1`
+     - `https://localhost:11434/v1`
+     - `https://127.0.0.1:11434/v1`
      - `file:///tmp/model`
+7. Backend egress validation rejects unsafe destinations.
+   - Unit test private IPv4 and IPv6 ranges.
+   - Unit test cloud metadata addresses.
+   - Unit test redirects to blocked destinations.
+   - Unit test DNS rebinding or re-resolution behavior at the chosen network layer.
+8. Logging/redaction tests prove API keys, Authorization headers, and full endpoint URLs are not emitted to logs or telemetry.
 
 Manual validation after implementation:
 
@@ -215,8 +241,10 @@ Manual validation after implementation:
 
 - Risk: custom endpoints may not support the complete Warp Agent protocol or tool expectations.
   Mitigation: scope the first version to OpenAI-compatible chat/model routing and return clear provider/model errors when the endpoint cannot satisfy a request.
-- Risk: users may expect local-only execution.
-  Mitigation: copy should say this follows Warp's BYOK request flow and should not promise local-only routing unless the backend/client architecture changes.
+- Risk: users may expect local-only execution or `localhost` support.
+  Mitigation: V1 explicitly excludes localhost/private-network endpoints and copy should say this follows Warp's backend-routed BYOK request flow.
+- Risk: arbitrary endpoint routing creates SSRF and secret-leak exposure.
+  Mitigation: backend egress validation, redirect handling, DNS rebinding protection, timeouts, response limits, and log redaction are required before implementation is complete.
 - Risk: model IDs collide with server-provided IDs.
   Mitigation: use an internal custom model prefix or a separate marker to distinguish custom endpoint selections.
 - Risk: storing routing metadata in `ApiKeys` overloads a fixed-provider key store.
@@ -227,6 +255,7 @@ Manual validation after implementation:
 ## Follow-ups
 
 - Multiple saved custom endpoint profiles.
+- Client-side/local routing for localhost and private-network endpoints.
 - Optional OpenRouter preset that pre-fills the base URL.
 - Optional model catalog import for endpoints that expose a compatible `/models` endpoint.
 - Per-profile custom endpoint selection if execution profiles need separate endpoint configs.
