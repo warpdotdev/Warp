@@ -1360,3 +1360,37 @@ impl CommandExecutor for RecordingCommandExecutor {
         false
     }
 }
+
+#[test]
+fn test_filter_git_branch_on_click_values_strips_worktree_and_current_markers() {
+    // Output from `git branch --no-color` includes `* ` for the current branch
+    // and `+ ` for a branch checked out in another linked worktree. Both
+    // prefixes must be stripped before the value is fed to `git checkout`,
+    // otherwise selecting a worktree-linked branch produces commands like
+    // `git checkout + my-branch` which fail (issue #9170).
+    let raw = vec![
+        "  feature-a".to_string(),
+        "+ 273-improvement-suggestion-agent".to_string(),
+        "* master".to_string(),
+        "  feature-b".to_string(),
+    ];
+
+    let filtered = CurrentPrompt::filter_git_branch_on_click_values(Some(raw))
+        .expect("filter should pass through Some");
+
+    // Current branch is sorted to the top, all marker prefixes are gone.
+    assert_eq!(
+        filtered,
+        vec![
+            "master".to_string(),
+            "feature-a".to_string(),
+            "273-improvement-suggestion-agent".to_string(),
+            "feature-b".to_string(),
+        ],
+    );
+}
+
+#[test]
+fn test_filter_git_branch_on_click_values_passes_through_none() {
+    assert_eq!(CurrentPrompt::filter_git_branch_on_click_values(None), None);
+}

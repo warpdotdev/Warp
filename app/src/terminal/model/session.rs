@@ -1466,9 +1466,13 @@ impl Session {
                     );
                     return vec![];
                 };
+                // `git branch` prefixes lines with `* ` for the current branch
+                // and `+ ` for branches checked out in another linked worktree;
+                // strip both so command corrections operate on the bare names.
                 let res = output_string
                     .lines()
-                    .map(|s| s.trim().to_string())
+                    .map(|s| s.trim().trim_start_matches(['*', '+']).trim().to_string())
+                    .filter(|s| !s.is_empty())
                     .collect();
                 res
             }
