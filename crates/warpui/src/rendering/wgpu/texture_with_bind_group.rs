@@ -114,9 +114,8 @@ impl TextureWithBindGroup {
             }
             other => {
                 debug_assert!(
-                    false,
-                    "unexpected glyph atlas format {:?}; upload assumes R8Unorm or Bgra8Unorm",
-                    other,
+                    matches!(self.format, TextureFormat::R8Unorm | TextureFormat::Bgra8Unorm),
+                    "unexpected glyph atlas format {other:?}; upload assumes R8Unorm or Bgra8Unorm",
                 );
                 upload_bytes = std::borrow::Cow::Borrowed(glyph.canvas.pixels.as_slice());
                 4 * region.pixel_region.width() as u32
