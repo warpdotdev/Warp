@@ -12,7 +12,9 @@ fn custom_base16(path: PathBuf) -> ThemeKind {
 
 #[test]
 fn theme_kind_syncs_custom_theme_under_theme_root() {
-    let setting = Theme::new(Some(custom(crate::user_config::themes_dir().join("custom.yml"))));
+    let setting = Theme::new(Some(custom(
+        crate::user_config::themes_dir().join("custom.yml"),
+    )));
 
     assert!(setting.current_value_is_syncable());
 }
