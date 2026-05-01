@@ -576,16 +576,29 @@ impl FileTreeView {
                                 if **root_dir.entry.root_directory() == *std_path {
                                     root_dir.entry = state.entry.clone();
                                 } else {
-                                    // For lazy-loaded subdirectories, always update to clear stale entries
-                                    // even if the directory was moved or deleted (contains() would be false)
+                                    // For lazy-loaded subdirectories, update only when appropriate
                                     #[cfg(feature = "local_fs")]
                                     {
                                         if self.registered_lazy_loaded_paths.contains(root_path) {
-                                            root_dir.entry = state.entry.clone();
-                                            // When promoting a lazy-loaded root to repository-backed state,
-                                            // unregister the standalone lazy-loaded path to avoid
-                                            // obsolete watcher/model registrations
-                                            self.remove_lazy_loaded_entry(root_path, ctx);
+                                            // Only promote to repo-backed state if the repo contains this path
+                                            // or if the path no longer exists (moved/deleted)
+                                            if state.entry.contains(root_path) {
+                                                // Path exists in repo - promote to repo-backed state
+                                                root_dir.entry = state.entry.clone();
+                                                self.remove_lazy_loaded_entry(root_path, ctx);
+                                            } else {
+                                                // Path doesn't exist in repo - could be moved/deleted or ignored/excluded
+                                                // Check if the path still exists on filesystem to determine action
+                                                if root_path.to_local_path_lossy().exists() {
+                                                    // Path exists but not in repo (likely ignored/excluded) - keep lazy-loaded
+                                                    // Refresh the lazy-loaded entry to get current filesystem state
+                                                    self.register_and_refresh_lazy_loaded_directory(root_path, ctx);
+                                                } else {
+                                                    // Path doesn't exist on filesystem (moved/deleted) - clear the entry
+                                                    root_dir.entry = state.entry.clone();
+                                                    self.remove_lazy_loaded_entry(root_path, ctx);
+                                                }
+                                            }
                                         }
                                     }
                                 }
