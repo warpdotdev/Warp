@@ -135,10 +135,25 @@ bootstrap context:
     time and never had the chance to read the nonce.
 
   It does **not** defend against:
-  - A process spawned during the narrow window between the shell
-    starting and the bootstrap unsetting the variable. We minimize
-    this window by making the unset the first non-trivial line of the
-    bootstrap, before any user rc file is sourced.
+  - A process spawned during the window between the shell starting
+    and the bootstrap unsetting the variable. For zsh and bash this
+    window is closed by making the unset the first non-trivial line
+    of the bootstrap, before any user rc file is sourced.
+
+    **Fish-specific caveat.** Warp launches fish as
+    `fish -f no-mark-prompt --login --init-command '<bootstrap>'`
+    (`app/src/terminal/local_tty/shell.rs:632`). Fish runs `config.fish`
+    and any user functions *before* `--init-command`, so the env-var
+    nonce is readable to user code that runs at config time. To close
+    this gap the fish path passes the nonce out-of-band: Warp writes
+    the nonce to a tempfile under the user's runtime dir with mode
+    `0600`, passes the path as the first argument of `--init-command`,
+    and the bootstrap reads it then `rm`s the file before any further
+    work. The `WARP_BOOTSTRAP_NONCE` env var is not used for fish at
+    all. This brings fish to parity with zsh/bash on later-spawned
+    descendants but does not protect against an adversarial
+    `config.fish` written before Warp launched, which is consistent
+    with the same-uid threat model below.
   - A same-user process that already has read access to the parent
     shell's environment (`/proc/<pid>/environ` on Linux,
     `procfs`/`ps eww` on macOS — both gated by same-uid). Such a
@@ -258,29 +273,58 @@ distinguishes:
 
 ### 4. Keymap matcher integration
 
-Extend `Keymap` in `crates/warpui_core/src/keymap.rs` with a third
-binding tier that lives outside the persisted user keymap:
+`warpui_core` is a UI-layer crate and must not learn about shells,
+tabs, or PTYs. Shell bindings are therefore normalized into ordinary
+`Binding` instances at the terminal layer before they are handed to
+the matcher; the matcher itself stays unchanged at the type level.
 
-```rust
-pub struct Keymap {
-    pub fixed_bindings: Vec<Binding>,
-    pub editable_bindings: Vec<Binding>,
-    pub shell_bindings: Vec<ShellTabBinding>,   // new
-}
-```
+Concretely:
 
-`ShellTabBinding` carries a tab id and the parsed `ShellBinding`. The
-matcher consults bindings in this order (PRODUCT #14):
+- `crates/warpui_core/src/keymap.rs` gains no new public types. The
+  existing `Keymap { fixed_bindings, editable_bindings }` is extended
+  internally with a third `Vec<Binding>` slot — call it
+  `contextual_bindings` — populated and cleared by the embedder via a
+  small `Keymap::set_contextual(scope_key, bindings)` API. Bindings in
+  this slot use the existing `ContextPredicate` to scope themselves to
+  a context the embedder defines (the embedder owns the meaning; the
+  matcher just evaluates the predicate).
+- The terminal layer (`app/src/terminal/keymap_bridge.rs`, new) owns
+  shell-binding state per tab. On a `ShellBindingsUpdated` event it:
+  1. Translates each `ShellBinding`'s widget into the appropriate
+     `InputAction` (or `Macro` injection / `Unsupported` sentinel) via
+     `shell/widget_dispatch.rs`.
+  2. Emits one `Binding` per honored shell binding, with a
+     `ContextPredicate::TabIs(tab_id)` predicate and a binding origin
+     tag (`BindingOrigin::Shell`) so it remains distinguishable for
+     the debug view (PRODUCT #25) and for precedence (the matcher's
+     existing fixed-vs-editable ordering, plus the new
+     `BindingOrigin::Shell` tier slotted between them).
+  3. Calls `Keymap::set_contextual(("shell", tab_id), bindings)`.
 
-1. `editable_bindings` scoped to tabs of any kind (user Warp overrides)
-2. `shell_bindings` for the current tab's `tab_id` and `active_keymap`
-3. `fixed_bindings` (Warp defaults)
+This keeps `warpui_core` free of any shell concept and confines the
+new types (`ShellBinding`, `ShellWidget`, `BindingOrigin::Shell`) to
+the terminal/app layer. The matcher's resolution order (PRODUCT #14)
+is enforced by the predicate evaluation order plus the origin tag,
+not by a new tier-typed Vec.
 
-`shell_bindings` are populated by the `ShellBindingsUpdated` event and
-cleared on tab close. Multi-tab independence (PRODUCT #5, #17) falls
-out of tab-scoping naturally. Switching tabs swaps which
-`shell_bindings` set is consulted via the existing
-`ContextPredicate`-style filtering.
+Effective resolution order for a keystroke in the active tab
+(PRODUCT #14, enforced by predicate + origin-tag ordering, not by
+separate Vecs):
+
+1. Reserved infrastructure keys for the tab's shell.
+2. `editable_bindings` (user Warp overrides) whose context matches.
+3. Bindings from `set_contextual(("shell", current_tab_id), …)` —
+   tagged `BindingOrigin::Shell`, scoped to this tab via the
+   predicate.
+4. `fixed_bindings` (Warp defaults).
+
+The terminal layer's per-tab store is the source of truth for what is
+currently in the contextual slot. `ShellBindingsUpdated` writes
+through it and into `Keymap::set_contextual`; tab close calls
+`set_contextual(("shell", tab_id), &[])` to clear. Multi-tab
+independence (PRODUCT #5, #17) falls out of `TabIs(tab_id)` predicates
+naturally — switching tabs does not require swapping anything; the
+matcher just resolves predicates against the new active tab.
 
 Mid-sequence handling for multi-key bindings (`^X^E`, `gg`) reuses the
 existing `Matcher::match_keystrokes` prefix logic — the shell bindings
@@ -292,7 +336,7 @@ special case.
 - New boolean setting in `app/src/terminal/keys_settings.rs` via
   `define_settings_group!`: `honor_shell_bindkeys` (default `true`)
   with `toml_path: "terminal.input.honor_shell_bindkeys"`. The matcher
-  short-circuits the `shell_bindings` tier when this is off (PRODUCT
+  short-circuits the `BindingOrigin::Shell` tier when this is off (PRODUCT
   #24). Because re-queries are shell-side (bootstrap + `precmd`
   driven), turning the toggle back on does not actively re-query — it
   resumes matching against the most recent table the bootstrap emitted,
@@ -358,7 +402,7 @@ special case.
     would require an invisible-exec primitive (we don't have one) or
     block on the PTY (violates PRODUCT #26).
 - **#22 (AI prompt input)** — v1: not honored. The matcher's tab-scoped
-  `shell_bindings` tier only activates on tabs whose focus is the shell
+  `BindingOrigin::Shell` tier only activates on tabs whose focus is the shell
   command input editor, not on the AI prompt input.
 - **#23 (rollout)** — gated by `FeatureFlag::HonorShellBindkeys` (above).
 
@@ -433,8 +477,12 @@ Tests are organized to map to numbered PRODUCT invariants. Use
   arrives; assert the keystroke is handled with Warp defaults and not
   buffered. Covers PRODUCT #26.
 - **Setting toggle** — flip `honor_shell_bindkeys` off mid-session;
-  assert shell bindings stop applying without restart; flip on; assert
-  re-query happens. Covers PRODUCT #24.
+  assert shell bindings stop applying without restart and Warp's
+  default keymap takes over. Flip on; assert (a) the most recently
+  cached binding table from each tab resumes immediately (no fresh
+  query is issued from the toggle), and (b) the next `precmd` payload
+  on each tab refreshes that table if anything changed. Covers PRODUCT
+  #24.
 - **Manual** — run Warp against a developer's real zsh+oh-my-zsh
   config, a real bash with a populated `~/.inputrc`, and a real fish
   with `bind` declarations in `~/.config/fish/`. Capture a short loom

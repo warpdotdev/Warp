@@ -78,11 +78,15 @@ Out of scope for this spec:
 4. When the user changes their bindings inside an existing session
    (`bindkey '^X^E' edit-command-line`, `bind '"\C-x\C-e": edit-and-execute-command'`,
    sourcing a new rc file mid-session, switching emacs/vi mode), Warp picks
-   up the change without requiring a restart of the tab. The implementation
-   may either re-query on a signal (prompt redraw, mode change, OSC hint) or
-   re-query periodically — but the user-visible invariant is: a binding
-   declared at the shell prompt is honored on the next keystroke after the
-   declaration completes.
+   up the change without requiring a restart of the tab. Discovery is
+   driven shell-side at every `precmd`, so the change is detected when
+   the prompt next redraws. The user-visible invariant: a binding
+   declared at the shell prompt is honored starting with the first
+   keystroke after Warp has parsed the next `ShellBindings` payload
+   from that prompt. Keystrokes pressed during the small async window
+   between the prompt firing and the payload being parsed use the
+   previous keymap (consistent with the non-blocking guarantee in #26);
+   declarations never block typing.
 
 5. Each tab tracks its own bindings independently. Changing bindings in one
    tab does not affect another tab, even if both run the same shell.
@@ -209,20 +213,25 @@ Out of scope for this spec:
     override Warp's defaults — that is the entire point of this issue. Warp
     defaults are the floor.
 
-    **Reserved infrastructure keys (fish only).** Fish ships shell
-    integration with Warp via `bind` (rather than via process-level
-    hooks like zsh's `precmd` or bash's `PROMPT_COMMAND`), so a small
-    set of keys is structurally needed for Warp ↔ shell communication
-    and cannot be honored as user-controlled in v1: `\cP` (clear input
-    buffer), `\ep` (switch to PS1 prompt), `\ew` (switch to Warp
-    prompt), and `\ei` (input reporting). User fish bindings on these
-    four keys are noted in the imported binding table as
-    `reserved-by-warp` and will not fire; bindings on every other key
-    follow the regular precedence. zsh and bash do not have any
-    equivalent reserved keys because their integration uses event
-    hooks. Lifting this fish-specific exception is a follow-up
-    (re-implement Warp's fish integration without bind-level
-    interception).
+    **Reserved infrastructure keys.** A small set of keys is structurally
+    needed for Warp ↔ shell communication (input reporting, prompt-mode
+    switching, kill-buffer signaling) and cannot be honored as
+    user-controlled in v1. User bindings on these keys are imported into
+    Warp's debug view tagged `reserved-by-warp` and do not fire;
+    bindings on every other key follow the regular precedence above.
+    The reserved set per shell:
+
+    - **zsh:** `^P` (Warp uses for `kill-buffer`), `\ei` (input reporting).
+    - **bash:** `\C-p` (`kill-whole-line` for clear-buffer), `\ei`
+      (input reporting), `\ep` (switch to PS1 prompt), `\ew` (switch to
+      Warp prompt).
+    - **fish:** `\cP` (clear input buffer), `\ep` (switch to PS1
+      prompt), `\ew` (switch to Warp prompt), `\ei` (input reporting).
+
+    These match the keys Warp's existing bootstrap already installs in
+    each shell. Lifting the exception (re-implementing each integration
+    point without bind-level interception) is a tracked follow-up; the
+    integrations exist today and replacing them is out of scope here.
 
 15. When a user shell binding shadows a Warp default, no warning, banner, or
     toast appears. The user already declared this binding in their shell
