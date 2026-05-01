@@ -200,6 +200,7 @@ tikv-jemallocator = { version = "0.6", optional = true, features = [
     "override_allocator_on_supported_platforms",
 ] }
 toml = "0.8.13"
+toml_edit.workspace = true
 tracing.workspace = true
 ui_components.workspace = true
 unicase = "2.7.0"

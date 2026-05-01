@@ -76,9 +76,17 @@
 /crates/onboarding/ @kevinchevalier
 
 # MCP and skills
-/app/src/ai/mcp/ @peicodes
-/app/src/ai/skills/ @peicodes
-/crates/mcp/ @peicodes
+/app/src/ai/mcp/ @peicodes @vkodithala
+/app/src/ai/skills/ @peicodes @vkodithala
+/crates/mcp/ @peicodes @vkodithala
+
+# File-based MCP (overrides MCP and skills above)
+/app/src/ai/mcp/file_based_manager.rs @vkodithala
+/app/src/ai/mcp/file_based_manager_tests.rs @vkodithala
+/app/src/ai/mcp/file_mcp_watcher.rs @vkodithala
+/app/src/ai/mcp/file_mcp_watcher_tests.rs @vkodithala
+/app/src/ai/mcp/dummy_file_based_manager.rs @vkodithala
+/app/src/ai/mcp/dummy_file_mcp_watcher.rs @vkodithala
 
 # Conversation management / credit usage footer / input UI / natural-language detection
 /app/src/ai/active_agent_views_model.rs @harryalbert
@@ -126,10 +134,11 @@
 /app/src/terminal/input/cli_agent.rs @Advait-M
 
 # UI framework
-/crates/warpui/ @vorporeal
-/crates/warpui_core/ @vorporeal
+/crates/warpui/ @vorporeal @alokedesai @acarl005
+/crates/warpui_core/ @vorporeal @alokedesai
 /crates/warpui_extras/ @vorporeal
-/crates/ui_components/ @vorporeal
+/crates/warpui_extras/src/user_preferences @danielpeng
+/crates/ui_components/ @vorporeal @acarl005 @zachbai @bnavetta
 
 # Conversation rewind / CLI agent UI / macOS/Linux platform issues / performance issues
 /app/src/terminal/cli_agent.rs @zachbai @harryalbert
@@ -145,6 +154,9 @@
 
 # Grep tool call UI
 /app/src/ai/blocklist/action_model/execute/grep.rs @vkodithala
+
+# Long-running shell commands
+/app/src/ai/blocklist/action_model/execute/shell_command.rs @vkodithala
 
 ###########################################################################
 # Team: Platform

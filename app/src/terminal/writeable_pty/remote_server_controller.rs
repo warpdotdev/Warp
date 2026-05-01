@@ -42,11 +42,15 @@ enum SshInitState {
         setup_start: Instant,
     },
     /// Stash held, `install_binary` in flight.
+    /// `for_update` is `true` when reinstalling over an existing install
+    /// (auto-update path) and `false` for a fresh install.
     AwaitingInstall {
         session_id: SessionId,
         session_info: SessionInfo,
         transport: SshTransport,
         setup_start: Instant,
+        #[allow(dead_code)]
+        for_update: bool,
     },
     /// Stash held, `connect_session` in flight. Bootstrap is flushed only
     /// once `SessionConnected` arrives (or on connection failure).
@@ -102,9 +106,10 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 session_id,
                 result,
                 remote_platform,
+                has_old_binary,
             } => {
                 me.remote_platform = remote_platform.clone();
-                me.on_binary_check_complete(*session_id, result.clone(), ctx);
+                me.on_binary_check_complete(*session_id, result.clone(), *has_old_binary, ctx);
             }
             RemoteServerManagerEvent::BinaryInstallComplete { session_id, result } => {
                 me.on_binary_install_complete(*session_id, result.clone(), ctx);
@@ -198,6 +203,7 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         &mut self,
         session_id: SessionId,
         result: Result<bool, String>,
+        has_old_binary: bool,
         ctx: &mut ModelContext<Self>,
     ) {
         let SshInitState::AwaitingCheck {
@@ -229,6 +235,21 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                 };
                 self.connect_session_for_current_identity(session_id, socket_path, ctx);
             }
+            Ok(false) if has_old_binary => {
+                // Auto-update: a prior install exists, so skip the modal
+                // and reinstall.
+                self.did_install = true;
+                self.state = SshInitState::AwaitingInstall {
+                    session_id,
+                    session_info,
+                    transport: transport.clone(),
+                    setup_start,
+                    for_update: true,
+                };
+                RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
+                    mgr.install_binary(session_id, transport, true, ctx);
+                });
+            }
             Ok(false) => {
                 let install_mode = *WarpifySettings::as_ref(ctx)
                     .ssh_extension_install_mode
@@ -251,9 +272,10 @@ impl<T: EventLoopSender> RemoteServerController<T> {
                             session_info,
                             transport: transport.clone(),
                             setup_start,
+                            for_update: false,
                         };
                         RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-                            mgr.install_binary(session_id, transport, ctx);
+                            mgr.install_binary(session_id, transport, false, ctx);
                         });
                     }
                     SshExtensionInstallMode::NeverInstall => {
@@ -287,15 +309,20 @@ impl<T: EventLoopSender> RemoteServerController<T> {
             unreachable!("just matched AwaitingUserChoice above");
         };
 
+        // Reaching this path implies the user explicitly confirmed a
+        // fresh install from the modal. Auto-update flows (with an old
+        // binary detected) skip the modal entirely and go through
+        // `on_binary_check_complete` with `is_update: true`.
         self.did_install = true;
         self.state = SshInitState::AwaitingInstall {
             session_id,
             session_info,
             transport: transport.clone(),
             setup_start,
+            for_update: false,
         };
         RemoteServerManager::handle(ctx).update(ctx, |mgr, ctx| {
-            mgr.install_binary(session_id, transport, ctx);
+            mgr.install_binary(session_id, transport, false, ctx);
         });
     }
 
@@ -403,26 +430,24 @@ impl<T: EventLoopSender> RemoteServerController<T> {
         result: Result<(), String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        let SshInitState::AwaitingInstall {
-            session_id: expected,
-            ..
-        } = &self.state
-        else {
-            return;
+        let expected = match &self.state {
+            SshInitState::AwaitingInstall { session_id, .. } => *session_id,
+            _ => return,
         };
-        if *expected != session_id {
+        if expected != session_id {
             return;
         }
 
-        let SshInitState::AwaitingInstall {
-            session_info,
-            transport,
-            setup_start,
-            ..
-        } = std::mem::replace(&mut self.state, SshInitState::Idle)
-        else {
-            unreachable!("just matched AwaitingInstall above");
-        };
+        let (session_info, transport, setup_start) =
+            match std::mem::replace(&mut self.state, SshInitState::Idle) {
+                SshInitState::AwaitingInstall {
+                    session_info,
+                    transport,
+                    setup_start,
+                    ..
+                } => (session_info, transport, setup_start),
+                _ => unreachable!("just matched AwaitingInstall above"),
+            };
         match result {
             Ok(()) => {
                 let socket_path = transport.socket_path().clone();

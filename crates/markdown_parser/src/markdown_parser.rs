@@ -1315,7 +1315,7 @@ fn parse_underline<'a>(state: &mut InlineState, remaining: &'a str) -> &'a str {
 ///
 /// This is approximately equivalent to the CommonMark [process emphasis](https://spec.commonmark.org/0.30/#phase-2-inline-structure)
 /// algorithm. However:
-/// * It omits `openers_bottom`, which is purely a performace optimization.
+/// * It omits `openers_bottom`, which is purely a performance optimization.
 /// * It uses a `Vec` rather than a linked list, which changes the structure a bit to work with lifetimes.
 /// * It also parses [GFM strikethrough](https://github.github.com/gfm/#strikethrough-extension-).
 fn process_emphasis(state: &mut InlineState, stack_bottom: Option<usize>) {

@@ -499,6 +499,7 @@ pub enum CLIAgentType {
     Pi,
     Auggie,
     Cursor,
+    Goose,
     Unknown,
 }
 
@@ -1892,7 +1893,7 @@ pub enum TelemetryEvent {
 
         /// The server-generated output ID for the output in this block.
         ///
-        /// This is only populated if the some part of the response was succesfully received.
+        /// This is only populated if the some part of the response was successfully received.
         server_output_id: Option<ServerOutputId>,
 
         was_autodetected_ai_query: bool,
