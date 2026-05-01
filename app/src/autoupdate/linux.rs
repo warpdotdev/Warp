@@ -642,6 +642,9 @@ fn is_pacman_signing_key_installed() -> bool {
     if !matches!(validity, 'f' | 'u') {
         return false; // Force key reconfiguration
     }
+    if !matches!(validity, 'f' | 'u') {
+        return false; // Force key reconfiguration
+    }
 
     // Parse the expiry timestamp from the pub: line (field 7, 1-indexed).
     let Some(expiry_field) = stdout
