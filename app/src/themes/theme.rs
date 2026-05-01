@@ -221,17 +221,27 @@ pub(crate) fn custom_theme_path_for_storage(path: &Path, theme_root: &Path) -> P
     }
 
     path.strip_prefix(theme_root)
+        .ok()
+        .filter(|relative| theme_root_relative_path_is_safe(relative))
         .map(Path::to_path_buf)
-        .unwrap_or_else(|_| path.to_path_buf())
+        .unwrap_or_else(|| path.to_path_buf())
 }
 
 pub(crate) fn custom_theme_path_from_storage(path: &Path, theme_root: &Path) -> PathBuf {
     if path.is_relative() {
-        return theme_root.join(path);
+        return if theme_root_relative_path_is_safe(path) {
+            theme_root.join(path)
+        } else {
+            path.to_path_buf()
+        };
     }
 
     if let Ok(relative) = path.strip_prefix(theme_root) {
-        return theme_root.join(relative);
+        return if theme_root_relative_path_is_safe(relative) {
+            theme_root.join(relative)
+        } else {
+            path.to_path_buf()
+        };
     }
 
     if let Some(relative) = legacy_theme_root_relative_path(path) {
@@ -245,32 +255,52 @@ pub(crate) fn custom_theme_path_from_storage(path: &Path, theme_root: &Path) -> 
 }
 
 pub(crate) fn custom_theme_path_is_portable(path: &Path, theme_root: &Path) -> bool {
-    path.is_relative() || path.starts_with(theme_root)
+    if path.is_relative() {
+        return theme_root_relative_path_is_safe(path);
+    }
+
+    path.strip_prefix(theme_root)
+        .is_ok_and(theme_root_relative_path_is_safe)
+}
+
+fn theme_root_relative_path_is_safe(path: &Path) -> bool {
+    !path.as_os_str().is_empty()
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 
 fn legacy_theme_root_relative_path(path: &Path) -> Option<PathBuf> {
-    let components = path
-        .components()
-        .filter_map(|component| match component {
-            Component::Normal(value) => value.to_str(),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let components = path.components().collect::<Vec<_>>();
 
     relative_path_after_marker(&components, &[".warp", "themes"])
         .or_else(|| relative_path_after_marker(&components, &["warp-terminal", "themes"]))
 }
 
-fn relative_path_after_marker(components: &[&str], marker: &[&str]) -> Option<PathBuf> {
+fn relative_path_after_marker(components: &[Component<'_>], marker: &[&str]) -> Option<PathBuf> {
     let start = components
         .windows(marker.len())
-        .position(|window| window == marker)?;
-    let relative = &components[start + marker.len()..];
-    if relative.is_empty() {
+        .position(|window| components_match_marker(window, marker))?;
+    let relative = components[start + marker.len()..]
+        .iter()
+        .map(|component| match component {
+            Component::Normal(value) => Some(PathBuf::from(value)),
+            Component::CurDir => Some(PathBuf::from(".")),
+            _ => None,
+        })
+        .collect::<Option<PathBuf>>()?;
+    if relative.as_os_str().is_empty() {
         return None;
     }
 
-    Some(relative.iter().collect())
+    Some(relative)
+}
+
+fn components_match_marker(components: &[Component<'_>], marker: &[&str]) -> bool {
+    components
+        .iter()
+        .zip(marker)
+        .all(|(component, marker)| matches!(component, Component::Normal(value) if value == marker))
 }
 
 impl CustomTheme {

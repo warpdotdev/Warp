@@ -24,6 +24,24 @@ fn custom_theme_relative_path_resolves_under_local_theme_root() {
 }
 
 #[test]
+fn custom_theme_relative_parent_dir_path_is_preserved() {
+    let root = PathBuf::from("/Users/ivan/.warp/themes");
+    let stored = PathBuf::from("../outside.yml");
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_relative_parent_dir_path_is_not_portable() {
+    let root = PathBuf::from("/Users/ivan/.warp/themes");
+
+    assert!(!custom_theme_path_is_portable(
+        &PathBuf::from("../outside.yml"),
+        &root
+    ));
+}
+
+#[test]
 fn custom_theme_legacy_macos_path_resolves_by_theme_root_suffix_when_local_file_exists() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("warp-terminal/themes");
@@ -34,6 +52,19 @@ fn custom_theme_legacy_macos_path_resolves_by_theme_root_suffix_when_local_file_
     let stored = PathBuf::from("/Users/ivan/.warp/themes/catppuccin/catppuccin_mocha.yml");
 
     assert_eq!(custom_theme_path_from_storage(&stored, &root), local);
+}
+
+#[test]
+fn custom_theme_legacy_parent_dir_path_is_preserved() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("warp-terminal/themes");
+    let local = root.join("outside.yml");
+    std::fs::create_dir_all(local.parent().unwrap()).unwrap();
+    std::fs::write(&local, "").unwrap();
+
+    let stored = PathBuf::from("/Users/ivan/.warp/themes/../outside.yml");
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
 }
 
 #[test]
