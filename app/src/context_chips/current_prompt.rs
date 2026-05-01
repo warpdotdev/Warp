@@ -1454,6 +1454,13 @@ impl CurrentPrompt {
     /// into the `ShellGitBranch` and `GitDiffStats` chip values. Used both as
     /// the body of the `MetadataChanged` subscription callback and as the
     /// initial-state hydration call from `set_git_repo_status`.
+    ///
+    /// When metadata is unavailable (e.g. a freshly-attached
+    /// `GitRepoStatusModel` whose async fetch hasn't completed yet), clears
+    /// both chip values rather than preserving them. Without this, chips
+    /// would keep displaying the previous repo's branch and diff stats until
+    /// the async refresh emits `MetadataChanged` — a stale-data window that
+    /// is especially visible when switching repos in the same session.
     #[cfg(feature = "local_fs")]
     fn apply_git_repo_status_metadata(&mut self, ctx: &mut ModelContext<Self>) {
         let Some(metadata) = self
@@ -1462,6 +1469,11 @@ impl CurrentPrompt {
             .and_then(|w| w.upgrade(ctx))
             .and_then(|h| h.as_ref(ctx).metadata().cloned())
         else {
+            // No metadata available yet — clear any stale values from a
+            // previous repo so nothing visibly carries over while the new
+            // model populates asynchronously.
+            self.update_chip_value(&ContextChipKind::ShellGitBranch, None);
+            self.update_chip_value(&ContextChipKind::GitDiffStats, None);
             return;
         };
 

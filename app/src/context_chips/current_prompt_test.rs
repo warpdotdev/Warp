@@ -1420,6 +1420,126 @@ fn test_set_git_repo_status_applies_existing_metadata() {
 
 #[cfg(feature = "local_fs")]
 #[test]
+fn test_set_git_repo_status_clears_stale_chip_values_when_new_model_has_no_metadata() {
+    // When the prompt re-binds to a freshly-created `GitRepoStatusModel`
+    // whose async fetch has not completed yet, the chip values from the
+    // previous repo must NOT carry over — otherwise the user sees the old
+    // branch and diff stats until the new model emits `MetadataChanged`.
+    //
+    // Verifies the contract that `set_git_repo_status` always reflects the
+    // *new* model's state, even when that state is "no metadata yet".
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| {
+            Prompt::mock_with(
+                [
+                    ContextChipKind::ShellGitBranch,
+                    ContextChipKind::GitDiffStats,
+                ],
+                false,
+                WarpPromptSeparator::None,
+            )
+        });
+        app.add_singleton_model(SessionSettings::new_with_defaults);
+        app.add_singleton_model(|_ctx| {
+            settings::PublicPreferences::new(
+                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
+            )
+        });
+        app.add_singleton_model(|_| {
+            settings::PrivatePreferences::new(
+                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
+            )
+        });
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let watcher_handle = app.add_singleton_model(DirectoryWatcher::new_for_testing);
+        let repo_handle = watcher_handle.update(&mut app, |watcher, ctx| {
+            watcher
+                .add_directory(
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                        temp_dir.path(),
+                    )
+                    .unwrap(),
+                    ctx,
+                )
+                .unwrap()
+        });
+
+        // First model: has metadata for a "previous" repo (`feature-x`).
+        let prev_metadata = GitStatusMetadata {
+            current_branch_name: "feature-x".to_string(),
+            main_branch_name: "main".to_string(),
+            stats_against_head: DiffStats::default(),
+        };
+        let prev_git_status = app
+            .add_model(move |_| GitRepoStatusModel::new_for_test(repo_handle, Some(prev_metadata)));
+
+        // Second model: brand-new, no metadata yet (simulating an in-flight
+        // async fetch on a different repo).
+        let temp_dir_b = tempfile::TempDir::new().unwrap();
+        let repo_handle_b = watcher_handle.update(&mut app, |watcher, ctx| {
+            watcher
+                .add_directory(
+                    warp_util::standardized_path::StandardizedPath::from_local_canonicalized(
+                        temp_dir_b.path(),
+                    )
+                    .unwrap(),
+                    ctx,
+                )
+                .unwrap()
+        });
+        let new_git_status =
+            app.add_model(move |_| GitRepoStatusModel::new_for_test(repo_handle_b, None));
+
+        let sessions = app.add_model(|_| Sessions::new_for_test());
+        let current_prompt = app.add_model(move |ctx| CurrentPrompt::new(sessions, ctx));
+
+        // Bind to the first model; chip values populate from its metadata.
+        current_prompt.update(&mut app, |cp, ctx| {
+            cp.update_states_with_new_context(ctx);
+            cp.set_git_repo_status(Some(prev_git_status.downgrade()), ctx);
+        });
+
+        // Sanity-check: previous repo's branch is showing.
+        app.read(|ctx| {
+            let cp = current_prompt.as_ref(ctx);
+            assert_eq!(
+                cp.latest_chip_value(&ContextChipKind::ShellGitBranch),
+                Some(&crate::context_chips::ChipValue::Text(
+                    "feature-x".to_string()
+                )),
+                "precondition: previous repo's branch should be hydrated"
+            );
+        });
+
+        // Now re-bind to a freshly-created model with NO metadata. The chips
+        // must be cleared so the previous repo's data does not leak through.
+        current_prompt.update(&mut app, |cp, ctx| {
+            cp.set_git_repo_status(Some(new_git_status.downgrade()), ctx);
+        });
+
+        app.read(|ctx| {
+            let cp = current_prompt.as_ref(ctx);
+            assert_eq!(
+                cp.latest_chip_value(&ContextChipKind::ShellGitBranch),
+                None,
+                "ShellGitBranch should be cleared when re-binding to a model \
+                 without metadata, to avoid carrying over the previous repo's \
+                 branch name",
+            );
+            assert_eq!(
+                cp.latest_chip_value(&ContextChipKind::GitDiffStats),
+                None,
+                "GitDiffStats should be cleared when re-binding to a model \
+                 without metadata, to avoid carrying over the previous repo's \
+                 diff stats",
+            );
+        });
+    });
+}
+
+#[cfg(feature = "local_fs")]
+#[test]
 fn test_git_status_change_updates_chip_value() {
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| {
