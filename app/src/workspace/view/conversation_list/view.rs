@@ -4,6 +4,7 @@ use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
 use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
+#[cfg(feature = "warp_hosted")]
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_conversations_model::{AgentConversationsModel, ConversationOrTask};
@@ -11,12 +12,14 @@ use crate::ai::agent_management::telemetry::{AgentManagementTelemetryEvent, Open
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::appearance::Appearance;
 use crate::drive::sharing::dialog::SharingDialog;
+#[cfg(feature = "warp_hosted")]
 use crate::drive::sharing::ShareableObject;
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys,
     PropagateHorizontalNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
+#[cfg(feature = "warp_hosted")]
 use crate::server::telemetry::SharingDialogSource;
 use crate::view_components::action_button::{ActionButton, ButtonSize, SecondaryTheme};
 use crate::view_components::DismissibleToast;
@@ -986,43 +989,54 @@ impl TypedActionView for ConversationListView {
                 ctx.notify();
             }
             ConversationListViewAction::OpenShareDialog { conversation_id } => {
-                // Clear selection state when opening share dialog
-                self.selected_index = None;
+                // PDX-80: Conversation share dialog is hosted-only UI. The
+                // action variant remains so menu wiring still typechecks, but
+                // the dialog is never opened when warp_hosted is off.
+                #[cfg(feature = "warp_hosted")]
+                {
+                    // Clear selection state when opening share dialog
+                    self.selected_index = None;
 
-                // Resolve the AIConversationId for the shareable object
-                let ai_conversation_id: Option<AIConversationId> = match conversation_id {
-                    ConversationOrTaskId::TaskId(task_id) => {
-                        // For tasks, look up the associated conversation_id by server token
-                        if let Some(ConversationOrTask::Task(task)) =
-                            AgentConversationsModel::as_ref(ctx).get_task(task_id)
-                        {
-                            task.conversation_id.as_ref().and_then(|token_str| {
-                                let server_token = ServerConversationToken::new(token_str.clone());
-                                BlocklistAIHistoryModel::as_ref(ctx)
-                                    .find_conversation_id_by_server_token(&server_token)
-                            })
-                        } else {
-                            None
+                    // Resolve the AIConversationId for the shareable object
+                    let ai_conversation_id: Option<AIConversationId> = match conversation_id {
+                        ConversationOrTaskId::TaskId(task_id) => {
+                            // For tasks, look up the associated conversation_id by server token
+                            if let Some(ConversationOrTask::Task(task)) =
+                                AgentConversationsModel::as_ref(ctx).get_task(task_id)
+                            {
+                                task.conversation_id.as_ref().and_then(|token_str| {
+                                    let server_token =
+                                        ServerConversationToken::new(token_str.clone());
+                                    BlocklistAIHistoryModel::as_ref(ctx)
+                                        .find_conversation_id_by_server_token(&server_token)
+                                })
+                            } else {
+                                None
+                            }
                         }
-                    }
-                    ConversationOrTaskId::ConversationId(conv_id) => Some(*conv_id),
-                };
+                        ConversationOrTaskId::ConversationId(conv_id) => Some(*conv_id),
+                    };
 
-                let Some(ai_conversation_id) = ai_conversation_id else {
-                    return;
-                };
+                    let Some(ai_conversation_id) = ai_conversation_id else {
+                        return;
+                    };
 
-                // Set the share dialog target and open it
-                self.share_dialog_open_for = Some(*conversation_id);
-                self.sharing_dialog.update(ctx, |dialog, ctx| {
-                    dialog.set_target(
-                        Some(ShareableObject::AIConversation(ai_conversation_id)),
-                        ctx,
-                    );
-                    dialog.report_open(SharingDialogSource::ConversationList, ctx);
-                });
-                ctx.focus(&self.sharing_dialog);
-                ctx.notify();
+                    // Set the share dialog target and open it
+                    self.share_dialog_open_for = Some(*conversation_id);
+                    self.sharing_dialog.update(ctx, |dialog, ctx| {
+                        dialog.set_target(
+                            Some(ShareableObject::AIConversation(ai_conversation_id)),
+                            ctx,
+                        );
+                        dialog.report_open(SharingDialogSource::ConversationList, ctx);
+                    });
+                    ctx.focus(&self.sharing_dialog);
+                    ctx.notify();
+                }
+                #[cfg(not(feature = "warp_hosted"))]
+                {
+                    let _ = (conversation_id, ctx);
+                }
             }
             ConversationListViewAction::DeleteFromOverflowMenu { conversation_id } => {
                 let ConversationOrTaskId::ConversationId(ai_conversation_id) = conversation_id

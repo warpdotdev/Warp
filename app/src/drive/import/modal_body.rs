@@ -169,6 +169,9 @@ impl ImportModalBody {
         }
     }
 
+    // PDX-80: Reachable only via ImportModal::open_with_target, which is gated
+    // on warp_hosted at the WorkspaceView entry point.
+    #[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
     pub fn set_new_target(&mut self, owner: Owner, initial_folder_id: Option<SyncId>) {
         // TODO: this should take an owner OR folder.
         self.owner = Some(owner);

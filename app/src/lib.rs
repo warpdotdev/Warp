@@ -1545,6 +1545,10 @@ fn initialize_app(
     ai::blocklist::init(ctx);
     ai::blocklist::block::status_bar::init(ctx);
     drive::index::init(ctx);
+    // PDX-80: Sharing dialog UI is gated to warp_hosted builds. Domain types in
+    // `drive::sharing` remain compiled, but the dialog is not registered when
+    // hosted backend is unavailable (PDX-79 stubbed the SyncQueue/ObjectClient).
+    #[cfg(feature = "warp_hosted")]
     drive::sharing::dialog::init(ctx);
     ai_assistant::panel::init(ctx);
     settings_view::update_environment_form::init(ctx);

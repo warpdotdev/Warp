@@ -920,6 +920,10 @@ pub struct Workspace {
     ctrl_tab_palette: ViewHandle<CommandPalette>,
     mouse_states: WorkspaceMouseStates,
     settings_pane: ViewHandle<SettingsView>,
+    /// PDX-80: ImportModal is hosted-only UI. Field is kept always-present so
+    /// the workspace struct doesn't need cfg-gated initialization, but it's
+    /// only ever read by the hosted-feature render branch.
+    #[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
     import_modal: ViewHandle<ImportModal>,
     theme_chooser_view: ViewHandle<ThemeChooser>,
     previous_theme: Option<ThemeKind>,
@@ -7724,12 +7728,23 @@ impl Workspace {
         initial_folder_id: &Option<SyncId>,
         ctx: &mut ViewContext<Self>,
     ) {
-        // TODO: This should take either an owner OR a folder.
-        self.current_workspace_state.is_import_modal_open = true;
-        self.import_modal.update(ctx, |import_modal, ctx| {
-            import_modal.open_with_target(owner, *initial_folder_id, ctx);
-        });
-        ctx.notify();
+        // PDX-80: ImportModal wires into SyncQueue, which PDX-79 stubbed out.
+        // The modal is hosted-only UI; method signature is preserved so existing
+        // dispatch sites (DrivePanelEvent::OpenImportModal handler, etc.) still
+        // compile, but opening is a no-op when warp_hosted is off.
+        #[cfg(feature = "warp_hosted")]
+        {
+            // TODO: This should take either an owner OR a folder.
+            self.current_workspace_state.is_import_modal_open = true;
+            self.import_modal.update(ctx, |import_modal, ctx| {
+                import_modal.open_with_target(owner, *initial_folder_id, ctx);
+            });
+            ctx.notify();
+        }
+        #[cfg(not(feature = "warp_hosted"))]
+        {
+            let _ = (owner, initial_folder_id, ctx);
+        }
     }
 
     pub fn open_or_toggle_warp_drive(
@@ -19655,6 +19670,11 @@ impl Workspace {
                 entry_focus: GlobalSearchEntryFocus::Results,
             });
         }
+        // PDX-80: The Warp Drive toolbelt entry is hosted-only. With warp_hosted
+        // off, the entry is omitted entirely, so the LeftPanelView never builds
+        // a WarpDrive toolbelt button and ToolPanelView::WarpDrive is never
+        // selected as the active view from this code path.
+        #[cfg(feature = "warp_hosted")]
         if WarpDriveSettings::is_warp_drive_enabled(ctx) {
             views.push(ToolPanelView::WarpDrive);
         }
@@ -22452,6 +22472,11 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.theme_creator_modal).finish());
         }
 
+        // PDX-80: ImportModal render is hosted-only. The field stays present
+        // (so the workspace struct doesn't need cfg-gated initialization), but
+        // is_import_modal_open can never be set to true when warp_hosted is off
+        // (open_import_modal is a no-op above), so the modal never renders.
+        #[cfg(feature = "warp_hosted")]
         if self.current_workspace_state.is_import_modal_open {
             stack.add_child(ChildView::new(&self.import_modal).finish());
         }

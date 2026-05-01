@@ -14,12 +14,16 @@ use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::color::internal_colors;
 use warp_util::path::user_friendly_path;
+#[cfg(feature = "warp_hosted")]
 use warpui::elements::{
-    AnchorPair, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
-    CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Flex, Highlight, Hoverable,
-    MainAxisAlignment, MainAxisSize, MouseInBehavior, MouseStateHandle, OffsetPositioning,
-    OffsetType, ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds,
-    PositioningAxis, Radius, SavePosition, Shrinkable, Stack, Text, XAxisAnchor, YAxisAnchor,
+    AnchorPair, ChildView, OffsetType, PositionedElementOffsetBounds, PositioningAxis,
+    XAxisAnchor, YAxisAnchor,
+};
+use warpui::elements::{
+    ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+    DispatchEventResult, Element, EventHandler, Flex, Highlight, Hoverable, MainAxisAlignment,
+    MainAxisSize, MouseInBehavior, MouseStateHandle, OffsetPositioning, ParentAnchor,
+    ParentElement, ParentOffsetBounds, Radius, SavePosition, Shrinkable, Stack, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
@@ -33,7 +37,9 @@ const MAX_TOOLTIP_LENGTH: usize = 80;
 /// Spacing between icon and title
 const ICON_SPACING: f32 = 4.;
 
-/// Offset for the sharing dialog from the item row
+/// Offset for the sharing dialog from the item row.
+/// PDX-80: Only used by the hosted-only sharing-dialog overlay path.
+#[cfg(feature = "warp_hosted")]
 const DIALOG_OFFSET_PIXELS: f32 = -16.;
 
 /// Generate a position ID for a conversation list item
@@ -386,11 +392,21 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         )
         .finish();
 
-    // Wrap in a stack to support the sharing dialog overlay
+    // Wrap in a stack to support the sharing dialog overlay.
+    // PDX-80: The mutator below is only active under warp_hosted; declare the
+    // binding mutable only when the cfg-gated mutation can occur, to keep the
+    // non-hosted build warning-free.
     let position_id = conversation_item_position_id(&conversation_id);
+    #[cfg(feature = "warp_hosted")]
     let mut item_stack = Stack::new().with_child(event_handler);
+    #[cfg(not(feature = "warp_hosted"))]
+    let item_stack = Stack::new().with_child(event_handler);
 
-    // Add the sharing dialog as a positioned overlay when open for this item
+    // PDX-80: The conversation-item sharing dialog overlay is a hosted-only UI
+    // surface. The overlay is feature-gated; sharing_dialog stays in ItemProps
+    // so the field plumbing remains identical, but the overlay is never added
+    // to the item stack when warp_hosted is off.
+    #[cfg(feature = "warp_hosted")]
     if is_share_dialog_open {
         // Position the dialog to the right of the item row
         item_stack.add_positioned_overlay_child(
@@ -411,6 +427,8 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
             ),
         );
     }
+    #[cfg(not(feature = "warp_hosted"))]
+    let _ = (is_share_dialog_open, sharing_dialog);
 
     SavePosition::new(item_stack.finish(), &position_id).finish()
 }

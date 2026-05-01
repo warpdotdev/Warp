@@ -69,6 +69,9 @@ impl ImportModal {
         }
     }
 
+    // PDX-80: Only invoked from WorkspaceView::open_import_modal, which is a
+    // no-op when warp_hosted is off. Method body remains identical.
+    #[cfg_attr(not(feature = "warp_hosted"), allow(dead_code))]
     pub fn open_with_target(
         &mut self,
         owner: Owner,
