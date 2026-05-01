@@ -68,6 +68,7 @@ impl ThirdPartyHarness for ClaudeHarness {
         working_dir: &Path,
         _system_prompt: Option<&str>,
         secrets: &HashMap<String, ManagedSecretValue>,
+        _third_party_harness_model_id: Option<&str>,
     ) -> Result<(), AgentDriverError> {
         prepare_claude_environment_config(working_dir, secrets).map_err(|error| {
             AgentDriverError::HarnessConfigSetupFailed {
