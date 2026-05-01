@@ -1215,13 +1215,18 @@ impl ansi::Handler for GridHandler {
 
     fn text_area_size_pixels<W: std::io::Write>(&mut self, writer: &mut W) {
         let sf = self.ansi_handler_state.scale_factor;
-        // Use the pre-truncation `_px` fields so a 9.6-px logical cell at
-        // 1.25× scale reports as 12 (round of 9.6 * 1.25), not 11 (round
-        // of trunc(9.6) * 1.25).
-        let cell_w_phys = (self.ansi_handler_state.cell_width_px.as_f32() * sf).round() as usize;
-        let cell_h_phys = (self.ansi_handler_state.cell_height_px.as_f32() * sf).round() as usize;
-        let width = cell_w_phys * self.columns();
-        let height = cell_h_phys * self.visible_rows();
+        // Round the *total* width and height once after multiplying by the
+        // grid extents and the scale factor. Rounding per-cell first and
+        // then multiplying by columns or rows accumulates the per-cell
+        // rounding error: at 1.25x scale a 9.7-px cell rounds to 12 phys
+        // px, so 80 columns reports 960 instead of the correct
+        // round(9.7 * 1.25 * 80) = 970, a 10-pixel drift. CSI 16t
+        // (cell_pixel_size) is intentionally per-cell so it can keep its
+        // own rounding.
+        let cell_w_logical = self.ansi_handler_state.cell_width_px.as_f32();
+        let cell_h_logical = self.ansi_handler_state.cell_height_px.as_f32();
+        let width = (cell_w_logical * self.columns() as f32 * sf).round() as usize;
+        let height = (cell_h_logical * self.visible_rows() as f32 * sf).round() as usize;
         let _ = write!(writer, "\x1b[4;{height};{width}t");
     }
 
