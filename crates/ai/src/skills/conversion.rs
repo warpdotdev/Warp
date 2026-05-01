@@ -73,6 +73,13 @@ impl From<SkillProvider> for api::skill_descriptor::Provider {
             SkillProvider::Codex => api::skill_descriptor::provider::Type::Codex(()),
             SkillProvider::Cursor => api::skill_descriptor::provider::Type::Cursor(()),
             SkillProvider::Gemini => api::skill_descriptor::provider::Type::Gemini(()),
+            // The protobuf does not yet have dedicated variants for every
+            // third-party agent provider. Preserve compatibility by sending
+            // them as Agent Skills providers; local UI still keeps the exact
+            // provider via [`SkillProvider`].
+            SkillProvider::Vibe | SkillProvider::Devin | SkillProvider::Windsurf => {
+                api::skill_descriptor::provider::Type::Agents(())
+            }
             SkillProvider::Copilot => api::skill_descriptor::provider::Type::Copilot(()),
             SkillProvider::Droid => api::skill_descriptor::provider::Type::Droid(()),
             SkillProvider::Github => api::skill_descriptor::provider::Type::Github(()),

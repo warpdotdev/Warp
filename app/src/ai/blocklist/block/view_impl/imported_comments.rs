@@ -12,7 +12,6 @@ pub(crate) fn render_imported_comments(
         .with_spacing(12.);
 
     for (card, state) in group.cards.iter().zip(group.element_states.iter()) {
-        let open_in_code_review = ChildView::new(&state.open_in_code_review_button).finish();
         let chevron = ChildView::new(&state.chevron_button).finish();
 
         let mut header_trailing = Flex::row()
@@ -23,10 +22,12 @@ pub(crate) fn render_imported_comments(
             header_trailing.add_child(ChildView::new(open_in_github).finish());
         }
 
-        let header_trailing = header_trailing
-            .with_child(open_in_code_review)
-            .with_child(chevron)
-            .finish();
+        if !state.is_opened_in_code_review {
+            header_trailing
+                .add_child(ChildView::new(&state.open_in_code_review_button).finish());
+        }
+
+        let header_trailing = header_trailing.with_child(chevron).finish();
 
         column.add_child(card.render(
             None,

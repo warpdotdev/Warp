@@ -34,6 +34,8 @@ fn returns_none_for_unsupported_agents() {
     assert!(plugin_manager_for(CLIAgent::Amp).is_none());
     assert!(plugin_manager_for(CLIAgent::Droid).is_none());
     assert!(plugin_manager_for(CLIAgent::Copilot).is_none());
+    assert!(plugin_manager_for(CLIAgent::Devin).is_none());
+    assert!(plugin_manager_for(CLIAgent::MistralVibe).is_none());
     assert!(plugin_manager_for(CLIAgent::Unknown).is_none());
 }
 

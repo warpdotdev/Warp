@@ -5,10 +5,26 @@
 
 set -e
 
+confirm_system_changes() {
+    if [ "${WARP_BOOTSTRAP_ASSUME_YES:-}" = "1" ]; then
+        return
+    fi
+
+    echo "This bootstrap script will run sudo commands and install developer dependencies with Homebrew, cargo, and PowerShell."
+    printf "Continue? [y/N] "
+    read answer
+    case "$answer" in
+        y|Y|yes|YES) ;;
+        *) echo "Bootstrap cancelled."; exit 1 ;;
+    esac
+}
+
 if ! [ -d "/Applications/Xcode.app" ]; then
     echo "Please install Xcode from the App Store before continuing."
     exit 1
 fi
+
+confirm_system_changes
 
 sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 # Mimic actually launching XCode, which performs some necessary set-up of the
@@ -28,6 +44,8 @@ if ! command -v cargo; then
     echo "Please start a new terminal session so that cargo is in your PATH"
     exit 1
 fi
+
+bash "$PWD"/script/check_node_yarn
 
 # Install various binaries through cargo.
 "$PWD"/script/install_cargo_test_deps

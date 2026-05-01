@@ -223,3 +223,144 @@ fn resolve_simple_name_uses_directory_precedence() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn resolve_simple_name_finds_subdirectory_skill_when_git_root_is_parent() -> Result<()> {
+    let temp_dir = tempfile::TempDir::new().context("Failed to create temp dir")?;
+    let root = temp_dir.path();
+    let package_skill = root
+        .join("packages")
+        .join("frontend")
+        .join(".agents/skills/my-skill/SKILL.md");
+
+    write_skill_file(
+        &package_skill,
+        "my-skill",
+        "desc",
+        "# Package skill\n\nThis should resolve from a subdirectory.",
+    )?;
+
+    let spec = SkillSpec::without_repo("my-skill".to_string());
+    let resolved = resolve_from_root_path_by_directory_scan(&spec, root)?
+        .context("Expected to resolve skill by scanning subdirectories")?;
+
+    assert_eq!(resolved.skill_path, package_skill);
+    assert!(resolved.instructions.contains("Package skill"));
+
+    Ok(())
+}
+
+#[test]
+fn resolve_simple_name_prefers_current_subdirectory_scope_over_sibling() -> Result<()> {
+    let temp_dir = tempfile::TempDir::new().context("Failed to create temp dir")?;
+    let root = temp_dir.path();
+    let package_a_skill = root
+        .join("packages")
+        .join("a")
+        .join(".agents/skills/my-skill/SKILL.md");
+    let package_b_skill = root
+        .join("packages")
+        .join("b")
+        .join(".agents/skills/my-skill/SKILL.md");
+    let package_b_working_dir = root.join("packages").join("b").join("src");
+
+    fs::create_dir_all(&package_b_working_dir)
+        .context("Failed to create package b working dir")?;
+    write_skill_file(
+        &package_a_skill,
+        "my-skill",
+        "desc",
+        "# Package A skill\n\nDo not pick this sibling.",
+    )?;
+    write_skill_file(
+        &package_b_skill,
+        "my-skill",
+        "desc",
+        "# Package B skill\n\nUse this scoped skill.",
+    )?;
+
+    let spec = SkillSpec::without_repo("my-skill".to_string());
+    let resolved = resolve_from_root_path_by_directory_scan_with_scope(
+        &spec,
+        root,
+        Some(&package_b_working_dir),
+    )?
+    .context("Expected to resolve package b skill")?;
+
+    assert_eq!(resolved.skill_path, package_b_skill);
+    assert!(resolved.instructions.contains("Package B skill"));
+    assert!(!resolved.instructions.contains("Package A skill"));
+
+    Ok(())
+}
+
+#[test]
+fn resolve_simple_name_is_ambiguous_for_multiple_descendant_matches_without_scope() -> Result<()> {
+    let temp_dir = tempfile::TempDir::new().context("Failed to create temp dir")?;
+    let root = temp_dir.path();
+    let package_a_skill = root
+        .join("packages")
+        .join("a")
+        .join(".agents/skills/my-skill/SKILL.md");
+    let package_b_skill = root
+        .join("packages")
+        .join("b")
+        .join(".agents/skills/my-skill/SKILL.md");
+
+    write_skill_file(
+        &package_a_skill,
+        "my-skill",
+        "desc",
+        "# Package A skill\n\nAmbiguous.",
+    )?;
+    write_skill_file(
+        &package_b_skill,
+        "my-skill",
+        "desc",
+        "# Package B skill\n\nAmbiguous.",
+    )?;
+
+    let spec = SkillSpec::without_repo("my-skill".to_string());
+    let err = resolve_from_root_path_by_directory_scan(&spec, root)
+        .expect_err("Expected ambiguity for sibling package skills");
+
+    match err {
+        ResolveSkillError::Ambiguous { skill, candidates } => {
+            assert_eq!(skill, "my-skill");
+            assert_eq!(candidates.len(), 2);
+            assert!(candidates.contains(&package_a_skill));
+            assert!(candidates.contains(&package_b_skill));
+        }
+        other => panic!("Expected ambiguous error, got {other:?}"),
+    }
+
+    Ok(())
+}
+
+#[test]
+fn cached_resolution_prefers_current_subdirectory_scope_over_sibling() -> Result<()> {
+    let temp_dir = tempfile::TempDir::new().context("Failed to create temp dir")?;
+    let root = temp_dir.path();
+    let package_a_skill = root
+        .join("packages")
+        .join("a")
+        .join(".agents/skills/my-skill/SKILL.md");
+    let package_b_skill = root
+        .join("packages")
+        .join("b")
+        .join(".agents/skills/my-skill/SKILL.md");
+    let package_b_working_dir = root.join("packages").join("b").join("src");
+
+    let spec = SkillSpec::without_repo("my-skill".to_string());
+    let resolved = best_match_by_working_directory_scope(
+        vec![package_a_skill, package_b_skill.clone()],
+        root,
+        Some(&package_b_working_dir),
+        &spec,
+    )?
+    .context("Expected cached path to resolve")?;
+
+    assert_eq!(resolved, package_b_skill);
+
+    Ok(())
+}

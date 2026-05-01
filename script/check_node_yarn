@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+set -e
+
+missing=0
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js is required to build Warp's command-signatures package."
+  echo "Install Node.js 18 or newer, then rerun ./script/bootstrap."
+  missing=1
+else
+  node_version="$(node --version 2>/dev/null | sed 's/^v//')"
+  node_major="${node_version%%.*}"
+  if [ -z "$node_major" ] || [ "$node_major" -lt 18 ] 2>/dev/null; then
+    echo "Node.js 18 or newer is required; found $(node --version)."
+    missing=1
+  fi
+fi
+
+if ! command -v yarn >/dev/null 2>&1; then
+  echo "Yarn is required to build Warp's command-signatures package."
+  if command -v corepack >/dev/null 2>&1; then
+    echo "Run 'corepack enable' to install the Yarn shim for this Node.js installation."
+  else
+    echo "Install a Node.js distribution that includes corepack, then run 'corepack enable'."
+  fi
+  missing=1
+fi
+
+if [ "$missing" -ne 0 ]; then
+  exit 1
+fi
+
+echo "Node.js $(node --version) and Yarn $(yarn --version) are available."

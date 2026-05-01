@@ -259,6 +259,8 @@ fn test_detect_known_agents() {
                 ("copilot", CLIAgent::Copilot),
                 ("agent", CLIAgent::CursorCli),
                 ("goose", CLIAgent::Goose),
+                ("devin", CLIAgent::Devin),
+                ("vibe", CLIAgent::MistralVibe),
             ] {
                 assert_eq!(
                     CLIAgent::detect(command, None, None, ctx),

@@ -11,13 +11,17 @@
 //! - Applies consistent skill-directory precedence (e.g. `.claude/` vs `.codex/`, etc.).
 //! - Falls back to scanning disk when the manager cache has not warmed yet.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use ai::skills::{
     home_skills_path, parse_skill, ParsedSkill, SkillProvider, SKILL_PROVIDER_DEFINITIONS,
 };
 use command::blocking::Command;
 use command::r#async::Command as AsyncCommand;
+use walkdir::{DirEntry, WalkDir};
 use warp_cli::skill::SkillSpec;
 use warpui::AppContext;
 use warpui::SingletonEntity as _;
@@ -263,7 +267,7 @@ fn resolve_repo_qualified(
     candidate_repo_roots.sort();
 
     for repo_root in candidate_repo_roots {
-        match resolve_in_single_repo_root(spec, &repo_root, skill_manager) {
+        match resolve_in_single_repo_root(spec, &repo_root, None, skill_manager) {
             Ok(resolved) => return Ok(resolved),
             Err(ResolveSkillError::NotFound { .. }) => {}
             Err(err) => return Err(err),
@@ -322,7 +326,7 @@ fn resolve_unqualified(
         .get_root_for_path(working_dir);
 
     if let Some(repo_root) = repo_root {
-        match resolve_in_single_repo_root(spec, &repo_root, skill_manager) {
+        match resolve_in_single_repo_root(spec, &repo_root, Some(working_dir), skill_manager) {
             Ok(resolved) => return Ok(resolved),
             Err(ResolveSkillError::NotFound { .. }) => {}
             Err(err) => return Err(err),
@@ -364,6 +368,7 @@ fn resolve_unqualified(
 fn resolve_in_single_repo_root(
     spec: &SkillSpec,
     repo_root: &Path,
+    preferred_scope: Option<&Path>,
     skill_manager: &SkillManager,
 ) -> Result<ResolvedSkill, ResolveSkillError> {
     // If the skill_path is a full path, skip cache lookup and go straight to disk resolution.
@@ -386,13 +391,17 @@ fn resolve_in_single_repo_root(
         .filter(|p| repo_skill_paths.contains(p))
         .collect();
 
-    if let Some(best_path) = best_match_by_directory_precedence(cached_paths, Some(repo_root)) {
+    if let Some(best_path) =
+        best_match_by_working_directory_scope(cached_paths, repo_root, preferred_scope, spec)?
+    {
         let parsed = parsed_skill_from_manager_or_disk(skill_manager, &best_path)?;
         return Ok(to_resolved_skill(best_path, parsed));
     }
 
     // Cold start fallback: check disk in precedence order.
-    if let Some(resolved) = resolve_from_root_path_by_directory_scan(spec, repo_root)? {
+    if let Some(resolved) =
+        resolve_from_root_path_by_directory_scan_with_scope(spec, repo_root, preferred_scope)?
+    {
         return Ok(resolved);
     }
 
@@ -404,6 +413,14 @@ fn resolve_in_single_repo_root(
 fn resolve_from_root_path_by_directory_scan(
     spec: &SkillSpec,
     root: &Path,
+) -> Result<Option<ResolvedSkill>, ResolveSkillError> {
+    resolve_from_root_path_by_directory_scan_with_scope(spec, root, None)
+}
+
+fn resolve_from_root_path_by_directory_scan_with_scope(
+    spec: &SkillSpec,
+    root: &Path,
+    preferred_scope: Option<&Path>,
 ) -> Result<Option<ResolvedSkill>, ResolveSkillError> {
     // If the skill_path is a full path (contains "/" or ends with ".md"),
     // try to resolve it directly without iterating through SKILL_PROVIDER_DEFINITIONS.
@@ -429,7 +446,94 @@ fn resolve_from_root_path_by_directory_scan(
         return Ok(None);
     }
 
-    // For simple skill names, iterate through SKILL_PROVIDER_DEFINITIONS in precedence order.
+    if let Some(preferred_scope) = preferred_scope.filter(|scope| scope.starts_with(root)) {
+        if let Some(resolved) =
+            resolve_from_provider_paths_in_ancestor_scope(spec, root, preferred_scope)?
+        {
+            return Ok(Some(resolved));
+        }
+
+        return resolve_from_descendant_provider_paths(spec, preferred_scope);
+    }
+
+    // For simple skill names, first check provider directories directly under
+    // the root in precedence order.
+    if let Some(resolved) = resolve_from_provider_paths_at_root(spec, root)? {
+        return Ok(Some(resolved));
+    }
+
+    // Then scan descendant directories. This catches skills scoped to a
+    // subproject when the git root is a parent directory and SkillManager's
+    // cache has not warmed yet.
+    resolve_from_descendant_provider_paths(spec, root)
+}
+
+fn resolve_from_descendant_provider_paths(
+    spec: &SkillSpec,
+    root: &Path,
+) -> Result<Option<ResolvedSkill>, ResolveSkillError> {
+    let mut matches = Vec::new();
+
+    for entry in WalkDir::new(root)
+        .follow_links(false)
+        .min_depth(1)
+        .into_iter()
+        .filter_entry(should_descend_into_for_skill_scan)
+    {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        if !entry.file_type().is_dir() {
+            continue;
+        }
+        if let Some(path) = skill_path_from_provider_paths_at_root(spec, entry.path()) {
+            matches.push((entry.path().to_path_buf(), path));
+        }
+    }
+
+    let Some(path) = select_descendant_skill_path(spec, matches)? else {
+        return Ok(None);
+    };
+
+    parse_resolved_skill(path).map(Some)
+}
+
+fn resolve_from_provider_paths_in_ancestor_scope(
+    spec: &SkillSpec,
+    root: &Path,
+    preferred_scope: &Path,
+) -> Result<Option<ResolvedSkill>, ResolveSkillError> {
+    let mut current = Some(preferred_scope);
+    while let Some(candidate) = current {
+        if !candidate.starts_with(root) {
+            break;
+        }
+
+        if let Some(resolved) = resolve_from_provider_paths_at_root(spec, candidate)? {
+            return Ok(Some(resolved));
+        }
+
+        if candidate == root {
+            break;
+        }
+        current = candidate.parent();
+    }
+
+    Ok(None)
+}
+
+fn resolve_from_provider_paths_at_root(
+    spec: &SkillSpec,
+    root: &Path,
+) -> Result<Option<ResolvedSkill>, ResolveSkillError> {
+    let Some(path) = skill_path_from_provider_paths_at_root(spec, root) else {
+        return Ok(None);
+    };
+
+    parse_resolved_skill(path).map(Some)
+}
+
+fn skill_path_from_provider_paths_at_root(spec: &SkillSpec, root: &Path) -> Option<PathBuf> {
     for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
         let path = root
             .join(&provider.skills_path)
@@ -437,16 +541,69 @@ fn resolve_from_root_path_by_directory_scan(
             .join(SKILL_FILE_NAME);
 
         if path.exists() {
-            let parsed = parse_skill(&path).map_err(|err| ResolveSkillError::ParseFailed {
-                path: path.clone(),
-                message: err.to_string(),
-            })?;
-
-            return Ok(Some(to_resolved_skill(path, parsed)));
+            return Some(path);
         }
     }
 
-    Ok(None)
+    None
+}
+
+fn parse_resolved_skill(path: PathBuf) -> Result<ResolvedSkill, ResolveSkillError> {
+    let parsed = parse_skill(&path).map_err(|err| ResolveSkillError::ParseFailed {
+        path: path.clone(),
+        message: err.to_string(),
+    })?;
+
+    Ok(to_resolved_skill(path, parsed))
+}
+
+fn select_descendant_skill_path(
+    spec: &SkillSpec,
+    matches: Vec<(PathBuf, PathBuf)>,
+) -> Result<Option<PathBuf>, ResolveSkillError> {
+    if matches.is_empty() {
+        return Ok(None);
+    }
+
+    let mut matches_by_owner: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
+    for (owner_dir, skill_path) in matches {
+        matches_by_owner.entry(owner_dir).or_default().push(skill_path);
+    }
+
+    if matches_by_owner.len() > 1 {
+        let candidates = matches_by_owner
+            .into_values()
+            .flatten()
+            .collect::<Vec<PathBuf>>();
+        return Err(ResolveSkillError::Ambiguous {
+            skill: spec.skill_identifier.clone(),
+            candidates,
+        });
+    }
+
+    let (owner_dir, paths) = matches_by_owner
+        .into_iter()
+        .next()
+        .expect("matches is not empty");
+    Ok(best_match_by_directory_precedence(paths, Some(&owner_dir)))
+}
+
+fn should_descend_into_for_skill_scan(entry: &DirEntry) -> bool {
+    let Some(file_name) = entry.file_name().to_str() else {
+        return true;
+    };
+
+    !matches!(
+        file_name,
+        ".git"
+            | ".hg"
+            | ".svn"
+            | "target"
+            | "node_modules"
+            | ".venv"
+            | "venv"
+            | ".direnv"
+    )
 }
 
 fn parsed_skill_from_manager_or_disk(
@@ -515,6 +672,107 @@ fn best_match_by_directory_precedence(
     matches.into_iter().next()
 }
 
+fn best_match_by_working_directory_scope(
+    matches: Vec<PathBuf>,
+    repo_root: &Path,
+    preferred_scope: Option<&Path>,
+    spec: &SkillSpec,
+) -> Result<Option<PathBuf>, ResolveSkillError> {
+    let Some(preferred_scope) = preferred_scope.filter(|scope| scope.starts_with(repo_root)) else {
+        return best_match_without_preferred_scope(matches, repo_root, spec);
+    };
+
+    let mut ancestor_matches = Vec::new();
+    let mut descendant_matches: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
+
+    for path in matches {
+        let Some(owner_dir) = skill_owner_directory_from_path(&path) else {
+            continue;
+        };
+
+        if preferred_scope.starts_with(&owner_dir) && owner_dir.starts_with(repo_root) {
+            let depth = owner_dir.components().count();
+            ancestor_matches.push((depth, owner_dir, path));
+        } else if owner_dir.starts_with(preferred_scope) {
+            descendant_matches.entry(owner_dir).or_default().push(path);
+        }
+    }
+
+    if !ancestor_matches.is_empty() {
+        ancestor_matches.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then_with(|| {
+                    directory_precedence_rank(&a.1, &a.2)
+                        .cmp(&directory_precedence_rank(&b.1, &b.2))
+                })
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        return Ok(ancestor_matches.into_iter().next().map(|(_, _, path)| path));
+    }
+
+    if descendant_matches.len() > 1 {
+        let candidates = descendant_matches
+            .into_values()
+            .flatten()
+            .collect::<Vec<PathBuf>>();
+        return Err(ResolveSkillError::Ambiguous {
+            skill: spec.skill_identifier.clone(),
+            candidates,
+        });
+    }
+
+    let Some((owner_dir, paths)) = descendant_matches.into_iter().next() else {
+        return Ok(None);
+    };
+
+    Ok(best_match_by_directory_precedence(paths, Some(&owner_dir)))
+}
+
+fn best_match_without_preferred_scope(
+    matches: Vec<PathBuf>,
+    repo_root: &Path,
+    spec: &SkillSpec,
+) -> Result<Option<PathBuf>, ResolveSkillError> {
+    let mut root_matches = Vec::new();
+    let mut descendant_matches: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
+
+    for path in matches {
+        let Some(owner_dir) = skill_owner_directory_from_path(&path) else {
+            continue;
+        };
+
+        if owner_dir == repo_root {
+            root_matches.push(path);
+        } else if owner_dir.starts_with(repo_root) {
+            descendant_matches.entry(owner_dir).or_default().push(path);
+        }
+    }
+
+    if !root_matches.is_empty() {
+        return Ok(best_match_by_directory_precedence(
+            root_matches,
+            Some(repo_root),
+        ));
+    }
+
+    if descendant_matches.len() > 1 {
+        let candidates = descendant_matches
+            .into_values()
+            .flatten()
+            .collect::<Vec<PathBuf>>();
+        return Err(ResolveSkillError::Ambiguous {
+            skill: spec.skill_identifier.clone(),
+            candidates,
+        });
+    }
+
+    let Some((owner_dir, paths)) = descendant_matches.into_iter().next() else {
+        return Ok(None);
+    };
+
+    Ok(best_match_by_directory_precedence(paths, Some(&owner_dir)))
+}
+
 fn directory_precedence_rank(root: &Path, skill_path: &Path) -> usize {
     for (idx, provider) in SKILL_PROVIDER_DEFINITIONS.iter().enumerate() {
         if skill_path.starts_with(root.join(&provider.skills_path)) {
@@ -523,6 +781,24 @@ fn directory_precedence_rank(root: &Path, skill_path: &Path) -> usize {
     }
 
     SKILL_PROVIDER_DEFINITIONS.len()
+}
+
+fn skill_owner_directory_from_path(skill_path: &Path) -> Option<PathBuf> {
+    let path_components: Vec<_> = skill_path.components().collect();
+
+    for provider in SKILL_PROVIDER_DEFINITIONS.iter() {
+        let provider_components: Vec<_> = provider.skills_path.components().collect();
+        for (idx, window) in path_components
+            .windows(provider_components.len())
+            .enumerate()
+        {
+            if window == provider_components.as_slice() {
+                return Some(PathBuf::from_iter(path_components.iter().take(idx).copied()));
+            }
+        }
+    }
+
+    None
 }
 
 fn get_git_remote_org(repo_path: &Path) -> Option<String> {
