@@ -125,7 +125,6 @@ struct TooltipMouseStateHandles {
     call_mcp_servers_tooltip_mouse_state: MouseStateHandle,
     // Separate mouse state handles for text input editors (for workspace override tooltips)
     command_allowlist_editor_tooltip_mouse_state: MouseStateHandle,
-    command_denylist_editor_tooltip_mouse_state: MouseStateHandle,
     directory_allowlist_editor_tooltip_mouse_state: MouseStateHandle,
     mcp_allowlist_editor_tooltip_mouse_state: MouseStateHandle,
     mcp_denylist_editor_tooltip_mouse_state: MouseStateHandle,
@@ -253,6 +252,7 @@ pub struct ExecutionProfileEditorView {
     directory_allowlist_editor: ViewHandle<SubmittableTextInput>,
     command_allowlist_mouse_state_handles: Vec<MouseStateHandle>,
     command_denylist_mouse_state_handles: Vec<MouseStateHandle>,
+    command_denylist_tooltip_mouse_state_handles: Vec<MouseStateHandle>,
     directory_allowlist_mouse_state_handles: Vec<MouseStateHandle>,
     mcp_allowlist_dropdown: ViewHandle<FilterableDropdown<ExecutionProfileEditorViewAction>>,
     mcp_allowlist_mouse_state_handles: Vec<MouseStateHandle>,
@@ -628,6 +628,11 @@ impl ExecutionProfileEditorView {
             directory_allowlist_editor,
             command_allowlist_mouse_state_handles,
             command_denylist_mouse_state_handles,
+            command_denylist_tooltip_mouse_state_handles: profile_data
+                .command_denylist
+                .iter()
+                .map(|_| Default::default())
+                .collect(),
             directory_allowlist_mouse_state_handles,
             mcp_allowlist_dropdown,
             mcp_allowlist_mouse_state_handles,
@@ -803,6 +808,7 @@ impl ExecutionProfileEditorView {
         ctx.subscribe_to_model(&workspace, |me, workspace, event, ctx| {
             if let UserWorkspacesEvent::TeamsChanged = event {
                 Self::update_all_editor_interaction_states(me, workspace, ctx);
+                me.update_mouse_state_handles(ctx);
                 ctx.notify();
             }
         });
@@ -840,6 +846,12 @@ impl ExecutionProfileEditorView {
             .collect();
 
         self.command_denylist_mouse_state_handles = current_permissions
+            .command_denylist
+            .iter()
+            .map(|_| Default::default())
+            .collect();
+
+        self.command_denylist_tooltip_mouse_state_handles = current_permissions
             .command_denylist
             .iter()
             .map(|_| Default::default())
@@ -1276,7 +1288,7 @@ impl ExecutionProfileEditorView {
 
         Self::update_editor_interaction_state(
             view.command_denylist_editor.as_ref(ctx).editor().clone(),
-            is_any_ai_enabled && !ai_autonomy_settings.has_override_for_execute_commands_denylist(),
+            is_any_ai_enabled,
             ctx,
         );
 

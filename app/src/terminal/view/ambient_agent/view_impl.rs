@@ -192,6 +192,14 @@ impl TerminalView {
                 // Re-render to show loading state.
                 ctx.notify();
             }
+            AmbientAgentViewModelEvent::FollowupDispatched => {
+                self.update_active_ambient_agent_conversation_status(
+                    ConversationStatus::InProgress,
+                    None,
+                    ctx,
+                );
+                ctx.notify();
+            }
             AmbientAgentViewModelEvent::SessionReady { .. }
             | AmbientAgentViewModelEvent::FollowupSessionReady { .. } => {
                 // Auto-open details panel for local cloud mode once the session is ready.
