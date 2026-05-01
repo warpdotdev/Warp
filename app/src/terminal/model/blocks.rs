@@ -654,6 +654,7 @@ impl BlockList {
             pinned_to_bottom: None,
             is_executing_oz_environment_startup_commands: false,
             last_active_block_height: None,
+        }
     }
 
     /// Must be called before the model is used. Even if no blocks are to be restored,
@@ -1783,7 +1784,7 @@ impl BlockList {
             let mut cursor = self.block_heights.cursor::<BlockIndex, ()>();
             let next_index = block_index + BlockIndex(1);
             let mut tree_before_last_block = cursor.slice(&next_index, SeekBias::Left);
-            tree_before_last_block.push(BlockHeightItem::Block(block_height));
+            tree_before_last_block.push(BlockHeightItem::Block(BlockHeight(block_height)));
 
             // Advance the cursor past the current block and take the suffix to get all the items
             // after the active block.
@@ -2046,6 +2047,11 @@ impl BlockList {
     pub fn resize(&mut self, size_update: &SizeUpdate, update_old_blocks: bool) {
         let size = size_update.new_size;
         self.size = size;
+        // Invalidate the cached active block height on resize, since the
+        // viewport row count may have changed (affecting the
+        // CapActiveBlockHeight cap) and block heights may change due to
+        // reflow.
+        self.last_active_block_height = None;
         if size_update.rows_or_columns_changed() {
             self.clear_selection();
         }
