@@ -61,6 +61,7 @@ impl ThirdPartyHarness for GeminiHarness {
         _resume: Option<ResumePayload>,
         _resolved_env_vars: &HashMap<OsString, OsString>,
         _resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
+        _third_party_harness_model_id: Option<&str>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
         // Prepare the environment config files.
         prepare_gemini_environment_config(working_dir, system_prompt).map_err(|error| {

@@ -179,6 +179,7 @@ pub(crate) trait ThirdPartyHarness: Send + Sync {
         resume: Option<ResumePayload>,
         resolved_env_vars: &HashMap<OsString, OsString>,
         resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
+        third_party_harness_model_id: Option<&str>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError>;
 }
 
@@ -372,10 +373,10 @@ pub(crate) fn task_env_vars(
 /// Claude Code's `settings.json`.
 pub(crate) fn harness_model_env_vars(
     selected_harness: Harness,
-    harness_model_id: Option<&str>,
+    third_party_harness_model_id: Option<&str>,
 ) -> HashMap<OsString, OsString> {
     let mut env_vars = HashMap::new();
-    let Some(model_id) = harness_model_id.filter(|id| !id.is_empty()) else {
+    let Some(model_id) = third_party_harness_model_id.filter(|id| !id.is_empty()) else {
         return env_vars;
     };
 

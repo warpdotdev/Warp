@@ -103,6 +103,7 @@ impl ThirdPartyHarness for ClaudeHarness {
         resume: Option<ResumePayload>,
         resolved_env_vars: &HashMap<OsString, OsString>,
         resolved_mcp_servers: &HashMap<String, JSONMCPServer>,
+        _third_party_harness_model_id: Option<&str>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
         // Prepare the environment config files.
         prepare_claude_environment_config(working_dir, resolved_env_vars).map_err(|error| {
