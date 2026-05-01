@@ -161,12 +161,15 @@ Out of scope for this spec:
     - If the widget has a documented behavior Warp can replicate cheaply,
       Warp replicates it.
     - Otherwise the keystroke falls through to Warp's default handling for
-      that key, and Warp emits a one-time-per-session diagnostic naming the
-      unsupported widget and the key it was bound to. Telemetry records
-      unsupported-widget hits with the widget name verbatim only when the
-      name appears in the documented shell-vocabulary allowlist (the
-      well-known ZLE, readline, and fish input function names enumerated in
-      #10); user-defined or otherwise unknown widget names are reported as
+      that key, and Warp emits a one-time-per-session diagnostic noting
+      the unsupported widget. The diagnostic uses the same redaction
+      policy as telemetry: the widget name is included verbatim only if
+      it is in the documented shell-vocabulary allowlist (the well-known
+      ZLE/readline/fish input function names enumerated in #10);
+      user-defined or otherwise unknown names are written as
+      `user-defined`. The bound key sequence is not included in the
+      diagnostic. Telemetry records unsupported-widget hits under the
+      same rule; user-defined or otherwise unknown widget names are reported as
       the bucket `user-defined` with no further identifying information,
       since user-defined widget names can be arbitrary or private. Key
       contents, key sequences, and binding bodies are never recorded.

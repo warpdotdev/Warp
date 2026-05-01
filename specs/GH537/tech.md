@@ -198,8 +198,49 @@ one hash computation per prompt; the full payload is re-emitted only on
 real changes (new `bindkey`, mode switch via `bindkey -v`, sourcing a
 new rc file, plugin rebind). PRODUCT #26 holds because the work runs
 inside `warp_precmd` after the user's command output, asynchronously to
-keystrokes; PRODUCT #27 holds because the entire flow is DCS-only with
-no visible shell state mutation.
+keystrokes.
+
+**Preserving shell state during the hash step (PRODUCT #27).** The
+hash function runs as the very first action of `warp_precmd` and must
+leave shell-observable state untouched. The discipline:
+
+- **Last-status (`$?` / `$status`).** Save before any other
+  expression: zsh `local __warp_status=$?`, bash
+  `local __warp_status=$?`, fish `set -l __warp_status $status`. Any
+  value the user reads from `$?` later in their own `precmd` chain
+  sees the saved value, restored via `return $__warp_status` at the
+  end of the function (or `set -e status $__warp_status` in fish).
+- **Shell options.** No `set -o`, `setopt`, `shopt`, or
+  `set -gx fish_<option>` calls inside the hash path. The hash reads
+  bindings via `bindkey -L` / `bind -p` / `bind`, which are pure
+  reads.
+- **Keymap state.** No `bindkey -v` / `bindkey -e` / `set -o vi` /
+  `set fish_key_bindings ...` calls; the hash only reads. Specifically
+  for zsh, do not `bindkey -A` between maps, and do not change
+  `KEYMAP` (it is read as a value but never assigned).
+- **Variables.** All temporaries are `local`/`typeset -g
+  __warp_<name>` (zsh, bash) or `set -l __warp_<name>` (fish), with a
+  `__warp_` prefix to avoid collisions with user variables. The
+  shell-scoped `__warp_bindings_hash` tracker is the single
+  long-lived variable; it is created with `typeset -g`/`set -g`
+  exactly once on bootstrap entry.
+- **Pipelines.** The hash computation avoids subshells where
+  possible (subshells in zsh/bash inherit `$?` clobbering rules).
+  Where a subshell is unavoidable, `$?` is captured before the
+  subshell and restored after.
+- **Aliases.** All command invocations inside `warp_precmd` use
+  `\bindkey` / `command bind` / `builtin bind` form so user-defined
+  aliases or function shadowing of `bindkey` / `bind` cannot
+  interfere with the read or with state.
+- **Traps and DEBUG hooks.** zsh's `TRAPDEBUG` and bash's `trap …
+  DEBUG` are not modified. The hash function does not add or remove
+  any trap.
+
+A unit test under `crates/integration` runs each shell with a
+synthetic precmd chain that asserts every one of these invariants
+(`$?` round-trips an arbitrary value, every `set -o` flag is
+unchanged, `KEYMAP` is unchanged, no new shell variables outside the
+`__warp_` prefix exist after `warp_precmd` returns).
 
 ### 2. Shell-bindings storage on `Shell`
 
@@ -278,28 +319,52 @@ tabs, or PTYs. Shell bindings are therefore normalized into ordinary
 `Binding` instances at the terminal layer before they are handed to
 the matcher; the matcher itself stays unchanged at the type level.
 
-Concretely:
+The current `ContextPredicate` only takes `&'static str`
+identifiers/values (`crates/warpui_core/src/keymap/context.rs:10-17`),
+so a `TabIs(tab_id: u64)` predicate cannot be expressed without
+extending it — and we don't want to. Instead, tab scoping happens at
+the storage tier, not inside the predicate. The new API is:
 
-- `crates/warpui_core/src/keymap.rs` gains no new public types. The
-  existing `Keymap { fixed_bindings, editable_bindings }` is extended
-  internally with a third `Vec<Binding>` slot — call it
-  `contextual_bindings` — populated and cleared by the embedder via a
-  small `Keymap::set_contextual(scope_key, bindings)` API. Bindings in
-  this slot use the existing `ContextPredicate` to scope themselves to
-  a context the embedder defines (the embedder owns the meaning; the
-  matcher just evaluates the predicate).
-- The terminal layer (`app/src/terminal/keymap_bridge.rs`, new) owns
-  shell-binding state per tab. On a `ShellBindingsUpdated` event it:
-  1. Translates each `ShellBinding`'s widget into the appropriate
-     `InputAction` (or `Macro` injection / `Unsupported` sentinel) via
-     `shell/widget_dispatch.rs`.
-  2. Emits one `Binding` per honored shell binding, with a
-     `ContextPredicate::TabIs(tab_id)` predicate and a binding origin
-     tag (`BindingOrigin::Shell`) so it remains distinguishable for
-     the debug view (PRODUCT #25) and for precedence (the matcher's
-     existing fixed-vs-editable ordering, plus the new
-     `BindingOrigin::Shell` tier slotted between them).
-  3. Calls `Keymap::set_contextual(("shell", tab_id), bindings)`.
+```rust
+// crates/warpui_core/src/keymap.rs
+pub struct ScopeKey { pub category: &'static str, pub id: u64 }
+
+impl Keymap {
+    pub fn set_contextual(&mut self, scope: ScopeKey, bindings: Vec<Binding>);
+    pub fn clear_contextual(&mut self, scope: ScopeKey);
+    pub fn set_active_scopes(&mut self, scopes: SmallVec<[ScopeKey; 4]>);
+}
+```
+
+Internally `Keymap` stores `contextual: HashMap<ScopeKey, Vec<Binding>>`
+plus `active_scopes: SmallVec<[ScopeKey; 4]>`. The matcher iterates
+only over bindings in `active_scopes`, in priority order, alongside
+the existing fixed/editable tiers. `Binding`s themselves keep using
+the existing `ContextPredicate` for any further conditional matching
+within a scope (e.g. "only when the input editor is focused"); they
+don't need to know about tabs.
+
+The terminal layer (`app/src/terminal/keymap_bridge.rs`, new) owns
+shell-binding state per tab and writes through this API:
+
+1. On `ShellBindingsUpdated(tab_id, bindings)`, translates each
+   `ShellBinding`'s widget into an `InputAction` (or `Macro` injection
+   / `Unsupported` sentinel) via `shell/widget_dispatch.rs`, then
+   builds `Vec<Binding>` with `BindingOrigin::Shell` tags and a
+   regular `ContextPredicate` matching "input editor focused".
+2. Calls `keymap.set_contextual(ScopeKey { category: "shell", id:
+   tab_id }, bindings)`.
+3. On tab focus change, calls `keymap.set_active_scopes(...)` with
+   the focused tab's shell scope (plus any other always-active
+   scopes).
+4. On tab close, calls `keymap.clear_contextual(...)`.
+
+`BindingOrigin::Shell` is a tag carried on each `Binding` so the
+debug view (PRODUCT #25) and precedence ordering can distinguish it
+from `Fixed` and `Editable` origins. The matcher applies the
+PRODUCT #14 ordering by walking bindings in
+editable-first → shell-second → fixed-last order within each scope's
+candidate set.
 
 This keeps `warpui_core` free of any shell concept and confines the
 new types (`ShellBinding`, `ShellWidget`, `BindingOrigin::Shell`) to
@@ -308,28 +373,51 @@ is enforced by the predicate evaluation order plus the origin tag,
 not by a new tier-typed Vec.
 
 Effective resolution order for a keystroke in the active tab
-(PRODUCT #14, enforced by predicate + origin-tag ordering, not by
-separate Vecs):
+(PRODUCT #14, enforced by origin-tag ordering within
+`active_scopes`):
 
 1. Reserved infrastructure keys for the tab's shell.
-2. `editable_bindings` (user Warp overrides) whose context matches.
-3. Bindings from `set_contextual(("shell", current_tab_id), …)` —
-   tagged `BindingOrigin::Shell`, scoped to this tab via the
-   predicate.
-4. `fixed_bindings` (Warp defaults).
+2. Bindings tagged `BindingOrigin::Editable` (user Warp overrides)
+   whose context predicate matches.
+3. Bindings tagged `BindingOrigin::Shell` from the active tab's
+   contextual scope.
+4. Bindings tagged `BindingOrigin::Fixed` (Warp defaults).
 
-The terminal layer's per-tab store is the source of truth for what is
-currently in the contextual slot. `ShellBindingsUpdated` writes
-through it and into `Keymap::set_contextual`; tab close calls
-`set_contextual(("shell", tab_id), &[])` to clear. Multi-tab
-independence (PRODUCT #5, #17) falls out of `TabIs(tab_id)` predicates
-naturally — switching tabs does not require swapping anything; the
-matcher just resolves predicates against the new active tab.
+Multi-tab independence (PRODUCT #5, #17) falls out of scope-keyed
+storage. The terminal layer maintains active-scope membership in
+sync with focus.
 
-Mid-sequence handling for multi-key bindings (`^X^E`, `gg`) reuses the
-existing `Matcher::match_keystrokes` prefix logic — the shell bindings
-participate in the same sequence machine, so PRODUCT #8 needs no
-special case.
+**Multi-key prefix handling (PRODUCT #8) requires a matcher API
+change.** The current `Matcher::match_keystrokes` returns `None` and
+clears its pending state on a mismatch
+(`crates/warpui_core/src/keymap/matcher.rs:258`+); buffered prefix
+keys are dropped silently. PRODUCT #8 demands the readline / ZLE
+behavior of replaying buffered keys when a multi-key sequence is
+abandoned by a non-matching keystroke. Concrete change:
+
+- The matcher's per-call return type becomes:
+
+  ```rust
+  pub enum MatchOutcome<'a> {
+      Match(&'a Binding),
+      Pending,                       // prefix matched, awaiting more
+      AbandonedPrefix(SmallVec<[Keystroke; 4]>, Keystroke),
+                                     // prefix did not extend; replay
+                                     // these keys then handle the
+                                     // current key normally
+  }
+  ```
+- The dispatcher handles `AbandonedPrefix` by feeding each replayed
+  keystroke through the matcher with pending state cleared, then
+  feeding the current keystroke last. Any of those replayed keys may
+  themselves trigger a (single-key) binding; the new prefix
+  accumulator is empty until something matches a multi-key prefix
+  again.
+- The change is internal to `warpui_core`. Callers that don't care
+  about the new variant (every existing keymap) use a thin helper
+  `match_or_replay()` that flattens `AbandonedPrefix` back into the
+  old "single key, no match, drop pending" semantics — preserving
+  current behavior for surfaces that don't want replay.
 
 ### 5. Settings, feature flag, debug surface
 
