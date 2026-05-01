@@ -74,20 +74,85 @@ bindings are available when the user starts typing.
 - `bundled/bootstrap/bash.sh`: `bind -p` for the current keymap and
   `bind -p -m emacs / vi-insert / vi-command` for the others. Detect vi
   vs emacs via `set -o | grep -E '^(vi|emacs)'`.
-- `bundled/bootstrap/fish.sh`: `bind` (default mode), `bind -M insert`,
-  `bind -M default`, `bind -M visual`. Track `$fish_bind_mode`.
+- `bundled/bootstrap/fish.sh`: this requires reworking the existing
+  bootstrap, which currently sets
+  `fish_key_bindings = fish_default_key_bindings` (line 306) and then
+  installs four Warp-required binds (`\cP`, `\ep`, `\ew`, `\ei`) on
+  top — clobbering any user `fish_vi_key_bindings` setting and any
+  user-installed binds. To honor user fish bindings without losing
+  Warp's required reporting binds, we change the bootstrap to:
+
+  1. Capture the user's `fish_key_bindings` value at the very top of
+     the bootstrap, and stop the unconditional reset at line 306. The
+     user's chosen scheme runs as configured.
+  2. After the user's scheme runs, install Warp's four reserved binds
+     (`\cP`, `\ep`, `\ew`, `\ei`) explicitly in every bind mode the
+     user uses (default, insert, visual for vi mode; default for
+     emacs; plus any custom modes discovered via `bind -L`). Those
+     four keys are reserved for Warp and intentionally shadow user
+     bindings on them — the explicit precedence boundary from
+     PRODUCT #14.
+  3. Snapshot the resulting `bind` output per mode and emit it as the
+     `ShellBindings` payload. The vi-mode-vs-input-reporting conflict
+     that originally motivated the reset is resolved here because the
+     reporting bind is reinstalled in whichever mode is active, instead
+     of the scheme being reset wholesale.
+
+  Mode tracking uses `$fish_bind_mode` for the initial snapshot and
+  the in-app vi state machine described in the open-questions section
+  for transitions.
 
 The payload is emitted as a new `DProtoHook::ShellBindings` variant in
-`dcs_hooks.rs` carrying `{ shell, keymaps: Vec<KeymapTable>, active_keymap,
-schema_version }`. Reuse `HEX_ENCODED_JSON_MARKER`.
+`dcs_hooks.rs` carrying `{ shell, keymaps: Vec<KeymapTable>,
+active_keymap, schema_version, nonce }`. Reuse `HEX_ENCODED_JSON_MARKER`.
 
-Re-queries: extend the existing `Precmd` hook (already fired every
-prompt) to include a 64-bit hash of the current binding table. The app
-caches the last-seen hash per tab; on mismatch it asks the bootstrap
-script to re-emit a full `ShellBindings` payload (via a small helper
-function in the bootstrap script, triggered by an env-var flag). This
-keeps steady-state cost to one hash computation per prompt while
-correctly handling dynamic rebinds.
+The `ShellBindings` payload is a privileged terminal-control message
+(it can rewrite local key handling) and is only accepted from the
+bootstrap context:
+
+- Each Warp-spawned shell receives a per-session, per-tab nonce in its
+  environment (`WARP_BOOTSTRAP_NONCE`, generated when the tab spawns
+  and not exported beyond it). The bootstrap embeds this nonce in
+  every `ShellBindings` and `Precmd` payload it emits. The app-side
+  handler rejects any payload whose nonce does not match the expected
+  value for that tab — `cat`'d files, curl responses, and other
+  process output that happens to contain a DCS sequence cannot spoof
+  bindings because they cannot read the nonce.
+- Payloads exceeding a fixed total size cap (256 KiB across all
+  keymaps combined) are rejected and logged. Individual binding
+  entries exceeding a per-key cap (4 KiB) are dropped from the
+  payload before parsing.
+- Schema validation is strict: any field type mismatch, unknown
+  `schema_version`, or malformed Keystroke string causes the entire
+  payload to be discarded — partial application is never attempted.
+- The same nonce check applies to the binding-hash field on the
+  existing `Precmd` hook; an unsigned or mismatched hash leaves the
+  previous binding table in place.
+
+### Re-query mechanism
+
+Re-queries are driven entirely shell-side; the app never has to mutate
+shell state to trigger a re-emit (which the running shell can't observe
+anyway — flipping an env var from outside has no effect on the live
+session). The bootstrap script keeps a shell-scoped variable
+`__warp_bindings_hash` initialized at startup to the hash emitted
+alongside the first `ShellBindings` payload. On every `precmd` the
+script:
+
+1. Recomputes the 64-bit hash of the current binding table.
+2. Emits the hash in the `Precmd` DCS payload (informational; the app
+   uses it for telemetry and to detect mid-session resyncs).
+3. If the new hash differs from `__warp_bindings_hash`, emits a fresh
+   `ShellBindings` payload with the full table and updates
+   `__warp_bindings_hash` to the new value.
+
+The app-side handler simply consumes whatever arrives. Steady state is
+one hash computation per prompt; the full payload is re-emitted only on
+real changes (new `bindkey`, mode switch via `bindkey -v`, sourcing a
+new rc file, plugin rebind). PRODUCT #26 holds because the work runs
+inside `warp_precmd` after the user's command output, asynchronously to
+keystrokes; PRODUCT #27 holds because the entire flow is DCS-only with
+no visible shell state mutation.
 
 ### 2. Shell-bindings storage on `Shell`
 
@@ -191,8 +256,15 @@ special case.
   `app/src/server/telemetry/events.rs`:
   - `HonorShellBindkeysToggled { enabled: bool }`
   - `ShellBindkeysQueryFailed { shell_type, reason }`
-  - `UnsupportedShellBindkeyWidget { shell_type, widget_name }` — name
-    only, never key contents.
+  - `UnsupportedShellBindkeyWidget { shell_type, widget_name }` — the
+    `widget_name` field is sent verbatim only when it appears in the
+    shell-vocabulary allowlist (the well-known ZLE/readline/fish
+    widget names enumerated in PRODUCT #10). Names outside the
+    allowlist (user-defined functions, plugin-private widgets) are
+    redacted to the literal string `user-defined`. Key contents and
+    binding bodies are never sent. The allowlist lives in
+    `crates/warp_terminal/src/shell/bindings.rs` so it is the same
+    source of truth used by the parser.
   - `ShellBindkeysApplied { shell_type, honored_count,
     unsupported_count }` once per tab on first apply.
 
@@ -202,11 +274,33 @@ special case.
   falls through. Forwarding the keystroke to the shell so it can run
   the widget is feasible (write the key on the PTY) but introduces
   ordering hazards with Warp's input editor; deferred.
-- **#13 (vi-mode signal)** — zsh: `Precmd` payload includes
-  `$KEYMAP`. bash: `Precmd` includes the result of
-  `bind -v | grep editing-mode`. fish: `Precmd` includes
-  `$fish_bind_mode`. All three read cheaply on every prompt; no
-  separate hook needed.
+- **#13 (vi-mode signal)** — vi mode is tracked by an in-app state
+  machine, not by polling the shell. Reading the shell's mode only at
+  `precmd` would miss every transition that fires inside the input
+  editor (Esc → command, `i` → insert, `v` → visual, etc.) because no
+  prompt hook runs between those keystrokes. Concretely:
+
+  - `active_keymap: KeymapMode` lives on each tab's `Shell` struct
+    (see Proposed Changes #2).
+  - **Initial state and resync** come from the shell. The bootstrap
+    payload includes the current mode (zsh `$KEYMAP`, bash
+    `bind -v | grep editing-mode`, fish `$fish_bind_mode`); each
+    `Precmd` payload also includes the mode and is treated as
+    authoritative — if it disagrees with the in-app state, the
+    in-app state is corrected to the shell's value, since the shell
+    just observed whichever sequence of widgets actually executed.
+  - **Transitions between prompts** are driven by the dispatched
+    widget. The widget dispatcher maintains a small transition table:
+    `vi-cmd-mode` / Esc → `ViCommand`, `vi-insert` /
+    `vi-add-next` / `vi-add-eol` / `vi-substitute` /
+    `vi-change-whole-line` → `ViInsert`, `vi-replace` → `ViReplace`,
+    `vi-visual` → `ViVisual`, `accept-line` → reset to shell-reported
+    mode at next prompt. The dispatcher updates `active_keymap`
+    synchronously *before* the next keystroke is matched, so the
+    next keystroke resolves against the new keymap.
+  - This is the only feasible model: any per-keystroke shell roundtrip
+    would require an invisible-exec primitive (we don't have one) or
+    block on the PTY (violates PRODUCT #26).
 - **#22 (AI prompt input)** — v1: not honored. The matcher's tab-scoped
   `shell_bindings` tier only activates on tabs whose focus is the shell
   command input editor, not on the AI prompt input.
@@ -228,9 +322,14 @@ special case.
 - **Widget coverage gaps.** Many widgets have no Warp equivalent
   initially. The `Unsupported(name)` fallthrough plus telemetry on
   hit count tells us which to prioritize.
-- **Privacy.** Telemetry never includes key contents or widget bodies;
-  only widget names (which are well-known shell vocabulary) and
-  counts.
+- **Privacy.** Telemetry never includes key contents or widget bodies.
+  Widget names are sent verbatim only when in the shell-vocabulary
+  allowlist; user-defined or otherwise unknown names are redacted to
+  the bucket `user-defined` (see Proposed changes #5).
+- **DCS spoofing.** Arbitrary process output containing a DCS sequence
+  could otherwise rewrite local key handling. Mitigated by the per-tab
+  nonce gate, size cap, and strict schema validation described in
+  Proposed changes #1.
 - **Bootstrap parsing fragility.** `bindkey -L`, `bind -p`, and fish
   `bind` outputs are stable but quoting differs. Each parser has a
   property-test fixture set covering edge cases (escapes, multi-byte,

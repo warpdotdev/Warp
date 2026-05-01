@@ -108,11 +108,16 @@ Out of scope for this spec:
    handles all the buffered keys as it would have without the binding —
    matching readline / ZLE behavior).
 
-9. `self-insert` and "insert literal string" bindings (e.g. zsh
-   `bindkey -s '^X' 'echo hi\n'`) insert the literal text into the input
-   buffer at the cursor, exactly as the equivalent shell would. Newlines in
-   the inserted string are treated as literal newlines in the input buffer
-   unless the binding is `accept-line` or equivalent.
+9. "Insert literal string" bindings (e.g. zsh `bindkey -s '^X' 'echo hi\n'`,
+   readline `"\C-x": "echo hi\n"`) inject the bound text into the input
+   stream as if the user had typed each character — matching shell
+   input-queue semantics, not literal text insertion. A newline in the
+   bound string therefore submits the line (it triggers `accept-line`),
+   `^A` moves the cursor to the start, and so on. The injected
+   characters are processed through the same key-resolution chain as
+   real keystrokes, including any other bindings they happen to trigger.
+   Plain `self-insert` (no string macro) inserts the literal key
+   character at the cursor as expected.
 
 10. The full set of widgets / functions whose semantics Warp must honor when
     bound includes, at minimum:
@@ -153,9 +158,14 @@ Out of scope for this spec:
       Warp replicates it.
     - Otherwise the keystroke falls through to Warp's default handling for
       that key, and Warp emits a one-time-per-session diagnostic naming the
-      unsupported widget and the key it was bound to. Telemetry records the
-      unsupported widget name (no key contents) so Warp can prioritize
-      coverage.
+      unsupported widget and the key it was bound to. Telemetry records
+      unsupported-widget hits with the widget name verbatim only when the
+      name appears in the documented shell-vocabulary allowlist (the
+      well-known ZLE, readline, and fish input function names enumerated in
+      #10); user-defined or otherwise unknown widget names are reported as
+      the bucket `user-defined` with no further identifying information,
+      since user-defined widget names can be arbitrary or private. Key
+      contents, key sequences, and binding bodies are never recorded.
     - **Open question:** for user-defined shell-function widgets (e.g. zsh
       `zle -N my-widget; bindkey '^X' my-widget`), v1 treats these as
       unsupported. A future iteration could forward the keystroke to the
@@ -307,6 +317,5 @@ tech spec must resolve:
 - Canonical signal for vi-mode transitions across zsh, bash, and fish (#13).
 - AI prompt input opt-in for shell bindings (#22).
 - Default-on vs feature-flagged staged rollout (#23).
-- Telemetry events for unsupported widgets, query failures, and toggle
-  usage — confirm what we can / want to record under existing privacy
-  rules.
+- (Resolved) Telemetry redaction policy for widget names — see #11; the
+  rule is allowlist-or-bucket, never raw user-defined names.
