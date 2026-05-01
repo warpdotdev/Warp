@@ -751,7 +751,7 @@ fn render_command_denylist_section(
 ) -> Box<dyn Element> {
     use crate::ai::blocklist::BlocklistAIPermissions;
 
-    let ai_disabled = !AISettings::as_ref(app).is_command_denylist_editable(app);
+    let ai_disabled = !AISettings::as_ref(app).is_any_ai_enabled(app);
     let org_denylist = BlocklistAIPermissions::get_org_execute_commands_denylist(app);
     let mut tooltip_idx = 0usize;
 
