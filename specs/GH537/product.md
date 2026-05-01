@@ -197,16 +197,32 @@ Out of scope for this spec:
 
 14. Resolution order for a single keystroke in the shell command input
     editor, highest priority first:
-    1. User-customized Warp keybindings (anything the user has explicitly
+    1. Reserved infrastructure keys (see below).
+    2. User-customized Warp keybindings (anything the user has explicitly
        set in Warp settings).
-    2. User shell bindkeys for the active keymap.
-    3. Warp's default keybindings.
-    4. Default character insertion.
+    3. User shell bindkeys for the active keymap.
+    4. Warp's default keybindings.
+    5. Default character insertion.
 
     Rationale: a key the user has explicitly bound in Warp settings is the
     strongest signal of intent. Below that, the user's shell bindings
     override Warp's defaults — that is the entire point of this issue. Warp
     defaults are the floor.
+
+    **Reserved infrastructure keys (fish only).** Fish ships shell
+    integration with Warp via `bind` (rather than via process-level
+    hooks like zsh's `precmd` or bash's `PROMPT_COMMAND`), so a small
+    set of keys is structurally needed for Warp ↔ shell communication
+    and cannot be honored as user-controlled in v1: `\cP` (clear input
+    buffer), `\ep` (switch to PS1 prompt), `\ew` (switch to Warp
+    prompt), and `\ei` (input reporting). User fish bindings on these
+    four keys are noted in the imported binding table as
+    `reserved-by-warp` and will not fire; bindings on every other key
+    follow the regular precedence. zsh and bash do not have any
+    equivalent reserved keys because their integration uses event
+    hooks. Lifting this fish-specific exception is a follow-up
+    (re-implement Warp's fish integration without bind-level
+    interception).
 
 15. When a user shell binding shadows a Warp default, no warning, banner, or
     toast appears. The user already declared this binding in their shell
@@ -273,9 +289,14 @@ Out of scope for this spec:
       release? Tech spec / release plan to decide.
 
 24. A single setting "Honor shell keybindings in input editor" lives under
-    the Keybindings section of settings. Toggling it off restores Warp's
-    default keymap for all tabs immediately (no restart). Toggling it back
-    on re-queries each tab's shell.
+    the Keybindings section of settings. Toggling it off immediately
+    restores Warp's default keymap for all tabs (no restart). Toggling
+    it back on resumes matching against each tab's most recently
+    received binding table; any drift since the toggle was off is
+    picked up on the tab's next `precmd` payload, since re-queries are
+    shell-driven (see TECH.md §1). Users who want a fresh re-import
+    without waiting for the next prompt can press Enter on an empty
+    line, which fires `precmd` immediately.
 
 25. The Keybindings settings page surfaces, somewhere reachable, a
     read-only view of the bindings Warp has imported for the active tab —

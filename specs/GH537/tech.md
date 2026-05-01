@@ -67,10 +67,16 @@ adding a runtime invisible-exec primitive) avoids polluting history,
 scrollback, and last-status; it also runs before the first prompt so
 bindings are available when the user starts typing.
 
-- `bundled/bootstrap/zsh.sh`: for each keymap (`main emacs viins vicmd
-  vivis viopp command isearch menuselect`), run `bindkey -L -M
-  $keymap` and emit a JSON object `{ keymap: [ { keys, widget }, … ] }`.
-  Also emit `KEYMAP` so the active keymap is known.
+- `bundled/bootstrap/zsh.sh`: discover keymaps dynamically with
+  `bindkey -l` (this enumerates the standard set — `main`, `emacs`,
+  `viins`, `vicmd`, `vivis`, `viopp`, `command`, `isearch`,
+  `menuselect` — and any user-defined keymaps created via
+  `bindkey -N <name>`), then run `bindkey -L -M $keymap` per keymap and
+  emit a JSON object `{ keymap_name: [ { keys, widget }, … ] }`. Also
+  emit `KEYMAP` so the active keymap is known. User-defined keymaps
+  pass through with their declared name; the matcher honors them when
+  they are referenced as the active keymap (resolves PRODUCT #2's
+  reference to "user-defined keymaps").
 - `bundled/bootstrap/bash.sh`: `bind -p` for the current keymap and
   `bind -p -m emacs / vi-insert / vi-command` for the others. Detect vi
   vs emacs via `set -o | grep -E '^(vi|emacs)'`.
@@ -111,13 +117,39 @@ The `ShellBindings` payload is a privileged terminal-control message
 bootstrap context:
 
 - Each Warp-spawned shell receives a per-session, per-tab nonce in its
-  environment (`WARP_BOOTSTRAP_NONCE`, generated when the tab spawns
-  and not exported beyond it). The bootstrap embeds this nonce in
-  every `ShellBindings` and `Precmd` payload it emits. The app-side
-  handler rejects any payload whose nonce does not match the expected
-  value for that tab — `cat`'d files, curl responses, and other
-  process output that happens to contain a DCS sequence cannot spoof
-  bindings because they cannot read the nonce.
+  initial environment (`WARP_BOOTSTRAP_NONCE`). The very first action in
+  the bootstrap script is to copy this value into a non-exported,
+  shell-local variable (`typeset -g` in zsh, plain assignment in bash
+  with `export -n`, `set -l` plus careful scoping in fish), then
+  `unset WARP_BOOTSTRAP_NONCE` and remove it from the inherited
+  environment so it is not visible to any descendant process. Every
+  `ShellBindings` and `Precmd` payload the bootstrap emits embeds this
+  value. The app rejects any payload whose nonce does not match the
+  expected value for that tab.
+
+  **Threat model** (documented explicitly so the limits are not
+  oversold). The nonce defends against:
+  - Innocent process output that happens to contain a DCS sequence
+    (`cat`'d binary file, curl response, log dump, terminal-art).
+  - Descendants of the user's shell that did not exist at bootstrap
+    time and never had the chance to read the nonce.
+
+  It does **not** defend against:
+  - A process spawned during the narrow window between the shell
+    starting and the bootstrap unsetting the variable. We minimize
+    this window by making the unset the first non-trivial line of the
+    bootstrap, before any user rc file is sourced.
+  - A same-user process that already has read access to the parent
+    shell's environment (`/proc/<pid>/environ` on Linux,
+    `procfs`/`ps eww` on macOS — both gated by same-uid). Such a
+    process can already inject keystrokes through `TIOCSTI` (where
+    enabled), modify rc files, or attach via debugger; defending the
+    DCS channel against this attacker offers no marginal security.
+  - A privileged adversary; out of scope for any user-mode mitigation.
+
+  This trust boundary is the same one Warp's existing shell-integration
+  hooks already implicitly rely on. The nonce makes that boundary
+  explicit and raises the bar above pure-output spoofing.
 - Payloads exceeding a fixed total size cap (256 KiB across all
   keymaps combined) are rejected and logged. Individual binding
   entries exceeding a per-key cap (4 KiB) are dropped from the
@@ -200,11 +232,29 @@ because the buffer already supports the underlying mutations
 (word-aware cursor motion, kill-ring) — they just lack public action
 entry points.
 
-A widget→`InputAction` map (`shell/widget_dispatch.rs`) is the bridge:
-honored widgets dispatch the matching `InputAction`,
-`SelfInsert(string)` writes the literal string to the buffer at the
-cursor, `Unsupported(name)` returns a sentinel that tells the matcher
-to fall through (PRODUCT #11, #16).
+A widget→`InputAction` map (`shell/widget_dispatch.rs`) is the bridge.
+Honored widgets dispatch the matching `InputAction`. The widget enum
+distinguishes:
+
+- `SelfInsert` (no payload) — the dispatched key character is inserted
+  literally at the cursor. This is the trivial `bindkey -e` /
+  `bind self-insert` case, plus any binding that evaluates to a single
+  printable keystroke.
+- `Macro(String)` — the bound text is fed back through the input
+  pipeline one keystroke at a time, exactly as if the user had typed
+  each character. The injected stream goes through the same
+  key-resolution chain as real input (PRODUCT #9): a newline therefore
+  triggers `accept-line` and submits the command, `^A` triggers
+  `beginning-of-line`, and so on. This is the path for zsh
+  `bindkey -s '^X' 'echo hi\n'`, readline `"\C-x": "echo hi\n"`, and
+  fish string-bind macros. Macro re-injection is bounded (a small
+  per-macro-character limit prevents bind-cycle infinite loops; the
+  input pipeline rejects further macro expansion once the limit is
+  reached and emits a diagnostic).
+- `Action(InputAction)` — every other widget. The dispatcher fires the
+  mapped `InputAction` directly.
+- `Unsupported(name)` — returns a sentinel that tells the matcher to
+  fall through (PRODUCT #11, #16).
 
 ### 4. Keymap matcher integration
 
@@ -243,7 +293,13 @@ special case.
   `define_settings_group!`: `honor_shell_bindkeys` (default `true`)
   with `toml_path: "terminal.input.honor_shell_bindkeys"`. The matcher
   short-circuits the `shell_bindings` tier when this is off (PRODUCT
-  #24).
+  #24). Because re-queries are shell-side (bootstrap + `precmd`
+  driven), turning the toggle back on does not actively re-query — it
+  resumes matching against the most recent table the bootstrap emitted,
+  and any change since then will arrive on the next `precmd`. PRODUCT
+  #24 is updated to reflect this (toggling off restores defaults
+  immediately; toggling on resumes from the cached table and picks up
+  changes on the next prompt).
 - New `FeatureFlag::HonorShellBindkeys` in
   `crates/warp_features/src/lib.rs` so we can stage rollout
   (default off → dogfood → preview → stable). Resolves PRODUCT
