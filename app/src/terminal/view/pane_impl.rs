@@ -5,6 +5,7 @@ use super::{Event, PaneConfiguration, TerminalAction, TerminalViewState, Viewer}
 use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
 use crate::ai::blocklist::agent_view::agent_view_bg_fill;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_navigation_card;
+use crate::ai::blocklist::agent_view::render_orchestration_breadcrumbs;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
@@ -16,6 +17,7 @@ use crate::pane_group::pane::view::header::components::{
     header_edge_min_width, render_pane_header_buttons, render_pane_header_title_text,
     render_three_column_header, CenteredHeaderEdgeWidth,
 };
+use crate::pane_group::pane::view::header::PANE_HEADER_HEIGHT;
 use crate::pane_group::pane::PaneStack;
 use crate::pane_group::{pane::view, pane::view::PaneHeaderAction, BackingView, SplitPaneState};
 use crate::settings::app_installation_detection::{
@@ -193,7 +195,7 @@ impl TerminalView {
         // In cloud mode, we want to preserve the shared session sharing dialog even after the shared session has ended.
         // We need this to be able to view and change permissions on a cloud mode shared session that failed before
         // any conversation started, to view cloud mode sessions that failed during setup.
-        let is_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_ambient_agent = self.is_ambient_agent_session(ctx);
         if !is_ambient_agent {
             let shareable_object = self.agent_view_shareable_object(ctx);
             self.pane_configuration.update(ctx, |pane_config, ctx| {
@@ -238,11 +240,10 @@ impl TerminalView {
             .and_then(|h| h.upgrade(app))
             .is_some_and(|stack| stack.as_ref(app).depth() > 1);
 
-        let ambient_agent_view = self.ambient_agent_view_model.as_ref(app);
         let is_transcript_viewer = self.model.lock().is_conversation_transcript_viewer();
-        let has_parent_terminal = (ambient_agent_view.is_ambient_agent()
-            && ambient_agent_view.has_parent_terminal())
-            || (!ambient_agent_view.is_ambient_agent() && !is_transcript_viewer);
+        let is_ambient_agent = self.is_ambient_agent_session(app);
+        let has_parent_terminal = (is_ambient_agent && self.is_nested_cloud_mode(app))
+            || (!is_ambient_agent && !is_transcript_viewer);
         let is_fullscreen_agent_view = self.agent_view_controller.as_ref(app).is_fullscreen();
 
         if in_nav_stack || (is_fullscreen_agent_view && has_parent_terminal) {
@@ -270,6 +271,27 @@ impl TerminalView {
         header_ctx: &view::HeaderRenderContext,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        // When viewing a child agent under an orchestrator, replace the
+        // regular conversation title with a breadcrumb path: [Parent] / [Child].
+        // Clicking the parent crumb navigates the current pane back to the
+        // orchestrator (which then shows the pill bar again).
+        //
+        // Return the breadcrumbs element directly. `render_three_column_header`
+        // wraps the title in `Shrinkable + Clipped` which gives the inner
+        // breadcrumbs Flex (whose crumbs are themselves Shrinkable) a finite
+        // main-axis constraint. Wrapping it in our own `MainAxisSize::Min`
+        // Flex here would forward an infinite constraint and panic.
+        // Pass our persistent `parent_conversation_header_link` mouse state
+        // to the breadcrumb's parent crumb so hover and click events work
+        // (a fresh `MouseStateHandle::default()` per render would not).
+        if let Some(breadcrumbs) = render_orchestration_breadcrumbs(
+            self.agent_view_controller.as_ref(app),
+            self.mouse_states.parent_conversation_header_link.clone(),
+            app,
+        ) {
+            return breadcrumbs;
+        }
+
         let appearance = Appearance::as_ref(app);
         let pane_config = self.pane_configuration.as_ref(app);
         let title = pane_config.title().to_owned();
@@ -393,10 +415,11 @@ impl TerminalView {
         let mut icon_button_count: u32 = 0;
 
         if FeatureFlag::CloudMode.is_enabled() {
-            let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
-            let button_element = if ambient_agent_model.is_ambient_agent()
-                && ambient_agent_model.is_waiting_for_session()
-            {
+            let is_waiting_for_session = self
+                .ambient_agent_view_model
+                .as_ref()
+                .is_some_and(|model| model.as_ref(app).is_waiting_for_session());
+            let button_element = if is_waiting_for_session {
                 Some(self.render_ambient_agent_cancel_button(app))
             } else if self.can_show_cloud_mode_details_ui(app) {
                 #[cfg(not(target_arch = "wasm32"))]
@@ -480,7 +503,36 @@ impl TerminalView {
         &self,
         header: Box<dyn Element>,
         parent_conversation_header_card: Option<Box<dyn Element>>,
+        app: &AppContext,
     ) -> Box<dyn Element> {
+        // When `OrchestrationPillBar` is on, the pill bar takes the place of the
+        // parent navigation card (the parent pill is the "back to parent" link)
+        // and is shown for the orchestrator and all its children.
+        if FeatureFlag::OrchestrationPillBar.is_enabled()
+            && FeatureFlag::AgentView.is_enabled()
+            && self.agent_view_controller.as_ref(app).is_fullscreen()
+        {
+            // The wrapping `Flex::column` would otherwise pass an infinite
+            // vertical max constraint down to its non-flex children. That
+            // breaks the title's vertical centering: with infinite max.y,
+            // the centered `Align` inside `render_three_column_header`
+            // collapses to the title's own (small) line-box height, and
+            // the outer row's `CrossAxisAlignment::Stretch` then pins the
+            // title to the top of the row. Pinning the header to its
+            // standard `PANE_HEADER_HEIGHT` here restores the finite
+            // vertical constraint the centering logic relies on, while
+            // letting the pill bar sit immediately below at its own height.
+            let pinned_header = ConstrainedBox::new(header)
+                .with_height(PANE_HEADER_HEIGHT)
+                .finish();
+            let pill_bar = ChildView::new(&self.orchestration_pill_bar).finish();
+            return Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_child(pinned_header)
+                .with_child(pill_bar)
+                .finish();
+        }
+
         if !FeatureFlag::Orchestration.is_enabled() {
             return header;
         }
@@ -527,7 +579,8 @@ impl TerminalView {
             header_ctx.header_left_inset,
             header_ctx.draggable_state.is_dragging(),
         );
-        let header = self.maybe_add_parent_navigation_card(header, parent_conversation_header_card);
+        let header =
+            self.maybe_add_parent_navigation_card(header, parent_conversation_header_card, app);
 
         if is_fullscreen_agent_view {
             Container::new(header)
@@ -586,8 +639,7 @@ impl BackingView for TerminalView {
 
         // Shared-session related items.
         let shared_session_status = model.shared_session_status();
-        let is_ambient_agent = FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
+        let is_ambient_agent = self.is_ambient_agent_session(ctx);
         if shared_session_status.is_sharer_or_viewer() {
             if !is_ambient_agent {
                 items.push(
@@ -779,8 +831,7 @@ impl TerminalView {
         let theme = appearance.theme();
 
         // Check if we're configuring or waiting on an ambient agent
-        let is_ambient_agent = FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(app).is_ambient_agent();
+        let is_ambient_agent = self.is_ambient_agent_session(app);
 
         // When a long-running command is active, show InProgress
         // instead of the conversation's actual status.
@@ -940,7 +991,10 @@ impl TerminalView {
 
     pub fn is_ambient_agent_session(&self, ctx: &AppContext) -> bool {
         FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+            && self
+                .ambient_agent_view_model
+                .as_ref()
+                .is_some_and(|model| model.as_ref(ctx).is_ambient_agent())
     }
 
     fn selected_conversation_for_user_facing_chrome<'a>(

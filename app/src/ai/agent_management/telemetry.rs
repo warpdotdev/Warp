@@ -111,6 +111,9 @@ pub enum AgentManagementTelemetryEvent {
     /// User clicked "Continue locally" in the details panel
     #[cfg(not(target_family = "wasm"))]
     DetailsPanelContinueLocally,
+    /// User invoked the /continue-locally slash command
+    #[cfg(not(target_family = "wasm"))]
+    SlashCommandContinueLocally,
     /// User clicked "Open in Warp" in the tombstone (wasm)
     #[cfg(target_family = "wasm")]
     TombstoneOpenInWarp,
@@ -192,6 +195,8 @@ impl TelemetryEvent for AgentManagementTelemetryEvent {
             AgentManagementTelemetryEvent::TombstoneContinueLocally => None,
             #[cfg(not(target_family = "wasm"))]
             AgentManagementTelemetryEvent::DetailsPanelContinueLocally => None,
+            #[cfg(not(target_family = "wasm"))]
+            AgentManagementTelemetryEvent::SlashCommandContinueLocally => None,
             #[cfg(target_family = "wasm")]
             AgentManagementTelemetryEvent::TombstoneOpenInWarp => None,
             AgentManagementTelemetryEvent::CloudRunCancelled { task_id } => {
@@ -244,6 +249,8 @@ impl TelemetryEventDesc for AgentManagementTelemetryEventDiscriminants {
             Self::TombstoneContinueLocally => "AgentManagement.TombstoneContinueLocally",
             #[cfg(not(target_family = "wasm"))]
             Self::DetailsPanelContinueLocally => "AgentManagement.DetailsPanelContinueLocally",
+            #[cfg(not(target_family = "wasm"))]
+            Self::SlashCommandContinueLocally => "AgentManagement.SlashCommandContinueLocally",
             #[cfg(target_family = "wasm")]
             Self::TombstoneOpenInWarp => "AgentManagement.TombstoneOpenInWarp",
             Self::CloudRunCancelled => "AgentManagement.CloudRunCancelled",
@@ -277,6 +284,10 @@ impl TelemetryEventDesc for AgentManagementTelemetryEventDiscriminants {
             #[cfg(not(target_family = "wasm"))]
             Self::DetailsPanelContinueLocally => {
                 "User clicked Continue locally in the details panel"
+            }
+            #[cfg(not(target_family = "wasm"))]
+            Self::SlashCommandContinueLocally => {
+                "User invoked /continue-locally to fork a cloud conversation locally"
             }
             #[cfg(target_family = "wasm")]
             Self::TombstoneOpenInWarp => "User clicked Open in Warp in the tombstone",

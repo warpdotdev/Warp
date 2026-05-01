@@ -778,4 +778,6 @@ pub struct WorkspaceSettings {
     /// user toggle is locked. When `RespectUserSetting` (or absent), the user can choose.
     #[serde(default)]
     pub enable_warp_attribution: AdminEnablementSetting,
+    #[serde(default)]
+    pub default_host_slug: Option<String>,
 }

@@ -2,5 +2,5 @@
 pub mod winit;
 
 pub use warpui_core::windowing::*;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub use winit::WindowingSystem;

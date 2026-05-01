@@ -39,10 +39,10 @@ use crate::ai::document::ai_document_model::{
 use crate::ai::llms::LLMId;
 use crate::ai::{
     agent::{
-        conversation::AIConversationId, AIAgentActionResultType, AIAgentAttachment, AIAgentContext,
-        AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, AIIdentifiers, EntrypointType,
-        FinishedAIAgentOutput, RenderableAIError, RequestCost, RequestMetadata, StaticQueryType,
-        UserQueryMode,
+        conversation::AIConversationId, extract_user_query_mode, AIAgentActionResultType,
+        AIAgentAttachment, AIAgentContext, AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus,
+        AIIdentifiers, EntrypointType, FinishedAIAgentOutput, RenderableAIError, RequestCost,
+        RequestMetadata, StaticQueryType, UserQueryMode,
     },
     llms::LLMPreferences,
     AIRequestUsageModel,
@@ -626,15 +626,7 @@ impl BlocklistAIController {
             return;
         }
 
-        let (query, user_query_mode) = if let Some(q) =
-            commands::strip_command_prefix(&query, commands::PLAN_NAME)
-        {
-            (q, UserQueryMode::Plan)
-        } else if let Some(q) = commands::strip_command_prefix(&query, commands::ORCHESTRATE_NAME) {
-            (q, UserQueryMode::Orchestrate)
-        } else {
-            (query, UserQueryMode::Normal)
-        };
+        let (query, user_query_mode) = extract_user_query_mode(query);
 
         let should_prepend_finished_action_results = matches!(
             input_query.input_query,
@@ -2936,9 +2928,8 @@ fn input_for_query(
     }
 }
 
-/// Validates that tool call results have corresponding tool calls in the task context.
-/// Logs an error if a tool call result is found without a corresponding tool call,
-/// or if a tool call result is in a different task than the tool call use.
+/// Validates that tool call results have corresponding tool calls in the task context, otherwise
+/// logs a warning.
 fn validate_tool_call_results<'a>(
     inputs: impl Iterator<Item = &'a AIAgentInput>,
     tasks: &[Task],
@@ -2965,8 +2956,9 @@ fn validate_tool_call_results<'a>(
                 .unwrap_or("None");
 
             if !tool_call_to_task_map.contains_key(&action_id_str) {
-                log::error!(
-                    "Found tool call result with ID '{action_id_str}' but no corresponding tool call in task context. Server conversation ID: '{server_conversation_id}'"
+                log::warn!(
+                    "Found tool call result with ID '{action_id_str}' but no corresponding tool \
+                    call in task context. Server conversation ID: '{server_conversation_id}'"
                 );
             }
         }

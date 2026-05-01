@@ -1,17 +1,23 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::pin::pin;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::ai::agent::conversation::ConversationStatus;
+use parking_lot::FairMutex;
 use warp_terminal::model::escape_sequences::{BRACKETED_PASTE_END, BRACKETED_PASTE_START};
-use warpui::{notification::UserNotification, Presenter, WindowInvalidation};
+use warpui::{
+    notification::UserNotification, platform::WindowStyle, Presenter, WindowInvalidation,
+};
 
 use crate::ai::agent::task::TaskId;
 use crate::ai::blocklist::block::cli_controller::UserTakeOverReason;
-use warpui::App;
+use warpui::{App, ReadModel};
 
 use crate::pane_group::focus_state::PaneGroupFocusState;
-use crate::pane_group::{BackingView, TerminalPaneId};
+use crate::pane_group::{pane::PaneStack, BackingView, TerminalPaneId};
+use crate::settings::import::model::ImportedConfigModel;
 use crate::terminal::model::grid::Dimensions as _;
 use crate::{
     terminal::alt_screen::should_intercept_mouse,
@@ -48,11 +54,42 @@ use crate::terminal::model::ansi::{BootstrappedValue, PreexecValue};
 use crate::terminal::model::blocks::{insert_block, TotalIndex};
 use crate::terminal::model::terminal_model::WithinBlock;
 
-use crate::terminal::MockTerminalManager;
+use crate::terminal::{MockTerminalManager, TerminalManager, TerminalModel};
 use crate::test_util::terminal::initialize_app_for_terminal_view;
 use crate::test_util::{add_window_with_terminal, assert_eventually};
 
 use super::*;
+
+fn add_window_with_cloud_mode_terminal(app: &mut App) -> ViewHandle<TerminalView> {
+    let tips_model = app.add_model(|_| Default::default());
+    let (_, terminal) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
+        TerminalView::new_for_test_with_cloud_mode(tips_model, None, true, ctx)
+    });
+    terminal
+}
+
+struct TestTerminalManager {
+    model: Arc<FairMutex<TerminalModel>>,
+    view: ViewHandle<TerminalView>,
+}
+
+impl TerminalManager for TestTerminalManager {
+    fn model(&self) -> Arc<FairMutex<TerminalModel>> {
+        self.model.clone()
+    }
+
+    fn view(&self) -> ViewHandle<TerminalView> {
+        self.view.clone()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
 
 /// Test to verify that blocks created through normal execution
 /// have the correct local status set
@@ -328,27 +365,141 @@ fn command_first_word_and_suffix_handles_alias_without_args() {
 }
 
 #[test]
+fn escape_pops_nested_cloud_agent_view_with_long_running_command() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        let _cloud_mode = FeatureFlag::CloudMode.override_enabled(true);
+
+        let parent_terminal = add_window_with_terminal(&mut app, None);
+        let cloud_terminal = add_window_with_cloud_mode_terminal(&mut app);
+
+        let parent_view = parent_terminal.clone();
+        let cloud_view = cloud_terminal.clone();
+        let parent_model = parent_terminal.read(&app, |view, _| view.model.clone());
+        let cloud_model = cloud_terminal.read(&app, |view, _| view.model.clone());
+        let pane_stack = app.update(move |ctx| {
+            let parent_manager = ctx.add_model(|_| {
+                let manager: Box<dyn TerminalManager> = Box::new(TestTerminalManager {
+                    model: parent_model,
+                    view: parent_view.clone(),
+                });
+                manager
+            });
+            let cloud_manager = ctx.add_model(|_| {
+                let manager: Box<dyn TerminalManager> = Box::new(TestTerminalManager {
+                    model: cloud_model,
+                    view: cloud_view.clone(),
+                });
+                manager
+            });
+            let pane_stack = ctx.add_model(|ctx| PaneStack::new(parent_manager, parent_view, ctx));
+            pane_stack.update(ctx, |stack, ctx| {
+                stack.push(cloud_manager, cloud_view, ctx);
+            });
+            pane_stack
+        });
+
+        cloud_terminal.update(&mut app, |view, ctx| {
+            view.enter_agent_view_for_new_conversation(None, AgentViewEntryOrigin::CloudAgent, ctx);
+            view.model
+                .lock()
+                .simulate_long_running_block("sleep 10", "running");
+
+            assert!(view.can_pop_nested_cloud_agent_view(ctx));
+            assert_eq!(view.can_exit_agent_view_for_terminal_view(ctx), Ok(()));
+        });
+
+        assert_eq!(
+            app.read_model(&pane_stack, |stack, _| stack.active_view().id()),
+            cloud_terminal.id()
+        );
+
+        cloud_terminal.update(&mut app, |view, ctx| {
+            view.handle_input_event(&InputEvent::Escape, ctx);
+        });
+
+        assert_eq!(
+            app.read_model(&pane_stack, |stack, _| stack.active_view().id()),
+            parent_terminal.id()
+        );
+    })
+}
+
+#[test]
+fn escape_does_not_exit_local_agent_view_with_long_running_command() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            view.enter_agent_view_for_new_conversation(
+                None,
+                AgentViewEntryOrigin::Input {
+                    was_prompt_autodetected: false,
+                },
+                ctx,
+            );
+            view.model
+                .lock()
+                .simulate_long_running_block("sleep 10", "running");
+
+            assert!(matches!(
+                view.can_exit_agent_view_for_terminal_view(ctx),
+                Err(ExitAgentViewError::LongRunningCommand)
+            ));
+
+            view.handle_input_event(&InputEvent::Escape, ctx);
+
+            assert!(view.agent_view_controller().as_ref(ctx).is_active());
+        });
+    })
+}
+
+#[test]
 fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
-    use crate::settings::import::model::ImportedConfigModel;
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
         app.add_singleton_model(ImportedConfigModel::new);
         FeatureFlag::AgentView.set_enabled(true);
         FeatureFlag::CloudMode.set_enabled(true);
 
-        let terminal = add_window_with_terminal(&mut app, None);
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
+        let nested_terminal = add_window_with_cloud_mode_terminal(&mut app);
 
         terminal.read(&app, |view, ctx| {
-            assert!(!view
+            assert!(view
                 .keymap_context(ctx)
                 .set
                 .contains(init::ROOT_CLOUD_MODE_PANE_KEY));
         });
 
-        terminal.update(&mut app, |view, ctx| {
-            view.ambient_agent_view_model().update(ctx, |model, ctx| {
-                model.enter_setup(ctx);
+        let root_view = terminal.clone();
+        let nested_view = nested_terminal.clone();
+        let root_model = terminal.read(&app, |view, _| view.model.clone());
+        let nested_model = nested_terminal.read(&app, |view, _| view.model.clone());
+        let _pane_stack = app.update(move |ctx| {
+            let root_manager = ctx.add_model(|_| {
+                let manager: Box<dyn TerminalManager> = Box::new(TestTerminalManager {
+                    model: root_model,
+                    view: root_view.clone(),
+                });
+                manager
             });
+            let nested_manager = ctx.add_model(|_| {
+                let manager: Box<dyn TerminalManager> = Box::new(TestTerminalManager {
+                    model: nested_model,
+                    view: nested_view.clone(),
+                });
+                manager
+            });
+            let pane_stack = ctx.add_model(|ctx| PaneStack::new(root_manager, root_view, ctx));
+            pane_stack.update(ctx, |stack, ctx| {
+                stack.push(nested_manager, nested_view, ctx);
+            });
+            pane_stack
         });
 
         terminal.read(&app, |view, ctx| {
@@ -358,13 +509,7 @@ fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
                 .contains(init::ROOT_CLOUD_MODE_PANE_KEY));
         });
 
-        terminal.update(&mut app, |view, ctx| {
-            view.ambient_agent_view_model().update(ctx, |model, _| {
-                model.set_has_parent_terminal(true);
-            });
-        });
-
-        terminal.read(&app, |view, ctx| {
+        nested_terminal.read(&app, |view, ctx| {
             assert!(!view
                 .keymap_context(ctx)
                 .set
@@ -382,12 +527,14 @@ fn set_input_mode_agent_does_not_enter_local_agent_from_root_cloud_mode_pane() {
         FeatureFlag::AgentView.set_enabled(true);
         FeatureFlag::CloudMode.set_enabled(true);
 
-        let terminal = add_window_with_terminal(&mut app, None);
+        let terminal = add_window_with_cloud_mode_terminal(&mut app);
 
         terminal.update(&mut app, |view, ctx| {
-            view.ambient_agent_view_model().update(ctx, |model, ctx| {
-                model.enter_setup(ctx);
-            });
+            view.ambient_agent_view_model()
+                .expect("cloud mode terminal should have ambient model")
+                .update(ctx, |model, ctx| {
+                    model.enter_setup(ctx);
+                });
             view.model
                 .lock()
                 .set_shared_session_status(SharedSessionStatus::FinishedViewer);

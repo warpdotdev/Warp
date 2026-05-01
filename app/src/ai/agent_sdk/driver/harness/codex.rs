@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use tempfile::NamedTempFile;
 use warp_cli::agent::Harness;
 use warp_managed_secrets::ManagedSecretValue;
 use warpui::{ModelHandle, ModelSpawner};
@@ -103,7 +104,7 @@ enum CodexRunnerState {
 struct CodexHarnessRunner {
     command: String,
     /// Held so the temp file is cleaned up when the runner is dropped.
-    _temp_prompt_file: tempfile::NamedTempFile,
+    _temp_prompt_file: NamedTempFile,
     client: Arc<dyn HarnessSupportClient>,
     terminal_driver: ModelHandle<TerminalDriver>,
     state: Mutex<CodexRunnerState>,
@@ -448,3 +449,7 @@ fn set_codex_project_trust_level(
     proj_tbl.set_implicit(false);
     proj_tbl["trust_level"] = toml_edit::value(trust_level);
 }
+
+#[cfg(test)]
+#[path = "codex_tests.rs"]
+mod tests;

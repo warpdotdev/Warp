@@ -103,7 +103,16 @@ pub enum ConversationRestorationInNewPaneType {
 
     /// Fork an existing conversation into this new pane.
     /// This is like Historical but requires special persistence handling.
-    Forked { conversation: AIConversation },
+    Forked {
+        conversation: AIConversation,
+        /// True when the fork is paired with a follow-up prompt or summarize that
+        /// will be sent immediately after restore.
+        /// We skip the `couldn't find original conversation directory` ephemeral
+        /// hint in that case so the warping indicator (gated on
+        /// `ephemeral_message_model.current_message().is_none()` in
+        /// `BlocklistAIStatusBar::render`) isn't suppressed by the hint.
+        has_initial_query: bool,
+    },
 
     /// Load a CLI agent conversation from its downloaded snapshot.
     HistoricalCLIAgent {
@@ -125,7 +134,10 @@ impl ConversationRestorationInNewPaneType {
     pub fn should_show_restore_context_hint(&self) -> bool {
         match self {
             Self::Startup { .. } => false,
-            Self::Historical { .. } | Self::Forked { .. } | Self::HistoricalCLIAgent { .. } => true,
+            Self::Forked {
+                has_initial_query, ..
+            } => !has_initial_query,
+            Self::Historical { .. } | Self::HistoricalCLIAgent { .. } => true,
         }
     }
 
@@ -643,7 +655,7 @@ impl TerminalView {
             ConversationRestorationInNewPaneType::Historical { conversation, .. } => {
                 vec![RestoredAIConversation::new(conversation)]
             }
-            ConversationRestorationInNewPaneType::Forked { conversation } => {
+            ConversationRestorationInNewPaneType::Forked { conversation, .. } => {
                 vec![RestoredAIConversation::new(conversation)]
             }
             ConversationRestorationInNewPaneType::HistoricalCLIAgent { conversation, .. } => {

@@ -67,7 +67,8 @@ use crate::{
             icons::red_stop_icon, AIAgentAction, AIAgentActionType, AIAgentInput,
             AIAgentOutputMessageType, AIAgentTextSection, AgentOutputImage, AgentOutputImageLayout,
             AgentOutputMermaidDiagram, AgentOutputTable, AgentOutputTableRendering,
-            ProgrammingLanguage, RenderableAIError, SummarizationType, WebSearchStatus,
+            ProgrammingLanguage, RenderableAIError, SummarizationType, UserQueryMode,
+            WebSearchStatus,
         },
         blocklist::{
             block::{
@@ -1239,6 +1240,7 @@ pub fn render_text_sections<V: View, A: Action>(
                         working_directory: props.current_working_directory,
                         open_code_block_action_factory: props.open_code_block_action_factory,
                         copy_code_action_factory: props.copy_code_action_factory,
+                        selectable: props.selectable,
                         #[cfg(feature = "local_fs")]
                         resolved_code_block_paths: props.resolved_code_block_paths,
                     },
@@ -2650,6 +2652,8 @@ pub struct CodeSectionProps<'a, A: 'static> {
     pub working_directory: Option<&'a String>,
     pub open_code_block_action_factory: Option<OpenCodeBlockActionFactory<A>>,
     pub copy_code_action_factory: Option<CopyCodeActionFactory<A>>,
+    /// Whether the code block text should be selectable within the parent SelectableArea.
+    pub selectable: bool,
     /// Pre-resolved code block file paths from the background detection task.
     /// Keyed by original path; value is the resolved absolute path (or None if unresolvable).
     #[cfg(feature = "local_fs")]
@@ -2851,6 +2855,7 @@ pub fn render_code_output_section<A: Action>(
                     footer_element: language_text,
                     mouse_handles: props.button_handles.cloned(),
                 },
+                props.selectable,
                 app,
                 source,
             )
@@ -3398,13 +3403,28 @@ pub struct UserQueryProps<'a> {
     pub find_context: Option<FindContext<'a>>,
     pub font_properties: &'a Properties,
 }
+pub(crate) fn user_query_mode_prefix_highlight_len(mode: UserQueryMode) -> Option<usize> {
+    match mode {
+        UserQueryMode::Normal => None,
+        UserQueryMode::Plan => Some(commands::PLAN.name.len()),
+        UserQueryMode::Orchestrate => Some(commands::ORCHESTRATE.name.len()),
+    }
+}
+
 pub(super) fn query_prefix_highlight_len(
     input: &AIAgentInput,
     displayed_query: &str,
 ) -> Option<usize> {
-    if displayed_query.starts_with(commands::PLAN.name) {
-        Some(commands::PLAN.name.len())
-    } else if displayed_query.starts_with(commands::CREATE_ENVIRONMENT.name) {
+    if let AIAgentInput::UserQuery {
+        user_query_mode, ..
+    } = input
+    {
+        if let Some(prefix_len) = user_query_mode_prefix_highlight_len(*user_query_mode) {
+            return Some(prefix_len);
+        }
+    }
+
+    if displayed_query.starts_with(commands::CREATE_ENVIRONMENT.name) {
         Some(commands::CREATE_ENVIRONMENT.name.len())
     } else if displayed_query.starts_with(commands::AGENT.name) {
         Some(commands::AGENT.name.len())

@@ -146,7 +146,7 @@ impl View for CloudModeSetupTextBlock {
                 .with_child(
                     Text::new(
                         if is_cloud_agent_pre_first_exchange(
-                            &self.ambient_agent_view_model,
+                            Some(&self.ambient_agent_view_model),
                             &self.agent_view_controller,
                             app,
                         ) {

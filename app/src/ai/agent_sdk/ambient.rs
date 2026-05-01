@@ -3,6 +3,7 @@ use std::io::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::ai::agent::extract_user_query_mode;
 use crate::ai::ambient_agents::spawn::{
     spawn_task, AmbientAgentEvent, SessionJoinInfo, TASK_STATUS_POLLING_DURATION,
 };
@@ -471,8 +472,10 @@ impl AmbientAgentRunner {
                 None
             };
 
+            let (prompt, mode) = extract_user_query_mode(prompt_string);
             let request = SpawnAgentRequest {
-                prompt: prompt_string,
+                prompt,
+                mode,
                 config,
                 title: None,
                 team: match (args.scope.team, args.scope.personal) {
