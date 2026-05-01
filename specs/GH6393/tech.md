@@ -31,14 +31,21 @@ The implementation is broken into the layers below, listed bottom-up. Each layer
 
 ### 1. ANSI types — `crates/warp_terminal/src/model/ansi/control_sequence_parameters.rs`
 
-Add a `Hyperlink { id: Option<String>, uri: String }` value type, a `HyperlinkParseError`, and `Hyperlink::parse_osc_params(params: &[&[u8]]) -> Result<Option<Self>, HyperlinkParseError>`. Layout per the OSC 8 spec:
+Add a `Hyperlink { id: Option<String>, uri: String }` value type, a `HyperlinkParseError`, and `Hyperlink::parse_osc_params(params: &[&[u8]]) -> Result<Option<Self>, HyperlinkParseError>`.
 
-- Two fields after the `b"8"` identifier: `params_field` (colon-separated `key=value` list, may be empty) and `uri_field`.
-- Empty `uri_field` (or single empty field — what some emitters send for the close form) → `Ok(None)`, the close form.
-- `params_field` is split on `:`; only `id=…` is recognized today, others ignored. A param without `=` is `Err(MalformedParam)`.
-- Non-UTF-8 bytes in the URI return `Err(InvalidUtf8)`.
+**Parser contract.** The OSC 8 grammar is `OSC 8 ; params ; URI ST`. The vte parser splits OSC bytes on `;` and hands `params: &[&[u8]]` to the dispatcher; this function takes the slice **after** the leading `b"8"` identifier:
 
-Parser unit tests live next to the type in a `#[cfg(test)] mod hyperlink_parse_tests`.
+1. **Field layout.** Treat the first slice element as the params field. Treat **all subsequent slice elements rejoined with `b";"`** as the URI field. This explicit rejoin is the parser's single most important rule: real-world URIs contain `;` (matrix params, query separators in some encodings, jsessionid, percent-encoded payloads), and the vte parser will split such URIs across multiple `params` entries. The contract — URI is always the rejoin of `params[1..]` — guarantees those URIs are reconstructed correctly by every implementation. Implementations that follow only the "two-field" mental shortcut **will silently drop valid URIs** and must not pass review.
+2. **Close form.** `params == []`, or `params == [b""]`, or the rejoined URI field is empty → `Ok(None)`. Three accepted shapes because real emitters send all three.
+3. **Open form.** Rejoined URI field is non-empty → parse the params field and return `Ok(Some(Hyperlink {...}))`. The params field is split on `:`; recognized keys are `id=...`, all others ignored. A params entry without `=` is `Err(MalformedParam)`.
+4. **Error cases.** Non-UTF-8 bytes in the URI → `Err(InvalidUtf8)`. URI exceeding the registry's max byte length (see §3) → `Err(InvalidUtf8)` (the parser doesn't import the registry's cap; the dispatcher checks length and treats over-long as malformed). Empty params slice with no opening byte at all isn't reachable because `osc_dispatch` already guards against `params.is_empty()`.
+
+**Parser unit tests** live next to the type in a `#[cfg(test)] mod hyperlink_parse_tests`. The required ones:
+
+- **`uri_with_semicolons_is_rejoined`** (anti-regression for finding 5 in the third Oz pass): input `params == [b"", b"https://example.com/a?x=1", b"y=2"]`; assert URI is `"https://example.com/a?x=1;y=2"`. **Failing this test is the cardinal indicator of an implementation that took the two-field shortcut.**
+- `open_with_no_params`, `open_with_id_param`, `close_canonical`, `close_single_empty_field`, `close_zero_fields`.
+- `unknown_keys_in_params_are_ignored`, `multiple_params_separated_by_colons`, `malformed_param_without_equals_rejected`.
+- `non_utf8_uri_rejected`.
 
 Tradeoffs considered:
 - **Storing `id` and `uri` directly vs. interning.** Interning at parse time would couple the parser to an app-level registry. The parser stays pure and small; deduplication happens at the storage layer (3).
@@ -170,7 +177,11 @@ pub fn check_open_scheme(uri: &str) -> SchemeCheck;
 pub fn open_validated(ctx: &mut impl AppContextLike, uri: &str) -> SchemeCheck;
 ```
 
-The allow-list is `http`, `https`, `mailto`, and `ftp`. Any other scheme — `javascript:`, `data:`, `file:`, `vbscript:`, `about:`, `chrome:`, custom protocol handlers, etc. — is rejected. The list is a `const &[&str]`, not a runtime config, to keep the boundary auditable.
+The allow-list is `http`, `https`, `mailto`, and `ftp` (matching product invariant 16, which makes this the single source of truth across click / context menu / shared markdown / copy-as-bytes / AI context). It is a `const &[&str]`, not a runtime config, to keep the boundary auditable.
+
+**Compatibility with the existing auto-detected URL flow.** Today, no explicit scheme allow-list exists for auto-detected URLs — but the detection regex only matches `http` and `https`. Routing the auto-detected click path through `check_open_scheme` is therefore not a behavior regression: every URL the regex matches is `http`/`https`, both pre- and post-PR are openable. `mailto` and `ftp` are additions only relevant to OSC 8 (the auto-detect regex doesn't produce them today). Any future expansion of the auto-detect regex to additional schemes must update this `const` allow-list in lockstep.
+
+**Rollout / migration.** The auto-detected URL flow gains validation in this PR. Telemetry: emit a `LinkRejectedScheme` event on every `Rejected` outcome, partitioned by source (`AutoDetected` vs `OscHyperlink`); we should see ≈0 `AutoDetected` rejections in production after rollout. If any do appear, the allow-list constant is the one place to revisit. No data migration is needed because the allow-list is compile-time only.
 
 **Hover, copy, and click semantics for malformed/disallowed URIs** (product invariant 15):
 - The hyperlink span on the cells is unaffected by validity: hover always works, the tooltip always shows the literal URI, and right-click "Copy link" always copies the literal URI to the clipboard regardless of `SchemeCheck`. Validation only gates *opening* the URI.
@@ -205,20 +216,52 @@ This split lets each layer land independently and lets the team revert OSC 8 in 
 
 ### 6a. Session persistence (Warp Drive, history, shared sessions)
 
-`Cell` and `CellExtra` already derive `Serialize` / `Deserialize` (`crates/warp_terminal/src/model/grid/cell.rs:100,113,143`), so adding `hyperlink_id: Option<HyperlinkId>` to `CellExtra` automatically extends the wire format. The harder part is **resolving** the id back to a URI on the receiving side — the integer is meaningless without the registry. The plan:
+The three persistence formats have different shapes. Rather than one strategy, here's a per-format compatibility table — both directions (old client reading new payload, and new client reading old payload) — with a concrete migration plan for each.
 
-- Tag `HyperlinkId` itself with `#[derive(Serialize, Deserialize)]` (a `NonZeroU32` is trivially serializable).
-- Persist the `HyperlinkRegistry` alongside the grid wherever the grid itself is persisted: in the same blob/document for Warp Drive blocks, the same row for sqlite-backed history, and the same message for shared-session protocol frames. Concretely:
-  - `BlockGrid` / `Block` gain `pub registry: HyperlinkRegistry` in their serialized shape.
-  - `AltScreen` gains the same.
-  - The session-sharing protocol (`session-sharing-protocol` workspace crate) adds a `hyperlink_registry: HyperlinkRegistry` field to the per-block payload. The new field is `#[serde(default)]` so older clients that don't send it deserialize cleanly (`HyperlinkId` becomes orphaned and the cell renders as a plain non-clickable cell — graceful degradation).
-- Cross-block id stability: ids are local to each grid's registry. Restoring a session reconstructs the same id space because we serialize the registry *with* the grid.
-- Forward compatibility: an older Warp build reading a block that contains a `hyperlink_id` field it doesn't know about must ignore it, not error. We confirm this is the case (or fix it) for each receiving site: the sqlite history reader, the Warp Drive deserializer, and the session-sharing client.
+**Common type changes (apply to all formats).**
+- `HyperlinkId` is `#[derive(Serialize, Deserialize)]` over a `NonZeroU32`.
+- `CellExtra` gains `#[serde(default, skip_serializing_if = "Option::is_none")] hyperlink_id: Option<HyperlinkId>`. `serde(default)` → new client reading old payload deserializes cleanly. `skip_serializing_if` → new client writing for cells that don't carry an id produces bytes byte-identical to today's, so old-client reads are unaffected for all non-hyperlinked output.
 
-Tests:
-- Round-trip serialize → deserialize a block with a hyperlinked span; assert the cells still resolve to the same URI through the restored registry.
-- Round-trip a block produced by *this* client through a deserializer that lacks the hyperlink fields (simulating an older client); assert the deserialization succeeds and the visible cells render unchanged (clickability lost is acceptable).
-- The session-sharing integration test exercises a producer that emits OSC 8 and a consumer that observes the link as clickable on the receiver side.
+#### 6a-i. sqlite history (`crates/persistence`)
+
+Block output is already stored as `stylized_output: String` (a Diesel `Binary`-backed `Text` column at `crates/persistence/src/schema.rs:79-99`) containing the **raw ANSI byte stream from the PTY**. OSC 8 bytes — those the original program emitted, including the URI — are already present in this string today; they're just dropped on the parser floor on every load. Once layer (2) ships, the same string passes through a parser that recognizes OSC 8 and the cells become clickable on every load.
+
+- **No schema migration needed.** The Diesel migrations directory does not gain a new entry for this feature.
+- **Old client → new payload (forward compat):** trivially fine — old clients have always written ANSI byte streams that may include OSC 8 sequences from the program.
+- **New client → old payload (backward compat):** also fine — new clients read the same ANSI string, OSC 8 sequences re-parse, hyperlinks are restored. Blocks written before the feature shipped come back clickable too, for free.
+- The `HyperlinkRegistry` itself is **not** persisted in sqlite — it's reconstructed from the byte stream on load. Saves us a column and a migration, and matches how every other terminal-state attribute (color, bold, etc.) is handled today.
+
+#### 6a-ii. Warp Drive (cloud objects, shared sessions)
+
+Warp Drive blocks store the same `SerializedBlock` shape (`app/src/terminal/model/block.rs:474-480`), with `stylized_output: String`. Same reasoning as sqlite: OSC 8 bytes round-trip transparently in the string and re-parse on load.
+
+- **Forward and backward compat both ride for free** for the byte-stream encoding. No protocol-version bump is needed for blocks whose hyperlink state can be recovered from `stylized_output`.
+- **Risk: a future representation change.** If Warp Drive ever moves from the byte-stream encoding to a structured per-cell encoding (e.g. for performance), the cell-side `hyperlink_id` field becomes the wire field of record. The `serde(default, skip_serializing_if)` defaults above already cover both directions. We name this in the spec so anyone making that representation change tests both compatibility directions.
+
+#### 6a-iii. Session-sharing protocol (`session-sharing-protocol` workspace crate)
+
+The session-sharing protocol streams **events**, not byte streams (set cursor, write char, set SGR, etc.). Adding OSC 8 means a new event:
+
+```rust
+// session-sharing-protocol — new event variant
+SetHyperlink { hyperlink: Option<Hyperlink> },
+```
+
+The protocol's serialization (whichever framing — protobuf, MessagePack, JSON-over-WS) must handle unknown variants on the consuming side. Concrete plan:
+
+- **Old client reading new payload:** the `SetHyperlink` event is unknown. Whatever framing the protocol uses, the receiver must skip-and-continue rather than error. We audit and (if needed) fix this path as part of the layer's PR.
+  - For protobuf: unknown fields are skipped by default — no fix needed.
+  - For serde-tagged JSON / MessagePack: add `#[serde(other)]` or a `Unknown` variant with `#[serde(skip_serializing)]` on a new event-envelope enum so deserializers tolerate forward-compatible additions.
+- **New client reading old payload:** old payload simply doesn't contain `SetHyperlink` events. Cells render plain — graceful degradation, exactly what we want. No code path needed.
+- **Active-state replay.** The session-sharing replay must apply `SetHyperlink` events in stream order; a late-joiner gets a `state_snapshot` followed by the live tail, and the snapshot needs to include the active hyperlink id. We add `active_hyperlink: Option<Hyperlink>` to the snapshot frame (same `#[serde(default)]` posture).
+- **Versioning fallback.** If the protocol turns out to error on unknown events instead of skipping, we bump the protocol version and gate `SetHyperlink` behind a "OSC 8 supported" client capability negotiated at session start. Older clients negotiate down; newer clients fall back to not emitting the event when paired with an older peer.
+
+#### Tests
+
+- **sqlite round-trip** (`app/src/persistence/block_list.rs` test module): persist a block with `stylized_output` containing an OSC 8 sequence; reload from sqlite; assert the reloaded `Block` has cells with non-None `hyperlink_id` and the URI matches.
+- **Warp Drive round-trip:** simulate the cloud serialization round-trip and verify the same.
+- **Old-client read-of-new-payload (session-sharing):** a CI matrix test that pins the old client to a tag-before-this-PR, runs the new client as the producer, and asserts the old client renders cells correctly (just not clickable). Lives in `crates/integration` and runs as part of the protocol-compat CI job.
+- **New-client read-of-old-payload (session-sharing):** the inverse — new client consumes a recorded session from before the PR; asserts the deserializer doesn't error and cells render plain.
 
 This subsumes the earlier "session persistence" follow-up; it is no longer deferred.
 
@@ -275,7 +318,7 @@ sequenceDiagram
 Each numbered item below maps to a product invariant from `product.md`.
 
 **Unit tests — parser** (`crates/warp_terminal/src/model/ansi/control_sequence_parameters.rs`, `#[cfg(test)] mod hyperlink_parse_tests`).
-- Open / open-with-id / close / single-empty-field-close / unknown-keys-ignored / malformed-param / multi-`:` separators / non-UTF-8 URI → invariants 1, 2, 3, 15.
+- Open / open-with-id / close / single-empty-field-close / unknown-keys-ignored / malformed-param / multi-`:` param separators / **`uri_with_semicolons_is_rejoined`** (mandatory; see §1) / non-UTF-8 URI → invariants 1, 2, 3, 15.
 
 **Unit tests — dispatch** (`app/src/terminal/model/ansi/mod_test.rs`, alongside the existing `parse_osc9_*` tests).
 - Open + close fires two `set_hyperlink` events on `MockHandler` (the mock gets a `hyperlink_events: Vec<Option<Hyperlink>>` field) → invariant 1.
@@ -316,9 +359,9 @@ Each numbered item below maps to a product invariant from `product.md`.
 - **Memory / DoS from the registry.** Designed in, not deferred — see "Bounded registry, no reclamation" in (3). The cap (4096 distinct entries × 4096-byte max URI ≈ 16 MB worst-case per block) plus the bounded URI byte length plus the registry's grid-scoped lifetime put a hard ceiling on the working set. Adopting no-reclaim avoids a class of refcount/use-after-free bugs across cell overwrite, RLE split/merge, scrollback eviction, reflow, and deserialization.
 - **Cell-size budget.** `cell.rs:122` is explicit that growing `Cell` past 24 bytes is a 33% memory hit. The `HyperlinkId` lives in `CellExtra` exactly to avoid this; the only `Cell`-shaped change is to `CellExtra`'s box, which is already optional and pays only when present.
 - **Security: `javascript:` / `data:` / unexpected schemes.** Centralized in (5a) — every code path that can be reached from terminal output goes through `check_open_scheme` / `open_validated` before any platform open call. The plan also closes the same gap for the existing auto-detected URL flow.
-- **URIs containing `;`.** The vte parser splits OSC params on `;`; a URI with literal `;` arrives as multiple params. Mitigation: when more than two params follow `b"8"`, rejoin params from index 2 onward with `;` before parsing. Documented as part of (1).
+- **URIs containing `;` are addressed in the parser contract,** not as a deferred mitigation. See §1: the URI field is the `b";"`-rejoin of all `params[1..]` slice elements, and a `uri_with_semicolons_is_rejoined` unit test is required.
 - **Existing handler implementors not overriding `set_hyperlink`.** Default no-op means OSC 8 is silently dropped on those surfaces (e.g. `EarlyOutputHandler`). Acceptable: those surfaces don't render clickable output today either. They can be wired later without a behavior change for users.
-- **Session-sharing protocol compatibility.** New `hyperlink_registry` field in the per-block payload uses `#[serde(default)]`, so older clients deserialize without error and just don't see clickable links. The CI matrix includes a "current client ↔ pinned-old client" round-trip to lock this in.
+- **Persistence compatibility, three formats, three different stories.** sqlite history and Warp Drive round-trip OSC 8 transparently because the format is already the raw ANSI byte stream — no schema or protocol change. Session-sharing is event-streamed and gains a new `SetHyperlink` event; old clients must skip unknown events (audited per-framing in §6a-iii) and a CI matrix locks in both directions of the compat. If skip-unknown turns out to be unavailable, the fallback is a client-capability negotiation that downgrades when paired with a pre-PR client.
 
 ## Parallelization
 
