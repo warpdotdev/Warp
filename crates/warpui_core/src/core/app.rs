@@ -617,13 +617,6 @@ pub struct AppContext {
     /// borrowing the AppContext, since the callback is invoked synchronously
     /// from inside the GPU resource creation path.
     gpu_supports_lcd_subpixel: Arc<AtomicBool>,
-    /// Latched bit reporting whether the most recent window's surface
-    /// composites with a non-opaque alpha. Stored alongside
-    /// `gpu_supports_lcd_subpixel` and populated from the same callback
-    /// so `rendering_config()` can gate the LCD subpixel path on opaque
-    /// surfaces; per-channel coverage on a translucent surface corrupts
-    /// the compositor's alpha.
-    gpu_surface_is_transparent: Arc<AtomicBool>,
     global_actions: HashMap<String, Vec<Box<GlobalActionCallback>>>,
     keystroke_matcher: Matcher,
     next_task_id: usize,
@@ -786,7 +779,6 @@ impl AppContext {
             presenters: Default::default(),
             rendering_config: Default::default(),
             gpu_supports_lcd_subpixel: Arc::new(AtomicBool::new(false)),
-            gpu_surface_is_transparent: Arc::new(AtomicBool::new(false)),
             keystroke_matcher: Default::default(),
             disabled_key_bindings_windows: Default::default(),
             next_task_id: 0,
@@ -943,7 +935,6 @@ impl AppContext {
         // Stored separately because the on_gpu_device_info_reported
         // callback that sets them runs without a mutable AppContext borrow.
         config.lcd_subpixel_supported = self.gpu_supports_lcd_subpixel.load(Ordering::Acquire);
-        config.surface_is_transparent = self.gpu_surface_is_transparent.load(Ordering::Acquire);
         config
     }
 
@@ -2335,18 +2326,15 @@ impl AppContext {
             .insert(window_id, Rc::new(RefCell::new(Presenter::new(window_id))));
 
         // Wrap the user-supplied GPU-info callback so we can latch the
-        // dual-source-blending capability and surface-transparency flag
-        // into AppContext before forwarding to the user. The callback is
-        // called synchronously from inside Resources::new, so the latches
-        // are observable on the next call to rendering_config(). Using
-        // Arc<AtomicBool>s keeps the wrapper Send + Sync and avoids needing
-        // a mutable AppContext borrow.
+        // dual-source-blending capability into AppContext before forwarding
+        // to the user. The callback is called synchronously from inside
+        // Resources::new, so the latch is observable on the next call to
+        // rendering_config(). Using an Arc<AtomicBool> keeps the wrapper
+        // Send + Sync and avoids needing a mutable AppContext borrow.
         let user_callback = on_gpu_driver_reported.unwrap_or_else(|| Box::new(|_| {}));
         let lcd_supported = Arc::clone(&self.gpu_supports_lcd_subpixel);
-        let surface_transparent = Arc::clone(&self.gpu_surface_is_transparent);
         let on_gpu_info: Box<rendering::OnGPUDeviceSelected> = Box::new(move |info| {
             lcd_supported.store(info.supports_dual_source_blending, Ordering::Release);
-            surface_transparent.store(info.surface_is_transparent, Ordering::Release);
             user_callback(info);
         });
 

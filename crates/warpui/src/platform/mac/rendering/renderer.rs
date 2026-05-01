@@ -59,12 +59,5 @@ fn get_gpu_device_info(device: &metal::Device) -> GPUDeviceInfo {
         driver_name: String::new(),
         driver_info: String::new(),
         backend: GPUBackend::Metal,
-        // The Metal renderer doesn't expose dual-source blending through
-        // this codepath and doesn't drive a wgpu surface, so both LCD
-        // subpixel gating bits are reported off; macOS falls through to
-        // CoreText / Metal's existing glyph path which handles its own
-        // sharpness without our wgpu pipeline.
-        supports_dual_source_blending: false,
-        surface_is_transparent: false,
     }
 }

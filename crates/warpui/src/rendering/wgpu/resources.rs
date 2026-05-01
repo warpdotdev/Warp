@@ -124,18 +124,9 @@ impl Resources {
             let supports_dual_source_blending = device
                 .features()
                 .contains(wgpu::Features::DUAL_SOURCE_BLENDING);
-            // Snapshot transparency once. alpha_mode is fixed at renderer
-            // creation: create_surface_config picks it from the adapter's
-            // alpha_modes and surface_config never rewrites it later (only
-            // width/height change in update_surface_size). Treat anything
-            // other than CompositeAlphaMode::Opaque as transparent;
-            // Inherit is platform-defined and not safe to assume opaque.
-            let surface_is_transparent =
-                !matches!(surface_config.alpha_mode, CompositeAlphaMode::Opaque,);
             on_gpu_device_selected(device_info_from_adapter_info(
                 adapter_info,
                 supports_dual_source_blending,
-                surface_is_transparent,
             ));
 
             let uniforms = uniforms::Uniforms::new(&device);
@@ -267,7 +258,6 @@ impl Resources {
 fn device_info_from_adapter_info(
     adapter_info: wgpu::AdapterInfo,
     supports_dual_source_blending: bool,
-    surface_is_transparent: bool,
 ) -> GPUDeviceInfo {
     let device_type = match adapter_info.device_type {
         DeviceType::Other => GPUDeviceType::Other,
@@ -291,7 +281,6 @@ fn device_info_from_adapter_info(
         driver_info: adapter_info.driver_info,
         backend,
         supports_dual_source_blending,
-        surface_is_transparent,
     }
 }
 

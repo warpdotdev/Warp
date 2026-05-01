@@ -77,23 +77,11 @@ pub struct Config {
     pub backend_preference: Option<GraphicsBackend>,
 
     /// Whether the renderer supports compositing glyphs through LCD subpixel
-    /// rasterization. This is set to true only when the GPU exposes the
-    /// dual-source blending feature and the renderer has built the
-    /// corresponding pipeline. Scene-time glyph classification consults this
-    /// flag together with [`Self::surface_is_transparent`] to decide whether
-    /// a given glyph can take the subpixel path.
+    /// rasterization. Set to true only when the GPU exposes the dual-source
+    /// blending feature and the renderer has built the corresponding
+    /// pipeline. Scene-time glyph classification consults this flag to
+    /// decide whether a given glyph can take the subpixel path.
     pub lcd_subpixel_supported: bool,
-
-    /// Whether the rendering surface composites with a non-opaque alpha
-    /// (translucent windows, alpha-aware compositors, etc.).
-    ///
-    /// The field is named in the negative so a `Default` of `false` reflects
-    /// the safe assumption: most surfaces are opaque, and subpixel coverage
-    /// only corrupts the destination alpha channel when the compositor
-    /// actually reads it. When this is true, scene-time classification must
-    /// fall back to grayscale glyphs even on hardware that supports
-    /// dual-source blending.
-    pub surface_is_transparent: bool,
 }
 
 #[derive(Clone, Debug, Default)]

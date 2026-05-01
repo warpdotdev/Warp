@@ -659,14 +659,16 @@ impl Scene {
         font_size: f32,
         color: ColorU,
     ) -> &mut Glyph {
-        // Subpixel rasterisation is only correct when the GPU reports
-        // dual-source blending (so the renderer has a pipeline that can
-        // consume the per-channel coverage) and when the surface is opaque
-        // (otherwise per-channel coverage corrupts the compositor's alpha).
-        // Classifying once here lets the cache key and renderer dispatch
-        // share the decision.
-        let lcd_subpixel = self.rendering_config.lcd_subpixel_supported
-            && !self.rendering_config.surface_is_transparent;
+        // Subpixel rasterisation is gated on the renderer having actually
+        // built the dual-source-blend pipeline. The other half of the
+        // historical concern (per-channel coverage corrupting the
+        // compositor's alpha on transparent surfaces) is already handled
+        // one layer down: the subpixel render pipeline declares
+        // `wgpu::ColorWrites::COLOR`, so the per-channel pass writes RGB
+        // only and never touches the framebuffer's alpha. Whatever alpha
+        // the background pass wrote is what the compositor reads,
+        // regardless of the swapchain's `CompositeAlphaMode`.
+        let lcd_subpixel = self.rendering_config.lcd_subpixel_supported;
 
         // TODO: Support hit testing on glyphs?
         let layer = self.active_layer();

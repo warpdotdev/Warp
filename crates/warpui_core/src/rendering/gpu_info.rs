@@ -77,13 +77,6 @@ pub struct GPUDeviceInfo {
     /// flag when a window's renderer is created; the LCD subpixel glyph
     /// path requires dual-source blending to composite per-channel coverage.
     pub supports_dual_source_blending: bool,
-    /// Whether the rendering surface composites with a non-opaque alpha
-    /// (translucent windows / alpha-aware compositors). Reported alongside
-    /// [`Self::supports_dual_source_blending`] so the application can
-    /// populate [`super::Config::surface_is_transparent`]; LCD subpixel
-    /// rendering must fall back to grayscale on transparent surfaces or
-    /// the per-channel coverage corrupts the compositor's alpha channel.
-    pub surface_is_transparent: bool,
 }
 
 impl Display for GPUDeviceType {
