@@ -482,9 +482,12 @@ pub struct TerminalModel {
     /// `CSI ? 996 n` (color scheme query) and to emit unsolicited `CSI ? 997 ; Ps n`
     /// notifications when `CSI ? 2031 h` (dark/light notifications) is enabled.
     ///
-    /// Initialized to `true` (dark) as a safe default; the view overwrites this on
-    /// the first `AppearanceEvent::ThemeChanged` subscription fire, which happens
-    /// before any running process is likely to query or subscribe.
+    /// `TerminalModel::new` initializes this to `true` (dark) as a safe fallback.
+    /// In normal app flow, `create_terminal_model` eagerly seeds it from the current
+    /// `Appearance`, and the first `AppearanceEvent::ThemeChanged` subscription fire
+    /// can update it again if needed. The raw `true` default is therefore mainly
+    /// observable in tests or direct `TerminalModel::new` call sites before any
+    /// appearance-driven initialization or theme event arrives.
     is_dark_mode: bool,
 
     /// Color overrides set via escape sequence. If a color is not set here, the view determines the
