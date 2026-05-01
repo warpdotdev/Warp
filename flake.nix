@@ -15,10 +15,8 @@
     extra-sandbox-paths = [
       "/Applications?"
       "/Library/Developer/CommandLineTools?"
-      "/usr/bin/xcode-select?"
       "/usr/bin/xcodebuild?"
       "/usr/bin/xcrun?"
-      "/var/db/xcode_select_link?"
     ];
   };
 
@@ -56,12 +54,6 @@
             set -euo pipefail
 
             developerDir="''${DEVELOPER_DIR:-}"
-            if [ -z "$developerDir" ] && [ -x /usr/bin/xcode-select ]; then
-              selectedDeveloperDir="$(/usr/bin/xcode-select -p 2>/dev/null || true)"
-              if [ -n "$selectedDeveloperDir" ] && [ -d "$selectedDeveloperDir" ]; then
-                developerDir="$selectedDeveloperDir"
-              fi
-            fi
 
             if [ -z "$developerDir" ]; then
               for candidate in /Applications/Xcode_16.4.app/Contents/Developer /Applications/Xcode.app/Contents/Developer /Applications/Xcode*.app/Contents/Developer /Library/Developer/CommandLineTools; do
@@ -74,6 +66,7 @@
 
             if [ -n "$developerDir" ]; then
               export DEVELOPER_DIR="$developerDir"
+              echo "xcrun wrapper using DEVELOPER_DIR=$DEVELOPER_DIR" >&2
             fi
 
             exec /usr/bin/xcrun "$@"
