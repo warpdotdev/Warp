@@ -20,7 +20,9 @@ extern "C" {
 }
 
 pub fn init_cocoa_sentry() {
-    let endpoint = ChannelState::sentry_url();
+    // PDX-78: same DSN resolution as the Rust Sentry client — Doppler first,
+    // then fall back to the per-channel CrashReportingConfig::sentry_url.
+    let endpoint = crate::sentry_init::resolved_dsn();
     let environment = super::get_environment();
 
     log::info!("Initializing Sentry for cocoa app with endpoint {endpoint}");

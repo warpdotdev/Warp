@@ -397,11 +397,22 @@ fn init_sentry(user_id: Option<UserUid>, email: Option<String>, ctx: &mut AppCon
 
 /// Baseline Sentry client options.
 fn sentry_client_options() -> sentry::ClientOptions {
-    sentry::ClientOptions {
-        dsn: ChannelState::sentry_url()
-            .into_dsn()
-            .expect("Invalid Sentry DSN"),
+    // PDX-78: prefer the Doppler-sourced DSN if startup populated it; fall
+    // back to the per-channel CrashReportingConfig::sentry_url. An invalid
+    // or empty string parses to `None`, which makes Sentry initialisation a
+    // strict no-op rather than panicking — matches the brief's "no DSN =>
+    // no-op" rule.
+    let dsn_string = crate::sentry_init::resolved_dsn();
+    let dsn = match dsn_string.into_dsn() {
+        Ok(dsn) => dsn,
+        Err(e) => {
+            log::warn!("Sentry DSN failed to parse; crash reporting disabled: {e:?}");
+            None
+        }
+    };
 
+    sentry::ClientOptions {
+        dsn,
         release: Some(release_version().into()),
         environment: Some(get_environment()),
         auto_session_tracking: true,

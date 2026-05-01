@@ -71,6 +71,8 @@ mod resource_limits;
 mod reward_view;
 mod safe_triangle;
 mod search_bar;
+#[cfg(feature = "crash_reporting")]
+mod sentry_init;
 mod server;
 mod session_management;
 mod shell_indicator;
@@ -1264,6 +1266,11 @@ fn initialize_app(
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "crash_reporting")] {
+            // PDX-78: source the Sentry DSN from Doppler at startup, before
+            // crash_reporting::init runs. If Doppler is unavailable or the
+            // secret is missing, this is a no-op and crash_reporting falls
+            // back to the per-channel CrashReportingConfig::sentry_url.
+            sentry_init::init_dsn_from_doppler_blocking();
             let is_crash_reporting_enabled = crash_reporting::init(ctx);
         } else {
             let is_crash_reporting_enabled = false;
