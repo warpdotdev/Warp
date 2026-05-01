@@ -97,11 +97,15 @@ fn custom_theme_to_file_value_uses_tilde_test() {
     let path_in_file = file_value["path"]
         .as_str()
         .expect("path should be a string");
+
+    // Normalize path separators to forward slashes for cross-platform comparison
+    let normalized_path_in_file = path_in_file.replace('\\', "/");
+
     assert!(
-        path_in_file.starts_with("~/"),
-        "path in settings file should start with '~/', got: {path_in_file}"
+        normalized_path_in_file.starts_with("~/"),
+        "path in settings file should start with '~/', got: {normalized_path_in_file}"
     );
-    assert_eq!(path_in_file, "~/.warp/themes/my_theme.yaml");
+    assert_eq!(normalized_path_in_file, "~/.warp/themes/my_theme.yaml");
 }
 
 #[test]
