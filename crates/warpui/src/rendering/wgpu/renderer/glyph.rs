@@ -247,13 +247,22 @@ impl Pipeline {
             (AtlasTextureKind, TextureId),
             Vec<shaders::GlyphInstanceData>,
         > = HashMap::new();
+        // Per-renderer override on the scene-time classification. The
+        // scene flag comes from a process-wide AppContext atomic, so a
+        // multi-window deployment where adapters disagree about
+        // dual-source-blending support can hand a Subpixel-classified
+        // glyph to a renderer whose subpixel_render_pipeline was never
+        // built. Routing such a glyph through the cache would put it in
+        // the Bgra8Unorm Subpixel atlas; pipeline_for_kind's mono
+        // fallback then samples that atlas with fs_main, which only
+        // reads the .r channel and would render with the wrong alpha
+        // shape. Anding with the local pipeline state here keeps the
+        // cache, atlas, and pipeline choices consistent.
+        let renderer_supports_subpixel = self.subpixel_render_pipeline.is_some();
         for glyph in &layer.glyphs {
             let glyph_position = glyph.position * scale_factor;
             let subpixel_alignment = SubpixelAlignment::new(glyph_position);
-            // Scene-time classification has decided whether this glyph wants
-            // the LCD subpixel path; the cache routes to the matching atlas
-            // and pipeline_for_kind picks the pipeline at draw time.
-            let lcd_subpixel = glyph.lcd_subpixel;
+            let lcd_subpixel = glyph.lcd_subpixel && renderer_supports_subpixel;
             match self.glyph_cache.get(
                 glyph.glyph_key,
                 scene.scale_factor(),
