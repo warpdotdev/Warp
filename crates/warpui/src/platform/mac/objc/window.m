@@ -432,6 +432,23 @@ void init_warp_nswindow(NSWindow<WarpWindowProtocol> *window, bool testMode, boo
     // We need to bypass the default performKeyEquivalent implementation which, in the case of
     // having keybinding conflicts with MacOS itself, yields priority to the OS.
     if ([event type] == NSEventTypeKeyDown) {
+        // While the IME is composing (e.g. selecting candidates in a Bopomofo / Pinyin / Kana
+        // input method), skip the priority path entirely. AppKit will then route the event
+        // through the standard keyDown: chain exactly once, which calls interpretKeyEvents
+        // and lets the IME consume the keystroke.
+        //
+        // Without this guard, navigation keys with the function-key flag (e.g. arrow keys,
+        // 0xa00100) reach this method first because they qualify as key equivalents. We then
+        // call keyDownImpl, which invokes interpretKeyEvents and forwards to Rust. Rust
+        // suppresses keystrokes during composition, so keyDownImpl returns NO. We fall
+        // through to [super performKeyEquivalent:], AppKit fires keyDown: on the host view,
+        // and interpretKeyEvents runs a second time. IMEs that listen to every keystroke on
+        // the input context — for example 超注音 (Yahoo Bopomofo) — observe both deliveries
+        // and advance their candidate selection by 2 per arrow press. See #9709.
+        if ([(WarpHostView *)self.contentView hasMarkedText]) {
+            return [super performKeyEquivalent:event];
+        }
+
         NSApplication *application = [NSApplication sharedApplication];
 
         // If we are recording a keystroke for an EditableBinding.
