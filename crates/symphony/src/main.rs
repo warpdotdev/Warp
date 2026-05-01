@@ -29,6 +29,12 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // rustls 0.23 requires an explicit crypto provider before any TLS client
+    // is constructed (reqwest's rustls-tls in this workspace doesn't install
+    // one automatically). Idempotent: ignore the error if a provider is
+    // already installed (e.g. by another crate in the same process).
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
@@ -86,6 +92,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if cli.once {
         orch.tick().await?;
+        // Wait for spawned agent tasks to drain before exiting, with a
+        // generous cap so the smoke test never hangs forever. The agent
+        // subprocess streams events back into the runtime state; once
+        // running is empty we know the dispatch path completed.
+        let drain_deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+        loop {
+            let (running, _completed) = orch.state_snapshot().await;
+            if running.is_empty() {
+                tracing::info!("once: all dispatched agents finished");
+                break;
+            }
+            if std::time::Instant::now() > drain_deadline {
+                tracing::warn!(
+                    running = running.len(),
+                    "once: drain timeout (300s); exiting with agents still running"
+                );
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
         return Ok(());
     }
 

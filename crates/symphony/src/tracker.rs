@@ -288,9 +288,16 @@ fn candidate_query() -> &'static str {
       updatedAt
       state { name }
       labels { nodes { name } }
-      relations(filter: { type: { eq: "blocks" } }) {
+      relations {
         nodes {
+          type
           relatedIssue { id identifier state { name } }
+        }
+      }
+      inverseRelations {
+        nodes {
+          type
+          issue { id identifier state { name } }
         }
       }
     }
@@ -334,17 +341,24 @@ fn parse_issue(v: &serde_json::Value) -> Option<Issue> {
                 .collect()
         })
         .unwrap_or_default();
+    // Build blocked_by from inverseRelations where type == "blocks"
+    // (this issue is the target of someone else's "blocks" relation).
+    // Filter client-side because Linear's schema no longer accepts a
+    // `filter` arg on Issue.relations / inverseRelations.
     let blocked_by: Vec<BlockerRef> = v
-        .pointer("/relations/nodes")
+        .pointer("/inverseRelations/nodes")
         .and_then(|x| x.as_array())
         .map(|arr| {
             arr.iter()
+                .filter(|n| {
+                    n.get("type").and_then(|t| t.as_str()) == Some("blocks")
+                })
                 .filter_map(|n| {
-                    let related = n.get("relatedIssue")?;
+                    let other = n.get("issue")?;
                     Some(BlockerRef {
-                        id: related.get("id")?.as_str()?.to_string(),
-                        identifier: related.get("identifier")?.as_str()?.to_string(),
-                        state: related
+                        id: other.get("id")?.as_str()?.to_string(),
+                        identifier: other.get("identifier")?.as_str()?.to_string(),
+                        state: other
                             .pointer("/state/name")
                             .and_then(|x| x.as_str())
                             .map(|s| s.to_string()),
