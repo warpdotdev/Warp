@@ -1,10 +1,10 @@
 use warpui::{EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use super::{CLIAgentEvent, CLIAgentSessionsModel};
+use crate::terminal::CLIAgent;
 use crate::terminal::cli_agent_sessions::event::parse_event;
 use crate::terminal::cli_agent_sessions::event::{CLIAgentEventPayload, CLIAgentEventType};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::terminal::CLIAgent;
 
 /// Per-agent handler that filters and transforms parsed CLI agent events.
 /// Each CLI agent can have a different implementation depending on which events
@@ -46,6 +46,7 @@ pub fn is_agent_supported(agent: &CLIAgent) -> bool {
             | CLIAgent::Codex
             | CLIAgent::Gemini
             | CLIAgent::Auggie
+            | CLIAgent::Pi
     )
 }
 
@@ -56,14 +57,15 @@ fn create_handler(agent: &CLIAgent) -> Option<Box<dyn CLIAgentSessionHandler>> {
         // (https://github.com/augmentmoogi/auggie-warp), which emits the same
         // structured OSC 777 events as the first-party Claude/OpenCode/Gemini
         // plugins. We don't ship an install flow for it — we just listen.
-        CLIAgent::Claude | CLIAgent::OpenCode | CLIAgent::Gemini | CLIAgent::Auggie => {
-            Some(Box::new(DefaultSessionListener))
-        }
+        CLIAgent::Claude
+        | CLIAgent::OpenCode
+        | CLIAgent::Gemini
+        | CLIAgent::Auggie
+        | CLIAgent::Pi => Some(Box::new(DefaultSessionListener)),
         CLIAgent::Codex => Some(Box::new(CodexSessionHandler)),
         CLIAgent::Amp
         | CLIAgent::Droid
         | CLIAgent::Copilot
-        | CLIAgent::Pi
         | CLIAgent::CursorCli
         | CLIAgent::Unknown => None,
     }
@@ -235,9 +237,11 @@ mod tests {
     #[test]
     fn codex_try_parse_ignores_titled_notifications() {
         let handler = CodexSessionHandler;
-        assert!(handler
-            .try_parse(Some("some-title"), "Agent turn complete")
-            .is_none());
+        assert!(
+            handler
+                .try_parse(Some("some-title"), "Agent turn complete")
+                .is_none()
+        );
     }
 
     #[test]
@@ -278,6 +282,46 @@ mod tests {
         let event = CLIAgentEvent {
             v: 1,
             agent: CLIAgent::Auggie,
+            event: CLIAgentEventType::Stop,
+            session_id: None,
+            cwd: None,
+            project: None,
+            payload: CLIAgentEventPayload::default(),
+        };
+        assert!(handler.handle_event(event).is_some());
+    }
+
+    #[test]
+    fn pi_is_supported() {
+        assert!(is_agent_supported(&CLIAgent::Pi));
+    }
+
+    #[test]
+    fn pi_uses_default_handler_with_rich_status() {
+        assert!(agent_supports_rich_status(&CLIAgent::Pi));
+    }
+
+    #[test]
+    fn pi_default_handler_skips_session_start() {
+        let mut handler = DefaultSessionListener;
+        let event = CLIAgentEvent {
+            v: 1,
+            agent: CLIAgent::Pi,
+            event: CLIAgentEventType::SessionStart,
+            session_id: None,
+            cwd: None,
+            project: None,
+            payload: CLIAgentEventPayload::default(),
+        };
+        assert!(handler.handle_event(event).is_none());
+    }
+
+    #[test]
+    fn pi_default_handler_forwards_stop() {
+        let mut handler = DefaultSessionListener;
+        let event = CLIAgentEvent {
+            v: 1,
+            agent: CLIAgent::Pi,
             event: CLIAgentEventType::Stop,
             session_id: None,
             cwd: None,
