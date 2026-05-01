@@ -6826,7 +6826,7 @@ impl CodeReviewView {
                     button.set_label("Push", ctx);
                     button.set_icon(Some(Icon::ArrowUp), ctx);
                     button.set_disabled(false, ctx);
-                    button.set_tooltip(None::<String>, ctx);
+                    button.clear_tooltip(ctx);
                     button.set_on_click(
                         |ctx| ctx.dispatch_typed_action(CodeReviewAction::OpenPushDialog),
                         ctx,
@@ -6842,7 +6842,7 @@ impl CodeReviewView {
                     button.set_label("Create PR", ctx);
                     button.set_icon(Some(Icon::Github), ctx);
                     button.set_disabled(false, ctx);
-                    button.set_tooltip(None::<String>, ctx);
+                    button.clear_tooltip(ctx);
                     button.set_on_click(
                         |ctx| ctx.dispatch_typed_action(CodeReviewAction::OpenCreatePrDialog),
                         ctx,
@@ -6881,7 +6881,7 @@ impl CodeReviewView {
                     button.set_label("Publish", ctx);
                     button.set_icon(Some(Icon::UploadCloud), ctx);
                     button.set_disabled(false, ctx);
-                    button.set_tooltip(None::<String>, ctx);
+                    button.clear_tooltip(ctx);
                     button.set_on_click(
                         |ctx| ctx.dispatch_typed_action(CodeReviewAction::PublishBranch),
                         ctx,
@@ -6930,16 +6930,16 @@ impl CodeReviewView {
     /// (e.g. a worktree branch whose tracking was auto-set to origin/master).
     fn pr_menu_item(&self, app: &AppContext) -> MenuItem<CodeReviewAction> {
         let diff_state = self.diff_state_model.as_ref(app);
+        let is_pr_info_refreshing = diff_state.is_pr_info_refreshing();
         if let Some(pr_info) = diff_state.pr_info().cloned() {
             MenuItemFields::new(format!("PR #{}", pr_info.number))
                 .with_icon(Icon::Github)
                 .with_on_select_action(CodeReviewAction::ViewPr(pr_info.url))
-                .with_disabled(diff_state.is_pr_info_refreshing())
+                .with_disabled(is_pr_info_refreshing)
                 .into_item()
         } else {
             let is_on_main = diff_state.is_on_main_branch();
             let has_upstream = diff_state.upstream_ref().is_some();
-            let is_pr_info_refreshing = diff_state.is_pr_info_refreshing();
             let upstream_differs_from_main = diff_state.upstream_differs_from_main();
             MenuItemFields::new("Create PR")
                 .with_icon(Icon::Github)

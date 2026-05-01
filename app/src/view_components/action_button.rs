@@ -432,6 +432,11 @@ impl ActionButton {
         ctx.notify();
     }
 
+    pub fn clear_tooltip(&mut self, ctx: &mut ViewContext<Self>) {
+        self.tooltip = None;
+        ctx.notify();
+    }
+
     pub fn set_tooltip_sublabel(
         &mut self,
         tooltip_sublabel: Option<impl Into<String>>,
