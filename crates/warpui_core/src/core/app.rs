@@ -611,12 +611,15 @@ pub struct AppContext {
     presenters: HashMap<WindowId, Rc<RefCell<Presenter>>>,
     /// Configuration options related to rendering of the application.
     rendering_config: rendering::Config,
-    /// Latched bit reporting whether any window's renderer has reported
-    /// dual-source blending support. Stored in an Arc<AtomicBool> so the
-    /// `on_gpu_device_info_reported` callback can write to it without
-    /// borrowing the AppContext, since the callback is invoked synchronously
-    /// from inside the GPU resource creation path.
-    gpu_supports_lcd_subpixel: Arc<AtomicBool>,
+    /// Latched bits reporting whether each window's renderer has reported
+    /// dual-source blending support. Keyed by `WindowId` because adapter
+    /// capabilities are per-window: a process with a discrete-GPU window
+    /// and a CPU-fallback window must not have one's report overwrite the
+    /// other's. Each entry is an `Arc<AtomicBool>` so the
+    /// `on_gpu_device_info_reported` callback can write to its window's
+    /// bit without borrowing the AppContext, since the callback runs
+    /// synchronously from inside the GPU resource creation path.
+    gpu_supports_lcd_subpixel_per_window: HashMap<WindowId, Arc<AtomicBool>>,
     /// Latched bit reporting whether the user has configured a translucent
     /// window background (the `appearance.window.override_opacity` setting
     /// is below 100%). Updated from the app layer's `WindowSettings`
@@ -785,7 +788,7 @@ impl AppContext {
             global_actions: Default::default(),
             presenters: Default::default(),
             rendering_config: Default::default(),
-            gpu_supports_lcd_subpixel: Arc::new(AtomicBool::new(false)),
+            gpu_supports_lcd_subpixel_per_window: HashMap::default(),
             transparent_background_active: Arc::new(AtomicBool::new(false)),
             keystroke_matcher: Default::default(),
             disabled_key_bindings_windows: Default::default(),
@@ -939,12 +942,27 @@ impl AppContext {
 
     pub fn rendering_config(&self) -> rendering::Config {
         let mut config = self.rendering_config;
-        // Merge in GPU capability flags learned at window-renderer init.
-        // Stored separately because the on_gpu_device_info_reported
-        // callback that sets them runs without a mutable AppContext borrow.
-        config.lcd_subpixel_supported = self.gpu_supports_lcd_subpixel.load(Ordering::Acquire);
+        // `lcd_subpixel_supported` is intentionally not populated here:
+        // adapter capabilities are per-window, not process-wide. Callers
+        // that build a Scene for a specific window should override the
+        // field with `gpu_supports_lcd_subpixel(window_id)`. Callers that
+        // only need glyph or backend defaults (settings UI, tests) get
+        // the conservative `false` from `Config::default()` and the bit
+        // is unused on those paths.
         config.transparent_background = self.transparent_background_active.load(Ordering::Acquire);
         config
+    }
+
+    /// Read the latched dual-source-blending support for a specific
+    /// window's renderer. Used by the Scene-build call sites to populate
+    /// `Config.lcd_subpixel_supported` against the actual capabilities
+    /// of the window the scene will be drawn into, not whichever window
+    /// reported its capabilities last process-wide.
+    pub fn gpu_supports_lcd_subpixel(&self, window_id: WindowId) -> bool {
+        self.gpu_supports_lcd_subpixel_per_window
+            .get(&window_id)
+            .map(|atomic| atomic.load(Ordering::Acquire))
+            .unwrap_or(false)
     }
 
     /// Update the latched window-translucency bit consumed by
@@ -2345,13 +2363,17 @@ impl AppContext {
             .insert(window_id, Rc::new(RefCell::new(Presenter::new(window_id))));
 
         // Wrap the user-supplied GPU-info callback so we can latch the
-        // dual-source-blending capability into AppContext before forwarding
-        // to the user. The callback is called synchronously from inside
-        // Resources::new, so the latch is observable on the next call to
-        // rendering_config(). Using an Arc<AtomicBool> keeps the wrapper
-        // Send + Sync and avoids needing a mutable AppContext borrow.
+        // dual-source-blending capability for *this* window into
+        // AppContext before forwarding to the user. The callback is
+        // called synchronously from inside Resources::new, so the latch
+        // is observable on the next call to gpu_supports_lcd_subpixel.
+        // The atomic is keyed per-window so multi-adapter setups (a
+        // discrete-GPU window plus a fallback-adapter window, etc.) do
+        // not race each other through a single global bit.
         let user_callback = on_gpu_driver_reported.unwrap_or_else(|| Box::new(|_| {}));
-        let lcd_supported = Arc::clone(&self.gpu_supports_lcd_subpixel);
+        let lcd_supported = Arc::new(AtomicBool::new(false));
+        self.gpu_supports_lcd_subpixel_per_window
+            .insert(window_id, Arc::clone(&lcd_supported));
         let on_gpu_info: Box<rendering::OnGPUDeviceSelected> = Box::new(move |info| {
             lcd_supported.store(info.supports_dual_source_blending, Ordering::Release);
             user_callback(info);
@@ -2600,6 +2622,7 @@ impl AppContext {
         self.presenters.remove(&window_id);
         self.invalidation_callbacks.remove(&window_id);
         self.window_invalidations.remove(&window_id);
+        self.gpu_supports_lcd_subpixel_per_window.remove(&window_id);
         autotracking::close_window(window_id);
 
         let mut subscriptions = HashMap::new();
@@ -2745,10 +2768,9 @@ impl AppContext {
 
     /// Builds a new scene for the given window.
     fn build_scene(&mut self, window_id: WindowId, window: &dyn WindowContext) -> Rc<Scene> {
-        let mut scene = Rc::new(Scene::new(
-            window.backing_scale_factor(),
-            self.rendering_config(),
-        ));
+        let mut config = self.rendering_config();
+        config.lcd_subpixel_supported = self.gpu_supports_lcd_subpixel(window_id);
+        let mut scene = Rc::new(Scene::new(window.backing_scale_factor(), config));
         let Some(presenter) = self.presenter(window_id) else {
             return scene;
         };
