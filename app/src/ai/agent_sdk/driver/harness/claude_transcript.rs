@@ -26,6 +26,8 @@ use warp_core::safe_warn;
 
 use crate::ai::agent::conversation::AIConversationId;
 
+use super::json_utils::entries_to_jsonl;
+
 /// JSON envelope sent to the server representing a complete Claude Code session.
 ///
 /// Bundles the main session transcript, any subagent transcripts, and
@@ -291,16 +293,6 @@ pub(crate) fn write_session_index_entry(
     )
     .with_context(|| format!("Failed to write {}", index_path.display()))?;
     Ok(())
-}
-
-/// Serialize a slice of JSON values as a JSONL byte string (one value per line).
-fn entries_to_jsonl(entries: &[Value]) -> Result<Vec<u8>> {
-    let mut buf = Vec::new();
-    for entry in entries {
-        serde_json::to_writer(&mut buf, entry)?;
-        buf.push(b'\n');
-    }
-    Ok(buf)
 }
 
 /// Read a JSONL file, returning one parsed [`Value`] per non-blank line.
