@@ -11,6 +11,10 @@ fn test_path_passes_filters_unix() {
         sandbox.mkdir("my_repo/.git/refs");
         sandbox.mkdir("my_repo/.git/refs/heads");
         sandbox.mkdir("my_repo/src");
+        sandbox.mkdir("my_repo/node_modules");
+        sandbox.mkdir("my_repo/node_modules/pkg");
+        sandbox.mkdir("my_repo/.next");
+        sandbox.mkdir("my_repo/.next/cache");
         sandbox.mkdir("my_repo/target");
         sandbox.mkdir("my_repo/target/debug");
         sandbox.mkdir("outside_of_codebase");
@@ -21,6 +25,8 @@ fn test_path_passes_filters_unix() {
             Stub::EmptyFile("my_repo/.git/refs/heads/main"),
             Stub::EmptyFile("my_repo/.git/refs/heads/feature-branch"),
             Stub::EmptyFile("my_repo/src/main.rs"),
+            Stub::EmptyFile("my_repo/node_modules/pkg/index.js"),
+            Stub::EmptyFile("my_repo/.next/cache/page.js"),
             Stub::EmptyFile("my_repo/target/debug/a.out"),
             Stub::EmptyFile("outside_of_codebase/text.txt"),
         ]);
@@ -41,6 +47,20 @@ fn test_path_passes_filters_unix() {
         ));
         assert!(path_passes_filters(
             dirs.tests().join("my_repo/src/main.rs").as_path(),
+            &gitignores
+        ));
+        assert!(!path_passes_filters(
+            dirs.tests().join("my_repo/node_modules").as_path(),
+            &gitignores
+        ));
+        assert!(!path_passes_filters(
+            dirs.tests()
+                .join("my_repo/node_modules/pkg/index.js")
+                .as_path(),
+            &gitignores
+        ));
+        assert!(!path_passes_filters(
+            dirs.tests().join("my_repo/.next/cache/page.js").as_path(),
             &gitignores
         ));
         assert!(path_passes_filters(
