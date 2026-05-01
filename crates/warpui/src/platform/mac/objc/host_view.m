@@ -59,6 +59,13 @@ void warp_marked_text_cleared(WarpHostView *);
     // The selectedRange of the most recent setMarkedText: call, kept so we
     // can re-dispatch the marked text after a commit (see keyDownImpl:).
     NSRange lastMarkedSelectedRange;
+
+    // True if setMarkedText: was actually called during the current
+    // interpretKeyEvents:. Used to distinguish a freshly-started composition
+    // from stale markedText that survived a commit-only flow — insertText:
+    // deliberately skips unmarkText while interpretingKeyEvents is true, so
+    // hasMarkedText alone cannot tell the two apart.
+    BOOL setMarkedTextDuringInterpret;
 }
 
 - (BOOL)acceptsFirstResponder {
@@ -157,6 +164,7 @@ void warp_marked_text_cleared(WarpHostView *);
 - (BOOL)keyDownImpl:(NSEvent *)event {
     BOOL wasComposing = [self hasMarkedText];
     [textToInsert setString:@""];
+    setMarkedTextDuringInterpret = NO;
 
     // Interpret the key events here so we could check whether user is composing
     // text within the IME and pass the state down to the KeyDown events.
@@ -197,7 +205,13 @@ void warp_marked_text_cleared(WarpHostView *);
         // text would then overwrite that selection (losing the next
         // character). Workaround: temporarily clear the marked text,
         // dispatch the commit, then re-apply the marked text.
-        BOOL hasNewMarked = [self hasMarkedText];
+        //
+        // We can only treat hasMarkedText as a "freshly-started composition"
+        // when setMarkedText: was actually called during this keyDown.
+        // insertText: leaves stale markedText untouched while
+        // interpretingKeyEvents, so commit-only flows (e.g. dead-key + char)
+        // would otherwise see stale marked text and incorrectly re-emit it.
+        BOOL hasNewMarked = setMarkedTextDuringInterpret && [self hasMarkedText];
         if (hasNewMarked) {
             warp_marked_text_cleared(self);
             warp_update_ime_state(self, NO);
@@ -206,6 +220,14 @@ void warp_marked_text_cleared(WarpHostView *);
         if (hasNewMarked) {
             warp_marked_text_updated(self, markedText.string, lastMarkedSelectedRange);
             warp_update_ime_state(self, YES);
+        } else {
+            // Commit-only flow (no new composition started). End IME state
+            // explicitly — insertText: deliberately skipped unmarkText while
+            // interpretingKeyEvents was true, so the stale markedText object
+            // and ime_active flag would otherwise survive into the next
+            // keyDown and break downstream input (e.g. Backspace would be
+            // treated as composing-state input and not delete the character).
+            [self unmarkText];
         }
     }
 
@@ -496,6 +518,9 @@ void warp_marked_text_cleared(WarpHostView *);
         markedText = [[NSMutableAttributedString alloc] initWithString:string];
 
     lastMarkedSelectedRange = selectedRange;
+    if (interpretingKeyEvents) {
+        setMarkedTextDuringInterpret = YES;
+    }
 
     if (self.readyForWarp) {
         warp_marked_text_updated(self, markedText.string, selectedRange);
