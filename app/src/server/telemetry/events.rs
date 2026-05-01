@@ -524,8 +524,8 @@ pub enum NotificationAgentVariant {
 impl From<NotificationSourceAgent> for NotificationAgentVariant {
     fn from(agent: NotificationSourceAgent) -> Self {
         match agent {
-            NotificationSourceAgent::Oz => Self::Oz,
-            NotificationSourceAgent::CLI(cli_agent) => Self::CLIAgent(cli_agent.into()),
+            NotificationSourceAgent::Oz { .. } => Self::Oz,
+            NotificationSourceAgent::CLI { agent, .. } => Self::CLIAgent(agent.into()),
         }
     }
 }
