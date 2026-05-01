@@ -9,7 +9,12 @@
 
 pub mod claude_code;
 pub mod codex;
-// pub mod ollama;  // TODO PDX-46
+pub mod foundation_models;
+pub mod ollama;
+pub mod remote;
 
 pub use claude_code::{ClaudeCodeAgent, ClaudeModel};
 pub use codex::{CodexAgent, ReasoningEffort, ServiceTier};
+pub use foundation_models::FoundationModelsAgent;
+pub use ollama::OllamaAgent;
+pub use remote::RemoteAgent;
