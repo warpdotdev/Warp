@@ -1303,6 +1303,9 @@ mod tests {
             assert_eq!(path, PathBuf::from(expected_path));
             assert_eq!(line_col, expected_line_col);
         }
+    }
+}
+
 /// Returns true when the conversation with `conversation_id` is associated with a cloud Oz
 /// `AmbientAgentTask`. Used as the defensive runtime gate for `/continue-locally` so a
 /// keybinding-triggered execution can't fall through onto a non-cloud-Oz conversation after
