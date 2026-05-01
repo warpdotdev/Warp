@@ -22073,21 +22073,33 @@ impl View for Workspace {
             && self.vertical_tabs_panel_open
             && self.vertical_tabs_panel.show_settings_popup
         {
-            stack.add_positioned_overlay_child(
-                Dismiss::new(render_settings_popup(&self.vertical_tabs_panel, app))
-                    .prevent_interaction_with_other_elements()
-                    .on_dismiss(|ctx, _| {
-                        ctx.dispatch_typed_action(WorkspaceAction::ToggleVerticalTabsSettingsPopup);
-                    })
-                    .finish(),
-                OffsetPositioning::offset_from_save_position_element(
-                    VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
-                    vec2f(0., 4.),
-                    PositionedElementOffsetBounds::WindowByPosition,
-                    PositionedElementAnchor::BottomLeft,
-                    ChildAnchor::TopLeft,
-                ),
-            );
+            {
+                let tabs_side = Self::tabs_panel_side(
+                    &TabSettings::as_ref(app).header_toolbar_chip_selection,
+                );
+                let (popup_anchor, popup_child_anchor) = if tabs_side == PanelPosition::Left {
+                    (PositionedElementAnchor::BottomLeft, ChildAnchor::TopLeft)
+                } else {
+                    (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight)
+                };
+                stack.add_positioned_overlay_child(
+                    Dismiss::new(render_settings_popup(&self.vertical_tabs_panel, app))
+                        .prevent_interaction_with_other_elements()
+                        .on_dismiss(|ctx, _| {
+                            ctx.dispatch_typed_action(
+                                WorkspaceAction::ToggleVerticalTabsSettingsPopup,
+                            );
+                        })
+                        .finish(),
+                    OffsetPositioning::offset_from_save_position_element(
+                        VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
+                        vec2f(0., 4.),
+                        PositionedElementOffsetBounds::WindowByPosition,
+                        popup_anchor,
+                        popup_child_anchor,
+                    ),
+                );
+            }
         }
 
         if FeatureFlag::VerticalTabs.is_enabled()
