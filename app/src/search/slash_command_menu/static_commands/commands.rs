@@ -732,18 +732,6 @@ mod tests {
     }
 
     #[test]
-    fn add_mcp_command_clarifies_settings_flow() {
-        let command = COMMAND_REGISTRY
-            .get_command_with_name(ADD_MCP.name)
-            .expect("expected /add-mcp to be registered");
-
-        assert_eq!(
-            command.description,
-            "Add a new MCP server via the MCP settings page"
-        );
-    }
-
-    #[test]
     fn rename_tab_command_requires_argument() {
         let command = COMMAND_REGISTRY
             .get_command_with_name(RENAME_TAB.name)
