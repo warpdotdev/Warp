@@ -119,6 +119,9 @@ jobs:
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@main
 
+      - name: Install cargo release dependencies
+        run: ./script/install_cargo_release_deps --no-build-deps
+
       - name: Install channel config (graceful failure for forks)
         run: ./script/install_channel_config || echo "Skipping channel config (no access)"
 
@@ -237,6 +240,9 @@ jobs:
 
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@main
+
+      - name: Install cargo release dependencies
+        run: ./script/install_cargo_release_deps --no-build-deps
 
       - name: Install channel config (graceful failure for forks)
         run: ./script/install_channel_config || echo "Skipping channel config (no access)"
