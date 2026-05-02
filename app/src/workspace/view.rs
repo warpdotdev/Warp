@@ -8212,7 +8212,8 @@ impl Workspace {
 
     fn user_menu_items(&self, app: &AppContext) -> Vec<MenuItem<WorkspaceAction>> {
         let mut items = Vec::new();
-        if !self.auth_state.is_anonymous_or_logged_out() {
+        let bypass = crate::local_ai::auth_bypass_enabled();
+        if !bypass && !self.auth_state.is_anonymous_or_logged_out() {
             let name = self.auth_state.username_for_display().unwrap_or_default();
             items.push(MenuItemFields::new(name).with_disabled(true).into_item())
         }
@@ -8264,8 +8265,6 @@ impl Workspace {
                 _ => {}
             }
         }
-
-        let bypass = crate::local_ai::auth_bypass_enabled();
 
         if !bypass {
             items.push(
@@ -8344,7 +8343,7 @@ impl Workspace {
             }
         }
 
-        if !crate::local_ai::auth_bypass_enabled() {
+        if !bypass {
             items.push(
                 MenuItemFields::new("Invite a friend")
                     .with_on_select_action(WorkspaceAction::ShowReferralSettingsPage)
@@ -8352,7 +8351,7 @@ impl Workspace {
             );
         }
 
-        if !self.auth_state.is_anonymous_or_logged_out() {
+        if !bypass && !self.auth_state.is_anonymous_or_logged_out() {
             items.push(
                 MenuItemFields::new("Log out")
                     .with_on_select_action(WorkspaceAction::LogOut)
@@ -17720,7 +17719,9 @@ impl Workspace {
             .username_for_display()
             .unwrap_or(DEFAULT_USER_DISPLAY_NAME.to_owned());
 
-        let avatar_content = if self.auth_state.is_anonymous_or_logged_out() {
+        let avatar_content = if self.auth_state.is_anonymous_or_logged_out()
+            || crate::local_ai::auth_bypass_enabled()
+        {
             AvatarContent::Icon(icons::Icon::Gear)
         } else {
             self.auth_state
