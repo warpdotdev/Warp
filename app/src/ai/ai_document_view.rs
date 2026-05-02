@@ -263,9 +263,16 @@ impl AIDocumentView {
                     me.refresh(ctx);
                 }
                 AIDocumentModelEvent::DocumentVisibilityChanged(_) => {}
-                AIDocumentModelEvent::OrchestrationConfigUpdated => {
-                    // Re-render so the config block picks up changes.
-                    ctx.notify();
+                AIDocumentModelEvent::OrchestrationConfigUpdated {
+                    conversation_id: cid,
+                } => {
+                    // Re-render so the config block picks up changes
+                    // only for our document's conversation.
+                    let our_conv = AIDocumentModel::as_ref(ctx)
+                        .get_conversation_id_for_document_id(&document_id);
+                    if our_conv.as_ref() == Some(cid) {
+                        ctx.notify();
+                    }
                 }
             },
         );
@@ -409,12 +416,20 @@ impl AIDocumentView {
                 })
         });
 
-        // Create the orchestration config block if there's an active config.
-        let orchestration_config_block = if AIDocumentModel::as_ref(ctx)
-            .active_orchestration_config()
-            .is_some()
-        {
-            Some(ctx.add_typed_action_view(OrchestrationConfigBlockView::new))
+        // Create the orchestration config block if there's an active config
+        // for this document's conversation.
+        let doc_conversation_id = AIDocumentModel::as_ref(ctx)
+            .get_conversation_id_for_document_id(&document_id);
+        let has_orchestration_config = doc_conversation_id
+            .and_then(|cid| {
+                BlocklistAIHistoryModel::as_ref(ctx)
+                    .conversation(&cid)
+                    .and_then(|conv| conv.orchestration_config().map(|_| cid))
+            });
+        let orchestration_config_block = if let Some(conv_id) = has_orchestration_config {
+            Some(ctx.add_typed_action_view(move |ctx| {
+                OrchestrationConfigBlockView::new_with_conversation_id(conv_id, ctx)
+            }))
         } else {
             None
         };
@@ -1034,7 +1049,12 @@ impl View for AIDocumentView {
 
     fn render(&self, _app: &AppContext) -> Box<dyn warpui::Element> {
         let has_orchestration_config = AIDocumentModel::as_ref(_app)
-            .active_orchestration_config()
+            .get_conversation_id_for_document_id(&self.document_id)
+            .and_then(|cid| {
+                BlocklistAIHistoryModel::as_ref(_app)
+                    .conversation(&cid)
+                    .and_then(|conv| conv.orchestration_config().map(|_| ()))
+            })
             .is_some();
 
         let mut content_column =

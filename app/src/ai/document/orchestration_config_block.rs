@@ -10,12 +10,14 @@ use warpui::elements::{
 use warpui::fonts::{Properties, Weight};
 use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
+use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::inline_action::orchestration_controls::{
     self as oc, OrchestrationControlAction, OrchestrationEditState, OrchestrationPickerHandles,
 };
 use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
+use crate::BlocklistAIHistoryModel;
 
 const CONFIG_BLOCK_HEADER: &str = "Use orchestration";
 const CONFIG_BLOCK_DESCRIPTION: &str =
@@ -58,6 +60,7 @@ impl OrchestrationControlAction for OrchestrationConfigBlockAction {
 // ── View ────────────────────────────────────────────────────────────
 
 pub struct OrchestrationConfigBlockView {
+    conversation_id: AIConversationId,
     edit_state: OrchestrationEditState,
     pickers: OrchestrationPickerHandles<OrchestrationConfigBlockAction>,
     is_approved: bool,
@@ -65,30 +68,45 @@ pub struct OrchestrationConfigBlockView {
 }
 
 impl OrchestrationConfigBlockView {
-    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        let doc_model = AIDocumentModel::as_ref(ctx);
-        let (edit_state, is_approved) = match doc_model.active_orchestration_config() {
-            Some(config) => (
-                OrchestrationEditState::from_orchestration_config(config),
-                doc_model.orchestration_status().is_approved(),
-            ),
-            None => (
-                OrchestrationEditState::from_run_agents_fields(
-                    "auto",
-                    "oz",
-                    &RunAgentsExecutionMode::Local,
-                ),
-                false,
-            ),
-        };
+    pub fn new_with_conversation_id(
+        conversation_id: AIConversationId,
+        ctx: &mut ViewContext<Self>,
+    ) -> Self {
+        let history = BlocklistAIHistoryModel::as_ref(ctx);
+        let (edit_state, is_approved) = history
+            .conversation(&conversation_id)
+            .and_then(|conv| {
+                conv.orchestration_config().map(|config| {
+                    (
+                        OrchestrationEditState::from_orchestration_config(config),
+                        conv.orchestration_status().is_approved(),
+                    )
+                })
+            })
+            .unwrap_or_else(|| {
+                (
+                    OrchestrationEditState::from_run_agents_fields(
+                        "auto",
+                        "oz",
+                        &RunAgentsExecutionMode::Local,
+                    ),
+                    false,
+                )
+            });
 
-        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), |me, _, event, ctx| {
-            if let AIDocumentModelEvent::OrchestrationConfigUpdated = event {
-                me.refresh_from_model(ctx);
+        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), move |me, _, event, ctx| {
+            if let AIDocumentModelEvent::OrchestrationConfigUpdated {
+                conversation_id: cid,
+            } = event
+            {
+                if *cid == me.conversation_id {
+                    me.refresh_from_model(ctx);
+                }
             }
         });
 
         Self {
+            conversation_id,
             edit_state,
             pickers: OrchestrationPickerHandles::default(),
             is_approved,
@@ -97,14 +115,16 @@ impl OrchestrationConfigBlockView {
     }
 
     fn refresh_from_model(&mut self, ctx: &mut ViewContext<Self>) {
-        let doc_model = AIDocumentModel::as_ref(ctx);
-        if let Some(config) = doc_model.active_orchestration_config() {
-            self.edit_state = OrchestrationEditState::from_orchestration_config(config);
-            self.is_approved = doc_model.orchestration_status().is_approved();
-            if self.pickers_initialized {
-                oc::sync_picker_selections(&self.edit_state, &self.pickers, ctx);
+        let history = BlocklistAIHistoryModel::as_ref(ctx);
+        if let Some(conv) = history.conversation(&self.conversation_id) {
+            if let Some(config) = conv.orchestration_config() {
+                self.edit_state = OrchestrationEditState::from_orchestration_config(config);
+                self.is_approved = conv.orchestration_status().is_approved();
+                if self.pickers_initialized {
+                    oc::sync_picker_selections(&self.edit_state, &self.pickers, ctx);
+                }
+                ctx.notify();
             }
-            ctx.notify();
         }
     }
 
@@ -150,8 +170,9 @@ impl OrchestrationConfigBlockView {
         } else {
             OrchestrationConfigStatus::Disapproved
         };
+        let conversation_id = self.conversation_id;
         AIDocumentModel::handle(ctx).update(ctx, |model, ctx| {
-            model.set_orchestration_config(config, status, None, ctx);
+            model.set_orchestration_config(conversation_id, config, status, None, ctx);
         });
     }
 }

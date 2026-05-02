@@ -7,6 +7,7 @@ use crate::ai::skills::SkillDescriptor;
 use crate::code_review::CodeReviewTelemetryEvent;
 use crate::notebooks::NotebookId;
 use crate::persistence::model::{ConversationUsageMetadata, ModelTokenUsage, ToolUsageMetadata};
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 use crate::server::ids::ServerId;
 use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::model::block::{
@@ -228,6 +229,12 @@ pub struct AIConversation {
     /// event log. Used on restore to resume event delivery without
     /// re-delivering already-processed events.
     last_event_sequence: Option<i64>,
+
+    /// Per-conversation orchestration config hydrated from
+    /// `OrchestrationConfigSnapshot` messages in the conversation's task list.
+    orchestration_config: Option<OrchestrationConfig>,
+    orchestration_status: OrchestrationConfigStatus,
+    orchestration_plan_id: Option<String>,
 }
 
 pub(crate) fn artifact_from_fork_proto(
@@ -278,6 +285,9 @@ impl AIConversation {
             parent_conversation_id: None,
             is_remote_child: false,
             last_event_sequence: None,
+            orchestration_config: None,
+            orchestration_status: OrchestrationConfigStatus::default(),
+            orchestration_plan_id: None,
         }
     }
 
@@ -463,6 +473,9 @@ impl AIConversation {
             parent_conversation_id,
             is_remote_child,
             last_event_sequence,
+            orchestration_config: None,
+            orchestration_status: OrchestrationConfigStatus::default(),
+            orchestration_plan_id: None,
         })
     }
 
@@ -837,6 +850,35 @@ impl AIConversation {
     /// Marks this conversation as a remote child placeholder.
     pub fn mark_as_remote_child(&mut self) {
         self.is_remote_child = true;
+    }
+
+    pub fn orchestration_config(&self) -> Option<&OrchestrationConfig> {
+        self.orchestration_config.as_ref()
+    }
+
+    pub fn orchestration_status(&self) -> OrchestrationConfigStatus {
+        self.orchestration_status
+    }
+
+    pub fn orchestration_plan_id(&self) -> Option<&str> {
+        self.orchestration_plan_id.as_deref()
+    }
+
+    /// Replaces the orchestration config, status, and plan_id for this
+    /// conversation. Returns `true` if any value actually changed.
+    pub fn set_orchestration_config(
+        &mut self,
+        config: Option<OrchestrationConfig>,
+        status: OrchestrationConfigStatus,
+        plan_id: Option<String>,
+    ) -> bool {
+        let changed = self.orchestration_config != config
+            || self.orchestration_status != status
+            || self.orchestration_plan_id != plan_id;
+        self.orchestration_config = config;
+        self.orchestration_status = status;
+        self.orchestration_plan_id = plan_id;
+        changed
     }
 
     /// Returns a flat list of linearized messages across all tasks, interpolating subtask messages
