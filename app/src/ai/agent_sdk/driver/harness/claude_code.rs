@@ -544,14 +544,24 @@ fn prepare_claude_environment_config(
     working_dir: &Path,
     secrets: &HashMap<String, ManagedSecretValue>,
 ) -> Result<()> {
-    let home_dir =
-        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
+    let home_dir = claude_home_dir()?;
     let claude_json_path = home_dir.join(CLAUDE_JSON_FILE_NAME);
     let claude_settings_path = claude_config_dir()?.join(CLAUDE_SETTINGS_FILE_NAME);
     let api_key_suffix = resolve_anthropic_api_key_suffix(secrets);
     prepare_claude_config(&claude_json_path, working_dir, api_key_suffix.as_deref())?;
     prepare_claude_settings(&claude_settings_path)?;
     Ok(())
+}
+
+fn claude_home_dir() -> Result<PathBuf> {
+    #[cfg(test)]
+    if let Some(home_dir) = std::env::var_os("HOME") {
+        if !home_dir.as_os_str().is_empty() {
+            return Ok(PathBuf::from(home_dir));
+        }
+    }
+
+    dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
 }
 
 fn prepare_claude_config(
