@@ -8,7 +8,9 @@ publish.workspace = true
 
 [dependencies]
 chrono = { workspace = true }
+diesel = { workspace = true, features = ["sqlite"] }
 orchestrator = { workspace = true }
+persistence = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -18,5 +20,6 @@ tracing = { workspace = true }
 walkdir = { workspace = true }
 
 [dev-dependencies]
+diesel_migrations = "2.2.0"
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
