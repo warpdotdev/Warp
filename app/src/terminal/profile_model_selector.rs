@@ -4,6 +4,11 @@ use instant::{Duration, Instant};
 use parking_lot::FairMutex;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
+// Pulled in only to ground the `as_claude_model()` accessor; the rest of
+// this file refers to Claude variants via the local `ClaudeCodeOption`
+// enum so it stays buildable on `target_family = "wasm"`.
+#[cfg(not(target_family = "wasm"))]
+use agents::ClaudeModel;
 use std::sync::Arc;
 use warpui::{
     elements::{
@@ -64,6 +69,7 @@ use warp_core::{
     features::FeatureFlag,
     ui::color::{coloru_with_opacity, Opacity},
 };
+use warpui::fonts::{Properties as FontProperties, Style as FontStyle, Weight as FontWeight};
 
 const MENU_WIDTH: f32 = 280.;
 const NEW_MODEL_CHOICES_POPUP_DELAY: Duration = Duration::from_millis(500);
@@ -177,6 +183,15 @@ pub struct ProfileModelSelector {
     manage_api_key_button: ViewHandle<ActionButton>,
     terminal_model: Arc<FairMutex<TerminalModel>>,
     all_model_choices: Vec<LLMInfo>,
+    /// Per-session pin of which Claude Code model the next turn should
+    /// dispatch through. `None` means "use the normal Router tie-break".
+    ///
+    /// TODO(PDX-103 B1 task 2): once the Router lives on `AppContext`, this
+    /// pin should move to a per-session struct that the AgentDriver reads
+    /// during dispatch (and that survives selector teardown). For now we
+    /// keep it on the selector itself, which is per-`terminal_view_id`,
+    /// so it persists across menu opens within the same terminal session.
+    pinned_claude_code_model: Option<ClaudeCodeOption>,
 }
 
 pub enum ProfileModelSelectorEvent {
@@ -194,6 +209,134 @@ pub enum ProfileModelSelectorAction {
     ManageProfiles,
     ToggleProfileMenu,
     ToggleModelMenu,
+    /// Pin the next turn to a Claude Code model. The skeleton just records the
+    /// pin on the selector; B1 task 2 will lift the Router into `AppContext`
+    /// and dispatch through `Provider::ClaudeCode` from there.
+    SelectClaudeCodeModel(ClaudeCodeOption),
+    /// Open the AI settings page anchored to the `CliAgentSignInWidget`
+    /// (added on the sibling `pdx-103-b1-cli-agent-signin-ui` branch).
+    OpenClaudeCodeSignIn,
+}
+
+/// In-prompt selector entry identifying a Claude Code model variant.
+///
+/// Mirrors a subset of `agents::ClaudeModel`. We keep this app-side enum
+/// (rather than re-using `ClaudeModel` directly) so that the action enum
+/// remains buildable on `target_family = "wasm"`, where the `agents` crate
+/// is not a dependency.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ClaudeCodeOption {
+    /// Sonnet 4.6 — balanced workhorse, registered first in B1.
+    Sonnet46,
+    // TODO(PDX-103 B1 task 3): add `Opus47` and `Haiku45` once those agents
+    // are registered with the Router. They are currently skeletons in
+    // `crates/agents/src/claude_code.rs`.
+}
+
+impl ClaudeCodeOption {
+    /// Human-readable label rendered in the menu row.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            ClaudeCodeOption::Sonnet46 => "Claude Sonnet 4.6",
+        }
+    }
+
+    /// Stable position-id slug used for layout anchoring and tests.
+    pub fn position_slug(self) -> &'static str {
+        match self {
+            ClaudeCodeOption::Sonnet46 => "claude_sonnet_46",
+        }
+    }
+
+    /// Map to the underlying `agents::ClaudeModel` variant.
+    ///
+    /// Native-only because the `agents` crate is not compiled on wasm.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn as_claude_model(self) -> ClaudeModel {
+        match self {
+            ClaudeCodeOption::Sonnet46 => ClaudeModel::Sonnet46,
+        }
+    }
+
+    /// Ordered list of options surfaced in the in-prompt selector.
+    pub fn all() -> &'static [ClaudeCodeOption] {
+        &[ClaudeCodeOption::Sonnet46]
+    }
+}
+
+/// Build the "Claude Code" section appended to the bottom of the model menu.
+///
+/// Returns a `Separator`, a `Header { "Claude Code", … }`, and one
+/// `MenuItem::Item` per `ClaudeCodeOption` in `health_states`.
+///
+/// * `health_states` — pairs of `(option, is_healthy)`. Unhealthy entries
+///   render disabled with a right-side "Sign in" hint and a tooltip; an
+///   extra "Sign in to Claude Code" entry is appended that emits
+///   `OpenClaudeCodeSignIn` (handled by the selector to fire
+///   `OpenSettings(SettingsSection::AI)`).
+/// * `pinned` — the option currently pinned for the session, marked with
+///   a check icon. Pass `None` for "no pin".
+///
+/// This helper is ctx-free so it can be unit-tested without spinning up a
+/// full `ViewContext`.
+pub(crate) fn build_claude_code_menu_items(
+    health_states: &[(ClaudeCodeOption, bool)],
+    pinned: Option<ClaudeCodeOption>,
+) -> Vec<MenuItem<ProfileModelSelectorAction>> {
+    let mut items: Vec<MenuItem<ProfileModelSelectorAction>> = Vec::new();
+    if health_states.is_empty() {
+        return items;
+    }
+
+    items.push(MenuItem::Separator);
+    items.push(MenuItem::Header {
+        fields: MenuItemFields::new("Claude Code"),
+        clickable: false,
+        right_side_fields: None,
+    });
+
+    let mut any_unhealthy = false;
+    for (option, healthy) in health_states {
+        let mut fields = MenuItemFields::new(option.display_name())
+            .with_on_select_action(ProfileModelSelectorAction::SelectClaudeCodeModel(*option));
+
+        if pinned == Some(*option) {
+            fields = fields.with_icon(Icon::Check);
+        } else {
+            fields = fields.with_indent();
+        }
+
+        if !*healthy {
+            any_unhealthy = true;
+            fields = fields
+                .with_disabled(true)
+                .with_tooltip(
+                    "Sign in to Claude Code in Settings → AI to enable this model.",
+                )
+                .with_right_side_label(
+                    "Sign in",
+                    FontProperties::default()
+                        .style(FontStyle::Italic)
+                        .weight(FontWeight::Medium),
+                );
+        }
+
+        items.push(MenuItem::Item(fields));
+    }
+
+    // Inline sign-in affordance: an extra clickable row that fires
+    // `OpenSettings(SettingsSection::AI)` so users can sign in without
+    // backing out of the prompt. Only shown when at least one Claude Code
+    // option is unhealthy.
+    if any_unhealthy {
+        items.push(MenuItem::Item(
+            MenuItemFields::new("Sign in to Claude Code…")
+                .with_icon(Icon::Gear)
+                .with_on_select_action(ProfileModelSelectorAction::OpenClaudeCodeSignIn),
+        ));
+    }
+
+    items
 }
 
 /// Menu type for get_selected_llm_info lookups
@@ -544,6 +687,7 @@ impl ProfileModelSelector {
             manage_api_key_button,
             terminal_model,
             all_model_choices: Vec::new(),
+            pinned_claude_code_model: None,
         };
         me.refresh_state(ctx);
         me
@@ -589,6 +733,26 @@ impl ProfileModelSelector {
 
     pub fn is_open(&self) -> bool {
         self.is_profile_menu_open || self.is_model_menu_open
+    }
+
+    /// Currently-pinned Claude Code option for this session, if any.
+    ///
+    /// Used by `AgentDriver` to force-route the next turn through
+    /// `Provider::ClaudeCode`, bypassing the Router's normal Role + budget
+    /// tie-break. Returns `None` when no Claude Code model is pinned.
+    pub fn pinned_claude_code_model(&self) -> Option<ClaudeCodeOption> {
+        self.pinned_claude_code_model
+    }
+
+    /// Stub health probe for a Claude Code option.
+    ///
+    /// TODO(PDX-103 B1 task 2 + task 6): once the Router lives on
+    /// `AppContext` and `CliAgentSignInWidget` reports the live auth state,
+    /// this should call `Router::agent_health(&AgentId(...))` and return
+    /// the real `Health::healthy` flag. For now we report "always healthy"
+    /// so the selector compiles and renders against current `master`.
+    fn claude_code_option_healthy(&self, _option: ClaudeCodeOption) -> bool {
+        true
     }
 
     pub fn model_menu_item_position_id(&self, llm_id: &LLMId) -> String {
@@ -811,7 +975,7 @@ impl ProfileModelSelector {
             .filter_map(|(_, variants)| variants.into_iter().next())
             .collect();
 
-        let items = available_model_menu_items(
+        let mut items = available_model_menu_items(
             choices,
             |llm| {
                 let all_refs: Vec<_> = self.all_model_choices.iter().collect();
@@ -831,6 +995,19 @@ impl ProfileModelSelector {
             true,
             ctx,
         );
+
+        // Append the Claude Code section under the existing model list.
+        // Each option is health-aware: when the underlying agent is
+        // unhealthy (signed-out / binary missing), we render it disabled
+        // with an inline "Sign in" affordance that deep-links back into the
+        // AI settings page where `CliAgentSignInWidget` lives (added on the
+        // sibling `pdx-103-b1-cli-agent-signin-ui` branch).
+        let pinned = self.pinned_claude_code_model;
+        let health_states: Vec<(ClaudeCodeOption, bool)> = ClaudeCodeOption::all()
+            .iter()
+            .map(|o| (*o, self.claude_code_option_healthy(*o)))
+            .collect();
+        items.extend(build_claude_code_menu_items(&health_states, pinned));
 
         let selected_index = Self::find_selected_index(&items, active_llm);
         self.model_dropdown.update(ctx, |menu, ctx| {
@@ -1842,6 +2019,31 @@ impl TypedActionView for ProfileModelSelector {
                     self.set_model_menu_visibility(!self.is_model_menu_open, ctx);
                 }
             }
+            ProfileModelSelectorAction::SelectClaudeCodeModel(option) => {
+                // TODO(PDX-103 B1 task 2): once the Router is on AppContext,
+                // also write through to the per-session pin used by
+                // `AgentDriver` to dispatch with `Provider::ClaudeCode`
+                // (currently `orchestrator::Provider::ClaudeCode`).
+                log::info!(
+                    "Pinning Claude Code option {:?} for terminal {:?}",
+                    option,
+                    self.terminal_view_id
+                );
+                self.pinned_claude_code_model = Some(*option);
+                self.set_model_menu_visibility(false, ctx);
+                ctx.notify();
+            }
+            ProfileModelSelectorAction::OpenClaudeCodeSignIn => {
+                self.set_model_menu_visibility(false, ctx);
+                // Deep-link via the existing OpenSettings event. The
+                // `CliAgentSignInWidget` lives on the sibling
+                // `pdx-103-b1-cli-agent-signin-ui` branch and renders inside
+                // `SettingsSection::AI`; once that branch lands we can
+                // anchor more precisely (e.g. via a scroll-to fragment).
+                ctx.emit(ProfileModelSelectorEvent::OpenSettings(
+                    SettingsSection::AI,
+                ));
+            }
         }
     }
 }
@@ -2024,4 +2226,107 @@ impl View for ProfileModelSelector {
 
 impl Entity for ProfileModelSelector {
     type Event = ProfileModelSelectorEvent;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn count_actions(
+        items: &[MenuItem<ProfileModelSelectorAction>],
+        f: impl Fn(&ProfileModelSelectorAction) -> bool,
+    ) -> usize {
+        items
+            .iter()
+            .filter_map(|i| i.item_on_select_action())
+            .filter(|a| f(*a))
+            .count()
+    }
+
+    #[test]
+    fn build_claude_code_menu_items_empty_when_no_options() {
+        let items = build_claude_code_menu_items(&[], None);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn build_claude_code_menu_items_includes_separator_and_header() {
+        let items =
+            build_claude_code_menu_items(&[(ClaudeCodeOption::Sonnet46, true)], None);
+        assert!(matches!(items.first(), Some(MenuItem::Separator)));
+        assert!(matches!(items.get(1), Some(MenuItem::Header { .. })));
+    }
+
+    #[test]
+    fn build_claude_code_menu_items_emits_select_action_for_each_option() {
+        let items =
+            build_claude_code_menu_items(&[(ClaudeCodeOption::Sonnet46, true)], None);
+        let n = count_actions(&items, |a| {
+            matches!(a, ProfileModelSelectorAction::SelectClaudeCodeModel(_))
+        });
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn build_claude_code_menu_items_renders_disabled_with_signin_when_unhealthy() {
+        let items =
+            build_claude_code_menu_items(&[(ClaudeCodeOption::Sonnet46, false)], None);
+
+        // The Sonnet row must be disabled.
+        let sonnet_disabled = items.iter().any(|item| match item {
+            MenuItem::Item(fields) => {
+                fields.is_disabled()
+                    && matches!(
+                        item.item_on_select_action(),
+                        Some(ProfileModelSelectorAction::SelectClaudeCodeModel(
+                            ClaudeCodeOption::Sonnet46
+                        ))
+                    )
+            }
+            _ => false,
+        });
+        assert!(sonnet_disabled, "expected unhealthy Sonnet row to be disabled");
+
+        // And an inline "Sign in to Claude Code" row must appear.
+        let n = count_actions(&items, |a| {
+            matches!(a, ProfileModelSelectorAction::OpenClaudeCodeSignIn)
+        });
+        assert_eq!(n, 1, "expected exactly one OpenClaudeCodeSignIn entry");
+    }
+
+    #[test]
+    fn build_claude_code_menu_items_no_signin_row_when_all_healthy() {
+        let items =
+            build_claude_code_menu_items(&[(ClaudeCodeOption::Sonnet46, true)], None);
+        let n = count_actions(&items, |a| {
+            matches!(a, ProfileModelSelectorAction::OpenClaudeCodeSignIn)
+        });
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn pinned_option_is_marked_with_check_icon() {
+        let items = build_claude_code_menu_items(
+            &[(ClaudeCodeOption::Sonnet46, true)],
+            Some(ClaudeCodeOption::Sonnet46),
+        );
+        let pinned_item = items.iter().find(|item| {
+            matches!(
+                item.item_on_select_action(),
+                Some(ProfileModelSelectorAction::SelectClaudeCodeModel(
+                    ClaudeCodeOption::Sonnet46
+                ))
+            )
+        });
+        let pinned_fields = match pinned_item {
+            Some(MenuItem::Item(fields)) => fields,
+            _ => panic!("pinned Sonnet row missing"),
+        };
+        assert_eq!(pinned_fields.icon(), Some(crate::ui_components::icons::Icon::Check));
+    }
+
+    #[test]
+    fn claude_code_option_all_starts_with_sonnet_46() {
+        assert_eq!(ClaudeCodeOption::all().first(), Some(&ClaudeCodeOption::Sonnet46));
+    }
 }
