@@ -134,7 +134,10 @@ fn computer_use_not_in_match_check() {
 
 #[test]
 fn status_default_is_none() {
-    assert_eq!(OrchestrationConfigStatus::default(), OrchestrationConfigStatus::None);
+    assert_eq!(
+        OrchestrationConfigStatus::default(),
+        OrchestrationConfigStatus::None
+    );
 }
 
 #[test]

@@ -46,7 +46,7 @@ use crate::view_components::compactible_action_button::{
     CompactibleActionButton, RenderCompactibleActionButton, MEDIUM_SIZE_SWITCH_THRESHOLD,
 };
 use crate::view_components::compactible_split_action_button::CompactibleSplitActionButton;
-use crate::view_components::dropdown::{DropdownEvent};
+use crate::view_components::dropdown::DropdownEvent;
 use crate::view_components::FilterableDropdownEvent;
 
 const RUN_AGENTS_CARD_TITLE: &str = "Can I add additional agents to this task?";
@@ -213,17 +213,16 @@ impl RunAgentsCardView {
     ) -> Self {
         // Detect an existing Denied result from history (e.g. restored
         // conversation where orchestration was disabled).
-        let is_denied =
-            if let Some(AIActionStatus::Finished(result)) =
-                action_model.as_ref(ctx).get_action_status(&action_id)
-            {
-                matches!(
-                    &result.result,
-                    AIAgentActionResultType::RunAgents(RunAgentsResult::Denied { .. })
-                )
-            } else {
-                false
-            };
+        let is_denied = if let Some(AIActionStatus::Finished(result)) =
+            action_model.as_ref(ctx).get_action_status(&action_id)
+        {
+            matches!(
+                &result.result,
+                AIAgentActionResultType::RunAgents(RunAgentsResult::Denied { .. })
+            )
+        } else {
+            false
+        };
 
         // Auto-launch when the active config is approved and matches
         // the request — skip the confirmation card entirely.
@@ -335,7 +334,11 @@ impl RunAgentsCardView {
     /// Re-sync edit state from the latest streaming request.
     /// No-op when the editor is open (user edits take precedence).
     pub fn update_request(&mut self, request: &RunAgentsRequest, ctx: &mut ViewContext<Self>) {
-        if self.state.is_editor_open || self.spawning.is_some() || self.auto_launched || self.is_denied {
+        if self.state.is_editor_open
+            || self.spawning.is_some()
+            || self.auto_launched
+            || self.is_denied
+        {
             return;
         }
         let new_state = RunAgentsEditState::from_request(request);
@@ -467,7 +470,9 @@ impl RunAgentsCardView {
     }
 
     fn subscribe_picker_close(
-        dropdown_handle: &ViewHandle<crate::view_components::dropdown::Dropdown<RunAgentsCardViewAction>>,
+        dropdown_handle: &ViewHandle<
+            crate::view_components::dropdown::Dropdown<RunAgentsCardViewAction>,
+        >,
         ctx: &mut ViewContext<Self>,
     ) {
         ctx.subscribe_to_view(dropdown_handle, move |me, _, event, ctx| {
@@ -885,7 +890,11 @@ fn render_editor(
         .with_margin_top(12.)
         .finish(),
     );
-    column.add_child(oc::render_picker_row(&state.orch, &handles.pickers, appearance));
+    column.add_child(oc::render_picker_row(
+        &state.orch,
+        &handles.pickers,
+        appearance,
+    ));
 
     if let Some(reason) = state.orch.accept_disabled_reason() {
         column.add_child(oc::render_validation_error(
@@ -893,7 +902,9 @@ fn render_editor(
             theme.ui_error_color(),
             appearance,
         ));
-    } else if let Some(message) = oc::empty_env_recommendation_message(&state.orch.execution_mode, app) {
+    } else if let Some(message) =
+        oc::empty_env_recommendation_message(&state.orch.execution_mode, app)
+    {
         column.add_child(oc::render_validation_error(
             message,
             theme.ui_warning_color(),
