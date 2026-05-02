@@ -20,6 +20,7 @@ pub mod skill;
 pub mod agent;
 pub mod completions;
 pub mod config_file;
+pub mod new;
 pub mod environment;
 pub mod federate;
 pub mod harness_support;
@@ -243,6 +244,15 @@ impl Args {
                     }
                 }
 
+                if !FeatureFlag::TemplateScaffolding.is_enabled() {
+                    let args: Vec<String> = env::args().collect();
+                    if args.len() > 1 && args[1] == "new" {
+                        eprintln!("error: unrecognized subcommand 'new'\n");
+                        eprintln!("For more information, try '--help'");
+                        std::process::exit(2);
+                    }
+                }
+
                 let command = Self::clap_command();
 
                 command.try_get_matches()
@@ -347,6 +357,11 @@ impl Args {
         // Hide the artifact subcommand from help text.
         if !FeatureFlag::ArtifactCommand.is_enabled() {
             command = command.mut_subcommand("artifact", |c| c.hide(true));
+        }
+
+        // Hide the new subcommand from help text.
+        if !FeatureFlag::TemplateScaffolding.is_enabled() {
+            command = command.mut_subcommand("new", |c| c.hide(true));
         }
 
         // Wire up `--version` / `-V` using the same version metadata used elsewhere in the
@@ -535,6 +550,12 @@ pub enum CliCommand {
     /// Manage artifacts.
     #[command(subcommand)]
     Artifact(crate::artifact::ArtifactCommand),
+
+    /// Scaffold a new project from a registered template.
+    ///
+    /// As a shorthand, `warp new <template>` maps to `warp new scaffold <template>`.
+    /// Run `warp new list` to see available templates.
+    New(crate::new::NewCommand),
 }
 
 /// A subcommand of the main Warp application. This includes all [`WorkerCommand`]s as well as app-specific debugging tools.
