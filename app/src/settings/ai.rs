@@ -1483,6 +1483,12 @@ impl AISettings {
     }
 
     pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {
+        // Local-AI bypass: force-enable AI gating so the agent UI, menu items,
+        // and Cmd+I binding predicate all light up.
+        if crate::local_ai::auth_bypass_enabled() {
+            return true;
+        }
+
         // Disable AI for anonymous and logged-out users.
         let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
             .get()

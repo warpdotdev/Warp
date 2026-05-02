@@ -1156,6 +1156,20 @@ fn register_input_mode_bindings(app: &mut AppContext) {
     )
     .with_enabled(|| FeatureFlag::AgentView.is_enabled())]);
 
+    // Local-AI bypass: cmd-i / ctrl-i toggles agent mode unconditionally when WARP_BYPASS_AUTH=1.
+    // The default is an EditableBinding that depends on the user's keybindings.json; in fresh
+    // OSS builds it doesn't fire reliably, so we add a FixedBinding with a Workspace-only
+    // predicate to guarantee the keystroke registers.
+    app.register_fixed_bindings([FixedBinding::new_per_platform(
+        PerPlatformKeystroke {
+            mac: "cmd-i",
+            linux_and_windows: "ctrl-i",
+        },
+        TerminalAction::SetInputModeAgent,
+        id!("Workspace"),
+    )
+    .with_enabled(|| crate::local_ai::auth_bypass_enabled())]);
+
     app.register_editable_bindings([
         EditableBinding::new(
             SET_INPUT_MODE_AGENT_ACTION_NAME,
