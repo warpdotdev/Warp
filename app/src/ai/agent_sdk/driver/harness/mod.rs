@@ -181,6 +181,16 @@ pub(crate) fn harness_kind_with_model(
                 Some(crate::local_ai::LocalModelSpec::Codex { .. }) => {
                     return Ok(HarnessKind::ThirdParty(Box::new(CodexHarness)));
                 }
+                Some(crate::local_ai::LocalModelSpec::Ollama { .. }) => {
+                    // Ollama uses HTTP (via local_cli.rs) for the interactive panel.
+                    // The TUI /agent command path does not have an OllamaHarness yet.
+                    // Fall through to the harness flag so /agent still works (with
+                    // whatever the user selected in the UI) while the panel uses HTTP.
+                    log::info!(
+                        "Ollama selected: interactive panel uses HTTP; \
+                         /agent TUI path falls back to harness flag (OllamaHarness deferred)"
+                    );
+                }
                 None => {}
             }
         }
@@ -195,9 +205,12 @@ pub(crate) fn harness_kind_with_model(
             return Ok(HarnessKind::ThirdParty(Box::new(CodexHarness)));
         }
         crate::local_ai::LocalAiMode::Ollama => {
-            // Phase 2: implement OllamaHarness. For now, fall through with a clear error so
-            // setting WARP_LOCAL_AI=ollama doesn't silently route to the cloud Oz path.
-            log::warn!("WARP_LOCAL_AI=ollama is not yet implemented; falling back to selected harness");
+            // Ollama uses HTTP for the interactive panel (local_cli.rs).
+            // The /agent TUI path falls through to the harness flag.
+            log::info!(
+                "WARP_LOCAL_AI=ollama: interactive panel uses HTTP; \
+                 /agent TUI path uses selected harness (OllamaHarness deferred)"
+            );
         }
         crate::local_ai::LocalAiMode::Off => {}
     }

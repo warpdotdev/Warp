@@ -8,14 +8,21 @@
 //! instead of Warp's server-fetched list.  Each entry uses a structured ID
 //! that encodes the provider and its parameters:
 //!
-//! | ID string                                   | CLI invoked                                   |
-//! |---------------------------------------------|-----------------------------------------------|
-//! | `local:claude:claude-sonnet-4-7`             | `claude -p --model claude-sonnet-4-7 ...`     |
-//! | `local:claude:claude-opus-4-7`               | `claude -p --model claude-opus-4-7 ...`       |
-//! | `local:claude:claude-haiku-4-5`              | `claude -p --model claude-haiku-4-5 ...`      |
-//! | `local:codex:gpt-5.5:low`                   | `codex exec -m gpt-5.5 -c reasoning_effort=low ...`  |
-//! | `local:codex:gpt-5.5:medium`                | `codex exec -m gpt-5.5 -c reasoning_effort=medium ...` |
-//! | `local:codex:gpt-5.5:high`                  | `codex exec -m gpt-5.5 -c reasoning_effort=high ...`  |
+//! | ID string                                   | Invocation                                                  |
+//! |---------------------------------------------|-------------------------------------------------------------|
+//! | `local:claude:claude-sonnet-4-7`             | `claude -p --model claude-sonnet-4-7 ...`                   |
+//! | `local:claude:claude-opus-4-7`               | `claude -p --model claude-opus-4-7 ...`                     |
+//! | `local:claude:claude-haiku-4-5`              | `claude -p --model claude-haiku-4-5 ...`                    |
+//! | `local:codex:gpt-5.5:low`                   | `codex exec -m gpt-5.5 -c reasoning_effort=low ...`         |
+//! | `local:codex:gpt-5.5:medium`                | `codex exec -m gpt-5.5 -c reasoning_effort=medium ...`      |
+//! | `local:codex:gpt-5.5:high`                  | `codex exec -m gpt-5.5 -c reasoning_effort=high ...`        |
+//! | `local:ollama:qwen2.5-coder:7b`              | HTTP POST `$OLLAMA_HOST/api/chat` model=qwen2.5-coder:7b    |
+//! | `local:ollama:llama3.3:70b`                  | HTTP POST `$OLLAMA_HOST/api/chat` model=llama3.3:70b        |
+//! | `local:ollama:custom`                        | HTTP POST `$OLLAMA_HOST/api/chat` model=`$OLLAMA_MODEL`     |
+//!
+//! Ollama uses HTTP, not a CLI subprocess.  The `POST /api/chat` endpoint with
+//! `"stream": true` returns newline-delimited JSON; each line is a chunk like
+//! `{"message":{"content":"..."},"done":false}`.  The final line has `"done":true`.
 //!
 //! The `WARP_LOCAL_AI` env var overrides which provider is used (for
 //! backwards compatibility) but does NOT restrict which models appear in the
@@ -31,7 +38,7 @@ use crate::ai::llms::{
 };
 
 // ---------------------------------------------------------------------------
-// LocalAiMode – legacy env-var override
+// LocalAiMode -- legacy env-var override
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +99,32 @@ pub fn local_model_routing_active() -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Ollama env-var helpers
+// ---------------------------------------------------------------------------
+
+/// Default Ollama base URL used when `OLLAMA_HOST` is not set.
+pub const OLLAMA_DEFAULT_HOST: &str = "http://localhost:11434";
+
+/// Returns the Ollama base URL, reading `OLLAMA_HOST` from the environment.
+pub fn ollama_host() -> String {
+    std::env::var("OLLAMA_HOST")
+        .ok()
+        .map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| OLLAMA_DEFAULT_HOST.to_string())
+}
+
+/// Returns the model name to use for the "custom" Ollama entry, reading
+/// `OLLAMA_MODEL` from the environment (defaults to `"llama3.2"`).
+pub fn ollama_custom_model() -> String {
+    std::env::var("OLLAMA_MODEL")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "llama3.2".to_string())
+}
+
+// ---------------------------------------------------------------------------
 // Local model ID helpers
 // ---------------------------------------------------------------------------
 
@@ -114,6 +147,9 @@ pub enum LocalModelSpec {
         model_name: String,
         reasoning_effort: Option<String>,
     },
+    /// HTTP POST to `$OLLAMA_HOST/api/chat` with the given model name.
+    /// When `model_name` is `"custom"`, the actual model is read from `$OLLAMA_MODEL`.
+    Ollama { model_name: String },
 }
 
 impl LocalModelSpec {
@@ -121,20 +157,41 @@ impl LocalModelSpec {
     /// Returns `None` for unrecognised or non-local IDs.
     pub fn parse(id: &str) -> Option<Self> {
         let rest = id.strip_prefix(LOCAL_MODEL_PREFIX)?;
-        let mut parts = rest.splitn(3, ':');
-        let provider = parts.next()?;
-        let model_name = parts.next()?.to_string();
+        // Ollama model names contain colons (e.g. "qwen2.5-coder:7b"), so we
+        // only split off the provider prefix and keep the rest as the model name.
+        let colon = rest.find(':')?;
+        let provider = &rest[..colon];
+        let after_provider = &rest[colon + 1..];
 
         match provider {
-            "claude" => Some(LocalModelSpec::Claude { model_name }),
+            "claude" => Some(LocalModelSpec::Claude {
+                model_name: after_provider.to_string(),
+            }),
             "codex" => {
+                // Codex IDs: `codex:<model>` or `codex:<model>:<effort>`
+                // Model names don't contain colons, so splitting on ':' is safe here.
+                let mut parts = after_provider.splitn(2, ':');
+                let model_name = parts.next()?.to_string();
                 let reasoning_effort = parts.next().map(str::to_string);
                 Some(LocalModelSpec::Codex {
                     model_name,
                     reasoning_effort,
                 })
             }
+            "ollama" => Some(LocalModelSpec::Ollama {
+                model_name: after_provider.to_string(),
+            }),
             _ => None,
+        }
+    }
+
+    /// Resolve the effective Ollama model name, expanding `"custom"` to
+    /// the `OLLAMA_MODEL` env var value.
+    pub fn ollama_resolved_model(model_name: &str) -> String {
+        if model_name == "custom" {
+            ollama_custom_model()
+        } else {
+            model_name.to_string()
         }
     }
 }
@@ -143,11 +200,7 @@ impl LocalModelSpec {
 // Local model list
 // ---------------------------------------------------------------------------
 
-fn make_claude_model(
-    display_name: &str,
-    model_name: &str,
-    spec: Option<LLMSpec>,
-) -> LLMInfo {
+fn make_claude_model(display_name: &str, model_name: &str, spec: Option<LLMSpec>) -> LLMInfo {
     LLMInfo {
         display_name: display_name.to_string(),
         base_model_name: display_name.to_string(),
@@ -196,6 +249,34 @@ fn make_codex_model(
     }
 }
 
+/// Build an Ollama model entry.
+///
+/// `ollama_model` is the Ollama model tag (e.g. `"qwen2.5-coder:7b"`).
+/// Pass `"custom"` to produce the entry that reads `$OLLAMA_MODEL` at
+/// request time; the display name will include the current env value.
+fn make_ollama_model(display_name: &str, ollama_model: &str, spec: Option<LLMSpec>) -> LLMInfo {
+    LLMInfo {
+        display_name: display_name.to_string(),
+        base_model_name: display_name.to_string(),
+        // The Ollama model tag may contain a colon (e.g. "qwen2.5-coder:7b").
+        // The ID encodes it directly; the parser handles it by keeping
+        // everything after the second colon as the model name.
+        id: format!("local:ollama:{ollama_model}").into(),
+        reasoning_level: None,
+        usage_metadata: LLMUsageMetadata {
+            request_multiplier: 1,
+            credit_multiplier: None,
+        },
+        description: Some(ollama_host()),
+        disable_reason: None,
+        vision_supported: false,
+        spec,
+        provider: LLMProvider::Unknown,
+        host_configs: HashMap::new(),
+        discount_percentage: None,
+    }
+}
+
 /// Build the `ModelsByFeature` for the local-model menu.
 ///
 /// The default selection is Claude Sonnet 4.7 (good balance of quality and speed
@@ -204,6 +285,7 @@ fn make_codex_model(
 /// The `WARP_LOCAL_AI` env var does NOT restrict which models appear; it only
 /// provides a backwards-compatible default provider choice.  Specifically:
 /// - If `WARP_LOCAL_AI=codex`, the default selection becomes GPT-5.5 (medium).
+/// - If `WARP_LOCAL_AI=ollama`, the default selection becomes Ollama (custom).
 /// - Otherwise, Claude Sonnet 4.7 is the default.
 pub fn local_model_list() -> ModelsByFeature {
     let claude_sonnet = make_claude_model(
@@ -239,6 +321,26 @@ pub fn local_model_list() -> ModelsByFeature {
         Some("high"),
         Some(LLMSpec { cost: 0.85, quality: 0.95, speed: 0.45 }),
     );
+    // Ollama entries. "qwen2.5-coder:7b" and "llama3.3:70b" are pre-set
+    // popular choices; "custom" reads OLLAMA_MODEL at request time.
+    let ollama_qwen = make_ollama_model(
+        "Ollama: qwen2.5-coder:7b",
+        "qwen2.5-coder:7b",
+        Some(LLMSpec { cost: 0.0, quality: 0.7, speed: 0.85 }),
+    );
+    let ollama_llama = make_ollama_model(
+        "Ollama: llama3.3:70b",
+        "llama3.3:70b",
+        Some(LLMSpec { cost: 0.0, quality: 0.8, speed: 0.5 }),
+    );
+    // "custom" entry: display name shows current OLLAMA_MODEL value so the
+    // user can see which model will be used without opening the env file.
+    let custom_model = ollama_custom_model();
+    let ollama_custom = make_ollama_model(
+        &format!("Ollama: {custom_model} (OLLAMA_MODEL)"),
+        "custom",
+        Some(LLMSpec { cost: 0.0, quality: 0.5, speed: 0.75 }),
+    );
 
     let all_choices = vec![
         claude_sonnet.clone(),
@@ -247,12 +349,16 @@ pub fn local_model_list() -> ModelsByFeature {
         gpt55_low.clone(),
         gpt55_medium.clone(),
         gpt55_high,
+        ollama_qwen,
+        ollama_llama,
+        ollama_custom.clone(),
     ];
 
     // The default ID depends on the legacy WARP_LOCAL_AI env var so that
     // existing configurations keep working without re-selecting a model.
     let default_id: LLMId = match current() {
         LocalAiMode::Codex => gpt55_medium.id.clone(),
+        LocalAiMode::Ollama => ollama_custom.id.clone(),
         _ => claude_sonnet.id.clone(),
     };
 

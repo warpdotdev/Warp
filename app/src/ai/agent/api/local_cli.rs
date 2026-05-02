@@ -3,9 +3,9 @@
 //! When `WARP_BYPASS_AUTH=1` is set (with or without `WARP_LOCAL_AI`), the
 //! panel ordinarily fails with a 401 because `generate_multi_agent_output`
 //! routes to Warp's authenticated GraphQL server.  This module short-circuits
-//! that path: instead of hitting the server, it shells out to the local CLI
-//! indicated by the user's model-selector choice, and synthesises a
-//! `ResponseEvent` stream that Warp's controller can consume normally.
+//! that path: instead of hitting the server, it either shells out to the local
+//! CLI indicated by the user's model-selector choice, or (for Ollama) issues
+//! an HTTP request to the local Ollama daemon.
 //!
 //! # Model routing
 //!
@@ -33,10 +33,25 @@
 //!
 //! Codex `--json` events are unchanged from the previous implementation: only
 //! `item.completed / agent_message` lines are surfaced as text.
+//!
+//! ## Ollama (HTTP)
+//!
+//! Ollama is a long-running daemon that exposes an HTTP server.  When
+//! `LocalModelSpec::Ollama` is selected, this module:
+//!   1. Resolves the model name (`"custom"` -> `$OLLAMA_MODEL`).
+//!   2. POSTs to `$OLLAMA_HOST/api/chat` with `"stream": true`.
+//!   3. Reads the newline-delimited JSON response stream; each line is:
+//!      `{"model":"...","message":{"role":"assistant","content":"..."},"done":false}`
+//!   4. Maps each `content` chunk to a `ResponseEvent` and forwards it to the
+//!      panel controller.
+//!
+//! The `/agent` TUI command with Ollama is deferred (OllamaHarness not yet
+//! implemented); the interactive panel path works via HTTP.
 
 use std::process::Stdio;
 
 use async_channel::{Sender, unbounded};
+use futures_util::StreamExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use uuid::Uuid;
@@ -54,7 +69,7 @@ type ResponseStream = crate::ai::agent::api::ResponseStream;
 enum OutputMode {
     /// Raw text: each stdout line is displayed verbatim.
     ///
-    /// Kept for future harnesses (e.g. Ollama) that don't emit structured JSON.
+    /// Kept for future harnesses that don't emit structured JSON.
     #[allow(dead_code)]
     RawText,
     /// Claude `--output-format stream-json --verbose` events.
@@ -68,7 +83,7 @@ enum OutputMode {
     CodexJson,
 }
 
-/// Build and return a local-CLI `ResponseStream` for the given `params`.
+/// Build and return a local `ResponseStream` for the given `params`.
 ///
 /// On success the stream emits:
 ///   1. `StreamInit`
@@ -134,14 +149,49 @@ async fn run_local_cli(
 
     let message_id = format!("local-msg-{}", Uuid::new_v4());
 
-    // Determine which local CLI to invoke.
+    // Determine which backend to use.
     //
     // Priority:
-    //   1. If the selected model is a local-model ID (e.g. "local:claude:…"),
+    //   1. If the selected model is a local-model ID (e.g. "local:ollama:…"),
     //      parse it and use its provider + parameters.
     //   2. Fall back to the legacy WARP_LOCAL_AI env var for backward compat.
     let model_id_str = params.model.to_string();
     let maybe_spec = LocalModelSpec::parse(&model_id_str);
+
+    // Ollama is HTTP-only, not a subprocess; branch here before the CLI path.
+    match &maybe_spec {
+        Some(LocalModelSpec::Ollama { model_name }) => {
+            let resolved = LocalModelSpec::ollama_resolved_model(model_name);
+            run_ollama_http(
+                &resolved,
+                &query,
+                &request_id,
+                &task_id,
+                &message_id,
+                &tx,
+                cancellation_rx,
+            )
+            .await;
+            return;
+        }
+        Some(_) | None => {} // Fall through to the CLI subprocess path below.
+    }
+
+    // Check the legacy env var for Ollama too.
+    if maybe_spec.is_none() && matches!(crate::local_ai::current(), LocalAiMode::Ollama) {
+        let model = crate::local_ai::ollama_custom_model();
+        run_ollama_http(
+            &model,
+            &query,
+            &request_id,
+            &task_id,
+            &message_id,
+            &tx,
+            cancellation_rx,
+        )
+        .await;
+        return;
+    }
 
     let (output_mode, cli_label, mut cmd) = match maybe_spec {
         Some(ref spec) => match spec {
@@ -155,6 +205,10 @@ async fn run_local_cli(
                 "codex",
                 build_command_from_spec(spec, &query, cwd.as_deref()),
             ),
+            LocalModelSpec::Ollama { .. } => {
+                // Already handled above; unreachable.
+                unreachable!("Ollama handled above")
+            }
         },
         None => {
             // Legacy WARP_LOCAL_AI env var path.
@@ -279,6 +333,142 @@ async fn run_local_cli(
     }
 }
 
+/// POST to Ollama's `/api/chat` endpoint and forward the streaming response.
+///
+/// Ollama returns newline-delimited JSON.  Each line (when `stream: true`) is:
+/// ```json
+/// {"model":"qwen2.5-coder:7b","message":{"role":"assistant","content":"Hello"},"done":false}
+/// ```
+/// The final line has `"done": true`.
+#[allow(clippy::too_many_arguments)]
+async fn run_ollama_http(
+    model: &str,
+    query: &str,
+    request_id: &str,
+    task_id: &str,
+    message_id: &str,
+    tx: &Sender<Event>,
+    cancellation_rx: futures::channel::oneshot::Receiver<()>,
+) {
+    let host = crate::local_ai::ollama_host();
+    let url = format!("{host}/api/chat");
+
+    log::info!("Ollama: POST {url} model={model}");
+
+    let body = serde_json::json!({
+        "model": model,
+        "stream": true,
+        "messages": [
+            {
+                "role": "user",
+                "content": query
+            }
+        ]
+    });
+
+    let client = reqwest::Client::new();
+    let response = match client.post(&url).json(&body).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = format!("Ollama request to {url} failed: {e}");
+            log::error!("{msg}");
+            let _ = send_internal_error(tx, msg).await;
+            return;
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        let msg = format!("Ollama returned HTTP {status}: {body_text}");
+        log::error!("{msg}");
+        let _ = send_internal_error(tx, msg).await;
+        return;
+    }
+
+    let mut byte_stream = response.bytes_stream();
+    let mut buffer = Vec::<u8>::new();
+    let mut first_chunk = true;
+    let mut cancellation_rx = cancellation_rx;
+
+    loop {
+        tokio::select! {
+            _ = &mut cancellation_rx => {
+                let _ = send_done(tx).await;
+                return;
+            }
+            chunk = byte_stream.next() => {
+                match chunk {
+                    Some(Ok(bytes)) => {
+                        buffer.extend_from_slice(&bytes);
+
+                        // Process all complete newline-terminated JSON lines in the buffer.
+                        while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                            let line_bytes = buffer.drain(..=newline_pos).collect::<Vec<u8>>();
+                            let line = String::from_utf8_lossy(&line_bytes);
+                            let line = line.trim();
+                            if line.is_empty() {
+                                continue;
+                            }
+
+                            let content = match extract_ollama_content(line) {
+                                Some(c) if !c.is_empty() => c,
+                                _ => continue,
+                            };
+
+                            let event = if first_chunk {
+                                first_chunk = false;
+                                add_agent_output_event(request_id, task_id, message_id, &content)
+                            } else {
+                                append_agent_output_event(request_id, task_id, message_id, &content)
+                            };
+                            if tx.send(Ok(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    Some(Err(e)) => {
+                        log::warn!("Error reading Ollama stream: {e}");
+                        break;
+                    }
+                    None => {
+                        // Stream ended; flush any trailing bytes.
+                        if !buffer.is_empty() {
+                            let line = String::from_utf8_lossy(&buffer);
+                            let line = line.trim();
+                            if !line.is_empty() {
+                                if let Some(content) = extract_ollama_content(line) {
+                                    if !content.is_empty() {
+                                        let event = if first_chunk {
+                                            add_agent_output_event(request_id, task_id, message_id, &content)
+                                        } else {
+                                            append_agent_output_event(request_id, task_id, message_id, &content)
+                                        };
+                                        let _ = tx.send(Ok(event)).await;
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = send_done(tx).await;
+}
+
+/// Extract the assistant content string from an Ollama streaming JSON line.
+///
+/// Expects: `{"model":"...","message":{"role":"assistant","content":"..."},"done":false}`
+/// Returns `None` if the line cannot be parsed or has empty content.
+fn extract_ollama_content(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let content = v.get("message")?.get("content")?.as_str()?;
+    Some(content.to_string())
+}
+
 /// Build a `tokio::process::Command` from a parsed [`LocalModelSpec`].
 ///
 /// - `Claude`: `claude -p --model <name> --output-format stream-json --verbose --dangerously-skip-permissions <query>`
@@ -316,6 +506,10 @@ fn build_command_from_spec(spec: &LocalModelSpec, query: &str, cwd: Option<&str>
             ]);
             c.arg(query);
             c
+        }
+        LocalModelSpec::Ollama { .. } => {
+            // Ollama uses the HTTP path; this function should not be called for Ollama.
+            unreachable!("Ollama spec should use run_ollama_http, not build_command_from_spec")
         }
     };
     if let Some(dir) = cwd {
@@ -375,7 +569,7 @@ fn build_legacy_command(cli: &str, query: &str, cwd: Option<&str>) -> Command {
 /// - `assistant` with `content[].type == "text"` -> forward the text verbatim.
 /// - `assistant` with `content[].type == "tool_use"` -> emit `[tool: Name] summary`.
 /// - `user` with `content[].type == "tool_result"` (tool finished) -> emit `[result] excerpt`.
-/// - Everything else (`system`, `result`, `rate_limit_event`, …) -> `None`.
+/// - Everything else (`system`, `result`, `rate_limit_event`, ...) -> `None`.
 fn extract_claude_stream_json_text(line: &str) -> Option<String> {
     // Fast-path: skip lines that can't carry user-visible content.
     if line.is_empty() {
@@ -538,7 +732,7 @@ fn extract_codex_json_text(line: &str) -> Option<String> {
         return None;
     }
     // Parse just enough JSON to get item.type and item.text.
-    // Example: {"type":"item.completed","item":{"id":"…","type":"agent_message","text":"Hello."}}
+    // Example: {"type":"item.completed","item":{"id":"...","type":"agent_message","text":"Hello."}}
     let v: serde_json::Value = serde_json::from_str(line).ok()?;
     if v.get("type")?.as_str()? != "item.completed" {
         return None;
