@@ -844,6 +844,10 @@ pub enum FeatureFlag {
     ConfigurableContextWindow,
     /// Enables continuing cloud mode conversations in the cloud after an execution ends.
     HandoffCloudCloud,
+
+    /// Gates the `warp new <template>` CLI command that scaffolds new projects from
+    /// registered templates in `~/.warp/templates/` or the bundled template library.
+    TemplateScaffolding,
 }
 
 static FLAG_STATES: [AtomicBool; cardinality::<FeatureFlag>()] =
@@ -923,6 +927,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
+    FeatureFlag::TemplateScaffolding,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
