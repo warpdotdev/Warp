@@ -14,10 +14,25 @@
 //! If the ID is not a local model ID, the legacy `WARP_LOCAL_AI` env var is
 //! used as a fallback so existing configurations keep working.
 //!
-//! Only the user-visible text path is implemented here.  Tool calls emitted by
-//! the underlying CLI (file edits, shell commands, etc.) are not yet forwarded
-//! back to the panel - that requires a richer protocol bridge and is left as
-//! follow-up work.
+//! # Tool-call visibility (Slice B)
+//!
+//! Claude is invoked with `--output-format stream-json --verbose`, which emits
+//! one JSON object per line.  This module parses those events and renders them
+//! as inline text annotations in the panel:
+//!
+//! - `assistant` content blocks of type `text` are forwarded verbatim.
+//! - `assistant` content blocks of type `tool_use` produce a `[tool: Name]`
+//!   line so the user sees which tool the agent is calling.
+//! - `user` events carrying `tool_result` produce a `[result]` line with a
+//!   short stdout/stderr excerpt so the user sees what the tool returned.
+//! - `result`/`system` events are silently dropped.
+//!
+//! This is Slice B of the full tool-loop bridge.  Warp native tool-block UI
+//! (Slice C) is deferred - that requires mapping each CLI tool event to a
+//! proper `api::message::ToolCall` protobuf message.
+//!
+//! Codex `--json` events are unchanged from the previous implementation: only
+//! `item.completed / agent_message` lines are surfaced as text.
 
 use std::process::Stdio;
 
@@ -38,7 +53,16 @@ type ResponseStream = crate::ai::agent::api::ResponseStream;
 /// Which output format the CLI subprocess uses.
 enum OutputMode {
     /// Raw text: each stdout line is displayed verbatim.
+    ///
+    /// Kept for future harnesses (e.g. Ollama) that don't emit structured JSON.
+    #[allow(dead_code)]
     RawText,
+    /// Claude `--output-format stream-json --verbose` events.
+    ///
+    /// Each line is a JSON object with a `type` discriminator.  Text content
+    /// from `assistant` events is forwarded; `tool_use` and `tool_result`
+    /// events are rendered as inline annotations.
+    ClaudeStreamJson,
     /// Codex `--json` events: each stdout line is a JSON object; only
     /// `{"type":"item.completed","item":{"type":"agent_message","text":"..."}}` is shown.
     CodexJson,
@@ -122,7 +146,7 @@ async fn run_local_cli(
     let (output_mode, cli_label, mut cmd) = match maybe_spec {
         Some(ref spec) => match spec {
             LocalModelSpec::Claude { .. } => (
-                OutputMode::RawText,
+                OutputMode::ClaudeStreamJson,
                 "claude",
                 build_command_from_spec(spec, &query, cwd.as_deref()),
             ),
@@ -136,7 +160,7 @@ async fn run_local_cli(
             // Legacy WARP_LOCAL_AI env var path.
             match crate::local_ai::current() {
                 LocalAiMode::Claude => (
-                    OutputMode::RawText,
+                    OutputMode::ClaudeStreamJson,
                     "claude",
                     build_legacy_command("claude", &query, cwd.as_deref()),
                 ),
@@ -200,6 +224,12 @@ async fn run_local_cli(
                                     format!("{raw_line}\n")
                                 }
                             }
+                            OutputMode::ClaudeStreamJson => {
+                                match extract_claude_stream_json_text(&raw_line) {
+                                    Some(t) => t,
+                                    None => continue,
+                                }
+                            }
                             OutputMode::CodexJson => {
                                 match extract_codex_json_text(&raw_line) {
                                     Some(t) => t,
@@ -251,7 +281,7 @@ async fn run_local_cli(
 
 /// Build a `tokio::process::Command` from a parsed [`LocalModelSpec`].
 ///
-/// - `Claude`: `claude -p --model <name> --output-format text --dangerously-skip-permissions <query>`
+/// - `Claude`: `claude -p --model <name> --output-format stream-json --verbose --dangerously-skip-permissions <query>`
 /// - `Codex`: `codex exec -m <name> [-c reasoning_effort=<effort>] --dangerously-bypass-approvals-and-sandbox --json --color never <query>`
 fn build_command_from_spec(spec: &LocalModelSpec, query: &str, cwd: Option<&str>) -> Command {
     let mut cmd = match spec {
@@ -262,7 +292,8 @@ fn build_command_from_spec(spec: &LocalModelSpec, query: &str, cwd: Option<&str>
                 "--model",
                 model_name,
                 "--output-format",
-                "text",
+                "stream-json",
+                "--verbose",
                 "--dangerously-skip-permissions",
             ]);
             c.arg(query);
@@ -302,8 +333,14 @@ fn build_legacy_command(cli: &str, query: &str, cwd: Option<&str>) -> Command {
 
     match cli {
         "claude" => {
-            // -p / --print: non-interactive; output-format text: plain text to stdout.
-            cmd.args(["-p", "--output-format", "text", "--dangerously-skip-permissions"]);
+            // -p / --print: non-interactive; stream-json for tool-call visibility.
+            cmd.args([
+                "-p",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--dangerously-skip-permissions",
+            ]);
             cmd.arg(query);
         }
         "codex" => {
@@ -329,6 +366,167 @@ fn build_legacy_command(cli: &str, query: &str, cwd: Option<&str>) -> Command {
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::null());
     cmd
+}
+
+/// Parse one line from `claude -p --output-format stream-json --verbose` and
+/// return the text that should appear in the panel, or `None` to skip the line.
+///
+/// Handled event types:
+/// - `assistant` with `content[].type == "text"` -> forward the text verbatim.
+/// - `assistant` with `content[].type == "tool_use"` -> emit `[tool: Name] summary`.
+/// - `user` with `content[].type == "tool_result"` (tool finished) -> emit `[result] excerpt`.
+/// - Everything else (`system`, `result`, `rate_limit_event`, …) -> `None`.
+fn extract_claude_stream_json_text(line: &str) -> Option<String> {
+    // Fast-path: skip lines that can't carry user-visible content.
+    if line.is_empty() {
+        return None;
+    }
+
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let event_type = v.get("type")?.as_str()?;
+
+    match event_type {
+        "assistant" => {
+            let message = v.get("message")?;
+            let content = message.get("content")?.as_array()?;
+            let mut out = String::new();
+            for block in content {
+                match block.get("type")?.as_str()? {
+                    "text" => {
+                        if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                            if !text.is_empty() {
+                                out.push_str(text);
+                                // Ensure the text ends with a newline so subsequent
+                                // chunks stay visually separated.
+                                if !out.ends_with('\n') {
+                                    out.push('\n');
+                                }
+                            }
+                        }
+                    }
+                    "tool_use" => {
+                        let name = block
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("unknown");
+                        // Build a short human-readable summary of the input.
+                        let summary = tool_use_summary(name, block.get("input"));
+                        out.push_str(&format!("[tool: {name}] {summary}\n"));
+                    }
+                    _ => {}
+                }
+            }
+            if out.is_empty() {
+                None
+            } else {
+                Some(out)
+            }
+        }
+        "user" => {
+            // Tool results come back as `user` events with tool_result content blocks.
+            let message = v.get("message")?;
+            let content = message.get("content")?.as_array()?;
+            let mut out = String::new();
+            for block in content {
+                if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
+                    // Prefer the top-level `tool_use_result` field (richer).
+                    let excerpt = if let Some(tur) = v.get("tool_use_result") {
+                        tool_result_excerpt(tur)
+                    } else {
+                        // Fall back to content string payload.
+                        block
+                            .get("content")
+                            .and_then(|c| c.as_str())
+                            .map(|s| truncate(s, 120).to_string())
+                            .unwrap_or_default()
+                    };
+                    if !excerpt.is_empty() {
+                        out.push_str(&format!("[result] {excerpt}\n"));
+                    }
+                }
+            }
+            if out.is_empty() {
+                None
+            } else {
+                Some(out)
+            }
+        }
+        // `system`, `result`, `rate_limit_event`, and any future event types
+        // are intentionally dropped - they carry no user-visible content for
+        // the panel.
+        _ => None,
+    }
+}
+
+/// Build a short summary string for a `tool_use` content block.
+///
+/// For well-known tool names (Bash, Read, Write, Edit, Grep, Glob) we surface
+/// the most relevant field.  For everything else we fall back to a compact JSON
+/// representation of the input (truncated to 120 chars).
+fn tool_use_summary(name: &str, input: Option<&serde_json::Value>) -> String {
+    let Some(inp) = input else {
+        return String::new();
+    };
+
+    // Helper: get a string field from the input object.
+    let field = |key: &str| -> Option<&str> { inp.get(key)?.as_str() };
+
+    match name {
+        "Bash" => field("command")
+            .map(|s| truncate(s, 120).to_string())
+            .unwrap_or_default(),
+        "Read" => field("file_path")
+            .or_else(|| field("path"))
+            .map(|s| s.to_string())
+            .unwrap_or_default(),
+        "Write" | "Edit" => field("file_path")
+            .or_else(|| field("path"))
+            .map(|s| s.to_string())
+            .unwrap_or_default(),
+        "Grep" => {
+            let pattern = field("pattern").unwrap_or("");
+            let path = field("path").unwrap_or("");
+            if path.is_empty() {
+                pattern.to_string()
+            } else {
+                format!("{pattern} in {path}")
+            }
+        }
+        "Glob" => field("pattern").unwrap_or("").to_string(),
+        _ => {
+            // Generic fallback: compact JSON, truncated.
+            let compact = inp.to_string();
+            truncate(&compact, 120).to_string()
+        }
+    }
+}
+
+/// Extract a short excerpt from a `tool_use_result` JSON value.
+fn tool_result_excerpt(tur: &serde_json::Value) -> String {
+    // `stdout` is the primary output; fall back to `output` for older schemas.
+    let raw = tur
+        .get("stdout")
+        .and_then(|s| s.as_str())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            tur.get("output")
+                .and_then(|s| s.as_str())
+                .filter(|s| !s.is_empty())
+        })
+        .unwrap_or("");
+    truncate(raw, 120).to_string()
+}
+
+/// Return a string slice of at most `max_chars` UTF-8 characters.
+fn truncate(s: &str, max_chars: usize) -> &str {
+    if s.chars().count() <= max_chars {
+        return s;
+    }
+    // Find the byte offset of the `max_chars`-th character boundary.
+    match s.char_indices().nth(max_chars) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
 }
 
 /// For codex `--json` output, extract the agent reply text from an
