@@ -1,4 +1,7 @@
-//! Skills loader and registry for Helm agents.
+//! Skills loader, registry, and usage ledger for Helm agents.
+//!
+//! The [`ledger`] module provides the append-only write path for recording
+//! skill invocations to local SQLite (PDX-71).
 //!
 //! Skills are markdown files with optional YAML front matter that agents can
 //! load contextually based on the current task's role and tags. They live in
@@ -25,6 +28,8 @@
 //! Front matter is optional. When absent the skill name defaults to the
 //! filename stem, the description defaults to the first non-blank line of the
 //! body, and `roles` / `tags` default to empty (matching every role).
+
+pub mod ledger;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

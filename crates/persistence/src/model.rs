@@ -14,9 +14,10 @@ use super::schema::{
     generic_string_objects, ignored_suggestions, mcp_environment_variables,
     mcp_server_installations, mcp_server_panes, notebook_panes, notebooks, object_actions,
     object_metadata, object_permissions, pane_branches, pane_leaves, pane_nodes, panels,
-    project_rules, projects, server_experiments, settings_panes, tabs, team_members, team_settings,
-    teams, terminal_panes, user_profiles, welcome_panes, windows, workflow_panes, workflows,
-    workspace_language_server, workspace_metadata, workspace_teams, workspaces,
+    project_rules, projects, server_experiments, settings_panes, skill_usage_events, tabs,
+    team_members, team_settings, teams, terminal_panes, user_profiles, welcome_panes, windows,
+    workflow_panes, workflows, workspace_language_server, workspace_metadata, workspace_teams,
+    workspaces,
 };
 
 #[derive(Insertable)]
@@ -1404,4 +1405,41 @@ pub struct Panel {
     pub tab_id: i32,
     pub left_panel: Option<String>,
     pub right_panel: Option<String>,
+}
+
+/// Insertable row for the append-only skill usage ledger (PDX-71).
+///
+/// The `invoked_at` timestamp is set by the caller (typically via
+/// `chrono::Utc::now().naive_utc()`).  All telemetry fields are optional so
+/// that the ledger can accept events even when token counts are unavailable.
+#[derive(Debug, Insertable)]
+#[diesel(table_name = skill_usage_events)]
+pub struct NewSkillUsageEvent {
+    pub skill_name: String,
+    pub invoked_at: NaiveDateTime,
+    pub role: String,
+    pub model_id: Option<String>,
+    pub tokens_in: Option<i32>,
+    pub tokens_out: Option<i32>,
+    pub tool_calls: Option<i32>,
+    pub success: bool,
+    pub task_id: Option<String>,
+    pub conversation_id: Option<String>,
+}
+
+/// Queryable row from the skill usage ledger.
+#[derive(Debug, Identifiable, Queryable, Selectable)]
+#[diesel(table_name = skill_usage_events)]
+pub struct SkillUsageEvent {
+    pub id: i32,
+    pub skill_name: String,
+    pub invoked_at: NaiveDateTime,
+    pub role: String,
+    pub model_id: Option<String>,
+    pub tokens_in: Option<i32>,
+    pub tokens_out: Option<i32>,
+    pub tool_calls: Option<i32>,
+    pub success: bool,
+    pub task_id: Option<String>,
+    pub conversation_id: Option<String>,
 }

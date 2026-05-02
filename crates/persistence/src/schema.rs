@@ -528,3 +528,19 @@ diesel::allow_tables_to_appear_in_same_query!(code_pane_tabs, code_panes,);
 diesel::allow_tables_to_appear_in_same_query!(object_metadata, object_permissions,);
 diesel::allow_tables_to_appear_in_same_query!(team_members, team_settings, teams,);
 diesel::allow_tables_to_appear_in_same_query!(workspace_language_server, workspace_metadata,);
+
+diesel::table! {
+    skill_usage_events (id) {
+        id -> Integer,
+        skill_name -> Text,
+        invoked_at -> Timestamp,
+        role -> Text,
+        model_id -> Nullable<Text>,
+        tokens_in -> Nullable<Integer>,
+        tokens_out -> Nullable<Integer>,
+        tool_calls -> Nullable<Integer>,
+        success -> Bool,
+        task_id -> Nullable<Text>,
+        conversation_id -> Nullable<Text>,
+    }
+}
