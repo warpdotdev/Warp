@@ -2,27 +2,28 @@
 //
 // Doppler section UI for the Settings view (PDX-50 [A4.2]).
 //
-// Renders a single "Sign in with Doppler" button under a "Secrets (Doppler)"
-// header. The button state is computed at render time from `doppler::detect()`:
+// Renders a "Sign in with Doppler" button under a "Secrets (Doppler)" header.
+// PDX-55 [A4.7] replaces the generic tooltip fallback with per-variant inline
+// error banners that carry a specific remediation hint:
 //
-//   * `Ok(_)`                          -> button enabled, no tooltip
-//   * `Err(NotInstalled { hint })`     -> button disabled, tooltip = hint
-//   * `Err(_)`                         -> button enabled with a warning hint
+//   Error state          Banner title                              Subtext
+//   ─────────────────────────────────────────────────────────────────────────────
+//   NotInstalled         "Doppler CLI not installed"               install command
+//   NotAuthenticated     "Not signed in to Doppler"                "doppler login"
+//   NoProjectBound       "No Doppler project configured…"          "doppler setup"
+//   KeyMissing(name)     "Secret \"<name>\" not found in config"   dashboard hint
+//   Unreachable          "Doppler API unreachable"                 network hint
 //
-// On click, this spawns `doppler login` as a fire-and-forget subprocess. The
-// Doppler CLI handles the browser handoff itself; we deliberately do NOT
-// capture stdout/stderr or wait for the process. Status checking and
-// project-picker UX are tracked separately (PDX-51, PDX-52, PDX-54).
+// On sign-in click, `doppler login` is spawned fire-and-forget. The CLI
+// handles the browser OAuth dance; we do NOT capture stdout/stderr.
+// Status checking and project-picker UX are tracked in PDX-51, PDX-52, PDX-54.
 
 use std::path::PathBuf;
 
 use doppler::DopplerError;
-use pathfinder_geometry::vector::vec2f;
 use warpui::{
     elements::{
-        Align, ChildAnchor, Container, CrossAxisAlignment, Element, Flex, Hoverable,
-        MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
-        Stack, Text,
+        Align, Container, CrossAxisAlignment, Element, Flex, MouseStateHandle, ParentElement, Text,
     },
     fonts::{Properties, Weight},
     ui_components::{
@@ -34,36 +35,95 @@ use warpui::{
 
 use super::{
     settings_page::{
-        MatchData, PageType, SettingsPageEvent, SettingsPageMeta, SettingsPageViewHandle,
-        SettingsWidget, CONTENT_FONT_SIZE, SUBHEADER_FONT_SIZE,
+        render_settings_info_banner, MatchData, PageType, SettingsPageEvent, SettingsPageMeta,
+        SettingsPageViewHandle, SettingsWidget, CONTENT_FONT_SIZE, SUBHEADER_FONT_SIZE,
     },
     SettingsSection,
 };
 use crate::appearance::Appearance;
 
-/// Pure logic: given the current detect result, decide whether the
-/// "Sign in with Doppler" button should be enabled and what (if any)
-/// tooltip text to show on hover.
+/// The distinct UI states the Doppler integration can be in.
 ///
-/// Extracted as a pure function so it can be tested without spinning up
-/// the full GPUI render machinery — UI testing in GPUI is non-trivial.
-///
-/// Returned tuple: `(enabled, tooltip)`.
-///   * `enabled` is `false` only when the binary is not installed.
-///   * `tooltip` is `Some(_)` when there's a non-empty hint to surface.
-///
-/// Other detection errors keep the button enabled (the user may still want to
-/// retry the login flow) but include a warning tooltip so the failure is
-/// visible.
-pub(crate) fn doppler_button_state(
-    detect_result: &Result<PathBuf, DopplerError>,
-) -> (bool, Option<String>) {
-    match detect_result {
-        Ok(_) => (true, None),
-        Err(DopplerError::NotInstalled { install_hint }) => {
-            (false, Some(install_hint.clone()))
+/// Returned by [`doppler_ui_state`] and consumed by the render logic to decide
+/// whether the sign-in button is enabled and which inline banner to show.
+#[derive(Debug, PartialEq)]
+pub(crate) enum DopplerUiState {
+    /// CLI detected; no error to surface.
+    Ready,
+    /// `doppler` binary absent from `PATH`. Button disabled.
+    NotInstalled { hint: String },
+    /// User is not authenticated.
+    NotAuthenticated,
+    /// No project/config bound to the current working directory.
+    NoProjectBound,
+    /// The requested secret key does not exist in the bound config.
+    KeyMissing { name: String },
+    /// Doppler API is unreachable.
+    Unreachable,
+    /// Any other error not covered above.
+    OtherError { message: String },
+}
+
+impl DopplerUiState {
+    /// `false` only when the CLI binary is absent — nothing to launch.
+    /// All other error states keep the button enabled so the user can retry
+    /// after resolving the shown error.
+    pub(crate) fn button_enabled(&self) -> bool {
+        !matches!(self, DopplerUiState::NotInstalled { .. })
+    }
+
+    /// Returns `(title, remediation_hint)` for the inline banner, or `None`
+    /// when the state is `Ready` and no banner should appear.
+    pub(crate) fn banner_content(&self) -> Option<(String, String)> {
+        match self {
+            DopplerUiState::Ready => None,
+            DopplerUiState::NotInstalled { hint } => Some((
+                "Doppler CLI not installed".to_owned(),
+                hint.clone(),
+            )),
+            DopplerUiState::NotAuthenticated => Some((
+                "Not signed in to Doppler".to_owned(),
+                "Run `doppler login` to authenticate, then click Sign in again".to_owned(),
+            )),
+            DopplerUiState::NoProjectBound => Some((
+                "No Doppler project configured for this directory".to_owned(),
+                "Run `doppler setup` in your project root to bind a config".to_owned(),
+            )),
+            DopplerUiState::KeyMissing { name } => Some((
+                format!("Secret \"{name}\" not found in bound config"),
+                "Verify the key name exists in your Doppler dashboard".to_owned(),
+            )),
+            DopplerUiState::Unreachable => Some((
+                "Doppler API unreachable".to_owned(),
+                "Check your network connection and try again".to_owned(),
+            )),
+            DopplerUiState::OtherError { message } => Some((
+                "Doppler check failed".to_owned(),
+                message.clone(),
+            )),
         }
-        Err(other) => (true, Some(format!("Doppler check warning: {other}"))),
+    }
+}
+
+/// Pure logic: map a detect (or fetch) result onto a [`DopplerUiState`].
+///
+/// Extracted as a pure function so it can be unit-tested without spinning up
+/// the GPUI render machinery.
+pub(crate) fn doppler_ui_state(result: &Result<PathBuf, DopplerError>) -> DopplerUiState {
+    match result {
+        Ok(_) => DopplerUiState::Ready,
+        Err(DopplerError::NotInstalled { install_hint }) => DopplerUiState::NotInstalled {
+            hint: install_hint.clone(),
+        },
+        Err(DopplerError::NotAuthenticated) => DopplerUiState::NotAuthenticated,
+        Err(DopplerError::NoProjectBound) => DopplerUiState::NoProjectBound,
+        Err(DopplerError::KeyMissing(name)) => DopplerUiState::KeyMissing {
+            name: name.clone(),
+        },
+        Err(DopplerError::Unreachable) => DopplerUiState::Unreachable,
+        Err(other) => DopplerUiState::OtherError {
+            message: other.to_string(),
+        },
     }
 }
 
@@ -154,7 +214,6 @@ impl From<ViewHandle<DopplerSettingsPageView>> for SettingsPageViewHandle {
 #[derive(Default)]
 struct DopplerSignInWidget {
     sign_in_button_mouse_state: MouseStateHandle,
-    tooltip_mouse_state: MouseStateHandle,
 }
 
 impl SettingsWidget for DopplerSignInWidget {
@@ -174,7 +233,7 @@ impl SettingsWidget for DopplerSignInWidget {
         let theme = appearance.theme();
 
         let detect_result = doppler::detect();
-        let (enabled, tooltip_text) = doppler_button_state(&detect_result);
+        let ui_state = doppler_ui_state(&detect_result);
 
         // Section header: "Secrets (Doppler)".
         let header = Container::new(
@@ -211,7 +270,20 @@ impl SettingsWidget for DopplerSignInWidget {
         .with_padding_bottom(12.)
         .finish();
 
-        // Build the button. Disabled when doppler isn't on PATH.
+        // Inline error banner — shown for every error state, each with its own
+        // title and remediation subtext. Hidden when state is Ready.
+        let maybe_banner: Option<Box<dyn Element>> =
+            ui_state.banner_content().map(|(title, subtext)| {
+                Container::new(render_settings_info_banner(
+                    &title,
+                    Some(&subtext),
+                    appearance,
+                ))
+                .with_padding_bottom(12.)
+                .finish()
+            });
+
+        // Sign-in button. Disabled only when the binary is absent.
         let button_builder = ui_builder
             .button(
                 ButtonVariant::Accent,
@@ -230,7 +302,7 @@ impl SettingsWidget for DopplerSignInWidget {
                 ..Default::default()
             });
 
-        let button_element = if enabled {
+        let button_element: Box<dyn Element> = if ui_state.button_enabled() {
             button_builder
                 .build()
                 .on_click(move |ctx, _, _| {
@@ -241,39 +313,16 @@ impl SettingsWidget for DopplerSignInWidget {
             button_builder.disabled().build().finish()
         };
 
-        // Wrap the button in a Hoverable so we can show a tooltip on hover
-        // (used both for the install hint when disabled and warning text on
-        // other detect errors). When there's no tooltip we just render the
-        // button as-is.
-        let button_with_tooltip: Box<dyn Element> = if let Some(tooltip) = tooltip_text {
-            let tooltip_state = self.tooltip_mouse_state.clone();
-            let mut stack = Stack::new().with_child(button_element);
-            Hoverable::new(tooltip_state, move |mouse_state| {
-                if mouse_state.is_hovered() {
-                    let tip = appearance.ui_builder().tool_tip(tooltip.clone());
-                    stack.add_positioned_overlay_child(
-                        tip.build().finish(),
-                        OffsetPositioning::offset_from_parent(
-                            vec2f(0., 4.),
-                            ParentOffsetBounds::Unbounded,
-                            ParentAnchor::BottomMiddle,
-                            ChildAnchor::TopMiddle,
-                        ),
-                    );
-                }
-                stack.finish()
-            })
-            .finish()
-        } else {
-            button_element
-        };
+        let mut column_children: Vec<Box<dyn Element>> = vec![header, description];
+        if let Some(banner) = maybe_banner {
+            column_children.push(banner);
+        }
+        column_children.push(button_element);
 
         Container::new(
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Start)
-                .with_child(header)
-                .with_child(description)
-                .with_child(button_with_tooltip)
+                .with_children(column_children)
                 .finish(),
         )
         .with_padding_bottom(15.)
@@ -287,45 +336,93 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn button_disabled_when_doppler_not_installed() {
-        let install_hint = "brew install dopplerhq/cli/doppler".to_string();
+    fn ready_when_doppler_present() {
+        let result: Result<PathBuf, DopplerError> = Ok(PathBuf::from("/usr/local/bin/doppler"));
+        let state = doppler_ui_state(&result);
+        assert_eq!(state, DopplerUiState::Ready);
+        assert!(state.button_enabled());
+        assert!(state.banner_content().is_none());
+    }
+
+    #[test]
+    fn not_installed_disables_button_and_shows_install_hint() {
+        let hint = "brew install dopplerhq/cli/doppler".to_string();
         let result: Result<PathBuf, DopplerError> = Err(DopplerError::NotInstalled {
-            install_hint: install_hint.clone(),
+            install_hint: hint.clone(),
         });
+        let state = doppler_ui_state(&result);
 
-        let (enabled, tooltip) = doppler_button_state(&result);
-
-        assert!(!enabled, "button should be disabled when doppler not on PATH");
-        let tooltip = tooltip.expect("tooltip must be present when disabled");
+        assert!(!state.button_enabled(), "button must be disabled when binary absent");
+        let (title, subtext) = state.banner_content().expect("banner must appear");
         assert!(
-            tooltip.contains(&install_hint),
-            "tooltip should contain the install hint, got: {tooltip}"
+            title.to_lowercase().contains("not installed"),
+            "title should mention install: {title}"
+        );
+        assert_eq!(subtext, hint, "subtext should be the exact install hint");
+    }
+
+    #[test]
+    fn no_project_bound_enables_button_with_setup_hint() {
+        let result: Result<PathBuf, DopplerError> = Err(DopplerError::NoProjectBound);
+        let state = doppler_ui_state(&result);
+
+        assert!(state.button_enabled(), "button should remain enabled");
+        let (title, subtext) = state.banner_content().expect("banner must appear");
+        assert!(
+            title.to_lowercase().contains("project"),
+            "title should reference project binding: {title}"
+        );
+        assert!(
+            subtext.contains("doppler setup"),
+            "subtext must include the setup command: {subtext}"
         );
     }
 
     #[test]
-    fn button_enabled_when_doppler_present() {
+    fn key_missing_enables_button_and_names_the_key() {
         let result: Result<PathBuf, DopplerError> =
-            Ok(PathBuf::from("/usr/local/bin/doppler"));
+            Err(DopplerError::KeyMissing("DATABASE_URL".to_owned()));
+        let state = doppler_ui_state(&result);
 
-        let (enabled, tooltip) = doppler_button_state(&result);
-
-        assert!(enabled, "button should be enabled when doppler detected");
+        assert!(state.button_enabled(), "button should remain enabled");
+        let (title, _subtext) = state.banner_content().expect("banner must appear");
         assert!(
-            tooltip.is_none(),
-            "no tooltip should be shown for the happy path"
+            title.contains("DATABASE_URL"),
+            "title must name the missing key: {title}"
         );
     }
 
     #[test]
-    fn button_enabled_with_warning_for_other_errors() {
-        // Other DopplerError variants (e.g. spawn failures) keep the button
-        // clickable but surface a warning so the failure is visible.
+    fn unreachable_enables_button_with_network_hint() {
+        let result: Result<PathBuf, DopplerError> = Err(DopplerError::Unreachable);
+        let state = doppler_ui_state(&result);
+
+        assert!(state.button_enabled(), "button should remain enabled");
+        let (title, subtext) = state.banner_content().expect("banner must appear");
+        assert!(
+            title.to_lowercase().contains("unreachable"),
+            "title should indicate unreachability: {title}"
+        );
+        assert!(
+            subtext.to_lowercase().contains("network"),
+            "subtext should mention network: {subtext}"
+        );
+    }
+
+    #[test]
+    fn not_authenticated_enables_button_with_login_hint() {
         let result: Result<PathBuf, DopplerError> = Err(DopplerError::NotAuthenticated);
+        let state = doppler_ui_state(&result);
 
-        let (enabled, tooltip) = doppler_button_state(&result);
-
-        assert!(enabled, "non-NotInstalled errors keep the button enabled");
-        assert!(tooltip.is_some(), "warning tooltip should be set");
+        assert!(state.button_enabled(), "button should remain enabled");
+        let (title, subtext) = state.banner_content().expect("banner must appear");
+        assert!(
+            title.to_lowercase().contains("sign") || title.to_lowercase().contains("auth"),
+            "title should reference authentication: {title}"
+        );
+        assert!(
+            subtext.contains("doppler login"),
+            "subtext must include the login command: {subtext}"
+        );
     }
 }
