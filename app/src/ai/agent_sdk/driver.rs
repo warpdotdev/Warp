@@ -35,7 +35,8 @@ use crate::terminal::cli_agent_sessions::{
 use crate::{
     ai::{
         agent::{
-            AIAgentExchange, AIAgentInput, AIAgentOutput, CancellationReason, RenderableAIError,
+            AIAgentActionResultType, AIAgentExchange, AIAgentInput, AIAgentOutput,
+            CancellationReason, RenderableAIError, RequestFileEditsResult,
         },
         ambient_agents::{
             conversation_output_status_from_conversation, AmbientAgentTaskId,
@@ -297,6 +298,12 @@ pub struct AgentDriver {
     /// conversation's `parent_agent_id` field at register time so the
     /// streamer recognizes the child role in driver-hosted processes.
     parent_run_id: Option<String>,
+
+    /// Async writer that records `file` declarations for paths the agent creates or edits
+    /// via `RequestFileEdits`. `Some` only when `FeatureFlag::OzHandoff` is enabled, the run
+    /// has a cloud task id, and `--no-snapshot` was not set; `None` keeps the observer a
+    /// pure no-op for local and disabled runs.
+    snapshot_file_writer: Option<snapshot::DeclarationsWriterHandle>,
 }
 
 pub(crate) enum SDKConversationOutputStatus {
@@ -644,6 +651,21 @@ impl AgentDriver {
             run_conversation_id = Some(conv_id);
         }
 
+        // Spawn the async declarations writer only when the snapshot pipeline will actually
+        // read what it produces: feature enabled, cloud task run, and --no-snapshot not set.
+        let snapshot_disabled_value = snapshot_disabled.unwrap_or(false);
+        let snapshot_file_writer = match task_id {
+            Some(id) if FeatureFlag::OzHandoff.is_enabled() && !snapshot_disabled_value => {
+                let background = ctx.background_executor();
+                Some(snapshot::DeclarationsWriterHandle::new(
+                    id,
+                    working_dir.clone(),
+                    &background,
+                ))
+            }
+            _ => None,
+        };
+
         Ok(Self {
             terminal_driver,
             working_dir,
@@ -656,13 +678,14 @@ impl AgentDriver {
             resume_payload,
             cloud_providers,
             environment,
-            snapshot_disabled: snapshot_disabled.unwrap_or(false),
+            snapshot_disabled: snapshot_disabled_value,
             snapshot_upload_timeout: snapshot_upload_timeout
                 .unwrap_or(snapshot::DEFAULT_SNAPSHOT_UPLOAD_TIMEOUT),
             snapshot_script_timeout: snapshot_script_timeout
                 .unwrap_or(snapshot::DEFAULT_DECLARATIONS_SCRIPT_TIMEOUT),
             run_conversation_id,
             parent_run_id: parent_run_id_for_self,
+            snapshot_file_writer,
         })
     }
 
@@ -1782,6 +1805,26 @@ impl AgentDriver {
                         .write_exchange_inputs(exchange)
                         .context("Failed to write exchange inputs"));
 
+                    // Forward any successful file-edit paths from this exchange's inputs to the
+                    // snapshot declarations writer so the end-of-run upload covers files written
+                    // outside any declared repo.
+                    if let Some(writer) = me.snapshot_file_writer.as_ref() {
+                        let mut paths = Vec::new();
+                        for input in &exchange.input {
+                            if let AIAgentInput::ActionResult { result, .. } = input {
+                                if let AIAgentActionResultType::RequestFileEdits(
+                                    RequestFileEditsResult::Success { updated_files, .. },
+                                ) = &result.result
+                                {
+                                    for updated in updated_files {
+                                        paths.push(updated.file_context.file_name.clone());
+                                    }
+                                }
+                            }
+                        }
+                        writer.append(paths);
+                    }
+
                     // Reset the idle timer only if we've already scheduled one.
                     // This handles the case where a follow-up query creates new exchanges after
                     // the conversation has finished and an idle timer was set.
@@ -2304,6 +2347,13 @@ impl AgentDriver {
             log::error!("Unable to retrieve snapshot upload context for cleanup (task {task_id})");
             return;
         };
+
+        // Drain any pending declarations writes from the history subscription before the
+        // declarations script runs. This guarantees no driver-side `file` append is still in
+        // flight when the bash script appends its `repo` entries.
+        if let Ok(Some(writer)) = spawner.spawn(|me, _| me.snapshot_file_writer.clone()).await {
+            writer.flush().await;
+        }
 
         // Regenerate the declarations file so the upload pipeline sees the latest workspace
         // state. The helper swallows its own errors at ERROR level; we just proceed.

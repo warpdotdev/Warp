@@ -678,7 +678,6 @@ impl BlocklistAIController {
         let mut inputs = if should_prepend_finished_action_results {
             completed_action_results
                 .into_iter()
-                .filter(|result| !result.result.is_cancelled())
                 .map(|result| AIAgentInput::ActionResult {
                     result,
                     context: context.clone(),

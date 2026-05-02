@@ -1440,7 +1440,10 @@ impl RightPanelView {
                 terminal_status.is_available(),
                 Self::format_optional_path(terminal_status.active_session_path.as_deref()),
                 Self::format_optional_path(terminal_status.current_repo_path.as_deref()),
-                terminal_status.active_cli_agent.as_deref().unwrap_or("<none>"),
+                terminal_status
+                    .active_cli_agent
+                    .as_deref()
+                    .unwrap_or("<none>"),
                 terminal_status.is_executing,
                 terminal_status.is_input_box_visible,
                 unavailable_reasons,

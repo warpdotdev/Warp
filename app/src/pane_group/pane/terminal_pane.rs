@@ -559,7 +559,7 @@ impl PaneContent for TerminalPane {
                     Ok(ShareableLink::Pane { url })
                 } else {
                     Err(ShareableLinkError::Unexpected(String::from(
-                        "Failed to retreive shared session link",
+                        "Failed to retrieve shared session link",
                     )))
                 }
             }
@@ -1500,7 +1500,7 @@ fn handle_ai_history_event(
             }
 
             // Do not persist AI queries from shared ambient agent sessions that we've viewed,
-            // as these were sent as part of an ambient agent run and shouldn't polute the up arrow history.
+            // as these were sent as part of an ambient agent run and shouldn't pollute the up arrow history.
             if is_shared_ambient_agent_session {
                 return;
             }

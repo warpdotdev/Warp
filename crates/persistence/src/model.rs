@@ -700,7 +700,7 @@ pub struct NewBlock<'a> {
     pub block_id: &'a str,
     // Note that there is no pane leaf UUID foreign key relationship because there's no good way to
     // enforce it: when we remove a pane and subsequently create a new snapshot, the old blocks
-    // will now violate the constaint. While sqlite does have deferred constraints, it doesn't
+    // will now violate the constraint. While sqlite does have deferred constraints, it doesn't
     // work well with ON DELETE CASCADE (i.e. the cascade happens on the delete, not after the
     // transaction commit).
     pub pane_leaf_uuid: Vec<u8>,

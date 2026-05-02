@@ -226,7 +226,7 @@ impl ActiveNotebookData {
         // create a new client id
         let new_id = ClientId::default();
 
-        // Set the active notebook to be an uncommited notebook
+        // Set the active notebook to be an uncommitted notebook
         self.active_notebook = ActiveNotebook::NewNotebook(Box::new(CloudNotebook::new_local(
             CloudNotebookModel::default(),
             owner,
