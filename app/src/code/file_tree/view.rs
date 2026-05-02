@@ -10,14 +10,13 @@ use repo_metadata::local_model::IndexedRepoState;
 use repo_metadata::FileTreeEntry;
 use repo_metadata::RepoMetadataModel;
 use std::collections::{HashMap, HashSet};
-use std::io::Read;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use warp_util::path::LineAndColumnArg;
 use warp_util::standardized_path::StandardizedPath;
 
-use repo_metadata::repositories::{DetectedRepositories, RepoDetectionSource};
+use repo_metadata::repositories::DetectedRepositories;
 use warp_core::send_telemetry_from_ctx;
 use warpui::elements::{
     AcceptedByDropTarget, Align, Clipped, ConstrainedBox, Container, Dismiss, Draggable,
@@ -1534,49 +1533,6 @@ impl FileTreeView {
         // When the file tree is active, index the lazy-loaded path through the
         // model so that a file watcher is started.
         if self.is_active && !self.registered_lazy_loaded_paths.contains(path) {
-            // Check if this path appears to be a valid git repository by looking for .git directory
-            // or .git file (used by worktrees/submodules). For .git files, we need to parse the
-            // gitdir path and verify the actual git directory has a valid HEAD.
-            // Cap .git file read to 1KB to prevent unbounded reads from malformed local folders.
-            let has_git_entry = path
-                .to_local_path()
-                .map(|p| {
-                    let git_entry = p.join(".git");
-                    if git_entry.is_dir() {
-                        // Standard .git directory - verify HEAD exists
-                        git_entry.join("HEAD").is_file()
-                    } else if git_entry.is_file() {
-                        // .git file (worktree/submodule) - read gitdir path and verify HEAD there
-                        // Cap read to 1KB to prevent malicious/malformed folders from stalling UI.
-                        std::fs::File::open(&git_entry)
-                            .ok()
-                            .and_then(|mut file| {
-                                let mut contents = vec![0u8; 1024];
-                                let n = file.read(&mut contents).ok()?;
-                                contents.truncate(n);
-                                String::from_utf8(contents).ok()
-                            })
-                            .and_then(|contents| {
-                                contents
-                                    .trim()
-                                    .strip_prefix("gitdir:")
-                                    .map(|gitdir| PathBuf::from(gitdir.trim()))
-                            })
-                            .map(|gitdir| {
-                                let gitdir = if gitdir.is_absolute() {
-                                    gitdir
-                                } else {
-                                    p.join(gitdir)
-                                };
-                                gitdir.join("HEAD").is_file()
-                            })
-                            .unwrap_or(false)
-                    } else {
-                        false
-                    }
-                })
-                .unwrap_or(false);
-
             // Check if this repo has already been attempted and failed. If so, fallback
             // to lazy-loading to avoid repeatedly retrying failed detection.
             let repo_id = repo_metadata::RepositoryIdentifier::local(path.clone());
@@ -1598,17 +1554,6 @@ impl FileTreeView {
                 }
             } else {
                 self.registered_lazy_loaded_paths.insert(path.clone());
-            }
-
-            // Trigger detection to upgrade from lazy-loaded to full repo
-            if has_git_entry && !previously_failed {
-                DetectedRepositories::handle(ctx).update(ctx, |repos, ctx| {
-                    std::mem::drop(repos.detect_possible_git_repo(
-                        &path.to_string(),
-                        RepoDetectionSource::TerminalNavigation,
-                        ctx,
-                    ));
-                });
             }
         }
 
