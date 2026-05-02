@@ -48,7 +48,9 @@
 //! The `/agent` TUI command with Ollama is deferred (OllamaHarness not yet
 //! implemented); the interactive panel path works via HTTP.
 
+use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::{OnceLock, RwLock};
 
 use async_channel::{Sender, unbounded};
 use futures_util::StreamExt;
@@ -60,6 +62,64 @@ use warp_multi_agent_api as api;
 use crate::ai::agent::api::RequestParams;
 use crate::ai::agent::{AIAgentContext, AIAgentInput};
 use crate::local_ai::{LocalAiMode, LocalModelSpec};
+
+// ---------------------------------------------------------------------------
+// Session-reuse cache
+// ---------------------------------------------------------------------------
+//
+// Maps `conversation_id` -> `session_id` so that follow-up turns can pass
+// `--resume <session_id>` (Claude) or `codex exec resume <thread_id>` (Codex)
+// and skip CLI init + conversation context resend.
+//
+// Separate caches for Claude and Codex because their ID formats are unrelated.
+
+fn claude_session_cache() -> &'static RwLock<HashMap<String, String>> {
+    static CACHE: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
+    CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn codex_session_cache() -> &'static RwLock<HashMap<String, String>> {
+    static CACHE: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
+    CACHE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn claude_session_id(conv_id: &str) -> Option<String> {
+    claude_session_cache()
+        .read()
+        .ok()
+        .and_then(|g| g.get(conv_id).cloned())
+}
+
+fn store_claude_session(conv_id: &str, session_id: &str) {
+    if let Ok(mut g) = claude_session_cache().write() {
+        g.insert(conv_id.to_string(), session_id.to_string());
+    }
+}
+
+fn evict_claude_session(conv_id: &str) {
+    if let Ok(mut g) = claude_session_cache().write() {
+        g.remove(conv_id);
+    }
+}
+
+fn codex_thread_id(conv_id: &str) -> Option<String> {
+    codex_session_cache()
+        .read()
+        .ok()
+        .and_then(|g| g.get(conv_id).cloned())
+}
+
+fn store_codex_thread(conv_id: &str, thread_id: &str) {
+    if let Ok(mut g) = codex_session_cache().write() {
+        g.insert(conv_id.to_string(), thread_id.to_string());
+    }
+}
+
+fn evict_codex_thread(conv_id: &str) {
+    if let Ok(mut g) = codex_session_cache().write() {
+        g.remove(conv_id);
+    }
+}
 
 // Re-use the type aliases from the parent api module.
 type Event = crate::ai::agent::api::Event;
@@ -238,17 +298,21 @@ async fn run_local_cli(
         return;
     }
 
+    // Look up cached session/thread IDs for session reuse.
+    let cached_claude_session = claude_session_id(&conversation_id);
+    let cached_codex_thread = codex_thread_id(&conversation_id);
+
     let (output_mode, cli_label, mut cmd) = match maybe_spec {
         Some(ref spec) => match spec {
             LocalModelSpec::Claude { .. } => (
                 OutputMode::ClaudeStreamJson,
                 "claude",
-                build_command_from_spec(spec, &query, cwd.as_deref()),
+                build_command_from_spec(spec, &query, cwd.as_deref(), cached_claude_session.as_deref()),
             ),
             LocalModelSpec::Codex { .. } => (
                 OutputMode::CodexJson,
                 "codex",
-                build_command_from_spec(spec, &query, cwd.as_deref()),
+                build_command_from_spec(spec, &query, cwd.as_deref(), cached_codex_thread.as_deref()),
             ),
             LocalModelSpec::Ollama { .. } => {
                 // Already handled above; unreachable.
@@ -261,12 +325,12 @@ async fn run_local_cli(
                 LocalAiMode::Claude => (
                     OutputMode::ClaudeStreamJson,
                     "claude",
-                    build_legacy_command("claude", &query, cwd.as_deref()),
+                    build_legacy_command("claude", &query, cwd.as_deref(), cached_claude_session.as_deref()),
                 ),
                 LocalAiMode::Codex => (
                     OutputMode::CodexJson,
                     "codex",
-                    build_legacy_command("codex", &query, cwd.as_deref()),
+                    build_legacy_command("codex", &query, cwd.as_deref(), cached_codex_thread.as_deref()),
                 ),
                 _ => {
                     let _ = send_internal_error(
@@ -280,10 +344,19 @@ async fn run_local_cli(
         }
     };
 
-    log::info!("Spawning local CLI subprocess: {cli_label}");
+    if cached_claude_session.is_some() {
+        log::info!("Spawning local CLI subprocess: {cli_label} (resuming session)");
+    } else {
+        log::info!("Spawning local CLI subprocess: {cli_label}");
+    }
+
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
+            // If we tried to resume a session and it failed to spawn, evict
+            // the cache so the next turn starts fresh.
+            evict_claude_session(&conversation_id);
+            evict_codex_thread(&conversation_id);
             let msg = format!("Failed to launch `{cli_label}`: {e}");
             log::error!("{msg}");
             let _ = send_internal_error(&tx, msg).await;
@@ -318,6 +391,8 @@ async fn run_local_cli(
     let mut lines = BufReader::new(stdout).lines();
     let mut first_chunk = true;
     let mut cancellation_rx = cancellation_rx;
+    // Track whether we have already seeded the session cache for this turn.
+    let mut session_cached = false;
 
     loop {
         tokio::select! {
@@ -330,6 +405,30 @@ async fn run_local_cli(
             line = lines.next_line() => {
                 match line {
                     Ok(Some(raw_line)) => {
+                        // Opportunistically extract and cache the session/thread
+                        // ID from the first events so subsequent turns can reuse
+                        // the session.  This is a pure side-effect; it does not
+                        // affect the text forwarded to the panel.
+                        if !session_cached {
+                            match output_mode {
+                                OutputMode::ClaudeStreamJson => {
+                                    if let Some(sid) = extract_claude_session_id(&raw_line) {
+                                        store_claude_session(&conversation_id, &sid);
+                                        session_cached = true;
+                                        log::debug!("Cached Claude session {sid} for conv {conversation_id}");
+                                    }
+                                }
+                                OutputMode::CodexJson => {
+                                    if let Some(tid) = extract_codex_thread_id(&raw_line) {
+                                        store_codex_thread(&conversation_id, &tid);
+                                        session_cached = true;
+                                        log::debug!("Cached Codex thread {tid} for conv {conversation_id}");
+                                    }
+                                }
+                                OutputMode::RawText => {}
+                            }
+                        }
+
                         // Extract text to display (may be empty for non-text lines).
                         let text = match output_mode {
                             OutputMode::RawText => {
@@ -383,6 +482,10 @@ async fn run_local_cli(
     match child.wait().await {
         Ok(status) if status.success() => {}
         Ok(status) => {
+            // Non-zero exit: evict any cached session so the next turn starts
+            // fresh.  This handles expired/invalid session IDs gracefully.
+            evict_claude_session(&conversation_id);
+            evict_codex_thread(&conversation_id);
             // Collect any stderr output to help diagnose the failure.
             let stderr_output = if let Some(handle) = stderr_handle {
                 handle.await.unwrap_or_default()
@@ -542,14 +645,67 @@ fn extract_ollama_content(line: &str) -> Option<String> {
     Some(content.to_string())
 }
 
+/// Extract the `session_id` from a Claude `stream-json` line.
+///
+/// Claude emits the session ID on every `system` event (e.g. `hook_started`,
+/// `hook_response`).  We grab it from the very first occurrence so we can seed
+/// the session cache before any text reaches the panel.
+///
+/// Example: `{"type":"system","subtype":"hook_started",...,"session_id":"<uuid>"}`
+fn extract_claude_session_id(line: &str) -> Option<String> {
+    // Fast-path: only system events carry session_id.
+    if !line.contains("\"session_id\"") {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    let sid = v.get("session_id")?.as_str()?;
+    if sid.is_empty() {
+        return None;
+    }
+    Some(sid.to_string())
+}
+
+/// Extract the `thread_id` from a Codex `--json` line.
+///
+/// Codex emits `{"type":"thread.started","thread_id":"<uuid>"}` as its first
+/// event.  We capture it here so follow-up turns can use
+/// `codex exec resume <thread_id>`.
+fn extract_codex_thread_id(line: &str) -> Option<String> {
+    if !line.contains("thread.started") {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+    if v.get("type")?.as_str()? != "thread.started" {
+        return None;
+    }
+    let tid = v.get("thread_id")?.as_str()?;
+    if tid.is_empty() {
+        return None;
+    }
+    Some(tid.to_string())
+}
+
 /// Build a `tokio::process::Command` from a parsed [`LocalModelSpec`].
 ///
-/// - `Claude`: `claude -p --model <name> --output-format stream-json --verbose --dangerously-skip-permissions <query>`
-/// - `Codex`: `codex exec -m <name> [-c reasoning_effort=<effort>] --dangerously-bypass-approvals-and-sandbox --json --color never <query>`
-fn build_command_from_spec(spec: &LocalModelSpec, query: &str, cwd: Option<&str>) -> Command {
+/// When `resume_id` is `Some`, the command is modified to resume an existing
+/// session, skipping CLI init cost and conversation context resend:
+/// - Claude: prepends `--resume <session_id>` before `-p`.
+/// - Codex: uses `codex exec resume <thread_id>` subcommand instead of `codex exec`.
+///
+/// - `Claude`: `claude [-resume <id>] -p --model <name> --output-format stream-json --verbose --dangerously-skip-permissions <query>`
+/// - `Codex`: `codex exec [-m <name>] [-c reasoning_effort=<effort>] --dangerously-bypass-approvals-and-sandbox --json --color never <query>`
+fn build_command_from_spec(
+    spec: &LocalModelSpec,
+    query: &str,
+    cwd: Option<&str>,
+    resume_id: Option<&str>,
+) -> Command {
     let mut cmd = match spec {
         LocalModelSpec::Claude { model_name } => {
             let mut c = Command::new("claude");
+            if let Some(sid) = resume_id {
+                c.args(["--resume", sid]);
+            }
             c.args([
                 "-p",
                 "--model",
@@ -567,16 +723,21 @@ fn build_command_from_spec(spec: &LocalModelSpec, query: &str, cwd: Option<&str>
             reasoning_effort,
         } => {
             let mut c = Command::new("codex");
-            c.args(["exec", "-m", model_name]);
+            let is_resume = resume_id.is_some();
+            if let Some(tid) = resume_id {
+                // `codex exec resume <thread_id> [opts] <prompt>`
+                // Note: `codex exec resume` does not support `--color never`.
+                c.args(["exec", "resume", tid]);
+            } else {
+                c.args(["exec", "-m", model_name]);
+            }
             if let Some(effort) = reasoning_effort {
                 c.args(["-c", &format!("reasoning_effort={effort}")]);
             }
-            c.args([
-                "--dangerously-bypass-approvals-and-sandbox",
-                "--json",
-                "--color",
-                "never",
-            ]);
+            c.args(["--dangerously-bypass-approvals-and-sandbox", "--json"]);
+            if !is_resume {
+                c.args(["--color", "never"]);
+            }
             c.arg(query);
             c
         }
@@ -596,12 +757,17 @@ fn build_command_from_spec(spec: &LocalModelSpec, query: &str, cwd: Option<&str>
 
 /// Build a `tokio::process::Command` using the legacy provider name string
 /// (no model flag, uses the CLI's own default model).
-fn build_legacy_command(cli: &str, query: &str, cwd: Option<&str>) -> Command {
+///
+/// `resume_id` works the same as in `build_command_from_spec`.
+fn build_legacy_command(cli: &str, query: &str, cwd: Option<&str>, resume_id: Option<&str>) -> Command {
     let mut cmd = Command::new(cli);
 
     match cli {
         "claude" => {
             // -p / --print: non-interactive; stream-json for tool-call visibility.
+            if let Some(sid) = resume_id {
+                cmd.args(["--resume", sid]);
+            }
             cmd.args([
                 "-p",
                 "--output-format",
@@ -613,13 +779,17 @@ fn build_legacy_command(cli: &str, query: &str, cwd: Option<&str>) -> Command {
         }
         "codex" => {
             // exec subcommand: non-interactive run; --json: structured JSON events on stdout.
-            cmd.args([
-                "exec",
-                "--dangerously-bypass-approvals-and-sandbox",
-                "--json",
-                "--color",
-                "never",
-            ]);
+            // Note: `codex exec resume` does not support `--color never`.
+            let is_resume = resume_id.is_some();
+            if let Some(tid) = resume_id {
+                cmd.args(["exec", "resume", tid]);
+            } else {
+                cmd.args(["exec"]);
+            }
+            cmd.args(["--dangerously-bypass-approvals-and-sandbox", "--json"]);
+            if !is_resume {
+                cmd.args(["--color", "never"]);
+            }
             cmd.arg(query);
         }
         _ => {
