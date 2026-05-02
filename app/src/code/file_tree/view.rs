@@ -1548,17 +1548,26 @@ impl FileTreeView {
                     model.index_lazy_loaded_path(path, ctx)
                 });
 
-            // If lazy-loading succeeded, we're good. If it failed or was skipped (Pending),
-            // we still need local fallback to prevent empty tree.
-            if index_result.is_ok() || is_pending {
+            // If lazy-loading succeeded, we're good.
+            if index_result.is_ok() {
                 self.registered_lazy_loaded_paths.insert(path.clone());
-            }
-
-            // For Pending state or failed indexing, ensure we have a placeholder entry
-            if is_pending || index_result.is_err() {
-                if let Some(root_dir) = self.root_directories.get_mut(path) {
-                    root_dir.entry = Self::create_empty_entry(path);
+            } else if is_pending {
+                // Pending - still register to preserve fallback
+                self.registered_lazy_loaded_paths.insert(path.clone());
+            } else {
+                // Failed - show toast and log warning, preserve existing entry
+                if matches!(
+                    index_result,
+                    Err(repo_metadata::RepoMetadataError::BuildTree(
+                        repo_metadata::BuildTreeError::ExceededMaxFileLimit,
+                    ))
+                ) {
+                    Self::show_exceeded_file_limit_toast(ctx);
                 }
+                if let Err(error) = &index_result {
+                    log::warn!("Failed to index lazy-loaded path {path}: {error}");
+                }
+                // Don't overwrite existing entry - preserve what we had before
             }
         }
 
