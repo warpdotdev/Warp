@@ -39,7 +39,12 @@ impl SyncDataSource for DataSource {
             .iter()
             .enumerate()
             .filter(|(_, tab)| {
-                query_text.is_empty() || tab.title.to_lowercase().contains(&query_text)
+                query_text.is_empty()
+                    || tab.title.to_lowercase().contains(&query_text)
+                    || tab
+                        .subtitle
+                        .as_deref()
+                        .is_some_and(|s| s.to_lowercase().contains(&query_text))
             })
             .map(|(i, tab)| QueryResult::from(SearchItem::new(tab.clone(), i)))
             .collect();
