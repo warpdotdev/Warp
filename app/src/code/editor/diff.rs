@@ -25,7 +25,9 @@ use crate::{
 };
 use warp_core::ui::theme::AnsiColorIdentifier;
 
+/// Alpha for line-level diff overlays (add/remove background).
 const OVERLAY_ALPHA: u8 = 56;
+/// Alpha for inline word-level highlights within replacement hunks.
 const INLINE_OVERLAY_ALPHA: u8 = 71;
 
 /// Get the theme-appropriate add color
@@ -223,6 +225,8 @@ pub enum RenderableDiffHunk {
 pub struct DiffModel {
     /// Store base in an Arc to avoid cloning the underlying data on every content change.
     base: Option<Arc<MultilineString<LF>>>,
+    /// File path for language detection (used by semantic diff).
+    file_path: Option<Arc<std::path::PathBuf>>,
     status: DiffStatus,
     abort_handle: Option<(AbortHandle, BufferVersion)>,
 }
@@ -231,6 +235,7 @@ impl DiffModel {
     pub fn new() -> Self {
         Self {
             base: None,
+            file_path: None,
             status: DiffStatus::default(),
             abort_handle: None,
         }
@@ -537,6 +542,11 @@ impl DiffModel {
         }
     }
 
+    /// Set the file path for language detection (used by semantic diff).
+    pub fn set_file_path(&mut self, path: std::path::PathBuf) {
+        self.file_path = Some(Arc::new(path));
+    }
+
     pub fn base(&self) -> Option<Arc<MultilineString<LF>>> {
         self.base.clone()
     }
@@ -563,9 +573,28 @@ impl DiffModel {
             return;
         };
 
+        // When SemanticDiff is enabled and we have a file path, attempt
+        // syntax-token diff first. Fall back to line-based diff if the
+        // language is unsupported or parsing fails.
+        let file_path = self.file_path.clone();
+        let use_semantic =
+            warp_core::features::FeatureFlag::SemanticDiff.is_enabled() && file_path.is_some();
+
         let handle = ctx
             .spawn(
-                async move { Self::compute_diff_internal(&base_text, &new).await },
+                async move {
+                    if use_semantic {
+                        if let Some(path) = file_path.as_ref() {
+                            if let Some((change_mapping, deletion_mapping)) =
+                                Self::compute_syntax_diff_internal(&base_text, &new, path.as_path())
+                                    .await
+                            {
+                                return (change_mapping, deletion_mapping);
+                            }
+                        }
+                    }
+                    Self::compute_diff_internal(&base_text, &new).await
+                },
                 move |model, (change_mapping, deletion_mapping), ctx| {
                     model.status.change_mapping = change_mapping;
                     model.status.deletion_mapping = deletion_mapping;
@@ -660,6 +689,73 @@ impl DiffModel {
             lines_added,
             lines_removed,
         }
+    }
+
+    /// Syntax-token diff: uses tree-sitter to parse both versions, then diffs
+    /// syntax tokens (not lines). Produces semantically correct hunks — a renamed
+    /// function shows as a single replacement hunk, not a deletion + insertion of
+    /// the whole function body.
+    ///
+    /// Returns `None` if the language is unsupported or parsing fails,
+    /// so the caller can fall back to line-based diff.
+    #[cfg(feature = "local_fs")]
+    async fn compute_syntax_diff_internal(
+        base: &MultilineStr<LF>,
+        new: &MultilineStr<LF>,
+        path: &std::path::Path,
+    ) -> Option<(RangeMap<usize, ChangeType>, HashMap<usize, Range<usize>>)> {
+        use languages::semantic_diff::{compute_syntax_diff, SyntaxHunk};
+
+        let syntax_diff = compute_syntax_diff(base.as_str(), new.as_str(), path)?;
+
+        futures_lite::future::yield_now().await;
+
+        let mut deletion_mapping = HashMap::new();
+        let mut change_mapping = RangeMap::new();
+
+        for hunk in syntax_diff.hunks {
+            match hunk {
+                SyntaxHunk::Equal { .. } => continue,
+                SyntaxHunk::Addition { start, end } => {
+                    change_mapping.insert(start..end, ChangeType::Addition);
+                }
+                SyntaxHunk::Deletion { start, end, anchor } => {
+                    deletion_mapping.insert(anchor, start..end);
+                }
+                SyntaxHunk::Replacement {
+                    base_start,
+                    base_end,
+                    current_start,
+                    current_end,
+                    insertion_highlights,
+                    deletion_highlights,
+                } => {
+                    change_mapping.insert(
+                        current_start..current_end,
+                        ChangeType::Replacement {
+                            replaced_range: base_start..base_end,
+                            insertion: insertion_highlights,
+                            deletion: deletion_highlights,
+                        },
+                    );
+                }
+            }
+        }
+
+        // Apply the same coalescing as the line-based diff.
+        // We can't use `coalesce_replacements` directly because it needs a `TextDiff`,
+        // but the semantic diff should already produce correct replacement hunks.
+
+        Some((change_mapping, deletion_mapping))
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    async fn compute_syntax_diff_internal(
+        _base: &MultilineStr<LF>,
+        _new: &MultilineStr<LF>,
+        _path: &std::path::Path,
+    ) -> Option<(RangeMap<usize, ChangeType>, HashMap<usize, Range<usize>>)> {
+        None
     }
 
     async fn compute_diff_internal(

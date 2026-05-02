@@ -579,6 +579,497 @@ fn jaccard_index(a: &[String], b: &[String]) -> f64 {
     intersection as f64 / union as f64
 }
 
+// ── Syntax-token diff (difftastic-style) ─────────────────────────────────
+//
+// Instead of diffing lines, we diff syntax tokens extracted from tree-sitter.
+// This produces semantic hunks: a renamed function shows as a single replacement
+// (old name → new name), not a deletion + insertion of the whole function body.
+//
+// Algorithm:
+//   1. Parse both files with tree-sitter.
+//   2. Walk both trees depth-first, collecting leaf tokens (kind + text + line).
+//   3. Hash each token for efficient comparison.
+//   4. LCS diff the two token sequences (using the same `similar` algorithm
+//      that Warp's line diff uses, but on tokens instead of lines).
+//   5. Convert the token-level diff to line-level hunks.
+//   6. Within replacement hunks, do word-level diff for inline highlights.
+
+/// A syntax token extracted from a tree-sitter leaf node.
+#[derive(Debug, Clone)]
+struct SyntaxToken {
+    /// Tree-sitter node kind (e.g., "identifier", "string_literal", "+").
+    /// Used for future classification (e.g., treating comments differently).
+    _kind: String,
+    /// The text content of the token (kept for debugging, not used in diff computation).
+    _text: String,
+    /// 0-indexed line where this token starts.
+    line: usize,
+    /// 0-indexed column where this token starts.
+    /// Kept for potential future use (column-aware diff rendering).
+    _col: usize,
+    /// Pre-computed hash for efficient LCS comparison.
+    hash: u64,
+}
+
+impl SyntaxToken {
+    fn new(kind: &str, text: &str, line: usize, col: usize) -> Self {
+        let mut hasher = DefaultHasher::new();
+        // Hash kind + text so that `x` (identifier) and `"x"` (string) differ.
+        kind.hash(&mut hasher);
+        text.hash(&mut hasher);
+        Self {
+            _kind: kind.to_string(),
+            _text: text.to_string(),
+            line,
+            _col: col,
+            hash: hasher.finish(),
+        }
+    }
+}
+
+impl PartialEq for SyntaxToken {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+    }
+}
+
+impl Eq for SyntaxToken {}
+
+impl std::hash::Hash for SyntaxToken {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
+
+/// Walk a tree-sitter tree depth-first and collect all leaf tokens.
+///
+/// Comment and string nodes are treated as opaque: the entire text is emitted
+/// as a single token. This prevents fragmented word-level changes within
+/// comments/strings and produces clean deletion+addition blocks.
+fn collect_tokens(node: Node, source: &str, tokens: &mut Vec<SyntaxToken>) {
+    let kind = node.kind();
+    let is_comment = kind.contains("comment");
+    let is_string = kind.contains("string") || kind.contains("char");
+
+    if is_comment || is_string || node.child_count() == 0 {
+        let text = &source[node.byte_range()];
+        if !text.is_empty() {
+            tokens.push(SyntaxToken::new(
+                node.kind(),
+                text,
+                node.start_position().row,
+                node.start_position().column,
+            ));
+        }
+    } else {
+        // Recurse into children.
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            collect_tokens(child, source, tokens);
+        }
+    }
+}
+
+/// Parse a file and extract its syntax tokens.
+///
+/// Returns `None` if the language is unsupported or parsing fails.
+fn extract_syntax_tokens(content: &str, path: &Path) -> Option<Vec<SyntaxToken>> {
+    let language = crate::language_by_filename(path)?;
+
+    let mut parser = Parser::new();
+    parser.set_language(&language.grammar).ok()?;
+    let tree = parser.parse(content, None)?;
+
+    let mut tokens = Vec::new();
+    collect_tokens(tree.root_node(), content, &mut tokens);
+    Some(tokens)
+}
+
+/// Result of a syntax-token diff: line-level hunks with change classification.
+///
+/// This is designed to be converted into Warp's `DiffStatus` / `ChangeType`
+/// types, replacing the line-based `similar::TextDiff` output.
+#[derive(Debug, Clone, Default)]
+pub struct SyntaxDiff {
+    /// Hunks representing the diff between base and current.
+    pub hunks: Vec<SyntaxHunk>,
+}
+
+/// A single diff hunk at the line level, produced from the syntax-token diff.
+#[derive(Debug, Clone)]
+pub enum SyntaxHunk {
+    /// Lines that exist in both versions (unchanged).
+    Equal {
+        base_start: usize,
+        base_end: usize,
+        current_start: usize,
+        current_end: usize,
+    },
+    /// Lines added in the current version.
+    Addition { start: usize, end: usize },
+    /// Lines deleted from the base version.
+    Deletion {
+        start: usize,
+        end: usize,
+        /// The line in the current version where this deletion is anchored
+        /// (the line immediately after the deleted section).
+        anchor: usize,
+    },
+    /// Lines changed between base and current.
+    Replacement {
+        base_start: usize,
+        base_end: usize,
+        current_start: usize,
+        current_end: usize,
+        /// Word-level highlights within the current (added) lines.
+        /// Each range is (char_offset_start, char_offset_end) within the
+        /// concatenated current-side hunk text.
+        insertion_highlights: Vec<std::ops::Range<usize>>,
+        /// Word-level highlights within the base (removed) lines.
+        /// Each range is (char_offset_start, char_offset_end) within the
+        /// concatenated base-side hunk text.
+        deletion_highlights: Vec<std::ops::Range<usize>>,
+    },
+}
+
+/// Compute a syntax-token diff between two file versions.
+///
+/// This is the difftastic-style semantic diff: it diffs the **tokens** of the
+/// tree-sitter parse, not the lines. The result is then mapped back to line-level
+/// hunks so it can feed into Warp's existing rendering pipeline.
+///
+/// Returns `None` if the language is unsupported or parsing fails.
+/// Returns `Some(SyntaxDiff)` with empty hunks if both files are identical.
+pub fn compute_syntax_diff(
+    base_content: &str,
+    current_content: &str,
+    path: &Path,
+) -> Option<SyntaxDiff> {
+    let base_tokens = extract_syntax_tokens(base_content, path)?;
+    let current_tokens = extract_syntax_tokens(current_content, path)?;
+
+    // Skip if either file has no tokens (empty or parse failure).
+    if base_tokens.is_empty() && current_tokens.is_empty() {
+        return Some(SyntaxDiff::default());
+    }
+
+    // LCS diff on the token sequences.
+    // We use `similar` (same crate Warp already uses for line diff) but on
+    // token hashes serialized as lines. Each hash becomes one "line",
+    // so `diff_lines` with Patience algorithm gives us token-level LCS.
+    let base_hashes: Vec<u64> = base_tokens.iter().map(|t| t.hash).collect();
+    let current_hashes: Vec<u64> = current_tokens.iter().map(|t| t.hash).collect();
+
+    let base_hash_lines: String = base_hashes.iter().map(|h| format!("{h}\n")).collect();
+    let current_hash_lines: String = current_hashes.iter().map(|h| format!("{h}\n")).collect();
+
+    let diffs = similar::TextDiff::configure()
+        .algorithm(similar::Algorithm::Patience)
+        .diff_lines(&base_hash_lines, &current_hash_lines);
+
+    // Map the diff ops back to line ranges using the token position info.
+    let hunks = map_ops_to_hunks(
+        &diffs.ops(),
+        &base_tokens,
+        &current_tokens,
+        base_content,
+        current_content,
+    );
+
+    Some(SyntaxDiff { hunks })
+}
+
+/// Convert `similar` diff ops (which operate on token-indices) to line-level
+/// `SyntaxHunk`s using the position information stored in each token.
+fn map_ops_to_hunks(
+    ops: &[similar::DiffOp],
+    base_tokens: &[SyntaxToken],
+    current_tokens: &[SyntaxToken],
+    base_content: &str,
+    current_content: &str,
+) -> Vec<SyntaxHunk> {
+    let mut hunks = Vec::new();
+
+    for op in ops {
+        match op {
+            similar::DiffOp::Equal {
+                old_index,
+                new_index,
+                len,
+            } => {
+                let base_start = base_tokens[*old_index].line;
+                let base_end = base_tokens[*old_index + len - 1].line + 1;
+                let current_start = current_tokens[*new_index].line;
+                let current_end = current_tokens[*new_index + len - 1].line + 1;
+                hunks.push(SyntaxHunk::Equal {
+                    base_start,
+                    base_end,
+                    current_start,
+                    current_end,
+                });
+            }
+            similar::DiffOp::Delete {
+                old_index,
+                old_len,
+                new_index,
+            } => {
+                let start = base_tokens[*old_index].line;
+                let end = base_tokens[*old_index + old_len - 1].line + 1;
+                let anchor = if *new_index < current_tokens.len() {
+                    current_tokens[*new_index].line
+                } else {
+                    // Deletion at end of file — anchor past the last line.
+                    current_content.lines().count()
+                };
+                hunks.push(SyntaxHunk::Deletion { start, end, anchor });
+            }
+            similar::DiffOp::Insert {
+                new_index,
+                new_len,
+                old_index: _,
+            } => {
+                let start = current_tokens[*new_index].line;
+                let end = current_tokens[*new_index + new_len - 1].line + 1;
+                hunks.push(SyntaxHunk::Addition { start, end });
+            }
+            similar::DiffOp::Replace {
+                old_index,
+                old_len,
+                new_index,
+                new_len,
+            } => {
+                let base_start = base_tokens[*old_index].line;
+                let base_end = base_tokens[*old_index + old_len - 1].line + 1;
+                let current_start = current_tokens[*new_index].line;
+                let current_end = current_tokens[*new_index + new_len - 1].line + 1;
+
+                let base_lines = base_end.saturating_sub(base_start);
+                let current_lines = current_end.saturating_sub(current_start);
+
+                if base_lines <= 1 && current_lines <= 1 {
+                    // Single-line change: use inline word-level highlights for
+                    // precise character-level diffing (e.g. renamed function).
+                    let insertion_highlights = compute_word_highlights(
+                        base_content,
+                        current_content,
+                        base_start,
+                        base_end,
+                        current_start,
+                        current_end,
+                    );
+                    let deletion_highlights = compute_word_highlights_for_deletion(
+                        base_content,
+                        current_content,
+                        base_start,
+                        base_end,
+                        current_start,
+                        current_end,
+                    );
+
+                    hunks.push(SyntaxHunk::Replacement {
+                        base_start,
+                        base_end,
+                        current_start,
+                        current_end,
+                        insertion_highlights,
+                        deletion_highlights,
+                    });
+                } else {
+                    // Multi-line rewrite: emit clean block deletions/additions
+                    // rather than fragmented inline highlights.
+                    hunks.push(SyntaxHunk::Deletion {
+                        start: base_start,
+                        end: base_end,
+                        anchor: current_start,
+                    });
+                    hunks.push(SyntaxHunk::Addition {
+                        start: current_start,
+                        end: current_end,
+                    });
+                }
+            }
+        }
+    }
+
+    hunks
+}
+
+/// Compute word-level highlights for the current (added) side of a replacement.
+///
+/// Within a replacement, some tokens may be unchanged (same hash on both sides).
+/// Only the truly novel tokens should get word-level highlights.
+/// This is the difftastic approach: unchanged words inside a changed hunk are
+/// shown normally, only novel words are highlighted.
+/// Compute word-level highlights for the current (insertion) side of a replacement.
+///
+/// Character offsets are relative to the concatenated text of the current-side
+/// hunk lines (each line followed by a newline), matching the format expected
+/// by `ChangeType::Replacement::insertion`.
+///
+/// Uses `similar::TextDiff::from_lines` on the actual hunk texts, then walks
+/// through all ops tracking cumulative new-side character offsets and using
+/// `iter_inline_changes` on Replace ops to get word-level highlights.
+fn compute_word_highlights(
+    base_content: &str,
+    current_content: &str,
+    base_start_line: usize,
+    base_end_line: usize,
+    current_start_line: usize,
+    current_end_line: usize,
+) -> Vec<std::ops::Range<usize>> {
+    let base_hunk_text = extract_hunk_text(base_content, base_start_line, base_end_line);
+    let current_hunk_text =
+        extract_hunk_text(current_content, current_start_line, current_end_line);
+
+    let text_diff = similar::TextDiff::from_lines(&base_hunk_text, &current_hunk_text);
+
+    let mut highlights = Vec::new();
+    let mut new_offset = 0usize;
+
+    for op in text_diff.ops() {
+        match &op {
+            similar::DiffOp::Equal { new_index, len, .. } => {
+                // Skip equal lines on the new side.
+                for i in *new_index..*new_index + len {
+                    if let Some(line) = current_hunk_text.lines().nth(i) {
+                        new_offset += line.chars().count() + 1; // +1 for newline
+                    }
+                }
+            }
+            similar::DiffOp::Insert {
+                new_index, new_len, ..
+            } => {
+                // Pure insertions — all text is novel.
+                for i in *new_index..*new_index + new_len {
+                    if let Some(line) = current_hunk_text.lines().nth(i) {
+                        let char_len = line.chars().count();
+                        if !line.trim().is_empty() {
+                            highlights.push(new_offset..new_offset + char_len);
+                        }
+                        new_offset += char_len + 1;
+                    }
+                }
+            }
+            similar::DiffOp::Delete { .. } => {
+                // No current-side content for deletions.
+            }
+            similar::DiffOp::Replace { .. } => {
+                // Use `iter_inline_changes` to get word-level highlights within
+                // this replaced region. Track new_offset as we go.
+                for inline_change in text_diff.iter_inline_changes(&op) {
+                    match inline_change.tag() {
+                        similar::ChangeTag::Insert => {
+                            for (highlighted, val) in inline_change.values() {
+                                let char_len = val.chars().count();
+                                if *highlighted {
+                                    highlights.push(new_offset..new_offset + char_len);
+                                }
+                                new_offset += char_len;
+                            }
+                        }
+                        similar::ChangeTag::Equal => {
+                            for (_, val) in inline_change.values() {
+                                new_offset += val.chars().count();
+                            }
+                        }
+                        similar::ChangeTag::Delete => {
+                            // Deleted text has no current-side position.
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    highlights
+}
+
+/// Compute word-level highlights for the base (deletion) side of a replacement.
+///
+/// Same approach as `compute_word_highlights` but tracks old-side offsets.
+fn compute_word_highlights_for_deletion(
+    base_content: &str,
+    current_content: &str,
+    base_start_line: usize,
+    base_end_line: usize,
+    current_start_line: usize,
+    current_end_line: usize,
+) -> Vec<std::ops::Range<usize>> {
+    let base_hunk_text = extract_hunk_text(base_content, base_start_line, base_end_line);
+    let current_hunk_text =
+        extract_hunk_text(current_content, current_start_line, current_end_line);
+
+    let text_diff = similar::TextDiff::from_lines(&base_hunk_text, &current_hunk_text);
+
+    let mut highlights = Vec::new();
+    let mut old_offset = 0usize;
+
+    for op in text_diff.ops() {
+        match &op {
+            similar::DiffOp::Equal { old_index, len, .. } => {
+                for i in *old_index..*old_index + len {
+                    if let Some(line) = base_hunk_text.lines().nth(i) {
+                        old_offset += line.chars().count() + 1;
+                    }
+                }
+            }
+            similar::DiffOp::Insert { .. } => {
+                // No base-side content for insertions.
+            }
+            similar::DiffOp::Delete {
+                old_index, old_len, ..
+            } => {
+                for i in *old_index..*old_index + old_len {
+                    if let Some(line) = base_hunk_text.lines().nth(i) {
+                        let char_len = line.chars().count();
+                        if !line.trim().is_empty() {
+                            highlights.push(old_offset..old_offset + char_len);
+                        }
+                        old_offset += char_len + 1;
+                    }
+                }
+            }
+            similar::DiffOp::Replace { .. } => {
+                for inline_change in text_diff.iter_inline_changes(&op) {
+                    match inline_change.tag() {
+                        similar::ChangeTag::Delete => {
+                            for (highlighted, val) in inline_change.values() {
+                                let char_len = val.chars().count();
+                                if *highlighted {
+                                    highlights.push(old_offset..old_offset + char_len);
+                                }
+                                old_offset += char_len;
+                            }
+                        }
+                        similar::ChangeTag::Equal => {
+                            for (_, val) in inline_change.values() {
+                                old_offset += val.chars().count();
+                            }
+                        }
+                        similar::ChangeTag::Insert => {
+                            // Inserted text has no base-side position.
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    highlights
+}
+
+/// Extract lines `[start_line, end_line)` from content as a single string
+/// with newlines. Line numbers are 0-indexed.
+fn extract_hunk_text(content: &str, start_line: usize, end_line: usize) -> String {
+    content
+        .lines()
+        .skip(start_line)
+        .take(end_line - start_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1015,6 +1506,250 @@ fn new_fn() {
             moved.len(),
             0,
             "insertions above should not cause Moved classification"
+        );
+    }
+
+    // ── Syntax diff tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_compute_syntax_diff_identical() {
+        let base = "fn hello() {\n    println!(\"hello\");\n}\n";
+        let current = base;
+        let path = Path::new("test.rs");
+
+        let diff = compute_syntax_diff(base, current, path).expect("should compute syntax diff");
+        // Identical files should produce no changes (all Equal hunks, or empty).
+        let non_equal: Vec<_> = diff
+            .hunks
+            .iter()
+            .filter(|h| !matches!(h, SyntaxHunk::Equal { .. }))
+            .collect();
+        assert!(
+            non_equal.is_empty(),
+            "identical files should have no changes"
+        );
+    }
+
+    #[test]
+    fn test_compute_syntax_diff_addition() {
+        let base = "fn hello() {\n    println!(\"hello\");\n}\n";
+        let current = "fn hello() {\n    println!(\"hello\");\n}\nfn world() {\n    println!(\"world\");\n}\n";
+        let path = Path::new("test.rs");
+
+        let diff = compute_syntax_diff(base, current, path).expect("should compute syntax diff");
+        // Should have an Addition hunk for the new `world` function.
+        let additions: Vec<_> = diff
+            .hunks
+            .iter()
+            .filter_map(|h| match h {
+                SyntaxHunk::Addition { start, end } => Some(*start..*end),
+                _ => None,
+            })
+            .collect();
+        assert!(!additions.is_empty(), "should have at least one addition");
+    }
+
+    #[test]
+    fn test_compute_syntax_diff_deletion() {
+        let base = "fn hello() {\n    println!(\"hello\");\n}\nfn world() {\n    println!(\"world\");\n}\n";
+        let current = "fn hello() {\n    println!(\"hello\");\n}\n";
+        let path = Path::new("test.rs");
+
+        let diff = compute_syntax_diff(base, current, path).expect("should compute syntax diff");
+        // Should have a Deletion hunk for the removed `world` function.
+        let deletions: Vec<_> = diff
+            .hunks
+            .iter()
+            .filter_map(|h| match h {
+                SyntaxHunk::Deletion { start, end, anchor } => Some((*start..*end, *anchor)),
+                _ => None,
+            })
+            .collect();
+        assert!(!deletions.is_empty(), "should have at least one deletion");
+    }
+
+    #[test]
+    fn test_compute_syntax_diff_rename() {
+        // Renaming a function: the old name is deleted, the new name is inserted.
+        // With syntax-token diff, the function body tokens should match as Equal,
+        // and only the name token should be in a Replacement hunk.
+        let base = "fn old_name() {\n    let x = 1;\n}\n";
+        let current = "fn new_name() {\n    let x = 1;\n}\n";
+        let path = Path::new("test.rs");
+
+        let diff = compute_syntax_diff(base, current, path).expect("should compute syntax diff");
+
+        // The key property: the diff should NOT treat the entire function body as
+        // changed. Only the name token should differ.
+        let replacements: Vec<_> = diff
+            .hunks
+            .iter()
+            .filter_map(|h| match h {
+                SyntaxHunk::Replacement {
+                    base_start,
+                    base_end,
+                    current_start,
+                    current_end,
+                    ..
+                } => Some((*base_start..*base_end, *current_start..*current_end)),
+                _ => None,
+            })
+            .collect();
+
+        // The replacement hunk should span only 1-2 lines (the name), not the
+        // entire function body.
+        let max_hunk_size = replacements
+            .iter()
+            .map(|(base, cur)| base.len().max(cur.len()))
+            .max()
+            .unwrap_or(0);
+        assert!(
+            max_hunk_size <= 2,
+            "rename should produce a small replacement hunk, got {max_hunk_size} lines: {replacements:?}"
+        );
+    }
+
+    #[test]
+    fn test_compute_syntax_diff_unsupported_language() {
+        let base = "some text";
+        let current = "some other text";
+        let path = Path::new("test.xyz");
+
+        // Should return None for unsupported languages.
+        assert!(compute_syntax_diff(base, current, path).is_none());
+    }
+
+    #[test]
+    fn test_extract_syntax_tokens_rust() {
+        let content = "fn hello() {\n    println!(\"hello\");\n}\n";
+        let path = Path::new("test.rs");
+
+        let tokens = extract_syntax_tokens(content, path).expect("should extract tokens");
+        assert!(!tokens.is_empty(), "should have tokens");
+
+        // Should contain at least: fn, hello, (, ), {, println, !, (, "hello", ), ;, }
+        let texts: Vec<&str> = tokens.iter().map(|t| t._text.as_str()).collect();
+        assert!(texts.contains(&"fn"), "missing 'fn': {texts:?}");
+        assert!(texts.contains(&"hello"), "missing 'hello': {texts:?}");
+        assert!(texts.contains(&"println"), "missing 'println': {texts:?}");
+    }
+
+    #[test]
+    fn test_word_highlights_rename_function() {
+        // Verify word highlights are character offsets within actual line text.
+        let base = "fn old_name() {\n    let x = 1;\n}\n";
+        let current = "fn new_name() {\n    let x = 1;\n}\n";
+        let path = Path::new("test.rs");
+
+        let diff = compute_syntax_diff(base, current, path).expect("should compute syntax diff");
+
+        // Find the replacement hunk.
+        let replacement = diff.hunks.iter().find_map(|h| match h {
+            SyntaxHunk::Replacement {
+                insertion_highlights,
+                deletion_highlights,
+                ..
+            } => Some((insertion_highlights.clone(), deletion_highlights.clone())),
+            _ => None,
+        });
+
+        if let Some((insertion, deletion)) = replacement {
+            // Current hunk text: "fn new_name() {\n    let x = 1;\n}\n"
+            // The insertion highlight should cover "new_name" which is at chars 3..11.
+            // If it's a single-line Replace (just line 0 changed), the offset is
+            // within that line: 'f'=0, 'n'=1, ' '=2, 'n'=3... so "new_name"
+            // starts at char 3 and ends at char 11.
+            //
+            // For a multi-line Replace covering the whole function, the offset
+            // includes previous lines. Either way, "new_name" should be in the highlights.
+            let highlighted_text: String = {
+                let current_hunk = "fn new_name() {\n    let x = 1;\n}\n";
+                insertion
+                    .iter()
+                    .map(|r| {
+                        current_hunk
+                            .chars()
+                            .skip(r.start)
+                            .take(r.end - r.start)
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            assert!(
+                highlighted_text.contains("new_name"),
+                "insertion highlights should contain 'new_name', got: {highlighted_text:?} (ranges: {insertion:?})"
+            );
+
+            // Deletion highlights should cover "old_name".
+            let deleted_text: String = {
+                let base_hunk = "fn old_name() {\n    let x = 1;\n}\n";
+                deletion
+                    .iter()
+                    .map(|r| {
+                        base_hunk
+                            .chars()
+                            .skip(r.start)
+                            .take(r.end - r.start)
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            assert!(
+                deleted_text.contains("old_name"),
+                "deletion highlights should contain 'old_name', got: {deleted_text:?} (ranges: {deletion:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_comment_rewrite_is_opaque() {
+        // When an entire comment block is rewritten, it should show as clean
+        // Deletion + Addition blocks, not fragmented Replacement hunks with
+        // partial word matches.
+        let base = "// Original version header\n// Some old description\nfn foo() {}\n";
+        let current =
+            "// Modified version header\n// A totally different description\nfn foo() {}\n";
+        let path = Path::new("test.rs");
+
+        let diff = compute_syntax_diff(base, current, path).expect("should compute syntax diff");
+
+        // Should have NO Replacement hunks for comments.
+        let replacements: Vec<_> = diff
+            .hunks
+            .iter()
+            .filter(|h| matches!(h, SyntaxHunk::Replacement { .. }))
+            .collect();
+        assert!(
+            replacements.is_empty(),
+            "comment rewrites should not produce Replacement hunks, got {replacements:?}"
+        );
+
+        // Should have Deletion + Addition for the comment block.
+        let deletions: Vec<_> = diff
+            .hunks
+            .iter()
+            .filter_map(|h| match h {
+                SyntaxHunk::Deletion { start, end, .. } => Some(*start..*end),
+                _ => None,
+            })
+            .collect();
+        let additions: Vec<_> = diff
+            .hunks
+            .iter()
+            .filter_map(|h| match h {
+                SyntaxHunk::Addition { start, end } => Some(*start..*end),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !deletions.is_empty(),
+            "should have a deletion hunk for old comments"
+        );
+        assert!(
+            !additions.is_empty(),
+            "should have an addition hunk for new comments"
         );
     }
 }

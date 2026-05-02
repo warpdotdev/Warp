@@ -585,6 +585,12 @@ impl CodeEditorView {
             .update(ctx, |model, ctx| model.set_base(base, recompute_diff, ctx));
     }
 
+    /// Set the file path for semantic diff language detection.
+    pub fn set_diff_file_path(&self, path: std::path::PathBuf, ctx: &mut ViewContext<Self>) {
+        self.model
+            .update(ctx, |model, ctx| model.set_diff_file_path(path, ctx));
+    }
+
     pub fn lens_for_line_range(
         &self,
         line_range: Range<EditorLineLocation>,

@@ -1715,13 +1715,22 @@ impl DiffStateModel {
                 let current_path = repo_path.join(&file_path);
                 let current_content = fs::read_to_string(&current_path).unwrap_or_default();
                 if current_content.len() > MAX_ENTITY_DIFF_FILE_SIZE {
+                    log::debug!(
+                        "SemanticDiff: skipping {file_path:?} — current file too large ({} bytes)",
+                        current_content.len()
+                    );
                     None
                 } else {
-                    languages::semantic_diff::compute_entity_diff(
+                    let result = languages::semantic_diff::compute_entity_diff(
                         content_at_head.as_ref().unwrap(),
                         &current_content,
                         &file_path,
-                    )
+                    );
+                    log::debug!(
+                        "SemanticDiff: {file_path:?} -> entity_diff={} changes",
+                        result.as_ref().map_or(0, |d| d.changes.len())
+                    );
+                    result
                 }
             } else {
                 None
@@ -1946,13 +1955,22 @@ impl DiffStateModel {
             let current_path = repo_path.join(file_path);
             let current_content = fs::read_to_string(&current_path).unwrap_or_default();
             if current_content.len() > MAX_ENTITY_DIFF_FILE_SIZE {
+                log::debug!(
+                    "SemanticDiff: skipping {file_path:?} — current file too large ({} bytes)",
+                    current_content.len()
+                );
                 None
             } else {
-                languages::semantic_diff::compute_entity_diff(
+                let result = languages::semantic_diff::compute_entity_diff(
                     content_at_head.as_ref().unwrap(),
                     &current_content,
                     file_path,
-                )
+                );
+                log::debug!(
+                    "SemanticDiff: {file_path:?} -> entity_diff={} changes",
+                    result.as_ref().map_or(0, |d| d.changes.len())
+                );
+                result
             }
         } else {
             None
