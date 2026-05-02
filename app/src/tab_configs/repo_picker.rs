@@ -187,11 +187,11 @@ impl RepoPicker {
 
         self.dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_items(items, ctx);
-            // The dropdown looks up by `display_text`, so format the raw path
-            // with the same formatter used to build the items above.
+            // Match by the action (which carries the raw absolute path) so two
+            // repos that left-clip to identical-looking labels can't be
+            // confused at preselection time.
             if let Some(ref raw) = raw_to_select {
-                let display = format_display_path(raw, home.as_deref());
-                dropdown.set_selected_by_name(display.as_str(), ctx);
+                dropdown.set_selected_by_action(RepoPickerAction::Select(raw.clone()), ctx);
             }
         });
 
