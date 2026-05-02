@@ -494,9 +494,15 @@ fn apply_scroll_multiplier(event: &mut Event, app: &AppContext) {
 
 /// Runs the app. If a subcommand was requested, it'll be run instead of the main application.
 pub fn run() -> Result<()> {
-    // Load `.env` from the current working directory before anything reads env vars.
-    // Used by the local-AI bypass feature (WARP_BYPASS_AUTH, WARP_LOCAL_AI, WARP_ILO_SYSTEM_PROMPT).
+    // Load `.env` for the local-AI bypass feature (WARP_BYPASS_AUTH, WARP_LOCAL_AI,
+    // WARP_ILO_SYSTEM_PROMPT). Try the cwd first (works for `cargo run` from the repo) and
+    // fall back to `~/.warp/.env` so launching via `open WarpOss.app` (cwd = `/`) also works.
+    // `dotenvy::from_filename` does not overwrite vars already present in the process env,
+    // so anything pre-set in the shell still wins over either file.
     let _ = dotenvy::from_filename(".env");
+    if let Some(home) = dirs::home_dir() {
+        let _ = dotenvy::from_filename(home.join(".warp").join(".env"));
+    }
 
     // Perform any necessary platform-specific initialization.
     platform::init();

@@ -21670,11 +21670,15 @@ impl View for Workspace {
             context.set.insert("IsOnline");
         }
 
-        if AISettings::as_ref(app).is_any_ai_enabled(app) {
+        if AISettings::as_ref(app).is_any_ai_enabled(app)
+            || crate::local_ai::auth_bypass_enabled()
+        {
             context.set.insert(flags::IS_ANY_AI_ENABLED);
         }
 
-        if AISettings::as_ref(app).is_active_ai_enabled(app) {
+        if AISettings::as_ref(app).is_active_ai_enabled(app)
+            || crate::local_ai::auth_bypass_enabled()
+        {
             context.set.insert(flags::IS_ACTIVE_AI_ENABLED);
         }
         if AISettings::as_ref(app).is_voice_input_enabled(app)
