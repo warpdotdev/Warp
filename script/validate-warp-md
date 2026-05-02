@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""Validate a WARP.md project-overlay file against the schema in docs/warp-md-schema.md.
+
+Usage:
+    script/validate-warp-md [OPTIONS] <file>
+
+Options:
+    --root      Apply additional root-overlay constraints (auto-detected when
+                the file is named WARP.md and lives at the repository root).
+    --no-root   Disable root-overlay constraints even for repo-root files.
+    --strict    Promote warnings to errors.
+    --json      Emit a JSON report instead of human-readable text.
+    --quiet     Suppress passing messages; only print diagnostics.
+
+Exit codes:
+    0  No issues found (or only warnings when --strict is not set).
+    1  One or more warnings were emitted (--strict was not set).
+    2  One or more errors were found; the file is malformed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import List, Optional
+
+
+# ---------------------------------------------------------------------------
+# Data model
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Diagnostic:
+    code: str
+    severity: str  # "error" | "warning"
+    line: Optional[int]
+    message: str
+
+    def as_text(self, path: str) -> str:
+        location = f":{self.line}" if self.line is not None else ""
+        return f"{path}{location}: [{self.severity.upper()}] {self.code}: {self.message}"
+
+
+@dataclass
+class ValidationResult:
+    path: str
+    diagnostics: List[Diagnostic] = field(default_factory=list)
+
+    def error(self, code: str, message: str, line: Optional[int] = None) -> None:
+        self.diagnostics.append(Diagnostic(code, "error", line, message))
+
+    def warn(self, code: str, message: str, line: Optional[int] = None) -> None:
+        self.diagnostics.append(Diagnostic(code, "warning", line, message))
+
+    @property
+    def errors(self) -> List[Diagnostic]:
+        return [d for d in self.diagnostics if d.severity == "error"]
+
+    @property
+    def warnings(self) -> List[Diagnostic]:
+        return [d for d in self.diagnostics if d.severity == "warning"]
+
+
+# ---------------------------------------------------------------------------
+# Validation logic
+# ---------------------------------------------------------------------------
+
+# Maximum file size thresholds (bytes).
+_WARN_BYTES = 10_000
+_ERROR_BYTES = 20_000
+
+
+def _is_root_overlay(path: Path) -> bool:
+    """Return True when path looks like a repository-root WARP.md."""
+    parent = path.resolve().parent
+    return (parent / "Cargo.toml").exists() or (parent / ".git").exists()
+
+
+def validate(
+    path: Path,
+    *,
+    root: Optional[bool] = None,
+    strict: bool = False,
+) -> ValidationResult:
+    result = ValidationResult(path=str(path))
+
+    # ------------------------------------------------------------------
+    # E002: UTF-8 readability
+    # ------------------------------------------------------------------
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        result.error("E002", f"Cannot read file: {exc}")
+        return result
+
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        result.error("E002", f"File is not valid UTF-8: {exc}")
+        return result
+
+    # ------------------------------------------------------------------
+    # E001: non-empty
+    # ------------------------------------------------------------------
+    if not text.strip():
+        result.error("E001", "File is empty or contains only whitespace")
+        return result
+
+    # ------------------------------------------------------------------
+    # Size checks
+    # ------------------------------------------------------------------
+    size = len(raw)
+    if size > _ERROR_BYTES:
+        result.warn("W002", f"File is {size} bytes; exceeds the 20 000-byte safety limit")
+    elif size > _WARN_BYTES:
+        result.warn("W001", f"File is {size} bytes; consider trimming to stay under 10 000 bytes")
+
+    lines = text.splitlines()
+
+    # ------------------------------------------------------------------
+    # Pass 1: identify code-fence ranges so heading detection ignores them.
+    # ------------------------------------------------------------------
+    fence_open_line: Optional[int] = None    # 1-based line number of opening fence
+    fenced_ranges: list[tuple[int, int]] = []  # (open_lineno, close_lineno) inclusive
+
+    for lineno, line in enumerate(lines, start=1):
+        if re.match(r"^```", line.rstrip()):
+            if fence_open_line is None:
+                fence_open_line = lineno
+            else:
+                fenced_ranges.append((fence_open_line, lineno))
+                fence_open_line = None
+
+    # ------------------------------------------------------------------
+    # E008: unclosed code fence
+    # ------------------------------------------------------------------
+    if fence_open_line is not None:
+        result.error(
+            "E008",
+            f"Unclosed code fence opened at line {fence_open_line}",
+            line=fence_open_line,
+        )
+        # Record a synthetic close so the rest of the analysis doesn't
+        # spuriously flag headings inside the unclosed block.
+        fenced_ranges.append((fence_open_line, len(lines)))
+
+    def in_fence(lineno: int) -> bool:
+        return any(start <= lineno <= end for start, end in fenced_ranges)
+
+    # ------------------------------------------------------------------
+    # Pass 2: collect headings (outside code fences).
+    # ------------------------------------------------------------------
+    # Each entry: (lineno, level, title_text)
+    headings: list[tuple[int, int, str]] = []
+    first_content_line: Optional[int] = None
+
+    for lineno, line in enumerate(lines, start=1):
+        if in_fence(lineno):
+            if first_content_line is None and line.strip():
+                first_content_line = lineno
+            continue
+
+        stripped = line.rstrip()
+        m = re.match(r"^(#{1,6})\s+(.*)", stripped)
+        if m:
+            level = len(m.group(1))
+            title = m.group(2).strip()
+            headings.append((lineno, level, title))
+            if first_content_line is None:
+                first_content_line = lineno
+        elif stripped and first_content_line is None:
+            first_content_line = lineno
+
+    h1s = [(ln, t) for ln, lv, t in headings if lv == 1]
+    h2s = [(ln, t) for ln, lv, t in headings if lv == 2]
+    h3s = [(ln, t) for ln, lv, t in headings if lv == 3]
+    deep = [(ln, lv) for ln, lv, t in headings if lv >= 4]
+
+    # ------------------------------------------------------------------
+    # E003, E004, E005: H1 presence and placement
+    # ------------------------------------------------------------------
+    if not h1s:
+        result.error("E003", "No H1 heading found; the file must open with a single `# Title`")
+    else:
+        h1_lineno, h1_title = h1s[0]
+
+        # E004: H1 must be the first content line
+        if first_content_line is not None and h1_lineno != first_content_line:
+            result.error(
+                "E004",
+                f"H1 heading is on line {h1_lineno} but the first content appears on "
+                f"line {first_content_line}; H1 must be the first non-blank line",
+                line=h1_lineno,
+            )
+
+        # E005: exactly one H1
+        if len(h1s) > 1:
+            extras = ", ".join(str(ln) for ln, _ in h1s[1:])
+            result.error(
+                "E005",
+                f"Multiple H1 headings at lines {extras}; only one is allowed",
+                line=h1s[1][0],
+            )
+
+    # ------------------------------------------------------------------
+    # E006: at least one H2
+    # ------------------------------------------------------------------
+    if not h2s:
+        result.error("E006", "No H2 sections found; add at least one `## Section` heading")
+
+    # ------------------------------------------------------------------
+    # E007: unique H2 names (case-insensitive)
+    # ------------------------------------------------------------------
+    seen_h2: dict[str, int] = {}
+    for lineno, title in h2s:
+        key = title.lower()
+        if key in seen_h2:
+            result.error(
+                "E007",
+                f"Duplicate H2 section `{title}` (first seen at line {seen_h2[key]})",
+                line=lineno,
+            )
+        else:
+            seen_h2[key] = lineno
+
+    # ------------------------------------------------------------------
+    # W003: H4+ heading depth
+    # ------------------------------------------------------------------
+    if deep:
+        sample = [ln for ln, _ in deep[:3]]
+        extra = f" (and {len(deep) - 3} more)" if len(deep) > 3 else ""
+        result.warn(
+            "W003",
+            f"H4+ heading(s) at line(s) {', '.join(str(l) for l in sample)}{extra}; "
+            "use H3 as the maximum nesting level",
+            line=sample[0],
+        )
+
+    # ------------------------------------------------------------------
+    # W004: empty sections — H2 sections with no body content AND no H3
+    # children before the next H2 (or end-of-file).
+    # ------------------------------------------------------------------
+    # Build a set of H3 line numbers and which H2 "owns" each H3.
+    # A section is empty only if it has no body text and no sub-headings.
+    h2_linenos = [ln for ln, _ in h2s]
+    h3_linenos = [ln for ln, _ in h3s]
+
+    for idx, (h2_ln, h2_title) in enumerate(h2s):
+        next_h2_ln = h2s[idx + 1][0] if idx + 1 < len(h2s) else len(lines) + 1
+
+        # Does this H2 own any H3?
+        has_subheading = any(h2_ln < h3_ln < next_h2_ln for h3_ln in h3_linenos)
+
+        # Does this H2 have any non-blank, non-heading body lines?
+        has_body = False
+        for lineno, line in enumerate(lines, start=1):
+            if lineno <= h2_ln or lineno >= next_h2_ln:
+                continue
+            if in_fence(lineno):
+                has_body = True
+                break
+            stripped = line.strip()
+            if stripped and not re.match(r"^#{1,6}\s", stripped):
+                has_body = True
+                break
+
+        if not has_body and not has_subheading:
+            result.warn(
+                "W004",
+                f"Section `## {h2_title}` at line {h2_ln} has no body content or subsections",
+                line=h2_ln,
+            )
+
+    # ------------------------------------------------------------------
+    # Root-overlay checks
+    # ------------------------------------------------------------------
+    apply_root = root if root is not None else _is_root_overlay(path)
+
+    if apply_root and h1s:
+        _, h1_title = h1s[0]
+
+        # E009: root H1 must be exactly "WARP.md"
+        if h1_title.strip() != "WARP.md":
+            result.error(
+                "E009",
+                f"Root overlay H1 must be `# WARP.md`; got `# {h1_title}`",
+                line=h1s[0][0],
+            )
+
+        present = {t.lower() for _, t in h2s}
+
+        # E010: Development Commands required
+        if "development commands" not in present:
+            result.error(
+                "E010",
+                "Root overlay is missing the required `## Development Commands` section",
+            )
+        else:
+            # W005: Development Commands needs ≥1 H3
+            dev_ln = next(ln for ln, t in h2s if t.lower() == "development commands")
+            next_h2_idx = next(
+                (i for i, (ln, _) in enumerate(h2s) if ln > dev_ln), len(h2s)
+            )
+            next_h2_ln = h2s[next_h2_idx][0] if next_h2_idx < len(h2s) else len(lines) + 1
+            has_h3 = any(dev_ln < h3_ln < next_h2_ln for h3_ln in h3_linenos)
+            if not has_h3:
+                result.warn(
+                    "W005",
+                    "`## Development Commands` has no H3 subsections; "
+                    "add subsections like `### Build and Run` and `### Testing`",
+                )
+
+        # E011: Architecture Overview required
+        if "architecture overview" not in present:
+            result.error(
+                "E011",
+                "Root overlay is missing the required `## Architecture Overview` section",
+            )
+
+    # ------------------------------------------------------------------
+    # Strict mode: promote warnings to errors
+    # ------------------------------------------------------------------
+    if strict:
+        for diag in result.diagnostics:
+            if diag.severity == "warning":
+                diag.severity = "error"
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Output formatting
+# ---------------------------------------------------------------------------
+
+def _emit_text(result: ValidationResult, quiet: bool) -> None:
+    for diag in result.diagnostics:
+        print(diag.as_text(result.path), file=sys.stderr)
+
+    n_errors = len(result.errors)
+    n_warnings = len(result.warnings)
+
+    if not quiet:
+        if n_errors == 0 and n_warnings == 0:
+            print(f"{result.path}: OK")
+        else:
+            counts = []
+            if n_errors:
+                counts.append(f"{n_errors} error(s)")
+            if n_warnings:
+                counts.append(f"{n_warnings} warning(s)")
+            print(f"{result.path}: {', '.join(counts)}")
+
+
+def _emit_json(result: ValidationResult) -> None:
+    payload = {
+        "path": result.path,
+        "errors": len(result.errors),
+        "warnings": len(result.warnings),
+        "diagnostics": [
+            {
+                "code": d.code,
+                "severity": d.severity,
+                "line": d.line,
+                "message": d.message,
+            }
+            for d in result.diagnostics
+        ],
+    }
+    print(json.dumps(payload, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Validate a WARP.md project-overlay file.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("file", help="Path to the WARP.md file to validate")
+    parser.add_argument(
+        "--root",
+        action="store_true",
+        default=None,
+        help="Apply root-overlay constraints (auto-detected if not specified)",
+    )
+    parser.add_argument(
+        "--no-root",
+        dest="root",
+        action="store_false",
+        help="Disable root-overlay constraints even for repo-root files",
+    )
+    parser.add_argument("--strict", action="store_true", help="Treat warnings as errors")
+    parser.add_argument("--json", action="store_true", help="Emit JSON output")
+    parser.add_argument("--quiet", action="store_true", help="Suppress passing messages")
+
+    args = parser.parse_args()
+    path = Path(args.file)
+
+    if not path.exists():
+        print(f"error: file not found: {path}", file=sys.stderr)
+        return 2
+
+    result = validate(path, root=args.root, strict=args.strict)
+
+    if args.json:
+        _emit_json(result)
+    else:
+        _emit_text(result, quiet=args.quiet)
+
+    if result.errors:
+        return 2
+    if result.warnings:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
