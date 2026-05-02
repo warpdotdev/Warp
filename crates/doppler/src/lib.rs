@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
-// Doppler CLI integration: detection (PDX-49) and TTL-cached secret fetcher
-// (PDX-53). This crate is intentionally narrow — it only wraps the local
-// `doppler` CLI. Login flows, project pickers, status readers, refetch on
-// 401, error-state UI and multi-account scoping live elsewhere.
+// Doppler CLI integration: detection (PDX-49), TTL-cached secret fetcher
+// (PDX-53), and cwd-based multi-account context switching (PDX-56). This
+// crate is intentionally narrow — it only wraps the local `doppler` CLI.
+// Login flows, project pickers, status readers, refetch on 401, and
+// error-state UI live elsewhere.
 //
 // Hard rules enforced here:
 //   * Secret values are NEVER written to logs, files, or `Debug` output.
 //   * Secrets are NEVER persisted to disk; the cache is in-memory only.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -127,11 +128,22 @@ struct CacheEntry {
     expires_at: Instant,
 }
 
+/// Cache key: the working directory that scopes the Doppler config, plus the
+/// secret name. Different directories can map to different Doppler accounts or
+/// projects, so both dimensions must be part of the key.
+type CacheKey = (Option<PathBuf>, String);
+
 /// Async client for fetching secrets from the local `doppler` CLI with an
 /// in-memory TTL cache.
+///
+/// Each call to [`get`] accepts an optional `cwd`. Doppler reads its
+/// per-directory `.doppler.yaml` from that directory, so passing the repo
+/// root enables automatic per-repo account/project selection. The cache is
+/// keyed by `(cwd, secret_name)`, so secrets from different repos are stored
+/// independently.
 pub struct DopplerClient {
     ttl: Duration,
-    cache: RwLock<HashMap<String, CacheEntry>>,
+    cache: RwLock<HashMap<CacheKey, CacheEntry>>,
     runner: Arc<dyn CommandRunner>,
 }
 
@@ -152,13 +164,22 @@ impl DopplerClient {
         }
     }
 
-    /// Fetch a secret by name. Returns a cached value if one exists and is
-    /// still within TTL, otherwise spawns `doppler secrets get NAME --plain`.
-    pub async fn get(&self, name: &str) -> Result<SecretValue, DopplerError> {
+    /// Fetch a secret by name, scoped to `cwd`.
+    ///
+    /// `cwd` is passed as the working directory when spawning `doppler`, so
+    /// the CLI picks up the `.doppler.yaml` for that directory. Pass `None`
+    /// to inherit the process working directory (useful in single-repo setups
+    /// or when the caller does not have a relevant directory).
+    ///
+    /// Returns a cached value if one exists for `(cwd, name)` and is still
+    /// within TTL, otherwise spawns `doppler secrets get NAME --plain`.
+    pub async fn get(&self, name: &str, cwd: Option<&Path>) -> Result<SecretValue, DopplerError> {
+        let key: CacheKey = (cwd.map(|p| p.to_path_buf()), name.to_string());
+
         // Fast path: cache hit.
         {
             let cache = self.cache.read().await;
-            if let Some(entry) = cache.get(name) {
+            if let Some(entry) = cache.get(&key) {
                 if entry.expires_at > Instant::now() {
                     tracing::debug!("doppler cache hit for {}", name);
                     return Ok(entry.value.clone());
@@ -169,9 +190,9 @@ impl DopplerClient {
         // Slow path: drop expired entry (if any) and refetch.
         {
             let mut cache = self.cache.write().await;
-            if let Some(entry) = cache.get(name) {
+            if let Some(entry) = cache.get(&key) {
                 if entry.expires_at <= Instant::now() {
-                    cache.remove(name);
+                    cache.remove(&key);
                 }
             }
         }
@@ -179,7 +200,7 @@ impl DopplerClient {
         tracing::debug!("doppler fetching {}", name);
         let output = self
             .runner
-            .run(&["secrets", "get", name, "--plain"])
+            .run(&["secrets", "get", name, "--plain"], cwd)
             .await?;
 
         let value = parse_output(name, output)?;
@@ -188,7 +209,7 @@ impl DopplerClient {
         {
             let mut cache = self.cache.write().await;
             cache.insert(
-                name.to_string(),
+                key,
                 CacheEntry {
                     value: value.clone(),
                     expires_at: Instant::now() + self.ttl,
@@ -199,16 +220,17 @@ impl DopplerClient {
         Ok(value)
     }
 
-    /// Drop a single cached entry.
+    /// Drop the cached entry for `(cwd, name)`.
     ///
     /// Synchronous: uses an opportunistic non-blocking write. Concurrent
     /// `get` callers may briefly hold the lock; in that case the caller can
     /// retry. In practice the cache is uncontended.
-    pub fn invalidate(&self, name: &str) {
+    pub fn invalidate(&self, name: &str, cwd: Option<&Path>) {
+        let key: CacheKey = (cwd.map(|p| p.to_path_buf()), name.to_string());
         loop {
             match self.cache.try_write() {
                 Ok(mut cache) => {
-                    cache.remove(name);
+                    cache.remove(&key);
                     return;
                 }
                 Err(_) => std::thread::yield_now(),
@@ -216,7 +238,7 @@ impl DopplerClient {
         }
     }
 
-    /// Drop all cached entries.
+    /// Drop all cached entries across all directories.
     pub fn clear(&self) {
         loop {
             match self.cache.try_write() {

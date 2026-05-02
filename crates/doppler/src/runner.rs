@@ -4,6 +4,7 @@
 // the runner without spawning the real `doppler` binary.
 
 use std::io;
+use std::path::Path;
 use std::process::Output;
 
 /// A pluggable command runner. The default implementation
@@ -12,7 +13,11 @@ use std::process::Output;
 #[async_trait::async_trait]
 pub trait CommandRunner: Send + Sync {
     /// Run `doppler` with the given args and return its [`Output`].
-    async fn run(&self, args: &[&str]) -> io::Result<Output>;
+    ///
+    /// `cwd` sets the working directory for the spawned process. Doppler reads
+    /// its per-directory `.doppler.yaml` from the cwd, so passing the repo
+    /// root here enables per-repo account/project selection.
+    async fn run(&self, args: &[&str], cwd: Option<&Path>) -> io::Result<Output>;
 }
 
 /// Default [`CommandRunner`] that spawns the real `doppler` binary via
@@ -21,10 +26,12 @@ pub struct TokioCommandRunner;
 
 #[async_trait::async_trait]
 impl CommandRunner for TokioCommandRunner {
-    async fn run(&self, args: &[&str]) -> io::Result<Output> {
-        tokio::process::Command::new("doppler")
-            .args(args)
-            .output()
-            .await
+    async fn run(&self, args: &[&str], cwd: Option<&Path>) -> io::Result<Output> {
+        let mut cmd = tokio::process::Command::new("doppler");
+        cmd.args(args);
+        if let Some(dir) = cwd {
+            cmd.current_dir(dir);
+        }
+        cmd.output().await
     }
 }
