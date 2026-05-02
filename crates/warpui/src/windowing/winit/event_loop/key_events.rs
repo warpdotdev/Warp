@@ -61,6 +61,7 @@ pub fn convert_keyboard_input_event(
     input: winit::event::KeyEvent,
     window_state: &WindowState,
     is_synthetic: bool,
+    ime_composing: bool,
 ) -> Option<crate::Event> {
     if input.state != ElementState::Pressed {
         return None;
@@ -130,7 +131,7 @@ pub fn convert_keyboard_input_event(
             right_alt: window_state.right_alt_pressed,
             key_without_modifiers,
         },
-        is_composing: false,
+        is_composing: ime_composing,
     })
 }
 
