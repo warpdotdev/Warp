@@ -15,6 +15,9 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 futures-core = "0.3.31"
+futures-util = { workspace = true }
+async-stream = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt", "macros", "sync"] }
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
+futures-util = { workspace = true }
