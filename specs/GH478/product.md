@@ -68,15 +68,21 @@ Out of scope:
 A tab's effective theme is determined by walking these layers and returning
 the first hit:
 
-1. **Manual override**, if any. Sources: a tab-level `theme:` in a launch
-   configuration; the right-click "Pin theme" menu.
-2. **Directory match**, if any. The active pane's current working directory
-   is matched against `appearance.themes.directory_overrides`; if a key is
-   a prefix of the cwd, the longest such key wins.
-3. **Launch-configuration window-level default**, if the tab was opened from
-   a launch configuration with a window-level `theme:` and no closer
-   override applies.
-4. **Global theme** as derived from `ThemeSettings` and the system theme,
+1. **Menu pin**, if any. Set by the right-click "Pin theme" menu and
+   cleared by the right-click "Reset theme" menu. Persists across
+   sessions.
+2. **Launch-configuration manual pin**, if any. Set by a tab-level
+   `theme:` in the launch configuration that opened (or restored) the
+   tab. Cleared only by an explicit "Forget launch config theme" menu
+   entry — `Reset theme` does **not** clear this layer (per Zach's v4
+   review). Persists across sessions.
+3. **Directory match**, if any. The active pane's current working
+   directory is matched against `appearance.themes.directory_overrides`;
+   if a key is a prefix of the cwd, the longest such key wins.
+4. **Launch-configuration window-level default**, if the tab was opened
+   from a launch configuration with a window-level `theme:` and no
+   closer override applies. Persists across sessions.
+5. **Global theme** as derived from `ThemeSettings` and the system theme,
    exactly as today.
 
 If none of the override sources resolve to a known theme, behavior is
@@ -226,14 +232,16 @@ bit-for-bit identical to today.
     trust/validation rules as the global theme loader.
 
 13. Overrides persist per-tab through session restore, by source:
-    - **Manual pin** — kept on relaunch.
-    - **Launch-configuration window-level default** — kept on relaunch.
-      The launch configuration that opened the tab is not necessarily
+    - **Menu pin** (layer #1) — kept on relaunch.
+    - **Launch-configuration manual pin** (layer #2) — kept on
+      relaunch. The launch configuration that set it is not necessarily
       reopened on restore, so the value travels with the tab.
-    - **Directory match** — not stored; recomputed on relaunch from the
-      current `directory_overrides` and the restored cwd. Editing
-      `directory_overrides` between sessions therefore takes effect on
-      the next launch.
+    - **Launch-configuration window-level default** (layer #4) — kept
+      on relaunch, same reason as #2.
+    - **Directory match** (layer #3) — not stored; recomputed on
+      relaunch from the current `directory_overrides` and the restored
+      cwd. Editing `directory_overrides` between sessions therefore
+      takes effect on the next launch.
 
 14. The accepted form for any theme reference (in
     `directory_overrides`, in launch-config tab `theme:`, in launch-config
@@ -264,26 +272,48 @@ bit-for-bit identical to today.
 
 ### User affordances
 
-18. The right-click tab context menu gains two entries, alongside the
+18. The right-click tab context menu gains three entries, alongside the
     existing per-tab attributes:
     - **Pin theme...** — opens a submenu listing available themes.
-      Choosing one sets a manual override on the tab, which wins over
-      directory matching and the global theme. Visible at all times.
-    - **Reset theme** — clears the tab's manual override. Visible only
-      when the tab has a manual override. After reset, the tab falls
-      through to the directory-match / window-default / global layers in
-      that order; if a directory match applies, the tab redraws with the
-      directory-matched theme.
+      Choosing one sets a *menu pin* on the tab (resolution layer #1),
+      which wins over every other layer including a launch-config
+      manual pin. Visible at all times.
+    - **Reset theme** — clears only the menu pin (layer #1). The tab
+      falls through to the launch-config manual pin / directory match /
+      window default / global layers in that order. Visible only when
+      the tab has a menu pin.
+    - **Forget launch config theme** — clears only the launch-config
+      manual pin (layer #2). The tab falls through to the directory
+      match / window default / global layers. Visible only when the
+      tab has a launch-config manual pin.
+
+    Splitting "Reset theme" from "Forget launch config theme" means a
+    user who pinned a different theme via the menu can clear that pin
+    without unintentionally also discarding what their launch
+    configuration originally set. (Per Zach's v4 review.)
 
 19. The existing per-tab `color:` field on a tab template (the small
     colored indicator next to the tab title) is independent of the new
     theme override. Both can be set; both are honored.
 
 20. The feature applies on every supported platform (macOS, Linux,
-    Windows). It is gated behind no feature flag and is on by default once
-    shipped. An empty `directory_overrides` map (the default) plus no
-    launch-config theme fields plus no pinned themes is bit-for-bit
-    identical to current behavior.
+    Windows). It is **gated behind a feature flag** named
+    `appearance.themes.per_tab_overrides` (per Zach's v4 review):
+    - Initial release ships with the flag **off** in stable and **on**
+      in dev/preview, so the rollout can soak with internal users
+      before reaching the broader install base.
+    - When the flag is off the feature is invisible: the right-click
+      menu entries are hidden, `directory_overrides` matching does not
+      run (the settings group is still parseable so users who set up
+      the map under preview do not lose data), and launch-configuration
+      `theme:` fields are deserialized but ignored. The user-visible
+      behavior is bit-for-bit identical to today.
+    - The default flips to on in stable in a follow-up release, after
+      telemetry on the preview/dev cohort confirms no regressions in
+      render performance, settings parsing, or session restore.
+    - An empty `directory_overrides` map (the default) plus no
+      launch-config theme fields plus no pinned themes — even with the
+      flag on — is bit-for-bit identical to current behavior.
 
 ### Accessibility
 
@@ -310,20 +340,20 @@ bit-for-bit identical to today.
 
 ## Open questions
 
-- Should `directory_overrides` keys support glob patterns (`~/Work/*`)?
-  This spec proposes prefix-matching only because that covers the
-  most-requested use case ("a folder of projects, each in a subfolder")
-  and avoids the edge cases of glob semantics on Windows paths. Globs are
-  a candidate follow-up.
-- Should "Reset theme" also clear a launch-config-set manual override
-  (#18 says it does)? An alternative is "Reset theme" only clears
-  pin-from-menu overrides and a separate "Forget launch config theme"
-  entry handles YAML-set overrides. This spec takes the simpler
-  one-entry-clears-all-manual position and lists the alternative as a
-  follow-up.
+(Resolved in v4 review and folded into the spec — kept here as a record
+of the design choices made.)
+
+- ~~`directory_overrides` keys: glob vs. prefix matching.~~ Resolved:
+  prefix matching only (Zach v4: "i think prefix-match is fine to
+  start"). Globs are a follow-up.
+- ~~"Reset theme" scope: clear all manual layers, or only menu pins.~~
+  Resolved: only menu pins (Zach v4: "i don't think it should" clear
+  launch-config pins). A separate "Forget launch config theme" entry
+  exists for the launch-config layer. Reflected in behaviors #18 and
+  in the resolution order.
 - Should saving a launch configuration emit `directory_overrides`
-  entries (so themes travel with the launch config)? This spec keeps the
-  two surfaces independent: launch configs carry only manual overrides;
-  directory matching is a settings-level concept that does not roundtrip
-  through saved launch configs. A future "shareable theme bundle" feature
-  could compose them.
+  entries so themes travel with the launch config? Spec keeps the two
+  surfaces independent — launch configs carry only manual pins;
+  directory matching is settings-level and does not round-trip through
+  saved launch configs. A future "shareable theme bundle" could
+  compose them. Open for product-team input.

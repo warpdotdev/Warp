@@ -125,13 +125,21 @@ tab is computed as:
 
 ```rust
 fn preserved_override(state: &TabThemeState) -> Option<&ThemeKind> {
-    state.manual.as_ref().or(state.window_default.as_ref())
+    // menu_pin and launch_config_pin both round-trip through saved
+    // launch configs as tab-level `theme:`. menu_pin wins on
+    // resolution (layer #1 > #2), so we save the higher-priority slot
+    // when both are set; on reopen the field reseeds launch_config_pin
+    // and the user's prior menu_pin (if any) is restored from session
+    // state independently.
+    state.menu_pin.as_ref()
+        .or(state.launch_config_pin.as_ref())
+        .or(state.window_default.as_ref())
 }
 ```
 
-(Directory-matched themes are deliberately not part of `preserved_override`
-— they round-trip through `directory_overrides`, not through the saved
-launch configuration.)
+(Directory-matched themes are deliberately not part of
+`preserved_override` — they round-trip through `directory_overrides`,
+not through the saved launch configuration.)
 
 `From<WindowSnapshot> for WindowTemplate` then:
 
@@ -195,53 +203,64 @@ explicit and keeping unknown-theme handling field-level.
 
 File: `app/src/app_state.rs` and `app/src/tab.rs`.
 
-A tab can have up to three independent theme inputs at once — a manual
-pin, a cwd-pattern match, and a launch-configuration window-level
-default — and the product spec defines a strict priority order between
-them (manual > cwd > window default > global). A single `Option<enum>`
-cannot represent "manual cleared, cwd applies, window default also
-exists as a deeper fallback" because the three sources are not mutually
+A tab can have up to four independent theme inputs at once — a menu
+pin, a launch-config manual pin, a cwd-pattern match, and a
+launch-config window-level default — and the product spec defines a
+strict priority order between them (menu > launch-config-manual > cwd >
+window default > global). A single `Option<enum>` cannot represent the
+state "menu pin cleared, launch-config-manual still applies, cwd also
+exists as a deeper fallback" because the sources are not mutually
 exclusive at storage time, only at render time. Replace the single
-field with a struct holding all three slots, plus a resolver:
+field with a struct holding all four slots, plus a resolver:
 
 ```rust
 /// Per-tab theme state. Each slot is independent storage for one
 /// resolution layer; the resolver in `effective()` enforces the
-/// priority order from `product.md` (Resolution order #1–#4).
+/// priority order from `product.md` §Resolution order.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TabThemeState {
-    /// User-set pin: launch-config tab-level `theme:`, "Pin theme"
-    /// menu, or a restored pin from a previous session.
+    /// Layer #1. Set by the right-click "Pin theme" menu; cleared by
+    /// the right-click "Reset theme" menu.
     /// **Persisted across sessions.**
-    pub manual: Option<ThemeKind>,
+    pub menu_pin: Option<ThemeKind>,
 
-    /// Set at open time when the tab was created from a launch
-    /// configuration whose window had a window-level `theme:`.
-    /// **Persisted across sessions** (the launch config that opened
-    /// the tab is not necessarily reopened on restore, so the value
-    /// must travel with the tab).
-    pub window_default: Option<ThemeKind>,
+    /// Layer #2. Set by a tab-level `theme:` in the launch
+    /// configuration that opened (or restored) the tab. Cleared only
+    /// by the right-click "Forget launch config theme" menu, never by
+    /// "Reset theme" — see Zach's v4 review.
+    /// **Persisted across sessions.**
+    pub launch_config_pin: Option<ThemeKind>,
 
-    /// Computed by directory-pattern matching against the focused
-    /// pane's cwd. Recomputed on tab creation, on focused-pane cwd
-    /// change, and on `directory_overrides` settings change.
-    /// **Not persisted** — recomputed on startup from current
-    /// settings + restored cwd.
+    /// Layer #3. Computed by directory-pattern matching against the
+    /// focused pane's cwd. Recomputed on tab creation, on focused-pane
+    /// cwd change, and on `directory_overrides` settings change.
+    /// **Not persisted** — recomputed on startup from current settings
+    /// + restored cwd.
     pub cwd_resolved: Option<ThemeKind>,
+
+    /// Layer #4. Set at open time when the tab was created from a
+    /// launch configuration whose window had a window-level `theme:`.
+    /// **Persisted across sessions** (the launch config that opened
+    /// the tab is not necessarily reopened on restore).
+    pub window_default: Option<ThemeKind>,
 }
 
 impl TabThemeState {
-    /// Resolution order: manual > cwd > window default > caller's
-    /// global fallback. Mirrors product.md §"Resolution order".
+    /// Resolution order: menu_pin > launch_config_pin > cwd_resolved
+    /// > window_default > caller's global fallback. Mirrors
+    /// product.md §"Resolution order" exactly.
     pub fn effective<'a>(&'a self, global: &'a ThemeKind) -> &'a ThemeKind {
-        self.manual.as_ref()
+        self.menu_pin.as_ref()
+            .or(self.launch_config_pin.as_ref())
             .or(self.cwd_resolved.as_ref())
             .or(self.window_default.as_ref())
             .unwrap_or(global)
     }
 
     pub fn has_any_override(&self) -> bool {
-        self.manual.is_some() || self.cwd_resolved.is_some()
+        self.menu_pin.is_some()
+            || self.launch_config_pin.is_some()
+            || self.cwd_resolved.is_some()
             || self.window_default.is_some()
     }
 }
@@ -252,24 +271,30 @@ Add `pub theme_state: TabThemeState` to:
 - `TabSnapshot` (`app_state.rs:61–69`), placed next to `selected_color`.
 - `TabData` (`tab.rs:134`), same.
 
-Session serialization writes only `manual` and `window_default`;
-`cwd_resolved` is recomputed on startup. The serializer omits the
-field entirely when all three slots are `None`, so existing sessions
-with no overrides round-trip with no schema cost.
+Session serialization writes `menu_pin`, `launch_config_pin`, and
+`window_default`; `cwd_resolved` is recomputed on startup. The
+serializer omits the field entirely when all four slots are `None`, so
+existing sessions with no overrides round-trip with no schema cost.
 
 `WindowSnapshot` does not gain a theme field; the window-level
 launch-config theme lives only on the *tabs* it opened (in their
-`window_default` slot). This is what Oz's first v2 review correctly
-flagged: expanding the window default into the *manual* slot would
-have made it incorrectly outrank cwd matches. The dedicated slot fixes
-that — `effective()` consults `manual` first, then `cwd_resolved`, and
-falls through to `window_default` only when neither of the higher
-layers applies.
+`window_default` slot). The dedicated slot is what makes
+`effective()`'s priority order honor the product spec without
+collapsing into an enum that could mis-rank window defaults — the
+finding Oz raised in the v2 review.
 
-The right-click "Reset theme" entry (§6) only clears `manual`. The
-other two slots are unaffected, so a tab whose manual pin sat on top
-of a still-applicable cwd match falls back to the cwd theme on reset
-rather than to the global theme — matching product behavior #18.
+Menu actions (§6) target individual slots:
+
+- **Reset theme** clears `menu_pin` only. `launch_config_pin`,
+  `cwd_resolved`, and `window_default` are unaffected — the tab falls
+  through to the next non-empty layer per `effective()`.
+- **Forget launch config theme** clears `launch_config_pin` only.
+- "Pin theme..." sets `menu_pin`.
+
+A tab can have a menu pin AND a launch-config pin simultaneously: the
+menu pin wins for rendering (layer #1 > layer #2), and clearing the
+menu pin reveals the launch-config pin underneath. This is exactly the
+behavior Zach's v4 review asked for.
 
 ### 4. Directory-pattern overrides settings group
 
@@ -292,7 +317,10 @@ define_settings_group!(DirectoryThemeOverrides, settings: [
         // remain user-controllable through the right-click "Pin theme"
         // menu, which writes to the (non-synced) tab snapshot, not to
         // this map. See *Privacy model* below.
-        sync_to_cloud: SyncToCloud::Locally,
+        // (Per Zach's v4 review: `Never` is the correct variant here.
+        // The settings system uses `Globally`, `Never`, `PerPlatform`;
+        // there is no `Locally` variant.)
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
         toml_path: "appearance.themes.directory_overrides",
         max_table_depth: 1,
@@ -314,10 +342,10 @@ about the user's employer, clients, and projects. A key like
 already distinguishes synced from local settings via `sync_to_cloud`
 and `private`; the design rule applied here is:
 
-- **Keys are locally-stored, never synced.** `sync_to_cloud:
-  Locally` and `private: true`. The map is written only to the user's
-  local `settings.toml` and is not transmitted off-machine by the
-  settings sync path.
+- **Keys are locally-stored, never synced.** `sync_to_cloud: Never`
+  and `private: true`. The map is written only to the user's local
+  `settings.toml` and is not transmitted off-machine by the settings
+  sync path.
 - **No telemetry on the contents.** The match function emits at most a
   count metric ("a directory match applied to N tabs this minute"); it
   never logs path keys or theme names to remote telemetry pipelines.
@@ -414,9 +442,12 @@ finding that settings edits were not handled):
 - **Tab creation** — when a tab is added (from a launch configuration
   or from "new tab"), the focused pane's cwd is matched and
   `tab.theme_state.cwd_resolved` is set to the result (`None` on no
-  match). The `manual` slot is set independently from the launch
-  config or from a saved pin; it is *not* gated on `cwd_resolved`
-  being absent.
+  match). The `launch_config_pin` slot is set independently from the
+  launch config (`tab_template.theme` resolved through
+  `resolve_theme_ref`); the `window_default` slot is set similarly
+  from the window-level `theme:`. None of these is gated on
+  `cwd_resolved` being absent — every applicable slot is filled, and
+  `effective()` chooses the winner.
 - **Focused-pane cwd-change events** — the existing pane-cwd tracker
   emits a "focused pane cwd changed" event used today for tab title
   updates. A new subscriber re-runs `directory_theme_for` for the
@@ -565,25 +596,76 @@ Window-chrome consumers (per the table) keep
 single source of truth for which sites are which; reviewers verify the
 table by reading the lint config, not by re-walking 862 call sites.
 
-### 6. Right-click menu: Pin theme / Reset theme
+### 6. Right-click menu: Pin theme / Reset theme / Forget launch config theme
 
-The existing tab context menu gains two entries:
+The existing tab context menu gains three entries:
 
 - **Pin theme...** — opens a submenu listing built-in themes plus any
   loaded custom themes (the same list the theme picker shows). On
-  click, sets `tab.theme_state.manual = Some(chosen)`. Always
-  visible.
-- **Reset theme** — sets `tab.theme_state.manual = None`. The other
-  two slots (`cwd_resolved`, `window_default`) are unaffected; if
-  either still has a value the tab immediately re-renders with the
-  next-priority theme per `effective()`. Visible only when
-  `theme_state.manual.is_some()`.
+  click, sets `tab.theme_state.menu_pin = Some(chosen)`. Always
+  visible (when the feature flag is on, see §7).
+- **Reset theme** — sets `tab.theme_state.menu_pin = None`. The other
+  three slots (`launch_config_pin`, `cwd_resolved`, `window_default`)
+  are unaffected; if any still has a value the tab immediately
+  re-renders with the next-priority theme per `effective()`. Visible
+  only when `theme_state.menu_pin.is_some()`.
+- **Forget launch config theme** — sets `tab.theme_state.launch_config_pin
+  = None`. Visible only when `theme_state.launch_config_pin.is_some()`.
+  This entry exists per Zach's v4 review: a user pinning a different
+  theme via the menu should not also discard what their launch
+  configuration originally set.
 
-Both entries trigger the existing theme-changed redraw path used today
-when the global theme changes (no new render-invalidation work).
+All three entries trigger the existing theme-changed redraw path used
+today when the global theme changes (no new render-invalidation work).
 
-Telemetry: one counter per click, using the existing tab-menu telemetry
-conventions. No new event schema.
+Telemetry: one counter per click for each of the three entries (using
+existing tab-menu telemetry conventions). No new event schema.
+
+### 7. Feature flag wiring
+
+Per Zach's v4 review, the entire feature ships behind a feature flag
+`appearance.themes.per_tab_overrides`. The flag is added through the
+existing feature-flag system (the same mechanism that gates other
+in-development features like `OpenWarpNewSettingsModes`).
+
+**Default values:**
+
+- `dev` and `preview` channels: flag defaults to **on**.
+- `stable` channel: flag defaults to **off** in the initial release.
+  A follow-up changelog entry flips it on once preview telemetry
+  confirms no regressions.
+
+**Surfaces gated by the flag (when off):**
+
+| Surface | Behavior with flag off |
+| --- | --- |
+| `directory_overrides` matching | Skipped entirely. The settings group is still parsed (so users who set up the map under preview do not lose data on stable) but `directory_theme_for` is never invoked. |
+| Launch-config `theme:` fields | Deserialized as today (`Option<String>`) but ignored — `launch_config_pin` and `window_default` are not populated when applying templates. |
+| Right-click menu entries | "Pin theme...", "Reset theme", and "Forget launch config theme" are hidden. |
+| Theme catalog (§5) | `theme_for(None)` always returns the global theme; `theme_for(Some(_))` is unreachable because no slot is ever populated. The catalog cache stays empty. |
+| Settings-change subscription on `DirectoryThemeOverrides` | Subscribed but the handler short-circuits when the flag is off. |
+| `appearance_theme_in_tab_path` lint (§5) | Still enforced — the call sites need to be migrated regardless of runtime behavior because the flag must be flippable without recompiling. The migrated call sites pass `theme_state.effective(&global)` which falls through to `global` when every slot is `None`, which is exactly what the flag-off state guarantees. |
+
+**Persisted state with flag off:**
+
+The `theme_state` field is still serialized and deserialized through
+session restore. A user who pinned themes under preview, then opens
+stable with the flag off, has their pins preserved on disk; flipping
+the flag back on (or upgrading to a stable release that turns it on)
+restores the visible behavior exactly as they left it. This avoids
+any "I lost my themes when I downgraded" regression.
+
+The settings-system feature-flag check is one call:
+
+```rust
+fn per_tab_overrides_enabled(ctx: &AppContext) -> bool {
+    FeatureFlags::as_ref(ctx).per_tab_overrides.value()
+}
+```
+
+Each gated surface above guards entry with this single call. The
+implementation PR introduces a constant for the flag name to avoid
+typos.
 
 ## Testing and validation
 
@@ -624,20 +706,28 @@ conventions. No new event schema.
 
 `app/src/app_state.rs` (or test module):
 
-- `TabThemeState { manual: Some(Dracula), .. }` round-trips through
-  session-restore serialization.
-- `TabThemeState { window_default: Some(Light), .. }` round-trips —
-  window defaults travel with the tab because the launch config that
-  set them is not necessarily reopened on restore.
-- `TabThemeState { cwd_resolved: Some(Dracula), .. }` does **not**
-  persist; on deserialization the slot is `None` regardless of what
-  was written. (Pins product behavior #13.)
-- `TabThemeState::effective()` priority: `manual=Some(A) cwd=Some(B)
-  window=Some(C)` resolves to `A`; `manual=None cwd=Some(B) window=Some(C)`
-  resolves to `B`; `manual=None cwd=None window=Some(C)` resolves to
-  `C`; all `None` resolves to the global fallback. (Pins the
-  resolution order from product.md and directly addresses Oz's v2
-  CRITICAL finding — window defaults must not outrank cwd.)
+- Each persisted slot round-trips through session-restore
+  serialization: `menu_pin`, `launch_config_pin`, `window_default`.
+- `cwd_resolved` does **not** persist; on deserialization the slot is
+  `None` regardless of what was written. (Pins product behavior #13.)
+- `TabThemeState::effective()` walks the priority order exactly:
+  - `menu=A launch=B cwd=C window=D` → `A`.
+  - `menu=None launch=B cwd=C window=D` → `B`.
+  - `menu=None launch=None cwd=C window=D` → `C`.
+  - `menu=None launch=None cwd=None window=D` → `D`.
+  - All `None` → global fallback.
+  Pins the 5-layer resolution order from product.md and addresses
+  the CRITICAL finding from Oz's v2 review (window defaults must
+  not outrank cwd) plus Zach's v4 split (menu pin must outrank
+  launch-config pin).
+- "Reset theme" semantics: a tab with `menu=A launch=B` resolves to
+  `A`. After clearing `menu_pin`, it resolves to `B`. A tab with
+  `menu=A` only resolves to `A`; after clear, falls through to
+  global. Pins product behavior #18.
+- "Forget launch config theme" semantics: a tab with `menu=A launch=B`
+  resolves to `A`. After clearing `launch_config_pin`, it still
+  resolves to `A` (menu wins). After also clearing `menu_pin`, it
+  falls through to global.
 - `TabSnapshot::color()` returns the same value with and without
   `theme_state` populated (color and theme are independent — #19).
 
@@ -667,10 +757,18 @@ conventions. No new event schema.
   unmatched tab into a matched directory; assert the tab redraws with
   the matched theme. `cd` it back out; assert it redraws with the
   global theme.
-- Tab with `Manual(Dracula)` from a launch config sits in a directory
-  that maps to `Solarized Dark`. Assert Dracula wins (manual > cwd).
-  Right-click → Reset theme. Assert the tab redraws with Solarized
-  Dark (the cwd match takes over).
+- Tab with `launch_config_pin = Some(Dracula)` (set via launch-config
+  tab-level `theme:`) sits in a directory that maps to
+  `Solarized Dark`. Assert Dracula wins (launch_config_pin > cwd).
+  Right-click → "Forget launch config theme". Assert the tab redraws
+  with Solarized Dark.
+- Tab with both `menu_pin = Some(Light)` and `launch_config_pin =
+  Some(Dracula)`. Assert Light wins (menu_pin > launch_config_pin).
+  Right-click → "Reset theme" (clears menu_pin only). Assert the tab
+  redraws with Dracula. Right-click → "Forget launch config theme".
+  Assert the tab redraws with the next-priority theme. (Addresses
+  Zach's v4 review — menu and launch-config pins must be
+  independently clearable.)
 - **Settings-change recompute.** With three tabs open in three
   different cwds, edit `directory_overrides` to add a new key that
   matches one of them. Assert that one tab redraws with the new
@@ -723,6 +821,27 @@ conventions. No new event schema.
 - Unknown theme name in a launch configuration: the file opens,
   exactly that one tab falls through, the warning appears in the log,
   other tabs render correctly.
+
+### Feature-flag tests
+
+- With `appearance.themes.per_tab_overrides` **off**, open a launch
+  configuration containing both window-level and tab-level `theme:`
+  fields. Assert no tab carries any populated slot in `theme_state`
+  (effective() falls through to global) and no warning is logged for
+  the launch-config theme references.
+- With the flag **off**, configure `directory_overrides` and `cd` into
+  a matched directory. Assert no theme change occurs.
+- With the flag **off**, the right-click tab menu does not include
+  "Pin theme...", "Reset theme", or "Forget launch config theme".
+- Toggle the flag from **off** to **on** while a session is restored
+  with persisted slots from a prior preview run. Assert the persisted
+  `menu_pin`, `launch_config_pin`, and `window_default` slots resume
+  their effects without losing data, and `cwd_resolved` is recomputed
+  from current settings.
+- Toggle the flag from **on** to **off** mid-session. Assert all
+  themed tabs redraw with the global theme (or the cwd-stripped
+  fallback chain — but with the flag off, `effective()` collapses to
+  global). Persisted slot data is not cleared.
 
 ### Privacy invariant tests
 
