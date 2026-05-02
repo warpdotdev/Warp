@@ -1,0 +1,22 @@
+name = "helm-cloudflare-mcp"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The MCP agent class runs as a Durable Object so each SSE connection
+# gets its own isolated instance with stable state.
+[durable_objects]
+bindings = [{ name = "MCP_OBJECT", class_name = "CloudflareMCP" }]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["CloudflareMCP"]
+
+# Set these as Worker secrets (never in plain text):
+#   wrangler secret put CLOUDFLARE_API_TOKEN
+#   wrangler secret put CLOUDFLARE_ACCOUNT_ID
+#
+# For local dev, add them to .dev.vars (see .dev.vars.example).
+
+[vars]
+# Non-secret runtime config can go here if needed.

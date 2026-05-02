@@ -1,0 +1,9 @@
+# Copy this file to .dev.vars and fill in real values for local development.
+# .dev.vars is gitignored by wrangler by default — never commit the real file.
+#
+# In production, set these as Worker secrets:
+#   wrangler secret put CLOUDFLARE_API_TOKEN
+#   wrangler secret put CLOUDFLARE_ACCOUNT_ID
+
+CLOUDFLARE_API_TOKEN=your-api-token-here
+CLOUDFLARE_ACCOUNT_ID=your-account-id-here

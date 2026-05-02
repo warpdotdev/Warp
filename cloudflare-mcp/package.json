@@ -1,0 +1,20 @@
+{
+  "name": "helm-cloudflare-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "agents": "^0.0.71",
+    "@modelcontextprotocol/sdk": "^1.8.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250430.0",
+    "typescript": "^5.5.2",
+    "wrangler": "^3.114.7"
+  }
+}
