@@ -8,6 +8,8 @@ publish.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "process", "sync", "macros"] }
 tracing.workspace = true

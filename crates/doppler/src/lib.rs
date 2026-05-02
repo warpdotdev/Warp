@@ -18,9 +18,11 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
 
+mod picker;
 mod runner;
 mod status;
 
+pub use picker::{bind_project, list_configs, list_projects, DopplerConfig, DopplerProject};
 pub use runner::{CommandRunner, TokioCommandRunner};
 pub use status::{parse_configure_all, read_status, DopplerStatus, ScopedBinding};
 
