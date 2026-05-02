@@ -158,6 +158,31 @@ async fn run_local_cli(
 
     let message_id = format!("local-msg-{}", Uuid::new_v4());
 
+    // Upgrade the optimistic root task to a server task before any AddMessagesToTask
+    // events arrive.  The task_store holds an Optimistic::Root entry (no `source`), so
+    // add_messages() would return TaskNotInitialized for every chunk.  Sending a
+    // CreateTask event with the same ID triggers `into_server_created_task()` in the
+    // conversation, which sets the task data to TaskImpl::Server and satisfies the
+    // source() check.
+    let _ = tx
+        .send(Ok(api::ResponseEvent {
+            r#type: Some(api::response_event::Type::ClientActions(
+                api::response_event::ClientActions {
+                    actions: vec![api::ClientAction {
+                        action: Some(api::client_action::Action::CreateTask(
+                            api::client_action::CreateTask {
+                                task: Some(api::Task {
+                                    id: task_id.clone(),
+                                    ..Default::default()
+                                }),
+                            },
+                        )),
+                    }],
+                },
+            )),
+        }))
+        .await;
+
     // Determine which backend to use.
     //
     // Priority:
@@ -244,6 +269,7 @@ async fn run_local_cli(
         }
     };
 
+    log::info!("Spawning local CLI subprocess: {cli_label}");
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
