@@ -201,6 +201,65 @@ struct ShellCommandExecutionContext {
     shell_type: crate::terminal::shell::ShellType,
 }
 
+fn trimmed_git_branch_on_click_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn git_branch_on_click_value_is_current(value: &str) -> bool {
+    value
+        .trim()
+        .strip_prefix('*')
+        .is_some_and(|rest| rest.chars().next().is_some_and(|c| c.is_whitespace()))
+}
+
+fn strip_git_branch_status_marker(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    let branch = ['*', '+']
+        .into_iter()
+        .find_map(|marker| {
+            trimmed.strip_prefix(marker).and_then(|rest| {
+                rest.chars()
+                    .next()
+                    .filter(|c| c.is_whitespace())
+                    .map(|_| rest.trim())
+            })
+        })
+        .unwrap_or(trimmed);
+
+    if branch.is_empty() {
+        None
+    } else {
+        Some(branch)
+    }
+}
+
+fn filter_git_branch_on_click_values(values_opt: Option<Vec<String>>) -> Option<Vec<String>> {
+    values_opt.map(|values| {
+        let mut trimmed: Vec<String> = values
+            .into_iter()
+            .filter_map(|s| trimmed_git_branch_on_click_value(&s))
+            .collect();
+
+        // We want to sort the branches so the current branch is first (denoted by *).
+        // The rest of the branches maintain their relative order.
+        trimmed.sort_by(|a, b| {
+            let a_starts_with_star = git_branch_on_click_value_is_current(a);
+            let b_starts_with_star = git_branch_on_click_value_is_current(b);
+            b_starts_with_star.cmp(&a_starts_with_star)
+        });
+
+        trimmed
+            .into_iter()
+            .filter_map(|s| strip_git_branch_status_marker(&s).map(str::to_string))
+            .collect()
+    })
+}
+
 impl CurrentPrompt {
     pub fn new(sessions: ModelHandle<Sessions>, ctx: &mut ModelContext<Self>) -> Self {
         Self::new_with_model_events(sessions, None, ctx)
@@ -619,26 +678,7 @@ impl CurrentPrompt {
         &self,
         values_opt: Option<Vec<String>>,
     ) -> Option<Vec<String>> {
-        values_opt.map(|values| {
-            let mut trimmed: Vec<String> = values
-                .into_iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-
-            // We want to sort the branches so the current branch is first (denoted by *).
-            // The rest of the branches maintain their relative order.
-            trimmed.sort_by(|a, b| {
-                let a_starts_with_star = a.starts_with('*');
-                let b_starts_with_star = b.starts_with('*');
-                b_starts_with_star.cmp(&a_starts_with_star)
-            });
-
-            trimmed
-                .into_iter()
-                .map(|s| s.trim_start_matches('*').trim().to_string())
-                .collect()
-        })
+        filter_git_branch_on_click_values(values_opt)
     }
 
     /// Perform a single update of the given chip.
