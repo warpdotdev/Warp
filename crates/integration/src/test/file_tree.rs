@@ -339,15 +339,16 @@ pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
             new_step_with_default_assertions("Open file tree panel")
                 .with_action(|app, _, _| open_file_tree_panel(app)),
         )
-        // Verify the file tree loaded the full repo, not just lazy-loaded first-level entries.
-        // Lazy-loading only shows top-level items; expanding src and verifying main.rs
-        // proves proper repo indexing occurred (which loads nested content).
+        // With the fix, detection triggers immediately on .git dirs, so the repo
+        // should NOT be in lazy-loaded state. We verify by clicking on main.rs
+        // which only works if full indexing happened (lazy-loading loads shallow tree).
+        // Note: This tests the detection path; old lazy-loading would need expand.
         .with_step(
-            new_step_with_default_assertions("Expand src directory")
+            new_step_with_default_assertions("Expand src to verify nested content loads")
                 .with_click_on_saved_position("file_tree_item:src"),
         )
         .with_step(
-            new_step_with_default_assertions("Verify main.rs is visible (proves full repo indexed)")
+            new_step_with_default_assertions("Verify main.rs visible (proves full tree loaded)")
                 .with_click_on_saved_position("file_tree_item:main.rs"),
         )
 }

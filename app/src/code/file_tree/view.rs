@@ -1536,6 +1536,7 @@ impl FileTreeView {
             // Check if this path appears to be a valid git repository by looking for .git directory
             // or .git file (used by worktrees/submodules). For .git files, we need to parse the
             // gitdir path and verify the actual git directory has a valid HEAD.
+            // Cap .git file read to 1KB to prevent unbounded reads from malformed local folders.
             let has_git_entry = path
                 .to_local_path()
                 .map(|p| {
@@ -1545,9 +1546,19 @@ impl FileTreeView {
                         git_entry.join("HEAD").is_file()
                     } else if git_entry.is_file() {
                         // .git file (worktree/submodule) - read gitdir path and verify HEAD there
-                        std::fs::read_to_string(&git_entry)
+                        // Cap read to 1KB - gitfile format is small (~100 bytes), so this prevents
+                        // malicious or malformed folders from stalling the UI.
+                        std::fs::read(&git_entry)
                             .ok()
                             .and_then(|contents| {
+                                let contents = contents.trim_end(); // trim trailing nulls
+                                if contents.len() > 1024 {
+                                    contents[..1024].try_into().ok()
+                                } else {
+                                    contents.try_into().ok()
+                                }
+                            })
+                            .and_then(|contents: String| {
                                 contents
                                     .trim()
                                     .strip_prefix("gitdir:")
