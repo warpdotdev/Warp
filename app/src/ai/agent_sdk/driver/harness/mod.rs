@@ -40,7 +40,6 @@ mod codex;
 pub(crate) mod codex_transcript;
 mod gemini;
 mod json_utils;
-
 pub(crate) use claude_code::ClaudeHarness;
 use claude_transcript::ClaudeResumeInfo;
 use codex::CodexHarness;
@@ -226,9 +225,9 @@ pub(crate) fn harness_kind(harness: Harness) -> Result<HarnessKind, AgentDriverE
     match harness {
         Harness::Oz => Ok(HarnessKind::Oz),
         Harness::Claude => Ok(HarnessKind::ThirdParty(Box::new(ClaudeHarness))),
+        Harness::Codex => Ok(HarnessKind::ThirdParty(Box::new(CodexHarness))),
         Harness::OpenCode => Ok(HarnessKind::Unsupported(Harness::OpenCode)),
         Harness::Gemini => Ok(HarnessKind::ThirdParty(Box::new(GeminiHarness))),
-        Harness::Codex => Ok(HarnessKind::ThirdParty(Box::new(CodexHarness))),
         Harness::Unknown => Err(AgentDriverError::InvalidRuntimeState),
     }
 }
@@ -384,6 +383,18 @@ pub(crate) enum SavePoint {
     PostTurn,
 }
 
+/// Controls how much harness-owned state should survive cleanup after the CLI
+/// exits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum HarnessCleanupDisposition {
+    /// Tear down all harness-owned resume and wake state.
+    DropResumptionState,
+    /// The harness exited cleanly and its final save completed, so wake/resume
+    /// state may be preserved if the harness-specific runtime also considers
+    /// the run complete.
+    PreserveResumptionStateIfSupported,
+}
+
 /// Stateful per-run representation of an external harness produced
 /// by [`ThirdPartyHarness::build_runner`].
 ///
@@ -421,7 +432,11 @@ pub(crate) trait HarnessRunner: Send + Sync {
     }
 
     /// Clean up any harness-owned background state after the harness exits.
-    async fn cleanup(&self, _foreground: &ModelSpawner<AgentDriver>) -> Result<()> {
+    async fn cleanup(
+        &self,
+        _cleanup_disposition: HarnessCleanupDisposition,
+        _foreground: &ModelSpawner<AgentDriver>,
+    ) -> Result<()> {
         Ok(())
     }
 }
@@ -432,20 +447,29 @@ pub(crate) async fn has_running_cli_agent(
     terminal_driver: &ModelHandle<TerminalDriver>,
     foreground: &ModelSpawner<AgentDriver>,
 ) -> bool {
+    matches!(
+        cli_agent_session_status(terminal_driver, foreground).await,
+        Some(CLIAgentSessionStatus::InProgress)
+    )
+}
+
+/// Returns the tracked CLI agent session status for the terminal, if any.
+pub(crate) async fn cli_agent_session_status(
+    terminal_driver: &ModelHandle<TerminalDriver>,
+    foreground: &ModelSpawner<AgentDriver>,
+) -> Option<CLIAgentSessionStatus> {
     let driver = terminal_driver.clone();
-    let Ok(running) = foreground
+    foreground
         .spawn(move |_, ctx| {
             let terminal_view_id = driver.as_ref(ctx).terminal_view().id();
             CLIAgentSessionsModel::handle(ctx)
                 .as_ref(ctx)
                 .session(terminal_view_id)
-                .is_some_and(|s| s.status == CLIAgentSessionStatus::InProgress)
+                .map(|session| session.status.clone())
         })
         .await
-    else {
-        return false;
-    };
-    running
+        .ok()
+        .flatten()
 }
 
 /// Create a [`NamedTempFile`] with the given prefix and write `content` into it.

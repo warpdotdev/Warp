@@ -315,6 +315,10 @@ pub struct RunAgentArgs {
     #[command(flatten)]
     pub snapshot: SnapshotArgs,
     /// Identifier for the task that spawned this agent, used to report progress.
+    ///
+    /// When `--conversation` is omitted, the conversation id is read off the server-side
+    /// task metadata. Some worker follow-up call sites still pass both flags, so keep
+    /// accepting the compatibility shape until all producers have been updated.
     #[arg(long = "task-id", hide = true, conflicts_with_all = ["prompt", "saved_prompt", "file"])]
     pub task_id: Option<String>,
 

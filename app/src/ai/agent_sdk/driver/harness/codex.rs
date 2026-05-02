@@ -516,6 +516,7 @@ fn write_codex_auth_json(path: &Path, auth: &CodexAuthDotJson) -> Result<()> {
     {
         use std::io::Write as _;
         use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::PermissionsExt;
         let mut file = fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -523,6 +524,8 @@ fn write_codex_auth_json(path: &Path, auth: &CodexAuthDotJson) -> Result<()> {
             .mode(0o600)
             .open(path)
             .with_context(|| format!("Failed to open {} for writing", path.display()))?;
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("Failed to set permissions on {}", path.display()))?;
         file.write_all(&bytes)
             .with_context(|| format!("Failed to write {}", path.display()))?;
     }
