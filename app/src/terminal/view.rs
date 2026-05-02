@@ -314,7 +314,9 @@ use crate::terminal::shared_session::{
 use crate::terminal::ssh::ssh_detection::SshInteractiveSessionDetected;
 use crate::terminal::view::block_onboarding::onboarding_prompt_block::OnboardingPromptBlock;
 use crate::terminal::warpify::{
-    render::render_subshell_separator, settings::WarpifySettings, SubshellSource,
+    render::render_subshell_separator,
+    settings::{WarpifySettings, PIPENV_SUBSHELL_COMMAND_REGEX, POETRY_SUBSHELL_COMMAND_REGEX},
+    SubshellSource,
 };
 use crate::terminal::ShellLaunchData;
 use crate::terminal::{element_size_at_last_frame, HistoryEntry};
@@ -8036,7 +8038,12 @@ impl TerminalView {
             }
         }
 
-        self.write_init_subshell_bytes_to_pty(shell_type, ctx);
+        let is_pexpect_subshell = self.is_pexpect_subshell(ctx);
+        if is_pexpect_subshell {
+            self.write_init_subshell_bytes_to_pty_without_clearing(shell_type, ctx);
+        } else {
+            self.write_init_subshell_bytes_to_pty(shell_type, ctx);
+        }
 
         if !self.env_vars.is_empty() {
             self.start_bootstrap_timer(ENV_VAR_BOOTSTRAP_FAILED_DURATION, ctx);
@@ -13537,6 +13544,35 @@ impl TerminalView {
             ctx,
         );
         self.write_to_pty(vec![escape_sequences::C0::CR], ctx);
+    }
+
+    /// Writes the InitShell DCS hook to the PTY for pexpect-based subshells (poetry, pipenv).
+    /// Unlike `write_init_subshell_bytes_to_pty`, this method does not send Ctrl-U/Ctrl-K to clear
+    /// the line first, as these control characters interfere with pexpect's PTY management.
+    fn write_init_subshell_bytes_to_pty_without_clearing(
+        &mut self,
+        shell_type: Option<ShellType>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.write_to_pty(
+            init_subshell_command(shell_type, &self.env_vars, ctx).into_bytes(),
+            ctx,
+        );
+        self.write_to_pty(vec![escape_sequences::C0::CR], ctx);
+    }
+
+    /// Returns true if the current subshell is a pexpect-based subshell (poetry or pipenv).
+    /// These subshells use pexpect's PTY management which is sensitive to control characters
+    /// like Ctrl-U and Ctrl-K.
+    fn is_pexpect_subshell(&self, ctx: &mut ViewContext<Self>) -> bool {
+        let Some(session) = self.active_session.session(ctx) else {
+            return false;
+        };
+        let Some(subshell_info) = session.subshell_info() else {
+            return false;
+        };
+        POETRY_SUBSHELL_COMMAND_REGEX.is_match(subshell_info.spawning_command.as_str())
+            || PIPENV_SUBSHELL_COMMAND_REGEX.is_match(subshell_info.spawning_command.as_str())
     }
 
     /// If a command correction exists, generate the command correction banner.
