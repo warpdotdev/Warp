@@ -1058,7 +1058,7 @@ impl View for AIDocumentView {
             .with_padding_left(8.)
             .with_padding_right(8.)
             .finish();
-        content_column.add_child(editor);
+        content_column.add_child(warpui::elements::Expanded::new(1.0, editor).finish());
 
         let mut stack = Stack::new().with_child(content_column.finish());
 
