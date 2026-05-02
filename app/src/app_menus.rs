@@ -159,11 +159,16 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         ))
     }
 
-    menu_items.extend([
-        MenuItem::Separator,
-        updateable_custom_item_without_checkmark(CustomAction::ReferAFriend, ctx),
-        MenuItem::Separator,
-    ]);
+    // Invite People requires Warp cloud auth and is non-functional under bypass mode.
+    if !crate::local_ai::auth_bypass_enabled() {
+        menu_items.extend([
+            MenuItem::Separator,
+            updateable_custom_item_without_checkmark(CustomAction::ReferAFriend, ctx),
+            MenuItem::Separator,
+        ]);
+    } else {
+        menu_items.push(MenuItem::Separator);
+    }
 
     let preferences_menu_items = vec![
         updateable_custom_item_without_checkmark(CustomAction::ShowSettings, ctx),
@@ -237,21 +242,24 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         None,
     )));
     menu_items.push(MenuItem::Separator);
-    menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-        "Log out",
-        auth::maybe_log_out,
-        move |_, ctx| {
-            let is_anonymous = AuthStateProvider::handle(ctx)
-                .as_ref(ctx)
-                .get()
-                .is_anonymous_or_logged_out();
-            MenuItemPropertyChanges {
-                disabled: Some(is_anonymous),
-                ..Default::default()
-            }
-        },
-        None,
-    )));
+    // Log out requires Warp cloud auth and is non-functional under bypass mode.
+    if !crate::local_ai::auth_bypass_enabled() {
+        menu_items.push(MenuItem::Custom(CustomMenuItem::new(
+            "Log out",
+            auth::maybe_log_out,
+            move |_, ctx| {
+                let is_anonymous = AuthStateProvider::handle(ctx)
+                    .as_ref(ctx)
+                    .get()
+                    .is_anonymous_or_logged_out();
+                MenuItemPropertyChanges {
+                    disabled: Some(is_anonymous),
+                    ..Default::default()
+                }
+            },
+            None,
+        )));
+    }
     menu_items.push(MenuItem::Standard(StandardAction::Quit));
     Menu::new("Warp", menu_items)
 }
