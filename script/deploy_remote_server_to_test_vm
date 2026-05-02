@@ -26,9 +26,9 @@ WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 TARGET="x86_64-unknown-linux-musl"
 CARGO_PROFILE="dev-remote"
-FEATURES="release_bundle,crash_reporting,standalone,agent_mode_debug"
-WARP_BIN="warp"
-# The integration test binary runs on Channel::Integration, which maps to
+FEATURES="crash_reporting,standalone,agent_mode_debug"
+WARP_BIN="integration"
+# The integration app binary runs on Channel::Integration, which maps to
 # cli_command_name() = "oz-integration", remote_server_dir() = "~/.warp-dev/remote-server",
 # and remote_server_binary() = "oz-integration-${pinned_version}".
 # See crates/warp_core/src/channel/mod.rs and crates/remote_server/src/setup.rs.
