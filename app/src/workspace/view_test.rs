@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::AIRequestUsageModel;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
 use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
@@ -8,7 +9,6 @@ use crate::ai::outline::RepoOutlines;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
-use crate::ai::AIRequestUsageModel;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::view::CloudViewModel;
 use crate::context_chips::prompt::Prompt;
@@ -22,12 +22,12 @@ use crate::pricing::PricingInfoModel;
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
 #[cfg(feature = "local_fs")]
 use crate::user_config::tab_configs_dir;
-use repo_metadata::repositories::DetectedRepositories;
-use repo_metadata::watcher::DirectoryWatcher;
 #[cfg(feature = "local_fs")]
 use repo_metadata::CanonicalizedPath;
 #[cfg(feature = "local_fs")]
 use repo_metadata::RepoMetadataModel;
+use repo_metadata::repositories::DetectedRepositories;
+use repo_metadata::watcher::DirectoryWatcher;
 use session_sharing_protocol::sharer::SessionSourceType;
 use std::collections::HashMap;
 #[cfg(feature = "local_fs")]
@@ -41,8 +41,8 @@ use crate::server::sync_queue::SyncQueue;
 
 use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings::PrivacySettings;
-use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::settings_view::DisplayCount;
+use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::system::SystemStats;
 use crate::tab_configs::tab_config::{TabConfigPaneNode, TabConfigPaneType};
 use crate::terminal::history::History;
@@ -61,8 +61,8 @@ use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
 use crate::ai::mcp::{
-    gallery::MCPGalleryManager, templatable_manager::TemplatableMCPServerManager,
-    FileBasedMCPManager, FileMCPWatcher,
+    FileBasedMCPManager, FileMCPWatcher, gallery::MCPGalleryManager,
+    templatable_manager::TemplatableMCPServerManager,
 };
 use crate::resource_center::Tip;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
@@ -70,8 +70,8 @@ use crate::test_util::settings::initialize_settings_for_tests;
 use crate::undo_close::UndoCloseSettings;
 use crate::warp_managed_paths_watcher::WarpManagedPathsWatcher;
 use crate::workflows::local_workflows::LocalWorkflows;
-use crate::{experiments, workspace, GlobalResourceHandlesProvider};
 use crate::{AgentNotificationsModel, ObjectActions};
+use crate::{GlobalResourceHandlesProvider, experiments, workspace};
 
 use crate::settings::cloud_preferences_syncer::CloudPreferencesSyncer;
 use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
@@ -82,7 +82,7 @@ use terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use terminal::view::ActiveSessionState;
 use warp_editor::editor::NavigationKey;
 use warpui::AddSingletonModel;
-use warpui::{platform::WindowStyle, App, ViewHandle};
+use warpui::{App, ViewHandle, platform::WindowStyle};
 
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
@@ -971,9 +971,11 @@ fn test_workspace_sessions_retrieves_tabs() {
                 .map(|tab| tab.read(ctx, |tab, _ctx| tab.pane_id_by_index(0).unwrap()))
                 .expect("WindowId was not retrieved.");
 
-            assert!(workspace
-                .workspace_sessions(ctx.window_id(), ctx)
-                .any(|x| { x.pane_view_locator().pane_id == pane_id }));
+            assert!(
+                workspace
+                    .workspace_sessions(ctx.window_id(), ctx)
+                    .any(|x| { x.pane_view_locator().pane_id == pane_id })
+            );
 
             // Add a tab and check if workspace_sessions finds the second session from the new tab.
             workspace.add_terminal_tab(false, ctx);
@@ -982,9 +984,11 @@ fn test_workspace_sessions_retrieves_tabs() {
                 .map(|tab| tab.read(ctx, |tab, _ctx| tab.pane_id_by_index(0).unwrap()))
                 .expect("WindowId was not retrieved.");
 
-            assert!(workspace
-                .workspace_sessions(ctx.window_id(), ctx)
-                .any(|x| { x.pane_view_locator().pane_id == new_pane_id }));
+            assert!(
+                workspace
+                    .workspace_sessions(ctx.window_id(), ctx)
+                    .any(|x| { x.pane_view_locator().pane_id == new_pane_id })
+            );
         });
     });
 }
@@ -1009,9 +1013,11 @@ fn test_workspace_sessions_retrieves_panes() {
                 .get_pane_group_view(0)
                 .map(|tab| tab.read(ctx, |tab, _ctx| tab.pane_id_by_index(1).unwrap()))
                 .expect("WindowId was not retrieved.");
-            assert!(workspace
-                .workspace_sessions(ctx.window_id(), ctx)
-                .any(|x| { x.pane_view_locator().pane_id == new_pane_id }));
+            assert!(
+                workspace
+                    .workspace_sessions(ctx.window_id(), ctx)
+                    .any(|x| { x.pane_view_locator().pane_id == new_pane_id })
+            );
         });
     });
 }
@@ -1753,8 +1759,11 @@ fn test_tab_context_menu_share_session_items() {
         // for sharing are "Stop sharing" and "Stop sharing all".
         workspace.read(&app, |workspace, ctx| {
             let items = workspace.tabs[1].menu_items(1, 3, ctx);
-            assert!(items[0]
-                .is_approximately_same_item_as(&MenuItemFields::new("Stop sharing").into_item()));
+            assert!(
+                items[0].is_approximately_same_item_as(
+                    &MenuItemFields::new("Stop sharing").into_item()
+                )
+            );
             assert!(items[1].is_approximately_same_item_as(
                 &MenuItemFields::new("Stop sharing all").into_item()
             ));
@@ -1774,8 +1783,11 @@ fn test_tab_context_menu_share_session_items() {
         // for sharing are "Share session" and "Stop sharing all".
         workspace.read(&app, |workspace, ctx| {
             let items = workspace.tabs[1].menu_items(1, 3, ctx);
-            assert!(items[0]
-                .is_approximately_same_item_as(&MenuItemFields::new("Share session").into_item()));
+            assert!(
+                items[0].is_approximately_same_item_as(
+                    &MenuItemFields::new("Share session").into_item()
+                )
+            );
             assert!(items[1].is_approximately_same_item_as(
                 &MenuItemFields::new("Stop sharing all").into_item()
             ));
@@ -1790,8 +1802,11 @@ fn test_tab_context_menu_share_session_items() {
         // When there's no shared sessions in a tab, the only option is "Share session".
         workspace.read(&app, |workspace, ctx| {
             let items = workspace.tabs[1].menu_items(1, 3, ctx);
-            assert!(items[0]
-                .is_approximately_same_item_as(&MenuItemFields::new("Share session").into_item()));
+            assert!(
+                items[0].is_approximately_same_item_as(
+                    &MenuItemFields::new("Share session").into_item()
+                )
+            );
             assert!(items[1].is_approximately_same_item_as(&MenuItem::Separator));
         });
     });
@@ -2372,9 +2387,11 @@ fn test_vertical_tabs_panel_restored_open_when_show_in_restored_windows_enabled(
         app.update(|ctx| {
             TabSettings::handle(ctx).update(ctx, |settings, ctx| {
                 report_if_error!(settings.use_vertical_tabs.set_value(true, ctx));
-                report_if_error!(settings
-                    .show_vertical_tab_panel_in_restored_windows
-                    .set_value(true, ctx));
+                report_if_error!(
+                    settings
+                        .show_vertical_tab_panel_in_restored_windows
+                        .set_value(true, ctx)
+                );
             });
         });
 
@@ -2828,11 +2845,13 @@ fn test_worktree_sidecar_search_editor_proxies_navigation_and_escape() {
             assert!(workspace.show_new_session_dropdown_menu.is_none());
             assert!(!workspace.show_new_session_sidecar);
             assert!(workspace.worktree_sidecar_search_query.is_empty());
-            assert!(workspace
-                .worktree_sidecar_search_editor
-                .as_ref(ctx)
-                .buffer_text(ctx)
-                .is_empty());
+            assert!(
+                workspace
+                    .worktree_sidecar_search_editor
+                    .as_ref(ctx)
+                    .buffer_text(ctx)
+                    .is_empty()
+            );
         });
     });
 }
@@ -2932,9 +2951,11 @@ fn test_vertical_tabs_context_menu_does_not_show_hover_only_tab_bar() {
 
         workspace.update(&mut app, |workspace, ctx| {
             TabSettings::handle(ctx).update(ctx, |settings, ctx| {
-                report_if_error!(settings
-                    .workspace_decoration_visibility
-                    .set_value(WorkspaceDecorationVisibility::OnHover, ctx));
+                report_if_error!(
+                    settings
+                        .workspace_decoration_visibility
+                        .set_value(WorkspaceDecorationVisibility::OnHover, ctx)
+                );
                 report_if_error!(settings.use_vertical_tabs.set_value(true, ctx));
             });
             workspace.should_show_ai_assistant_warm_welcome = false;
@@ -2959,9 +2980,11 @@ fn test_standard_tab_context_menu_shows_hover_only_tab_bar() {
 
         workspace.update(&mut app, |workspace, ctx| {
             TabSettings::handle(ctx).update(ctx, |settings, ctx| {
-                report_if_error!(settings
-                    .workspace_decoration_visibility
-                    .set_value(WorkspaceDecorationVisibility::OnHover, ctx));
+                report_if_error!(
+                    settings
+                        .workspace_decoration_visibility
+                        .set_value(WorkspaceDecorationVisibility::OnHover, ctx)
+                );
             });
             workspace.should_show_ai_assistant_warm_welcome = false;
 
@@ -2995,10 +3018,12 @@ fn test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempot
                     .current_workspace_state
                     .is_agent_management_view_open
             );
-            assert!(workspace
-                .agent_management_view
-                .as_ref(ctx)
-                .is_showing_setup_guide());
+            assert!(
+                workspace
+                    .agent_management_view
+                    .as_ref(ctx)
+                    .is_showing_setup_guide()
+            );
 
             workspace.handle_action(&WorkspaceAction::OpenCloudAgentSetupGuide, ctx);
             assert!(
@@ -3006,10 +3031,12 @@ fn test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempot
                     .current_workspace_state
                     .is_agent_management_view_open
             );
-            assert!(workspace
-                .agent_management_view
-                .as_ref(ctx)
-                .is_showing_setup_guide());
+            assert!(
+                workspace
+                    .agent_management_view
+                    .as_ref(ctx)
+                    .is_showing_setup_guide()
+            );
         });
     });
 }

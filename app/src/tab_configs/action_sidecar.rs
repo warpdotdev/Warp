@@ -1,5 +1,6 @@
 use warp_util::path::user_friendly_path;
 use warpui::{
+    AppContext, Element, SingletonEntity,
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, MainAxisSize,
         MouseStateHandle, ParentElement, Radius, Text,
@@ -9,7 +10,6 @@ use warpui::{
         button::{ButtonTooltipPosition, ButtonVariant},
         components::{UiComponent, UiComponentStyles},
     },
-    AppContext, Element, SingletonEntity,
 };
 
 use crate::{

@@ -10,25 +10,25 @@ use crate::ai::agent_conversations_model::{AgentConversationsModel, Conversation
 use crate::ai::agent_management::telemetry::{AgentManagementTelemetryEvent, OpenedFrom};
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::appearance::Appearance;
-use crate::drive::sharing::dialog::SharingDialog;
 use crate::drive::sharing::ShareableObject;
+use crate::drive::sharing::dialog::SharingDialog;
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys,
     PropagateHorizontalNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::server::telemetry::SharingDialogSource;
-use crate::view_components::action_button::{ActionButton, ButtonSize, SecondaryTheme};
 use crate::view_components::DismissibleToast;
+use crate::view_components::action_button::{ActionButton, ButtonSize, SecondaryTheme};
+use crate::workspace::ToastStack;
+use crate::workspace::WorkspaceAction;
 use crate::workspace::global_actions::ForkedConversationDestination;
 use crate::workspace::header_toolbar_item::HeaderToolbarItemKind;
 use crate::workspace::tab_settings::TabSettings;
 use crate::workspace::view::conversation_list::item::{
-    render_item, render_static_item, ItemProps, ItemState, OverflowMenuDisplay, StaticItemProps,
-    STATIC_ITEM_MIN_HEIGHT,
+    ItemProps, ItemState, OverflowMenuDisplay, STATIC_ITEM_MIN_HEIGHT, StaticItemProps,
+    render_item, render_static_item,
 };
-use crate::workspace::ToastStack;
-use crate::workspace::WorkspaceAction;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::Icon;
@@ -43,8 +43,8 @@ use warpui::elements::{
     ScrollbarWidth, Shrinkable, Stack, Text, UniformList, UniformListState,
 };
 use warpui::fonts::{Properties, Weight};
-use warpui::keymap::macros::*;
 use warpui::keymap::FixedBinding;
+use warpui::keymap::macros::*;
 use warpui::platform::Cursor;
 use warpui::text_layout::TextAlignment;
 use warpui::{

@@ -1,11 +1,11 @@
 //! Logic to determine the working directory for new terminal sessions.
 
 use super::Workspace;
+use crate::terminal::ShellLaunchData;
 use crate::terminal::available_shells::AvailableShell;
 #[cfg(feature = "local_tty")]
 use crate::terminal::available_shells::AvailableShells;
 use crate::terminal::session_settings::{NewSessionSource, SessionSettings};
-use crate::terminal::ShellLaunchData;
 use std::path::PathBuf;
 use warpui::SingletonEntity;
 use warpui::{AppContext, ViewContext, WindowId};
