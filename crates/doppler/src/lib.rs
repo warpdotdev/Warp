@@ -14,8 +14,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use instant::Instant;
 use tokio::sync::RwLock;
 
 mod refetch;

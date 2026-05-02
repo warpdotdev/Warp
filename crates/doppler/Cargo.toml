@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+instant = { workspace = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "process", "sync", "macros"] }
 tracing.workspace = true
