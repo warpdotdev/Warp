@@ -19,9 +19,7 @@ This is useful if you already pay for Claude or Codex and don't want a second AI
 
 I'm using this fork to test how my agent-optimised programming language, [**ilo-lang**](https://ilo-lang.ai), behaves when wired into a working developer tool. Ilo is token-minimal: programs are written and read primarily by LLMs, so every saved token compounds across millions of agent turns.
 
-Warp is a useful first target. It's a terminal with an embedded coding agent, so an agent loop runs on every keystroke. If ilo expresses agent prompts, tool definitions, and workflows in fewer tokens than Markdown, YAML, or JSON, the difference shows up here first.
-
-The codebase is also a real test for ilo. Around half a million lines of Rust, idiomatic, with a custom entity-handle UI framework. An "ilo-aware" agent has to navigate and modify production-shaped code, not a fixture.
+Warp is a useful first target. It's a terminal with an embedded coding agent, so an agent loop runs on every keystroke against whatever codebase I'm in. If ilo expresses agent prompts, tool definitions, and workflows in fewer tokens than Markdown, YAML, or JSON, the difference shows up in day-to-day work, not in a benchmark.
 
 Purpose 1 helps purpose 2: the local-AI bypass lets me run the same ilo system prompt against different LLMs (Claude, Codex, eventually Ollama) and compare token usage and output quality across them.
 
