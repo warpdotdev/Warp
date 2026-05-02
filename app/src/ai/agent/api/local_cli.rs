@@ -164,24 +164,35 @@ async fn run_local_cli(
     // CreateTask event with the same ID triggers `into_server_created_task()` in the
     // conversation, which sets the task data to TaskImpl::Server and satisfies the
     // source() check.
-    let _ = tx
-        .send(Ok(api::ResponseEvent {
-            r#type: Some(api::response_event::Type::ClientActions(
-                api::response_event::ClientActions {
-                    actions: vec![api::ClientAction {
-                        action: Some(api::client_action::Action::CreateTask(
-                            api::client_action::CreateTask {
-                                task: Some(api::Task {
-                                    id: task_id.clone(),
-                                    ..Default::default()
-                                }),
-                            },
-                        )),
-                    }],
-                },
-            )),
-        }))
-        .await;
+    //
+    // IMPORTANT: only emit CreateTask when the root task is still optimistic.
+    // `params.tasks` comes from `compute_active_tasks()`, which only includes tasks that
+    // already have server-backed data (i.e. `task.source()` is Some).  An empty vec means
+    // the root is still Optimistic::Root and needs the upgrade.  A non-empty vec means the
+    // task was already upgraded (e.g. on a resumed conversation or a second user message),
+    // so calling into_server_created_task() again would hit the UnexpectedUpgrade branch
+    // and leave the conversation broken.
+    let task_is_already_server_backed = params.tasks.iter().any(|t| t.id == task_id);
+    if !task_is_already_server_backed {
+        let _ = tx
+            .send(Ok(api::ResponseEvent {
+                r#type: Some(api::response_event::Type::ClientActions(
+                    api::response_event::ClientActions {
+                        actions: vec![api::ClientAction {
+                            action: Some(api::client_action::Action::CreateTask(
+                                api::client_action::CreateTask {
+                                    task: Some(api::Task {
+                                        id: task_id.clone(),
+                                        ..Default::default()
+                                    }),
+                                },
+                            )),
+                        }],
+                    },
+                )),
+            }))
+            .await;
+    }
 
     // Determine which backend to use.
     //
