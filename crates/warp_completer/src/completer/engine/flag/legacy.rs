@@ -1,5 +1,7 @@
 //! Contains the legacy implementation of flag suggestion generation that depends on the legacy
 //! command signature struct (`warp_command_signatures::Signature`).
+use std::collections::HashSet;
+
 use itertools::Itertools;
 use warp_command_signatures::{FlagStyle, Signature as SpecSignature};
 
@@ -20,6 +22,17 @@ fn short_hand_flag_suggestions(
     signature: &SpecSignature,
     partial_without_dashes: &str,
 ) -> impl Iterator<Item = MatchedSuggestion> {
+    let known_shorthand_chars: HashSet<char> = signature
+        .short_hand_flags()
+        .map(|flag| flag.name.chars().next())
+        .flatten()
+        .collect();
+
+    let is_valid_shorthand_bundle = !partial_without_dashes.is_empty()
+        && partial_without_dashes
+            .chars()
+            .all(|c| known_shorthand_chars.contains(&c));
+
     signature
         .short_hand_flags()
         .filter_map(|flag| {
@@ -38,7 +51,8 @@ fn short_hand_flag_suggestions(
                 .chars()
                 .last()
                 .is_some_and(|c| c.to_string() == flag.name);
-            let should_include_flag = !is_flag_already_included || is_current_flag;
+            let should_include_flag = is_valid_shorthand_bundle
+                && (!is_flag_already_included || is_current_flag);
             should_include_flag.then(|| {
                 let replacement_text = if is_current_flag {
                     // The replacement text should be exactly the existing flags.

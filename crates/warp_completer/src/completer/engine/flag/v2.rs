@@ -1,6 +1,7 @@
 //! Contains the v2 implementation of flag suggestion generation that depends on the JS-compatible
 //! command signature struct (`crate::signatures::CommandSignature`).
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::iter;
 
 use itertools::Itertools;
@@ -92,6 +93,19 @@ fn short_hand_flag_suggestions(
             return Box::new(iter::empty());
         };
 
+    let known_shorthand_chars: HashSet<char> = command_signature
+        .options
+        .iter()
+        .flat_map(|option| option.name.iter())
+        .filter(|name| is_short_hand_flag_name(name))
+        .filter_map(|name| name.trim_start_matches('-').chars().next())
+        .collect();
+
+    let is_valid_shorthand_bundle = !partial_flag_name.is_empty()
+        && partial_flag_name
+            .chars()
+            .all(|c| known_shorthand_chars.contains(&c));
+
     Box::new(
         command_signature
             .options
@@ -110,7 +124,9 @@ fn short_hand_flag_suggestions(
                         .chars()
                         .last()
                         .is_some_and(|c| c.to_string() == name_without_prefix);
-                    (!is_flag_already_included || is_current_flag).then(|| {
+                    (is_valid_shorthand_bundle
+                        && (!is_flag_already_included || is_current_flag))
+                    .then(|| {
                         let replacement_text = if is_current_flag {
                             // The replacement text should be exactly the existing flags.
                             format!("-{partial_flag_name}")
