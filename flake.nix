@@ -51,7 +51,7 @@
             cargo = rustToolchain;
             rustc = rustToolchain;
           };
-          hostXcodeSelection = ''
+          hostXcodeHelpers = ''
             select_host_xcode_developer_dir() {
               local developerDir=""
 
@@ -94,7 +94,7 @@
           xcodeBuildWrapper = pkgs.writeShellScriptBin "xcodebuild" ''
             set -euo pipefail
 
-            ${hostXcodeSelection}
+            ${hostXcodeHelpers}
 
             configure_host_xcode_developer_dir
             exec /usr/bin/xcodebuild "$@"
@@ -102,12 +102,12 @@
           xcodeSelectWrapper = pkgs.writeShellScriptBin "xcode-select" ''
             set -euo pipefail
 
-            ${hostXcodeSelection}
+            ${hostXcodeHelpers}
 
             if [ "''${1:-}" = "-p" ] || [ "''${1:-}" = "--print-path" ]; then
-              developerDir="$(select_host_xcode_developer_dir)"
-              if [ -n "$developerDir" ]; then
-                printf '%s\n' "$developerDir"
+              configure_host_xcode_developer_dir
+              if [ -n "''${DEVELOPER_DIR:-}" ]; then
+                printf '%s\n' "$DEVELOPER_DIR"
                 exit 0
               fi
             fi
@@ -118,7 +118,7 @@
           xcodeXcrunWrapper = pkgs.writeShellScriptBin "xcrun" ''
             set -euo pipefail
 
-            ${hostXcodeSelection}
+            ${hostXcodeHelpers}
 
             configure_host_xcode_developer_dir
             if [ -n "''${DEVELOPER_DIR:-}" ]; then
