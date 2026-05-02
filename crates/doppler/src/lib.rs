@@ -18,8 +18,10 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 mod runner;
+mod status;
 
 pub use runner::{CommandRunner, TokioCommandRunner};
+pub use status::{parse_configure_all, read_status, DopplerStatus, ScopedBinding};
 
 /// Default time-to-live for cached secrets. Five minutes balances
 /// responsiveness with avoiding excessive CLI invocations.
