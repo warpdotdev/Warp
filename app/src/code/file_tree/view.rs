@@ -1537,23 +1537,28 @@ impl FileTreeView {
             // to lazy-loading to avoid repeatedly retrying failed detection.
             let repo_id = repo_metadata::RepositoryIdentifier::local(path.clone());
             let repo_state = RepoMetadataModel::as_ref(ctx).repository_state(&repo_id, ctx);
+            let is_pending = matches!(repo_state, Some(IndexedRepoState::Pending));
             let previously_failed = matches!(repo_state, Some(IndexedRepoState::Failed(_)));
 
-            // Always register lazy-loading as fallback - even if model skips it due to Pending state.
-            // This ensures we have a fallback entry while detection completes.
-            // The lazy path may already exist if detection started after file tree opened,
-            // or it may need to be created manually if detection already set Pending.
-            let is_lazy_loaded = RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(path, ctx);
-            if !is_lazy_loaded {
-                // Model may skip registration if repo is already Pending.
-                // Force register a local fallback entry to prevent empty tree.
+            // Index lazy-loaded path to build tree and register watcher.
+            // This may no-op if already Pending/Indexed, but that's handled below.
+            let index_result = self
+                .repository_metadata_model
+                .update(ctx, |model: &mut RepoMetadataModel, ctx| {
+                    model.index_lazy_loaded_path(path, ctx)
+                });
+
+            // If lazy-loading succeeded, we're good. If it failed or was skipped (Pending),
+            // we still need local fallback to prevent empty tree.
+            if index_result.is_ok() || is_pending {
                 self.registered_lazy_loaded_paths.insert(path.clone());
-                // Also ensure root_directory has a placeholder entry
+            }
+
+            // For Pending state or failed indexing, ensure we have a placeholder entry
+            if is_pending || index_result.is_err() {
                 if let Some(root_dir) = self.root_directories.get_mut(path) {
                     root_dir.entry = Self::create_empty_entry(path);
                 }
-            } else {
-                self.registered_lazy_loaded_paths.insert(path.clone());
             }
         }
 
