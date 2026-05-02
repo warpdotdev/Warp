@@ -6,26 +6,16 @@
 use ai::agent::action::{RunAgentsAgentRunConfig, RunAgentsExecutionMode, RunAgentsRequest};
 use ai::agent::action_result::{RunAgentsAgentOutcomeKind, RunAgentsResult};
 use ai::skills::SkillReference;
-use pathfinder_color::ColorU;
 use std::rc::Rc;
 use warpui::elements::{
-    Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty,
-    Expanded, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement,
+    Border, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, MainAxisSize, ParentElement,
     Radius, Text,
 };
 use warpui::keymap::{FixedBinding, Keystroke};
-use warpui::platform::Cursor;
-use warpui::ui_components::button::ButtonVariant;
-use warpui::ui_components::components::{Coords, UiComponentStyles};
 use warpui::{
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
-
-use warp_cli::agent::Harness;
-use warp_core::channel::{Channel, ChannelState};
-use warp_core::ui::color::blend::Blend;
-use warp_core::ui::theme::Fill;
 
 use crate::ai::agent::icons;
 use crate::ai::agent::{AIAgentActionId, AIAgentActionResultType};
@@ -39,14 +29,13 @@ use crate::ai::blocklist::block::view_impl::WithContentItemSpacing;
 use crate::ai::blocklist::block::AIBlock;
 use crate::ai::blocklist::inline_action::inline_action_header::{HeaderConfig, InteractionMode};
 use crate::ai::blocklist::inline_action::inline_action_icons;
+use crate::ai::blocklist::inline_action::orchestration_controls::{
+    self as oc, OrchestrationControlAction, OrchestrationPickerHandles,
+};
 use crate::ai::blocklist::inline_action::requested_action::{
     render_requested_action_row_for_text, CTRL_C_KEYSTROKE, ENTER_KEYSTROKE,
 };
-use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
-use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
-use crate::ai::harness_display;
 use crate::appearance::Appearance;
-use crate::menu::{MenuItem, MenuItemFields};
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ButtonSize, KeystrokeSource, NakedTheme};
@@ -54,22 +43,12 @@ use crate::view_components::compactible_action_button::{
     CompactibleActionButton, RenderCompactibleActionButton, MEDIUM_SIZE_SWITCH_THRESHOLD,
 };
 use crate::view_components::compactible_split_action_button::CompactibleSplitActionButton;
-use crate::view_components::dropdown::{Dropdown, DropdownAction, DropdownEvent, DropdownStyle};
-use crate::view_components::{FilterableDropdown, FilterableDropdownEvent};
-use crate::LLMPreferences;
-
-const RUN_AGENTS_WARP_WORKER_HOST: &str = "warp";
+use crate::view_components::dropdown::{DropdownEvent};
+use crate::view_components::FilterableDropdownEvent;
 
 const RUN_AGENTS_CARD_TITLE: &str = "Can I add additional agents to this task?";
 
-const RUN_AGENTS_ENV_NONE_LABEL: &str = "(no environment)";
-
 const RUN_AGENTS_EDITOR_OPEN: &str = "RunAgentsEditorOpen";
-
-const RUN_AGENTS_PICKER_HEIGHT: f32 = 36.;
-const RUN_AGENTS_PICKER_BORDER_WIDTH: f32 = 1.;
-const RUN_AGENTS_PICKER_FONT_SIZE: f32 = 14.;
-const ORCHESTRATE_PICKER_RADIUS: f32 = 4.;
 
 pub fn init(app: &mut AppContext) {
     use warpui::keymap::macros::*;
@@ -105,12 +84,12 @@ pub fn init(app: &mut AppContext) {
 }
 
 /// Per-action edit state for the orchestrate confirmation card.
+/// Delegates run-wide config fields to `oc::OrchestrationEditState`
+/// and adds card-specific fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunAgentsEditState {
     pub is_editor_open: bool,
-    pub model_id: String,
-    pub harness_type: String,
-    pub execution_mode: RunAgentsExecutionMode,
+    pub orch: oc::OrchestrationEditState,
     pub agent_run_configs: Vec<RunAgentsAgentRunConfig>,
     pub base_prompt: String,
     pub summary: String,
@@ -122,66 +101,15 @@ impl RunAgentsEditState {
     pub fn from_request(req: &RunAgentsRequest) -> Self {
         Self {
             is_editor_open: false,
-            model_id: req.model_id.clone(),
-            harness_type: req.harness_type.clone(),
-            execution_mode: req.execution_mode.clone(),
+            orch: oc::OrchestrationEditState::from_run_agents_fields(
+                &req.model_id,
+                &req.harness_type,
+                &req.execution_mode,
+            ),
             agent_run_configs: req.agent_run_configs.clone(),
             base_prompt: req.base_prompt.clone(),
             summary: req.summary.clone(),
             skills: req.skills.clone(),
-        }
-    }
-
-    /// Toggle Local <-> Cloud. Resets OpenCode to Oz when switching
-    /// to Cloud (unsupported combination).
-    pub fn toggle_execution_mode_to_remote(&mut self, is_remote: bool) {
-        if is_remote {
-            if self.harness_type.eq_ignore_ascii_case("opencode") {
-                self.harness_type = "oz".to_string();
-            }
-            // TODO(QUALITY-569): expose worker_host as an editable picker.
-            if !self.execution_mode.is_remote() {
-                self.execution_mode = RunAgentsExecutionMode::Remote {
-                    environment_id: String::new(),
-                    worker_host: "warp".to_string(),
-                    computer_use_enabled: false,
-                };
-            }
-        } else {
-            self.execution_mode = RunAgentsExecutionMode::Local;
-        }
-    }
-
-    pub fn set_environment_id(&mut self, environment_id: String) {
-        if let RunAgentsExecutionMode::Remote {
-            environment_id: id, ..
-        } = &mut self.execution_mode
-        {
-            *id = environment_id;
-        }
-    }
-
-    pub fn set_worker_host(&mut self, worker_host: String) {
-        if let RunAgentsExecutionMode::Remote {
-            worker_host: wh, ..
-        } = &mut self.execution_mode
-        {
-            *wh = worker_host;
-        }
-    }
-
-    /// Returns `Some(reason)` if Accept must be disabled.
-    /// Only hard block: OpenCode+Cloud.
-    pub fn accept_disabled_reason(&self) -> Option<&'static str> {
-        match &self.execution_mode {
-            RunAgentsExecutionMode::Remote { .. }
-                if self.harness_type.eq_ignore_ascii_case("opencode") =>
-            {
-                Some(
-                    "OpenCode is not supported on Cloud yet. Switch to Local or pick a different harness.",
-                )
-            }
-            RunAgentsExecutionMode::Local | RunAgentsExecutionMode::Remote { .. } => None,
         }
     }
 
@@ -190,11 +118,29 @@ impl RunAgentsEditState {
             summary: self.summary.clone(),
             base_prompt: self.base_prompt.clone(),
             skills: self.skills.clone(),
-            model_id: self.model_id.clone(),
-            harness_type: self.harness_type.clone(),
-            execution_mode: self.execution_mode.clone(),
+            model_id: self.orch.model_id.clone(),
+            harness_type: self.orch.harness_type.clone(),
+            execution_mode: self.orch.execution_mode.clone(),
             agent_run_configs: self.agent_run_configs.clone(),
         }
+    }
+}
+
+impl OrchestrationControlAction for RunAgentsCardViewAction {
+    fn execution_mode_toggled(is_remote: bool) -> Self {
+        Self::ExecutionModeToggled { is_remote }
+    }
+    fn model_changed(model_id: String) -> Self {
+        Self::ModelChanged { model_id }
+    }
+    fn harness_changed(harness_type: String) -> Self {
+        Self::HarnessChanged { harness_type }
+    }
+    fn environment_changed(environment_id: String) -> Self {
+        Self::EnvironmentChanged { environment_id }
+    }
+    fn worker_host_changed(worker_host: String) -> Self {
+        Self::WorkerHostChanged { worker_host }
     }
 }
 
@@ -205,12 +151,7 @@ struct RunAgentsCardHandles {
     reject_button: Option<CompactibleActionButton>,
     edit_button: Option<CompactibleActionButton>,
     accept_button: Option<CompactibleSplitActionButton>,
-    local_toggle: MouseStateHandle,
-    cloud_toggle: MouseStateHandle,
-    model_picker: Option<ViewHandle<Dropdown<RunAgentsCardViewAction>>>,
-    harness_picker: Option<ViewHandle<Dropdown<RunAgentsCardViewAction>>>,
-    environment_picker: Option<ViewHandle<FilterableDropdown<RunAgentsCardViewAction>>>,
-    host_picker: Option<ViewHandle<Dropdown<RunAgentsCardViewAction>>>,
+    pickers: OrchestrationPickerHandles<RunAgentsCardViewAction>,
 }
 
 #[derive(Clone, Debug)]
@@ -424,279 +365,65 @@ impl RunAgentsCardView {
 
     /// Lazily construct the picker dropdown views (idempotent).
     fn ensure_pickers(&mut self, ctx: &mut ViewContext<Self>) {
-        // Shared picker styling.
-        let picker_padding = Coords {
-            top: 8.,
-            bottom: 8.,
-            left: 12.,
-            right: 12.,
-        };
-        let picker_corner_radius =
-            CornerRadius::with_all(Radius::Pixels(ORCHESTRATE_PICKER_RADIUS));
-        let theme = Appearance::as_ref(ctx).theme();
-        // The picker bg is a translucent overlay (surface_overlay_1 =
-        // fg at 5%). Composite it against the card background to derive
-        // opaque border and text colors that work on any theme.
-        let picker_background_theme: Fill = theme.surface_overlay_1();
-        let composited_bg = theme
-            .background()
-            .blend(&picker_background_theme)
-            .into_solid();
-        let picker_border_color_warpui: warpui::elements::Fill = theme.surface_2().into();
-        let picker_font_color = blended_colors::text_main(theme, composited_bg);
-        let picker_background_warpui: warpui::elements::Fill = picker_background_theme.into();
-        let picker_styles = UiComponentStyles {
-            height: Some(RUN_AGENTS_PICKER_HEIGHT),
-            background: Some(picker_background_warpui),
-            border_color: Some(picker_border_color_warpui),
-            border_width: Some(RUN_AGENTS_PICKER_BORDER_WIDTH),
-            border_radius: Some(picker_corner_radius),
-            font_size: Some(RUN_AGENTS_PICKER_FONT_SIZE),
-            font_color: Some(picker_font_color),
-            padding: Some(picker_padding),
-            ..Default::default()
-        };
+        let appearance = Appearance::as_ref(ctx);
+        let (styles, colors) = oc::picker_styles(appearance);
 
         let initial_model_id_default = self
             .block_model
             .base_model(ctx)
             .map(|id| id.to_string())
             .unwrap_or_default();
-        let state_snapshot = self.state.clone();
+        let state = &self.state;
 
-        if self.handles.model_picker.is_none() {
-            let initial_model_id = if state_snapshot.model_id.trim().is_empty() {
+        if self.handles.pickers.model_picker.is_none() {
+            let initial_model_id = if state.orch.model_id.trim().is_empty() {
                 initial_model_id_default.clone()
             } else {
-                state_snapshot.model_id.clone()
+                state.orch.model_id.clone()
             };
-            let dropdown_handle = Self::new_standard_picker_dropdown(
-                picker_padding,
-                picker_corner_radius,
-                picker_background_warpui,
-                picker_border_color_warpui,
-                picker_font_color,
-                ctx,
-            );
-            dropdown_handle.update(ctx, |dropdown, ctx_dropdown| {
-                let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
-                let choices: Vec<_> = llm_prefs.get_base_llm_choices_for_agent_mode().collect();
-                let initial_index = choices
-                    .iter()
-                    .position(|llm| llm.id.to_string() == initial_model_id);
-                let items = available_model_menu_items(
-                    choices,
-                    move |llm| {
-                        DropdownAction::SelectActionAndClose(
-                            RunAgentsCardViewAction::ModelChanged {
-                                model_id: llm.id.to_string(),
-                            },
-                        )
-                    },
-                    None,
-                    None,
-                    false,
-                    false,
-                    ctx_dropdown,
-                );
-                dropdown.set_rich_items(items, ctx_dropdown);
-                if let Some(idx) = initial_index {
-                    dropdown.set_selected_by_index(idx, ctx_dropdown);
-                }
-            });
-            Self::subscribe_picker_close(&dropdown_handle, ctx);
-            self.handles.model_picker = Some(dropdown_handle);
+            let handle = oc::new_standard_picker_dropdown(&colors, ctx);
+            oc::populate_model_picker(&handle, &initial_model_id, ctx);
+            Self::subscribe_picker_close(&handle, ctx);
+            self.handles.pickers.model_picker = Some(handle);
         }
 
-        if self.handles.harness_picker.is_none() {
-            let initial_harness = state_snapshot.harness_type.clone();
-            let dropdown_handle = Self::new_standard_picker_dropdown(
-                picker_padding,
-                picker_corner_radius,
-                picker_background_warpui,
-                picker_border_color_warpui,
-                picker_font_color,
-                ctx,
-            );
-            dropdown_handle.update(ctx, |dropdown, ctx_dropdown| {
-                let mut items: Vec<MenuItem<DropdownAction<RunAgentsCardViewAction>>> = Vec::new();
-                let mut selected_idx = None;
-                // TODO: Re-enable Harness::Gemini once it is supported as
-                // a multi-agent harness (currently causes an infinite
-                // "Spawning agents" hang).
-                for (idx, harness) in [Harness::Oz, Harness::Claude, Harness::Codex]
-                    .into_iter()
-                    .enumerate()
-                {
-                    let mut fields = MenuItemFields::new(harness_display::display_name(harness))
-                        .with_icon(harness_display::icon_for(harness));
-                    if let Some(color) = harness_display::brand_color(harness) {
-                        fields = fields.with_override_icon_color(Fill::from(color));
-                    }
-                    let harness_str = harness.to_string();
-                    fields = fields.with_on_select_action(DropdownAction::SelectActionAndClose(
-                        RunAgentsCardViewAction::HarnessChanged {
-                            harness_type: harness_str.clone(),
-                        },
-                    ));
-                    if harness_str.eq_ignore_ascii_case(&initial_harness) {
-                        selected_idx = Some(idx);
-                    }
-                    items.push(MenuItem::Item(fields));
-                }
-                dropdown.set_rich_items(items, ctx_dropdown);
-                if let Some(idx) = selected_idx {
-                    dropdown.set_selected_by_index(idx, ctx_dropdown);
-                }
-            });
-            Self::subscribe_picker_close(&dropdown_handle, ctx);
-            self.handles.harness_picker = Some(dropdown_handle);
+        if self.handles.pickers.harness_picker.is_none() {
+            let handle = oc::new_standard_picker_dropdown(&colors, ctx);
+            oc::populate_harness_picker(&handle, &state.orch.harness_type, ctx);
+            Self::subscribe_picker_close(&handle, ctx);
+            self.handles.pickers.harness_picker = Some(handle);
         }
 
-        if self.handles.environment_picker.is_none() {
-            let initial_env = match &state_snapshot.execution_mode {
-                RunAgentsExecutionMode::Remote { environment_id, .. } => environment_id.clone(),
-                RunAgentsExecutionMode::Local => String::new(),
+        if self.handles.pickers.environment_picker.is_none() {
+            let initial_env = match &state.orch.execution_mode {
+                RunAgentsExecutionMode::Remote { environment_id, .. } => environment_id.as_str(),
+                RunAgentsExecutionMode::Local => "",
             };
-            let picker_styles_clone = picker_styles;
-            let dropdown_handle = ctx.add_typed_action_view(move |ctx_dropdown| {
-                let mut dropdown = FilterableDropdown::<RunAgentsCardViewAction>::new(ctx_dropdown);
-                dropdown.set_use_overlay_layer(false, ctx_dropdown);
-                dropdown.set_main_axis_size(MainAxisSize::Max, ctx_dropdown);
-                dropdown.set_button_variant(ButtonVariant::Secondary);
-                dropdown.set_style(picker_styles_clone);
-                dropdown.set_top_bar_height(RUN_AGENTS_PICKER_HEIGHT, ctx_dropdown);
-                dropdown
-            });
-            dropdown_handle.update(ctx, |dropdown, ctx_dropdown| {
-                dropdown.set_menu_width(280.0, ctx_dropdown);
-                let all_envs = CloudAmbientAgentEnvironment::get_all(ctx_dropdown);
-                let mut sorted_envs: Vec<(String, String)> = all_envs
-                    .iter()
-                    .map(|env| (env.id.uid(), env.model().string_model.name.clone()))
-                    .collect();
-                sorted_envs.sort_by(|a, b| a.1.cmp(&b.1));
-
-                let mut items: Vec<MenuItem<DropdownAction<RunAgentsCardViewAction>>> = Vec::new();
-                let mut selected_name: Option<String> = None;
-                items.push(MenuItem::Item(
-                    MenuItemFields::new(RUN_AGENTS_ENV_NONE_LABEL).with_on_select_action(
-                        DropdownAction::SelectActionAndClose(
-                            RunAgentsCardViewAction::EnvironmentChanged {
-                                environment_id: String::new(),
-                            },
-                        ),
-                    ),
-                ));
-                if initial_env.is_empty() {
-                    selected_name = Some(RUN_AGENTS_ENV_NONE_LABEL.to_string());
-                }
-                for (env_id, env_name) in &sorted_envs {
-                    if env_id == &initial_env {
-                        selected_name = Some(env_name.clone());
-                    }
-                    let env_id_for_item = env_id.clone();
-                    items.push(MenuItem::Item(
-                        MenuItemFields::new(env_name).with_on_select_action(
-                            DropdownAction::SelectActionAndClose(
-                                RunAgentsCardViewAction::EnvironmentChanged {
-                                    environment_id: env_id_for_item,
-                                },
-                            ),
-                        ),
-                    ));
-                }
-                dropdown.set_rich_items(items, ctx_dropdown);
-                if let Some(name) = selected_name {
-                    dropdown.set_selected_by_name(&name, ctx_dropdown);
-                }
-            });
-            ctx.subscribe_to_view(&dropdown_handle, |me, _, event, ctx| {
+            let handle = oc::create_environment_picker(initial_env, &styles, ctx);
+            ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
                 if let FilterableDropdownEvent::Close = event {
                     me.refocus_after_picker_close(ctx);
                 }
             });
-            self.handles.environment_picker = Some(dropdown_handle);
+            self.handles.pickers.environment_picker = Some(handle);
         }
 
-        if self.handles.host_picker.is_none() {
-            let initial_host = match &state_snapshot.execution_mode {
-                RunAgentsExecutionMode::Remote { worker_host, .. } => worker_host.clone(),
-                RunAgentsExecutionMode::Local => RUN_AGENTS_WARP_WORKER_HOST.to_string(),
+        if self.handles.pickers.host_picker.is_none() {
+            let initial_host = match &state.orch.execution_mode {
+                RunAgentsExecutionMode::Remote { worker_host, .. } => worker_host.as_str(),
+                RunAgentsExecutionMode::Local => oc::ORCHESTRATION_WARP_WORKER_HOST,
             };
-            let dropdown_handle = Self::new_standard_picker_dropdown(
-                picker_padding,
-                picker_corner_radius,
-                picker_background_warpui,
-                picker_border_color_warpui,
-                picker_font_color,
-                ctx,
-            );
-            dropdown_handle.update(ctx, |dropdown, ctx_dropdown| {
-                let hosts: &[&str] = if matches!(ChannelState::channel(), Channel::Local) {
-                    &["warp", "local-dev"]
-                } else {
-                    &["warp"]
-                };
-                let mut items: Vec<MenuItem<DropdownAction<RunAgentsCardViewAction>>> = Vec::new();
-                let mut selected_idx = None;
-                for (idx, &host) in hosts.iter().enumerate() {
-                    let fields = MenuItemFields::new(host).with_on_select_action(
-                        DropdownAction::SelectActionAndClose(
-                            RunAgentsCardViewAction::WorkerHostChanged {
-                                worker_host: host.to_string(),
-                            },
-                        ),
-                    );
-                    if host.eq_ignore_ascii_case(&initial_host) {
-                        selected_idx = Some(idx);
-                    }
-                    items.push(MenuItem::Item(fields));
-                }
-                dropdown.set_rich_items(items, ctx_dropdown);
-                if let Some(idx) = selected_idx {
-                    dropdown.set_selected_by_index(idx, ctx_dropdown);
-                }
-            });
-            Self::subscribe_picker_close(&dropdown_handle, ctx);
-            self.handles.host_picker = Some(dropdown_handle);
+            let handle = oc::new_standard_picker_dropdown(&colors, ctx);
+            oc::populate_host_picker(&handle, initial_host, ctx);
+            Self::subscribe_picker_close(&handle, ctx);
+            self.handles.pickers.host_picker = Some(handle);
         }
 
-        // Dropdown's internal selection display is unreliable in this
-        // view tree, so we explicitly drive it.
         self.sync_picker_selections(ctx);
     }
 
-    /// Shared dropdown construction with the standard orchestrate-card
-    /// styling (border, radius, background, font). Both the model and
-    /// harness pickers use identical chrome; only their item lists differ.
-    fn new_standard_picker_dropdown(
-        padding: Coords,
-        corner_radius: CornerRadius,
-        background: warpui::elements::Fill,
-        border_color: warpui::elements::Fill,
-        font_color: ColorU,
-        ctx: &mut ViewContext<Self>,
-    ) -> ViewHandle<Dropdown<RunAgentsCardViewAction>> {
-        ctx.add_typed_action_view(move |ctx_dropdown| {
-            let mut dropdown = Dropdown::<RunAgentsCardViewAction>::new(ctx_dropdown);
-            dropdown.set_use_overlay_layer(false, ctx_dropdown);
-            dropdown.set_main_axis_size(MainAxisSize::Max, ctx_dropdown);
-            dropdown.set_style(DropdownStyle::ActionButtonSecondary, ctx_dropdown);
-            dropdown.set_top_bar_height(RUN_AGENTS_PICKER_HEIGHT, ctx_dropdown);
-            dropdown.set_padding(padding, ctx_dropdown);
-            dropdown.set_border_radius(corner_radius, ctx_dropdown);
-            dropdown.set_background(background, ctx_dropdown);
-            dropdown.set_border_color(border_color, ctx_dropdown);
-            dropdown.set_border_width(RUN_AGENTS_PICKER_BORDER_WIDTH, ctx_dropdown);
-            dropdown.set_font_size(RUN_AGENTS_PICKER_FONT_SIZE, ctx_dropdown);
-            dropdown.set_font_color(font_color, ctx_dropdown);
-            dropdown
-        })
-    }
-
     fn subscribe_picker_close(
-        dropdown_handle: &ViewHandle<Dropdown<RunAgentsCardViewAction>>,
+        dropdown_handle: &ViewHandle<crate::view_components::dropdown::Dropdown<RunAgentsCardViewAction>>,
         ctx: &mut ViewContext<Self>,
     ) {
         ctx.subscribe_to_view(dropdown_handle, move |me, _, event, ctx| {
@@ -706,59 +433,12 @@ impl RunAgentsCardView {
         });
     }
 
-    /// Restore focus after a picker dropdown closes.
     fn refocus_after_picker_close(&self, ctx: &mut ViewContext<Self>) {
         ctx.focus_self();
     }
 
     fn sync_picker_selections(&mut self, ctx: &mut ViewContext<Self>) {
-        let state = self.state.clone();
-        if let Some(model_picker) = self.handles.model_picker.clone() {
-            let target_model_id = state.model_id.clone();
-            model_picker.update(ctx, |dropdown, ctx_dropdown| {
-                let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
-                let choices: Vec<_> = llm_prefs.get_base_llm_choices_for_agent_mode().collect();
-                if let Some(idx) = choices
-                    .iter()
-                    .position(|llm| llm.id.to_string() == target_model_id)
-                {
-                    dropdown.set_selected_by_index(idx, ctx_dropdown);
-                }
-            });
-        }
-        if let Some(harness_picker) = self.handles.harness_picker.clone() {
-            let target =
-                Harness::parse_orchestration_harness(&state.harness_type).unwrap_or(Harness::Oz);
-            let display = harness_display::display_name(target).to_string();
-            harness_picker.update(ctx, |dropdown, ctx_dropdown| {
-                dropdown.set_selected_by_name(&display, ctx_dropdown);
-            });
-        }
-        if let Some(environment_picker) = self.handles.environment_picker.clone() {
-            let env_id = match &state.execution_mode {
-                RunAgentsExecutionMode::Remote { environment_id, .. } => environment_id.clone(),
-                RunAgentsExecutionMode::Local => String::new(),
-            };
-            environment_picker.update(ctx, |dropdown, ctx_dropdown| {
-                if env_id.is_empty() {
-                    dropdown.set_selected_by_name(RUN_AGENTS_ENV_NONE_LABEL, ctx_dropdown);
-                    return;
-                }
-                let all_envs = CloudAmbientAgentEnvironment::get_all(ctx_dropdown);
-                if let Some(env) = all_envs.iter().find(|e| e.id.uid() == env_id) {
-                    dropdown.set_selected_by_name(&env.model().string_model.name, ctx_dropdown);
-                }
-            });
-        }
-        if let Some(host_picker) = self.handles.host_picker.clone() {
-            let worker_host = match &state.execution_mode {
-                RunAgentsExecutionMode::Remote { worker_host, .. } => worker_host.clone(),
-                RunAgentsExecutionMode::Local => RUN_AGENTS_WARP_WORKER_HOST.to_string(),
-            };
-            host_picker.update(ctx, |dropdown, ctx_dropdown| {
-                dropdown.set_selected_by_name(&worker_host, ctx_dropdown);
-            });
-        }
+        oc::sync_picker_selections(&self.state.orch, &self.handles.pickers, ctx);
     }
 }
 
@@ -849,29 +529,24 @@ impl TypedActionView for RunAgentsCardView {
                 }
             }
             RunAgentsCardViewAction::ExecutionModeToggled { is_remote } => {
-                self.state.toggle_execution_mode_to_remote(*is_remote);
-                // Local→Cloud may reset OpenCode→Oz; sync pickers.
+                self.state.orch.toggle_execution_mode_to_remote(*is_remote);
                 self.sync_picker_selections(ctx);
                 ctx.notify();
             }
             RunAgentsCardViewAction::ModelChanged { model_id } => {
-                self.state.model_id = model_id.clone();
-                // Do NOT call sync_picker_selections here — this runs
-                // mid-update and would cause a circular view update.
+                self.state.orch.model_id = model_id.clone();
                 ctx.notify();
             }
             RunAgentsCardViewAction::HarnessChanged { harness_type } => {
-                self.state.harness_type = harness_type.clone();
-                // See ModelChanged note.
+                self.state.orch.harness_type = harness_type.clone();
                 ctx.notify();
             }
             RunAgentsCardViewAction::EnvironmentChanged { environment_id } => {
-                self.state.set_environment_id(environment_id.clone());
-                // See ModelChanged note.
+                self.state.orch.set_environment_id(environment_id.clone());
                 ctx.notify();
             }
             RunAgentsCardViewAction::WorkerHostChanged { worker_host } => {
-                self.state.set_worker_host(worker_host.clone());
+                self.state.orch.set_worker_host(worker_host.clone());
                 ctx.notify();
             }
         }
@@ -1123,6 +798,7 @@ fn render_editor(
     handles: &RunAgentsCardHandles,
     app: &AppContext,
 ) -> Box<dyn Element> {
+    use warpui::elements::ConstrainedBox;
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
     let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
@@ -1137,20 +813,24 @@ fn render_editor(
     column.add_child(divider);
 
     column.add_child(
-        Container::new(render_mode_toggle(state, handles, appearance))
-            .with_margin_top(12.)
-            .finish(),
+        Container::new(oc::render_mode_toggle(
+            state.orch.execution_mode.is_remote(),
+            &handles.pickers,
+            appearance,
+        ))
+        .with_margin_top(12.)
+        .finish(),
     );
-    column.add_child(render_picker_row_quad(state, handles, appearance));
+    column.add_child(oc::render_picker_row(&state.orch, &handles.pickers, appearance));
 
-    if let Some(reason) = state.accept_disabled_reason() {
-        column.add_child(render_validation_error(
+    if let Some(reason) = state.orch.accept_disabled_reason() {
+        column.add_child(oc::render_validation_error(
             reason,
             theme.ui_error_color(),
             appearance,
         ));
-    } else if let Some(message) = empty_env_recommendation_message(state, app) {
-        column.add_child(render_validation_error(
+    } else if let Some(message) = oc::empty_env_recommendation_message(&state.orch.execution_mode, app) {
+        column.add_child(oc::render_validation_error(
             message,
             theme.ui_warning_color(),
             appearance,
@@ -1163,236 +843,6 @@ fn render_editor(
         .with_background_color(theme.background().into_solid())
         .with_corner_radius(CornerRadius::with_bottom(Radius::Pixels(8.)))
         .finish()
-}
-
-fn render_picker_row_quad(
-    state: &RunAgentsEditState,
-    handles: &RunAgentsCardHandles,
-    appearance: &Appearance,
-) -> Box<dyn Element> {
-    let is_remote = state.execution_mode.is_remote();
-    let main_axis_size = if is_remote {
-        MainAxisSize::Max
-    } else {
-        MainAxisSize::Min
-    };
-    let mut row = Flex::row()
-        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .with_main_axis_size(main_axis_size)
-        .with_main_axis_alignment(MainAxisAlignment::Start)
-        .with_spacing(12.);
-
-    const LOCAL_PICKER_WIDTH: f32 = 220.;
-    let add_picker = |row: &mut Flex, label: &str, picker: Option<Box<dyn Element>>| {
-        let column = render_picker_column(label, picker, appearance);
-        if is_remote {
-            row.add_child(Expanded::new(1.0, column).finish());
-        } else {
-            row.add_child(
-                ConstrainedBox::new(column)
-                    .with_width(LOCAL_PICKER_WIDTH)
-                    .finish(),
-            );
-        }
-    };
-
-    add_picker(
-        &mut row,
-        "Agent harness",
-        handles
-            .harness_picker
-            .as_ref()
-            .map(|p| ChildView::new(p).finish()),
-    );
-    if is_remote {
-        add_picker(
-            &mut row,
-            "Host",
-            handles
-                .host_picker
-                .as_ref()
-                .map(|p| ChildView::new(p).finish()),
-        );
-        add_picker(
-            &mut row,
-            "Environment",
-            handles
-                .environment_picker
-                .as_ref()
-                .map(|p| ChildView::new(p).finish()),
-        );
-    }
-    add_picker(
-        &mut row,
-        "Base model",
-        handles
-            .model_picker
-            .as_ref()
-            .map(|p| ChildView::new(p).finish()),
-    );
-
-    Container::new(row.finish()).with_margin_top(12.).finish()
-}
-
-fn render_picker_column(
-    label: &str,
-    picker: Option<Box<dyn Element>>,
-    appearance: &Appearance,
-) -> Box<dyn Element> {
-    let theme = appearance.theme();
-    let label_el = Text::new(
-        label.to_string(),
-        appearance.ui_font_family(),
-        appearance.monospace_font_size() - 1.,
-    )
-    .with_color(blended_colors::text_disabled(theme, theme.surface_1()))
-    .finish();
-
-    let body: Box<dyn Element> = picker.unwrap_or_else(|| Empty::new().finish());
-    Flex::column()
-        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .with_child(label_el)
-        .with_child(body)
-        .finish()
-}
-
-fn render_mode_toggle(
-    state: &RunAgentsEditState,
-    handles: &RunAgentsCardHandles,
-    appearance: &Appearance,
-) -> Box<dyn Element> {
-    let theme = appearance.theme();
-    let is_remote = state.execution_mode.is_remote();
-    let label = Text::new(
-        "Agent location".to_string(),
-        appearance.ui_font_family(),
-        appearance.monospace_font_size() - 1.,
-    )
-    .with_color(blended_colors::text_disabled(theme, theme.surface_1()))
-    .finish();
-
-    let local_segment = render_segment_button(
-        "Local",
-        !is_remote,
-        RunAgentsCardViewAction::ExecutionModeToggled { is_remote: false },
-        handles.local_toggle.clone(),
-        appearance,
-    );
-    let cloud_segment = render_segment_button(
-        "Cloud",
-        is_remote,
-        RunAgentsCardViewAction::ExecutionModeToggled { is_remote: true },
-        handles.cloud_toggle.clone(),
-        appearance,
-    );
-
-    let segment_outer_bg = warp_core::ui::theme::color::internal_colors::fg_overlay_2(theme);
-    let segments_row = Flex::row()
-        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .with_main_axis_alignment(MainAxisAlignment::Start)
-        .with_main_axis_size(MainAxisSize::Max)
-        .with_child(Expanded::new(1.0, cloud_segment).finish())
-        .with_child(Expanded::new(1.0, local_segment).finish())
-        .finish();
-    let segmented_control = Container::new(segments_row)
-        .with_padding_top(4.)
-        .with_padding_bottom(4.)
-        .with_padding_left(4.)
-        .with_padding_right(4.)
-        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
-        .with_background(segment_outer_bg)
-        .finish();
-    let segmented_control = ConstrainedBox::new(segmented_control)
-        .with_width(205.)
-        .finish();
-
-    Flex::column()
-        .with_cross_axis_alignment(CrossAxisAlignment::Start)
-        .with_child(Container::new(label).with_margin_bottom(6.).finish())
-        .with_child(segmented_control)
-        .finish()
-}
-
-fn render_segment_button(
-    label: &str,
-    is_active: bool,
-    on_click: RunAgentsCardViewAction,
-    mouse_state: MouseStateHandle,
-    appearance: &Appearance,
-) -> Box<dyn Element> {
-    let theme = appearance.theme();
-    let label_owned = label.to_string();
-    let font_family = appearance.ui_font_family();
-    let font_size = appearance.monospace_font_size() + 1.;
-    let active_text_color = blended_colors::text_main(theme, theme.surface_1());
-    let inactive_text_color = blended_colors::text_disabled(theme, theme.surface_1());
-    let segment_active_bg = warp_core::ui::theme::color::internal_colors::fg_overlay_4(theme);
-    Hoverable::new(mouse_state, move |_| {
-        let text = Text::new(label_owned.clone(), font_family, font_size)
-            .with_color(if is_active {
-                active_text_color
-            } else {
-                inactive_text_color
-            })
-            .finish();
-        let centered = warpui::elements::Align::new(text).finish();
-        let mut container = Container::new(centered)
-            .with_vertical_padding(6.)
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)));
-        if is_active {
-            container = container.with_background(segment_active_bg);
-        }
-        container.finish()
-    })
-    .on_click(move |ctx, _, _| {
-        ctx.dispatch_typed_action(on_click.clone());
-    })
-    .with_cursor(Cursor::PointingHand)
-    .finish()
-}
-
-fn render_validation_error(
-    reason: impl Into<String>,
-    color: ColorU,
-    appearance: &Appearance,
-) -> Box<dyn Element> {
-    Container::new(
-        Text::new(
-            reason.into(),
-            appearance.ui_font_family(),
-            appearance.monospace_font_size() - 1.,
-        )
-        .with_color(color)
-        .finish(),
-    )
-    .with_margin_bottom(8.)
-    .finish()
-}
-
-fn empty_env_recommendation_message(
-    state: &RunAgentsEditState,
-    app: &AppContext,
-) -> Option<String> {
-    let RunAgentsExecutionMode::Remote {
-        environment_id,
-        worker_host,
-        ..
-    } = &state.execution_mode
-    else {
-        return None;
-    };
-    if !environment_id.trim().is_empty() {
-        return None;
-    }
-    if !worker_host.eq_ignore_ascii_case(RUN_AGENTS_WARP_WORKER_HOST) {
-        return None;
-    }
-    let env_count = CloudAmbientAgentEnvironment::get_all(app).len();
-    Some(if env_count > 0 {
-        "We recommend selecting an environment for cloud agents.".to_string()
-    } else {
-        "We recommend creating an environment for cloud agents.".to_string()
-    })
 }
 
 #[cfg(test)]

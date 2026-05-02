@@ -37,16 +37,16 @@ fn local_to_cloud_initializes_remote_with_empty_environment() {
     let mut state =
         RunAgentsEditState::from_request(&make_request("oz", RunAgentsExecutionMode::Local));
     assert!(matches!(
-        state.execution_mode,
+        state.orch.execution_mode,
         RunAgentsExecutionMode::Local
     ));
 
-    state.toggle_execution_mode_to_remote(true);
+    state.orch.toggle_execution_mode_to_remote(true);
     let RunAgentsExecutionMode::Remote {
         environment_id,
         worker_host,
         computer_use_enabled,
-    } = state.execution_mode
+    } = state.orch.execution_mode
     else {
         panic!("expected Remote after toggle");
     };
@@ -65,9 +65,9 @@ fn cloud_to_local_drops_environment() {
             computer_use_enabled: false,
         },
     ));
-    state.toggle_execution_mode_to_remote(false);
+    state.orch.toggle_execution_mode_to_remote(false);
     assert!(matches!(
-        state.execution_mode,
+        state.orch.execution_mode,
         RunAgentsExecutionMode::Local
     ));
 }
@@ -76,8 +76,8 @@ fn cloud_to_local_drops_environment() {
 fn local_to_cloud_resets_opencode_to_oz() {
     let mut state =
         RunAgentsEditState::from_request(&make_request("opencode", RunAgentsExecutionMode::Local));
-    state.toggle_execution_mode_to_remote(true);
-    assert_eq!(state.harness_type, "oz");
+    state.orch.toggle_execution_mode_to_remote(true);
+    assert_eq!(state.orch.harness_type, "oz");
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn cloud_without_env_no_longer_disables_accept() {
         },
     ));
     assert!(
-        state.accept_disabled_reason().is_none(),
+        state.orch.accept_disabled_reason().is_none(),
         "Cloud without env should NOT disable Accept (soft recommendation only)"
     );
 }
@@ -107,7 +107,7 @@ fn cloud_with_opencode_disables_accept() {
             computer_use_enabled: false,
         },
     ));
-    let reason = state.accept_disabled_reason();
+    let reason = state.orch.accept_disabled_reason();
     assert!(reason.is_some(), "Cloud + OpenCode should disable Accept");
     assert!(reason.unwrap().contains("OpenCode"));
 }
@@ -118,7 +118,7 @@ fn local_with_any_harness_does_not_disable_accept() {
         let state =
             RunAgentsEditState::from_request(&make_request(harness, RunAgentsExecutionMode::Local));
         assert!(
-            state.accept_disabled_reason().is_none(),
+            state.orch.accept_disabled_reason().is_none(),
             "Local + {harness} should allow Accept"
         );
     }
@@ -136,7 +136,7 @@ fn cloud_with_env_and_non_opencode_harness_allows_accept() {
             },
         ));
         assert!(
-            state.accept_disabled_reason().is_none(),
+            state.orch.accept_disabled_reason().is_none(),
             "Cloud + env + {harness} should allow Accept"
         );
     }
@@ -146,9 +146,9 @@ fn cloud_with_env_and_non_opencode_harness_allows_accept() {
 fn set_environment_id_no_op_in_local_mode() {
     let mut state =
         RunAgentsEditState::from_request(&make_request("oz", RunAgentsExecutionMode::Local));
-    state.set_environment_id("env-1".to_string());
+    state.orch.set_environment_id("env-1".to_string());
     assert!(matches!(
-        state.execution_mode,
+        state.orch.execution_mode,
         RunAgentsExecutionMode::Local
     ));
 }
@@ -163,8 +163,8 @@ fn set_environment_id_updates_remote() {
             computer_use_enabled: false,
         },
     ));
-    state.set_environment_id("new-env".to_string());
-    let RunAgentsExecutionMode::Remote { environment_id, .. } = state.execution_mode else {
+    state.orch.set_environment_id("new-env".to_string());
+    let RunAgentsExecutionMode::Remote { environment_id, .. } = state.orch.execution_mode else {
         panic!("expected Remote");
     };
     assert_eq!(environment_id, "new-env");
@@ -315,12 +315,12 @@ fn local_to_cloud_idempotent_when_already_remote() {
             computer_use_enabled: true,
         },
     ));
-    state.toggle_execution_mode_to_remote(true);
+    state.orch.toggle_execution_mode_to_remote(true);
     let RunAgentsExecutionMode::Remote {
         environment_id,
         computer_use_enabled,
         ..
-    } = state.execution_mode
+    } = state.orch.execution_mode
     else {
         panic!("expected Remote");
     };
