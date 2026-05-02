@@ -289,34 +289,34 @@ fn make_ollama_model(display_name: &str, ollama_model: &str, spec: Option<LLMSpe
 /// - Otherwise, Claude Sonnet 4.7 is the default.
 pub fn local_model_list() -> ModelsByFeature {
     let claude_sonnet = make_claude_model(
-        "Claude Sonnet 4.7",
+        "Claude / Sonnet 4.7",
         "claude-sonnet-4-7",
         Some(LLMSpec { cost: 0.5, quality: 0.85, speed: 0.8 }),
     );
     let claude_opus = make_claude_model(
-        "Claude Opus 4.7",
+        "Claude / Opus 4.7",
         "claude-opus-4-7",
         Some(LLMSpec { cost: 0.9, quality: 1.0, speed: 0.5 }),
     );
     let claude_haiku = make_claude_model(
-        "Claude Haiku 4.5",
+        "Claude / Haiku 4.5",
         "claude-haiku-4-5",
         Some(LLMSpec { cost: 0.2, quality: 0.6, speed: 1.0 }),
     );
     let gpt55_low = make_codex_model(
-        "GPT-5.5 (low)",
+        "Codex / GPT-5.5 (low)",
         "gpt-5.5",
         Some("low"),
         Some(LLMSpec { cost: 0.3, quality: 0.65, speed: 0.9 }),
     );
     let gpt55_medium = make_codex_model(
-        "GPT-5.5 (medium)",
+        "Codex / GPT-5.5 (medium)",
         "gpt-5.5",
         Some("medium"),
         Some(LLMSpec { cost: 0.55, quality: 0.80, speed: 0.7 }),
     );
     let gpt55_high = make_codex_model(
-        "GPT-5.5 (high)",
+        "Codex / GPT-5.5 (high)",
         "gpt-5.5",
         Some("high"),
         Some(LLMSpec { cost: 0.85, quality: 0.95, speed: 0.45 }),
@@ -324,12 +324,12 @@ pub fn local_model_list() -> ModelsByFeature {
     // Ollama entries. "qwen2.5-coder:7b" and "llama3.3:70b" are pre-set
     // popular choices; "custom" reads OLLAMA_MODEL at request time.
     let ollama_qwen = make_ollama_model(
-        "Ollama: qwen2.5-coder:7b",
+        "Ollama / qwen2.5-coder:7b",
         "qwen2.5-coder:7b",
         Some(LLMSpec { cost: 0.0, quality: 0.7, speed: 0.85 }),
     );
     let ollama_llama = make_ollama_model(
-        "Ollama: llama3.3:70b",
+        "Ollama / llama3.3:70b",
         "llama3.3:70b",
         Some(LLMSpec { cost: 0.0, quality: 0.8, speed: 0.5 }),
     );
@@ -337,7 +337,7 @@ pub fn local_model_list() -> ModelsByFeature {
     // user can see which model will be used without opening the env file.
     let custom_model = ollama_custom_model();
     let ollama_custom = make_ollama_model(
-        &format!("Ollama: {custom_model} (OLLAMA_MODEL)"),
+        &format!("Ollama / {custom_model} (env)"),
         "custom",
         Some(LLMSpec { cost: 0.0, quality: 0.5, speed: 0.75 }),
     );
