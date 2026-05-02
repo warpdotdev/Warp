@@ -1506,6 +1506,12 @@ impl AISettingsPageView {
                     widgets.push(Box::new(VoiceWidget::default()));
                 }
                 widgets.push(Box::new(CLIAgentWidget::default()));
+                // PDX-103 [B1] task 6: coding-agent sign-in row sits ABOVE
+                // the API keys (BYOK) section. PDX-104 (B2) appends Codex +
+                // Ollama rows inside this widget.
+                widgets.push(Box::new(
+                    super::cli_agent_sign_in_widget::CliAgentSignInWidget::default(),
+                ));
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
                 widgets.push(Box::new(AgentAttributionWidget::default()));
@@ -1546,6 +1552,10 @@ impl AISettingsPageView {
                 if voice_supported {
                     widgets.push(Box::new(VoiceWidget::default()));
                 }
+                // PDX-103 [B1] task 6: same sign-in row above BYOK on this subpage.
+                widgets.push(Box::new(
+                    super::cli_agent_sign_in_widget::CliAgentSignInWidget::default(),
+                ));
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
                 widgets.push(Box::new(AgentAttributionWidget::default()));
@@ -1567,6 +1577,11 @@ impl AISettingsPageView {
             }
             Some(AISubpage::ThirdPartyCLIAgents) => {
                 widgets.push(Box::new(CLIAgentWidget::default()));
+                // PDX-103 [B1] task 6: same sign-in row reused on the
+                // dedicated third-party agents subpage.
+                widgets.push(Box::new(
+                    super::cli_agent_sign_in_widget::CliAgentSignInWidget::default(),
+                ));
             }
         }
 
@@ -2271,6 +2286,11 @@ pub enum AISettingsPageAction {
         pattern: String,
         agent: Option<CLIAgent>,
     },
+    /// PDX-103 [B1] task 6: shells out `claude /login` fire-and-forget.
+    /// The CLI handles the browser/keychain flow exactly like `doppler login`.
+    /// Auth-state re-poll lands when PDX-103 task 2 hoists the Router into
+    /// AppContext.
+    SignInWithClaudeCode,
 }
 
 impl From<&AISettingsPageAction> for LoginGatedFeature {
@@ -2496,6 +2516,31 @@ impl TypedActionView for AISettingsPageView {
                     Ok(_new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for NLD in Terminal: {e:?}");
+                    }
+                }
+                ctx.notify();
+            }
+            AISettingsPageAction::SignInWithClaudeCode => {
+                // PDX-103 [B1] task 6. Fire-and-forget: do NOT wait, do NOT
+                // capture output. The Claude Code CLI opens the browser and
+                // runs the OAuth dance on its own. Nulling stdio prevents the
+                // child from blocking on the GUI's missing TTY.
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    match std::process::Command::new("claude")
+                        .arg("/login")
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                    {
+                        Ok(_) => {
+                            // TODO(PDX-103 task 6): poll Router::health for
+                            // ClaudeCode and refresh the row when it flips
+                            // healthy, mirroring DopplerSignInWidget's
+                            // poll_until_authenticated.
+                        }
+                        Err(err) => log::warn!("failed to spawn `claude /login`: {err}"),
                     }
                 }
                 ctx.notify();
