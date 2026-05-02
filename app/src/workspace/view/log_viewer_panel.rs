@@ -20,6 +20,7 @@ use {
 
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill as ThemeFill;
+use warpui::clipboard::ClipboardContent;
 use warpui::elements::{
     Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DragBarSide,
     Element, Fill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, Padding,
@@ -103,6 +104,8 @@ pub enum LogViewerAction {
     Close,
     SetLevelFilter(LevelFilter),
     FilterChanged,
+    ClearBuffer,
+    CopyAll,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -125,6 +128,8 @@ pub struct LogViewerPanel {
     list_state: UniformListState,
     scroll_state: ScrollStateHandle,
     close_button_mouse_state: MouseStateHandle,
+    clear_button_mouse_state: MouseStateHandle,
+    copy_all_button_mouse_state: MouseStateHandle,
     chip_states: [MouseStateHandle; 4],
     resizable_state_handle: ResizableStateHandle,
 }
@@ -169,6 +174,8 @@ impl LogViewerPanel {
             list_state: UniformListState::new(),
             scroll_state: Default::default(),
             close_button_mouse_state: Default::default(),
+            clear_button_mouse_state: Default::default(),
+            copy_all_button_mouse_state: Default::default(),
             chip_states: Default::default(),
             resizable_state_handle,
         };
@@ -332,6 +339,50 @@ impl LogViewerPanel {
         };
 
         let icon_color = theme.sub_text_color(theme.background());
+        let action_ui_builder = appearance.ui_builder().clone();
+
+        let clear_tooltip_builder = action_ui_builder.clone();
+        let clear_btn = icon_button_with_color(
+            appearance,
+            icons::Icon::Trash,
+            false,
+            self.clear_button_mouse_state.clone(),
+            icon_color,
+        )
+        .with_tooltip(move || {
+            clear_tooltip_builder
+                .tool_tip("Clear log buffer".to_string())
+                .build()
+                .finish()
+        })
+        .build()
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(LogViewerAction::ClearBuffer);
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish();
+
+        let copy_tooltip_builder = action_ui_builder;
+        let copy_all_btn = icon_button_with_color(
+            appearance,
+            icons::Icon::Copy,
+            false,
+            self.copy_all_button_mouse_state.clone(),
+            icon_color,
+        )
+        .with_tooltip(move || {
+            copy_tooltip_builder
+                .tool_tip("Copy all visible lines".to_string())
+                .build()
+                .finish()
+        })
+        .build()
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(LogViewerAction::CopyAll);
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish();
+
         let close_btn = icon_button_with_color(
             appearance,
             icons::Icon::X,
@@ -354,7 +405,15 @@ impl LogViewerPanel {
                     .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
                     .with_child(Shrinkable::new(1., title).finish())
-                    .with_child(close_btn)
+                    .with_child(
+                        Flex::row()
+                            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                            .with_spacing(4.)
+                            .with_child(clear_btn)
+                            .with_child(copy_all_btn)
+                            .with_child(close_btn)
+                            .finish(),
+                    )
                     .finish(),
             )
             .with_height(PANE_HEADER_HEIGHT)
@@ -487,6 +546,7 @@ impl LogViewerPanel {
                             Container::new(
                                 Text::new(line.clone(), font_family, font_size)
                                     .with_color(color)
+                                    .soft_wrap(false)
                                     .finish(),
                             )
                             .with_horizontal_padding(12.)
@@ -537,6 +597,24 @@ impl TypedActionView for LogViewerPanel {
                 self.rebuild_filtered();
                 self.scroll_to_bottom();
                 ctx.notify();
+            }
+            LogViewerAction::ClearBuffer => {
+                self.lines.clear();
+                self.filtered_indices.clear();
+                ctx.notify();
+            }
+            LogViewerAction::CopyAll => {
+                let lines = self
+                    .filtered_indices
+                    .iter()
+                    .filter_map(|&i| self.lines.get(i))
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ctx.clipboard().write(ClipboardContent {
+                    plain_text: lines,
+                    ..Default::default()
+                });
             }
         }
     }
