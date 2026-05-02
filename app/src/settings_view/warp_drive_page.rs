@@ -88,6 +88,9 @@ impl SettingsPageMeta for WarpDriveSettingsPageView {
     }
 
     fn should_render(&self, _ctx: &AppContext) -> bool {
+        if crate::local_ai::auth_bypass_enabled() {
+            return false;
+        }
         FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
     }
 
