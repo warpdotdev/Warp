@@ -333,11 +333,12 @@ pub fn init(app: &mut AppContext) {
         )
         .with_key_binding("ctrl-g")
         .with_context_predicate(
-            id!("Terminal")
+            (id!("Terminal")
                 & !id!("IMEOpen")
                 & (id!("LongRunningCommand") | id!("AltScreen"))
                 & id!(flags::CLI_AGENT_FOOTER_ENABLED)
-                & id!(flags::CLI_AGENT_RICH_INPUT_CHIP_ENABLED),
+                & id!(flags::CLI_AGENT_RICH_INPUT_CHIP_ENABLED))
+            | (id!("EditorView") & id!("AIInput") & !id!("IMEOpen")),
         ),
         EditableBinding::new(
             "terminal:warpify_subshell",
