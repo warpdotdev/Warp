@@ -1,4 +1,4 @@
-# TECH.md — Per-tab theme override via launch configurations
+# TECH.md — Per-tab theme overrides driven by directory and launch configurations
 
 Issue: https://github.com/warpdotdev/warp/issues/478
 Related: https://github.com/warpdotdev/warp/issues/2618
@@ -8,376 +8,509 @@ Product spec: `specs/GH478/product.md`
 
 The Warp theme is currently a single global value derived from
 `ThemeSettings`. The renderer reads it through the global `Appearance`
-singleton; nothing in the rendering pipeline today accepts a per-tab theme
-parameter. Adding per-tab overrides therefore touches three layers — the
-launch configuration schema, the persisted tab snapshot, and the renderer's
-theme lookup — but does not require changing the theme storage format or
-adding any new theme types.
+singleton, which today owns exactly one resolved `WarpTheme`. Per-tab
+overrides therefore require changes in four layers — the launch
+configuration schema, a new directory-pattern settings group, the
+persisted tab snapshot (with override-source semantics), and the
+renderer's theme lookup (with a theme catalog so non-active themes can be
+borrowed by reference). None of this requires changing the theme storage
+format or adding new theme types.
 
-The rest of this section enumerates the existing surfaces the implementation
-will modify or read from. All file references are at HEAD on `master`.
+All file references are at HEAD on `master`.
 
 ### Launch configuration schema
 
 `app/src/launch_configs/launch_config.rs` defines the YAML data model:
 
-- `LaunchConfig` (lines 14–20) — top-level: `name`, `active_window_index`,
-  `windows: Vec<WindowTemplate>`.
-- `WindowTemplate` (lines 36–41) — `active_tab_index`, `tabs:
-  Vec<TabTemplate>`. **No theme field today.**
-- `TabTemplate` (lines 180–187) — `title`, `layout: PaneTemplateType`,
-  `color: Option<AnsiColorIdentifier>`. The `color` field (line 186) is the
-  closest precedent for the new `theme` field: same `Option<…>` shape, same
-  serde skip-if-none treatment, deserialized into the same struct, and
-  forwarded into the runtime tab. Importantly the file already imports
-  `crate::themes::theme::AnsiColorIdentifier` (line 7), so importing
-  `ThemeKind` from the same module is a one-line addition.
-- `PaneTemplateType` (lines 92–113) — pane-level layout. Not modified by this
-  spec; per-pane theming is explicitly out of scope per `product.md`.
+- `LaunchConfig` (lines 14–20) — `name`, `active_window_index`, `windows`.
+- `WindowTemplate` (lines 36–41) — `active_tab_index`, `tabs`. **No theme
+  field today.**
+- `TabTemplate` (lines 180–187) — `title`, `layout`, `color:
+  Option<AnsiColorIdentifier>`. The `color` field (line 186) is the
+  closest precedent for a per-tab theme field.
+- The file already imports `crate::themes::theme::AnsiColorIdentifier`
+  (line 7).
 
-### Theme model
+### Theme model and global theme settings
 
-`app/src/themes/theme.rs` defines:
-
-- `ThemeKind` enum (lines 42–100) — the canonical theme identifier. Includes
-  built-in themes (`Dark`, `Light`, `Dracula`, `DarkCity`, …) plus
-  `Custom(CustomTheme)` and `CustomBase16(CustomTheme)` variants for
-  user-supplied themes. Already derives `Serialize`, `Deserialize`,
-  `JsonSchema`, and `settings_value::SettingsValue`, so it round-trips through
-  serde with no additional work.
-- `Display for ThemeKind` (lines 112+) — the canonical user-facing string for
-  each variant. Used for both the global theme setting and the theme picker;
-  reusable as-is for launch configuration YAML.
-
-### Theme settings and resolution
-
-`app/src/settings/theme.rs` defines:
-
-- `ThemeSettings` group (lines 14–48) — three fields: `theme_kind`,
-  `use_system_theme`, `selected_system_themes`. The `theme_kind` field's
-  `toml_path` is `"appearance.themes.theme"` (line 23).
-- `derived_theme_kind(theme_settings, system_theme) -> ThemeKind`
-  (lines 69–78) — applies the system-light/dark logic. **This is the function
-  the per-tab override must wrap**: when an override is present we want to
-  return it directly; when absent we want this function's existing answer.
-- `active_theme_kind(theme_settings, app) -> ThemeKind` (lines 81–83) — calls
-  `derived_theme_kind` with `app.system_theme()`. Currently the only entry
-  point for "what theme should we show?" outside the appearance manager.
+- `app/src/themes/theme.rs:42–100` — `ThemeKind` enum, the canonical
+  theme identifier. Built-in variants plus `Custom(CustomTheme)` and
+  `CustomBase16(CustomTheme)`. Derives `Serialize`, `Deserialize`,
+  `JsonSchema`, `settings_value::SettingsValue`.
+- `app/src/themes/theme.rs:112+` — `Display for ThemeKind` returns the
+  canonical user-facing string (`"Dark City"`, `"Solarized Dark"`, etc.).
+- `app/src/settings/theme.rs:14–48` — `ThemeSettings` group; `theme_kind`
+  field with `toml_path: "appearance.themes.theme"` (line 23).
+- `app/src/settings/theme.rs:69–78` — `derived_theme_kind`, applies
+  system-light/dark logic. Wrapped by per-tab resolution.
+- `app/src/settings/theme.rs:81–83` — `active_theme_kind`, current entry
+  point for "what theme should we show?".
 
 ### Renderer entry point
 
-`app/src/appearance.rs` re-exports the singleton `Appearance` from
-`warp_core::ui::appearance` (line 34) and defines `AppearanceManager`
-(lines 40–47) that subscribes to `ThemeSettings` (line 51) and pushes theme,
-font, and icon changes into `Appearance`. `Appearance::handle(ctx)` is the
-canonical "give me the active theme" handle used by the terminal view, the
-theme picker, and other UI surfaces.
-
-`Appearance` today holds **one** theme. It does not have a notion of "the
-theme for tab X". Plumbing per-tab overrides will therefore introduce a
-*resolved theme* lookup that consults the active tab's override before
-falling back to `Appearance`'s global value (see *Proposed changes* below).
+- `app/src/appearance.rs:34` re-exports `Appearance` from
+  `warp_core::ui::appearance`.
+- `app/src/appearance.rs:40–47` — `AppearanceManager`; subscribes to
+  `ThemeSettings` (line 51) and pushes changes into `Appearance`.
+- `Appearance` today owns one `WarpTheme`. Per-tab overrides require
+  it to own a *catalog* (see *Proposed changes* §5).
 
 ### Tab and window state
 
-`app/src/app_state.rs`:
-
-- `WindowSnapshot` (lines 43–59) — persisted window state. **No theme field.**
-- `TabSnapshot` (lines 61–69) — persisted per-tab state. Carries
+- `app/src/app_state.rs:43–59` — `WindowSnapshot`. **No theme field.**
+- `app/src/app_state.rs:61–69` — `TabSnapshot`. Carries
   `default_directory_color` and `selected_color: SelectedTabColor` (the
-  per-tab indicator color from `#7` in `product.md`). **No theme field.**
-  This is where the persisted override is added.
-- `TabSnapshot::color()` (lines 71–75) — resolves the indicator color. The
-  per-tab theme override resolution will live next to this method and follow
-  the same shape.
+  per-tab indicator color).
+- `app/src/app_state.rs:71–75` — `TabSnapshot::color()`, the resolution
+  helper for the indicator.
+- `app/src/tab.rs:134–143` — `TabData` (runtime), holds `selected_color`.
 
-### Existing precedent — per-tab color flow
+### Existing precedent — per-tab color
 
-The path that loads `TabTemplate.color` into a runtime tab is the closest
-analog to what this spec adds, and the implementation should mirror it
-exactly. The flow today:
+The path that loads `TabTemplate.color` into a runtime tab is the
+closest analog. Today:
 
 1. `TabTemplate.color: Option<AnsiColorIdentifier>` parsed from YAML
    (`launch_config.rs:186`).
 2. On launch-config open, `app/src/workspace/view.rs:3517–3519` writes
    `tab_template.color` into `self.tabs[…].selected_color` via
-   `SelectedTabColor::Color`. Tabs without `color` get `SelectedTabColor::Unset`.
+   `SelectedTabColor::Color`.
 3. `TabSnapshot.selected_color` persists this through session save/restore.
-4. `TabSnapshot::color()` resolves `selected_color` against
-   `default_directory_color` and the resulting `Option<AnsiColorIdentifier>`
-   is rendered as the tab indicator.
 
-The new theme override follows the same four steps, replacing
-`AnsiColorIdentifier` with `ThemeKind` and routing the resolved value into
-the renderer instead of the indicator widget.
+The new override follows the same path but with richer types (an
+override-source enum, see §3) and an apply-time resolver (§2) instead of
+direct serde (which is what Oz's first-pass review correctly flagged).
+
+### Existing pane cwd tracking
+
+The active pane's cwd is already tracked for tab title generation and
+breadcrumbs. The directory-pattern feature (§4) hooks into the existing
+"focused pane cwd changed" event rather than introducing new shell-side
+plumbing.
 
 ## Proposed changes
 
-The implementation is broken into four areas, in dependency order. Each step
-compiles and passes tests on its own.
+Six steps in dependency order. Each compiles standalone.
 
-### 1. Schema: add `theme` to `TabTemplate` and `WindowTemplate`
+### 1. Schema: `theme: Option<String>` on `TabTemplate` and `WindowTemplate`
 
 File: `app/src/launch_configs/launch_config.rs`.
 
-- Add `use crate::themes::theme::ThemeKind;` next to the existing
-  `AnsiColorIdentifier` import on line 7.
-- Add a new field to `TabTemplate` (lines 180–187):
+Add a new field to both structs:
 
-  ```rust
-  #[serde(skip_serializing_if = "Option::is_none", default)]
-  pub theme: Option<ThemeKind>,
-  ```
+```rust
+#[serde(skip_serializing_if = "Option::is_none", default)]
+pub theme: Option<String>,
+```
 
-- Add the same field to `WindowTemplate` (lines 36–41) so a launch
-  configuration can theme an entire window without repeating the value on
-  every tab. Window-level inheritance is resolved at open time
-  (`workspace/view.rs`, step 3 below); the runtime never needs to consult
-  `WindowTemplate` after that.
-- Update `impl TryFrom<TabSnapshot> for TabTemplate` (lines 189–200) to copy
-  the override out of the snapshot. This keeps "save layout as launch
-  configuration" round-tripping symmetric, satisfying behavior #10 of
-  `product.md`.
-- Update `impl From<WindowSnapshot> for WindowTemplate` (lines 43–70) to
-  emit the window-level `theme` when every tab in the window has the same
-  explicit override (the coalescing rule in behavior #10). When emitted at
-  the window level the per-tab fields are dropped; otherwise per-tab
-  fields are emitted and the window field is `None`.
+The field is `Option<String>` rather than `Option<ThemeKind>` for two
+reasons that directly address Oz's first-pass concerns:
 
-`ThemeKind` already derives `Serialize` and `Deserialize`, so YAML support
-comes for free. Round-trip and serde tests live in
+- **Serde-compat (Oz concern 1).** `ThemeKind` derives `Deserialize`,
+  but its accepted string form (variant names / snake-case) is not
+  guaranteed to match the human-readable display strings the product
+  spec promises (`"Dark City"`, `"Solarized Dark"`). Going through
+  `String` decouples the YAML surface from the enum's internal
+  representation.
+- **Field-level fallback (Oz concern 2).** A direct `ThemeKind`
+  deserialization on an unknown string would fail the entire YAML load
+  and reject every tab in the file. With `Option<String>` the load
+  always succeeds; resolution and fallback happen at apply time per the
+  product spec's behavior #11.
+
+The `From<WindowSnapshot> for WindowTemplate` (lines 43–70) and
+`TryFrom<TabSnapshot> for TabTemplate` (lines 189–200) impls are updated
+to copy *manual* overrides out of the snapshot. Directory-matched
+overrides are not emitted into saved launch configurations (per product
+spec behavior #10).
+
+Round-trip and serde tests live in
 `launch_configs/launch_config_tests.rs` (referenced by the `#[path]`
-attribute on line 11) and gain coverage in step 5 below.
+attribute on line 11) and gain coverage in §6.
 
-### 2. Persisted state: add `theme_override` to `TabSnapshot`
+### 2. Theme-name resolver
 
-File: `app/src/app_state.rs`.
+A new helper, alongside `ThemeKind` in `app/src/themes/theme.rs`:
 
-- Add `pub theme_override: Option<ThemeKind>` to `TabSnapshot` (lines 61–69).
-  Place it next to `selected_color` so the "what's been overridden on this
-  tab" fields stay grouped.
-- Mirror this in the runtime tab type (`app/src/tab.rs`, `TabData` around
-  line 134, alongside the existing `selected_color` field).
-- Wire snapshot ↔ runtime conversion. The codebase has bidirectional
-  conversions between `TabSnapshot` and the runtime tab; both directions
-  copy the new field unchanged.
-- `WindowSnapshot` does **not** gain a theme field. Window-level themes are a
-  pure launch-configuration convenience: at open time we expand them into
-  per-tab overrides (step 3) and never persist the window-level form. This
-  keeps session restore unambiguous — every tab's effective override is
-  stored on the tab itself.
+```rust
+/// Resolve a free-form theme reference (from a launch configuration or
+/// from `directory_overrides`) to a `ThemeKind`.
+///
+/// Accepts:
+///   * Display strings: "Dark City", "Solarized Dark", "Dracula"
+///   * Snake-case strings: "dark_city", "solarized_dark", "dracula"
+///   * Custom theme names registered via the theme loader
+///
+/// Matching is case-insensitive on whitespace-stripped input.
+/// Returns `None` for unknown names; callers log a warning and fall
+/// through to the next resolution layer.
+pub fn resolve_theme_ref(raw: &str) -> Option<ThemeKind> { ... }
+```
 
-### 3. Apply on open: window/tab template → runtime tab
+Implementation:
 
-File: `app/src/workspace/view.rs`, the `for_each` block at lines 3506–3520
-that already applies `tab_template.color`.
+1. Trim and case-fold the input.
+2. Walk built-in `ThemeKind` variants; return the first whose `Display`
+   string or snake-case form matches.
+3. Consult the custom-theme registry the existing loader maintains
+   (the same registry that powers the theme picker).
+4. Return `None` on no match.
 
-- After the existing `selected_color` assignment (lines 3517–3519), assign
-  `theme_override`:
+This satisfies Oz concerns 1 and 2 by making YAML-format coupling
+explicit and keeping unknown-theme handling field-level.
 
-  ```rust
-  let resolved_theme = tab_template
-      .theme
-      .clone()
-      .or_else(|| window.theme.clone());
-  self.tabs[start_index + tab_index].theme_override = resolved_theme;
-  ```
+### 3. `ThemeOverride` source enum on `TabSnapshot` and `TabData`
 
-  This implements behavior #2 of `product.md` — tab-level wins, window-level
-  is the fallback. It also closes over `window` exactly the way
-  `tab_template` already does.
-- No other code path in this function changes. Tabs without `theme` (and
-  without a window-level value) get `theme_override = None`, which is
-  identical to the pre-feature behavior.
+File: `app/src/app_state.rs` and `app/src/tab.rs`.
 
-### 4. Renderer: theme resolution in `Appearance` lookup
+Add a new type:
 
-This is the architecturally interesting step. Two options were considered:
+```rust
+/// The source of a tab's theme override. The enum exists so "Reset
+/// theme" can clear a manual override without also dismissing a
+/// directory match that the tab would otherwise still receive.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ThemeOverride {
+    /// Set explicitly: launch-configuration tab-level `theme:`,
+    /// "Pin theme" menu, or saved-and-restored manual pin.
+    Manual(ThemeKind),
+    /// Set automatically by `directory_overrides` matching against the
+    /// focused pane's cwd. Not persisted across sessions; recomputed on
+    /// startup from the current settings + cwd.
+    Cwd(ThemeKind),
+}
+```
 
-**Option A — Resolved-theme accessor on `Appearance`**: extend `Appearance`
-with `pub fn theme_for_tab(&self, override: Option<&ThemeKind>) -> &WarpTheme`
-that returns the override's resolved theme when `Some`, or
-`self.theme()` when `None`. Every consumer that reads the active theme is
-updated to call `theme_for_tab(active_tab.theme_override.as_ref())`.
+Add `pub theme_override: Option<ThemeOverride>` to:
 
-**Option B — Per-tab `Appearance` instances**: clone `Appearance` per
-overridden tab and swap which one is consulted on tab activation.
+- `TabSnapshot` (`app_state.rs:61–69`), placed next to `selected_color`.
+- `TabData` (`tab.rs:134`), same.
 
-Option A is recommended. It localizes the change (one new method on
-`Appearance`, one new lookup point per consumer), keeps font / icon /
-non-theme appearance state shared (those are still global today), and fits
-the existing "Appearance is one global thing, but the value it returns can
-depend on context" pattern that already governs system-light/dark resolution.
-Option B duplicates state, complicates change propagation
-(`AppearanceManager`'s subscription would have to fan out to every
-overridden tab), and tempts later code into per-tab font or icon overrides
-that this spec explicitly does not promise.
+Snapshot ↔ runtime conversion copies the field unchanged. Session
+serialization persists only `Manual(_)` overrides; `Cwd(_)` overrides are
+re-derived on startup (per product spec behavior #13).
 
-Concretely:
+`WindowSnapshot` does not gain a theme field — window-level launch-config
+theme is expanded to per-tab `Manual` overrides at open time and not
+persisted at the window level.
 
-- Add `pub fn theme_for(&self, override: Option<&ThemeKind>) -> &WarpTheme`
-  to `warp_core::ui::appearance::Appearance` (the canonical type re-exported
-  from `app/src/appearance.rs:34`). When `override` is `Some`, look the theme
-  up via the same loader the global theme already uses; when `None`, return
-  the existing `self.theme()`. Loader fallbacks (unknown theme name,
-  missing custom theme file) reuse the existing global-theme fallback path,
-  satisfying behaviors #11 and #12 of `product.md`.
-- Update the terminal cell renderer (`app/src/terminal/view.rs` and
-  `app/src/terminal/color.rs`, the consumers identified in the codebase
-  map) to consult `theme_for(tab.theme_override.as_ref())` rather than the
-  global `Appearance::theme`. The exact call sites will be enumerated when
-  the implementation PR is opened — they all flow through the existing
-  `Appearance::as_ref(ctx).theme()` lookup, so the change is a mechanical
-  swap with the new accessor at each site.
-- Window chrome (title bar, sidebar, settings views, tab strip) continues to
-  consult `Appearance::theme()` directly with no override argument,
-  satisfying behavior #4 of `product.md`.
+### 4. Directory-pattern overrides settings group
 
-### 5. Right-click menu: "Reset theme"
+A new settings group, defined in a new file
+`app/src/settings/directory_overrides.rs` and exported from
+`app/src/settings/mod.rs`:
 
-The existing tab context menu already exposes per-tab attributes. Add a
-"Reset theme" entry that:
+```rust
+define_settings_group!(DirectoryThemeOverrides, settings: [
+    overrides: Map {
+        // Stored as TOML table: keys = directory paths, values = theme refs.
+        type: BTreeMap<String, String>,
+        default: BTreeMap::new(),
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "appearance.themes.directory_overrides",
+        max_table_depth: 1,
+        description: "Map of directory paths to theme names. The active \
+                      pane's cwd is matched against keys (longest prefix \
+                      wins); the matched theme overrides the global theme \
+                      for that tab.",
+    },
+]);
+```
 
-- Is shown only when the active tab's `theme_override` is `Some`.
-- On click, sets `theme_override` to `None` on the tab and triggers the
-  renderer's existing theme-changed redraw path (the one used today when the
-  global theme changes).
+Resolution helper, alongside the group:
 
-This menu entry is the only in-app surface for clearing an override; setting
-overrides remains the launch-configuration file's job per `product.md`.
-Telemetry: emit a single counter on click using the existing tab-menu
-telemetry conventions; no new event schema is required.
+```rust
+/// Returns the theme to use for `cwd`, walking the directory-overrides
+/// map by longest-prefix match. Returns `None` when no key matches.
+/// Tilde expansion and trailing-slash normalization happen here.
+pub fn directory_theme_for(
+    overrides: &BTreeMap<String, String>,
+    cwd: &Path,
+) -> Option<ThemeKind> { ... }
+```
+
+Match semantics (per product spec #2, #3):
+
+- Keys are tilde-expanded once at evaluation time.
+- A key matches a cwd if it is a prefix at a path-component boundary
+  (use `Path::starts_with` after normalization, not `str::starts_with`).
+- The longest matching key wins.
+- Each value is resolved via `resolve_theme_ref`; unresolved values are
+  skipped and a warning is logged once at settings-change time, not
+  per-match.
+
+Matching is invoked from two places:
+
+- **Tab creation** — when a tab is added (from a launch configuration or
+  from "new tab"), if the tab has no `Manual` override the focused
+  pane's cwd is matched. On hit, the tab's `theme_override` is set to
+  `Cwd(...)`.
+- **Cwd-change events** — the existing pane-cwd tracker emits a
+  "focused pane cwd changed" event used for tab title updates. Add a
+  subscriber that re-runs directory matching for the affected tab when
+  the new cwd differs from the previous match key. The runtime tab
+  retains the last-matched key so re-matching is `O(1)` in the no-change
+  case.
+
+### 5. Renderer: `Appearance` gains a theme catalog
+
+This addresses Oz concern 3 (`Appearance::theme_for` cannot return
+`&WarpTheme` for arbitrary overrides because `Appearance` only owns the
+global `WarpTheme` today).
+
+`Appearance` is extended in `warp_core::ui::appearance`:
+
+```rust
+pub struct Appearance {
+    // existing fields...
+
+    /// Currently-active global theme. Always present in the catalog
+    /// below, but tracked separately so `theme()` is O(1).
+    global_theme: Arc<WarpTheme>,
+
+    /// Lazy cache of all themes referenced by per-tab overrides.
+    /// Keyed by `ThemeKind` so custom themes get their own entries.
+    /// Wrapped in `RwLock` because lookup is on the hot rendering path
+    /// while population happens on the (much rarer) settings-change path.
+    theme_cache: parking_lot::RwLock<HashMap<ThemeKind, Arc<WarpTheme>>>,
+}
+
+impl Appearance {
+    /// Active global theme. Unchanged contract.
+    pub fn theme(&self) -> Arc<WarpTheme> {
+        self.global_theme.clone()
+    }
+
+    /// Per-tab theme lookup. `override` is taken straight from
+    /// `TabData::theme_override.as_ref().map(ThemeOverride::kind)`.
+    /// Returns the global theme when `override` is `None`.
+    pub fn theme_for(&self, override_kind: Option<&ThemeKind>) -> Arc<WarpTheme> {
+        match override_kind {
+            None => self.global_theme.clone(),
+            Some(kind) if *kind == self.global_theme.kind() => {
+                self.global_theme.clone()
+            }
+            Some(kind) => {
+                if let Some(t) = self.theme_cache.read().get(kind).cloned() {
+                    return t;
+                }
+                self.load_and_cache(kind)
+            }
+        }
+    }
+
+    fn load_and_cache(&self, kind: &ThemeKind) -> Arc<WarpTheme> {
+        // Load via the same path the global theme loader uses.
+        // On failure, log warning and return self.global_theme.clone()
+        // (callers see a fall-through to global theme; per behavior #11).
+    }
+}
+```
+
+Cache-invalidation rules:
+
+- `AppearanceManager` already subscribes to `ThemeSettings` change events
+  (`app/src/appearance.rs:51`). On every change it (a) updates
+  `global_theme` and (b) calls a new `theme_cache.clear()` so any
+  previously-cached entries are reloaded next time they are looked up.
+  The hit-rate cost is bounded by the number of distinct overridden
+  themes open at once (typically ≤ 5).
+- Custom-theme file changes (which already invalidate the global theme
+  via the existing watcher) trigger the same cache clear.
+
+Renderer call-site update: every place that today reads
+`Appearance::as_ref(ctx).theme()` and is **inside a tab's render path**
+becomes `Appearance::as_ref(ctx).theme_for(tab.theme_override.as_ref().map(ThemeOverride::kind))`.
+The exact list of call sites (terminal cell renderer in
+`app/src/terminal/view.rs`, color derivation in
+`app/src/terminal/color.rs`, any block-styling consumers) is enumerated
+during implementation; the change is mechanical at each site.
+
+Window-chrome consumers (title bar, sidebar, settings views, tab strip)
+continue to call `Appearance::theme()` with no override argument, per
+product spec #15.
+
+### 6. Right-click menu: Pin theme / Reset theme
+
+The existing tab context menu gains two entries:
+
+- **Pin theme...** — opens a submenu listing built-in themes plus any
+  loaded custom themes (the same list the theme picker shows). On
+  click, sets the tab's `theme_override` to `Manual(chosen)`. Always
+  visible.
+- **Reset theme** — clears any `Manual(_)` override on the tab; if the
+  focused pane's cwd matches a `directory_overrides` key the override
+  is set to `Cwd(_)` immediately, otherwise it becomes `None`. Visible
+  only when the tab has a `Manual` override.
+
+Both entries trigger the existing theme-changed redraw path used today
+when the global theme changes (no new render-invalidation work).
+
+Telemetry: one counter per click, using the existing tab-menu telemetry
+conventions. No new event schema.
 
 ## Testing and validation
 
 ### Unit tests
 
-- `app/src/launch_configs/launch_config_tests.rs`:
-  - YAML round-trip for `TabTemplate` with `theme: "Solarized Dark"`.
-  - YAML round-trip for `TabTemplate` with `theme: { custom: { … } }` to
-    cover the `Custom` variant.
-  - Round-trip for `WindowTemplate.theme` set with all tabs un-themed,
-    asserting tabs inherit the window value at open time.
-  - Round-trip for a launch configuration mixing some themed tabs and some
-    un-themed tabs in the same window.
-  - Negative test: an unknown theme string deserializes successfully into
-    `Some(ThemeKind::…)`-fallback or surfaces a deserialization error that
-    the launch-config loader catches and converts to a logged warning. The
-    behavior here matches whatever path `ThemeKind` already uses for
-    `appearance.themes.theme`; the test pins it.
+`app/src/themes/theme.rs` (or sibling test module):
 
-- `app/src/app_state.rs` (or its test module):
-  - `TabSnapshot` with `theme_override: Some(ThemeKind::Dracula)` round-trips
-    through whatever serializer session-restore uses.
-  - `TabSnapshot::color()` continues to return the same value with and
-    without `theme_override` set (the indicator color and the theme override
-    are independent — behavior #7 of `product.md`).
+- `resolve_theme_ref("Dark City")` → `Some(ThemeKind::DarkCity)`.
+- `resolve_theme_ref("dark_city")` → `Some(ThemeKind::DarkCity)`.
+- `resolve_theme_ref("  DARK CITY  ")` → `Some(ThemeKind::DarkCity)`
+  (case-insensitive, whitespace-tolerant).
+- `resolve_theme_ref("My Custom Theme")` → `Some(ThemeKind::Custom(...))`
+  when registered; `None` otherwise.
+- `resolve_theme_ref("Definitely Not A Theme")` → `None`.
 
-- `app/src/themes/theme.rs` or `app/src/appearance.rs`:
-  - `Appearance::theme_for(None)` returns the same reference as
-    `Appearance::theme()`.
-  - `Appearance::theme_for(Some(&ThemeKind::Light))` resolves to the Light
-    theme regardless of the global setting.
-  - `Appearance::theme_for(Some(&ThemeKind::Custom(missing)))` returns the
-    global theme (fallback path) and increments whatever warning counter the
-    global custom-theme loader uses today.
+`app/src/launch_configs/launch_config_tests.rs`:
+
+- YAML round-trip of `TabTemplate { theme: Some("Solarized Dark") }`.
+- A YAML file with one valid and one unknown `theme:` value loads
+  successfully; resolution applied at apply time, only the unknown tab
+  falls through, the file is **not** rejected.
+- `WindowTemplate.theme` set with all tabs un-themed: round-trip
+  preserves the window-level value.
+- Saving a snapshot whose tabs have only `Cwd(_)` overrides emits no
+  `theme:` fields in the resulting YAML.
+
+`app/src/settings/directory_overrides.rs` (new):
+
+- `directory_theme_for(map, "~/Work/medone/apps/admin-api")` returns
+  the theme mapped to `"~/Work/medone"`.
+- `directory_theme_for(map, "~/Work/medone-archive")` returns `None`
+  when only `"~/Work/medone"` is mapped (component-boundary match).
+- Two overlapping keys `"~/Work"` and `"~/Work/medone"`: longer wins
+  for paths under `medone`, shorter wins elsewhere under `~/Work`.
+- Unresolved theme value: that entry is skipped, `directory_theme_for`
+  on a path that would have matched it returns `None` (or the next
+  match), and one warning is logged.
+
+`app/src/app_state.rs` (or test module):
+
+- `TabSnapshot { theme_override: Some(Manual(Dracula)) }` round-trips
+  through session-restore serialization.
+- `TabSnapshot { theme_override: Some(Cwd(Dracula)) }` does **not**
+  persist — the Cwd variant is re-derived on startup from current
+  settings + cwd. (This pins behavior #13.)
+- `TabSnapshot::color()` returns the same value with and without
+  `theme_override` set (color and theme are independent — #19).
+
+`app/src/appearance.rs` (or `warp_core` tests):
+
+- `Appearance::theme_for(None)` returns the same `Arc` as
+  `Appearance::theme()`.
+- `Appearance::theme_for(Some(&ThemeKind::Light))` returns a `WarpTheme`
+  whose kind is `Light` regardless of the active global theme.
+- `Appearance::theme_for(Some(&ThemeKind::Custom(missing)))` falls back
+  to the global theme and increments the existing missing-custom-theme
+  warning counter.
+- After `ThemeSettings` changes, the cache is cleared: a subsequent
+  `theme_for(Some(&kind))` reloads from disk rather than returning
+  stale custom-theme content.
 
 ### Integration tests
 
-`crates/integration/` is the home for user-flow tests per `CONTRIBUTING.md`.
-Add coverage for:
+`crates/integration/`:
 
-- Open a launch configuration with three tabs — one with `theme: "Dracula"`,
-  one with `theme: "Solarized Light"`, one un-themed. Assert each tab
-  renders with the expected theme and that switching the active tab does not
-  change the rendering of the inactive tabs.
-- Change the global theme via settings while the above launch configuration
-  is open. Assert the un-themed tab redraws to match the new global theme;
-  the two themed tabs do not redraw (behavior #6 of `product.md`).
-- Right-click the Dracula-themed tab → "Reset theme". Assert the tab
-  redraws to match the global theme and that the menu entry disappears.
-- Quit and relaunch with session restore enabled. Assert the Dracula and
-  Solarized Light overrides persist; the previously-reset tab continues to
-  follow the global theme.
+- Open a launch configuration with three tabs — `theme: "Dracula"`,
+  `theme: "Solarized Light"`, no `theme:`. Assert each tab renders the
+  expected theme and that switching tabs does not redraw inactive tabs.
+- Configure `[appearance.themes.directory_overrides]` with two entries.
+  Open one tab in each matched directory and one in an unmatched
+  directory. Assert each tab renders the expected theme. `cd` the
+  unmatched tab into a matched directory; assert the tab redraws with
+  the matched theme. `cd` it back out; assert it redraws with the
+  global theme.
+- Tab with `Manual(Dracula)` from a launch config sits in a directory
+  that maps to `Solarized Dark`. Assert Dracula wins (manual > cwd).
+  Right-click → Reset theme. Assert the tab redraws with Solarized
+  Dark (the cwd match takes over).
+- Edit `directory_overrides` while Warp is running. Assert all tabs
+  whose effective theme changes redraw, others do not.
+- Quit and relaunch. Assert manually-pinned tabs restore their pin;
+  cwd-matched tabs re-derive their theme from current settings + cwd.
+- Unknown theme name in a launch configuration: the file opens,
+  exactly that one tab falls through, the warning appears in the log,
+  other tabs render correctly.
 
 ### Manual verification
 
-- macOS, Linux, Windows: open the test launch configuration above and visually
-  confirm each tab's terminal background and ANSI palette match the chosen
-  theme. Confirm the window chrome and tab strip continue to follow the
-  global theme.
-- Toggle system light/dark: confirm un-themed tabs follow the system, themed
-  tabs do not.
-- Save layout as launch configuration with mixed overrides; reopen the saved
-  YAML and confirm the per-tab `theme:` fields match what was set.
-- Save layout as launch configuration with every tab on the same explicit
-  override; confirm the YAML coalesces to a window-level `theme:` per
-  behavior #10 of `product.md`.
-- Edit a launch configuration's `theme:` value; reopen Warp; confirm
-  already-open tabs from a previous run keep their original override, new
-  tabs from the edited launch configuration get the new value (behavior #13).
+- macOS, Linux, Windows: visually confirm terminal background and ANSI
+  palette match the expected theme for each tab in the test scenarios.
+- Confirm window chrome (title bar, sidebar, tab strip) follows the
+  global theme in all scenarios.
+- Toggle system light/dark while a mix of themed/unthemed tabs is open;
+  confirm only unthemed tabs follow the system.
+- Save layout as launch configuration; confirm tabs with manual pins
+  emit `theme:`, tabs themed only by directory matching do not.
+- After implementation, invoke the `verify-ui-change-in-cloud` skill
+  per the repository rule for user-facing client changes.
 
 ### Tooling
 
 - `cargo fmt` and
   `cargo clippy --workspace --all-targets --all-features --tests -- -D warnings`
-  must pass per `CONTRIBUTING.md` style rules.
-- `cargo nextest run` for unit tests; `crates/integration` for end-to-end.
+  must pass.
+- `cargo nextest run` for unit tests; `crates/integration` for
+  end-to-end.
 - `./script/presubmit` before pushing.
 
 ## Risks and mitigations
 
-- **Risk: rendering pipeline is hotter than expected and an extra
-  `Option<&ThemeKind>` argument shows up in profiling.** Mitigation: the
-  override is a small enum and the `theme_for` lookup is one branch and one
-  `HashMap` hit at most. The existing per-tab indicator color path executes
-  on the same render frame and has not been a bottleneck. If profiling
-  flags it post-merge, cache the resolved `&WarpTheme` on the runtime tab.
+- **Render hot-path cost of the per-tab lookup.** The added work per
+  frame is one `Option` deref, one `Arc` clone in the common case (no
+  override or override == global), or one `RwLock::read` + `HashMap`
+  hit when the override resolves to a non-global cached theme. The
+  existing per-tab indicator color path runs on the same frame and has
+  not been a bottleneck. If profiling flags it post-merge, cache the
+  `Arc<WarpTheme>` directly on `TabData` and invalidate on
+  override-change; the change is local.
 
-- **Risk: subtle visual mismatch where a UI surface today reads from
-  `Appearance::theme()` but logically belongs *inside* a tab (e.g. block
-  output styling) and we miss it during the consumer-update sweep.**
-  Mitigation: the integration tests above visually exercise terminal
-  background, ANSI palette, and block output; the manual verification step
-  walks across the in-tab UI surfaces explicitly. Any miss surfaces as "this
-  bit didn't change theme" rather than as a crash, and is fixable with a
-  follow-up call-site update.
+- **Cache stampedes when the user changes the global theme with many
+  overridden tabs open.** `theme_cache.clear()` followed by lazy
+  reload means each unique overridden theme reloads once. Bounded by
+  open-tab cardinality.
 
-- **Risk: round-trip save/load asymmetry produces a launch configuration that
-  no longer reproduces the user's tabs.** Mitigation: behavior #10 in
-  `product.md` is precise about when `theme:` is emitted at the tab vs.
-  window level, and the launch-configuration round-trip tests pin both
-  directions.
+- **Mismatch between `directory_overrides` keys and how the OS reports
+  paths.** Tilde expansion happens in the resolver; symlinks are not
+  followed (matching whatever the shell's `pwd` reports). This is
+  documented in the product spec; integration tests cover the common
+  cases.
 
-- **Risk: an unknown theme string in a launch configuration shipped between
-  Warp versions silently downgrades a user's tab.** Mitigation: behavior #11
-  of `product.md` mandates a logged warning identifying the offending
-  launch configuration, tab, and theme name. The fallback is the same
-  one global-theme uses today, so the tab still opens.
+- **`Cwd(_)` override mistakenly persists across sessions.** Session
+  serialization explicitly emits only `Manual(_)`; the integration test
+  for restart behavior pins this.
 
-- **Risk: persisted `theme_override` collides with a future per-window or
-  per-pane theme feature.** Mitigation: the field is named
-  `theme_override` (not `theme`) precisely to leave room for a separate
-  resolved theme to live elsewhere later. Per-pane theming is explicitly
-  out of scope; per-window theming, if added, would also produce a
-  per-tab override at open time and reuse this same field.
+- **Concern 1 / Concern 2 / Concern 3 from Oz's first review.**
+  Addressed in §1 (Option<String> + apply-time resolver), §2
+  (`resolve_theme_ref` returns `Option<ThemeKind>`), and §5 (theme
+  catalog, `Arc<WarpTheme>` ownership) respectively. Each concern has
+  a corresponding unit test above.
+
+- **Per-pane theme creep.** The override field lives on the tab, not
+  the pane, and the resolver consults the focused pane's cwd. A future
+  per-pane theming feature would need its own data path; this spec
+  does not lock that out but does not pre-pay for it either.
+
+- **Persistence schema collision with future per-window theming.** The
+  field is named `theme_override` (not `theme`) so a separate resolved
+  theme can live elsewhere if added later.
 
 ## Follow-ups (deliberately not in this PR)
 
-Tracked separately so that this spec stays scoped:
-
-- **Auto-theme by SSH host or hostname** (raised by `stevenchanin`,
-  `pyronaur`, `zethon`, `janderegg` in `#478`). Requires a detection layer
-  that observes process state inside the tab. Would consume the
-  `theme_override` field this spec adds.
-- **Auto-theme by cwd** (`pyronaur`). Same shape as the SSH case; consumes
-  the field.
-- **Runtime escape-code or shell-hook protocol for setting a tab's theme**
-  (raised by `yatharth` for Claude Code session signaling). Defines a wire
-  format and a security model; consumes the field.
-- **In-app per-tab theme picker submenu in the right-click menu** (open
-  question in `product.md`). Strictly additive to this spec.
-- **Wallpaper-per-tab** (`scottaw66`, `SheepDomination`). Different surface
-  area entirely (asset loading, layering); does not conflict with this
-  spec.
-- **Closing `#2618` as a duplicate** of `#478` once this spec lands.
+- **Glob pattern support in `directory_overrides`** (open question in
+  product.md) — extends key matching from prefix to glob.
+- **Auto-theme by SSH host or hostname** (`stevenchanin`, `pyronaur`,
+  `zethon`, `janderegg` in #478). Requires detection inside the tab's
+  shell; consumes the `Manual` / new `Ssh` variant of `ThemeOverride`.
+- **Runtime escape-code or shell-hook protocol for setting a tab's
+  theme** (`yatharth`, for Claude-Code session signaling). Defines a
+  wire format and a security model; consumes the override field.
+- **In-tab "Pin theme" command in the command palette** (so users can
+  pin without right-clicking). Strictly additive.
+- **Wallpaper-per-tab** (`scottaw66`, `SheepDomination`). Different
+  surface area entirely; does not conflict.
+- **Closing #2618 as a duplicate** of #478 once this spec lands.

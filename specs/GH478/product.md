@@ -1,28 +1,39 @@
-# PRODUCT.md — Per-tab theme override via launch configurations
+# PRODUCT.md — Per-tab theme overrides driven by directory and launch configurations
 
 Issue: https://github.com/warpdotdev/warp/issues/478
 Related: https://github.com/warpdotdev/warp/issues/2618 (set warp theme in launch configuration)
 
 ## Summary
 
-Today the Warp theme is a single global value (`appearance.themes.theme` in
-`settings.toml`). Switching themes affects every open window and tab at once.
-Users who keep many tabs open across distinct contexts — different projects,
-local vs. remote machines, production vs. development environments — have asked
-for years (`#478`, 55+ upvotes; `#2618`) for a way to give specific tabs a
-different theme so context is visible at a glance.
+The Warp theme is a single global value today (`appearance.themes.theme` in
+`settings.toml`); switching it affects every open tab at once. Users have asked
+for years (`#478`, 55+ upvotes; `#2618`) for tabs to render with different
+themes when they represent different contexts — different projects, local vs.
+remote machines, production vs. development.
 
-This spec covers a focused first cut of that capability: a tab can carry a
-**theme override** that comes from the launch configuration that opened it (or
-from a tab restored from a previous session). The override scopes the theme to
-that single tab; the global theme setting is unchanged and continues to apply
-to every tab that does not have an override. A window-level default override is
-also defined so a launch configuration can theme all of its tabs at once.
+This spec covers a focused first cut of per-tab theme overrides driven by
+**three** sources, in priority order:
 
-This spec deliberately scopes out automatic theme switching (SSH host
-detection, agent conversation type, escape-code-driven runtime changes). Those
-appear in `#478` discussion and warrant their own product spec once the
-override mechanism this spec defines exists to build on.
+1. A user-visible **manual** override on a tab (set via the launch
+   configuration YAML or via a right-click menu).
+2. A **directory-pattern** auto-match: the user maps directory paths to
+   themes in `settings.toml`, and tabs whose active pane's cwd matches a
+   pattern render with the mapped theme. This is the path most users in the
+   issue thread describe (`pyronaur`, `janderegg`, `milopersic`): "I `cd`
+   into project A, my theme should change."
+3. A **launch-configuration window-level default** that themes every tab a
+   given launch configuration opens unless the tab itself has another
+   override.
+
+The global theme remains the fallback when none of the three sources apply.
+Window chrome (title bar, sidebar, settings views, the tab strip) continues
+to follow the global theme so windows holding mixed-theme tabs remain
+visually coherent at the window level.
+
+This spec deliberately scopes out automatic theming triggered by SSH host,
+hostname, runtime escape codes, or shell hooks. Those appear in `#478`
+discussion and are listed as follow-ups that consume the override field this
+spec introduces.
 
 Figma: none provided.
 
@@ -30,155 +41,225 @@ Figma: none provided.
 
 In-scope surfaces:
 
-- The launch configuration YAML schema (`~/.warp/launch_configurations/*.yaml`)
-  gains an optional theme field at the tab level and at the window level. The
-  values are theme identifiers — the same names users already see in the theme
-  picker (`"Dark"`, `"Solarized Dark"`, `"Dracula"`, `"Dark City"`, etc.) and
-  the same custom-theme references the rest of the theme system already
-  accepts.
-- Tabs opened from a launch configuration that specifies a theme render with
-  that theme: terminal background, foreground, ANSI palette, and any
-  theme-derived UI surfaces inside the tab follow the override.
-- The override persists with the tab so that on restart / session restore the
-  tab continues to render with the same theme without depending on the user
-  re-running the launch configuration.
-- A user can clear a tab-level override (returning the tab to the global theme)
-  through the same right-click tab menu that already exposes per-tab
-  attributes.
+- A new settings map `appearance.themes.directory_overrides` whose keys are
+  directory paths (tilde-expanded) and whose values are theme identifiers.
+  Matching uses longest-prefix-wins.
+- The launch-configuration YAML schema gains an optional `theme:` field at
+  the tab level and at the window level.
+- A persisted per-tab override that survives session restore.
+- A right-click tab menu entry for **Pin theme** (manually override the
+  active tab's theme to a chosen theme) and **Reset theme** (clear a
+  manual override; cwd-pattern matching may then reapply).
 
-Out of scope (explicitly **not** part of this spec):
+Out of scope:
 
-- Automatic theming based on SSH host, hostname, working directory, or
-  `whoami` (raised in `#478` comments). These require separate detection and
-  policy mechanisms and are tracked as follow-ups.
-- A new escape-code or shell-side protocol for setting a tab's theme at
-  runtime (raised in `#478` comments by users wanting hooks to color Claude
-  Code sessions). Once a per-tab override field exists internally a runtime
-  setter is a small follow-up; defining the protocol is its own surface.
-- Per-pane theming. Panes inside a tab continue to share one theme; the
-  override is a tab-level concept.
+- SSH-host-driven, hostname-driven, or `whoami`-driven theming
+  (`stevenchanin`, `pyronaur`, `zethon`, `janderegg`).
+- Escape-code or shell-hook protocols for runtime theme switching
+  (`yatharth`, for Claude-Code session signaling).
+- Per-pane theming. Panes inside a tab continue to share one theme.
+- Per-tab wallpaper or graphics (`scottaw66`, `SheepDomination`).
 - Changes to the global theme storage path
-  (`appearance.themes.theme` in `settings.toml`), the theme picker UI, or
-  custom-theme loading. The override reuses the existing theme identifier type
-  unchanged.
-- Onboarding or settings-page surfacing of the new field. Discoverability lives
-  in the launch configuration docs and the right-click tab menu only.
+  (`appearance.themes.theme`), the theme picker UI, or custom-theme loading.
+  Overrides reuse the existing theme identifier type.
+
+## Resolution order
+
+A tab's effective theme is determined by walking these layers and returning
+the first hit:
+
+1. **Manual override**, if any. Sources: a tab-level `theme:` in a launch
+   configuration; the right-click "Pin theme" menu.
+2. **Directory match**, if any. The active pane's current working directory
+   is matched against `appearance.themes.directory_overrides`; if a key is
+   a prefix of the cwd, the longest such key wins.
+3. **Launch-configuration window-level default**, if the tab was opened from
+   a launch configuration with a window-level `theme:` and no closer
+   override applies.
+4. **Global theme** as derived from `ThemeSettings` and the system theme,
+   exactly as today.
+
+If none of the override sources resolve to a known theme, behavior is
+bit-for-bit identical to today.
 
 ## Behavior
 
-1. A launch configuration YAML file may include a `theme:` field on any tab
-   entry. The accepted value is a theme identifier exactly as it appears in
-   `settings.toml` today (e.g. `theme: "Dark City"`, `theme: "Solarized Dark"`,
-   `theme: "Dracula"`). Custom theme references use the same form the global
-   theme setting accepts. Omitting the field leaves the tab using whatever
-   theme would otherwise apply (per behavior #3).
+### Directory-pattern overrides
 
-2. A launch configuration YAML file may include a `theme:` field on any window
-   entry. When present, every tab in that window with no tab-level `theme:`
-   inherits this window-level value. A tab-level `theme:` always wins over a
-   window-level one.
+1. `settings.toml` accepts a new section
+   `[appearance.themes.directory_overrides]` whose entries map a directory
+   path to a theme identifier. Example:
 
-3. Theme resolution for a tab is, in order: (a) the tab's own override, if
-   any; (b) the window-level override of the window that opened the tab, if
-   any and inherited at open time; (c) the global theme as derived from
-   `ThemeSettings` and the system theme, exactly as today. If none of the
-   override sources apply the tab's behavior is bit-for-bit identical to a
-   tab opened without this feature.
+   ```toml
+   [appearance.themes.directory_overrides]
+   "~/Work/medone"   = "Dark City"
+   "~/Work/bondwise" = "Solarized Dark"
+   "~/Work/checkpt"  = "Dracula"
+   ```
 
-4. When a tab has an override the override applies to: the terminal cell
-   foreground/background, the ANSI 16-color palette used by the terminal grid,
-   and any in-tab UI surfaces whose colors are derived from the active theme
-   (block backgrounds, command output styling, accent colors). The window
-   chrome (title bar, sidebar, settings views, the tab strip itself) continues
-   to follow the global theme so that windows holding mixed-theme tabs remain
-   visually coherent at the window level.
+   Theme values are the same string form accepted by the global
+   `appearance.themes.theme` (the parser tolerates both display names like
+   `"Dark City"` and snake-case like `"dark_city"`; see #14 below).
 
-5. Switching tabs is instant: there is no flash, no progressive paint, and no
-   redraw of unrelated tabs. The previously-active tab's content does not
-   change appearance because of the switch — only the rendering of the
-   newly-active tab reflects its (possibly different) theme. A user
-   alt-tabbing through ten tabs with different overrides sees each tab in its
-   own theme as it becomes active.
+2. Keys are tilde-expanded to absolute paths at match time. Trailing slashes
+   are normalized away. Symlinks are not resolved — the cwd as the shell
+   reports it is what's matched.
 
-6. Changing the global theme (via the theme picker, settings page, or system
-   light/dark switch) updates every tab that does **not** have an override.
-   Tabs with overrides are unaffected by the global change; their rendering
-   stays on the override value.
+3. Match resolution: a key matches if it is a prefix of the active pane's
+   cwd at a path-component boundary. `~/Work/medone` matches both
+   `~/Work/medone` and `~/Work/medone/apps/admin-api`, but does **not**
+   match `~/Work/medone-archive` (no component boundary). When multiple
+   keys match, the longest one wins (most specific).
 
-7. The existing per-tab `color:` field on a tab template (the small colored
-   indicator next to the tab title) is independent of the new `theme:` field.
-   Both can be set on the same tab; both are honored. Neither implies the
-   other.
+4. The cwd evaluated for a tab is the cwd of the **focused pane** in that
+   tab. A tab whose focused pane is in a non-shell context (notebook,
+   settings view, etc.) has no cwd and falls through directory matching.
 
-8. A tab opened with a theme override surfaces a "Reset theme" entry in the
-   right-click tab context menu, alongside the existing per-tab attributes
-   (color, title, etc.). Choosing "Reset theme" clears the tab's override; the
-   tab immediately re-renders using whatever theme falls out of the resolution
-   order in #3 (typically the global theme). The menu entry is hidden for
-   tabs that have no override.
+5. When a tab's active pane changes cwd (because the user ran `cd`, opened
+   a subdirectory, or moved focus to a pane in a different cwd), directory
+   matching re-runs. If the new cwd matches a different key, the tab
+   immediately re-renders with the new theme. If it matches no key, the
+   tab falls through to the next layer in the resolution order.
 
-9. Tab overrides survive session restore. A tab that had an override when the
-   user last quit Warp opens with the same override on relaunch. A tab with
-   no override opens with no override (i.e. it tracks the current global
-   theme).
+6. Adding, editing, or removing entries in `directory_overrides` while
+   Warp is running re-evaluates every open tab. Tabs whose effective theme
+   changes redraw; tabs whose effective theme is unchanged do not.
 
-10. Saving a window's current state to a launch configuration (`File → Save
-    Layout as Launch Configuration` and equivalents) emits `theme:` entries on
-    each tab that has an override. Tabs without overrides emit no `theme:`
-    field. Window-level `theme:` is emitted only when every tab in the window
-    shared the same explicit override at save time, in which case the per-tab
-    fields are coalesced up to the window. (This keeps round-trip save/load
-    clean for the common "themed launch config" case.)
+7. A theme name in `directory_overrides` that does not resolve to a known
+   theme is treated the same way an unknown launch-configuration theme is
+   (#11): a warning is logged identifying the offending key, the entry is
+   skipped for matching purposes, and the rest of the map continues to
+   work.
 
-11. An unknown theme identifier in a launch configuration (e.g. a theme that
-    has been deleted, or a typo) is treated the same way an unknown global
-    theme is treated today: the tab falls back to the global resolved theme,
-    a warning is logged, and opening the launch configuration does not fail.
-    Other tabs in the same launch configuration are unaffected.
+### Launch-configuration overrides
+
+8. A launch configuration YAML may include `theme:` on any tab entry.
+   Accepted values are theme identifiers in the form documented in #14.
+   Omitting the field leaves the tab to fall through the resolution order.
+
+9. A launch configuration YAML may include `theme:` on any window entry.
+   Tabs in that window with no tab-level `theme:` and no directory match
+   inherit this window-level value (per the resolution order: #3 sits
+   below #2).
+
+10. Saving a window's current state to a launch configuration emits
+    `theme:` entries on each tab whose effective theme came from a manual
+    override. Tabs themed only by directory matching emit no `theme:`
+    field — directory matching is config-level, not tab-level, so a saved
+    launch configuration that relies on it stays portable. Window-level
+    `theme:` is emitted only when every tab in the window shared the same
+    explicit manual override at save time.
+
+### YAML / settings format
+
+11. An unknown theme identifier — anywhere it appears — never causes a
+    file-level load failure. The deserializer accepts any string; the
+    resolver runs at apply time and falls back to the next resolution
+    layer for the affected entry only. Other tabs in the same launch
+    configuration, and other entries in the same `directory_overrides`
+    map, are unaffected. Each unknown name produces exactly one logged
+    warning per load.
 
 12. Custom themes referenced by an override behave identically to custom
-    themes used as the global theme — they are loaded from the user's themes
-    directory, fail-soft to the global theme if the file is missing, and
-    obey the same trust/validation rules already in the theme loader.
+    themes used as the global theme — loaded from the user's themes
+    directory, fail-soft to the next layer if the file is missing, same
+    trust/validation rules as the global theme loader.
 
-13. The override persists per-tab, not per-launch-configuration. If a user
-    edits a launch configuration's theme after first opening it, already-open
-    tabs that came from that launch configuration keep their original
-    override; new tabs opened by re-running the launch configuration get the
-    new value. This matches how the existing per-tab `color:` field behaves.
+13. The override persists per-tab through session restore. A tab whose
+    effective theme came from a manual pin keeps that pin on relaunch. A
+    tab whose effective theme came from directory matching is restored
+    with no manual pin; on relaunch its theme is recomputed from the
+    current `directory_overrides` and the restored cwd.
 
-14. Accessibility: the theme override does not change any text content,
-    accessible labels, or focus order. Screen readers continue to report tab
-    titles and contents identically. The "Reset theme" menu entry has the
-    accessible label "Reset theme" and is announced as a menu item.
+14. The accepted form for any theme reference (in
+    `directory_overrides`, in launch-config tab `theme:`, in launch-config
+    window `theme:`) is a single string. Both the human-readable display
+    form (`"Dark City"`, `"Solarized Dark"`, `"Dracula"`) and the
+    snake-case form (`"dark_city"`, `"solarized_dark"`, `"dracula"`) are
+    accepted. Matching is case-insensitive on whitespace-stripped input.
+    Custom themes are referenced by their custom-theme name, same as
+    today's global setting.
 
-15. The feature applies on every supported platform (macOS, Linux, Windows).
-    It is gated behind no feature flag and is on by default once shipped.
+### Rendering scope
+
+15. When a tab has an effective override (from any layer), the override
+    applies to: the terminal cell foreground/background, the ANSI 16-color
+    palette used by the terminal grid, and any in-tab UI surfaces whose
+    colors are derived from the active theme (block backgrounds, command
+    output styling, accent colors). The window chrome (title bar, sidebar,
+    settings views, the tab strip itself) continues to follow the global
+    theme.
+
+16. Switching tabs is instant — no flash, no progressive paint. Only the
+    rendering of the newly-active tab reflects its (possibly different)
+    theme; inactive tabs do not redraw on switch.
+
+17. Changing the global theme updates every tab whose effective theme
+    falls through to the global layer. Tabs with overrides at any
+    higher-priority layer are unaffected.
+
+### User affordances
+
+18. The right-click tab context menu gains two entries, alongside the
+    existing per-tab attributes:
+    - **Pin theme...** — opens a submenu listing available themes.
+      Choosing one sets a manual override on the tab, which wins over
+      directory matching and the global theme. Visible at all times.
+    - **Reset theme** — clears the tab's manual override. Visible only
+      when the tab has a manual override. After reset, the tab falls
+      through to the directory-match / window-default / global layers in
+      that order; if a directory match applies, the tab redraws with the
+      directory-matched theme.
+
+19. The existing per-tab `color:` field on a tab template (the small
+    colored indicator next to the tab title) is independent of the new
+    theme override. Both can be set; both are honored.
+
+20. The feature applies on every supported platform (macOS, Linux,
+    Windows). It is gated behind no feature flag and is on by default once
+    shipped. An empty `directory_overrides` map (the default) plus no
+    launch-config theme fields plus no pinned themes is bit-for-bit
+    identical to current behavior.
+
+### Accessibility
+
+21. The override does not change any text content, accessible labels, or
+    focus order. Screen readers continue to report tab titles and
+    contents identically. The new menu entries have accessible labels
+    "Pin theme" (with a submenu) and "Reset theme".
 
 ## User-visible failure modes
 
-- **Unknown theme name in YAML** — tab opens with the global theme; a one-line
-  warning is written to the Warp log identifying the launch configuration
-  filename, the tab title (or index, if untitled), and the unrecognized theme
-  string. The launch configuration as a whole still opens.
-- **Custom theme file missing** — same fallback as the global theme exhibits
-  today: tab opens with the global theme, warning logged.
-- **Window-level theme set, tab-level not set, tab opens with override
-  inherited; user later edits the YAML to remove the window-level value** —
-  already-open tabs keep their existing override (per #13). New tabs opened
-  from the edited launch configuration get no override.
+- **Unknown theme name** — anywhere it appears, the entry is skipped at
+  apply time, a one-line warning is written to the Warp log identifying
+  the source (launch configuration filename + tab title or index;
+  `directory_overrides` key), and the rest of the configuration loads
+  normally.
+- **Custom theme file missing** — same fallback the global theme uses
+  today: tab opens with the next-layer theme, warning logged.
+- **Two `directory_overrides` keys are equivalent after tilde expansion**
+  — last-write-wins per TOML semantics; a warning is logged identifying
+  the duplicate.
+- **A pane's cwd is unavailable** (non-shell pane content) — that pane
+  contributes no cwd to directory matching; if it is the focused pane the
+  tab falls through to the window/global layers.
 
 ## Open questions
 
-- Should the right-click "Reset theme" entry also offer a submenu of theme
-  names so a user can change a tab's override without editing YAML? This spec
-  takes the more conservative position of "reset only" so the launch
-  configuration file remains the single source of truth for setting overrides;
-  a richer in-app picker is a candidate follow-up.
-- Should saving a launch configuration record the *resolved* theme of each
-  tab, or only the explicit override the tab carries? This spec records only
-  explicit overrides (#10) so a saved launch configuration that contains no
-  `theme:` fields continues to track the global theme on every machine it is
-  loaded on. The alternative (record resolved theme always) would lock the
-  saved configuration to a snapshot of the user's current global theme, which
-  is rarely the desired behavior for a portable launch configuration.
+- Should `directory_overrides` keys support glob patterns (`~/Work/*`)?
+  This spec proposes prefix-matching only because that covers the
+  most-requested use case ("a folder of projects, each in a subfolder")
+  and avoids the edge cases of glob semantics on Windows paths. Globs are
+  a candidate follow-up.
+- Should "Reset theme" also clear a launch-config-set manual override
+  (#18 says it does)? An alternative is "Reset theme" only clears
+  pin-from-menu overrides and a separate "Forget launch config theme"
+  entry handles YAML-set overrides. This spec takes the simpler
+  one-entry-clears-all-manual position and lists the alternative as a
+  follow-up.
+- Should saving a launch configuration emit `directory_overrides`
+  entries (so themes travel with the launch config)? This spec keeps the
+  two surfaces independent: launch configs carry only manual overrides;
+  directory matching is a settings-level concept that does not roundtrip
+  through saved launch configs. A future "shareable theme bundle" feature
+  could compose them.
