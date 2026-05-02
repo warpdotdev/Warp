@@ -8314,11 +8314,13 @@ impl Workspace {
             );
         }
 
-        items.push(
-            MenuItemFields::new("Invite a friend")
-                .with_on_select_action(WorkspaceAction::ShowReferralSettingsPage)
-                .into_item(),
-        );
+        if !crate::local_ai::auth_bypass_enabled() {
+            items.push(
+                MenuItemFields::new("Invite a friend")
+                    .with_on_select_action(WorkspaceAction::ShowReferralSettingsPage)
+                    .into_item(),
+            );
+        }
 
         if !self.auth_state.is_anonymous_or_logged_out() {
             items.push(
@@ -20003,7 +20005,9 @@ impl TypedActionView for Workspace {
                 ctx.open_url(&upgrade_url);
             }
             ShowReferralSettingsPage => {
-                self.show_settings_with_section(Some(SettingsSection::Referrals), ctx);
+                if !crate::local_ai::auth_bypass_enabled() {
+                    self.show_settings_with_section(Some(SettingsSection::Referrals), ctx);
+                }
             }
             JoinSlack => self.join_slack(ctx),
             ViewUserDocs => self.view_user_docs(ctx),

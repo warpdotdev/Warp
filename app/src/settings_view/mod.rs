@@ -1208,12 +1208,16 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Warpify),
-            SettingsNavItem::Page(SettingsSection::Referrals),
+        ];
+        if !crate::local_ai::auth_bypass_enabled() {
+            nav_items.push(SettingsNavItem::Page(SettingsSection::Referrals));
+        }
+        nav_items.extend([
             SettingsNavItem::Page(SettingsSection::SharedBlocks),
             SettingsNavItem::Page(SettingsSection::WarpDrive),
             SettingsNavItem::Page(SettingsSection::Privacy),
             SettingsNavItem::Page(SettingsSection::About),
-        ];
+        ]);
 
         // Resolve the initial page: map internal backing-page sections to their default subpage.
         let initial_page = match page {
