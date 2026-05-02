@@ -1203,17 +1203,18 @@ impl SettingsView {
                     SettingsSection::OzCloudAPIKeys,
                 ],
             )),
-            SettingsNavItem::Page(SettingsSection::Teams),
             SettingsNavItem::Page(SettingsSection::Appearance),
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Warpify),
         ];
         if !crate::local_ai::auth_bypass_enabled() {
+            // Teams, Referrals, and Shared blocks are cloud-only; hide them under auth-bypass mode.
+            nav_items.push(SettingsNavItem::Page(SettingsSection::Teams));
             nav_items.push(SettingsNavItem::Page(SettingsSection::Referrals));
+            nav_items.push(SettingsNavItem::Page(SettingsSection::SharedBlocks));
         }
         nav_items.extend([
-            SettingsNavItem::Page(SettingsSection::SharedBlocks),
             SettingsNavItem::Page(SettingsSection::WarpDrive),
             SettingsNavItem::Page(SettingsSection::Privacy),
             SettingsNavItem::Page(SettingsSection::About),

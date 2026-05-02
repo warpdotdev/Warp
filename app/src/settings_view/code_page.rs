@@ -860,33 +860,37 @@ impl SettingsWidget for CodePageWidget {
     ) -> Box<dyn Element> {
         let mut content = Flex::column();
 
+        let bypass = crate::local_ai::auth_bypass_enabled();
         let global_ai_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
 
         // Main "Code" header
         content.add_child(self.render_code_header(appearance));
 
-        // Initialization Settings section
-        content.add_child(render_separator(appearance));
-        content.add_child(self.render_initialization_settings_header(appearance));
-        content.add_child(self.render_codebase_indexing_toggle_row(
-            global_ai_enabled,
-            appearance,
-            app,
-        ));
-        content.add_child(self.render_settings_subtext(
-            global_ai_enabled,
-            CODEBASE_INDEX_DESCRIPTION,
-            appearance,
-        ));
-        content.add_child(self.render_settings_subtext(
-            global_ai_enabled,
-            WARP_INDEXING_IGNORE_DESCRIPTION,
-            appearance,
-        ));
+        // Cloud codebase-indexing section - hidden under bypass (indexer is disabled, UI is misleading)
+        if !bypass {
+            content.add_child(render_separator(appearance));
+            content.add_child(self.render_initialization_settings_header(appearance));
+            content.add_child(self.render_codebase_indexing_toggle_row(
+                global_ai_enabled,
+                appearance,
+                app,
+            ));
+            content.add_child(self.render_settings_subtext(
+                global_ai_enabled,
+                CODEBASE_INDEX_DESCRIPTION,
+                appearance,
+            ));
+            content.add_child(self.render_settings_subtext(
+                global_ai_enabled,
+                WARP_INDEXING_IGNORE_DESCRIPTION,
+                appearance,
+            ));
 
-        let codebase_context_enabled = UserWorkspaces::as_ref(app).is_codebase_context_enabled(app);
-        if global_ai_enabled && codebase_context_enabled {
-            content.add_children(self.render_autoindexing_rows(appearance, app));
+            let codebase_context_enabled =
+                UserWorkspaces::as_ref(app).is_codebase_context_enabled(app);
+            if global_ai_enabled && codebase_context_enabled {
+                content.add_children(self.render_autoindexing_rows(appearance, app));
+            }
         }
 
         // Initialized / indexed folders section
@@ -1147,51 +1151,57 @@ impl CodePageWidget {
             open_project_rules: open_project_rules_mouse_states,
         } = mouse_states;
 
+        let bypass = crate::local_ai::auth_bypass_enabled();
         let mut content = Flex::column();
 
-        // Section header with "Index folder" button
-        content.add_child(
-            Container::new(
-                Flex::row()
-                    .with_main_axis_size(MainAxisSize::Max)
-                    .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(
-                        ui_builder
-                            .span("Initialized / indexed folders")
-                            .with_style(UiComponentStyles {
-                                font_size: Some(16.0),
-                                font_weight: Some(Weight::Semibold),
-                                font_color: Some(theme.active_ui_text_color().into()),
-                                ..Default::default()
-                            })
-                            .build()
-                            .finish(),
-                    )
-                    .with_child(ChildView::new(&self.manual_add_directory_button).finish())
-                    .finish(),
-            )
-            .with_margin_top(8.)
-            .with_margin_bottom(12.)
-            .finish(),
-        );
+        // Under bypass the cloud indexer is disabled, so hide the "Initialized / indexed folders"
+        // header and "Index new folder" button. The LSP servers subsection is still rendered below.
+        if !bypass {
+            content.add_child(
+                Container::new(
+                    Flex::row()
+                        .with_main_axis_size(MainAxisSize::Max)
+                        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                        .with_child(
+                            ui_builder
+                                .span("Initialized / indexed folders")
+                                .with_style(UiComponentStyles {
+                                    font_size: Some(16.0),
+                                    font_weight: Some(Weight::Semibold),
+                                    font_color: Some(theme.active_ui_text_color().into()),
+                                    ..Default::default()
+                                })
+                                .build()
+                                .finish(),
+                        )
+                        .with_child(ChildView::new(&self.manual_add_directory_button).finish())
+                        .finish(),
+                )
+                .with_margin_top(8.)
+                .with_margin_bottom(12.)
+                .finish(),
+            );
+        }
 
         // Get workspaces from PersistedWorkspace
         let workspaces: Vec<WorkspaceMetadata> =
             PersistedWorkspace::as_ref(app).workspaces().collect();
 
         if workspaces.is_empty() {
-            content.add_child(
-                Container::new(
-                    appearance
-                        .ui_builder()
-                        .paragraph("No folders have been initialized yet.")
-                        .build()
-                        .finish(),
-                )
-                .with_margin_bottom(MAIN_SECTION_MARGIN)
-                .finish(),
-            );
+            if !bypass {
+                content.add_child(
+                    Container::new(
+                        appearance
+                            .ui_builder()
+                            .paragraph("No folders have been initialized yet.")
+                            .build()
+                            .finish(),
+                    )
+                    .with_margin_bottom(MAIN_SECTION_MARGIN)
+                    .finish(),
+                );
+            }
             return content.finish();
         }
 
@@ -1224,8 +1234,13 @@ impl CodePageWidget {
                 .cloned()
                 .unwrap_or_default();
 
-            // Skip workspaces that have neither an index nor any LSP servers
-            if index_status.is_none() && all_servers.is_empty() {
+            // Under bypass, only show workspaces that have LSP servers; index_status is irrelevant.
+            // Without bypass, skip workspaces that have neither an index nor any LSP servers.
+            if bypass {
+                if all_servers.is_empty() {
+                    continue;
+                }
+            } else if index_status.is_none() && all_servers.is_empty() {
                 continue;
             }
 
@@ -1368,14 +1383,16 @@ impl CodePageWidget {
 
         workspace_content.add_child(header_row.finish());
 
-        // Indexing section (always rendered per design)
-        workspace_content.add_child(self.render_indexing_subsection(
-            workspace_path,
-            index_status,
-            resync_mouse,
-            delete_mouse,
-            appearance,
-        ));
+        // Cloud indexing subsection - hidden under bypass (indexer is disabled)
+        if !crate::local_ai::auth_bypass_enabled() {
+            workspace_content.add_child(self.render_indexing_subsection(
+                workspace_path,
+                index_status,
+                resync_mouse,
+                delete_mouse,
+                appearance,
+            ));
+        }
 
         // LSP Servers section (if any servers known)
         if !all_servers.is_empty() {
@@ -2089,92 +2106,95 @@ impl SettingsWidget for CodebaseIndexingCategorizedWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        let bypass = crate::local_ai::auth_bypass_enabled();
         let ui_builder = appearance.ui_builder();
         let global_ai_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
         let codebase_context_enabled = UserWorkspaces::as_ref(app).is_codebase_context_enabled(app);
 
         let mut content = Flex::column();
 
-        // Codebase indexing toggle using render_body_item for consistent styling
-        let admin_setting = UserWorkspaces::as_ref(app).team_allows_codebase_context();
-        let switch = ui_builder
-            .switch(self.inner.switch_state.clone())
-            .check(codebase_context_enabled);
+        // Cloud codebase-indexing toggles - hidden under bypass (indexer is disabled, UI is misleading)
+        if !bypass {
+            let admin_setting = UserWorkspaces::as_ref(app).team_allows_codebase_context();
+            let switch = ui_builder
+                .switch(self.inner.switch_state.clone())
+                .check(codebase_context_enabled);
 
-        let disabled_tooltip_text = match admin_setting {
-            AdminEnablementSetting::Enable => Some(INDEXING_WORKSPACE_ENABLED_ADMIN_TEXT),
-            AdminEnablementSetting::Disable => Some(INDEXING_DISABLED_ADMIN_TEXT),
-            AdminEnablementSetting::RespectUserSetting if !global_ai_enabled => {
-                Some(INDEXING_DISABLED_GLOBAL_AI_TEXT)
-            }
-            AdminEnablementSetting::RespectUserSetting => None,
-        };
+            let disabled_tooltip_text = match admin_setting {
+                AdminEnablementSetting::Enable => Some(INDEXING_WORKSPACE_ENABLED_ADMIN_TEXT),
+                AdminEnablementSetting::Disable => Some(INDEXING_DISABLED_ADMIN_TEXT),
+                AdminEnablementSetting::RespectUserSetting if !global_ai_enabled => {
+                    Some(INDEXING_DISABLED_GLOBAL_AI_TEXT)
+                }
+                AdminEnablementSetting::RespectUserSetting => None,
+            };
 
-        let toggle_element = if let Some(tooltip_text) = disabled_tooltip_text {
-            switch
-                .with_tooltip(TooltipConfig {
-                    text: tooltip_text.to_string(),
-                    styles: ui_builder.default_tool_tip_styles(),
-                })
-                .disable()
-                .build()
-                .finish()
-        } else {
-            switch
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleCodebaseContext);
-                })
-                .finish()
-        };
-
-        content.add_child(render_body_item::<CodeSettingsPageAction>(
-            CODEBASE_INDEXING_LABEL.into(),
-            None,
-            LocalOnlyIconState::Hidden,
-            ToggleState::Enabled,
-            appearance,
-            toggle_element,
-            Some(CODEBASE_INDEX_DESCRIPTION.into()),
-        ));
-
-        // Auto-indexing toggle (only shown when codebase indexing is enabled)
-        if global_ai_enabled && codebase_context_enabled {
-            let auto_indexing_enabled = *CodeSettings::as_ref(app).auto_indexing_enabled;
+            let toggle_element = if let Some(tooltip_text) = disabled_tooltip_text {
+                switch
+                    .with_tooltip(TooltipConfig {
+                        text: tooltip_text.to_string(),
+                        styles: ui_builder.default_tool_tip_styles(),
+                    })
+                    .disable()
+                    .build()
+                    .finish()
+            } else {
+                switch
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleCodebaseContext);
+                    })
+                    .finish()
+            };
 
             content.add_child(render_body_item::<CodeSettingsPageAction>(
-                AUTO_INDEX_FEATURE_NAME.into(),
+                CODEBASE_INDEXING_LABEL.into(),
                 None,
                 LocalOnlyIconState::Hidden,
                 ToggleState::Enabled,
                 appearance,
-                ui_builder
-                    .switch(self.inner.auto_index_switch_state.clone())
-                    .check(auto_indexing_enabled)
-                    .build()
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleAutoIndexing);
-                    })
-                    .finish(),
-                Some(AUTO_INDEX_DESCRIPTION.into()),
+                toggle_element,
+                Some(CODEBASE_INDEX_DESCRIPTION.into()),
             ));
 
-            if !CodebaseIndexManager::as_ref(app).can_create_new_indices() {
-                content.add_child(
+            // Auto-indexing toggle (only shown when codebase indexing is enabled)
+            if global_ai_enabled && codebase_context_enabled {
+                let auto_indexing_enabled = *CodeSettings::as_ref(app).auto_indexing_enabled;
+
+                content.add_child(render_body_item::<CodeSettingsPageAction>(
+                    AUTO_INDEX_FEATURE_NAME.into(),
+                    None,
+                    LocalOnlyIconState::Hidden,
+                    ToggleState::Enabled,
+                    appearance,
                     ui_builder
-                        .paragraph(CODEBASE_INDEX_LIMIT_REACHED)
-                        .with_style(UiComponentStyles {
-                            font_color: Some(appearance.theme().disabled_ui_text_color().into()),
-                            ..Default::default()
-                        })
+                        .switch(self.inner.auto_index_switch_state.clone())
+                        .check(auto_indexing_enabled)
                         .build()
-                        .with_margin_bottom(8.0)
+                        .on_click(move |ctx, _, _| {
+                            ctx.dispatch_typed_action(CodeSettingsPageAction::ToggleAutoIndexing);
+                        })
                         .finish(),
-                );
+                    Some(AUTO_INDEX_DESCRIPTION.into()),
+                ));
+
+                if !CodebaseIndexManager::as_ref(app).can_create_new_indices() {
+                    content.add_child(
+                        ui_builder
+                            .paragraph(CODEBASE_INDEX_LIMIT_REACHED)
+                            .with_style(UiComponentStyles {
+                                font_color: Some(appearance.theme().disabled_ui_text_color().into()),
+                                ..Default::default()
+                            })
+                            .build()
+                            .with_margin_bottom(8.0)
+                            .finish(),
+                    );
+                }
             }
         }
 
-        // Initialized / indexed folders section
+        // Initialized / indexed folders section (LSP servers are still shown under bypass)
         let mouse_states = InitializedFoldersMouseStates {
             codebase_manual_resync: view.codebase_manual_resync_mouse_states.clone(),
             codebase_delete: view.codebase_delete_mouse_states.clone(),

@@ -614,6 +614,9 @@ impl SettingsPageMeta for ShowBlocksView {
     }
 
     fn should_render(&self, ctx: &AppContext) -> bool {
+        if crate::local_ai::auth_bypass_enabled() {
+            return false;
+        }
         let is_anonymous = AuthStateProvider::as_ref(ctx)
             .get()
             .is_anonymous_or_logged_out();
