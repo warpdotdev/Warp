@@ -17,6 +17,7 @@ chrono = { workspace = true }
 futures-core = "0.3.31"
 futures-util = { workspace = true }
 async-stream = { workspace = true }
+instant = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "sync", "time"] }
