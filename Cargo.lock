@@ -4158,6 +4158,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotenvy"
+version = "0.15.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
+
+[[package]]
 name = "downcast"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14208,6 +14214,7 @@ dependencies = [
  "difflib 0.4.0 (git+https://github.com/warpdotdev/difflib.git?rev=114177e7d8e1f8017baca397f943e11644b14d63)",
  "directories",
  "dirs 6.0.0",
+ "dotenvy",
  "dunce",
  "email_address 0.2.3",
  "embed-resource",

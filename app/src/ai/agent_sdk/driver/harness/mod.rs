@@ -36,11 +36,13 @@ use super::{
 
 mod claude_code;
 pub(crate) mod claude_transcript;
+mod codex;
 mod gemini;
 mod json_utils;
 
 pub(crate) use claude_code::ClaudeHarness;
 use claude_transcript::ClaudeResumeInfo;
+use codex::CodexHarness;
 use gemini::GeminiHarness;
 
 /// Harness-agnostic payload describing how to resume an existing conversation.
@@ -162,6 +164,23 @@ impl fmt::Debug for HarnessKind {
 /// We shouldn't ever get a `--harness unknown` here because clap should handle
 /// it.
 pub(crate) fn harness_kind(harness: Harness) -> Result<HarnessKind, AgentDriverError> {
+    // When `WARP_LOCAL_AI` is set, override the requested harness regardless of UI selection.
+    // The local-AI bypass requires routing to a CLI subprocess, not Warp's server.
+    match crate::local_ai::current() {
+        crate::local_ai::LocalAiMode::Claude => {
+            return Ok(HarnessKind::ThirdParty(Box::new(ClaudeHarness)));
+        }
+        crate::local_ai::LocalAiMode::Codex => {
+            return Ok(HarnessKind::ThirdParty(Box::new(CodexHarness)));
+        }
+        crate::local_ai::LocalAiMode::Ollama => {
+            // Phase 2: implement OllamaHarness. For now, fall through with a clear error so
+            // setting WARP_LOCAL_AI=ollama doesn't silently route to the cloud Oz path.
+            log::warn!("WARP_LOCAL_AI=ollama is not yet implemented; falling back to selected harness");
+        }
+        crate::local_ai::LocalAiMode::Off => {}
+    }
+
     match harness {
         Harness::Oz => Ok(HarnessKind::Oz),
         Harness::Claude => Ok(HarnessKind::ThirdParty(Box::new(ClaudeHarness))),

@@ -44,6 +44,7 @@ mod gpu_state;
 mod input_classifier;
 mod interval_timer;
 mod linear;
+mod local_ai;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod login_item;
 mod menu;
@@ -493,6 +494,10 @@ fn apply_scroll_multiplier(event: &mut Event, app: &AppContext) {
 
 /// Runs the app. If a subcommand was requested, it'll be run instead of the main application.
 pub fn run() -> Result<()> {
+    // Load `.env` from the current working directory before anything reads env vars.
+    // Used by the local-AI bypass feature (WARP_BYPASS_AUTH, WARP_LOCAL_AI, WARP_ILO_SYSTEM_PROMPT).
+    let _ = dotenvy::from_filename(".env");
+
     // Perform any necessary platform-specific initialization.
     platform::init();
 
@@ -2305,6 +2310,19 @@ fn init_logging_for_unit_tests_glue() {
 pub fn init_feature_flags() {
     for flag in enabled_features() {
         flag.set_enabled(true);
+    }
+    // Local-AI bypass: force-enable feature flags that are gated behind cargo features in
+    // OSS builds but are required for the agent UI (Cmd+I to enter agent mode, etc).
+    if local_ai::auth_bypass_enabled() {
+        for flag in [
+            FeatureFlag::AgentView,
+            FeatureFlag::AgentViewBlockContext,
+            FeatureFlag::AgentTips,
+            FeatureFlag::AgentManagementView,
+            FeatureFlag::AgentHarness,
+        ] {
+            flag.set_enabled(true);
+        }
     }
     features::mark_initialized();
 }

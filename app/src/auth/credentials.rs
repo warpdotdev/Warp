@@ -25,8 +25,8 @@ pub enum Credentials {
     },
     /// Authentication derived from an ambient browser session cookie.
     SessionCookie,
-    /// Test credentials used in unit tests, integration tests, and skip_login builds.
-    #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
+    /// Test credentials used in unit tests, integration tests, skip_login builds, and the
+    /// runtime `WARP_BYPASS_AUTH=1` local-AI bypass path.
     Test,
 }
 
@@ -37,7 +37,6 @@ impl Credentials {
             Credentials::Firebase(tokens) => Some(tokens),
             Credentials::ApiKey { .. } => None,
             Credentials::SessionCookie => None,
-            #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => None,
         }
     }
@@ -48,7 +47,6 @@ impl Credentials {
             Credentials::ApiKey { key, .. } => Some(key),
             Credentials::Firebase(_) => None,
             Credentials::SessionCookie => None,
-            #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => None,
         }
     }
@@ -59,7 +57,6 @@ impl Credentials {
             Credentials::ApiKey { owner_type, .. } => *owner_type,
             Credentials::Firebase(_) => None,
             Credentials::SessionCookie => None,
-            #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => None,
         }
     }
@@ -70,7 +67,6 @@ impl Credentials {
             Credentials::Firebase(tokens) => Some(&tokens.refresh_token),
             Credentials::ApiKey { .. } => None,
             Credentials::SessionCookie => None,
-            #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => None,
         }
     }
@@ -81,7 +77,6 @@ impl Credentials {
             Credentials::Firebase(tokens) => AuthToken::Firebase(tokens.id_token.clone()),
             Credentials::ApiKey { key, .. } => AuthToken::ApiKey(key.clone()),
             Credentials::SessionCookie => AuthToken::NoAuth,
-            #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => AuthToken::NoAuth,
         }
     }
@@ -94,7 +89,6 @@ impl Credentials {
             ))),
             Credentials::ApiKey { key, .. } => Some(LoginToken::ApiKey(key.clone())),
             Credentials::SessionCookie => Some(LoginToken::SessionCookie),
-            #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             Credentials::Test => None,
         }
     }
@@ -108,10 +102,6 @@ pub enum AuthToken {
     /// API key for direct server authentication.
     ApiKey(String),
     /// No authentication token available (e.g. session cookie auth or test credentials).
-    #[cfg_attr(
-        not(any(test, feature = "integration_tests", feature = "skip_login")),
-        allow(dead_code)
-    )]
     NoAuth,
 }
 

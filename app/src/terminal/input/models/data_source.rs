@@ -225,8 +225,10 @@ impl ModelSearchItem {
     fn new(llm: &LLMInfo, active_llm_id: &LLMId, app: &AppContext) -> Self {
         // If the model requires an upgrade but the user already has a BYOK key
         // for this provider, treat it as enabled by clearing the disable reason.
+        // Also clear it when the local-AI bypass is active, so all models appear usable.
         let disable_reason = if llm.disable_reason == Some(DisableReason::RequiresUpgrade)
-            && is_using_api_key_for_provider(&llm.provider, app)
+            && (is_using_api_key_for_provider(&llm.provider, app)
+                || crate::local_ai::auth_bypass_enabled())
         {
             None
         } else {
