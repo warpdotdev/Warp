@@ -889,6 +889,7 @@ fn render_editor(
             state.orch.execution_mode.is_remote(),
             &handles.pickers,
             appearance,
+            None,
         ))
         .with_margin_top(12.)
         .finish(),

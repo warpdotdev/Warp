@@ -4,20 +4,21 @@
 
 use ai::agent::action::RunAgentsExecutionMode;
 use ai::agent::orchestration_config::OrchestrationConfigStatus;
+use pathfinder_color::ColorU;
 use warpui::elements::{
-    Container, CornerRadius, CrossAxisAlignment, Flex, ParentElement, Radius, Text,
+    ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Empty, Flex, Hoverable,
+    MainAxisAlignment, MouseStateHandle, ParentElement, Radius, Text,
 };
 use warpui::fonts::{Properties, Weight};
+use warpui::platform::Cursor;
 use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
-use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::inline_action::orchestration_controls::{
     self as oc, OrchestrationControlAction, OrchestrationEditState, OrchestrationPickerHandles,
 };
 use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
-use crate::BlocklistAIHistoryModel;
 
 const CONFIG_BLOCK_HEADER: &str = "Use orchestration";
 const CONFIG_BLOCK_DESCRIPTION: &str =
@@ -60,71 +61,59 @@ impl OrchestrationControlAction for OrchestrationConfigBlockAction {
 // ── View ────────────────────────────────────────────────────────────
 
 pub struct OrchestrationConfigBlockView {
-    conversation_id: AIConversationId,
     edit_state: OrchestrationEditState,
     pickers: OrchestrationPickerHandles<OrchestrationConfigBlockAction>,
     is_approved: bool,
     pickers_initialized: bool,
+    toggle_mouse_state: MouseStateHandle,
 }
 
 impl OrchestrationConfigBlockView {
-    pub fn new_with_conversation_id(
-        conversation_id: AIConversationId,
-        ctx: &mut ViewContext<Self>,
-    ) -> Self {
-        let history = BlocklistAIHistoryModel::as_ref(ctx);
-        let (edit_state, is_approved) = history
-            .conversation(&conversation_id)
-            .and_then(|conv| {
-                conv.orchestration_config().map(|config| {
-                    (
-                        OrchestrationEditState::from_orchestration_config(config),
-                        conv.orchestration_status().is_approved(),
-                    )
-                })
-            })
-            .unwrap_or_else(|| {
-                (
-                    OrchestrationEditState::from_run_agents_fields(
-                        "auto",
-                        "oz",
-                        &RunAgentsExecutionMode::Local,
-                    ),
-                    false,
-                )
-            });
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
+        let doc_model = AIDocumentModel::as_ref(ctx);
+        let (edit_state, is_approved) = match doc_model.active_orchestration_config() {
+            Some(config) => (
+                OrchestrationEditState::from_orchestration_config(config),
+                doc_model.orchestration_status().is_approved(),
+            ),
+            None => (
+                OrchestrationEditState::from_run_agents_fields(
+                    "auto",
+                    "oz",
+                    &RunAgentsExecutionMode::Local,
+                ),
+                false,
+            ),
+        };
 
-        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), move |me, _, event, ctx| {
-            if let AIDocumentModelEvent::OrchestrationConfigUpdated {
-                conversation_id: cid,
-            } = event
-            {
-                if *cid == me.conversation_id {
-                    me.refresh_from_model(ctx);
-                }
+        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), |me, _, event, ctx| {
+            if let AIDocumentModelEvent::OrchestrationConfigUpdated = event {
+                me.refresh_from_model(ctx);
             }
         });
 
-        Self {
-            conversation_id,
+        let mut view = Self {
             edit_state,
             pickers: OrchestrationPickerHandles::default(),
             is_approved,
             pickers_initialized: false,
+            toggle_mouse_state: MouseStateHandle::default(),
+        };
+        if view.is_approved {
+            view.ensure_pickers(ctx);
         }
+        view
     }
 
     fn refresh_from_model(&mut self, ctx: &mut ViewContext<Self>) {
-        let history = BlocklistAIHistoryModel::as_ref(ctx);
-        if let Some(conv) = history.conversation(&self.conversation_id) {
-            if let Some(config) = conv.orchestration_config() {
-                self.edit_state = OrchestrationEditState::from_orchestration_config(config);
-                self.is_approved = conv.orchestration_status().is_approved();
-                if self.pickers_initialized {
-                    oc::sync_picker_selections(&self.edit_state, &self.pickers, ctx);
-                }
-                ctx.notify();
+        let doc_model = AIDocumentModel::as_ref(ctx);
+        if let Some(config) = doc_model.active_orchestration_config() {
+            self.edit_state = OrchestrationEditState::from_orchestration_config(config);
+            self.is_approved = doc_model.orchestration_status().is_approved();
+            if self.pickers_initialized {
+                oc::sync_picker_selections(&self.edit_state, &self.pickers, ctx);
             }
+            ctx.notify();
         }
     }
 
@@ -170,9 +159,8 @@ impl OrchestrationConfigBlockView {
         } else {
             OrchestrationConfigStatus::Disapproved
         };
-        let conversation_id = self.conversation_id;
         AIDocumentModel::handle(ctx).update(ctx, |model, ctx| {
-            model.set_orchestration_config(conversation_id, config, status, None, ctx);
+            model.set_orchestration_config(config, status, None, ctx);
         });
     }
 }
@@ -192,7 +180,7 @@ impl View for OrchestrationConfigBlockView {
 
         let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
-        // Header: "Use orchestration" + toggle
+        // Header: "Use orchestration" + toggle switch
         let header_label = Text::new(
             CONFIG_BLOCK_HEADER.to_string(),
             appearance.ui_font_family(),
@@ -202,31 +190,56 @@ impl View for OrchestrationConfigBlockView {
         .with_style(Properties::default().weight(Weight::Bold))
         .finish();
 
-        let toggle_text = if self.is_approved { "On" } else { "Off" };
-        let toggle_indicator = Text::new(
-            toggle_text.to_string(),
-            appearance.ui_font_family(),
-            appearance.monospace_font_size(),
+        // Pill-shaped toggle switch (36×18 per Figma)
+        let is_on = self.is_approved;
+        let thumb_size = 16.;
+        let thumb = ConstrainedBox::new(
+            Container::new(Empty::new().finish())
+                .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
+                .with_background_color(ColorU::white())
+                .finish(),
         )
-        .with_color(if self.is_approved {
+        .with_width(thumb_size)
+        .with_height(thumb_size)
+        .finish();
+
+        let track_bg = if is_on {
             theme.accent().into_solid()
         } else {
-            blended_colors::text_disabled(theme, theme.background())
-        })
+            ColorU::new(170, 170, 170, 255)
+        };
+        let alignment = if is_on {
+            MainAxisAlignment::End
+        } else {
+            MainAxisAlignment::Start
+        };
+        let switch_inner = Flex::row()
+            .with_main_axis_alignment(alignment)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(Container::new(thumb).with_uniform_padding(1.).finish())
+            .finish();
+        let switch_el = ConstrainedBox::new(
+            Container::new(switch_inner)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(49.)))
+                .with_background_color(track_bg)
+                .finish(),
+        )
+        .with_width(36.)
+        .with_height(18.)
         .finish();
 
         let header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(warpui::elements::Expanded::new(1.0, header_label).finish())
             .with_child(
-                warpui::elements::Hoverable::new(
-                    warpui::elements::MouseStateHandle::default(),
-                    move |_| toggle_indicator,
+                Hoverable::new(
+                    self.toggle_mouse_state.clone(),
+                    move |_| switch_el,
                 )
                 .on_click(|ctx, _, _| {
                     ctx.dispatch_typed_action(OrchestrationConfigBlockAction::ToggleApproval);
                 })
-                .with_cursor(warpui::platform::Cursor::PointingHand)
+                .with_cursor(Cursor::PointingHand)
                 .finish(),
             )
             .finish();
@@ -244,12 +257,25 @@ impl View for OrchestrationConfigBlockView {
 
         // Controls (only when approved)
         if self.is_approved {
+            // Horizontal divider between description and controls
+            let divider = Container::new(
+                ConstrainedBox::new(Empty::new().finish())
+                    .with_height(1.)
+                    .finish(),
+            )
+            .with_background_color(theme.surface_2().into_solid())
+            .finish();
+            column.add_child(Container::new(divider).with_margin_top(8.).finish());
+
             // Mode toggle
+            let active_seg_bg =
+                warp_core::ui::theme::color::internal_colors::accent_overlay_2(theme);
             column.add_child(
                 Container::new(oc::render_mode_toggle(
                     self.edit_state.execution_mode.is_remote(),
                     &self.pickers,
                     appearance,
+                    Some(active_seg_bg),
                 ))
                 .with_margin_top(12.)
                 .finish(),
