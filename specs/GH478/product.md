@@ -131,6 +131,16 @@ bit-for-bit identical to today.
    skipped for matching purposes, and the rest of the map continues to
    work.
 
+7a. **`directory_overrides` is stored locally and never synced to Warp's
+    cloud.** Directory paths can encode employer, customer, and project
+    names (`~/Work/<client>/<engagement>/...`); cloud-syncing the keys
+    would push that organizational context off-machine. Users on
+    multiple machines who want shared themes today set them per-machine.
+    An opt-in cloud-sync mode is a candidate follow-up. The global
+    theme setting (`appearance.themes.theme`) and per-tab pins set via
+    the right-click menu remain user-controllable surfaces; only this
+    map is local-only.
+
 ### Launch-configuration overrides
 
 8. A launch configuration YAML may include `theme:` on any tab entry.
@@ -165,11 +175,15 @@ bit-for-bit identical to today.
     directory, fail-soft to the next layer if the file is missing, same
     trust/validation rules as the global theme loader.
 
-13. The override persists per-tab through session restore. A tab whose
-    effective theme came from a manual pin keeps that pin on relaunch. A
-    tab whose effective theme came from directory matching is restored
-    with no manual pin; on relaunch its theme is recomputed from the
-    current `directory_overrides` and the restored cwd.
+13. Overrides persist per-tab through session restore, by source:
+    - **Manual pin** — kept on relaunch.
+    - **Launch-configuration window-level default** — kept on relaunch.
+      The launch configuration that opened the tab is not necessarily
+      reopened on restore, so the value travels with the tab.
+    - **Directory match** — not stored; recomputed on relaunch from the
+      current `directory_overrides` and the restored cwd. Editing
+      `directory_overrides` between sessions therefore takes effect on
+      the next launch.
 
 14. The accepted form for any theme reference (in
     `directory_overrides`, in launch-config tab `theme:`, in launch-config

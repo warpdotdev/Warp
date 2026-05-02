@@ -159,40 +159,85 @@ Implementation:
 This satisfies Oz concerns 1 and 2 by making YAML-format coupling
 explicit and keeping unknown-theme handling field-level.
 
-### 3. `ThemeOverride` source enum on `TabSnapshot` and `TabData`
+### 3. `TabThemeState` on `TabSnapshot` and `TabData`
 
 File: `app/src/app_state.rs` and `app/src/tab.rs`.
 
-Add a new type:
+A tab can have up to three independent theme inputs at once — a manual
+pin, a cwd-pattern match, and a launch-configuration window-level
+default — and the product spec defines a strict priority order between
+them (manual > cwd > window default > global). A single `Option<enum>`
+cannot represent "manual cleared, cwd applies, window default also
+exists as a deeper fallback" because the three sources are not mutually
+exclusive at storage time, only at render time. Replace the single
+field with a struct holding all three slots, plus a resolver:
 
 ```rust
-/// The source of a tab's theme override. The enum exists so "Reset
-/// theme" can clear a manual override without also dismissing a
-/// directory match that the tab would otherwise still receive.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ThemeOverride {
-    /// Set explicitly: launch-configuration tab-level `theme:`,
-    /// "Pin theme" menu, or saved-and-restored manual pin.
-    Manual(ThemeKind),
-    /// Set automatically by `directory_overrides` matching against the
-    /// focused pane's cwd. Not persisted across sessions; recomputed on
-    /// startup from the current settings + cwd.
-    Cwd(ThemeKind),
+/// Per-tab theme state. Each slot is independent storage for one
+/// resolution layer; the resolver in `effective()` enforces the
+/// priority order from `product.md` (Resolution order #1–#4).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TabThemeState {
+    /// User-set pin: launch-config tab-level `theme:`, "Pin theme"
+    /// menu, or a restored pin from a previous session.
+    /// **Persisted across sessions.**
+    pub manual: Option<ThemeKind>,
+
+    /// Set at open time when the tab was created from a launch
+    /// configuration whose window had a window-level `theme:`.
+    /// **Persisted across sessions** (the launch config that opened
+    /// the tab is not necessarily reopened on restore, so the value
+    /// must travel with the tab).
+    pub window_default: Option<ThemeKind>,
+
+    /// Computed by directory-pattern matching against the focused
+    /// pane's cwd. Recomputed on tab creation, on focused-pane cwd
+    /// change, and on `directory_overrides` settings change.
+    /// **Not persisted** — recomputed on startup from current
+    /// settings + restored cwd.
+    pub cwd_resolved: Option<ThemeKind>,
+}
+
+impl TabThemeState {
+    /// Resolution order: manual > cwd > window default > caller's
+    /// global fallback. Mirrors product.md §"Resolution order".
+    pub fn effective<'a>(&'a self, global: &'a ThemeKind) -> &'a ThemeKind {
+        self.manual.as_ref()
+            .or(self.cwd_resolved.as_ref())
+            .or(self.window_default.as_ref())
+            .unwrap_or(global)
+    }
+
+    pub fn has_any_override(&self) -> bool {
+        self.manual.is_some() || self.cwd_resolved.is_some()
+            || self.window_default.is_some()
+    }
 }
 ```
 
-Add `pub theme_override: Option<ThemeOverride>` to:
+Add `pub theme_state: TabThemeState` to:
 
 - `TabSnapshot` (`app_state.rs:61–69`), placed next to `selected_color`.
 - `TabData` (`tab.rs:134`), same.
 
-Snapshot ↔ runtime conversion copies the field unchanged. Session
-serialization persists only `Manual(_)` overrides; `Cwd(_)` overrides are
-re-derived on startup (per product spec behavior #13).
+Session serialization writes only `manual` and `window_default`;
+`cwd_resolved` is recomputed on startup. The serializer omits the
+field entirely when all three slots are `None`, so existing sessions
+with no overrides round-trip with no schema cost.
 
-`WindowSnapshot` does not gain a theme field — window-level launch-config
-theme is expanded to per-tab `Manual` overrides at open time and not
-persisted at the window level.
+`WindowSnapshot` does not gain a theme field; the window-level
+launch-config theme lives only on the *tabs* it opened (in their
+`window_default` slot). This is what Oz's first v2 review correctly
+flagged: expanding the window default into the *manual* slot would
+have made it incorrectly outrank cwd matches. The dedicated slot fixes
+that — `effective()` consults `manual` first, then `cwd_resolved`, and
+falls through to `window_default` only when neither of the higher
+layers applies.
+
+The right-click "Reset theme" entry (§6) only clears `manual`. The
+other two slots are unaffected, so a tab whose manual pin sat on top
+of a still-applicable cwd match falls back to the cwd theme on reset
+rather than to the global theme — matching product behavior #18.
 
 ### 4. Directory-pattern overrides settings group
 
@@ -207,17 +252,55 @@ define_settings_group!(DirectoryThemeOverrides, settings: [
         type: BTreeMap<String, String>,
         default: BTreeMap::new(),
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
+        // **Local-only.** Directory paths can encode employer, customer,
+        // and project names (e.g. `~/Work/<client>/<engagement>/...`).
+        // Cloud-syncing the keys would leak that organizational context
+        // off-machine; cloud-syncing the values without the keys is
+        // useless. The setting is therefore not synced. Per-tab themes
+        // remain user-controllable through the right-click "Pin theme"
+        // menu, which writes to the (non-synced) tab snapshot, not to
+        // this map. See *Privacy model* below.
+        sync_to_cloud: SyncToCloud::Locally,
+        private: true,
         toml_path: "appearance.themes.directory_overrides",
         max_table_depth: 1,
-        description: "Map of directory paths to theme names. The active \
-                      pane's cwd is matched against keys (longest prefix \
-                      wins); the matched theme overrides the global theme \
-                      for that tab.",
+        description: "Local map of directory paths to theme names. The \
+                      active pane's cwd is matched against keys (longest \
+                      prefix wins); the matched theme overrides the global \
+                      theme for that tab. Stored locally; never synced to \
+                      Warp's cloud because path keys can leak employer or \
+                      project names.",
     },
 ]);
 ```
+
+#### Privacy model (responding to Oz's [SECURITY] finding on v2)
+
+Directory paths are not just configuration — they encode information
+about the user's employer, clients, and projects. A key like
+`~/Work/AcmeCorp/redesign-2026` reveals all three. The settings system
+already distinguishes synced from local settings via `sync_to_cloud`
+and `private`; the design rule applied here is:
+
+- **Keys are locally-stored, never synced.** `sync_to_cloud:
+  Locally` and `private: true`. The map is written only to the user's
+  local `settings.toml` and is not transmitted off-machine by the
+  settings sync path.
+- **No telemetry on the contents.** The match function emits at most a
+  count metric ("a directory match applied to N tabs this minute"); it
+  never logs path keys or theme names to remote telemetry pipelines.
+  The local Warp log (which already contains plenty of cwd-bearing
+  information from existing features) may include a key in a
+  warning when a value fails to resolve, but that surface is local.
+- **No round-tripping into shareable artifacts.** A saved launch
+  configuration does not emit `directory_overrides` entries (product
+  spec #10). Launch configurations are explicitly designed to be
+  shared between machines and users; the directory map is not.
+- **Opt-in cloud sync is a follow-up.** A future `cloud_sync_directory_overrides`
+  setting could let users with enterprise sync needs share the map
+  *to themselves* across machines. That requires a separate spec
+  covering opt-in UI, encryption-at-rest of keys, and admin-policy
+  controls; it is deliberately not pre-paid for here.
 
 Resolution helper, alongside the group:
 
@@ -241,18 +324,36 @@ Match semantics (per product spec #2, #3):
   skipped and a warning is logged once at settings-change time, not
   per-match.
 
-Matching is invoked from two places:
+Matching is invoked from **three** places (responding to Oz's v2
+finding that settings edits were not handled):
 
-- **Tab creation** — when a tab is added (from a launch configuration or
-  from "new tab"), if the tab has no `Manual` override the focused
-  pane's cwd is matched. On hit, the tab's `theme_override` is set to
-  `Cwd(...)`.
-- **Cwd-change events** — the existing pane-cwd tracker emits a
-  "focused pane cwd changed" event used for tab title updates. Add a
-  subscriber that re-runs directory matching for the affected tab when
-  the new cwd differs from the previous match key. The runtime tab
-  retains the last-matched key so re-matching is `O(1)` in the no-change
-  case.
+- **Tab creation** — when a tab is added (from a launch configuration
+  or from "new tab"), the focused pane's cwd is matched and
+  `tab.theme_state.cwd_resolved` is set to the result (`None` on no
+  match). The `manual` slot is set independently from the launch
+  config or from a saved pin; it is *not* gated on `cwd_resolved`
+  being absent.
+- **Focused-pane cwd-change events** — the existing pane-cwd tracker
+  emits a "focused pane cwd changed" event used today for tab title
+  updates. A new subscriber re-runs `directory_theme_for` for the
+  affected tab when the cwd differs from the last-matched key. The
+  runtime tab retains the last-matched key so re-matching is `O(1)`
+  in the no-change case. Result is written to `cwd_resolved`; if
+  the effective theme (per `TabThemeState::effective`) changes, the
+  tab re-renders.
+- **Settings-change events on `DirectoryThemeOverrides`** — the
+  `define_settings_group!` macro emits change events the same way
+  `ThemeSettings` does (`app/src/appearance.rs:51` is the existing
+  pattern). A new subscription on `DirectoryThemeOverrides::handle(ctx)`
+  walks every open tab in every window, recomputes
+  `cwd_resolved` from the new map and the tab's current cwd, and
+  re-renders each tab whose effective theme changed. Implements
+  product behavior #6.
+
+The same subscription handles validation: any value in the new map
+that fails `resolve_theme_ref` is logged once (with its key) and
+treated as absent for matching purposes. Subsequent edits that fix
+the value re-trigger this validation.
 
 ### 5. Renderer: `Appearance` gains a theme catalog
 
@@ -283,8 +384,9 @@ impl Appearance {
         self.global_theme.clone()
     }
 
-    /// Per-tab theme lookup. `override` is taken straight from
-    /// `TabData::theme_override.as_ref().map(ThemeOverride::kind)`.
+    /// Per-tab theme lookup. The caller passes
+    /// `tab.theme_state.effective(global_kind)` (or `None` for the
+    /// global theme).
     /// Returns the global theme when `override` is `None`.
     pub fn theme_for(&self, override_kind: Option<&ThemeKind>) -> Arc<WarpTheme> {
         match override_kind {
@@ -322,7 +424,12 @@ Cache-invalidation rules:
 
 Renderer call-site update: every place that today reads
 `Appearance::as_ref(ctx).theme()` and is **inside a tab's render path**
-becomes `Appearance::as_ref(ctx).theme_for(tab.theme_override.as_ref().map(ThemeOverride::kind))`.
+becomes
+`Appearance::as_ref(ctx).theme_for(Some(tab.theme_state.effective(&global_kind)))`,
+where `global_kind` is the active global `ThemeKind` from
+`active_theme_kind(theme_settings, app)`. Render paths that already have
+no per-tab context (window chrome) keep calling `Appearance::theme()`
+unchanged.
 The exact list of call sites (terminal cell renderer in
 `app/src/terminal/view.rs`, color derivation in
 `app/src/terminal/color.rs`, any block-styling consumers) is enumerated
@@ -338,12 +445,13 @@ The existing tab context menu gains two entries:
 
 - **Pin theme...** — opens a submenu listing built-in themes plus any
   loaded custom themes (the same list the theme picker shows). On
-  click, sets the tab's `theme_override` to `Manual(chosen)`. Always
+  click, sets `tab.theme_state.manual = Some(chosen)`. Always
   visible.
-- **Reset theme** — clears any `Manual(_)` override on the tab; if the
-  focused pane's cwd matches a `directory_overrides` key the override
-  is set to `Cwd(_)` immediately, otherwise it becomes `None`. Visible
-  only when the tab has a `Manual` override.
+- **Reset theme** — sets `tab.theme_state.manual = None`. The other
+  two slots (`cwd_resolved`, `window_default`) are unaffected; if
+  either still has a value the tab immediately re-renders with the
+  next-priority theme per `effective()`. Visible only when
+  `theme_state.manual.is_some()`.
 
 Both entries trigger the existing theme-changed redraw path used today
 when the global theme changes (no new render-invalidation work).
@@ -390,13 +498,22 @@ conventions. No new event schema.
 
 `app/src/app_state.rs` (or test module):
 
-- `TabSnapshot { theme_override: Some(Manual(Dracula)) }` round-trips
-  through session-restore serialization.
-- `TabSnapshot { theme_override: Some(Cwd(Dracula)) }` does **not**
-  persist — the Cwd variant is re-derived on startup from current
-  settings + cwd. (This pins behavior #13.)
+- `TabThemeState { manual: Some(Dracula), .. }` round-trips through
+  session-restore serialization.
+- `TabThemeState { window_default: Some(Light), .. }` round-trips —
+  window defaults travel with the tab because the launch config that
+  set them is not necessarily reopened on restore.
+- `TabThemeState { cwd_resolved: Some(Dracula), .. }` does **not**
+  persist; on deserialization the slot is `None` regardless of what
+  was written. (Pins product behavior #13.)
+- `TabThemeState::effective()` priority: `manual=Some(A) cwd=Some(B)
+  window=Some(C)` resolves to `A`; `manual=None cwd=Some(B) window=Some(C)`
+  resolves to `B`; `manual=None cwd=None window=Some(C)` resolves to
+  `C`; all `None` resolves to the global fallback. (Pins the
+  resolution order from product.md and directly addresses Oz's v2
+  CRITICAL finding — window defaults must not outrank cwd.)
 - `TabSnapshot::color()` returns the same value with and without
-  `theme_override` set (color and theme are independent — #19).
+  `theme_state` populated (color and theme are independent — #19).
 
 `app/src/appearance.rs` (or `warp_core` tests):
 
@@ -428,13 +545,40 @@ conventions. No new event schema.
   that maps to `Solarized Dark`. Assert Dracula wins (manual > cwd).
   Right-click → Reset theme. Assert the tab redraws with Solarized
   Dark (the cwd match takes over).
-- Edit `directory_overrides` while Warp is running. Assert all tabs
-  whose effective theme changes redraw, others do not.
+- **Settings-change recompute.** With three tabs open in three
+  different cwds, edit `directory_overrides` to add a new key that
+  matches one of them. Assert that one tab redraws with the new
+  theme; the other two are unchanged. Then edit the same key's value
+  to a different theme name. Assert the matched tab redraws again.
+  Then delete the key. Assert the tab falls through to its
+  next-priority theme. (Pins product behavior #6 and addresses Oz's
+  v2 IMPORTANT finding that this path was missing from the design.)
+- Open a launch configuration with a window-level `theme:` and three
+  tabs, one of which sits in a `directory_overrides`-matched cwd.
+  Assert the matched tab uses the cwd theme (cwd > window default);
+  the other two use the window default. (Pins the priority order and
+  addresses Oz's v2 CRITICAL finding.)
 - Quit and relaunch. Assert manually-pinned tabs restore their pin;
-  cwd-matched tabs re-derive their theme from current settings + cwd.
+  tabs that had only a `cwd_resolved` theme have `cwd_resolved` set
+  to `None` after deserialization but are recomputed on startup from
+  current settings + cwd.
 - Unknown theme name in a launch configuration: the file opens,
   exactly that one tab falls through, the warning appears in the log,
   other tabs render correctly.
+
+### Privacy invariant tests
+
+- `DirectoryThemeOverrides` settings group has `private == true` and
+  `sync_to_cloud == SyncToCloud::Locally`. Pinned by a settings-system
+  test analogous to the existing tests that gate which settings sync.
+- The settings sync serializer, when run over a populated
+  `DirectoryThemeOverrides`, emits no entry containing a path key in
+  the cloud-sync payload. Test by populating the map, running the
+  serializer, and asserting the resulting payload does not contain
+  the literal key string.
+- Saving a window's state as a launch configuration with a populated
+  `directory_overrides` map produces YAML with no
+  `directory_overrides` field.
 
 ### Manual verification
 
@@ -480,24 +624,36 @@ conventions. No new event schema.
   documented in the product spec; integration tests cover the common
   cases.
 
-- **`Cwd(_)` override mistakenly persists across sessions.** Session
-  serialization explicitly emits only `Manual(_)`; the integration test
-  for restart behavior pins this.
+- **`cwd_resolved` mistakenly persists across sessions.** The slot's
+  serde derives skip it on serialization and default it to `None` on
+  deserialization; the integration test for restart behavior pins this.
 
-- **Concern 1 / Concern 2 / Concern 3 from Oz's first review.**
+- **Path keys leaking off-machine.** Addressed in *Privacy model* (§4):
+  `private: true`, `sync_to_cloud: Locally`, no telemetry on contents,
+  no roundtrip into shareable launch-config YAML. Privacy invariant
+  tests pin each rule.
+
+- **Window-default outranking cwd matches.** Addressed by giving
+  window-default its own slot in `TabThemeState` (§3) rather than
+  expanding it into the manual slot. `effective()` walks slots in the
+  product spec's resolution order; the integration test for the
+  launch-config-with-window-default scenario pins the priority.
+
+- **Concern 1 / Concern 2 / Concern 3 from Oz's first-pass review.**
   Addressed in §1 (Option<String> + apply-time resolver), §2
   (`resolve_theme_ref` returns `Option<ThemeKind>`), and §5 (theme
   catalog, `Arc<WarpTheme>` ownership) respectively. Each concern has
   a corresponding unit test above.
 
-- **Per-pane theme creep.** The override field lives on the tab, not
-  the pane, and the resolver consults the focused pane's cwd. A future
+- **Per-pane theme creep.** Override slots live on the tab, not the
+  pane; the resolver consults the focused pane's cwd. A future
   per-pane theming feature would need its own data path; this spec
   does not lock that out but does not pre-pay for it either.
 
-- **Persistence schema collision with future per-window theming.** The
-  field is named `theme_override` (not `theme`) so a separate resolved
-  theme can live elsewhere if added later.
+- **Persistence schema collision with future per-window theming.**
+  The field is named `theme_state` (a struct of slots) rather than
+  `theme`, so a separate resolved theme can live elsewhere if added
+  later.
 
 ## Follow-ups (deliberately not in this PR)
 
@@ -505,7 +661,8 @@ conventions. No new event schema.
   product.md) — extends key matching from prefix to glob.
 - **Auto-theme by SSH host or hostname** (`stevenchanin`, `pyronaur`,
   `zethon`, `janderegg` in #478). Requires detection inside the tab's
-  shell; consumes the `Manual` / new `Ssh` variant of `ThemeOverride`.
+  shell; would add a fourth slot (`ssh_resolved`) to `TabThemeState`
+  and a corresponding rung in `effective()`'s priority order.
 - **Runtime escape-code or shell-hook protocol for setting a tab's
   theme** (`yatharth`, for Claude-Code session signaling). Defines a
   wire format and a security model; consumes the override field.
