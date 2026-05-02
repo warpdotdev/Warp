@@ -2,32 +2,171 @@
 
 use std::fs;
 
+use pathfinder_geometry::{
+    rect::RectF,
+    vector::{vec2f, Vector2F},
+};
 use settings::Setting as _;
-use warp::integration_testing::terminal::assert_long_running_block_executing_for_single_terminal_in_tab;
-use warp::integration_testing::view_getters::terminal_view;
-use warp::integration_testing::workspace::{assert_tab_count, press_native_modal_button};
+use warp::integration_testing::terminal::{
+    assert_command_executed_for_single_terminal_in_tab, assert_focused_editor_in_tab,
+    assert_long_running_block_executing_for_single_terminal_in_tab,
+};
+use warp::integration_testing::view_getters::{terminal_view, workspace_view};
+use warp::integration_testing::window::{
+    add_and_save_window, assert_num_windows_open, save_active_window_id,
+};
+use warp::integration_testing::workspace::{
+    assert_focused_tab_index, assert_tab_count, press_native_modal_button,
+};
 use warp::{
     cmd_or_ctrl_shift,
     integration_testing::{
         pane_group::assert_focused_pane_index,
         step::new_step_with_default_assertions,
         terminal::{
-            assert_active_session_local_path, execute_command, util::ExpectedExitStatus,
+            assert_active_session_local_path, execute_command,
+            execute_command_for_single_terminal_in_tab, util::ExpectedExitStatus,
             wait_until_bootstrapped_pane, wait_until_bootstrapped_single_pane_for_tab,
         },
     },
     settings::PaneSettings,
     workspace::NEW_TAB_BUTTON_POSITION_ID,
 };
-use warpui::{async_assert, integration::TestStep, SingletonEntity};
+use warpui::{
+    async_assert, async_assert_eq,
+    event::{Event, ModifiersState},
+    integration::{AssertionOutcome, TestStep},
+    windowing::WindowManager,
+    SingletonEntity, WindowId,
+};
 
 use crate::{util::skip_if_powershell_core_2303, Builder};
 
 use super::new_builder;
 
+const SOURCE_WINDOW_KEY: &str = "source window";
+const TARGET_WINDOW_KEY: &str = "target window";
+const DETACHED_WINDOW_KEY: &str = "detached window";
+
+fn tab_position_id(tab_index: usize) -> String {
+    format!("tab_position_{tab_index}")
+}
+
+fn focus_other_window(other_window_key: &'static str, known_window_key: &'static str) -> TestStep {
+    TestStep::new("Focus other window").with_action(move |app, _, data| {
+        let known_window_id = *data
+            .get::<_, WindowId>(known_window_key)
+            .expect("saved window id should exist");
+        let other_window_id = app
+            .window_ids()
+            .into_iter()
+            .find(|window_id| *window_id != known_window_id)
+            .expect("other window should exist");
+        data.insert(other_window_key, other_window_id);
+        app.update(|ctx| {
+            WindowManager::as_ref(ctx).show_window_and_focus_app(other_window_id);
+        });
+    })
+}
+
+fn dispatch_mouse_event(app: &mut warpui::App, window_id: WindowId, event: Event) {
+    let window = app.read(|ctx| {
+        ctx.windows()
+            .platform_window(window_id)
+            .expect("platform window should exist")
+    });
+    app.update(|ctx| {
+        (window.callbacks().event_callback)(event, ctx);
+    });
+}
+
+fn tab_bounds(app: &mut warpui::App, window_id: WindowId, tab_index: usize) -> RectF {
+    let presenter = app.presenter(window_id).expect("presenter should exist");
+    let bounds = presenter
+        .borrow()
+        .position_cache()
+        .get_position(tab_position_id(tab_index))
+        .unwrap_or_else(|| panic!("tab_position_{tab_index} should exist for {window_id:?}"));
+    bounds
+}
+
+fn tab_center(app: &mut warpui::App, window_id: WindowId, tab_index: usize) -> Vector2F {
+    tab_bounds(app, window_id, tab_index).center()
+}
+
+fn source_local_point_for_screen_point(
+    app: &mut warpui::App,
+    source_window_id: WindowId,
+    screen_point: Vector2F,
+) -> Vector2F {
+    let source_bounds = app
+        .window_bounds(&source_window_id)
+        .expect("source window bounds should exist");
+    screen_point - source_bounds.origin()
+}
+
+fn tab_screen_point(
+    app: &mut warpui::App,
+    window_id: WindowId,
+    tab_index: usize,
+    x_offset: f32,
+    y_offset: f32,
+) -> Vector2F {
+    let bounds = tab_bounds(app, window_id, tab_index);
+    let window_bounds = app
+        .window_bounds(&window_id)
+        .expect("window bounds should exist");
+    window_bounds.origin() + vec2f(bounds.min_x() + x_offset, bounds.min_y() + y_offset)
+}
+
+fn focus_saved_window(window_key: &'static str) -> TestStep {
+    TestStep::new("Focus saved window").with_action(move |app, _, data| {
+        let window_id = *data
+            .get::<_, WindowId>(window_key)
+            .expect("saved window id should exist");
+        app.update(|ctx| {
+            WindowManager::as_ref(ctx).show_window_and_focus_app(window_id);
+        });
+    })
+}
+
+fn set_saved_window_origin(window_key: &'static str, origin: Vector2F) -> TestStep {
+    TestStep::new("Move saved window").with_action(move |app, _, data| {
+        let window_id = *data
+            .get::<_, WindowId>(window_key)
+            .expect("saved window id should exist");
+        let size = app
+            .window_bounds(&window_id)
+            .expect("window bounds should exist")
+            .size();
+        app.update(|ctx| {
+            ctx.set_and_cache_window_bounds(window_id, RectF::new(origin, size));
+        });
+    })
+}
+
+fn assert_total_tab_count(
+    expected_total_tab_count: usize,
+) -> impl FnMut(&mut warpui::App, WindowId) -> AssertionOutcome {
+    move |app, _| {
+        let total_tab_count = app
+            .window_ids()
+            .into_iter()
+            .map(|window_id| {
+                let workspace = workspace_view(app, window_id);
+                workspace.read(app, |view, _ctx| view.tab_count())
+            })
+            .sum::<usize>();
+        async_assert_eq!(total_tab_count, expected_total_tab_count)
+    }
+}
+
+fn drag_tabs_feature_enabled() -> bool {
+    cfg!(feature = "drag_tabs_to_windows")
+}
+
 pub fn test_active_session_follows_focus() -> Builder {
     new_builder()
-        // TODO(CORE-2732): Flakey on Powershell (Linux)
         .set_should_run_test(skip_if_powershell_core_2303)
         .with_setup(|utils| {
             fs::create_dir(utils.test_dir().join("dir1")).expect("Couldn't create subdirectory");
@@ -169,11 +308,526 @@ pub fn test_close_tab_with_long_running_process() -> Builder {
                 .with_click_on_saved_position("close_tab_button:1")
                 .add_assertion(assert_tab_count(2))
                 .add_assertion(
-                    // The tab should not yet be closed.
                     assert_long_running_block_executing_for_single_terminal_in_tab(true, 1),
                 ),
         )
-        // Press the confirm button in the modal.
         .with_step(press_native_modal_button(0))
         .with_step(TestStep::new("Wait for tab to close").add_assertion(assert_tab_count(1)))
+}
+
+pub fn test_reorder_tabs_with_drag() -> Builder {
+    new_builder()
+        .set_should_run_test(drag_tabs_feature_enabled)
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(execute_command_for_single_terminal_in_tab(
+            0,
+            "echo source-zero".to_string(),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(
+            new_step_with_default_assertions("Open a new tab")
+                .with_keystrokes(&[cmd_or_ctrl_shift("t")]),
+        )
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(1))
+        .with_step(execute_command_for_single_terminal_in_tab(
+            1,
+            "echo source-one".to_string(),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(
+            TestStep::new("Drag the second tab to the first position")
+                .with_action(|app, window_id, _| {
+                    let start = tab_center(app, window_id, 1);
+                    dispatch_mouse_event(
+                        app,
+                        window_id,
+                        Event::LeftMouseDown {
+                            position: start,
+                            modifiers: ModifiersState::default(),
+                            click_count: 1,
+                            is_first_mouse: false,
+                        },
+                    );
+                })
+                .with_action(|app, window_id, _| {
+                    let start = tab_center(app, window_id, 1);
+                    dispatch_mouse_event(
+                        app,
+                        window_id,
+                        Event::LeftMouseDragged {
+                            position: start + vec2f(12.0, 0.0),
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, window_id, _| {
+                    let target_bounds = tab_bounds(app, window_id, 0);
+                    let target = vec2f(target_bounds.min_x() + 5.0, target_bounds.center().y());
+                    dispatch_mouse_event(
+                        app,
+                        window_id,
+                        Event::LeftMouseDragged {
+                            position: target,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, window_id, _| {
+                    let target_bounds = tab_bounds(app, window_id, 0);
+                    let target = vec2f(target_bounds.min_x() + 5.0, target_bounds.center().y());
+                    dispatch_mouse_event(
+                        app,
+                        window_id,
+                        Event::LeftMouseUp {
+                            position: target,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .add_assertion(assert_focused_tab_index(0))
+                .add_assertion(assert_command_executed_for_single_terminal_in_tab(
+                    0,
+                    "echo source-one".to_string(),
+                ))
+                .add_assertion(assert_command_executed_for_single_terminal_in_tab(
+                    1,
+                    "echo source-zero".to_string(),
+                )),
+        )
+}
+
+pub fn test_detach_tab_to_new_window_with_drag() -> Builder {
+    new_builder()
+        .set_should_run_test(drag_tabs_feature_enabled)
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(
+            execute_command_for_single_terminal_in_tab(
+                0,
+                "echo source-zero".to_string(),
+                ExpectedExitStatus::Success,
+                (),
+            )
+            .add_assertion(save_active_window_id(SOURCE_WINDOW_KEY)),
+        )
+        .with_step(
+            new_step_with_default_assertions("Open a new tab")
+                .with_keystrokes(&[cmd_or_ctrl_shift("t")]),
+        )
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(1))
+        .with_step(execute_command_for_single_terminal_in_tab(
+            1,
+            "echo source-one".to_string(),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(
+            TestStep::new("Detach the second tab into a standalone window")
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let start = tab_center(app, source_window_id, 1);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDown {
+                            position: start,
+                            modifiers: ModifiersState::default(),
+                            click_count: 1,
+                            is_first_mouse: false,
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let start = tab_center(app, source_window_id, 1);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: start + vec2f(12.0, 0.0),
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let start = tab_center(app, source_window_id, 1);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: start + vec2f(0.0, 140.0),
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let start = tab_center(app, source_window_id, 1);
+                    let drop_position = start + vec2f(220.0, 220.0);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: drop_position,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let start = tab_center(app, source_window_id, 1);
+                    let drop_position = start + vec2f(220.0, 220.0);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseUp {
+                            position: drop_position,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .add_assertion(assert_num_windows_open(2))
+                .add_assertion(assert_total_tab_count(2))
+                .add_assertion(assert_tab_count(1)),
+        )
+        .with_step(
+            focus_other_window(DETACHED_WINDOW_KEY, SOURCE_WINDOW_KEY)
+                .add_assertion(assert_tab_count(1))
+                .add_assertion(assert_focused_editor_in_tab(0))
+                .add_assertion(assert_command_executed_for_single_terminal_in_tab(
+                    0,
+                    "echo source-one".to_string(),
+                )),
+        )
+        .with_step(focus_saved_window(SOURCE_WINDOW_KEY).add_assertion(assert_tab_count(1)))
+}
+
+pub fn test_attach_tab_to_other_window_and_continue_drag() -> Builder {
+    new_builder()
+        .set_should_run_test(drag_tabs_feature_enabled)
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(
+            execute_command_for_single_terminal_in_tab(
+                0,
+                "echo source-zero".to_string(),
+                ExpectedExitStatus::Success,
+                (),
+            )
+            .add_assertion(save_active_window_id(SOURCE_WINDOW_KEY)),
+        )
+        .with_step(
+            new_step_with_default_assertions("Open a new tab")
+                .with_keystrokes(&[cmd_or_ctrl_shift("t")]),
+        )
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(1))
+        .with_step(execute_command_for_single_terminal_in_tab(
+            1,
+            "echo source-one".to_string(),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(add_and_save_window(TARGET_WINDOW_KEY))
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(execute_command_for_single_terminal_in_tab(
+            0,
+            "echo target-only".to_string(),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(set_saved_window_origin(
+            SOURCE_WINDOW_KEY,
+            vec2f(100.0, 100.0),
+        ))
+        .with_step(set_saved_window_origin(
+            TARGET_WINDOW_KEY,
+            vec2f(900.0, 100.0),
+        ))
+        .with_step(focus_saved_window(SOURCE_WINDOW_KEY))
+        .with_step(
+            TestStep::new("Attach the dragged tab into another window and keep dragging")
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let start = tab_center(app, source_window_id, 1);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDown {
+                            position: start,
+                            modifiers: ModifiersState::default(),
+                            click_count: 1,
+                            is_first_mouse: false,
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let start = tab_center(app, source_window_id, 1);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: start + vec2f(12.0, 0.0),
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let start = tab_center(app, source_window_id, 1);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: start + vec2f(0.0, 140.0),
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let target_window_id = *data
+                        .get::<_, WindowId>(TARGET_WINDOW_KEY)
+                        .expect("saved target window id should exist");
+                    let target_tab_bounds = tab_bounds(app, target_window_id, 0);
+                    let attach_before = tab_screen_point(
+                        app,
+                        target_window_id,
+                        0,
+                        8.0,
+                        target_tab_bounds.height() / 2.0,
+                    );
+                    let source_local_target =
+                        source_local_point_for_screen_point(app, source_window_id, attach_before);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: source_local_target,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let target_window_id = *data
+                        .get::<_, WindowId>(TARGET_WINDOW_KEY)
+                        .expect("saved target window id should exist");
+                    let target_tab_bounds = tab_bounds(app, target_window_id, 0);
+                    let reorder_after = tab_screen_point(
+                        app,
+                        target_window_id,
+                        0,
+                        target_tab_bounds.width() + 40.0,
+                        target_tab_bounds.height() / 2.0,
+                    );
+                    let source_local_target =
+                        source_local_point_for_screen_point(app, source_window_id, reorder_after);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: source_local_target,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseUp {
+                            position: source_local_target,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .add_assertion(assert_num_windows_open(2))
+                .add_assertion(assert_total_tab_count(3)),
+        )
+        .with_step(
+            focus_saved_window(TARGET_WINDOW_KEY)
+                .add_assertion(assert_tab_count(2))
+                .add_assertion(assert_focused_tab_index(1))
+                .add_assertion(assert_focused_editor_in_tab(1)),
+        )
+        .with_step(focus_saved_window(SOURCE_WINDOW_KEY).add_assertion(assert_tab_count(1)))
+}
+
+pub fn test_single_tab_handoff_continues_drag() -> Builder {
+    new_builder()
+        .set_should_run_test(drag_tabs_feature_enabled)
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(
+            execute_command_for_single_terminal_in_tab(
+                0,
+                "echo single-source".to_string(),
+                ExpectedExitStatus::Success,
+                (),
+            )
+            .add_assertion(save_active_window_id(SOURCE_WINDOW_KEY)),
+        )
+        .with_step(add_and_save_window(TARGET_WINDOW_KEY))
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(execute_command_for_single_terminal_in_tab(
+            0,
+            "echo target-only".to_string(),
+            ExpectedExitStatus::Success,
+            (),
+        ))
+        .with_step(set_saved_window_origin(
+            SOURCE_WINDOW_KEY,
+            vec2f(100.0, 100.0),
+        ))
+        .with_step(set_saved_window_origin(
+            TARGET_WINDOW_KEY,
+            vec2f(900.0, 100.0),
+        ))
+        .with_step(focus_saved_window(SOURCE_WINDOW_KEY))
+        .with_step(
+            TestStep::new("Attach a single-tab window and then drag it back out")
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let start = tab_center(app, source_window_id, 0);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDown {
+                            position: start,
+                            modifiers: ModifiersState::default(),
+                            click_count: 1,
+                            is_first_mouse: false,
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let start = tab_center(app, source_window_id, 0);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: start + vec2f(12.0, 0.0),
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let target_window_id = *data
+                        .get::<_, WindowId>(TARGET_WINDOW_KEY)
+                        .expect("saved target window id should exist");
+                    let target_tab_bounds = tab_bounds(app, target_window_id, 0);
+                    let attach_before = tab_screen_point(
+                        app,
+                        target_window_id,
+                        0,
+                        8.0,
+                        target_tab_bounds.height() / 2.0,
+                    );
+                    let source_local_target =
+                        source_local_point_for_screen_point(app, source_window_id, attach_before);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: source_local_target,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let target_window_id = *data
+                        .get::<_, WindowId>(TARGET_WINDOW_KEY)
+                        .expect("saved target window id should exist");
+                    let target_tab_bounds = tab_bounds(app, target_window_id, 0);
+                    let below_target = tab_screen_point(
+                        app,
+                        target_window_id,
+                        0,
+                        target_tab_bounds.width() / 2.0,
+                        target_tab_bounds.height() + 160.0,
+                    );
+                    let source_local_target =
+                        source_local_point_for_screen_point(app, source_window_id, below_target);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: source_local_target,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .with_action(|app, _, data| {
+                    let source_window_id = *data
+                        .get::<_, WindowId>(SOURCE_WINDOW_KEY)
+                        .expect("saved source window id should exist");
+                    let target_window_id = *data
+                        .get::<_, WindowId>(TARGET_WINDOW_KEY)
+                        .expect("saved target window id should exist");
+                    let target_tab_bounds = tab_bounds(app, target_window_id, 0);
+                    let drop_point = tab_screen_point(
+                        app,
+                        target_window_id,
+                        0,
+                        target_tab_bounds.width() / 2.0 + 120.0,
+                        target_tab_bounds.height() + 220.0,
+                    );
+                    let source_local_target =
+                        source_local_point_for_screen_point(app, source_window_id, drop_point);
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseDragged {
+                            position: source_local_target,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                    dispatch_mouse_event(
+                        app,
+                        source_window_id,
+                        Event::LeftMouseUp {
+                            position: source_local_target,
+                            modifiers: ModifiersState::default(),
+                        },
+                    );
+                })
+                .add_assertion(assert_num_windows_open(2))
+                .add_assertion(assert_total_tab_count(2)),
+        )
+        .with_step(
+            focus_saved_window(SOURCE_WINDOW_KEY)
+                .add_assertion(assert_tab_count(1))
+                .add_assertion(assert_focused_editor_in_tab(0)),
+        )
+        .with_step(focus_saved_window(TARGET_WINDOW_KEY).add_assertion(assert_tab_count(1)))
 }
