@@ -135,9 +135,12 @@ impl McpForwarder {
         if already_active {
             return false;
         }
-        // Infallible: all receivers are lazily created; even if the last
-        // subscriber dropped, the `Sender` itself retains the value.
-        let _ = self.tx.send(ForwardingTarget::Agent(id));
+        // Use `send_replace` rather than `send`: the latter returns
+        // `Err(SendError)` when there are no live receivers and *does not*
+        // update the stored value, which would silently lose the target if
+        // no subscriber had attached yet. `send_replace` always overwrites
+        // the stored value and notifies any receivers that do exist.
+        self.tx.send_replace(ForwardingTarget::Agent(id));
         true
     }
 
@@ -152,7 +155,8 @@ impl McpForwarder {
         if matches!(&*self.tx.borrow(), ForwardingTarget::None) {
             return false;
         }
-        let _ = self.tx.send(ForwardingTarget::None);
+        // See `set_active` for why we prefer `send_replace` over `send`.
+        self.tx.send_replace(ForwardingTarget::None);
         true
     }
 
