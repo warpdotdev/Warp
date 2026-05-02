@@ -372,3 +372,140 @@ pub fn local_model_list() -> ModelsByFeature {
         computer_use: None,
     }
 }
+
+// ---------------------------------------------------------------------------
+// jCodeMunch MCP integration
+// ---------------------------------------------------------------------------
+
+/// Returns `true` when jCodeMunch auto-registration is suppressed.
+///
+/// Set `JCODEMUNCH_DISABLED=1` in `.env` to opt out.
+pub fn jcodemunch_disabled() -> bool {
+    static CACHE: OnceLock<bool> = OnceLock::new();
+    *CACHE.get_or_init(|| {
+        std::env::var("JCODEMUNCH_DISABLED")
+            .ok()
+            .map(|v| matches!(v.trim(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
+    })
+}
+
+/// Path to the Warp home-level MCP config file (channel-aware).
+///
+/// On macOS with the OSS channel this is `~/.warp-oss/.mcp.json`.
+/// Returns `None` if the home directory cannot be determined.
+fn warp_home_mcp_config_path() -> Option<std::path::PathBuf> {
+    warp_core::paths::warp_home_mcp_config_file_path()
+}
+
+/// Ensures a jCodeMunch entry exists in the Warp home MCP config when bypass
+/// is active.
+///
+/// The function is idempotent: if an entry named `"jcodemunch"` already exists
+/// it is not modified.  If `jcodemunch-mcp` is not on `$PATH` (and the user has
+/// not installed it via `pip install jcodemunch-mcp`) a single info-level
+/// message is logged and the function returns normally - Warp continues without
+/// the codebase index.
+///
+/// Set `JCODEMUNCH_DISABLED=1` to suppress this entirely.
+pub fn ensure_jcodemunch_mcp_entry() {
+    if !auth_bypass_enabled() || jcodemunch_disabled() {
+        return;
+    }
+
+    // Check that jcodemunch-mcp is on PATH.  We look for the binary that
+    // `pip install jcodemunch-mcp` drops (name: `jcodemunch-mcp`) as well as
+    // `uvx jcodemunch-mcp` (which is runtime-resolved and always available if
+    // uvx is installed).  We prefer the direct binary to avoid a uvx overhead.
+    let has_binary = std::process::Command::new("which")
+        .arg("jcodemunch-mcp")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    let has_uvx = !has_binary
+        && std::process::Command::new("which")
+            .arg("uvx")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+    if !has_binary && !has_uvx {
+        log::info!(
+            "jCodeMunch: jcodemunch-mcp not found on PATH and uvx not available - \
+             local codebase index unavailable. \
+             Install with: pip install jcodemunch-mcp   OR   brew install uv"
+        );
+        return;
+    }
+
+    let Some(mcp_config_path) = warp_home_mcp_config_path() else {
+        return;
+    };
+
+    // Read or initialise the config file.
+    let existing = if mcp_config_path.exists() {
+        std::fs::read_to_string(&mcp_config_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    // Parse as a JSON object; fall back to an empty object on parse error.
+    let mut config: serde_json::Value = if existing.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(&existing).unwrap_or(serde_json::json!({}))
+    };
+
+    // If "jcodemunch" is already registered, nothing to do.
+    if config
+        .get("mcpServers")
+        .and_then(|s| s.get("jcodemunch"))
+        .is_some()
+    {
+        return;
+    }
+
+    // Build the server entry.
+    let entry = if has_binary {
+        serde_json::json!({
+            "command": "jcodemunch-mcp",
+            "args": []
+        })
+    } else {
+        // uvx path: no install required, runs via uv tool runner.
+        serde_json::json!({
+            "command": "uvx",
+            "args": ["jcodemunch-mcp"]
+        })
+    };
+
+    config
+        .as_object_mut()
+        .and_then(|obj| {
+            obj.entry("mcpServers")
+                .or_insert(serde_json::json!({}))
+                .as_object_mut()
+                .map(|servers| servers.insert("jcodemunch".to_owned(), entry))
+        });
+
+    // Ensure the parent directory exists.
+    if let Some(parent) = mcp_config_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    match serde_json::to_string_pretty(&config) {
+        Ok(serialized) => {
+            if let Err(e) = std::fs::write(&mcp_config_path, serialized) {
+                log::warn!("jCodeMunch: failed to write MCP config: {e}");
+            } else {
+                let invocation = if has_binary { "jcodemunch-mcp" } else { "uvx jcodemunch-mcp" };
+                log::info!(
+                    "jCodeMunch: registered '{invocation}' in {} - \
+                     local codebase index available via MCP",
+                    mcp_config_path.display()
+                );
+            }
+        }
+        Err(e) => log::warn!("jCodeMunch: failed to serialize MCP config: {e}"),
+    }
+}

@@ -504,6 +504,12 @@ pub fn run() -> Result<()> {
         let _ = dotenvy::from_filename(home.join(".warp").join(".env"));
     }
 
+    // When auth bypass is active, ensure jCodeMunch is wired into the Warp home
+    // MCP config so the agent has a local codebase index without touching Warp's
+    // cloud embedding pipeline. Safe to call before platform::init(); it only
+    // reads env vars and may do a filesystem write.
+    crate::local_ai::ensure_jcodemunch_mcp_entry();
+
     // Perform any necessary platform-specific initialization.
     platform::init();
 
