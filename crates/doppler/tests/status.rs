@@ -5,12 +5,12 @@ use std::io;
 use std::os::unix::process::ExitStatusExt as _;
 #[cfg(windows)]
 use std::os::windows::process::ExitStatusExt as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use doppler::{parse_configure_all, read_status, CommandRunner, DopplerError, DopplerStatus, ScopedBinding};
+use doppler::{parse_configure_all, read_status, CommandRunner, DopplerError, DopplerStatus};
 
 // ---------------------------------------------------------------------------
 // MockRunner — identical pattern to tests/fetch.rs
@@ -31,6 +31,7 @@ impl MockRunner {
         })
     }
 
+    #[allow(dead_code)]
     fn call_count(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
@@ -42,7 +43,7 @@ impl MockRunner {
 
 #[async_trait::async_trait]
 impl CommandRunner for MockRunner {
-    async fn run(&self, args: &[&str]) -> io::Result<Output> {
+    async fn run(&self, args: &[&str], _cwd: Option<&Path>) -> io::Result<Output> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.last_args
             .lock()
