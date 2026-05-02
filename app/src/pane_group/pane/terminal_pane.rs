@@ -1391,6 +1391,7 @@ fn handle_terminal_view_event(
                                 }),
                                 title: (!title.is_empty()).then_some(title),
                                 team: None,
+                                agent_identity_uid: None,
                                 skill: None,
                                 attachments: vec![],
                                 interactive: Some(true),
