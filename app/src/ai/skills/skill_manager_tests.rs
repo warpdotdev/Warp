@@ -433,6 +433,19 @@ Plain content with no variables.
 }
 
 #[test]
+fn bundled_add_mcp_skill_uses_agent_add_mcp_name() {
+    let skill_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../resources/bundled/skills/add-mcp-server/SKILL.md");
+    let skill = parse_bundled_skill(&skill_path).unwrap();
+
+    assert_eq!(skill.name, "agent-add-mcp");
+    assert_eq!(
+        skill.description,
+        "Use this skill when helping users add MCP servers to their Warp configuration."
+    );
+}
+
+#[test]
 fn test_build_bundled_skill_context() {
     let context = build_bundled_skill_context();
 

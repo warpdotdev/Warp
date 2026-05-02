@@ -29,7 +29,7 @@ pub static CLOUD_AGENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand
 
 pub const ADD_MCP: StaticCommand = StaticCommand {
     name: "/add-mcp",
-    description: "Add new MCP server",
+    description: "Add a new MCP server via the MCP settings page",
     icon_path: "bundled/svg/dataflow.svg",
     availability: Availability::AI_ENABLED,
     auto_enter_ai_mode: false,
@@ -729,6 +729,18 @@ mod tests {
         for name in names {
             assert!(seen.insert(name), "duplicate slash command name: {name}");
         }
+    }
+
+    #[test]
+    fn add_mcp_command_clarifies_settings_flow() {
+        let command = COMMAND_REGISTRY
+            .get_command_with_name(ADD_MCP.name)
+            .expect("expected /add-mcp to be registered");
+
+        assert_eq!(
+            command.description,
+            "Add a new MCP server via the MCP settings page"
+        );
     }
 
     #[test]
