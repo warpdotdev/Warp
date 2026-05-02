@@ -23,9 +23,12 @@
 
 <h1></h1>
 
-## Personal fork — danieljohnmorris/warp
+## This fork
 
-This is a personal AGPL fork of [warpdotdev/warp](https://github.com/warpdotdev/warp). It removes the cloud-auth requirement so the OSS build boots straight into a local terminal, hides the notifications inbox, and adds plumbing to route AI agent runs to local CLIs (`claude`, `codex`) instead of Warp's cloud server.
+This is my personal AGPL fork of [warpdotdev/warp](https://github.com/warpdotdev/warp). It boots without server auth, hides the notifications inbox, and adds plumbing to route AI agent runs to local CLIs (`claude`, `codex`) instead of Warp's cloud. Not affiliated with or endorsed by Warp Inc.
+
+**Forked from**: [`warpdotdev/warp@00df35b`](https://github.com/warpdotdev/warp/commit/00df35b5dc951b9ed9ac57f873ea0b0484f42ad6) (2026-05-01).
+**Sync**: pull the latest upstream with `git fetch upstream master && git merge upstream/master`.
 
 ### Configuration (`.env`)
 
