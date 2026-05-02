@@ -1182,8 +1182,14 @@ impl SettingsView {
 
         // Build sidebar nav items. AI page is presented as an "Agents" umbrella
         // with subpages; the actual AI SettingsPage is hidden from direct sidebar listing.
-        let mut nav_items = vec![
-            SettingsNavItem::Page(SettingsSection::Account),
+        // Under auth-bypass mode the Account page (fake test_user email, cloud-only sync
+        // toggle, Log out button) is meaningless, so it is omitted from the sidebar.
+        let mut nav_items = if crate::local_ai::auth_bypass_enabled() {
+            vec![]
+        } else {
+            vec![SettingsNavItem::Page(SettingsSection::Account)]
+        };
+        nav_items.extend(vec![
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
                 "Agents",
                 SettingsSection::ai_subpages().to_vec(),
@@ -1221,11 +1227,19 @@ impl SettingsView {
         ]);
 
         // Resolve the initial page: map internal backing-page sections to their default subpage.
+        // Under auth-bypass, Account is hidden; redirect to Appearance as the landing page.
         let initial_page = match page {
             Some(SettingsSection::AI) => SettingsSection::WarpAgent,
             Some(SettingsSection::Code) => SettingsSection::CodeIndexing,
             Some(section) if section.is_subpage() => section,
-            other => other.unwrap_or_default(),
+            other => {
+                let section = other.unwrap_or_default();
+                if section == SettingsSection::Account && crate::local_ai::auth_bypass_enabled() {
+                    SettingsSection::Appearance
+                } else {
+                    section
+                }
+            }
         };
 
         // Auto-expand the umbrella if the initial page is one of its subpages.
