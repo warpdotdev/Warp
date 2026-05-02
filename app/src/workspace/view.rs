@@ -8251,10 +8251,17 @@ impl Workspace {
             }
         }
 
+        let bypass = crate::local_ai::auth_bypass_enabled();
+
+        if !bypass {
+            items.push(
+                MenuItemFields::new("What's new")
+                    .with_on_select_action(WorkspaceAction::ViewLatestChangelog)
+                    .into_item(),
+            );
+        }
+
         items.extend([
-            MenuItemFields::new("What's new")
-                .with_on_select_action(WorkspaceAction::ViewLatestChangelog)
-                .into_item(),
             MenuItemFields::new("Settings")
                 .with_on_select_action(WorkspaceAction::ShowSettings)
                 .into_item(),
@@ -8265,10 +8272,15 @@ impl Workspace {
             MenuItemFields::new("Documentation")
                 .with_on_select_action(WorkspaceAction::ViewUserDocs)
                 .into_item(),
-            MenuItemFields::new("Feedback")
-                .with_on_select_action(WorkspaceAction::SendFeedback)
-                .into_item(),
         ]);
+
+        if !bypass {
+            items.push(
+                MenuItemFields::new("Feedback")
+                    .with_on_select_action(WorkspaceAction::SendFeedback)
+                    .into_item(),
+            );
+        }
 
         #[cfg(not(target_family = "wasm"))]
         items.push(
@@ -8277,12 +8289,14 @@ impl Workspace {
                 .into_item(),
         );
 
-        items.extend([
-            MenuItemFields::new("Slack")
-                .with_on_select_action(WorkspaceAction::JoinSlack)
-                .into_item(),
-            MenuItem::Separator,
-        ]);
+        if !bypass {
+            items.extend([
+                MenuItemFields::new("Slack")
+                    .with_on_select_action(WorkspaceAction::JoinSlack)
+                    .into_item(),
+                MenuItem::Separator,
+            ]);
+        }
 
         if self.auth_state.is_anonymous_or_logged_out() {
             items.push(
@@ -8306,7 +8320,7 @@ impl Workspace {
                     ))
                     .into_item(),
             );
-        } else {
+        } else if !bypass {
             items.push(
                 MenuItemFields::new("Upgrade")
                     .with_on_select_action(WorkspaceAction::ShowUpgrade)
