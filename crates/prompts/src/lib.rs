@@ -11,6 +11,9 @@
 //! Layers are concatenated with explicit `## Layer: <kind>` headers so that
 //! downstream consumers can introspect provenance if they need to.
 
+#[cfg(feature = "dev")]
+pub mod hot_reload;
+
 use std::path::{Path, PathBuf};
 
 use orchestrator::Role;
