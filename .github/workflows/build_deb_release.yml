@@ -1,0 +1,313 @@
+# Build and release .deb packages for Linux (x86_64 and aarch64).
+#
+# Triggered by:
+#   - Pushing a tag that matches `v*` (e.g. v1.0.0, v0.2024.05.01)
+#   - Manual workflow_dispatch (for testing without publishing)
+
+name: Build .deb Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel'
+        required: true
+        type: choice
+        options:
+          - oss
+          - dev
+          - stable
+        default: 'oss'
+      publish_release:
+        description: 'Create a GitHub Release and upload .deb artifacts'
+        required: true
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -C debuginfo=line-tables-only
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-deb:
+    name: Build .deb (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Determine release channel
+        id: channel
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "channel=${{ inputs.channel || 'oss' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=oss" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine version tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v0.0.0-dev.$(date +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            build-essential cmake pkg-config \
+            python-is-python3 \
+            libssl-dev libfreetype-dev libexpat1-dev libgit2-dev \
+            libfontconfig1-dev \
+            jq brotli \
+            libasound2-dev \
+            libclang-dev \
+            fakeroot dpkg-dev
+
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION="25.1"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64)  PROTOC_ZIP="protoc-${PROTOC_VERSION}-linux-x86_64.zip" ;;
+            aarch64) PROTOC_ZIP="protoc-${PROTOC_VERSION}-linux-aarch_64.zip" ;;
+            *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
+          esac
+          curl -fsSL -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}"
+          sudo unzip -o /tmp/protoc.zip -d /usr/local bin/protoc 'include/*'
+          rm /tmp/protoc.zip
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-deb-${{ matrix.arch }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.9.0'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install channel config (graceful failure for forks)
+        run: ./script/install_channel_config || echo "Skipping channel config (no access)"
+
+      - name: Build and bundle .deb package
+        id: bundle
+        run: |
+          ./script/linux/bundle \
+            --channel "$CHANNEL" \
+            --release-tag "$GIT_RELEASE_TAG" \
+            --packages deb \
+            --artifact app
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          GIT_RELEASE_TAG: ${{ steps.version.outputs.tag }}
+
+      - name: Find built .deb files
+        id: find-deb
+        run: |
+          DEB_DIR="${{ steps.bundle.outputs.packages_dir }}"
+          if [ -z "$DEB_DIR" ]; then
+            # Fallback: search for .deb files in the target directory
+            DEB_DIR="$(find target -name '*.deb' -printf '%h\n' | head -1)"
+          fi
+          echo "deb_dir=$DEB_DIR" >> "$GITHUB_OUTPUT"
+          echo "Found .deb files:"
+          find target -name '*.deb' -ls
+
+      - name: Upload .deb as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: warp-deb-${{ matrix.arch }}
+          path: |
+            target/**/*.deb
+          retention-days: 30
+
+  # Build CLI .deb package
+  build-cli-deb:
+    name: Build CLI .deb (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Determine release channel
+        id: channel
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "channel=${{ inputs.channel || 'oss' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=oss" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Determine version tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v0.0.0-dev.$(date +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            build-essential cmake pkg-config \
+            python-is-python3 \
+            libssl-dev libfreetype-dev libexpat1-dev libgit2-dev \
+            libfontconfig1-dev \
+            jq brotli \
+            libasound2-dev \
+            libclang-dev \
+            fakeroot dpkg-dev
+
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION="25.1"
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64)  PROTOC_ZIP="protoc-${PROTOC_VERSION}-linux-x86_64.zip" ;;
+            aarch64) PROTOC_ZIP="protoc-${PROTOC_VERSION}-linux-aarch_64.zip" ;;
+            *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
+          esac
+          curl -fsSL -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}"
+          sudo unzip -o /tmp/protoc.zip -d /usr/local bin/protoc 'include/*'
+          rm /tmp/protoc.zip
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-cli-deb-${{ matrix.arch }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.9.0'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install channel config (graceful failure for forks)
+        run: ./script/install_channel_config || echo "Skipping channel config (no access)"
+
+      - name: Build and bundle CLI .deb package
+        id: bundle
+        run: |
+          ./script/linux/bundle \
+            --channel "$CHANNEL" \
+            --release-tag "$GIT_RELEASE_TAG" \
+            --packages deb \
+            --artifact cli
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          GIT_RELEASE_TAG: ${{ steps.version.outputs.tag }}
+
+      - name: Upload CLI .deb as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: warp-cli-deb-${{ matrix.arch }}
+          path: |
+            target/**/*.deb
+          retention-days: 30
+
+  # Create a GitHub Release and attach all .deb files
+  create-release:
+    name: Create GitHub Release
+    needs: [build-deb, build-cli-deb]
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
+    permissions:
+      contents: write
+    steps:
+      - name: Determine version tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v0.0.0-dev.$(date +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: List downloaded artifacts
+        run: find artifacts/ -type f -ls
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          body: |
+            ## Warp .deb Release ${{ steps.version.outputs.tag }}
+
+            ### Artifacts
+            - `warp-terminal-*.deb` — Warp Terminal application
+            - `oz-*.deb` — Warp CLI tool
+
+            ### Installation
+            ```bash
+            sudo dpkg -i warp-terminal-*_amd64.deb   # x86_64
+            sudo dpkg -i warp-terminal-*_arm64.deb    # aarch64
+            sudo apt-get install -f                    # fix dependencies if needed
+            ```
+          draft: false
+          prerelease: ${{ github.event_name == 'workflow_dispatch' }}
+          files: artifacts/**/*.deb
+          token: ${{ secrets.GITHUB_TOKEN }}
