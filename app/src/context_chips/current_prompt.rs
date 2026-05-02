@@ -1041,15 +1041,31 @@ impl CurrentPrompt {
                 }
                 RefreshConfig::Periodically { .. } => {
                     if self.is_updated_externally(chip_kind) {
-                        let initial_gen = chip_kind.initial_value_generator();
-                        let generator = initial_gen.as_ref().unwrap_or(chip.generator());
-                        self.fetch_chip_value_once(
-                            chip_kind,
-                            generator,
-                            chip.on_click_generator().cloned(),
-                            true,
-                            ctx,
-                        );
+                        // For chips updated externally (e.g. by the per-repo
+                        // git status filesystem watcher), avoid running the
+                        // periodic shell-based generator. Doing so can briefly
+                        // overwrite the structured watcher value with one that
+                        // uses different semantics (for example, the
+                        // `GitDiffStats` shell fallback runs `git diff
+                        // --shortstat HEAD`, which excludes untracked files,
+                        // whereas the watcher counts untracked files as
+                        // changes), causing the chip to flicker between the
+                        // tracked-only count and the all-files count when
+                        // untracked files are present.
+                        //
+                        // If a chip provides an `initial_value_generator` that
+                        // sources from the prompt context (rather than running
+                        // a shell command), use it for a fast initial value
+                        // until the watcher emits a metadata-changed event.
+                        if let Some(initial_gen) = chip_kind.initial_value_generator() {
+                            self.fetch_chip_value_once(
+                                chip_kind,
+                                &initial_gen,
+                                chip.on_click_generator().cloned(),
+                                true,
+                                ctx,
+                            );
+                        }
                     } else {
                         self.fetch_chip_value_at_interval(
                             chip_kind,

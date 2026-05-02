@@ -565,6 +565,7 @@ pub struct AISettingsPageView {
 
     // Denylisting commands (default profile)
     command_denylist_mouse_state_handles: Vec<MouseStateHandle>,
+    command_denylist_tooltip_mouse_state_handles: Vec<MouseStateHandle>,
     command_denylist_editor: ViewHandle<SubmittableTextInput>,
 
     mcp_allowlist_mouse_state_handles: Vec<MouseStateHandle>,
@@ -609,8 +610,7 @@ impl AISettingsPageView {
 
                 Self::update_editor_interaction_state(
                     me.command_denylist_editor.as_ref(ctx).editor().clone(),
-                    is_any_ai_enabled
-                        && !ai_autonomy_settings.has_override_for_execute_commands_denylist(),
+                    is_any_ai_enabled,
                     ctx,
                 );
 
@@ -1019,8 +1019,7 @@ impl AISettingsPageView {
 
                     Self::update_editor_interaction_state(
                         me.command_denylist_editor.as_ref(ctx).editor().clone(),
-                        is_enabled
-                            && !ai_autonomy_settings.has_override_for_execute_commands_denylist(),
+                        is_enabled,
                         ctx,
                     );
 
@@ -1319,11 +1318,14 @@ impl AISettingsPageView {
             }
         });
 
+        let org_denylist = BlocklistAIPermissions::get_org_execute_commands_denylist(ctx);
         let command_denylist_mouse_state_handles = current_permission
             .command_denylist
             .iter()
             .map(|_| Default::default())
             .collect();
+        let command_denylist_tooltip_mouse_state_handles: Vec<MouseStateHandle> =
+            org_denylist.iter().map(|_| Default::default()).collect();
 
         let command_denylist_editor = ctx.add_typed_action_view(|ctx| {
             let mut input =
@@ -1494,6 +1496,7 @@ impl AISettingsPageView {
             directory_allowlist_mouse_state_handles,
             directory_allowlist_editor,
             command_denylist_mouse_state_handles,
+            command_denylist_tooltip_mouse_state_handles,
             command_denylist_editor,
             command_allowlist_mouse_state_handles,
             command_allowlist_editor,
@@ -2173,6 +2176,10 @@ impl AISettingsPageView {
             .iter()
             .map(|_| Default::default())
             .collect();
+
+        let org_denylist = BlocklistAIPermissions::get_org_execute_commands_denylist(ctx);
+        self.command_denylist_tooltip_mouse_state_handles =
+            org_denylist.iter().map(|_| Default::default()).collect();
 
         self.command_allowlist_mouse_state_handles = blocklist_permissions
             .get_execute_commands_allowlist(ctx, None)
@@ -5215,6 +5222,7 @@ impl AgentsWidget {
         .with_margin_bottom(2.)
         .finish();
 
+        let disabled = !ai_settings.is_any_ai_enabled(app);
         let items = render_input_list(
             None,
             items
@@ -5227,7 +5235,7 @@ impl AgentsWidget {
                         item: server_name,
                         mouse_state_handle,
                         on_remove_action: action(uuid),
-                        is_disabled: !ai_settings.is_any_ai_enabled(app),
+                        is_disabled: disabled,
                         tooltip_mouse_state: None,
                     })
                 }),

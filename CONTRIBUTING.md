@@ -2,6 +2,9 @@
 
 Thanks for helping improve Warp! This guide explains how to open issues, propose changes, and get your work reviewed.
 
+> [!TIP]
+> **Chat with us in Slack.** Connect with other contributors and the Warp team in the [`#oss-contributors`](https://warpcommunity.slack.com/archives/C0B0LM8N4DB) channel — a good place for ad-hoc questions, design discussion, and pairing with maintainers as you work through an issue or PR. New here? [Join the Warp Slack community](https://go.warp.dev/join-preview) first, then hop into `#oss-contributors`.
+
 ## TL;DR
 
 - Bug fixes are welcome for any issue. All bugs are marked as `ready-to-implement`.
@@ -163,6 +166,6 @@ See [`SECURITY.md`](SECURITY.md) for our security disclosure policy and private 
 
 ## Getting Help
 
+- Chat with other contributors and the Warp team in [`#oss-contributors`](https://warpcommunity.slack.com/archives/C0B0LM8N4DB) on the [Warp Slack community](https://go.warp.dev/join-preview) (join the workspace first if you're new).
 - Browse the [Warp docs](https://docs.warp.dev/).
-- Join the [Slack Community](https://go.warp.dev/join-preview) to ask questions and connect with other contributors.
 - Open a [GitHub issue](https://github.com/warpdotdev/warp/issues) for bugs or feature requests.

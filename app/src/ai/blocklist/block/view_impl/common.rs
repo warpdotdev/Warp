@@ -24,12 +24,12 @@ use warpui::{
     assets::asset_cache::{AssetCache, AssetSource, AssetState},
     elements::{
         new_scrollable::{ScrollableAppearance, SingleAxisConfig},
-        Align, Axis, Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox,
-        Container, CornerRadius, CrossAxisAlignment, DispatchEventResult, Empty, EventHandler,
-        Expanded, Fill, Flex, FormattedTextElement, HeadingFontSizeMultipliers, Hoverable,
-        Image as WarpImage, MainAxisAlignment, MainAxisSize, MouseStateHandle, NewScrollable,
-        OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition,
-        ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack, Table,
+        Align, Axis, Border, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle,
+        ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult, Empty,
+        EventHandler, Expanded, Fill, Flex, FormattedTextElement, HeadingFontSizeMultipliers,
+        Hoverable, Image as WarpImage, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+        NewScrollable, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius,
+        SavePosition, ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack, Table,
         TableColumnWidth, TableConfig, TableHeader, TableVerticalSizing, Text, Wrap,
     },
     fonts::{Properties, Weight},
@@ -67,7 +67,8 @@ use crate::{
             icons::red_stop_icon, AIAgentAction, AIAgentActionType, AIAgentInput,
             AIAgentOutputMessageType, AIAgentTextSection, AgentOutputImage, AgentOutputImageLayout,
             AgentOutputMermaidDiagram, AgentOutputTable, AgentOutputTableRendering,
-            ProgrammingLanguage, RenderableAIError, SummarizationType, WebSearchStatus,
+            ProgrammingLanguage, RenderableAIError, SummarizationType, UserQueryMode,
+            WebSearchStatus,
         },
         blocklist::{
             block::{
@@ -566,19 +567,6 @@ pub fn render_warping_indicator_base(
 
     let text = render_output_status_text(warping_indicator_text, appearance, app);
 
-    let mut row = Flex::row()
-        .with_cross_axis_alignment(CrossAxisAlignment::Start)
-        .with_spacing(6.);
-
-    if let Some(icon) = icon {
-        row = row.with_child(
-            ConstrainedBox::new(icon)
-                .with_width(icon_size(app) - STATUS_ICON_SIZE_DELTA)
-                .with_height(icon_size(app) - STATUS_ICON_SIZE_DELTA)
-                .finish(),
-        );
-    }
-
     let text_content = {
         let mut row = Flex::row().with_child(Shrinkable::new(1., text).finish());
 
@@ -637,14 +625,29 @@ pub fn render_warping_indicator_base(
         );
     }
 
+    let mut row = Flex::row()
+        .with_cross_axis_alignment(CrossAxisAlignment::Start)
+        .with_spacing(6.);
+
+    if let Some(icon) = icon {
+        row = row.with_child(
+            ConstrainedBox::new(icon)
+                .with_width(icon_size(app) - STATUS_ICON_SIZE_DELTA)
+                .with_height(icon_size(app) - STATUS_ICON_SIZE_DELTA)
+                .finish(),
+        );
+    }
+
     row = row.with_child(Expanded::new(1., text_col.finish()).finish());
 
     if let Some(buttons) = buttons {
         row = row.with_child(buttons);
     }
 
+    let content = Clipped::new(row.finish()).finish();
+
     if is_passive_code_diff {
-        Container::new(row.finish())
+        Container::new(content)
             // Use custom padding for the passive code diff block
             .with_padding_top(8.)
             .with_padding_bottom(4.)
@@ -652,7 +655,7 @@ pub fn render_warping_indicator_base(
             .finish()
     } else {
         let mut container = Container::new(
-            ConstrainedBox::new(row.finish())
+            ConstrainedBox::new(content)
                 .with_height(STATUS_FOOTER_VERTICAL_PADDING * 2. + appearance.monospace_font_size())
                 .finish(),
         )
@@ -2315,7 +2318,7 @@ fn is_supported_blocklist_image_source(source: &str) -> bool {
         .map(|ext| {
             matches!(
                 ext.to_ascii_lowercase().as_str(),
-                "jpg" | "jpeg" | "png" | "gif" | "webp" | "svg"
+                "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "tif" | "webp" | "ico" | "svg"
             )
         })
         .unwrap_or(false)
@@ -3406,13 +3409,28 @@ pub struct UserQueryProps<'a> {
     pub find_context: Option<FindContext<'a>>,
     pub font_properties: &'a Properties,
 }
+pub(crate) fn user_query_mode_prefix_highlight_len(mode: UserQueryMode) -> Option<usize> {
+    match mode {
+        UserQueryMode::Normal => None,
+        UserQueryMode::Plan => Some(commands::PLAN.name.len()),
+        UserQueryMode::Orchestrate => Some(commands::ORCHESTRATE.name.len()),
+    }
+}
+
 pub(super) fn query_prefix_highlight_len(
     input: &AIAgentInput,
     displayed_query: &str,
 ) -> Option<usize> {
-    if displayed_query.starts_with(commands::PLAN.name) {
-        Some(commands::PLAN.name.len())
-    } else if displayed_query.starts_with(commands::CREATE_ENVIRONMENT.name) {
+    if let AIAgentInput::UserQuery {
+        user_query_mode, ..
+    } = input
+    {
+        if let Some(prefix_len) = user_query_mode_prefix_highlight_len(*user_query_mode) {
+            return Some(prefix_len);
+        }
+    }
+
+    if displayed_query.starts_with(commands::CREATE_ENVIRONMENT.name) {
         Some(commands::CREATE_ENVIRONMENT.name.len())
     } else if displayed_query.starts_with(commands::AGENT.name) {
         Some(commands::AGENT.name.len())

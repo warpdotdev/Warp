@@ -865,6 +865,7 @@ impl ExecutionProfileEditorView {
         ctx.subscribe_to_model(&workspace, |me, workspace, event, ctx| {
             if let UserWorkspacesEvent::TeamsChanged = event {
                 Self::update_all_editor_interaction_states(me, workspace, ctx);
+                me.update_mouse_state_handles(ctx);
                 ctx.notify();
             }
         });
@@ -910,6 +911,12 @@ impl ExecutionProfileEditorView {
             .iter()
             .map(|_| Default::default())
             .collect();
+        self.command_denylist_tooltip_mouse_state_handles = current_permissions
+            .command_denylist
+            .iter()
+            .map(|_| Default::default())
+            .collect();
+
         self.command_denylist_tooltip_mouse_state_handles = current_permissions
             .command_denylist
             .iter()

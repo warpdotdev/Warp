@@ -3107,7 +3107,7 @@ dependencies = [
 [[package]]
 name = "core-foundation"
 version = "0.10.1"
-source = "git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82#0bcad1e103ead6bd71c4e5f85598ada9508e3a82"
+source = "git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff#6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -3116,7 +3116,7 @@ dependencies = [
 [[package]]
 name = "core-foundation-sys"
 version = "0.8.7"
-source = "git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82#0bcad1e103ead6bd71c4e5f85598ada9508e3a82"
+source = "git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff#6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff"
 
 [[package]]
 name = "core-graphics"
@@ -3147,11 +3147,11 @@ dependencies = [
 [[package]]
 name = "core-graphics"
 version = "0.25.0"
-source = "git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82#0bcad1e103ead6bd71c4e5f85598ada9508e3a82"
+source = "git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff#6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff"
 dependencies = [
  "bitflags 2.9.4",
  "core-foundation 0.10.1",
- "core-graphics-types 0.2.0 (git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82)",
+ "core-graphics-types 0.2.0 (git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff)",
  "foreign-types 0.5.0",
  "libc",
 ]
@@ -3181,15 +3181,15 @@ dependencies = [
 [[package]]
 name = "core-graphics-types"
 version = "0.2.0"
-source = "git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82#0bcad1e103ead6bd71c4e5f85598ada9508e3a82"
+source = "git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff#6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff"
 dependencies = [
  "core-foundation 0.10.1",
 ]
 
 [[package]]
 name = "core-text"
-version = "21.0.0"
-source = "git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82#0bcad1e103ead6bd71c4e5f85598ada9508e3a82"
+version = "21.1.0"
+source = "git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff#6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff"
 dependencies = [
  "core-foundation 0.10.1",
  "core-graphics 0.25.0",

@@ -6707,6 +6707,8 @@ impl Workspace {
     }
 
     fn should_trigger_get_started_onboarding(&self, ctx: &mut ViewContext<Self>) -> bool {
+        // Onboarding requires a real user to interact with it; suppress when
+        // running in a headless mode like the SDK/CLI.
         if !AppExecutionMode::as_ref(ctx).can_show_onboarding() {
             return false;
         }
@@ -6743,6 +6745,8 @@ impl Workspace {
     /// If the user is new and therefore has not seen the in app onboarding,
     /// triggers the welcome block to be shown after bootstrapping is completed.
     fn check_and_trigger_onboarding(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        // Onboarding requires a real user to interact with it; suppress when
+        // running in a headless mode like the SDK/CLI.
         if !AppExecutionMode::as_ref(ctx).can_show_onboarding() {
             return false;
         }
@@ -11573,6 +11577,12 @@ impl Workspace {
             }
         });
 
+        // True when the fork is paired with a follow-up that fires immediately after restore
+        // (a prompt to send, or a `/summarize` triggered by `summarize_after_fork`).
+        // Used to suppress the `couldn't find original conversation directory` ephemeral hint
+        // for cloud-to-local forks, which would otherwise mask the warping indicator while the
+        // agent processes the follow-up. See `BlocklistAIStatusBar::render`'s
+        // `ephemeral_message_model.current_message().is_none()` gate.
         let has_initial_query = summarize_after_fork || initial_prompt.is_some();
 
         // Load the conversation data asynchronously
@@ -14460,6 +14470,11 @@ impl Workspace {
                 has_remote_server,
             );
 
+            // When an SSH command is running (pending host set + block
+            // still long-running), the old local session is still active
+            // so the enablement computes as `Enabled`. Override to
+            // `PendingRemoteSession` so the file tree shows loading
+            // instead of the stale local tree.
             let enablement =
                 if has_pending_ssh && matches!(enablement, CodingPanelEnablementState::Enabled) {
                     CodingPanelEnablementState::PendingRemoteSession
@@ -18259,7 +18274,7 @@ impl Workspace {
         let mut main_content = Flex::row();
 
         // In horizontal tabs mode, config-driven panels render inside this row
-        // so they share the same background/corner-radius wrapper from render_main_panel.
+        // alongside the terminal area.
         // In vertical tabs mode, panels are rendered in render_panels instead.
         if !vertical_tabs_active {
             let config = TabSettings::as_ref(app)
@@ -18867,8 +18882,7 @@ impl Workspace {
             && *TabSettings::as_ref(app).use_vertical_tabs;
 
         // In vertical tabs mode, config-driven panels are rendered here.
-        // In horizontal tabs mode, they're rendered inside render_banner_and_active_tab
-        // so they share the same background/corner-radius wrapper.
+        // In horizontal tabs mode, they're rendered inside render_banner_and_active_tab.
         if vertical_tabs_active {
             let config = TabSettings::as_ref(app)
                 .header_toolbar_chip_selection
@@ -18904,6 +18918,8 @@ impl Workspace {
         if prev_panel_added {
             panels_view.add_child(Self::render_panel_separator(app));
         }
+        // The outer workspace container in `render` already paints the terminal
+        // background fill, so don't paint it again here (see APP-4328).
         panels_view = panels_view.with_child(Shrinkable::new(1.0, terminal_view).finish());
         prev_panel_added = true;
 
@@ -21974,7 +21990,9 @@ impl View for Workspace {
             // Hide the vertical tab rail for simplified WASM views (notebooks, shared sessions, etc.)
             let panels_row = self.render_panels(app, Shrinkable::new(1.0, content).finish(), true);
             outer_column.add_child(Shrinkable::new(1.0, panels_row).finish());
-            outer_column.finish()
+            Container::new(outer_column.finish())
+                .with_background(util::get_terminal_background_fill(self.window_id, app))
+                .finish()
         } else {
             let mut outer_column = Flex::column();
             if tab_bar_mode == ShowTabBar::Stacked {

@@ -2174,7 +2174,7 @@ pub fn test_ctrl_tab_session_switching() -> Builder {
     // this test fails on linux at the step where the command pallete is expected to show.
     // The feature does work on linux though - there's some underlying issue with our integration
     // test here.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     {
         return builder;
     }

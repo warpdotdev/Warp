@@ -204,7 +204,10 @@ impl SupportedPlatforms {
                 cfg!(all(not(target_family = "wasm"), target_os = "macos"))
             }
             SupportedPlatforms::LINUX => {
-                cfg!(all(not(target_family = "wasm"), target_os = "linux"))
+                cfg!(all(
+                    not(target_family = "wasm"),
+                    any(target_os = "linux", target_os = "freebsd")
+                ))
             }
             SupportedPlatforms::WINDOWS => {
                 cfg!(all(not(target_family = "wasm"), target_os = "windows"))

@@ -2,7 +2,6 @@ use crate::ui_components::blended_colors;
 use core::fmt::{self, Display};
 use itertools::Itertools as _;
 use pathfinder_color::ColorU;
-use pathfinder_geometry::vector::vec2f;
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -33,6 +32,7 @@ use crate::{
     ui_components::icons::Icon,
     view_components::{Dropdown, SubmittableTextInput},
 };
+use pathfinder_geometry::vector::vec2f;
 use settings::Setting;
 use warp_core::{
     settings::SyncToCloud,
@@ -1009,9 +1009,9 @@ pub struct InputListItem<SettingsPageAction: Action + Clone> {
     pub mouse_state_handle: MouseStateHandle,
     pub on_remove_action: SettingsPageAction,
     pub is_disabled: bool,
+    /// Must be pre-created (not inline during render) to preserve mouse tracking.
     pub tooltip_mouse_state: Option<MouseStateHandle>,
 }
-
 /// Renders a title, an input field to add new items and a list of already
 /// added items.
 ///
@@ -1102,7 +1102,6 @@ pub fn render_alternating_color_list<
 
 const WORKSPACE_OVERRIDE_TOOLTIP_TEXT: &str =
     "This option is enforced by your organization's settings and cannot be customized.";
-
 fn render_workspace_override_row_tooltip(
     child: Box<dyn Element>,
     mouse_state: MouseStateHandle,
@@ -1743,7 +1742,7 @@ impl<V: warpui::View> PageType<V> {
         }
     }
 
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     pub fn scroll_by(&self, delta: Pixels) {
         match self {
             PageType::Monolith {

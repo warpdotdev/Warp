@@ -249,21 +249,6 @@ impl EnvironmentSelector {
             .is_configuring_ambient_agent()
     }
 
-    fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
-        if self.is_menu_open == is_open {
-            return;
-        }
-
-        self.is_menu_open = is_open;
-        if is_open {
-            send_telemetry_from_ctx!(CloudAgentTelemetryEvent::EnvironmentSelectorOpened, ctx);
-            self.highlight_selected_environment(ctx);
-            ctx.focus(&self.dropdown);
-        }
-        ctx.emit(EnvironmentSelectorEvent::MenuVisibilityChanged { open: is_open });
-        ctx.notify();
-    }
-
     fn highlight_selected_environment(&mut self, ctx: &mut ViewContext<Self>) {
         let Some(selected_id) = self
             .ambient_agent_model
@@ -283,6 +268,21 @@ impl EnvironmentSelector {
         self.dropdown.update(ctx, |menu, ctx| {
             menu.select_index(index, ctx);
         });
+    }
+
+    fn set_menu_visibility(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
+        if self.is_menu_open == is_open {
+            return;
+        }
+
+        self.is_menu_open = is_open;
+        if is_open {
+            send_telemetry_from_ctx!(CloudAgentTelemetryEvent::EnvironmentSelectorOpened, ctx);
+            self.highlight_selected_environment(ctx);
+            ctx.focus(&self.dropdown);
+        }
+        ctx.emit(EnvironmentSelectorEvent::MenuVisibilityChanged { open: is_open });
+        ctx.notify();
     }
 
     /// Ensures a default environment is selected if none is currently selected.

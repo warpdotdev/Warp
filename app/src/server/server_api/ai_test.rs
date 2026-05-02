@@ -2,9 +2,10 @@ use chrono::TimeZone;
 use chrono::Utc;
 
 use super::{
-    build_list_agent_runs_url, AgentMessageHeader, AgentRunEvent, AgentSource,
-    AmbientAgentTaskState, Artifact, ArtifactDownloadResponse, ArtifactType, ExecutionLocation,
-    ListRunsResponse, ReadAgentMessageResponse, RunSortBy, RunSortOrder, TaskListFilter,
+    build_list_agent_runs_url, build_run_followup_url, AgentMessageHeader, AgentRunEvent,
+    AgentSource, AmbientAgentTaskState, Artifact, ArtifactDownloadResponse, ArtifactType,
+    ExecutionLocation, ListRunsResponse, ReadAgentMessageResponse, RunFollowupRequest, RunSortBy,
+    RunSortOrder, TaskListFilter,
 };
 use crate::notebooks::NotebookId;
 
@@ -971,4 +972,29 @@ fn build_list_agent_runs_url_routes_to_runs_not_tasks() {
     let url = build_list_agent_runs_url(10, &TaskListFilter::default());
     assert!(url.starts_with("agent/runs?"));
     assert!(!url.starts_with("agent/tasks"));
+}
+
+#[test]
+fn build_run_followup_url_routes_to_run_followups() {
+    let run_id = "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
+    assert_eq!(
+        build_run_followup_url(&run_id),
+        "agent/runs/550e8400-e29b-41d4-a716-446655440000/followups"
+    );
+}
+
+#[test]
+fn serialize_run_followup_request() {
+    let request = RunFollowupRequest {
+        message: "continue from here".to_string(),
+    };
+
+    let json = serde_json::to_value(request).unwrap();
+
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "message": "continue from here",
+        })
+    );
 }

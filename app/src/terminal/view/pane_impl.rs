@@ -271,6 +271,19 @@ impl TerminalView {
         header_ctx: &view::HeaderRenderContext,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        // When viewing a child agent under an orchestrator, replace the
+        // regular conversation title with a breadcrumb path: [Parent] / [Child].
+        // Clicking the parent crumb navigates the current pane back to the
+        // orchestrator (which then shows the pill bar again).
+        //
+        // Return the breadcrumbs element directly. `render_three_column_header`
+        // wraps the title in `Shrinkable + Clipped` which gives the inner
+        // breadcrumbs Flex (whose crumbs are themselves Shrinkable) a finite
+        // main-axis constraint. Wrapping it in our own `MainAxisSize::Min`
+        // Flex here would forward an infinite constraint and panic.
+        // Pass our persistent `parent_conversation_header_link` mouse state
+        // to the breadcrumb's parent crumb so hover and click events work
+        // (a fresh `MouseStateHandle::default()` per render would not).
         if let Some(breadcrumbs) = render_orchestration_breadcrumbs(
             self.agent_view_controller.as_ref(app),
             self.mouse_states.parent_conversation_header_link.clone(),
@@ -492,13 +505,23 @@ impl TerminalView {
         parent_conversation_header_card: Option<Box<dyn Element>>,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let should_show_pill_bar = FeatureFlag::OrchestrationPillBar.is_enabled()
-            && FeatureFlag::Orchestration.is_enabled()
+        // When `OrchestrationPillBar` is on, the pill bar takes the place of the
+        // parent navigation card (the parent pill is the "back to parent" link)
+        // and is shown for the orchestrator and all its children.
+        if FeatureFlag::OrchestrationPillBar.is_enabled()
             && FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(app).is_fullscreen()
-            && parent_conversation_header_card.is_none();
-
-        if should_show_pill_bar {
+        {
+            // The wrapping `Flex::column` would otherwise pass an infinite
+            // vertical max constraint down to its non-flex children. That
+            // breaks the title's vertical centering: with infinite max.y,
+            // the centered `Align` inside `render_three_column_header`
+            // collapses to the title's own (small) line-box height, and
+            // the outer row's `CrossAxisAlignment::Stretch` then pins the
+            // title to the top of the row. Pinning the header to its
+            // standard `PANE_HEADER_HEIGHT` here restores the finite
+            // vertical constraint the centering logic relies on, while
+            // letting the pill bar sit immediately below at its own height.
             let pinned_header = ConstrainedBox::new(header)
                 .with_height(PANE_HEADER_HEIGHT)
                 .finish();

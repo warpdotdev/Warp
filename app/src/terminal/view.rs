@@ -2740,6 +2740,7 @@ pub struct TerminalView {
     agent_view_back_button: ViewHandle<ActionButton>,
     /// Pill bar shown above the agent view header listing the orchestrator and
     /// child agents. Gated by `FeatureFlag::OrchestrationPillBar`.
+    /// always constructed; render-time guards control whether it draws anything.
     orchestration_pill_bar: ViewHandle<OrchestrationPillBar>,
     is_using_conversation_for_pane_header_title: bool,
 
@@ -3293,10 +3294,21 @@ impl TerminalView {
             ctx.notify();
         });
 
+        let ai_context_model = ctx.add_model(|ctx| {
+            BlocklistAIContextModel::new(
+                sessions.clone(),
+                &model_events_handle,
+                model.clone(),
+                terminal_view_id,
+                agent_view_controller.clone(),
+                ctx,
+            )
+        });
         let ai_input_model = ctx.add_model(|ctx| {
             let mut model = BlocklistAIInputModel::new(
                 model.clone(),
                 agent_view_controller.clone(),
+                ai_context_model.clone(),
                 terminal_view_id,
                 ctx,
             );
@@ -3319,16 +3331,6 @@ impl TerminalView {
                 &model_events_handle,
                 get_relevant_files_controller.clone(),
                 terminal_view_id,
-                ctx,
-            )
-        });
-        let ai_context_model = ctx.add_model(|ctx| {
-            BlocklistAIContextModel::new(
-                sessions.clone(),
-                &model_events_handle,
-                model.clone(),
-                terminal_view_id,
-                agent_view_controller.clone(),
                 ctx,
             )
         });
@@ -7391,6 +7393,9 @@ impl TerminalView {
 
     /// Returns `true` when an interactive SSH command has been detected at
     /// preexec and the SSH block is still running.
+    /// preexec and the SSH block is still running (long-running). Used by
+    /// the workspace to derive `PendingRemoteSession` without storing
+    /// mutable state on the workspace itself.
     pub fn has_pending_ssh_command(&self) -> bool {
         self.warpify_state.get_pending_ssh_host().is_some() && self.is_long_running()
     }
@@ -10427,6 +10432,7 @@ impl TerminalView {
                                 self.warpify_state
                                     .set_pending_ssh_host(warpify_command.to_string(), ssh_host);
                                 self.model.lock().start_notify_on_end_of_ssh_login();
+                                ctx.emit(Event::TerminalViewStateChanged);
                             }
                         } else {
                             self.warpify_state.clear_pending_ssh_host();
@@ -23268,7 +23274,7 @@ impl TerminalView {
 
                 // On Linux, immediately mark the request permission status as accepted since there's no concept of
                 // requesting desktop notification permissions.
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                 {
                     if let NotificationsDiscoveryBanner::Open {
                         request_outcome, ..

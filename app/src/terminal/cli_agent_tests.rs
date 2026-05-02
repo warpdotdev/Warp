@@ -258,6 +258,7 @@ fn test_detect_known_agents() {
                 ("opencode", CLIAgent::OpenCode),
                 ("copilot", CLIAgent::Copilot),
                 ("agent", CLIAgent::CursorCli),
+                ("goose", CLIAgent::Goose),
             ] {
                 assert_eq!(
                     CLIAgent::detect(command, None, None, ctx),

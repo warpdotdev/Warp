@@ -74,14 +74,35 @@ pub fn create_cloud_mode_view(
     };
     terminal_manager.update(ctx, |_, ctx| {
         ctx.subscribe_to_model(&view_model, move |manager, event, ctx| {
-            if let AmbientAgentViewModelEvent::SessionReady { session_id } = event {
-                if let Some(manager) = manager
-                    .as_any_mut()
-                    .downcast_mut::<shared_session::viewer::TerminalManager>()
-                {
+            let Some(manager) = manager
+                .as_any_mut()
+                .downcast_mut::<shared_session::viewer::TerminalManager>()
+            else {
+                return;
+            };
+            match event {
+                AmbientAgentViewModelEvent::SessionReady { session_id } => {
                     manager.connect_to_session(*session_id, ctx);
                 }
-            };
+                AmbientAgentViewModelEvent::FollowupSessionReady { session_id } => {
+                    manager.attach_followup_session(*session_id, ctx);
+                }
+                AmbientAgentViewModelEvent::EnteredSetupState
+                | AmbientAgentViewModelEvent::EnteredComposingState
+                | AmbientAgentViewModelEvent::DispatchedAgent
+                | AmbientAgentViewModelEvent::FollowupDispatched
+                | AmbientAgentViewModelEvent::ProgressUpdated
+                | AmbientAgentViewModelEvent::EnvironmentSelected
+                | AmbientAgentViewModelEvent::Failed { .. }
+                | AmbientAgentViewModelEvent::ShowCloudAgentCapacityModal
+                | AmbientAgentViewModelEvent::ShowAICreditModal
+                | AmbientAgentViewModelEvent::NeedsGithubAuth
+                | AmbientAgentViewModelEvent::Cancelled
+                | AmbientAgentViewModelEvent::HarnessSelected
+                | AmbientAgentViewModelEvent::HostSelected
+                | AmbientAgentViewModelEvent::HarnessCommandStarted
+                | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => {}
+            }
         });
     });
 
