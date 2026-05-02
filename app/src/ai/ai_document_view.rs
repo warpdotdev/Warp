@@ -260,7 +260,8 @@ impl AIDocumentView {
                 AIDocumentModelEvent::StreamingDocumentsCleared(_) => {
                     me.refresh(ctx);
                 }
-                AIDocumentModelEvent::DocumentVisibilityChanged(_) => {}
+                AIDocumentModelEvent::DocumentVisibilityChanged(_)
+                | AIDocumentModelEvent::OrchestrationConfigUpdated => {}
             },
         );
 

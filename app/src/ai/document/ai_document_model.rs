@@ -48,8 +48,10 @@ use crate::{
     throttle::throttle,
     workspaces::user_workspaces::UserWorkspaces,
 };
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 use ai::diff_validation::DiffDelta;
 use warp_editor::{model::RichTextEditorModel, render::model::RichTextStyles};
+use warp_multi_agent_api as maa_api;
 use warpui::color::ColorU;
 
 /// The frequency at which we check for modifications and save the AI document to the server.
@@ -163,6 +165,16 @@ pub enum AIDocumentUpdateSource {
     Restoration,
 }
 
+/// Payload queued when the user edits the plan-card orchestration
+/// config block. Cleared after `send_request_input()` piggybacks it
+/// onto the outbound `UserInputs`.
+#[derive(Debug, Clone)]
+pub struct DirtyOrchestrationEvent {
+    pub plan_id: String,
+    pub config: OrchestrationConfig,
+    pub status: OrchestrationConfigStatus,
+}
+
 #[derive(Debug, Clone)]
 pub struct AIDocumentModel {
     documents: HashMap<AIDocumentId, AIDocument>,
@@ -179,6 +191,18 @@ pub struct AIDocumentModel {
     /// Mapping from (conversation_id, action_id, document_index) for streaming CreateDocuments
     /// tool calls to the corresponding AI document ID.
     streaming_create_documents: HashMap<(AIConversationId, AIAgentActionId, usize), AIDocumentId>,
+
+    // ── Stage 2: conversation-level orchestration config ──────────
+    // These are NOT per-plan — the config is shared across all plans
+    // in a conversation. Hydrated from `Message.OrchestrationConfigSnapshot`.
+    orchestration_config: Option<OrchestrationConfig>,
+    orchestration_status: OrchestrationConfigStatus,
+    orchestration_plan_id: Option<String>,
+    /// Dirty event queued for the next outbound request.
+    /// Set when the user edits the config or toggles approval on the
+    /// plan card; cleared by the controller after piggybacking onto
+    /// the outbound `UserInputs`.
+    dirty_orchestration_event: Option<DirtyOrchestrationEvent>,
 }
 
 impl AIDocumentModel {
@@ -203,6 +227,10 @@ impl AIDocumentModel {
             save_tx,
             pending_document_queue: Vec::new(),
             streaming_create_documents: HashMap::new(),
+            orchestration_config: None,
+            orchestration_status: OrchestrationConfigStatus::default(),
+            orchestration_plan_id: None,
+            dirty_orchestration_event: None,
         }
     }
 
@@ -217,6 +245,10 @@ impl AIDocumentModel {
             save_tx,
             pending_document_queue: Vec::new(),
             streaming_create_documents: HashMap::new(),
+            orchestration_config: None,
+            orchestration_status: OrchestrationConfigStatus::default(),
+            orchestration_plan_id: None,
+            dirty_orchestration_event: None,
         }
     }
 
@@ -1162,6 +1194,101 @@ impl AIDocumentModel {
         });
     }
 
+    // ── Orchestration config accessors ────────────────────────────
+
+    pub fn active_orchestration_config(&self) -> Option<&OrchestrationConfig> {
+        self.orchestration_config.as_ref()
+    }
+
+    pub fn orchestration_status(&self) -> OrchestrationConfigStatus {
+        self.orchestration_status
+    }
+
+    pub fn orchestration_plan_id(&self) -> Option<&str> {
+        self.orchestration_plan_id.as_deref()
+    }
+
+    pub fn dirty_orchestration_event(&self) -> Option<&DirtyOrchestrationEvent> {
+        self.dirty_orchestration_event.as_ref()
+    }
+
+    pub fn clear_dirty_orchestration_event(&mut self) {
+        self.dirty_orchestration_event = None;
+    }
+
+    /// Updates the conversation-level orchestration config and status.
+    /// Called from the plan card config block when the user edits a field
+    /// or toggles the approval switch.
+    pub fn set_orchestration_config(
+        &mut self,
+        config: OrchestrationConfig,
+        status: OrchestrationConfigStatus,
+        plan_id: Option<String>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.orchestration_config = Some(config.clone());
+        self.orchestration_status = status;
+        if let Some(pid) = &plan_id {
+            self.orchestration_plan_id = Some(pid.clone());
+        }
+        self.dirty_orchestration_event = Some(DirtyOrchestrationEvent {
+            plan_id: plan_id.unwrap_or_default(),
+            config,
+            status,
+        });
+        ctx.emit(AIDocumentModelEvent::OrchestrationConfigUpdated);
+    }
+
+    /// Sets only the approval status (toggle on/off). Config values are
+    /// preserved; only `status` changes.
+    pub fn set_orchestration_status(
+        &mut self,
+        status: OrchestrationConfigStatus,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if let Some(config) = self.orchestration_config.clone() {
+            self.set_orchestration_config(
+                config,
+                status,
+                self.orchestration_plan_id.clone(),
+                ctx,
+            );
+        }
+    }
+
+    /// Hydrates the orchestration config from an in-history
+    /// `Message.OrchestrationConfigSnapshot`. Called during conversation
+    /// restore and on incoming `UpdateTaskMessage` / `AddMessagesToTask`
+    /// events that carry the snapshot.
+    pub fn hydrate_orchestration_config_from_snapshot(
+        &mut self,
+        snapshot: &maa_api::OrchestrationConfigSnapshot,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let config = snapshot
+            .config
+            .as_ref()
+            .map(OrchestrationConfig::from_proto);
+        let status = OrchestrationConfigStatus::from_proto(snapshot.status.as_ref());
+        let plan_id = if snapshot.plan_id.is_empty() {
+            None
+        } else {
+            Some(snapshot.plan_id.clone())
+        };
+
+        let changed = self.orchestration_config != config
+            || self.orchestration_status != status
+            || self.orchestration_plan_id != plan_id;
+
+        self.orchestration_config = config;
+        self.orchestration_status = status;
+        self.orchestration_plan_id = plan_id;
+
+        if changed {
+            ctx.emit(AIDocumentModelEvent::OrchestrationConfigUpdated);
+        }
+    }
+
     /// Restore a document to a previous version, creating a new version in the process.
     /// Returns the new version number on success.
     pub fn revert_to_document_version(
@@ -1238,6 +1365,9 @@ pub enum AIDocumentModelEvent {
     /// When streaming documents for a conversation are cleared
     StreamingDocumentsCleared(AIConversationId),
     DocumentVisibilityChanged(AIDocumentId),
+    /// Conversation-level orchestration config was created or updated
+    /// (from server snapshot hydration or user edit on the plan card).
+    OrchestrationConfigUpdated,
 }
 
 impl Entity for AIDocumentModel {
