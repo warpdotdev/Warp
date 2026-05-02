@@ -392,6 +392,9 @@ fn is_valid_placeholder(s: &str) -> bool {
     }
 }
 
+/// Template repo sync (PDX-59): pull configured template repos on launch.
+pub mod sync;
+
 // ────────────────────────────────────────────── unit tests ──
 
 #[cfg(test)]

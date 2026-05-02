@@ -24,6 +24,7 @@ default-members = [
   "crates/templates",
   "crates/sum_tree",
   "crates/symphony",
+  "crates/templates",
   "crates/warpui",
   "crates/warp_completer",
   "crates/warp_terminal",
@@ -76,6 +77,7 @@ simple_logger = { path = "crates/simple_logger" }
 skills = { path = "crates/skills" }
 templates = { path = "crates/templates" }
 string-offset = { path = "crates/string-offset" }
+templates = { path = "crates/templates" }
 sum_tree = { path = "crates/sum_tree" }
 symphony = { path = "crates/symphony" }
 syntax_tree = { path = "crates/syntax_tree" }

@@ -7,12 +7,15 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+dirs = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["fs", "rt"] }
+tokio = { workspace = true, features = ["fs", "process", "rt", "macros"] }
+toml = "0.8"
 toml_edit = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
 walkdir = { workspace = true }
+warp_core = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

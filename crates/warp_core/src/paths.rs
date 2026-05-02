@@ -76,6 +76,14 @@ pub fn warp_home_mcp_config_file_path() -> Option<PathBuf> {
     warp_home_config_dir().map(|warp_config_dir| warp_config_dir.join(".mcp.json"))
 }
 
+/// Returns the directory where template repos are cached locally.
+///
+/// Template repos are cloned under `~/.warp/templates/<slug>/` on first
+/// launch and fast-forward pulled on subsequent launches (PDX-59).
+pub fn warp_home_templates_dir() -> Option<PathBuf> {
+    warp_home_config_dir().map(|warp_config_dir| warp_config_dir.join("templates"))
+}
+
 /// Returns the macOS config directory name for the current channel.
 ///
 /// Stable uses `.warp`, while other channels include a channel suffix
