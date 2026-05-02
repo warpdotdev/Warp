@@ -53,7 +53,9 @@ use crate::global_resource_handles::GlobalResourceHandlesProvider;
 use crate::network::NetworkStatus;
 use crate::notebooks::editor::model::FileLinkResolutionContext;
 use crate::persistence::ModelEvent;
-use crate::server::server_api::{AIApiError, ServerApiProvider};
+use crate::server::server_api::AIApiError;
+#[cfg(not(target_family = "wasm"))]
+use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::block::{
     formatted_terminal_contents_for_input, BlockId, CURSOR_MARKER,
 };
@@ -373,6 +375,7 @@ enum LocalClaudeWakeTrigger {
 }
 
 impl LocalClaudeWakeTrigger {
+    #[cfg(not(target_family = "wasm"))]
     fn requires_pending_events(self) -> bool {
         match self {
             Self::PendingEvents => true,
@@ -1656,6 +1659,7 @@ impl BlocklistAIController {
         true
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn schedule_pending_events_ready_retry(
         &mut self,
         conversation_id: AIConversationId,
@@ -1669,6 +1673,7 @@ impl BlocklistAIController {
         );
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn schedule_dormant_claude_wake_ready_retry(
         &mut self,
         conversation_id: AIConversationId,
