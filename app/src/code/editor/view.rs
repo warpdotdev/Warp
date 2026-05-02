@@ -80,8 +80,8 @@ use warpui::{
     prelude::RectF,
     text::point::Point,
     units::Pixels,
-    AppContext, BlurContext, Element, Entity, FocusContext, ModelHandle, SingletonEntity, View,
-    ViewContext, ViewHandle, WeakViewHandle, WindowId,
+    AppContext, BlurContext, CursorInfo, Element, Entity, FocusContext, ModelHandle,
+    SingletonEntity, View, ViewContext, ViewHandle, WeakViewHandle, WindowId,
 };
 
 mod actions;
@@ -2333,6 +2333,18 @@ impl View for CodeEditorView {
         if focus_ctx.is_self_focused() && self.goto_line_dialog.as_ref(ctx).is_open() {
             ctx.focus(&self.goto_line_dialog);
         }
+    }
+
+    fn active_cursor_position(&self, ctx: &ViewContext<Self>) -> Option<CursorInfo> {
+        let render_state = self.model.as_ref(ctx).render_state().as_ref(ctx);
+        let cursor_id = render_state.saved_positions().cursor_id();
+        let font_size = render_state.styles().base_text.font_size;
+
+        ctx.element_position_by_id(cursor_id.as_str())
+            .map(|position| CursorInfo {
+                position,
+                font_size,
+            })
     }
 
     fn on_blur(&mut self, blur_ctx: &BlurContext, ctx: &mut ViewContext<Self>) {
