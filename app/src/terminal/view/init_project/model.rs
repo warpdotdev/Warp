@@ -161,14 +161,17 @@ impl InitProjectModel {
         }
         self.compute_project_scoped_rules_step(&pwd_path, ctx);
 
-        // CreateEnvironment step is always Ready (no async computation)
-        self.set_step(
-            InitStepKind::CreateEnvironment,
-            Some(InitStep::new_ready(
+        // CreateEnvironment step is always Ready (no async computation).
+        // Hidden under local-AI bypass: cloud agents can't run without Warp auth.
+        if !crate::local_ai::auth_bypass_enabled() {
+            self.set_step(
                 InitStepKind::CreateEnvironment,
-                InitStepData::CreateEnvironment,
-            )),
-        );
+                Some(InitStep::new_ready(
+                    InitStepKind::CreateEnvironment,
+                    InitStepData::CreateEnvironment,
+                )),
+            );
+        }
 
         // Emit welcome step immediately, then progress to next
         ctx.emit(InitProjectModelEvent::InsertStep(InitStepKind::Welcome));
@@ -366,6 +369,14 @@ impl InitProjectModel {
     fn compute_codebase_context_step(&mut self, pwd_path: &Path, ctx: &mut ModelContext<Self>) {
         if !UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx) {
             // Feature disabled, leave as None
+            return;
+        }
+
+        // Codebase indexing sends code fragments to Warp's GraphQL backend for
+        // server-side embedding generation and retrieval. Under local-AI bypass
+        // there is no valid session token, so every StoreClient call would fail.
+        // Leave the step as None so the prompt is never shown.
+        if crate::local_ai::auth_bypass_enabled() {
             return;
         }
 
