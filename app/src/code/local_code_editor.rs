@@ -58,6 +58,7 @@ use crate::{
         SaveOutcome, ShowFindReferencesCardProvider,
     },
     debounce::debounce,
+    i18n::{self, I18nKey},
     settings::AISettings,
     terminal::TerminalView,
     util::sync::Condition,
@@ -1889,12 +1890,12 @@ impl LocalCodeEditorView {
     }
 
     /// Creates menu items for the context menu
-    fn context_menu_items(&self) -> Vec<MenuItem<LocalCodeEditorAction>> {
+    fn context_menu_items(&self, app: &AppContext) -> Vec<MenuItem<LocalCodeEditorAction>> {
         vec![
-            MenuItemFields::new("Go to definition")
+            MenuItemFields::new(i18n::tr(app, I18nKey::CodeGoToDefinition))
                 .with_on_select_action(LocalCodeEditorAction::GotoDefinition)
                 .into_item(),
-            MenuItemFields::new("Find references")
+            MenuItemFields::new(i18n::tr(app, I18nKey::CodeFindReferences))
                 .with_on_select_action(LocalCodeEditorAction::FindReferences)
                 .into_item(),
         ]
@@ -2099,6 +2100,7 @@ impl View for LocalCodeEditorView {
                 self.conflict_banner_mouse_states
                     .overwrite_mouse_state
                     .clone(),
+                app,
             );
             let mut col = Flex::column().with_child(banner);
 
@@ -2252,7 +2254,7 @@ impl TypedActionView for LocalCodeEditorView {
                 // Only show context menu if LSP is available
                 if self.is_lsp_server_available(ctx) {
                     self.context_menu_state.is_open = true;
-                    let menu_items = self.context_menu_items();
+                    let menu_items = self.context_menu_items(ctx);
                     self.context_menu.update(ctx, move |menu, ctx| {
                         menu.set_items(menu_items, ctx);
                         ctx.notify();
@@ -2277,6 +2279,7 @@ pub fn render_unsaved_changes_banner(
     appearance: &Appearance,
     discard_mouse_state: MouseStateHandle,
     overwrite_mouse_state: MouseStateHandle,
+    app: &AppContext,
 ) -> Box<dyn Element> {
     let left = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -2316,7 +2319,7 @@ pub fn render_unsaved_changes_banner(
             appearance
                 .ui_builder()
                 .button(ButtonVariant::Text, discard_mouse_state)
-                .with_text_label("Discard this version".into())
+                .with_text_label(i18n::tr(app, I18nKey::CodeDiscardThisVersion).into())
                 .with_style(UiComponentStyles {
                     height: Some(24.),
                     padding: Some(Coords {
@@ -2338,7 +2341,7 @@ pub fn render_unsaved_changes_banner(
                 appearance
                     .ui_builder()
                     .button(ButtonVariant::Outlined, overwrite_mouse_state)
-                    .with_text_label("Overwrite".into())
+                    .with_text_label(i18n::tr(app, I18nKey::CommonOverwrite).into())
                     .with_style(UiComponentStyles {
                         font_color: Some(appearance.theme().active_ui_text_color().into()),
                         ..Default::default()

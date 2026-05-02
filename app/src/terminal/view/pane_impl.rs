@@ -5,6 +5,7 @@ use super::{Event, PaneConfiguration, TerminalAction, TerminalViewState, Viewer}
 use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
 use crate::ai::blocklist::agent_view::agent_view_bg_fill;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_navigation_card;
+use crate::ai::blocklist::agent_view::render_orchestration_breadcrumbs;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
@@ -16,6 +17,7 @@ use crate::pane_group::pane::view::header::components::{
     header_edge_min_width, render_pane_header_buttons, render_pane_header_title_text,
     render_three_column_header, CenteredHeaderEdgeWidth,
 };
+use crate::pane_group::pane::view::header::PANE_HEADER_HEIGHT;
 use crate::pane_group::pane::PaneStack;
 use crate::pane_group::{pane::view, pane::view::PaneHeaderAction, BackingView, SplitPaneState};
 use crate::settings::app_installation_detection::{
@@ -269,6 +271,14 @@ impl TerminalView {
         header_ctx: &view::HeaderRenderContext,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        if let Some(breadcrumbs) = render_orchestration_breadcrumbs(
+            self.agent_view_controller.as_ref(app),
+            self.mouse_states.parent_conversation_header_link.clone(),
+            app,
+        ) {
+            return breadcrumbs;
+        }
+
         let appearance = Appearance::as_ref(app);
         let pane_config = self.pane_configuration.as_ref(app);
         let title = pane_config.title().to_owned();
@@ -480,7 +490,26 @@ impl TerminalView {
         &self,
         header: Box<dyn Element>,
         parent_conversation_header_card: Option<Box<dyn Element>>,
+        app: &AppContext,
     ) -> Box<dyn Element> {
+        let should_show_pill_bar = FeatureFlag::OrchestrationPillBar.is_enabled()
+            && FeatureFlag::Orchestration.is_enabled()
+            && FeatureFlag::AgentView.is_enabled()
+            && self.agent_view_controller.as_ref(app).is_fullscreen()
+            && parent_conversation_header_card.is_none();
+
+        if should_show_pill_bar {
+            let pinned_header = ConstrainedBox::new(header)
+                .with_height(PANE_HEADER_HEIGHT)
+                .finish();
+            let pill_bar = ChildView::new(&self.orchestration_pill_bar).finish();
+            return Flex::column()
+                .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .with_child(pinned_header)
+                .with_child(pill_bar)
+                .finish();
+        }
+
         if !FeatureFlag::Orchestration.is_enabled() {
             return header;
         }
@@ -527,7 +556,8 @@ impl TerminalView {
             header_ctx.header_left_inset,
             header_ctx.draggable_state.is_dragging(),
         );
-        let header = self.maybe_add_parent_navigation_card(header, parent_conversation_header_card);
+        let header =
+            self.maybe_add_parent_navigation_card(header, parent_conversation_header_card, app);
 
         if is_fullscreen_agent_view {
             Container::new(header)
@@ -590,7 +620,7 @@ impl BackingView for TerminalView {
         if shared_session_status.is_sharer_or_viewer() {
             if !is_ambient_agent {
                 items.push(
-                    MenuItemFields::new("Copy link")
+                    MenuItemFields::new(crate::i18n::tr_static(ctx, "Copy link"))
                         .with_on_select_action(TerminalAction::CopySharedSessionLink { source })
                         .into_item(),
                 );
@@ -598,7 +628,7 @@ impl BackingView for TerminalView {
 
             if shared_session_status.is_sharer() {
                 items.push(
-                    MenuItemFields::new("Stop sharing session")
+                    MenuItemFields::new(crate::i18n::tr_static(ctx, "Stop sharing session"))
                         .with_on_select_action(TerminalAction::StopSharingCurrentSession { source })
                         .into_item(),
                 );
@@ -610,7 +640,7 @@ impl BackingView for TerminalView {
                     == UserAppInstallStatus::Detected
             {
                 items.push(
-                    MenuItemFields::new("Open on Desktop")
+                    MenuItemFields::new(crate::i18n::tr_static(ctx, "Open on Desktop"))
                         .with_on_select_action(TerminalAction::OpenSharedSessionOnDesktop {
                             source,
                         })
@@ -621,7 +651,7 @@ impl BackingView for TerminalView {
             && ContextFlag::CreateSharedSession.is_enabled()
         {
             items.push(
-                MenuItemFields::new("Share session")
+                MenuItemFields::new(crate::i18n::tr_static(ctx, "Share session"))
                     .with_on_select_action(TerminalAction::OpenShareSessionModal { source })
                     .into_item(),
             );
@@ -690,6 +720,7 @@ impl TerminalView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
         let ui_builder = appearance.ui_builder().clone();
+        let cancel_tooltip = crate::i18n::tr_static(app, "Cancel").to_string();
 
         icon_button_with_color(
             appearance,
@@ -698,7 +729,7 @@ impl TerminalView {
             self.ambient_agent_cancel_mouse_state.clone(),
             blended_colors::text_sub(theme, theme.background()).into(),
         )
-        .with_tooltip(move || ui_builder.tool_tip("Cancel".to_string()).build().finish())
+        .with_tooltip(move || ui_builder.tool_tip(cancel_tooltip.clone()).build().finish())
         .build()
         .on_click(|ctx, _, _| {
             ctx.dispatch_typed_action::<PaneHeaderAction<TerminalAction, TerminalAction>>(
@@ -862,6 +893,7 @@ impl TerminalView {
             .main_text_color(appearance.theme().background());
         let font_size = appearance.ui_font_size();
         let ui_builder = appearance.ui_builder().clone();
+        let cloud_agent_run_tooltip = crate::i18n::tr_static(app, "Cloud agent run").to_string();
 
         Hoverable::new(
             self.mouse_states
@@ -876,7 +908,7 @@ impl TerminalView {
                 );
                 if state.is_hovered() {
                     let tooltip = ui_builder
-                        .tool_tip("Cloud agent run".to_string())
+                        .tool_tip(cloud_agent_run_tooltip.clone())
                         .build()
                         .finish();
                     stack.add_positioned_overlay_child(

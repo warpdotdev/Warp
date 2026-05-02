@@ -40,7 +40,7 @@ pub(crate) const GEMINI_BLUE: ColorU = ColorU {
 };
 
 /// OpenAI brand color (dark gray/black)
-const OPENAI_COLOR: ColorU = ColorU {
+pub(crate) const OPENAI_COLOR: ColorU = ColorU {
     r: 0,
     g: 0,
     b: 0,

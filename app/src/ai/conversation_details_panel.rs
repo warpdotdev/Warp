@@ -206,11 +206,11 @@ impl ConversationDetailsData {
     fn directory_for_task(task: &AmbientAgentTask, app: &AppContext) -> Option<String> {
         let history_model = BlocklistAIHistoryModel::as_ref(app);
         let conversation_id = history_model
-            .conversation_id_for_agent_id(&task.task_id.to_string())
+            .conversation_id_for_agent_id(&task.run_id().to_string())
             .or_else(|| {
-                task.conversation_id.as_ref().and_then(|conversation_id| {
+                task.conversation_id().and_then(|conversation_id| {
                     history_model.find_conversation_id_by_server_token(
-                        &ServerConversationToken::new(conversation_id.clone()),
+                        &ServerConversationToken::new(conversation_id.to_string()),
                     )
                 })
             })?;
@@ -325,7 +325,7 @@ impl ConversationDetailsData {
             .as_ref()
             .and_then(|config| config.environment_id.clone());
 
-        let credits = task.request_usage.as_ref().and_then(|u| {
+        let credits = task.active_run_execution().request_usage.and_then(|u| {
             Some(CreditsInfo::AmbientConversation {
                 inference: u.inference_cost? as f32,
                 compute: u.compute_cost? as f32,
@@ -348,12 +348,12 @@ impl ConversationDetailsData {
 
         ConversationDetailsData {
             mode: PanelMode::Task {
-                task_id: Some(task.task_id),
+                task_id: Some(task.run_id()),
                 directory: Self::directory_for_task(task, app),
                 display_status: Some(AgentRunDisplayStatus::from_task(task, app)),
                 error_message,
                 environment_id,
-                conversation_id: task.conversation_id.clone(),
+                conversation_id: task.conversation_id().map(str::to_string),
             },
             title: task.title.clone(),
             created_at: Some(task.created_at.with_timezone(&Local)),
@@ -510,17 +510,26 @@ impl ConversationDetailsPanel {
         ctx.subscribe_to_view(&action_buttons, Self::handle_action_buttons_event);
 
         #[cfg(not(target_family = "wasm"))]
-        let continue_locally_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Continue locally", PrimaryTheme)
-                .with_tooltip("Fork this conversation locally")
+        let continue_locally_button = ctx.add_typed_action_view(|ctx| {
+            ActionButton::new(
+                crate::i18n::tr_static(ctx, "Continue locally"),
+                PrimaryTheme,
+            )
+            .with_tooltip(crate::i18n::tr_static(
+                ctx,
+                "Fork this conversation locally",
+            ))
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(ConversationDetailsPanelAction::ContinueLocally);
                 })
         });
-        let open_in_oz_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("View in Oz", SecondaryTheme)
-                .with_tooltip("View this run in the Oz web app")
+        let open_in_oz_button = ctx.add_typed_action_view(|ctx| {
+            ActionButton::new(crate::i18n::tr_static(ctx, "View in Oz"), SecondaryTheme)
+                .with_tooltip(crate::i18n::tr_static(
+                    ctx,
+                    "View this run in the Oz web app",
+                ))
                 .with_size(ButtonSize::Small)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(ConversationDetailsPanelAction::OpenInOz);
@@ -624,7 +633,9 @@ impl ConversationDetailsPanel {
 
                 let window_id = ctx.window_id();
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::default("Copied branch name".to_string());
+                    let toast = DismissibleToast::default(
+                        crate::i18n::tr_static(ctx, "Copied branch name").to_string(),
+                    );
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
             }

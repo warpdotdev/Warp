@@ -41,6 +41,7 @@ mod external_secrets;
 mod font_fallback;
 mod global_resource_handles;
 mod gpu_state;
+mod i18n;
 mod input_classifier;
 mod interval_timer;
 mod linear;
@@ -933,7 +934,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         app_builder.set_dev_icon(dev_icon);
 
         app_builder.set_menu_bar_builder(app_menus::menu_bar);
-        app_builder.set_dock_menu_builder(|_| app_menus::dock_menu());
+        app_builder.set_dock_menu_builder(|ctx| app_menus::dock_menu(ctx));
     }
 
     #[cfg(target_os = "linux")]
@@ -2813,6 +2814,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::IncrementalAutoReload,
         #[cfg(feature = "orchestration")]
         FeatureFlag::Orchestration,
+        #[cfg(feature = "orchestration_pill_bar")]
+        FeatureFlag::OrchestrationPillBar,
         #[cfg(feature = "orchestration_v2")]
         FeatureFlag::OrchestrationV2,
         #[cfg(feature = "pending_user_query_indicator")]
@@ -2865,6 +2868,8 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::TrimTrailingBlankLines,
         #[cfg(feature = "cloud_mode_setup_v2")]
         FeatureFlag::CloudModeSetupV2,
+        #[cfg(feature = "handoff_cloud_cloud")]
+        FeatureFlag::HandoffCloudCloud,
         #[cfg(feature = "cloud_mode_input_v2")]
         FeatureFlag::CloudModeInputV2,
         #[cfg(feature = "configurable_context_window")]
