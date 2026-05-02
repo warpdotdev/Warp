@@ -1304,12 +1304,30 @@ impl<'a> ViewportState<'a> {
             .min(self.max_scroll_top_in_lines())
     }
 
+    fn interactive_cursor_needs_scroll_follow(&self) -> bool {
+        heights_approx_lt(
+            self.interactive_cursor_scroll_top_in_lines(),
+            self.max_scroll_top_in_lines(),
+        )
+    }
+
     fn scroll_position_for_interactive_long_running_input(&self) -> ScrollPosition {
         match self.scroll_position {
             ScrollPosition::FollowsBottomOfMostRecentBlock
-            | ScrollPosition::FollowsInteractiveCursor => ScrollPosition::FollowsInteractiveCursor,
-            ScrollPosition::WaterfallGapFollowsBottomOfMostRecentBlock { .. }
-            | ScrollPosition::FixedAtPosition { .. }
+            | ScrollPosition::FollowsInteractiveCursor
+            | ScrollPosition::WaterfallGapFollowsBottomOfMostRecentBlock { .. } => {
+                if self.interactive_cursor_needs_scroll_follow()
+                    || matches!(
+                        self.scroll_position,
+                        ScrollPosition::FollowsInteractiveCursor
+                    )
+                {
+                    ScrollPosition::FollowsInteractiveCursor
+                } else {
+                    self.scroll_position
+                }
+            }
+            ScrollPosition::FixedAtPosition { .. }
             | ScrollPosition::FixedAtInteractivePosition { .. }
             | ScrollPosition::FixedWithinLongRunningBlock { .. }
             | ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. } => self.scroll_position,

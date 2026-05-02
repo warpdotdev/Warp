@@ -1855,6 +1855,7 @@ fn test_manual_scroll_away_is_respected_during_interactive_long_running_input() 
                 for _ in 0..100 {
                     model.process_bytes("\n");
                 }
+                model.process_bytes("\x1b[1;1HSSO session name");
             }
 
             view.write_user_bytes_to_pty(vec![b'a'], ctx);
