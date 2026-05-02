@@ -1,8 +1,10 @@
+use crate::ai::agent::conversation::ConversationStatus;
 use crate::context_chips::display_chip::GitLineChanges;
 use crate::pane_group::pane::IPaneType;
 use crate::pane_group::{PaneId, TerminalPaneId};
 use crate::safe_triangle::SafeTriangle;
 use crate::terminal::CLIAgent;
+use crate::ui_components::icon_with_status::IconWithStatusVariant;
 use crate::workspace::tab_settings::VerticalTabsDisplayGranularity;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
@@ -17,12 +19,13 @@ use super::{
     non_terminal_search_text_fragments, pane_ids_for_display_granularity,
     pane_search_text_fragments, preferred_agent_tab_titles, search_fragments_contain_query,
     select_summary_pane_kind_icons, should_keep_detail_sidecar_visible_for_mouse_position,
-    summary_overflow_count, summary_search_text_fragments, terminal_kind_badge_label,
-    terminal_primary_line_data, terminal_pull_request_badge_label, terminal_search_text_fragments,
-    terminal_title_fallback_font, uses_outer_group_container, visible_pane_ids_for_detail_target,
-    vtab_diff_stats_text, AgentTabTextPreference, SummaryPaneKind, SummaryPaneKindIcons,
-    TerminalAgentText, TerminalPrimaryLineData, TerminalPrimaryLineFont, VerticalTabsDetailTarget,
-    VerticalTabsDetailTargetKind, VerticalTabsSummaryBranchEntry, VerticalTabsSummaryData,
+    summary_agent_variant, summary_overflow_count, summary_search_text_fragments,
+    terminal_kind_badge_label, terminal_primary_line_data, terminal_pull_request_badge_label,
+    terminal_search_text_fragments, terminal_title_fallback_font, uses_outer_group_container,
+    visible_pane_ids_for_detail_target, vtab_diff_stats_text, AgentTabTextPreference,
+    SummaryPaneKind, SummaryPaneKindIcons, TerminalAgentText, TerminalPrimaryLineData,
+    TerminalPrimaryLineFont, VerticalTabsDetailTarget, VerticalTabsDetailTargetKind,
+    VerticalTabsSummaryBranchEntry, VerticalTabsSummaryData,
 };
 
 fn pane_id() -> PaneId {
@@ -87,18 +90,23 @@ fn summary_pane_kind_icons_distinguish_agent_terminals_from_plain_terminals() {
                 EntityId::from_usize(20),
                 SummaryPaneKind::CLIAgent {
                     agent: CLIAgent::Claude,
+                    status: None,
                     is_ambient: false,
                 },
             ),
             (
                 EntityId::from_usize(30),
-                SummaryPaneKind::OzAgent { is_ambient: false },
+                SummaryPaneKind::OzAgent {
+                    status: None,
+                    is_ambient: false,
+                },
             ),
         ]),
         Some(SummaryPaneKindIcons::Pair {
             primary: SummaryPaneKind::Terminal,
             secondary: SummaryPaneKind::CLIAgent {
                 agent: CLIAgent::Claude,
+                status: None,
                 is_ambient: false,
             },
         })
@@ -115,6 +123,7 @@ fn summary_pane_kind_icons_distinguish_ambient_claude_from_local_claude() {
                 EntityId::from_usize(10),
                 SummaryPaneKind::CLIAgent {
                     agent: CLIAgent::Claude,
+                    status: None,
                     is_ambient: false,
                 },
             ),
@@ -122,6 +131,7 @@ fn summary_pane_kind_icons_distinguish_ambient_claude_from_local_claude() {
                 EntityId::from_usize(20),
                 SummaryPaneKind::CLIAgent {
                     agent: CLIAgent::Claude,
+                    status: None,
                     is_ambient: true,
                 },
             ),
@@ -129,14 +139,59 @@ fn summary_pane_kind_icons_distinguish_ambient_claude_from_local_claude() {
         Some(SummaryPaneKindIcons::Pair {
             primary: SummaryPaneKind::CLIAgent {
                 agent: CLIAgent::Claude,
+                status: None,
                 is_ambient: false,
             },
             secondary: SummaryPaneKind::CLIAgent {
                 agent: CLIAgent::Claude,
+                status: None,
                 is_ambient: true,
             },
         })
     );
+}
+
+#[test]
+fn summary_agent_variant_preserves_cli_agent_status() {
+    let variant = summary_agent_variant(&SummaryPaneKind::CLIAgent {
+        agent: CLIAgent::Claude,
+        status: Some(ConversationStatus::InProgress),
+        is_ambient: false,
+    })
+    .expect("agent summary kind should produce status-aware icon variant");
+
+    match variant {
+        IconWithStatusVariant::CLIAgent {
+            agent,
+            status,
+            is_ambient,
+        } => {
+            assert_eq!(agent, CLIAgent::Claude);
+            assert_eq!(status, Some(ConversationStatus::InProgress));
+            assert!(!is_ambient);
+        }
+        _ => panic!("expected CLI agent icon variant"),
+    }
+}
+
+#[test]
+fn summary_agent_variant_preserves_oz_agent_status() {
+    let blocked_status = ConversationStatus::Blocked {
+        blocked_action: "Approve command".to_string(),
+    };
+    let variant = summary_agent_variant(&SummaryPaneKind::OzAgent {
+        status: Some(blocked_status.clone()),
+        is_ambient: true,
+    })
+    .expect("oz summary kind should produce status-aware icon variant");
+
+    match variant {
+        IconWithStatusVariant::OzAgent { status, is_ambient } => {
+            assert_eq!(status, Some(blocked_status));
+            assert!(is_ambient);
+        }
+        _ => panic!("expected Oz agent icon variant"),
+    }
 }
 
 #[test]
