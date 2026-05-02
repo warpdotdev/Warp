@@ -22,8 +22,7 @@ Relevant current code:
 - `app/src/settings_view/mcp_servers/server_card.rs:807` and `app/src/settings_view/mcp_servers/server_card.rs:841` — both edit icon and `Edit config` text button dispatch `ServerCardAction::Edit(item_id)`.
 - `app/src/settings_view/mcp_servers/server_card.rs:969` — `ServerCardAction::Edit` emits `ServerCardEvent::Edit`.
 - `app/src/settings_view/mcp_servers_page.rs:355` — the MCP settings page handles `MCPServersListPageViewEvent::Edit` by opening the templatable MCP edit page.
-- `app/src/workspace/view.rs:5588` — project-rules `AIFactViewEvent::OpenFile` opens local files with `Workspace::open_code`.
-- `app/src/workspace/view.rs:5687` — `Workspace::open_file_with_target` is the public workspace helper available to child views for opening local files with a resolved `FileTarget`.
+- `app/src/workspace/view.rs:5588` — project-rules `AIFactViewEvent::OpenFile` opens local files directly in Warp with `Workspace::open_code`.
 
 The required change is small but crosses three boundaries: file-based discovery metadata, MCP card event routing, and workspace editor opening.
 
@@ -57,10 +56,9 @@ Change `MCPServersListPageView::handle_server_card_event` so `ServerCardEvent::E
 3. If no path exists, show an error toast such as `Could not find the config file for this MCP server.` and return.
 4. If the path no longer exists or cannot be opened, show an error toast such as `Could not open MCP config file: <display path>` and return. Use safe logging for full path details if needed.
 5. Find the current `Workspace` view the same way `open_logs_for_server` does in `app/src/settings_view/mcp_servers/list_page.rs:552`.
-6. Resolve the user's preferred in-app file target with `resolve_file_target_with_editor_choice` and `EditorSettings`, matching the pattern used by tab-config file-opening actions in `app/src/workspace/view.rs:19829`.
-7. Call `workspace.open_file_with_target(path.clone(), target, None, CodeSource::Link { path, range_start: None, range_end: None }, ctx)`.
+6. Call `workspace.open_code(path.clone(), None, CodeSource::Link { path, range_start: None, range_end: None }, ctx)`.
 
-This keeps the source of the action in the MCP list page, while using the workspace's public file-opening API instead of duplicating editor-pane creation logic in the settings view.
+This keeps the source of the action in the MCP list page, while using the workspace's in-Warp editor path instead of the helper that can route to the user's configured default editor. The action is meant for quick config edits from settings, so it should always open inside Warp rather than handing off to an external editor.
 
 ### 3. Enable the existing edit affordance for promoted file-based cards
 Update `create_file_based_spawned_card` in `app/src/settings_view/mcp_servers/list_page.rs:1628`:
@@ -98,7 +96,7 @@ All of these should log enough for developers to debug, but the user-facing resu
 3. `MCPServersListPageView::create_file_based_spawned_card` sees the installation has a templatable-manager state, promotes it into the installed section, and enables the edit icon when `config_paths_for_installation(uuid)` is non-empty.
 4. The user clicks either the hover edit icon or the error-state `Edit config` button.
 5. `ServerCardView` emits `ServerCardEvent::Edit(ServerCardItemId::FileBasedMCP(uuid))`.
-6. `MCPServersListPageView` resolves the config path through `FileBasedMCPManager`, resolves the editor target from settings, and asks `Workspace::open_file_with_target` to open the local file.
+6. `MCPServersListPageView` resolves the config path through `FileBasedMCPManager` and asks `Workspace::open_code` to open the local file directly in Warp.
 7. The file opens in Warp's editor pane. Saving the file later is handled by the existing editor and file-based MCP watcher paths.
 
 ## Testing and validation
