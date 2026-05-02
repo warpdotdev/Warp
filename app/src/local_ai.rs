@@ -10,9 +10,9 @@
 //!
 //! | ID string                                   | Invocation                                                  |
 //! |---------------------------------------------|-------------------------------------------------------------|
-//! | `local:claude:claude-sonnet-4-7`             | `claude -p --model claude-sonnet-4-7 ...`                   |
-//! | `local:claude:claude-opus-4-7`               | `claude -p --model claude-opus-4-7 ...`                     |
-//! | `local:claude:claude-haiku-4-5`              | `claude -p --model claude-haiku-4-5 ...`                    |
+//! | `local:claude:sonnet`                        | `claude -p --model sonnet ...`                              |
+//! | `local:claude:opus`                          | `claude -p --model opus ...`                                |
+//! | `local:claude:haiku`                         | `claude -p --model haiku ...`                               |
 //! | `local:codex:gpt-5.5:low`                   | `codex exec -m gpt-5.5 -c reasoning_effort=low ...`         |
 //! | `local:codex:gpt-5.5:medium`                | `codex exec -m gpt-5.5 -c reasoning_effort=medium ...`      |
 //! | `local:codex:gpt-5.5:high`                  | `codex exec -m gpt-5.5 -c reasoning_effort=high ...`        |
@@ -272,9 +272,20 @@ impl LocalModelSpec {
         let after_provider = &rest[colon + 1..];
 
         match provider {
-            "claude" => Some(LocalModelSpec::Claude {
-                model_name: after_provider.to_string(),
-            }),
+            "claude" => {
+                // Normalise legacy versioned IDs (stored before this change) to
+                // the canonical aliases so the CLI call succeeds regardless of
+                // which claude version is installed.
+                let model_name = match after_provider {
+                    "claude-sonnet-4-7" | "claude-sonnet-4-6" | "claude-sonnet-4-5" => "sonnet",
+                    "claude-opus-4-7" | "claude-opus-4-6" | "claude-opus-4-5" => "opus",
+                    "claude-haiku-4-5" | "claude-haiku-4-6" => "haiku",
+                    other => other,
+                };
+                Some(LocalModelSpec::Claude {
+                    model_name: model_name.to_string(),
+                })
+            }
             "codex" => {
                 // Codex IDs: `codex:<model>` or `codex:<model>:<effort>`
                 // Model names don't contain colons, so splitting on ':' is safe here.
@@ -387,8 +398,8 @@ fn make_ollama_model(display_name: &str, ollama_model: &str, spec: Option<LLMSpe
 
 /// Build the `ModelsByFeature` for the local-model menu.
 ///
-/// The default selection is Claude Sonnet 4.7 (good balance of quality and speed
-/// for users who already have `claude` CLI authenticated).
+/// The default selection is Claude Sonnet (latest alias, always resolves to the
+/// installed version) for users who already have `claude` CLI authenticated.
 ///
 /// The `WARP_LOCAL_AI` env var does NOT restrict which models appear; it only
 /// provides a backwards-compatible default provider choice.  Specifically:
@@ -397,18 +408,18 @@ fn make_ollama_model(display_name: &str, ollama_model: &str, spec: Option<LLMSpe
 /// - Otherwise, Claude Sonnet 4.7 is the default.
 pub fn local_model_list() -> ModelsByFeature {
     let claude_sonnet = make_claude_model(
-        "Claude / Sonnet 4.7",
-        "claude-sonnet-4-7",
+        "Claude / Sonnet (latest)",
+        "sonnet",
         Some(LLMSpec { cost: 0.5, quality: 0.85, speed: 0.8 }),
     );
     let claude_opus = make_claude_model(
-        "Claude / Opus 4.7",
-        "claude-opus-4-7",
+        "Claude / Opus (latest)",
+        "opus",
         Some(LLMSpec { cost: 0.9, quality: 1.0, speed: 0.5 }),
     );
     let claude_haiku = make_claude_model(
-        "Claude / Haiku 4.5",
-        "claude-haiku-4-5",
+        "Claude / Haiku (latest)",
+        "haiku",
         Some(LLMSpec { cost: 0.2, quality: 0.6, speed: 1.0 }),
     );
     let gpt55_low = make_codex_model(
