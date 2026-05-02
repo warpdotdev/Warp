@@ -250,6 +250,7 @@ rmcp = { workspace = true, features = ["client"] }
 warp_isolation_platform.workspace = true
 warp_ripgrep.workspace = true
 warp_managed_secrets.workspace = true
+warp_vault.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block.workspace = true

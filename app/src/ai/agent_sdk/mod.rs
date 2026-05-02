@@ -37,6 +37,7 @@ use warp_cli::{
     schedule::ScheduleSubcommand,
     secret::SecretCommand,
     share::ShareRequest,
+    vault::VaultCommand,
     task::{MessageCommand, TaskCommand},
     CliCommand, GlobalOptions,
 };
@@ -101,6 +102,7 @@ pub(crate) mod retry;
 mod schedule;
 mod secret;
 mod telemetry;
+mod vault;
 #[cfg(test)]
 mod test_support;
 mod text_layout;
@@ -179,6 +181,9 @@ fn dispatch_command(
                 return Err(anyhow::anyhow!("invalid value 'secret'"));
             }
             secret::run(ctx, global_options, secret_cmd)
+        }
+        CliCommand::Vault(vault_cmd) => {
+            vault::run(ctx, global_options, vault_cmd)
         }
         CliCommand::Federate(federate_cmd) => {
             if !FeatureFlag::OzIdentityFederation.is_enabled() {
