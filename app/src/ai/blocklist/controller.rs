@@ -772,7 +772,7 @@ impl BlocklistAIController {
         }
 
         // Clear the dirty orchestration event after the request is sent.
-        AIDocumentModel::handle(ctx).update(ctx, |model, ctx| {
+        AIDocumentModel::handle(ctx).update(ctx, |model, _| {
             model.clear_dirty_orchestration_event();
         });
     }

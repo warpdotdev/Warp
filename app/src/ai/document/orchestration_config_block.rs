@@ -3,14 +3,12 @@
 //! toggle, Cloud/Local picker, and run-wide config dropdowns.
 
 use ai::agent::action::RunAgentsExecutionMode;
-use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
+use ai::agent::orchestration_config::OrchestrationConfigStatus;
 use warpui::elements::{
     Container, CornerRadius, CrossAxisAlignment, Flex, ParentElement, Radius, Text,
 };
 use warpui::fonts::{Properties, Weight};
-use warpui::{
-    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
-};
+use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
 use crate::ai::blocklist::inline_action::orchestration_controls::{
     self as oc, OrchestrationControlAction, OrchestrationEditState, OrchestrationPickerHandles,
