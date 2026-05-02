@@ -75,6 +75,16 @@
 
               printf '%s' "$developerDir"
             }
+
+            configure_host_xcode_developer_dir() {
+              local developerDir
+              developerDir="$(select_host_xcode_developer_dir)"
+              if [ -n "$developerDir" ]; then
+                export DEVELOPER_DIR="$developerDir"
+              else
+                unset DEVELOPER_DIR
+              fi
+            }
           '';
           hostPlutilWrapper = pkgs.writeShellScriptBin "plutil" ''
             set -euo pipefail
@@ -86,13 +96,7 @@
 
             ${hostXcodeSelection}
 
-            developerDir="$(select_host_xcode_developer_dir)"
-            if [ -n "$developerDir" ]; then
-              export DEVELOPER_DIR="$developerDir"
-            else
-              unset DEVELOPER_DIR
-            fi
-
+            configure_host_xcode_developer_dir
             exec /usr/bin/xcodebuild "$@"
           '';
           xcodeSelectWrapper = pkgs.writeShellScriptBin "xcode-select" ''
@@ -116,12 +120,10 @@
 
             ${hostXcodeSelection}
 
-            developerDir="$(select_host_xcode_developer_dir)"
-            if [ -n "$developerDir" ]; then
-              export DEVELOPER_DIR="$developerDir"
+            configure_host_xcode_developer_dir
+            if [ -n "''${DEVELOPER_DIR:-}" ]; then
               echo "xcrun wrapper using DEVELOPER_DIR=$DEVELOPER_DIR" >&2
             else
-              unset DEVELOPER_DIR
               echo "xcrun wrapper could not locate a host Xcode developer dir; falling back to system xcrun" >&2
             fi
 
