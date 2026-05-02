@@ -6120,7 +6120,12 @@ impl Workspace {
             && FeatureFlag::AgentView.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
         {
-            let mut cloud_item = MenuItemFields::new("Cloud Oz")
+            let cloud_label = if FeatureFlag::AgentHarness.is_enabled() {
+                "Cloud Agent"
+            } else {
+                "Cloud Oz"
+            };
+            let mut cloud_item = MenuItemFields::new(cloud_label)
                 .with_on_select_action(WorkspaceAction::AddAmbientAgentTab)
                 .with_icon(icons::Icon::LayoutAlt01);
             if effective_default == DefaultSessionMode::CloudAgent {
