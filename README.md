@@ -5,6 +5,9 @@ My personal AGPL fork of [warpdotdev/warp](https://github.com/warpdotdev/warp). 
 > [!IMPORTANT]
 > Not affiliated with or endorsed by Warp Inc. The upstream README (Warp's product description, contribution flow, support links) lives at [UPSTREAM_README.md](UPSTREAM_README.md).
 
+> [!NOTE]
+> This is the `main` branch: generic local-AI bypass. There's also an [`ilo`](https://github.com/danieljohnmorris/warp/tree/ilo) branch that extends this with ilo-lang context injection for agent runs. Use `main` if you want a vanilla local-AI Warp.
+
 ## Why this fork exists
 
 ### A local-AI version of Warp with cloud features stripped
