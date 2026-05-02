@@ -1,10 +1,18 @@
 //! Local-CLI bypass for the interactive agent panel.
 //!
-//! When `WARP_LOCAL_AI=claude` or `WARP_LOCAL_AI=codex` is set, the panel
-//! ordinarily fails with a 401 because `generate_multi_agent_output` routes to
-//! Warp's authenticated GraphQL server.  This module short-circuits that path:
-//! instead of hitting the server, it shells out to the local CLI and synthesises
-//! a `ResponseEvent` stream that Warp's controller can consume normally.
+//! When `WARP_BYPASS_AUTH=1` is set (with or without `WARP_LOCAL_AI`), the
+//! panel ordinarily fails with a 401 because `generate_multi_agent_output`
+//! routes to Warp's authenticated GraphQL server.  This module short-circuits
+//! that path: instead of hitting the server, it shells out to the local CLI
+//! indicated by the user's model-selector choice, and synthesises a
+//! `ResponseEvent` stream that Warp's controller can consume normally.
+//!
+//! # Model routing
+//!
+//! The model is taken from `params.model`.  Local model IDs are structured
+//! strings like `"local:claude:claude-sonnet-4-7"` (see `local_ai` module).
+//! If the ID is not a local model ID, the legacy `WARP_LOCAL_AI` env var is
+//! used as a fallback so existing configurations keep working.
 //!
 //! Only the user-visible text path is implemented here.  Tool calls emitted by
 //! the underlying CLI (file edits, shell commands, etc.) are not yet forwarded
@@ -21,6 +29,7 @@ use warp_multi_agent_api as api;
 
 use crate::ai::agent::api::RequestParams;
 use crate::ai::agent::{AIAgentContext, AIAgentInput};
+use crate::local_ai::{LocalAiMode, LocalModelSpec};
 
 // Re-use the type aliases from the parent api module.
 type Event = crate::ai::agent::api::Event;
@@ -101,24 +110,57 @@ async fn run_local_cli(
 
     let message_id = format!("local-msg-{}", Uuid::new_v4());
 
-    // Determine CLI command and output mode.
-    let (cli, output_mode) = match crate::local_ai::current() {
-        crate::local_ai::LocalAiMode::Claude => ("claude", OutputMode::RawText),
-        crate::local_ai::LocalAiMode::Codex => ("codex", OutputMode::CodexJson),
-        _ => {
-            let _ =
-                send_internal_error(&tx, "WARP_LOCAL_AI mode not supported in panel bypass").await;
-            return;
+    // Determine which local CLI to invoke.
+    //
+    // Priority:
+    //   1. If the selected model is a local-model ID (e.g. "local:claude:…"),
+    //      parse it and use its provider + parameters.
+    //   2. Fall back to the legacy WARP_LOCAL_AI env var for backward compat.
+    let model_id_str = params.model.to_string();
+    let maybe_spec = LocalModelSpec::parse(&model_id_str);
+
+    let (output_mode, cli_label, mut cmd) = match maybe_spec {
+        Some(ref spec) => match spec {
+            LocalModelSpec::Claude { .. } => (
+                OutputMode::RawText,
+                "claude",
+                build_command_from_spec(spec, &query, cwd.as_deref()),
+            ),
+            LocalModelSpec::Codex { .. } => (
+                OutputMode::CodexJson,
+                "codex",
+                build_command_from_spec(spec, &query, cwd.as_deref()),
+            ),
+        },
+        None => {
+            // Legacy WARP_LOCAL_AI env var path.
+            match crate::local_ai::current() {
+                LocalAiMode::Claude => (
+                    OutputMode::RawText,
+                    "claude",
+                    build_legacy_command("claude", &query, cwd.as_deref()),
+                ),
+                LocalAiMode::Codex => (
+                    OutputMode::CodexJson,
+                    "codex",
+                    build_legacy_command("codex", &query, cwd.as_deref()),
+                ),
+                _ => {
+                    let _ = send_internal_error(
+                        &tx,
+                        "No local model selected; set WARP_LOCAL_AI or select a model from the menu",
+                    )
+                    .await;
+                    return;
+                }
+            }
         }
     };
-
-    // Build the subprocess.
-    let mut cmd = build_command(cli, &query, cwd.as_deref());
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            let msg = format!("Failed to launch `{cli}`: {e}");
+            let msg = format!("Failed to launch `{cli_label}`: {e}");
             log::error!("{msg}");
             let _ = send_internal_error(&tx, msg).await;
             return;
@@ -207,8 +249,55 @@ async fn run_local_cli(
     }
 }
 
-/// Build the `tokio::process::Command` for the local CLI.
-fn build_command(cli: &str, query: &str, cwd: Option<&str>) -> Command {
+/// Build a `tokio::process::Command` from a parsed [`LocalModelSpec`].
+///
+/// - `Claude`: `claude -p --model <name> --output-format text --dangerously-skip-permissions <query>`
+/// - `Codex`: `codex exec -m <name> [-c reasoning_effort=<effort>] --dangerously-bypass-approvals-and-sandbox --json --color never <query>`
+fn build_command_from_spec(spec: &LocalModelSpec, query: &str, cwd: Option<&str>) -> Command {
+    let mut cmd = match spec {
+        LocalModelSpec::Claude { model_name } => {
+            let mut c = Command::new("claude");
+            c.args([
+                "-p",
+                "--model",
+                model_name,
+                "--output-format",
+                "text",
+                "--dangerously-skip-permissions",
+            ]);
+            c.arg(query);
+            c
+        }
+        LocalModelSpec::Codex {
+            model_name,
+            reasoning_effort,
+        } => {
+            let mut c = Command::new("codex");
+            c.args(["exec", "-m", model_name]);
+            if let Some(effort) = reasoning_effort {
+                c.args(["-c", &format!("reasoning_effort={effort}")]);
+            }
+            c.args([
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--json",
+                "--color",
+                "never",
+            ]);
+            c.arg(query);
+            c
+        }
+    };
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::null());
+    cmd
+}
+
+/// Build a `tokio::process::Command` using the legacy provider name string
+/// (no model flag, uses the CLI's own default model).
+fn build_legacy_command(cli: &str, query: &str, cwd: Option<&str>) -> Command {
     let mut cmd = Command::new(cli);
 
     match cli {

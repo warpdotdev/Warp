@@ -507,32 +507,42 @@ pub struct LLMPreferences {
 
 impl LLMPreferences {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        let models_by_feature = get_cached_models(ctx).unwrap_or_default();
+        // When running with auth bypass / local-AI, use the hardcoded local
+        // model list instead of whatever was cached from the server.  The
+        // server is unavailable in bypass mode so the cache is stale anyway.
+        let models_by_feature = if crate::local_ai::local_model_routing_active() {
+            crate::local_ai::local_model_list()
+        } else {
+            get_cached_models(ctx).unwrap_or_default()
+        };
 
-        ctx.subscribe_to_model(&NetworkStatus::handle(ctx), |me, event, ctx| {
-            if let NetworkStatusEvent::NetworkStatusChanged {
-                new_status: NetworkStatusKind::Online,
-            } = event
-            {
-                me.refresh_authed_models(ctx);
-            }
-        });
+        // Only subscribe to server-side refresh events when not in bypass mode.
+        if !crate::local_ai::local_model_routing_active() {
+            ctx.subscribe_to_model(&NetworkStatus::handle(ctx), |me, event, ctx| {
+                if let NetworkStatusEvent::NetworkStatusChanged {
+                    new_status: NetworkStatusKind::Online,
+                } = event
+                {
+                    me.refresh_authed_models(ctx);
+                }
+            });
 
-        // TODO: Instead of querying this ad-hoc upon a successful log in, we should add the
-        // available LLMs query to the general workspace metadata query which is polled
-        // and hooked up to workspace changes. For that to work, each user would need to
-        // have a personal workspace. This is a stop-gap.
-        ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, event, ctx| {
-            if let AuthManagerEvent::AuthComplete = event {
-                me.refresh_authed_models(ctx);
-            }
-        });
+            // TODO: Instead of querying this ad-hoc upon a successful log in, we should add the
+            // available LLMs query to the general workspace metadata query which is polled
+            // and hooked up to workspace changes. For that to work, each user would need to
+            // have a personal workspace. This is a stop-gap.
+            ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, event, ctx| {
+                if let AuthManagerEvent::AuthComplete = event {
+                    me.refresh_authed_models(ctx);
+                }
+            });
 
-        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, event, ctx| {
-            if let UserWorkspacesEvent::TeamsChanged = event {
-                me.refresh_authed_models(ctx);
-            }
-        });
+            ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, event, ctx| {
+                if let UserWorkspacesEvent::TeamsChanged = event {
+                    me.refresh_authed_models(ctx);
+                }
+            });
+        }
 
         let base_llm_for_terminal_view = HashMap::new();
 
@@ -848,6 +858,11 @@ impl LLMPreferences {
 
     /// Fetches the latest set of models from the server for the currently logged in user, and updates the model.
     pub fn refresh_authed_models(&self, ctx: &mut ModelContext<Self>) {
+        // In bypass / local-AI mode the server is unavailable; keep the
+        // hardcoded local model list and skip the network request.
+        if crate::local_ai::local_model_routing_active() {
+            return;
+        }
         // Don't try to fetch auth'd models if the user is not logged in yet.
         if !AuthStateProvider::as_ref(ctx).get().is_logged_in() {
             return;
@@ -871,6 +886,9 @@ impl LLMPreferences {
 
     /// No auth required (i.e. to populate the pre-login onboarding picker).
     fn refresh_public_models(&self, ctx: &mut ModelContext<Self>) {
+        if crate::local_ai::local_model_routing_active() {
+            return;
+        }
         let ai_api_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         ctx.spawn(
             async move { ai_api_client.get_free_available_models(None).await },

@@ -35,24 +35,27 @@ The OSS build reads `~/.warp/.env`, then `./.env` from the cwd, at startup. See 
 
 ```env
 # Boot directly into a logged-in fake-user state. Skips the browser-check / paywall.
+# The model-selector menu (footer button) will show the local model list.
 WARP_BYPASS_AUTH=1
 
-# Route agent runs to a local CLI. Currently supported: claude, codex.
-# Ollama is wired but not yet implemented.
-WARP_LOCAL_AI=claude
+# Optional: override the default menu selection to a specific provider.
+# Supported: claude, codex. (Ollama planned - see Known limitations.)
+# WARP_LOCAL_AI=claude
 ```
 
 ## What's changed vs upstream
 
 - **Auth bypass**. `WARP_BYPASS_AUTH=1` short-circuits `AuthState::initialize` to a Test user, drops the `cfg(skip_login)` gates so `Credentials::Test` is available in OSS builds, and forces `is_any_ai_enabled` so the AI menu, Cmd+I binding, and agent-mode predicate light up.
-- **Local-AI harness override**. When `WARP_LOCAL_AI` is set, `harness_kind()` overrides the user's selection to the matching `ThirdParty` harness. A new `CodexHarness` shells `codex --full-auto`. The agent driver synthesises the `ResolvedHarnessPrompt` locally, so it never calls `ServerApi::resolve_prompt()`.
+- **Local-model selector**. When `WARP_BYPASS_AUTH=1` is set, the model-selector menu (footer button) replaces Warp's server-fetched model list with a local set: Claude Sonnet 4.7, Opus 4.7, Haiku 4.5, and GPT-5.5 at low/medium/high reasoning effort. Selecting a model routes the panel agent to the corresponding CLI (`claude -p --model ...` or `codex exec -m ...`). The selection persists across restarts via Warp's existing profile persistence.
+- **Local-AI harness override**. When `WARP_LOCAL_AI` is set, `harness_kind_with_model()` overrides the harness selection to the matching `ThirdParty` harness. A new `CodexHarness` shells `codex --full-auto`. The agent driver synthesises the `ResolvedHarnessPrompt` locally, so it never calls `ServerApi::resolve_prompt()`.
 - **Notifications inbox hidden**. `HeaderToolbarItemKind::NotificationsMailbox::is_supported()` returns `false`, removing the inbox icon and dropdown from the header toolbar.
 - **`.env` loading**. dotenvy loads `.env` at the top of `run()`, from the cwd and from `~/.warp/.env`, so launching via `open WarpOss.app` (cwd = `/`) still picks up env vars.
 
 ## Known limitations
 
-- The interactive agent panel under `WARP_LOCAL_AI` routes through a local CLI subprocess (`claude -p` / `codex exec`). Tool calls the CLI emits (file edits, shell commands) are not forwarded back to the Warp panel UI - only the assistant text reply is shown. Full tool-loop support requires a richer protocol bridge and is left as follow-up.
-- `WARP_LOCAL_AI=ollama` logs a warning and is not yet implemented.
+- The interactive agent panel routes through a local CLI subprocess (`claude -p` / `codex exec`). Tool calls the CLI emits (file edits, shell commands) are not forwarded back to the Warp panel UI - only the assistant text reply is shown. Full tool-loop support requires a richer protocol bridge and is left as follow-up.
+- **Ollama and OpenRouter models** are listed as planned entries in `.env.example` but not yet implemented. The menu currently shows only Claude and GPT-5.5 (codex) entries. Adding HTTP-based providers requires a new harness type and is deferred to a follow-up PR.
+- `WARP_LOCAL_AI=ollama` logs a warning and falls through to the cloud Oz path (a no-op in bypass mode).
 
 ## Build
 

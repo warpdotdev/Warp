@@ -12,7 +12,7 @@ use crate::ai::agent::api::convert_conversation::{
 };
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent_sdk::driver::harness::{harness_kind, HarnessKind};
+use crate::ai::agent_sdk::driver::harness::{harness_kind_with_model, HarnessKind};
 use crate::ai::agent_sdk::driver::{AgentDriverOptions, AgentRunPrompt, Task};
 use crate::ai::agent_sdk::mcp_config::build_mcp_servers_from_specs;
 #[cfg(not(target_family = "wasm"))]
@@ -397,10 +397,13 @@ fn build_merged_config_and_task(
 
     let task = Task {
         prompt: AgentRunPrompt::Local(resolve_prompt(&local_prompt, ctx)?),
-        model: model_override,
+        model: model_override.clone(),
         profile: args.profile.clone(),
         mcp_specs: runtime_mcp_specs,
-        harness: harness_kind(args.harness)?,
+        harness: harness_kind_with_model(
+            args.harness,
+            model_override.as_ref().map(|id| id.as_str()),
+        )?,
     };
 
     Ok((merged_config, task))
@@ -457,10 +460,13 @@ fn build_server_side_task(
             skill,
             attachments_dir: None,
         },
-        model: model_override,
+        model: model_override.clone(),
         profile,
         mcp_specs: runtime_mcp_specs,
-        harness: harness_kind(args.harness)?,
+        harness: harness_kind_with_model(
+            args.harness,
+            model_override.as_ref().map(|id| id.as_str()),
+        )?,
     };
 
     Ok((config, task))

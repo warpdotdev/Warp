@@ -159,13 +159,34 @@ impl fmt::Debug for HarnessKind {
     }
 }
 
-/// Build a [`HarnessKind`] for the given [`Harness`].
+/// Build a [`HarnessKind`] for the given [`Harness`], optionally using
+/// `model_id` to pick the local provider when auth-bypass is active.
 ///
-/// We shouldn't ever get a `--harness unknown` here because clap should handle
-/// it.
-pub(crate) fn harness_kind(harness: Harness) -> Result<HarnessKind, AgentDriverError> {
-    // When `WARP_LOCAL_AI` is set, override the requested harness regardless of UI selection.
-    // The local-AI bypass requires routing to a CLI subprocess, not Warp's server.
+/// Priority:
+///   1. If `model_id` is a local model ID (e.g. `"local:claude:…"`), use
+///      the matching harness regardless of the `harness` flag.
+///   2. If `WARP_LOCAL_AI` is set, use that provider.
+///   3. Otherwise, honour the `harness` flag as before.
+pub(crate) fn harness_kind_with_model(
+    harness: Harness,
+    model_id: Option<&str>,
+) -> Result<HarnessKind, AgentDriverError> {
+    // When local-model routing is active, prefer the spec from the model ID.
+    if crate::local_ai::local_model_routing_active() {
+        if let Some(id) = model_id {
+            match crate::local_ai::LocalModelSpec::parse(id) {
+                Some(crate::local_ai::LocalModelSpec::Claude { .. }) => {
+                    return Ok(HarnessKind::ThirdParty(Box::new(ClaudeHarness)));
+                }
+                Some(crate::local_ai::LocalModelSpec::Codex { .. }) => {
+                    return Ok(HarnessKind::ThirdParty(Box::new(CodexHarness)));
+                }
+                None => {}
+            }
+        }
+    }
+
+    // Fall back to the legacy WARP_LOCAL_AI env var override.
     match crate::local_ai::current() {
         crate::local_ai::LocalAiMode::Claude => {
             return Ok(HarnessKind::ThirdParty(Box::new(ClaudeHarness)));
@@ -189,6 +210,7 @@ pub(crate) fn harness_kind(harness: Harness) -> Result<HarnessKind, AgentDriverE
         Harness::Unknown => Err(AgentDriverError::InvalidRuntimeState),
     }
 }
+
 
 /// Check that `cli` is installed and on PATH, returning a `HarnessSetupFailed`
 /// error with an optional install-docs link when it isn't.
