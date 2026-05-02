@@ -3,7 +3,7 @@ use crate::pane_group::{PaneGroup, PaneId};
 #[cfg(feature = "local_fs")]
 use repo_metadata::repositories::DetectedRepositories;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use warpui::AppContext;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -41,7 +41,6 @@ pub(super) fn resolve_project_group_for_pane_group(
 ) -> ProjectGroupKey {
     let mut candidate_paths: Vec<PathBuf> = Vec::new();
     let mut push_candidate = |path: PathBuf| {
-        let path = normalize_project_group_path(path);
         if !candidate_paths.contains(&path) {
             candidate_paths.push(path);
         }
@@ -57,15 +56,31 @@ pub(super) fn resolve_project_group_for_pane_group(
         // Repo-root detection is local-FS only; other builds fall back to normalized paths.
         use warpui::SingletonEntity as _;
         let detected = DetectedRepositories::as_ref(app);
-        for path in &candidate_paths {
-            if let Some(root) = detected.get_root_for_path(path) {
-                return ProjectGroupKey::Root(root);
-            }
+        if let Some(key) =
+            repo_root_project_group_key(&candidate_paths, |path| detected.get_root_for_path(path))
+        {
+            return key;
         }
     }
 
-    if let Some(p) = candidate_paths.into_iter().next() {
-        return ProjectGroupKey::Cwd(p);
+    fallback_project_group_key(candidate_paths, unknown_id)
+}
+
+fn repo_root_project_group_key(
+    candidate_paths: &[PathBuf],
+    mut get_root_for_path: impl FnMut(&Path) -> Option<PathBuf>,
+) -> Option<ProjectGroupKey> {
+    for path in candidate_paths {
+        if let Some(root) = get_root_for_path(path) {
+            return Some(ProjectGroupKey::Root(normalize_project_group_path(root)));
+        }
+    }
+    None
+}
+
+fn fallback_project_group_key(candidate_paths: Vec<PathBuf>, unknown_id: usize) -> ProjectGroupKey {
+    if let Some(path) = candidate_paths.into_iter().next() {
+        return ProjectGroupKey::Cwd(normalize_project_group_path(path));
     }
     ProjectGroupKey::Unknown(unknown_id)
 }
@@ -282,6 +297,51 @@ mod tests {
         assert_eq!(groups[0].member_indices, vec![0, 2, 3]);
         assert_eq!(groups[1].key, cwd("/elsewhere"));
         assert_eq!(groups[1].member_indices, vec![1, 4]);
+    }
+
+    #[test]
+    fn repo_lookup_uses_raw_path_and_normalizes_returned_root() {
+        let candidates = vec![PathBuf::from("/mnt/c/repo/foo")];
+        let mut looked_up_paths = Vec::new();
+
+        let key = repo_root_project_group_key(&candidates, |path| {
+            looked_up_paths.push(path.to_path_buf());
+            (path == Path::new("/mnt/c/repo/foo")).then_some(PathBuf::from("/mnt/c/repo/foo"))
+        });
+
+        assert_eq!(looked_up_paths, vec![PathBuf::from("/mnt/c/repo/foo")]);
+        assert_eq!(key, Some(root("c:/repo/foo")));
+    }
+
+    #[test]
+    fn wsl_and_windows_repo_roots_normalize_to_same_project_key() {
+        let wsl_key = repo_root_project_group_key(&[PathBuf::from("/mnt/c/repo/foo")], |path| {
+            (path == Path::new("/mnt/c/repo/foo")).then_some(PathBuf::from("/mnt/c/repo/foo"))
+        })
+        .expect("WSL path should resolve to a repo root");
+        let windows_key = repo_root_project_group_key(&[PathBuf::from(r"C:\repo\foo")], |path| {
+            (path == Path::new(r"C:\repo\foo")).then_some(PathBuf::from(r"C:\repo\foo"))
+        })
+        .expect("Windows path should resolve to a repo root");
+
+        let keys = [wsl_key, windows_key];
+        let groups = group_by_project_key(keys.len(), |i| keys[i].clone());
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].key, root("c:/repo/foo"));
+        assert_eq!(groups[0].member_indices, vec![0, 1]);
+    }
+
+    #[test]
+    fn cwd_fallback_normalizes_project_key() {
+        assert_eq!(
+            fallback_project_group_key(vec![PathBuf::from("/mnt/c/repo/foo")], 7),
+            cwd("c:/repo/foo")
+        );
+        assert_eq!(
+            fallback_project_group_key(vec![PathBuf::from(r"C:\repo\foo")], 7),
+            cwd("c:/repo/foo")
+        );
     }
 
     #[test]
