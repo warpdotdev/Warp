@@ -6466,13 +6466,16 @@ impl AIBlock {
         }
 
         // Read the active orchestration config for auto-launch /
-        // denied decisions in the card constructor.
+        // denied decisions from the conversation (not the singleton).
         let active_config = {
-            let doc_handle = AIDocumentModel::handle(ctx);
-            let doc = doc_handle.as_ref(ctx);
-            doc.active_orchestration_config()
-                .cloned()
-                .map(|config| (config, doc.orchestration_status()))
+            let history = crate::BlocklistAIHistoryModel::as_ref(ctx);
+            history
+                .conversation(&self.client_ids.conversation_id)
+                .and_then(|conv| {
+                    conv.orchestration_config()
+                        .cloned()
+                        .map(|config| (config, conv.orchestration_status()))
+                })
         };
 
         let action_id_clone = action_id.clone();

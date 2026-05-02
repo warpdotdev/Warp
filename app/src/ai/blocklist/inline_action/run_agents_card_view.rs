@@ -226,11 +226,14 @@ impl RunAgentsCardView {
 
         // Auto-launch when the active config is approved and matches
         // the request — skip the confirmation card entirely.
-        // TODO(Stage 2): Re-enable once the active config is properly
-        // scoped to the current conversation. Currently the singleton
-        // AIDocumentModel carries config from any conversation, which
-        // causes unintended auto-launches in unrelated conversations.
-        let auto_launched = false;
+        // The active_config is now conversation-scoped so cross-conversation
+        // leakage is no longer possible.
+        let auto_launched = !is_denied
+            && !request.agent_run_configs.is_empty()
+            && matches!(
+                &active_config,
+                Some((config, status)) if status.is_approved() && matches_active_config(request, config)
+            );
 
         let reject_keystroke = CTRL_C_KEYSTROKE.clone();
         let edit_keystroke =

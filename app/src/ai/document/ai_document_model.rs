@@ -192,12 +192,6 @@ pub struct AIDocumentModel {
     /// tool calls to the corresponding AI document ID.
     streaming_create_documents: HashMap<(AIConversationId, AIAgentActionId, usize), AIDocumentId>,
 
-    // ── Stage 2: conversation-level orchestration config ──────────
-    // These are NOT per-plan — the config is shared across all plans
-    // in a conversation. Hydrated from `Message.OrchestrationConfigSnapshot`.
-    orchestration_config: Option<OrchestrationConfig>,
-    orchestration_status: OrchestrationConfigStatus,
-    orchestration_plan_id: Option<String>,
     /// Dirty event queued for the next outbound request.
     /// Set when the user edits the config or toggles approval on the
     /// plan card; cleared by the controller after piggybacking onto
@@ -237,9 +231,6 @@ impl AIDocumentModel {
             save_tx,
             pending_document_queue: Vec::new(),
             streaming_create_documents: HashMap::new(),
-            orchestration_config: None,
-            orchestration_status: OrchestrationConfigStatus::default(),
-            orchestration_plan_id: None,
             dirty_orchestration_event: None,
         }
     }
@@ -255,9 +246,6 @@ impl AIDocumentModel {
             save_tx,
             pending_document_queue: Vec::new(),
             streaming_create_documents: HashMap::new(),
-            orchestration_config: None,
-            orchestration_status: OrchestrationConfigStatus::default(),
-            orchestration_plan_id: None,
             dirty_orchestration_event: None,
         }
     }
@@ -1243,7 +1231,7 @@ impl AIDocumentModel {
         ctx: &mut ModelContext<Self>,
     ) {
         // Clone the snapshot out of the history borrow so we can pass
-        // &mut ctx to hydrate_orchestration_config_from_snapshot.
+        // &mut ctx to hydrate below.
         let snapshot = {
             let history = BlocklistAIHistoryModel::as_ref(ctx);
             let Some(conversation) = history.conversation(&conversation_id) else {
@@ -1263,23 +1251,11 @@ impl AIDocumentModel {
             })
         };
         if let Some(snapshot) = snapshot {
-            self.hydrate_orchestration_config_from_snapshot(&snapshot, ctx);
+            Self::hydrate_orchestration_config_from_snapshot(conversation_id, &snapshot, ctx);
         }
     }
 
     // ── Orchestration config accessors ────────────────────────────
-
-    pub fn active_orchestration_config(&self) -> Option<&OrchestrationConfig> {
-        self.orchestration_config.as_ref()
-    }
-
-    pub fn orchestration_status(&self) -> OrchestrationConfigStatus {
-        self.orchestration_status
-    }
-
-    pub fn orchestration_plan_id(&self) -> Option<&str> {
-        self.orchestration_plan_id.as_deref()
-    }
 
     pub fn dirty_orchestration_event(&self) -> Option<&DirtyOrchestrationEvent> {
         self.dirty_orchestration_event.as_ref()
@@ -1294,42 +1270,31 @@ impl AIDocumentModel {
     /// or toggles the approval switch.
     pub fn set_orchestration_config(
         &mut self,
+        conversation_id: AIConversationId,
         config: OrchestrationConfig,
         status: OrchestrationConfigStatus,
         plan_id: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        self.orchestration_config = Some(config.clone());
-        self.orchestration_status = status;
-        if let Some(pid) = &plan_id {
-            self.orchestration_plan_id = Some(pid.clone());
-        }
         self.dirty_orchestration_event = Some(DirtyOrchestrationEvent {
-            plan_id: plan_id.unwrap_or_default(),
-            config,
+            plan_id: plan_id.clone().unwrap_or_default(),
+            config: config.clone(),
             status,
         });
-        ctx.emit(AIDocumentModelEvent::OrchestrationConfigUpdated);
-    }
-
-    /// Sets only the approval status (toggle on/off). Config values are
-    /// preserved; only `status` changes.
-    pub fn set_orchestration_status(
-        &mut self,
-        status: OrchestrationConfigStatus,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if let Some(config) = self.orchestration_config.clone() {
-            self.set_orchestration_config(config, status, self.orchestration_plan_id.clone(), ctx);
-        }
+        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
+            if let Some(conversation) = history.conversation_mut(&conversation_id) {
+                conversation.set_orchestration_config(Some(config), status, plan_id);
+            }
+        });
+        ctx.emit(AIDocumentModelEvent::OrchestrationConfigUpdated { conversation_id });
     }
 
     /// Hydrates the orchestration config from an in-history
     /// `Message.OrchestrationConfigSnapshot`. Called during conversation
     /// restore and on incoming `UpdateTaskMessage` / `AddMessagesToTask`
     /// events that carry the snapshot.
-    pub fn hydrate_orchestration_config_from_snapshot(
-        &mut self,
+    fn hydrate_orchestration_config_from_snapshot(
+        conversation_id: AIConversationId,
         snapshot: &maa_api::OrchestrationConfigSnapshot,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -1344,16 +1309,16 @@ impl AIDocumentModel {
             Some(snapshot.plan_id.clone())
         };
 
-        let changed = self.orchestration_config != config
-            || self.orchestration_status != status
-            || self.orchestration_plan_id != plan_id;
-
-        self.orchestration_config = config;
-        self.orchestration_status = status;
-        self.orchestration_plan_id = plan_id;
+        let changed = BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
+            if let Some(conversation) = history.conversation_mut(&conversation_id) {
+                conversation.set_orchestration_config(config, status, plan_id)
+            } else {
+                false
+            }
+        });
 
         if changed {
-            ctx.emit(AIDocumentModelEvent::OrchestrationConfigUpdated);
+            ctx.emit(AIDocumentModelEvent::OrchestrationConfigUpdated { conversation_id });
         }
     }
 
@@ -1435,7 +1400,9 @@ pub enum AIDocumentModelEvent {
     DocumentVisibilityChanged(AIDocumentId),
     /// Conversation-level orchestration config was created or updated
     /// (from server snapshot hydration or user edit on the plan card).
-    OrchestrationConfigUpdated,
+    OrchestrationConfigUpdated {
+        conversation_id: AIConversationId,
+    },
 }
 
 impl Entity for AIDocumentModel {
