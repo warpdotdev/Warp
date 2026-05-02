@@ -5,6 +5,16 @@ A personal AGPL fork of [warpdotdev/warp](https://github.com/warpdotdev/warp). B
 > [!IMPORTANT]
 > Not affiliated with or endorsed by Warp Inc. The upstream README (Warp's product description, contribution flow, support links) lives at [UPSTREAM_README.md](UPSTREAM_README.md).
 
+## Why this fork exists
+
+This is a testbench for integrating [**ilo-lang**](https://ilo-lang.ai) — my agent-optimised, token-minimal programming language designed to be written and read by LLMs — into real developer tools. Warp is a useful first target because:
+
+- It's a *terminal* with a deeply embedded coding agent. If ilo can express agent prompts, tool definitions, and workflows in fewer tokens than Markdown / YAML / JSON, that should show up first in an environment that runs an agent loop on every keystroke.
+- The OSS codebase is large, idiomatic Rust with a clean entity-handle UI framework — a realistic test of how an "ilo-aware" agent navigates and modifies a non-trivial codebase, not a toy.
+- The local-AI bypass (`WARP_LOCAL_AI=claude|codex`) lets me swap providers without touching Warp's billing, so I can A/B different agents reading the same ilo system prompt and compare token usage / quality on a level playing field.
+
+The current `WARP_ILO_SYSTEM_PROMPT` env var is the seed of this experiment: a single hook for prepending ilo context to every agent turn. Future work in this fork will explore tool definitions in ilo, ilo-syntax slash commands, ilo-encoded conversation summaries, and similar bench tests. Findings will feed back into [ilo-lang](https://github.com/danieljohnmorris/ilo-lang).
+
 **Forked from**: [`warpdotdev/warp@00df35b`](https://github.com/warpdotdev/warp/commit/00df35b5dc951b9ed9ac57f873ea0b0484f42ad6) (2026-05-01).
 **Sync upstream**: `git fetch upstream master && git merge upstream/master`.
 
