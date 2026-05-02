@@ -5951,8 +5951,42 @@ impl Workspace {
         });
     }
 
+    /// Ensure the Logs chip is present in the user's toolbar config.
+    /// Users with a persisted Custom config that predates the Logs variant will not see
+    /// the sidebar rendered unless the chip is in their right (or left) items list.
+    /// This migration runs lazily on first use so existing users get the sidebar.
+    #[cfg(not(target_family = "wasm"))]
+    fn ensure_logs_in_config(ctx: &mut ViewContext<Self>) {
+        let config = TabSettings::as_ref(ctx)
+            .header_toolbar_chip_selection
+            .clone();
+        let left = config.left_items();
+        let right = config.right_items();
+        let already_present = left.contains(&HeaderToolbarItemKind::Logs)
+            || right.contains(&HeaderToolbarItemKind::Logs);
+        if already_present {
+            return;
+        }
+        // Append to the right side, mirroring the default placement.
+        let mut new_right = right;
+        new_right.push(HeaderToolbarItemKind::Logs);
+        let selection = HeaderToolbarChipSelection::Custom {
+            left,
+            right: new_right,
+        };
+        TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+            report_if_error!(settings
+                .header_toolbar_chip_selection
+                .set_value(selection, ctx));
+        });
+    }
+
     #[cfg(not(target_family = "wasm"))]
     fn view_logs(&mut self, ctx: &mut ViewContext<Self>) {
+        // Ensure the Logs chip is in the toolbar config so the sidebar can render.
+        // This is a one-time migration for users with a Custom config that predates
+        // the Logs variant.
+        Self::ensure_logs_in_config(ctx);
         // "View Warp logs" from Help menu always opens the sidebar (never closes it).
         if !self.current_workspace_state.is_log_viewer_open {
             self.open_log_viewer(ctx);
