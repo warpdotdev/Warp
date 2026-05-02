@@ -1,6 +1,7 @@
 mod build_plan_migration_modal;
 pub(crate) mod cloud_agent_capacity_modal;
 pub(crate) mod codex_modal;
+pub(crate) mod log_viewer_panel;
 pub mod conversation_list;
 #[cfg(enable_crash_recovery)]
 mod crash_recovery;
@@ -125,6 +126,7 @@ use crate::workspace::view::cloud_agent_capacity_modal::{
     CloudAgentCapacityModal, CloudAgentCapacityModalEvent, CloudAgentCapacityModalVariant,
 };
 use crate::workspace::view::codex_modal::{CodexModal, CodexModalEvent};
+use crate::workspace::view::log_viewer_panel::{LogViewerEvent, LogViewerPanel};
 use crate::workspace::view::free_tier_limit_hit_modal::{
     FreeTierLimitHitModal, FreeTierLimitHitModalEvent,
 };
@@ -971,6 +973,7 @@ pub struct Workspace {
     enable_auto_reload_modal: ViewHandle<EnableAutoReloadModal>,
     build_plan_migration_modal: ViewHandle<BuildPlanMigrationModal>,
     codex_modal: ViewHandle<CodexModal>,
+    log_viewer_panel: ViewHandle<LogViewerPanel>,
     cloud_agent_capacity_modal: ViewHandle<CloudAgentCapacityModal>,
     free_tier_limit_hit_modal: ViewHandle<FreeTierLimitHitModal>,
     free_tier_limit_check_triggered: bool,
@@ -2633,6 +2636,11 @@ impl Workspace {
             me.handle_codex_modal_event(event, ctx);
         });
 
+        let log_viewer_panel = ctx.add_typed_action_view(LogViewerPanel::new);
+        ctx.subscribe_to_view(&log_viewer_panel, |me, _, event, ctx| {
+            me.handle_log_viewer_event(event, ctx);
+        });
+
         let cloud_agent_capacity_modal =
             ctx.add_typed_action_view(|_| CloudAgentCapacityModal::new());
         ctx.subscribe_to_view(&cloud_agent_capacity_modal, |me, _, event, ctx| {
@@ -3140,6 +3148,7 @@ impl Workspace {
             notification_mailbox_view,
             notification_toast_stack,
             codex_modal,
+            log_viewer_panel,
             cloud_agent_capacity_modal,
             free_tier_limit_hit_modal,
             free_tier_limit_check_triggered: false,
@@ -5944,30 +5953,7 @@ impl Workspace {
 
     #[cfg(not(target_family = "wasm"))]
     fn view_logs(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.spawn(
-            async { tokio::task::spawn_blocking(warp_logging::create_log_bundle_zip).await },
-            |me, result, ctx| match result {
-                Ok(Ok(path)) => {
-                    ctx.open_file_path_in_explorer(&path);
-                }
-                Ok(Err(err)) => {
-                    let error_message = format!("Failed to create log bundle: {err}");
-                    log::error!("{error_message}");
-                    me.toast_stack.update(ctx, |toast_stack, ctx| {
-                        let toast = DismissibleToast::error(error_message);
-                        toast_stack.add_persistent_toast(toast, ctx);
-                    });
-                }
-                Err(err) => {
-                    let error_message = format!("Failed to create log bundle: {err}");
-                    log::error!("{error_message}");
-                    me.toast_stack.update(ctx, |toast_stack, ctx| {
-                        let toast = DismissibleToast::error(error_message);
-                        toast_stack.add_persistent_toast(toast, ctx);
-                    });
-                }
-            },
-        );
+        self.open_log_viewer(ctx);
     }
 
     fn copy_version(&mut self, version: &str, ctx: &mut ViewContext<Self>) {
@@ -16002,6 +15988,22 @@ impl Workspace {
         send_telemetry_from_ctx!(TelemetryEvent::CodexModalOpened, ctx);
     }
 
+    fn handle_log_viewer_event(&mut self, event: &LogViewerEvent, ctx: &mut ViewContext<Self>) {
+        match event {
+            LogViewerEvent::Close => {
+                self.current_workspace_state.is_log_viewer_open = false;
+                self.focus_active_tab(ctx);
+                ctx.notify();
+            }
+        }
+    }
+
+    fn open_log_viewer(&mut self, ctx: &mut ViewContext<Self>) {
+        self.current_workspace_state.is_log_viewer_open = true;
+        ctx.focus(&self.log_viewer_panel);
+        ctx.notify();
+    }
+
     /// Opens a new tab and enters agent view with a prompt from a Linear deeplink.
     pub fn open_linear_issue_work(
         &mut self,
@@ -22619,6 +22621,10 @@ impl View for Workspace {
 
         if self.current_workspace_state.is_codex_modal_open {
             stack.add_child(ChildView::new(&self.codex_modal).finish());
+        }
+
+        if self.current_workspace_state.is_log_viewer_open {
+            stack.add_child(ChildView::new(&self.log_viewer_panel).finish());
         }
 
         if FeatureFlag::CloudMode.is_enabled()

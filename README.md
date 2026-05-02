@@ -57,6 +57,7 @@ WARP_BYPASS_AUTH=1
 - **Notifications inbox hidden**. `HeaderToolbarItemKind::NotificationsMailbox::is_supported()` returns `false`, removing the inbox icon and dropdown from the header toolbar.
 - **`.env` loading**. dotenvy loads `.env` at the top of `run()`, from the cwd and from `~/.warp/.env`, so launching via `open WarpOss.app` (cwd = `/`) still picks up env vars.
 - **`/init` cloud-only chips hidden**. The "create cloud-agent environment" prompt in the `/init` project-setup flow is suppressed when `WARP_BYPASS_AUTH` is active. The codebase indexing chip is also suppressed: the indexing pipeline sends code fragments to Warp's GraphQL backend for server-side embedding generation (OpenAI text-small-3 / Voyage models), so without a valid session token every `StoreClient` call would fail silently. Language-support installation still appears as normal.
+- **In-app log viewer**. Help > "View Warp logs" now opens a live log tail panel instead of exporting a zip. The panel tails `~/Library/Logs/warp-oss.log` (or whichever channel log file is active), streams new lines in real time, supports case-insensitive text filter, and has level-filter chips (All / INFO / WARN / ERROR). Error lines are red, WARN lines are yellow. Press Escape or click X to close. The old zip-export path is no longer the default; follow-up work would be to add a separate "Export log bundle" menu item.
 
 ## Known limitations
 
