@@ -435,9 +435,12 @@ pub struct RunCloudArgs {
 
     #[command(flatten)]
     pub scope: ObjectScope,
-    /// Agent UID to use as the execution principal for this run.
+
+    /// UID of the agent to execute this run as.
     ///
-    /// This is only valid for team-owned runs.
+    /// This will apply the agent's configuration, such
+    /// as its skills and base model, and attribute
+    /// credit usage back to the agent.
     #[arg(long = "agent", value_name = "UID")]
     pub agent_uid: Option<String>,
 
