@@ -706,7 +706,7 @@ fn extract_claude_stream_json_text(line: &str) -> Option<String> {
                         block
                             .get("content")
                             .and_then(|c| c.as_str())
-                            .map(|s| truncate(s, 120).to_string())
+                            .map(truncate_result)
                             .unwrap_or_default()
                     };
                     if !excerpt.is_empty() {
@@ -783,7 +783,32 @@ fn tool_result_excerpt(tur: &serde_json::Value) -> String {
                 .filter(|s| !s.is_empty())
         })
         .unwrap_or("");
-    truncate(raw, 120).to_string()
+    truncate_result(raw)
+}
+
+/// Truncate tool-result output for display in the agent panel.
+///
+/// Shows up to 4 000 chars of the output.  When the output exceeds that limit
+/// an indicator is appended so the user knows there is more:
+///
+/// ```text
+/// [result] line1\nline2\n... (truncated, full output 12345 chars)
+/// ```
+///
+/// 4 000 chars is large enough to hold a typical file listing or grep result
+/// while still protecting the panel from extremely large outputs (e.g. `find /`).
+fn truncate_result(s: &str) -> String {
+    const MAX_CHARS: usize = 4_000;
+    let total = s.chars().count();
+    if total <= MAX_CHARS {
+        return s.to_string();
+    }
+    // Find the byte index of the MAX_CHARS-th character boundary.
+    let end = match s.char_indices().nth(MAX_CHARS) {
+        Some((idx, _)) => idx,
+        None => s.len(),
+    };
+    format!("{}\n... (truncated, full output {} chars)", &s[..end], total)
 }
 
 /// Return a string slice of at most `max_chars` UTF-8 characters.
