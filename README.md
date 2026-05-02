@@ -1,26 +1,38 @@
 # danieljohnmorris/warp · personal fork
 
-A personal AGPL fork of [warpdotdev/warp](https://github.com/warpdotdev/warp). Boots the OSS build without server auth, hides the notifications inbox, and adds plumbing to route AI agent runs to local CLIs (`claude`, `codex`) instead of Warp's cloud.
+My personal AGPL fork of [warpdotdev/warp](https://github.com/warpdotdev/warp). The OSS build boots without server auth, the notifications inbox is gone, and agent runs route to local CLIs (`claude`, `codex`) instead of Warp's cloud.
 
 > [!IMPORTANT]
 > Not affiliated with or endorsed by Warp Inc. The upstream README (Warp's product description, contribution flow, support links) lives at [UPSTREAM_README.md](UPSTREAM_README.md).
 
 ## Why this fork exists
 
-This is a testbench for integrating [**ilo-lang**](https://ilo-lang.ai) — my agent-optimised, token-minimal programming language designed to be written and read by LLMs — into real developer tools. Warp is a useful first target because:
+Two reasons, in priority order.
 
-- It's a *terminal* with a deeply embedded coding agent. If ilo can express agent prompts, tool definitions, and workflows in fewer tokens than Markdown / YAML / JSON, that should show up first in an environment that runs an agent loop on every keystroke.
-- The OSS codebase is large, idiomatic Rust with a clean entity-handle UI framework — a realistic test of how an "ilo-aware" agent navigates and modifies a non-trivial codebase, not a toy.
-- The local-AI bypass (`WARP_LOCAL_AI=claude|codex`) lets me swap providers without touching Warp's billing, so I can A/B different agents reading the same ilo system prompt and compare token usage / quality on a level playing field.
+### 1. A local-AI version of Warp with cloud features stripped
 
-The current `WARP_ILO_SYSTEM_PROMPT` env var is the seed of this experiment: a single hook for prepending ilo context to every agent turn. Future work in this fork will explore tool definitions in ilo, ilo-syntax slash commands, ilo-encoded conversation summaries, and similar bench tests. Findings will feed back into [ilo-lang](https://github.com/danieljohnmorris/ilo-lang).
+I want to run Warp's terminal and agent UI without signing into Warp's cloud and without paying for Warp's hosted models. The fork swaps Warp's server-mediated AI path for direct calls to local CLIs I already have authenticated (`claude`, `codex`). It removes the auth gate. It hides cloud-only UI: the notifications inbox, the upgrade-required model badges, the "free AI disabled" modal.
 
-**Forked from**: [`warpdotdev/warp@00df35b`](https://github.com/warpdotdev/warp/commit/00df35b5dc951b9ed9ac57f873ea0b0484f42ad6) (2026-05-01).
+This is useful if you already pay for Claude or Codex and don't want a second AI subscription, if you want to keep agent traffic off a third-party server, or if you want to hack on Warp's UI without the live cloud dependency.
+
+### 2. A testbench for ilo-lang
+
+I'm using this fork to test how my agent-optimised programming language, [**ilo-lang**](https://ilo-lang.ai), behaves when wired into a working developer tool. Ilo is token-minimal: programs are written and read primarily by LLMs, so every saved token compounds across millions of agent turns.
+
+Warp is a useful first target. It's a terminal with an embedded coding agent, so an agent loop runs on every keystroke. If ilo expresses agent prompts, tool definitions, and workflows in fewer tokens than Markdown, YAML, or JSON, the difference shows up here first.
+
+The codebase is also a real test for ilo. Around half a million lines of Rust, idiomatic, with a custom entity-handle UI framework. An "ilo-aware" agent has to navigate and modify production-shaped code, not a fixture.
+
+Purpose 1 helps purpose 2: the local-AI bypass lets me run the same ilo system prompt against different LLMs (Claude, Codex, eventually Ollama) and compare token usage and output quality across them.
+
+`WARP_ILO_SYSTEM_PROMPT` is the first hook. It prepends ilo context to every agent turn. Later experiments will cover tool definitions in ilo, ilo-syntax slash commands, and ilo-encoded conversation summaries. What I learn lands back in [ilo-lang](https://github.com/danieljohnmorris/ilo-lang).
+
+**Forked from**: [`warpdotdev/warp@00df35b`](https://github.com/warpdotdev/warp/commit/00df35b5dc951b9ed9ac57f873ea0b0484f42ad6), May 2026.
 **Sync upstream**: `git fetch upstream master && git merge upstream/master`.
 
 ## Configuration (`.env`)
 
-The OSS build reads `~/.warp/.env` (or `./.env` from the cwd) at startup. See [`.env.example`](.env.example) for the full list. Common usage:
+The OSS build reads `~/.warp/.env`, then `./.env` from the cwd, at startup. See [`.env.example`](.env.example) for the full list.
 
 ```env
 # Boot directly into a logged-in fake-user state. Skips the browser-check / paywall.
@@ -36,31 +48,31 @@ WARP_ILO_SYSTEM_PROMPT="You are an ilo-lang expert."
 
 ## What's changed vs upstream
 
-- **Auth bypass**: `WARP_BYPASS_AUTH=1` short-circuits `AuthState::initialize` to a Test user, drops the `cfg(skip_login)` gates so `Credentials::Test` is available in OSS builds, and forces `is_any_ai_enabled` so the AI menu, Cmd+I binding, and agent-mode predicate all light up.
-- **Local-AI harness override**: when `WARP_LOCAL_AI` is set, `harness_kind()` overrides the user's selection to the matching `ThirdParty` harness. New `CodexHarness` shells `codex --full-auto`. The agent driver synthesizes the `ResolvedHarnessPrompt` locally so it never calls `ServerApi::resolve_prompt()`.
-- **ilo-lang context injection**: `WARP_ILO_SYSTEM_PROMPT` is prepended to every system prompt before the harness writes it to the temp file passed to the CLI subprocess.
-- **Notifications inbox hidden**: `HeaderToolbarItemKind::NotificationsMailbox::is_supported()` returns `false`, removing the inbox icon and dropdown from the header toolbar.
-- **`.env` loading**: dotenvy loads `.env` at the top of `run()` from cwd and `~/.warp/.env`, so launching via `open WarpOss.app` (cwd = `/`) still picks up env vars.
+- **Auth bypass**. `WARP_BYPASS_AUTH=1` short-circuits `AuthState::initialize` to a Test user, drops the `cfg(skip_login)` gates so `Credentials::Test` is available in OSS builds, and forces `is_any_ai_enabled` so the AI menu, Cmd+I binding, and agent-mode predicate light up.
+- **Local-AI harness override**. When `WARP_LOCAL_AI` is set, `harness_kind()` overrides the user's selection to the matching `ThirdParty` harness. A new `CodexHarness` shells `codex --full-auto`. The agent driver synthesises the `ResolvedHarnessPrompt` locally, so it never calls `ServerApi::resolve_prompt()`.
+- **ilo-lang context injection**. `WARP_ILO_SYSTEM_PROMPT` is prepended to every system prompt before the harness writes it to the temp file passed to the CLI subprocess.
+- **Notifications inbox hidden**. `HeaderToolbarItemKind::NotificationsMailbox::is_supported()` returns `false`, removing the inbox icon and dropdown from the header toolbar.
+- **`.env` loading**. dotenvy loads `.env` at the top of `run()`, from the cwd and from `~/.warp/.env`, so launching via `open WarpOss.app` (cwd = `/`) still picks up env vars.
 
 ## Known limitations
 
-- The interactive agent panel still dispatches via `generate_multi_agent_output()` → Warp's GraphQL server. Under bypass this returns 401. The `WARP_LOCAL_AI` harness override only intercepts the `agent_sdk` CLI path. Full interactive-UI routing to a local CLI requires synthesizing a `warp_multi_agent_api::ResponseEvent` stream — tracked follow-up.
+- The interactive agent panel still dispatches via `generate_multi_agent_output()` to Warp's GraphQL server. Under bypass this returns 401. The `WARP_LOCAL_AI` harness override only intercepts the `agent_sdk` CLI path. Routing the interactive UI to a local CLI requires synthesising a `warp_multi_agent_api::ResponseEvent` stream. Tracked as follow-up.
 - `WARP_LOCAL_AI=ollama` logs a warning and is not yet implemented.
-- `WARP_ILO_SYSTEM_PROMPT` accepts plain text only; loading from a file path is a follow-up.
+- `WARP_ILO_SYSTEM_PROMPT` accepts plain text only. Loading from a file path is a follow-up.
 
 ## Build
 
 ```bash
 ./script/bootstrap   # one-time platform setup (Xcode tools, brew, rustup)
-./script/run         # build + bundle + launch WarpOss.app
+./script/run         # build, bundle, launch WarpOss.app
 ```
 
 For everything else (engineering guide, coding style, testing, platform notes), see [WARP.md](WARP.md).
 
 ## Licensing
 
-Same as upstream: `warpui_core` and `warpui` crates are [MIT](LICENSE-MIT); everything else is [AGPL v3](LICENSE-AGPL). My changes inherit the AGPL of the files they edit.
+Same as upstream. `warpui_core` and `warpui` crates are [MIT](LICENSE-MIT). The rest of the repo is [AGPL v3](LICENSE-AGPL). My changes inherit the AGPL of the files they edit.
 
 ---
 
-→ Looking for the original project? Read [the upstream Warp README](UPSTREAM_README.md).
+Looking for the original project? Read [the upstream Warp README](UPSTREAM_README.md).
