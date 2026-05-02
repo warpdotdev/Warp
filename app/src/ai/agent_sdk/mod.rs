@@ -1284,6 +1284,7 @@ fn command_requires_auth(command: &CliCommand) -> bool {
         CliCommand::Integration(_) => true,
         CliCommand::Schedule(_) => true,
         CliCommand::Secret(_) => true,
+        CliCommand::Vault(_) => false,
         CliCommand::Federate(_) => true,
         CliCommand::HarnessSupport(_) => true,
         CliCommand::Artifact(_) => true,
@@ -1483,6 +1484,7 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
             SecretCommand::Update(_) => CliTelemetryEvent::SecretUpdate,
             SecretCommand::List(_) => CliTelemetryEvent::SecretList,
         },
+        CliCommand::Vault(_) => CliTelemetryEvent::VaultInject,
         CliCommand::Federate(federate_cmd) => match federate_cmd {
             FederateCommand::IssueToken(_) => CliTelemetryEvent::FederateIssueToken,
             FederateCommand::IssueGcpToken(_) => CliTelemetryEvent::FederateIssueGcpToken,

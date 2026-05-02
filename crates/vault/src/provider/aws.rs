@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use aws_sdk_secretsmanager::Client;
 
@@ -30,13 +30,13 @@ impl SecretProvider for AwsProvider {
             .secret_id(path)
             .send()
             .await
-            .with_context(|| format!("vault: secret '{path}' not found"))?;
+            .map_err(|e| anyhow::anyhow!("vault: failed to fetch '{}': {}", path, e))?;
 
         let value = response
             .secret_string()
-            .context("vault: secret has no string value")?
+            .ok_or_else(|| anyhow::anyhow!("vault: secret '{}' has no string value", path))?
             .to_string();
 
-        Ok(Secret::new(env_var.to_string(), value))
+        Secret::new(env_var.to_string(), value)
     }
 }
