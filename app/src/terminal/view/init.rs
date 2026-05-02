@@ -338,7 +338,7 @@ pub fn init(app: &mut AppContext) {
                 & (id!("LongRunningCommand") | id!("AltScreen"))
                 & id!(flags::CLI_AGENT_FOOTER_ENABLED)
                 & id!(flags::CLI_AGENT_RICH_INPUT_CHIP_ENABLED))
-            | (id!("EditorView") & id!("AIInput") & !id!("IMEOpen")),
+            | (id!("EditorView") & id!(flags::CLI_AGENT_RICH_INPUT_OPEN) & !id!("IMEOpen")),
         ),
         EditableBinding::new(
             "terminal:warpify_subshell",
