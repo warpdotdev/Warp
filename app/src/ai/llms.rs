@@ -559,7 +559,48 @@ impl LLMPreferences {
         #[cfg(feature = "agent_mode_evals")]
         me.refresh_available_models(ctx);
 
+        // When running in local-AI / bypass mode, kick off a background fetch
+        // of the Ollama model list so the selector shows real installed models.
+        if crate::local_ai::local_model_routing_active() {
+            me.refresh_ollama_models(ctx);
+        }
+
         me
+    }
+
+    /// Fetch the installed Ollama model list in the background and update the
+    /// local model list when the response arrives.
+    ///
+    /// This is a no-op if the cache was refreshed within the last 30 seconds
+    /// or if local-model routing is not active.
+    pub fn refresh_ollama_models(&self, ctx: &mut ModelContext<Self>) {
+        if !crate::local_ai::local_model_routing_active() {
+            return;
+        }
+        if !crate::local_ai::ollama_cache_needs_refresh() {
+            return;
+        }
+
+        ctx.spawn(
+            async move { crate::local_ai::fetch_ollama_models().await },
+            |me, result, ctx| match result {
+                Ok(models) => {
+                    log::debug!("Ollama model discovery: found {} models", models.len());
+                    crate::local_ai::update_ollama_model_cache(models);
+                    // Rebuild the local model list from the fresh cache and notify
+                    // the UI so the selector reflects the discovered models.
+                    let updated = crate::local_ai::local_model_list();
+                    if updated != me.models_by_feature {
+                        me.models_by_feature = updated;
+                        ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+                    }
+                }
+                Err(e) => {
+                    log::debug!("Ollama model discovery failed (Ollama may not be running): {e}");
+                    // Leave the existing model list (static fallback) in place.
+                }
+            },
+        );
     }
 
     /// Returns the `LLMInfo` for the base LLM to be used for an Agent Mode request.

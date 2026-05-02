@@ -1194,7 +1194,7 @@ impl SettingsView {
                 "Agents",
                 SettingsSection::ai_subpages().to_vec(),
             )),
-        ];
+        ]);
         if !crate::local_ai::auth_bypass_enabled() {
             nav_items.push(SettingsNavItem::Page(SettingsSection::BillingAndUsage));
         }
@@ -1217,7 +1217,7 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Features),
             SettingsNavItem::Page(SettingsSection::Keybindings),
             SettingsNavItem::Page(SettingsSection::Warpify),
-        ];
+        ]);
         if !crate::local_ai::auth_bypass_enabled() {
             // Teams, Referrals, and Shared blocks are cloud-only; hide them under auth-bypass mode.
             nav_items.push(SettingsNavItem::Page(SettingsSection::Teams));

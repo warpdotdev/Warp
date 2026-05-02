@@ -28,14 +28,122 @@
 //! backwards compatibility) but does NOT restrict which models appear in the
 //! menu.  The menu selection is the primary control when `WARP_BYPASS_AUTH=1`
 //! is set without `WARP_LOCAL_AI`.
+//!
+//! # Ollama model discovery
+//!
+//! At startup (via `LLMPreferences::new`) a background task fetches
+//! `GET $OLLAMA_HOST/api/tags` and caches the installed model list in a
+//! process-wide `RwLock`.  `local_model_list()` reads from that cache so the
+//! model selector shows real models rather than static placeholders.  If Ollama
+//! is offline or the fetch fails, the selector falls back to the two hard-coded
+//! placeholder entries.  The cache is refreshed on each menu open, with a
+//! minimum 30-second gap between network calls.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
+use std::time::{Duration, Instant};
 
 // Re-export only what callers need; the full model definitions live here.
 use crate::ai::llms::{
     AvailableLLMs, LLMId, LLMInfo, LLMProvider, LLMSpec, LLMUsageMetadata, ModelsByFeature,
 };
+
+/// Minimum interval between Ollama `/api/tags` fetches.
+const OLLAMA_CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// Process-wide cache of installed Ollama model names.
+///
+/// `None` means no successful fetch has completed yet (initial state or all
+/// fetches have failed).  `Some(vec)` holds the last known list.
+struct OllamaModelCache {
+    models: Option<Vec<String>>,
+    last_fetch: Option<Instant>,
+}
+
+static OLLAMA_MODELS: OnceLock<RwLock<OllamaModelCache>> = OnceLock::new();
+
+fn ollama_model_cache() -> &'static RwLock<OllamaModelCache> {
+    OLLAMA_MODELS.get_or_init(|| {
+        RwLock::new(OllamaModelCache {
+            models: None,
+            last_fetch: None,
+        })
+    })
+}
+
+/// Returns the cached Ollama model names, or `None` if the cache is empty.
+pub fn cached_ollama_models() -> Option<Vec<String>> {
+    ollama_model_cache()
+        .read()
+        .ok()
+        .and_then(|g| g.models.clone())
+}
+
+/// Returns `true` if the cache is old enough that a fresh fetch should be attempted.
+pub fn ollama_cache_needs_refresh() -> bool {
+    ollama_model_cache()
+        .read()
+        .ok()
+        .map(|g| {
+            g.last_fetch
+                .map(|t| t.elapsed() >= OLLAMA_CACHE_TTL)
+                .unwrap_or(true)
+        })
+        .unwrap_or(true)
+}
+
+/// Fetch installed model names from the Ollama `/api/tags` endpoint.
+///
+/// Returns a list of model name strings (e.g. `["qwen3:32b", "llama3.3:70b"]`),
+/// or an error if Ollama is unreachable, returns an unexpected HTTP status, or
+/// returns unparseable JSON.
+pub async fn fetch_ollama_models() -> Result<Vec<String>, String> {
+    let host = ollama_host();
+    let url = format!("{host}/api/tags");
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(3000))
+        .build()
+        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("GET {url} failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "GET {url} returned HTTP {}",
+            response.status()
+        ));
+    }
+
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("failed to parse JSON from {url}: {e}"))?;
+
+    let models = body
+        .get("models")
+        .and_then(|m| m.as_array())
+        .ok_or_else(|| format!("unexpected JSON shape from {url}: missing 'models' array"))?;
+
+    let names: Vec<String> = models
+        .iter()
+        .filter_map(|m| m.get("name")?.as_str().map(str::to_string))
+        .collect();
+
+    Ok(names)
+}
+
+/// Store a successfully-fetched list of models in the process-wide cache.
+pub fn update_ollama_model_cache(models: Vec<String>) {
+    if let Ok(mut guard) = ollama_model_cache().write() {
+        guard.models = Some(models);
+        guard.last_fetch = Some(Instant::now());
+    }
+}
 
 // ---------------------------------------------------------------------------
 // LocalAiMode -- legacy env-var override
@@ -321,18 +429,38 @@ pub fn local_model_list() -> ModelsByFeature {
         Some("high"),
         Some(LLMSpec { cost: 0.85, quality: 0.95, speed: 0.45 }),
     );
-    // Ollama entries. "qwen2.5-coder:7b" and "llama3.3:70b" are pre-set
-    // popular choices; "custom" reads OLLAMA_MODEL at request time.
-    let ollama_qwen = make_ollama_model(
-        "Ollama / qwen2.5-coder:7b",
-        "qwen2.5-coder:7b",
-        Some(LLMSpec { cost: 0.0, quality: 0.7, speed: 0.85 }),
-    );
-    let ollama_llama = make_ollama_model(
-        "Ollama / llama3.3:70b",
-        "llama3.3:70b",
-        Some(LLMSpec { cost: 0.0, quality: 0.8, speed: 0.5 }),
-    );
+    // Ollama entries: built from the live cache when available, falling back
+    // to a pair of popular static entries so the menu is never empty.
+    //
+    // The "custom (env)" entry always appears last so power-users who set
+    // OLLAMA_MODEL can always reach their model regardless of cache state.
+    let discovered: Vec<LLMInfo> = if let Some(names) = cached_ollama_models() {
+        names
+            .into_iter()
+            .map(|name| {
+                make_ollama_model(
+                    &format!("Ollama / {name}"),
+                    &name,
+                    Some(LLMSpec { cost: 0.0, quality: 0.5, speed: 0.75 }),
+                )
+            })
+            .collect()
+    } else {
+        // Fallback while the background fetch is in flight (or Ollama is offline).
+        vec![
+            make_ollama_model(
+                "Ollama / qwen2.5-coder:7b",
+                "qwen2.5-coder:7b",
+                Some(LLMSpec { cost: 0.0, quality: 0.7, speed: 0.85 }),
+            ),
+            make_ollama_model(
+                "Ollama / llama3.3:70b",
+                "llama3.3:70b",
+                Some(LLMSpec { cost: 0.0, quality: 0.8, speed: 0.5 }),
+            ),
+        ]
+    };
+
     // "custom" entry: display name shows current OLLAMA_MODEL value so the
     // user can see which model will be used without opening the env file.
     let custom_model = ollama_custom_model();
@@ -342,17 +470,16 @@ pub fn local_model_list() -> ModelsByFeature {
         Some(LLMSpec { cost: 0.0, quality: 0.5, speed: 0.75 }),
     );
 
-    let all_choices = vec![
+    let mut all_choices = vec![
         claude_sonnet.clone(),
         claude_opus,
         claude_haiku,
         gpt55_low.clone(),
         gpt55_medium.clone(),
         gpt55_high,
-        ollama_qwen,
-        ollama_llama,
-        ollama_custom.clone(),
     ];
+    all_choices.extend(discovered);
+    all_choices.push(ollama_custom.clone());
 
     // The default ID depends on the legacy WARP_LOCAL_AI env var so that
     // existing configurations keep working without re-selecting a model.

@@ -582,6 +582,15 @@ impl ProfileModelSelector {
 
             log::info!("Focusing model menu");
             ctx.focus(&self.model_dropdown);
+
+            // Kick off a non-blocking Ollama model refresh so the next menu
+            // open reflects any newly pulled/removed models.  This runs in the
+            // background; the current open shows whatever is already cached.
+            if crate::local_ai::local_model_routing_active() {
+                LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
+                    prefs.refresh_ollama_models(ctx);
+                });
+            }
         }
         ctx.emit(ProfileModelSelectorEvent::MenuVisibilityChanged { open: is_open });
         ctx.notify();
