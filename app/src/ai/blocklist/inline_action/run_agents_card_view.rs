@@ -5,9 +5,6 @@
 //! the view; only `RejectRequested` flows back to the parent.
 use ai::agent::action::{RunAgentsAgentRunConfig, RunAgentsExecutionMode, RunAgentsRequest};
 use ai::agent::action_result::{RunAgentsAgentOutcomeKind, RunAgentsResult};
-use ai::agent::orchestration_config::{
-    matches_active_config, OrchestrationConfig, OrchestrationConfigStatus,
-};
 use ai::skills::SkillReference;
 use std::rc::Rc;
 use warpui::elements::{
@@ -38,6 +35,7 @@ use crate::ai::blocklist::inline_action::orchestration_controls::{
 use crate::ai::blocklist::inline_action::requested_action::{
     render_requested_action_row_for_text, CTRL_C_KEYSTROKE, ENTER_KEYSTROKE,
 };
+use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
 use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
@@ -205,7 +203,6 @@ impl RunAgentsCardView {
     pub fn new(
         action_id: AIAgentActionId,
         request: &RunAgentsRequest,
-        active_config: Option<(OrchestrationConfig, OrchestrationConfigStatus)>,
         action_model: ModelHandle<BlocklistAIActionModel>,
         run_agents_executor: ModelHandle<RunAgentsExecutor>,
         block_model: Rc<dyn AIBlockModel<View = AIBlock>>,
@@ -301,6 +298,20 @@ impl RunAgentsCardView {
                 }
             }
         });
+
+        // Repopulate the model picker when available LLMs change.
+        // LLMPreferences loads asynchronously from the server; the
+        // picker may have been created before models arrived.
+        ctx.subscribe_to_model(
+            &LLMPreferences::handle(ctx),
+            |me, _, event, ctx| {
+                if let LLMPreferencesEvent::UpdatedAvailableLLMs = event {
+                    if let Some(handle) = &me.handles.pickers.model_picker {
+                        oc::populate_model_picker(handle, &me.state.orch.model_id, ctx);
+                    }
+                }
+            },
+        );
 
         let card = Self {
             action_id,
