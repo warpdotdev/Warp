@@ -77,6 +77,8 @@ use futures::{
     future::{self, Either},
     FutureExt as _,
 };
+#[cfg(not(target_family = "wasm"))]
+use futures::StreamExt as _;
 use oneshot::{Canceled, Receiver, Sender};
 use uuid::Uuid;
 use warp_cli::agent::{Harness, OutputFormat};
@@ -95,6 +97,8 @@ pub(crate) mod cloud_provider;
 pub(crate) mod environment;
 mod error_classification;
 pub(crate) mod harness;
+#[cfg(not(target_family = "wasm"))]
+pub(crate) mod local_orchestrator;
 pub(super) mod output;
 mod snapshot;
 pub(crate) mod terminal;
@@ -677,6 +681,56 @@ impl AgentDriver {
 
     pub fn set_output_format(&mut self, output_format: OutputFormat) {
         self.output_format = output_format;
+    }
+
+    /// Execute the prompt through the local orchestrator.
+    ///
+    /// Replaces the now-removed hosted Oz code path by routing through the
+    /// canonical `orchestrator::Router` → `LocalOrchestratorAgent` → `execute_run`
+    /// stack, which drives the existing Warp conversation model locally.
+    #[cfg(not(target_family = "wasm"))]
+    async fn run_via_local_orchestrator(
+        prompt: AgentRunPrompt,
+        foreground: &ModelSpawner<Self>,
+    ) -> Result<(), AgentDriverError> {
+        let router = local_orchestrator::build_local_router(foreground.clone(), prompt);
+
+        let orch_task = orchestrator::Task {
+            id: local_orchestrator::new_task_id(),
+            role: orchestrator::Role::Worker,
+            prompt: String::new(),
+            context: orchestrator::TaskContext::default(),
+            budget_hint: None,
+        };
+
+        let agent = router
+            .select(&orch_task)
+            .await
+            .map_err(|e| {
+                AgentDriverError::EnvironmentSetupFailed(format!("orchestrator routing: {e}"))
+            })?;
+
+        let mut stream = agent
+            .execute(orch_task)
+            .await
+            .map_err(|e| {
+                AgentDriverError::EnvironmentSetupFailed(format!("agent launch: {e}"))
+            })?;
+
+        while let Some(event) = stream.next().await {
+            match event {
+                orchestrator::AgentEvent::Completed { .. } => return Ok(()),
+                orchestrator::AgentEvent::Failed { error, .. } => {
+                    return Err(AgentDriverError::EnvironmentSetupFailed(error));
+                }
+                orchestrator::AgentEvent::Started { .. }
+                | orchestrator::AgentEvent::OutputChunk { .. }
+                | orchestrator::AgentEvent::ToolCall { .. }
+                | orchestrator::AgentEvent::ToolResult { .. } => {}
+            }
+        }
+
+        Ok(())
     }
 
     pub fn add_share_requests(
@@ -1433,24 +1487,23 @@ impl AgentDriver {
         // Run the harness with a prompt
         match task.harness {
             HarnessKind::Oz => {
-                let conversation_status = foreground
-                    .spawn(move |me, ctx| me.execute_run(task.prompt, ctx))
-                    .await?
-                    .await
-                    .map_err(|_| {
-                        log::error!("Subscription dropped before agent finished");
-                        AgentDriverError::InvalidRuntimeState
-                    })?;
-
-                // Pause before returning to make sure that all conversation events are transmitted before the session is closed.
-                // TODO: This is a bit of a bandaid fix, and it would be better if we explicitly waited for the session to end before terminating.
-                // The way we could do that is through having the driver wait for all in-flight streams to be finished before terminating
-                // and then call stop_sharing_session when they're done. To know when streams are finished, we would need to modify start_ordered_terminal_events_listener
-                // to send a message when the streams are finished, flushed, and the websocket is disconnected. For now, we'll just sleep for a second, as this seems
-                // to be enough time for the streams to be finished and the events to be flushed.
-                warpui::r#async::Timer::after(Duration::from_secs(1)).await;
-
-                conversation_status.into_result()
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    Self::run_via_local_orchestrator(task.prompt, &foreground).await
+                }
+                #[cfg(target_family = "wasm")]
+                {
+                    let conversation_status = foreground
+                        .spawn(move |me, ctx| me.execute_run(task.prompt, ctx))
+                        .await?
+                        .await
+                        .map_err(|_| {
+                            log::error!("Subscription dropped before agent finished");
+                            AgentDriverError::InvalidRuntimeState
+                        })?;
+                    warpui::r#async::Timer::after(Duration::from_secs(1)).await;
+                    conversation_status.into_result()
+                }
             }
             HarnessKind::ThirdParty(harness) => {
                 let harness_exit_rx = Self::setup_harness(harness.as_ref(), &foreground).await?;
