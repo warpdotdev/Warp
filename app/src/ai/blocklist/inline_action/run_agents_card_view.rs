@@ -5,6 +5,9 @@
 //! the view; only `RejectRequested` flows back to the parent.
 use ai::agent::action::{RunAgentsAgentRunConfig, RunAgentsExecutionMode, RunAgentsRequest};
 use ai::agent::action_result::{RunAgentsAgentOutcomeKind, RunAgentsResult};
+use ai::agent::orchestration_config::{
+    matches_active_config, OrchestrationConfig, OrchestrationConfigStatus,
+};
 use ai::skills::SkillReference;
 use std::rc::Rc;
 use warpui::elements::{
@@ -180,6 +183,12 @@ pub struct RunAgentsCardView {
     original_request: RunAgentsRequest,
     handles: RunAgentsCardHandles,
     spawning: Option<RunAgentsSpawningSnapshot>,
+    /// Set when the active config was approved and matched the request,
+    /// causing immediate dispatch without user confirmation.
+    auto_launched: bool,
+    /// Set when the action has a `RunAgentsResult::Denied` result in
+    /// history (e.g. orchestration was disabled at dispatch time).
+    is_denied: bool,
 
     action_model: ModelHandle<BlocklistAIActionModel>,
     block_model: Rc<dyn AIBlockModel<View = AIBlock>>,
@@ -196,11 +205,34 @@ impl RunAgentsCardView {
     pub fn new(
         action_id: AIAgentActionId,
         request: &RunAgentsRequest,
+        active_config: Option<(OrchestrationConfig, OrchestrationConfigStatus)>,
         action_model: ModelHandle<BlocklistAIActionModel>,
         run_agents_executor: ModelHandle<RunAgentsExecutor>,
         block_model: Rc<dyn AIBlockModel<View = AIBlock>>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
+        // Detect an existing Denied result from history (e.g. restored
+        // conversation where orchestration was disabled).
+        let is_denied =
+            if let Some(AIActionStatus::Finished(result)) =
+                action_model.as_ref(ctx).get_action_status(&action_id)
+            {
+                matches!(
+                    &result.result,
+                    AIAgentActionResultType::RunAgents(RunAgentsResult::Denied { .. })
+                )
+            } else {
+                false
+            };
+
+        // Auto-launch when the active config is approved and matches
+        // the request — skip the confirmation card entirely.
+        let auto_launched = !is_denied
+            && matches!(
+                &active_config,
+                Some((config, status)) if status.is_approved() && matches_active_config(request, config)
+            );
+
         let reject_keystroke = CTRL_C_KEYSTROKE.clone();
         let edit_keystroke =
             Keystroke::parse("cmdorctrl-e").expect("orchestrate edit keystroke literal must parse");
@@ -268,7 +300,7 @@ impl RunAgentsCardView {
             }
         });
 
-        Self {
+        let card = Self {
             action_id,
             state: RunAgentsEditState::from_request(request),
             original_request: request.clone(),
@@ -279,9 +311,21 @@ impl RunAgentsCardView {
                 ..Default::default()
             },
             spawning: None,
+            auto_launched,
+            is_denied,
             action_model,
             block_model,
+        };
+
+        if auto_launched {
+            let action_id = card.action_id.clone();
+            let request = card.state.to_request();
+            card.action_model.update(ctx, |action_model, action_ctx| {
+                action_model.execute_run_agents(&action_id, request, action_ctx);
+            });
         }
+
+        card
     }
 
     pub fn is_spawning(&self) -> bool {
@@ -291,7 +335,7 @@ impl RunAgentsCardView {
     /// Re-sync edit state from the latest streaming request.
     /// No-op when the editor is open (user edits take precedence).
     pub fn update_request(&mut self, request: &RunAgentsRequest, ctx: &mut ViewContext<Self>) {
-        if self.state.is_editor_open || self.spawning.is_some() {
+        if self.state.is_editor_open || self.spawning.is_some() || self.auto_launched || self.is_denied {
             return;
         }
         let new_state = RunAgentsEditState::from_request(request);
@@ -469,12 +513,32 @@ impl View for RunAgentsCardView {
             return Empty::new().finish();
         }
 
+        // Denied at construction — render static disabled card.
+        if self.is_denied {
+            return render_status_only_card(
+                "Orchestration is currently disabled. Re-enable on the plan card to launch."
+                    .to_string(),
+                appearance,
+                StatusKind::Cancelled,
+                app,
+            );
+        }
+
         // In-flight dispatch: check both spawning snapshot and action
         // status because the event arrives one tick after the status.
         if let Some(snapshot) = &self.spawning {
             return render_spawning_card(snapshot, appearance, app);
         }
         if matches!(status, Some(AIActionStatus::RunningAsync)) {
+            let snapshot = RunAgentsSpawningSnapshot {
+                agent_count: self.state.agent_run_configs.len(),
+            };
+            return render_spawning_card(&snapshot, appearance, app);
+        }
+
+        // Auto-launched: show spawning card while dispatch is in
+        // flight (before the executor fires the SpawningStarted event).
+        if self.auto_launched {
             let snapshot = RunAgentsSpawningSnapshot {
                 agent_count: self.state.agent_run_configs.len(),
             };
