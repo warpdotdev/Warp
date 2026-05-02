@@ -101,8 +101,8 @@ fn short_hand_flag_suggestions(
         .filter_map(|name| name.trim_start_matches('-').chars().next())
         .collect();
 
-    let is_valid_shorthand_bundle = !partial_flag_name.is_empty()
-        && partial_flag_name
+    let is_valid_shorthand_bundle = partial_flag_name.is_empty()
+        || partial_flag_name
             .chars()
             .all(|c| known_shorthand_chars.contains(&c));
 

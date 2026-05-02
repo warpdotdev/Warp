@@ -28,8 +28,8 @@ fn short_hand_flag_suggestions(
         .flatten()
         .collect();
 
-    let is_valid_shorthand_bundle = !partial_without_dashes.is_empty()
-        && partial_without_dashes
+    let is_valid_shorthand_bundle = partial_without_dashes.is_empty()
+        || partial_without_dashes
             .chars()
             .all(|c| known_shorthand_chars.contains(&c));
 
