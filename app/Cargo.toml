@@ -94,6 +94,7 @@ difflib = { git = "https://github.com/warpdotdev/difflib.git", rev = "114177e7d8
 directories.workspace = true
 dirs.workspace = true
 doppler.workspace = true
+templates.workspace = true
 dunce.workspace = true
 email_address = { git = "https://github.com/warpdotdev/rust-email_address", branch = "main" }
 embed_plist = "1.2"

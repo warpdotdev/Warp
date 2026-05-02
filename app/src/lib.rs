@@ -994,6 +994,14 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
             .spawn(warp_logging::rotate_log_files())
             .detach();
 
+        // PDX-59: Clone or pull configured template repos in the background.
+        // This is fire-and-forget; failures are logged as warnings and do not
+        // block app startup.
+        #[cfg(not(target_family = "wasm"))]
+        ctx.background_executor()
+            .spawn(templates::sync_all())
+            .detach();
+
         ctx.add_singleton_model(|ctx| {
             AppExecutionMode::new(
                 launch_mode.execution_mode(),
