@@ -1630,7 +1630,13 @@ impl TerminalView {
             );
         }
 
-        if model.shared_session_status().is_sharer_or_viewer() {
+        // Only offer "Copy session sharing link" when a link actually
+        // exists. Pending shares (SharePending / SharePendingPreBootstrap)
+        // have not yet produced a URL, and a session that finished or
+        // failed to share leaves no link to copy. Surfacing the menu
+        // entry in those states writes a stale or empty value to the
+        // clipboard — see GH#9736.
+        if model.shared_session_status().has_active_share_link() {
             items.push(
                 MenuItemFields::new("Copy session sharing link")
                     .with_on_select_action(TerminalAction::CopySharedSessionLink {
