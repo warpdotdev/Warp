@@ -1490,6 +1490,23 @@ impl AgentDriver {
             AgentRunPrompt::ServerSide {
                 skill,
                 attachments_dir,
+            } if crate::local_ai::is_active() => {
+                // Bypass `server_api.resolve_prompt()` (requires auth, makes a network round-trip).
+                // Synthesize a minimal prompt locally from the skill content if any was attached.
+                let prompt = skill
+                    .as_ref()
+                    .map(|s| s.content.clone())
+                    .unwrap_or_default();
+                if attachments_dir.is_some() {
+                    log::warn!(
+                        "Local-AI mode: ignoring server-side attachments_dir; only skill content is forwarded."
+                    );
+                }
+                (Cow::Owned(prompt), None, None)
+            }
+            AgentRunPrompt::ServerSide {
+                skill,
+                attachments_dir,
             } => {
                 let skill = skill
                     .as_ref()
@@ -1512,6 +1529,14 @@ impl AgentDriver {
                     resolved.resumption_prompt,
                 )
             }
+        };
+
+        // Prepend the ilo-lang context (WARP_ILO_SYSTEM_PROMPT) to the system prompt for any
+        // local-AI run. Combines with whatever the harness already builds in.
+        let system_prompt = match (system_prompt, crate::local_ai::ilo_system_prompt()) {
+            (Some(existing), Some(ilo)) => Some(format!("{ilo}\n\n{existing}")),
+            (None, Some(ilo)) => Some(ilo.to_owned()),
+            (existing, None) => existing,
         };
 
         // Prepare harness config files (onboarding, trust dialog, API-key approval, etc.).

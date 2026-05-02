@@ -93,6 +93,7 @@ diesel.workspace = true
 difflib = { git = "https://github.com/warpdotdev/difflib.git", rev = "114177e7d8e1f8017baca397f943e11644b14d63" }
 directories.workspace = true
 dirs.workspace = true
+dotenvy = "0.15"
 dunce.workspace = true
 email_address = { git = "https://github.com/warpdotdev/rust-email_address", branch = "main" }
 embed_plist = "1.2"

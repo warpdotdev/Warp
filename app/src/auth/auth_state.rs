@@ -84,7 +84,6 @@ impl AuthState {
 
         if Self::should_use_test_user() {
             state.set_user(Some(User::test()));
-            #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             state.set_credentials(Some(Credentials::Test));
             return state;
         }
@@ -134,7 +133,9 @@ impl AuthState {
     }
 
     fn should_use_test_user() -> bool {
-        cfg!(any(test, feature = "skip_login")) || ChannelState::channel() == Channel::Integration
+        cfg!(any(test, feature = "skip_login"))
+            || ChannelState::channel() == Channel::Integration
+            || crate::local_ai::auth_bypass_enabled()
     }
 
     /// Determines the appropriate persistence action based on the current auth state.
@@ -168,7 +169,6 @@ impl AuthState {
             // Do not persist if using API keys, session cookies, or test credentials.
             (Some(_), Some(Credentials::ApiKey { .. })) => PersistAction::DoNothing,
             (Some(_), Some(Credentials::SessionCookie)) => PersistAction::DoNothing,
-            #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
             (Some(_), Some(Credentials::Test)) => PersistAction::DoNothing,
             // Credentials without a user, or user without credentials - transient states
             // during initialization or refresh; no persistence action needed.
