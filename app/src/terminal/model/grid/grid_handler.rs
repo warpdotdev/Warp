@@ -305,6 +305,12 @@ enum StorageRow {
     FlatStorage(usize),
 }
 
+#[derive(Clone)]
+struct MarkedText {
+    text: String,
+    selected_byte_range: Range<usize>,
+}
+
 /// An implementation of `ansi::Handler` that writes to a `Grid`.
 #[derive(Clone)]
 pub struct GridHandler {
@@ -329,7 +335,7 @@ pub struct GridHandler {
     /// Determines whether all bytes have been processed to detect secrets.
     all_bytes_scanned_for_secrets: bool,
     pub(super) images: ImageMap,
-    marked_text: Option<String>,
+    marked_text: Option<MarkedText>,
 
     /// Bottommost row with content that should contribute to trimmed CLI agent
     /// block height, updated per PTY-read batch in `on_finish_byte_processing`
@@ -1466,7 +1472,7 @@ impl GridHandler {
     /// This should be used when you want to render the cursor, because it accounts for marked text.
     pub fn cursor_render_point(&self) -> Point {
         let cursor_point = self.cursor_point();
-        cursor_point.wrapping_add(self.columns(), self.marked_text_cell_length())
+        cursor_point.wrapping_add(self.columns(), self.marked_text_cursor_cell_length())
     }
 
     /// Updates the cursor point to be at the provided row and column.
@@ -1480,6 +1486,10 @@ impl GridHandler {
 
     /// Determines if the rendered cursor is on a wide character, accounting for marked text.
     pub fn is_cursor_on_wide_char(&self) -> bool {
+        if let Some(marked_text) = &self.marked_text {
+            return marked_text_cursor_is_on_wide_char(marked_text);
+        }
+
         let cursor_render_point = self.cursor_render_point();
         self.cell_type(cursor_render_point) == Some(CellType::WideChar)
     }
@@ -2504,8 +2514,14 @@ impl GridHandler {
         self.on_finish_byte_processing(&ansi::ProcessorInput::new(&[]));
     }
 
-    pub fn set_marked_text(&mut self, marked_text: &str, _selected_range: &Range<usize>) {
-        self.marked_text = Some(marked_text.to_string())
+    pub fn set_marked_text(&mut self, marked_text: &str, selected_range: &Range<usize>) {
+        self.marked_text = Some(MarkedText {
+            text: marked_text.to_string(),
+            selected_byte_range: normalize_selected_range_to_byte_range(
+                marked_text,
+                selected_range.clone(),
+            ),
+        })
     }
 
     pub fn clear_marked_text(&mut self) {
@@ -2513,15 +2529,29 @@ impl GridHandler {
     }
 
     pub fn marked_text(&self) -> Option<&str> {
-        self.marked_text.as_deref()
+        self.marked_text
+            .as_ref()
+            .map(|marked_text| marked_text.text.as_str())
     }
 
     /// How many cells the marked text will occupy.
     fn marked_text_cell_length(&self) -> usize {
         self.marked_text
             .as_ref()
-            .map(|s| s.chars().map(|c| c.width().unwrap_or(0)).sum())
+            .map(|marked_text| text_cell_width(&marked_text.text))
             .unwrap_or(0)
+    }
+
+    fn marked_text_cursor_cell_length(&self) -> usize {
+        let Some(marked_text) = &self.marked_text else {
+            return 0;
+        };
+
+        if marked_text.selected_byte_range.end == marked_text.text.len() {
+            return self.marked_text_cell_length();
+        }
+
+        text_cell_width(&marked_text.text[..marked_text.selected_byte_range.end])
     }
 
     pub fn evict_all_images(&mut self) {
@@ -2535,6 +2565,80 @@ impl GridHandler {
     pub fn evict_placement(&mut self, image_id: u32, placement_id: u32) {
         self.images.evict_placement(image_id, placement_id);
     }
+}
+
+fn normalize_selected_range_to_byte_range(text: &str, range: Range<usize>) -> Range<usize> {
+    #[cfg(target_os = "macos")]
+    {
+        utf16_range_to_byte_range(text, range)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        clamp_byte_range_to_char_boundaries(text, range)
+    }
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn utf16_range_to_byte_range(text: &str, range: Range<usize>) -> Range<usize> {
+    let start = utf16_index_to_byte_index(text, range.start);
+    let end = utf16_index_to_byte_index(text, range.end).max(start);
+    start..end
+}
+
+fn utf16_index_to_byte_index(text: &str, utf16_index: usize) -> usize {
+    let mut utf16_offset = 0;
+
+    for (byte_offset, ch) in text.char_indices() {
+        if utf16_offset == utf16_index {
+            return byte_offset;
+        }
+
+        let next_utf16_offset = utf16_offset + ch.len_utf16();
+        if utf16_index < next_utf16_offset {
+            return byte_offset;
+        }
+
+        utf16_offset = next_utf16_offset;
+    }
+
+    text.len()
+}
+
+fn clamp_byte_range_to_char_boundaries(text: &str, range: Range<usize>) -> Range<usize> {
+    let start = clamp_byte_index_to_char_boundary(text, range.start);
+    let end = clamp_byte_index_to_char_boundary(text, range.end).max(start);
+    start..end
+}
+
+fn clamp_byte_index_to_char_boundary(text: &str, index: usize) -> usize {
+    let mut index = index.min(text.len());
+    while !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+fn text_cell_width(text: &str) -> usize {
+    text.chars().map(|c| c.width().unwrap_or(0)).sum()
+}
+
+fn marked_text_cursor_is_on_wide_char(marked_text: &MarkedText) -> bool {
+    let cursor_cell_offset =
+        text_cell_width(&marked_text.text[..marked_text.selected_byte_range.end]);
+    let mut cell_offset = 0;
+
+    for c in marked_text.text.chars() {
+        let width = c.width().unwrap_or(0);
+        let next_cell_offset = cell_offset + width;
+        if width >= 2 && cursor_cell_offset >= cell_offset && cursor_cell_offset < next_cell_offset
+        {
+            return true;
+        }
+        cell_offset = next_cell_offset;
+    }
+
+    false
 }
 
 /// Iterator over regex matches.

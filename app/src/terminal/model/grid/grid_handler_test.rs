@@ -377,6 +377,80 @@ fn double_width_chars() {
 }
 
 #[test]
+#[cfg(not(target_os = "macos"))]
+fn cursor_render_point_respects_marked_text_selected_range_with_cjk() {
+    let mut grid = GridHandler::new_for_test(1, 10);
+    let marked_text = "\u{4e2d}\u{6587}";
+
+    for (selected_range, expected) in [
+        (0..0, Point::new(0, 0)),
+        (3..3, Point::new(0, 2)),
+        (6..6, Point::new(0, 4)),
+    ] {
+        grid.set_marked_text(marked_text, &selected_range);
+        assert_eq!(grid.cursor_render_point(), expected);
+    }
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn cursor_render_point_respects_macos_utf16_marked_text_selected_range_with_cjk() {
+    let mut grid = GridHandler::new_for_test(1, 10);
+    let marked_text = "\u{4e2d}\u{6587}";
+
+    for (selected_range, expected) in [
+        (0..0, Point::new(0, 0)),
+        (1..1, Point::new(0, 2)),
+        (2..2, Point::new(0, 4)),
+    ] {
+        grid.set_marked_text(marked_text, &selected_range);
+        assert_eq!(grid.cursor_render_point(), expected);
+    }
+}
+
+#[test]
+fn utf16_range_to_byte_range_handles_cjk() {
+    let text = "\u{4e2d}\u{6587}";
+
+    assert_eq!(utf16_range_to_byte_range(text, 0..0), 0..0);
+    assert_eq!(utf16_range_to_byte_range(text, 1..1), 3..3);
+    assert_eq!(utf16_range_to_byte_range(text, 2..2), 6..6);
+}
+
+#[test]
+fn utf16_range_to_byte_range_handles_surrogate_pairs() {
+    let text = "\u{1f600}\u{4e2d}";
+
+    assert_eq!(utf16_range_to_byte_range(text, 2..2), 4..4);
+    assert_eq!(utf16_range_to_byte_range(text, 3..3), 7..7);
+}
+
+#[test]
+#[cfg(not(target_os = "macos"))]
+fn marked_text_selected_range_is_clamped_to_char_boundary() {
+    let mut grid = GridHandler::new_for_test(1, 10);
+
+    grid.set_marked_text("\u{4e2d}", &(1..1));
+
+    assert_eq!(grid.cursor_render_point(), Point::new(0, 0));
+}
+
+#[test]
+fn is_cursor_on_wide_char_checks_marked_text() {
+    let mut grid = GridHandler::new_for_test(1, 10);
+    let marked_text = "\u{4e2d}\u{6587}";
+
+    grid.set_marked_text(marked_text, &(0..0));
+    assert!(grid.is_cursor_on_wide_char());
+
+    grid.set_marked_text(marked_text, &(3..3));
+    assert!(grid.is_cursor_on_wide_char());
+
+    grid.set_marked_text(marked_text, &(6..6));
+    assert!(!grid.is_cursor_on_wide_char());
+}
+
+#[test]
 fn wrapping() {
     #[rustfmt::skip]
     let blockgrid = mock_blockgrid("\
