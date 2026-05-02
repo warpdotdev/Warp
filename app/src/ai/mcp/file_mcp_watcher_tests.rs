@@ -1,5 +1,9 @@
-use super::substitute_env_vars;
-use std::env;
+use super::{
+    insert_project_config_target, project_config_parent_dirs, providers_in_scope,
+    substitute_env_vars,
+};
+use crate::ai::mcp::MCPProvider;
+use std::{collections::HashMap, env, path::PathBuf};
 
 fn cleanup_env_vars(vars: &[&str]) {
     for var in vars {
@@ -71,4 +75,62 @@ fn test_substitute_env_vars_missing_or_empty() {
 
     // Cleanup
     cleanup_env_vars(&["EMPTY_VAR"]);
+}
+
+#[test]
+fn test_project_config_parent_dirs_only_tracks_known_config_locations() {
+    let root = PathBuf::from("/tmp/repo");
+    let mut parent_dirs = project_config_parent_dirs(root)
+        .into_iter()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    parent_dirs.sort();
+
+    assert_eq!(
+        parent_dirs,
+        vec![
+            "/tmp/repo",
+            "/tmp/repo/.agents",
+            "/tmp/repo/.codex",
+            "/tmp/repo/.warp",
+        ]
+    );
+}
+
+#[test]
+fn test_providers_in_scope_preserves_project_and_provider_config_paths() {
+    let root = PathBuf::from("/tmp/repo");
+    let mut config_paths = providers_in_scope(root.clone(), root)
+        .map(|(provider, path)| (provider, path.to_string_lossy().to_string()))
+        .collect::<Vec<_>>();
+    config_paths.sort_by(|(_, left), (_, right)| left.cmp(right));
+
+    assert!(config_paths.contains(&(MCPProvider::Claude, "/tmp/repo/.claude.json".into())));
+    assert!(config_paths.contains(&(MCPProvider::Claude, "/tmp/repo/.mcp.json".into())));
+    assert!(config_paths.contains(&(MCPProvider::Codex, "/tmp/repo/.codex/config.toml".into())));
+    assert!(config_paths.contains(&(MCPProvider::Warp, "/tmp/repo/.warp/.mcp.json".into())));
+    assert!(config_paths.contains(&(MCPProvider::Agents, "/tmp/repo/.agents/.mcp.json".into())));
+}
+
+#[test]
+fn test_insert_project_config_target_deduplicates_root_provider_pairs() {
+    let mut targets = HashMap::new();
+    let config_path = PathBuf::from("/tmp/repo/.mcp.json");
+    let root = PathBuf::from("/tmp/repo");
+
+    insert_project_config_target(
+        &mut targets,
+        config_path.clone(),
+        root.clone(),
+        MCPProvider::Claude,
+    );
+    insert_project_config_target(
+        &mut targets,
+        config_path.clone(),
+        root.clone(),
+        MCPProvider::Claude,
+    );
+    insert_project_config_target(&mut targets, config_path.clone(), root, MCPProvider::Agents);
+
+    assert_eq!(targets.get(&config_path).unwrap().len(), 2);
 }
