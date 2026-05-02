@@ -14,6 +14,7 @@ default-members = [
   "crates/channel_versions",
   "crates/command",
   "crates/doppler",
+  "crates/doppler_mcp",
   "crates/editor",
   "crates/graphql",
   "crates/markdown_parser",
@@ -45,6 +46,7 @@ command = { path = "crates/command" }
 command-signatures-v2 = { path = "crates/command-signatures-v2" }
 computer_use = { path = "crates/computer_use" }
 doppler = { path = "crates/doppler" }
+doppler_mcp = { path = "crates/doppler_mcp" }
 field_mask = { path = "crates/field_mask" }
 firebase = { path = "crates/firebase" }
 fuzzy_match = { path = "crates/fuzzy_match" }
