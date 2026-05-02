@@ -54,7 +54,8 @@ WARP_BYPASS_AUTH=1
 
 ## Known limitations
 
-- The interactive agent panel routes through a local CLI subprocess (`claude -p` / `codex exec`). Tool calls the CLI emits (file edits, shell commands) are not forwarded back to the Warp panel UI - only the assistant text reply is shown. Full tool-loop support requires a richer protocol bridge and is left as follow-up.
+- **Tool visibility (Slice B)**: The panel now shows inline text annotations for Claude tool calls: `[tool: Bash] echo hello` when the agent invokes a tool, and `[result] output` when the tool returns. Claude is invoked with `--output-format stream-json --verbose` so tool activity is visible in real-time. What's still missing: Warp's native tool-block UI (the rich block rendering you'd see in a cloud agent run). That requires mapping each `tool_use` event to an `api::message::ToolCall` protobuf message (Slice C), which is left as follow-up work.
+- **Codex tool visibility**: Codex events are still parsed from `codex exec --json`, which only surfaces `item.completed / agent_message` lines. Tool calls from Codex are not annotated.
 - **Ollama and OpenRouter models** are listed as planned entries in `.env.example` but not yet implemented. The menu currently shows only Claude and GPT-5.5 (codex) entries. Adding HTTP-based providers requires a new harness type and is deferred to a follow-up PR.
 - `WARP_LOCAL_AI=ollama` logs a warning and falls through to the cloud Oz path (a no-op in bypass mode).
 
