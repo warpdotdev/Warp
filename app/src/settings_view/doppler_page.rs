@@ -161,9 +161,19 @@ impl TypedActionView for DopplerSettingsPageView {
             DopplerSettingsPageAction::SignIn => {
                 // Fire-and-forget: do NOT wait, do NOT capture output. The
                 // Doppler CLI opens the browser and runs the OAuth dance on
-                // its own. Status reporting will be wired up in PDX-52.
+                // its own. --yes accepts the "already logged in -> overwrite"
+                // prompt non-interactively; --scope . picks the cwd without
+                // asking; nulling stdio prevents the child from blocking on
+                // the GUI's missing TTY (it would hang at the interactive
+                // prompt and never open the browser).
                 if let Err(err) = std::process::Command::new("doppler")
                     .arg("login")
+                    .arg("--yes")
+                    .arg("--scope")
+                    .arg(".")
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
                     .spawn()
                 {
                     log::warn!("failed to spawn `doppler login`: {err}");
