@@ -128,6 +128,9 @@ pub struct RequestParams {
     pub parent_agent_id: Option<String>,
     /// The display name for this agent (e.g. "Agent 1"), assigned by the orchestrator.
     pub agent_name: Option<String>,
+    /// The root task ID from the conversation's task store (may be optimistic).
+    /// Used by the local-CLI bypass to emit correctly-keyed AddMessagesToTask events.
+    pub root_task_id: Option<String>,
 }
 
 pub type Event = Result<warp_multi_agent_api::ResponseEvent, Arc<AIApiError>>;
@@ -279,6 +282,15 @@ impl RequestParams {
                 .as_ref()
                 .is_none_or(|t| matches!(t, crate::terminal::model::session::SessionType::Local));
 
+        // Pull the root task ID from the request input's task map so the local-CLI
+        // bypass can emit AddMessagesToTask events with the correct (possibly optimistic)
+        // task ID that was registered in the conversation's task_store.
+        let root_task_id = request_input
+            .input_messages
+            .keys()
+            .next()
+            .map(|id| id.to_string());
+
         Self {
             input: request_input.all_inputs().cloned().collect(),
             conversation_token: conversation.server_conversation_token,
@@ -309,6 +321,7 @@ impl RequestParams {
             supported_tools_override: request_input.supported_tools_override.clone(),
             parent_agent_id: None,
             agent_name: None,
+            root_task_id,
         }
     }
 }

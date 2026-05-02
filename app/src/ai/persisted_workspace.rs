@@ -624,6 +624,10 @@ impl PersistedWorkspace {
 
     /// Enables or disables codebase indexing according to the setting.
     fn maybe_enable_codebase_indexing(ctx: &mut ModelContext<Self>) {
+        // Under local-AI bypass the embedding endpoints are unavailable; skip entirely.
+        if crate::local_ai::auth_bypass_enabled() {
+            return;
+        }
         CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
             if UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx) {
                 Self::enable_codebase_indexing(manager, ctx);
@@ -664,6 +668,11 @@ impl PersistedWorkspace {
         ProjectContextModel::handle(ctx).update(ctx, |model, ctx| {
             let _ = model.index_and_store_rules(directory_path.clone(), ctx);
         });
+
+        // Under local-AI bypass the embedding endpoints require auth; skip network indexing.
+        if crate::local_ai::auth_bypass_enabled() {
+            return;
+        }
 
         if FeatureFlag::FullSourceCodeEmbedding.is_enabled() {
             let auto_indexing_enabled = UserWorkspaces::as_ref(ctx)

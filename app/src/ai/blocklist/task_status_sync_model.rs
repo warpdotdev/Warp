@@ -177,6 +177,9 @@ impl TaskStatusSyncModel {
     }
 
     /// Sends an `update_agent_task` request to the server (fire-and-forget).
+    ///
+    /// Under local-AI bypass the server is unavailable (401), so skip the request entirely
+    /// rather than generating noise in the log.
     fn fire_update(
         &self,
         task_id: AmbientAgentTaskId,
@@ -184,6 +187,9 @@ impl TaskStatusSyncModel {
         status_message: Option<TaskStatusUpdate>,
         ctx: &mut ModelContext<Self>,
     ) {
+        if crate::local_ai::auth_bypass_enabled() {
+            return;
+        }
         let ai_client = self.ai_client.clone();
         ctx.spawn(
             async move {

@@ -1733,7 +1733,10 @@ fn initialize_app(
     ctx.add_singleton_model(DefaultTerminal::new);
 
     ctx.add_singleton_model(|ctx| {
-        let indices_to_restore = if UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx)
+        // Under local-AI bypass the GraphQL embedding endpoints are unavailable (401).
+        // Pass an empty list so the manager never attempts to sync persisted indices.
+        let indices_to_restore = if !local_ai::auth_bypass_enabled()
+            && UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx)
             && launch_mode.supports_indexing()
         {
             persisted_workspaces.clone()

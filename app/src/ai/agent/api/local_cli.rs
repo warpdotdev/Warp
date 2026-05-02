@@ -134,16 +134,25 @@ async fn run_local_cli(
     let cwd = extract_cwd(&params.input);
 
     // Resolve task id.
+    //
+    // Prefer the root_task_id from the request params - this is the optimistic root task
+    // ID that the conversation's task_store actually holds, even for brand-new conversations
+    // where compute_active_tasks() returns an empty vec (because optimistic tasks have no
+    // server-side source).  Falling back to params.tasks works for resumed conversations
+    // that already have server-backed tasks.  The final fallback generates a local UUID,
+    // which will not match any task_store entry and is kept only as a last resort.
     let task_id = params
-        .tasks
-        .first()
-        .and_then(|t| {
-            let id = t.id.trim();
-            if id.is_empty() {
-                None
-            } else {
-                Some(id.to_string())
-            }
+        .root_task_id
+        .filter(|id| !id.trim().is_empty())
+        .or_else(|| {
+            params.tasks.first().and_then(|t| {
+                let id = t.id.trim();
+                if id.is_empty() {
+                    None
+                } else {
+                    Some(id.to_string())
+                }
+            })
         })
         .unwrap_or_else(|| format!("local-task-{}", Uuid::new_v4()));
 
@@ -253,6 +262,22 @@ async fn run_local_cli(
         }
     };
 
+    // Drain stderr in the background so the child never blocks on a full pipe.
+    // We log it only when the process exits non-zero so it aids debugging without
+    // flooding the log on every successful run.
+    let stderr_handle = child
+        .stderr
+        .take()
+        .map(|stderr| tokio::spawn(async move {
+            let mut buf = String::new();
+            let mut reader = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                buf.push_str(&line);
+                buf.push('\n');
+            }
+            buf
+        }));
+
     let mut lines = BufReader::new(stdout).lines();
     let mut first_chunk = true;
     let mut cancellation_rx = cancellation_rx;
@@ -319,18 +344,29 @@ async fn run_local_cli(
 
     // Wait for exit and check status.
     match child.wait().await {
-        Ok(status) if status.success() => {
-            let _ = send_done(&tx).await;
-        }
+        Ok(status) if status.success() => {}
         Ok(status) => {
-            log::warn!("CLI exited with non-zero status: {status}");
-            // Finish with Done so the panel renders whatever text was already emitted.
-            let _ = send_done(&tx).await;
+            // Collect any stderr output to help diagnose the failure.
+            let stderr_output = if let Some(handle) = stderr_handle {
+                handle.await.unwrap_or_default()
+            } else {
+                String::new()
+            };
+            if stderr_output.is_empty() {
+                log::warn!("CLI exited with non-zero status: {status}");
+            } else {
+                log::warn!(
+                    "CLI exited with non-zero status: {status}\nstderr: {stderr_output}"
+                );
+            }
         }
         Err(e) => {
             let _ = send_internal_error(&tx, format!("CLI wait failed: {e}")).await;
+            return;
         }
     }
+    // Finish with Done so the panel renders whatever text was already emitted.
+    let _ = send_done(&tx).await;
 }
 
 /// POST to Ollama's `/api/chat` endpoint and forward the streaming response.
@@ -515,8 +551,9 @@ fn build_command_from_spec(spec: &LocalModelSpec, query: &str, cwd: Option<&str>
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
+    cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::null());
+    cmd.stderr(Stdio::piped());
     cmd
 }
 
@@ -557,8 +594,9 @@ fn build_legacy_command(cli: &str, query: &str, cwd: Option<&str>) -> Command {
         cmd.current_dir(dir);
     }
 
+    cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::null());
+    cmd.stderr(Stdio::piped());
     cmd
 }
 
