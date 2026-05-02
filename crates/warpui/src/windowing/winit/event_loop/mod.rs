@@ -1092,7 +1092,11 @@ impl EventLoop {
 
                 let mut window_callbacks = self.callbacks.for_window(window.as_ref());
                 let result = window_callbacks.dispatch_event(event);
-                if !result.handled && !cmd_pressed {
+                // When IME is active, text input is handled via Ime::Commit
+                // events instead. Suppress TypedCharacters here to avoid
+                // double input for languages that use composition (e.g.
+                // Vietnamese Telex, CJK).
+                if !result.handled && !cmd_pressed && !self.ime_enabled {
                     if let Some(chars) = chars {
                         window_callbacks.dispatch_event(TypedCharacters { chars });
                     }
@@ -1298,8 +1302,12 @@ impl EventLoop {
                 }
 
                 let event_text = event.text.as_ref().map(|text| text.to_string());
-                let warp_ui_event =
-                    convert_keyboard_input_event(event, window_state, is_synthetic)?;
+                let warp_ui_event = convert_keyboard_input_event(
+                    event,
+                    window_state,
+                    is_synthetic,
+                    self.ime_enabled,
+                )?;
                 Some(ConvertedEvent::KeyDownWithTypedCharacters {
                     chars: event_text,
                     event: warp_ui_event,
