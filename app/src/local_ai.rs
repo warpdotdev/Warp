@@ -49,15 +49,3 @@ pub fn auth_bypass_enabled() -> bool {
             || LocalAiMode::from_env() != LocalAiMode::Off
     })
 }
-
-pub fn ilo_system_prompt() -> Option<&'static str> {
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            std::env::var("WARP_ILO_SYSTEM_PROMPT")
-                .ok()
-                .map(|s| s.trim().to_owned())
-                .filter(|s| !s.is_empty())
-        })
-        .as_deref()
-}
