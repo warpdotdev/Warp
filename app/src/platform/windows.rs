@@ -16,9 +16,7 @@ pub fn check_redirection_guard() {
     let ok = unsafe {
         Threading::GetProcessMitigationPolicy(
             Threading::GetCurrentProcess(),
-            std::mem::transmute::<i32, Threading::PROCESS_MITIGATION_POLICY>(
-                Threading::ProcessRedirectionTrustPolicy.0,
-            ),
+            Threading::ProcessRedirectionTrustPolicy,
             &mut policy as *mut _ as *mut std::ffi::c_void,
             std::mem::size_of::<RedirectionTrustPolicy>(),
         )
