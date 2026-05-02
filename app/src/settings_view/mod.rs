@@ -1194,7 +1194,11 @@ impl SettingsView {
                 "Agents",
                 SettingsSection::ai_subpages().to_vec(),
             )),
-            SettingsNavItem::Page(SettingsSection::BillingAndUsage),
+        ];
+        if !crate::local_ai::auth_bypass_enabled() {
+            nav_items.push(SettingsNavItem::Page(SettingsSection::BillingAndUsage));
+        }
+        nav_items.extend([
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
                 "Code",
                 vec![

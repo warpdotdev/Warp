@@ -686,6 +686,9 @@ impl SettingsPageMeta for BillingAndUsagePageView {
     }
 
     fn should_render(&self, ctx: &AppContext) -> bool {
+        if crate::local_ai::auth_bypass_enabled() {
+            return false;
+        }
         let is_anonymous = AuthStateProvider::as_ref(ctx)
             .get()
             .is_anonymous_or_logged_out();
@@ -694,6 +697,9 @@ impl SettingsPageMeta for BillingAndUsagePageView {
     }
 
     fn on_page_selected(&mut self, _: bool, ctx: &mut ViewContext<Self>) {
+        if crate::local_ai::auth_bypass_enabled() {
+            return;
+        }
         self.purchase_addon_credits_loading = false;
         std::mem::drop(
             TeamUpdateManager::handle(ctx)
