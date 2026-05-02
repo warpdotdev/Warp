@@ -1,4 +1,4 @@
-# Build and release .deb packages for Linux (x86_64 and aarch64).
+# Build and release .deb packages for Linux (x86_64).
 #
 # Triggered by:
 #   - Pushing a tag that matches `v*` (e.g. v1.0.0, v0.2024.05.01)
@@ -37,17 +37,9 @@ concurrency:
 
 jobs:
   build-deb:
-    name: Build .deb (${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
+    name: Build .deb (x86_64)
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-22.04
-          - arch: aarch64
-            runner: ubuntu-22.04-arm
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -106,7 +98,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: linux-deb-${{ matrix.arch }}
+          key: linux-deb-x86_64
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -152,24 +144,16 @@ jobs:
       - name: Upload .deb as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: warp-deb-${{ matrix.arch }}
+          name: warp-deb-x86_64
           path: |
             target/**/*.deb
           retention-days: 30
 
   # Build CLI .deb package
   build-cli-deb:
-    name: Build CLI .deb (${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
+    name: Build CLI .deb (x86_64)
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-22.04
-          - arch: aarch64
-            runner: ubuntu-22.04-arm
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -228,7 +212,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: linux-cli-deb-${{ matrix.arch }}
+          key: linux-cli-deb-x86_64
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -262,7 +246,7 @@ jobs:
       - name: Upload CLI .deb as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: warp-cli-deb-${{ matrix.arch }}
+          name: warp-cli-deb-x86_64
           path: |
             target/**/*.deb
           retention-days: 30
@@ -309,9 +293,8 @@ jobs:
 
             ### Installation
             ```bash
-            sudo dpkg -i warp-terminal-*_amd64.deb   # x86_64
-            sudo dpkg -i warp-terminal-*_arm64.deb    # aarch64
-            sudo apt-get install -f                    # fix dependencies if needed
+            sudo dpkg -i warp-terminal-*_amd64.deb
+            sudo apt-get install -f   # fix dependencies if needed
             ```
           draft: false
           prerelease: ${{ github.event_name == 'workflow_dispatch' }}
