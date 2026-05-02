@@ -32,6 +32,7 @@ pub enum HeaderToolbarItemKind {
     AgentManagement,
     CodeReview,
     NotificationsMailbox,
+    Logs,
 }
 
 impl HeaderToolbarItemKind {
@@ -42,6 +43,7 @@ impl HeaderToolbarItemKind {
             Self::AgentManagement => "Agent Management",
             Self::CodeReview => "Code Review",
             Self::NotificationsMailbox => "Notifications",
+            Self::Logs => "Logs",
         }
     }
 
@@ -52,6 +54,7 @@ impl HeaderToolbarItemKind {
             Self::AgentManagement => Icon::Grid,
             Self::CodeReview => Icon::Diff,
             Self::NotificationsMailbox => Icon::Inbox,
+            Self::Logs => Icon::TextBlock,
         }
     }
 
@@ -79,6 +82,8 @@ impl HeaderToolbarItemKind {
             // the entry point (icon button + popup) has been removed from the tab bar.
             // The underlying notifications model is left intact.
             Self::NotificationsMailbox => false,
+            // Log viewer is available on all non-WASM desktop builds.
+            Self::Logs => cfg!(not(target_family = "wasm")),
         }
     }
 
@@ -91,6 +96,7 @@ impl HeaderToolbarItemKind {
         match self {
             Self::CodeReview => *TabSettings::as_ref(app).show_code_review_button.value(),
             Self::NotificationsMailbox => *AISettings::as_ref(app).show_agent_notifications,
+            Self::Logs => true,
             _ => true,
         }
     }
@@ -98,7 +104,10 @@ impl HeaderToolbarItemKind {
     /// Whether this item opens a side panel (as opposed to replacing the content
     /// area or opening a popover).
     pub fn is_panel(&self) -> bool {
-        matches!(self, Self::TabsPanel | Self::ToolsPanel | Self::CodeReview)
+        matches!(
+            self,
+            Self::TabsPanel | Self::ToolsPanel | Self::CodeReview | Self::Logs
+        )
     }
 
     pub fn default_left() -> Vec<Self> {
@@ -106,7 +115,7 @@ impl HeaderToolbarItemKind {
     }
 
     pub fn default_right() -> Vec<Self> {
-        vec![Self::CodeReview, Self::NotificationsMailbox]
+        vec![Self::CodeReview, Self::NotificationsMailbox, Self::Logs]
     }
 
     /// All toolbar item variants (availability filtering is done at the call site).
@@ -117,6 +126,7 @@ impl HeaderToolbarItemKind {
             Self::AgentManagement,
             Self::CodeReview,
             Self::NotificationsMailbox,
+            Self::Logs,
         ]
     }
 }

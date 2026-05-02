@@ -15,6 +15,7 @@ pub const DEFAULT_WARP_DRIVE_INDEX_WIDTH: f32 = 300.;
 pub const DEFAULT_SETTINGS_PANEL_WIDTH: f32 = 194.;
 pub const DEFAULT_LEFT_PANEL_WIDTH: f32 = 240.;
 pub const DEFAULT_RIGHT_PANEL_WIDTH: f32 = 480.;
+pub const DEFAULT_LOG_VIEWER_WIDTH: f32 = 480.;
 /// A naming system for the ResizableStateHandles
 pub enum ModalType {
     UniversalSearchWidth,
@@ -24,6 +25,7 @@ pub enum ModalType {
     SettingsPanelWidth,
     LeftPanelWidth,
     RightPanelWidth,
+    LogViewerWidth,
 }
 
 /// A grouping of state handles for the resizables that should be stored and loaded as a part
@@ -36,6 +38,7 @@ pub struct ModalSizes {
     pub settings_panel_width: ResizableStateHandle,
     pub left_panel_width: ResizableStateHandle,
     pub right_panel_width: ResizableStateHandle,
+    pub log_viewer_width: ResizableStateHandle,
 }
 
 impl ModalSizes {
@@ -71,6 +74,7 @@ impl ModalSizes {
             settings_panel_width: resizable_state_handle(settings_panel_width),
             left_panel_width: resizable_state_handle(left_panel_width),
             right_panel_width: resizable_state_handle(right_panel_width),
+            log_viewer_width: resizable_state_handle(DEFAULT_LOG_VIEWER_WIDTH),
         }
     }
 
@@ -83,6 +87,7 @@ impl ModalSizes {
             settings_panel_width: resizable_state_handle(DEFAULT_SETTINGS_PANEL_WIDTH),
             left_panel_width: resizable_state_handle(left_default),
             right_panel_width: resizable_state_handle(right_default),
+            log_viewer_width: resizable_state_handle(DEFAULT_LOG_VIEWER_WIDTH),
         }
     }
 
@@ -96,6 +101,7 @@ impl ModalSizes {
             ModalType::SettingsPanelWidth => self.settings_panel_width.clone(),
             ModalType::LeftPanelWidth => self.left_panel_width.clone(),
             ModalType::RightPanelWidth => self.right_panel_width.clone(),
+            ModalType::LogViewerWidth => self.log_viewer_width.clone(),
         }
     }
 }
@@ -111,6 +117,7 @@ impl Default for ModalSizes {
             settings_panel_width: resizable_state_handle(DEFAULT_SETTINGS_PANEL_WIDTH),
             left_panel_width: resizable_state_handle(DEFAULT_LEFT_PANEL_WIDTH),
             right_panel_width: resizable_state_handle(DEFAULT_RIGHT_PANEL_WIDTH),
+            log_viewer_width: resizable_state_handle(DEFAULT_LOG_VIEWER_WIDTH),
         }
     }
 }

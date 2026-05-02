@@ -5953,7 +5953,21 @@ impl Workspace {
 
     #[cfg(not(target_family = "wasm"))]
     fn view_logs(&mut self, ctx: &mut ViewContext<Self>) {
-        self.open_log_viewer(ctx);
+        // "View Warp logs" from Help menu always opens the sidebar (never closes it).
+        if !self.current_workspace_state.is_log_viewer_open {
+            self.open_log_viewer(ctx);
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn toggle_log_viewer(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.current_workspace_state.is_log_viewer_open {
+            self.current_workspace_state.is_log_viewer_open = false;
+            self.focus_active_tab(ctx);
+        } else {
+            self.open_log_viewer(ctx);
+        }
+        ctx.notify();
     }
 
     fn copy_version(&mut self, version: &str, ctx: &mut ViewContext<Self>) {
@@ -16847,6 +16861,28 @@ impl Workspace {
         .finish()
     }
 
+    /// Renders the log viewer toolbar toggle button (TextBlock icon, active when sidebar is open).
+    #[cfg(not(target_family = "wasm"))]
+    fn render_log_viewer_toolbar_button(
+        &self,
+        appearance: &Appearance,
+        ctx: &AppContext,
+    ) -> Box<dyn Element> {
+        use crate::workspace::view::log_viewer_panel::TOGGLE_LOG_VIEWER_BINDING_NAME;
+        let is_active = self.current_workspace_state.is_log_viewer_open;
+        self.render_tab_bar_icon_button(
+            appearance,
+            icons::Icon::TextBlock,
+            &self.mouse_states.log_viewer_icon,
+            WorkspaceAction::ToggleLogViewer,
+            "Log viewer".to_string(),
+            keybinding_name_to_display_string(TOGGLE_LOG_VIEWER_BINDING_NAME, ctx),
+            is_active,
+            false,
+        )
+        .finish()
+    }
+
     /// Renders an invisible rect for detecting hovers over the tab bar.
     fn render_tab_bar_hover_area(&self) -> Box<dyn Element> {
         self.render_tab_bar_hoverable(
@@ -17222,6 +17258,10 @@ impl Workspace {
             HeaderToolbarItemKind::NotificationsMailbox => {
                 self.render_notifications_mailbox_button(appearance, ctx)
             }
+            #[cfg(not(target_family = "wasm"))]
+            HeaderToolbarItemKind::Logs => self.render_log_viewer_toolbar_button(appearance, ctx),
+            #[cfg(target_family = "wasm")]
+            HeaderToolbarItemKind::Logs => return None,
         };
         Some(
             Container::new(
@@ -18946,6 +18986,15 @@ impl Workspace {
             }
             HeaderToolbarItemKind::AgentManagement
             | HeaderToolbarItemKind::NotificationsMailbox => None,
+            #[cfg(not(target_family = "wasm"))]
+            HeaderToolbarItemKind::Logs => {
+                if !self.current_workspace_state.is_log_viewer_open {
+                    return None;
+                }
+                Some(ChildView::new(&self.log_viewer_panel).finish())
+            }
+            #[cfg(target_family = "wasm")]
+            HeaderToolbarItemKind::Logs => None,
         }
     }
 
@@ -20030,6 +20079,8 @@ impl TypedActionView for Workspace {
             SendFeedback => self.send_feedback(ctx),
             #[cfg(not(target_family = "wasm"))]
             ViewLogs => self.view_logs(ctx),
+            #[cfg(not(target_family = "wasm"))]
+            ToggleLogViewer => self.toggle_log_viewer(ctx),
             ChangeCursor(cursor) => self.change_cursor(*cursor, ctx),
             ToggleErrorUnderlining => self.toggle_error_underlining(ctx),
             ToggleSyntaxHighlighting => self.toggle_syntax_highlighting(ctx),
@@ -22639,10 +22690,6 @@ impl View for Workspace {
 
         if self.current_workspace_state.is_codex_modal_open {
             stack.add_child(ChildView::new(&self.codex_modal).finish());
-        }
-
-        if self.current_workspace_state.is_log_viewer_open {
-            stack.add_child(ChildView::new(&self.log_viewer_panel).finish());
         }
 
         if FeatureFlag::CloudMode.is_enabled()

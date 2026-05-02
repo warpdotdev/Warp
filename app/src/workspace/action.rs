@@ -199,6 +199,9 @@ pub enum WorkspaceAction {
     /// Open the log directory in the system file explorer with the current log file selected.
     #[cfg(not(target_family = "wasm"))]
     ViewLogs,
+    /// Toggle the log viewer sidebar open/closed.
+    #[cfg(not(target_family = "wasm"))]
+    ToggleLogViewer,
     ChangeCursor(Cursor),
     ToggleBlockSnackbar,
     ToggleErrorUnderlining,
@@ -950,6 +953,8 @@ impl WorkspaceAction {
             | UseLocalOpenCodeWarpPlugin => false,
             #[cfg(not(target_family = "wasm"))]
             ViewLogs => false,
+            #[cfg(not(target_family = "wasm"))]
+            ToggleLogViewer => false,
             #[cfg(target_os = "macos")]
             SampleProcess => false,
             #[cfg(target_os = "macos")]

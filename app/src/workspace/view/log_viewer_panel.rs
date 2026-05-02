@@ -1,6 +1,6 @@
-/// In-app log viewer panel.
+/// In-app log viewer sidebar panel.
 ///
-/// Opens as a full-screen overlay that tails the live Warp log file
+/// Docks on the right side of the workspace and tails the live Warp log file
 /// (path resolved via `warp_logging::log_file_path()`).
 ///
 /// Features
@@ -9,6 +9,8 @@
 /// - Case-insensitive substring filter
 /// - Level filter chips (All / INFO / WARN / ERROR)
 /// - Auto-scroll to bottom as new lines arrive
+/// - Resizable via drag handle on the left edge
+/// - Toggled from Help > "View Warp logs" or the header toolbar Logs button
 
 #[cfg(not(target_family = "wasm"))]
 use {
@@ -16,16 +18,13 @@ use {
     tokio::io::AsyncBufReadExt as _,
 };
 
-use pathfinder_color::ColorU;
-use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill as ThemeFill;
 use warpui::elements::{
-    Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DropShadow,
-    Element, Fill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-    OffsetPositioning, Padding, ParentAnchor, ParentElement, ParentOffsetBounds, Radius,
-    ScrollStateHandle, Scrollable, ScrollableElement, ScrollbarWidth, Shrinkable, Stack, Text,
-    UniformList, UniformListState,
+    Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DragBarSide,
+    Element, Fill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle, Padding,
+    ParentElement, Radius, Resizable, ResizableStateHandle, ScrollStateHandle, Scrollable,
+    ScrollableElement, ScrollbarWidth, Shrinkable, Text, UniformList, UniformListState,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::keymap::FixedBinding;
@@ -33,8 +32,15 @@ use warpui::platform::Cursor;
 use warpui::ui_components::components::{UiComponent as _, UiComponentStyles};
 use warpui::ui_components::text_input::TextInput;
 use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
+use pathfinder_color::ColorU;
 
+use crate::drive::panel::{MAX_SIDEBAR_WIDTH_RATIO, MIN_SIDEBAR_WIDTH};
 use crate::editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions};
+use crate::pane_group::pane::view::header::PANE_HEADER_HEIGHT;
+use crate::terminal::resizable_data::{ModalType, ResizableData};
+use crate::ui_components::{buttons::icon_button_with_color, icons};
+use crate::util::bindings::keybinding_name_to_display_string;
+use crate::workspace::WorkspaceAction;
 
 /// Maximum lines kept in memory.
 const MAX_LINES: usize = 10_000;
@@ -42,6 +48,9 @@ const MAX_LINES: usize = 10_000;
 const TAIL_INITIAL_BYTES: u64 = 256 * 1024;
 /// Poll interval for new lines in milliseconds.
 const POLL_INTERVAL_MS: u64 = 500;
+
+/// Keybinding name used to toggle the log viewer sidebar.
+pub const TOGGLE_LOG_VIEWER_BINDING_NAME: &str = "workspace:toggle_log_viewer";
 
 // ---------------------------------------------------------------------------
 // Level filter
@@ -115,8 +124,9 @@ pub struct LogViewerPanel {
     filter_text: String,
     list_state: UniformListState,
     scroll_state: ScrollStateHandle,
-    close_button: MouseStateHandle,
+    close_button_mouse_state: MouseStateHandle,
     chip_states: [MouseStateHandle; 4],
+    resizable_state_handle: ResizableStateHandle,
 }
 
 impl LogViewerPanel {
@@ -136,6 +146,20 @@ impl LogViewerPanel {
             }
         });
 
+        let resizable_state_handle = {
+            let resizable_data_handle = ResizableData::handle(ctx);
+            match resizable_data_handle
+                .as_ref(ctx)
+                .get_handle(ctx.window_id(), ModalType::LogViewerWidth)
+            {
+                Some(handle) => handle,
+                None => {
+                    log::error!("Couldn't retrieve log viewer resizable state handle.");
+                    warpui::elements::resizable_state_handle(480.0)
+                }
+            }
+        };
+
         let mut panel = Self {
             lines: Vec::new(),
             filtered_indices: Vec::new(),
@@ -144,8 +168,9 @@ impl LogViewerPanel {
             filter_text: String::new(),
             list_state: UniformListState::new(),
             scroll_state: Default::default(),
-            close_button: Default::default(),
+            close_button_mouse_state: Default::default(),
             chip_states: Default::default(),
+            resizable_state_handle,
         };
 
         #[cfg(not(target_family = "wasm"))]
@@ -281,6 +306,66 @@ impl LogViewerPanel {
         self.list_state.scroll_to(last);
     }
 
+    fn render_header(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
+        let theme = appearance.theme();
+        let sub_text_color = theme.sub_text_color(theme.background());
+        let border_color = theme.outline().into_solid();
+
+        let title = Text::new_inline("Warp Logs", appearance.ui_font_family(), 12.)
+            .with_style(Properties::default().weight(Weight::Bold))
+            .with_color(sub_text_color.into())
+            .finish();
+
+        let tooltip_keybinding =
+            keybinding_name_to_display_string(TOGGLE_LOG_VIEWER_BINDING_NAME, app);
+        let ui_builder = appearance.ui_builder().clone();
+        let tooltip = if let Some(keybinding) = tooltip_keybinding {
+            ui_builder
+                .tool_tip_with_sublabel("Close panel".to_string(), keybinding)
+                .build()
+                .finish()
+        } else {
+            ui_builder
+                .tool_tip("Close panel".to_string())
+                .build()
+                .finish()
+        };
+
+        let icon_color = theme.sub_text_color(theme.background());
+        let close_btn = icon_button_with_color(
+            appearance,
+            icons::Icon::X,
+            false,
+            self.close_button_mouse_state.clone(),
+            icon_color,
+        )
+        .with_tooltip(move || tooltip)
+        .build()
+        .on_click(move |ctx, _, _| {
+            ctx.dispatch_typed_action(WorkspaceAction::ToggleLogViewer);
+        })
+        .with_cursor(Cursor::PointingHand)
+        .finish();
+
+        Container::new(
+            ConstrainedBox::new(
+                Flex::row()
+                    .with_main_axis_size(MainAxisSize::Max)
+                    .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
+                    .with_child(Shrinkable::new(1., title).finish())
+                    .with_child(close_btn)
+                    .finish(),
+            )
+            .with_height(PANE_HEADER_HEIGHT)
+            .finish(),
+        )
+        .with_padding_left(16.)
+        .with_padding_right(8.)
+        .with_border(Border::bottom(1.).with_border_color(border_color))
+        .finish()
+    }
+
     fn render_filter_bar(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let text_color = theme.sub_text_color(theme.background()).into_solid();
@@ -368,7 +453,7 @@ impl LogViewerPanel {
                 .finish(),
         )
         .with_padding(Padding::uniform(8.))
-        .with_border(Border::bottom(1.).with_border_color(border_color))
+        .with_border(Border::bottom(1.).with_border_color(theme.outline().into_solid()))
         .finish()
     }
 
@@ -464,38 +549,8 @@ impl View for LogViewerPanel {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
 
-        let bg = theme.background().into_solid();
-        let border_color = theme.outline().into_solid();
-
-        // --- Header ---
-        let title = Text::new("Warp Logs", appearance.ui_font_family(), 14.)
-            .with_style(Properties::default().weight(Weight::Bold))
-            .with_color(theme.main_text_color(theme.background()).into_solid())
-            .finish();
-
-        let close_btn = appearance
-            .ui_builder()
-            .close_button(20., self.close_button.clone())
-            .build()
-            .on_click(|ctx, _app, _pos| ctx.dispatch_typed_action(LogViewerAction::Close))
-            .finish();
-
-        let header = Container::new(
-            Flex::row()
-                .with_main_axis_size(MainAxisSize::Max)
-                .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(title)
-                .with_child(close_btn)
-                .finish(),
-        )
-        .with_horizontal_padding(12.)
-        .with_vertical_padding(8.)
-        .with_border(Border::bottom(1.).with_border_color(border_color))
-        .finish();
-
+        let header = self.render_header(appearance, app);
         let filter_bar = self.render_filter_bar(appearance);
         let log_list = self.render_log_list(appearance);
 
@@ -505,34 +560,16 @@ impl View for LogViewerPanel {
             .with_child(Shrinkable::new(1., log_list).finish())
             .finish();
 
-        let panel = Container::new(body)
-            .with_background(ThemeFill::Solid(bg))
-            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(8.)))
-            .with_border(Border::all(1.).with_border_color(border_color))
-            .with_drop_shadow(DropShadow::default())
-            .finish();
-
-        let constrained = ConstrainedBox::new(panel)
-            .with_min_width(600.)
-            .with_min_height(400.)
-            .with_max_width(960.)
-            .with_max_height(640.)
-            .finish();
-
-        let mut centered = Stack::new();
-        centered.add_positioned_child(
-            constrained,
-            OffsetPositioning::offset_from_parent(
-                vec2f(0., 0.),
-                ParentOffsetBounds::WindowByPosition,
-                ParentAnchor::Center,
-                ChildAnchor::Center,
-            ),
-        );
-
-        // Dim scrim behind the panel.
-        Container::new(centered.finish())
-            .with_background(ThemeFill::Solid(ColorU::new(0, 0, 0, 255)).with_opacity(60))
+        Resizable::new(self.resizable_state_handle.clone(), body)
+            .with_dragbar_side(DragBarSide::Left)
+            .on_resize(move |ctx, _| {
+                ctx.notify();
+            })
+            .with_bounds_callback(Box::new(|window_size| {
+                let min_width = MIN_SIDEBAR_WIDTH;
+                let max_width = window_size.x() * MAX_SIDEBAR_WIDTH_RATIO;
+                (min_width, max_width.max(min_width))
+            }))
             .finish()
     }
 }
@@ -540,6 +577,7 @@ impl View for LogViewerPanel {
 /// Register keyboard shortcuts for `LogViewerPanel`.
 pub fn init(app: &mut AppContext) {
     use warpui::keymap::macros::*;
+    // Escape closes the panel when focus is inside it.
     app.register_fixed_bindings([FixedBinding::new(
         "escape",
         LogViewerAction::Close,
