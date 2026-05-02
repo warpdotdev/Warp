@@ -23,6 +23,46 @@
 
 <h1></h1>
 
+## Personal fork — danieljohnmorris/warp
+
+This is a personal AGPL fork of [warpdotdev/warp](https://github.com/warpdotdev/warp). It removes the cloud-auth requirement so the OSS build boots straight into a local terminal, hides the notifications inbox, and adds plumbing to route AI agent runs to local CLIs (`claude`, `codex`) instead of Warp's cloud server.
+
+### Configuration (`.env`)
+
+The OSS build reads `~/.warp/.env` (or `./.env` from the cwd) at startup. See `.env.example` for the full list. Common usage:
+
+```env
+# Boot directly into a logged-in fake-user state. Skips the browser-check / paywall.
+WARP_BYPASS_AUTH=1
+
+# Route agent runs to a local CLI. Currently supported: claude, codex.
+# Ollama is wired but not yet implemented.
+WARP_LOCAL_AI=claude
+
+# Optional: prepended to the system prompt of every local-AI run.
+WARP_ILO_SYSTEM_PROMPT="You are an ilo-lang expert."
+```
+
+### What's changed vs upstream
+
+- **Auth bypass**: `WARP_BYPASS_AUTH=1` short-circuits `AuthState::initialize` to a Test user, drops the `cfg(skip_login)` gates so `Credentials::Test` is available in OSS builds, and forces `is_any_ai_enabled` so the AI menu, Cmd+I binding, and agent-mode predicate all light up.
+- **Local-AI harness override**: when `WARP_LOCAL_AI` is set, `harness_kind()` overrides the user's selection to the matching `ThirdParty` harness. New `CodexHarness` shells `codex --full-auto`. The agent driver synthesizes the `ResolvedHarnessPrompt` locally so it never calls `ServerApi::resolve_prompt()`.
+- **ilo-lang context injection**: `WARP_ILO_SYSTEM_PROMPT` is prepended to every system prompt before the harness writes it to the temp file passed to the CLI subprocess.
+- **Notifications inbox hidden**: `HeaderToolbarItemKind::NotificationsMailbox::is_supported()` returns `false`, removing the inbox icon and dropdown from the header toolbar.
+- **dotenvy** loads `.env` at the top of `run()` from cwd and `~/.warp/.env`, so launching via `open WarpOss.app` (cwd = `/`) still picks up env vars.
+
+### Known limitations
+
+- The interactive agent panel still dispatches via `generate_multi_agent_output()` → Warp's GraphQL server. Under bypass this returns 401. The `WARP_LOCAL_AI` harness override only intercepts the `agent_sdk` CLI path. Full interactive-UI routing to a local CLI requires synthesizing a `warp_multi_agent_api::ResponseEvent` stream, which is a tracked follow-up.
+- `WARP_LOCAL_AI=ollama` logs a warning and is not yet implemented.
+- `WARP_ILO_SYSTEM_PROMPT` accepts plain text only; loading from a file path is a follow-up.
+
+### Build
+
+Same as upstream: `./script/run` from this directory builds and bundles `WarpOss.app` to `target/debug/bundle/osx/`. See [Building the Repo Locally](#building-the-repo-locally) below.
+
+<h1></h1>
+
 ## About
 
 [Warp](https://www.warp.dev) is an agentic development environment, born out of the terminal. Use Warp's built-in coding agent, or bring your own CLI agent (Claude Code, Codex, Gemini CLI, and others).
