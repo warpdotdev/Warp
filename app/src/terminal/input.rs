@@ -6360,7 +6360,7 @@ impl Input {
             self.model.lock().shared_session_status()
         {
             self.editor.update(ctx, |editor, ctx| {
-                // Restore the orignal buffer and interaction state based on the viewer's role.
+                // Restore the original buffer and interaction state based on the viewer's role.
                 editor.set_buffer_text(original_buffer, ctx);
                 editor.set_interaction_state(role.into(), ctx);
 

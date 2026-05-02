@@ -28,6 +28,7 @@ use crate::{
 use ai::api_keys::{ApiKeyManager, ApiKeyManagerEvent};
 use itertools::Itertools;
 use regex::Regex;
+use thousands::Separable;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::fonts::Properties;
 use warpui::platform::Cursor;
@@ -514,7 +515,7 @@ impl ExecutionProfileEditorView {
                 ..Default::default()
             };
             let mut editor = EditorView::single_line(options, ctx);
-            editor.set_buffer_text(&initial_context_window_value.to_string(), ctx);
+            editor.set_buffer_text(&initial_context_window_value.separate_with_commas(), ctx);
             editor
         });
         let last_synced_context_window_editor_value = Some(initial_context_window_value);
@@ -1378,14 +1379,14 @@ impl ExecutionProfileEditorView {
             return;
         };
 
-        let formatted = value.to_string();
+        let formatted = value.separate_with_commas();
         let should_update = if force {
             true
         } else {
             match self.last_synced_context_window_editor_value {
                 Some(last_value) => {
                     self.context_window_editor.as_ref(ctx).buffer_text(ctx)
-                        == last_value.to_string()
+                        == last_value.separate_with_commas()
                 }
                 None => true,
             }
@@ -1507,7 +1508,7 @@ impl TypedActionView for ExecutionProfileEditorView {
                 // in the input box without persisting to the profile yet.
                 // Persistence happens on SetContextWindowSize (drop / commit).
                 if self.configurable_context_window(ctx).is_some() {
-                    let formatted = value.to_string();
+                    let formatted = value.separate_with_commas();
                     self.context_window_editor.update(ctx, |editor, ctx| {
                         editor.system_reset_buffer_text(&formatted, ctx);
                     });
