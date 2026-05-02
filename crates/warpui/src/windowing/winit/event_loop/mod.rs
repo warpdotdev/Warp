@@ -503,6 +503,10 @@ pub(super) struct EventLoop {
     state: State,
     proxy: EventLoopProxy<CustomEvent>,
     ime_enabled: bool,
+    /// Whether the IME is actively composing (has non-empty preedit text).
+    /// Unlike `ime_enabled` which is true whenever the IME framework is active,
+    /// this is only true during an active composition sequence.
+    ime_composing: bool,
     /// Whether to downrank non-NVIDIA vulkan adapters. This is set to true when we detect a DRI3
     /// error that occurs when trying to present against a non-NVIDIA Vulkan adapter when the
     /// PRIME Profile is set to "Performance" mode.  It's not fully clear why this error occurs. Our
@@ -532,6 +536,7 @@ impl EventLoop {
             state: Default::default(),
             proxy,
             ime_enabled: false,
+            ime_composing: false,
             downrank_non_nvidia_vulkan_adapters: false,
             #[cfg(target_family = "wasm")]
             soft_keyboard_manager: None,
@@ -1092,11 +1097,14 @@ impl EventLoop {
 
                 let mut window_callbacks = self.callbacks.for_window(window.as_ref());
                 let result = window_callbacks.dispatch_event(event);
-                // When IME is active, text input is handled via Ime::Commit
-                // events instead. Suppress TypedCharacters here to avoid
-                // double input for languages that use composition (e.g.
-                // Vietnamese Telex, CJK).
-                if !result.handled && !cmd_pressed && !self.ime_enabled {
+                // When IME is actively composing (preedit text is present),
+                // text input is handled via Ime::Commit events instead.
+                // Suppress TypedCharacters here to avoid double input for
+                // languages that use composition (e.g. Vietnamese Telex, CJK).
+                // Note: we check ime_composing (not ime_enabled) so that
+                // regular typing still works when the IME framework is
+                // running but not actively composing.
+                if !result.handled && !cmd_pressed && !self.ime_composing {
                     if let Some(chars) = chars {
                         window_callbacks.dispatch_event(TypedCharacters { chars });
                     }
@@ -1306,7 +1314,7 @@ impl EventLoop {
                     event,
                     window_state,
                     is_synthetic,
-                    self.ime_enabled,
+                    self.ime_composing,
                 )?;
                 Some(ConvertedEvent::KeyDownWithTypedCharacters {
                     chars: event_text,
@@ -1525,6 +1533,10 @@ impl EventLoop {
                     return;
                 }
 
+                // Track whether we are actively composing. Empty preedit
+                // means the composition was cancelled or hasn't started.
+                self.ime_composing = !preedit_text.is_empty();
+
                 let Some(window_state) = self.state.windows.get_mut(&winit_window_id) else {
                     return;
                 };
@@ -1544,6 +1556,8 @@ impl EventLoop {
                 });
             }
             winit::event::Ime::Commit(chars) => {
+                self.ime_composing = false;
+
                 let Some(window_state) = self.state.windows.get_mut(&winit_window_id) else {
                     return;
                 };
@@ -1562,6 +1576,7 @@ impl EventLoop {
             }
             winit::event::Ime::Disabled => {
                 self.ime_enabled = false;
+                self.ime_composing = false;
             }
         };
     }

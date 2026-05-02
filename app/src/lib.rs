@@ -805,10 +805,44 @@ fn init_common(launch_mode: &LaunchMode, timer: Option<&mut IntervalTimer>) -> R
 /// Note that every initialization step in this function is specific to the GUI app and Oz. If you want
 /// to add setup steps that should be generic to all launch modes (e.g. remote server). It should be added
 /// in init_common instead.
+/// On Linux, writes a per-app XDG portal configuration that disables the
+/// RemoteDesktop portal backend. This prevents Ubuntu 26.04's buggy
+/// xdg-desktop-portal-gnome from showing a "Remote Desktop" dialog whenever
+/// Warp accesses any portal interface (e.g. Settings for theme detection).
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+fn disable_remote_desktop_portal() {
+    let config_dir = match std::env::var("XDG_CONFIG_HOME") {
+        Ok(dir) if !dir.is_empty() => std::path::PathBuf::from(dir),
+        _ => match std::env::var("HOME") {
+            Ok(home) => std::path::PathBuf::from(home).join(".config"),
+            Err(_) => return,
+        },
+    };
+
+    let portal_dir = config_dir.join("xdg-desktop-portal");
+    if std::fs::create_dir_all(&portal_dir).is_err() {
+        return;
+    }
+
+    let app_id = ChannelState::app_id();
+    let conf_path = portal_dir.join(format!("{app_id}.portals.conf"));
+    if conf_path.exists() {
+        return;
+    }
+
+    let _ = std::fs::write(
+        &conf_path,
+        "[preferred]\norg.freedesktop.impl.portal.RemoteDesktop=none\n",
+    );
+}
+
 fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
     let mut timer = IntervalTimer::new();
 
     init_common(&launch_mode, Some(&mut timer))?;
+
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    disable_remote_desktop_portal();
 
     // For wasm builds we have this special case to parse out the intent
     // from the url that is used to visite the app on web.
