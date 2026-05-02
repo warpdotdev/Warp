@@ -1085,6 +1085,7 @@ impl From<FullAIAgentInput> for AIAgentInput {
                 event_count: events.len(),
             },
             FullAIAgentInput::PassiveSuggestionResult { .. } => Self::PassiveSuggestionResult,
+            FullAIAgentInput::OrchestrationConfigUpdate { .. } => Self::PassiveSuggestionResult, // Reuse existing variant; config updates are not a distinct telemetry event.
         }
     }
 }
