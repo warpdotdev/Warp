@@ -63,6 +63,10 @@ WARP_LOCAL_AI=claude
 
 For everything else (engineering guide, coding style, testing, platform notes), see [WARP.md](WARP.md).
 
+## Related work
+
+[`regismesquita/warp-with-local-server`](https://github.com/regismesquita/warp-with-local-server) takes a different route to the same goal. It runs a local OpenAI-compatible shim server that intercepts Warp's GraphQL/WebSocket calls and translates them to any OpenAI-compatible upstream (Anthropic, OpenAI, Ollama, LiteLLM). Network-layer interception, vs this fork's harness-layer override that shells out to local CLIs.
+
 ## Licensing
 
 Same as upstream. `warpui_core` and `warpui` crates are [MIT](LICENSE-MIT). The rest of the repo is [AGPL v3](LICENSE-AGPL). My changes inherit the AGPL of the files they edit.
