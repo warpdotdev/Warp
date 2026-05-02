@@ -4,6 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, OnceLock},
 };
+use warp_cli::agent::Harness;
 use warp_core::ui::icons::Icon;
 use warp_core::user_preferences::GetUserPreferences;
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
@@ -45,6 +46,29 @@ pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -
 /// Note: this key used to store a single [`AvailableLLMs`]
 /// but was migrated to store a full [`ModelsByFeature`].
 pub const MODELS_BY_FEATURE_CACHE_KEY: &str = "AvailableLLMs";
+
+/// Key for cached harness models in user preferences.
+/// Stores a serialized `HashMap<Harness, AvailableHarnessModels>` (JSON keys are the lowercase
+/// harness names produced by `Harness`'s serde representation, e.g. `"claude"`).
+pub const HARNESS_MODELS_CACHE_KEY: &str = "HarnessModels";
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct HarnessModelInfo {
+    pub id: String,
+    pub display_name: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AvailableHarnessModels {
+    pub default_model_id: String,
+    pub models: Vec<HarnessModelInfo>,
+}
+
+impl AvailableHarnessModels {
+    pub fn info_for_id(&self, id: &str) -> Option<&HarnessModelInfo> {
+        self.models.iter().find(|m| m.id == id)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LLMUsageMetadata {
@@ -524,6 +548,11 @@ pub struct LLMPreferences {
     // from the base LLM for the active profile. This means that if the user selects the
     // profile's default model and changes their profile, the model will update to that profile's default.
     base_llm_for_terminal_view: HashMap<EntityId, LLMId>,
+    /// Models supported by each third-party harness, keyed by [`Harness`].
+    /// Populated lazily as the user opens the harness model selector.
+    harness_models: HashMap<Harness, AvailableHarnessModels>,
+    /// Set of harnesses for which a fetch is in-flight, to dedupe redundant requests.
+    inflight_harness_model_fetches: HashSet<Harness>,
 }
 
 impl LLMPreferences {
@@ -556,11 +585,14 @@ impl LLMPreferences {
         });
 
         let base_llm_for_terminal_view = HashMap::new();
+        let harness_models = get_cached_harness_models(ctx).unwrap_or_default();
 
         let me = Self {
             models_by_feature,
             last_update: None,
             base_llm_for_terminal_view,
+            harness_models,
+            inflight_harness_model_fetches: HashSet::new(),
         };
 
         // In agent mode eval builds, eagerly kick off a fetch of the model list from the server
@@ -1055,6 +1087,92 @@ impl LLMPreferences {
             ctx.emit(LLMPreferencesEvent::UpdatedActiveAgentModeLLM);
         }
     }
+
+    pub fn get_harness_models(&self, harness: Harness) -> Option<&AvailableHarnessModels> {
+        self.harness_models.get(&harness)
+    }
+
+    /// Returns the choices to display in the cloud model selector for a third-party harness.
+    pub fn get_harness_llm_choices(
+        &self,
+        harness: Harness,
+    ) -> impl Iterator<Item = &HarnessModelInfo> {
+        self.harness_models
+            .get(&harness)
+            .into_iter()
+            .flat_map(|m| m.models.iter())
+    }
+
+    /// Fetches the list of harness models from the server and caches them.
+    /// No-op for `Harness::Oz` and `Harness::Unknown`. Dedupes overlapping in-flight requests.
+    pub fn fetch_harness_models(&mut self, harness: Harness, ctx: &mut ModelContext<Self>) {
+        if matches!(harness, Harness::Oz | Harness::Unknown) {
+            return;
+        }
+        // Don't try to fetch if the user is not logged in yet.
+        if !AuthStateProvider::as_ref(ctx).get().is_logged_in() {
+            return;
+        }
+
+        if !self.inflight_harness_model_fetches.insert(harness) {
+            return;
+        }
+
+        let ai_api_client = ServerApiProvider::as_ref(ctx).get_ai_client();
+        // The REST endpoint takes the lowercase harness name as a query string param.
+        let harness_name = harness.to_string();
+        ctx.spawn(
+            async move { ai_api_client.get_harness_models(&harness_name).await },
+            move |me, result, ctx| {
+                me.inflight_harness_model_fetches.remove(&harness);
+                match result {
+                    Ok(response) => {
+                        let new_value = AvailableHarnessModels {
+                            default_model_id: response.default_model_id,
+                            models: response
+                                .models
+                                .into_iter()
+                                .map(|m| HarnessModelInfo {
+                                    id: m.id,
+                                    display_name: m.display_name,
+                                })
+                                .collect(),
+                        };
+                        let changed = me
+                            .harness_models
+                            .get(&harness)
+                            .is_none_or(|existing| existing != &new_value);
+                        if changed {
+                            me.harness_models.insert(harness, new_value);
+                            me.persist_harness_models(ctx);
+                            ctx.emit(LLMPreferencesEvent::UpdatedHarnessModels);
+                        }
+                    }
+                    Err(e) => {
+                        report_error!(
+                            e.context(format!("Failed to fetch harness models for {harness}"))
+                        );
+                    }
+                }
+            },
+        );
+    }
+
+    fn persist_harness_models(&self, ctx: &mut ModelContext<Self>) {
+        match serde_json::to_string(&self.harness_models) {
+            Ok(serialized) => {
+                if let Err(e) = ctx
+                    .private_user_preferences()
+                    .write_value(HARNESS_MODELS_CACHE_KEY, serialized)
+                {
+                    log::error!("Failed to cache harness models: {e}");
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to serialize harness models for cache: {e}");
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1062,6 +1180,8 @@ pub enum LLMPreferencesEvent {
     UpdatedAvailableLLMs,
     UpdatedActiveAgentModeLLM,
     UpdatedActiveCodingLLM,
+    /// Emitted when the cached models for a third-party harness change.
+    UpdatedHarnessModels,
 }
 
 impl Entity for LLMPreferences {
@@ -1108,6 +1228,24 @@ fn get_cached_models(app: &mut AppContext) -> Option<ModelsByFeature> {
                     None
                 }
             }
+        }
+    }
+}
+
+/// Loads the per-harness model cache from disk.
+fn get_cached_harness_models(
+    app: &mut AppContext,
+) -> Option<HashMap<Harness, AvailableHarnessModels>> {
+    let value = app
+        .private_user_preferences()
+        .read_value(HARNESS_MODELS_CACHE_KEY)
+        .ok()
+        .flatten()?;
+    match serde_json::from_str::<HashMap<Harness, AvailableHarnessModels>>(value.as_str()) {
+        Ok(cached) => Some(cached),
+        Err(e) => {
+            log::warn!("Failed to deserialize cached harness models: {e}");
+            None
         }
     }
 }

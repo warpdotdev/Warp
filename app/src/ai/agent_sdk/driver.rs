@@ -22,7 +22,8 @@ use crate::ai::skills::{SkillManager, SkillWatcher};
 use crate::ai::{
     agent::conversation::AIConversationId,
     agent_sdk::driver::harness::{
-        task_env_vars, HarnessKind, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness,
+        harness_model_env_vars, task_env_vars, HarnessKind, HarnessRunner, ResumePayload,
+        SavePoint, ThirdPartyHarness,
     },
 };
 use crate::terminal::cli_agent_sessions::plugin_manager::{
@@ -234,6 +235,8 @@ pub struct AgentDriverOptions {
     pub environment: Option<AmbientAgentEnvironment>,
     /// Selected execution harness for this run.
     pub selected_harness: Harness,
+    /// Model ID for the selected harness. Only used for non-Oz harnesses.
+    pub harness_model_id: Option<String>,
     /// Whether to skip end-of-run snapshot upload.
     pub snapshot_disabled: Option<bool>,
     /// End-of-run snapshot upload timeout override.
@@ -494,6 +497,7 @@ impl AgentDriver {
             cloud_providers,
             environment,
             selected_harness,
+            harness_model_id,
             snapshot_disabled,
             snapshot_upload_timeout,
             snapshot_script_timeout,
@@ -616,6 +620,10 @@ impl AgentDriver {
             task_id.as_ref(),
             parent_run_id.as_deref(),
             selected_harness,
+        ));
+        env_vars.extend(harness_model_env_vars(
+            selected_harness,
+            harness_model_id.as_deref(),
         ));
 
         // Signal to third-party harnesses (e.g. Claude Code) that we're in a sandbox

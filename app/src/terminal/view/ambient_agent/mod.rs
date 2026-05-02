@@ -20,7 +20,9 @@ pub use host_selector::{
 };
 pub use loading_screen::{render_cloud_mode_error_screen, render_cloud_mode_loading_screen};
 pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
-pub use model_selector::{ModelSelector, ModelSelectorAction, ModelSelectorEvent};
+pub use model_selector::{
+    HarnessSelection, ModelSelection, ModelSelector, ModelSelectorAction, ModelSelectorEvent,
+};
 pub use progress::{render_progress, ProgressProps, ProgressStep, ProgressStepState};
 pub use progress_ui_state::AmbientAgentProgressUIState;
 pub use tips::{get_cloud_mode_tips, CloudModeTip};
@@ -100,6 +102,7 @@ pub fn create_cloud_mode_view(
                 | AmbientAgentViewModelEvent::Cancelled
                 | AmbientAgentViewModelEvent::HarnessSelected
                 | AmbientAgentViewModelEvent::HostSelected
+                | AmbientAgentViewModelEvent::HarnessModelSelected
                 | AmbientAgentViewModelEvent::HarnessCommandStarted
                 | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility => {}
             }

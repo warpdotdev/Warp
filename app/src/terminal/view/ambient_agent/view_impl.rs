@@ -299,6 +299,7 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::HostSelected => {}
+            AmbientAgentViewModelEvent::HarnessModelSelected => {}
             AmbientAgentViewModelEvent::HarnessCommandStarted => {
                 // Stop classifying new blocks as environment setup commands, mirroring the
                 // Oz path in the `AppendedExchange` handler. Flipping this flag to `false`

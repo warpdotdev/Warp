@@ -74,12 +74,18 @@ pub struct HarnessConfig {
         deserialize_with = "deserialize_harness"
     )]
     pub harness_type: Harness,
+    /// The model to use with this harness. None means use the harness default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
 }
 
 impl HarnessConfig {
     /// Builds a harness config from just the harness type.
     pub fn from_harness_type(harness_type: Harness) -> Self {
-        Self { harness_type }
+        Self {
+            harness_type,
+            model_id: None,
+        }
     }
 }
 
