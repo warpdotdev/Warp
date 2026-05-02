@@ -7,6 +7,14 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    warpProtoApis = {
+      url = "github:warpdotdev/warp-proto-apis";
+      flake = false;
+    };
+    warpWorkflows = {
+      url = "github:warpdotdev/workflows";
+      flake = false;
+    };
   };
 
   nixConfig = {
@@ -26,6 +34,8 @@
       self,
       nixpkgs,
       rust-overlay,
+      warpProtoApis,
+      warpWorkflows,
       ...
     }:
     let
@@ -133,18 +143,6 @@
           appCargoToml = builtins.fromTOML (builtins.readFile ./app/Cargo.toml);
           version = "${appCargoToml.package.version}+${self.shortRev or "dirty"}";
           cargoVendorHash = "sha256-TzYSC82HVRhCxBHLmHw8BIZ4hJKCZfp+s/mfbeAjdQ4=";
-          warpProtoApis = pkgs.fetchFromGitHub {
-            owner = "warpdotdev";
-            repo = "warp-proto-apis";
-            rev = "78a78f21a75432bf0141e396fb318bf1694e47f0";
-            hash = "sha256-8bB/tCLIzRCofMK1rYCe8bizUr1U4A6f6uVeckJJKI4=";
-          };
-          warpWorkflows = pkgs.fetchFromGitHub {
-            owner = "warpdotdev";
-            repo = "workflows";
-            rev = "793a98ddda6ef19682aed66364faebd2829f0e01";
-            hash = "sha256-ICgkxlUUIfyhr0agZEk3KtGHX0uNRlRCKtz0iF2jd7o=";
-          };
           cargoDeps = pkgs.runCommand "warp-terminal-${version}-vendor" { } ''
             cp -R ${
               rustPlatform.fetchCargoVendor {
@@ -222,7 +220,8 @@
             "release_bundle"
             "gui"
             "nld_improvements"
-          ] ++ lib.optionals pkgs.stdenv.isDarwin [
+          ]
+          ++ lib.optionals pkgs.stdenv.isDarwin [
             "extern_plist"
           ];
 
@@ -282,7 +281,8 @@
               PROTOC = "${pkgs.protobuf}/bin/protoc";
               PROTOC_INCLUDE = "${pkgs.protobuf}/include";
               CARGO_PROFILE_RELEASE_DEBUG = "false";
-            } // lib.optionalAttrs pkgs.stdenv.isDarwin {
+            }
+            // lib.optionalAttrs pkgs.stdenv.isDarwin {
               MACOSX_DEPLOYMENT_TARGET = "10.14";
             };
 
