@@ -19,8 +19,11 @@
 // Status checking and project-picker UX are tracked in PDX-51, PDX-52, PDX-54.
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
-use doppler::DopplerError;
+use doppler::{DopplerError, DopplerStatus, TokioCommandRunner};
+use warpui::r#async::Timer;
 use warpui::{
     elements::{
         Align, Container, CrossAxisAlignment, Element, Flex, MouseStateHandle, ParentElement, Text,
@@ -50,6 +53,11 @@ use crate::appearance::Appearance;
 pub(crate) enum DopplerUiState {
     /// CLI detected; no error to surface.
     Ready,
+    /// User is signed in. Optional project/config bound to the cwd.
+    Authenticated {
+        cwd_project: Option<String>,
+        cwd_config: Option<String>,
+    },
     /// `doppler` binary absent from `PATH`. Button disabled.
     NotInstalled { hint: String },
     /// User is not authenticated.
@@ -77,6 +85,17 @@ impl DopplerUiState {
     pub(crate) fn banner_content(&self) -> Option<(String, String)> {
         match self {
             DopplerUiState::Ready => None,
+            DopplerUiState::Authenticated {
+                cwd_project,
+                cwd_config,
+            } => {
+                let subtext = match (cwd_project.as_deref(), cwd_config.as_deref()) {
+                    (Some(p), Some(c)) => format!("Bound to project \"{p}\" / config \"{c}\""),
+                    (Some(p), None) => format!("Bound to project \"{p}\""),
+                    _ => "No project bound to this directory (run `doppler setup`)".to_owned(),
+                };
+                Some(("Signed in to Doppler".to_owned(), subtext))
+            }
             DopplerUiState::NotInstalled { hint } => Some((
                 "Doppler CLI not installed".to_owned(),
                 hint.clone(),
@@ -132,20 +151,67 @@ pub(crate) fn doppler_ui_state(result: &Result<PathBuf, DopplerError>) -> Dopple
 #[derive(Debug, Clone)]
 pub enum DopplerSettingsPageAction {
     SignIn,
+    Refresh,
 }
 
 pub struct DopplerSettingsPageView {
     page: PageType<Self>,
+    cached_status: Option<DopplerStatus>,
 }
 
 impl DopplerSettingsPageView {
-    pub fn new(_ctx: &mut ViewContext<Self>) -> Self {
-        Self {
+    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
+        let mut me = Self {
             page: PageType::new_uncategorized(
                 vec![Box::new(DopplerSignInWidget::default())],
                 None,
             ),
-        }
+            cached_status: None,
+        };
+        me.refresh_status(ctx);
+        me
+    }
+
+    /// Kick off a one-shot async `read_status` and store the result. Used both
+    /// on view-mount and by the manual "Refresh" button.
+    fn refresh_status(&mut self, ctx: &mut ViewContext<Self>) {
+        let runner: Arc<dyn doppler::CommandRunner> = Arc::new(TokioCommandRunner);
+        let _ = ctx.spawn(
+            async move { doppler::read_status(runner).await.ok() },
+            |me, status, ctx| {
+                if let Some(status) = status {
+                    me.cached_status = Some(status);
+                    ctx.notify();
+                }
+            },
+        );
+    }
+
+    /// After spawning `doppler login`, poll `read_status` every 2s for up to
+    /// 30s. Stops early on the first authenticated read. Updates
+    /// `cached_status` and notifies on success.
+    fn poll_until_authenticated(&mut self, ctx: &mut ViewContext<Self>) {
+        let runner: Arc<dyn doppler::CommandRunner> = Arc::new(TokioCommandRunner);
+        let _ = ctx.spawn(
+            async move {
+                let deadline = std::time::Instant::now() + Duration::from_secs(30);
+                while std::time::Instant::now() < deadline {
+                    Timer::after(Duration::from_secs(2)).await;
+                    if let Ok(status) = doppler::read_status(runner.clone()).await {
+                        if status.authenticated {
+                            return Some(status);
+                        }
+                    }
+                }
+                None
+            },
+            |me, status, ctx| {
+                if let Some(status) = status {
+                    me.cached_status = Some(status);
+                    ctx.notify();
+                }
+            },
+        );
     }
 }
 
@@ -156,7 +222,7 @@ impl Entity for DopplerSettingsPageView {
 impl TypedActionView for DopplerSettingsPageView {
     type Action = DopplerSettingsPageAction;
 
-    fn handle_action(&mut self, action: &Self::Action, _ctx: &mut ViewContext<Self>) {
+    fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             DopplerSettingsPageAction::SignIn => {
                 // Fire-and-forget: do NOT wait, do NOT capture output. The
@@ -166,7 +232,7 @@ impl TypedActionView for DopplerSettingsPageView {
                 // asking; nulling stdio prevents the child from blocking on
                 // the GUI's missing TTY (it would hang at the interactive
                 // prompt and never open the browser).
-                if let Err(err) = std::process::Command::new("doppler")
+                match std::process::Command::new("doppler")
                     .arg("login")
                     .arg("--yes")
                     .arg("--scope")
@@ -176,8 +242,12 @@ impl TypedActionView for DopplerSettingsPageView {
                     .stderr(std::process::Stdio::null())
                     .spawn()
                 {
-                    log::warn!("failed to spawn `doppler login`: {err}");
+                    Ok(_) => self.poll_until_authenticated(ctx),
+                    Err(err) => log::warn!("failed to spawn `doppler login`: {err}"),
                 }
+            }
+            DopplerSettingsPageAction::Refresh => {
+                self.refresh_status(ctx);
             }
         }
     }
@@ -224,26 +294,47 @@ impl From<ViewHandle<DopplerSettingsPageView>> for SettingsPageViewHandle {
 #[derive(Default)]
 struct DopplerSignInWidget {
     sign_in_button_mouse_state: MouseStateHandle,
+    refresh_button_mouse_state: MouseStateHandle,
 }
 
 impl SettingsWidget for DopplerSignInWidget {
     type View = DopplerSettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "doppler secrets sign in login cli"
+        "doppler secrets sign in login cli refresh"
     }
 
     fn render(
         &self,
-        _view: &Self::View,
+        view: &Self::View,
         appearance: &Appearance,
         _app: &AppContext,
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         let theme = appearance.theme();
 
-        let detect_result = doppler::detect();
-        let ui_state = doppler_ui_state(&detect_result);
+        // Prefer the live status read (post-login signal); fall back to the
+        // detect-only view when we have no successful read yet.
+        let ui_state = match view.cached_status.as_ref() {
+            Some(status) if status.authenticated => {
+                let cwd = std::env::current_dir().ok();
+                let (cwd_project, cwd_config) = cwd
+                    .as_deref()
+                    .and_then(|c| {
+                        status
+                            .scoped_bindings
+                            .iter()
+                            .find(|b| b.scope == c)
+                            .map(|b| (b.project.clone(), b.config.clone()))
+                    })
+                    .unwrap_or((status.default_project.clone(), status.default_config.clone()));
+                DopplerUiState::Authenticated {
+                    cwd_project,
+                    cwd_config,
+                }
+            }
+            _ => doppler_ui_state(&doppler::detect()),
+        };
 
         // Section header: "Secrets (Doppler)".
         let header = Container::new(
@@ -294,40 +385,60 @@ impl SettingsWidget for DopplerSignInWidget {
             });
 
         // Sign-in button. Disabled only when the binary is absent.
-        let button_builder = ui_builder
+        let button_style = UiComponentStyles {
+            font_size: Some(14.),
+            font_weight: Some(Weight::Semibold),
+            padding: Some(Coords {
+                top: 8.,
+                bottom: 8.,
+                left: 24.,
+                right: 24.,
+            }),
+            ..Default::default()
+        };
+        let sign_in_builder = ui_builder
             .button(
                 ButtonVariant::Accent,
                 self.sign_in_button_mouse_state.clone(),
             )
             .with_text_label("Sign in with Doppler".to_owned())
-            .with_style(UiComponentStyles {
-                font_size: Some(14.),
-                font_weight: Some(Weight::Semibold),
-                padding: Some(Coords {
-                    top: 8.,
-                    bottom: 8.,
-                    left: 24.,
-                    right: 24.,
-                }),
-                ..Default::default()
-            });
+            .with_style(button_style.clone());
 
-        let button_element: Box<dyn Element> = if ui_state.button_enabled() {
-            button_builder
+        let sign_in_element: Box<dyn Element> = if ui_state.button_enabled() {
+            sign_in_builder
                 .build()
                 .on_click(move |ctx, _, _| {
                     ctx.dispatch_typed_action(DopplerSettingsPageAction::SignIn);
                 })
                 .finish()
         } else {
-            button_builder.disabled().build().finish()
+            sign_in_builder.disabled().build().finish()
         };
+
+        // Refresh button — manual recovery if the post-login poll misses.
+        let refresh_element: Box<dyn Element> = ui_builder
+            .button(
+                ButtonVariant::Secondary,
+                self.refresh_button_mouse_state.clone(),
+            )
+            .with_text_label("Refresh".to_owned())
+            .with_style(button_style)
+            .build()
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(DopplerSettingsPageAction::Refresh);
+            })
+            .finish();
+
+        let button_row = Flex::row()
+            .with_child(sign_in_element)
+            .with_child(Container::new(refresh_element).with_margin_left(8.).finish())
+            .finish();
 
         let mut column_children: Vec<Box<dyn Element>> = vec![header, description];
         if let Some(banner) = maybe_banner {
             column_children.push(banner);
         }
-        column_children.push(button_element);
+        column_children.push(button_row);
 
         Container::new(
             Flex::column()
