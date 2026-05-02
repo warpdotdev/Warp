@@ -36,12 +36,17 @@
 #![deny(missing_docs)]
 
 pub mod budget;
+pub mod handoff;
 pub mod mcp_forwarder;
 pub mod router;
 
 pub use budget::{
     evaluate_charge, Budget, BudgetError, BudgetSnapshot, BudgetTier, Cap, CustomProviderId,
     Provider,
+};
+pub use handoff::{
+    format_handoff_prompt, HandoffState, HandoffSummarizer, HandoffSummary,
+    RouterHandoffSummarizer, SummarizerError,
 };
 pub use mcp_forwarder::{ForwardingTarget, McpForwarder};
 pub use router::{AgentRegistration, Router, RouterError};
