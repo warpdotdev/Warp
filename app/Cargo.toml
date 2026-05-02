@@ -5,7 +5,7 @@ description = "The cloud-backed terminal for individuals and teams"
 edition = "2021"
 autobins = false
 name = "warp"
-version = "0.1.0"
+version = "1.1.0"
 publish.workspace = true
 license.workspace = true
 
