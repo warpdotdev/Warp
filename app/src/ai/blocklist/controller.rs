@@ -736,6 +736,15 @@ impl BlocklistAIController {
         };
         inputs.push(ai_input);
 
+        // Stage 2: piggyback any pending orchestration config update.
+        if let Some(dirty_event) = AIDocumentModel::as_ref(ctx).dirty_orchestration_event().cloned() {
+            inputs.push(AIAgentInput::OrchestrationConfigUpdate {
+                plan_id: dirty_event.plan_id,
+                config: dirty_event.config,
+                status: dirty_event.status,
+            });
+        }
+
         if let Err(e) = self.send_request_input(
             RequestInput::for_task(
                 inputs,
@@ -758,6 +767,11 @@ impl BlocklistAIController {
         ) {
             log::error!("Failed to send agent request: {e:?}");
         }
+
+        // Clear the dirty orchestration event after the request is sent.
+        AIDocumentModel::handle(ctx).update(ctx, |model, ctx| {
+            model.clear_dirty_orchestration_event();
+        });
     }
 
     /// Populates plan documents from user query to AIDocumentModel if not already present.
