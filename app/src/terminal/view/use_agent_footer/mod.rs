@@ -865,12 +865,24 @@ impl TerminalView {
                     let mime_type = mime_type_for_image_path(path);
 
                     // Hop back to the view to write the clipboard + paste
-                    // keystroke. Bail if the CLI agent session disappeared
-                    // between iterations so we don't leak Ctrl+V into an
-                    // unrelated PTY context.
+                    // keystroke. Bail if the CLI agent session disappeared,
+                    // OR if the agent's long-running block exited while we
+                    // were reading off-thread — without that second check
+                    // the paste byte would leak into the shell after the
+                    // agent quit, since the session entry can outlive its
+                    // foreground block.
                     let cont = spawner
                         .spawn(move |me, ctx| {
                             if !me.has_active_cli_agent_session(ctx) {
+                                return false;
+                            }
+                            let still_long_running = me
+                                .model
+                                .lock()
+                                .block_list()
+                                .active_block()
+                                .is_active_and_long_running();
+                            if !still_long_running {
                                 return false;
                             }
                             ctx.clipboard().write(ClipboardContent {
