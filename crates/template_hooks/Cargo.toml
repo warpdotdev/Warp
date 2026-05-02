@@ -1,0 +1,19 @@
+[package]
+name = "template_hooks"
+version = "0.1.0"
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tera = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["process", "rt", "time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

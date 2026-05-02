@@ -21,10 +21,10 @@ default-members = [
   "crates/orchestrator",
   "crates/prompts",
   "crates/skills",
+  "crates/template_hooks",
   "crates/templates",
   "crates/sum_tree",
   "crates/symphony",
-  "crates/templates",
   "crates/warpui",
   "crates/warp_completer",
   "crates/warp_terminal",
@@ -75,9 +75,9 @@ settings_value = { path = "crates/settings_value", default-features = false }
 settings_value_derive = { path = "crates/settings_value_derive" }
 simple_logger = { path = "crates/simple_logger" }
 skills = { path = "crates/skills" }
+template_hooks = { path = "crates/template_hooks" }
 templates = { path = "crates/templates" }
 string-offset = { path = "crates/string-offset" }
-templates = { path = "crates/templates" }
 sum_tree = { path = "crates/sum_tree" }
 symphony = { path = "crates/symphony" }
 syntax_tree = { path = "crates/syntax_tree" }
@@ -275,6 +275,7 @@ strsim = "0.11"
 strum = "0.27"
 strum_macros = "0.27"
 tempfile = "3.8.0"
+tera = "1"
 thiserror = "2.0.17"
 tokio = "1.47.1"
 tokio-util = { version = "0.7", features = ["io"] }
