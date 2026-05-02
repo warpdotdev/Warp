@@ -1583,31 +1583,24 @@ impl FileTreeView {
             let repo_state = RepoMetadataModel::as_ref(ctx).repository_state(&repo_id, ctx);
             let previously_failed = matches!(repo_state, Some(IndexedRepoState::Failed(_)));
 
-            // Always use lazy-loading as a fallback in case detection fails or returns None.
-            // This ensures the tree is never empty - detection will update it with full content
-            // if successful, otherwise lazy-loaded content remains visible.
-            let index_result = self
-                .repository_metadata_model
-                .update(ctx, |model: &mut RepoMetadataModel, ctx| {
-                    model.index_lazy_loaded_path(path, ctx)
-                });
-            if matches!(
-                index_result,
-                Err(repo_metadata::RepoMetadataError::BuildTree(
-                    repo_metadata::BuildTreeError::ExceededMaxFileLimit,
-                ))
-            ) {
-                Self::show_exceeded_file_limit_toast(ctx);
-            }
-            if let Err(error) = &index_result {
-                log::warn!("Failed to index lazy-loaded path {path}: {error}");
-            }
-            if RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(path, ctx) {
+            // Always register lazy-loading as fallback - even if model skips it due to Pending state.
+            // This ensures we have a fallback entry while detection completes.
+            // The lazy path may already exist if detection started after file tree opened,
+            // or it may need to be created manually if detection already set Pending.
+            let is_lazy_loaded = RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(path, ctx);
+            if !is_lazy_loaded {
+                // Model may skip registration if repo is already Pending.
+                // Force register a local fallback entry to prevent empty tree.
+                self.registered_lazy_loaded_paths.insert(path.clone());
+                // Also ensure root_directory has a placeholder entry
+                if let Some(root_dir) = self.root_directories.get_mut(path) {
+                    root_dir.entry = Self::create_empty_entry(path);
+                }
+            } else {
                 self.registered_lazy_loaded_paths.insert(path.clone());
             }
 
-            // Additionally, if this appears to be a git repo and hasn't failed before,
-            // trigger proper detection to get full repo indexing instead of shallow tree.
+            // Trigger detection to upgrade from lazy-loaded to full repo
             if has_git_entry && !previously_failed {
                 DetectedRepositories::handle(ctx).update(ctx, |repos, ctx| {
                     std::mem::drop(repos.detect_possible_git_repo(
