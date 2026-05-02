@@ -1620,14 +1620,26 @@ impl FileTreeView {
         }
 
         let id = repo_metadata::RepositoryIdentifier::local(path.clone());
-        let entry = RepoMetadataModel::as_ref(ctx)
-            .get_repository(&id, ctx)
-            .map(|state| state.entry.clone());
+        let repo_state = RepoMetadataModel::as_ref(ctx).repository_state(&id, ctx);
+
+        let entry = match repo_state {
+            // Fully indexed - use the repo's entry
+            Some(IndexedRepoState::Indexed(state)) => Some(state.entry.clone()),
+            // Pending - repo is being indexed, use lazy-loaded entry if available
+            Some(IndexedRepoState::Pending) => {
+                if self.registered_lazy_loaded_paths.contains(path) {
+                    // Keep the lazy-loaded entry while pending
+                    self.root_directories.get(path).map(|d| d.entry.clone())
+                } else {
+                    None
+                }
+            }
+            // Failed or None - create empty entry (will be handled by event)
+            _ => None,
+        };
+
         if let Some(root_dir) = self.root_directories.get_mut(path) {
-            root_dir.entry = match entry {
-                Some(entry) => entry,
-                None => Self::create_empty_entry(path),
-            };
+            root_dir.entry = entry.unwrap_or_else(|| Self::create_empty_entry(path));
         }
     }
 
