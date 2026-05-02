@@ -21,6 +21,7 @@ default-members = [
   "crates/orchestrator",
   "crates/prompts",
   "crates/skills",
+  "crates/templates",
   "crates/sum_tree",
   "crates/symphony",
   "crates/warpui",
@@ -73,6 +74,7 @@ settings_value = { path = "crates/settings_value", default-features = false }
 settings_value_derive = { path = "crates/settings_value_derive" }
 simple_logger = { path = "crates/simple_logger" }
 skills = { path = "crates/skills" }
+templates = { path = "crates/templates" }
 string-offset = { path = "crates/string-offset" }
 sum_tree = { path = "crates/sum_tree" }
 symphony = { path = "crates/symphony" }
