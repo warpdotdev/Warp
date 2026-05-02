@@ -23,8 +23,8 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
 
+use instant::Instant;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::RwLock;
