@@ -5,6 +5,7 @@
 //! Gemini CLI, Codex), it displays a specialized footer with additional functionality.
 
 use crate::ai::agent::ImageContext;
+use std::path::Path;
 use crate::ai::blocklist::agent_view::agent_input_footer::{
     AgentInputFooter, AgentInputFooterEvent,
 };
@@ -95,6 +96,21 @@ const CLI_AGENT_IMAGE_PASTE_DELAY: Duration = Duration::from_millis(300);
 /// before the rest of the command arrives.
 #[allow(clippy::byte_char_slices)]
 const CLI_AGENT_MODE_SWITCH_PREFIXES: &[u8] = &[b'!', b'&'];
+
+fn mime_type_for_image_path(path: &Path) -> String {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .as_deref()
+    {
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        _ => "image/png",
+    }
+    .to_owned()
+}
 
 /// How rich input delivers text + Enter to the CLI agent's PTY.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -814,6 +830,80 @@ impl TerminalView {
                 }
                 me.write_cli_agent_text_then_submit(text_bytes, strategy, ctx);
             },
+        );
+    }
+
+    /// Mirrors the CLI-agent Cmd+V image-paste path in `TerminalView::paste`
+    /// for dropped image files: reads each file, writes its bytes to the
+    /// system clipboard as image data, and sends the agent's paste keystroke
+    /// to the PTY so the agent reads the image directly. This produces the
+    /// same outcome as if the user had copied the image to their clipboard
+    /// and pressed Cmd+V over the agent's TUI.
+    pub(in crate::terminal) fn paste_dropped_images_to_cli_agent(
+        &mut self,
+        image_filepaths: Vec<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if image_filepaths.is_empty() {
+            return;
+        }
+        let spawner = ctx.spawner();
+        ctx.spawn(
+            async move {
+                for path_str in image_filepaths {
+                    let bytes = match async_fs::read(&path_str).await {
+                        Ok(b) => b,
+                        Err(e) => {
+                            log::error!("Failed to read dropped image {path_str}: {e}");
+                            continue;
+                        }
+                    };
+                    let path = Path::new(&path_str);
+                    let filename = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned());
+                    let mime_type = mime_type_for_image_path(path);
+
+                    // Hop back to the view to write the clipboard + paste
+                    // keystroke. Bail if the CLI agent session disappeared
+                    // between iterations so we don't leak Ctrl+V into an
+                    // unrelated PTY context.
+                    let cont = spawner
+                        .spawn(move |me, ctx| {
+                            if !me.has_active_cli_agent_session(ctx) {
+                                return false;
+                            }
+                            ctx.clipboard().write(ClipboardContent {
+                                images: Some(vec![ImageData {
+                                    data: bytes,
+                                    mime_type,
+                                    filename,
+                                }]),
+                                ..Default::default()
+                            });
+                            // Windows Claude Code paste is `Alt+V` (ESC + 'v');
+                            // macOS/Linux is `Ctrl+V` (SYN). Mirrors the
+                            // mapping in `TerminalView::paste`.
+                            let paste_bytes: Vec<u8> = if cfg!(windows) {
+                                vec![0x1b, b'v']
+                            } else {
+                                vec![0x16]
+                            };
+                            me.write_user_bytes_to_pty(paste_bytes, ctx);
+                            true
+                        })
+                        .await;
+
+                    if !matches!(cont, Ok(true)) {
+                        return;
+                    }
+
+                    // Give the CLI agent time to read from the clipboard
+                    // before we overwrite it with the next image.
+                    Timer::after(CLI_AGENT_IMAGE_PASTE_DELAY).await;
+                }
+            },
+            |_, _, _| {},
         );
     }
 
