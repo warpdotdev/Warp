@@ -491,6 +491,7 @@ pub fn render_mode_toggle<A: OrchestrationControlAction>(
     is_remote: bool,
     handles: &OrchestrationPickerHandles<A>,
     appearance: &Appearance,
+    active_segment_bg: Option<Fill>,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let label = Text::new(
@@ -507,6 +508,7 @@ pub fn render_mode_toggle<A: OrchestrationControlAction>(
         A::execution_mode_toggled(false),
         handles.local_toggle.clone(),
         appearance,
+        active_segment_bg,
     );
     let cloud_segment = render_segment_button::<A>(
         "Cloud",
@@ -514,6 +516,7 @@ pub fn render_mode_toggle<A: OrchestrationControlAction>(
         A::execution_mode_toggled(true),
         handles.cloud_toggle.clone(),
         appearance,
+        active_segment_bg,
     );
 
     let segment_outer_bg = warp_core::ui::theme::color::internal_colors::fg_overlay_2(theme);
@@ -549,6 +552,7 @@ fn render_segment_button<A: OrchestrationControlAction>(
     on_click: A,
     mouse_state: MouseStateHandle,
     appearance: &Appearance,
+    active_bg_override: Option<Fill>,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let label_owned = label.to_string();
@@ -556,7 +560,8 @@ fn render_segment_button<A: OrchestrationControlAction>(
     let font_size = appearance.monospace_font_size() + 1.;
     let active_text_color = blended_colors::text_main(theme, theme.surface_1());
     let inactive_text_color = blended_colors::text_disabled(theme, theme.surface_1());
-    let segment_active_bg = warp_core::ui::theme::color::internal_colors::fg_overlay_4(theme);
+    let segment_active_bg = active_bg_override
+        .unwrap_or_else(|| warp_core::ui::theme::color::internal_colors::fg_overlay_4(theme));
     Hoverable::new(mouse_state, move |_| {
         let text = Text::new(label_owned.clone(), font_family, font_size)
             .with_color(if is_active {
