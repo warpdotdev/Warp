@@ -7,6 +7,7 @@ pub mod assets;
 pub mod content_version;
 pub mod file;
 pub mod file_type;
+pub mod listing_command;
 pub mod on_cancel;
 pub mod path;
 pub mod standardized_path;
