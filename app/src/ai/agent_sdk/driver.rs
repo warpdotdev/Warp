@@ -1668,7 +1668,7 @@ impl AgentDriver {
         let command_result = loop {
             futures::select! {
                 exit_code = command_handle => break exit_code,
-                _ = warpui::r#async::Timer::after(HARNESS_SAVE_INTERVAL).fuse() => {
+                _ = futures::FutureExt::fuse(warpui::r#async::Timer::after(HARNESS_SAVE_INTERVAL)) => {
                     log::debug!("Triggering periodic save of harness conversation data");
                     report_if_error!(runner
                         .save_conversation(SavePoint::Periodic, foreground)

@@ -2688,6 +2688,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "chrono-tz"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93698b29de5e97ad0ae26447b344c482a7284c737d9ddc5f9e52b74a336671bb"
+dependencies = [
+ "chrono",
+ "chrono-tz-build",
+ "phf",
+]
+
+[[package]]
+name = "chrono-tz-build"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c088aee841df9c3041febbb73934cfc39708749bf96dc827e3359cd39ef11b1"
+dependencies = [
+ "parse-zoneinfo",
+ "phf",
+ "phf_codegen",
+]
+
+[[package]]
 name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3966,6 +3988,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "deunicode"
+version = "1.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
+
+[[package]]
 name = "dhat"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4196,6 +4224,21 @@ dependencies = [
  "tracing",
  "which",
  "zeroize",
+]
+
+[[package]]
+name = "doppler_mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "doppler",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -5474,6 +5517,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "globwalk"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bf760ebf69878d9fd8f110c89703d90ce35095324d1f1edcb595c63945ee757"
+dependencies = [
+ "bitflags 2.9.4",
+ "ignore",
+ "walkdir",
+]
+
+[[package]]
 name = "gloo"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6146,6 +6200,15 @@ name = "httpdate"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
+name = "humansize"
+version = "2.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cb51c9a029ddc91b07a787f1d86b53ccfa49b0e86688c946ebe8d3555685dd7"
+dependencies = [
+ "libm",
+]
 
 [[package]]
 name = "humantime"
@@ -9364,6 +9427,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "parse-zoneinfo"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f2a05b18d44e2957b88f96ba460715e295bc1d7510468a2f3d3b44535d26c24"
+dependencies = [
+ "regex",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10013,6 +10085,7 @@ dependencies = [
 name = "prompts"
 version = "0.1.0"
 dependencies = [
+ "notify-debouncer-full",
  "orchestrator",
  "serde",
  "tempfile",
@@ -11862,9 +11935,9 @@ dependencies = [
 
 [[package]]
 name = "serde_spanned"
-version = "1.0.3"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e24345aa0fe688594e73770a5f6d1b216508b4f93484c0026d521acd30134392"
+checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
 dependencies = [
  "serde_core",
 ]
@@ -12202,8 +12275,13 @@ dependencies = [
 name = "skills"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "diesel",
+ "diesel_migrations",
  "orchestrator",
+ "persistence",
  "serde",
+ "serde_json",
  "serde_yaml",
  "tempfile",
  "thiserror 2.0.17",
@@ -12238,6 +12316,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1e08e261d0e8f5c43123b7adf3e4ca1690d655377ac93a03b2c9d3e98de1342"
 dependencies = [
  "version_check",
+]
+
+[[package]]
+name = "slug"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "882a80f72ee45de3cc9a5afeb2da0331d58df69e4e7d8eeb5d3c7784ae67e724"
+dependencies = [
+ "deunicode",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -12967,6 +13055,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "template_hooks"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tera",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "templates"
+version = "0.1.0"
+dependencies = [
+ "dirs 6.0.0",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "toml 0.8.23",
+ "toml_edit 0.25.6+spec-1.1.0",
+ "tracing",
+ "walkdir",
+ "warp_core",
+]
+
+[[package]]
 name = "tendril"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12975,6 +13092,28 @@ dependencies = [
  "futf",
  "mac",
  "utf-8",
+]
+
+[[package]]
+name = "tera"
+version = "1.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab9d851b45e865f178319da0abdbfe6acbc4328759ff18dafc3a41c16b4cd2ee"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "globwalk",
+ "humansize",
+ "lazy_static",
+ "percent-encoding",
+ "pest",
+ "pest_derive",
+ "rand 0.8.5",
+ "regex",
+ "serde",
+ "serde_json",
+ "slug",
+ "unic-segment",
 ]
 
 [[package]]
@@ -13481,7 +13620,7 @@ checksum = "ae2a4cf385da23d1d53bc15cdfa5c2109e93d8d362393c801e87da2f72f0e201"
 dependencies = [
  "indexmap 2.12.0",
  "serde_core",
- "serde_spanned 1.0.3",
+ "serde_spanned 1.1.1",
  "toml_datetime 0.7.3",
  "toml_parser",
  "toml_writer",
@@ -13567,6 +13706,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0db3bae107c9522f86d361697dee1d7386a2ddcf659d5aea5159819a21a3c4a7"
 dependencies = [
  "indexmap 2.12.0",
+ "serde_core",
+ "serde_spanned 1.1.1",
  "toml_datetime 1.1.0+spec-1.1.0",
  "toml_parser",
  "toml_writer",
@@ -13902,6 +14043,56 @@ source = "git+https://github.com/warpdotdev/uneval?rev=df4d9fad372aedc447e6f93ca
 dependencies = [
  "serde",
  "thiserror 1.0.63",
+]
+
+[[package]]
+name = "unic-char-property"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8c57a407d9b6fa02b4795eb81c5b6652060a15a7903ea981f3d723e6c0be221"
+dependencies = [
+ "unic-char-range",
+]
+
+[[package]]
+name = "unic-char-range"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0398022d5f700414f6b899e10b8348231abf9173fa93144cbc1a43b9793c1fbc"
+
+[[package]]
+name = "unic-common"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80d7ff825a6a654ee85a63e80f92f054f904f21e7d12da4e22f9834a4aaa35bc"
+
+[[package]]
+name = "unic-segment"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4ed5d26be57f84f176157270c112ef57b86debac9cd21daaabbe56db0f88f23"
+dependencies = [
+ "unic-ucd-segment",
+]
+
+[[package]]
+name = "unic-ucd-segment"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2079c122a62205b421f499da10f3ee0f7697f012f55b675e002483c73ea34700"
+dependencies = [
+ "unic-char-property",
+ "unic-char-range",
+ "unic-ucd-version",
+]
+
+[[package]]
+name = "unic-ucd-version"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96bd2f2237fe450fcd0a1d2f5f4e91711124f7857ba2e964247776ebeeb7b0c4"
+dependencies = [
+ "unic-common",
 ]
 
 [[package]]
@@ -14376,6 +14567,7 @@ name = "warp"
 version = "0.1.0"
 dependencies = [
  "addr",
+ "agents",
  "aho-corasick",
  "ai",
  "anyhow",
@@ -14519,6 +14711,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "onboarding",
  "once_cell",
+ "orchestrator",
  "ordered-float 3.9.2",
  "os_info",
  "palette",
@@ -14586,6 +14779,7 @@ dependencies = [
  "tabwriter",
  "tantivy",
  "tempfile",
+ "templates",
  "thiserror 2.0.17",
  "thousands",
  "tikv-jemallocator",

@@ -151,7 +151,7 @@ pub fn parse_configure_all(stdout: &str) -> DopplerStatus {
 /// [`DopplerError::NotAuthenticated`]; all other non-zero exits become
 /// [`DopplerError::NonZeroExit`].
 pub async fn read_status(runner: Arc<dyn CommandRunner>) -> Result<DopplerStatus, DopplerError> {
-    let output = runner.run(&["configure", "--all"]).await?;
+    let output = runner.run(&["configure", "--all"], None).await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();

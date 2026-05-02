@@ -198,6 +198,9 @@ fn dispatch_command(
             }
             artifact::run(ctx, global_options, artifact_cmd)
         }
+        CliCommand::New(_) => Err(anyhow::anyhow!(
+            "`warp new` is not yet wired into the in-app dispatcher; run via the `warp_cli` binary"
+        )),
     }
 }
 
@@ -1282,6 +1285,7 @@ fn command_requires_auth(command: &CliCommand) -> bool {
         CliCommand::Federate(_) => true,
         CliCommand::HarnessSupport(_) => true,
         CliCommand::Artifact(_) => true,
+        CliCommand::New(_) => false,
     }
 }
 
@@ -1503,6 +1507,7 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
             ArtifactCommand::Get(_) => CliTelemetryEvent::ArtifactGet,
             ArtifactCommand::Download(_) => CliTelemetryEvent::ArtifactDownload,
         },
+        CliCommand::New(_) => CliTelemetryEvent::New,
     }
 }
 

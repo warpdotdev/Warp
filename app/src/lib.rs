@@ -999,7 +999,7 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         // block app startup.
         #[cfg(not(target_family = "wasm"))]
         ctx.background_executor()
-            .spawn(templates::sync_all())
+            .spawn(templates::sync::sync_all())
             .detach();
 
         ctx.add_singleton_model(|ctx| {

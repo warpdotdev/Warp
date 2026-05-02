@@ -78,6 +78,8 @@ pub(super) enum CliTelemetryEvent {
     ArtifactGet,
     /// Executing `warp artifact download`
     ArtifactDownload,
+    /// Executing `warp new <template>` (Helm scaffold)
+    New,
     /// Executing `warp schedule create`
     ScheduleCreate,
     /// Executing `warp schedule list`
@@ -167,6 +169,7 @@ impl TelemetryEvent for CliTelemetryEvent {
             CliTelemetryEvent::ArtifactUpload => None,
             CliTelemetryEvent::ArtifactGet => None,
             CliTelemetryEvent::ArtifactDownload => None,
+            CliTelemetryEvent::New => None,
             CliTelemetryEvent::ScheduleCreate => None,
             CliTelemetryEvent::ScheduleList => None,
             CliTelemetryEvent::ScheduleGet => None,
@@ -274,6 +277,7 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             CliTelemetryEventDiscriminants::HarnessSupportFinishTask => {
                 "CLI.Execute.HarnessSupport.FinishTask"
             }
+            CliTelemetryEventDiscriminants::New => "CLI.Execute.New",
         }
     }
 
@@ -395,6 +399,9 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             }
             CliTelemetryEventDiscriminants::HarnessSupportFinishTask => {
                 "Reported task completion via harness-support from the Warp CLI"
+            }
+            CliTelemetryEventDiscriminants::New => {
+                "Scaffolded a new project from a Helm template via the Warp CLI"
             }
         }
     }
