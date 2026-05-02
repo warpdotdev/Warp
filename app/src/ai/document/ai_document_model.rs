@@ -211,6 +211,16 @@ impl AIDocumentModel {
             me.handle_update_manager_event(event, ctx);
         });
 
+        // Subscribe to history events so we can hydrate the orchestration
+        // config from OrchestrationConfigSnapshot messages that arrive
+        // in the conversation's task message list.
+        ctx.subscribe_to_model(
+            &BlocklistAIHistoryModel::handle(ctx),
+            |me, event, ctx| {
+                me.handle_history_event_for_orchestration_config(event, ctx);
+            },
+        );
+
         // Setup throttled save channel
         let (save_tx, save_rx) = async_channel::unbounded();
         ctx.spawn_stream_local(
@@ -1192,6 +1202,69 @@ impl AIDocumentModel {
                 ctx,
             );
         });
+    }
+
+    // ── Orchestration config: history event → hydration ──────────
+
+    fn handle_history_event_for_orchestration_config(
+        &mut self,
+        event: &BlocklistAIHistoryEvent,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        use crate::ai::blocklist::BlocklistAIHistoryEvent;
+        // Fire on any event that may have introduced new messages into
+        // a conversation's task list (append, streaming update, restore).
+        let conversation_id = match event {
+            BlocklistAIHistoryEvent::AppendedExchange {
+                conversation_id, ..
+            }
+            | BlocklistAIHistoryEvent::UpdatedStreamingExchange {
+                conversation_id, ..
+            } => Some(*conversation_id),
+            BlocklistAIHistoryEvent::RestoredConversations {
+                conversation_ids, ..
+            } => {
+                // On restore, scan all restored conversations.
+                for cid in conversation_ids {
+                    self.scan_conversation_for_orchestration_config(*cid, ctx);
+                }
+                None
+            }
+            _ => None,
+        };
+        if let Some(cid) = conversation_id {
+            self.scan_conversation_for_orchestration_config(cid, ctx);
+        }
+    }
+
+    fn scan_conversation_for_orchestration_config(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        // Clone the snapshot out of the history borrow so we can pass
+        // &mut ctx to hydrate_orchestration_config_from_snapshot.
+        let snapshot = {
+            let history = BlocklistAIHistoryModel::as_ref(ctx);
+            let Some(conversation) = history.conversation(&conversation_id) else {
+                return;
+            };
+            conversation.all_tasks().find_map(|task| {
+                task.messages().find_map(|message| {
+                    if let Some(maa_api::message::Message::OrchestrationConfigSnapshot(
+                        snapshot,
+                    )) = &message.message
+                    {
+                        Some(snapshot.clone())
+                    } else {
+                        None
+                    }
+                })
+            })
+        };
+        if let Some(snapshot) = snapshot {
+            self.hydrate_orchestration_config_from_snapshot(&snapshot, ctx);
+        }
     }
 
     // ── Orchestration config accessors ────────────────────────────
