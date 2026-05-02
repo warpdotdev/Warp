@@ -1621,16 +1621,22 @@ impl FileTreeView {
 
         let id = repo_metadata::RepositoryIdentifier::local(path.clone());
         let repo_state = RepoMetadataModel::as_ref(ctx).repository_state(&id, ctx);
+        let is_lazy_loaded = RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(path, ctx);
 
         let entry = match repo_state {
             // Fully indexed - use the repo's entry
             Some(IndexedRepoState::Indexed(state)) => Some(state.entry.clone()),
             // Pending - repo is being indexed, use lazy-loaded entry if available
             Some(IndexedRepoState::Pending) => {
-                if self.registered_lazy_loaded_paths.contains(path) {
+                // Check both local registry AND model's lazy-loaded paths
+                // This handles the case where detection started before file tree opened
+                if self.registered_lazy_loaded_paths.contains(path) || is_lazy_loaded {
                     // Keep the lazy-loaded entry while pending
                     self.root_directories.get(path).map(|d| d.entry.clone())
                 } else {
+                    // No lazy-loaded fallback exists yet - create placeholder.
+                    // This prevents empty tree while detection completes.
+                    // The root_dir entry will be set in the final branch below.
                     None
                 }
             }
