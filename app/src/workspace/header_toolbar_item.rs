@@ -75,7 +75,10 @@ impl HeaderToolbarItemKind {
                     && !is_web_anonymous_user
             }
             Self::CodeReview => cfg!(feature = "local_fs"),
-            Self::NotificationsMailbox => FeatureFlag::HOANotifications.is_enabled(),
+            // Notifications inbox is intentionally disabled in this build:
+            // the entry point (icon button + popup) has been removed from the tab bar.
+            // The underlying notifications model is left intact.
+            Self::NotificationsMailbox => false,
         }
     }
 
