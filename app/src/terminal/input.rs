@@ -221,7 +221,7 @@ use crate::{
         ForkedConversationDestination, InitContent, RestoreConversationLayout, ToastStack,
         WorkspaceAction,
     },
-    workspaces::user_workspaces::UserWorkspaces,
+    workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
     AgentModeEntrypoint, ServerApiProvider,
 };
 
@@ -2220,17 +2220,78 @@ impl Input {
                         let view = ctx.add_typed_action_view(|ctx| {
                             HostSelector::new(menu_positioning_provider.clone(), ctx)
                         });
-                        // Mirror the V2 model selector's `ModelSelectorClosed` -> refocus path:
-                        // when the host selector menu closes (item picked or dismissed via Esc /
-                        // click-outside), restore focus to the input editor so typing resumes
-                        // immediately. This is what powers the "input is focused after the host
-                        // selector closes" UX for the `/harness` slash command.
+                        // Env var takes priority over workspace setting for developer testing.
+                        let effective_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
+                            .ok()
+                            .filter(|s| !s.is_empty())
+                            .or_else(|| {
+                                UserWorkspaces::as_ref(ctx)
+                                    .default_host_slug()
+                                    .map(String::from)
+                            });
+                        if let Some(slug) = &effective_host {
+                            view.update(ctx, |selector, ctx| {
+                                selector.set_default_host(slug.clone(), ctx);
+                            });
+                        }
+                        if let Some(slug) = effective_host {
+                            view_model.update(ctx, |model, _ctx| {
+                                model.set_worker_host(Some(slug));
+                            });
+                        }
+                        // When the host selector menu closes (item picked or dismissed via
+                        // Esc / click-outside), restore focus to the input editor so typing
+                        // resumes immediately.
                         ctx.subscribe_to_view(&view, |me, _, event, ctx| {
-                            let HostSelectorEvent::MenuVisibilityChanged { open } = event;
-                            if !*open {
+                            if matches!(
+                                event,
+                                HostSelectorEvent::MenuVisibilityChanged { open: false }
+                            ) {
                                 me.focus_input_box(ctx);
                             }
                         });
+                        // Propagate host selection changes to the view model when a host is
+                        // explicitly selected, rather than on menu close, to avoid a race
+                        // where the menu closes before the selection updates.
+                        let vm_for_host = view_model.clone();
+                        ctx.subscribe_to_view(&view, move |_me, handle, event, ctx| {
+                            if matches!(event, HostSelectorEvent::HostSelected) {
+                                let selected = handle.as_ref(ctx).selected().clone();
+                                vm_for_host.update(ctx, |model, _ctx| {
+                                    model.set_worker_host(selected.worker_host_value());
+                                });
+                            }
+                        });
+                        // Keep the host selector and view model in sync when workspace
+                        // metadata refreshes (e.g. admin changes default_host_slug).
+                        let view_for_ws = view.clone();
+                        let vm_for_ws = view_model.clone();
+                        ctx.subscribe_to_model(
+                            &UserWorkspaces::handle(ctx),
+                            move |_me, _, event, ctx| {
+                                if !matches!(event, UserWorkspacesEvent::TeamsChanged) {
+                                    return;
+                                }
+                                let effective_host = std::env::var("WARP_CLOUD_MODE_DEFAULT_HOST")
+                                    .ok()
+                                    .filter(|s| !s.is_empty())
+                                    .or_else(|| {
+                                        UserWorkspaces::as_ref(ctx)
+                                            .default_host_slug()
+                                            .map(String::from)
+                                    });
+                                if let Some(slug) = &effective_host {
+                                    view_for_ws.update(ctx, |selector, ctx| {
+                                        selector.set_default_host(slug.clone(), ctx);
+                                    });
+                                }
+                                if let Some(slug) = effective_host {
+                                    vm_for_ws.update(ctx, |model, _ctx| {
+                                        model.set_worker_host(Some(slug));
+                                    });
+                                }
+                            },
+                        );
                         Some(view)
                     } else {
                         None
@@ -2631,6 +2692,9 @@ impl Input {
         });
         if FeatureFlag::InlineHistoryMenu.is_enabled() {
             ctx.subscribe_to_view(&inline_history_menu_view, |me, _, event, ctx| {
+                if me.is_cloud_mode_input_v2_composing(ctx) {
+                    return;
+                }
                 me.handle_inline_history_menu_event(event, ctx);
             });
         }
@@ -2655,6 +2719,9 @@ impl Input {
             });
             if FeatureFlag::InlineHistoryMenu.is_enabled() {
                 ctx.subscribe_to_view(&view, |me, _, event, ctx| {
+                    if !me.is_cloud_mode_input_v2_composing(ctx) {
+                        return;
+                    }
                     me.handle_inline_history_menu_event(event, ctx);
                 });
             }
@@ -6293,7 +6360,7 @@ impl Input {
             self.model.lock().shared_session_status()
         {
             self.editor.update(ctx, |editor, ctx| {
-                // Restore the orignal buffer and interaction state based on the viewer's role.
+                // Restore the original buffer and interaction state based on the viewer's role.
                 editor.set_buffer_text(original_buffer, ctx);
                 editor.set_interaction_state(role.into(), ctx);
 
@@ -13015,10 +13082,16 @@ impl Input {
 
         // When AgentView is enabled, reverting to AI mode in an active agent view with an empty
         // buffer should unlock (re-enable autodetection) - semantically like clearing the "!".
+        //
+        // If there is a pending image / file attachment or block, do NOT unlock. The user's
+        // intent is unambiguously "talk to the agent"; letting the classifier flip the input
+        // back to shell mode would be a bug.
+        let has_locking_attachment = self.ai_context_model.as_ref(ctx).has_locking_attachment();
         let should_unlock = FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen()
             && is_input_buffer_empty
-            && AISettings::as_ref(ctx).is_ai_autodetection_enabled(ctx);
+            && AISettings::as_ref(ctx).is_ai_autodetection_enabled(ctx)
+            && !has_locking_attachment;
 
         if should_unlock {
             self.ai_input_model.update(ctx, |ai_input_model, ctx| {

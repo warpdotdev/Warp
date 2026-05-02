@@ -13,6 +13,7 @@ use markdown_parser::parse_markdown;
 use pathfinder_color::ColorU;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
+use warp_cli::agent::Harness;
 use warp_editor::content::{buffer::Buffer, markdown::MarkdownStyle};
 
 use warpui::{AppContext, SingletonEntity};
@@ -103,7 +104,15 @@ const CURSOR_COLOR: ColorU = ColorU {
     a: 255,
 };
 
-/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor)
+/// Goose brand color (#101010, from Block's official Goose logo)
+const GOOSE_COLOR: ColorU = ColorU {
+    r: 16,
+    g: 16,
+    b: 16,
+    a: 255,
+};
+
+/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
     Claude,
@@ -116,6 +125,7 @@ pub enum CLIAgent {
     Pi,
     Auggie,
     CursorCli,
+    Goose,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -134,6 +144,7 @@ impl CLIAgent {
             CLIAgent::Pi => "pi",
             CLIAgent::Auggie => "auggie",
             CLIAgent::CursorCli => "agent",
+            CLIAgent::Goose => "goose",
             CLIAgent::Unknown => "",
         }
     }
@@ -152,6 +163,20 @@ impl CLIAgent {
         serde_json::from_value(name.into()).unwrap_or(CLIAgent::Unknown)
     }
 
+    /// Returns the [`CLIAgent`] corresponding to a cloud-agent [`Harness`] when it represents a
+    /// third-party agent. Returns `None` for [`Harness::Oz`] (Warp's built-in harness has no
+    /// distinct CLI agent identity).
+    pub fn from_harness(harness: Harness) -> Option<Self> {
+        match harness {
+            Harness::Oz => None,
+            Harness::Claude => Some(CLIAgent::Claude),
+            Harness::Gemini => Some(CLIAgent::Gemini),
+            Harness::OpenCode => Some(CLIAgent::OpenCode),
+            Harness::Codex => Some(CLIAgent::Codex),
+            Harness::Unknown => Some(CLIAgent::Unknown),
+        }
+    }
+
     pub fn display_name(&self) -> &'static str {
         match self {
             CLIAgent::Claude => "Claude Code",
@@ -164,6 +189,7 @@ impl CLIAgent {
             CLIAgent::Pi => "Pi",
             CLIAgent::Auggie => "Auggie",
             CLIAgent::CursorCli => "Cursor",
+            CLIAgent::Goose => "Goose",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -181,6 +207,7 @@ impl CLIAgent {
             CLIAgent::Pi => Some(Icon::PiLogo),
             CLIAgent::Auggie => Some(Icon::AuggieLogo),
             CLIAgent::CursorCli => Some(Icon::CursorLogo),
+            CLIAgent::Goose => Some(Icon::GooseLogo),
             CLIAgent::Unknown => None,
         }
     }
@@ -208,6 +235,7 @@ impl CLIAgent {
             CLIAgent::Pi => &[SkillProvider::Agents],
             CLIAgent::Auggie => &[SkillProvider::Agents],
             CLIAgent::CursorCli => &[SkillProvider::Agents],
+            CLIAgent::Goose => &[SkillProvider::Agents],
             CLIAgent::Unknown => &[],
         }
     }
@@ -247,6 +275,7 @@ impl CLIAgent {
             CLIAgent::Pi => Some(PI_COLOR),
             CLIAgent::Auggie => Some(AUGGIE_COLOR),
             CLIAgent::CursorCli => Some(CURSOR_COLOR),
+            CLIAgent::Goose => Some(GOOSE_COLOR),
             CLIAgent::Unknown => None,
         }
     }
@@ -507,6 +536,7 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Pi => CLIAgentType::Pi,
             CLIAgent::Auggie => CLIAgentType::Auggie,
             CLIAgent::CursorCli => CLIAgentType::Cursor,
+            CLIAgent::Goose => CLIAgentType::Goose,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }
     }

@@ -31,6 +31,7 @@ use crate::{
     ui_components::icons::Icon,
     view_components::{Dropdown, SubmittableTextInput},
 };
+use pathfinder_geometry::vector::vec2f;
 use settings::Setting;
 use warp_core::{
     settings::SyncToCloud,
@@ -39,11 +40,12 @@ use warp_core::{
 use warpui::{
     elements::{
         new_scrollable::{ClippedAxisConfiguration, DualAxisConfig, SingleAxisConfig},
-        Align, Border, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
+        Align, Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
         CornerRadius, CrossAxisAlignment, Element, Empty, Expanded, Flex, Hoverable,
-        MainAxisAlignment, MainAxisSize, MouseStateHandle, NewScrollable, ParentElement, Radius,
-        SavePosition, ScrollTarget, ScrollToPositionMode, Shrinkable, SizeConstraintCondition,
-        SizeConstraintSwitch, Text,
+        MainAxisAlignment, MainAxisSize, MouseStateHandle, NewScrollable, OffsetPositioning,
+        ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition, ScrollTarget,
+        ScrollToPositionMode, Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack,
+        Text,
     },
     fonts::{Properties, Weight},
     platform::Cursor,
@@ -1000,12 +1002,17 @@ pub(crate) fn render_settings_info_banner(
     .finish()
 }
 
+const WORKSPACE_OVERRIDE_TOOLTIP_TEXT: &str =
+    "This option is enforced by your organization's settings and cannot be customized.";
+
 pub struct InputListItem<SettingsPageAction: Action + Clone> {
     pub item: String,
     pub mouse_state_handle: MouseStateHandle,
     pub on_remove_action: SettingsPageAction,
+    pub is_disabled: bool,
+    /// Must be pre-created (not inline during render) to preserve mouse tracking.
+    pub tooltip_mouse_state: Option<MouseStateHandle>,
 }
-
 /// Renders a title, an input field to add new items and a list of already
 /// added items.
 ///
@@ -1014,7 +1021,6 @@ pub fn render_input_list<SettingsPageAction: Action + Clone>(
     title: Option<&str>,
     items: impl IntoIterator<Item = InputListItem<SettingsPageAction>>,
     handle: Option<&ViewHandle<SubmittableTextInput>>,
-    disabled: bool,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let mut column = Flex::column();
@@ -1040,15 +1046,21 @@ pub fn render_input_list<SettingsPageAction: Action + Clone>(
     let background = appearance.theme().surface_1();
     let peekable = items.into_iter().peekable();
     for item in peekable {
-        let mut container = Container::new(render_alternating_color_list_item(
+        let disabled = item.is_disabled;
+        let row_element = render_alternating_color_list_item(
             background,
             item.item,
             item.mouse_state_handle,
             item.on_remove_action,
             disabled,
             appearance,
-        ));
-        container = container.with_margin_bottom(4.);
+        );
+        let row_element = if let Some(tooltip_mouse_state) = item.tooltip_mouse_state {
+            render_workspace_override_row_tooltip(row_element, tooltip_mouse_state, appearance)
+        } else {
+            row_element
+        };
+        let container = Container::new(row_element).with_margin_bottom(4.);
         column.add_child(container.finish());
     }
 
@@ -1090,6 +1102,34 @@ pub fn render_alternating_color_list<
     }
 }
 
+fn render_workspace_override_row_tooltip(
+    child: Box<dyn Element>,
+    mouse_state: MouseStateHandle,
+    appearance: &Appearance,
+) -> Box<dyn Element> {
+    Hoverable::new(mouse_state, |state| {
+        let mut stack = Stack::new().with_child(child);
+        if state.is_hovered() {
+            let tooltip = appearance
+                .ui_builder()
+                .tool_tip(WORKSPACE_OVERRIDE_TOOLTIP_TEXT.to_string())
+                .build()
+                .finish();
+            stack.add_positioned_child(
+                tooltip,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0., -4.),
+                    ParentOffsetBounds::Unbounded,
+                    ParentAnchor::TopLeft,
+                    ChildAnchor::BottomLeft,
+                ),
+            );
+        }
+        stack.finish()
+    })
+    .finish()
+}
+
 fn render_alternating_color_list_item<SettingsPageAction: Action + Clone>(
     background: impl Into<Fill>,
     item_label: String,
@@ -1106,10 +1146,12 @@ fn render_alternating_color_list_item<SettingsPageAction: Action + Clone>(
         remove_button = remove_button.disabled();
     }
 
-    let remove_button = remove_button
-        .build()
-        .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action.clone()))
-        .finish();
+    let mut remove_button = remove_button.build();
+    if !disabled {
+        remove_button =
+            remove_button.on_click(move |ctx, _, _| ctx.dispatch_typed_action(action.clone()));
+    }
+    let remove_button = remove_button.finish();
 
     let background = background.into();
     let font_color = if disabled {
@@ -1151,7 +1193,7 @@ fn render_alternating_color_list_item<SettingsPageAction: Action + Clone>(
     .with_uniform_padding(ALTERNATING_LIST_ITEM_PADDING)
     .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
     // The bottom has a bit of extra padding b/c lines of text have more space above the text
-    // than below. This visually balances that to make it lok vertically centered.
+    // than below. This visually balances that to make it look vertically centered.
     .with_padding_bottom(ALTERNATING_LIST_ITEM_PADDING + 2.)
     .finish()
 }
@@ -1539,7 +1581,7 @@ impl<V: warpui::View> PageType<V> {
         }
     }
 
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     pub fn scroll_by(&self, delta: Pixels) {
         match self {
             PageType::Monolith {

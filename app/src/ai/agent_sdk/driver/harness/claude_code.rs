@@ -86,28 +86,9 @@ impl ThirdPartyHarness for ClaudeHarness {
         conversation_id: &AIConversationId,
         harness_support_client: Arc<dyn HarnessSupportClient>,
     ) -> Result<Option<ResumePayload>, AgentDriverError> {
-        let conversation_id_str = conversation_id.to_string();
-        let bytes = harness_support_client
-            .fetch_transcript()
-            .await
-            .map_err(|err| {
-                // A 404 from the server maps to "no stored transcript" so the CLI can tell
-                // the user the prior run never saved state.
-                let message = format!("{err:#}").to_lowercase();
-                if message.contains("status 404") {
-                    AgentDriverError::ConversationResumeStateMissing {
-                        harness: "claude".to_string(),
-                        conversation_id: conversation_id_str.clone(),
-                    }
-                } else {
-                    AgentDriverError::ConversationLoadFailed(format!("{err:#}"))
-                }
-            })?;
-        let envelope: ClaudeTranscriptEnvelope = serde_json::from_slice(&bytes).map_err(|err| {
-            AgentDriverError::ConversationLoadFailed(format!(
-                "Failed to deserialize Claude transcript for {conversation_id_str}: {err:#}"
-            ))
-        })?;
+        let envelope: ClaudeTranscriptEnvelope =
+            super::fetch_transcript_envelope("claude", conversation_id, harness_support_client)
+                .await?;
         let session_id = envelope.uuid;
         Ok(Some(ResumePayload::Claude(ClaudeResumeInfo {
             conversation_id: *conversation_id,
@@ -127,12 +108,8 @@ impl ThirdPartyHarness for ClaudeHarness {
         terminal_driver: ModelHandle<TerminalDriver>,
         resume: Option<ResumePayload>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
-        // Extract the Claude variant; any other variant is ignored since it belongs to a
-        // different harness. Today there are no other variants, but this keeps the shape
-        // ready for future CLI-specific payloads.
-        let claude_resume = resume.map(|payload| match payload {
-            ResumePayload::Claude(info) => info,
-        });
+        // The ResumePayload shouldn't contain non-Claude information, error if it does.
+        let claude_resume = resume.map(ClaudeResumeInfo::try_from).transpose()?;
         // Claude treats the user-turn message as immediate intent, so the resumption preamble
         // is most reliable when prepended directly to the prompt that gets piped into the CLI.
         let owned_prompt = match resumption_prompt {
@@ -230,7 +207,7 @@ impl ClaudeHarnessRunner {
         let temp_file = write_temp_file("oz_prompt_", prompt)?;
         let prompt_path = temp_file.path().display().to_string();
 
-        let (session_id, preexisting_conversation_id, resuming) = match resume {
+        let (session_id, preexisting_conversation_id) = match resume {
             Some(ClaudeResumeInfo {
                 conversation_id,
                 session_id,
@@ -256,9 +233,9 @@ impl ClaudeHarnessRunner {
                 if let Err(e) = write_session_index_entry(session_id, working_dir, &config_root) {
                     log::warn!("Failed to update Claude sessions-index.json: {e:#}");
                 }
-                (session_id, Some(conversation_id), true)
+                (session_id, Some(conversation_id))
             }
-            None => (Uuid::new_v4(), None, false),
+            None => (Uuid::new_v4(), None),
         };
 
         let temp_system_prompt_file = system_prompt
@@ -279,7 +256,7 @@ impl ClaudeHarnessRunner {
                 &session_id,
                 &prompt_path,
                 system_prompt_path.as_deref(),
-                resuming,
+                preexisting_conversation_id.is_some(),
             ),
             cli_name: cli_command.to_string(),
             _temp_prompt_file: temp_file,

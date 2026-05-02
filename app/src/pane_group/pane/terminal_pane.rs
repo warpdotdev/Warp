@@ -34,7 +34,7 @@ use crate::{
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
-    server::server_api::ai::SpawnAgentRequest,
+    server::server_api::ai::{SpawnAgentRequest, UserQueryMode},
     session_management::SessionNavigationData,
     terminal::cli_agent_sessions::CLIAgentSessionsModel,
     terminal::{
@@ -557,7 +557,7 @@ impl PaneContent for TerminalPane {
                     Ok(ShareableLink::Pane { url })
                 } else {
                     Err(ShareableLinkError::Unexpected(String::from(
-                        "Failed to retreive shared session link",
+                        "Failed to retrieve shared session link",
                     )))
                 }
             }
@@ -1371,6 +1371,8 @@ fn handle_terminal_view_event(
                             };
                             let spawn_request = SpawnAgentRequest {
                                 prompt: request.prompt,
+                                // Agents spawned during orchestrations are always run in normal mode.
+                                mode: UserQueryMode::Normal,
                                 config: Some(AgentConfigSnapshot {
                                     environment_id,
                                     model_id: (!model_id.is_empty()).then_some(model_id),
@@ -1490,7 +1492,7 @@ fn handle_ai_history_event(
             }
 
             // Do not persist AI queries from shared ambient agent sessions that we've viewed,
-            // as these were sent as part of an ambient agent run and shouldn't polute the up arrow history.
+            // as these were sent as part of an ambient agent run and shouldn't pollute the up arrow history.
             if is_shared_ambient_agent_session {
                 return;
             }
