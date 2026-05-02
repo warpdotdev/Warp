@@ -1686,6 +1686,13 @@ impl SettingsWidget for CloudConversationStorageWidget {
     }
 
     fn should_render(&self, app: &AppContext) -> bool {
+        // Under bypass mode we never authenticate to Warp's cloud, so the
+        // toggle is misleading - nothing would be stored there regardless of
+        // the setting value.
+        if crate::local_ai::auth_bypass_enabled() {
+            return false;
+        }
+
         if !FeatureFlag::CloudConversations.is_enabled() {
             return false;
         }

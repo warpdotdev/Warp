@@ -592,9 +592,13 @@ pub fn render_privacy_settings_toggles<A: Action + Clone + 'static>(
         ]);
     }
 
-    // Hide the cloud conversation storage toggle entirely when AI is disabled:
-    // the setting has no effect without AI, and showing it is confusing.
-    if FeatureFlag::CloudConversations.is_enabled() && is_ai_enabled {
+    // Hide the cloud conversation storage toggle entirely when AI is disabled
+    // or when bypass mode is active (bypass means no Warp cloud session, so
+    // the toggle would be misleading - nothing stores there regardless).
+    if FeatureFlag::CloudConversations.is_enabled()
+        && is_ai_enabled
+        && !crate::local_ai::auth_bypass_enabled()
+    {
         col.add_children(vec![
             Container::new(cloud_conversation_storage_toggle)
                 .with_margin_bottom(AUTH_MODAL_GAP)
