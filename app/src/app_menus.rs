@@ -61,7 +61,7 @@ const MAX_RECENT_REPOS_IN_MENU: usize = 10;
 
 /// Creates the root app menu bar
 pub fn menu_bar(ctx: &mut AppContext) -> MenuBar {
-    MenuBar::new(vec![
+    let mut menus = vec![
         make_new_app_menu(ctx),
         make_new_file_menu(ctx),
         make_new_edit_menu(ctx),
@@ -69,10 +69,20 @@ pub fn menu_bar(ctx: &mut AppContext) -> MenuBar {
         make_new_tab_menu(ctx),
         make_new_blocks_menu(ctx),
         make_new_ai_menu(ctx),
-        make_new_drive_menu(ctx),
-        make_new_window_menu(),
-        make_new_help_menu(),
-    ])
+    ];
+
+    // Hide the Drive menu under auth-bypass mode: all Drive features
+    // (workflows, notebooks, prompts, env-vars, team settings, share session)
+    // require Warp cloud auth and are non-functional under WARP_BYPASS_AUTH=1.
+    // AI Rules and MCP Servers are still available via the AI menu.
+    if !crate::local_ai::auth_bypass_enabled() {
+        menus.push(make_new_drive_menu(ctx));
+    }
+
+    menus.push(make_new_window_menu());
+    menus.push(make_new_help_menu());
+
+    MenuBar::new(menus)
 }
 
 // Creates the app dock menu
