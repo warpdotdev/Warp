@@ -101,9 +101,27 @@ bit-for-bit identical to today.
    `appearance.themes.theme` (the parser tolerates both display names like
    `"Dark City"` and snake-case like `"dark_city"`; see #14 below).
 
-2. Keys are tilde-expanded to absolute paths at match time. Trailing slashes
-   are normalized away. Symlinks are not resolved — the cwd as the shell
-   reports it is what's matched.
+2. Keys are tilde-expanded to absolute paths at match time. Trailing
+   slashes are normalized away. Symlinks are not resolved — the cwd as
+   the shell reports it is what's matched. Path normalization rules,
+   per platform:
+
+    - **Linux:** matching is case-sensitive (matches the filesystem
+      semantics on standard ext4/xfs). Path separators are `/`.
+    - **macOS:** matching is case-insensitive (matches the default
+      HFS+/APFS case-insensitive setting). Path separators are `/`.
+    - **Windows:** matching is case-insensitive. Both `/` and `\` are
+      accepted as separators in `directory_overrides` keys and are
+      normalized internally to a single canonical form before
+      comparison. Drive letters are normalized to uppercase (`c:\Work`
+      and `C:\Work` are equivalent keys; the second-written one wins
+      per TOML duplicate-key semantics). Tilde expands to
+      `%USERPROFILE%`.
+
+   Component-boundary matching (the rule in the previous paragraph
+   that prevents `~/Work/medone` from matching `~/Work/medone-archive`)
+   uses the platform's path-component definition — on Windows that
+   means the boundary follows either `\` or `/` after normalization.
 
 3. Match resolution: a key matches if it is a prefix of the active pane's
    cwd at a path-component boundary. `~/Work/medone` matches both
@@ -141,6 +159,20 @@ bit-for-bit identical to today.
     the right-click menu remain user-controllable surfaces; only this
     map is local-only.
 
+7b. **Diagnostic output never contains raw `directory_overrides` keys.**
+    Local logs are routinely shared with Warp support and copied into
+    bug reports, so even local diagnostics can leak path keys. The
+    invariant is: any warning or telemetry emitted by the
+    `directory_overrides` machinery refers to an offending entry by a
+    short non-cryptographic hash of its key plus the offending value
+    (the theme name, which is non-sensitive). For example, a warning
+    that today might say `directory_overrides: "~/Work/AcmeCorp/2026":
+    unknown theme "Drakula"` instead reads
+    `directory_overrides[hash=8a3f9c]: unknown theme "Drakula"`. The
+    user can grep their `settings.toml` for the bad theme name to find
+    the offending row. Hashes are stable for the same key but contain
+    no path information.
+
 ### Launch-configuration overrides
 
 8. A launch configuration YAML may include `theme:` on any tab entry.
@@ -152,13 +184,31 @@ bit-for-bit identical to today.
    inherit this window-level value (per the resolution order: #3 sits
    below #2).
 
-10. Saving a window's current state to a launch configuration emits
-    `theme:` entries on each tab whose effective theme came from a manual
-    override. Tabs themed only by directory matching emit no `theme:`
-    field — directory matching is config-level, not tab-level, so a saved
-    launch configuration that relies on it stays portable. Window-level
-    `theme:` is emitted only when every tab in the window shared the same
-    explicit manual override at save time.
+10. Saving a window's current state to a launch configuration preserves
+    every theme override that was *not* derived from directory matching,
+    so that reopening the saved configuration produces the same effective
+    themes (modulo cwd matching, which re-runs against the current
+    `directory_overrides`). Specifically, for each tab the *preserved
+    override* is the tab's manual pin if any, otherwise the tab's
+    window-level default if any; tabs whose effective theme came only
+    from directory matching have no preserved override. The save rule
+    is then:
+
+    - If every tab in the window has the same preserved override
+      `Some(X)` and no tab has a manual pin different from the others,
+      the saved YAML emits a single window-level `theme: X` and no
+      per-tab `theme:` fields.
+    - Otherwise, each tab whose preserved override is `Some(Y)` emits a
+      per-tab `theme: Y`; tabs with no preserved override emit no
+      `theme:` field; window-level `theme:` is omitted.
+    - Directory-matched themes never appear in saved YAML — directory
+      matching is settings-level and re-applies on next open.
+
+    This means a launch configuration that originally opened with a
+    window-level `theme:` round-trips correctly: every tab inherited
+    the value into its `window_default` slot, the save rule sees a
+    shared preserved override, and emits the same window-level
+    `theme:` again.
 
 ### YAML / settings format
 

@@ -119,10 +119,42 @@ reasons that directly address Oz's first-pass concerns:
   product spec's behavior #11.
 
 The `From<WindowSnapshot> for WindowTemplate` (lines 43–70) and
-`TryFrom<TabSnapshot> for TabTemplate` (lines 189–200) impls are updated
-to copy *manual* overrides out of the snapshot. Directory-matched
-overrides are not emitted into saved launch configurations (per product
-spec behavior #10).
+`TryFrom<TabSnapshot> for TabTemplate` (lines 189–200) impls implement
+the save rule from product behavior #10. The "preserved override" for a
+tab is computed as:
+
+```rust
+fn preserved_override(state: &TabThemeState) -> Option<&ThemeKind> {
+    state.manual.as_ref().or(state.window_default.as_ref())
+}
+```
+
+(Directory-matched themes are deliberately not part of `preserved_override`
+— they round-trip through `directory_overrides`, not through the saved
+launch configuration.)
+
+`From<WindowSnapshot> for WindowTemplate` then:
+
+1. Computes the preserved override for every tab.
+2. If every tab's preserved override is the same `Some(X)` *and* no tab
+   has a manual pin different from the others, emits the saved
+   `WindowTemplate` with `theme: Some(X.to_string())` and clears the
+   per-tab `theme:` on every `TabTemplate`. This is the common case —
+   a window opened from a launch configuration with a window-level
+   `theme:` and no per-tab pinning round-trips losslessly.
+3. Otherwise, emits no window-level `theme:` and writes each tab's
+   preserved override (if any) into the corresponding `TabTemplate.theme`.
+4. Tabs whose preserved override is `None` (all sources empty, or only
+   `cwd_resolved` populated) emit no `theme:` field. Their effective
+   theme on reopen will be either a fresh directory match or the
+   global theme.
+
+This is what Oz's v3 review correctly flagged: a window opened with a
+window-level `theme:` would otherwise drop the theme on save, because
+v2's "only emit manual" rule treated `window_default` as not preserved.
+The `preserved_override` helper makes the logic symmetric with
+resolution and adds an integration test (in §6) that exercises the
+full round-trip.
 
 Round-trip and serde tests live in
 `launch_configs/launch_config_tests.rs` (referenced by the `#[path]`
@@ -289,9 +321,10 @@ and `private`; the design rule applied here is:
 - **No telemetry on the contents.** The match function emits at most a
   count metric ("a directory match applied to N tabs this minute"); it
   never logs path keys or theme names to remote telemetry pipelines.
-  The local Warp log (which already contains plenty of cwd-bearing
-  information from existing features) may include a key in a
-  warning when a value fails to resolve, but that surface is local.
+- **Local logs are also redacted.** Diagnostic output is routinely
+  shared in bug reports and support sessions, so even the local
+  Warp log must not contain raw `directory_overrides` keys. The
+  redaction rule and helper are specced in *Diagnostic redaction* below.
 - **No round-tripping into shareable artifacts.** A saved launch
   configuration does not emit `directory_overrides` entries (product
   spec #10). Launch configurations are explicitly designed to be
@@ -301,6 +334,40 @@ and `private`; the design rule applied here is:
   *to themselves* across machines. That requires a separate spec
   covering opt-in UI, encryption-at-rest of keys, and admin-policy
   controls; it is deliberately not pre-paid for here.
+
+#### Diagnostic redaction
+
+Helper, alongside the settings group:
+
+```rust
+/// Stable short hash of a `directory_overrides` key suitable for
+/// inclusion in user-facing warnings. **Not cryptographic.** Purpose
+/// is identification of an entry across runs without including the
+/// raw path. 6 hex chars (24 bits) is enough to disambiguate the
+/// O(10) entries a typical user will have.
+pub fn redacted_key_id(raw_key: &str) -> String {
+    let mut hasher = rustc_hash::FxHasher::default();
+    raw_key.hash(&mut hasher);
+    format!("{:06x}", hasher.finish() & 0xffff_ff)
+}
+```
+
+Usage rule (enforced by code review and by the tests in *Privacy
+invariant tests*): every log/warn/error line emitted by the
+`directory_overrides` matcher, settings subscriber, or value validator
+must reference offending entries by `redacted_key_id` only.
+
+Warnings include the offending **value** (the theme name) verbatim
+because theme names are not sensitive and are needed for the user to
+locate the entry in their `settings.toml`. Example warning text:
+
+```
+directory_overrides[hash=8a3f9c]: unknown theme "Drakula" — matching this entry will be skipped until the value is corrected
+```
+
+The hash is stable for a given key, so the same warning recurs with
+the same hash across Warp restarts and helps the user correlate
+multiple diagnostics about the same entry.
 
 Resolution helper, alongside the group:
 
@@ -316,13 +383,30 @@ pub fn directory_theme_for(
 
 Match semantics (per product spec #2, #3):
 
-- Keys are tilde-expanded once at evaluation time.
-- A key matches a cwd if it is a prefix at a path-component boundary
-  (use `Path::starts_with` after normalization, not `str::starts_with`).
-- The longest matching key wins.
+- Keys are tilde-expanded once at evaluation time. On Linux/macOS tilde
+  expands to `$HOME`; on Windows to `%USERPROFILE%`.
+- Both `/` and `\` are accepted as separators in keys; normalization
+  rewrites them to the platform's canonical form via
+  `Path::components()` before comparison.
+- On Windows, drive-letter prefixes are normalized to uppercase
+  (`c:\…` → `C:\…`).
+- A key matches a cwd if it is a prefix at a path-component boundary.
+  Implementation: walk both paths' `Path::components()` after
+  normalization and require the key's components to be an exact prefix
+  of the cwd's. Using `str::starts_with` would let `~/Work/medone`
+  spuriously match `~/Work/medone-archive` and is forbidden.
+- Case sensitivity follows the platform's filesystem default:
+  case-sensitive on Linux, case-insensitive on macOS, case-insensitive
+  on Windows. Implementation uses
+  `unicase::eq(key_component, cwd_component)` on Windows and macOS,
+  `key_component == cwd_component` on Linux. Tests cover each platform.
+- The longest matching key wins (most components after normalization,
+  not most bytes — `~/Work` is shorter than `~/Work/medone` regardless
+  of how the user typed them).
 - Each value is resolved via `resolve_theme_ref`; unresolved values are
   skipped and a warning is logged once at settings-change time, not
-  per-match.
+  per-match. **Warnings refer to the offending entry by a short hash of
+  its key, never by the key itself, per *Diagnostic redaction* below.**
 
 Matching is invoked from **three** places (responding to Oz's v2
 finding that settings edits were not handled):
@@ -422,22 +506,64 @@ Cache-invalidation rules:
 - Custom-theme file changes (which already invalidate the global theme
   via the existing watcher) trigger the same cache clear.
 
-Renderer call-site update: every place that today reads
-`Appearance::as_ref(ctx).theme()` and is **inside a tab's render path**
-becomes
-`Appearance::as_ref(ctx).theme_for(Some(tab.theme_state.effective(&global_kind)))`,
-where `global_kind` is the active global `ThemeKind` from
-`active_theme_kind(theme_settings, app)`. Render paths that already have
-no per-tab context (window chrome) keep calling `Appearance::theme()`
-unchanged.
-The exact list of call sites (terminal cell renderer in
-`app/src/terminal/view.rs`, color derivation in
-`app/src/terminal/color.rs`, any block-styling consumers) is enumerated
-during implementation; the change is mechanical at each site.
+#### Renderer call-site migration
 
-Window-chrome consumers (title bar, sidebar, settings views, tab strip)
-continue to call `Appearance::theme()` with no override argument, per
-product spec #15.
+`Appearance::as_ref(ctx).theme()` is consumed in 862 call sites across
+the workspace as of HEAD. An exhaustive line-by-line enumeration in this
+spec would be unreviewable and would also rot the moment any caller
+moves; the design instead defines a categorical rule plus a custom lint
+that mechanically enforces it.
+
+**Categorical rule** (matches product spec #15):
+
+A call to `Appearance::*::theme()` becomes
+`Appearance::as_ref(ctx).theme_for(Some(tab.theme_state.effective(&global_kind)))`
+**if and only if** the call is reached during the rendering of content
+that lives inside a single tab. All other calls keep the existing
+global `theme()` form. Concretely:
+
+| Area | Per-tab? | Notes |
+| --- | --- | --- |
+| `app/src/terminal/view/**` | per-tab | terminal grid, blocks, in-tab modals over the grid |
+| `app/src/terminal/input/**` | per-tab | input bar, inline menus, slash commands inside the tab |
+| `app/src/terminal/{view.rs, block_filter.rs, rich_history.rs, terminal_manager.rs, universal_developer_input.rs, ssh/**, warpify/**, shared_session/**}` | per-tab | terminal-pane content |
+| `app/src/terminal/{share_block_modal.rs, profile_model_selector.rs}` | per-tab | scoped to a specific tab's content |
+| `app/src/{tab.rs, root_view.rs, voltron.rs, modal.rs, menu.rs, search_bar.rs, input_suggestions.rs}` | global | window chrome, command palette, top-level modals |
+| `app/src/settings/**` | global | settings UI |
+| `app/src/reward_view.rs`, `wasm_nux_dialog.rs`, `word_block_editor.rs` | global | full-window modals/views |
+| `crates/onboarding/**` | global | onboarding flow runs outside a tab |
+| `crates/ui_components/**` | global | generic widgets — they do not know about tabs |
+| `crates/editor/**` | global by default; per-tab when invoked from `terminal/view/**` (the call site, not the crate, decides) | editor is reusable |
+| `crates/integration/**` | tests; updated to assert both forms |
+
+**Migration enforcement — custom lint**
+
+To make the migration mechanical, exhaustive, and durable across future
+additions, the implementation adds a small `clippy_lints`-style check
+(or a `dylint` lint, depending on the existing tooling Warp uses)
+named `appearance_theme_in_tab_path`. The lint:
+
+- Flags any call to `Appearance::*::theme()` (the global accessor)
+  whose enclosing module is under a *per-tab* path per the table
+  above. Path classification is hard-coded in the lint config.
+- Fails CI when triggered.
+- Is silenced at a call site only by replacing the call with
+  `theme_for(...)`, or — for a deliberate exception — by
+  `#[allow(appearance_theme_in_tab_path = "...")]` with a written
+  rationale (e.g. "this surface intentionally renders in window
+  chrome even though it lives under terminal/view/").
+
+The lint is the deliverable that gives this spec a feasibility
+guarantee: the migration is correct *by construction* across all 862
+sites, and any future call site added in a per-tab path is caught by
+CI before merge. The PR opens with the lint enabled and zero
+warnings; subsequent reviewers can read the diff knowing every flagged
+site was either migrated or explicitly justified.
+
+Window-chrome consumers (per the table) keep
+`Appearance::as_ref(ctx).theme()` unchanged. The custom lint is the
+single source of truth for which sites are which; reviewers verify the
+table by reading the lint config, not by re-walking 862 call sites.
 
 ### 6. Right-click menu: Pin theme / Reset theme
 
@@ -553,6 +679,38 @@ conventions. No new event schema.
   Then delete the key. Assert the tab falls through to its
   next-priority theme. (Pins product behavior #6 and addresses Oz's
   v2 IMPORTANT finding that this path was missing from the design.)
+- **Save-from-snapshot for window-level theme.** Open a launch config
+  whose window has `theme: "Dark City"` and three tabs (no per-tab
+  pins, no directory matches). Save the resulting layout to a new
+  launch config. Assert the saved YAML contains a window-level
+  `theme: "Dark City"` and no per-tab `theme:` fields. Reopen it.
+  Assert all three tabs render Dark City. (Addresses Oz v3 IMPORTANT
+  finding on save-rule dropping window defaults.)
+- **Save-from-snapshot for mixed pinning.** Open a layout with a mix
+  of manually pinned tabs (different themes), tabs with only a window
+  default, and tabs whose effective theme came from cwd. Save.
+  Assert: window-level `theme:` is omitted (mixed manual pins make
+  coalescing impossible); each manually pinned tab emits its own
+  `theme:`; tabs with only `window_default` emit their default; tabs
+  themed only by cwd emit no `theme:`. Reopen and assert the
+  effective theme of every tab matches what it was pre-save.
+- **Windows path normalization.** Cross-platform integration test
+  matrix:
+  - Linux: keys `~/Work/medone` (case-sensitive) — assert
+    `~/Work/MEDONE` does **not** match.
+  - macOS: same key — assert `~/Work/MEDONE` **does** match
+    (case-insensitive default).
+  - Windows: keys `C:\Work\medone` and `c:\Work\medone` collapse to
+    one entry (drive-letter normalization). Cwd `C:/Work/medone/app`
+    matches (separator normalization). Cwd
+    `C:\Work\medone-archive` does not match (component boundary).
+- **Diagnostic redaction.** Configure `directory_overrides` with a
+  key `~/Work/AcmeCorp/2026` mapped to a bad theme name `"Drakula"`.
+  Trigger validation. Capture the warning string. Assert it
+  contains `"Drakula"` and `redacted_key_id("~/Work/AcmeCorp/2026")`,
+  and does **not** contain `"AcmeCorp"`, `"Work"`, `"2026"`, or any
+  substring of the raw key. Assert the same key produces the same
+  hash on a second run within the test process.
 - Open a launch configuration with a window-level `theme:` and three
   tabs, one of which sits in a `directory_overrides`-matched cwd.
   Assert the matched tab uses the cwd theme (cwd > window default);
@@ -638,6 +796,31 @@ conventions. No new event schema.
   expanding it into the manual slot. `effective()` walks slots in the
   product spec's resolution order; the integration test for the
   launch-config-with-window-default scenario pins the priority.
+
+- **Save layout dropping window-level theme.** Addressed by the
+  `preserved_override` helper in §1. Both save tests above pin the
+  round-trip.
+
+- **Windows path matching ambiguity.** Component-boundary matching
+  uses `Path::components()` rather than string operations, separator
+  and drive-letter normalization happens before comparison, and case
+  semantics are platform-conditional. Pinned by the cross-platform
+  test matrix above. The lint `appearance_theme_in_tab_path` does not
+  cover this — these are runtime correctness tests.
+
+- **Path keys leaking through diagnostics.** Addressed by
+  `redacted_key_id` and the *Diagnostic redaction* contract in §4.
+  Pinned by the redaction test above plus a code-review checklist
+  item; we considered a custom lint but the surface is small enough
+  (one helper function, one logger call site) that a unit-test
+  enforcement is sufficient.
+
+- **Renderer call-site drift.** The
+  `appearance_theme_in_tab_path` lint catches both the initial
+  migration and any future call site added in a per-tab path. This
+  replaces a one-time enumeration that would have rotted on the next
+  PR. The trade-off is the small cost of maintaining the lint config
+  (one entry per top-level area).
 
 - **Concern 1 / Concern 2 / Concern 3 from Oz's first-pass review.**
   Addressed in §1 (Option<String> + apply-time resolver), §2
