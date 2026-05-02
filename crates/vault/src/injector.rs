@@ -9,7 +9,7 @@ pub async fn fetch_secrets(
 ) -> Result<Vec<Secret>> {
     let mut secrets = Vec::new();
     for mapping in mappings {
-        let secret = provider.fetch(&mapping.path, &mapping.env_var).await?;
+        let secret = provider.fetch(&mapping.path, mapping.env_var()).await?;
         secrets.push(secret);
     }
     Ok(secrets)

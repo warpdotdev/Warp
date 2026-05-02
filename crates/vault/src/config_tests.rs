@@ -38,7 +38,7 @@ fn test_parse_config_empty_mappings() {
     "#;
 
     let config: VaultConfig = toml::from_str(toml).unwrap();
-    assert!(config.mappings().is_empty());
+    assert!(config.mappings().unwrap().is_empty());
 }
 
 #[test]
@@ -52,10 +52,10 @@ fn test_mappings_returns_correct_pairs() {
     "#;
 
     let config: VaultConfig = toml::from_str(toml).unwrap();
-    let mappings = config.mappings();
+    let mappings = config.mappings().unwrap();
     assert_eq!(mappings.len(), 1);
     assert_eq!(mappings[0].path, "prod/secret");
-    assert_eq!(mappings[0].env_var, "MY_SECRET");
+    assert_eq!(mappings[0].env_var(), "MY_SECRET");
 }
 
 #[test]
@@ -67,4 +67,18 @@ fn test_parse_invalid_provider_type() {
 
     let result: Result<VaultConfig, _> = toml::from_str(toml);
     assert!(result.is_err());
+}
+
+#[test]
+fn test_mappings_rejects_invalid_env_var() {
+    let toml = r#"
+        [provider]
+        type = "aws"
+
+        [mappings]
+        "prod/secret" = "INVALID NAME"
+    "#;
+
+    let config: VaultConfig = toml::from_str(toml).unwrap();
+    assert!(config.mappings().is_err());
 }
