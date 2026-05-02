@@ -8,10 +8,10 @@ Maintainer: Warp Linux Maintainers <linux-maintainers@warp.dev>
 Homepage: https://warp.dev/
 Replaces: warp-cli@@CHANNEL_SUFFIX@@ (<< @@VERSION@@), oz (= 0.2026.02.09.06.06.stable.00), oz (= 0.2026.02.09.06.06.stable.02), oz (= 0.2026.02.10.11.37.stable.00), oz (= 0.2026.02.10.11.37.stable.01), oz (= 0.2026.02.11.08.23.stable.00)
 Conflicts: warp-cli@@CHANNEL_SUFFIX@@ (<< @@VERSION@@), oz (= 0.2026.02.09.06.06.stable.00), oz (= 0.2026.02.09.06.06.stable.02), oz (= 0.2026.02.10.11.37.stable.00), oz (= 0.2026.02.10.11.37.stable.01), oz (= 0.2026.02.11.08.23.stable.00)
-Description: The orchestration platform for cloud agents
- The Oz CLI is a tool for running, managing, and orchestrating coding agents at scale.
+Description: The intelligent terminal for developers
+ The Warp CLI is a tool for managing agents, MCP servers, and cloud environments.
  Use the CLI to:
- * Launch and inspect cloud agents
- * Schedule cloud agents to run in the future
- * Manage the environments that cloud agents run in
- * Upload secrets to Oz's secure storage
+ * Launch and inspect coding agents
+ * Manage MCP servers and integrations
+ * Manage cloud environments
+ * Manage secrets and artifacts

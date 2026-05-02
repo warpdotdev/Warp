@@ -92,15 +92,15 @@ pub struct GlobalOptions {
 #[derive(Debug, Default, Parser, Clone)]
 #[command(
     name = "oz",
-    display_name = "Oz",
-    about = r#"The orchestration platform for cloud agents
+    display_name = "Warp",
+    about = r#"The intelligent terminal for developers
 
-The Oz CLI is a tool for running, managing, and orchestrating coding agents at scale.
+The Warp CLI is a tool for managing agents, MCP servers, and cloud environments.
 Use the CLI to:
-* Launch and inspect cloud agents
-* Schedule cloud agents to run in the future
-* Manage the environments that cloud agents run in
-* Upload secrets to Oz's secure storage"#
+* Launch and inspect coding agents
+* Manage MCP servers and integrations
+* Manage cloud environments
+* Manage secrets and artifacts"#
 )]
 #[clap(args_conflicts_with_subcommands = true)]
 pub struct Args {

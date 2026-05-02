@@ -2,7 +2,7 @@
 # Package Spec
 ###############################################################################
 
-Summary:     The orchestration platform for cloud agents.
+Summary:     The intelligent terminal for developers.
 Name:        oz@@CHANNEL_SUFFIX@@
 Version:     @@VERSION@@
 Release:     @@RELEASE@@
@@ -31,12 +31,12 @@ prefix:      /opt
 ###############################################################################
 
 %description
-The Oz CLI is a tool for running, managing, and orchestrating coding agents at scale.
+The Warp CLI is a tool for managing agents, MCP servers, and cloud environments.
 Use the CLI to:
-* Launch and inspect cloud agents
-* Schedule cloud agents to run in the future
-* Manage the environments that cloud agents run in
-* Upload secrets to Oz's secure storage
+* Launch and inspect coding agents
+* Manage MCP servers and integrations
+* Manage cloud environments
+* Manage secrets and artifacts
 
 ###############################################################################
 # Build rule - how does the package get built?
