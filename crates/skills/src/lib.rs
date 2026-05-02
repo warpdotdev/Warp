@@ -26,6 +26,10 @@
 //! filename stem, the description defaults to the first non-blank line of the
 //! body, and `roles` / `tags` default to empty (matching every role).
 
+pub mod metadata;
+
+pub use metadata::{MetadataStore, MetadataStoreError, SkillMetadata};
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -52,6 +56,12 @@ pub struct Skill {
     pub tags: Vec<String>,
     /// Markdown body (everything after the front matter, if any).
     pub body: String,
+    /// Runtime statistics and user-supplied overrides for this skill.
+    ///
+    /// Populated by [`SkillRegistry::apply_metadata`]; defaults to zeroes /
+    /// empty until that call is made.
+    #[serde(default)]
+    pub metadata: SkillMetadata,
 }
 
 /// Skill metadata read from optional YAML front matter.
@@ -148,6 +158,19 @@ impl SkillRegistry {
     /// True iff no skills are loaded.
     pub fn is_empty(&self) -> bool {
         self.by_name.is_empty()
+    }
+
+    /// Merge metadata from `store` into the already-loaded skills.
+    ///
+    /// For each skill in the registry, the corresponding [`SkillMetadata`]
+    /// record is looked up by name and copied into [`Skill::metadata`]. Skills
+    /// with no entry in the store retain their default (zeroed) metadata.
+    pub fn apply_metadata(&mut self, store: &MetadataStore) {
+        for (name, skill) in self.by_name.iter_mut() {
+            if let Some(meta) = store.get(name) {
+                skill.metadata = meta.clone();
+            }
+        }
     }
 
     /// Contextual selection.
@@ -252,6 +275,7 @@ fn parse_skill(path: &Path, raw: &str) -> Result<Skill, SkillsError> {
         roles,
         tags,
         body: body.to_string(),
+        metadata: SkillMetadata::default(),
     })
 }
 
