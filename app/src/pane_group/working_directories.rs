@@ -516,12 +516,17 @@ impl WorkingDirectoriesModel {
     /// Emit a DirectoriesChanged event with the current state for a specific pane group.
     /// Directories are returned in most recent first order for use in the UI.
     fn emit_directories_changed(&mut self, pane_group_id: EntityId, ctx: &mut ModelContext<Self>) {
+        let directories = self
+            .most_recent_directories_for_pane_group(pane_group_id)
+            .map(|iter| iter.collect())
+            .unwrap_or_default();
+
+        log::info!(
+            "[file_tree_debug] WorkingDirectoriesModel::emit_directories_changed pane_group_id={pane_group_id:?} directories={directories:?}"
+        );
         ctx.emit(WorkingDirectoriesEvent::DirectoriesChanged {
             pane_group_id,
-            directories: self
-                .most_recent_directories_for_pane_group(pane_group_id)
-                .map(|iter| iter.collect())
-                .unwrap_or_default(),
+            directories,
         });
     }
 

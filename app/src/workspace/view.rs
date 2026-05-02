@@ -12910,9 +12910,10 @@ impl Workspace {
             .filter_map(|(id, cwd)| cwd.map(|c| (id, c)))
             .collect();
         let local_paths: Vec<(EntityId, String)> = code_local_paths
-            .into_iter()
-            .chain(notebook_local_paths)
-            .chain(code_diff_local_paths)
+            .iter()
+            .cloned()
+            .chain(notebook_local_paths.iter().cloned())
+            .chain(code_diff_local_paths.iter().cloned())
             .collect();
 
         // Get the focused terminal ID to prioritize it in the repo_to_terminal map
@@ -12920,6 +12921,9 @@ impl Workspace {
             .as_ref(ctx)
             .active_session_view(ctx)
             .map(|terminal_view| terminal_view.id());
+        log::info!(
+            "[file_tree_debug] WorkspaceView::refresh_working_directories_for_pane_group pane_group_id={pane_group_id:?} terminal_cwds={terminal_cwds:?} code_local_paths={code_local_paths:?} notebook_local_paths={notebook_local_paths:?} code_diff_local_paths={code_diff_local_paths:?} local_paths={local_paths:?} focused_terminal_id={focused_terminal_id:?}"
+        );
 
         self.working_directories_model.update(ctx, |model, ctx| {
             model.refresh_working_directories_for_pane_group(

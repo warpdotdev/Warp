@@ -965,6 +965,14 @@ impl FileTreeView {
             .iter()
             .filter_map(|p| StandardizedPath::try_from_local(p).ok())
             .collect();
+        #[cfg(feature = "local_fs")]
+        {
+            log::info!(
+                "[file_tree_debug] FileTreeView::set_root_directories input paths={paths:?} standardized_paths={std_paths:?} is_active={} enablement={:?}",
+                self.is_active,
+                self.enablement
+            );
+        }
 
         // Collect existing remote directories so we can preserve them.
         // Remote CWDs are not present in `std_paths` because `normalize_cwd`
@@ -1145,6 +1153,17 @@ impl FileTreeView {
             }
         }
         self.apply_pending_focus_target();
+
+        #[cfg(feature = "local_fs")]
+        {
+            let root_directories: Vec<_> = self.root_directories.keys().cloned().collect();
+            log::info!(
+                "[file_tree_debug] FileTreeView::set_root_directories final displayed_directories={:?} root_directories={root_directories:?} is_active={} total_item_count={}",
+                self.displayed_directories,
+                self.is_active,
+                self.total_item_count()
+            );
+        }
     }
 
     /// Attempts to select `pending_focus_target` if it is currently
@@ -2569,6 +2588,30 @@ impl FileTreeView {
             .sum()
     }
 
+    #[cfg(feature = "local_fs")]
+    fn log_loading_state(&self, reason: &str) {
+        let root_directories: Vec<_> = self.root_directories.keys().cloned().collect();
+        log::info!(
+            "[file_tree_debug] FileTreeView loading reason={reason} enablement={:?} is_active={} displayed_directories_len={} total_item_count={} displayed_directories={:?} root_directories={root_directories:?}",
+            self.enablement,
+            self.is_active,
+            self.displayed_directories.len(),
+            self.total_item_count(),
+            self.displayed_directories
+        );
+    }
+
+    #[cfg(not(feature = "local_fs"))]
+    fn log_loading_state(&self, reason: &str) {
+        let root_directories: Vec<_> = self.root_directories.keys().cloned().collect();
+        log::info!(
+            "[file_tree_debug] FileTreeView loading reason={reason} displayed_directories_len={} total_item_count={} displayed_directories={:?} root_directories={root_directories:?}",
+            self.displayed_directories.len(),
+            self.total_item_count(),
+            self.displayed_directories
+        );
+    }
+
     /// Creates a FileTreeIdentifier from a global index by finding which root it belongs to.
     fn identifier_from_global_index(&self, global_index: usize) -> Option<FileTreeIdentifier> {
         let mut current_index = 0;
@@ -2602,6 +2645,7 @@ impl FileTreeView {
         let theme = appearance.theme();
         let num_items = self.total_item_count();
         if num_items == 0 {
+            self.log_loading_state("render_file_tree_empty_items");
             return self.render_loading_state(app);
         }
 
@@ -2896,6 +2940,7 @@ impl View for FileTreeView {
             self.enablement,
             CodingPanelEnablementState::PendingRemoteSession
         ) {
+            self.log_loading_state("pending_remote_session");
             return self.render_loading_state(app);
         }
 
@@ -2908,6 +2953,7 @@ impl View for FileTreeView {
                 // (tmux, subshell) no data will arrive, so show the disabled
                 // error instead.
                 return if has_remote_server {
+                    self.log_loading_state("remote_session_with_server");
                     self.render_loading_state(app)
                 } else {
                     self.render_error_state(REMOTE_TEXT.to_string(), app)
@@ -2920,6 +2966,7 @@ impl View for FileTreeView {
             ) {
                 return self.render_error_state(WSL_TEXT.to_string(), app);
             }
+            self.log_loading_state("empty_displayed_directories");
 
             return self.render_loading_state(app);
         }
