@@ -10,6 +10,7 @@ use repo_metadata::local_model::IndexedRepoState;
 use repo_metadata::FileTreeEntry;
 use repo_metadata::RepoMetadataModel;
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1546,19 +1547,16 @@ impl FileTreeView {
                         git_entry.join("HEAD").is_file()
                     } else if git_entry.is_file() {
                         // .git file (worktree/submodule) - read gitdir path and verify HEAD there
-                        // Cap read to 1KB - gitfile format is small (~100 bytes), so this prevents
-                        // malicious or malformed folders from stalling the UI.
-                        std::fs::read(&git_entry)
+                        // Cap read to 1KB to prevent malicious/malformed folders from stalling UI.
+                        std::fs::File::open(&git_entry)
                             .ok()
-                            .and_then(|contents| {
-                                let contents = contents.trim_end(); // trim trailing nulls
-                                if contents.len() > 1024 {
-                                    contents[..1024].try_into().ok()
-                                } else {
-                                    contents.try_into().ok()
-                                }
+                            .and_then(|mut file| {
+                                let mut contents = vec![0u8; 1024];
+                                let n = file.read(&mut contents).ok()?;
+                                contents.truncate(n);
+                                String::from_utf8(contents).ok()
                             })
-                            .and_then(|contents: String| {
+                            .and_then(|contents| {
                                 contents
                                     .trim()
                                     .strip_prefix("gitdir:")
