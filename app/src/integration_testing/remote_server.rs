@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use warpui::{
     async_assert, async_assert_eq,
-    integration::{AssertionCallback, AssertionOutcome, TestStep},
-    SingletonEntity,
+    integration::{AssertionCallback, AssertionOutcome, StepDataMap, TestStep},
+    App, SingletonEntity, WindowId,
 };
 
 use crate::{
@@ -11,6 +11,7 @@ use crate::{
     remote_server::manager::{RemoteServerManager, RemoteSessionState},
     terminal::model::session::command_executor::remote_server_executor::RemoteServerCommandExecutor,
 };
+pub type RemoteServerActionCallback = Box<dyn Fn(&mut App, WindowId, &mut StepDataMap) + 'static>;
 
 /// Returns a `TestStep` that polls until the remote server setup state for
 /// the active session reaches `Ready`. Times out after 60 seconds to allow
@@ -102,8 +103,7 @@ pub fn write_file_via_remote_server(
     tab_idx: usize,
     path: String,
     content: String,
-) -> Box<dyn Fn(&mut warpui::App, warpui::WindowId, &mut warpui::integration::StepDataMap) + 'static>
-{
+) -> RemoteServerActionCallback {
     Box::new(move |app, window_id, _| {
         let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
         let maybe_client = terminal_view.read(app, |view, ctx| {
@@ -138,8 +138,7 @@ pub fn load_repo_metadata_directory_via_remote_server(
     tab_idx: usize,
     repo_path: String,
     dir_path: String,
-) -> Box<dyn Fn(&mut warpui::App, warpui::WindowId, &mut warpui::integration::StepDataMap) + 'static>
-{
+) -> RemoteServerActionCallback {
     Box::new(move |app, window_id, _| {
         let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
         let maybe_session_id = terminal_view.read(app, |view, _ctx| view.active_block_session_id());
