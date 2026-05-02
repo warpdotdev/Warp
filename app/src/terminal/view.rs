@@ -10604,6 +10604,14 @@ impl TerminalView {
                         }
 
                         self.maybe_suggest_open_in_warp(block_completed, ctx);
+
+                        // When the local-AI bypass is active, offer an AI-generated
+                        // fix suggestion for failed commands with recognisable error
+                        // output.  This fires at most once per block (the background
+                        // future runs once and delivers its result to the empty input
+                        // box; if the user types before the result arrives the
+                        // autosuggestion is silently discarded).
+                        self.maybe_suggest_local_ai_fix(block_completed, ctx);
                     }
 
                     // Check if the user tried to run an AWS login command but AWS CLI wasn't installed.
@@ -13480,6 +13488,184 @@ impl TerminalView {
                 ctx
             );
         }
+    }
+
+    /// Returns true if the output looks like a recognisable shell error that an
+    /// AI fix suggestion would be useful for.
+    fn output_has_known_error_pattern(output: &str) -> bool {
+        let lower = output.to_ascii_lowercase();
+        // Common shell error patterns worth suggesting fixes for.
+        [
+            "no such file or directory",
+            "command not found",
+            "permission denied",
+            "not a git repository",
+            "unknown option",
+            "unrecognized option",
+            "invalid option",
+            "too many arguments",
+            "missing argument",
+            "bad substitution",
+            "syntax error",
+            "no such command",
+            "cannot find",
+            "not found",
+        ]
+        .iter()
+        .any(|pat| lower.contains(pat))
+    }
+
+    /// Spawn a local-CLI subprocess to suggest a fix for a failed command.
+    ///
+    /// Only fires when `local_ai::auth_bypass_enabled()` is true and the
+    /// block output contains a recognisable error pattern.  The result is
+    /// delivered via [`Self::after_local_ai_error_fix`] where it is set as
+    /// a ghost-text autosuggestion in the input box.
+    fn maybe_suggest_local_ai_fix(
+        &mut self,
+        block_completed: &UserBlockCompleted,
+        ctx: &mut ViewContext<TerminalView>,
+    ) {
+        if !crate::local_ai::auth_bypass_enabled() {
+            return;
+        }
+
+        let exit_code = block_completed.serialized_block.exit_code;
+        if exit_code.was_successful() {
+            return;
+        }
+
+        let output = block_completed.output_truncated.as_str();
+        if !Self::output_has_known_error_pattern(output) {
+            // Also fire on exit-code 127 (command not found) even without
+            // matching output text, since some shells don't echo the message.
+            if !exit_code.was_command_not_found() {
+                return;
+            }
+        }
+
+        let command = block_completed.command.clone();
+        let output = block_completed.output_truncated.clone();
+        let cwd = block_completed.serialized_block.pwd.clone();
+
+        let _ = ctx.spawn(
+            Self::fetch_local_ai_error_fix(command, output, cwd),
+            Self::after_local_ai_error_fix,
+        );
+    }
+
+    /// Run the local CLI with a brief error-fix prompt and return the suggested
+    /// corrected command (or a short clarifying message), capped to 200 chars.
+    ///
+    /// Returns `None` on any failure so the view callback can silently skip.
+    async fn fetch_local_ai_error_fix(
+        command: String,
+        output: String,
+        cwd: Option<String>,
+    ) -> Option<String> {
+        use std::process::Stdio;
+        use tokio::io::AsyncReadExt as _;
+        use tokio::process::Command;
+
+        // Build a terse prompt that asks for a one-line corrected command.
+        let truncated_output = if output.chars().count() > 400 {
+            let end = output
+                .char_indices()
+                .nth(400)
+                .map(|(i, _)| i)
+                .unwrap_or(output.len());
+            format!("{}...", &output[..end])
+        } else {
+            output.clone()
+        };
+
+        let prompt = format!(
+            "I ran `{command}` and got this error:\n{truncated_output}\n\nReply with ONLY the corrected shell command, no explanation, no markdown, no backticks. If you need to ask a clarifying question instead, keep it under 120 characters."
+        );
+
+        // Resolve which CLI to use, mirroring the logic in local_cli.rs.
+        let mode = crate::local_ai::current();
+        let (cli, fix_args): (&str, &[&str]) = match mode {
+            crate::local_ai::LocalAiMode::Codex => (
+                "codex",
+                &[
+                    "exec",
+                    "--dangerously-bypass-approvals-and-sandbox",
+                    "--no-project-doc",
+                    "--color",
+                    "never",
+                ],
+            ),
+            _ => ("claude", &["-p", "--dangerously-skip-permissions"]),
+        };
+
+        let mut cmd = Command::new(cli);
+        cmd.args(fix_args);
+        cmd.arg(&prompt);
+        cmd.stdin(Stdio::null());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::null());
+        if let Some(dir) = &cwd {
+            cmd.current_dir(dir);
+        }
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("local AI error-fix: failed to spawn `{cli}`: {e}");
+                return None;
+            }
+        };
+
+        let mut stdout = child.stdout.take()?;
+        let mut raw = String::new();
+        if let Err(e) = stdout.read_to_string(&mut raw).await {
+            log::warn!("local AI error-fix: reading stdout failed: {e}");
+            return None;
+        }
+        let _ = child.wait().await;
+
+        let suggestion = raw.trim().to_string();
+        if suggestion.is_empty() {
+            return None;
+        }
+
+        // Cap to 200 chars so it fits as a ghost-text suggestion.
+        let capped = if suggestion.chars().count() > 200 {
+            let end = suggestion
+                .char_indices()
+                .nth(200)
+                .map(|(i, _)| i)
+                .unwrap_or(suggestion.len());
+            suggestion[..end].to_string()
+        } else {
+            suggestion
+        };
+
+        Some(capped)
+    }
+
+    /// Callback: set the AI error-fix result as a ghost-text autosuggestion.
+    fn after_local_ai_error_fix(
+        &mut self,
+        suggestion: Option<String>,
+        ctx: &mut ViewContext<TerminalView>,
+    ) {
+        let Some(text) = suggestion else { return };
+
+        self.input.update(ctx, |input, ctx| {
+            // Only set if the input box is still empty; don't stomp over
+            // something the user has already started typing.
+            if input.buffer_text(ctx).is_empty() {
+                input.set_autosuggestion(
+                    text,
+                    AutosuggestionType::Command {
+                        was_intelligent_autosuggestion: true,
+                    },
+                    ctx,
+                );
+            }
+        });
     }
 
     fn clear_prompt_suggestions(&mut self, ctx: &mut ViewContext<Self>) {
