@@ -14775,8 +14775,9 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         let window_id = ctx.window_id();
+        let object_id = format!("persistent_toast:{}", &text);
         ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            let toast = DismissibleToast::new(text, flavor);
+            let toast = DismissibleToast::new(text, flavor).with_object_id(object_id);
             toast_stack.add_persistent_toast(toast, window_id, ctx);
         });
     }

@@ -11,7 +11,7 @@ use warpui::keymap::Keystroke;
 use warpui::r#async::Timer;
 use warpui::{
     elements::{
-        Border, ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
+        Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
         DispatchEventResult, EventHandler, Flex, Hoverable, Icon, MainAxisAlignment, MainAxisSize,
         MouseStateHandle, OffsetPositioning, ParentElement, PositionedElementAnchor,
         PositionedElementOffsetBounds, Radius, SavePosition, Shrinkable, Stack,
@@ -34,6 +34,8 @@ const VERTICAL_PADDING: f32 = 8.;
 const HORIZONTAL_PADDING: f32 = 12.;
 const ICON_RIGHT_MARGIN: f32 = 8.;
 const CLOSE_BUTTON_SIZE: f32 = 16.;
+const MAX_PERSISTENT_TOASTS: usize = 5;
+const TOAST_STACK_MAX_HEIGHT: f32 = 500.;
 
 const SUCCESS_ICON_PATH: &str = "bundled/svg/check-skinny.svg";
 const ERROR_ICON_PATH: &str = "bundled/svg/alert-circle.svg";
@@ -116,6 +118,10 @@ impl<A: Action + Clone> DismissibleToastStack<A> {
             uuid: Uuid::new_v4(),
         });
 
+        while self.toasts.len() > MAX_PERSISTENT_TOASTS {
+            self.toasts.remove(0);
+        }
+
         ctx.notify();
     }
 
@@ -178,10 +184,6 @@ impl<A: Action + Clone> View for DismissibleToastStack<A> {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let mut rendered_toasts =
             Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Center);
-        // For loop over the toasts in reverse order so that the most recent toast is
-        // rendered first. Pass in the toast's UUID to the render method so that it is
-        // piped to the dismiss action when the close button is clicked. The handler will
-        // use this UUID to determine which toast in the stack to close.
         for toast in self.toasts.iter().rev() {
             rendered_toasts.add_child(
                 Container::new(toast.dismissible_toast.render(app, toast.uuid))
@@ -190,7 +192,9 @@ impl<A: Action + Clone> View for DismissibleToastStack<A> {
             );
         }
 
-        rendered_toasts.finish()
+        ConstrainedBox::new(Clipped::new(rendered_toasts.finish()).finish())
+            .with_max_height(TOAST_STACK_MAX_HEIGHT)
+            .finish()
     }
 }
 
