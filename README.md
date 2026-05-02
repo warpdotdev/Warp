@@ -6,15 +6,25 @@ My personal AGPL fork of [warpdotdev/warp](https://github.com/warpdotdev/warp). 
 > Not affiliated with or endorsed by Warp Inc. The upstream README (Warp's product description, contribution flow, support links) lives at [UPSTREAM_README.md](UPSTREAM_README.md).
 
 > [!NOTE]
-> This is the `main` branch: generic local-AI bypass. There's also an [`ilo`](https://github.com/danieljohnmorris/warp/tree/ilo) branch that extends this with ilo-lang context injection for agent runs. Use `main` if you want a vanilla local-AI Warp.
+> This is the `main` branch: purpose 1 only (local-AI bypass). Purpose 2 (ilo-lang testbench) lives on the [`ilo`](https://github.com/danieljohnmorris/warp/tree/ilo) branch.
 
 ## Why this fork exists
 
-### A local-AI version of Warp with cloud features stripped
+### 1. A local-AI version of Warp with cloud features stripped
 
 I want to run Warp's terminal and agent UI without signing into Warp's cloud and without paying for Warp's hosted models. The fork swaps Warp's server-mediated AI path for direct calls to local CLIs I already have authenticated (`claude`, `codex`). It removes the auth gate. It hides cloud-only UI: the notifications inbox, the upgrade-required model badges, the "free AI disabled" modal.
 
 This is useful if you already pay for Claude or Codex and don't want a second AI subscription, if you want to keep agent traffic off a third-party server, or if you want to remix Warp's UI without the live cloud dependency.
+
+### 2. A testbench for ilo-lang
+
+Implemented on the [`ilo`](https://github.com/danieljohnmorris/warp/tree/ilo) branch. This branch (`main`) does not include the ilo-lang context injection.
+
+I'm using this fork to test how my agent-optimised programming language, [**ilo-lang**](https://ilo-lang.ai), behaves when wired into a working developer tool. Ilo is token-minimal: programs are written and read primarily by LLMs, so every saved token compounds across millions of agent turns.
+
+This is iteration 3 of integrating ilo into a real agent loop. v1 was Claude Code with the ilo spec pasted manually into the system message. v2 was a Claude skill that loaded the ilo spec on demand. v3 is this fork: ilo context injected at the harness layer of a terminal that runs an agent loop on every keystroke, against whatever codebase I'm in. If ilo expresses agent prompts, tool definitions, and workflows in fewer tokens than Markdown, YAML, or JSON, the difference shows up in day-to-day work, not in a benchmark.
+
+Purpose 1 helps purpose 2: the local-AI bypass lets me run the same ilo system prompt against different LLMs (Claude, Codex, eventually Ollama) and compare token usage and output quality across them. See the [`ilo` branch](https://github.com/danieljohnmorris/warp/tree/ilo) for the implementation.
 
 **Forked from**: [`warpdotdev/warp@00df35b`](https://github.com/warpdotdev/warp/commit/00df35b5dc951b9ed9ac57f873ea0b0484f42ad6), May 2026.
 **Sync upstream**: `git fetch upstream master && git merge upstream/master`.
