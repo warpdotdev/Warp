@@ -138,7 +138,7 @@ impl WarpifyBannerState {
 }
 
 /// This banner is shown when the user runs a command which is recognized as a subshell-compatible
-/// command. It asks if they want to boostrap a subshell and, if so, whether we should ask again
+/// command. It asks if they want to bootstrap a subshell and, if so, whether we should ask again
 /// next time they run the same command.
 pub fn render_warpification_banner(
     state: &WarpifyBannerState,

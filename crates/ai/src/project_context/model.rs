@@ -118,7 +118,7 @@ impl ProjectRules {
         }
     }
 
-    /// Upsert a rule to the set of project rules. This will create a new RuleAtPath entry if none exists and update the existin one
+    /// Upsert a rule to the set of project rules. This will create a new RuleAtPath entry if none exists and update the existing one
     /// otherwise.
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     fn upsert_rule(&mut self, path: &Path, content: String) {

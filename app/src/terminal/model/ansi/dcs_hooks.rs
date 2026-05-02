@@ -38,7 +38,7 @@ pub(super) enum DProtoHook {
         value: PreexecValue,
     },
     Bootstrapped {
-        // This is wrapped in an `Box` to surpress clippy's large-enum-variant warning, not because it
+        // This is wrapped in an `Box` to suppress clippy's large-enum-variant warning, not because it
         // functionally needs to be wrapped in an `Box`.
         value: Box<BootstrappedValue>,
     },
