@@ -95,7 +95,6 @@ Today, codebase indexing is local-only: the filesystem walk, tree build, chunkin
 29. Any remote client <> remote server proto message that can cause the daemon to make auth-required outbound Warp service requests must include the client's current auth token or request-scoped bearer credential. The daemon must reject those requests when the token is missing or invalid instead of treating the daemon's stored token as sufficient, so a process writing directly to the proxy socket cannot bypass authentication.
 
 30. Remote indexing does not change `ReadFiles`, `ApplyFileDiffs`, shell execution, or other remote agent tools. Those tools remain available regardless of whether remote indexing is enabled.
-29. Remote indexing does not change `ReadFiles`, `ApplyFileDiffs`, shell execution, or other remote agent tools. Those tools remain available regardless of whether remote indexing is enabled.
 
 ### Backend reachability and firewall behavior
 31. The v1 product assumes the remote daemon can reach `app.warp.dev`; that assumption has been checked with the initial target enterprise environments.
