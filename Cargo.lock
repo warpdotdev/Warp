@@ -9221,9 +9221,11 @@ dependencies = [
 name = "orchestrator"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "async-trait",
  "chrono",
  "futures-core",
+ "futures-util",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
