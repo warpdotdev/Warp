@@ -47,7 +47,7 @@ impl WindowManager {
 
     /// Returns the monitor which contains the focused window ("key window" in MacOS parlance). It's
     /// the window that receives and handles the keypress events.
-    fn get_foreground_monitor_handle(&self) -> Result<MonitorHandle> {
+    fn get_foreground_monitor(&self) -> Result<MonitorHandle> {
         let any_window = self.get_any_window_handle()?;
 
         // Even if no window has foreground focus, MonitorFromWindow with
@@ -67,7 +67,7 @@ impl WindowManager {
                 w.current_monitor()
                     .ok_or_else(|| anyhow::anyhow!("Unable to get current monitor"))
             })
-            .or_else(|_| self.get_foreground_monitor_handle())
+            .or_else(|_| self.get_foreground_monitor())
     }
 
     pub(super) fn get_monitor_bounds_for_display_idx(&self, idx: DisplayIdx) -> Result<RectF> {
