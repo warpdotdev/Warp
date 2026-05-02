@@ -74,10 +74,7 @@ pub fn matches_active_config(request: &RunAgentsRequest, config: &OrchestrationC
 
     // execution_mode variant must agree.
     match (&request.execution_mode, &config.execution_mode) {
-        (
-            super::action::RunAgentsExecutionMode::Local,
-            OrchestrationExecutionMode::Local,
-        ) => true,
+        (super::action::RunAgentsExecutionMode::Local, OrchestrationExecutionMode::Local) => true,
         (
             super::action::RunAgentsExecutionMode::Remote {
                 environment_id,
@@ -117,8 +114,7 @@ impl OrchestrationConfig {
             }
         };
 
-        let harness_type = harness_proto_to_string(proto.harness.as_ref())
-            .unwrap_or_default();
+        let harness_type = harness_proto_to_string(proto.harness.as_ref()).unwrap_or_default();
 
         Self {
             model_id: proto.model_id.clone(),

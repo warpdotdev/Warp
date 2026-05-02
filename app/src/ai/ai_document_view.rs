@@ -410,12 +410,14 @@ impl AIDocumentView {
         });
 
         // Create the orchestration config block if there's an active config.
-        let orchestration_config_block =
-            if AIDocumentModel::as_ref(ctx).active_orchestration_config().is_some() {
-                Some(ctx.add_typed_action_view(OrchestrationConfigBlockView::new))
-            } else {
-                None
-            };
+        let orchestration_config_block = if AIDocumentModel::as_ref(ctx)
+            .active_orchestration_config()
+            .is_some()
+        {
+            Some(ctx.add_typed_action_view(OrchestrationConfigBlockView::new))
+        } else {
+            None
+        };
 
         let mut me = Self {
             document_id,
@@ -1031,11 +1033,12 @@ impl View for AIDocumentView {
     }
 
     fn render(&self, _app: &AppContext) -> Box<dyn warpui::Element> {
-        let has_orchestration_config =
-            AIDocumentModel::as_ref(_app).active_orchestration_config().is_some();
+        let has_orchestration_config = AIDocumentModel::as_ref(_app)
+            .active_orchestration_config()
+            .is_some();
 
-        let mut content_column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        let mut content_column =
+            Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
         // Orchestration config block (Stage 2) — shown above the editor
         // when the conversation has an active OrchestrationConfigSnapshot.

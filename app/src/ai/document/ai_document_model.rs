@@ -1247,12 +1247,7 @@ impl AIDocumentModel {
         ctx: &mut ModelContext<Self>,
     ) {
         if let Some(config) = self.orchestration_config.clone() {
-            self.set_orchestration_config(
-                config,
-                status,
-                self.orchestration_plan_id.clone(),
-                ctx,
-            );
+            self.set_orchestration_config(config, status, self.orchestration_plan_id.clone(), ctx);
         }
     }
 

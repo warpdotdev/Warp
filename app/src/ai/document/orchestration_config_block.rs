@@ -8,7 +8,9 @@ use warpui::elements::{
     Container, CornerRadius, CrossAxisAlignment, Flex, ParentElement, Radius, Text,
 };
 use warpui::fonts::{Properties, Weight};
-use warpui::{AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext};
+use warpui::{
+    AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
+};
 
 use crate::ai::blocklist::inline_action::orchestration_controls::{
     self as oc, OrchestrationControlAction, OrchestrationEditState, OrchestrationPickerHandles,
@@ -73,19 +75,20 @@ impl OrchestrationConfigBlockView {
                 doc_model.orchestration_status().is_approved(),
             ),
             None => (
-                OrchestrationEditState::from_run_agents_fields("auto", "oz", &RunAgentsExecutionMode::Local),
+                OrchestrationEditState::from_run_agents_fields(
+                    "auto",
+                    "oz",
+                    &RunAgentsExecutionMode::Local,
+                ),
                 false,
             ),
         };
 
-        ctx.subscribe_to_model(
-            &AIDocumentModel::handle(ctx),
-            |me, _, event, ctx| {
-                if let AIDocumentModelEvent::OrchestrationConfigUpdated = event {
-                    me.refresh_from_model(ctx);
-                }
-            },
-        );
+        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), |me, _, event, ctx| {
+            if let AIDocumentModelEvent::OrchestrationConfigUpdated = event {
+                me.refresh_from_model(ctx);
+            }
+        });
 
         Self {
             edit_state,
@@ -168,8 +171,7 @@ impl View for OrchestrationConfigBlockView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
-        let mut column = Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+        let mut column = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
         // Header: "Use orchestration" + toggle
         let header_label = Text::new(
@@ -196,9 +198,7 @@ impl View for OrchestrationConfigBlockView {
 
         let header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(
-                warpui::elements::Expanded::new(1.0, header_label).finish(),
-            )
+            .with_child(warpui::elements::Expanded::new(1.0, header_label).finish())
             .with_child(
                 warpui::elements::Hoverable::new(
                     warpui::elements::MouseStateHandle::default(),
@@ -221,11 +221,7 @@ impl View for OrchestrationConfigBlockView {
         )
         .with_color(blended_colors::text_main(theme, theme.background()))
         .finish();
-        column.add_child(
-            Container::new(description)
-                .with_margin_top(8.)
-                .finish(),
-        );
+        column.add_child(Container::new(description).with_margin_top(8.).finish());
 
         // Controls (only when approved)
         if self.is_approved {
@@ -241,7 +237,11 @@ impl View for OrchestrationConfigBlockView {
             );
 
             // Picker row
-            column.add_child(oc::render_picker_row(&self.edit_state, &self.pickers, appearance));
+            column.add_child(oc::render_picker_row(
+                &self.edit_state,
+                &self.pickers,
+                appearance,
+            ));
 
             // Helper text
             let helper = Text::new(

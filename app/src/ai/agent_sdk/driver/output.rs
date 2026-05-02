@@ -796,7 +796,8 @@ pub mod json {
                 | AIAgentInput::StartFromAmbientRunPrompt { .. }
                 | AIAgentInput::MessagesReceivedFromAgents { .. }
                 | AIAgentInput::EventsFromAgents { .. }
-                | AIAgentInput::PassiveSuggestionResult { .. } | AIAgentInput::OrchestrationConfigUpdate { .. } => None,
+                | AIAgentInput::PassiveSuggestionResult { .. }
+                | AIAgentInput::OrchestrationConfigUpdate { .. } => None,
                 // These input types should not occur in a SDK-run agent.
                 AIAgentInput::ResumeConversation { .. }
                 | AIAgentInput::TriggerPassiveSuggestion { .. } => None,

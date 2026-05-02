@@ -7,9 +7,7 @@
 //! from field-change events to their own action enum.
 
 use ai::agent::action::RunAgentsExecutionMode;
-use ai::agent::orchestration_config::{
-    OrchestrationConfig, OrchestrationExecutionMode,
-};
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationExecutionMode};
 use pathfinder_color::ColorU;
 use std::fmt::Debug;
 use warpui::elements::{
@@ -295,9 +293,7 @@ pub fn populate_model_picker<A: OrchestrationControlAction, V: View>(
             .position(|llm| llm.id.to_string() == initial_model_id);
         let items = available_model_menu_items(
             choices,
-            move |llm| {
-                DropdownAction::SelectActionAndClose(A::model_changed(llm.id.to_string()))
-            },
+            move |llm| DropdownAction::SelectActionAndClose(A::model_changed(llm.id.to_string())),
             None,
             None,
             false,

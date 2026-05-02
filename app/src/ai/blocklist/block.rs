@@ -6470,9 +6470,9 @@ impl AIBlock {
         let active_config = {
             let doc_handle = AIDocumentModel::handle(ctx);
             let doc = doc_handle.as_ref(ctx);
-            doc.active_orchestration_config().cloned().map(|config| {
-                (config, doc.orchestration_status())
-            })
+            doc.active_orchestration_config()
+                .cloned()
+                .map(|config| (config, doc.orchestration_status()))
         };
 
         let action_id_clone = action_id.clone();
