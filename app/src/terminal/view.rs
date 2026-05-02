@@ -6722,11 +6722,12 @@ impl TerminalView {
                 return;
             }
             if self.owned_ambient_agent_task_id(ctx).is_some() {
-                if !self
-                    .model
-                    .lock()
-                    .shared_session_status()
-                    .is_sharer_or_viewer()
+                if FeatureFlag::HandoffCloudCloud.is_enabled()
+                    && !self
+                        .model
+                        .lock()
+                        .shared_session_status()
+                        .is_sharer_or_viewer()
                 {
                     self.enable_owned_cloud_followup_input(task_id, ctx);
                 }
@@ -19784,7 +19785,13 @@ impl TerminalView {
         prompt: String,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        let Some(task_id) = self.pending_cloud_followup_task_id else {
+        if !FeatureFlag::HandoffCloudCloud.is_enabled() {
+            return false;
+        }
+        let Some(task_id) = self
+            .pending_cloud_followup_task_id
+            .or_else(|| self.owned_ambient_agent_task_id(ctx))
+        else {
             return false;
         };
 
@@ -19796,12 +19803,6 @@ impl TerminalView {
             self.update_pane_configuration(ctx);
             self.focus_input_box(ctx);
             ctx.notify();
-            return true;
-        }
-
-        if !FeatureFlag::HandoffCloudCloud.is_enabled() {
-            self.restore_followup_prompt_after_failed_submission(&prompt, ctx);
-            self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
             return true;
         }
 
@@ -19880,7 +19881,9 @@ impl TerminalView {
                 prompt,
                 attachments,
             } => {
-                if self.try_submit_pending_cloud_followup(prompt.clone(), ctx) {
+                if FeatureFlag::HandoffCloudCloud.is_enabled()
+                    && self.try_submit_pending_cloud_followup(prompt.clone(), ctx)
+                {
                     return;
                 }
                 ctx.emit(Event::SendAgentPrompt {

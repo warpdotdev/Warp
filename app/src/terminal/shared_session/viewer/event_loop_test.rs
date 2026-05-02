@@ -318,7 +318,6 @@ fn test_append_followup_replay_marks_existing_conversations_suppressible() {
         {
             let model = model.lock();
             assert!(model.is_receiving_agent_conversation_replay());
-            assert!(model.should_suppress_existing_agent_conversation_replay());
         }
 
         event_loop.update(&mut app, |event_loop, ctx| {
@@ -333,7 +332,6 @@ fn test_append_followup_replay_marks_existing_conversations_suppressible() {
 
         let model = model.lock();
         assert!(!model.is_receiving_agent_conversation_replay());
-        assert!(!model.should_suppress_existing_agent_conversation_replay());
     })
 }
 
@@ -374,7 +372,6 @@ fn test_fresh_session_replay_does_not_suppress_existing_conversations() {
 
         let model = model.lock();
         assert!(model.is_receiving_agent_conversation_replay());
-        assert!(!model.should_suppress_existing_agent_conversation_replay());
     })
 }
 

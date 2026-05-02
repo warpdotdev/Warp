@@ -531,7 +531,7 @@ impl ConversationOrTask<'_> {
     /// Returns the session ID for tasks, if we have one.
     pub fn session_id(&self) -> Option<SessionId> {
         match self {
-            ConversationOrTask::Task(task) => task.latest_execution_session_id().and_then(|s| {
+            ConversationOrTask::Task(task) => task.session_id.as_deref().and_then(|s| {
                 let session_id = s.parse::<SessionId>();
                 if let Err(ref e) = session_id {
                     log::warn!("Failed to parse shared session ID: {e}");

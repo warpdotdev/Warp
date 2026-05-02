@@ -452,6 +452,8 @@ fn create_cloud_mode_task_for_user(creator_uid: &str) -> AmbientAgentTask {
         is_sandbox_running: false,
         agent_config_snapshot: None,
         artifacts: vec![],
+        last_event_sequence: None,
+        children: vec![],
     }
 }
 
@@ -685,7 +687,7 @@ fn test_on_ambient_agent_execution_ended_keeps_live_owned_session_on_session_sha
 }
 
 #[test]
-fn test_on_ambient_agent_session_ended_enables_followup_for_owned_task_before_status_changes() {
+fn test_try_submit_pending_cloud_followup_allows_repeat_submission_for_owned_task() {
     let _handoff_flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
     let _setup_v2_flag = FeatureFlag::CloudModeSetupV2.override_enabled(true);
 
@@ -714,8 +716,7 @@ fn test_on_ambient_agent_session_ended_enables_followup_for_owned_task_before_st
                 model.enter_viewing_existing_session(task_id, ctx);
             });
 
-            view.on_ambient_agent_session_ended(ctx);
-            assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
+            view.enable_owned_cloud_followup_input(task_id, ctx);
             assert!(view.try_submit_pending_cloud_followup("follow up".to_string(), ctx));
             assert_eq!(view.pending_cloud_followup_task_id, Some(task_id));
             assert!(view.try_submit_pending_cloud_followup("second follow up".to_string(), ctx));

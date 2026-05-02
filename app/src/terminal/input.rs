@@ -6364,7 +6364,9 @@ impl Input {
                 editor.set_buffer_text(original_buffer, ctx);
                 editor.set_interaction_state(role.into(), ctx);
 
-                // Set the text colors back to normal.
+                // Shared-session pending-command and cloud-followup flows can swap the editor into
+                // a frozen/pending color treatment, so restore the normal palette alongside the
+                // buffer + interaction state reset.
                 let appearance: &Appearance = Appearance::as_ref(ctx);
                 editor.set_text_colors(TextColors::from_appearance(appearance), ctx);
             });

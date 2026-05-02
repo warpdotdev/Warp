@@ -316,10 +316,6 @@ impl AmbientAgentTask {
         }
     }
 
-    pub fn latest_execution_session_id(&self) -> Option<&str> {
-        self.active_run_execution().session_id
-    }
-
     pub fn active_execution_session_id(&self) -> Option<&str> {
         let execution = self.active_run_execution();
         if self.state == AmbientAgentTaskState::InProgress && execution.is_active() {

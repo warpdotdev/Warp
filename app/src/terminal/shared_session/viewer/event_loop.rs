@@ -317,16 +317,33 @@ impl EventLoop {
                     }
                 }
                 OrderedTerminalEventType::AgentConversationReplayStarted => {
-                    let mut model = self.terminal_model.lock();
-                    model.set_is_receiving_agent_conversation_replay(true);
-                    model.set_should_suppress_existing_agent_conversation_replay(
-                        self.should_suppress_existing_agent_conversation_replay,
-                    );
+                    self.terminal_model
+                        .lock()
+                        .set_is_receiving_agent_conversation_replay(true);
+                    if let Some(view) = self.terminal_view.upgrade(ctx) {
+                        let should_suppress_existing_replay =
+                            self.should_suppress_existing_agent_conversation_replay;
+                        view.update(ctx, |view, ctx| {
+                            view.ai_controller().update(ctx, |controller, _| {
+                                controller.set_should_suppress_existing_agent_conversation_replay(
+                                    should_suppress_existing_replay,
+                                );
+                            });
+                        });
+                    }
                 }
                 OrderedTerminalEventType::AgentConversationReplayEnded => {
-                    let mut model = self.terminal_model.lock();
-                    model.set_is_receiving_agent_conversation_replay(false);
-                    model.set_should_suppress_existing_agent_conversation_replay(false);
+                    self.terminal_model
+                        .lock()
+                        .set_is_receiving_agent_conversation_replay(false);
+                    if let Some(view) = self.terminal_view.upgrade(ctx) {
+                        view.update(ctx, |view, ctx| {
+                            view.ai_controller().update(ctx, |controller, _| {
+                                controller
+                                    .set_should_suppress_existing_agent_conversation_replay(false);
+                            });
+                        });
+                    }
                 }
             }
 

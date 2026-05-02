@@ -136,10 +136,15 @@ pub struct AmbientAgentViewModel {
     harness_command_started: bool,
     optimistically_rendered_user_queries: Vec<String>,
 
+    /// Session ID for the currently running ambient execution, if the run has attached to a live
+    /// shared session.
     active_execution_session_id: Option<SessionId>,
+    /// Session ID for the most recently finished ambient execution.
+    /// Used as the previous session ID when submitting a follow-up so polling can wait for a
+    /// different fresh session after the prior execution has ended.
     last_ended_execution_session_id: Option<SessionId>,
+    /// Prompt text for a follow-up that has been submitted but not yet attached to a new session.
     pending_followup_prompt: Option<String>,
-    should_show_followup_progress: bool,
 }
 
 impl AmbientAgentViewModel {
@@ -176,7 +181,6 @@ impl AmbientAgentViewModel {
             active_execution_session_id: None,
             last_ended_execution_session_id: None,
             pending_followup_prompt: None,
-            should_show_followup_progress: false,
         }
     }
 
@@ -454,7 +458,6 @@ impl AmbientAgentViewModel {
 
         // Store the task ID for later use
         self.task_id = Some(task_id);
-        self.should_show_followup_progress = false;
 
         self.status = Status::AgentRunning;
 
@@ -491,7 +494,6 @@ impl AmbientAgentViewModel {
     pub fn attach_followup_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
         self.stop_progress_timer();
         self.pending_followup_prompt = None;
-        self.should_show_followup_progress = false;
         self.active_execution_session_id = Some(session_id);
         self.last_ended_execution_session_id = None;
         self.status = Status::AgentRunning;
@@ -529,7 +531,6 @@ impl AmbientAgentViewModel {
         );
 
         self.pending_followup_prompt = Some(prompt);
-        self.should_show_followup_progress = true;
         self.status = Status::WaitingForSession {
             progress: AgentProgress::new(),
             kind: SessionStartupKind::Followup,
@@ -553,7 +554,7 @@ impl AmbientAgentViewModel {
     }
 
     pub fn should_show_followup_progress(&self) -> bool {
-        self.should_show_followup_progress
+        self.pending_followup_prompt.is_some()
             && matches!(
                 self.status,
                 Status::WaitingForSession { .. }
@@ -575,7 +576,6 @@ impl AmbientAgentViewModel {
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
         self.pending_followup_prompt = None;
-        self.should_show_followup_progress = false;
         self.stop_progress_timer();
         ctx.notify();
     }
@@ -666,7 +666,6 @@ impl AmbientAgentViewModel {
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         self.request = Some(request.clone());
         let stream = spawn_task(request, ai_client, None);
-        self.should_show_followup_progress = false;
 
         ctx.spawn_stream_local(
             stream,
@@ -831,7 +830,6 @@ impl AmbientAgentViewModel {
                     self.active_execution_session_id = Some(session_id);
                     self.last_ended_execution_session_id = None;
                     self.pending_followup_prompt = None;
-                    self.should_show_followup_progress = false;
                     self.status = Status::AgentRunning;
                     ctx.emit(event);
                 }

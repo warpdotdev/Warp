@@ -71,7 +71,9 @@ use super::adapter::{Adapter, Kind, Participant};
 use super::sharer::inactivity_modal::InactivityModalEvent;
 use super::sharer::Sharer;
 use super::viewer::Viewer;
-use super::{ConversationEndedTombstoneEvent, ConversationEndedTombstoneView};
+#[cfg(not(target_family = "wasm"))]
+use super::ConversationEndedTombstoneEvent;
+use super::ConversationEndedTombstoneView;
 
 impl TerminalView {
     pub fn sharer_session_kind(&self) -> Option<&Kind> {
@@ -722,12 +724,12 @@ impl TerminalView {
     /// Clear the presence manager and handle any UI necessary on shared session end.
     /// Applies to both sharer and viewer when the session sharing ends.
     pub fn on_session_share_ended(&mut self, ctx: &mut ViewContext<Self>) {
-        let owned_ambient_task_id = self.owned_ambient_agent_task_id(ctx);
+        let viewed_ambient_task_id_owned_by_current_user = self.owned_ambient_agent_task_id(ctx);
         let should_insert_tombstone = {
             let model = self.model.lock();
             FeatureFlag::CloudModeSetupV2.is_enabled()
                 && model.is_shared_ambient_agent_session()
-                && owned_ambient_task_id.is_none()
+                && viewed_ambient_task_id_owned_by_current_user.is_none()
                 && self.conversation_ended_tombstone_view_id.is_none()
                 && !model.is_receiving_agent_conversation_replay()
         };
@@ -769,15 +771,17 @@ impl TerminalView {
             });
         });
 
-        if let Some(task_id) = owned_ambient_task_id {
-            self.enable_owned_cloud_followup_input(task_id, ctx);
-        } else if self.model.lock().shared_session_status().is_viewer() {
-            // When the session is ended, the input should be uneditable iff this is a viewer.
-            self.input().update(ctx, |input, ctx| {
-                input.editor().update(ctx, |editor, ctx| {
-                    editor.set_interaction_state(InteractionState::Selectable, ctx);
+        if self.pending_cloud_followup_task_id.is_none() {
+            if let Some(task_id) = viewed_ambient_task_id_owned_by_current_user {
+                self.enable_owned_cloud_followup_input(task_id, ctx);
+            } else if self.model.lock().shared_session_status().is_viewer() {
+                // When the session is ended, the input should be uneditable iff this is a viewer.
+                self.input().update(ctx, |input, ctx| {
+                    input.editor().update(ctx, |editor, ctx| {
+                        editor.set_interaction_state(InteractionState::Selectable, ctx);
+                    });
                 });
-            });
+            }
         }
 
         self.pane_configuration.update(ctx, |pane_config, ctx| {
@@ -794,10 +798,6 @@ impl TerminalView {
             status.is_active_viewer() || status.is_active_sharer()
         };
         self.handle_non_running_ambient_agent_task(has_live_shared_session, ctx);
-    }
-
-    pub fn on_ambient_agent_session_ended(&mut self, ctx: &mut ViewContext<Self>) {
-        self.handle_non_running_ambient_agent_task(false, ctx);
     }
 
     fn handle_non_running_ambient_agent_task(
@@ -828,6 +828,7 @@ impl TerminalView {
         self.insert_conversation_ended_tombstone(ctx);
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn start_cloud_followup_from_tombstone(
         &mut self,
         task_id: crate::ai::ambient_agents::AmbientAgentTaskId,
@@ -1657,7 +1658,7 @@ impl TerminalView {
 
     pub fn insert_conversation_ended_tombstone(&mut self, ctx: &mut ViewContext<Self>) {
         if self.conversation_ended_tombstone_view_id.is_some() {
-            return;
+            self.remove_conversation_ended_tombstone(ctx);
         }
         let task_id = self.model.lock().ambient_agent_task_id();
         let terminal_view_id = self.id();
@@ -1665,8 +1666,8 @@ impl TerminalView {
         let tombstone_view_handle = ctx.add_typed_action_view(|ctx| {
             ConversationEndedTombstoneView::new(ctx, terminal_view_id, task_id)
         });
+        #[cfg(not(target_family = "wasm"))]
         ctx.subscribe_to_view(&tombstone_view_handle, |me, _, event, ctx| match event {
-            #[cfg(not(target_family = "wasm"))]
             ConversationEndedTombstoneEvent::ContinueInCloud { task_id } => {
                 me.start_cloud_followup_from_tombstone(*task_id, ctx);
             }

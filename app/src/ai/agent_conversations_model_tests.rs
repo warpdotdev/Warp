@@ -206,8 +206,10 @@ fn test_display_status_uses_active_execution_over_previous_conversation_status()
                 parent_agent_id: None,
                 agent_name: None,
                 parent_conversation_id: None,
+                is_remote_child: false,
                 run_id: Some(task_id.clone()),
                 autoexecute_override: None,
+                last_event_sequence: None,
             },
         );
 

@@ -102,7 +102,7 @@ impl View for CloudModeFollowupUserQuery {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
-        render_user_query(&self.prompt, &self.view_model, app)
+        render_user_query(&self.prompt, None, &self.view_model, app)
     }
 }
 

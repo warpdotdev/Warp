@@ -26,6 +26,12 @@ use warpui::{AppContext, ModelContext, SingletonEntity};
 pub(super) struct SharedSessionState {
     // The current active request id for the shared session (used if subsequent events do not provide a request id)
     current_response_id: Option<ResponseStreamId>,
+    /// `true` if shared response streams should be ignored, used to skip processing MAA response streams that
+    /// originate from session sharing replay when joining a new shared session for a follow-up on an existing
+    /// ambient agent conversation.
+    should_suppress_replayed_response_for_existing_conversation: bool,
+    /// Per-stream latch derived from the gate above once we decide the current replay should be
+    /// ignored.
     should_skip_current_replayed_response: bool,
     // The participant who initiated the current response stream
     current_response_initiator: Option<ParticipantId>,
@@ -34,6 +40,13 @@ pub(super) struct SharedSessionState {
 }
 
 impl BlocklistAIController {
+    /// Controls whether replayed events for an already-restored shared-session conversation should
+    /// be ignored to avoid duplicating content appended from follow-up scrollback.
+    pub fn set_should_suppress_existing_agent_conversation_replay(&mut self, value: bool) {
+        self.shared_session_state
+            .should_suppress_replayed_response_for_existing_conversation = value;
+    }
+
     /// Returns the current conversation ID for the active shared session stream.
     /// Returns None if there's no active shared session conversation.
     pub(crate) fn get_current_shared_session_conversation_id(
@@ -150,16 +163,14 @@ impl BlocklistAIController {
                     h.start_new_conversation(terminal_view_id, false, true, ctx)
                 })
             });
+        self.shared_session_state.current_response_id = Some(stream_id.clone());
         if self
             .should_skip_replayed_response_for_existing_conversation(existing_conversation_id, ctx)
         {
-            self.shared_session_state.current_response_id = Some(stream_id);
             self.shared_session_state
                 .should_skip_current_replayed_response = true;
             return;
         }
-
-        self.shared_session_state.current_response_id = Some(stream_id.clone());
 
         let Some(conversation) = history.as_ref(ctx).conversation(&conversation_id) else {
             log::error!(
@@ -217,6 +228,8 @@ impl BlocklistAIController {
         });
     }
 
+    /// Returns whether replayed events for an already-populated shared-session conversation should
+    /// be ignored to avoid duplicating content that was restored from scrollback.
     fn should_skip_replayed_response_for_existing_conversation(
         &self,
         existing_conversation_id: Option<AIConversationId>,
@@ -227,7 +240,9 @@ impl BlocklistAIController {
         };
         let model = self.terminal_model.lock();
         if !model.is_receiving_agent_conversation_replay()
-            || !model.should_suppress_existing_agent_conversation_replay()
+            || !self
+                .shared_session_state
+                .should_suppress_replayed_response_for_existing_conversation
         {
             return false;
         }
