@@ -1274,6 +1274,14 @@ impl TerminalManager {
         sharer_remote_update_guard: RemoteUpdateGuard,
         ctx: &mut AppContext,
     ) {
+        // Session sharing requires Warp server auth. Under auth bypass the server
+        // would reject the request with UserNotFound, producing a spurious toast.
+        // Skip the init entirely; session sharing is not functional in this mode.
+        if crate::local_ai::auth_bypass_enabled() {
+            log::debug!("Skipping session sharing init: auth bypass is active");
+            return;
+        }
+
         let mut session_sharer = shared_session_model.borrow_mut();
 
         // If it's already being shared, then this should no-op.
