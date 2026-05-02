@@ -159,6 +159,15 @@ impl CLIAgent {
         }
     }
 
+    /// Alternative command prefixes that also resolve to this CLI agent.
+    /// For example, `vibe-acp` is an alternative entry point for Mistral Vibe.
+    pub fn command_aliases(&self) -> &'static [&'static str] {
+        match self {
+            CLIAgent::Vibe => &["vibe-acp"],
+            _ => &[],
+        }
+    }
+
     /// Serialized version of the CLIAgent name (e.g. "Claude", "Gemini"). Used for the
     /// session-sharing protocol's opaque `cli_agent` string field.
     pub fn to_serialized_name(&self) -> String {
@@ -356,6 +365,7 @@ impl CLIAgent {
             .filter(|agent| !matches!(agent, CLIAgent::Unknown))
             .find(|agent| {
                 resolved_first_word == agent.command_prefix()
+                    || agent.command_aliases().contains(&resolved_first_word.as_str())
                     || (matches!(agent, CLIAgent::Claude)
                         && Self::is_aifx_agent_run_claude(&resolved_command, ctx))
             })
