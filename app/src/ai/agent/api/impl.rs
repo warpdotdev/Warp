@@ -9,11 +9,21 @@ use crate::server::server_api::ServerApi;
 
 use super::{convert_to::convert_input, ConvertToAPITypeError, RequestParams, ResponseStream};
 
+#[path = "local_cli.rs"]
+mod local_cli;
+
 pub async fn generate_multi_agent_output(
     server_api: Arc<ServerApi>,
     mut params: RequestParams,
     cancellation_rx: futures::channel::oneshot::Receiver<()>,
 ) -> Result<ResponseStream, ConvertToAPITypeError> {
+    // Local-AI bypass: when WARP_LOCAL_AI is set, route the interactive panel
+    // through the CLI subprocess instead of Warp's authenticated server.
+    // This avoids the 401 "User not in context" error from generate_multi_agent_output.
+    if crate::local_ai::is_active() {
+        let stream = local_cli::generate_local_output(params, cancellation_rx).await;
+        return Ok(stream);
+    }
     let supported_tools = params
         .supported_tools_override
         .take()

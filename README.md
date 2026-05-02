@@ -51,7 +51,7 @@ WARP_LOCAL_AI=claude
 
 ## Known limitations
 
-- The interactive agent panel still dispatches via `generate_multi_agent_output()` to Warp's GraphQL server. Under bypass this returns 401. The `WARP_LOCAL_AI` harness override only intercepts the `agent_sdk` CLI path. Routing the interactive UI to a local CLI requires synthesising a `warp_multi_agent_api::ResponseEvent` stream. Tracked as follow-up.
+- The interactive agent panel under `WARP_LOCAL_AI` routes through a local CLI subprocess (`claude -p` / `codex exec`). Tool calls the CLI emits (file edits, shell commands) are not forwarded back to the Warp panel UI - only the assistant text reply is shown. Full tool-loop support requires a richer protocol bridge and is left as follow-up.
 - `WARP_LOCAL_AI=ollama` logs a warning and is not yet implemented.
 
 ## Build
