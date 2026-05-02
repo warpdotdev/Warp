@@ -18926,6 +18926,18 @@ impl TerminalView {
                     *conversation_id,
                     ctx,
                 );
+                // Force-locks to AI mode regardless of prior agent-view state.
+                let is_buffer_empty = self.input.as_ref(ctx).buffer_text(ctx).is_empty();
+                self.ai_input_model.update(ctx, |ai_input, ctx| {
+                    ai_input.set_input_config(
+                        InputConfig {
+                            input_type: InputType::AI,
+                            is_locked: true,
+                        },
+                        is_buffer_empty,
+                        ctx,
+                    );
+                });
                 self.redetermine_global_focus(ctx);
             }
             AIBlockEvent::ContinuePassiveCodeDiffWithAgent {
