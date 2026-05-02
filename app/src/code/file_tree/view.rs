@@ -1307,6 +1307,12 @@ impl FileTreeView {
                         {
                             Some(state.entry.clone())
                         }
+                        Some(IndexedRepoState::Pending) => {
+                            // Repo is being (re-)indexed. Keep whatever entry
+                            // we already have so the tree doesn't flash to a
+                            // loading state during the transition.
+                            continue;
+                        }
                         _ => None,
                     }
                 };
@@ -1578,10 +1584,23 @@ impl FileTreeView {
             .get_repository(&id, ctx)
             .map(|state| state.entry.clone());
         if let Some(root_dir) = self.root_directories.get_mut(path) {
-            root_dir.entry = match entry {
-                Some(entry) => entry,
-                None => Self::create_empty_entry(path),
-            };
+            match entry {
+                Some(entry) => root_dir.entry = entry,
+                None => {
+                    // Preserve the existing entry if it already has data (e.g. from a
+                    // prior lazy-loaded index that is now being upgraded to a full git
+                    // repo). Overwriting with an empty entry causes the tree to flash
+                    // back to a loading state during the Pending → Indexed transition.
+                    let has_children = root_dir
+                        .entry
+                        .child_paths(root_dir.entry.root_directory())
+                        .next()
+                        .is_some();
+                    if !has_children {
+                        root_dir.entry = Self::create_empty_entry(path);
+                    }
+                }
+            }
         }
     }
 
