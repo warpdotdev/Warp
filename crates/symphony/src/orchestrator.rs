@@ -799,7 +799,11 @@ fn truncate(s: &str, n: usize) -> String {
     if s.len() <= n {
         s.to_string()
     } else {
-        let mut t = s[..n].to_string();
+        let mut end = n;
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        let mut t = s[..end].to_string();
         t.push('…');
         t
     }

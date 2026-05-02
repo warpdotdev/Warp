@@ -100,25 +100,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if cli.once {
         orch.tick().await?;
-        // Wait for spawned agent tasks to drain before exiting, with a
-        // generous cap so the smoke test never hangs forever. The agent
-        // subprocess streams events back into the runtime state; once
-        // running is empty we know the dispatch path completed.
-        let drain_deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+        // Wait indefinitely for spawned agent tasks to drain. Real coding
+        // tasks against the warp source can take 10-30 minutes; capping the
+        // drain causes Symphony to exit before agents finish, which means
+        // diff-stat / comment / state-transition never run. Use Ctrl-C to
+        // abort if needed.
         loop {
             let (running, _completed) = orch.state_snapshot().await;
             if running.is_empty() {
                 tracing::info!("once: all dispatched agents finished");
                 break;
             }
-            if std::time::Instant::now() > drain_deadline {
-                tracing::warn!(
-                    running = running.len(),
-                    "once: drain timeout (300s); exiting with agents still running"
-                );
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
         return Ok(());
     }

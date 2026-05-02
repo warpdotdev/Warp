@@ -58,3 +58,4 @@ desired_behavior.md
 
 # Don't include the python cache for bundled skills.
 __pycache__/
+.claude-flow/
