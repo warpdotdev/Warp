@@ -6,12 +6,18 @@ authors.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Enable file-watching and hot-reload support for development workflows.
+# Not for production — use Composer directly in release builds.
+dev = ["dep:notify-debouncer-full"]
+
 [dependencies]
 orchestrator = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["fs", "rt"] }
+tokio = { workspace = true, features = ["fs", "rt", "sync"] }
 tracing = { workspace = true }
+notify-debouncer-full = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
