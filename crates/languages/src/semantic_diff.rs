@@ -153,16 +153,23 @@ fn extract_entities_from_tree(
             let capture_name = capture_names.get(cap.index as usize);
             let Some(name) = capture_name else { continue };
 
-            // Skip comments — they aren't entities.
+            // Skip non-definition captures (comments, references, etc.).
             if *name == "comment" || *name == "ignore" || *name == "reference" {
                 continue;
             }
 
-            // Only process @definition.* captures.
-            let type_prefix = name.split('.').nth(1).map(String::from);
-            if !name.starts_with("definition.") && type_prefix.is_none() {
+            // Only process @definition and @definition.* captures.
+            // Bare @definition is used by 18+ languages (C, C++, C#, Java, JS, etc.)
+            // for functions/methods. Dotted forms like @definition.class provide
+            // a type prefix for the entity pill.
+            if !name.starts_with("definition") {
                 continue;
             }
+            // Must be exactly "definition" or "definition.<suffix>" (dot-separated).
+            if *name != "definition" && !name.starts_with("definition.") {
+                continue;
+            }
+            let type_prefix = name.strip_prefix("definition.").map(String::from);
 
             // The captured node is typically the _name_ identifier.
             // Walk up to the parent to get the full entity span.
@@ -171,8 +178,16 @@ fn extract_entities_from_tree(
             let end_line = entity_node.end_position().row; // 0-indexed, inclusive from tree-sitter
             let end_line_exclusive = end_line + 1; // make exclusive
 
+            let name_byte_start = cap.node.start_byte();
+            let name_byte_end = cap.node.end_byte();
             let name_text = &content[cap.node.byte_range()];
-            let body_hash = compute_body_hash(content, start_line, end_line_exclusive);
+            let body_hash = compute_body_hash(
+                content,
+                start_line,
+                end_line_exclusive,
+                name_byte_start,
+                name_byte_end,
+            );
 
             entities.push(Entity {
                 name: name_text.to_string(),
@@ -210,15 +225,63 @@ fn entity_body_node(name_node: Node) -> Node {
 
 /// Compute a hash of the entity body with whitespace normalization.
 ///
-/// Skips the first line (signature) so that renames produce the same hash.
-/// Trims each line, removes empty lines, and joins. This ensures formatting-only
-/// changes (cargo fmt, prettier) produce the same hash.
-fn compute_body_hash(content: &str, start_line: usize, end_line: usize) -> u64 {
-    let normalized: String = content
+/// Masks the name token's byte range (replaces with spaces) so that renames
+/// produce the same hash. Trims each line, removes empty lines, and joins.
+/// This ensures formatting-only changes (cargo fmt, prettier) produce the same
+/// hash, and single-line entities (e.g., `fn foo() { 1 }`) are hashed correctly.
+fn compute_body_hash(
+    content: &str,
+    start_line: usize,
+    end_line: usize,
+    name_byte_start: usize,
+    name_byte_end: usize,
+) -> u64 {
+    let start_byte = content
         .lines()
-        .skip(start_line)
-        .take(end_line - start_line)
-        .skip(1) // skip signature line (which contains the name)
+        .nth(start_line)
+        .map(|l| l.as_ptr() as usize - content.as_ptr() as usize)
+        .unwrap_or(0);
+    let end_byte = content
+        .lines()
+        .nth(end_line)
+        .map(|l| l.as_ptr() as usize - content.as_ptr() as usize)
+        .unwrap_or(content.len());
+
+    // Extract entity body text, masking the name token.
+    let entity_text = &content[start_byte..end_byte];
+    let masked: String = if name_byte_start >= start_byte && name_byte_end <= end_byte {
+        let local_start = name_byte_start - start_byte;
+        let local_end = name_byte_end - start_byte;
+        let mut chars: Vec<char> = entity_text.chars().collect();
+        // Count byte offset within the char vec to find the masking region.
+        let mut byte_pos = 0usize;
+        let mut char_start = None;
+        let mut char_end = chars.len();
+        for (i, &ch) in chars.iter().enumerate() {
+            if byte_pos >= local_start && char_start.is_none() {
+                char_start = Some(i);
+            }
+            if byte_pos >= local_end && char_end == chars.len() {
+                char_end = i;
+                break;
+            }
+            byte_pos += ch.len_utf8();
+        }
+        let char_start = char_start.unwrap_or(0);
+        let char_end = char_end.min(chars.len());
+        for ch in &mut chars[char_start..char_end] {
+            if !ch.is_whitespace() {
+                *ch = ' ';
+            }
+        }
+        chars.into_iter().collect()
+    } else {
+        // Name range outside entity body — hash the full body.
+        entity_text.to_string()
+    };
+
+    let normalized: String = masked
+        .lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
@@ -411,26 +474,64 @@ fn find_best_match_fuzzy(base: &[Entity], base_matched: &[bool], cur: &Entity) -
 
 /// Heuristic: did this entity move significantly within the file?
 ///
-/// An entity "moved" if:
-///   - Its body is the same (same hash), AND
-///   - Its position relative to other same-named entities has shifted by more
-///     than a small threshold (entities around it changed position).
+/// Compares the entity's neighbors in the sorted entity list rather than
+/// absolute line numbers. Inserting or deleting lines above an entity
+/// shifts its absolute line number but preserves its adjacent neighbors,
+/// so this avoids false `Moved` classifications from insertions/deletions.
 ///
-/// Simple approach: if the entity's line offset from the start of the file differs
-/// by more than a reasonable margin given the number of changes between base and current,
-/// classify as moved. For now, we use a generous threshold.
+/// An entity is classified as moved when its immediate neighbors in the
+/// entity ordering have changed (i.e., it swapped position with another
+/// existing entity).
 fn position_shifted(
     base_ent: &Entity,
     cur_ent: &Entity,
-    _base: &[Entity],
-    _current: &[Entity],
-    _bi: usize,
-    _ci: usize,
+    base: &[Entity],
+    current: &[Entity],
+    bi: usize,
+    ci: usize,
 ) -> bool {
-    // If start lines differ by more than 3, the entity moved.
-    // This is a simple heuristic; a more sophisticated approach would track
-    // the relative ordering of all entities.
-    (base_ent.start_line as isize - cur_ent.start_line as isize).unsigned_abs() > 3
+    // Collect same-type entities into indexed lists.
+    let base_same: Vec<(usize, &Entity)> = base
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.type_prefix == base_ent.type_prefix)
+        .collect();
+    let current_same: Vec<(usize, &Entity)> = current
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.type_prefix == cur_ent.type_prefix)
+        .collect();
+
+    // Find this entity's ordinal position among same-type entities.
+    let base_ord = base_same
+        .iter()
+        .position(|(i, e)| *i == bi && e.start_line == base_ent.start_line)
+        .unwrap_or(0);
+    let current_ord = current_same
+        .iter()
+        .position(|(i, e)| *i == ci && e.start_line == cur_ent.start_line)
+        .unwrap_or(0);
+
+    // Check neighbors: the entity before and after in the ordering.
+    // If both neighbors are different entities (by name), the entity moved.
+    // If at least one neighbor is the same, it's still in roughly the same spot.
+    let base_before = base_ord
+        .checked_sub(1)
+        .and_then(|o| base_same.get(o))
+        .map(|(_, e)| &e.name);
+    let base_after = base_same.get(base_ord + 1).map(|(_, e)| &e.name);
+    let cur_before = current_ord
+        .checked_sub(1)
+        .and_then(|o| current_same.get(o))
+        .map(|(_, e)| &e.name);
+    let cur_after = current_same.get(current_ord + 1).map(|(_, e)| &e.name);
+
+    // Both neighbors changed → entity moved.
+    // If at least one neighbor is the same (or the entity is at a boundary
+    // in both versions), it hasn't meaningfully moved.
+    let before_changed = base_before != cur_before;
+    let after_changed = base_after != cur_after;
+    before_changed && after_changed
 }
 
 /// Split an entity name into tokens for fuzzy matching.
@@ -849,11 +950,71 @@ fn new_fn() {
         let content_a = "fn foo() {\n    let x = 1;\n}\n";
         let content_b = "fn foo() {\nlet x = 1;\n}\n";
 
-        let hash_a = compute_body_hash(content_a, 0, 3);
-        let hash_b = compute_body_hash(content_b, 0, 3);
+        // "foo" is at byte range 3..6 in both
+        let hash_a = compute_body_hash(content_a, 0, 3, 3, 6);
+        let hash_b = compute_body_hash(content_b, 0, 3, 3, 6);
         assert_eq!(
             hash_a, hash_b,
             "whitespace-normalized body hashes should match"
+        );
+    }
+
+    #[test]
+    fn test_body_hash_rename_invariant() {
+        let content_a = "fn foo() {\n    let x = 1;\n}\n";
+        let content_b = "fn bar() {\n    let x = 1;\n}\n";
+
+        // "foo" at 3..6, "bar" at 3..6 — names are masked so hashes match
+        let hash_a = compute_body_hash(content_a, 0, 3, 3, 6);
+        let hash_b = compute_body_hash(content_b, 0, 3, 3, 6);
+        assert_eq!(
+            hash_a, hash_b,
+            "renamed function should produce same body hash when name is masked"
+        );
+    }
+
+    #[test]
+    fn test_body_hash_single_line_entity() {
+        let content_a = "fn foo() { 1 }\n";
+        let content_b = "fn foo() { 2 }\n";
+
+        // "foo" at byte range 3..6
+        let hash_a = compute_body_hash(content_a, 0, 1, 3, 6);
+        let hash_b = compute_body_hash(content_b, 0, 1, 3, 6);
+        assert_ne!(
+            hash_a, hash_b,
+            "single-line entity body change should produce different hash"
+        );
+    }
+
+    #[test]
+    fn test_insertion_above_does_not_cause_moved() {
+        // Adding a helper at the top should NOT classify later functions as Moved.
+        // base: [foo(0-5), bar(10-15)]
+        // current: [helper(0-3), foo(5-10), bar(15-20)] — all same bodies, shifted down
+        let base = vec![
+            make_entity("foo", Some("fn"), 0, 5, 111),
+            make_entity("bar", Some("fn"), 10, 15, 222),
+        ];
+        let current = vec![
+            make_entity("helper", Some("fn"), 0, 3, 999), // added above
+            make_entity("foo", Some("fn"), 5, 10, 111),   // same body, shifted down
+            make_entity("bar", Some("fn"), 15, 20, 222),  // same body, shifted down
+        ];
+
+        let diff = diff_entities(&base, &current);
+        // foo: base_rank=0/2=0%, current_rank=1/3=33%, diff=33% — borderline
+        // bar: base_rank=1/2=50%, current_rank=2/3=67%, diff=17% — borderline
+        // Both should NOT be Moved because their relative ordering is preserved.
+        let moved: Vec<_> = diff
+            .changes
+            .iter()
+            .filter(|c| c.kind == EntityChangeKind::Moved)
+            .collect();
+        assert_eq!(
+            moved.len(),
+            0,
+            "insertions above should not cause Moved classification"
         );
     }
 }

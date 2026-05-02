@@ -2688,6 +2688,7 @@ impl CodeReviewView {
                                 .unwrap_or(true);
                             if should_apply {
                                 current.file_diff = diff.file_diff;
+                                current.entity_diff = diff.entity_diff.clone();
                             }
                             self.viewported_list_state
                                 .invalidate_height_for_index(index);
