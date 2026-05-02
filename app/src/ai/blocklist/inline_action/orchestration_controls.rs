@@ -352,13 +352,13 @@ pub fn create_environment_picker<A: OrchestrationControlAction, V: View>(
     ctx: &mut ViewContext<V>,
 ) -> ViewHandle<FilterableDropdown<A>> {
     let initial_env = initial_env_id.to_string();
-    let styles_clone = styles.clone();
+    let styles = *styles;
     let dropdown_handle = ctx.add_typed_action_view(move |ctx_dropdown| {
         let mut dropdown = FilterableDropdown::<A>::new(ctx_dropdown);
         dropdown.set_use_overlay_layer(false, ctx_dropdown);
         dropdown.set_main_axis_size(MainAxisSize::Max, ctx_dropdown);
         dropdown.set_button_variant(ButtonVariant::Secondary);
-        dropdown.set_style(styles_clone);
+        dropdown.set_style(styles);
         dropdown.set_top_bar_height(ORCHESTRATION_PICKER_HEIGHT, ctx_dropdown);
         dropdown
     });
