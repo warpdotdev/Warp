@@ -90,26 +90,37 @@ Key `ThirdPartyHarness` method implementations:
 - `prepare_environment_config()` → write ACP session config if needed; for v1 this may be a no-op or minimal JSON config file with MCP server list
 - `build_command()` → spawn `self.command` with `self.args`. No additional ACP-specific launch flags are injected by Warp — ACP-compatible agents communicate over stdio by default. Any required flags are user-supplied via the Args field.
 
-The ACP protocol handshake (JSON-RPC `initialize` / `initialized` exchange over
-stdio) is handled in a new `run_acp_session()` function within this file, called
-from `run()`. The initialize request must include:
+The ACP protocol handshake and session flow is handled in a new
+`run_acp_session()` function within this file, called from `run()`.
+
+**Step 1 — Initialize:** Warp sends an `initialize` request:
 
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 1,
+  "id": 0,
   "method": "initialize",
   "params": {
-    "clientInfo": { "name": "warp", "version": "<warp_version>" },
-    "capabilities": {}
+    "protocolVersion": 1,
+    "clientCapabilities": {
+      "fs": { "readTextFile": true, "writeTextFile": true },
+      "terminal": true
+    },
+    "clientInfo": { "name": "warp", "title": "Warp", "version": "<warp_version>" }
   }
 }
 ```
 
-Warp then reads the `InitializeResult` from the agent's stdout, sends
-`initialized`, and transitions to the active session loop.
+The agent responds with its `protocolVersion`, `agentCapabilities`, and
+`agentInfo`. If versions don't match, Warp closes the connection and
+surfaces a descriptive error to the user.
 
-**Timeout:** If no `InitializeResult` arrives within 10 seconds, `run()` returns
+**Step 2 — Session setup:** Warp calls `session/new` with workspace context.
+
+**Step 3 — Prompt loop:** Warp sends prompts via `session/prompt` and
+streams response chunks into Warp's conversation blocks.
+
+**Timeout:** If no initialize arrives within 10 seconds, `run()` returns
 `AgentDriverError::HarnessConfigSetupFailed` with a descriptive message.
 
 **MCP passthrough:** After initialization, Warp offers to pass its 
@@ -143,11 +154,10 @@ for Gemini.
 User selects ACP agent + sends prompt
   → AcpHarness::validate() checks command on PATH
   → AcpHarness::build_command() spawns process over stdio
-  → run_acp_session() sends initialize, awaits InitializeResult (10s timeout)
-  → sends initialized notification
-  → passes MCP servers to session config (if any)
+  → run_acp_session() sends initialize, awaits initialize response (10s timeout)
+  → calls session/new with workspace context
   → enters prompt/response loop:
-      Warp sends prompt as ACP session/message
+      Warp sends prompt via session/prompt
       Agent streams response chunks
       Warp renders chunks as conversation blocks
       File edits → diff view
@@ -179,7 +189,7 @@ Invariant-to-test mapping (from `product.md` success criteria):
 2. **Unit test:** `run_acp_session()` returns a timeout error if the mock agent
    process does not send `InitializeResult` within the deadline.
 3. **Integration test under `crates/integration/`:** Spawn a minimal ACP echo
-   agent (a small test binary that implements initialize/initialized and
+   agent (a small test binary that implements initialize/session/new/session/prompt and
    returns a static response), send a prompt, and assert a conversation block
    is produced.
 4. **Manual:** Configure `opencode` as an ACP agent, send a prompt, confirm
@@ -193,7 +203,7 @@ Invariant-to-test mapping (from `product.md` success criteria):
 ## Risks and mitigations
 
 - **ACP spec churn:** The ACP spec is still evolving. Mitigation: pin to the
-  stable `initialize`/`initialized`/`session/message` core and treat unknown
+  stable `initialize`/`session/new`/`session/prompt` core and treat unknown
   fields as ignored (forward-compatible deserialization with `#[serde(flatten)]`
   or `deny_unknown_fields = false`).
 - **CLIAgent enum serialization:** Adding `Acp(String)` changes the shape of a
