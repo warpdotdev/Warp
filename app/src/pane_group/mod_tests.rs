@@ -9,7 +9,11 @@ use crate::{
         agent_conversations_model::AgentConversationsModel,
         ambient_agents::github_auth_notifier::GitHubAuthNotifier,
         ambient_agents::AmbientAgentTaskId,
-        blocklist::BlocklistAIHistoryModel,
+        blocklist::{
+            orchestration_event_streamer::OrchestrationEventStreamer,
+            orchestration_events::OrchestrationEventService,
+            task_status_sync_model::TaskStatusSyncModel, BlocklistAIHistoryModel,
+        },
         document::ai_document_model::AIDocumentModel,
         execution_profiles::profiles::AIExecutionProfilesModel,
         llms::LLMPreferences,
@@ -134,6 +138,11 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
+    app.add_singleton_model(OrchestrationEventService::new);
+    app.add_singleton_model(TaskStatusSyncModel::new);
+    if FeatureFlag::OrchestrationV2.is_enabled() {
+        app.add_singleton_model(OrchestrationEventStreamer::new);
+    }
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
     app.add_singleton_model(crate::ai::blocklist::BlocklistAIPermissions::new);
     app.add_singleton_model(AgentNotificationsModel::new);

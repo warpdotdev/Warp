@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -29,6 +29,10 @@ use super::{claude_command, prepare_claude_environment_config, ClaudeHarness};
 const CLAUDE_WAKE_PROMPT: &str =
     "New lead-agent messages are available. Read the latest lead-agent updates and continue the task accordingly.";
 pub(super) const CLAUDE_WAKE_PROMPT_FILE_NAME: &str = "wake-turn-prompt.txt";
+const CLAUDE_WAKE_EXTERNALLY_MANAGED_LISTENER_ENV_VARS: &[&str] = &[
+    "OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY",
+    "OZ_PARENT_LISTENER_MANAGED_EXTERNALLY",
+];
 
 #[derive(Debug)]
 pub(super) struct ClaudeWakeRemoteContext {
@@ -71,7 +75,7 @@ impl ClaudeHarness {
             "Evaluating dormant Claude wake: task_id={task_id} server_task_state={:?} harness={harness:?}",
             task.state
         );
-        if task.state != AmbientAgentTaskState::Succeeded || harness != Some(Harness::Claude) {
+        if !is_local_wake_task_state_ready(task.state.clone()) || harness != Some(Harness::Claude) {
             log::info!(
                 "Skipping dormant Claude wake: task_id={task_id} server_task_state={:?} harness={harness:?}",
                 task.state
@@ -216,9 +220,46 @@ impl ClaudeHarness {
             None,
             true,
         );
-        let env_vars = task_env_vars(Some(&task_id), parent_run_id.as_deref(), Harness::Claude);
+        let env_vars = local_wake_task_env_vars(Some(&task_id), parent_run_id.as_deref());
 
         Ok(prefix_command_with_env_vars(command, env_vars))
+    }
+}
+
+fn local_wake_task_env_vars(
+    task_id: Option<&AmbientAgentTaskId>,
+    parent_run_id: Option<&str>,
+) -> HashMap<OsString, OsString> {
+    let mut env_vars = task_env_vars(task_id, parent_run_id, Harness::Claude);
+    // The local wake command is executed directly in the existing child
+    // terminal, not through `AgentDriver::run_harness`, so Warp does not start
+    // `MessageBridge` for this resumed Claude process. Leave the listener in
+    // the Claude plugin's self-managed mode; otherwise the hook waits for
+    // state files that no managed bridge is producing and the wake message is
+    // never surfaced to Claude.
+    for env_name in CLAUDE_WAKE_EXTERNALLY_MANAGED_LISTENER_ENV_VARS {
+        env_vars.remove(OsStr::new(env_name));
+    }
+    env_vars
+}
+
+fn is_local_wake_task_state_ready(state: AmbientAgentTaskState) -> bool {
+    match state {
+        AmbientAgentTaskState::Succeeded => true,
+        // The local conversation status is already gated on `Success` before
+        // this function is called. The server task update is fire-and-forget,
+        // so it can still report `InProgress` for a short window after the
+        // local Claude process has actually stopped. Treat that stale server
+        // state as wakeable for local children.
+        AmbientAgentTaskState::InProgress => true,
+        AmbientAgentTaskState::Queued
+        | AmbientAgentTaskState::Pending
+        | AmbientAgentTaskState::Claimed
+        | AmbientAgentTaskState::Failed
+        | AmbientAgentTaskState::Error
+        | AmbientAgentTaskState::Blocked
+        | AmbientAgentTaskState::Cancelled
+        | AmbientAgentTaskState::Unknown => false,
     }
 }
 
@@ -245,4 +286,32 @@ fn prefix_command_with_env_vars(command: String, env_vars: HashMap<OsString, OsS
         .join(" ");
 
     format!("env {assignments} {command}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_wake_task_state_ready_allows_success_and_stale_in_progress() {
+        assert!(is_local_wake_task_state_ready(
+            AmbientAgentTaskState::Succeeded
+        ));
+        assert!(is_local_wake_task_state_ready(
+            AmbientAgentTaskState::InProgress
+        ));
+
+        for state in [
+            AmbientAgentTaskState::Queued,
+            AmbientAgentTaskState::Pending,
+            AmbientAgentTaskState::Claimed,
+            AmbientAgentTaskState::Failed,
+            AmbientAgentTaskState::Error,
+            AmbientAgentTaskState::Blocked,
+            AmbientAgentTaskState::Cancelled,
+            AmbientAgentTaskState::Unknown,
+        ] {
+            assert!(!is_local_wake_task_state_ready(state));
+        }
+    }
 }

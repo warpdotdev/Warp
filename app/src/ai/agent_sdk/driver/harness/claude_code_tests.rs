@@ -646,7 +646,7 @@ fn resolve_suffix_returns_none_for_short_key() {
 
 #[test]
 #[serial_test::serial]
-fn prepare_local_wake_command_rehydrates_transcript_without_staging_messages() {
+fn prepare_local_wake_command_rehydrates_transcript_with_self_managed_listener() {
     let home_dir = TempDir::new().unwrap();
     let claude_config_dir = TempDir::new().unwrap();
     let bridge_state_root = TempDir::new().unwrap();
@@ -698,10 +698,8 @@ fn prepare_local_wake_command_rehydrates_transcript_without_staging_messages() {
         shell_quote(&parent_run_id)
     )));
     assert!(command.contains(&format!("{OZ_HARNESS_ENV}={}", shell_quote("claude"))));
-    assert!(command.contains(&format!(
-        "{OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY_ENV}={}",
-        shell_quote("1")
-    )));
+    assert!(!command.contains(OZ_MESSAGE_LISTENER_MANAGED_EXTERNALLY_ENV));
+    assert!(!command.contains("OZ_PARENT_LISTENER_MANAGED_EXTERNALLY"));
     assert_eq!(
         fs::read_to_string(&prompt_path).unwrap(),
         "resume prompt\n\nwake prompt"

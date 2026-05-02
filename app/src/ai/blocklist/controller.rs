@@ -81,6 +81,9 @@ use warp_core::assertions::safe_assert;
 use warp_multi_agent_api::{message, Task, ToolType};
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 
+use super::orchestration_event_streamer::{
+    OrchestrationEventStreamer, OrchestrationEventStreamerEvent,
+};
 use super::orchestration_events::{OrchestrationEventService, OrchestrationEventServiceEvent};
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
@@ -363,6 +366,21 @@ enum FollowUpTrigger {
     UserRequested,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalClaudeWakeTrigger {
+    PendingEvents,
+    WakeOnlyStream,
+}
+
+impl LocalClaudeWakeTrigger {
+    fn requires_pending_events(self) -> bool {
+        match self {
+            Self::PendingEvents => true,
+            Self::WakeOnlyStream => false,
+        }
+    }
+}
+
 struct InputQuery {
     which_task: WhichTask,
     input_query: InputQueryType,
@@ -546,6 +564,14 @@ impl BlocklistAIController {
             ctx.subscribe_to_model(&svc, move |me, event, ctx| {
                 let OrchestrationEventServiceEvent::EventsReady { conversation_id } = event;
                 me.handle_pending_events_ready(*conversation_id, ctx);
+            });
+        }
+        if FeatureFlag::OrchestrationV2.is_enabled() {
+            let streamer = OrchestrationEventStreamer::handle(ctx);
+            ctx.subscribe_to_model(&streamer, move |me, event, ctx| {
+                let OrchestrationEventStreamerEvent::DormantClaudeWakeReady { conversation_id } =
+                    event;
+                me.handle_dormant_claude_wake_ready(*conversation_id, ctx);
             });
         }
         Self {
@@ -1507,6 +1533,7 @@ impl BlocklistAIController {
     fn maybe_prepare_local_claude_wake(
         &mut self,
         _conversation_id: AIConversationId,
+        _trigger: LocalClaudeWakeTrigger,
         _ctx: &mut ModelContext<Self>,
     ) -> bool {
         false
@@ -1516,6 +1543,7 @@ impl BlocklistAIController {
     fn maybe_prepare_local_claude_wake(
         &mut self,
         conversation_id: AIConversationId,
+        trigger: LocalClaudeWakeTrigger,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
         if self
@@ -1525,10 +1553,15 @@ impl BlocklistAIController {
             log::info!("Dormant Claude wake already pending: conversation_id={conversation_id:?}");
             return true;
         }
+        if trigger.requires_pending_events() {
+            let has_pending_events = OrchestrationEventService::handle(ctx)
+                .update(ctx, |svc, _| svc.has_pending_events(conversation_id));
+            if !has_pending_events {
+                return false;
+            }
+        }
 
-        let has_pending_events = OrchestrationEventService::handle(ctx)
-            .update(ctx, |svc, _| svc.has_pending_events(conversation_id));
-        if !has_pending_events {
+        if !self.conversation_ready_for_pending_events(conversation_id, ctx) {
             return false;
         }
 
@@ -1588,16 +1621,33 @@ impl BlocklistAIController {
                         });
                     }
                     Ok(None) => {
-                        log::info!(
-                            "Falling back to generic pending-event injection after dormant Claude wake eligibility check: conversation_id={conversation_id:?} task_id={task_id:?}"
-                        );
-                        me.inject_pending_events_for_request(conversation_id, ctx);
+                        match trigger {
+                            LocalClaudeWakeTrigger::PendingEvents => {
+                                log::info!(
+                                    "Falling back to generic pending-event injection after dormant Claude wake eligibility check: conversation_id={conversation_id:?} task_id={task_id:?}"
+                                );
+                                me.inject_pending_events_for_request(conversation_id, ctx);
+                            }
+                            LocalClaudeWakeTrigger::WakeOnlyStream => {
+                                log::info!(
+                                    "Retrying wake-only dormant Claude eligibility check: conversation_id={conversation_id:?} task_id={task_id:?}"
+                                );
+                                me.schedule_dormant_claude_wake_ready_retry(conversation_id, ctx);
+                            }
+                        }
                     }
                     Err(err) => {
                         log::warn!(
                             "Failed to prepare dormant Claude wake command for {conversation_id:?} task_id={task_id:?}: {err:#}"
                         );
-                        me.schedule_pending_events_ready_retry(conversation_id, ctx);
+                        match trigger {
+                            LocalClaudeWakeTrigger::PendingEvents => {
+                                me.schedule_pending_events_ready_retry(conversation_id, ctx);
+                            }
+                            LocalClaudeWakeTrigger::WakeOnlyStream => {
+                                me.schedule_dormant_claude_wake_ready_retry(conversation_id, ctx);
+                            }
+                        }
                     }
                 }
             },
@@ -1616,6 +1666,19 @@ impl BlocklistAIController {
             async move { Timer::after(Duration::from_secs(2)).await },
             move |me, _, ctx| {
                 me.handle_pending_events_ready(conversation_id, ctx);
+            },
+        );
+    }
+
+    fn schedule_dormant_claude_wake_ready_retry(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        ctx.spawn(
+            async move { Timer::after(Duration::from_secs(2)).await },
+            move |me, _, ctx| {
+                me.handle_dormant_claude_wake_ready(conversation_id, ctx);
             },
         );
     }
@@ -1673,11 +1736,31 @@ impl BlocklistAIController {
             return;
         }
 
-        if self.maybe_prepare_local_claude_wake(conversation_id, ctx) {
+        if self.maybe_prepare_local_claude_wake(
+            conversation_id,
+            LocalClaudeWakeTrigger::PendingEvents,
+            ctx,
+        ) {
             return;
         }
 
         self.inject_pending_events_for_request(conversation_id, ctx);
+    }
+
+    fn handle_dormant_claude_wake_ready(
+        &mut self,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        if !self.maybe_prepare_local_claude_wake(
+            conversation_id,
+            LocalClaudeWakeTrigger::WakeOnlyStream,
+            ctx,
+        ) {
+            log::info!(
+                "Ignoring dormant Claude wake-ready signal: conversation_id={conversation_id:?}"
+            );
+        }
     }
 
     pub fn resume_conversation(
