@@ -367,21 +367,66 @@ and `private`; the design rule applied here is:
 
 Helper, alongside the settings group:
 
+Per Oz's v5 [SECURITY] review: a stable unsalted 24-bit FxHash over
+the raw key is dictionary-guessable — an adversary with a shared log
+can hash a list of plausible candidate paths and recover the key by
+collision. The fix is a **per-installation keyed hash**: a 32-byte
+random salt is generated on first launch, stored in a local-only,
+non-synced file (`~/.warp/redaction_salt`, mode `0600`), and never
+leaves the machine.
+
 ```rust
-/// Stable short hash of a `directory_overrides` key suitable for
-/// inclusion in user-facing warnings. **Not cryptographic.** Purpose
-/// is identification of an entry across runs without including the
-/// raw path. 6 hex chars (24 bits) is enough to disambiguate the
-/// O(10) entries a typical user will have.
-pub fn redacted_key_id(raw_key: &str) -> String {
-    let mut hasher = rustc_hash::FxHasher::default();
-    raw_key.hash(&mut hasher);
-    format!("{:06x}", hasher.finish() & 0xffff_ff)
+/// Stable, **non-reversible** short identifier for a
+/// `directory_overrides` key. Suitable for inclusion in user-facing
+/// warnings and locally-shared diagnostic logs.
+///
+/// Implementation: HMAC-SHA256(installation_salt, raw_key), truncated
+/// to 6 hex chars (24 bits). The installation salt is read from
+/// `~/.warp/redaction_salt` (generated on first launch, mode 0600,
+/// never synced). Because the salt is per-installation and never
+/// shared, an identifier leaked in a log file cannot be reversed by
+/// a dictionary attack against candidate paths — the attacker would
+/// need the salt, which only ever exists on the originating machine.
+///
+/// Truncation to 24 bits keeps the identifier short enough for
+/// readable log lines; with O(10) entries per typical user the
+/// collision probability inside a single installation is negligible,
+/// and cross-installation collisions are irrelevant because each
+/// installation has its own salt.
+pub fn redacted_key_id(raw_key: &str, salt: &InstallationSalt) -> String {
+    let tag = hmac_sha256::HMAC::mac(raw_key.as_bytes(), salt.as_bytes());
+    let truncated = u32::from_be_bytes([tag[0], tag[1], tag[2], tag[3]])
+        & 0x00ff_ffff;
+    format!("{truncated:06x}")
 }
 ```
 
+`InstallationSalt` is a thin newtype around `[u8; 32]` whose
+constructor reads the salt file, generating it (with `rand::OsRng`,
+mode `0600` write) if missing. It is loaded once into the settings
+subsystem at startup and passed into `redacted_key_id` as a borrow;
+no global static is required.
+
+If the salt file is missing or unreadable at runtime — for example
+the user deleted it, or Warp is running in a container without write
+access — the redaction helper emits `directory_overrides[unsalted]:
+...` with no derived identifier from the path at all, which is the
+safest fallback and surfaces the configuration error to the user.
+
+**Even-stronger alternative considered and rejected**: storing an
+opaque local ID alongside each entry (e.g. a sidecar file mapping
+`key → uuid`). That removes the hash entirely but requires every
+settings edit to round-trip through Warp's runtime to allocate IDs
+for new keys; users editing `settings.toml` directly in a text
+editor would not get an ID until next launch, so the diagnostic for
+a freshly-typed bad theme value would be
+`directory_overrides[unidentified]`. The salted-HMAC scheme is
+deterministic from the key alone and preserves "edit settings.toml,
+get an immediate identifying warning" — the property that makes the
+diagnostics actually useful for the user.
+
 Usage rule (enforced by code review and by the tests in *Privacy
-invariant tests*): every log/warn/error line emitted by the
+invariant tests*): every log / warn / error line emitted by the
 `directory_overrides` matcher, settings subscriber, or value validator
 must reference offending entries by `redacted_key_id` only.
 
@@ -390,12 +435,15 @@ because theme names are not sensitive and are needed for the user to
 locate the entry in their `settings.toml`. Example warning text:
 
 ```
-directory_overrides[hash=8a3f9c]: unknown theme "Drakula" — matching this entry will be skipped until the value is corrected
+directory_overrides[id=8a3f9c]: unknown theme "Drakula" — matching this entry will be skipped until the value is corrected
 ```
 
-The hash is stable for a given key, so the same warning recurs with
-the same hash across Warp restarts and helps the user correlate
-multiple diagnostics about the same entry.
+The identifier is stable for a given key on a given machine, so the
+same warning recurs with the same id across Warp restarts and helps
+the user correlate multiple diagnostics about the same entry. The
+identifier does **not** match between machines (different salts), so
+correlation across users in a shared bug-report channel is impossible
+— which is the point.
 
 Resolution helper, alongside the group:
 
@@ -466,8 +514,10 @@ finding that settings edits were not handled):
   product behavior #6.
 
 The same subscription handles validation: any value in the new map
-that fails `resolve_theme_ref` is logged once (with its key) and
-treated as absent for matching purposes. Subsequent edits that fix
+that fails `resolve_theme_ref` is logged once via the
+`redacted_key_id` helper (the raw key is **never** included in the
+warning, per *Diagnostic redaction* below) and treated as absent for
+matching purposes. Subsequent edits that fix
 the value re-trigger this validation.
 
 ### 5. Renderer: `Appearance` gains a theme catalog
@@ -567,22 +617,41 @@ global `theme()` form. Concretely:
 | `crates/editor/**` | global by default; per-tab when invoked from `terminal/view/**` (the call site, not the crate, decides) | editor is reusable |
 | `crates/integration/**` | tests; updated to assert both forms |
 
-**Migration enforcement — custom lint**
+**Migration enforcement — concrete tooling**
 
-To make the migration mechanical, exhaustive, and durable across future
-additions, the implementation adds a small `clippy_lints`-style check
-(or a `dylint` lint, depending on the existing tooling Warp uses)
-named `appearance_theme_in_tab_path`. The lint:
+Per Oz's v5 suggestion, the spec commits to a specific mechanism
+rather than leaving it open between tooling families. The
+implementation adds the lint as a **`dylint`** library named
+`appearance_theme_in_tab_path` under a new top-level `tools/lints/`
+directory. `dylint` is the standard for project-specific Rust lints
+(used by `rust-fuzz`, `solana`, and others), runs against a normal
+`cargo` build, and does not require forking clippy or modifying the
+toolchain. The lint:
 
 - Flags any call to `Appearance::*::theme()` (the global accessor)
   whose enclosing module is under a *per-tab* path per the table
-  above. Path classification is hard-coded in the lint config.
+  above. Path classification is hard-coded in the lint source.
 - Fails CI when triggered.
 - Is silenced at a call site only by replacing the call with
   `theme_for(...)`, or — for a deliberate exception — by
   `#[allow(appearance_theme_in_tab_path = "...")]` with a written
   rationale (e.g. "this surface intentionally renders in window
   chrome even though it lives under terminal/view/").
+
+CI hook: `./script/presubmit` gains
+`cargo dylint --lib appearance_theme_in_tab_path -- -D warnings`
+after the existing `cargo clippy` step. The lint runs in parallel
+with clippy and adds well under a minute to presubmit time.
+
+**Fallback** if the Warp team would rather not introduce `dylint` as
+a new dependency: replace the lint library with a `ripgrep` check in
+`./script/presubmit` that matches `Appearance::*::theme()` calls
+under per-tab paths and exits non-zero on hit. This gives 90% of the
+guarantee with no new tooling; the trade-off is no per-call-site
+`#[allow]` syntax (deliberate exceptions need a known-marker comment
+that the script greps and skips). The implementation PR opens with
+`dylint`; if review prefers ripgrep, that switch is one file change
+and one CI-script change.
 
 The lint is the deliverable that gives this spec a feasibility
 guarantee: the migration is correct *by construction* across all 862
@@ -642,9 +711,47 @@ in-development features like `OpenWarpNewSettingsModes`).
 | `directory_overrides` matching | Skipped entirely. The settings group is still parsed (so users who set up the map under preview do not lose data on stable) but `directory_theme_for` is never invoked. |
 | Launch-config `theme:` fields | Deserialized as today (`Option<String>`) but ignored — `launch_config_pin` and `window_default` are not populated when applying templates. |
 | Right-click menu entries | "Pin theme...", "Reset theme", and "Forget launch config theme" are hidden. |
-| Theme catalog (§5) | `theme_for(None)` always returns the global theme; `theme_for(Some(_))` is unreachable because no slot is ever populated. The catalog cache stays empty. |
+| Theme catalog (§5) | `theme_for(None)` always returns the global theme. `theme_for(Some(_))` is reachable only if a render path bypasses the flag check — see *Flag check at the resolver* below — and falls back to the global theme via the catalog's existing missing-theme path. The catalog cache stays empty in normal flag-off operation. |
 | Settings-change subscription on `DirectoryThemeOverrides` | Subscribed but the handler short-circuits when the flag is off. |
-| `appearance_theme_in_tab_path` lint (§5) | Still enforced — the call sites need to be migrated regardless of runtime behavior because the flag must be flippable without recompiling. The migrated call sites pass `theme_state.effective(&global)` which falls through to `global` when every slot is `None`, which is exactly what the flag-off state guarantees. |
+| `appearance_theme_in_tab_path` lint (§5) | Still enforced. Migrated call sites pass not `theme_state.effective(&global)` directly but the wrapper described below, so the flag toggle is the single place that controls runtime behavior. |
+
+**Flag check at the resolver (single source of truth)**
+
+Per Oz's v5 [IMPORTANT] finding: the table above implied populated
+slots could not exist when the flag is off, but the persistence
+section preserves them so flipping the flag back on is non-lossy.
+Both must be true. The resolution is to put the flag check inside the
+resolver itself, so populated slots **on disk** are independent from
+populated slots **at render time**:
+
+```rust
+/// The single function the renderer should call. When the flag is
+/// off, `effective()`'s slot walk is skipped entirely and the global
+/// theme is returned. When on, `effective()` runs normally.
+///
+/// Putting the check here (not at the call site) means:
+///   * Flipping the flag has no per-frame cost: still one branch.
+///   * Persisted slot data is never consulted at render time when
+///     off, so "did the migration miss a call site?" defects can't
+///     leak themed pixels into a flag-off install.
+///   * The 862 migrated call sites all look identical and don't
+///     each need their own flag check.
+pub fn theme_state_effective<'a>(
+    state: &'a TabThemeState,
+    global: &'a ThemeKind,
+    ctx: &AppContext,
+) -> &'a ThemeKind {
+    if !per_tab_overrides_enabled(ctx) {
+        return global;
+    }
+    state.effective(global)
+}
+```
+
+The renderer-call-site migration in §5 calls `theme_state_effective`,
+not `state.effective` directly. The lint flags both the bare
+`Appearance::*::theme()` form and any direct `state.effective()` call
+inside a per-tab module — both are migration mistakes.
 
 **Persisted state with flag off:**
 
@@ -663,9 +770,10 @@ fn per_tab_overrides_enabled(ctx: &AppContext) -> bool {
 }
 ```
 
-Each gated surface above guards entry with this single call. The
-implementation PR introduces a constant for the flag name to avoid
-typos.
+Each gated surface above (matching, launch-config application, menu
+visibility, settings-change subscription) guards entry with this
+single call. The implementation PR introduces a constant for the flag
+name to avoid typos.
 
 ## Testing and validation
 
@@ -804,11 +912,20 @@ typos.
     `C:\Work\medone-archive` does not match (component boundary).
 - **Diagnostic redaction.** Configure `directory_overrides` with a
   key `~/Work/AcmeCorp/2026` mapped to a bad theme name `"Drakula"`.
-  Trigger validation. Capture the warning string. Assert it
-  contains `"Drakula"` and `redacted_key_id("~/Work/AcmeCorp/2026")`,
+  Trigger validation. Capture the warning string. Assert it contains
+  `"Drakula"` and `redacted_key_id("~/Work/AcmeCorp/2026", &salt)`,
   and does **not** contain `"AcmeCorp"`, `"Work"`, `"2026"`, or any
-  substring of the raw key. Assert the same key produces the same
-  hash on a second run within the test process.
+  substring of the raw key.
+- **Per-installation salt.** Two test runs with different generated
+  salts on the same key produce **different** identifiers (asserts
+  the salt is actually keyed in). Two runs with the same salt
+  produce the **same** identifier (asserts determinism within an
+  installation).
+- **Salt file mode.** On a Unix platform, after first-launch salt
+  generation, `stat` the file and assert mode bits == `0600`.
+- **Salt missing fallback.** Delete the salt file mid-test, trigger a
+  fresh validation. Assert the warning string contains
+  `[unsalted]` and does not contain any derived identifier.
 - Open a launch configuration with a window-level `theme:` and three
   tabs, one of which sits in a `directory_overrides`-matched cwd.
   Assert the matched tab uses the cwd theme (cwd > window default);
@@ -839,15 +956,22 @@ typos.
   their effects without losing data, and `cwd_resolved` is recomputed
   from current settings.
 - Toggle the flag from **on** to **off** mid-session. Assert all
-  themed tabs redraw with the global theme (or the cwd-stripped
-  fallback chain — but with the flag off, `effective()` collapses to
-  global). Persisted slot data is not cleared.
+  themed tabs redraw with the global theme (because
+  `theme_state_effective` short-circuits when the flag is off, even
+  though slot data remains populated in memory and on disk).
+  Persisted slot data is not cleared. Toggle back **on**: assert
+  every tab redraws with its prior effective theme without any
+  reload.
 
 ### Privacy invariant tests
 
 - `DirectoryThemeOverrides` settings group has `private == true` and
-  `sync_to_cloud == SyncToCloud::Locally`. Pinned by a settings-system
+  `sync_to_cloud == SyncToCloud::Never`. Pinned by a settings-system
   test analogous to the existing tests that gate which settings sync.
+- The redaction-salt file (`~/.warp/redaction_salt`) is created with
+  mode `0600` on first launch and is **not** included in any
+  cloud-synced settings payload (verified by the same serializer test
+  that asserts no path keys leak).
 - The settings sync serializer, when run over a populated
   `DirectoryThemeOverrides`, emits no entry containing a path key in
   the cloud-sync payload. Test by populating the map, running the

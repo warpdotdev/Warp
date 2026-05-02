@@ -195,10 +195,11 @@ bit-for-bit identical to today.
     so that reopening the saved configuration produces the same effective
     themes (modulo cwd matching, which re-runs against the current
     `directory_overrides`). Specifically, for each tab the *preserved
-    override* is the tab's manual pin if any, otherwise the tab's
-    window-level default if any; tabs whose effective theme came only
-    from directory matching have no preserved override. The save rule
-    is then:
+    override* is the first non-empty value of, in priority order: the
+    tab's menu pin (layer #1), the tab's launch-configuration manual
+    pin (layer #2), or the tab's window-level default (layer #4). Tabs
+    whose effective theme came only from directory matching (layer #3)
+    have no preserved override. The save rule is then:
 
     - If every tab in the window has the same preserved override
       `Some(X)` and no tab has a manual pin different from the others,
@@ -317,18 +318,24 @@ bit-for-bit identical to today.
 
 ### Accessibility
 
-21. The override does not change any text content, accessible labels, or
-    focus order. Screen readers continue to report tab titles and
-    contents identically. The new menu entries have accessible labels
-    "Pin theme" (with a submenu) and "Reset theme".
+21. The override does not change any text content, accessible labels,
+    or focus order. Screen readers continue to report tab titles and
+    contents identically. The three new right-click menu entries have
+    accessible labels "Pin theme" (with a submenu of theme names),
+    "Reset theme", and "Forget launch config theme"; each is announced
+    as a menu item, and each follows the menu's existing visibility
+    rules (Reset theme appears only when the tab has a menu pin;
+    Forget launch config theme appears only when the tab has a
+    launch-config manual pin).
 
 ## User-visible failure modes
 
 - **Unknown theme name** — anywhere it appears, the entry is skipped at
   apply time, a one-line warning is written to the Warp log identifying
-  the source (launch configuration filename + tab title or index;
-  `directory_overrides` key), and the rest of the configuration loads
-  normally.
+  the source (launch configuration filename + tab title or index for
+  launch-config sources; **redacted entry identifier** for
+  `directory_overrides` sources, never the raw path key — see #7b),
+  and the rest of the configuration loads normally.
 - **Custom theme file missing** — same fallback the global theme uses
   today: tab opens with the next-layer theme, warning logged.
 - **Two `directory_overrides` keys are equivalent after tilde expansion**
