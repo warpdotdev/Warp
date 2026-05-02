@@ -401,6 +401,8 @@ pub enum CodeReviewAction {
 
 pub struct FileState {
     pub file_diff: FileDiff,
+    /// Entity-level (semantic) diff for this file, computed when SemanticDiff feature is enabled.
+    pub entity_diff: Option<languages::semantic_diff::EntityDiff>,
     pub editor_state: Option<CodeReviewEditorState>,
     pub is_expanded: bool,
     sidebar_mouse_state: MouseStateHandle,
@@ -3006,6 +3008,7 @@ impl CodeReviewView {
 
             file_states.push(FileState {
                 file_diff: file.file_diff.clone(),
+                entity_diff: file.entity_diff.clone(),
                 editor_state,
                 is_expanded,
                 chevron_button,
@@ -4769,7 +4772,114 @@ impl CodeReviewView {
         counts_row
     }
 
-    /// Renders the diff statistics
+    /// Renders a compact entity-level change summary when SemanticDiff is enabled.
+    /// Shows pills like: `fn foo (modified) · bar → baz (renamed) · struct X (added)`
+    fn render_entity_summary(
+        entity_diff: &languages::semantic_diff::EntityDiff,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        use languages::semantic_diff::EntityChangeKind;
+
+        let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let font_size = appearance.ui_font_size() * 0.8;
+
+        let significant = entity_diff.significant_changes();
+        if significant.is_empty() {
+            return row.finish();
+        }
+
+        for (i, change) in significant.iter().enumerate() {
+            if i > 0 {
+                row.add_child(
+                    Text::new(" · ".to_string(), appearance.ui_font_family(), font_size)
+                        .with_color(
+                            appearance
+                                .theme()
+                                .sub_text_color(appearance.theme().surface_2())
+                                .into(),
+                        )
+                        .finish(),
+                );
+            }
+
+            let label = match &change.kind {
+                EntityChangeKind::Modified => {
+                    let name = change.current.as_ref().map_or("?", |e| &e.name);
+                    let prefix = change
+                        .current
+                        .as_ref()
+                        .and_then(|e| e.type_prefix.as_deref())
+                        .map(|p| format!("{p} "))
+                        .unwrap_or_default();
+                    format!("{prefix}{name} (modified)")
+                }
+                EntityChangeKind::Renamed { old_name } => {
+                    let new_name = change.current.as_ref().map_or("?", |e| &e.name);
+                    let prefix = change
+                        .current
+                        .as_ref()
+                        .and_then(|e| e.type_prefix.as_deref())
+                        .map(|p| format!("{p} "))
+                        .unwrap_or_default();
+                    format!("{prefix}{old_name} → {new_name} (renamed)")
+                }
+                EntityChangeKind::Added => {
+                    let name = change.current.as_ref().map_or("?", |e| &e.name);
+                    let prefix = change
+                        .current
+                        .as_ref()
+                        .and_then(|e| e.type_prefix.as_deref())
+                        .map(|p| format!("{p} "))
+                        .unwrap_or_default();
+                    format!("{prefix}{name} (added)")
+                }
+                EntityChangeKind::Deleted => {
+                    let name = change.base.as_ref().map_or("?", |e| &e.name);
+                    let prefix = change
+                        .base
+                        .as_ref()
+                        .and_then(|e| e.type_prefix.as_deref())
+                        .map(|p| format!("{p} "))
+                        .unwrap_or_default();
+                    format!("{prefix}{name} (deleted)")
+                }
+                EntityChangeKind::Moved => {
+                    let name = change.current.as_ref().map_or("?", |e| &e.name);
+                    let prefix = change
+                        .current
+                        .as_ref()
+                        .and_then(|e| e.type_prefix.as_deref())
+                        .map(|p| format!("{p} "))
+                        .unwrap_or_default();
+                    format!("{prefix}{name} (moved)")
+                }
+                EntityChangeKind::Unchanged => continue,
+            };
+
+            let color = match &change.kind {
+                EntityChangeKind::Modified | EntityChangeKind::Moved => {
+                    add_color(appearance) // reuse diff-add color
+                }
+                EntityChangeKind::Renamed { .. } => appearance
+                    .theme()
+                    .main_text_color(appearance.theme().surface_2())
+                    .into(),
+                EntityChangeKind::Added => add_color(appearance),
+                EntityChangeKind::Deleted => remove_color(appearance),
+                EntityChangeKind::Unchanged => unreachable!(),
+            };
+
+            row.add_child(
+                Text::new(label, appearance.ui_font_family(), font_size)
+                    .with_color(color)
+                    .soft_wrap(false)
+                    .with_clip(ClipConfig::end())
+                    .finish(),
+            );
+        }
+
+        row.finish()
+    }
     pub fn render_diff_stats(stats: &DiffStats, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
 
@@ -5139,6 +5249,25 @@ impl CodeReviewView {
             );
         }
 
+        // Add entity-level summary when SemanticDiff is enabled.
+        if FeatureFlag::SemanticDiff.is_enabled() {
+            if let Some(entity_diff) = &file_state.entity_diff {
+                if !entity_diff.significant_changes().is_empty() {
+                    let entity_summary = Self::render_entity_summary(entity_diff, appearance);
+                    // Wrap file_row + entity summary in a column
+                    let mut col = Flex::column();
+                    col.add_child(file_row.finish());
+                    col.add_child(
+                        Container::new(entity_summary)
+                            .with_margin_left(20.) // indent past the chevron
+                            .with_margin_top(2.)
+                            .finish(),
+                    );
+                    return col.finish();
+                }
+            }
+        }
+
         file_row.finish()
     }
 
@@ -5350,7 +5479,11 @@ impl CodeReviewView {
             .on_left_mouse_down(|_, _, _| DispatchEventResult::StopPropagation)
             .finish(),
         );
-        left_section.add_child(self.render_file_stats(&file.file_diff, appearance));
+        left_section.add_child(self.render_file_stats_with_entities(
+            &file.file_diff,
+            file.entity_diff.as_ref(),
+            appearance,
+        ));
 
         let mut right_row = Flex::row()
             .with_main_axis_alignment(MainAxisAlignment::End)
@@ -5457,7 +5590,13 @@ impl CodeReviewView {
     }
 
     /// Renders file-specific statistics
-    fn render_file_stats(&self, file: &FileDiff, appearance: &Appearance) -> Box<dyn Element> {
+    /// Renders file stats with optional entity-level augmentation.
+    fn render_file_stats_with_entities(
+        &self,
+        file: &FileDiff,
+        entity_diff: Option<&languages::semantic_diff::EntityDiff>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
         let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         let no_line_changes_present = file.additions() == 0 && file.deletions() == 0;
@@ -5513,6 +5652,72 @@ impl CodeReviewView {
                 .with_margin_left(4.)
                 .finish(),
             ]);
+
+            // Add entity counts when SemanticDiff is enabled.
+            if let Some(diff) = entity_diff {
+                let significant = diff.significant_changes();
+                if !significant.is_empty() {
+                    let mut counts: Vec<String> = Vec::new();
+                    use languages::semantic_diff::EntityChangeKind;
+                    let modified = significant
+                        .iter()
+                        .filter(|c| matches!(c.kind, EntityChangeKind::Modified))
+                        .count();
+                    let renamed = significant
+                        .iter()
+                        .filter(|c| matches!(c.kind, EntityChangeKind::Renamed { .. }))
+                        .count();
+                    let added = significant
+                        .iter()
+                        .filter(|c| matches!(c.kind, EntityChangeKind::Added))
+                        .count();
+                    let deleted = significant
+                        .iter()
+                        .filter(|c| matches!(c.kind, EntityChangeKind::Deleted))
+                        .count();
+                    let moved = significant
+                        .iter()
+                        .filter(|c| matches!(c.kind, EntityChangeKind::Moved))
+                        .count();
+
+                    if modified > 0 {
+                        counts.push(format!("{modified} modified"));
+                    }
+                    if renamed > 0 {
+                        counts.push(format!("{renamed} renamed"));
+                    }
+                    if added > 0 {
+                        counts.push(format!("{added} added"));
+                    }
+                    if deleted > 0 {
+                        counts.push(format!("{deleted} deleted"));
+                    }
+                    if moved > 0 {
+                        counts.push(format!("{moved} moved"));
+                    }
+
+                    if !counts.is_empty() {
+                        row.add_child(
+                            Container::new(
+                                Text::new(
+                                    format!(" ({})", counts.join(", ")),
+                                    appearance.ui_font_family(),
+                                    appearance.ui_font_size() * 0.85,
+                                )
+                                .with_color(
+                                    appearance
+                                        .theme()
+                                        .sub_text_color(appearance.theme().background())
+                                        .into(),
+                                )
+                                .finish(),
+                            )
+                            .with_margin_left(2.)
+                            .finish(),
+                        );
+                    }
+                }
+            }
         }
         Container::new(row.finish())
             .with_background(appearance.theme().background())

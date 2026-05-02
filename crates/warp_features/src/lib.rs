@@ -616,6 +616,11 @@ pub enum FeatureFlag {
     /// Enables configuring header toolbar item order, side placement, and visibility.
     ConfigurableToolbar,
 
+    /// Enables entity-level (semantic) diff understanding in the code review panel.
+    /// When enabled, diffs show entity-level classifications (modified, renamed, added, deleted)
+    /// alongside the standard line-based diff.
+    SemanticDiff,
+
     /// Enables real-time communication updates for ambient agent tasks.
     AmbientAgentsRTC,
 
@@ -923,6 +928,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
+    FeatureFlag::SemanticDiff,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
