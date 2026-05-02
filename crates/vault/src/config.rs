@@ -37,7 +37,7 @@ impl VaultConfig {
         let path = config_path();
         let contents = fs::read_to_string(&path).with_context(|| {
             format!(
-                "no config found at {} — run 'oz vault init' to get started",
+                "no config found at {}. Create it with:\n\n  [provider]\n  type = \"aws\"\n  region = \"us-east-1\"\n\n  [mappings]\n  \"your/secret/path\" = \"ENV_VAR_NAME\"",
                 path.display()
             )
         })?;

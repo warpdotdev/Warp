@@ -2,7 +2,7 @@ use anyhow::Result;
 use warp_cli::{vault::VaultCommand, GlobalOptions};
 use warp_vault::{
     config::{ProviderType, VaultConfig},
-    inject_secrets,
+    fetch_secrets,
     provider::aws::AwsProvider,
 };
 use warpui::AppContext;
@@ -21,17 +21,18 @@ pub fn run(_ctx: &mut AppContext, _global_options: GlobalOptions, command: Vault
                 };
 
                 if mappings.is_empty() {
-                    anyhow::bail!("vault: no mappings found — add entries to ~/.warp/vault.toml or pass a path and --as flag");
+                    anyhow::bail!("vault: no mappings found — add entries to ~/.warp/vault.toml or pass both a path and --as flag");
                 }
 
                 let provider = match config.provider.provider_type {
                     ProviderType::Aws => AwsProvider::new(config.provider.region).await?,
                 };
 
-                let secrets = inject_secrets(&provider, &mappings).await?;
+                let secrets = fetch_secrets(&provider, &mappings).await?;
 
                 for secret in &secrets {
-                    println!("✓ {} injected as ${}", secret.env_var, secret.env_var);
+                    let escaped = secret.value().replace('\'', "'\\''");
+                    println!("export {}='{}'", secret.env_var, escaped);
                 }
 
                 Ok(())
