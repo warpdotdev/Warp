@@ -323,7 +323,13 @@ impl DefaultSessionMode {
         match self {
             DefaultSessionMode::Terminal => "Terminal",
             DefaultSessionMode::Agent => "Agent",
-            DefaultSessionMode::CloudAgent => "Cloud Oz",
+            DefaultSessionMode::CloudAgent => {
+                if FeatureFlag::AgentHarness.is_enabled() {
+                    "Cloud Agent"
+                } else {
+                    "Cloud Oz"
+                }
+            }
             DefaultSessionMode::TabConfig => "Tab Config",
             DefaultSessionMode::DockerSandbox => "Local Docker Sandbox",
         }

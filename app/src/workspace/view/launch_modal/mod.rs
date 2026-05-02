@@ -10,7 +10,7 @@ use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, PrimaryTheme, SecondaryTheme};
 use crate::workspace::view::launch_modal::cta_button::{CTAButton, CTAButtonAction};
-use markdown_parser::{parse_markdown, FormattedText, FormattedTextLine};
+use markdown_parser::{FormattedText, FormattedTextLine, parse_markdown};
 use pathfinder_color::ColorU;
 use std::collections::HashMap;
 use warp_core::ui::appearance::Appearance;

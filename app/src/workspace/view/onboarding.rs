@@ -1,3 +1,4 @@
+use crate::FeatureFlag;
 use crate::pane_group::{NewTerminalOptions, PanesLayout};
 use crate::settings::AISettings;
 use crate::terminal;
@@ -5,7 +6,6 @@ use crate::terminal::view::{
     AgentOnboardingVersion, OnboardingIntention, OnboardingVersion, TerminalAction,
 };
 use crate::workspace::Workspace;
-use crate::FeatureFlag;
 use onboarding::{ProjectOnboardingSettings, SelectedSettings};
 use std::collections::HashMap;
 use std::path::PathBuf;

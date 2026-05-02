@@ -13,6 +13,7 @@ use string_offset::{ByteOffset, CharCounter};
 use warp_editor::editor::NavigationKey;
 use warp_ripgrep::search::{Match as RipgrepMatch, Submatch};
 
+use crate::TelemetryEvent;
 use crate::code::icon_from_file_path;
 use crate::debounce::debounce;
 use crate::editor::{
@@ -23,16 +24,15 @@ use crate::search::ItemHighlightState as SearchHighlightState;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon as UiIcon;
 use crate::ui_components::item_highlight::{ImageOrIcon, ItemHighlightState};
-use crate::ui_components::render_file_search_row::{render_file_search_row, FileSearchRowOptions};
+use crate::ui_components::render_file_search_row::{FileSearchRowOptions, render_file_search_row};
 use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme};
-use crate::workspace::view::global_search::model::GlobalSearch;
 use crate::workspace::view::global_search::SearchConfig;
-use crate::TelemetryEvent;
+use crate::workspace::view::global_search::model::GlobalSearch;
 use warp_core::send_telemetry_from_ctx;
+use warp_core::ui::Icon;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::{AnsiColorIdentifier, Fill as ThemeFill};
-use warp_core::ui::Icon;
 use warpui::elements::{
     Border, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DispatchEventResult, Empty, EventHandler, Fill, Flex, FormattedTextElement,

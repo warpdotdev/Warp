@@ -3,27 +3,27 @@ use crate::code_review::code_review_header::HEADER_BUTTON_PADDING;
 #[cfg(feature = "local_fs")]
 use crate::code_review::code_review_view::CodeReviewAction;
 use crate::code_review::code_review_view::{
-    render_file_navigation_button, CodeReviewView, CONTENT_LEFT_MARGIN, CONTENT_RIGHT_MARGIN,
+    CONTENT_LEFT_MARGIN, CONTENT_RIGHT_MARGIN, CodeReviewView, render_file_navigation_button,
 };
 use crate::code_review::code_review_view::{CodeReviewCommentDebugState, CodeReviewViewEvent};
 use crate::code_review::telemetry_event::CodeReviewContextDestination;
-use crate::pane_group::pane::view::header::{components::HEADER_EDGE_PADDING, PANE_HEADER_HEIGHT};
 use crate::pane_group::WorkingDirectoriesEvent;
+use crate::pane_group::pane::view::header::{PANE_HEADER_HEIGHT, components::HEADER_EDGE_PADDING};
 use crate::pane_group::{Event as PaneGroupEvent, PaneGroup, WorkingDirectoriesModel};
 use crate::settings::{AISettings, AISettingsChangedEvent};
+use crate::terminal::CLIAgent;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::input::MenuPositioning;
-use crate::terminal::CLIAgent;
 use crate::ui_components::{buttons::icon_button_with_color, icons};
-use crate::util::bindings::{keybinding_name_to_display_string, CustomAction};
+use crate::util::bindings::{CustomAction, keybinding_name_to_display_string};
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::FileTarget;
 use crate::view_components::action_button::{ActionButton, PaneHeaderTheme};
 #[cfg(feature = "local_fs")]
 use crate::view_components::action_button::{NakedTheme, TooltipAlignment};
 use crate::view_components::{Dropdown, DropdownItem};
-use crate::workspace::view::TOGGLE_RIGHT_PANEL_BINDING_NAME;
 use crate::workspace::WorkspaceAction;
+use crate::workspace::view::TOGGLE_RIGHT_PANEL_BINDING_NAME;
 use crate::{
     appearance::Appearance,
     drive::panel::{MAX_SIDEBAR_WIDTH_RATIO, MIN_SIDEBAR_WIDTH},
@@ -39,16 +39,16 @@ use std::{
 use warp_core::features::FeatureFlag;
 use warp_core::ui::Icon;
 use warp_util::path::LineAndColumnArg;
+use warpui::EntityId;
 use warpui::elements::{ChildAnchor, Empty, PositionedElementAnchor};
 use warpui::keymap::EditableBinding;
-use warpui::EntityId;
 use warpui::{
-    elements::{
-        resizable_state_handle, Container, DragBarSide, Element, MainAxisSize, MouseStateHandle,
-        Resizable, ResizableStateHandle,
-    },
     AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle, WeakViewHandle,
+    elements::{
+        Container, DragBarSide, Element, MainAxisSize, MouseStateHandle, Resizable,
+        ResizableStateHandle, resizable_state_handle,
+    },
 };
 use warpui::{
     elements::{
@@ -1440,7 +1440,10 @@ impl RightPanelView {
                 terminal_status.is_available(),
                 Self::format_optional_path(terminal_status.active_session_path.as_deref()),
                 Self::format_optional_path(terminal_status.current_repo_path.as_deref()),
-                terminal_status.active_cli_agent.as_deref().unwrap_or("<none>"),
+                terminal_status
+                    .active_cli_agent
+                    .as_deref()
+                    .unwrap_or("<none>"),
                 terminal_status.is_executing,
                 terminal_status.is_input_box_visible,
                 unavailable_reasons,

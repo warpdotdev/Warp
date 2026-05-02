@@ -1,5 +1,6 @@
 use warp_util::path::user_friendly_path;
 use warpui::{
+    AppContext, Element, SingletonEntity,
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, MainAxisSize,
         MouseStateHandle, ParentElement, Radius, Text,
@@ -9,7 +10,6 @@ use warpui::{
         button::{ButtonTooltipPosition, ButtonVariant},
         components::{UiComponent, UiComponentStyles},
     },
-    AppContext, Element, SingletonEntity,
 };
 
 use crate::{
@@ -23,7 +23,7 @@ const SIDECAR_PADDING: f32 = 12.;
 /// Describes what the sidecar is showing, which determines which buttons appear.
 #[derive(Clone, Debug)]
 pub(crate) enum SidecarItemKind {
-    /// A built-in item (Terminal, a specific shell, Agent, Cloud Oz).
+    /// A built-in item (Terminal, a specific shell, Agent, Cloud Oz / Cloud Agent).
     BuiltIn {
         name: String,
         default_mode: DefaultSessionMode,

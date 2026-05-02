@@ -1,5 +1,5 @@
-use crate::workspace::view::global_search::view::GlobalSearchEvent;
 use crate::workspace::view::global_search::SearchConfig;
+use crate::workspace::view::global_search::view::GlobalSearchEvent;
 use anyhow::Result;
 use futures::StreamExt as _;
 use instant::Instant;
