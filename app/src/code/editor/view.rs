@@ -2340,7 +2340,11 @@ impl View for CodeEditorView {
         let cursor_id = render_state.saved_positions().cursor_id();
         let font_size = render_state.styles().base_text.font_size;
 
-        ctx.element_position_by_id(cursor_id.as_str()).map(|position| CursorInfo { position, font_size })
+        ctx.element_position_by_id(cursor_id.as_str())
+            .map(|position| CursorInfo {
+                position,
+                font_size,
+            })
     }
 
     fn on_blur(&mut self, blur_ctx: &BlurContext, ctx: &mut ViewContext<Self>) {
