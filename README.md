@@ -7,8 +7,6 @@ My personal AGPL fork of [warpdotdev/warp](https://github.com/warpdotdev/warp). 
 
 ## Why this fork exists
 
-Two reasons, in priority order.
-
 ### 1. A local-AI version of Warp with cloud features stripped
 
 I want to run Warp's terminal and agent UI without signing into Warp's cloud and without paying for Warp's hosted models. The fork swaps Warp's server-mediated AI path for direct calls to local CLIs I already have authenticated (`claude`, `codex`). It removes the auth gate. It hides cloud-only UI: the notifications inbox, the upgrade-required model badges, the "free AI disabled" modal.
