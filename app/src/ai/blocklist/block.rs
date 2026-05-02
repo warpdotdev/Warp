@@ -6460,6 +6460,17 @@ impl AIBlock {
             });
             return;
         }
+
+        // Read the active orchestration config for auto-launch /
+        // denied decisions in the card constructor.
+        let active_config = {
+            let doc_handle = AIDocumentModel::handle(ctx);
+            let doc = doc_handle.as_ref(ctx);
+            doc.active_orchestration_config().cloned().map(|config| {
+                (config, doc.orchestration_status())
+            })
+        };
+
         let action_id_clone = action_id.clone();
         let request_clone = request.clone();
         let action_model = self.action_model.clone();
@@ -6469,6 +6480,7 @@ impl AIBlock {
             RunAgentsCardView::new(
                 action_id_clone,
                 &request_clone,
+                active_config,
                 action_model,
                 run_agents_executor,
                 block_model,
