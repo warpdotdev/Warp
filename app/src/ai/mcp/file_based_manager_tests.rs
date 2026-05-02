@@ -3,9 +3,7 @@ use crate::ai::mcp::FileMCPWatcher;
 use crate::ai::mcp::ParsedTemplatableMCPServerResult;
 use crate::auth::AuthStateProvider;
 use crate::settings::{AISettings, FocusedTerminalInfo};
-use crate::warp_managed_paths_watcher::{
-    warp_data_dir, warp_managed_mcp_config_path, WarpManagedPathsWatcher,
-};
+use crate::warp_managed_paths_watcher::{warp_managed_mcp_config_path, WarpManagedPathsWatcher};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use repo_metadata::{
     repositories::DetectedRepositories, watcher::DirectoryWatcher, RepoMetadataModel,
@@ -252,45 +250,6 @@ fn test_update_file_based_servers_removes_unreferenced_servers() {
                 *server_hashes.iter().next().unwrap(),
                 second_hash,
                 "Repo should reference the new server"
-            );
-        });
-    });
-}
-
-/// A globally-scoped Warp installation always auto-spawns, regardless of the
-/// `file_based_mcp_enabled` toggle.
-#[test]
-fn test_global_warp_server_always_spawns() {
-    let _flag_guard = FeatureFlag::FileBasedMcp.override_enabled(true);
-    let warp_root = warp_data_dir();
-    let parsed = parse_mcp_json(r#"{"global-warp": {"command": "npx", "args": ["warp"]}}"#);
-
-    App::test((), |mut app| async move {
-        let manager = setup_app(&mut app);
-        let events = subscribe_events(&mut app, &manager);
-
-        // Toggle is off by default; global Warp server should still spawn.
-        manager.update(&mut app, |m, ctx| {
-            m.apply_parsed_servers(warp_root.clone(), MCPProvider::Warp, parsed, ctx);
-        });
-
-        events.update(&mut app, |e, _| {
-            assert_eq!(
-                e.spawned_uuids.len(),
-                1,
-                "Global Warp server should auto-spawn regardless of toggle"
-            );
-        });
-
-        // Flipping the toggle must not despawn the global Warp server.
-        set_file_based_mcp_enabled(&mut app, true);
-        set_file_based_mcp_enabled(&mut app, false);
-
-        events.update(&mut app, |e, _| {
-            assert!(
-                e.despawned_uuids.is_empty(),
-                "Global Warp server should never be despawned by toggle changes, got: {:?}",
-                e.despawned_uuids
             );
         });
     });

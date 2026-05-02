@@ -14,7 +14,7 @@ use crate::{
         ParsedTemplatableMCPServerResult,
     },
     settings::{ai::AISettings, AISettingsChangedEvent},
-    warp_managed_paths_watcher::{warp_data_dir, warp_managed_mcp_config_path},
+    warp_managed_paths_watcher::warp_managed_mcp_config_path,
 };
 
 /// Singleton model to manage file-based MCP servers.
@@ -274,10 +274,7 @@ impl FileBasedMCPManager {
     }
 
     fn is_global_warp_root(root_path: &Path) -> bool {
-        let warp_data_dir = warp_data_dir();
-        root_path == warp_data_dir.as_path()
-            || warp_managed_mcp_config_path()
-                .is_some_and(|path| root_path == path.root_path.as_path())
+        warp_managed_mcp_config_path().is_some_and(|path| root_path == path.root_path.as_path())
     }
 
     fn spawn_file_based_servers(
