@@ -784,6 +784,9 @@ fn init_common(launch_mode: &LaunchMode, timer: Option<&mut IntervalTimer>) -> R
         timer.mark_interval_end("LOG_FILE_SETUP_COMPLETE");
     }
 
+    #[cfg(windows)]
+    platform::windows::check_redirection_guard();
+
     // Adjust resource limits early, before doing other work, to ensure that
     // any children we spawn (like the terminal server) inherit our adjusted
     // rlimits.
