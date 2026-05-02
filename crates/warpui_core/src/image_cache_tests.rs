@@ -401,6 +401,33 @@ fn test_svg_text_rasterizes_with_loaded_system_fonts() {
 }
 
 #[test]
+fn test_svg_text_rasterizes_with_bundled_generic_fonts() {
+    let options = usvg::Options {
+        fontdb: Arc::new(svg_font_db(false)),
+        ..Default::default()
+    };
+    let svg = Rc::new(
+        usvg::Tree::from_data(
+            br##"<svg width="160" height="40" viewBox="0 0 160 40" xmlns="http://www.w3.org/2000/svg">
+  <text x="10" y="24" font-family="sans-serif" font-size="20" fill="#000000">Warp</text>
+</svg>
+"##,
+            &options,
+        )
+        .expect("SVG with bundled generic font should parse"),
+    );
+    let image = svg_image(&svg, Vector2I::new(160, 40), FitType::Contain)
+        .expect("SVG should rasterize with bundled generic font");
+    let Image::Static(image) = image else {
+        panic!("Expected static image");
+    };
+
+    assert!(image
+        .rgba_bytes()
+        .chunks_exact(4)
+        .any(|pixel| pixel[3] != 0));
+}
+#[test]
 fn test_evict_image_drops_arc_for_resized_bysize() {
     let asset_cache = new_asset_cache();
     let image_cache = ImageCache::new();
