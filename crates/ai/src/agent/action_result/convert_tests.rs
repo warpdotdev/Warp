@@ -81,7 +81,7 @@ fn policy_denied_file_edit_result_converts_to_policy_error_message() {
 }
 
 #[test]
-fn policy_denied_write_to_shell_result_converts_to_unlabeled_error() {
+fn policy_denied_write_to_shell_result_converts_to_policy_marker() {
     let result = api::request::input::tool_call_result::Result::try_from(
         WriteToLongRunningShellCommandResult::PolicyDenied {
             reason: "interactive write blocked".to_string(),
@@ -94,10 +94,14 @@ fn policy_denied_write_to_shell_result_converts_to_unlabeled_error() {
     else {
         panic!("expected write_to_long_running_shell_command result");
     };
-    let Some(api::write_to_long_running_shell_command_result::Result::Error(error)) = result.result
+    let Some(api::write_to_long_running_shell_command_result::Result::CommandFinished(finished)) =
+        result.result
     else {
-        panic!("expected error result");
+        panic!("expected command_finished result");
     };
 
-    assert!(error.r#type.is_none());
+    assert_eq!(
+        finished.output,
+        "Write to long-running shell command blocked by host policy: interactive write blocked"
+    );
 }

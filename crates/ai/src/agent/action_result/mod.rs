@@ -14,6 +14,8 @@ use crate::{
 };
 
 pub const FILE_EDITS_POLICY_DENIED_PREFIX: &str = "File edits blocked by host policy: ";
+pub const WRITE_TO_SHELL_POLICY_DENIED_PREFIX: &str =
+    "Write to long-running shell command blocked by host policy: ";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AIAgentActionResultType {

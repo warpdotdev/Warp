@@ -144,12 +144,16 @@ impl TryFrom<WriteToLongRunningShellCommandResult>
             ),
             WriteToLongRunningShellCommandResult::Cancelled =>
                 Err(ConvertToAPITypeError::Ignore),
-            WriteToLongRunningShellCommandResult::PolicyDenied { .. } => {
+            WriteToLongRunningShellCommandResult::PolicyDenied { reason } => {
                 Ok(api::request::input::tool_call_result::Result::WriteToLongRunningShellCommand(
                     api::WriteToLongRunningShellCommandResult {
                         result: Some(
-                            api::write_to_long_running_shell_command_result::Result::Error(
-                                api::ShellCommandError { r#type: None },
+                            api::write_to_long_running_shell_command_result::Result::CommandFinished(
+                                api::ShellCommandFinished {
+                                    command_id: Default::default(),
+                                    output: format!("{WRITE_TO_SHELL_POLICY_DENIED_PREFIX}{reason}"),
+                                    exit_code: 126,
+                                },
                             ),
                         ),
                     },

@@ -113,6 +113,9 @@ fn config_deserializes_stdio_hook_shape() {
 fn config_rejects_stdio_hook_credential_args() {
     for args in [
         json!(["--token=secret"]),
+        json!(["--token", "secret"]),
+        json!(["--api-key", "secret"]),
+        json!(["--authorization", "Bearer secret"]),
         json!(["API_KEY=secret"]),
         json!(["Authorization: Bearer secret"]),
     ] {
@@ -135,6 +138,22 @@ fn config_rejects_stdio_hook_credential_args() {
         let value = serde_json::to_value(&config).unwrap();
         assert_eq!(value["enabled"], false);
     }
+}
+
+#[test]
+fn config_allows_stdio_hook_secret_env_reference_args() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "stdio-guard",
+            "transport": "stdio",
+            "command": "guard",
+            "args": ["--token", "$API_TOKEN", "--api-key=${POLICY_API_KEY}", "--authorization", "Bearer $POLICY_TOKEN"]
+        }]
+    }))
+    .unwrap();
+
+    assert!(config.validate().is_ok());
 }
 
 #[test]

@@ -168,6 +168,56 @@ fn test_convert_tool_call_result_to_input_preserves_file_edit_policy_denial() {
 fn test_convert_tool_call_result_to_input_preserves_write_to_shell_policy_denial() {
     let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
     let mut document_versions = HashMap::new();
+    let policy_reason = "interactive write blocked";
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(
+            api::message::tool_call_result::Result::WriteToLongRunningShellCommand(
+                api::WriteToLongRunningShellCommandResult {
+                    result: Some(
+                        api::write_to_long_running_shell_command_result::Result::CommandFinished(
+                            api::ShellCommandFinished {
+                                command_id: Default::default(),
+                                output: format!(
+                                    "{}{}",
+                                    crate::ai::agent::WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
+                                    policy_reason
+                                ),
+                                exit_code: 126,
+                            },
+                        ),
+                    ),
+                },
+            ),
+        ),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::WriteToLongRunningShellCommand(
+                crate::ai::agent::WriteToLongRunningShellCommandResult::PolicyDenied { reason },
+            ) => {
+                assert_eq!(reason, policy_reason);
+            }
+            other => panic!("Expected policy-denied shell write result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_treats_unlabeled_write_to_shell_error_as_cancelled() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
     let tool_call_result = api::message::ToolCallResult {
         tool_call_id: "tool_call".to_string(),
         context: None,
@@ -195,11 +245,9 @@ fn test_convert_tool_call_result_to_input_preserves_write_to_shell_policy_denial
     match input {
         AIAgentInput::ActionResult { result, .. } => match result.result {
             crate::ai::agent::AIAgentActionResultType::WriteToLongRunningShellCommand(
-                crate::ai::agent::WriteToLongRunningShellCommandResult::PolicyDenied { reason },
-            ) => {
-                assert_eq!(reason, "blocked by host policy");
-            }
-            other => panic!("Expected policy-denied shell write result, got {other:?}"),
+                crate::ai::agent::WriteToLongRunningShellCommandResult::Cancelled,
+            ) => {}
+            other => panic!("Expected cancelled shell write result, got {other:?}"),
         },
         other => panic!("Expected action-result input, got {other:?}"),
     }

@@ -25,6 +25,7 @@ use crate::ai::agent::{
     Shared, ShellCommandCompletedTrigger, ShellCommandError, SuggestNewConversationResult,
     SuggestPromptResult, TransferShellCommandControlToUserResult, UpdatedFileContext,
     UploadArtifactResult, WriteToLongRunningShellCommandResult, FILE_EDITS_POLICY_DENIED_PREFIX,
+    WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
 };
 use crate::ai::block_context::BlockContext;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
@@ -642,20 +643,25 @@ pub(crate) fn convert_tool_call_result_to_input(
                     },
                     Some(api::write_to_long_running_shell_command_result::Result::CommandFinished(
                         finished,
-                    )) => WriteToLongRunningShellCommandResult::CommandFinished {
-                        block_id: finished.command_id.clone().into(),
-                        output: finished.output.clone(),
-                        exit_code: ExitCode::from(finished.exit_code),
-                    },
+                    )) => {
+                        if let Some(reason) =
+                            finished.output.strip_prefix(WRITE_TO_SHELL_POLICY_DENIED_PREFIX)
+                        {
+                            WriteToLongRunningShellCommandResult::PolicyDenied {
+                                reason: reason.to_string(),
+                            }
+                        } else {
+                            WriteToLongRunningShellCommandResult::CommandFinished {
+                                block_id: finished.command_id.clone().into(),
+                                output: finished.output.clone(),
+                                exit_code: ExitCode::from(finished.exit_code),
+                            }
+                        }
+                    }
                     Some(api::write_to_long_running_shell_command_result::Result::Error(api::ShellCommandError{
                         r#type: Some(api::shell_command_error::Type::CommandNotFound(()))
                     })) => WriteToLongRunningShellCommandResult::Error(ShellCommandError::BlockNotFound),
-                    Some(api::write_to_long_running_shell_command_result::Result::Error(api::ShellCommandError{
-                        r#type: None,
-                    })) => WriteToLongRunningShellCommandResult::PolicyDenied {
-                        reason: "blocked by host policy".to_string(),
-                    },
-                    None => WriteToLongRunningShellCommandResult::Cancelled,
+                    Some(api::write_to_long_running_shell_command_result::Result::Error(_)) | None => WriteToLongRunningShellCommandResult::Cancelled,
                 };
 
             Some(AIAgentInput::ActionResult {

@@ -286,6 +286,11 @@ fn validate_stdio_args(args: &[String]) -> Result<(), AgentPolicyHookConfigError
     if args.iter().any(|arg| stdio_arg_contains_credentials(arg)) {
         return Err(AgentPolicyHookConfigError::StdioArgContainsCredentials);
     }
+    if args.windows(2).any(|args| {
+        stdio_arg_expects_secret_value(&args[0]) && stdio_arg_value_is_literal_secret(&args[1])
+    }) {
+        return Err(AgentPolicyHookConfigError::StdioArgContainsCredentials);
+    }
     Ok(())
 }
 
@@ -389,6 +394,33 @@ fn stdio_arg_contains_credentials(value: &str) -> bool {
                     .strip_prefix("ghp_")
                     .is_some_and(|token| token.len() >= 12)
         })
+}
+
+fn stdio_arg_expects_secret_value(value: &str) -> bool {
+    let value = value
+        .trim()
+        .trim_matches(|ch| ch == '"' || ch == '\'')
+        .trim_end_matches(':');
+    let value = value.trim_start_matches('-');
+    let normalized = value.to_ascii_lowercase().replace(['_', '-'], "");
+
+    matches!(
+        normalized.as_str(),
+        "apikey"
+            | "accesskey"
+            | "accesstoken"
+            | "auth"
+            | "authorization"
+            | "password"
+            | "passwd"
+            | "secret"
+            | "token"
+    )
+}
+
+fn stdio_arg_value_is_literal_secret(value: &str) -> bool {
+    let value = value.trim().trim_matches(|ch| ch == '"' || ch == '\'');
+    !value.is_empty() && !value.contains('$')
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
