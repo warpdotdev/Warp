@@ -2413,6 +2413,89 @@ fn test_vertical_tabs_panel_defaults_open_for_new_window_when_vertical_tabs_enab
 }
 
 #[test]
+fn test_tabs_panel_position_selection_moves_default_tabs_panel_to_right() {
+    let selection = Workspace::header_toolbar_selection_with_tabs_panel_position(
+        &HeaderToolbarChipSelection::Default,
+        PanelPosition::Right,
+    );
+
+    assert_eq!(
+        selection.left_items(),
+        vec![
+            HeaderToolbarItemKind::ToolsPanel,
+            HeaderToolbarItemKind::AgentManagement,
+        ]
+    );
+    assert_eq!(
+        selection.right_items(),
+        vec![
+            HeaderToolbarItemKind::TabsPanel,
+            HeaderToolbarItemKind::CodeReview,
+            HeaderToolbarItemKind::NotificationsMailbox,
+        ]
+    );
+}
+
+#[test]
+fn test_tabs_panel_position_selection_returns_default_when_moved_back_left() {
+    let selection = HeaderToolbarChipSelection::Custom {
+        left: vec![
+            HeaderToolbarItemKind::ToolsPanel,
+            HeaderToolbarItemKind::AgentManagement,
+        ],
+        right: vec![
+            HeaderToolbarItemKind::TabsPanel,
+            HeaderToolbarItemKind::CodeReview,
+            HeaderToolbarItemKind::NotificationsMailbox,
+        ],
+    };
+
+    assert_eq!(
+        Workspace::header_toolbar_selection_with_tabs_panel_position(
+            &selection,
+            PanelPosition::Left,
+        ),
+        HeaderToolbarChipSelection::Default
+    );
+}
+
+#[test]
+fn test_tabs_panel_position_selection_preserves_custom_toolbar_items() {
+    let selection = HeaderToolbarChipSelection::Custom {
+        left: vec![
+            HeaderToolbarItemKind::ToolsPanel,
+            HeaderToolbarItemKind::NotificationsMailbox,
+        ],
+        right: vec![
+            HeaderToolbarItemKind::CodeReview,
+            HeaderToolbarItemKind::AgentManagement,
+            HeaderToolbarItemKind::TabsPanel,
+        ],
+    };
+
+    let selection = Workspace::header_toolbar_selection_with_tabs_panel_position(
+        &selection,
+        PanelPosition::Left,
+    );
+
+    assert_eq!(
+        selection.left_items(),
+        vec![
+            HeaderToolbarItemKind::TabsPanel,
+            HeaderToolbarItemKind::ToolsPanel,
+            HeaderToolbarItemKind::NotificationsMailbox,
+        ]
+    );
+    assert_eq!(
+        selection.right_items(),
+        vec![
+            HeaderToolbarItemKind::CodeReview,
+            HeaderToolbarItemKind::AgentManagement,
+        ]
+    );
+}
+
+#[test]
 fn test_vertical_tabs_panel_inherits_transferred_tab_source_window_state() {
     let _vertical_tabs_guard = FeatureFlag::VerticalTabs.override_enabled(true);
 

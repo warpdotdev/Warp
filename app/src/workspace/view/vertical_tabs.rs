@@ -40,6 +40,7 @@ use crate::util::bindings::keybinding_name_to_display_string;
 use crate::util::color::Opacity;
 use crate::workspace::action::WorkspaceAction;
 use crate::workspace::cross_window_tab_drag::CrossWindowTabDrag;
+use crate::workspace::header_toolbar_item::HeaderToolbarItemKind;
 use crate::workspace::hoa_onboarding::HoaOnboardingStep;
 use crate::workspace::tab_settings::{
     TabSettings, VerticalTabsCompactSubtitle, VerticalTabsDisplayGranularity,
@@ -562,6 +563,8 @@ pub(super) struct VerticalTabsPanelState {
     new_tab_button_state: MouseStateHandle,
     pub(super) search_query: String,
     settings_button_mouse_state: MouseStateHandle,
+    left_position_segment_mouse_state: MouseStateHandle,
+    right_position_segment_mouse_state: MouseStateHandle,
     panes_segment_mouse_state: MouseStateHandle,
     tabs_segment_mouse_state: MouseStateHandle,
     focused_session_option_mouse_state: MouseStateHandle,
@@ -597,6 +600,8 @@ impl Default for VerticalTabsPanelState {
             new_tab_button_state: Default::default(),
             search_query: String::new(),
             settings_button_mouse_state: Default::default(),
+            left_position_segment_mouse_state: Default::default(),
+            right_position_segment_mouse_state: Default::default(),
             panes_segment_mouse_state: Default::default(),
             tabs_segment_mouse_state: Default::default(),
             focused_session_option_mouse_state: Default::default(),
@@ -4383,6 +4388,15 @@ pub(super) fn render_settings_popup(
     let current_granularity = *TabSettings::as_ref(app)
         .vertical_tabs_display_granularity
         .value();
+    let current_panel_position = if TabSettings::as_ref(app)
+        .header_toolbar_chip_selection
+        .left_items()
+        .contains(&HeaderToolbarItemKind::TabsPanel)
+    {
+        super::PanelPosition::Left
+    } else {
+        super::PanelPosition::Right
+    };
     let current_tab_item_mode = *TabSettings::as_ref(app).vertical_tabs_tab_item_mode.value();
     let current_mode = *TabSettings::as_ref(app).vertical_tabs_view_mode.value();
     let current_primary_info = *TabSettings::as_ref(app).vertical_tabs_primary_info.value();
@@ -4406,6 +4420,64 @@ pub(super) fn render_settings_popup(
         VerticalTabsResolvedMode::Summary
     );
     let sub_text = theme.sub_text_color(theme.background());
+    let position_header = Container::new(
+        Text::new_inline(
+            "Position".to_string(),
+            appearance.ui_font_family(),
+            SETTINGS_POPUP_MENU_ITEM_FONT_SIZE,
+        )
+        .with_color(sub_text.into())
+        .finish(),
+    )
+    .with_horizontal_padding(16.)
+    .with_margin_bottom(4.)
+    .finish();
+
+    let position_segmented_control = Container::new(
+        Flex::row()
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Expanded::new(
+                    1.,
+                    render_popup_text_segment(
+                        "Left",
+                        matches!(current_panel_position, super::PanelPosition::Left),
+                        state.left_position_segment_mouse_state.clone(),
+                        WorkspaceAction::SetVerticalTabsPanelPosition(super::PanelPosition::Left),
+                        appearance,
+                        theme,
+                    ),
+                )
+                .finish(),
+            )
+            .with_child(
+                Expanded::new(
+                    1.,
+                    render_popup_text_segment(
+                        "Right",
+                        matches!(current_panel_position, super::PanelPosition::Right),
+                        state.right_position_segment_mouse_state.clone(),
+                        WorkspaceAction::SetVerticalTabsPanelPosition(super::PanelPosition::Right),
+                        appearance,
+                        theme,
+                    ),
+                )
+                .finish(),
+            )
+            .finish(),
+    )
+    .with_uniform_padding(4.)
+    .with_background(internal_colors::fg_overlay_2(theme))
+    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(
+        SETTINGS_POPUP_CORNER_RADIUS,
+    )))
+    .finish();
+
+    let position_segmented_control_row = Container::new(position_segmented_control)
+        .with_horizontal_padding(16.)
+        .with_padding_bottom(4.)
+        .finish();
     let view_as_header = Container::new(
         Text::new_inline(
             "View as".to_string(),
@@ -4430,7 +4502,9 @@ pub(super) fn render_settings_popup(
                         "Panes",
                         matches!(current_granularity, VerticalTabsDisplayGranularity::Panes),
                         state.panes_segment_mouse_state.clone(),
-                        VerticalTabsDisplayGranularity::Panes,
+                        WorkspaceAction::SetVerticalTabsDisplayGranularity(
+                            VerticalTabsDisplayGranularity::Panes,
+                        ),
                         appearance,
                         theme,
                     ),
@@ -4444,7 +4518,9 @@ pub(super) fn render_settings_popup(
                         "Tabs",
                         matches!(current_granularity, VerticalTabsDisplayGranularity::Tabs),
                         state.tabs_segment_mouse_state.clone(),
-                        VerticalTabsDisplayGranularity::Tabs,
+                        WorkspaceAction::SetVerticalTabsDisplayGranularity(
+                            VerticalTabsDisplayGranularity::Tabs,
+                        ),
                         appearance,
                         theme,
                     ),
@@ -4627,6 +4703,9 @@ pub(super) fn render_settings_popup(
     let mut popup_col = Flex::column()
         .with_main_axis_size(MainAxisSize::Min)
         .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+    popup_col.add_child(position_header);
+    popup_col.add_child(position_segmented_control_row);
+    popup_col.add_child(make_divider(theme));
     popup_col.add_child(view_as_header);
     popup_col.add_child(view_as_segmented_control_row);
     if show_tab_item_section {
@@ -5060,7 +5139,7 @@ fn render_popup_text_segment(
     label: &str,
     is_selected: bool,
     mouse_state: MouseStateHandle,
-    granularity: VerticalTabsDisplayGranularity,
+    action: WorkspaceAction,
     appearance: &Appearance,
     theme: &WarpTheme,
 ) -> Box<dyn Element> {
@@ -5090,9 +5169,7 @@ fn render_popup_text_segment(
         .finish()
     })
     .on_click(move |ctx, _, _| {
-        ctx.dispatch_typed_action(WorkspaceAction::SetVerticalTabsDisplayGranularity(
-            granularity,
-        ));
+        ctx.dispatch_typed_action(action.clone());
     })
     .with_cursor(Cursor::PointingHand)
     .finish()
