@@ -12875,14 +12875,16 @@ impl Workspace {
         });
     }
 
-    /// Open a local-to-cloud handoff pane next to the active local pane. Triggered
-    /// by the `/move-to-cloud` slash command and the "Hand off to cloud" footer
-    /// chip.
+    /// Open a local-to-cloud handoff pane in place over the active local pane.
+    /// Triggered by the `/move-to-cloud` slash command and the "Hand off to
+    /// cloud" footer chip.
     ///
     /// When the active conversation is non-empty and has a server token, mints a
-    /// server-side fork via `POST /agent/handoff/prepare-fork`, then splits a fresh
-    /// cloud-mode pane next to the local pane and pre-populates it with the forked
-    /// conversation.
+    /// server-side fork via `POST /agent/handoff/prepare-fork`, then pushes a fresh
+    /// cloud-mode view onto the active pane's navigation stack and pre-populates
+    /// it with the forked conversation. Pressing Escape in the cloud-mode view
+    /// pops back to the original local pane (the same pattern used by Cmd-Alt-
+    /// Enter / Ctrl-Alt-Enter to enter cloud mode from a local session).
     ///
     /// All failure modes — ineligibility, prepare-fork RPC failure, and local fork
     /// materialization failure — surface an error toast and **do not open** any
@@ -12911,11 +12913,11 @@ impl Workspace {
                         conversation
                             .server_conversation_token()
                             .cloned()
-                            .map(|token| (conversation.clone(), token))
+                            .map(|token| (view.clone(), conversation.clone(), token))
                     })
             });
 
-        let Some((source_conversation, source_token)) = source else {
+        let Some((source_view, source_conversation, source_token)) = source else {
             // Ineligible: don't open a fresh unrelated pane — the chip is a
             // hand-off-this-conversation action.
             let window_id = ctx.window_id();
@@ -12928,6 +12930,22 @@ impl Workspace {
             return;
         };
 
+        // Exit the source pane's fullscreen agent view (if active) before kicking off the
+        // prepare-fork RPC. Mirrors the cmd-alt-enter pattern in `enter_cloud_mode_from_session`:
+        // starting cloud mode from agent view is analogous to starting a new agent
+        // conversation, and the source pane should be left in terminal mode so Esc from the
+        // pushed cloud-mode pane returns the user to a clean local terminal.
+        let source_agent_view_controller = source_view.as_ref(ctx).agent_view_controller().clone();
+        if source_agent_view_controller
+            .as_ref(ctx)
+            .agent_view_state()
+            .is_fullscreen()
+        {
+            source_agent_view_controller.update(ctx, |controller, ctx| {
+                controller.exit_agent_view_without_confirmation(ctx);
+            });
+        }
+
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         let request = PrepareHandoffForkRequest {
             source_conversation_id: source_token.as_str().to_string(),
@@ -12937,6 +12955,7 @@ impl Workspace {
             move |me, result, ctx| match result {
                 Ok(response) => {
                     me.complete_local_to_cloud_handoff_open(
+                        source_view,
                         source_conversation,
                         response.forked_conversation_id,
                         initial_prompt,
@@ -12959,10 +12978,12 @@ impl Workspace {
 
     /// Finishes the local-to-cloud handoff open after the prepare-fork RPC returns.
     /// Materializes a local fork bound to the server's forked conversation id,
-    /// splits a fresh cloud-mode pane, restores the forked conversation into it,
-    /// seeds `PendingHandoff`, and kicks off async derivation + snapshot upload.
+    /// pushes a fresh cloud-mode view onto `source_view`'s navigation stack,
+    /// restores the forked conversation into it, seeds `PendingHandoff`, and
+    /// kicks off async derivation + snapshot upload.
     fn complete_local_to_cloud_handoff_open(
         &mut self,
+        source_view: ViewHandle<TerminalView>,
         source_conversation: AIConversation,
         forked_conversation_id: String,
         initial_prompt: Option<String>,
@@ -12995,25 +13016,22 @@ impl Workspace {
         };
         let local_fork_id = local_fork.id();
 
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-            pane_group.add_ambient_agent_pane(ctx);
-        });
-        let Some(new_pane_view) = self
-            .active_tab_pane_group()
-            .as_ref(ctx)
-            .active_session_view(ctx)
-        else {
+        // Push a fresh cloud-mode view onto the source pane's navigation stack instead
+        // of splitting a sibling pane. Pressing Escape in the new view pops back to the
+        // local pane via the existing pane-stack escape handling.
+        let Some((new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
+            view.start_local_to_cloud_handoff_pane(view_ctx)
+        }) else {
             log::warn!(
-                "start_local_to_cloud_handoff: no active session view after add_ambient_agent_pane"
+                "start_local_to_cloud_handoff: failed to push handoff cloud-mode pane onto source pane stack"
             );
-            return;
-        };
-        let Some(model_handle) = new_pane_view
-            .as_ref(ctx)
-            .ambient_agent_view_model()
-            .cloned()
-        else {
-            log::warn!("start_local_to_cloud_handoff: new ambient agent pane has no view model");
+            let window_id = ctx.window_id();
+            WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                let toast = DismissibleToast::error(
+                    "Failed to prepare handoff. Please try again.".to_owned(),
+                );
+                toast_stack.add_ephemeral_toast(toast, window_id, ctx);
+            });
             return;
         };
 
@@ -13032,6 +13050,22 @@ impl Workspace {
             terminal_view.restore_conversation_after_view_creation(
                 RestoredAIConversation::new(local_fork_for_restore),
                 /* use_live_appearance */ true,
+                view_ctx,
+            );
+        });
+
+        // Enter fullscreen agent view for the restored fork in the new pane. Without this the
+        // pane sits in shared-session-viewer-pending mode and the input renders read-only;
+        // entering agent view activates the editable cloud-mode input flow. Use
+        // `RestoreExistingConversation` to indicate the conversation is restored (not new) —
+        // the `is_local_to_cloud_handoff` flag set via `set_pending_handoff` below is the
+        // authoritative "this is a cloud agent pane" signal for downstream gating
+        // (`is_cloud_agent_pre_first_exchange`, etc.).
+        new_pane_view.update(ctx, |terminal_view, view_ctx| {
+            terminal_view.enter_agent_view_for_conversation(
+                None,
+                AgentViewEntryOrigin::RestoreExistingConversation,
+                local_fork_id,
                 view_ctx,
             );
         });
