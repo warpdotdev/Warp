@@ -437,7 +437,7 @@ use super::{ActiveSession, TabBarDropTargetData, TabBarLocation};
 
 use super::tab_settings::{
     HeaderToolbarChipSelection, NewTabPlacement, TabSettings, TabSettingsChangedEvent,
-    VerticalTabsDisplayGranularity, WorkspaceDecorationVisibility,
+    VerticalTabsDisplayGranularity, VerticalTabsPanelSide, WorkspaceDecorationVisibility,
 };
 use super::util::{
     PaneViewLocator, TabMovement, TerminalSessionFallbackBehavior, WelcomeTipsViewState,
@@ -20485,6 +20485,51 @@ impl TypedActionView for Workspace {
                 );
                 ctx.notify();
             }
+            SetVerticalTabsPanelSide(side) => {
+                let side = *side;
+                let config = TabSettings::as_ref(ctx)
+                    .header_toolbar_chip_selection
+                    .clone();
+                let already_on_side = match side {
+                    VerticalTabsPanelSide::Left => {
+                        config.left_items().contains(&HeaderToolbarItemKind::TabsPanel)
+                    }
+                    VerticalTabsPanelSide::Right => {
+                        config.right_items().contains(&HeaderToolbarItemKind::TabsPanel)
+                    }
+                };
+                if already_on_side {
+                    return;
+                }
+                let mut left_items = config.left_items();
+                let mut right_items = config.right_items();
+                left_items.retain(|i| i != &HeaderToolbarItemKind::TabsPanel);
+                right_items.retain(|i| i != &HeaderToolbarItemKind::TabsPanel);
+                match side {
+                    VerticalTabsPanelSide::Left => {
+                        left_items.insert(0, HeaderToolbarItemKind::TabsPanel);
+                    }
+                    VerticalTabsPanelSide::Right => {
+                        right_items.insert(0, HeaderToolbarItemKind::TabsPanel);
+                    }
+                }
+                let selection = if left_items == HeaderToolbarItemKind::default_left()
+                    && right_items == HeaderToolbarItemKind::default_right()
+                {
+                    HeaderToolbarChipSelection::Default
+                } else {
+                    HeaderToolbarChipSelection::Custom {
+                        left: left_items,
+                        right: right_items,
+                    }
+                };
+                TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .header_toolbar_chip_selection
+                        .set_value(selection, ctx));
+                });
+                ctx.notify();
+            }
             ToggleVerticalTabsShowPrLink => {
                 let new_value = TabSettings::handle(ctx).update(ctx, |settings, ctx| {
                     let new_value = !*settings.vertical_tabs_show_pr_link.value();
@@ -22053,21 +22098,33 @@ impl View for Workspace {
             && self.vertical_tabs_panel_open
             && self.vertical_tabs_panel.show_settings_popup
         {
-            stack.add_positioned_overlay_child(
-                Dismiss::new(render_settings_popup(&self.vertical_tabs_panel, app))
-                    .prevent_interaction_with_other_elements()
-                    .on_dismiss(|ctx, _| {
-                        ctx.dispatch_typed_action(WorkspaceAction::ToggleVerticalTabsSettingsPopup);
-                    })
-                    .finish(),
-                OffsetPositioning::offset_from_save_position_element(
-                    VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
-                    vec2f(0., 4.),
-                    PositionedElementOffsetBounds::WindowByPosition,
-                    PositionedElementAnchor::BottomLeft,
-                    ChildAnchor::TopLeft,
-                ),
-            );
+            {
+                let tabs_side = Self::tabs_panel_side(
+                    &TabSettings::as_ref(app).header_toolbar_chip_selection,
+                );
+                let (popup_anchor, popup_child_anchor) = if tabs_side == PanelPosition::Left {
+                    (PositionedElementAnchor::BottomLeft, ChildAnchor::TopLeft)
+                } else {
+                    (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight)
+                };
+                stack.add_positioned_overlay_child(
+                    Dismiss::new(render_settings_popup(&self.vertical_tabs_panel, app))
+                        .prevent_interaction_with_other_elements()
+                        .on_dismiss(|ctx, _| {
+                            ctx.dispatch_typed_action(
+                                WorkspaceAction::ToggleVerticalTabsSettingsPopup,
+                            );
+                        })
+                        .finish(),
+                    OffsetPositioning::offset_from_save_position_element(
+                        VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
+                        vec2f(0., 4.),
+                        PositionedElementOffsetBounds::WindowByPosition,
+                        popup_anchor,
+                        popup_child_anchor,
+                    ),
+                );
+            }
         }
 
         if FeatureFlag::VerticalTabs.is_enabled()

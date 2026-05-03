@@ -1,8 +1,8 @@
 use super::WorkspaceAction;
 use crate::pane_group::TerminalPaneId;
 use crate::workspace::tab_settings::{
-    VerticalTabsDisplayGranularity, VerticalTabsPrimaryInfo, VerticalTabsTabItemMode,
-    VerticalTabsViewMode,
+    VerticalTabsDisplayGranularity, VerticalTabsPanelSide, VerticalTabsPrimaryInfo,
+    VerticalTabsTabItemMode, VerticalTabsViewMode,
 };
 use crate::workspace::PaneViewLocator;
 use warpui::EntityId;
@@ -61,6 +61,18 @@ fn primary_info_change_does_not_save_workspace_state() {
     .should_save_app_state_on_action());
     assert!(
         !WorkspaceAction::SetVerticalTabsPrimaryInfo(VerticalTabsPrimaryInfo::Branch)
+            .should_save_app_state_on_action()
+    );
+}
+
+#[test]
+fn panel_side_change_does_not_save_workspace_state() {
+    assert!(
+        !WorkspaceAction::SetVerticalTabsPanelSide(VerticalTabsPanelSide::Left)
+            .should_save_app_state_on_action()
+    );
+    assert!(
+        !WorkspaceAction::SetVerticalTabsPanelSide(VerticalTabsPanelSide::Right)
             .should_save_app_state_on_action()
     );
 }
