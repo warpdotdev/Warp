@@ -197,7 +197,9 @@ pub(crate) fn compose_policy_decisions(
             warp_permission,
             hook_results,
         },
-        WarpPermissionDecisionKind::Ask if allow_hook_autoapproval && !hook_results.is_empty() => {
+        WarpPermissionDecisionKind::Ask
+            if allow_hook_autoapproval && successful_hook_allows_autoapproval(&hook_results) =>
+        {
             AgentPolicyEffectiveDecision {
                 decision: AgentPolicyDecisionKind::Allow,
                 reason: hook_results.iter().find_map(|result| result.reason.clone()),
@@ -213,4 +215,11 @@ pub(crate) fn compose_policy_decisions(
         },
         WarpPermissionDecisionKind::Deny => unreachable!("warp deny is handled before this match"),
     }
+}
+
+fn successful_hook_allows_autoapproval(hook_results: &[AgentPolicyHookEvaluation]) -> bool {
+    !hook_results.is_empty()
+        && hook_results.iter().all(|result| {
+            result.decision == AgentPolicyDecisionKind::Allow && result.error.is_none()
+        })
 }

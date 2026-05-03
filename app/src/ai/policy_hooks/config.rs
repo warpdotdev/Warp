@@ -79,11 +79,12 @@ impl AgentPolicyHookConfig {
     }
 
     pub(crate) fn allow_autoapproval_for_all_hooks(&self) -> bool {
-        self.allow_hook_autoapproval
-            || self
-                .before_action
-                .iter()
-                .all(|hook| hook.allow_autoapproval)
+        !self.before_action.is_empty()
+            && (self.allow_hook_autoapproval
+                || self
+                    .before_action
+                    .iter()
+                    .all(|hook| hook.allow_autoapproval))
     }
 }
 

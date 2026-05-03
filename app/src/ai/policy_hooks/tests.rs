@@ -57,6 +57,34 @@ fn config_enabled_without_hooks_is_active_but_invalid() {
 }
 
 #[test]
+fn config_empty_hook_list_is_not_autoapproval_capable() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "allow_hook_autoapproval": true,
+        "before_action": []
+    }))
+    .unwrap();
+
+    assert!(!config.allow_autoapproval_for_all_hooks());
+}
+
+#[test]
+fn config_nonempty_hook_list_can_be_autoapproval_capable() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "company-agent-guard",
+            "transport": "stdio",
+            "command": "company-agent-guard",
+            "allow_autoapproval": true
+        }]
+    }))
+    .unwrap();
+
+    assert!(config.allow_autoapproval_for_all_hooks());
+}
+
+#[test]
 fn config_deserializes_stdio_hook_shape() {
     let config: AgentPolicyHookConfig = serde_json::from_value(json!({
         "enabled": true,
@@ -383,6 +411,25 @@ fn policy_decision_composition_is_conservative() {
     );
     assert_eq!(autoapproved.decision, AgentPolicyDecisionKind::Allow);
     assert_eq!(autoapproved.reason.as_deref(), Some("trusted"));
+}
+
+#[test]
+fn policy_decision_composition_does_not_autoapprove_unavailable_allow() {
+    let unavailable_allow = AgentPolicyHookEvaluation::unavailable(
+        "guard",
+        AgentPolicyDecisionKind::Allow,
+        AgentPolicyHookErrorKind::Timeout,
+        "hook timed out",
+    );
+
+    let decision = compose_policy_decisions(
+        WarpPermissionSnapshot::ask(Some("AlwaysAsk".to_string())),
+        vec![unavailable_allow],
+        true,
+    );
+
+    assert_eq!(decision.decision, AgentPolicyDecisionKind::Ask);
+    assert_eq!(decision.reason.as_deref(), Some("AlwaysAsk"));
 }
 
 #[test]
