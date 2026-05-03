@@ -5,24 +5,23 @@
 
 set -e
 
-if ! [ -d "/Applications/Xcode.app" ]; then
-    echo "Please install Xcode from the App Store before continuing."
+if ! (xcode-select -p && command -v xcodebuild) > /dev/null 2>&1; then
+    echo "Please install Xcode before continuing."
     exit 1
 fi
 
-sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 # Mimic actually launching XCode, which performs some necessary set-up of the
 # development environment.
 xcodebuild -runFirstLaunch
 
-if ! command -v brew; then
+if ! command -v brew > /dev/null 2>&1; then
     echo "Installing brew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     echo "Please make sure brew is set correctly in your PATH"
     exit 1
 fi
 
-if ! command -v cargo; then
+if ! command -v cargo > /dev/null 2>&1; then
     echo "Installing rust..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     echo "Please start a new terminal session so that cargo is in your PATH"
@@ -51,11 +50,11 @@ brew install llvm
 # Install PSScriptAnalyzer for PowerShell linting
 pwsh -Command "Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser"
 
-if ! [ "$(command -v docker)" ]; then
+if ! command -v docker > /dev/null 2>&1; then
     brew install --cask docker
 fi
 
-if ! [ "$(command -v gcloud)" ]; then
+if ! command -v gcloud > /dev/null 2>&1; then
     brew install google-cloud-sdk
 fi
 
