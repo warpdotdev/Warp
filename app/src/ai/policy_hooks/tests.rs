@@ -706,6 +706,66 @@ async fn http_engine_rejects_oversized_response_body() {
 
 #[cfg(not(target_family = "wasm"))]
 #[tokio::test]
+async fn http_engine_uses_single_timeout_for_request_and_response_body() {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/policy", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        let Ok((mut socket, _)) = listener.accept().await else {
+            return;
+        };
+        let mut request = [0_u8; 2048];
+        let _ = socket.read(&mut request).await;
+
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let body = br#"{"schema_version":"warp.agent_policy_hook.v1","decision":"allow"}"#;
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n",
+            body.len()
+        );
+        let _ = socket.write_all(headers.as_bytes()).await;
+        let _ = socket.flush().await;
+
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let _ = socket.write_all(body).await;
+    });
+
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "on_unavailable": "deny",
+        "before_action": [{
+            "name": "slow-http-guard",
+            "transport": "http",
+            "url": url,
+            "timeout_ms": 120
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("rm -rf .", "rm -rf .", Some(false), Some(true)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    assert_eq!(decision.decision, AgentPolicyDecisionKind::Deny);
+    assert_eq!(
+        decision.hook_results[0].error,
+        Some(AgentPolicyHookErrorKind::Timeout)
+    );
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[tokio::test]
 async fn http_engine_does_not_follow_redirects() {
     let mut server = mockito::Server::new_async().await;
     let (secret_env, _) = existing_secret_env_var();

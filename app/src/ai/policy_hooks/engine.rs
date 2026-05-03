@@ -278,34 +278,36 @@ impl AgentPolicyHookEngine {
         }
 
         let timeout = Duration::from_millis(self.config.hook_timeout_ms(hook));
-        let response = request
-            .send()
-            .with_timeout(timeout)
-            .await
-            .map_err(|_| AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::Timeout,
-                detail: format!("policy hook timed out after {timeout:?}"),
-            })?
-            .map_err(|source| AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::HttpRequestFailed,
-                detail: format!("failed to call HTTP policy hook: {}", source.without_url()),
-            })?;
+        let response_bytes = match async {
+            let response = request
+                .send()
+                .await
+                .map_err(|source| AgentPolicyHookFailure {
+                    kind: AgentPolicyHookErrorKind::HttpRequestFailed,
+                    detail: format!("failed to call HTTP policy hook: {}", source.without_url()),
+                })?;
 
-        let status = response.status();
-        if !status.is_success() {
-            return Err(AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::HttpStatus,
-                detail: format!("HTTP policy hook returned status {status}"),
-            });
+            let status = response.status();
+            if !status.is_success() {
+                return Err(AgentPolicyHookFailure {
+                    kind: AgentPolicyHookErrorKind::HttpStatus,
+                    detail: format!("HTTP policy hook returned status {status}"),
+                });
+            }
+
+            read_capped_http_response(response).await
         }
-
-        let response_bytes = read_capped_http_response(response)
-            .with_timeout(timeout)
-            .await
-            .map_err(|_| AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::Timeout,
-                detail: format!("policy hook response timed out after {timeout:?}"),
-            })??;
+        .with_timeout(timeout)
+        .await
+        {
+            Err(_) => {
+                return Err(AgentPolicyHookFailure {
+                    kind: AgentPolicyHookErrorKind::Timeout,
+                    detail: format!("policy hook timed out after {timeout:?}"),
+                });
+            }
+            Ok(result) => result?,
+        };
 
         parse_hook_response(&response_bytes).map_err(|source| AgentPolicyHookFailure {
             kind: AgentPolicyHookErrorKind::MalformedResponse,

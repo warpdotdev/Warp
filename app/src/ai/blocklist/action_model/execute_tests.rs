@@ -100,7 +100,7 @@ mod binary_detection {
 
 #[cfg(not(target_family = "wasm"))]
 mod policy_hooks {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     use crate::{
         ai::{
@@ -120,9 +120,10 @@ mod policy_hooks {
     };
 
     use super::super::{
-        agent_policy_action, normalize_command_for_policy, policy_denied_action_result,
-        policy_preflight_state_from_decision, should_consume_completed_policy_preflight,
-        warp_permission_snapshot_for_policy, PolicyPreflightKey, PolicyPreflightState,
+        agent_policy_action, complete_policy_preflight_if_pending, normalize_command_for_policy,
+        policy_denied_action_result, policy_preflight_state_from_decision,
+        should_consume_completed_policy_preflight, warp_permission_snapshot_for_policy,
+        PolicyPreflightKey, PolicyPreflightState,
     };
 
     fn command_action(command: &str) -> AIAgentAction {
@@ -250,6 +251,38 @@ mod policy_hooks {
         let mut pending = HashSet::new();
         pending.insert(key_one);
         assert!(!pending.contains(&key_two));
+    }
+
+    #[test]
+    fn cancelled_policy_preflight_completion_is_not_cached() {
+        let action_id = AIAgentActionId::from("action_1".to_string());
+        let preflight_key = PolicyPreflightKey::new(AIConversationId::new(), action_id);
+        let decision = AgentPolicyEffectiveDecision {
+            decision: AgentPolicyDecisionKind::Allow,
+            reason: None,
+            warp_permission: WarpPermissionSnapshot::allow(None),
+            hook_results: Vec::new(),
+        };
+        let mut pending = HashSet::new();
+        let mut completed = HashMap::new();
+
+        assert!(!complete_policy_preflight_if_pending(
+            &mut pending,
+            &mut completed,
+            preflight_key.clone(),
+            decision.clone()
+        ));
+        assert!(!completed.contains_key(&preflight_key));
+
+        pending.insert(preflight_key.clone());
+        assert!(complete_policy_preflight_if_pending(
+            &mut pending,
+            &mut completed,
+            preflight_key.clone(),
+            decision
+        ));
+        assert!(pending.is_empty());
+        assert!(completed.contains_key(&preflight_key));
     }
 
     #[test]

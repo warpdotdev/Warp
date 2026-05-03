@@ -499,7 +499,7 @@ impl BlocklistAIActionExecutor {
     }
 
     pub fn preprocess_action(
-        &self,
+        &mut self,
         action: &AIAgentAction,
         conversation_id: AIConversationId,
         ctx: &mut ModelContext<Self>,
@@ -913,7 +913,7 @@ impl BlocklistAIActionExecutor {
 
     #[cfg(not(target_family = "wasm"))]
     fn preprocess_request_file_edits_after_policy(
-        &self,
+        &mut self,
         input: PreprocessActionInput,
         ctx: &mut ModelContext<Self>,
     ) -> Option<BoxFuture<'static, ()>> {
@@ -955,6 +955,7 @@ impl BlocklistAIActionExecutor {
         let preflight_key = PolicyPreflightKey::new(conversation_id, action.id.clone());
         let (done_tx, done_rx) = oneshot::channel();
         let engine = AgentPolicyHookEngine::new(config);
+        self.pending_policy_preflights.insert(preflight_key.clone());
 
         ctx.spawn(
             async move { engine.preflight(event, warp_permission).await },
@@ -963,8 +964,15 @@ impl BlocklistAIActionExecutor {
                     decision.decision,
                     AgentPolicyDecisionKind::Deny | AgentPolicyDecisionKind::Unknown
                 );
-                me.completed_policy_preflights
-                    .insert(preflight_key.clone(), decision);
+                if !complete_policy_preflight_if_pending(
+                    &mut me.pending_policy_preflights,
+                    &mut me.completed_policy_preflights,
+                    preflight_key.clone(),
+                    decision,
+                ) {
+                    let _ = done_tx.send(());
+                    return;
+                }
 
                 if denied {
                     let _ = done_tx.send(());
@@ -1064,12 +1072,15 @@ impl BlocklistAIActionExecutor {
         ctx.spawn(
             async move { engine.preflight(event, warp_permission).await },
             move |me, decision, ctx| {
-                if !me.pending_policy_preflights.remove(&preflight_key) {
+                if !complete_policy_preflight_if_pending(
+                    &mut me.pending_policy_preflights,
+                    &mut me.completed_policy_preflights,
+                    preflight_key.clone(),
+                    decision,
+                ) {
                     me.user_initiated_policy_preflights.remove(&preflight_key);
                     return;
                 }
-                me.completed_policy_preflights
-                    .insert(preflight_key, decision);
                 ctx.emit(BlocklistAIActionExecutorEvent::PolicyPreflightFinished {
                     conversation_id,
                 });
@@ -1437,6 +1448,20 @@ fn policy_preflight_state_from_decision(
 #[cfg(not(target_family = "wasm"))]
 fn should_consume_completed_policy_preflight(state: &PolicyPreflightState) -> bool {
     !matches!(state, PolicyPreflightState::NeedsConfirmation(_))
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn complete_policy_preflight_if_pending(
+    pending_policy_preflights: &mut HashSet<PolicyPreflightKey>,
+    completed_policy_preflights: &mut HashMap<PolicyPreflightKey, AgentPolicyEffectiveDecision>,
+    preflight_key: PolicyPreflightKey,
+    decision: AgentPolicyEffectiveDecision,
+) -> bool {
+    if !pending_policy_preflights.remove(&preflight_key) {
+        return false;
+    }
+    completed_policy_preflights.insert(preflight_key, decision);
+    true
 }
 
 #[cfg(not(target_family = "wasm"))]
