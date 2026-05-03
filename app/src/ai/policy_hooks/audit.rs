@@ -1,7 +1,7 @@
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result};
@@ -53,9 +53,8 @@ pub(crate) fn write_audit_record(
         .parent()
         .context("agent policy audit path has no parent directory")?;
 
-    fs::create_dir_all(parent)
+    create_private_directory_all(parent)
         .with_context(|| format!("create agent policy audit directory {}", parent.display()))?;
-    set_private_directory_permissions(parent);
 
     let line = audit_record_json_line(event, decision)?;
 
@@ -77,6 +76,23 @@ pub(crate) fn write_audit_record(
     set_private_file_permissions(&path);
 
     Ok(())
+}
+
+fn create_private_directory_all(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt as _;
+
+        let mut builder = fs::DirBuilder::new();
+        builder.recursive(true).mode(0o700).create(path)?;
+        set_private_directory_permissions(path);
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    {
+        fs::create_dir_all(path)
+    }
 }
 
 pub(crate) fn audit_record_json_line(
@@ -122,7 +138,7 @@ fn audit_log_path() -> Option<PathBuf> {
 }
 
 #[cfg(unix)]
-fn set_private_directory_permissions(path: &std::path::Path) {
+fn set_private_directory_permissions(path: &Path) {
     use std::os::unix::fs::PermissionsExt as _;
 
     if let Err(err) = fs::set_permissions(path, fs::Permissions::from_mode(0o700)) {
@@ -134,10 +150,10 @@ fn set_private_directory_permissions(path: &std::path::Path) {
 }
 
 #[cfg(not(unix))]
-fn set_private_directory_permissions(_path: &std::path::Path) {}
+fn set_private_directory_permissions(_path: &Path) {}
 
 #[cfg(unix)]
-fn set_private_file_permissions(path: &std::path::Path) {
+fn set_private_file_permissions(path: &Path) {
     use std::os::unix::fs::PermissionsExt as _;
 
     if let Err(err) = fs::set_permissions(path, fs::Permissions::from_mode(0o600)) {
@@ -149,4 +165,22 @@ fn set_private_file_permissions(path: &std::path::Path) {
 }
 
 #[cfg(not(unix))]
-fn set_private_file_permissions(_path: &std::path::Path) {}
+fn set_private_file_permissions(_path: &Path) {}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    use super::create_private_directory_all;
+
+    #[test]
+    fn create_private_directory_all_uses_private_permissions() {
+        let root = tempfile::tempdir().unwrap();
+        let audit_dir = root.path().join("agent_policy_hooks");
+
+        create_private_directory_all(&audit_dir).unwrap();
+
+        let mode = audit_dir.metadata().unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
+    }
+}

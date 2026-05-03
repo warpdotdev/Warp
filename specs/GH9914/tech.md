@@ -192,7 +192,7 @@ Add a local JSONL audit writer owned by `policy_hooks::engine`:
 - timeout/error class when applicable
 - redaction metadata
 
-Do not include file contents, full env, access tokens, or unbounded MCP argument values. If a hook returns an `external_audit_id`, include it in the local record.
+Do not include file contents, full env, access tokens, or unbounded MCP argument values. If a hook returns an `external_audit_id`, include it in the local record. On Unix, create the audit directory with private `0700` permissions at creation time and write audit files with private `0600` permissions.
 
 ### 8. Stdio hook protocol
 
