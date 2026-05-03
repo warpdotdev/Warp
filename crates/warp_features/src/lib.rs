@@ -923,6 +923,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
+    FeatureFlag::DragTabsToWindows,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
