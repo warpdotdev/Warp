@@ -525,7 +525,7 @@ impl BlocklistAIActionExecutor {
         };
 
         #[cfg(not(target_family = "wasm"))]
-        if let Some(preprocess) = self.preprocess_request_file_edits_after_policy(input, ctx) {
+        if let Some(preprocess) = self.preprocess_request_file_edits_after_policy(&input, ctx) {
             return preprocess;
         }
 
@@ -1079,7 +1079,7 @@ impl BlocklistAIActionExecutor {
     #[cfg(not(target_family = "wasm"))]
     fn preprocess_request_file_edits_after_policy(
         &mut self,
-        input: PreprocessActionInput,
+        input: &PreprocessActionInput<'_>,
         ctx: &mut ModelContext<Self>,
     ) -> Option<BoxFuture<'static, ()>> {
         if !matches!(
@@ -1122,7 +1122,7 @@ impl BlocklistAIActionExecutor {
             ctx,
         )?;
 
-        let action = input.action.clone();
+        let action = (*input.action).clone();
         let conversation_id = input.conversation_id;
         let preflight_key = PolicyPreflightKey::new(conversation_id, action.id.clone());
         let (done_tx, done_rx) = oneshot::channel();
