@@ -118,9 +118,9 @@ Implementation approach:
 2. Add an action-to-policy-event builder in `BlocklistAIActionExecutor`.
 3. In `try_to_execute_action`, before the final execution dispatch, call a new `PolicyHookEngine::preflight(action, base_decision, ctx)`.
 4. If hooks are disabled, return the base decision immediately.
-5. If hooks are enabled and no cached decision exists for `(conversation_id, action_id)`, start an async hook request, store pending state, and return `TryExecuteResult::NotExecuted { reason: NotReady, action }`.
+5. If hooks are enabled and no cached decision exists for `(conversation_id, action_id, redacted action payload)`, start an async hook request, store pending state, and return `TryExecuteResult::NotExecuted { reason: NotReady, action }`.
 6. When the hook completes, store the decision and notify the action model to retry the pending action.
-7. On retry, recompose stored hook results with the current base Warp permission decision and continue, ask, or deny, so permission/profile changes while a hook is pending cannot leave a stale allow cached.
+7. On retry, recompose stored hook results with the current base Warp permission decision and continue, ask, or deny, so permission/profile changes while a hook is pending cannot leave a stale allow cached. A user click while the hook is pending does not pre-confirm a later hook `ask`; the confirmation UI must include the completed hook reason.
 
 This avoids blocking the UI thread or changing every executor to directly await a hook.
 
@@ -250,6 +250,7 @@ If HTTP is included in MVP, use the same JSON body and expect the same JSON resp
 - Reject embedded URL credentials such as `https://user:pass@example.com`; credentials must be supplied through configured header environment-variable references.
 - Apply the same timeout and unavailable behavior.
 - Redact resolved header credentials in settings, logs, hook errors, and hook-returned reasons.
+- Redact both complete configured header values and credential fragments for bearer/basic auth headers when hook responses echo only the token portion.
 
 If this is too much for MVP, defer HTTP and keep the JSON schema transport-independent.
 

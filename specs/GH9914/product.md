@@ -88,7 +88,7 @@ When hooks are enabled, Warp writes a redacted local audit record for every gove
    - MCP tool calls
    - MCP resource reads
 3. A hook decision of `deny` prevents the underlying command, file operation, or MCP call from starting.
-4. A hook decision of `ask` routes the action through Warp's existing confirmation UI and includes the hook's reason in the UI.
+4. A hook decision of `ask` routes the action through Warp's existing confirmation UI and includes the hook's reason in the UI, even if the user clicked while the hook was still pending.
 5. A hook decision of `allow` cannot override a hard Warp denial such as protected write paths or a managed policy denial.
 6. By default, a hook decision of `allow` only preserves an already-allowed Warp permission decision. Any option that lets a trusted hook auto-approve actions that Warp would otherwise ask for must be explicit and scoped to that hook.
 7. "Run until completion" still invokes policy hooks and cannot bypass a hook denial.
@@ -105,7 +105,7 @@ When hooks are enabled, Warp writes a redacted local audit record for every gove
 ## Edge Cases
 
 - **Multiple hooks:** Hooks are evaluated in configured order. The first `deny` wins. If any hook returns `ask` and none deny, the effective decision is `ask`.
-- **Parallel actions:** Each action has its own policy event id. Decisions must not leak across actions.
+- **Parallel actions:** Each action has its own policy event id. Decisions must not leak across conversations, action ids, or edited action payloads.
 - **Cancellation:** If the user cancels an agent run while a hook is pending, Warp cancels or ignores the pending hook result and does not execute the action.
 - **Redacted data:** If a value is redacted, the payload should preserve shape where useful, for example path count or argument key names.
 - **Offline operation:** If a remote hook cannot be reached, Warp applies the configured unavailable policy.

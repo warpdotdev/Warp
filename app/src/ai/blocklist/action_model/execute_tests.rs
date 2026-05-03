@@ -144,6 +144,11 @@ mod policy_hooks {
         }
     }
 
+    fn policy_command_action(command: &str) -> AgentPolicyAction {
+        agent_policy_action(&command_action(command), None, &None, &None)
+            .expect("command action should build a policy action")
+    }
+
     #[test]
     fn policy_denied_result_preserves_command_and_policy_reason() {
         let action = command_action("rm -rf target");
@@ -330,10 +335,11 @@ mod policy_hooks {
     #[test]
     fn policy_preflight_key_scopes_same_action_id_by_conversation() {
         let action_id = AIAgentActionId::from("action_1".to_string());
+        let policy_action = policy_command_action("ls");
         let conversation_one = AIConversationId::new();
         let conversation_two = AIConversationId::new();
-        let key_one = PolicyPreflightKey::new(conversation_one, action_id.clone());
-        let key_two = PolicyPreflightKey::new(conversation_two, action_id);
+        let key_one = PolicyPreflightKey::new(conversation_one, action_id.clone(), &policy_action);
+        let key_two = PolicyPreflightKey::new(conversation_two, action_id, &policy_action);
 
         assert_ne!(key_one, key_two);
 
@@ -343,9 +349,27 @@ mod policy_hooks {
     }
 
     #[test]
+    fn policy_preflight_key_scopes_same_action_id_by_action_payload() {
+        let action_id = AIAgentActionId::from("action_1".to_string());
+        let conversation_id = AIConversationId::new();
+        let old_action = policy_command_action("echo old");
+        let new_action = policy_command_action("echo new");
+
+        let old_key = PolicyPreflightKey::new(conversation_id, action_id.clone(), &old_action);
+        let new_key = PolicyPreflightKey::new(conversation_id, action_id.clone(), &new_action);
+
+        assert_ne!(old_key, new_key);
+        assert!(old_key.matches_action(conversation_id, &action_id));
+    }
+
+    #[test]
     fn cancelled_policy_preflight_completion_is_not_cached() {
         let action_id = AIAgentActionId::from("action_1".to_string());
-        let preflight_key = PolicyPreflightKey::new(AIConversationId::new(), action_id);
+        let preflight_key = PolicyPreflightKey::new(
+            AIConversationId::new(),
+            action_id,
+            &policy_command_action("ls"),
+        );
         let decision = AgentPolicyEffectiveDecision {
             decision: AgentPolicyDecisionKind::Allow,
             reason: None,

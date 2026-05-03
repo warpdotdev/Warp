@@ -1018,6 +1018,65 @@ async fn http_engine_redacts_configured_header_secret_hook_reason() {
     );
 }
 
+#[cfg(not(target_family = "wasm"))]
+#[tokio::test]
+async fn http_engine_redacts_basic_header_credential_fragment_hook_reason() {
+    let mut server = mockito::Server::new_async().await;
+    let secret_env = "WARP_POLICY_HOOK_TEST_BASIC_AUTH";
+    let credential = "dXNlcjpwYXNz";
+    let secret_value = format!("Basic {credential}");
+    std::env::set_var(secret_env, &secret_value);
+    let hook_response = json!({
+        "schema_version": AGENT_POLICY_SCHEMA_VERSION,
+        "decision": "deny",
+        "reason": format!("credential fragment {credential}"),
+        "external_audit_id": format!("audit-{credential}")
+    })
+    .to_string();
+    let mock = server
+        .mock("POST", "/policy")
+        .match_header("authorization", secret_value.as_str())
+        .with_status(200)
+        .with_body(hook_response)
+        .create_async()
+        .await;
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "http-guard",
+            "transport": "http",
+            "url": format!("{}/policy", server.url()),
+            "headers": { "authorization": { "env": secret_env } },
+            "timeout_ms": 1000
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("rm -rf .", "rm -rf .", Some(false), Some(true)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    mock.assert_async().await;
+    let reason = decision.hook_results[0].reason.as_deref().unwrap();
+    assert_eq!(reason, "credential fragment <redacted>");
+    assert!(!reason.contains(credential));
+    assert_eq!(
+        decision.hook_results[0].external_audit_id.as_deref(),
+        Some("audit-<redacted>")
+    );
+    std::env::remove_var(secret_env);
+}
+
 #[cfg(all(unix, not(target_family = "wasm")))]
 #[tokio::test]
 async fn engine_maps_enabled_empty_config_to_unavailable_policy() {

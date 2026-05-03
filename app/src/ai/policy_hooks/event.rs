@@ -81,7 +81,7 @@ pub(crate) enum AgentPolicyActionKind {
     ReadMcpResource,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
 pub(crate) enum AgentPolicyAction {
     ExecuteCommand(PolicyExecuteCommandAction),
@@ -118,7 +118,7 @@ impl Serialize for AgentPolicyAction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct PolicyExecuteCommandAction {
     pub command: String,
     pub normalized_command: String,
@@ -153,26 +153,26 @@ impl PolicyExecuteCommandAction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct PolicyReadFilesAction {
     pub paths: Vec<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct PolicyWriteFilesAction {
     pub paths: Vec<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff_stats: Option<PolicyDiffStats>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct PolicyDiffStats {
     pub files_changed: usize,
     pub additions: usize,
     pub deletions: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct PolicyCallMcpToolAction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_id: Option<uuid::Uuid>,
@@ -194,7 +194,7 @@ impl PolicyCallMcpToolAction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct PolicyReadMcpResourceAction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_id: Option<uuid::Uuid>,

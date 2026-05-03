@@ -457,7 +457,9 @@ fn redact_configured_secret_values<'a>(
             redacted = redacted.replace(&secret, "<redacted>");
         }
         if let Some((scheme, credential)) = secret.split_once(' ') {
-            if scheme.eq_ignore_ascii_case("bearer") && credential.len() >= 4 {
+            if (scheme.eq_ignore_ascii_case("bearer") || scheme.eq_ignore_ascii_case("basic"))
+                && credential.len() >= 4
+            {
                 redacted = redacted.replace(credential, "<redacted>");
             }
         }
