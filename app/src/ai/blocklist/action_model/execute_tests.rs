@@ -123,7 +123,8 @@ mod policy_hooks {
     };
 
     use super::super::{
-        agent_policy_action, complete_policy_preflight_if_pending, normalize_command_for_policy,
+        agent_policy_action, complete_policy_preflight_if_pending,
+        confirmed_file_edit_policy_preprocess_state, normalize_command_for_policy,
         policy_denied_action_result, policy_preflight_state_from_decision,
         recompose_completed_policy_decision, should_consume_completed_policy_preflight,
         should_preprocess_file_edits_after_policy_decision, warp_permission_snapshot_for_policy,
@@ -390,6 +391,16 @@ mod policy_hooks {
         assert!(!should_preprocess_file_edits_after_policy_decision(
             &action, &decision
         ));
+    }
+
+    #[test]
+    fn confirmed_file_edit_policy_preprocess_retry_skips_confirmation() {
+        assert_eq!(
+            confirmed_file_edit_policy_preprocess_state(),
+            PolicyPreflightState::Allowed {
+                skip_confirmation: true
+            }
+        );
     }
 
     #[test]

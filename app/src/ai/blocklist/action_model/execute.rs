@@ -1279,9 +1279,7 @@ impl BlocklistAIActionExecutor {
                 .confirmed_file_edit_policy_preprocesses
                 .remove(&(conversation_id, action.id.clone()))
         {
-            return Some(PolicyPreflightState::Allowed {
-                skip_confirmation: false,
-            });
+            return Some(confirmed_file_edit_policy_preprocess_state());
         }
 
         let warp_permission = self.warp_permission_snapshot_for_action(
@@ -1756,6 +1754,13 @@ fn should_preprocess_file_edits_after_policy_decision(
         policy_preflight_state_from_decision(action, decision, false),
         PolicyPreflightState::Allowed { .. }
     )
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn confirmed_file_edit_policy_preprocess_state() -> PolicyPreflightState {
+    PolicyPreflightState::Allowed {
+        skip_confirmation: true,
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]
