@@ -342,7 +342,9 @@ fn http_url_contains_credentials(url: &str) -> bool {
             || parsed.query_pairs().any(|(key, value)| {
                 text_contains_credentials(&key) || text_contains_credentials(&value)
             })
-            || parsed.fragment().is_some_and(text_contains_credentials);
+            || parsed
+                .fragment()
+                .is_some_and(url_component_contains_credentials);
     }
 
     let url = url.trim_start();
@@ -373,7 +375,17 @@ fn http_url_contains_credentials(url: &str) -> bool {
     let suffix = &url[authority_end..];
     suffix
         .find(|ch| matches!(ch, '?' | '#'))
-        .is_some_and(|offset| text_contains_credentials(&suffix[offset + 1..]))
+        .is_some_and(|offset| url_component_contains_credentials(&suffix[offset + 1..]))
+}
+
+fn url_component_contains_credentials(value: &str) -> bool {
+    if text_contains_credentials(value) {
+        return true;
+    }
+
+    urlencoding::decode(value)
+        .ok()
+        .is_some_and(|decoded| text_contains_credentials(decoded.as_ref()))
 }
 
 fn text_contains_credentials(value: &str) -> bool {

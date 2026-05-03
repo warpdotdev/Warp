@@ -257,7 +257,10 @@ fn config_rejects_http_hook_url_embedded_credentials() {
         "https://example.com/policy?state=ghs_secretsecretsecret",
         "https://example.com/policy?state=ghr_secretsecretsecret",
         "https://example.com/policy#access_token=secret",
+        "https://example.com/policy#access_token%3Dsecret",
         "https://example.com/policy#state=sk-secretsecretsecret",
+        "https://example.com/policy#state%3Dsk-secretsecretsecret",
+        "https://example.com/policy#Authorization%3A%20Bearer%20secret",
         "https://example.com/policy?authorization=Bearer%20secret",
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
