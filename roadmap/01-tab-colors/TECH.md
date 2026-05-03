@@ -141,42 +141,26 @@ Notes:
 - Add `BindingGroup::TabColor` to the bindings enum (file location: search for where `BindingGroup::Navigation` / `BindingGroup::Close` are defined — likely `app/src/workspace/bindings.rs`). The string label appears as the section heading in the keybindings settings page; pick "Tab color" (PRODUCT §16).
 - The `id!("Workspace")` context predicate matches the existing tab bindings in this file, which gives us PRODUCT §12's focus-rules behavior: shortcuts are inactive when a modal/palette/settings-editor has captured focus, but active when the terminal pane has focus (the terminal pane does not push a competing context predicate).
 
-### 7. Hover tooltip on the tab color indicator (PRODUCT §17)
+### 7. Hover tooltip on the color picker swatches (PRODUCT §17)
 
-When a tab has a manually-set color, hovering its indicator shows a tooltip in the form `<Color> — <shortcut>` (e.g. `Red — ⌘⌥1`). Implementation:
+Hovering a swatch in the right-click "Set color" menu shows `<Color> — <shortcut>` (e.g. `Red — ⌘⌥1`). The picker is the natural discovery surface — users hover the color they want to apply and the keyboard equivalent is right there. The tab itself does **not** get a separate color tooltip; its existing per-tab tooltip (title, directory, branch) is unchanged.
 
-- The colored region of a tab is rendered by `TabComponent::compute_background_and_border` (`app/src/tab.rs:1209-1290`) — the entire tab fill carries the color. Attach the tooltip at this surface so any hover on the tab while it's colored surfaces the tooltip. If twarp already attaches a tooltip to tabs (e.g. for the path/session name), augment that tooltip's text rather than registering a second one.
-- Build a helper function — colocate it with the tab component (or in `app/src/tab_color_tooltip.rs` if it grows):
+- Helpers live in `app/src/tab.rs`: `tab_color_binding_name(color)`, `format_tab_color_tooltip(color, shortcut)`, and `tab_color_shortcut_tooltip(color, ctx)`. Plus a parallel pair for the no-color slot: `format_tab_color_reset_tooltip(shortcut)` and `tab_color_reset_shortcut_tooltip(ctx)`. Lookup goes through `crate::util::bindings::keybinding_name_to_display_string`, which returns `Option<String>` and naturally yields the unbound fallback.
 
-  ```rust
-  fn tab_color_shortcut_tooltip(
-      color: AnsiColorIdentifier,
-      keymap: &KeymapState, // or whatever lookup type twarp uses
-  ) -> String {
-      let id = match color {
-          AnsiColorIdentifier::Red     => "workspace:set_active_tab_color_red",
-          AnsiColorIdentifier::Yellow  => "workspace:set_active_tab_color_yellow",
-          AnsiColorIdentifier::Green   => "workspace:set_active_tab_color_green",
-          AnsiColorIdentifier::Cyan    => "workspace:set_active_tab_color_cyan",
-          AnsiColorIdentifier::Blue    => "workspace:set_active_tab_color_blue",
-          AnsiColorIdentifier::Magenta => "workspace:set_active_tab_color_magenta",
-          AnsiColorIdentifier::White   => "workspace:set_active_tab_color_white",
-          AnsiColorIdentifier::Black   => "workspace:set_active_tab_color_black",
-      };
-      match keymap.bound_key_for(id) {
-          Some(key) => format!("{} — {}", color, key.to_glyph_string()),
-          None => color.to_string(),
-      }
-  }
-  ```
+- Two picker variants exist (`color_option_menu_items` in `app/src/tab.rs`):
+  - **Dot picker** (`dot_color_option_menu_items`, gated on `FeatureFlag::DirectoryTabColors`). Each swatch is a `render_color_dot` whose `tooltip_text` argument carries the formatted string. The custom-label closure receives `&AppContext` as its 4th argument (`CustomMenuItemLabelFn` in `app/src/menu.rs:160`), so the lookup happens on every render and tracks rebinds live. The leftmost "Default (no color)" slot uses `tab_color_reset_shortcut_tooltip(ctx)` and surfaces `Default (no color) — ⌘⌥0`.
+  - **Legacy picker** (`legacy_color_option_menu_items`). Each color icon is a `MenuItemFields::new_with_icon(...)` chained with `.with_tooltip(tab_color_shortcut_tooltip(*color_option, ctx))`. `MenuItemFields` already has built-in tooltip plumbing (`app/src/menu.rs:770, 1129`). The legacy picker has no separate "no color" slot — toggling the same color clears it — so the reset tooltip applies only in the dot picker.
 
-  The exact `keymap.bound_key_for` shape depends on twarp's keymap query API (search for an existing call site that reads a binding's bound key for display — there is precedent, e.g. menu items in `app/src/menu/mod.rs:927` use `with_custom_description(bindings::MAC_MENUS_CONTEXT, …)`). Reuse the existing helper rather than inventing a new one.
+- `color_option_menu_items` and `legacy_color_option_menu_items` take `ctx: &AppContext` (already in scope at the caller `menu_items_with_pane_name_target`). Pre-computation at construction time is sufficient for the legacy picker because `ItemsRow` items are fixed at construction; the dot picker reads `ctx` per-render.
 
-- The tooltip text is sourced live from the bound `EditableBinding`. If the user rebinds the shortcut, the tooltip updates automatically. If the user has unbound the shortcut for that color, the tooltip falls back to just `<Color>` with no shortcut suffix (no "Unbound" placeholder).
-- Uncolored tabs: do not attach a color tooltip. The reset shortcut is discoverable through the keybindings settings page only — this is intentional per PRODUCT §17.
-- The right-click "Set color" menu remains as-is. We do **not** add shortcut hints to its swatches; the tab indicator is the chosen discovery surface.
+- Unbound case falls through naturally because `keybinding_name_to_display_string` returns `None`; the formatters drop the suffix.
 
-Add a unit test that stubs a known binding for `"workspace:set_active_tab_color_red"` and asserts the formatter produces `"Red — ⌘⌥1"` (or whatever the canonical glyph form is in twarp), and that an unbound id produces `"Red"` with no suffix.
+- The TabComponent's existing tooltip column (`title` / directory / branch) is **not** extended with a color hint — that was an earlier approach which has been removed. Do not re-introduce it.
+
+Unit tests in `tab.rs` cover the formatter:
+- `format_tab_color_tooltip(Red, Some("⌘⌥1")) == "Red — ⌘⌥1"`, `… None == "Red"`.
+- `format_tab_color_reset_tooltip(Some("⌘⌥0")) == "Default (no color) — ⌘⌥0"`, `… None == "Default (no color)"`.
+- `tab_color_binding_name` returns a unique id per color.
 
 ### 8. Persistence
 
@@ -205,11 +189,11 @@ None. PRODUCT §14 requires the feature ships unconditionally.
 | §13 (zero-tab no-op) | Unit test: with `self.tabs.is_empty()`, both `set_active_tab_color` and `reset_active_tab_color` return without panic and without notify. |
 | §15 (no extra telemetry) | Unit test asserts `set_active_tab_color` emits exactly one `TabTelemetryAction::SetColor` (or `ResetColor`) per effective change, and zero on no-op. |
 | §16 (entries listed and rebindable) | Smoke step 11 (visual check in keybindings settings). |
-| §17 (tab-indicator hover tooltip) | Unit test on the tooltip formatter (bound and unbound cases — see §7). Smoke step 3. |
+| §17 (color-picker hover tooltip) | Unit tests on the color and reset formatters (bound and unbound cases — see §7). Smoke step 3. |
 
 Required new unit tests live in:
 
-- `app/src/tab.rs` (or wherever the new tooltip helper lands) — formatter test.
+- `app/src/tab.rs` — `tab_color_tooltip_tests` mod, covering both the color and reset formatters plus binding-name uniqueness.
 - `app/src/workspace/view_test.rs` — `set_active_tab_color` / `reset_active_tab_color` happy paths and §3/§5/§11/§13 cases.
 - `app/src/persistence/sqlite_tests.rs` — round-trip with one of the newly-listed colors.
 
@@ -222,11 +206,11 @@ Integration test: skip. The keybinding routing layer is config-shaped and the ke
 - **Risk: keybinding conflict introduced upstream between spec and impl.** Mitigation: re-grep `cmdorctrl-alt-[0-9]` and `cmd-alt-[0-9]` immediately before adding the bindings.
 - **Risk: settings page layout breaks at 8 swatches.** Mitigation: visual check at every `TAB_COLOR_OPTIONS` consumer site (1222, 2471, 4819) before opening the PR.
 - **Risk: White and Black ANSI swatches read poorly on light/dark themes respectively.** Mitigation: visual check on both bundled light and dark themes during smoke testing. If unreadable, the existing `compute_background_and_border` logic is the right place to pick a contrast-aware fill, but keep changes there minimal — palette-rendering polish is out of scope.
-- **Risk: tab tooltip integration conflicts with an existing per-tab tooltip (e.g. path/session name).** Mitigation: prefer augmenting the existing tooltip text over registering a second tooltip; if no per-tab tooltip exists today, add one only on colored tabs.
+- **Risk: only one of the two picker variants is wired and discovery silently breaks when a feature flag flips.** Mitigation: both `dot_color_option_menu_items` and `legacy_color_option_menu_items` carry the tooltip wiring. The default `cargo run` build hits the legacy path; turning on `directory_tab_colors` exercises the dot path. Smoke step 3 covers both branches.
 
 ## Follow-ups
 
 - User-configurable bindings (out of scope per PRODUCT.md non-goals).
 - Custom-color picker (out of scope).
 - Palette extension to the README §2 colors (Orange, Purple, Pink, Gray) — separate, larger feature requiring a `TabColor` enum decoupled from `AnsiColorIdentifier`. Tracked as a follow-up if the current ANSI palette proves insufficient.
-- Surfacing the reset shortcut (⌘⌥0) via something other than the settings page, if discoverability proves to be a real problem in use.
+- Surfacing the reset shortcut (⌘⌥0) outside the picker — e.g. on the keybindings settings page only — if the picker tooltip proves insufficient. (The dot picker's "Default (no color)" entry already surfaces it; the legacy picker has no equivalent slot, so users on that variant find ⌘⌥0 only in settings.)

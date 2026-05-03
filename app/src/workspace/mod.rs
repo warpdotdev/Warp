@@ -45,6 +45,7 @@ use crate::util::bindings::{self, cmd_or_ctrl_shift, is_binding_pty_compliant, C
 use crate::palette::PaletteMode;
 use serde::{Deserialize, Serialize};
 use warp_core::context_flag::ContextFlag;
+use warp_core::ui::theme::AnsiColorIdentifier;
 use warpui::accessibility::AccessibilityVerbosity;
 use warpui::elements::DropTargetData;
 use warpui::keymap::FixedBinding;
@@ -557,6 +558,94 @@ pub fn init(app: &mut AppContext) {
         .with_context_predicate(id!("Workspace"))
         .with_group(bindings::BindingGroup::Navigation.as_str())
         .with_key_binding("cmdorctrl-9"),
+        EditableBinding::new(
+            "workspace:set_active_tab_color_red",
+            "Set tab color: Red",
+            WorkspaceAction::SetActiveTabColor {
+                color: AnsiColorIdentifier::Red,
+            },
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_group(bindings::BindingGroup::TabColor.as_str())
+        .with_key_binding("cmdorctrl-alt-1"),
+        EditableBinding::new(
+            "workspace:set_active_tab_color_yellow",
+            "Set tab color: Yellow",
+            WorkspaceAction::SetActiveTabColor {
+                color: AnsiColorIdentifier::Yellow,
+            },
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_group(bindings::BindingGroup::TabColor.as_str())
+        .with_key_binding("cmdorctrl-alt-2"),
+        EditableBinding::new(
+            "workspace:set_active_tab_color_green",
+            "Set tab color: Green",
+            WorkspaceAction::SetActiveTabColor {
+                color: AnsiColorIdentifier::Green,
+            },
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_group(bindings::BindingGroup::TabColor.as_str())
+        .with_key_binding("cmdorctrl-alt-3"),
+        EditableBinding::new(
+            "workspace:set_active_tab_color_cyan",
+            "Set tab color: Cyan",
+            WorkspaceAction::SetActiveTabColor {
+                color: AnsiColorIdentifier::Cyan,
+            },
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_group(bindings::BindingGroup::TabColor.as_str())
+        .with_key_binding("cmdorctrl-alt-4"),
+        EditableBinding::new(
+            "workspace:set_active_tab_color_blue",
+            "Set tab color: Blue",
+            WorkspaceAction::SetActiveTabColor {
+                color: AnsiColorIdentifier::Blue,
+            },
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_group(bindings::BindingGroup::TabColor.as_str())
+        .with_key_binding("cmdorctrl-alt-5"),
+        EditableBinding::new(
+            "workspace:set_active_tab_color_magenta",
+            "Set tab color: Magenta",
+            WorkspaceAction::SetActiveTabColor {
+                color: AnsiColorIdentifier::Magenta,
+            },
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_group(bindings::BindingGroup::TabColor.as_str())
+        .with_key_binding("cmdorctrl-alt-6"),
+        EditableBinding::new(
+            "workspace:set_active_tab_color_white",
+            "Set tab color: White",
+            WorkspaceAction::SetActiveTabColor {
+                color: AnsiColorIdentifier::White,
+            },
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_group(bindings::BindingGroup::TabColor.as_str())
+        .with_key_binding("cmdorctrl-alt-7"),
+        EditableBinding::new(
+            "workspace:set_active_tab_color_black",
+            "Set tab color: Black",
+            WorkspaceAction::SetActiveTabColor {
+                color: AnsiColorIdentifier::Black,
+            },
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_group(bindings::BindingGroup::TabColor.as_str())
+        .with_key_binding("cmdorctrl-alt-8"),
+        EditableBinding::new(
+            "workspace:reset_active_tab_color",
+            "Reset tab color",
+            WorkspaceAction::ResetActiveTabColor,
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_group(bindings::BindingGroup::TabColor.as_str())
+        .with_key_binding("cmdorctrl-alt-0"),
         EditableBinding::new(
             "workspace:activate_prev_tab",
             "Activate previous tab",

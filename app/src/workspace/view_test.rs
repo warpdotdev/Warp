@@ -2861,3 +2861,157 @@ fn test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempot
         });
     });
 }
+
+#[test]
+fn test_set_active_tab_color_sets_active_tab_only() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+            workspace.add_terminal_tab(false, ctx);
+            workspace.handle_action(&WorkspaceAction::ActivateTab(1), ctx);
+
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor {
+                    color: AnsiColorIdentifier::Red,
+                },
+                ctx,
+            );
+
+            assert_eq!(
+                workspace.tabs[1].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Red),
+            );
+            assert_eq!(workspace.tabs[0].selected_color, SelectedTabColor::Unset);
+        });
+    });
+}
+
+#[test]
+fn test_set_active_tab_color_replaces_in_place() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor {
+                    color: AnsiColorIdentifier::Red,
+                },
+                ctx,
+            );
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor {
+                    color: AnsiColorIdentifier::Green,
+                },
+                ctx,
+            );
+
+            let active = workspace.active_tab_index();
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Green),
+            );
+        });
+    });
+}
+
+#[test]
+fn test_set_active_tab_color_idempotent() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor {
+                    color: AnsiColorIdentifier::Red,
+                },
+                ctx,
+            );
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor {
+                    color: AnsiColorIdentifier::Red,
+                },
+                ctx,
+            );
+
+            let active = workspace.active_tab_index();
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Color(AnsiColorIdentifier::Red),
+            );
+        });
+    });
+}
+
+#[test]
+fn test_reset_active_tab_color_unsets() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor {
+                    color: AnsiColorIdentifier::Red,
+                },
+                ctx,
+            );
+            workspace.handle_action(&WorkspaceAction::ResetActiveTabColor, ctx);
+
+            let active = workspace.active_tab_index();
+            // FeatureFlag::DirectoryTabColors is off in the test harness, so reset → Unset.
+            assert_eq!(
+                workspace.tabs[active].selected_color,
+                SelectedTabColor::Unset
+            );
+        });
+    });
+}
+
+#[test]
+fn test_new_tab_after_set_color_is_uncolored() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            workspace.add_terminal_tab(false, ctx);
+            workspace.handle_action(
+                &WorkspaceAction::SetActiveTabColor {
+                    color: AnsiColorIdentifier::Red,
+                },
+                ctx,
+            );
+
+            workspace.add_terminal_tab(false, ctx);
+            let new_index = workspace.active_tab_index();
+            assert_eq!(
+                workspace.tabs[new_index].selected_color,
+                SelectedTabColor::Unset
+            );
+        });
+    });
+}
+
+#[test]
+fn test_set_or_reset_active_tab_color_out_of_range_is_noop() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let workspace = mock_workspace(&mut app);
+        workspace.update(&mut app, |workspace, ctx| {
+            // Force the active index past the end of `tabs`. set/reset must early-return.
+            let bogus_index = workspace.tabs.len() + 5;
+            workspace.set_tab_color(bogus_index, AnsiColorIdentifier::Red, ctx);
+            workspace.reset_tab_color(bogus_index, ctx);
+
+            for tab in &workspace.tabs {
+                assert_eq!(tab.selected_color, SelectedTabColor::Unset);
+            }
+        });
+    });
+}

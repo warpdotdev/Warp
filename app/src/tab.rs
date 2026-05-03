@@ -1,5 +1,5 @@
 use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
+use crate::ai::conversation_status_ui::{STATUS_ELEMENT_PADDING, render_status_element};
 use crate::appearance::Appearance;
 /// Tab module contains structures related to Tabs (such as TabData or TabComponent) that simplify
 /// the rendering and management of tabs in general.
@@ -18,25 +18,25 @@ use crate::terminal::shared_session::render_util::shared_session_indicator_color
 use crate::terminal::view::TerminalViewState;
 use crate::themes::theme::{AnsiColorIdentifier, Fill as ThemeFill, VerticalGradient};
 use crate::ui_components::buttons::icon_button;
-use crate::ui_components::color_dot::{render_color_dot, TAB_COLOR_OPTIONS};
-use crate::ui_components::icons::{Icon, ICON_DIMENSIONS};
-use crate::util::color::{coloru_with_opacity, Opacity};
+use crate::ui_components::color_dot::{TAB_COLOR_OPTIONS, render_color_dot};
+use crate::ui_components::icons::{ICON_DIMENSIONS, Icon};
+use crate::util::color::{Opacity, coloru_with_opacity};
 use crate::util::truncation::truncate_from_end;
 
+use crate::BlocklistAIHistoryModel;
 use crate::window_settings::WindowSettings;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::tab_settings::{TabCloseButtonPosition, TabSettings};
 use crate::workspace::{
     PaneViewLocator, TabBarDropTargetData, TabBarLocation, TabContextMenuAnchor, WorkspaceAction,
 };
-use crate::BlocklistAIHistoryModel;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use serde::{Deserialize, Serialize};
 use warp_core::context_flag::ContextFlag;
 use warp_core::ui::builder::UiBuilder;
-use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::AnsiColors;
+use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
     Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DragAxis, Draggable, DraggableState, DropTarget, Element, Empty, Fill,
@@ -61,8 +61,67 @@ pub fn uses_vertical_tabs(ctx: &AppContext) -> bool {
     FeatureFlag::VerticalTabs.is_enabled() && *TabSettings::as_ref(ctx).use_vertical_tabs
 }
 
+fn tab_color_binding_name(color: AnsiColorIdentifier) -> &'static str {
+    match color {
+        AnsiColorIdentifier::Red => "workspace:set_active_tab_color_red",
+        AnsiColorIdentifier::Yellow => "workspace:set_active_tab_color_yellow",
+        AnsiColorIdentifier::Green => "workspace:set_active_tab_color_green",
+        AnsiColorIdentifier::Cyan => "workspace:set_active_tab_color_cyan",
+        AnsiColorIdentifier::Blue => "workspace:set_active_tab_color_blue",
+        AnsiColorIdentifier::Magenta => "workspace:set_active_tab_color_magenta",
+        AnsiColorIdentifier::White => "workspace:set_active_tab_color_white",
+        AnsiColorIdentifier::Black => "workspace:set_active_tab_color_black",
+    }
+}
+
+fn format_tab_color_tooltip(color: AnsiColorIdentifier, shortcut: Option<&str>) -> String {
+    match shortcut {
+        Some(s) => format!("{color} \u{2014} {s}"),
+        None => color.to_string(),
+    }
+}
+
+fn tab_color_shortcut_tooltip(color: AnsiColorIdentifier, ctx: &AppContext) -> String {
+    let shortcut = crate::util::bindings::keybinding_name_to_display_string(
+        tab_color_binding_name(color),
+        ctx,
+    );
+    format_tab_color_tooltip(color, shortcut.as_deref())
+}
+
+const TAB_COLOR_RESET_LABEL: &str = "Default (no color)";
+
+fn format_tab_color_reset_tooltip(shortcut: Option<&str>) -> String {
+    match shortcut {
+        Some(s) => format!("{TAB_COLOR_RESET_LABEL} \u{2014} {s}"),
+        None => TAB_COLOR_RESET_LABEL.to_string(),
+    }
+}
+
+fn tab_color_reset_shortcut_tooltip(ctx: &AppContext) -> String {
+    let shortcut = crate::util::bindings::keybinding_name_to_display_string(
+        "workspace:reset_active_tab_color",
+        ctx,
+    );
+    format_tab_color_reset_tooltip(shortcut.as_deref())
+}
+
 const WARP_2_TAB_COLOR_OPACITY: Opacity = 25;
 const WARP_2_HOVERED_TAB_COLOR_OPACITY: Opacity = 50;
+/// Opacity applied to the colored fill of the active tab in the legacy
+/// (non-`NewTabStyling`) tab bar. Higher than the hover/inactive opacities
+/// so the active colored tab is clearly distinguishable.
+const WARP_2_ACTIVE_TAB_COLOR_OPACITY: Opacity = 80;
+/// Opacity used for the active tab's colored background in the
+/// `NewTabStyling` tab bar. Bumped relative to hover/inactive so the active
+/// colored tab is clearly brighter than its neighbours.
+const NEW_TAB_ACTIVE_COLOR_OPACITY: u8 = 85;
+const NEW_TAB_HOVERED_COLOR_OPACITY: u8 = 40;
+const NEW_TAB_INACTIVE_COLOR_OPACITY: u8 = 20;
+/// Opacity (0..=100) for the saturated colored border drawn around the
+/// active tab when the tab has a custom color. Used by both legacy and new
+/// tab styling.
+const ACTIVE_TAB_COLOR_BORDER_OPACITY: Opacity = 95;
 const TAB_CLOSE_BUTTON_OPACITY: Opacity = 60;
 const TAB_CLOSE_BUTTON_WIDTH: f32 = 20.0;
 const MAX_TOOLTIP_LENGTH: usize = 80;
@@ -195,7 +254,7 @@ impl TabData {
             self.modify_tab_menu_items(index, tabs_len, pane_name_target, ctx),
             self.close_tab_menu_items(index, tabs_len, ctx),
             Self::save_config_menu_items(index),
-            self.color_option_menu_items(index, terminal_colors),
+            self.color_option_menu_items(index, terminal_colors, ctx),
         ] {
             if menu_items
                 .last()
@@ -298,9 +357,11 @@ impl TabData {
 
         // TODO add option to show the keybinding once we figure out a nice API to retrieve
         // the actual keybinding (based on the user's preferences etc.)
-        menu_items.append(&mut vec![MenuItemFields::new("Rename tab")
-            .with_on_select_action(WorkspaceAction::RenameTab(index))
-            .into_item()]);
+        menu_items.append(&mut vec![
+            MenuItemFields::new("Rename tab")
+                .with_on_select_action(WorkspaceAction::RenameTab(index))
+                .into_item(),
+        ]);
         // Group together with rename option (note, resetting doesn't make
         // sense unless you're able to rename a tab).
         let title = self.pane_group.as_ref(ctx).custom_title(ctx);
@@ -360,9 +421,11 @@ impl TabData {
             .custom_vertical_tabs_title()
             .is_some();
 
-        let mut menu_items = vec![MenuItemFields::new(target.rename_label)
-            .with_on_select_action(WorkspaceAction::RenamePane(target.locator))
-            .into_item()];
+        let mut menu_items = vec![
+            MenuItemFields::new(target.rename_label)
+                .with_on_select_action(WorkspaceAction::RenamePane(target.locator))
+                .into_item(),
+        ];
         if has_custom_name {
             menu_items.push(
                 MenuItemFields::new(target.reset_label)
@@ -415,20 +478,23 @@ impl TabData {
         if !FeatureFlag::TabConfigs.is_enabled() {
             return vec![];
         }
-        vec![MenuItemFields::new("Save as new config")
-            .with_on_select_action(WorkspaceAction::SaveCurrentTabAsNewConfig(index))
-            .into_item()]
+        vec![
+            MenuItemFields::new("Save as new config")
+                .with_on_select_action(WorkspaceAction::SaveCurrentTabAsNewConfig(index))
+                .into_item(),
+        ]
     }
 
     fn color_option_menu_items(
         &self,
         index: usize,
         terminal_colors: AnsiColors,
+        ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
         if FeatureFlag::DirectoryTabColors.is_enabled() {
             self.dot_color_option_menu_items(index, terminal_colors)
         } else {
-            self.legacy_color_option_menu_items(index, terminal_colors)
+            self.legacy_color_option_menu_items(index, terminal_colors, ctx)
         }
     }
 
@@ -446,7 +512,7 @@ impl TabData {
 
         vec![MenuItem::Item(
             MenuItemFields::new_with_custom_label(
-                Arc::new(move |_is_selected, _is_hovered, appearance, _app| {
+                Arc::new(move |_is_selected, _is_hovered, appearance, app| {
                     let theme = appearance.theme();
                     let ring_color: ColorU = theme.accent().into();
 
@@ -468,8 +534,8 @@ impl TabData {
                             Some(id) => id.to_ansi_color(&terminal_colors).into(),
                         };
                         let tooltip = match ansi_id {
-                            None => "Default (no color)".to_string(),
-                            Some(id) => id.to_string(),
+                            None => tab_color_reset_shortcut_tooltip(app),
+                            Some(id) => tab_color_shortcut_tooltip(id, app),
                         };
 
                         let dot = render_color_dot(
@@ -514,6 +580,7 @@ impl TabData {
         &self,
         index: usize,
         terminal_colors: AnsiColors,
+        ctx: &AppContext,
     ) -> Vec<MenuItem<WorkspaceAction>> {
         vec![MenuItem::ItemsRow {
             items: TAB_COLOR_OPTIONS
@@ -530,6 +597,7 @@ impl TabData {
                         color_option.to_string(),
                     )
                     .no_highlight_on_hover()
+                    .with_tooltip(tab_color_shortcut_tooltip(*color_option, ctx))
                     .with_on_select_action(WorkspaceAction::ToggleTabColor {
                         color: *color_option,
                         tab_index: index,
@@ -1195,26 +1263,25 @@ impl<'a> TabComponent<'a> {
         let theme = self.appearance.theme();
         let is_active = self.is_active_tab();
 
+        let custom_background_solid = self.styles.background.map(|fill| match fill {
+            ThemeFill::Solid(color) => color,
+            ThemeFill::VerticalGradient(gradient) => gradient.get_most_opaque(),
+            ThemeFill::HorizontalGradient(gradient) => gradient.get_most_opaque(),
+        });
+
         let (background_color, border_fill) = if FeatureFlag::NewTabStyling.is_enabled() {
-            // If there is a custom tab background, we overlay it with varying opacities.
-            let bg = if let Some(custom_background) = self.styles.background {
+            // If there is a custom tab background, we overlay it with varying opacities so the
+            // active tab pops while inactive colored tabs remain a subtle tint.
+            let bg = if let Some(color) = custom_background_solid {
                 let base_opacity = if is_active {
-                    60
+                    NEW_TAB_ACTIVE_COLOR_OPACITY
                 } else if is_hovered {
-                    40
+                    NEW_TAB_HOVERED_COLOR_OPACITY
                 } else {
-                    20
+                    NEW_TAB_INACTIVE_COLOR_OPACITY
                 };
                 let opacity = (base_opacity as f32 * self.background_opacity as f32 / 100.) as u8;
-                match custom_background {
-                    ThemeFill::Solid(color) => coloru_with_opacity(color, opacity).into(),
-                    ThemeFill::VerticalGradient(gradient) => {
-                        coloru_with_opacity(gradient.get_most_opaque(), opacity).into()
-                    }
-                    ThemeFill::HorizontalGradient(gradient) => {
-                        coloru_with_opacity(gradient.get_most_opaque(), opacity).into()
-                    }
-                }
+                coloru_with_opacity(color, opacity).into()
             } else if is_active {
                 internal_colors::fg_overlay_2(theme).into()
             } else if is_hovered {
@@ -1224,34 +1291,38 @@ impl<'a> TabComponent<'a> {
             };
 
             let border = if is_active {
-                internal_colors::fg_overlay_2(theme)
+                if let Some(color) = custom_background_solid {
+                    ThemeFill::Solid(coloru_with_opacity(color, ACTIVE_TAB_COLOR_BORDER_OPACITY))
+                } else {
+                    internal_colors::fg_overlay_2(theme)
+                }
             } else {
                 internal_colors::fg_overlay_1(theme)
             };
 
             (bg, border)
         } else {
-            let tab_opacity = if is_active || is_hovered {
+            let tab_opacity = if is_active {
+                WARP_2_ACTIVE_TAB_COLOR_OPACITY
+            } else if is_hovered {
                 WARP_2_HOVERED_TAB_COLOR_OPACITY
             } else {
                 WARP_2_TAB_COLOR_OPACITY
             };
 
-            let bg = if let Some(custom_background) = self.styles.background {
-                match custom_background {
-                    ThemeFill::Solid(color) => coloru_with_opacity(color, tab_opacity).into(),
-                    ThemeFill::VerticalGradient(gradient) => {
-                        coloru_with_opacity(gradient.get_most_opaque(), tab_opacity).into()
-                    }
-                    ThemeFill::HorizontalGradient(gradient) => {
-                        coloru_with_opacity(gradient.get_most_opaque(), tab_opacity).into()
-                    }
-                }
+            let bg = if let Some(color) = custom_background_solid {
+                coloru_with_opacity(color, tab_opacity).into()
             } else {
                 coloru_with_opacity(theme.surface_3().into(), tab_opacity).into()
             };
 
-            let border = if is_active || is_hovered {
+            let border = if is_active {
+                if let Some(color) = custom_background_solid {
+                    ThemeFill::Solid(coloru_with_opacity(color, ACTIVE_TAB_COLOR_BORDER_OPACITY))
+                } else {
+                    internal_colors::fg_overlay_2(theme)
+                }
+            } else if is_hovered {
                 internal_colors::fg_overlay_2(theme)
             } else {
                 internal_colors::fg_overlay_1(theme)
@@ -1691,5 +1762,61 @@ impl UiComponent for TabComponent<'_> {
             styles: self.styles.merge(style),
             ..self
         }
+    }
+}
+
+#[cfg(test)]
+mod tab_color_tooltip_tests {
+    use super::{
+        AnsiColorIdentifier, format_tab_color_reset_tooltip, format_tab_color_tooltip,
+        tab_color_binding_name,
+    };
+
+    #[test]
+    fn formats_tooltip_with_shortcut() {
+        assert_eq!(
+            format_tab_color_tooltip(AnsiColorIdentifier::Red, Some("⌘⌥1")),
+            "Red \u{2014} ⌘⌥1"
+        );
+    }
+
+    #[test]
+    fn formats_tooltip_without_shortcut() {
+        assert_eq!(
+            format_tab_color_tooltip(AnsiColorIdentifier::Red, None),
+            "Red"
+        );
+    }
+
+    #[test]
+    fn formats_reset_tooltip_with_shortcut() {
+        assert_eq!(
+            format_tab_color_reset_tooltip(Some("⌘⌥0")),
+            "Default (no color) \u{2014} ⌘⌥0"
+        );
+    }
+
+    #[test]
+    fn formats_reset_tooltip_without_shortcut() {
+        assert_eq!(format_tab_color_reset_tooltip(None), "Default (no color)");
+    }
+
+    #[test]
+    fn binding_name_is_unique_per_color() {
+        let names: Vec<_> = [
+            AnsiColorIdentifier::Red,
+            AnsiColorIdentifier::Yellow,
+            AnsiColorIdentifier::Green,
+            AnsiColorIdentifier::Cyan,
+            AnsiColorIdentifier::Blue,
+            AnsiColorIdentifier::Magenta,
+            AnsiColorIdentifier::White,
+            AnsiColorIdentifier::Black,
+        ]
+        .iter()
+        .map(|c| tab_color_binding_name(*c))
+        .collect();
+        let unique: std::collections::HashSet<_> = names.iter().collect();
+        assert_eq!(names.len(), unique.len());
     }
 }

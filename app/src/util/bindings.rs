@@ -812,6 +812,7 @@ pub enum BindingGroup {
     Notifications,
     EnvVarCollection,
     Terminal,
+    TabColor,
 }
 
 impl BindingGroup {
@@ -830,6 +831,7 @@ impl BindingGroup {
             Self::Notifications => "notifications",
             Self::EnvVarCollection => "env_var_collections",
             Self::Terminal => "terminal",
+            Self::TabColor => "tab_color",
         }
     }
 

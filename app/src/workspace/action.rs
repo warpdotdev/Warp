@@ -211,6 +211,10 @@ pub enum WorkspaceAction {
         color: AnsiColorIdentifier,
         tab_index: usize,
     },
+    SetActiveTabColor {
+        color: AnsiColorIdentifier,
+    },
+    ResetActiveTabColor,
     OpenLaunchConfigSaveModal,
     SelectTabConfig(TabConfig),
     DispatchToSettingsTab(SettingsTabAction),
@@ -728,6 +732,8 @@ impl WorkspaceAction {
             | CloseTabsRight(_)
             | CloseTabsRightActiveTab
             | ToggleTabColor { .. }
+            | SetActiveTabColor { .. }
+            | ResetActiveTabColor
             | AddDefaultTab
             | AddTerminalTab { .. }
             | AddTabWithShell { .. }

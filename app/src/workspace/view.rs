@@ -5103,6 +5103,82 @@ impl Workspace {
         ctx.notify();
     }
 
+    pub fn set_tab_color(
+        &mut self,
+        index: usize,
+        color: AnsiColorIdentifier,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.tabs.get(index).is_none() {
+            log::warn!(
+                "Not setting tab color: index was {index} but len is {}",
+                self.tabs.len()
+            );
+            return;
+        }
+        if self.tabs[index].color() == Some(color) {
+            return;
+        }
+        send_telemetry_from_ctx!(
+            TelemetryEvent::TabOperations {
+                action: TabTelemetryAction::SetColor,
+            },
+            ctx
+        );
+        self.tabs[index].selected_color = SelectedTabColor::Color(color);
+        ctx.notify();
+    }
+
+    pub fn reset_tab_color(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
+        if self.tabs.get(index).is_none() {
+            log::warn!(
+                "Not resetting tab color: index was {index} but len is {}",
+                self.tabs.len()
+            );
+            return;
+        }
+        let directory_colors_on = FeatureFlag::DirectoryTabColors.is_enabled();
+        let already_uncolored = matches!(
+            self.tabs[index].selected_color,
+            SelectedTabColor::Unset | SelectedTabColor::Cleared
+        );
+        if already_uncolored {
+            return;
+        }
+        send_telemetry_from_ctx!(
+            TelemetryEvent::TabOperations {
+                action: TabTelemetryAction::ResetColor,
+            },
+            ctx
+        );
+        self.tabs[index].selected_color = if directory_colors_on {
+            SelectedTabColor::Cleared
+        } else {
+            SelectedTabColor::Unset
+        };
+        ctx.notify();
+    }
+
+    pub fn set_active_tab_color(
+        &mut self,
+        color: AnsiColorIdentifier,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let index = self.active_tab_index();
+        if self.tabs.get(index).is_none() {
+            return;
+        }
+        self.set_tab_color(index, color, ctx);
+    }
+
+    pub fn reset_active_tab_color(&mut self, ctx: &mut ViewContext<Self>) {
+        let index = self.active_tab_index();
+        if self.tabs.get(index).is_none() {
+            return;
+        }
+        self.reset_tab_color(index, ctx);
+    }
+
     /// Syncs the tab color for the given tab based on the active terminal's CWD.
     /// If the CWD is within a directory that has a configured color, applies it.
     /// If the CWD moves outside all configured directories, the directory color is cleared.
@@ -20017,6 +20093,8 @@ impl TypedActionView for Workspace {
             SetA11yVerbosityLevel(verbosity) => self.set_a11y_verbosity(*verbosity, ctx),
             ToggleNotifications => self.toggle_notifications(ctx),
             ToggleTabColor { color, tab_index } => self.toggle_tab_color(*tab_index, *color, ctx),
+            SetActiveTabColor { color } => self.set_active_tab_color(*color, ctx),
+            ResetActiveTabColor => self.reset_active_tab_color(ctx),
             DispatchToSettingsTab(action) => {
                 let window_id = ctx.window_id();
                 ctx.dispatch_typed_action_for_view(window_id, self.settings_pane.id(), action)

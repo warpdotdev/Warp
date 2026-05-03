@@ -197,6 +197,7 @@ impl SearchItemIcon for BindingGroup {
             Self::Notifications => Icon::Bell,
             Self::EnvVarCollection => Icon::EnvVarCollection,
             Self::Terminal => Icon::Terminal,
+            Self::TabColor => Icon::PaintBrush,
         }
     }
 
@@ -209,7 +210,8 @@ impl SearchItemIcon for BindingGroup {
             | Self::AutoUpdate
             | Self::Folders
             | Self::Terminal
-            | Self::Notifications => appearance.theme().foreground().into_solid(),
+            | Self::Notifications
+            | Self::TabColor => appearance.theme().foreground().into_solid(),
             Self::WarpAi if !FeatureFlag::AgentMode.is_enabled() => {
                 ColorU::from_u32(colors::WARP_AI)
             }

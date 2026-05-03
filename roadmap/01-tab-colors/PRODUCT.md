@@ -15,14 +15,14 @@ Keyboard shortcuts that recolor the currently-active tab so users can visually d
 - Provide a one-keystroke way to mark the active tab with one of eight visually distinct colors, plus a clear shortcut.
 - Reuse twarp's existing tab-color visual treatment (the surface already used by the right-click "Set color" menu) so the keyboard path produces the same on-screen result.
 - Persist a tab's color across app restarts.
-- Surface each color's bound shortcut directly on the colored tab via a hover tooltip, so users discover the shortcut without opening a menu.
+- Surface each color's bound shortcut on the swatch where the user picks the color (the right-click "Set color" menu), so users discover the shortcut at the moment they're choosing a color.
 
 **Non-goals (deferred to follow-ups)**
 - User-configurable shortcut bindings (rebinding via the existing keybindings settings page works; no new UI for it).
 - A color picker UI or custom hex/RGB colors.
 - More than eight colors, or extending the palette beyond `AnsiColorIdentifier`. The README §2 lists a different eight (Red/Orange/Yellow/Green/Blue/Purple/Pink/Gray) marked as "tentative defaults"; this feature uses the existing ANSI palette to keep scope small. Palette extension is a separate, larger change.
 - Rules that auto-color tabs (by directory, command, host, etc.). The existing directory→color default that ships upstream continues to work but is not modified by this feature.
-- Adding shortcut hints to the right-click "Set color" menu. Discoverability lives on the tab indicator (see §17) instead of inside the menu.
+- Adding a separate hover tooltip on the tab indicator itself. Discoverability lives in the right-click color picker (see §17), not on the tab.
 
 ## Behavior
 
@@ -77,11 +77,11 @@ Keyboard shortcuts that recolor the currently-active tab so users can visually d
 
 16. **Discoverability — keybindings surface:** the nine shortcuts appear in twarp's keybindings settings page like any other built-in shortcut, under a category that groups them together. They are also discoverable in the command palette / shortcut help under names like "Set tab color: Red", "Reset tab color". Users can rebind, unbind, or assign the same actions to other keys through the existing settings surface — no special UI is added for this feature.
 
-17. **Discoverability — tab-indicator hover tooltip:** hovering a tab's color indicator (the colored region/dot rendered on the tab in the tab bar) shows a tooltip in the form `<Color> — <shortcut>` (e.g. `Red — ⌘⌥1`).
+17. **Discoverability — color-picker hover tooltip:** hovering a swatch in the right-click "Set color" menu shows a tooltip in the form `<Color> — <shortcut>` (e.g. `Red — ⌘⌥1`). The "Default (no color)" entry shows `Default (no color) — ⌘⌥0` so the reset shortcut is discoverable at the same surface.
     - The shortcut text reflects the **currently bound** key combination, sourced live from the corresponding `EditableBinding`. If a user rebinds the shortcut, the tooltip updates automatically.
-    - If the user has unbound the shortcut for that color, the tooltip falls back to just `<Color>` with no shortcut suffix; no "Unbound" placeholder.
-    - Uncolored tabs do not show a color tooltip from this feature. The reset shortcut (⌘⌥0) is discoverable through the keybindings settings page only.
-    - The right-click "Set color" menu remains unchanged — its swatches do not surface the keyboard shortcut. The tab indicator is the chosen discovery surface so users don't have to open a menu first.
+    - If the user has unbound the shortcut for that color, the tooltip falls back to just `<Color>` (or `Default (no color)`) with no shortcut suffix; no "Unbound" placeholder.
+    - Both color picker variants surface the tooltip — the dot-based picker (gated on `DirectoryTabColors`) and the legacy icon-row picker — so behavior is consistent regardless of which feature flags are active.
+    - The tab indicator itself does not get a separate color tooltip from this feature; the existing per-tab tooltip (title, directory, branch) is unchanged.
 
 ## Smoke test
 
@@ -89,7 +89,7 @@ Run against a freshly built twarp binary.
 
 1. Open twarp. Open three tabs.
 2. Focus tab 2. Press `⌘⌥1`. Tab 2's color indicator turns red.
-3. Hover tab 2's color indicator. Tooltip reads `Red — ⌘⌥1`.
+3. Right-click tab 2. Hover the red swatch in the color row — tooltip reads `Red — ⌘⌥1`. (If the build has the dot-based picker enabled via `DirectoryTabColors`, also hover the leftmost "Default (no color)" swatch — tooltip reads `Default (no color) — ⌘⌥0`.) Dismiss the menu.
 4. Press `⌘⌥1` again on tab 2. Tab 2 stays red (unconditional set, no toggle-off, no flicker).
 5. Press `⌘⌥3` on tab 2. Tab 2's color changes directly to green with no intermediate uncolored frame.
 6. Press `⌘⌥0` on tab 2. Tab 2 returns to the default (uncolored) appearance.

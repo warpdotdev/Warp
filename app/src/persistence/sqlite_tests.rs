@@ -16,6 +16,7 @@ use crate::{
     tab::SelectedTabColor,
     terminal::model::block::SerializedBlock,
     terminal::ShellLaunchData,
+    themes::theme::AnsiColorIdentifier,
 };
 
 use super::{
@@ -413,5 +414,33 @@ fn test_deserialize_corrupted_guests() {
             anyone_with_link: None,
             guests: vec![],
         })
+    );
+}
+
+#[test]
+fn test_sqlite_round_trips_selected_tab_color_white() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let mut window = test_terminal_window_snapshot(false);
+    window.tabs[0].selected_color = SelectedTabColor::Color(AnsiColorIdentifier::White);
+
+    let app_state = AppState {
+        windows: vec![window],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+        running_mcp_servers: Default::default(),
+    };
+
+    save_app_state(&mut conn, &app_state).expect("app state should save");
+
+    let restored = read_sqlite_data(&mut conn, None)
+        .expect("app state should load")
+        .app_state;
+
+    assert_eq!(
+        restored.windows[0].tabs[0].selected_color,
+        SelectedTabColor::Color(AnsiColorIdentifier::White),
     );
 }
