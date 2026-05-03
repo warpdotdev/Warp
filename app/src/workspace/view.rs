@@ -5548,6 +5548,37 @@ impl Workspace {
         });
     }
 
+    fn header_toolbar_selection_with_tabs_panel_position(
+        config: &HeaderToolbarChipSelection,
+        position: PanelPosition,
+    ) -> HeaderToolbarChipSelection {
+        let mut new_left = config.left_items();
+        let mut new_right = config.right_items();
+        let already_on_requested_side = match position {
+            PanelPosition::Left => new_left.contains(&HeaderToolbarItemKind::TabsPanel),
+            PanelPosition::Right => new_right.contains(&HeaderToolbarItemKind::TabsPanel),
+        };
+        if !already_on_requested_side {
+            new_left.retain(|item| item != &HeaderToolbarItemKind::TabsPanel);
+            new_right.retain(|item| item != &HeaderToolbarItemKind::TabsPanel);
+            match position {
+                PanelPosition::Left => new_left.insert(0, HeaderToolbarItemKind::TabsPanel),
+                PanelPosition::Right => new_right.insert(0, HeaderToolbarItemKind::TabsPanel),
+            }
+        }
+
+        if new_left == HeaderToolbarItemKind::default_left()
+            && new_right == HeaderToolbarItemKind::default_right()
+        {
+            HeaderToolbarChipSelection::Default
+        } else {
+            HeaderToolbarChipSelection::Custom {
+                left: new_left,
+                right: new_right,
+            }
+        }
+    }
+
     fn sync_panel_positions_from_config(&mut self, ctx: &mut ViewContext<Self>) {
         let config = TabSettings::as_ref(ctx)
             .header_toolbar_chip_selection
@@ -20413,6 +20444,26 @@ impl TypedActionView for Workspace {
                         !self.vertical_tabs_panel.show_settings_popup;
                     ctx.notify();
                 }
+            }
+            SetVerticalTabsPanelPosition(position) => {
+                let position = *position;
+                let config = TabSettings::as_ref(ctx)
+                    .header_toolbar_chip_selection
+                    .clone();
+                let selection =
+                    Self::header_toolbar_selection_with_tabs_panel_position(&config, position);
+                TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                    let _ = settings
+                        .header_toolbar_chip_selection
+                        .set_value(selection, ctx);
+                });
+                send_telemetry_from_ctx!(
+                    VerticalTabsTelemetryEvent::DisplayOptionChanged(
+                        VerticalTabsDisplayOption::PanelPosition(position),
+                    ),
+                    ctx
+                );
+                ctx.notify();
             }
             SetVerticalTabsDisplayGranularity(granularity) => {
                 let granularity = *granularity;

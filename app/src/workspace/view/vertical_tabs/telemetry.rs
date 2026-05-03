@@ -7,11 +7,13 @@ use crate::workspace::tab_settings::{
     VerticalTabsCompactSubtitle, VerticalTabsDisplayGranularity, VerticalTabsPrimaryInfo,
     VerticalTabsTabItemMode, VerticalTabsViewMode,
 };
+use crate::workspace::view::PanelPosition;
 
 /// Which display option on the vertical tabs settings popup the user changed,
 /// along with the new value they picked.
 #[derive(Clone, Copy, Debug)]
 pub enum VerticalTabsDisplayOption {
+    PanelPosition(PanelPosition),
     DisplayGranularity(VerticalTabsDisplayGranularity),
     TabItemMode(VerticalTabsTabItemMode),
     ViewMode(VerticalTabsViewMode),
@@ -25,6 +27,7 @@ pub enum VerticalTabsDisplayOption {
 impl VerticalTabsDisplayOption {
     fn option_name(&self) -> &'static str {
         match self {
+            Self::PanelPosition(_) => "panel_position",
             Self::DisplayGranularity(_) => "display_granularity",
             Self::TabItemMode(_) => "tab_item_mode",
             Self::ViewMode(_) => "view_mode",
@@ -38,6 +41,8 @@ impl VerticalTabsDisplayOption {
 
     fn serialized_value(&self) -> Value {
         match self {
+            Self::PanelPosition(PanelPosition::Left) => json!("left"),
+            Self::PanelPosition(PanelPosition::Right) => json!("right"),
             Self::DisplayGranularity(VerticalTabsDisplayGranularity::Panes) => json!("panes"),
             Self::DisplayGranularity(VerticalTabsDisplayGranularity::Tabs) => json!("tabs"),
             Self::TabItemMode(VerticalTabsTabItemMode::FocusedSession) => json!("focused_session"),
