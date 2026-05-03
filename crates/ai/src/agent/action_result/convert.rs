@@ -144,6 +144,17 @@ impl TryFrom<WriteToLongRunningShellCommandResult>
             ),
             WriteToLongRunningShellCommandResult::Cancelled =>
                 Err(ConvertToAPITypeError::Ignore),
+            WriteToLongRunningShellCommandResult::PolicyDenied { .. } => {
+                Ok(api::request::input::tool_call_result::Result::WriteToLongRunningShellCommand(
+                    api::WriteToLongRunningShellCommandResult {
+                        result: Some(
+                            api::write_to_long_running_shell_command_result::Result::Error(
+                                api::ShellCommandError { r#type: None },
+                            ),
+                        ),
+                    },
+                ))
+            }
             WriteToLongRunningShellCommandResult::Error(ShellCommandError::BlockNotFound) => {
                 Ok(api::request::input::tool_call_result::Result::WriteToLongRunningShellCommand(
                         api::WriteToLongRunningShellCommandResult {
@@ -307,7 +318,7 @@ impl TryFrom<RequestFileEditsResult> for api::request::input::tool_call_result::
                     api::ApplyFileDiffsResult {
                         result: Some(api::apply_file_diffs_result::Result::Error(
                             api::apply_file_diffs_result::Error {
-                                message: format!("File edits blocked by host policy: {reason}"),
+                                message: format!("{FILE_EDITS_POLICY_DENIED_PREFIX}{reason}"),
                             },
                         )),
                     },

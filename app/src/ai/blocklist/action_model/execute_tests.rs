@@ -107,8 +107,9 @@ mod policy_hooks {
             agent::task::TaskId,
             agent::{
                 conversation::AIConversationId, AIAgentAction, AIAgentActionId,
-                AIAgentActionResultType, AIAgentActionType, FileEdit, RequestCommandOutputResult,
-                RequestFileEditsResult,
+                AIAgentActionResultType, AIAgentActionType, AIAgentPtyWriteMode, FileEdit,
+                RequestCommandOutputResult, RequestFileEditsResult,
+                WriteToLongRunningShellCommandResult,
             },
             policy_hooks::{
                 decision::{
@@ -148,6 +149,19 @@ mod policy_hooks {
     fn policy_command_action(command: &str) -> AgentPolicyAction {
         agent_policy_action(&command_action(command), None, &None, &None)
             .expect("command action should build a policy action")
+    }
+
+    fn write_to_shell_action(input: &str) -> AIAgentAction {
+        AIAgentAction {
+            id: AIAgentActionId::from("action_1".to_string()),
+            task_id: TaskId::new("task_1".to_string()),
+            action: AIAgentActionType::WriteToLongRunningShellCommand {
+                block_id: "block_1".to_string().into(),
+                input: bytes::Bytes::from(input.to_string()),
+                mode: AIAgentPtyWriteMode::Line,
+            },
+            requires_result: true,
+        }
     }
 
     #[test]
@@ -213,6 +227,34 @@ mod policy_hooks {
             AIAgentActionResultType::RequestFileEdits(RequestFileEditsResult::PolicyDenied {
                 reason: "guard denied the action: protected path".to_string(),
             })
+        );
+    }
+
+    #[test]
+    fn policy_denied_write_to_shell_result_uses_stable_policy_variant() {
+        let action = write_to_shell_action("q\n");
+        let decision = AgentPolicyEffectiveDecision {
+            decision: AgentPolicyDecisionKind::Deny,
+            reason: Some("blocked".to_string()),
+            warp_permission: WarpPermissionSnapshot::allow(None),
+            hook_results: vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Deny,
+                reason: Some("interactive write blocked".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+        };
+
+        let result = policy_denied_action_result(&action, &decision);
+
+        assert_eq!(
+            result,
+            AIAgentActionResultType::WriteToLongRunningShellCommand(
+                WriteToLongRunningShellCommandResult::PolicyDenied {
+                    reason: "guard denied the action: interactive write blocked".to_string(),
+                }
+            )
         );
     }
 
@@ -459,6 +501,21 @@ mod policy_hooks {
 
         assert_eq!(write_files.paths.len(), 1);
         assert_eq!(write_files.diff_stats, None);
+    }
+
+    #[test]
+    fn write_to_shell_policy_action_is_governed_and_redacted() {
+        let action = write_to_shell_action("Authorization: Bearer secret-token\n:q\n");
+
+        let Some(AgentPolicyAction::WriteToLongRunningShellCommand(write)) =
+            agent_policy_action(&action, None, &None, &None)
+        else {
+            panic!("expected write-to-long-running-shell-command policy action");
+        };
+
+        assert_eq!(write.block_id, "block_1");
+        assert_eq!(write.mode, "line");
+        assert_eq!(write.input, "Authorization: Bearer <redacted>\n:q\n");
     }
 
     #[test]

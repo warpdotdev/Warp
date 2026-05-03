@@ -88,6 +88,9 @@ pub mod text {
                     WriteToLongRunningShellCommandResult::Error(_) => {
                         writeln!(w, "Failed to write to command.")
                     }
+                    WriteToLongRunningShellCommandResult::PolicyDenied { reason } => {
+                        writeln!(w, "Writing to command blocked by host policy: {reason}")
+                    }
                 },
                 AIAgentActionResultType::RequestFileEdits(result) => match result {
                     RequestFileEditsResult::Success {
@@ -856,6 +859,11 @@ pub mod json {
                     WriteToLongRunningShellCommandResult::Error(_) => {
                         Some(JsonMessage::ToolError {
                             error: "Failed to write to command.".into(),
+                        })
+                    }
+                    WriteToLongRunningShellCommandResult::PolicyDenied { reason } => {
+                        Some(JsonMessage::ToolError {
+                            error: Cow::Borrowed(reason.as_str()),
                         })
                     }
                     WriteToLongRunningShellCommandResult::Cancelled => {

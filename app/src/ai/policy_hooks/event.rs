@@ -77,6 +77,7 @@ impl AgentPolicyEvent {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AgentPolicyActionKind {
     ExecuteCommand,
+    WriteToLongRunningShellCommand,
     ReadFiles,
     WriteFiles,
     CallMcpTool,
@@ -87,6 +88,7 @@ pub(crate) enum AgentPolicyActionKind {
 #[allow(dead_code)]
 pub(crate) enum AgentPolicyAction {
     ExecuteCommand(PolicyExecuteCommandAction),
+    WriteToLongRunningShellCommand(PolicyWriteToLongRunningShellCommandAction),
     ReadFiles(PolicyReadFilesAction),
     WriteFiles(PolicyWriteFilesAction),
     CallMcpTool(PolicyCallMcpToolAction),
@@ -97,6 +99,9 @@ impl AgentPolicyAction {
     pub(crate) fn kind(&self) -> AgentPolicyActionKind {
         match self {
             Self::ExecuteCommand(_) => AgentPolicyActionKind::ExecuteCommand,
+            Self::WriteToLongRunningShellCommand(_) => {
+                AgentPolicyActionKind::WriteToLongRunningShellCommand
+            }
             Self::ReadFiles(_) => AgentPolicyActionKind::ReadFiles,
             Self::WriteFiles(_) => AgentPolicyActionKind::WriteFiles,
             Self::CallMcpTool(_) => AgentPolicyActionKind::CallMcpTool,
@@ -112,6 +117,7 @@ impl Serialize for AgentPolicyAction {
     {
         match self {
             Self::ExecuteCommand(action) => action.serialize(serializer),
+            Self::WriteToLongRunningShellCommand(action) => action.serialize(serializer),
             Self::ReadFiles(action) => action.serialize(serializer),
             Self::WriteFiles(action) => action.serialize(serializer),
             Self::CallMcpTool(action) => action.serialize(serializer),
@@ -151,6 +157,30 @@ impl PolicyExecuteCommandAction {
             normalized_command: redact_command_for_policy(&self.normalized_command),
             is_read_only: self.is_read_only,
             is_risky: self.is_risky,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub(crate) struct PolicyWriteToLongRunningShellCommandAction {
+    pub block_id: String,
+    pub input: String,
+    pub mode: String,
+}
+
+impl PolicyWriteToLongRunningShellCommandAction {
+    pub(crate) fn new(
+        block_id: impl Into<String>,
+        input: impl AsRef<[u8]>,
+        mode: impl Into<String>,
+    ) -> Self {
+        let input = String::from_utf8_lossy(input.as_ref());
+        let block_id = block_id.into();
+        let mode = mode.into();
+        Self {
+            block_id: truncate_for_policy(&block_id),
+            input: redact_command_for_policy(&input),
+            mode: truncate_for_policy(&mode),
         }
     }
 }

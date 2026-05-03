@@ -13,6 +13,8 @@ use crate::{
     document::{AIDocumentId, AIDocumentVersion},
 };
 
+pub const FILE_EDITS_POLICY_DENIED_PREFIX: &str = "File edits blocked by host policy: ";
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AIAgentActionResultType {
     /// The output of a requested command.
@@ -266,6 +268,9 @@ pub enum WriteToLongRunningShellCommandResult {
     },
     Cancelled,
     Error(ShellCommandError),
+    PolicyDenied {
+        reason: String,
+    },
 }
 
 impl Display for WriteToLongRunningShellCommandResult {
@@ -283,6 +288,10 @@ impl Display for WriteToLongRunningShellCommandResult {
             ),
             Self::Cancelled => write!(f, "Writing to long-running shell command cancelled"),
             Self::Error(e) => write!(f, "Write to long-running shell command failed: {e:?}"),
+            Self::PolicyDenied { reason } => write!(
+                f,
+                "Write to long-running shell command blocked by host policy: {reason}"
+            ),
         }
     }
 }
@@ -811,7 +820,11 @@ impl AIAgentActionResultType {
     pub fn is_failed(&self) -> bool {
         match self {
             Self::RequestCommandOutput(r) => r.failed(),
-            Self::RequestFileEdits(
+            Self::WriteToLongRunningShellCommand(
+                WriteToLongRunningShellCommandResult::Error(_)
+                | WriteToLongRunningShellCommandResult::PolicyDenied { .. },
+            )
+            | Self::RequestFileEdits(
                 RequestFileEditsResult::DiffApplicationFailed { .. }
                 | RequestFileEditsResult::PolicyDenied { .. },
             )

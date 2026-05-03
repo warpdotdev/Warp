@@ -16,6 +16,7 @@ pub(crate) use engine::AgentPolicyHookEngine;
 pub(crate) use event::{
     AgentPolicyAction, AgentPolicyEvent, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
     PolicyReadFilesAction, PolicyReadMcpResourceAction, PolicyWriteFilesAction,
+    PolicyWriteToLongRunningShellCommandAction,
 };
 
 #[cfg(test)]

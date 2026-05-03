@@ -1020,6 +1020,9 @@ impl<'a> std::fmt::Display for MarkdownActionResult<'a> {
                 WriteToLongRunningShellCommandResult::Error(e) => {
                     write!(f, "\n_Write to command failed: {e:?}")
                 }
+                WriteToLongRunningShellCommandResult::PolicyDenied { reason } => {
+                    write!(f, "\n_Write to command blocked by host policy: {reason}_")
+                }
             },
             AIAgentActionResultType::RequestFileEdits(result) => match result {
                 RequestFileEditsResult::Success { diff, .. } => {

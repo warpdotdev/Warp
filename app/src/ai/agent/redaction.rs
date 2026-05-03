@@ -119,6 +119,7 @@ pub(crate) fn redact_inputs(inputs: &mut [AIAgentInput]) {
                         match result {
                             Snapshot { grid_contents, .. } => redact_secrets(grid_contents),
                             CommandFinished { output, .. } => redact_secrets(output),
+                            PolicyDenied { reason } => redact_secrets(reason),
                             Error(_) | Cancelled => {}
                         }
                     }

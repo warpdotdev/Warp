@@ -79,3 +79,25 @@ fn policy_denied_file_edit_result_converts_to_policy_error_message() {
         "File edits blocked by host policy: protected path"
     );
 }
+
+#[test]
+fn policy_denied_write_to_shell_result_converts_to_unlabeled_error() {
+    let result = api::request::input::tool_call_result::Result::try_from(
+        WriteToLongRunningShellCommandResult::PolicyDenied {
+            reason: "interactive write blocked".to_string(),
+        },
+    )
+    .unwrap();
+
+    let api::request::input::tool_call_result::Result::WriteToLongRunningShellCommand(result) =
+        result
+    else {
+        panic!("expected write_to_long_running_shell_command result");
+    };
+    let Some(api::write_to_long_running_shell_command_result::Result::Error(error)) = result.result
+    else {
+        panic!("expected error result");
+    };
+
+    assert!(error.r#type.is_none());
+}

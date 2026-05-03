@@ -23,6 +23,7 @@ pub(super) mod use_computer;
 #[cfg(not(target_family = "wasm"))]
 use ai::agent::action_result::{
     CallMCPToolResult, ReadFilesResult, ReadMCPResourceResult, RequestFileEditsResult,
+    WriteToLongRunningShellCommandResult,
 };
 use ai::agent::action_result::{InsertReviewCommentsResult, RequestCommandOutputResult};
 pub use ask_user_question::AskUserQuestionExecutor;
@@ -104,8 +105,8 @@ use crate::{
     ai::{
         agent::{
             conversation::AIConversationId, AIAgentAction, AIAgentActionId, AIAgentActionResult,
-            AIAgentActionResultType, AIAgentActionType, CancellationReason, FileContext,
-            FileLocations, ServerOutputId,
+            AIAgentActionResultType, AIAgentActionType, AIAgentPtyWriteMode, CancellationReason,
+            FileContext, FileLocations, ServerOutputId,
         },
         ambient_agents::AmbientAgentTaskId,
         get_relevant_files::controller::GetRelevantFilesController,
@@ -127,7 +128,7 @@ use crate::ai::policy_hooks::{
     AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision, AgentPolicyEvent,
     AgentPolicyHookEngine, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
     PolicyReadFilesAction, PolicyReadMcpResourceAction, PolicyWriteFilesAction,
-    WarpPermissionSnapshot,
+    PolicyWriteToLongRunningShellCommandAction, WarpPermissionSnapshot,
 };
 
 /// Types of actions that can be executed in parallel.
@@ -1517,6 +1518,17 @@ fn agent_policy_action(
             )
             .redacted(),
         )),
+        AIAgentActionType::WriteToLongRunningShellCommand {
+            block_id,
+            input,
+            mode,
+        } => Some(AgentPolicyAction::WriteToLongRunningShellCommand(
+            PolicyWriteToLongRunningShellCommandAction::new(
+                block_id.to_string(),
+                input.as_ref(),
+                policy_pty_write_mode(*mode),
+            ),
+        )),
         AIAgentActionType::ReadFiles(read_files) => {
             Some(AgentPolicyAction::ReadFiles(PolicyReadFilesAction::new(
                 read_files
@@ -1549,6 +1561,15 @@ fn agent_policy_action(
             PolicyReadMcpResourceAction::new(*server_id, name.clone(), uri.clone()),
         )),
         _ => None,
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn policy_pty_write_mode(mode: AIAgentPtyWriteMode) -> &'static str {
+    match mode {
+        AIAgentPtyWriteMode::Raw => "raw",
+        AIAgentPtyWriteMode::Line => "line",
+        AIAgentPtyWriteMode::Block => "block",
     }
 }
 
@@ -1599,6 +1620,11 @@ fn policy_denied_action_result(
             AIAgentActionResultType::RequestFileEdits(RequestFileEditsResult::PolicyDenied {
                 reason,
             })
+        }
+        AIAgentActionType::WriteToLongRunningShellCommand { .. } => {
+            AIAgentActionResultType::WriteToLongRunningShellCommand(
+                WriteToLongRunningShellCommandResult::PolicyDenied { reason },
+            )
         }
         AIAgentActionType::CallMCPTool { .. } => AIAgentActionResultType::CallMCPTool(
             CallMCPToolResult::Error(format!("Blocked by host policy: {reason}")),
