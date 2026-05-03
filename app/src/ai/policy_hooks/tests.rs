@@ -110,6 +110,34 @@ fn config_deserializes_stdio_hook_shape() {
 }
 
 #[test]
+fn config_rejects_stdio_hook_credential_args() {
+    for args in [
+        json!(["--token=secret"]),
+        json!(["API_KEY=secret"]),
+        json!(["Authorization: Bearer secret"]),
+    ] {
+        let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+            "enabled": true,
+            "before_action": [{
+                "name": "stdio-guard",
+                "transport": "stdio",
+                "command": "guard",
+                "args": args
+            }]
+        }))
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(super::config::AgentPolicyHookConfigError::StdioArgContainsCredentials)
+        ));
+
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(value["enabled"], false);
+    }
+}
+
+#[test]
 fn config_rejects_non_https_remote_http_hooks() {
     let config: AgentPolicyHookConfig = serde_json::from_value(json!({
         "enabled": true,
@@ -142,6 +170,10 @@ fn config_rejects_http_hook_url_embedded_credentials() {
         "https://user:pass@example.com/policy",
         "https://token@example .com/policy",
         "https:user:pass@example.com/policy",
+        "https://example.com/policy?token=secret",
+        "https://example.com/policy?api_key=secret",
+        "https://example.com/policy#access_token=secret",
+        "https://example.com/policy?authorization=Bearer%20secret",
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
             "enabled": true,

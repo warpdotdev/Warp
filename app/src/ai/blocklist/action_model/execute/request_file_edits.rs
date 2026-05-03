@@ -134,6 +134,11 @@ impl RequestFileEditsExecutor {
         self.diff_views.insert(action_id.clone(), view.clone());
     }
 
+    pub(super) fn has_preprocessed_action(&self, action_id: &AIAgentActionId) -> bool {
+        self.diff_views.contains_key(action_id)
+            || self.diff_application_failures.contains_key(action_id)
+    }
+
     pub(super) fn execute(
         &mut self,
         input: ExecuteActionInput,

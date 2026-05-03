@@ -126,7 +126,8 @@ mod policy_hooks {
         agent_policy_action, complete_policy_preflight_if_pending, normalize_command_for_policy,
         policy_denied_action_result, policy_preflight_state_from_decision,
         recompose_completed_policy_decision, should_consume_completed_policy_preflight,
-        warp_permission_snapshot_for_policy, PolicyPreflightKey, PolicyPreflightState,
+        should_preprocess_file_edits_after_policy_decision, warp_permission_snapshot_for_policy,
+        PolicyPreflightKey, PolicyPreflightState,
     };
 
     fn command_action(command: &str) -> AIAgentAction {
@@ -159,6 +160,21 @@ mod policy_hooks {
                 block_id: "block_1".to_string().into(),
                 input: bytes::Bytes::from(input.to_string()),
                 mode: AIAgentPtyWriteMode::Line,
+            },
+            requires_result: true,
+        }
+    }
+
+    fn file_edit_action() -> AIAgentAction {
+        AIAgentAction {
+            id: AIAgentActionId::from("action_1".to_string()),
+            task_id: TaskId::new("task_1".to_string()),
+            action: AIAgentActionType::RequestFileEdits {
+                file_edits: vec![FileEdit::Create {
+                    file: Some("src/lib.rs".to_string()),
+                    content: Some("fn main() {}\n".to_string()),
+                }],
+                title: None,
             },
             requires_result: true,
         }
@@ -353,6 +369,27 @@ mod policy_hooks {
                 skip_confirmation: true
             }
         );
+    }
+
+    #[test]
+    fn file_edit_policy_ask_defers_diff_preprocessing_until_confirmation() {
+        let action = file_edit_action();
+        let decision = AgentPolicyEffectiveDecision {
+            decision: AgentPolicyDecisionKind::Ask,
+            reason: Some("requires approval".to_string()),
+            warp_permission: WarpPermissionSnapshot::allow(None),
+            hook_results: vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Ask,
+                reason: Some("requires approval".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+        };
+
+        assert!(!should_preprocess_file_edits_after_policy_decision(
+            &action, &decision
+        ));
     }
 
     #[test]

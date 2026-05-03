@@ -351,6 +351,8 @@ pub struct BlocklistAIActionExecutor {
     pending_policy_preflights: HashSet<PolicyPreflightKey>,
     #[cfg(not(target_family = "wasm"))]
     completed_policy_preflights: HashMap<PolicyPreflightKey, AgentPolicyEffectiveDecision>,
+    #[cfg(not(target_family = "wasm"))]
+    confirmed_file_edit_policy_preprocesses: HashSet<(AIConversationId, AIAgentActionId)>,
 
     /// Reference to the terminal model for checking session sharing state.
     terminal_model: Arc<FairMutex<TerminalModel>>,
@@ -437,6 +439,8 @@ impl BlocklistAIActionExecutor {
             pending_policy_preflights: Default::default(),
             #[cfg(not(target_family = "wasm"))]
             completed_policy_preflights: Default::default(),
+            #[cfg(not(target_family = "wasm"))]
+            confirmed_file_edit_policy_preprocesses: Default::default(),
             terminal_model,
             read_skill_executor,
             fetch_conversation_executor,
@@ -708,7 +712,17 @@ impl BlocklistAIActionExecutor {
                     policy_reason: None,
                 },
             };
-        } else if !is_user_initiated && !can_auto_execute && is_agent_autonomous {
+        }
+
+        #[cfg(not(target_family = "wasm"))]
+        if self.start_request_file_edits_preprocess_if_needed(&action, conversation_id, ctx) {
+            return TryExecuteResult::NotExecuted {
+                action: Box::new(action),
+                reason: NotExecutedReason::NotReady,
+            };
+        }
+
+        if !is_user_initiated && !can_auto_execute && is_agent_autonomous {
             // It must be the case that the autonomous agent is requesting a denylisted command.
             if let AIAgentActionType::RequestCommandOutput { command, .. } = &action.action {
                 let action_id = action.id.clone();
@@ -1147,10 +1161,8 @@ impl BlocklistAIActionExecutor {
         ctx.spawn(
             async move { engine.preflight(event, warp_permission).await },
             move |me, decision, ctx| {
-                let denied = matches!(
-                    decision.decision,
-                    AgentPolicyDecisionKind::Deny | AgentPolicyDecisionKind::Unknown
-                );
+                let should_preprocess =
+                    should_preprocess_file_edits_after_policy_decision(&action, &decision);
                 if !complete_policy_preflight_if_pending(
                     &mut me.pending_policy_preflights,
                     &mut me.completed_policy_preflights,
@@ -1161,7 +1173,7 @@ impl BlocklistAIActionExecutor {
                     return;
                 }
 
-                if denied {
+                if !should_preprocess {
                     let _ = done_tx.send(());
                     return;
                 }
@@ -1190,6 +1202,56 @@ impl BlocklistAIActionExecutor {
     }
 
     #[cfg(not(target_family = "wasm"))]
+    fn start_request_file_edits_preprocess_if_needed(
+        &mut self,
+        action: &AIAgentAction,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        if !matches!(action.action, AIAgentActionType::RequestFileEdits { .. }) {
+            return false;
+        }
+
+        let already_preprocessed = self
+            .request_file_edits_executor
+            .update(ctx, |executor, _ctx| {
+                executor.has_preprocessed_action(&action.id)
+            });
+        if already_preprocessed {
+            return false;
+        }
+
+        let active_profile =
+            AIExecutionProfilesModel::as_ref(ctx).active_profile(Some(self.terminal_view_id), ctx);
+        let policy_hooks_active = crate::ai::blocklist::BlocklistAIPermissions::as_ref(ctx)
+            .permissions_profile_for_id(ctx, *active_profile.id())
+            .agent_policy_hooks
+            .is_active();
+        if policy_hooks_active {
+            self.confirmed_file_edit_policy_preprocesses
+                .insert((conversation_id, action.id.clone()));
+        }
+
+        let action = action.clone();
+        let preprocess = self
+            .request_file_edits_executor
+            .update(ctx, |executor, ctx| {
+                executor.preprocess_action(
+                    PreprocessActionInput {
+                        action: &action,
+                        conversation_id,
+                    },
+                    ctx,
+                )
+            });
+        ctx.spawn(preprocess, move |_me, _, ctx| {
+            ctx.emit(BlocklistAIActionExecutorEvent::PolicyPreflightFinished { conversation_id });
+        });
+
+        true
+    }
+
+    #[cfg(not(target_family = "wasm"))]
     #[allow(clippy::too_many_arguments)]
     fn start_policy_preflight_if_needed(
         &mut self,
@@ -1210,6 +1272,16 @@ impl BlocklistAIActionExecutor {
         if !config.is_active() {
             self.remove_policy_preflights_for_action(conversation_id, &action.id);
             return None;
+        }
+
+        if matches!(action.action, AIAgentActionType::RequestFileEdits { .. })
+            && self
+                .confirmed_file_edit_policy_preprocesses
+                .remove(&(conversation_id, action.id.clone()))
+        {
+            return Some(PolicyPreflightState::Allowed {
+                skip_confirmation: false,
+            });
         }
 
         let warp_permission = self.warp_permission_snapshot_for_action(
@@ -1292,6 +1364,8 @@ impl BlocklistAIActionExecutor {
             .retain(|key| !key.matches_action(conversation_id, action_id));
         self.completed_policy_preflights
             .retain(|key, _| !key.matches_action(conversation_id, action_id));
+        self.confirmed_file_edit_policy_preprocesses
+            .remove(&(conversation_id, action_id.clone()));
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -1671,6 +1745,17 @@ fn policy_preflight_state_from_decision(
             PolicyPreflightState::Denied(policy_denied_action_result(action, decision))
         }
     }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn should_preprocess_file_edits_after_policy_decision(
+    action: &AIAgentAction,
+    decision: &AgentPolicyEffectiveDecision,
+) -> bool {
+    matches!(
+        policy_preflight_state_from_decision(action, decision, false),
+        PolicyPreflightState::Allowed { .. }
+    )
 }
 
 #[cfg(not(target_family = "wasm"))]

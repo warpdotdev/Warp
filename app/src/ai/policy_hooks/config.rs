@@ -179,7 +179,10 @@ pub(crate) enum AgentPolicyHookTransport {
 impl AgentPolicyHookTransport {
     fn validate_safe_to_persist(&self) -> Result<(), AgentPolicyHookConfigError> {
         match self {
-            Self::Stdio { env, .. } => validate_secret_value_map(env)?,
+            Self::Stdio { args, env, .. } => {
+                validate_stdio_args(args)?;
+                validate_secret_value_map(env)?;
+            }
             Self::Http { url, headers } => {
                 if http_url_contains_credentials(url) {
                     return Err(AgentPolicyHookConfigError::HttpUrlContainsCredentials);
@@ -195,13 +198,14 @@ impl AgentPolicyHookTransport {
         match self {
             Self::Stdio {
                 command,
+                args,
                 env,
                 working_directory,
-                ..
             } => {
                 if command.trim().is_empty() {
                     return Err(AgentPolicyHookConfigError::MissingStdioCommand);
                 }
+                validate_stdio_args(args)?;
                 validate_secret_value_map(env)?;
 
                 if working_directory
@@ -278,9 +282,21 @@ fn validate_secret_value_map(
     Ok(())
 }
 
+fn validate_stdio_args(args: &[String]) -> Result<(), AgentPolicyHookConfigError> {
+    if args.iter().any(|arg| stdio_arg_contains_credentials(arg)) {
+        return Err(AgentPolicyHookConfigError::StdioArgContainsCredentials);
+    }
+    Ok(())
+}
+
 fn http_url_contains_credentials(url: &str) -> bool {
     if let Ok(parsed) = url::Url::parse(url) {
-        return !parsed.username().is_empty() || parsed.password().is_some();
+        return !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.query_pairs().any(|(key, value)| {
+                text_contains_credentials(&key) || text_contains_credentials(&value)
+            })
+            || parsed.fragment().is_some_and(text_contains_credentials);
     }
 
     let url = url.trim_start();
@@ -304,7 +320,75 @@ fn http_url_contains_credentials(url: &str) -> bool {
         .map(|offset| authority_start + offset)
         .unwrap_or(url.len());
 
-    url[authority_start..authority_end].contains('@')
+    if url[authority_start..authority_end].contains('@') {
+        return true;
+    }
+
+    let suffix = &url[authority_end..];
+    suffix
+        .strip_prefix('?')
+        .or_else(|| suffix.strip_prefix('#'))
+        .is_some_and(text_contains_credentials)
+}
+
+fn text_contains_credentials(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    if lower.contains("bearer ") || lower.contains("bearer%20") {
+        return true;
+    }
+    if lower.contains("basic ") || lower.contains("basic%20") {
+        return true;
+    }
+
+    let normalized = lower.replace(['_', '-'], "");
+    if ["apikey", "accesskey"]
+        .iter()
+        .any(|keyword| normalized.contains(keyword))
+    {
+        return true;
+    }
+
+    lower
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .any(|part| {
+            matches!(
+                part,
+                "token" | "secret" | "password" | "passwd" | "authorization"
+            )
+        })
+}
+
+fn stdio_arg_contains_credentials(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let contains_env_reference = value.contains('$');
+    if !contains_env_reference
+        && (lower.contains("authorization:")
+            || lower.contains("bearer ")
+            || lower.contains("basic "))
+    {
+        return true;
+    }
+
+    if let Some((name, secret)) = value.split_once('=') {
+        let secret = secret.trim();
+        if text_contains_credentials(name)
+            && !secret.is_empty()
+            && !secret.starts_with('$')
+            && !secret.starts_with("${")
+        {
+            return true;
+        }
+    }
+
+    value
+        .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_')
+        .any(|part| {
+            part.strip_prefix("sk-")
+                .is_some_and(|token| token.len() >= 12)
+                || part
+                    .strip_prefix("ghp_")
+                    .is_some_and(|token| token.len() >= 12)
+        })
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -315,6 +399,10 @@ pub(crate) enum AgentPolicyHookConfigError {
     MissingHookName,
     #[error("agent policy hook stdio command must not be empty")]
     MissingStdioCommand,
+    #[error(
+        "agent policy hook stdio args must not include credentials; use env secret references"
+    )]
+    StdioArgContainsCredentials,
     #[error(
         "agent policy hook timeout must be between 1 and {MAX_AGENT_POLICY_HOOK_TIMEOUT_MS} ms"
     )]
