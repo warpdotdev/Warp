@@ -1,5 +1,7 @@
-use super::{truncate_from_beginning, GitLineChanges};
-use crate::context_chips::{github_pr_display_text_from_url, ContextChipKind};
+use super::{format_git_branch_command, truncate_from_beginning, GitLineChanges};
+use crate::context_chips::{
+    git_branch_on_click::GitBranchOnClickValue, github_pr_display_text_from_url, ContextChipKind,
+};
 
 #[test]
 fn test_github_pr_display_text_from_url() {
@@ -37,6 +39,36 @@ fn test_github_pr_chip_display_value_falls_back_to_raw_value() {
     assert_eq!(
         ContextChipKind::GithubPullRequest.display_value(&value),
         "https://example.com/not-a-pr"
+    );
+}
+
+#[test]
+fn test_format_git_branch_command_changes_to_linked_worktree_path() {
+    let value = GitBranchOnClickValue {
+        branch_name: "feature-a".to_string(),
+        worktree_path: Some("/tmp/repo feature-a".to_string()),
+        is_linked_worktree: true,
+    }
+    .encode();
+
+    assert_eq!(
+        format_git_branch_command(&value),
+        "cd '/tmp/repo feature-a'"
+    );
+}
+
+#[test]
+fn test_format_git_branch_command_reports_missing_linked_worktree_path() {
+    let value = GitBranchOnClickValue {
+        branch_name: "feature-a".to_string(),
+        worktree_path: None,
+        is_linked_worktree: true,
+    }
+    .encode();
+
+    assert_eq!(
+        format_git_branch_command(&value),
+        "echo 'Branch '\\''feature-a'\\'' is already checked out in another worktree, but Warp couldn'\\''t find its path.'"
     );
 }
 

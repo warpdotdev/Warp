@@ -10,6 +10,7 @@ use crate::ai::{
 use crate::code::editor::{add_color, remove_color};
 use crate::code_review::code_review_view::CODE_REVIEW_TOOLTIP_TEXT;
 use crate::code_review::diff_state::DiffStats;
+use crate::context_chips::git_branch_on_click::GitBranchOnClickValue;
 use crate::context_chips::node_version_popup::{NodeVersionPopupEvent, NodeVersionPopupView};
 use crate::context_chips::spacing;
 use crate::settings::{AISettings, AISettingsChangedEvent, InputSettings};
@@ -443,13 +444,19 @@ pub struct DisplayChipConfig {
 #[derive(Debug, Clone)]
 pub struct GitBranch(String);
 
+impl GitBranch {
+    fn command(&self) -> String {
+        format_git_branch_command(&self.0)
+    }
+}
+
 impl GenericMenuItem for GitBranch {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
     fn name(&self) -> String {
-        self.0.clone()
+        GitBranchOnClickValue::decode(&self.0).branch_name
     }
 
     fn icon(&self, _app: &AppContext) -> Option<Icon> {
@@ -557,7 +564,7 @@ impl DisplayChip {
                         };
 
                         ctx.emit(PromptDisplayChipEvent::TryExecuteCommand(
-                            format_git_branch_command(&git_branch.name()),
+                            git_branch.command(),
                         ));
                         me.close_git_branch_menu(ctx);
                         ctx.notify();
@@ -1774,12 +1781,31 @@ impl ActionButtonTheme for EnterAgentViewButton {
     }
 }
 
-fn format_change_directory_command(dir_name: &str) -> String {
-    format!("cd '{}'", dir_name.replace("'", "'\\'''"))
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace("'", "'\\'''"))
 }
 
-pub fn format_git_branch_command(branch_name: &str) -> String {
-    format!("git checkout {branch_name}")
+fn format_change_directory_command(dir_name: &str) -> String {
+    format!("cd {}", shell_single_quote(dir_name))
+}
+
+pub fn format_git_branch_command(value: &str) -> String {
+    let branch = GitBranchOnClickValue::decode(value);
+    if let Some(worktree_path) = branch.worktree_path {
+        return format_change_directory_command(&worktree_path);
+    }
+
+    if branch.is_linked_worktree {
+        return format!(
+            "echo {}",
+            shell_single_quote(&format!(
+                "Branch '{}' is already checked out in another worktree, but Warp couldn't find its path.",
+                branch.branch_name
+            ))
+        );
+    }
+
+    format!("git checkout {}", branch.branch_name)
 }
 
 pub(crate) fn chip_container(

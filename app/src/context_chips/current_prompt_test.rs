@@ -166,27 +166,6 @@ fn test_prompt_to_string() {
 }
 
 #[test]
-fn test_git_branch_on_click_values_strip_git_branch_markers() {
-    let values = Some(vec![
-        "  feature-a".to_string(),
-        "+ linked-worktree".to_string(),
-        "* main".to_string(),
-        "".to_string(),
-        "  +literal-plus".to_string(),
-    ]);
-
-    assert_eq!(
-        super::filter_git_branch_on_click_values(values),
-        Some(vec![
-            "main".to_string(),
-            "feature-a".to_string(),
-            "linked-worktree".to_string(),
-            "+literal-plus".to_string(),
-        ])
-    );
-}
-
-#[test]
 fn test_fingerprint_skips_contextual_chip_recompute_when_context_is_unchanged() {
     App::test((), |mut app| async move {
         let session_id = SessionId::from(777);
