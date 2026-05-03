@@ -43,26 +43,19 @@ Place between `OpenCode` and the `Unknown` fallback variant.
 
 ### 2. `app/src/terminal/cli_agent.rs`
 
-Add `Acp` to `pub enum CLIAgent`. Unlike other variants whose commands are
-hardcoded, `CLIAgent::Acp` carries the user-supplied command string:
+Add a fieldless `Acp` variant to `pub enum CLIAgent`:
 
 ```rust
 /// An ACP-compatible agent with a user-configured command.
-Acp(String),
+Acp,
 ```
 
-Update `command_prefix()`, `display_name()`, and `icon()` match arms:
-
-```rust
-// command_prefix
-CLIAgent::Acp(cmd) => cmd.as_str(),
-
-// display_name
-CLIAgent::Acp(cmd) => cmd.as_str(),  // show the actual command as the name
-
-// icon — no dedicated icon yet; fall through to None
-CLIAgent::Acp(_) => None,
-```
+The user-configured command, display name, and args are stored in a separate
+`AcpAgentConfig` struct in the AI settings model rather than inside the enum,
+avoiding conflicts with `CLIAgent`'s existing `Copy` and `&'static str`
+constraints. The `command_prefix()` and `display_name()` implementations look
+up the active config from settings at call time. The `icon()` arm returns
+`None` for v1.
 
 ### 3. New file: `app/src/ai/agent_sdk/driver/harness/acp.rs`
 
@@ -79,7 +72,7 @@ pub(crate) struct AcpHarness {
 Key `ThirdPartyHarness` method implementations:
 
 - `harness()` → `Harness::Acp`
-- `cli_agent()` → `CLIAgent::Acp(self.command.clone())`
+- `cli_agent()` → `CLIAgent::Acp`
 - `validate()` → call `validate_cli_installed(&self.command, self.install_docs_url())`
 - **Execution model:** The command is executed directly via argv (not 
   shell interpolation) to prevent injection. PATH resolution follows 
@@ -139,8 +132,11 @@ are eligible for passthrough.
 
 Add `Harness::Acp` to the harness selector dropdown. For user-configured ACP
 agents, each appears as a separate entry using its display name (the command
-string). This requires reading the list of configured ACP agents from settings
-and generating one selector entry per agent.
+string). This requires reading from a list of `AcpAgentConfig` entries persisted 
+in the AI settings model. Each entry has a stable UUID identity, a 
+display name, a command, and optional args. The selector serializes 
+the selected agent by UUID. Config is local-only and not synced across 
+machines in v1.
 
 ### 6. `app/src/server/server_api/harness_support.rs`
 
@@ -161,20 +157,20 @@ User selects ACP agent + sends prompt
       Agent streams response chunks
       Warp renders chunks as conversation blocks
       File edits → diff view
+      Agent file/terminal requests → routed through Warp's existing approval UX
       Tool calls → tool call blocks
   → on agent exit or crash → conversation marked ended
 ```
 
 ## Tradeoffs
 
-- **ACP agent config storage:** `CLIAgent::Acp(String)` conflicts with 
-  `CLIAgent`'s current `&'static str` return and `Copy` constraints. 
-  The preferred approach is likely storing ACP agent configuration 
-  (name, command, args) in a dedicated settings model (e.g. 
-  `AcpAgentConfig` struct in the AI settings) and keeping `CLIAgent` 
-  as a simple fieldless `Acp` variant. The harness selector would then 
-  read from that settings model. **Open question for Warp team: what is 
-  the preferred home for per-agent ACP config?**
+- **ACP agent config storage:** ACP agent configuration (name, command, args) 
+  is stored in a dedicated `AcpAgentConfig` struct in the AI settings model. 
+  `CLIAgent::Acp` remains fieldless to preserve `Copy` and `&'static str` 
+  compatibility. The harness selector reads from the settings model to populate 
+  per-agent entries. **Open question for Warp team: what is the preferred home 
+  for persisting `AcpAgentConfig` — alongside existing third-party CLI agent 
+  settings, or a new dedicated section?**
 - **Stdio-only in v1:** Excludes ACP agents that communicate over HTTP. This
   covers the majority of current ACP agents (opencode, Kimi, Gemini, Codex all
   support stdio) and avoids auth complexity for v1.
@@ -187,7 +183,7 @@ Invariant-to-test mapping (from `product.md` success criteria):
    command on PATH and `Err(AgentDriverError::CliNotInstalled)` for a missing
    command.
 2. **Unit test:** `run_acp_session()` returns a timeout error if the mock agent
-   process does not send `InitializeResult` within the deadline.
+   process does not respond to `initialize` within the deadline.
 3. **Integration test under `crates/integration/`:** Spawn a minimal ACP echo
    agent (a small test binary that implements initialize/session/new/session/prompt and
    returns a static response), send a prompt, and assert a conversation block
@@ -206,10 +202,9 @@ Invariant-to-test mapping (from `product.md` success criteria):
   stable `initialize`/`session/new`/`session/prompt` core and treat unknown
   fields as ignored (forward-compatible deserialization with `#[serde(flatten)]`
   or `deny_unknown_fields = false`).
-- **CLIAgent enum serialization:** Adding `Acp(String)` changes the shape of a
-  serialized enum. Mitigation: verify that `CLIAgent` is not persisted to disk
-  or sent over the network in a way that would break existing stored data; if it
-  is, add a migration.
+- **CLIAgent enum serialization:** `CLIAgent::Acp` is fieldless so it serializes
+  cleanly. The `AcpAgentConfig` settings struct will need migration guards if its
+  schema changes in future versions.
 - **No icon for ACP agents:** The harness selector will show ACP agents without
   a logo. Mitigation: acceptable for v1; a generic "agent" icon can be added as
   a follow-up.

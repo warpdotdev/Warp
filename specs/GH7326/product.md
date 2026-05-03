@@ -48,8 +48,10 @@ ACP-native agents inside Warp's UI, and must fall back to raw TUI output.
    - **Name** (e.g. "opencode", "Kimi")
    - **Command** (e.g. `opencode`, `kimi`)
    - **Args** (optional, e.g. `--model gpt-4o`)
-4. Warp validates the command exists on PATH. If not, shows an error with a link
-   to the agent's install docs (if known).
+4. Warp validates the command exists on PATH. Commands are executed via 
+   argv directly — no shell interpolation. Synced configs that would 
+   execute a new command on another machine require explicit confirmation 
+   before first run.
 5. The configured agent appears in the harness selector dropdown in the agent
    input footer.
 
@@ -87,7 +89,9 @@ ACP-native agents inside Warp's UI, and must fall back to raw TUI output.
 5. Configured ACP agents appear in the harness selector alongside Claude Code,
    Codex, and Gemini.
 6. Users can opt in to passing Warp's configured MCP servers to an ACP agent session; passthrough is off by default.
-7. Conversation history for ACP sessions persists and is viewable.
+7. ACP conversation turns are stored as Warp block snapshots and are 
+   viewable in conversation history. No ACP session IDs or agent-side 
+   transcripts are stored in v1 (resumption is a follow-up).
 
 ## Open questions
 
