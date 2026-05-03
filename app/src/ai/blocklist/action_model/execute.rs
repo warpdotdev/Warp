@@ -127,9 +127,9 @@ use crate::ai::policy_hooks::{
     decision::{compose_policy_decisions, WarpPermissionDecisionKind},
     redaction::{redact_command_for_policy, redact_sensitive_text_for_policy},
     AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision, AgentPolicyEvent,
-    AgentPolicyHookEngine, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
-    PolicyReadFilesAction, PolicyReadMcpResourceAction, PolicyWriteFilesAction,
-    PolicyWriteToLongRunningShellCommandAction, WarpPermissionSnapshot,
+    AgentPolicyHookConfig, AgentPolicyHookEngine, PolicyCallMcpToolAction,
+    PolicyExecuteCommandAction, PolicyReadFilesAction, PolicyReadMcpResourceAction,
+    PolicyWriteFilesAction, PolicyWriteToLongRunningShellCommandAction, WarpPermissionSnapshot,
 };
 
 /// Types of actions that can be executed in parallel.
@@ -166,7 +166,11 @@ struct PreprocessActionInput<'a> {
 struct PolicyPreflightKey {
     conversation_id: AIConversationId,
     action_id: AIAgentActionId,
+    working_directory: Option<PathBuf>,
+    run_until_completion: bool,
+    active_profile_id: Option<String>,
     action: AgentPolicyAction,
+    hook_config: AgentPolicyHookConfig,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -174,12 +178,17 @@ impl PolicyPreflightKey {
     fn new(
         conversation_id: AIConversationId,
         action_id: AIAgentActionId,
-        action: &AgentPolicyAction,
+        event: &AgentPolicyEvent,
+        hook_config: &AgentPolicyHookConfig,
     ) -> Self {
         Self {
             conversation_id,
             action_id,
-            action: action.clone(),
+            working_directory: event.working_directory.clone(),
+            run_until_completion: event.run_until_completion,
+            active_profile_id: event.active_profile_id.clone(),
+            action: event.action.clone(),
+            hook_config: hook_config.clone(),
         }
     }
 
@@ -1153,7 +1162,7 @@ impl BlocklistAIActionExecutor {
         let action = (*input.action).clone();
         let conversation_id = input.conversation_id;
         let preflight_key =
-            PolicyPreflightKey::new(conversation_id, action.id.clone(), &event.action);
+            PolicyPreflightKey::new(conversation_id, action.id.clone(), &event, &config);
         let (done_tx, done_rx) = oneshot::channel();
         let engine = AgentPolicyHookEngine::new(config);
         self.remove_policy_preflights_for_action(conversation_id, &action.id);
@@ -1292,7 +1301,7 @@ impl BlocklistAIActionExecutor {
             ctx,
         )?;
         let preflight_key =
-            PolicyPreflightKey::new(conversation_id, action.id.clone(), &event.action);
+            PolicyPreflightKey::new(conversation_id, action.id.clone(), &event, &config);
         let confirmed_file_edit_policy_preprocess =
             matches!(action.action, AIAgentActionType::RequestFileEdits { .. })
                 && self
@@ -1715,6 +1724,10 @@ fn policy_denied_action_result(
     action: &AIAgentAction,
     decision: &AgentPolicyEffectiveDecision,
 ) -> AIAgentActionResultType {
+    if let Some(result) = warp_denied_action_result(action, decision) {
+        return result;
+    }
+
     let reason = redact_sensitive_text_for_policy(&policy_denied_message(decision));
     match &action.action {
         AIAgentActionType::RequestCommandOutput { command, .. } => {
@@ -1746,6 +1759,60 @@ fn policy_denied_action_result(
         ),
         _ => action.action.cancelled_result(),
     }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn warp_denied_action_result(
+    action: &AIAgentAction,
+    decision: &AgentPolicyEffectiveDecision,
+) -> Option<AIAgentActionResultType> {
+    let is_hook_denial = decision
+        .hook_results
+        .iter()
+        .any(|result| result.decision == AgentPolicyDecisionKind::Deny);
+    if decision.decision != AgentPolicyDecisionKind::Deny
+        || decision.warp_permission.decision != WarpPermissionDecisionKind::Deny
+        || is_hook_denial
+    {
+        return None;
+    }
+
+    let reason = redact_sensitive_text_for_policy(
+        decision
+            .warp_permission
+            .reason
+            .as_deref()
+            .unwrap_or("Warp permissions denied the action"),
+    );
+    let warp_denied_message = format!("Blocked by Warp permissions: {reason}");
+
+    Some(match &action.action {
+        AIAgentActionType::RequestCommandOutput { command, .. } => {
+            AIAgentActionResultType::RequestCommandOutput(RequestCommandOutputResult::Denylisted {
+                command: command.clone(),
+            })
+        }
+        AIAgentActionType::ReadFiles(_) => {
+            AIAgentActionResultType::ReadFiles(ReadFilesResult::Error(warp_denied_message))
+        }
+        AIAgentActionType::RequestFileEdits { .. } => AIAgentActionResultType::RequestFileEdits(
+            RequestFileEditsResult::DiffApplicationFailed {
+                error: warp_denied_message,
+            },
+        ),
+        AIAgentActionType::WriteToLongRunningShellCommand { .. } => {
+            AIAgentActionResultType::WriteToLongRunningShellCommand(
+                WriteToLongRunningShellCommandResult::Cancelled,
+            )
+        }
+        AIAgentActionType::CallMCPTool { .. } => {
+            AIAgentActionResultType::CallMCPTool(CallMCPToolResult::Error(warp_denied_message))
+        }
+        AIAgentActionType::ReadMCPResource { .. } => AIAgentActionResultType::ReadMCPResource(
+            ReadMCPResourceResult::Error(warp_denied_message),
+        ),
+        _ => action.action.cancelled_result(),
+    })
 }
 
 #[cfg(not(target_family = "wasm"))]

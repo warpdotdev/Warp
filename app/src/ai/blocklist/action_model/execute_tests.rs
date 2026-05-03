@@ -100,7 +100,10 @@ mod binary_detection {
 
 #[cfg(not(target_family = "wasm"))]
 mod policy_hooks {
-    use std::collections::{HashMap, HashSet};
+    use std::{
+        collections::{HashMap, HashSet},
+        path::PathBuf,
+    };
 
     use crate::{
         ai::{
@@ -117,6 +120,7 @@ mod policy_hooks {
                     WarpPermissionDecisionKind, WarpPermissionSnapshot,
                 },
                 AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision,
+                AgentPolicyEvent, AgentPolicyHookConfig,
             },
         },
         terminal::shell::ShellType,
@@ -153,6 +157,28 @@ mod policy_hooks {
     fn policy_command_action(command: &str) -> AgentPolicyAction {
         agent_policy_action(&command_action(command), None, &None, &None)
             .expect("command action should build a policy action")
+    }
+
+    fn policy_preflight_key(
+        conversation_id: AIConversationId,
+        action_id: AIAgentActionId,
+        action: AgentPolicyAction,
+    ) -> PolicyPreflightKey {
+        let event = AgentPolicyEvent::new(
+            conversation_id.to_string(),
+            action_id.to_string(),
+            None,
+            false,
+            Some("profile_default".to_string()),
+            WarpPermissionSnapshot::allow(None),
+            action,
+        );
+        PolicyPreflightKey::new(
+            conversation_id,
+            action_id,
+            &event,
+            &AgentPolicyHookConfig::default(),
+        )
     }
 
     fn write_to_shell_action(input: &str) -> AIAgentAction {
@@ -272,6 +298,64 @@ mod policy_hooks {
             AIAgentActionResultType::WriteToLongRunningShellCommand(
                 WriteToLongRunningShellCommandResult::PolicyDenied {
                     reason: "guard denied the action: interactive write blocked".to_string(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn warp_denied_command_result_preserves_denylisted_variant() {
+        let action = command_action("rm -rf target");
+        let decision = compose_policy_decisions(
+            WarpPermissionSnapshot::deny(Some(
+                "command is explicitly denylisted by Warp permissions".to_string(),
+            )),
+            vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Allow,
+                reason: Some("approved by hook".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+            true,
+        );
+
+        let result = policy_denied_action_result(&action, &decision);
+
+        assert_eq!(
+            result,
+            AIAgentActionResultType::RequestCommandOutput(RequestCommandOutputResult::Denylisted {
+                command: "rm -rf target".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn warp_denied_file_edit_result_does_not_use_host_policy_variant() {
+        let action = file_edit_action();
+        let decision = compose_policy_decisions(
+            WarpPermissionSnapshot::deny(Some(
+                "file path is protected by Warp permissions".to_string(),
+            )),
+            vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Allow,
+                reason: Some("approved by hook".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+            true,
+        );
+
+        let result = policy_denied_action_result(&action, &decision);
+
+        assert_eq!(
+            result,
+            AIAgentActionResultType::RequestFileEdits(
+                RequestFileEditsResult::DiffApplicationFailed {
+                    error:
+                        "Blocked by Warp permissions: file path is protected by Warp permissions"
+                            .to_string(),
                 }
             )
         );
@@ -449,8 +533,8 @@ mod policy_hooks {
         assert_eq!(
             state,
             PolicyPreflightState::Denied(AIAgentActionResultType::RequestFileEdits(
-                RequestFileEditsResult::PolicyDenied {
-                    reason: "managed policy changed".to_string()
+                RequestFileEditsResult::DiffApplicationFailed {
+                    error: "Blocked by Warp permissions: managed policy changed".to_string()
                 }
             ))
         );
@@ -573,8 +657,9 @@ mod policy_hooks {
         let policy_action = policy_command_action("ls");
         let conversation_one = AIConversationId::new();
         let conversation_two = AIConversationId::new();
-        let key_one = PolicyPreflightKey::new(conversation_one, action_id.clone(), &policy_action);
-        let key_two = PolicyPreflightKey::new(conversation_two, action_id, &policy_action);
+        let key_one =
+            policy_preflight_key(conversation_one, action_id.clone(), policy_action.clone());
+        let key_two = policy_preflight_key(conversation_two, action_id, policy_action);
 
         assert_ne!(key_one, key_two);
 
@@ -590,20 +675,115 @@ mod policy_hooks {
         let old_action = policy_command_action("echo old");
         let new_action = policy_command_action("echo new");
 
-        let old_key = PolicyPreflightKey::new(conversation_id, action_id.clone(), &old_action);
-        let new_key = PolicyPreflightKey::new(conversation_id, action_id.clone(), &new_action);
+        let old_key = policy_preflight_key(conversation_id, action_id.clone(), old_action);
+        let new_key = policy_preflight_key(conversation_id, action_id.clone(), new_action);
 
         assert_ne!(old_key, new_key);
         assert!(old_key.matches_action(conversation_id, &action_id));
     }
 
     #[test]
+    fn policy_preflight_key_scopes_policy_event_context() {
+        let conversation_id = AIConversationId::new();
+        let action_id = AIAgentActionId::from("action_1".to_string());
+        let action = policy_command_action("ls");
+        let config = AgentPolicyHookConfig::default();
+        let base_event = AgentPolicyEvent::new(
+            conversation_id.to_string(),
+            action_id.to_string(),
+            Some(PathBuf::from("/repo")),
+            false,
+            Some("profile_a".to_string()),
+            WarpPermissionSnapshot::allow(None),
+            action.clone(),
+        );
+        let changed_cwd = AgentPolicyEvent::new(
+            conversation_id.to_string(),
+            action_id.to_string(),
+            Some(PathBuf::from("/other")),
+            false,
+            Some("profile_a".to_string()),
+            WarpPermissionSnapshot::allow(None),
+            action.clone(),
+        );
+        let changed_run_mode = AgentPolicyEvent::new(
+            conversation_id.to_string(),
+            action_id.to_string(),
+            Some(PathBuf::from("/repo")),
+            true,
+            Some("profile_a".to_string()),
+            WarpPermissionSnapshot::allow(None),
+            action.clone(),
+        );
+        let changed_profile = AgentPolicyEvent::new(
+            conversation_id.to_string(),
+            action_id.to_string(),
+            Some(PathBuf::from("/repo")),
+            false,
+            Some("profile_b".to_string()),
+            WarpPermissionSnapshot::allow(None),
+            action,
+        );
+
+        let base_key =
+            PolicyPreflightKey::new(conversation_id, action_id.clone(), &base_event, &config);
+
+        assert_ne!(
+            base_key,
+            PolicyPreflightKey::new(conversation_id, action_id.clone(), &changed_cwd, &config)
+        );
+        assert_ne!(
+            base_key,
+            PolicyPreflightKey::new(
+                conversation_id,
+                action_id.clone(),
+                &changed_run_mode,
+                &config
+            )
+        );
+        assert_ne!(
+            base_key,
+            PolicyPreflightKey::new(conversation_id, action_id, &changed_profile, &config)
+        );
+    }
+
+    #[test]
+    fn policy_preflight_key_scopes_hook_config() {
+        let conversation_id = AIConversationId::new();
+        let action_id = AIAgentActionId::from("action_1".to_string());
+        let event = AgentPolicyEvent::new(
+            conversation_id.to_string(),
+            action_id.to_string(),
+            None,
+            false,
+            Some("profile_default".to_string()),
+            WarpPermissionSnapshot::allow(None),
+            policy_command_action("ls"),
+        );
+        let old_config = AgentPolicyHookConfig {
+            enabled: true,
+            timeout_ms: 5_000,
+            ..Default::default()
+        };
+        let new_config = AgentPolicyHookConfig {
+            enabled: true,
+            timeout_ms: 10_000,
+            ..Default::default()
+        };
+
+        assert_ne!(
+            PolicyPreflightKey::new(conversation_id, action_id.clone(), &event, &old_config),
+            PolicyPreflightKey::new(conversation_id, action_id, &event, &new_config)
+        );
+    }
+
+    #[test]
     fn cancelled_policy_preflight_completion_is_not_cached() {
         let action_id = AIAgentActionId::from("action_1".to_string());
-        let preflight_key = PolicyPreflightKey::new(
+        let preflight_key = policy_preflight_key(
             AIConversationId::new(),
             action_id,
-            &policy_command_action("ls"),
+            policy_command_action("ls"),
         );
         let decision = AgentPolicyEffectiveDecision {
             decision: AgentPolicyDecisionKind::Allow,

@@ -13,7 +13,7 @@ use super::decision::AgentPolicyUnavailableDecision;
 pub(crate) const DEFAULT_AGENT_POLICY_HOOK_TIMEOUT_MS: u64 = 5_000;
 pub(crate) const MAX_AGENT_POLICY_HOOK_TIMEOUT_MS: u64 = 60_000;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
 #[serde(default)]
 pub(crate) struct AgentPolicyHookConfig {
     pub enabled: bool,
@@ -112,7 +112,7 @@ impl Serialize for AgentPolicyHookConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct AgentPolicyHook {
     pub name: String,
@@ -158,7 +158,7 @@ impl Default for AgentPolicyHook {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "transport", rename_all = "snake_case")]
 pub(crate) enum AgentPolicyHookTransport {
     Stdio {
@@ -243,7 +243,7 @@ impl AgentPolicyHookTransport {
 
 /// Reference to a local environment variable that supplies a hook credential at runtime.
 /// The profile persists only the environment variable name, never the credential value.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AgentPolicyHookSecretValue {
     env: String,

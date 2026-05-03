@@ -15,6 +15,8 @@ use api::message::tool_call::Tool;
 use api::message::tool_call_result::Result as ToolCallResultType;
 use api::message::Message;
 
+use crate::ai::policy_hooks::redaction::redact_sensitive_text_for_policy;
+
 use super::task::helper::{SubagentExt, ToolExt};
 
 const BASE_DIR_NAME: &str = "warp_conversation_search";
@@ -555,7 +557,7 @@ fn write_tool_call_result_content(out: &mut String, result: &ToolCallResultType)
                         let output = &r.output;
                         if !output.is_empty() {
                             out.push_str("reason: |\n");
-                            write_block_scalar(out, output);
+                            write_block_scalar(out, &redact_sensitive_text_for_policy(output));
                         }
                     }
                 }

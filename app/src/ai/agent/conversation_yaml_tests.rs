@@ -284,6 +284,41 @@ fn tool_call_result_resolves_tool_name_from_matching_call() {
 }
 
 #[test]
+fn permission_denied_tool_call_result_redacts_deprecated_output() {
+    let task_id = "root";
+    #[allow(deprecated)]
+    let result = api::RunShellCommandResult {
+        command: "dangerous".to_string(),
+        output: "blocked PASSWORD=hunter2 --token raw-token".to_string(),
+        exit_code: 1,
+        result: Some(api::run_shell_command_result::Result::PermissionDenied(
+            api::PermissionDenied { reason: None },
+        )),
+    };
+    let tasks = vec![create_api_task(
+        task_id,
+        vec![make_tool_call_result_message(
+            "m1",
+            task_id,
+            "tc1",
+            api::message::tool_call_result::Result::RunShellCommand(result),
+        )],
+    )];
+
+    let dir = materialize_tasks_to_yaml(&tasks).unwrap();
+    let files = list_dir_sorted(Path::new(&dir));
+    let content = fs::read_to_string(Path::new(&dir).join(&files[0])).unwrap();
+
+    assert!(content.contains("status: permission_denied"));
+    assert!(content.contains("PASSWORD=<redacted>"));
+    assert!(content.contains("--token <redacted>"));
+    assert!(!content.contains("hunter2"));
+    assert!(!content.contains("raw-token"));
+
+    cleanup_dir(&dir);
+}
+
+#[test]
 fn server_tool_calls_are_skipped() {
     let task_id = "root";
     let tasks = vec![create_api_task(

@@ -12,7 +12,7 @@ pub(crate) enum AgentPolicyDecisionKind {
     Unknown,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AgentPolicyUnavailableDecision {
     Allow,
