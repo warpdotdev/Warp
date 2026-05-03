@@ -40,6 +40,10 @@ impl AgentPolicyHookConfig {
     }
 
     pub(crate) fn validate(&self) -> Result<(), AgentPolicyHookConfigError> {
+        for hook in &self.before_action {
+            hook.validate_safe_to_persist()?;
+        }
+
         if !self.enabled {
             return Ok(());
         }
@@ -89,6 +93,10 @@ pub(crate) struct AgentPolicyHook {
 }
 
 impl AgentPolicyHook {
+    fn validate_safe_to_persist(&self) -> Result<(), AgentPolicyHookConfigError> {
+        self.transport.validate_safe_to_persist()
+    }
+
     pub(crate) fn validate(&self) -> Result<(), AgentPolicyHookConfigError> {
         if self.name.trim().is_empty() {
             return Err(AgentPolicyHookConfigError::MissingHookName);
@@ -139,6 +147,22 @@ pub(crate) enum AgentPolicyHookTransport {
 }
 
 impl AgentPolicyHookTransport {
+    fn validate_safe_to_persist(&self) -> Result<(), AgentPolicyHookConfigError> {
+        match self {
+            Self::Stdio { env, .. } => validate_secret_value_map(env)?,
+            Self::Http { url, headers } => {
+                if let Ok(parsed) = url::Url::parse(url) {
+                    if !parsed.username().is_empty() || parsed.password().is_some() {
+                        return Err(AgentPolicyHookConfigError::HttpUrlContainsCredentials);
+                    }
+                }
+                validate_secret_value_map(headers)?;
+            }
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn validate(&self) -> Result<(), AgentPolicyHookConfigError> {
         match self {
             Self::Stdio {

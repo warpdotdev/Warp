@@ -127,6 +127,35 @@ fn config_rejects_http_hook_url_embedded_credentials() {
 }
 
 #[test]
+fn config_rejects_disabled_http_hook_url_embedded_credentials() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": false,
+        "before_action": [{
+            "name": "remote-guard",
+            "transport": "http",
+            "url": "https://token@example.com/policy"
+        }]
+    }))
+    .unwrap();
+
+    assert!(config.validate().is_err());
+}
+
+#[test]
+fn config_allows_disabled_incomplete_hook_without_persisted_credentials() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": false,
+        "before_action": [{
+            "transport": "stdio",
+            "command": ""
+        }]
+    }))
+    .unwrap();
+
+    assert!(config.validate().is_ok());
+}
+
+#[test]
 fn config_rejects_inline_hook_secret_values() {
     let config = serde_json::from_value::<AgentPolicyHookConfig>(json!({
         "enabled": true,
@@ -534,6 +563,46 @@ async fn stdio_engine_times_out_blocked_stdin_write() {
     assert_eq!(
         decision.hook_results[0].error,
         Some(AgentPolicyHookErrorKind::Timeout)
+    );
+}
+
+#[cfg(all(unix, not(target_family = "wasm")))]
+#[tokio::test]
+async fn stdio_engine_does_not_inherit_parent_environment() {
+    std::env::var("HOME").expect("HOME must be set for policy hook environment inheritance test");
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "env-isolated-guard",
+            "transport": "stdio",
+            "command": "/bin/sh",
+            "args": [
+                "-c",
+                "cat >/dev/null; if [ -n \"${HOME+x}\" ]; then printf '%s\\n' '{\"schema_version\":\"warp.agent_policy_hook.v1\",\"decision\":\"deny\",\"reason\":\"inherited HOME\"}'; else printf '%s\\n' '{\"schema_version\":\"warp.agent_policy_hook.v1\",\"decision\":\"allow\"}'; fi"
+            ],
+            "timeout_ms": 1000
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("ls", "ls", Some(true), Some(false)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    assert_eq!(decision.decision, AgentPolicyDecisionKind::Allow);
+    assert_eq!(
+        decision.hook_results[0].decision,
+        AgentPolicyDecisionKind::Allow
     );
 }
 

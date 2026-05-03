@@ -172,7 +172,8 @@ Suggested storage strategy:
 1. Add optional `agent_policy_hooks` to `AIExecutionProfile`.
 2. Keep default disabled so old profiles deserialize unchanged.
 3. Persist hook credentials only as environment-variable references such as `{ "env": "WARP_POLICY_TOKEN" }`; do not store raw header, environment, or URL credentials in synced profile JSON.
-4. Surface minimal settings UI after the engine exists: enabled toggle, hook list, timeout, unavailable behavior, and latest error.
+4. Validate persisted credential-bearing fields even when hooks are disabled, so inactive profile config cannot store raw or URL-embedded credentials.
+5. Surface minimal settings UI after the engine exists: enabled toggle, hook list, timeout, unavailable behavior, and latest error.
 
 ### 7. Audit events
 
@@ -197,10 +198,11 @@ Do not include file contents, full env, access tokens, or unbounded MCP argument
 MVP stdio protocol:
 
 1. Warp launches the configured command with args.
-2. Warp writes one JSON policy event to stdin and closes stdin.
-3. Hook writes one JSON decision to stdout.
-4. Warp kills the process on timeout/cancellation.
-5. Stderr is captured only for debug logs and truncated/redacted before UI display.
+2. Warp clears the child process environment and passes only explicitly configured environment-variable references resolved from the local host.
+3. Warp writes one JSON policy event to stdin and closes stdin.
+4. Hook writes one JSON decision to stdout.
+5. Warp kills the process on timeout/cancellation.
+6. Stderr is captured only for debug logs and truncated/redacted before UI display.
 
 Example request:
 

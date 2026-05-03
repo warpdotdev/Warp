@@ -128,6 +128,7 @@ impl AgentPolicyHookEngine {
         let mut command = Command::new(command);
         command
             .args(args)
+            .env_clear()
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
