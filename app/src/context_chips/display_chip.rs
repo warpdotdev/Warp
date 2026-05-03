@@ -1047,7 +1047,7 @@ impl DisplayChip {
 
         let mut stack = Stack::new().with_child(hover);
 
-        if menu_open {
+        if menu_open && !is_cli_agent_active {
             let positioning = self.menu_positioning_provider.menu_position(app);
             let (parent_anchor, child_anchor) = Self::positioning_to_anchors(positioning);
             let offset = match positioning {
@@ -1283,8 +1283,9 @@ impl DisplayChip {
         } else {
             // Non-interactive chip (either show_menu is false or in active ambient agent)
             let font_color = if self.is_in_agent_view {
-                // Use disabled text color when in active ambient agent or CLI agent session
-                if is_in_active_ambient_agent || is_cli_agent_active {
+                if is_cli_agent_active {
+                    internal_colors::neutral_6(theme)
+                } else if is_in_active_ambient_agent {
                     theme
                         .disabled_text_color(blended_colors::neutral_1(theme).into())
                         .into_solid()
@@ -1330,7 +1331,7 @@ impl DisplayChip {
 
         stack.add_child(button);
 
-        if menu_open {
+        if menu_open && !is_cli_agent_active {
             let positioning = self.menu_positioning_provider.menu_position(app);
             let (parent_anchor, child_anchor) = Self::positioning_to_anchors(positioning);
 
