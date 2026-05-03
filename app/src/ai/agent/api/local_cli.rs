@@ -252,6 +252,49 @@ async fn run_local_cli(
                 )),
             }))
             .await;
+
+        // Persist the user query as a UserQuery message so that
+        // initialize_historical_conversations can extract initial_query on restore.
+        // Without this, local-CLI conversations have only AgentOutput messages and
+        // are silently dropped from the history sidebar after a restart.
+        if !query.is_empty() {
+            let user_query_message_id = format!("local-uq-{}", Uuid::new_v4());
+            let context = cwd.as_deref().map(|pwd| api::InputContext {
+                directory: Some(api::input_context::Directory {
+                    pwd: pwd.to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+            let _ = tx
+                .send(Ok(api::ResponseEvent {
+                    r#type: Some(api::response_event::Type::ClientActions(
+                        api::response_event::ClientActions {
+                            actions: vec![api::ClientAction {
+                                action: Some(api::client_action::Action::AddMessagesToTask(
+                                    api::client_action::AddMessagesToTask {
+                                        task_id: task_id.clone(),
+                                        messages: vec![api::Message {
+                                            id: user_query_message_id,
+                                            task_id: task_id.clone(),
+                                            request_id: request_id.clone(),
+                                            message: Some(api::message::Message::UserQuery(
+                                                api::message::UserQuery {
+                                                    query: query.clone(),
+                                                    context,
+                                                    ..Default::default()
+                                                },
+                                            )),
+                                            ..Default::default()
+                                        }],
+                                    },
+                                )),
+                            }],
+                        },
+                    )),
+                }))
+                .await;
+        }
     }
 
     // Determine which backend to use.

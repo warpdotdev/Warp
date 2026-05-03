@@ -17,10 +17,11 @@ pub async fn generate_multi_agent_output(
     mut params: RequestParams,
     cancellation_rx: futures::channel::oneshot::Receiver<()>,
 ) -> Result<ResponseStream, ConvertToAPITypeError> {
-    // Local-AI bypass: when WARP_LOCAL_AI is set, route the interactive panel
-    // through the CLI subprocess instead of Warp's authenticated server.
-    // This avoids the 401 "User not in context" error from generate_multi_agent_output.
-    if crate::local_ai::is_active() {
+    // Local-AI bypass: when WARP_LOCAL_AI is set OR when WARP_BYPASS_AUTH=1 is set
+    // (which activates local-model routing for any selected local:... model), route the
+    // interactive panel through the local CLI subprocess instead of Warp's authenticated
+    // server. This avoids the 401 "User not in context" error from generate_multi_agent_output.
+    if crate::local_ai::local_model_routing_active() {
         let stream = local_cli::generate_local_output(params, cancellation_rx).await;
         return Ok(stream);
     }
