@@ -7147,6 +7147,7 @@ dependencies = [
  "rust-embed 8.7.2",
  "serde",
  "serde_yaml",
+ "similar",
  "warp_editor",
 ]
 

@@ -5,6 +5,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+pub mod semantic_diff;
+
 use arborium::tree_sitter::{Language as ParserGrammar, Query};
 use lazy_static::lazy_static;
 use rust_embed::RustEmbed;

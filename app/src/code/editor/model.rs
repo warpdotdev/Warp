@@ -32,6 +32,7 @@ use crate::{
 
 use ai::diff_validation::DiffDelta;
 use itertools::Itertools;
+use languages::semantic_diff::EntityChangeKind;
 use languages::{language_by_filename, language_by_name, Language};
 use line_ending::LineEnding;
 use string_offset::CharOffset;
@@ -310,12 +311,27 @@ pub struct CodeEditorModel {
     hovered_symbol_range: Option<HoverableLink>,
     /// Automatically hide lines outside of the active diff with X context lines.
     hide_lines_outside_of_active_diff: Option<usize>,
+    /// Entity ranges from semantic diff — when set, expand visible ranges to cover entire
+    /// entities containing changes instead of using fixed context lines.
+    entity_ranges: Option<Vec<EntityRange>>,
     /// Whether this editor was configured to use lazy layout.
     lazy_layout_enabled: bool,
     /// Whether the editor has completed at least one layout cycle.
     lazy_layout_initialized: bool,
     /// Whether syntax parsing should be bootstrapped from the latest full buffer content.
     pending_syntax_tree_bootstrap: bool,
+}
+
+/// A line range representing a semantic entity (function, class, etc.)
+/// along with its change classification from semantic diff.
+#[derive(Debug, Clone)]
+pub struct EntityRange {
+    /// 0-indexed start line (inclusive).
+    pub start_line: usize,
+    /// 0-indexed end line (exclusive).
+    pub end_line: usize,
+    /// The semantic change kind for this entity.
+    pub kind: EntityChangeKind,
 }
 
 impl CodeEditorModel {
@@ -399,6 +415,7 @@ impl CodeEditorModel {
             vim_visual_tails: vec![],
             hovered_symbol_range: None,
             hide_lines_outside_of_active_diff: None,
+            entity_ranges: None,
             lazy_layout_enabled: lazy_layout,
             lazy_layout_initialized: false,
             pending_syntax_tree_bootstrap: false,
@@ -471,6 +488,13 @@ impl CodeEditorModel {
         )));
     }
 
+    /// Set semantic entity ranges for entity-scoped context.
+    /// When set, `calculate_hidden_lines` will expand visible ranges to cover
+    /// entire entities containing changes instead of using fixed context lines.
+    pub fn set_entity_ranges(&mut self, ranges: Vec<EntityRange>) {
+        self.entity_ranges = Some(ranges);
+    }
+
     /// We need to set the diff model base to the normalized version of the text. This is because the internal text
     /// representation of the content used for syntax tree highlighting and text rendering uses standard LF.
     pub fn set_base(&self, base: &str, recompute_diff: bool, ctx: &mut ModelContext<Self>) {
@@ -485,6 +509,11 @@ impl CodeEditorModel {
                 diff.compute_diff(content, true, buffer_version, ctx)
             });
         }
+    }
+
+    /// Set the file path for semantic diff language detection.
+    pub fn set_diff_file_path(&self, path: std::path::PathBuf, ctx: &mut ModelContext<Self>) {
+        self.diff.update(ctx, |diff, _ctx| diff.set_file_path(path));
     }
 
     pub fn positioning(&self, ctx: &AppContext) -> OffsetPositioning {
@@ -1302,8 +1331,44 @@ impl CodeEditorModel {
                 let start_line = range.start.saturating_sub(1);
                 let end_line = range.end.saturating_sub(1);
 
-                let context_start = start_line.saturating_sub(context_line);
-                let context_end = end_line + context_line;
+                // When entity ranges are available, expand to the full entity
+                // boundary instead of using fixed context lines.
+                let (context_start, context_end) = if let Some(entity_ranges) = &self.entity_ranges
+                {
+                    // Find ALL entities that overlap with this diff hunk.
+                    let mut exp_start = start_line;
+                    let mut exp_end = end_line;
+                    let mut found_any = false;
+                    for entity in entity_ranges {
+                        let overlaps =
+                            entity.start_line <= end_line && entity.end_line >= start_line;
+                        if overlaps {
+                            found_any = true;
+                            exp_start = exp_start.min(entity.start_line);
+                            exp_end = exp_end.max(entity.end_line);
+                        }
+                    }
+                    if found_any {
+                        (exp_start, exp_end)
+                    } else {
+                        // Changed line is outside any entity (top-level code, etc.)
+                        // Fall back to fixed context.
+                        (
+                            start_line.saturating_sub(context_line),
+                            end_line + context_line,
+                        )
+                    }
+                } else {
+                    (
+                        start_line.saturating_sub(context_line),
+                        end_line + context_line,
+                    )
+                };
+
+                // Add a small context margin around the expanded entity so the
+                // boundary between visible and hidden lines isn't jarring.
+                let context_start = context_start.saturating_sub(context_line);
+                let context_end = context_end + context_line;
 
                 if context_start < context_end {
                     visible_ranges.insert(context_start.into()..context_end.into());

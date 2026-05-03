@@ -314,6 +314,7 @@ fn create_loaded_state_with_editors(
                     has_hidden_bidi_chars: false,
                     size: DiffSize::Normal,
                 },
+                entity_diff: None,
                 editor_state: Some(CodeReviewEditorState::new_loaded(editor)),
                 is_expanded: true,
                 sidebar_mouse_state: MouseStateHandle::default(),

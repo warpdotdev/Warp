@@ -401,6 +401,8 @@ pub enum CodeReviewAction {
 
 pub struct FileState {
     pub file_diff: FileDiff,
+    /// Entity-level (semantic) diff for this file, computed when SemanticDiff feature is enabled.
+    pub entity_diff: Option<languages::semantic_diff::EntityDiff>,
     pub editor_state: Option<CodeReviewEditorState>,
     pub is_expanded: bool,
     sidebar_mouse_state: MouseStateHandle,
@@ -2686,6 +2688,7 @@ impl CodeReviewView {
                                 .unwrap_or(true);
                             if should_apply {
                                 current.file_diff = diff.file_diff;
+                                current.entity_diff = diff.entity_diff.clone();
                             }
                             self.viewported_list_state
                                 .invalidate_height_for_index(index);
@@ -3006,6 +3009,7 @@ impl CodeReviewView {
 
             file_states.push(FileState {
                 file_diff: file.file_diff.clone(),
+                entity_diff: file.entity_diff.clone(),
                 editor_state,
                 is_expanded,
                 chevron_button,
@@ -3347,6 +3351,33 @@ impl CodeReviewView {
             });
 
             let inner_editor = local_code_view.as_ref(ctx).editor().clone();
+
+            // Set entity ranges for entity-scoped context when SemanticDiff is enabled.
+            if let Some(entity_diff) = &file.entity_diff {
+                use crate::code::editor::model::EntityRange;
+                let entity_ranges: Vec<EntityRange> = entity_diff
+                    .changes
+                    .iter()
+                    .filter_map(|c| {
+                        // Use the current entity's line range (for Added/Modified/Renamed/Moved/Unchanged)
+                        // or the base entity's range (for Deleted).
+                        let entity = c.current.as_ref().or(c.base.as_ref())?;
+                        Some(EntityRange {
+                            start_line: entity.start_line,
+                            end_line: entity.end_line,
+                            kind: c.kind.clone(),
+                        })
+                    })
+                    .collect();
+                if !entity_ranges.is_empty() {
+                    inner_editor.update(ctx, |editor, ctx| {
+                        editor.model.update(ctx, |model, _| {
+                            model.set_entity_ranges(entity_ranges);
+                        });
+                    });
+                }
+            }
+
             ctx.subscribe_to_view(&inner_editor, {
                 let file_path = file.file_diff.file_path.clone();
                 move |this, editor, event, ctx| {
@@ -3433,6 +3464,31 @@ impl CodeReviewView {
             let local_code_view = ctx.add_typed_action_view(|ctx| {
                 let mut local_code_view =
                     LocalCodeEditorView::new(code_editor_view, None, false, None, ctx);
+
+                // Set entity ranges for entity-scoped context when SemanticDiff is enabled.
+                if let Some(entity_diff) = &file.entity_diff {
+                    use crate::code::editor::model::EntityRange;
+                    let entity_ranges: Vec<EntityRange> = entity_diff
+                        .changes
+                        .iter()
+                        .filter_map(|c| {
+                            let entity = c.current.as_ref().or(c.base.as_ref())?;
+                            Some(EntityRange {
+                                start_line: entity.start_line,
+                                end_line: entity.end_line,
+                                kind: c.kind.clone(),
+                            })
+                        })
+                        .collect();
+                    if !entity_ranges.is_empty() {
+                        local_code_view.editor().update(ctx, |editor, ctx| {
+                            editor.model.update(ctx, |model, _| {
+                                model.set_entity_ranges(entity_ranges);
+                            });
+                        });
+                    }
+                }
+
                 if FeatureFlag::HoaCodeReview.is_enabled() {
                     local_code_view =
                         local_code_view.with_selection_as_context(Box::new(move |_, app| {
@@ -3731,6 +3787,13 @@ impl CodeReviewView {
                     let state = InitialBufferState::plain_text(file_content).with_version(version);
                     // Reset editor state with incoming content.
                     local_editor.reset_with_state(state, ctx);
+
+                    // Set the file path for semantic diff on deleted files.
+                    if warp_core::features::FeatureFlag::SemanticDiff.is_enabled() {
+                        local_editor.editor().update(ctx, |editor, ctx| {
+                            editor.set_diff_file_path(file.file_diff.file_path.clone().into(), ctx);
+                        });
+                    }
                 }
                 #[cfg(not(target_family = "wasm"))]
                 if !is_deleted_file {
@@ -3740,6 +3803,10 @@ impl CodeReviewView {
 
                     local_editor.editor().update(ctx, |editor, ctx| {
                         editor.set_base(file_content, file_loaded, ctx);
+                        // Pass the file path for semantic diff language detection.
+                        if warp_core::features::FeatureFlag::SemanticDiff.is_enabled() {
+                            editor.set_diff_file_path(file.file_diff.file_path.clone().into(), ctx);
+                        }
                     });
                 }
 
@@ -4769,7 +4836,8 @@ impl CodeReviewView {
         counts_row
     }
 
-    /// Renders the diff statistics
+    /// Renders a compact entity-level change summary when SemanticDiff is enabled.
+    /// Shows pills like: `fn foo (modified) · bar → baz (renamed) · struct X (added)`
     pub fn render_diff_stats(stats: &DiffStats, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
 
@@ -5457,6 +5525,7 @@ impl CodeReviewView {
     }
 
     /// Renders file-specific statistics
+    /// Renders file stats with optional entity-level augmentation.
     fn render_file_stats(&self, file: &FileDiff, appearance: &Appearance) -> Box<dyn Element> {
         let mut row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
 
