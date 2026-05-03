@@ -664,3 +664,32 @@ pub fn npm_signature() -> CommandSignature {
         },
     }
 }
+
+pub fn cmake_like_signature() -> CommandSignature {
+    CommandSignature {
+        command: Command {
+            name: "cmake_test".to_owned(),
+            options: vec![
+                Opt {
+                    name: vec!["-D".to_owned()],
+                    arguments: vec![Argument {
+                        name: "define".to_owned(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                Opt {
+                    name: vec!["-S".to_owned()],
+                    description: Some("source directory".to_owned()),
+                    ..Default::default()
+                },
+                Opt {
+                    name: vec!["-B".to_owned()],
+                    description: Some("build directory".to_owned()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        },
+    }
+}
