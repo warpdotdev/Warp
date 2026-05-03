@@ -54,7 +54,7 @@ impl HeaderToolbarItemKind {
             Self::AgentManagement => Icon::Grid,
             Self::CodeReview => Icon::Diff,
             Self::NotificationsMailbox => Icon::Inbox,
-            Self::Logs => Icon::Terminal,
+            Self::Logs => Icon::FilterLines,
         }
     }
 
