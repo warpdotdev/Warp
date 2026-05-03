@@ -169,7 +169,7 @@ struct PolicyPreflightKey {
     working_directory: Option<PathBuf>,
     run_until_completion: bool,
     active_profile_id: Option<String>,
-    action: AgentPolicyAction,
+    raw_action: String,
     hook_config: AgentPolicyHookConfig,
 }
 
@@ -178,6 +178,7 @@ impl PolicyPreflightKey {
     fn new(
         conversation_id: AIConversationId,
         action_id: AIAgentActionId,
+        action: &AIAgentAction,
         event: &AgentPolicyEvent,
         hook_config: &AgentPolicyHookConfig,
     ) -> Self {
@@ -187,7 +188,7 @@ impl PolicyPreflightKey {
             working_directory: event.working_directory.clone(),
             run_until_completion: event.run_until_completion,
             active_profile_id: event.active_profile_id.clone(),
-            action: event.action.clone(),
+            raw_action: raw_policy_action_key(action),
             hook_config: hook_config.clone(),
         }
     }
@@ -1162,7 +1163,7 @@ impl BlocklistAIActionExecutor {
         let action = (*input.action).clone();
         let conversation_id = input.conversation_id;
         let preflight_key =
-            PolicyPreflightKey::new(conversation_id, action.id.clone(), &event, &config);
+            PolicyPreflightKey::new(conversation_id, action.id.clone(), &action, &event, &config);
         let (done_tx, done_rx) = oneshot::channel();
         let engine = AgentPolicyHookEngine::new(config);
         self.remove_policy_preflights_for_action(conversation_id, &action.id);
@@ -1301,7 +1302,7 @@ impl BlocklistAIActionExecutor {
             ctx,
         )?;
         let preflight_key =
-            PolicyPreflightKey::new(conversation_id, action.id.clone(), &event, &config);
+            PolicyPreflightKey::new(conversation_id, action.id.clone(), action, &event, &config);
         let confirmed_file_edit_policy_preprocess =
             matches!(action.action, AIAgentActionType::RequestFileEdits { .. })
                 && self
@@ -1705,6 +1706,51 @@ fn policy_path(
         shell,
         current_working_directory,
     ))
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn raw_policy_action_key(action: &AIAgentAction) -> String {
+    match &action.action {
+        AIAgentActionType::RequestCommandOutput {
+            command,
+            is_read_only,
+            is_risky,
+            wait_until_completion,
+            uses_pager,
+            rationale,
+            citations,
+        } => format!(
+            "execute_command:{command:?}:{is_read_only:?}:{is_risky:?}:{wait_until_completion:?}:{uses_pager:?}:{rationale:?}:{citations:?}"
+        ),
+        AIAgentActionType::WriteToLongRunningShellCommand {
+            block_id,
+            input,
+            mode,
+        } => format!(
+            "write_to_shell:{block_id:?}:{:?}:{mode:?}",
+            input.as_ref()
+        ),
+        AIAgentActionType::ReadFiles(read_files) => {
+            format!("read_files:{:?}", read_files.locations)
+        }
+        AIAgentActionType::RequestFileEdits { file_edits, title } => {
+            format!("write_files:{file_edits:?}:{title:?}")
+        }
+        AIAgentActionType::CallMCPTool {
+            server_id,
+            name,
+            input,
+        } => format!(
+            "call_mcp_tool:{server_id:?}:{name:?}:{}",
+            serde_json::to_string(input).unwrap_or_else(|_| format!("{input:?}"))
+        ),
+        AIAgentActionType::ReadMCPResource {
+            server_id,
+            name,
+            uri,
+        } => format!("read_mcp_resource:{server_id:?}:{name:?}:{uri:?}"),
+        _ => format!("{:?}", action.action),
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]

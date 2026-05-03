@@ -31,7 +31,9 @@ use crate::ai::agent::{
 use crate::ai::block_context::BlockContext;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::ai::llms::LLMId;
-use crate::ai::policy_hooks::redaction::redact_sensitive_text_for_policy;
+use crate::ai::policy_hooks::redaction::{
+    redact_command_for_policy, redact_sensitive_text_for_policy,
+};
 use crate::ai_assistant::execution_context::{WarpAiExecutionContext, WarpAiOsContext};
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::terminal_model::BlockIndex;
@@ -609,8 +611,8 @@ pub(crate) fn convert_tool_call_result_to_input(
                                 RequestCommandOutputResult::CancelledBeforeExecution
                             } else {
                                 RequestCommandOutputResult::PolicyDenied {
-                                    command: result.command.clone(),
-                                    reason: reason.to_string(),
+                                    command: redact_command_for_policy(&result.command),
+                                    reason: redact_sensitive_text_for_policy(reason),
                                 }
                             }
                         } else {

@@ -126,6 +126,58 @@ fn test_convert_tool_call_result_to_input_preserves_host_policy_denial() {
 }
 
 #[test]
+fn test_convert_tool_call_result_to_input_redacts_host_policy_denial() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    #[allow(deprecated)]
+    let run_shell_result = api::RunShellCommandResult {
+        command: "OPENAI_API_KEY=sk-secretsecretsecret guard --token raw-token".to_string(),
+        output: format!(
+            "{}blocked PASSWORD=hunter2 --token raw-token",
+            crate::ai::agent::COMMAND_POLICY_DENIED_PREFIX
+        ),
+        exit_code: 0,
+        result: Some(api::run_shell_command_result::Result::PermissionDenied(
+            api::PermissionDenied { reason: None },
+        )),
+    };
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(api::message::tool_call_result::Result::RunShellCommand(
+            run_shell_result,
+        )),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::RequestCommandOutput(
+                crate::ai::agent::RequestCommandOutputResult::PolicyDenied { command, reason },
+            ) => {
+                assert!(command.contains("OPENAI_API_KEY=<redacted>"));
+                assert!(command.contains("--token <redacted>"));
+                assert!(reason.contains("PASSWORD=<redacted>"));
+                assert!(reason.contains("--token <redacted>"));
+                assert!(!command.contains("sk-secretsecretsecret"));
+                assert!(!command.contains("raw-token"));
+                assert!(!reason.contains("hunter2"));
+                assert!(!reason.contains("raw-token"));
+            }
+            other => panic!("Expected policy-denied command result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_convert_tool_call_result_to_input_treats_unmarked_permission_denied_as_cancelled() {
     let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
     let mut document_versions = HashMap::new();

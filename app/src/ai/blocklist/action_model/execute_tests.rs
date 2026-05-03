@@ -154,16 +154,13 @@ mod policy_hooks {
         }
     }
 
-    fn policy_command_action(command: &str) -> AgentPolicyAction {
-        agent_policy_action(&command_action(command), None, &None, &None)
-            .expect("command action should build a policy action")
-    }
-
     fn policy_preflight_key(
         conversation_id: AIConversationId,
         action_id: AIAgentActionId,
-        action: AgentPolicyAction,
+        action: AIAgentAction,
     ) -> PolicyPreflightKey {
+        let policy_action = agent_policy_action(&action, None, &None, &None)
+            .expect("action should build a policy action");
         let event = AgentPolicyEvent::new(
             conversation_id.to_string(),
             action_id.to_string(),
@@ -171,11 +168,12 @@ mod policy_hooks {
             false,
             Some("profile_default".to_string()),
             WarpPermissionSnapshot::allow(None),
-            action,
+            policy_action,
         );
         PolicyPreflightKey::new(
             conversation_id,
             action_id,
+            &action,
             &event,
             &AgentPolicyHookConfig::default(),
         )
@@ -204,6 +202,19 @@ mod policy_hooks {
                     content: Some("fn main() {}\n".to_string()),
                 }],
                 title: None,
+            },
+            requires_result: true,
+        }
+    }
+
+    fn mcp_tool_action(input: serde_json::Value) -> AIAgentAction {
+        AIAgentAction {
+            id: AIAgentActionId::from("action_1".to_string()),
+            task_id: TaskId::new("task_1".to_string()),
+            action: AIAgentActionType::CallMCPTool {
+                server_id: None,
+                name: "dangerous_tool".to_string(),
+                input,
             },
             requires_result: true,
         }
@@ -654,12 +665,11 @@ mod policy_hooks {
     #[test]
     fn policy_preflight_key_scopes_same_action_id_by_conversation() {
         let action_id = AIAgentActionId::from("action_1".to_string());
-        let policy_action = policy_command_action("ls");
+        let action = command_action("ls");
         let conversation_one = AIConversationId::new();
         let conversation_two = AIConversationId::new();
-        let key_one =
-            policy_preflight_key(conversation_one, action_id.clone(), policy_action.clone());
-        let key_two = policy_preflight_key(conversation_two, action_id, policy_action);
+        let key_one = policy_preflight_key(conversation_one, action_id.clone(), action.clone());
+        let key_two = policy_preflight_key(conversation_two, action_id, action);
 
         assert_ne!(key_one, key_two);
 
@@ -672,8 +682,8 @@ mod policy_hooks {
     fn policy_preflight_key_scopes_same_action_id_by_action_payload() {
         let action_id = AIAgentActionId::from("action_1".to_string());
         let conversation_id = AIConversationId::new();
-        let old_action = policy_command_action("echo old");
-        let new_action = policy_command_action("echo new");
+        let old_action = command_action("echo old");
+        let new_action = command_action("echo new");
 
         let old_key = policy_preflight_key(conversation_id, action_id.clone(), old_action);
         let new_key = policy_preflight_key(conversation_id, action_id.clone(), new_action);
@@ -683,10 +693,55 @@ mod policy_hooks {
     }
 
     #[test]
+    fn policy_preflight_key_uses_raw_command_when_redaction_collides() {
+        let action_id = AIAgentActionId::from("action_1".to_string());
+        let conversation_id = AIConversationId::new();
+        let old_action = command_action("echo sk-aaaaaaaaaaaa");
+        let new_action = command_action("echo sk-bbbbbbbbbbbb");
+
+        let old_policy_action = agent_policy_action(&old_action, None, &None, &None).unwrap();
+        let new_policy_action = agent_policy_action(&new_action, None, &None, &None).unwrap();
+        assert_eq!(old_policy_action, new_policy_action);
+
+        let old_key = policy_preflight_key(conversation_id, action_id.clone(), old_action);
+        let new_key = policy_preflight_key(conversation_id, action_id, new_action);
+
+        assert_ne!(old_key, new_key);
+    }
+
+    #[test]
+    fn policy_preflight_key_uses_raw_mcp_input_when_argument_keys_are_capped() {
+        let action_id = AIAgentActionId::from("action_1".to_string());
+        let conversation_id = AIConversationId::new();
+        let mut old_arguments = serde_json::Map::new();
+        let mut new_arguments = serde_json::Map::new();
+        for index in 0..258 {
+            old_arguments.insert(format!("key_{index:03}"), serde_json::json!(index));
+        }
+        for index in 0..256 {
+            new_arguments.insert(format!("key_{index:03}"), serde_json::json!(index));
+        }
+        new_arguments.insert("key_900".to_string(), serde_json::json!(900));
+        new_arguments.insert("key_901".to_string(), serde_json::json!(901));
+
+        let old_action = mcp_tool_action(serde_json::Value::Object(old_arguments));
+        let new_action = mcp_tool_action(serde_json::Value::Object(new_arguments));
+        let old_policy_action = agent_policy_action(&old_action, None, &None, &None).unwrap();
+        let new_policy_action = agent_policy_action(&new_action, None, &None, &None).unwrap();
+        assert_eq!(old_policy_action, new_policy_action);
+
+        let old_key = policy_preflight_key(conversation_id, action_id.clone(), old_action);
+        let new_key = policy_preflight_key(conversation_id, action_id, new_action);
+
+        assert_ne!(old_key, new_key);
+    }
+
+    #[test]
     fn policy_preflight_key_scopes_policy_event_context() {
         let conversation_id = AIConversationId::new();
         let action_id = AIAgentActionId::from("action_1".to_string());
-        let action = policy_command_action("ls");
+        let action = command_action("ls");
+        let policy_action = agent_policy_action(&action, None, &None, &None).unwrap();
         let config = AgentPolicyHookConfig::default();
         let base_event = AgentPolicyEvent::new(
             conversation_id.to_string(),
@@ -695,7 +750,7 @@ mod policy_hooks {
             false,
             Some("profile_a".to_string()),
             WarpPermissionSnapshot::allow(None),
-            action.clone(),
+            policy_action.clone(),
         );
         let changed_cwd = AgentPolicyEvent::new(
             conversation_id.to_string(),
@@ -704,7 +759,7 @@ mod policy_hooks {
             false,
             Some("profile_a".to_string()),
             WarpPermissionSnapshot::allow(None),
-            action.clone(),
+            policy_action.clone(),
         );
         let changed_run_mode = AgentPolicyEvent::new(
             conversation_id.to_string(),
@@ -713,7 +768,7 @@ mod policy_hooks {
             true,
             Some("profile_a".to_string()),
             WarpPermissionSnapshot::allow(None),
-            action.clone(),
+            policy_action.clone(),
         );
         let changed_profile = AgentPolicyEvent::new(
             conversation_id.to_string(),
@@ -722,28 +777,46 @@ mod policy_hooks {
             false,
             Some("profile_b".to_string()),
             WarpPermissionSnapshot::allow(None),
-            action,
+            policy_action,
         );
 
-        let base_key =
-            PolicyPreflightKey::new(conversation_id, action_id.clone(), &base_event, &config);
+        let base_key = PolicyPreflightKey::new(
+            conversation_id,
+            action_id.clone(),
+            &action,
+            &base_event,
+            &config,
+        );
 
         assert_ne!(
             base_key,
-            PolicyPreflightKey::new(conversation_id, action_id.clone(), &changed_cwd, &config)
+            PolicyPreflightKey::new(
+                conversation_id,
+                action_id.clone(),
+                &action,
+                &changed_cwd,
+                &config
+            )
         );
         assert_ne!(
             base_key,
             PolicyPreflightKey::new(
                 conversation_id,
                 action_id.clone(),
+                &action,
                 &changed_run_mode,
                 &config
             )
         );
         assert_ne!(
             base_key,
-            PolicyPreflightKey::new(conversation_id, action_id, &changed_profile, &config)
+            PolicyPreflightKey::new(
+                conversation_id,
+                action_id,
+                &action,
+                &changed_profile,
+                &config
+            )
         );
     }
 
@@ -751,6 +824,7 @@ mod policy_hooks {
     fn policy_preflight_key_scopes_hook_config() {
         let conversation_id = AIConversationId::new();
         let action_id = AIAgentActionId::from("action_1".to_string());
+        let action = command_action("ls");
         let event = AgentPolicyEvent::new(
             conversation_id.to_string(),
             action_id.to_string(),
@@ -758,7 +832,7 @@ mod policy_hooks {
             false,
             Some("profile_default".to_string()),
             WarpPermissionSnapshot::allow(None),
-            policy_command_action("ls"),
+            agent_policy_action(&action, None, &None, &None).unwrap(),
         );
         let old_config = AgentPolicyHookConfig {
             enabled: true,
@@ -772,19 +846,22 @@ mod policy_hooks {
         };
 
         assert_ne!(
-            PolicyPreflightKey::new(conversation_id, action_id.clone(), &event, &old_config),
-            PolicyPreflightKey::new(conversation_id, action_id, &event, &new_config)
+            PolicyPreflightKey::new(
+                conversation_id,
+                action_id.clone(),
+                &action,
+                &event,
+                &old_config
+            ),
+            PolicyPreflightKey::new(conversation_id, action_id, &action, &event, &new_config)
         );
     }
 
     #[test]
     fn cancelled_policy_preflight_completion_is_not_cached() {
         let action_id = AIAgentActionId::from("action_1".to_string());
-        let preflight_key = policy_preflight_key(
-            AIConversationId::new(),
-            action_id,
-            policy_command_action("ls"),
-        );
+        let preflight_key =
+            policy_preflight_key(AIConversationId::new(), action_id, command_action("ls"));
         let decision = AgentPolicyEffectiveDecision {
             decision: AgentPolicyDecisionKind::Allow,
             reason: None,
