@@ -223,7 +223,7 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
             let is_warp_default = default_terminal.is_warp_default();
             MenuItemPropertyChanges {
                 name: Some(if is_warp_default {
-                    "Unset Warp as Default Terminal".to_string()
+                    "Restore macOS Terminal as Default".to_string()
                 } else {
                     "Set Warp as Default Terminal".to_string()
                 }),

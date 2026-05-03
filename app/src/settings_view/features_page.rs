@@ -4804,7 +4804,7 @@ impl SettingsWidget for DefaultTerminalWidget {
         if default_terminal.is_warp_default() {
             ui_builder
                 .link(
-                    "Unset Warp as the default terminal".to_string(),
+                    "Restore macOS Terminal as the default terminal".to_string(),
                     None,
                     Some(Box::new(|ctx| {
                         ctx.dispatch_typed_action(FeaturesPageAction::UnsetWarpDefaultTerminal);
