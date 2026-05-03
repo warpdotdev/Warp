@@ -53,7 +53,7 @@ fn policy_denied_shell_result_preserves_policy_reason_without_denylist_label() {
     let output = &result.output;
     assert_eq!(
         output.as_str(),
-        "Command blocked by host policy: blocked by org policy"
+        format!("{COMMAND_POLICY_DENIED_PREFIX}blocked by org policy")
     );
     assert!(permission_denied.reason.is_none());
 }

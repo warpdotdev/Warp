@@ -114,10 +114,14 @@ fn config_rejects_stdio_hook_credential_args() {
     for args in [
         json!(["--token=secret"]),
         json!(["--token", "secret"]),
+        json!(["--token", "prefix$API_TOKEN"]),
         json!(["--api-key", "secret"]),
         json!(["--authorization", "Bearer secret"]),
+        json!(["--authorization", "Bearer token$with-dollar"]),
         json!(["API_KEY=secret"]),
+        json!(["API_KEY=secret$with-dollar"]),
         json!(["Authorization: Bearer secret"]),
+        json!(["Authorization: Bearer token$with-dollar"]),
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
             "enabled": true,
@@ -148,7 +152,7 @@ fn config_allows_stdio_hook_secret_env_reference_args() {
             "name": "stdio-guard",
             "transport": "stdio",
             "command": "guard",
-            "args": ["--token", "$API_TOKEN", "--api-key=${POLICY_API_KEY}", "--authorization", "Bearer $POLICY_TOKEN"]
+            "args": ["--token", "$API_TOKEN", "--api-key=${POLICY_API_KEY}", "--authorization", "Bearer $POLICY_TOKEN", "--auth", "Basic ${POLICY_AUTH}", "Authorization: BEARER $HEADER_TOKEN"]
         }]
     }))
     .unwrap();
@@ -400,6 +404,32 @@ fn command_redaction_handles_url_userinfo_and_basic_auth() {
     assert!(!redacted.contains("alice:secret"));
     assert!(!redacted.contains("dXNlcjpwYXNz"));
     assert!(!redacted.contains("token@example"));
+}
+
+#[test]
+fn command_redaction_handles_split_secret_args() {
+    let command = concat!(
+        "guard --token token-secret --password 'quoted secret' ",
+        "--api-key sk-secretsecretsecret --authorization Bearer split-secret ",
+        "--authorization=Bearer eq-secret --auth Basic basic-secret ",
+        "--safe visible"
+    );
+
+    let redacted = redact_command_for_policy(command);
+
+    assert!(redacted.contains("--token <redacted>"));
+    assert!(redacted.contains("--password <redacted>"));
+    assert!(redacted.contains("--api-key <redacted>"));
+    assert!(redacted.contains("--authorization <redacted>"));
+    assert!(redacted.contains("--authorization=<redacted>"));
+    assert!(redacted.contains("--auth <redacted>"));
+    assert!(redacted.contains("--safe visible"));
+    assert!(!redacted.contains("token-secret"));
+    assert!(!redacted.contains("quoted secret"));
+    assert!(!redacted.contains("sk-secretsecretsecret"));
+    assert!(!redacted.contains("split-secret"));
+    assert!(!redacted.contains("eq-secret"));
+    assert!(!redacted.contains("basic-secret"));
 }
 
 #[test]

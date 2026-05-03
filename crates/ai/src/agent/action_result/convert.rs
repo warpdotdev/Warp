@@ -94,7 +94,7 @@ impl TryFrom<RequestCommandOutputResult> for api::request::input::tool_call_resu
                     api::request::input::tool_call_result::Result::RunShellCommand(
                         api::RunShellCommandResult {
                             command,
-                            output: format!("Command blocked by host policy: {reason}"),
+                            output: format!("{COMMAND_POLICY_DENIED_PREFIX}{reason}"),
                             exit_code: Default::default(),
                             result: Some(api::run_shell_command_result::Result::PermissionDenied(
                                 api::PermissionDenied { reason: None },

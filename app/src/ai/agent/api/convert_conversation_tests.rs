@@ -86,7 +86,10 @@ fn test_convert_tool_call_result_to_input_preserves_host_policy_denial() {
     #[allow(deprecated)]
     let run_shell_result = api::RunShellCommandResult {
         command: "rm -rf target".to_string(),
-        output: "Command blocked by host policy: blocked by org policy".to_string(),
+        output: format!(
+            "{}blocked by org policy",
+            crate::ai::agent::COMMAND_POLICY_DENIED_PREFIX
+        ),
         exit_code: 0,
         result: Some(api::run_shell_command_result::Result::PermissionDenied(
             api::PermissionDenied { reason: None },
@@ -117,6 +120,46 @@ fn test_convert_tool_call_result_to_input_preserves_host_policy_denial() {
                 assert_eq!(reason, "blocked by org policy");
             }
             other => panic!("Expected policy-denied command result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_treats_unmarked_permission_denied_as_cancelled() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    #[allow(deprecated)]
+    let run_shell_result = api::RunShellCommandResult {
+        command: "rm -rf target".to_string(),
+        output: "generic permission denied".to_string(),
+        exit_code: 0,
+        result: Some(api::run_shell_command_result::Result::PermissionDenied(
+            api::PermissionDenied { reason: None },
+        )),
+    };
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(api::message::tool_call_result::Result::RunShellCommand(
+            run_shell_result,
+        )),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::RequestCommandOutput(
+                crate::ai::agent::RequestCommandOutputResult::CancelledBeforeExecution,
+            ) => {}
+            other => panic!("Expected cancelled command result, got {other:?}"),
         },
         other => panic!("Expected action-result input, got {other:?}"),
     }

@@ -365,11 +365,8 @@ fn text_contains_credentials(value: &str) -> bool {
 
 fn stdio_arg_contains_credentials(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
-    let contains_env_reference = value.contains('$');
-    if !contains_env_reference
-        && (lower.contains("authorization:")
-            || lower.contains("bearer ")
-            || lower.contains("basic "))
+    if (lower.contains("authorization:") || lower.contains("bearer ") || lower.contains("basic "))
+        && !stdio_arg_value_uses_env_secret_reference(value)
     {
         return true;
     }
@@ -378,8 +375,7 @@ fn stdio_arg_contains_credentials(value: &str) -> bool {
         let secret = secret.trim();
         if text_contains_credentials(name)
             && !secret.is_empty()
-            && !secret.starts_with('$')
-            && !secret.starts_with("${")
+            && !stdio_arg_value_uses_env_secret_reference(secret)
         {
             return true;
         }
@@ -420,7 +416,40 @@ fn stdio_arg_expects_secret_value(value: &str) -> bool {
 
 fn stdio_arg_value_is_literal_secret(value: &str) -> bool {
     let value = value.trim().trim_matches(|ch| ch == '"' || ch == '\'');
-    !value.is_empty() && !value.contains('$')
+    !value.is_empty() && !stdio_arg_value_uses_env_secret_reference(value)
+}
+
+fn stdio_arg_value_uses_env_secret_reference(value: &str) -> bool {
+    let value = value.trim().trim_matches(|ch| ch == '"' || ch == '\'');
+    let value = strip_ascii_case_prefix(value, "authorization:")
+        .unwrap_or(value)
+        .trim();
+    let value = strip_ascii_case_prefix(value, "bearer ")
+        .or_else(|| strip_ascii_case_prefix(value, "basic "))
+        .unwrap_or(value)
+        .trim();
+
+    if let Some(name) = value
+        .strip_prefix("${")
+        .and_then(|value| value.strip_suffix('}'))
+    {
+        return is_env_reference_name(name);
+    }
+
+    value.strip_prefix('$').is_some_and(is_env_reference_name)
+}
+
+fn is_env_reference_name(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
+fn strip_ascii_case_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+    let head = value.get(..prefix.len())?;
+    head.eq_ignore_ascii_case(prefix)
+        .then_some(&value[prefix.len()..])
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

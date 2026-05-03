@@ -24,8 +24,8 @@ use crate::ai::agent::{
     RequestFileEditsResult, SearchCodebaseFailureReason, SearchCodebaseResult, ServerOutputId,
     Shared, ShellCommandCompletedTrigger, ShellCommandError, SuggestNewConversationResult,
     SuggestPromptResult, TransferShellCommandControlToUserResult, UpdatedFileContext,
-    UploadArtifactResult, WriteToLongRunningShellCommandResult, FILE_EDITS_POLICY_DENIED_PREFIX,
-    WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
+    UploadArtifactResult, WriteToLongRunningShellCommandResult, COMMAND_POLICY_DENIED_PREFIX,
+    FILE_EDITS_POLICY_DENIED_PREFIX, WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
 };
 use crate::ai::block_context::BlockContext;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
@@ -602,16 +602,17 @@ pub(crate) fn convert_tool_call_result_to_input(
                     None => {
                         #[allow(deprecated)]
                         let output = result.output.as_str();
-                        let reason = output
-                            .strip_prefix("Command blocked by host policy: ")
-                            .unwrap_or(output);
-                        if reason.is_empty() {
-                            RequestCommandOutputResult::CancelledBeforeExecution
-                        } else {
-                            RequestCommandOutputResult::PolicyDenied {
-                                command: result.command.clone(),
-                                reason: reason.to_string(),
+                        if let Some(reason) = output.strip_prefix(COMMAND_POLICY_DENIED_PREFIX) {
+                            if reason.is_empty() {
+                                RequestCommandOutputResult::CancelledBeforeExecution
+                            } else {
+                                RequestCommandOutputResult::PolicyDenied {
+                                    command: result.command.clone(),
+                                    reason: reason.to_string(),
+                                }
                             }
+                        } else {
+                            RequestCommandOutputResult::CancelledBeforeExecution
                         }
                     }
                 },
