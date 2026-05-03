@@ -217,7 +217,7 @@ impl AgentToolbarItemKind {
             Self::ContextChip(ContextChipKind::GitDiffStats),
         ];
         if cfg!(feature = "voice_input") {
-            items.push(Self::VoiceInput);
+            items.insert(1, Self::VoiceInput);
         }
         if FeatureFlag::CreatingSharedSessions.is_enabled()
             && FeatureFlag::HOARemoteControl.is_enabled()

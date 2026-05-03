@@ -77,7 +77,7 @@ fn open_toolbar_items_from_settings<V: View>(
     let appearance = Appearance::as_ref(ctx);
     let session_settings = SessionSettings::as_ref(ctx);
     let voice_input_enabled = AISettings::as_ref(ctx).is_voice_input_enabled(ctx);
-    let (current_left, current_right, mut available) = match mode {
+    let (mut current_left, mut current_right, mut available) = match mode {
         AgentToolbarEditorMode::AgentView => {
             let selection = session_settings.agent_footer_chip_selection.clone();
             (
@@ -96,6 +96,8 @@ fn open_toolbar_items_from_settings<V: View>(
         }
     };
     if !voice_input_enabled {
+        current_left.retain(|item| !matches!(item, AgentToolbarItemKind::VoiceInput));
+        current_right.retain(|item| !matches!(item, AgentToolbarItemKind::VoiceInput));
         available.retain(|item| !matches!(item, AgentToolbarItemKind::VoiceInput));
     }
     chip_configurator.open_left_right_zones_with_items(
