@@ -1241,7 +1241,7 @@ impl Block {
         self.wakeup_after_delay();
     }
 
-    fn disable_reset_grid_checks(&mut self) {
+    pub(super) fn disable_reset_grid_checks(&mut self) {
         self.header_grid.disable_reset_grid_checks();
         self.output_grid.disable_reset_grid_checks();
     }
