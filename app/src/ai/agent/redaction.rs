@@ -134,7 +134,10 @@ pub(crate) fn redact_inputs(inputs: &mut [AIAgentInput]) {
                         match result {
                             Snapshot { grid_contents, .. } => redact_secrets(grid_contents),
                             CommandFinished { output, .. } => redact_secrets(output),
-                            PolicyDenied { reason } => redact_secrets(reason),
+                            PolicyDenied { reason } => {
+                                *reason = redact_sensitive_text_for_policy(reason);
+                                redact_secrets(reason);
+                            }
                             Error(_) | Cancelled => {}
                         }
                     }
@@ -430,7 +433,9 @@ mod tests {
 
     use super::*;
     use crate::ai::agent::task::TaskId;
-    use crate::ai::agent::{AIAgentActionResult, AIAgentActionResultType};
+    use crate::ai::agent::{
+        AIAgentActionResult, AIAgentActionResultType, WriteToLongRunningShellCommandResult,
+    };
 
     #[test]
     fn redact_inputs_redacts_policy_denied_command_result_command() {
@@ -468,5 +473,41 @@ mod tests {
         assert!(!command.contains(secret));
         assert!(!command.contains("raw-client-secret"));
         assert!(!reason.contains(secret));
+    }
+
+    #[test]
+    fn redact_inputs_redacts_policy_denied_write_to_shell_reason() {
+        let mut inputs = vec![AIAgentInput::ActionResult {
+            result: AIAgentActionResult {
+                id: "action_1".to_string().into(),
+                task_id: TaskId::new("task_1".to_string()),
+                result: AIAgentActionResultType::WriteToLongRunningShellCommand(
+                    WriteToLongRunningShellCommandResult::PolicyDenied {
+                        reason: "blocked PASSWORD=hunter2 --token raw-token Authorization: Bearer rawbearer"
+                            .to_string(),
+                    },
+                ),
+            },
+            context: Arc::from([]),
+        }];
+
+        redact_inputs(&mut inputs);
+
+        let AIAgentInput::ActionResult { result, .. } = &inputs[0] else {
+            panic!("expected action result");
+        };
+        let AIAgentActionResultType::WriteToLongRunningShellCommand(
+            WriteToLongRunningShellCommandResult::PolicyDenied { reason },
+        ) = &result.result
+        else {
+            panic!("expected policy denied shell write result");
+        };
+
+        assert!(reason.contains("PASSWORD=<redacted>"));
+        assert!(reason.contains("--token <redacted>"));
+        assert!(reason.contains("Authorization: Bearer <redacted>"));
+        assert!(!reason.contains("hunter2"));
+        assert!(!reason.contains("raw-token"));
+        assert!(!reason.contains("rawbearer"));
     }
 }

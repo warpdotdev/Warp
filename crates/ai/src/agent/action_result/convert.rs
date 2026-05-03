@@ -150,9 +150,9 @@ impl TryFrom<WriteToLongRunningShellCommandResult>
                         result: Some(
                             api::write_to_long_running_shell_command_result::Result::CommandFinished(
                                 api::ShellCommandFinished {
-                                    command_id: Default::default(),
+                                    command_id: WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID.to_string(),
                                     output: format!("{WRITE_TO_SHELL_POLICY_DENIED_PREFIX}{reason}"),
-                                    exit_code: 126,
+                                    exit_code: WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
                                 },
                             ),
                         ),

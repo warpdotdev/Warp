@@ -25,11 +25,13 @@ use crate::ai::agent::{
     Shared, ShellCommandCompletedTrigger, ShellCommandError, SuggestNewConversationResult,
     SuggestPromptResult, TransferShellCommandControlToUserResult, UpdatedFileContext,
     UploadArtifactResult, WriteToLongRunningShellCommandResult, COMMAND_POLICY_DENIED_PREFIX,
-    FILE_EDITS_POLICY_DENIED_PREFIX, WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
+    FILE_EDITS_POLICY_DENIED_PREFIX, WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID,
+    WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE, WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
 };
 use crate::ai::block_context::BlockContext;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::ai::llms::LLMId;
+use crate::ai::policy_hooks::redaction::redact_sensitive_text_for_policy;
 use crate::ai_assistant::execution_context::{WarpAiExecutionContext, WarpAiOsContext};
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::terminal_model::BlockIndex;
@@ -645,11 +647,19 @@ pub(crate) fn convert_tool_call_result_to_input(
                     Some(api::write_to_long_running_shell_command_result::Result::CommandFinished(
                         finished,
                     )) => {
-                        if let Some(reason) =
-                            finished.output.strip_prefix(WRITE_TO_SHELL_POLICY_DENIED_PREFIX)
-                        {
+                        let is_policy_denial_marker =
+                            finished.command_id == WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID
+                                && finished.exit_code == WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE;
+                        let policy_denial_reason = if is_policy_denial_marker {
+                            finished
+                                .output
+                                .strip_prefix(WRITE_TO_SHELL_POLICY_DENIED_PREFIX)
+                        } else {
+                            None
+                        };
+                        if let Some(reason) = policy_denial_reason {
                             WriteToLongRunningShellCommandResult::PolicyDenied {
-                                reason: reason.to_string(),
+                                reason: redact_sensitive_text_for_policy(reason),
                             }
                         } else {
                             WriteToLongRunningShellCommandResult::CommandFinished {

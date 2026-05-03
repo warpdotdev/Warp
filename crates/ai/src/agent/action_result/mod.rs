@@ -17,6 +17,8 @@ pub const COMMAND_POLICY_DENIED_PREFIX: &str = "Command blocked by host policy: 
 pub const FILE_EDITS_POLICY_DENIED_PREFIX: &str = "File edits blocked by host policy: ";
 pub const WRITE_TO_SHELL_POLICY_DENIED_PREFIX: &str =
     "Write to long-running shell command blocked by host policy: ";
+pub const WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID: &str = "__warp_policy_denied_shell_write__";
+pub const WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE: i32 = 126;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AIAgentActionResultType {

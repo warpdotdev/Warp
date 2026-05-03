@@ -125,7 +125,7 @@ use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::policy_hooks::{
     decision::{compose_policy_decisions, WarpPermissionDecisionKind},
-    redaction::redact_command_for_policy,
+    redaction::{redact_command_for_policy, redact_sensitive_text_for_policy},
     AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision, AgentPolicyEvent,
     AgentPolicyHookEngine, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
     PolicyReadFilesAction, PolicyReadMcpResourceAction, PolicyWriteFilesAction,
@@ -1275,14 +1275,6 @@ impl BlocklistAIActionExecutor {
             return None;
         }
 
-        if matches!(action.action, AIAgentActionType::RequestFileEdits { .. })
-            && self
-                .confirmed_file_edit_policy_preprocesses
-                .remove(&(conversation_id, action.id.clone()))
-        {
-            return Some(confirmed_file_edit_policy_preprocess_state());
-        }
-
         let warp_permission = self.warp_permission_snapshot_for_action(
             action,
             conversation_id,
@@ -1301,15 +1293,62 @@ impl BlocklistAIActionExecutor {
         )?;
         let preflight_key =
             PolicyPreflightKey::new(conversation_id, action.id.clone(), &event.action);
+        let confirmed_file_edit_policy_preprocess =
+            matches!(action.action, AIAgentActionType::RequestFileEdits { .. })
+                && self
+                    .confirmed_file_edit_policy_preprocesses
+                    .remove(&(conversation_id, action.id.clone()));
 
-        if let Some(decision) = self.completed_policy_preflights.get(&preflight_key) {
+        if confirmed_file_edit_policy_preprocess {
+            if let Some(decision) = self
+                .completed_policy_preflights
+                .get(&preflight_key)
+                .cloned()
+            {
+                let state = confirmed_file_edit_policy_preprocess_state_from_cached_decision(
+                    action,
+                    &decision,
+                    warp_permission.clone(),
+                    config.allow_autoapproval_for_all_hooks(),
+                );
+                if should_consume_completed_policy_preflight(&state) {
+                    self.completed_policy_preflights.remove(&preflight_key);
+                }
+                return Some(state);
+            }
+        }
+
+        if let Some(decision) = self
+            .completed_policy_preflights
+            .get(&preflight_key)
+            .cloned()
+        {
             let decision = recompose_completed_policy_decision(
-                decision,
+                &decision,
                 warp_permission,
                 config.allow_autoapproval_for_all_hooks(),
             );
             let state = policy_preflight_state_from_decision(action, &decision, is_user_initiated);
-            if should_consume_completed_policy_preflight(&state) {
+            let already_preprocessed_file_edit = matches!(
+                (&action.action, &state),
+                (
+                    AIAgentActionType::RequestFileEdits { .. },
+                    PolicyPreflightState::Allowed { .. }
+                )
+            ) && self
+                .request_file_edits_executor
+                .update(ctx, |executor, _ctx| {
+                    executor.has_preprocessed_action(&action.id)
+                });
+            let should_preserve_for_file_edit_preprocess =
+                should_preserve_completed_policy_preflight_for_file_edit_preprocess(
+                    action,
+                    &state,
+                    already_preprocessed_file_edit,
+                );
+            if should_consume_completed_policy_preflight(&state)
+                && !should_preserve_for_file_edit_preprocess
+            {
                 self.completed_policy_preflights.remove(&preflight_key);
             }
             return Some(state);
@@ -1676,7 +1715,7 @@ fn policy_denied_action_result(
     action: &AIAgentAction,
     decision: &AgentPolicyEffectiveDecision,
 ) -> AIAgentActionResultType {
-    let reason = policy_denied_message(decision);
+    let reason = redact_sensitive_text_for_policy(&policy_denied_message(decision));
     match &action.action {
         AIAgentActionType::RequestCommandOutput { command, .. } => {
             AIAgentActionResultType::RequestCommandOutput(
@@ -1762,6 +1801,40 @@ fn confirmed_file_edit_policy_preprocess_state() -> PolicyPreflightState {
     PolicyPreflightState::Allowed {
         skip_confirmation: true,
     }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn confirmed_file_edit_policy_preprocess_state_from_cached_decision(
+    action: &AIAgentAction,
+    cached_decision: &AgentPolicyEffectiveDecision,
+    warp_permission: WarpPermissionSnapshot,
+    allow_hook_autoapproval: bool,
+) -> PolicyPreflightState {
+    let warp_permission_unchanged = cached_decision.warp_permission == warp_permission;
+    let decision = recompose_completed_policy_decision(
+        cached_decision,
+        warp_permission,
+        allow_hook_autoapproval,
+    );
+    if warp_permission_unchanged
+        && cached_decision.decision == AgentPolicyDecisionKind::Ask
+        && decision.decision == AgentPolicyDecisionKind::Ask
+    {
+        return confirmed_file_edit_policy_preprocess_state();
+    }
+
+    policy_preflight_state_from_decision(action, &decision, false)
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn should_preserve_completed_policy_preflight_for_file_edit_preprocess(
+    action: &AIAgentAction,
+    state: &PolicyPreflightState,
+    already_preprocessed: bool,
+) -> bool {
+    matches!(&action.action, AIAgentActionType::RequestFileEdits { .. })
+        && matches!(state, PolicyPreflightState::Allowed { .. })
+        && !already_preprocessed
 }
 
 #[cfg(not(target_family = "wasm"))]

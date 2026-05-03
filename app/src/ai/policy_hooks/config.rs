@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use http::header::HeaderName;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use thiserror::Error;
 
@@ -181,13 +182,13 @@ impl AgentPolicyHookTransport {
         match self {
             Self::Stdio { args, env, .. } => {
                 validate_stdio_args(args)?;
-                validate_secret_value_map(env)?;
+                validate_stdio_secret_value_map(env)?;
             }
             Self::Http { url, headers } => {
                 if http_url_contains_credentials(url) {
                     return Err(AgentPolicyHookConfigError::HttpUrlContainsCredentials);
                 }
-                validate_secret_value_map(headers)?;
+                validate_http_secret_value_map(headers)?;
             }
         }
 
@@ -206,7 +207,7 @@ impl AgentPolicyHookTransport {
                     return Err(AgentPolicyHookConfigError::MissingStdioCommand);
                 }
                 validate_stdio_args(args)?;
-                validate_secret_value_map(env)?;
+                validate_stdio_secret_value_map(env)?;
 
                 if working_directory
                     .as_deref()
@@ -232,7 +233,7 @@ impl AgentPolicyHookTransport {
                     return Err(AgentPolicyHookConfigError::InsecureHttpUrl(url.clone()));
                 }
 
-                validate_secret_value_map(headers)?;
+                validate_http_secret_value_map(headers)?;
             }
         }
 
@@ -264,7 +265,7 @@ impl AgentPolicyHookSecretValue {
         if env.is_empty() {
             return Err(AgentPolicyHookConfigError::MissingSecretEnvironmentVariableName);
         }
-        if !is_env_reference_name(env) || text_contains_common_token(env) {
+        if env != self.env || !is_env_reference_name(env) || text_contains_common_token(env) {
             return Err(AgentPolicyHookConfigError::InvalidSecretEnvironmentVariableName);
         }
         Ok(())
@@ -277,10 +278,27 @@ impl fmt::Debug for AgentPolicyHookSecretValue {
     }
 }
 
-fn validate_secret_value_map(
+fn validate_stdio_secret_value_map(
     values: &BTreeMap<String, AgentPolicyHookSecretValue>,
 ) -> Result<(), AgentPolicyHookConfigError> {
-    for value in values.values() {
+    for (name, value) in values {
+        if !is_env_reference_name(name) || text_contains_common_token(name) {
+            return Err(AgentPolicyHookConfigError::InvalidSecretEnvironmentVariableName);
+        }
+        value.validate()?;
+    }
+    Ok(())
+}
+
+fn validate_http_secret_value_map(
+    values: &BTreeMap<String, AgentPolicyHookSecretValue>,
+) -> Result<(), AgentPolicyHookConfigError> {
+    for (name, value) in values {
+        if HeaderName::from_bytes(name.as_bytes()).is_err() || text_contains_common_token(name) {
+            return Err(AgentPolicyHookConfigError::InvalidHttpHeaderName(
+                name.clone(),
+            ));
+        }
         value.validate()?;
     }
     Ok(())
@@ -506,6 +524,8 @@ pub(crate) enum AgentPolicyHookConfigError {
     InsecureHttpUrl(String),
     #[error("agent policy hook HTTP URL must not include embedded credentials")]
     HttpUrlContainsCredentials,
+    #[error("agent policy hook HTTP header name is invalid: {0}")]
+    InvalidHttpHeaderName(String),
     #[error("agent policy hook secret environment variable name must not be empty")]
     MissingSecretEnvironmentVariableName,
     #[error("agent policy hook secret environment variable reference must be an environment variable name")]

@@ -100,6 +100,8 @@ fn policy_denied_write_to_shell_result_converts_to_policy_marker() {
         panic!("expected command_finished result");
     };
 
+    assert_eq!(finished.command_id, WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID);
+    assert_eq!(finished.exit_code, WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE);
     assert_eq!(
         finished.output,
         "Write to long-running shell command blocked by host policy: interactive write blocked"

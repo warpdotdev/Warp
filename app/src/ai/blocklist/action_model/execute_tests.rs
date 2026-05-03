@@ -124,11 +124,13 @@ mod policy_hooks {
 
     use super::super::{
         agent_policy_action, complete_policy_preflight_if_pending,
-        confirmed_file_edit_policy_preprocess_state, normalize_command_for_policy,
-        policy_denied_action_result, policy_preflight_state_from_decision,
-        recompose_completed_policy_decision, should_consume_completed_policy_preflight,
-        should_preprocess_file_edits_after_policy_decision, warp_permission_snapshot_for_policy,
-        PolicyPreflightKey, PolicyPreflightState,
+        confirmed_file_edit_policy_preprocess_state_from_cached_decision,
+        normalize_command_for_policy, policy_denied_action_result,
+        policy_preflight_state_from_decision, recompose_completed_policy_decision,
+        should_consume_completed_policy_preflight,
+        should_preprocess_file_edits_after_policy_decision,
+        should_preserve_completed_policy_preflight_for_file_edit_preprocess,
+        warp_permission_snapshot_for_policy, PolicyPreflightKey, PolicyPreflightState,
     };
 
     fn command_action(command: &str) -> AIAgentAction {
@@ -395,11 +397,116 @@ mod policy_hooks {
 
     #[test]
     fn confirmed_file_edit_policy_preprocess_retry_skips_confirmation() {
+        let action = file_edit_action();
+        let cached_decision = AgentPolicyEffectiveDecision {
+            decision: AgentPolicyDecisionKind::Ask,
+            reason: Some("requires approval".to_string()),
+            warp_permission: WarpPermissionSnapshot::allow(None),
+            hook_results: vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Ask,
+                reason: Some("requires approval".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+        };
+
         assert_eq!(
-            confirmed_file_edit_policy_preprocess_state(),
+            confirmed_file_edit_policy_preprocess_state_from_cached_decision(
+                &action,
+                &cached_decision,
+                WarpPermissionSnapshot::allow(None),
+                true
+            ),
             PolicyPreflightState::Allowed {
                 skip_confirmation: true
             }
+        );
+    }
+
+    #[test]
+    fn confirmed_file_edit_policy_preprocess_retry_recomposes_changed_warp_denial() {
+        let action = file_edit_action();
+        let cached_decision = compose_policy_decisions(
+            WarpPermissionSnapshot::allow(Some("initial allow".to_string())),
+            vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Allow,
+                reason: Some("approved by hook".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+            true,
+        );
+
+        let state = confirmed_file_edit_policy_preprocess_state_from_cached_decision(
+            &action,
+            &cached_decision,
+            WarpPermissionSnapshot::deny(Some("managed policy changed".to_string())),
+            true,
+        );
+
+        assert_eq!(
+            state,
+            PolicyPreflightState::Denied(AIAgentActionResultType::RequestFileEdits(
+                RequestFileEditsResult::PolicyDenied {
+                    reason: "managed policy changed".to_string()
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn confirmed_file_edit_policy_preprocess_retry_reprompts_changed_warp_ask() {
+        let action = file_edit_action();
+        let cached_decision = compose_policy_decisions(
+            WarpPermissionSnapshot::allow(Some("initial allow".to_string())),
+            vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Allow,
+                reason: Some("approved by hook".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+            true,
+        );
+
+        let state = confirmed_file_edit_policy_preprocess_state_from_cached_decision(
+            &action,
+            &cached_decision,
+            WarpPermissionSnapshot::ask(Some("permission changed".to_string())),
+            true,
+        );
+
+        assert_eq!(
+            state,
+            PolicyPreflightState::NeedsConfirmation(Some("permission changed".to_string()))
+        );
+    }
+
+    #[test]
+    fn completed_file_edit_policy_preflight_is_preserved_until_preprocessed() {
+        let action = file_edit_action();
+        let state = PolicyPreflightState::Allowed {
+            skip_confirmation: false,
+        };
+
+        assert!(
+            should_preserve_completed_policy_preflight_for_file_edit_preprocess(
+                &action, &state, false
+            )
+        );
+        assert!(
+            !should_preserve_completed_policy_preflight_for_file_edit_preprocess(
+                &action, &state, true
+            )
+        );
+        assert!(
+            !should_preserve_completed_policy_preflight_for_file_edit_preprocess(
+                &action,
+                &PolicyPreflightState::NeedsConfirmation(Some("requires approval".to_string())),
+                false
+            )
         );
     }
 

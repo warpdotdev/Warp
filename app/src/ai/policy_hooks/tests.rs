@@ -376,6 +376,81 @@ fn config_rejects_object_shaped_hook_secret_literals() {
 }
 
 #[test]
+fn config_rejects_hook_secret_map_literal_keys() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [
+            {
+                "name": "stdio-guard",
+                "transport": "stdio",
+                "command": "guard",
+                "env": { "ghp_secretsecretsecret": { "env": "POLICY_TOKEN" } }
+            },
+            {
+                "name": "http-guard",
+                "transport": "http",
+                "url": "https://example.com/policy",
+                "headers": { "sk-secretsecretsecret": { "env": "POLICY_HEADER" } }
+            }
+        ]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        config.validate(),
+        Err(super::config::AgentPolicyHookConfigError::InvalidSecretEnvironmentVariableName)
+    ));
+    let value = serde_json::to_value(&config).unwrap();
+    assert_eq!(value["enabled"], false);
+    assert!(!value.to_string().contains("ghp_secretsecretsecret"));
+    assert!(!value.to_string().contains("sk-secretsecretsecret"));
+}
+
+#[test]
+fn config_rejects_http_hook_secret_header_literal_key() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "http-guard",
+            "transport": "http",
+            "url": "https://example.com/policy",
+            "headers": { "sk-secretsecretsecret": { "env": "POLICY_HEADER" } }
+        }]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        config.validate(),
+        Err(super::config::AgentPolicyHookConfigError::InvalidHttpHeaderName(_))
+    ));
+    let value = serde_json::to_value(&config).unwrap();
+    assert_eq!(value["enabled"], false);
+    assert!(!value.to_string().contains("sk-secretsecretsecret"));
+}
+
+#[test]
+fn config_rejects_whitespace_padded_hook_secret_refs() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "stdio-guard",
+            "transport": "stdio",
+            "command": "guard",
+            "env": { "API_TOKEN": { "env": " POLICY_TOKEN " } }
+        }]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        config.validate(),
+        Err(super::config::AgentPolicyHookConfigError::InvalidSecretEnvironmentVariableName)
+    ));
+    let value = serde_json::to_value(&config).unwrap();
+    assert_eq!(value["enabled"], false);
+    assert!(!value.to_string().contains(" POLICY_TOKEN "));
+}
+
+#[test]
 fn config_serialization_preserves_secret_environment_references() {
     let config: AgentPolicyHookConfig = serde_json::from_value(json!({
         "enabled": true,
