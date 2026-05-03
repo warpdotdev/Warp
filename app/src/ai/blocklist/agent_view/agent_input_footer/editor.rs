@@ -17,7 +17,7 @@ use crate::terminal::session_settings::{
     AgentToolbarChipSelection, CLIAgentToolbarChipSelection, SessionSettings,
     SessionSettingsChangedEvent, ToolbarChipSelection,
 };
-use crate::settings::AISettings;
+use crate::settings::{AISettings, AISettingsChangedEvent};
 use crate::Appearance;
 
 use settings::Setting as _;
@@ -170,6 +170,18 @@ impl AgentToolbarInlineEditor {
             );
 
             if should_refresh && me.chip_configurator.current_dragging_state.is_none() {
+                me.reset_from_settings(ctx);
+                ctx.notify();
+            }
+        });
+
+        ctx.subscribe_to_model(&AISettings::handle(ctx), |me, _, event, ctx| {
+            if matches!(
+                event,
+                AISettingsChangedEvent::VoiceInputEnabled { .. }
+                    | AISettingsChangedEvent::IsAnyAIEnabled { .. }
+            ) && me.chip_configurator.current_dragging_state.is_none()
+            {
                 me.reset_from_settings(ctx);
                 ctx.notify();
             }
