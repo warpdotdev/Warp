@@ -147,16 +147,31 @@ fn quoted_argument_with_spaces() {
 }
 
 #[test]
-fn first_arg_wins_when_multiple() {
+fn rejects_multi_directory_operands() {
     let tmp = tempdir().unwrap();
     fs::create_dir(tmp.path().join("a")).unwrap();
     fs::create_dir(tmp.path().join("b")).unwrap();
 
-    let got = listing_command_argument_dir("ls a b", tmp.path(), LS_ONLY);
-    assert_eq!(got, Some(tmp.path().join("a")));
+    // Both positionals are directories → ambiguous, return None.
+    assert_eq!(
+        listing_command_argument_dir("ls a b", tmp.path(), LS_ONLY),
+        None
+    );
+    assert_eq!(
+        listing_command_argument_dir("ls -la a b", tmp.path(), LS_ONLY),
+        None
+    );
+}
 
-    let got_flagged = listing_command_argument_dir("ls -la a b", tmp.path(), LS_ONLY);
-    assert_eq!(got_flagged, Some(tmp.path().join("a")));
+#[test]
+fn allows_single_dir_with_file_second_arg() {
+    let tmp = tempdir().unwrap();
+    fs::create_dir(tmp.path().join("a")).unwrap();
+    fs::write(tmp.path().join("somefile"), b"hi").unwrap();
+
+    // First positional is a dir, second is a file → not ambiguous multi-dir.
+    let got = listing_command_argument_dir("ls a somefile", tmp.path(), LS_ONLY);
+    assert_eq!(got, Some(tmp.path().join("a")));
 }
 
 #[test]
@@ -348,4 +363,38 @@ fn alias_resolution_with_no_resolved_name_falls_back_to_raw_token() {
 
     let got_miss = super::listing_command_argument_dir("ll subdir", None, tmp.path(), LS_ONLY);
     assert_eq!(got_miss, None, "without resolved name, ll misses");
+}
+
+#[test]
+fn rejects_recursive_flag_short() {
+    let tmp = tempdir().unwrap();
+    fs::create_dir(tmp.path().join("subdir")).unwrap();
+
+    assert_eq!(
+        listing_command_argument_dir("ls -R subdir", tmp.path(), LS_ONLY),
+        None
+    );
+    assert_eq!(
+        listing_command_argument_dir("ls -lR subdir", tmp.path(), LS_ONLY),
+        None
+    );
+    assert_eq!(
+        listing_command_argument_dir("ls -laR subdir", tmp.path(), LS_ONLY),
+        None
+    );
+}
+
+#[test]
+fn rejects_recursive_flag_long() {
+    let tmp = tempdir().unwrap();
+    fs::create_dir(tmp.path().join("subdir")).unwrap();
+
+    assert_eq!(
+        listing_command_argument_dir("ls --recursive subdir", tmp.path(), LS_ONLY),
+        None
+    );
+    assert_eq!(
+        listing_command_argument_dir("ls -la --recursive subdir", tmp.path(), LS_ONLY),
+        None
+    );
 }

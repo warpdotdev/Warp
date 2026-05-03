@@ -548,13 +548,23 @@ impl super::TerminalView {
         // resolve into DIR, not into CWD — fixing the silent-misresolution bug where
         // a same-named file in CWD would otherwise win.
         let try_resolve = |clean_path: &CleanPathResult| -> Option<PathBuf> {
+            // Only attempt listing-dir resolution for bare entry names (no path
+            // separators). Candidates like `subdir/README.md`, `./foo`, or absolute
+            // paths already resolve correctly against CWD and must not be double-joined
+            // with the listing directory.
             if let Some(listing_dir) = listing_dir {
-                if let Some(resolved) = absolute_path_if_valid(
-                    clean_path,
-                    ShellPathType::PlatformNative(listing_dir.to_path_buf()),
-                    shell_launch_data.as_ref(),
-                ) {
-                    return Some(resolved);
+                let path_str = &clean_path.path;
+                let is_bare_name = !path_str.contains('/')
+                    && !path_str.contains('\\')
+                    && !path_str.starts_with('~');
+                if is_bare_name {
+                    if let Some(resolved) = absolute_path_if_valid(
+                        clean_path,
+                        ShellPathType::PlatformNative(listing_dir.to_path_buf()),
+                        shell_launch_data.as_ref(),
+                    ) {
+                        return Some(resolved);
+                    }
                 }
             }
             absolute_path_if_valid(

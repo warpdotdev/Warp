@@ -56,7 +56,7 @@ pub const DEFAULT_LISTING_COMMANDS: &[&str] = &["ls", "exa", "eza", "lsd"];
 /// "ls --color=always subdir"  + cwd=/a/b  -> Some(/a/b/subdir)  (if dir)
 /// "ls /etc/"                  + cwd=/a/b  -> Some(/etc)         (if dir)
 /// "ls"                        + cwd=/a/b  -> None
-/// "ls subdir1/ subdir2/"      + cwd=/a/b  -> Some(/a/b/subdir1) (first arg wins)
+/// "ls subdir1/ subdir2/"      + cwd=/a/b  -> None               (multi-dir rejected)
 /// "cat subdir/foo"            + cwd=/a/b  -> None               (cat not in listing_commands)
 /// ```
 ///
@@ -117,8 +117,20 @@ pub fn listing_command_argument_dir(
         return None;
     }
 
-    // Find the first positional argument (skipping flags).
-    let first_positional = iter.find(|t| !t.starts_with('-'))?;
+    // Collect remaining tokens, rejecting recursive flags and detecting multi-dir.
+    let mut positionals = Vec::new();
+    for token in iter {
+        if token.starts_with('-') {
+            // Reject recursive listings — output has per-section roots we can't resolve.
+            if token == "--recursive" || (!token.starts_with("--") && token.contains('R')) {
+                return None;
+            }
+            continue;
+        }
+        positionals.push(token.as_str());
+    }
+
+    let first_positional = positionals.first()?;
 
     // Expand tilde if present. Without shell-level `$HOME`, `~` by itself or `~/foo`
     // won't resolve otherwise. We reuse the minimal expansion here rather than
@@ -135,7 +147,25 @@ pub fn listing_command_argument_dir(
     // Only return the path if it actually resolves to a directory on disk. This
     // guards against the user typing a typo'd path, or a path that exists as a file
     // (which wouldn't be a listing target anyway).
-    candidate.is_dir().then_some(candidate)
+    if !candidate.is_dir() {
+        return None;
+    }
+
+    // Reject multi-directory operands — output has per-section roots and picking
+    // just the first would misresolve entries from subsequent sections.
+    if positionals.len() > 1 {
+        let second = expand_leading_tilde(positionals[1]);
+        let second_candidate = if second.is_absolute() {
+            second
+        } else {
+            pwd.join(&second)
+        };
+        if second_candidate.is_dir() {
+            return None;
+        }
+    }
+
+    Some(candidate)
 }
 
 /// Expands a leading `~` or `~/` in a path to `$HOME` / `$HOME/`. Returns the input
