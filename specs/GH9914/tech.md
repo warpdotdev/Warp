@@ -172,7 +172,7 @@ Suggested storage strategy:
 1. Add optional `agent_policy_hooks` to `AIExecutionProfile`.
 2. Keep default disabled so old profiles deserialize unchanged.
 3. Persist hook credentials only as environment-variable references such as `{ "env": "WARP_POLICY_TOKEN" }`; do not store raw header, environment, or URL credentials in synced profile JSON.
-4. Validate persisted credential-bearing fields even when hooks are disabled, and run the same safe-to-persist check from `AgentPolicyHookConfig` serialization so inactive profile config cannot be locally or cloud-synced with raw or URL-embedded credentials.
+4. Validate persisted credential-bearing fields even when hooks are disabled, and sanitize unsafe config during `AgentPolicyHookConfig` serialization so inactive profile config cannot be locally or cloud-synced with raw or URL-embedded credentials.
 5. Detect URL-embedded credentials without relying only on successful URL parsing, because disabled configs may otherwise be incomplete while still containing raw userinfo in the URL authority.
 6. Surface minimal settings UI after the engine exists: enabled toggle, hook list, timeout, unavailable behavior, and latest error.
 

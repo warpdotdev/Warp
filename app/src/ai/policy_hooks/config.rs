@@ -92,15 +92,20 @@ impl Serialize for AgentPolicyHookConfig {
     where
         S: serde::Serializer,
     {
-        self.validate_safe_to_persist()
-            .map_err(serde::ser::Error::custom)?;
+        let sanitized_config;
+        let config = if self.validate_safe_to_persist().is_ok() {
+            self
+        } else {
+            sanitized_config = Self::default();
+            &sanitized_config
+        };
 
         let mut state = serializer.serialize_struct("AgentPolicyHookConfig", 5)?;
-        state.serialize_field("enabled", &self.enabled)?;
-        state.serialize_field("before_action", &self.before_action)?;
-        state.serialize_field("timeout_ms", &self.timeout_ms)?;
-        state.serialize_field("on_unavailable", &self.on_unavailable)?;
-        state.serialize_field("allow_hook_autoapproval", &self.allow_hook_autoapproval)?;
+        state.serialize_field("enabled", &config.enabled)?;
+        state.serialize_field("before_action", &config.before_action)?;
+        state.serialize_field("timeout_ms", &config.timeout_ms)?;
+        state.serialize_field("on_unavailable", &config.on_unavailable)?;
+        state.serialize_field("allow_hook_autoapproval", &config.allow_hook_autoapproval)?;
         state.end()
     }
 }

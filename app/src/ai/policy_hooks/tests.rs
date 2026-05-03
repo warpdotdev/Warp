@@ -7,7 +7,7 @@ use crate::ai::execution_profiles::AIExecutionProfile;
 use serde_json::json;
 
 use super::{
-    config::AgentPolicyHookConfig,
+    config::{AgentPolicyHook, AgentPolicyHookConfig, AgentPolicyHookTransport},
     decision::{
         compose_policy_decisions, AgentPolicyDecisionKind, AgentPolicyHookErrorKind,
         AgentPolicyHookEvaluation, AgentPolicyHookResponse, AgentPolicyUnavailableDecision,
@@ -151,23 +151,31 @@ fn config_rejects_disabled_http_hook_url_embedded_credentials() {
 }
 
 #[test]
-fn profile_serialization_rejects_disabled_http_hook_url_embedded_credentials() {
-    let agent_policy_hooks: AgentPolicyHookConfig = serde_json::from_value(json!({
-        "enabled": false,
-        "before_action": [{
-            "name": "remote-guard",
-            "transport": "http",
-            "url": "https:user:pass@example.com/policy"
-        }]
-    }))
-    .unwrap();
+fn profile_serialization_sanitizes_disabled_http_hook_url_embedded_credentials() {
+    let agent_policy_hooks = AgentPolicyHookConfig {
+        enabled: false,
+        before_action: vec![AgentPolicyHook {
+            name: "remote-guard".to_string(),
+            transport: AgentPolicyHookTransport::Http {
+                url: "https:user:pass@example.com/policy".to_string(),
+                headers: Default::default(),
+            },
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     let profile = AIExecutionProfile {
         agent_policy_hooks,
         ..Default::default()
     };
 
-    let error = serde_json::to_value(&profile).unwrap_err().to_string();
-    assert!(error.contains("embedded credentials"));
+    let value = serde_json::to_value(&profile).unwrap();
+    assert_eq!(value["agent_policy_hooks"]["enabled"], false);
+    assert!(value["agent_policy_hooks"]["before_action"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!value.to_string().contains('@'));
 }
 
 #[test]
