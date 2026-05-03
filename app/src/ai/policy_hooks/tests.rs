@@ -107,6 +107,26 @@ fn config_rejects_non_https_remote_http_hooks() {
 }
 
 #[test]
+fn config_rejects_http_hook_url_embedded_credentials() {
+    for url in [
+        "https://token@example.com/policy",
+        "https://user:pass@example.com/policy",
+    ] {
+        let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+            "enabled": true,
+            "before_action": [{
+                "name": "remote-guard",
+                "transport": "http",
+                "url": url
+            }]
+        }))
+        .unwrap();
+
+        assert!(config.validate().is_err());
+    }
+}
+
+#[test]
 fn config_rejects_inline_hook_secret_values() {
     let config = serde_json::from_value::<AgentPolicyHookConfig>(json!({
         "enabled": true,

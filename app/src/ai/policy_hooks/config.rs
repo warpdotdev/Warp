@@ -165,6 +165,10 @@ impl AgentPolicyHookTransport {
                 let parsed = url::Url::parse(url)
                     .map_err(|_| AgentPolicyHookConfigError::InvalidHttpUrl(url.clone()))?;
 
+                if !parsed.username().is_empty() || parsed.password().is_some() {
+                    return Err(AgentPolicyHookConfigError::HttpUrlContainsCredentials);
+                }
+
                 let host = parsed.host_str().unwrap_or_default();
                 let is_localhost = matches!(host, "localhost" | "127.0.0.1" | "::1");
                 let is_allowed_local_http = parsed.scheme() == "http" && is_localhost;
@@ -240,6 +244,8 @@ pub(crate) enum AgentPolicyHookConfigError {
     InvalidHttpUrl(String),
     #[error("agent policy hook HTTP URL must use HTTPS unless it targets localhost: {0}")]
     InsecureHttpUrl(String),
+    #[error("agent policy hook HTTP URL must not include embedded credentials")]
+    HttpUrlContainsCredentials,
     #[error("agent policy hook secret environment variable name must not be empty")]
     MissingSecretEnvironmentVariableName,
 }

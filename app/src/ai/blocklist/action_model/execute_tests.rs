@@ -111,7 +111,8 @@ mod policy_hooks {
             },
             policy_hooks::{
                 decision::{
-                    AgentPolicyHookEvaluation, WarpPermissionDecisionKind, WarpPermissionSnapshot,
+                    compose_policy_decisions, AgentPolicyHookEvaluation,
+                    WarpPermissionDecisionKind, WarpPermissionSnapshot,
                 },
                 AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision,
             },
@@ -174,9 +175,40 @@ mod policy_hooks {
 
     #[test]
     fn warp_permission_snapshot_marks_autonomous_denials_terminal() {
-        let snapshot = warp_permission_snapshot_for_policy(false, false, false, true);
+        let snapshot = warp_permission_snapshot_for_policy(false, false, false, true, None);
 
         assert_eq!(snapshot.decision, WarpPermissionDecisionKind::Deny);
+    }
+
+    #[test]
+    fn warp_permission_snapshot_preserves_terminal_denial_before_hook_autoapproval() {
+        let snapshot = warp_permission_snapshot_for_policy(
+            false,
+            false,
+            true,
+            false,
+            Some("file path is protected by Warp permissions".to_string()),
+        );
+
+        assert_eq!(snapshot.decision, WarpPermissionDecisionKind::Deny);
+
+        let decision = compose_policy_decisions(
+            snapshot,
+            vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Allow,
+                reason: Some("approved by hook".to_string()),
+                external_audit_id: None,
+                error: None,
+            }],
+            true,
+        );
+
+        assert_eq!(decision.decision, AgentPolicyDecisionKind::Deny);
+        assert_eq!(
+            decision.reason.as_deref(),
+            Some("file path is protected by Warp permissions")
+        );
     }
 
     #[test]

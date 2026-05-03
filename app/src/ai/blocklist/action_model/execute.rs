@@ -88,6 +88,16 @@ use mime_guess::from_path;
 use self::search_codebase::SearchCodebaseExecutor;
 #[cfg(feature = "local_fs")]
 use crate::ai::agent::AnyFileContent;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::blocklist::{
+    permissions::{
+        CommandExecutionPermission, CommandExecutionPermissionDeniedReason, FileWritePermission,
+        FileWritePermissionDeniedReason,
+    },
+    BlocklistAIPermissions,
+};
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::mcp::TemplatableMCPServerManager;
 #[cfg(any(feature = "local_fs", not(target_family = "wasm")))]
 use crate::ai::paths::host_native_absolute_path;
 use crate::{
@@ -912,6 +922,161 @@ impl BlocklistAIActionExecutor {
     }
 
     #[cfg(not(target_family = "wasm"))]
+    #[allow(clippy::too_many_arguments)]
+    fn warp_permission_snapshot_for_action(
+        &self,
+        action: &AIAgentAction,
+        conversation_id: AIConversationId,
+        is_user_initiated: bool,
+        can_auto_execute: bool,
+        needs_confirmation: bool,
+        autonomous_shell_command_denied: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> WarpPermissionSnapshot {
+        let terminal_denial_reason = self.terminal_warp_denial_reason_for_action(
+            action,
+            conversation_id,
+            is_user_initiated,
+            ctx,
+        );
+
+        warp_permission_snapshot_for_policy(
+            is_user_initiated,
+            can_auto_execute,
+            needs_confirmation,
+            autonomous_shell_command_denied,
+            terminal_denial_reason,
+        )
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn terminal_warp_denial_reason_for_action(
+        &self,
+        action: &AIAgentAction,
+        conversation_id: AIConversationId,
+        is_user_initiated: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<String> {
+        match &action.action {
+            AIAgentActionType::RequestCommandOutput {
+                command,
+                is_read_only,
+                is_risky,
+                ..
+            } => {
+                if is_user_initiated {
+                    return None;
+                }
+
+                let escape_char = self
+                    .active_session
+                    .as_ref(ctx)
+                    .shell_type(ctx)
+                    .map(|shell_type| ShellFamily::from(shell_type).escape_char())?;
+                let permission = BlocklistAIPermissions::as_ref(ctx).can_autoexecute_command(
+                    &conversation_id,
+                    command,
+                    escape_char,
+                    is_read_only.unwrap_or(false),
+                    *is_risky,
+                    Some(self.terminal_view_id),
+                    ctx,
+                );
+
+                match permission {
+                    CommandExecutionPermission::Denied(
+                        CommandExecutionPermissionDeniedReason::ExplicitlyDenylisted,
+                    ) => Some("command is explicitly denylisted by Warp permissions".to_string()),
+                    _ => None,
+                }
+            }
+            AIAgentActionType::RequestFileEdits { file_edits, .. } => {
+                let paths = file_edits
+                    .iter()
+                    .filter_map(|edit| edit.file().map(PathBuf::from))
+                    .collect::<Vec<_>>();
+                match BlocklistAIPermissions::as_ref(ctx).can_write_files(
+                    &conversation_id,
+                    &paths,
+                    Some(self.terminal_view_id),
+                    ctx,
+                ) {
+                    FileWritePermission::Denied(FileWritePermissionDeniedReason::ProtectedPath) => {
+                        Some("file path is protected by Warp permissions".to_string())
+                    }
+                    _ => None,
+                }
+            }
+            AIAgentActionType::CallMCPTool {
+                server_id, name, ..
+            } => self
+                .resolve_mcp_tool_template_uuid(server_id.as_ref(), name, ctx)
+                .and_then(|server_uuid| self.mcp_denylist_denial_reason(server_uuid, ctx)),
+            AIAgentActionType::ReadMCPResource {
+                server_id,
+                name,
+                uri,
+            } => self
+                .resolve_mcp_resource_template_uuid(server_id.as_ref(), name, uri.as_deref(), ctx)
+                .and_then(|server_uuid| self.mcp_denylist_denial_reason(server_uuid, ctx)),
+            _ => None,
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn resolve_mcp_tool_template_uuid(
+        &self,
+        server_id: Option<&uuid::Uuid>,
+        name: &str,
+        ctx: &AppContext,
+    ) -> Option<uuid::Uuid> {
+        let templatable_manager = TemplatableMCPServerManager::as_ref(ctx);
+        server_id
+            .and_then(|id| templatable_manager.get_template_uuid(*id))
+            .or_else(|| {
+                templatable_manager
+                    .server_from_tool(name.to_string())
+                    .copied()
+                    .and_then(|installation_uuid| {
+                        templatable_manager.get_template_uuid(installation_uuid)
+                    })
+            })
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn resolve_mcp_resource_template_uuid(
+        &self,
+        server_id: Option<&uuid::Uuid>,
+        name: &str,
+        uri: Option<&str>,
+        ctx: &AppContext,
+    ) -> Option<uuid::Uuid> {
+        let templatable_manager = TemplatableMCPServerManager::as_ref(ctx);
+        server_id
+            .and_then(|id| templatable_manager.get_template_uuid(*id))
+            .or_else(|| {
+                templatable_manager
+                    .server_from_resource(name, uri)
+                    .copied()
+                    .and_then(|installation_uuid| {
+                        templatable_manager.get_template_uuid(installation_uuid)
+                    })
+            })
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn mcp_denylist_denial_reason(
+        &self,
+        server_uuid: uuid::Uuid,
+        ctx: &AppContext,
+    ) -> Option<String> {
+        BlocklistAIPermissions::as_ref(ctx)
+            .get_mcp_denylist(ctx, Some(self.terminal_view_id))
+            .contains(&server_uuid)
+            .then(|| "MCP server is denylisted by Warp permissions".to_string())
+    }
+
+    #[cfg(not(target_family = "wasm"))]
     fn preprocess_request_file_edits_after_policy(
         &mut self,
         input: PreprocessActionInput,
@@ -940,8 +1105,15 @@ impl BlocklistAIActionExecutor {
             },
             ctx,
         );
-        let warp_permission =
-            warp_permission_snapshot_for_policy(false, can_auto_execute, !can_auto_execute, false);
+        let warp_permission = self.warp_permission_snapshot_for_action(
+            input.action,
+            input.conversation_id,
+            false,
+            can_auto_execute,
+            !can_auto_execute,
+            false,
+            ctx,
+        );
         let event = self.agent_policy_event(
             input.action,
             input.conversation_id,
@@ -1049,11 +1221,14 @@ impl BlocklistAIActionExecutor {
             return Some(PolicyPreflightState::Pending);
         }
 
-        let warp_permission = warp_permission_snapshot_for_policy(
+        let warp_permission = self.warp_permission_snapshot_for_action(
+            action,
+            conversation_id,
             is_user_initiated,
             can_auto_execute,
             needs_confirmation,
             autonomous_shell_command_denied,
+            ctx,
         );
         let event = self.agent_policy_event(
             action,
@@ -1273,7 +1448,12 @@ fn warp_permission_snapshot_for_policy(
     can_auto_execute: bool,
     needs_confirmation: bool,
     autonomous_shell_command_denied: bool,
+    terminal_denial_reason: Option<String>,
 ) -> WarpPermissionSnapshot {
+    if let Some(reason) = terminal_denial_reason {
+        return WarpPermissionSnapshot::deny(Some(reason));
+    }
+
     if autonomous_shell_command_denied {
         return WarpPermissionSnapshot::deny(Some(
             "autonomous command execution was not allowed by Warp permissions".to_string(),

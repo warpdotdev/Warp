@@ -38,12 +38,12 @@ pub enum AgentPolicyHookTransport {
     Stdio {
         command: String,
         args: Vec<String>,
-        env: BTreeMap<String, RedactedSettingValue>,
+        env: BTreeMap<String, AgentPolicyHookSecretValue>,
         working_directory: Option<PathBuf>,
     },
     Http {
         url: String,
-        headers: BTreeMap<String, RedactedSettingValue>,
+        headers: BTreeMap<String, AgentPolicyHookSecretValue>,
     },
 }
 
@@ -171,7 +171,7 @@ Suggested storage strategy:
 
 1. Add optional `agent_policy_hooks` to `AIExecutionProfile`.
 2. Keep default disabled so old profiles deserialize unchanged.
-3. Redact secret-like config values the same way MCP server config redacts environment variables when shared.
+3. Persist hook credentials only as environment-variable references such as `{ "env": "WARP_POLICY_TOKEN" }`; do not store raw header, environment, or URL credentials in synced profile JSON.
 4. Surface minimal settings UI after the engine exists: enabled toggle, hook list, timeout, unavailable behavior, and latest error.
 
 ### 7. Audit events
@@ -244,8 +244,9 @@ If HTTP is included in MVP, use the same JSON body and expect the same JSON resp
 - POST to the configured URL.
 - Include an idempotency key header derived from `event_id`.
 - Require HTTPS except for localhost.
+- Reject embedded URL credentials such as `https://user:pass@example.com`; credentials must be supplied through configured header environment-variable references.
 - Apply the same timeout and unavailable behavior.
-- Redact headers in settings and logs.
+- Redact resolved header credentials in settings, logs, hook errors, and hook-returned reasons.
 
 If this is too much for MVP, defer HTTP and keep the JSON schema transport-independent.
 
