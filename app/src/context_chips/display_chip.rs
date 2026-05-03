@@ -1452,7 +1452,7 @@ impl DisplayChip {
         };
 
         let mut stack = Stack::new().with_child(hoverable);
-        if popup_open {
+        if popup_open && !is_cli_agent_active {
             let positioning = self.menu_positioning_provider.menu_position(app);
             let (parent_anchor, child_anchor) = Self::positioning_to_anchors(positioning);
             let offset = match positioning {
