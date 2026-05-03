@@ -87,6 +87,38 @@ fn config_rejects_non_https_remote_http_hooks() {
 }
 
 #[test]
+fn config_serialization_omits_hook_secret_values() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [
+            {
+                "name": "stdio-guard",
+                "transport": "stdio",
+                "command": "guard",
+                "env": { "API_TOKEN": "super-secret-token" }
+            },
+            {
+                "name": "http-guard",
+                "transport": "http",
+                "url": "https://example.com/policy",
+                "headers": { "authorization": "Bearer super-secret-token" }
+            }
+        ]
+    }))
+    .unwrap();
+
+    let value = serde_json::to_value(&config).unwrap();
+    let stdio_hook = value["before_action"][0].as_object().unwrap();
+    let http_hook = value["before_action"][1].as_object().unwrap();
+    let serialized = value.to_string();
+
+    assert!(!stdio_hook.contains_key("env"));
+    assert!(!http_hook.contains_key("headers"));
+    assert!(!serialized.contains("super-secret-token"));
+    assert!(!serialized.contains("Bearer"));
+}
+
+#[test]
 fn event_serializes_redacted_command_shape() {
     let event = AgentPolicyEvent::execute_command(
         "conv_123",

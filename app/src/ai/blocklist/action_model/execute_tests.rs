@@ -200,8 +200,39 @@ mod policy_hooks {
         assert!(!should_consume_completed_policy_preflight(&unconfirmed));
 
         let confirmed = policy_preflight_state_from_decision(&action, &decision, true);
-        assert_eq!(confirmed, PolicyPreflightState::Allowed);
+        assert_eq!(
+            confirmed,
+            PolicyPreflightState::Allowed {
+                skip_confirmation: false
+            }
+        );
         assert!(should_consume_completed_policy_preflight(&confirmed));
+    }
+
+    #[test]
+    fn hook_autoapproval_skips_warp_confirmation() {
+        let action = command_action("rm -rf target");
+        let decision = AgentPolicyEffectiveDecision {
+            decision: AgentPolicyDecisionKind::Allow,
+            reason: Some("approved by hook".to_string()),
+            warp_permission: WarpPermissionSnapshot::ask(Some("AlwaysAsk".to_string())),
+            hook_results: vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Allow,
+                reason: Some("approved by hook".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+        };
+
+        let state = policy_preflight_state_from_decision(&action, &decision, false);
+
+        assert_eq!(
+            state,
+            PolicyPreflightState::Allowed {
+                skip_confirmation: true
+            }
+        );
     }
 
     #[test]

@@ -126,14 +126,14 @@ pub(crate) enum AgentPolicyHookTransport {
         command: String,
         #[serde(default)]
         args: Vec<String>,
-        #[serde(default)]
+        #[serde(default, skip_serializing)]
         env: BTreeMap<String, AgentPolicyHookSecretValue>,
         #[serde(default)]
         working_directory: Option<PathBuf>,
     },
     Http {
         url: String,
-        #[serde(default)]
+        #[serde(default, skip_serializing)]
         headers: BTreeMap<String, AgentPolicyHookSecretValue>,
     },
 }

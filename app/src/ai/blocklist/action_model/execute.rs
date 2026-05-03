@@ -32,7 +32,7 @@ use create_documents::CreateDocumentsExecutor;
 use edit_documents::EditDocumentsExecutor;
 use fetch_conversation::FetchConversationExecutor;
 use file_glob::FileGlobExecutor;
-use futures::{future::BoxFuture, FutureExt};
+use futures::{channel::oneshot, future::BoxFuture, FutureExt};
 use grep::GrepExecutor;
 use parking_lot::FairMutex;
 use read_documents::ReadDocumentsExecutor;
@@ -113,10 +113,10 @@ use crate::{
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::policy_hooks::{
-    AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision, AgentPolicyEvent,
-    AgentPolicyHookEngine, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
-    PolicyReadFilesAction, PolicyReadMcpResourceAction, PolicyWriteFilesAction,
-    WarpPermissionSnapshot,
+    decision::WarpPermissionDecisionKind, AgentPolicyAction, AgentPolicyDecisionKind,
+    AgentPolicyEffectiveDecision, AgentPolicyEvent, AgentPolicyHookEngine, PolicyCallMcpToolAction,
+    PolicyExecuteCommandAction, PolicyReadFilesAction, PolicyReadMcpResourceAction,
+    PolicyWriteFilesAction, WarpPermissionSnapshot,
 };
 
 /// Types of actions that can be executed in parallel.
@@ -194,7 +194,7 @@ enum AnyActionExecution {
 #[derive(Debug, PartialEq)]
 enum PolicyPreflightState {
     Pending,
-    Allowed,
+    Allowed { skip_confirmation: bool },
     NeedsConfirmation(Option<String>),
     Denied(AIAgentActionResultType),
 }
@@ -497,6 +497,11 @@ impl BlocklistAIActionExecutor {
             conversation_id,
         };
 
+        #[cfg(not(target_family = "wasm"))]
+        if let Some(preprocess) = self.preprocess_request_file_edits_after_policy(input, ctx) {
+            return preprocess;
+        }
+
         match &action.action {
             AIAgentActionType::RequestCommandOutput { .. }
             | AIAgentActionType::WriteToLongRunningShellCommand { .. }
@@ -609,6 +614,7 @@ impl BlocklistAIActionExecutor {
         let needs_confirmation = !(is_user_initiated
             || can_auto_execute
             || (is_agent_autonomous && action.action.is_request_command_output()));
+        let mut skip_confirmation = false;
         #[cfg(not(target_family = "wasm"))]
         if let Some(preflight_state) = self.start_policy_preflight_if_needed(
             &action,
@@ -649,10 +655,14 @@ impl BlocklistAIActionExecutor {
 
                     return TryExecuteResult::ExecutedSync;
                 }
-                PolicyPreflightState::Allowed => {}
+                PolicyPreflightState::Allowed {
+                    skip_confirmation: policy_skip_confirmation,
+                } => {
+                    skip_confirmation = policy_skip_confirmation;
+                }
             }
         }
-        if needs_confirmation {
+        if needs_confirmation && !skip_confirmation {
             return TryExecuteResult::NotExecuted {
                 action: Box::new(action),
                 reason: NotExecutedReason::NeedsConfirmation {
@@ -881,6 +891,89 @@ impl BlocklistAIActionExecutor {
                 conversation_id,
             },
             ctx,
+        )
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn preprocess_request_file_edits_after_policy(
+        &self,
+        input: PreprocessActionInput,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<BoxFuture<'static, ()>> {
+        if !matches!(
+            input.action.action,
+            AIAgentActionType::RequestFileEdits { .. }
+        ) {
+            return None;
+        }
+
+        let active_profile =
+            AIExecutionProfilesModel::as_ref(ctx).active_profile(Some(self.terminal_view_id), ctx);
+        let permissions_profile = crate::ai::blocklist::BlocklistAIPermissions::as_ref(ctx)
+            .permissions_profile_for_id(ctx, *active_profile.id());
+        let config = permissions_profile.agent_policy_hooks;
+        if !config.is_active() {
+            return None;
+        }
+
+        let can_auto_execute = self.should_autoexecute(
+            ExecuteActionInput {
+                action: input.action,
+                conversation_id: input.conversation_id,
+            },
+            ctx,
+        );
+        let warp_permission =
+            warp_permission_snapshot_for_policy(false, can_auto_execute, !can_auto_execute, false);
+        let event = self.agent_policy_event(
+            input.action,
+            input.conversation_id,
+            Some(active_profile.id().to_string()),
+            warp_permission.clone(),
+            ctx,
+        )?;
+
+        let action = input.action.clone();
+        let action_id = action.id.clone();
+        let conversation_id = input.conversation_id;
+        let (done_tx, done_rx) = oneshot::channel();
+        let engine = AgentPolicyHookEngine::new(config);
+
+        ctx.spawn(
+            async move { engine.preflight(event, warp_permission).await },
+            move |me, decision, ctx| {
+                let denied = matches!(
+                    decision.decision,
+                    AgentPolicyDecisionKind::Deny | AgentPolicyDecisionKind::Unknown
+                );
+                me.completed_policy_preflights
+                    .insert(action_id.clone(), decision);
+
+                if denied {
+                    let _ = done_tx.send(());
+                    return;
+                }
+
+                let preprocess = me.request_file_edits_executor.update(ctx, |executor, ctx| {
+                    executor.preprocess_action(
+                        PreprocessActionInput {
+                            action: &action,
+                            conversation_id,
+                        },
+                        ctx,
+                    )
+                });
+                ctx.spawn(preprocess, move |_me, _, _ctx| {
+                    let _ = done_tx.send(());
+                });
+            },
+        );
+
+        Some(
+            async {
+                let _ = done_rx.await;
+            }
+            .boxed(),
         )
     }
 
@@ -1301,8 +1394,12 @@ fn policy_preflight_state_from_decision(
     is_user_initiated: bool,
 ) -> PolicyPreflightState {
     match decision.decision {
-        AgentPolicyDecisionKind::Allow => PolicyPreflightState::Allowed,
-        AgentPolicyDecisionKind::Ask if is_user_initiated => PolicyPreflightState::Allowed,
+        AgentPolicyDecisionKind::Allow => PolicyPreflightState::Allowed {
+            skip_confirmation: decision.warp_permission.decision == WarpPermissionDecisionKind::Ask,
+        },
+        AgentPolicyDecisionKind::Ask if is_user_initiated => PolicyPreflightState::Allowed {
+            skip_confirmation: false,
+        },
         AgentPolicyDecisionKind::Ask => {
             PolicyPreflightState::NeedsConfirmation(decision.reason.clone())
         }
