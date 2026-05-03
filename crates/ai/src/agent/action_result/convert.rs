@@ -66,8 +66,7 @@ impl TryFrom<RequestCommandOutputResult> for api::request::input::tool_call_resu
             RequestCommandOutputResult::CancelledBeforeExecution => {
                 Err(ConvertToAPITypeError::Ignore)
             }
-            RequestCommandOutputResult::Denylisted { command }
-            | RequestCommandOutputResult::PolicyDenied { command, .. } =>
+            RequestCommandOutputResult::Denylisted { command } =>
             {
                 #[allow(deprecated)]
                 Ok(
@@ -82,6 +81,23 @@ impl TryFrom<RequestCommandOutputResult> for api::request::input::tool_call_resu
                                         api::permission_denied::Reason::DenylistedCommand(()),
                                     ),
                                 },
+                            )),
+                        },
+                    ),
+                )
+            }
+            RequestCommandOutputResult::PolicyDenied { command, reason } => {
+                // The current MAA schema only has a denylisted-command PermissionDenied reason.
+                // Leave it unset so host policy denials are not mislabeled.
+                #[allow(deprecated)]
+                Ok(
+                    api::request::input::tool_call_result::Result::RunShellCommand(
+                        api::RunShellCommandResult {
+                            command,
+                            output: format!("Command blocked by host policy: {reason}"),
+                            exit_code: Default::default(),
+                            result: Some(api::run_shell_command_result::Result::PermissionDenied(
+                                api::PermissionDenied { reason: None },
                             )),
                         },
                     ),

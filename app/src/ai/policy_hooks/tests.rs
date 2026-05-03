@@ -302,6 +302,88 @@ async fn stdio_engine_maps_malformed_response_to_unavailable_policy() {
     );
 }
 
+#[cfg(all(unix, not(target_family = "wasm")))]
+#[tokio::test]
+async fn stdio_engine_rejects_oversized_stdout() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "on_unavailable": "deny",
+        "before_action": [{
+            "name": "noisy-guard",
+            "transport": "stdio",
+            "command": "sh",
+            "args": ["-c", "cat >/dev/null; dd if=/dev/zero bs=70000 count=1 2>/dev/null"],
+            "timeout_ms": 1000
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("ls", "ls", Some(true), Some(false)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    assert_eq!(decision.decision, AgentPolicyDecisionKind::Deny);
+    assert_eq!(
+        decision.hook_results[0].error,
+        Some(AgentPolicyHookErrorKind::MalformedResponse)
+    );
+    assert!(decision.hook_results[0]
+        .reason
+        .as_deref()
+        .unwrap()
+        .contains("stdout exceeded"));
+}
+
+#[cfg(all(unix, not(target_family = "wasm")))]
+#[tokio::test]
+async fn stdio_engine_redacts_configured_secret_stderr() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "on_unavailable": "deny",
+        "before_action": [{
+            "name": "failing-guard",
+            "transport": "stdio",
+            "command": "sh",
+            "args": ["-c", "cat >/dev/null; printf '%s\\n' \"$API_TOKEN\" >&2; exit 42"],
+            "env": { "API_TOKEN": "super-secret-token" },
+            "timeout_ms": 1000
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("ls", "ls", Some(true), Some(false)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    let reason = decision.hook_results[0].reason.as_deref().unwrap();
+    assert_eq!(
+        decision.hook_results[0].error,
+        Some(AgentPolicyHookErrorKind::NonZeroExit)
+    );
+    assert!(reason.contains("<redacted>"));
+    assert!(!reason.contains("super-secret-token"));
+}
+
 #[cfg(not(target_family = "wasm"))]
 #[tokio::test]
 async fn http_engine_can_deny_before_action() {
@@ -354,6 +436,55 @@ async fn http_engine_can_deny_before_action() {
         decision.hook_results[0].external_audit_id.as_deref(),
         Some("audit_http_1")
     );
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[tokio::test]
+async fn http_engine_rejects_oversized_response_body() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("POST", "/policy")
+        .with_status(200)
+        .with_body(vec![b'x'; 70_000])
+        .create_async()
+        .await;
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "on_unavailable": "deny",
+        "before_action": [{
+            "name": "http-guard",
+            "transport": "http",
+            "url": format!("{}/policy", server.url()),
+            "timeout_ms": 1000
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("rm -rf .", "rm -rf .", Some(false), Some(true)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    mock.assert_async().await;
+    assert_eq!(decision.decision, AgentPolicyDecisionKind::Deny);
+    assert_eq!(
+        decision.hook_results[0].error,
+        Some(AgentPolicyHookErrorKind::MalformedResponse)
+    );
+    assert!(decision.hook_results[0]
+        .reason
+        .as_deref()
+        .unwrap()
+        .contains("response exceeded"));
 }
 
 #[cfg(all(unix, not(target_family = "wasm")))]

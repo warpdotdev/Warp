@@ -114,7 +114,7 @@ use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::policy_hooks::{
     AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision, AgentPolicyEvent,
-    AgentPolicyHookEngine, PolicyCallMcpToolAction, PolicyDiffStats, PolicyExecuteCommandAction,
+    AgentPolicyHookEngine, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
     PolicyReadFilesAction, PolicyReadMcpResourceAction, PolicyWriteFilesAction,
     WarpPermissionSnapshot,
 };
@@ -1226,14 +1226,9 @@ fn agent_policy_action(
                 .filter_map(|edit| edit.file())
                 .map(|file| policy_path(file, shell, current_working_directory))
                 .collect::<Vec<_>>();
-            let diff_stats = PolicyDiffStats {
-                files_changed: paths.len(),
-                additions: 0,
-                deletions: 0,
-            };
             Some(AgentPolicyAction::WriteFiles(PolicyWriteFilesAction {
                 paths,
-                diff_stats: Some(diff_stats),
+                diff_stats: None,
             }))
         }
         AIAgentActionType::CallMCPTool {

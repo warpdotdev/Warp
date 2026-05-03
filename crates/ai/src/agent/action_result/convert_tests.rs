@@ -28,3 +28,32 @@ fn ask_user_question_skipped_by_auto_approve_converts_to_skipped_answers() {
         Some(AskUserQuestionAnswer::Skipped(()))
     ));
 }
+
+#[test]
+fn policy_denied_shell_result_preserves_policy_reason_without_denylist_label() {
+    let result = api::request::input::tool_call_result::Result::try_from(
+        RequestCommandOutputResult::PolicyDenied {
+            command: "rm -rf target".to_string(),
+            reason: "blocked by org policy".to_string(),
+        },
+    )
+    .unwrap();
+
+    let api::request::input::tool_call_result::Result::RunShellCommand(result) = result else {
+        panic!("expected run_shell_command result");
+    };
+    let Some(api::run_shell_command_result::Result::PermissionDenied(permission_denied)) =
+        result.result
+    else {
+        panic!("expected permission_denied result");
+    };
+
+    assert_eq!(result.command, "rm -rf target");
+    #[allow(deprecated)]
+    let output = &result.output;
+    assert_eq!(
+        output.as_str(),
+        "Command blocked by host policy: blocked by org policy"
+    );
+    assert!(permission_denied.reason.is_none());
+}

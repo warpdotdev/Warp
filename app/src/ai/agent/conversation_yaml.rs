@@ -551,6 +551,12 @@ fn write_tool_call_result_content(out: &mut String, result: &ToolCallResultType)
                     }
                     Result::PermissionDenied(_) => {
                         out.push_str("status: permission_denied\n");
+                        #[allow(deprecated)]
+                        let output = &r.output;
+                        if !output.is_empty() {
+                            out.push_str("reason: |\n");
+                            write_block_scalar(out, output);
+                        }
                     }
                 }
             }

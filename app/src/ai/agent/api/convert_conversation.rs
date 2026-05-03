@@ -591,9 +591,30 @@ pub(crate) fn convert_tool_call_result_to_input(
                     is_alt_screen_active: snapshot.is_alt_screen_active,
                 },
                 Some(api::run_shell_command_result::Result::PermissionDenied(
-                    api::PermissionDenied { .. },
-                ))
-                | None => {
+                    api::PermissionDenied { reason },
+                )) => match reason {
+                    Some(api::permission_denied::Reason::DenylistedCommand(())) => {
+                        RequestCommandOutputResult::Denylisted {
+                            command: result.command.clone(),
+                        }
+                    }
+                    None => {
+                        #[allow(deprecated)]
+                        let output = result.output.as_str();
+                        let reason = output
+                            .strip_prefix("Command blocked by host policy: ")
+                            .unwrap_or(output);
+                        if reason.is_empty() {
+                            RequestCommandOutputResult::CancelledBeforeExecution
+                        } else {
+                            RequestCommandOutputResult::PolicyDenied {
+                                command: result.command.clone(),
+                                reason: reason.to_string(),
+                            }
+                        }
+                    }
+                },
+                None => {
                     // If no result is present, treat as cancelled
                     RequestCommandOutputResult::CancelledBeforeExecution
                 }

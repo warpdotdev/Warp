@@ -1,24 +1,31 @@
-use std::time::Duration;
+use std::{collections::BTreeMap, process::ExitStatus, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use command::{r#async::Command, Stdio};
-use futures_lite::io::AsyncWriteExt;
+use futures::StreamExt as _;
+use futures_lite::{
+    future,
+    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
+};
 use reqwest::header::CONTENT_TYPE;
 use warpui::r#async::FutureExt as _;
 
 use super::{
     audit::write_audit_record,
-    config::{AgentPolicyHook, AgentPolicyHookConfig, AgentPolicyHookTransport},
+    config::{
+        AgentPolicyHook, AgentPolicyHookConfig, AgentPolicyHookSecretValue,
+        AgentPolicyHookTransport,
+    },
     decision::{
         compose_policy_decisions, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision,
         AgentPolicyHookErrorKind, AgentPolicyHookEvaluation, AgentPolicyHookResponse,
         WarpPermissionSnapshot,
     },
     event::{AgentPolicyEvent, AGENT_POLICY_SCHEMA_VERSION},
-    redaction::truncate_for_policy,
+    redaction::redact_sensitive_text_for_policy,
 };
 
-const MAX_HOOK_STDOUT_BYTES: usize = 64 * 1024;
+const MAX_HOOK_OUTPUT_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone)]
 pub(crate) struct AgentPolicyHookEngine {
@@ -165,35 +172,60 @@ impl AgentPolicyHookEngine {
         drop(stdin);
 
         let timeout = Duration::from_millis(self.config.hook_timeout_ms(hook));
-        let output = child
-            .output()
-            .with_timeout(timeout)
-            .await
-            .map_err(|_| AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::Timeout,
-                detail: format!("policy hook timed out after {timeout:?}"),
-            })?
-            .map_err(|source| AgentPolicyHookFailure {
+        let output = match async {
+            let stdout = child.stdout.take().ok_or_else(|| AgentPolicyHookFailure {
                 kind: AgentPolicyHookErrorKind::SpawnFailed,
-                detail: format!("failed to wait for policy hook: {source}"),
+                detail: "policy hook stdout was not available".to_string(),
+            })?;
+            let stderr = child.stderr.take().ok_or_else(|| AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::SpawnFailed,
+                detail: "policy hook stderr was not available".to_string(),
             })?;
 
+            let (stdout, stderr) = future::try_zip(
+                read_capped_output(stdout, "stdout"),
+                read_capped_output(stderr, "stderr"),
+            )
+            .await?;
+            let status = child
+                .status()
+                .await
+                .map_err(|source| AgentPolicyHookFailure {
+                    kind: AgentPolicyHookErrorKind::SpawnFailed,
+                    detail: format!("failed to wait for policy hook: {source}"),
+                })?;
+
+            Ok::<_, AgentPolicyHookFailure>(HookProcessOutput {
+                status,
+                stdout,
+                stderr,
+            })
+        }
+        .with_timeout(timeout)
+        .await
+        {
+            Err(_) => {
+                let _ = child.kill();
+                return Err(AgentPolicyHookFailure {
+                    kind: AgentPolicyHookErrorKind::Timeout,
+                    detail: format!("policy hook timed out after {timeout:?}"),
+                });
+            }
+            Ok(Err(failure)) => {
+                let _ = child.kill();
+                return Err(failure);
+            }
+            Ok(Ok(output)) => output,
+        };
+
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = redact_hook_stderr(&output.stderr, env);
             return Err(AgentPolicyHookFailure {
                 kind: AgentPolicyHookErrorKind::NonZeroExit,
                 detail: format!(
                     "policy hook exited with {}; stderr={}",
-                    output.status,
-                    truncate_for_policy(stderr.trim())
+                    output.status, stderr,
                 ),
-            });
-        }
-
-        if output.stdout.len() > MAX_HOOK_STDOUT_BYTES {
-            return Err(AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::MalformedResponse,
-                detail: format!("policy hook stdout exceeded {MAX_HOOK_STDOUT_BYTES} bytes"),
             });
         }
 
@@ -255,25 +287,13 @@ impl AgentPolicyHookEngine {
             });
         }
 
-        let response_bytes = response
-            .bytes()
+        let response_bytes = read_capped_http_response(response)
             .with_timeout(timeout)
             .await
             .map_err(|_| AgentPolicyHookFailure {
                 kind: AgentPolicyHookErrorKind::Timeout,
                 detail: format!("policy hook response timed out after {timeout:?}"),
-            })?
-            .map_err(|source| AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::HttpRequestFailed,
-                detail: format!("failed to read HTTP policy hook response: {source}"),
-            })?;
-
-        if response_bytes.len() > MAX_HOOK_STDOUT_BYTES {
-            return Err(AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::MalformedResponse,
-                detail: format!("policy hook response exceeded {MAX_HOOK_STDOUT_BYTES} bytes"),
-            });
-        }
+            })??;
 
         parse_hook_response(&response_bytes).map_err(|source| AgentPolicyHookFailure {
             kind: AgentPolicyHookErrorKind::MalformedResponse,
@@ -292,6 +312,94 @@ fn audit_decision(event: &AgentPolicyEvent, decision: &AgentPolicyEffectiveDecis
 struct AgentPolicyHookFailure {
     kind: AgentPolicyHookErrorKind,
     detail: String,
+}
+
+#[derive(Debug)]
+struct HookProcessOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+async fn read_capped_output<R>(
+    mut reader: R,
+    stream_name: &'static str,
+) -> Result<Vec<u8>, AgentPolicyHookFailure>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut output = Vec::new();
+    let mut chunk = [0_u8; 8192];
+
+    loop {
+        let read = reader
+            .read(&mut chunk)
+            .await
+            .map_err(|source| AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::SpawnFailed,
+                detail: format!("failed to read policy hook {stream_name}: {source}"),
+            })?;
+        if read == 0 {
+            break;
+        }
+
+        if output.len().saturating_add(read) > MAX_HOOK_OUTPUT_BYTES {
+            return Err(AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::MalformedResponse,
+                detail: format!("policy hook {stream_name} exceeded {MAX_HOOK_OUTPUT_BYTES} bytes"),
+            });
+        }
+
+        output.extend_from_slice(&chunk[..read]);
+    }
+
+    Ok(output)
+}
+
+async fn read_capped_http_response(
+    response: reqwest::Response,
+) -> Result<Vec<u8>, AgentPolicyHookFailure> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_HOOK_OUTPUT_BYTES as u64)
+    {
+        return Err(AgentPolicyHookFailure {
+            kind: AgentPolicyHookErrorKind::MalformedResponse,
+            detail: format!("policy hook response exceeded {MAX_HOOK_OUTPUT_BYTES} bytes"),
+        });
+    }
+
+    let mut output = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|source| AgentPolicyHookFailure {
+            kind: AgentPolicyHookErrorKind::HttpRequestFailed,
+            detail: format!("failed to read HTTP policy hook response: {source}"),
+        })?;
+
+        if output.len().saturating_add(chunk.len()) > MAX_HOOK_OUTPUT_BYTES {
+            return Err(AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::MalformedResponse,
+                detail: format!("policy hook response exceeded {MAX_HOOK_OUTPUT_BYTES} bytes"),
+            });
+        }
+
+        output.extend_from_slice(&chunk);
+    }
+
+    Ok(output)
+}
+
+fn redact_hook_stderr(stderr: &[u8], env: &BTreeMap<String, AgentPolicyHookSecretValue>) -> String {
+    let stderr = String::from_utf8_lossy(stderr);
+    let mut redacted = stderr.trim().to_string();
+    for value in env.values() {
+        let secret = value.as_str();
+        if !secret.is_empty() {
+            redacted = redacted.replace(secret, "<redacted>");
+        }
+    }
+    redact_sensitive_text_for_policy(&redacted)
 }
 
 fn serialize_event(event: &AgentPolicyEvent) -> Result<Vec<u8>> {

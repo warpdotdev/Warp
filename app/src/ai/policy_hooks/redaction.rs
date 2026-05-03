@@ -21,10 +21,14 @@ static COMMON_TOKEN_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 pub(crate) fn redact_command_for_policy(command: &str) -> String {
-    let command = SECRET_ASSIGNMENT_RE.replace_all(command, "$1=<redacted>");
-    let command = AUTHORIZATION_BEARER_RE.replace_all(&command, "$1<redacted>");
-    let command = COMMON_TOKEN_RE.replace_all(&command, "<redacted>");
-    truncate_for_policy(&command)
+    redact_sensitive_text_for_policy(command)
+}
+
+pub(crate) fn redact_sensitive_text_for_policy(value: &str) -> String {
+    let value = SECRET_ASSIGNMENT_RE.replace_all(value, "$1=<redacted>");
+    let value = AUTHORIZATION_BEARER_RE.replace_all(&value, "$1<redacted>");
+    let value = COMMON_TOKEN_RE.replace_all(&value, "<redacted>");
+    truncate_for_policy(&value)
 }
 
 pub(crate) fn mcp_argument_keys(arguments: &serde_json::Value) -> Vec<String> {

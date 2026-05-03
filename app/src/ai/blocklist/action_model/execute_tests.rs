@@ -105,20 +105,20 @@ mod policy_hooks {
             agent::task::TaskId,
             agent::{
                 AIAgentAction, AIAgentActionId, AIAgentActionResultType, AIAgentActionType,
-                RequestCommandOutputResult,
+                FileEdit, RequestCommandOutputResult,
             },
             policy_hooks::{
                 decision::{
                     AgentPolicyHookEvaluation, WarpPermissionDecisionKind, WarpPermissionSnapshot,
                 },
-                AgentPolicyDecisionKind, AgentPolicyEffectiveDecision,
+                AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision,
             },
         },
         terminal::shell::ShellType,
     };
 
     use super::super::{
-        normalize_command_for_policy, policy_denied_action_result,
+        agent_policy_action, normalize_command_for_policy, policy_denied_action_result,
         warp_permission_snapshot_for_policy,
     };
 
@@ -173,6 +173,31 @@ mod policy_hooks {
         let snapshot = warp_permission_snapshot_for_policy(false, false, false, true);
 
         assert_eq!(snapshot.decision, WarpPermissionDecisionKind::Deny);
+    }
+
+    #[test]
+    fn write_file_policy_action_omits_unavailable_diff_stats() {
+        let action = AIAgentAction {
+            id: AIAgentActionId::from("action_1".to_string()),
+            task_id: TaskId::new("task_1".to_string()),
+            action: AIAgentActionType::RequestFileEdits {
+                file_edits: vec![FileEdit::Create {
+                    file: Some("src/lib.rs".to_string()),
+                    content: Some("fn main() {}\n".to_string()),
+                }],
+                title: None,
+            },
+            requires_result: true,
+        };
+
+        let Some(AgentPolicyAction::WriteFiles(write_files)) =
+            agent_policy_action(&action, None, &None, &None)
+        else {
+            panic!("expected write-files policy action");
+        };
+
+        assert_eq!(write_files.paths.len(), 1);
+        assert_eq!(write_files.diff_stats, None);
     }
 
     #[test]

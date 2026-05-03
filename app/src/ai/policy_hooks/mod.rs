@@ -14,9 +14,8 @@ pub(crate) use decision::{
 #[cfg(not(target_family = "wasm"))]
 pub(crate) use engine::AgentPolicyHookEngine;
 pub(crate) use event::{
-    AgentPolicyAction, AgentPolicyEvent, PolicyCallMcpToolAction, PolicyDiffStats,
-    PolicyExecuteCommandAction, PolicyReadFilesAction, PolicyReadMcpResourceAction,
-    PolicyWriteFilesAction,
+    AgentPolicyAction, AgentPolicyEvent, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
+    PolicyReadFilesAction, PolicyReadMcpResourceAction, PolicyWriteFilesAction,
 };
 
 #[cfg(test)]
