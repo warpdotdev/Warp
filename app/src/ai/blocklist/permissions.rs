@@ -206,6 +206,7 @@ impl BlocklistAIPermissions {
             coding_model: profile_data.coding_model.clone(),
             cli_agent_model: profile_data.cli_agent_model.clone(),
             computer_use_model: profile_data.computer_use_model.clone(),
+            context_window_limit: profile_data.context_window_limit,
             autosync_plans_to_warp_drive: profile_data.autosync_plans_to_warp_drive,
             web_search_enabled: profile_data.web_search_enabled,
         }
@@ -397,18 +398,35 @@ impl BlocklistAIPermissions {
         profile_id: ClientProfileId,
     ) -> Vec<AgentModeCommandExecutionPredicate> {
         let autonomy_settings = Self::workspace_autonomy_settings(ctx);
+        let profiles_model = AIExecutionProfilesModel::as_ref(ctx);
+        let user_denylist = profiles_model
+            .get_profile_by_id(profile_id, ctx)
+            .unwrap_or_else(|| profiles_model.default_profile(ctx))
+            .data()
+            .command_denylist
+            .clone();
 
+        match autonomy_settings.execute_commands_denylist {
+            Some(org_denylist) => {
+                let mut merged = org_denylist;
+                for item in user_denylist {
+                    if !merged.contains(&item) {
+                        merged.push(item);
+                    }
+                }
+                merged
+            }
+            None => user_denylist,
+        }
+    }
+
+    pub fn get_org_execute_commands_denylist(
+        ctx: &AppContext,
+    ) -> Vec<AgentModeCommandExecutionPredicate> {
+        let autonomy_settings = Self::workspace_autonomy_settings(ctx);
         autonomy_settings
             .execute_commands_denylist
-            .unwrap_or_else(|| {
-                let profiles_model = AIExecutionProfilesModel::as_ref(ctx);
-                profiles_model
-                    .get_profile_by_id(profile_id, ctx)
-                    .unwrap_or_else(|| profiles_model.default_profile(ctx))
-                    .data()
-                    .command_denylist
-                    .clone()
-            })
+            .unwrap_or_default()
     }
 
     /// Returns a denylist of command regexes that AM should not auto-execute.

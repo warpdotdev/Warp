@@ -1187,6 +1187,27 @@ impl CurrentPrompt {
                 }
                 RefreshConfig::Periodically { .. } => {
                     if self.is_updated_externally(chip_kind) {
+                        // For chips updated externally (e.g. by the per-repo
+                        // git status filesystem watcher), avoid running the
+                        // periodic shell-based generator. Doing so can briefly
+                        // overwrite the structured watcher value with one that
+                        // uses different semantics (for example, the
+                        // `GitDiffStats` shell fallback runs `git diff
+                        // --shortstat HEAD`, which excludes untracked files,
+                        // whereas the watcher counts untracked files as
+                        // changes), causing the chip to flicker between the
+                        // tracked-only count and the all-files count when
+                        // untracked files are present.
+                        //
+                        // If a chip provides an `initial_value_generator` that
+                        // sources from the prompt context (rather than running
+                        // a shell command), use it for a fast initial value
+                        // until the watcher emits a metadata-changed event.
+                        // Otherwise, proactively pull from the attached
+                        // `GitRepoStatusModel` so the chip reflects the latest
+                        // structured metadata even before the next watcher
+                        // event fires (and the periodic shell timer is
+                        // cancelled on attach in `set_git_repo_status`).
                         if let Some(initial_gen) = chip_kind.initial_value_generator() {
                             self.fetch_chip_value_once(
                                 chip_kind,

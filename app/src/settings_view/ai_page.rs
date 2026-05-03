@@ -8,8 +8,8 @@ use crate::ai::execution_profiles::model_menu_items::available_model_menu_items;
 use crate::ai::execution_profiles::profiles::{
     AIExecutionProfilesModel, AIExecutionProfilesModelEvent, ClientProfileId,
 };
-use crate::ai::execution_profiles::{ActionPermission, WriteToPtyPermission};
-use crate::ai::llms::{LLMId, LLMPreferences, LLMPreferencesEvent};
+use crate::ai::execution_profiles::{AIExecutionProfile, ActionPermission, WriteToPtyPermission};
+use crate::ai::llms::{LLMContextWindow, LLMId, LLMPreferences, LLMPreferencesEvent};
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::ai::paths::host_native_absolute_path;
 use crate::auth::auth_manager::{AuthManager, LoginGatedFeature};
@@ -53,12 +53,13 @@ use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
-    Border, ChildView, ConstrainedBox, CornerRadius, CrossAxisAlignment, Expanded, Fill,
+    Border, ChildView, ConstrainedBox, CornerRadius, CrossAxisAlignment, Dismiss, Expanded, Fill,
     HyperlinkLens, MainAxisAlignment, MainAxisSize, MouseStateHandle, Radius, Shrinkable, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::id;
 use warpui::keymap::ContextPredicate;
+use warpui::ui_components::slider::SliderStateHandle;
 use warpui::{
     elements::{
         Container, Flex, FormattedTextElement, HighlightedHyperlink, HyperlinkUrl, ParentElement,
@@ -121,7 +122,7 @@ use crate::server::telemetry::{
 };
 use crate::ui_components::icons::Icon;
 use crate::view_components::dropdown::DropdownAction;
-use crate::workspaces::workspace::CustomerType;
+use crate::workspaces::workspace::{AdminEnablementSetting, CustomerType};
 use crate::{
     appearance::Appearance,
     editor::Event as EditorEvent,
@@ -146,10 +147,12 @@ const PRIMARY_HEADER_FONT_SIZE: f32 = 24.;
 
 const AI_SETTINGS_DROPDOWN_WIDTH: f32 = 250.;
 const AI_SETTINGS_DROPDOWN_MAX_HEIGHT: f32 = 250.;
+const CONTEXT_WINDOW_SLIDER_WIDTH: f32 = 220.;
+const CONTEXT_WINDOW_INPUT_BOX_WIDTH: f32 = 120.;
+
 const NEXT_COMMAND_DESCRIPTION: &str = "Let AI suggest the next command to run based on your command history, outputs, and common workflows.";
 const PROMPT_SUGGESTIONS_DESCRIPTION: &str = "Let AI suggest natural language prompts, as inline banners in the input, based on recent commands and their outputs.";
-const SUGGESTED_CODE_BANNERS_DESCRIPTION: &str =
-    "Let AI suggest code diffs and queries as inline banners in the blocklist, based on recent commands and their outputs.";
+const SUGGESTED_CODE_BANNERS_DESCRIPTION: &str = "Let AI suggest code diffs and queries as inline banners in the blocklist, based on recent commands and their outputs.";
 const NATURAL_LANGUAGE_AUTOSUGGESTIONS: &str =
     "Let AI suggest natural language autosuggestions, based on recent commands and their outputs.";
 const SHARED_BLOCK_TITLE_GENERATION_DESCRIPTION: &str =
@@ -429,6 +432,7 @@ pub struct AISettingsPageView {
 
     // Denylisting commands (default profile)
     command_denylist_mouse_state_handles: Vec<MouseStateHandle>,
+    command_denylist_tooltip_mouse_state_handles: Vec<MouseStateHandle>,
     command_denylist_editor: ViewHandle<SubmittableTextInput>,
 
     mcp_allowlist_mouse_state_handles: Vec<MouseStateHandle>,
@@ -439,6 +443,10 @@ pub struct AISettingsPageView {
 
     base_model_dropdown: ViewHandle<Dropdown<AISettingsPageAction>>,
     coding_model_dropdown: ViewHandle<Dropdown<AISettingsPageAction>>,
+
+    context_window_slider_state: SliderStateHandle,
+    context_window_editor: ViewHandle<EditorView>,
+    last_synced_context_window_editor_value: Option<u32>,
 
     thinking_display_mode_dropdown: ViewHandle<Dropdown<AISettingsPageAction>>,
     #[cfg(feature = "local_fs")]
@@ -465,8 +473,7 @@ impl AISettingsPageView {
 
                 Self::update_editor_interaction_state(
                     me.command_denylist_editor.as_ref(ctx).editor().clone(),
-                    is_any_ai_enabled
-                        && !ai_autonomy_settings.has_override_for_execute_commands_denylist(),
+                    is_any_ai_enabled,
                     ctx,
                 );
 
@@ -542,6 +549,29 @@ impl AISettingsPageView {
             dropdown
         });
         Self::refresh_base_model_menu(&base_model_dropdown, ctx);
+
+        let initial_context_window_value = Self::initial_context_window_value(ctx);
+        let clamped_initial = Self::configurable_context_window(ctx)
+            .map(|cw| initial_context_window_value.clamp(cw.min, cw.max))
+            .unwrap_or(initial_context_window_value);
+        let context_window_slider_state = SliderStateHandle::default();
+
+        let context_window_editor = ctx.add_typed_action_view(|ctx| {
+            let options = SingleLineEditorOptions {
+                text: TextOptions {
+                    font_size_override: Some(Appearance::as_ref(ctx).ui_font_size()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_buffer_text(&clamped_initial.to_string(), ctx);
+            editor
+        });
+        ctx.subscribe_to_view(&context_window_editor, |me, _, event, ctx| {
+            me.handle_context_window_editor_event(event, ctx);
+        });
+        let last_synced_context_window_editor_value = Some(clamped_initial);
 
         let thinking_display_mode_dropdown =
             OtherAIWidget::create_thinking_display_mode_dropdown(ctx);
@@ -751,6 +781,7 @@ impl AISettingsPageView {
                     AIExecutionProfilesModelEvent::ProfileUpdated(_) => {
                         me.refresh_all_execution_profile_ui(ctx);
                         me.reset_execution_profile_mouse_state_handles(ctx);
+                        me.sync_context_window_editor(ctx, false);
                     }
                     AIExecutionProfilesModelEvent::UpdatedActiveProfile { .. } => (),
                 }
@@ -789,9 +820,11 @@ impl AISettingsPageView {
                 LLMPreferencesEvent::UpdatedAvailableLLMs => {
                     Self::refresh_base_model_menu(&me.base_model_dropdown, ctx);
                     Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
+                    me.sync_context_window_editor(ctx, false);
                 }
                 LLMPreferencesEvent::UpdatedActiveAgentModeLLM => {
                     Self::refresh_base_model_menu(&me.base_model_dropdown, ctx);
+                    me.sync_context_window_editor(ctx, false);
                 }
                 LLMPreferencesEvent::UpdatedActiveCodingLLM => {
                     Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
@@ -803,6 +836,7 @@ impl AISettingsPageView {
         ctx.subscribe_to_model(&ApiKeyManager::handle(ctx), |me, _model, _event, ctx| {
             Self::refresh_base_model_menu(&me.base_model_dropdown, ctx);
             Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
+            me.sync_context_window_editor(ctx, false);
             ctx.notify();
         });
 
@@ -856,8 +890,7 @@ impl AISettingsPageView {
 
                     Self::update_editor_interaction_state(
                         me.command_denylist_editor.as_ref(ctx).editor().clone(),
-                        is_enabled
-                            && !ai_autonomy_settings.has_override_for_execute_commands_denylist(),
+                        is_enabled,
                         ctx,
                     );
 
@@ -881,6 +914,7 @@ impl AISettingsPageView {
                     Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
                     Self::refresh_mcp_allowlist_dropdown(&me.mcp_allowlist_dropdown, ctx);
                     Self::refresh_mcp_denylist_dropdown(&me.mcp_denylist_dropdown, ctx);
+                    me.sync_context_window_editor(ctx, true);
                 }
                 AISettingsChangedEvent::VoiceInputEnabled { .. } => {
                     me.update_voice_input_dropdown_enablement(ctx);
@@ -1210,11 +1244,14 @@ impl AISettingsPageView {
             }
         });
 
+        let org_denylist = BlocklistAIPermissions::get_org_execute_commands_denylist(ctx);
         let command_denylist_mouse_state_handles = current_permission
             .command_denylist
             .iter()
             .map(|_| Default::default())
             .collect();
+        let command_denylist_tooltip_mouse_state_handles: Vec<MouseStateHandle> =
+            org_denylist.iter().map(|_| Default::default()).collect();
 
         let command_denylist_editor = ctx.add_typed_action_view(|ctx| {
             let mut input =
@@ -1368,6 +1405,9 @@ impl AISettingsPageView {
             cli_agent_toolbar_inline_editor,
             base_model_dropdown,
             coding_model_dropdown,
+            context_window_slider_state,
+            context_window_editor,
+            last_synced_context_window_editor_value,
             autonomy_dropdown_menu,
             code_read_allowlist_editor,
             code_read_autonomy_dropdown_menu,
@@ -1380,6 +1420,7 @@ impl AISettingsPageView {
             directory_allowlist_mouse_state_handles,
             directory_allowlist_editor,
             command_denylist_mouse_state_handles,
+            command_denylist_tooltip_mouse_state_handles,
             command_denylist_editor,
             command_allowlist_mouse_state_handles,
             command_allowlist_editor,
@@ -1470,6 +1511,7 @@ impl AISettingsPageView {
                 widgets.push(Box::new(CLIAgentWidget::default()));
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+                widgets.push(Box::new(AgentAttributionWidget::default()));
                 widgets.push(Box::new(OtherAIWidget::default()));
                 if FeatureFlag::AgentModeComputerUse.is_enabled() {
                     widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
@@ -1509,6 +1551,7 @@ impl AISettingsPageView {
                 }
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
                 widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+                widgets.push(Box::new(AgentAttributionWidget::default()));
                 widgets.push(Box::new(OtherAIWidget::default()));
                 if FeatureFlag::AgentModeComputerUse.is_enabled() {
                     widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
@@ -1534,6 +1577,108 @@ impl AISettingsPageView {
         // so we don't pass a page-level title to PageType.
         let title: Option<&str> = None;
         PageType::new_uncategorized(widgets, title)
+    }
+
+    fn handle_context_window_editor_event(
+        &mut self,
+        event: &EditorEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        match event {
+            EditorEvent::Blurred | EditorEvent::Enter => {
+                if !AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+                    self.sync_context_window_editor(ctx, true);
+                    return;
+                }
+                if let Some(cw) = Self::configurable_context_window(ctx) {
+                    let buffer_text = self.context_window_editor.as_ref(ctx).buffer_text(ctx);
+                    let cleaned: String = buffer_text
+                        .chars()
+                        .filter(|c| !c.is_whitespace() && *c != ',')
+                        .collect();
+                    if let Ok(parsed) = cleaned.parse::<u32>() {
+                        let clamped = parsed.clamp(cw.min, cw.max);
+                        if Some(clamped) != Self::current_context_window_display_value(ctx) {
+                            AIExecutionProfilesModel::handle(ctx).update(
+                                ctx,
+                                |profiles_model, ctx| {
+                                    let profile_id = *profiles_model.active_profile(None, ctx).id();
+                                    profiles_model.set_context_window_limit(
+                                        profile_id,
+                                        Some(clamped),
+                                        ctx,
+                                    );
+                                },
+                            );
+                        }
+                    }
+                }
+                self.sync_context_window_editor(ctx, true);
+                if let EditorEvent::Enter = event {
+                    ctx.emit(AISettingsPageEvent::FocusModal);
+                }
+                ctx.notify();
+            }
+            EditorEvent::Escape => ctx.emit(AISettingsPageEvent::FocusModal),
+            _ => {}
+        }
+    }
+
+    fn active_profile_data(app: &AppContext) -> AIExecutionProfile {
+        AIExecutionProfilesModel::as_ref(app)
+            .active_profile(None, app)
+            .data()
+            .clone()
+    }
+
+    fn configurable_context_window(app: &AppContext) -> Option<LLMContextWindow> {
+        Self::active_profile_data(app).configurable_context_window(app)
+    }
+
+    fn current_context_window_display_value(app: &AppContext) -> Option<u32> {
+        Self::active_profile_data(app).context_window_display_value(app)
+    }
+
+    fn initial_context_window_value(app: &AppContext) -> u32 {
+        Self::current_context_window_display_value(app).unwrap_or_else(|| {
+            LLMPreferences::as_ref(app)
+                .get_active_base_model(app, None)
+                .context_window
+                .default_max
+        })
+    }
+
+    fn sync_context_window_editor(&mut self, ctx: &mut ViewContext<Self>, force: bool) {
+        let Some(value) = Self::current_context_window_display_value(ctx) else {
+            self.last_synced_context_window_editor_value = None;
+            self.context_window_slider_state.reset_offset();
+            ctx.notify();
+            return;
+        };
+
+        let formatted = value.to_string();
+        let should_update = if force {
+            true
+        } else {
+            match self.last_synced_context_window_editor_value {
+                Some(last_value) => {
+                    self.context_window_editor.as_ref(ctx).buffer_text(ctx)
+                        == last_value.to_string()
+                }
+                None => true,
+            }
+        };
+
+        if should_update {
+            self.context_window_editor.update(ctx, |editor, ctx| {
+                if editor.buffer_text(ctx) != formatted {
+                    editor.system_reset_buffer_text(&formatted, ctx);
+                }
+            });
+            self.last_synced_context_window_editor_value = Some(value);
+            self.context_window_slider_state.reset_offset();
+            ctx.notify();
+        }
     }
 
     fn handle_detection_denylist_editor_event(
@@ -1757,6 +1902,10 @@ impl AISettingsPageView {
             .iter()
             .map(|_| Default::default())
             .collect();
+
+        let org_denylist = BlocklistAIPermissions::get_org_execute_commands_denylist(ctx);
+        self.command_denylist_tooltip_mouse_state_handles =
+            org_denylist.iter().map(|_| Default::default()).collect();
 
         self.command_allowlist_mouse_state_handles = blocklist_permissions
             .get_execute_commands_allowlist(ctx, None)
@@ -2084,6 +2233,11 @@ pub enum AISettingsPageAction {
     OpenExecutionProfileEditor(ClientProfileId),
     SetBaseModel(LLMId),
     SetCodingModel(LLMId),
+    /// Called while the user is actively dragging the context window slider.
+    ContextWindowSliderDragged(u32),
+    /// Called when the user commits a new context window value (slider drop or
+    /// input box commit).
+    SetContextWindowSize(u32),
     SetAutonomyReadonlyCommandsSetting,
     SetAutonomySupervisedSetting,
     SetCodingPermission(AgentModeCodingPermissionsType),
@@ -2112,6 +2266,7 @@ pub enum AISettingsPageAction {
     ToggleCloudAgentComputerUse,
     ToggleFileBasedMcp,
     ToggleIncludeAgentCommandsInHistory,
+    ToggleAgentAttribution,
     #[cfg(feature = "local_fs")]
     SetConversationLayout(crate::util::file::external_editor::settings::OpenConversationPreference),
     ToggleOrchestration,
@@ -2269,7 +2424,9 @@ impl TypedActionView for AISettingsPageView {
                         );
                     }
                     Err(e) => {
-                        log::warn!("Failed to set value for Natural Language Autosuggestions setting: {e:?}");
+                        log::warn!(
+                            "Failed to set value for Natural Language Autosuggestions setting: {e:?}"
+                        );
                     }
                 }
                 ctx.notify();
@@ -2548,15 +2705,46 @@ impl TypedActionView for AISettingsPageView {
             }
             AISettingsPageAction::SetBaseModel(id) => {
                 AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
-                    let profile = profiles_model.default_profile(ctx);
-                    profiles_model.set_base_model(*profile.id(), Some(id.clone()), ctx);
+                    let profile_id = *profiles_model.active_profile(None, ctx).id();
+                    profiles_model.set_base_model(profile_id, Some(id.clone()), ctx);
+                    profiles_model.set_context_window_limit(profile_id, None, ctx);
                 });
+                self.sync_context_window_editor(ctx, true);
                 ctx.notify();
             }
             AISettingsPageAction::SetCodingModel(id) => {
                 LLMPreferences::handle(ctx).update(ctx, |prefs, ctx| {
                     prefs.update_preferred_coding_llm(id, None, ctx);
                 });
+            }
+            AISettingsPageAction::ContextWindowSliderDragged(value) => {
+                if !AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+                    self.sync_context_window_editor(ctx, true);
+                    return;
+                }
+                if Self::configurable_context_window(ctx).is_some() {
+                    let formatted = value.to_string();
+                    self.context_window_editor.update(ctx, |editor, ctx| {
+                        editor.system_reset_buffer_text(&formatted, ctx);
+                    });
+                    ctx.notify();
+                }
+            }
+            AISettingsPageAction::SetContextWindowSize(value) => {
+                if !AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+                    self.sync_context_window_editor(ctx, true);
+                    return;
+                }
+                let Some(cw) = Self::configurable_context_window(ctx) else {
+                    return;
+                };
+                let clamped = (*value).clamp(cw.min, cw.max);
+                AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
+                    let profile_id = *profiles_model.active_profile(None, ctx).id();
+                    profiles_model.set_context_window_limit(profile_id, Some(clamped), ctx);
+                });
+                self.sync_context_window_editor(ctx, true);
+                ctx.notify();
             }
             AISettingsPageAction::SetAutonomyReadonlyCommandsSetting
             | AISettingsPageAction::SetAutonomySupervisedSetting => {
@@ -2821,6 +3009,17 @@ impl TypedActionView for AISettingsPageView {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     report_if_error!(settings
                         .show_conversation_history
+                        .toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            AISettingsPageAction::ToggleAgentAttribution => {
+                // The updated value syncs to warp-server automatically via
+                // `CloudPreferencesSyncer` as a `JsonPreference` GSO keyed
+                // `Global_AgentAttributionEnabled`; no bespoke server call needed.
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings
+                        .agent_attribution_enabled
                         .toggle_and_save_value(ctx));
                 });
                 ctx.notify();
@@ -3933,9 +4132,139 @@ impl AgentsWidget {
                 .with_margin_bottom(8.0)
                 .finish();
 
-        Flex::column()
-            .with_children([model_subheader, base_model_setting])
-            .finish()
+        let mut children = vec![model_subheader, base_model_setting];
+        if let Some(context_window_setting) =
+            self.render_context_window_setting(view, ai_settings, appearance, app)
+        {
+            children.push(
+                Container::new(context_window_setting)
+                    .with_margin_bottom(8.0)
+                    .finish(),
+            );
+        }
+
+        Flex::column().with_children(children).finish()
+    }
+
+    /// Renders the context window slider + numeric input row shown below the
+    /// base model dropdown. Returns `None` if the active base model does not
+    /// advertise a configurable context window, global AI is disabled, or the
+    /// [`FeatureFlag::ConfigurableContextWindow`] flag is disabled.
+    fn render_context_window_setting(
+        &self,
+        view: &AISettingsPageView,
+        ai_settings: &AISettings,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Option<Box<dyn Element>> {
+        if !FeatureFlag::ConfigurableContextWindow.is_enabled() {
+            return None;
+        }
+        if !ai_settings.is_any_ai_enabled(app) {
+            return None;
+        }
+        let cw = AISettingsPageView::configurable_context_window(app)?;
+        let min = cw.min;
+        let max = cw.max;
+
+        let label = Container::new(render_body_item_label::<AISettingsPageAction>(
+            "Context window (tokens)".to_string(),
+            None,
+            None,
+            LocalOnlyIconState::Hidden,
+            ToggleState::Enabled,
+            appearance,
+        ))
+        .with_margin_bottom(4.0)
+        .finish();
+
+        let min_label = appearance
+            .ui_builder()
+            .span(format!("{min}"))
+            .with_style(UiComponentStyles {
+                font_size: Some(CONTENT_FONT_SIZE),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        let max_label = appearance
+            .ui_builder()
+            .span(format!("{max}"))
+            .with_style(UiComponentStyles {
+                font_size: Some(CONTENT_FONT_SIZE),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        let current_value = AISettingsPageView::current_context_window_display_value(app)
+            .unwrap_or(cw.default_max)
+            .clamp(min, max);
+        let slider = appearance
+            .ui_builder()
+            .slider(view.context_window_slider_state.clone())
+            .with_range(min as f32..max as f32)
+            .with_default_value(current_value as f32)
+            .with_style(UiComponentStyles {
+                width: Some(CONTEXT_WINDOW_SLIDER_WIDTH),
+                margin: Some(Coords::default().left(8.).right(8.)),
+                ..Default::default()
+            })
+            .on_drag(|ctx, _, val| {
+                ctx.dispatch_typed_action(AISettingsPageAction::ContextWindowSliderDragged(
+                    val.round() as u32,
+                ));
+            })
+            .on_change(|ctx, _, val| {
+                ctx.dispatch_typed_action(AISettingsPageAction::SetContextWindowSize(
+                    val.round() as u32
+                ));
+            })
+            .build()
+            .finish();
+
+        let context_window_editor = view.context_window_editor.clone();
+        let input_box = Dismiss::new(
+            appearance
+                .ui_builder()
+                .text_input(view.context_window_editor.clone())
+                .with_style(UiComponentStyles {
+                    width: Some(CONTEXT_WINDOW_INPUT_BOX_WIDTH),
+                    padding: Some(Coords {
+                        top: 6.,
+                        bottom: 6.,
+                        left: 10.,
+                        right: 10.,
+                    }),
+                    margin: Some(Coords::default().left(12.)),
+                    background: Some(appearance.theme().surface_2().into()),
+                    ..Default::default()
+                })
+                .build()
+                .finish(),
+        )
+        .on_dismiss(move |ctx, app| {
+            let buffer_text = context_window_editor.as_ref(app).buffer_text(app);
+            let cleaned: String = buffer_text
+                .chars()
+                .filter(|c| !c.is_whitespace() && *c != ',')
+                .collect();
+            if let Ok(parsed) = cleaned.parse::<u32>() {
+                ctx.dispatch_typed_action(AISettingsPageAction::SetContextWindowSize(parsed));
+            }
+        })
+        .finish();
+
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(min_label)
+            .with_child(slider)
+            .with_child(max_label)
+            .with_child(input_box)
+            .finish();
+
+        Some(Flex::column().with_child(label).with_child(row).finish())
     }
 
     fn render_permissions_section(
@@ -4165,19 +4494,38 @@ impl AgentsWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        let ai_disabled = !ai_settings.is_any_ai_enabled(app);
+        let org_denylist = BlocklistAIPermissions::get_org_execute_commands_denylist(app);
+        let mut tooltip_idx = 0usize;
         let list = render_input_list(
             None,
             command_denylist
                 .into_iter()
                 .zip(view.command_denylist_mouse_state_handles.clone())
                 .rev()
-                .map(|(cmd, mouse_state_handle)| InputListItem {
-                    item: cmd.to_string(),
-                    mouse_state_handle,
-                    on_remove_action: AISettingsPageAction::RemoveFromProfileCommandDenylist(cmd),
+                .map(|(cmd, mouse_state_handle)| {
+                    let is_org = org_denylist.contains(&cmd);
+                    let tooltip_mouse_state = if is_org {
+                        let handle = view
+                            .command_denylist_tooltip_mouse_state_handles
+                            .get(tooltip_idx)
+                            .cloned();
+                        tooltip_idx += 1;
+                        handle
+                    } else {
+                        None
+                    };
+                    InputListItem {
+                        item: cmd.to_string(),
+                        mouse_state_handle,
+                        on_remove_action: AISettingsPageAction::RemoveFromProfileCommandDenylist(
+                            cmd,
+                        ),
+                        is_disabled: is_org || ai_disabled,
+                        tooltip_mouse_state,
+                    }
                 }),
             Some(&view.command_denylist_editor),
-            !ai_settings.is_command_denylist_editable(app),
             appearance,
         );
         render_ai_list(
@@ -4197,19 +4545,21 @@ impl AgentsWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        let disabled = !ai_settings.is_command_allowlist_editable(app);
         let list = render_input_list(
             None,
             command_allowlist
                 .into_iter()
                 .zip(view.command_allowlist_mouse_state_handles.clone())
                 .rev()
-                .map(|(cmd, mouse_state_handle)| InputListItem {
+                .map(move |(cmd, mouse_state_handle)| InputListItem {
                     item: cmd.to_string(),
                     mouse_state_handle,
                     on_remove_action: AISettingsPageAction::RemoveFromProfileCommandAllowlist(cmd),
+                    is_disabled: disabled,
+                    tooltip_mouse_state: None,
                 }),
             Some(&view.command_allowlist_editor),
-            !ai_settings.is_command_allowlist_editable(app),
             appearance,
         );
 
@@ -4230,6 +4580,7 @@ impl AgentsWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
+        let disabled = !ai_settings.is_directory_allowlist_editable(app);
         let list = render_input_list(
             None,
             directory_allowlist
@@ -4237,15 +4588,16 @@ impl AgentsWidget {
                 .into_iter()
                 .zip(view.directory_allowlist_mouse_state_handles.clone())
                 .rev()
-                .map(|(path, mouse_state_handle)| InputListItem {
+                .map(move |(path, mouse_state_handle)| InputListItem {
                     item: path.display().to_string(),
                     mouse_state_handle,
                     on_remove_action: AISettingsPageAction::RemoveFromProfileDirectoryAllowlist(
                         path,
                     ),
+                    is_disabled: disabled,
+                    tooltip_mouse_state: None,
                 }),
             Some(&view.directory_allowlist_editor),
-            !ai_settings.is_directory_allowlist_editable(app),
             appearance,
         );
 
@@ -4314,10 +4666,13 @@ impl AgentsWidget {
         render_dropdown_item(
             appearance,
             "Base model",
-            Some("This model serves as the primary engine behind the Warp Agent. It powers most interactions and invokes other models for tasks like planning or code generation when necessary. Warp may automatically switch to alternate models based on model availability or for auxiliary tasks such as conversation summarization."),
+            Some(
+                "This model serves as the primary engine behind the Warp Agent. It powers most interactions and invokes other models for tasks like planning or code generation when necessary. Warp may automatically switch to alternate models based on model availability or for auxiliary tasks such as conversation summarization.",
+            ),
             Some(show_in_prompt_checkbox),
             LocalOnlyIconState::Hidden,
-            (!ai_settings.is_any_ai_enabled(app)).then(|| appearance.theme().disabled_ui_text_color()),
+            (!ai_settings.is_any_ai_enabled(app))
+                .then(|| appearance.theme().disabled_ui_text_color()),
             &view.base_model_dropdown,
         )
     }
@@ -4343,7 +4698,7 @@ impl AgentsWidget {
 
         let codebase_context_description = vec![
             FormattedTextFragment::plain_text(
-                "Allow the Warp Agent to generate an outline of your codebase that can be used for context. No code is ever stored on our servers. "
+                "Allow the Warp Agent to generate an outline of your codebase that can be used for context. No code is ever stored on our servers. ",
             ),
             FormattedTextFragment::hyperlink(
                 "Learn more",
@@ -4415,10 +4770,18 @@ impl AgentsWidget {
 
         let subtext = {
             let subtext_fragments = vec![
-                FormattedTextFragment::plain_text("You haven't added any MCP servers yet. Once you do, you'll be able to control how much autonomy the Warp Agent has when interacting with them. "),
-                FormattedTextFragment::hyperlink_action("Add a server", AISettingsPageAction::OpenMCPServerCollection),
+                FormattedTextFragment::plain_text(
+                    "You haven't added any MCP servers yet. Once you do, you'll be able to control how much autonomy the Warp Agent has when interacting with them. ",
+                ),
+                FormattedTextFragment::hyperlink_action(
+                    "Add a server",
+                    AISettingsPageAction::OpenMCPServerCollection,
+                ),
                 FormattedTextFragment::plain_text(" or "),
-                FormattedTextFragment::hyperlink("learn more about MCPs.", "https://docs.warp.dev/agent-platform/capabilities/mcp"),
+                FormattedTextFragment::hyperlink(
+                    "learn more about MCPs.",
+                    "https://docs.warp.dev/agent-platform/capabilities/mcp",
+                ),
             ];
 
             Container::new(
@@ -4561,22 +4924,24 @@ impl AgentsWidget {
         .with_margin_bottom(2.)
         .finish();
 
+        let disabled = !ai_settings.is_any_ai_enabled(app);
         let items = render_input_list(
             None,
             items
                 .into_iter()
                 .rev()
                 .zip(mouse_state_handles.clone())
-                .filter_map(|(uuid, mouse_state_handle)| {
+                .filter_map(move |(uuid, mouse_state_handle)| {
                     let server_name = TemplatableMCPServerManager::get_mcp_name(&uuid, app);
                     server_name.map(|server_name| InputListItem {
                         item: server_name,
                         mouse_state_handle,
                         on_remove_action: action(uuid),
+                        is_disabled: disabled,
+                        tooltip_mouse_state: None,
                     })
                 }),
             None,
-            !ai_settings.is_any_ai_enabled(app),
             appearance,
         );
 
@@ -4764,11 +5129,16 @@ impl AIInputWidget {
                 Vec<FormattedTextFragment>,
             > = LazyLock::new(|| {
                 vec![
-                FormattedTextFragment::plain_text(
-                "Enabling natural language detection will detect when natural language is written in the terminal input, and then automatically switch to Agent Mode for AI queries."
-                ),
-                FormattedTextFragment::plain_text(" Encountered an incorrect input detection? "),
-                FormattedTextFragment::hyperlink("Let us know", "https://warpdotdev.typeform.com/to/offrTIpq"),
+                    FormattedTextFragment::plain_text(
+                        "Enabling natural language detection will detect when natural language is written in the terminal input, and then automatically switch to Agent Mode for AI queries.",
+                    ),
+                    FormattedTextFragment::plain_text(
+                        " Encountered an incorrect input detection? ",
+                    ),
+                    FormattedTextFragment::hyperlink(
+                        "Let us know",
+                        "https://warpdotdev.typeform.com/to/offrTIpq",
+                    ),
                 ]
             });
 
@@ -4871,7 +5241,7 @@ impl SettingsWidget for MCPServersWidget {
 
         let mcp_description = vec![
             FormattedTextFragment::plain_text(
-               "Add MCP servers to extend the Warp Agent's capabilities. \
+                "Add MCP servers to extend the Warp Agent's capabilities. \
             MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. ",
             ),
             FormattedTextFragment::hyperlink(
@@ -5170,10 +5540,12 @@ impl VoiceWidget {
         ));
 
         let voice_input_description_text_fragments = vec![
-                FormattedTextFragment::plain_text("Voice input allows you to control Warp by speaking directly to your terminal (powered by "),
-                FormattedTextFragment::hyperlink("Wispr Flow", WISPR_FLOW_URL),
-                FormattedTextFragment::plain_text(")."),
-            ];
+            FormattedTextFragment::plain_text(
+                "Voice input allows you to control Warp by speaking directly to your terminal (powered by ",
+            ),
+            FormattedTextFragment::hyperlink("Wispr Flow", WISPR_FLOW_URL),
+            FormattedTextFragment::plain_text(")."),
+        ];
 
         let voice_input_description = FormattedTextElement::new(
             FormattedText::new([FormattedTextLine::Line(
@@ -5679,6 +6051,139 @@ impl SettingsWidget for CLIAgentWidget {
     }
 }
 
+/// The presentation state of the agent attribution toggle, derived from the
+/// org-level [`AdminEnablementSetting`], the user's stored preference, and
+/// whether AI is globally enabled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AgentAttributionToggleState {
+    /// Whether the toggle is rendered in the checked state.
+    pub(crate) is_enabled: bool,
+    /// Whether the org has forced the value (locking the toggle with a tooltip).
+    pub(crate) is_forced_by_org: bool,
+    /// Whether the toggle should be rendered as non-interactive overall
+    /// (forced by the org, or AI globally disabled).
+    pub(crate) is_disabled: bool,
+}
+
+/// Derive the toggle state from its three inputs.
+pub(crate) fn derive_agent_attribution_toggle_state(
+    org_setting: &AdminEnablementSetting,
+    user_pref: bool,
+    is_any_ai_enabled: bool,
+) -> AgentAttributionToggleState {
+    let is_forced_by_org = match org_setting {
+        AdminEnablementSetting::Enable | AdminEnablementSetting::Disable => true,
+        AdminEnablementSetting::RespectUserSetting => false,
+    };
+    let is_enabled = match org_setting {
+        AdminEnablementSetting::Enable => true,
+        AdminEnablementSetting::Disable => false,
+        AdminEnablementSetting::RespectUserSetting => user_pref,
+    };
+    AgentAttributionToggleState {
+        is_enabled,
+        is_forced_by_org,
+        is_disabled: is_forced_by_org || !is_any_ai_enabled,
+    }
+}
+
+#[derive(Default)]
+struct AgentAttributionWidget {
+    toggle: SwitchStateHandle,
+}
+
+impl SettingsWidget for AgentAttributionWidget {
+    type View = AISettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "agent attribution commit pull request co-author author credit oz warp"
+    }
+
+    fn render(
+        &self,
+        _view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let ai_settings = AISettings::as_ref(app);
+        let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
+
+        let org_setting = UserWorkspaces::as_ref(app).get_agent_attribution_setting();
+        let state = derive_agent_attribution_toggle_state(
+            &org_setting,
+            *ai_settings.agent_attribution_enabled,
+            is_any_ai_enabled,
+        );
+
+        let ui_builder = appearance.ui_builder();
+        let toggle = if state.is_forced_by_org {
+            ui_builder
+                .switch(self.toggle.clone())
+                .check(state.is_enabled)
+                .with_tooltip(TooltipConfig {
+                    text: "This option is enforced by your organization's settings and cannot be customized.".to_string(),
+                    styles: ui_builder.default_tool_tip_styles(),
+                })
+                .disable()
+                .build()
+                .finish()
+        } else if !is_any_ai_enabled {
+            ui_builder
+                .switch(self.toggle.clone())
+                .check(state.is_enabled)
+                .with_disabled(true)
+                .build()
+                .finish()
+        } else {
+            ui_builder
+                .switch(self.toggle.clone())
+                .check(state.is_enabled)
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(AISettingsPageAction::ToggleAgentAttribution);
+                })
+                .finish()
+        };
+
+        let toggle_row = build_toggle_element(
+            render_body_item_label::<AISettingsPageAction>(
+                "Enable agent attribution".to_string(),
+                Some(styles::header_font_color(!state.is_disabled, app)),
+                None,
+                LocalOnlyIconState::Hidden,
+                ToggleState::Enabled,
+                appearance,
+            ),
+            toggle,
+            appearance,
+            None,
+        );
+
+        Flex::column()
+            .with_child(render_separator(appearance))
+            .with_child(
+                build_sub_header(
+                    appearance,
+                    "Agent Attribution",
+                    Some(styles::header_font_color(is_any_ai_enabled, app)),
+                )
+                .with_padding_bottom(HEADER_PADDING)
+                .finish(),
+            )
+            .with_child(toggle_row)
+            .with_child(render_ai_setting_description(
+                "Oz can add attribution to commit messages and pull requests it creates",
+                !state.is_disabled,
+                app,
+            ))
+            .finish()
+    }
+}
+
+#[cfg(test)]
+#[path = "ai_page_tests.rs"]
+mod tests;
+
 #[derive(Default)]
 struct CloudAgentComputerUseWidget {
     toggle: SwitchStateHandle,
@@ -6028,11 +6533,9 @@ impl ApiKeysWidget {
                             FormattedTextFragment::plain_text(" to use your own API keys."),
                         ]
                     } else {
-                        vec![
-                            FormattedTextFragment::plain_text(
-                                "Ask your team's admin to upgrade to the Build plan to use your own API keys.",
-                            ),
-                        ]
+                        vec![FormattedTextFragment::plain_text(
+                            "Ask your team's admin to upgrade to the Build plan to use your own API keys.",
+                        )]
                     }
                 }
             } else {

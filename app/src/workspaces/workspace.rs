@@ -239,7 +239,7 @@ impl Ord for InviteLinkDomainRestriction {
     }
 }
 
-/// This enum is the rust represenation of `CustomerType` from the GraphQL Schema.
+/// This enum is the rust representation of `CustomerType` from the GraphQL Schema.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum CustomerType {
     #[default]
@@ -774,4 +774,10 @@ pub struct WorkspaceSettings {
     pub addon_credits_settings: AddonCreditsSettings,
     pub codebase_context_settings: CodebaseContextSettings,
     pub sandboxed_agent_settings: Option<SandboxedAgentSettings>,
+    /// The team-level agent attribution setting. When `Enable` or `Disable`, the
+    /// user toggle is locked. When `RespectUserSetting` (or absent), the user can choose.
+    #[serde(default)]
+    pub enable_warp_attribution: AdminEnablementSetting,
+    #[serde(default)]
+    pub default_host_slug: Option<String>,
 }

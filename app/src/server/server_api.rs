@@ -54,6 +54,7 @@ use parking_lot::{Mutex, RwLock};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -355,7 +356,7 @@ cfg_if::cfg_if! {
 /// An event related to the server API itself (and not a particular API call).
 /// Most errors should be handled in callbacks to individual APIs, rather than sent over the
 /// server API channel.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum ServerApiEvent {
     /// We made a staging API call that was blocked, which may indicate a firewall misconfiguration.
     StagingAccessBlocked,
@@ -364,6 +365,25 @@ pub enum ServerApiEvent {
     NeedsReauth,
     /// The user's account has been disabled.
     UserAccountDisabled,
+    /// The current bearer token was refreshed.
+    AccessTokenRefreshed {
+        #[cfg_attr(target_family = "wasm", allow(dead_code))]
+        token: String,
+    },
+}
+
+impl fmt::Debug for ServerApiEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::StagingAccessBlocked => f.write_str("StagingAccessBlocked"),
+            Self::NeedsReauth => f.write_str("NeedsReauth"),
+            Self::UserAccountDisabled => f.write_str("UserAccountDisabled"),
+            Self::AccessTokenRefreshed { .. } => f
+                .debug_struct("AccessTokenRefreshed")
+                .field("token", &"<redacted>")
+                .finish(),
+        }
+    }
 }
 
 /// An API wrapper struct with methods to requests to warp-server.
@@ -468,6 +488,16 @@ impl ServerApi {
             .chain(task_id.map(|id| (CLOUD_AGENT_ID_HEADER, id)))
             .chain(agent_source.map(|s| (AGENT_SOURCE_HEADER, s)))
             .collect())
+    }
+
+    async fn ambient_agent_headers_for_task(
+        &self,
+        task_id: &AmbientAgentTaskId,
+    ) -> Result<Vec<(&'static str, String)>> {
+        let mut headers = self.ambient_agent_headers().await?;
+        headers.retain(|(name, _)| *name != CLOUD_AGENT_ID_HEADER);
+        headers.push((CLOUD_AGENT_ID_HEADER, task_id.to_string()));
+        Ok(headers)
     }
 
     fn create_oauth_client() -> self::auth::OAuth2Client {
@@ -685,6 +715,40 @@ impl ServerApi {
         }
 
         for (name, value) in self.ambient_agent_headers().await? {
+            request = request.header(name, value);
+        }
+
+        Ok(request.eventsource())
+    }
+
+    pub async fn stream_agent_events_for_task(
+        &self,
+        task_id: &AmbientAgentTaskId,
+        run_ids: &[String],
+        since_sequence: i64,
+    ) -> Result<http_client::EventSourceStream> {
+        debug_assert!(!run_ids.is_empty(), "run_ids must not be empty");
+        let auth_token = self
+            .get_or_refresh_access_token()
+            .await
+            .context("Failed to get access token for SSE stream")?;
+
+        let run_ids_param: String = run_ids
+            .iter()
+            .map(|id| format!("run_ids[]={}", urlencoding::encode(id)))
+            .collect::<Vec<_>>()
+            .join("&");
+        let url = format!(
+            "{}/api/v1/agent/events/stream?{run_ids_param}&since={since_sequence}",
+            ChannelState::rtc_http_url()
+        );
+
+        let mut request = self.client.get(&url);
+        if let Some(token) = auth_token.as_bearer_token() {
+            request = request.bearer_auth(token);
+        }
+
+        for (name, value) in self.ambient_agent_headers_for_task(task_id).await? {
             request = request.header(name, value);
         }
 

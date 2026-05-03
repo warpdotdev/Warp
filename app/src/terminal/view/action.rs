@@ -222,7 +222,7 @@ pub enum TerminalAction {
     },
     InputContextMenuItem(InputContextMenuAction),
     /// Open the menu on the specified [`crate::ai::blocklist::AIBlock`] that lists the blocks that
-    /// were attached to the query in the specifed [`crate::ai::blocklist::AIAgentExchange`] which
+    /// were attached to the query in the specified [`crate::ai::blocklist::AIAgentExchange`] which
     /// is part of the specified [`crate::ai::blocklist::AIConversation`].
     OpenAIBlockAttachedBlocksMenu {
         ai_block_view_id: EntityId,
@@ -424,6 +424,13 @@ pub enum TerminalAction {
     ToggleUsageFooter,
     /// Reveal a hidden child agent pane from the orchestrator status card.
     RevealChildAgent {
+        conversation_id: AIConversationId,
+    },
+    /// Switch the active terminal view's agent view to display the given
+    /// conversation in place, without spawning or revealing a separate pane.
+    /// Used by the orchestration pill bar to navigate the current pane to a
+    /// sibling/parent conversation.
+    SwitchAgentViewToConversation {
         conversation_id: AIConversationId,
     },
     /// Toggle PTY recording for this session.
@@ -703,6 +710,7 @@ impl fmt::Debug for TerminalAction {
             AwsCliNotInstalledBanner(action) => write!(f, "AwsCliNotInstalledBanner({action:?})"),
             ToggleUsageFooter => write!(f, "ToggleUsageFooter"),
             RevealChildAgent { .. } => write!(f, "RevealChildAgent"),
+            SwitchAgentViewToConversation { .. } => write!(f, "SwitchAgentViewToConversation"),
             ToggleSessionRecording => write!(f, "ToggleSessionRecording"),
             OpenCLIAgentRichInput => write!(f, "OpenCLIAgentRichInput"),
         }

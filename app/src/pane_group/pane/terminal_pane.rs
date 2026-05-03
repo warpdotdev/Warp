@@ -34,7 +34,7 @@ use crate::{
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
-    server::server_api::ai::SpawnAgentRequest,
+    server::server_api::ai::{SpawnAgentRequest, UserQueryMode},
     session_management::SessionNavigationData,
     terminal::cli_agent_sessions::CLIAgentSessionsModel,
     terminal::{
@@ -55,6 +55,8 @@ use crate::{
 
 #[cfg(feature = "local_fs")]
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
+#[cfg(not(target_family = "wasm"))]
+use crate::pane_group::child_agent::HiddenChildAgentTaskContext;
 #[cfg(not(target_family = "wasm"))]
 use crate::server::server_api::ServerApiProvider;
 
@@ -414,8 +416,8 @@ impl PaneContent for TerminalPane {
         if view.model.lock().shared_session_status().is_viewer() {
             // We save and restore ambient agent sessions
             // (restoring the shared session if it's still open and the conversation transcript otherwise).
-            let ambient_model = view.ambient_agent_view_model().as_ref(app);
-            if ambient_model.is_ambient_agent() {
+            if let Some(ambient_model) = view.ambient_agent_view_model() {
+                let ambient_model = ambient_model.as_ref(app);
                 let task_id = ambient_model.task_id();
 
                 return LeafContents::AmbientAgent(AmbientAgentPaneSnapshot {
@@ -557,7 +559,7 @@ impl PaneContent for TerminalPane {
                     Ok(ShareableLink::Pane { url })
                 } else {
                     Err(ShareableLinkError::Unexpected(String::from(
-                        "Failed to retreive shared session link",
+                        "Failed to retrieve shared session link",
                     )))
                 }
             }
@@ -1129,6 +1131,7 @@ fn handle_terminal_view_event(
                             request.name,
                             request.parent_conversation_id,
                             HashMap::new(),
+                            None,
                             ctx,
                         ) {
                             register_legacy_local_lifecycle_subscription(
@@ -1164,6 +1167,7 @@ fn handle_terminal_view_event(
                     } => {
                         let startup_directory =
                             group.startup_path_for_new_session(Some(terminal_pane_id), ctx);
+                        let launch_startup_directory = startup_directory.clone();
                         let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
                         let parent_pane_id = pane_id;
                         let request_name = request.name.clone();
@@ -1183,7 +1187,7 @@ fn handle_terminal_view_event(
                                     harness_type,
                                     parent_run_id,
                                     shell_type,
-                                    startup_directory,
+                                    launch_startup_directory,
                                     ai_client,
                                 )
                                 .await
@@ -1207,6 +1211,10 @@ fn handle_terminal_view_event(
                                         request_name.clone(),
                                         parent_conversation_id,
                                         env_vars,
+                                        Some(HiddenChildAgentTaskContext {
+                                            task_id,
+                                            working_dir: startup_directory.clone(),
+                                        }),
                                         ctx,
                                     ) {
                                         BlocklistAIHistoryModel::handle(ctx).update(
@@ -1223,14 +1231,14 @@ fn handle_terminal_view_event(
                                         );
 
                                         new_terminal_view.update(ctx, |terminal_view, ctx| {
-                                            terminal_view.execute_command_or_set_pending(
-                                                &command,
-                                                ctx,
-                                            );
                                             terminal_view.enter_agent_view(
                                                 None,
                                                 Some(conversation_id),
                                                 AgentViewEntryOrigin::ChildAgent,
+                                                ctx,
+                                            );
+                                            terminal_view.execute_command_or_set_pending(
+                                                &command,
                                                 ctx,
                                             );
                                         });
@@ -1371,6 +1379,8 @@ fn handle_terminal_view_event(
                             };
                             let spawn_request = SpawnAgentRequest {
                                 prompt: request.prompt,
+                                // Agents spawned during orchestrations are always run in normal mode.
+                                mode: UserQueryMode::Normal,
                                 config: Some(AgentConfigSnapshot {
                                     environment_id,
                                     model_id: (!model_id.is_empty()).then_some(model_id),
@@ -1396,13 +1406,18 @@ fn handle_terminal_view_event(
                                     AgentViewEntryOrigin::CloudAgent,
                                     ctx,
                                 );
-                                terminal_view.ambient_agent_view_model().update(
-                                    ctx,
-                                    |model, ctx| {
+                                if let Some(ambient_agent_view_model) =
+                                    terminal_view.ambient_agent_view_model()
+                                {
+                                    ambient_agent_view_model.update(ctx, |model, ctx| {
                                         model.set_conversation_id(Some(conversation_id));
                                         model.spawn_agent_with_request(spawn_request, ctx);
-                                    },
-                                );
+                                    });
+                                } else {
+                                    log::error!(
+                                        "Remote StartAgent child pane missing ambient agent view model"
+                                    );
+                                }
                             });
 
                             group
@@ -1485,7 +1500,7 @@ fn handle_ai_history_event(
             }
 
             // Do not persist AI queries from shared ambient agent sessions that we've viewed,
-            // as these were sent as part of an ambient agent run and shouldn't polute the up arrow history.
+            // as these were sent as part of an ambient agent run and shouldn't pollute the up arrow history.
             if is_shared_ambient_agent_session {
                 return;
             }

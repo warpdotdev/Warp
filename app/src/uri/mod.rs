@@ -7,14 +7,15 @@ pub mod browser_url_handler;
 
 use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
 use crate::ai::agent::api::ServerConversationToken;
-use crate::auth::AuthStateProvider;
 use crate::drive::OpenWarpDriveObjectSettings;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
 use crate::server::ids::ServerId;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
-use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
+use crate::util::openable_file_type::{
+    is_file_openable_in_warp, is_markdown_file, is_runnable_shell_script, starts_with_shebang,
+};
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{cloud_object::ObjectType, workspace::ToastStack};
 use crate::{drive::OpenWarpDriveObjectArgs, view_components::DismissibleToast};
@@ -31,7 +32,7 @@ use anyhow::{anyhow, ensure, Result};
 use itertools::Itertools;
 use session_sharing_protocol::common::SessionId;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use url::Url;
 use warpui::notification::UserNotification;
@@ -257,7 +258,7 @@ impl UriHost {
                 // For folder links, we expect an additional query parameter primary_object_id which refers to the id object
                 // that should be opened
                 // When the user is directed here via the request access flow, we expect an additional query parameter invitee_email
-                // If this paramter is present, we will open the sharing dialog with the email filled in.
+                // If this parameter is present, we will open the sharing dialog with the email filled in.
                 let object_type = url
                     .path_segments()
                     .into_iter()
@@ -455,7 +456,7 @@ impl UriHost {
     }
 
     /// When handling this URI action, determine which window(s) should be focused.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn window_behavior_hint(&self) -> WindowBehaviorHint {
         use WindowBehaviorHint as W;
         match self {
@@ -499,7 +500,7 @@ impl Default for WindowBehaviorHint {
 impl WindowBehaviorHint {
     /// Perform the desired window focus behavior for the URI being handled. This may change the
     /// "primary window" if a new one has to be created. Return the new primary WindowId.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn resolve(
         self,
         primary_window_id: Option<WindowId>,
@@ -547,7 +548,7 @@ enum WindowActivationFallbackBehavior {
 impl WindowActivationFallbackBehavior {
     /// Perform the desired window fallback behavior for the URI being handled. This may change the
     /// "primary window" if a new one has to be created. Return the new primary WindowId.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn resolve(self, primary_window_id: WindowId, ctx: &mut AppContext) -> Option<WindowId> {
         match self {
             WindowActivationFallbackBehavior::Notify { title, description } => {
@@ -658,6 +659,13 @@ fn find_matching_config_name<'a>(
         .find(|&config| config.name.to_lowercase() == target_name_lower)
 }
 
+/// Extract the `path` query parameter, expanding a leading `~` to the
+/// user's home directory.
+fn parse_tab_path(url: &Url) -> Option<PathBuf> {
+    let raw = url.query_pairs().find(|(k, _)| k == "path")?.1;
+    Some(PathBuf::from(shellexpand::tilde(&raw).into_owned()))
+}
+
 #[derive(Debug)]
 enum Action {
     NewTab,
@@ -698,7 +706,7 @@ impl Action {
     }
 
     fn handle(&self, primary_window_id: Option<WindowId>, url: &Url, ctx: &mut AppContext) {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         let primary_window_id = self.window_behavior_hint().resolve(primary_window_id, ctx);
         match self {
             Self::NewTab | Self::NewWindow => {
@@ -707,11 +715,7 @@ impl Action {
                 } else {
                     None
                 };
-                let Some(Ok(path)) = url
-                    .query_pairs()
-                    .find(|(k, _v)| k == "path")
-                    .map(|(_, path)| PathBuf::from_str(&path))
-                else {
+                let Some(path) = parse_tab_path(url) else {
                     log::warn!("Could not parse path to open a new tab/window");
                     return;
                 };
@@ -908,7 +912,7 @@ impl Action {
     }
 
     /// When handling this URI action, determine which window(s) should be focused.
-    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "linux", target_os = "freebsd")), allow(dead_code))]
     fn window_behavior_hint(&self) -> WindowBehaviorHint {
         use WindowBehaviorHint as W;
         match self {
@@ -959,7 +963,7 @@ pub fn handle_incoming_uri(url: &Url, ctx: &mut AppContext) {
 
     match validate_custom_uri(url) {
         Ok(host) => {
-            #[cfg(any(target_os = "linux", windows))]
+            #[cfg(any(target_os = "linux", target_os = "freebsd", windows))]
             let primary_window_id = host.window_behavior_hint().resolve(primary_window_id, ctx);
             host.handle(primary_window_id, url, ctx);
         }
@@ -1002,23 +1006,52 @@ fn get_primary_window(
     non_quake_mode_windows.next()
 }
 
+/// What `open_file` should do with an incoming `file://` URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenFileAction {
+    /// Open in the markdown notebook pane.
+    Notebook,
+    /// Open in Warp's code/text editor pane.
+    Editor,
+    /// Open a session at the parent directory and queue the file as the pending command,
+    /// or just open a session at the directory path if `path` is a directory.
+    ExecuteInSession,
+}
+
+/// Pure routing decision for `open_file`. Extracted so it can be unit-tested without
+/// standing up a full `AppContext`.
+fn classify_open_file_action(path: &Path) -> OpenFileAction {
+    if is_markdown_file(path) {
+        return OpenFileAction::Notebook;
+    }
+    if path.is_file() {
+        if is_runnable_shell_script(path) {
+            return OpenFileAction::ExecuteInSession;
+        }
+        // Anything we can show in the editor opens there. The second branch catches
+        // shebang scripts that `is_file_openable_in_warp` rejects on extension alone
+        // (e.g. an extensionless `#!/bin/sh` file without the user-execute bit) so
+        // they don't fall through to the executor and produce a `permission denied`.
+        if is_file_openable_in_warp(path).is_some() || starts_with_shebang(path) {
+            return OpenFileAction::Editor;
+        }
+    }
+    OpenFileAction::ExecuteInSession
+}
+
 /// Handle an incoming `file://` URL.
 /// * Markdown files are opened as notebook panes.
 /// * For directories, open a new session at the directory path.
 /// * For other files, open a new session at the parent directory path, then possibly execute the
 ///   file.
 fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
-    let auth_state = AuthStateProvider::as_ref(ctx).get();
-    // Don't open files if we're not logged in.
-    if !auth_state.is_logged_in() {
-        return;
-    }
     let primary_window_and_view = window_id.and_then(|window_id| {
         ctx.root_view_id(window_id)
             .map(|view_id| (window_id, view_id))
     });
 
-    if is_markdown_file(&path) {
+    let action = classify_open_file_action(&path);
+    if action == OpenFileAction::Notebook {
         if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
             ctx.dispatch_action(
                 primary_window_id,
@@ -1030,7 +1063,7 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
         } else {
             ctx.dispatch_global_action("root_view:open_new_with_file_notebook", &path);
         }
-    } else if path.is_file() && is_file_openable_in_warp(&path).is_some() {
+    } else if action == OpenFileAction::Editor {
         #[cfg(feature = "local_fs")]
         {
             use crate::code::editor_management::CodeSource;
@@ -1231,8 +1264,7 @@ fn find_cloud_mode_terminal_in_workspace(
                     terminal_view
                         .as_ref(ctx)
                         .ambient_agent_view_model()
-                        .as_ref(ctx)
-                        .is_ambient_agent()
+                        .is_some()
                         .then_some(terminal_view.id())
                 });
 

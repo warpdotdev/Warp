@@ -3404,7 +3404,7 @@ impl Element for BlockListElement {
                     });
                     visible_height_px += height_px;
 
-                    // we want to show different text in the seperator if this is an indvidual conversation
+                    // we want to show different text in the separator if this is an individual conversation
                     // restored from the command palette
                     let banner_intro_text = if is_historical_conversation_restoration {
                         "Conversation restored".to_string()

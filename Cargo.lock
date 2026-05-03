@@ -1496,7 +1496,7 @@ dependencies = [
  "hex",
  "http 1.1.0",
  "p256",
- "rand 0.8.5",
+ "rand 0.8.6",
  "ring",
  "sha2",
  "time",
@@ -3107,7 +3107,7 @@ dependencies = [
 [[package]]
 name = "core-foundation"
 version = "0.10.1"
-source = "git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82#0bcad1e103ead6bd71c4e5f85598ada9508e3a82"
+source = "git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff#6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff"
 dependencies = [
  "core-foundation-sys",
  "libc",
@@ -3116,7 +3116,7 @@ dependencies = [
 [[package]]
 name = "core-foundation-sys"
 version = "0.8.7"
-source = "git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82#0bcad1e103ead6bd71c4e5f85598ada9508e3a82"
+source = "git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff#6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff"
 
 [[package]]
 name = "core-graphics"
@@ -3147,11 +3147,11 @@ dependencies = [
 [[package]]
 name = "core-graphics"
 version = "0.25.0"
-source = "git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82#0bcad1e103ead6bd71c4e5f85598ada9508e3a82"
+source = "git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff#6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff"
 dependencies = [
  "bitflags 2.9.4",
  "core-foundation 0.10.1",
- "core-graphics-types 0.2.0 (git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82)",
+ "core-graphics-types 0.2.0 (git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff)",
  "foreign-types 0.5.0",
  "libc",
 ]
@@ -3181,15 +3181,15 @@ dependencies = [
 [[package]]
 name = "core-graphics-types"
 version = "0.2.0"
-source = "git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82#0bcad1e103ead6bd71c4e5f85598ada9508e3a82"
+source = "git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff#6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff"
 dependencies = [
  "core-foundation 0.10.1",
 ]
 
 [[package]]
 name = "core-text"
-version = "21.0.0"
-source = "git+https://github.com/servo/core-foundation-rs?rev=0bcad1e103ead6bd71c4e5f85598ada9508e3a82#0bcad1e103ead6bd71c4e5f85598ada9508e3a82"
+version = "21.1.0"
+source = "git+https://github.com/servo/core-foundation-rs?rev=6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff#6f844cf1a1a18e25b70fcdf1bcdc458555bd2eff"
 dependencies = [
  "core-foundation 0.10.1",
  "core-graphics 0.25.0",
@@ -6617,7 +6617,7 @@ dependencies = [
  "nix 0.26.4",
  "parking_lot",
  "pathfinder_geometry",
- "rand 0.8.5",
+ "rand 0.8.6",
  "regex",
  "rust-embed 8.7.2",
  "serde",
@@ -6717,7 +6717,7 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "parking_lot",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
  "thiserror 2.0.17",
  "uuid",
@@ -7088,7 +7088,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d9f1da1000eb32cea537203e5ea121eb06e66c5e5f3420a1e9f11a57676f55b"
 dependencies = [
  "palette",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rand_chacha 0.3.1",
 ]
 
@@ -8475,7 +8475,7 @@ dependencies = [
  "chrono",
  "getrandom 0.2.16",
  "http 1.1.0",
- "rand 0.8.5",
+ "rand 0.8.6",
  "reqwest",
  "serde",
  "serde_json",
@@ -9056,7 +9056,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1e1c390732d15f1d48471625cd92d154e66db2c56645e29a9cd26f4699f72dc"
 dependencies = [
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
 ]
 
@@ -9389,7 +9389,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c80231409c20246a13fddb31776fb942c38553c51e871f8cbd687a4cfb5843d"
 dependencies = [
  "phf_shared",
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -10193,9 +10193,9 @@ checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 
 [[package]]
 name = "rand"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
+checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
@@ -10559,6 +10559,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
+ "async-io",
  "async-process",
  "command",
  "dashmap",
@@ -10964,7 +10965,7 @@ dependencies = [
  "borsh",
  "bytes",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rkyv",
  "serde",
  "serde_json",
@@ -12326,7 +12327,7 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "log",
- "rand 0.8.5",
+ "rand 0.8.6",
  "sum_tree",
 ]
 
@@ -12939,7 +12940,7 @@ dependencies = [
  "digest",
  "hkdf",
  "lazy_static",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
  "serde_json",
  "sha-1",
@@ -13550,7 +13551,7 @@ dependencies = [
  "http 1.1.0",
  "httparse",
  "log",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rustls 0.23.39",
  "rustls-pki-types",
  "sha1",
@@ -14299,7 +14300,7 @@ dependencies = [
  "prost 0.14.3",
  "prost-build",
  "prost-types",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rangemap",
  "rayon",
  "regex",
@@ -14357,6 +14358,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml 0.8.23",
+ "toml_edit 0.25.6+spec-1.1.0",
  "tracing",
  "typed-path 0.10.0",
  "ui_components",
@@ -14551,7 +14553,7 @@ dependencies = [
  "objc",
  "objc2-foundation 0.3.2",
  "parking_lot",
- "rand 0.8.5",
+ "rand 0.8.6",
  "regex",
  "reqwest",
  "schemars",
@@ -14566,6 +14568,7 @@ dependencies = [
  "shellexpand",
  "string-offset",
  "strum",
+ "strum_macros",
  "sysinfo",
  "tempfile",
  "thiserror 2.0.17",
@@ -14607,7 +14610,7 @@ dependencies = [
  "ordered-float 3.9.2",
  "parking_lot",
  "pathfinder_color",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rangemap",
  "rayon",
  "regex-automata",
@@ -14767,7 +14770,7 @@ dependencies = [
 [[package]]
 name = "warp_multi_agent_api"
 version = "0.0.0"
-source = "git+https://github.com/warpdotdev/warp-proto-apis.git?rev=78a78f21a75432bf0141e396fb318bf1694e47f0#78a78f21a75432bf0141e396fb318bf1694e47f0"
+source = "git+https://github.com/warpdotdev/warp-proto-apis.git?rev=aa2f9cde164a5b48ac01087d417d1188771f9b6d#aa2f9cde164a5b48ac01087d417d1188771f9b6d"
 dependencies = [
  "prost 0.14.3",
  "prost-reflect",
@@ -14871,7 +14874,7 @@ dependencies = [
  "mime_guess",
  "pathdiff",
  "pin-project",
- "rand 0.8.5",
+ "rand 0.8.6",
  "regex",
  "serde",
  "serde_json",
@@ -14955,7 +14958,7 @@ dependencies = [
  "parking_lot",
  "pathfinder_color",
  "pathfinder_geometry",
- "rand 0.8.5",
+ "rand 0.8.6",
  "resvg",
  "rust-embed 8.7.2",
  "serde",
@@ -15032,7 +15035,7 @@ dependencies = [
  "parking_lot",
  "pathfinder_color",
  "pathfinder_geometry",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rangemap",
  "raw-window-handle 0.6.2",
  "resvg",
@@ -15073,7 +15076,7 @@ dependencies = [
  "log",
  "objc",
  "ouroboros",
- "rand 0.8.5",
+ "rand 0.8.6",
  "ring",
  "secret-service",
  "security-framework 2.9.2",

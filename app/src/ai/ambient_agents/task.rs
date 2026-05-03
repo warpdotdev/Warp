@@ -83,30 +83,16 @@ impl HarnessConfig {
     }
 }
 
-/// Parses a harness type name (e.g. `"claude"`) into a [`Harness`] variant.
-/// Unknown values fall back to [`Harness::Unknown`] so we don't
-/// misrepresent a future-server harness as Oz; UI surfaces should treat
-/// `Unknown` as a non-Oz, non-runnable harness.
-pub(crate) fn harness_from_name(name: &str) -> Harness {
-    match name {
-        "claude" => Harness::Claude,
-        "opencode" => Harness::OpenCode,
-        "gemini" => Harness::Gemini,
-        "oz" => Harness::Oz,
-        other => {
-            log::warn!("Unknown harness config name: {other:?}; treating as Unknown");
-            Harness::Unknown
-        }
-    }
-}
-
 fn serialize_harness<S: Serializer>(harness: &Harness, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&harness.to_string())
+    serializer.serialize_str(harness.config_name())
 }
 
 fn deserialize_harness<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Harness, D::Error> {
     let name = String::deserialize(deserializer)?;
-    Ok(harness_from_name(&name))
+    Ok(Harness::from_config_name(&name).unwrap_or_else(|| {
+        log::warn!("Unknown harness config name: {name:?}; treating as Unknown");
+        Harness::Unknown
+    }))
 }
 
 /// Authentication secrets for third-party harnesses.
@@ -185,10 +171,9 @@ impl AgentSource {
             AgentSource::Slack => "Slack",
             AgentSource::Cli => "CLI",
             AgentSource::ScheduledAgent => "Scheduled",
-            AgentSource::Interactive => "Warp (local agent)",
+            AgentSource::Interactive | AgentSource::CloudMode => "Warp App",
             AgentSource::WebApp => "Oz Web",
             AgentSource::GitHubAction => "GitHub Action",
-            AgentSource::CloudMode => "Warp (cloud agent)",
         }
     }
 
@@ -278,6 +263,14 @@ pub struct AmbientAgentTask {
     pub children: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RunExecution<'a> {
+    pub session_id: Option<&'a str>,
+    pub session_link: Option<&'a str>,
+    pub request_usage: Option<&'a RequestUsage>,
+    pub is_sandbox_running: bool,
+}
+
 /// Represents a single attachment input from the client (e.g., file upload)
 #[derive(Clone, Debug, Serialize)]
 pub struct AttachmentInput {
@@ -296,10 +289,27 @@ pub struct TaskAttachment {
 }
 
 impl AmbientAgentTask {
+    pub fn run_id(&self) -> AmbientAgentTaskId {
+        self.task_id
+    }
+
+    pub fn conversation_id(&self) -> Option<&str> {
+        self.conversation_id.as_deref()
+    }
+
+    pub fn active_run_execution(&self) -> RunExecution<'_> {
+        RunExecution {
+            session_id: self.session_id.as_deref(),
+            session_link: self.session_link.as_deref().filter(|link| !link.is_empty()),
+            request_usage: self.request_usage.as_ref(),
+            is_sandbox_running: self.is_sandbox_running,
+        }
+    }
+
     /// Total credits used (inference + compute).
     pub fn credits_used(&self) -> Option<f32> {
-        self.request_usage
-            .as_ref()
+        self.active_run_execution()
+            .request_usage
             .map(|u| (u.inference_cost.unwrap_or(0.0) + u.compute_cost.unwrap_or(0.0)) as f32)
     }
 
@@ -317,7 +327,7 @@ impl AmbientAgentTask {
 
     /// Returns true if the underlying session for the ambient agent is no longer running.
     pub fn is_no_longer_running(&self) -> bool {
-        !self.is_sandbox_running && !self.state.is_working()
+        !self.active_run_execution().is_sandbox_running && !self.state.is_working()
     }
 }
 

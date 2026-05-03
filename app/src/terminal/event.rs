@@ -112,13 +112,6 @@ pub enum Event {
         is_tagged_in: bool,
     },
     Handler(HandlerEvent),
-    /// Emitted by the async remote server setup task to report intermediate
-    /// state changes (e.g. Checking → Installing → Initializing) so the
-    /// prompt can show stage-specific messages.
-    RemoteServerSetupStateChanged {
-        session_id: SessionId,
-        state: RemoteServerSetupState,
-    },
     /// Emitted when the remote server binary has been successfully checked or
     /// installed and is ready. The session is initialized independently on
     /// `Bootstrapped`; when the remote server later connects, the client is
@@ -468,15 +461,6 @@ impl Debug for Event {
                 write!(f, "AgentTaggedInChanged(is_tagged_in: {is_tagged_in})")
             }
             Event::Handler(handler_event) => write!(f, "Handler({handler_event:?}))"),
-            Event::RemoteServerSetupStateChanged {
-                session_id,
-                ref state,
-            } => {
-                write!(
-                    f,
-                    "RemoteServerSetupStateChanged(session: {session_id:?}, state: {state:?})"
-                )
-            }
             Event::RemoteServerReady { session_id } => {
                 write!(f, "RemoteServerReady(session: {session_id:?})")
             }

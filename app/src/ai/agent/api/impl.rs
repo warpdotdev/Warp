@@ -66,6 +66,13 @@ pub async fn generate_multi_agent_output(
                 base: params.model.into(),
                 cli_agent: params.cli_agent_model.into(),
                 computer_use_agent: params.computer_use_model.into(),
+                base_model_context_window_limit: if FeatureFlag::ConfigurableContextWindow
+                    .is_enabled()
+                {
+                    params.context_window_limit.unwrap_or(0)
+                } else {
+                    0
+                },
                 ..Default::default()
             }),
             rules_enabled: params.is_memory_enabled,
@@ -112,7 +119,7 @@ pub async fn generate_multi_agent_output(
                 .unwrap_or_default(),
             forked_from_conversation_id: if params.conversation_token.is_none() {
                 // We only include this param on our initial request to the server
-                // (when the forked conversation has not been asigned a new id yet).
+                // (when the forked conversation has not been assigned a new id yet).
                 params
                     .forked_from_conversation_token
                     .map(|token| token.as_str().to_string())

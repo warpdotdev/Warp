@@ -880,6 +880,50 @@ fn test_toggle_autoexecute_override_persists_updated_conversation_state() {
 }
 
 #[test]
+fn test_update_event_sequence_persists_updated_conversation_state() {
+    App::test((), |mut app| async move {
+        initialize_settings_for_tests(&mut app);
+
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
+        global_resource_handles.model_event_sender = Some(sender);
+        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
+
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+        let terminal_view_id = EntityId::new();
+
+        let conversation_id = history_model.update(&mut app, |history_model, ctx| {
+            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+        });
+
+        history_model.update(&mut app, |history_model, ctx| {
+            history_model.update_event_sequence(conversation_id, 42, ctx);
+        });
+
+        let event = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let ModelEvent::UpdateMultiAgentConversation {
+            conversation_id: persisted_conversation_id,
+            conversation_data,
+            ..
+        } = event
+        else {
+            panic!("expected UpdateMultiAgentConversation event");
+        };
+
+        assert_eq!(persisted_conversation_id, conversation_id.to_string());
+        assert_eq!(conversation_data.last_event_sequence, Some(42));
+
+        history_model.read(&app, |history_model, _| {
+            let conversation = history_model
+                .conversation(&conversation_id)
+                .expect("conversation should exist");
+            assert_eq!(conversation.last_event_sequence(), Some(42));
+        });
+    });
+}
+
+#[test]
 fn test_find_by_token_after_merge_cloud_metadata() {
     App::test((), |mut app| async move {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
@@ -1130,6 +1174,7 @@ fn test_find_by_token_after_insert_forked_conversation_from_tasks() {
             parent_agent_id: None,
             agent_name: None,
             parent_conversation_id: None,
+            is_remote_child: false,
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,

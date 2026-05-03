@@ -71,7 +71,7 @@ fn test_shared_session_banners() {
             view.model.lock().block_list().block_heights().items().len()
         });
 
-        // Make a block and then insert the shared sesion starter banner.
+        // Make a block and then insert the shared session starter banner.
         terminal.update(&mut app, |view, ctx| {
             view.model.lock().simulate_block("ls", "foo");
             view.insert_shared_session_started_banner(
