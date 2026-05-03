@@ -191,6 +191,7 @@ enum AnyActionExecution {
 }
 
 #[cfg(not(target_family = "wasm"))]
+#[derive(Debug, PartialEq)]
 enum PolicyPreflightState {
     Pending,
     Allowed,
@@ -908,14 +909,15 @@ impl BlocklistAIActionExecutor {
             return None;
         }
 
-        if let Some(decision) = self.completed_policy_preflights.remove(&action.id) {
+        if let Some(decision) = self.completed_policy_preflights.get(&action.id) {
             let user_confirmed =
-                is_user_initiated || self.user_initiated_policy_preflights.remove(&action.id);
-            return Some(self.policy_preflight_state_from_decision(
-                action,
-                decision,
-                user_confirmed,
-            ));
+                is_user_initiated || self.user_initiated_policy_preflights.contains(&action.id);
+            let state = policy_preflight_state_from_decision(action, decision, user_confirmed);
+            if should_consume_completed_policy_preflight(&state) {
+                self.completed_policy_preflights.remove(&action.id);
+                self.user_initiated_policy_preflights.remove(&action.id);
+            }
+            return Some(state);
         }
 
         if self.pending_policy_preflights.contains(&action.id) {
@@ -970,25 +972,6 @@ impl BlocklistAIActionExecutor {
             self.pending_policy_preflights.remove(action_id);
             self.user_initiated_policy_preflights.remove(action_id);
             self.completed_policy_preflights.remove(action_id);
-        }
-    }
-
-    #[cfg(not(target_family = "wasm"))]
-    fn policy_preflight_state_from_decision(
-        &self,
-        action: &AIAgentAction,
-        decision: AgentPolicyEffectiveDecision,
-        is_user_initiated: bool,
-    ) -> PolicyPreflightState {
-        match decision.decision {
-            AgentPolicyDecisionKind::Allow => PolicyPreflightState::Allowed,
-            AgentPolicyDecisionKind::Ask if is_user_initiated => PolicyPreflightState::Allowed,
-            AgentPolicyDecisionKind::Ask => {
-                PolicyPreflightState::NeedsConfirmation(decision.reason.clone())
-            }
-            AgentPolicyDecisionKind::Deny | AgentPolicyDecisionKind::Unknown => {
-                PolicyPreflightState::Denied(policy_denied_action_result(action, &decision))
-            }
         }
     }
 
@@ -1309,6 +1292,29 @@ fn policy_denied_action_result(
         ),
         _ => action.action.cancelled_result(),
     }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn policy_preflight_state_from_decision(
+    action: &AIAgentAction,
+    decision: &AgentPolicyEffectiveDecision,
+    is_user_initiated: bool,
+) -> PolicyPreflightState {
+    match decision.decision {
+        AgentPolicyDecisionKind::Allow => PolicyPreflightState::Allowed,
+        AgentPolicyDecisionKind::Ask if is_user_initiated => PolicyPreflightState::Allowed,
+        AgentPolicyDecisionKind::Ask => {
+            PolicyPreflightState::NeedsConfirmation(decision.reason.clone())
+        }
+        AgentPolicyDecisionKind::Deny | AgentPolicyDecisionKind::Unknown => {
+            PolicyPreflightState::Denied(policy_denied_action_result(action, decision))
+        }
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn should_consume_completed_policy_preflight(state: &PolicyPreflightState) -> bool {
+    !matches!(state, PolicyPreflightState::NeedsConfirmation(_))
 }
 
 #[cfg(not(target_family = "wasm"))]

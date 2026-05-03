@@ -94,7 +94,10 @@ impl AgentPolicyHookEngine {
         };
 
         match response {
-            Ok(response) => AgentPolicyHookEvaluation::from_response(hook.name.clone(), response),
+            Ok(response) => AgentPolicyHookEvaluation::from_response(
+                hook.name.clone(),
+                redact_hook_response_configured_secrets(response, hook),
+            ),
             Err(failure) => AgentPolicyHookEvaluation::unavailable(
                 hook.name.clone(),
                 self.config.hook_unavailable_decision(hook).decision_kind(),
@@ -138,41 +141,41 @@ impl AgentPolicyHookEngine {
             command.env(key, value.as_str());
         }
 
-        let mut child = command.spawn().map_err(|source| AgentPolicyHookFailure {
-            kind: AgentPolicyHookErrorKind::SpawnFailed,
-            detail: format!("failed to spawn policy hook: {source}"),
-        })?;
-
         let event_bytes = serialize_event(event).map_err(|source| AgentPolicyHookFailure {
             kind: AgentPolicyHookErrorKind::MalformedResponse,
             detail: format!("failed to serialize policy event: {source}"),
         })?;
 
-        let Some(mut stdin) = child.stdin.take() else {
-            return Err(AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::StdinWriteFailed,
-                detail: "policy hook stdin was not available".to_string(),
-            });
-        };
-
-        stdin
-            .write_all(&event_bytes)
-            .await
-            .map_err(|source| AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::StdinWriteFailed,
-                detail: format!("failed to write policy event to hook stdin: {source}"),
-            })?;
-        stdin
-            .write_all(b"\n")
-            .await
-            .map_err(|source| AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::StdinWriteFailed,
-                detail: format!("failed to terminate policy event on hook stdin: {source}"),
-            })?;
-        drop(stdin);
+        let mut child = command.spawn().map_err(|source| AgentPolicyHookFailure {
+            kind: AgentPolicyHookErrorKind::SpawnFailed,
+            detail: format!("failed to spawn policy hook: {source}"),
+        })?;
 
         let timeout = Duration::from_millis(self.config.hook_timeout_ms(hook));
         let output = match async {
+            let Some(mut stdin) = child.stdin.take() else {
+                return Err(AgentPolicyHookFailure {
+                    kind: AgentPolicyHookErrorKind::StdinWriteFailed,
+                    detail: "policy hook stdin was not available".to_string(),
+                });
+            };
+
+            stdin
+                .write_all(&event_bytes)
+                .await
+                .map_err(|source| AgentPolicyHookFailure {
+                    kind: AgentPolicyHookErrorKind::StdinWriteFailed,
+                    detail: format!("failed to write policy event to hook stdin: {source}"),
+                })?;
+            stdin
+                .write_all(b"\n")
+                .await
+                .map_err(|source| AgentPolicyHookFailure {
+                    kind: AgentPolicyHookErrorKind::StdinWriteFailed,
+                    detail: format!("failed to terminate policy event on hook stdin: {source}"),
+                })?;
+            drop(stdin);
+
             let stdout = child.stdout.take().ok_or_else(|| AgentPolicyHookFailure {
                 kind: AgentPolicyHookErrorKind::SpawnFailed,
                 detail: "policy hook stdout was not available".to_string(),
@@ -276,7 +279,7 @@ impl AgentPolicyHookEngine {
             })?
             .map_err(|source| AgentPolicyHookFailure {
                 kind: AgentPolicyHookErrorKind::HttpRequestFailed,
-                detail: format!("failed to call HTTP policy hook: {source}"),
+                detail: format!("failed to call HTTP policy hook: {}", source.without_url()),
             })?;
 
         let status = response.status();
@@ -374,7 +377,10 @@ async fn read_capped_http_response(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|source| AgentPolicyHookFailure {
             kind: AgentPolicyHookErrorKind::HttpRequestFailed,
-            detail: format!("failed to read HTTP policy hook response: {source}"),
+            detail: format!(
+                "failed to read HTTP policy hook response: {}",
+                source.without_url()
+            ),
         })?;
 
         if output.len().saturating_add(chunk.len()) > MAX_HOOK_OUTPUT_BYTES {
@@ -392,14 +398,57 @@ async fn read_capped_http_response(
 
 fn redact_hook_stderr(stderr: &[u8], env: &BTreeMap<String, AgentPolicyHookSecretValue>) -> String {
     let stderr = String::from_utf8_lossy(stderr);
-    let mut redacted = stderr.trim().to_string();
-    for value in env.values() {
+    let redacted = redact_configured_secret_values(stderr.trim(), env.values());
+    redact_sensitive_text_for_policy(&redacted)
+}
+
+fn redact_hook_response_configured_secrets(
+    response: AgentPolicyHookResponse,
+    hook: &AgentPolicyHook,
+) -> AgentPolicyHookResponse {
+    match &hook.transport {
+        AgentPolicyHookTransport::Stdio { env, .. } => {
+            redact_hook_response_secret_values(response, env.values())
+        }
+        AgentPolicyHookTransport::Http { headers, .. } => {
+            redact_hook_response_secret_values(response, headers.values())
+        }
+    }
+}
+
+fn redact_hook_response_secret_values<'a>(
+    response: AgentPolicyHookResponse,
+    secrets: impl IntoIterator<Item = &'a AgentPolicyHookSecretValue> + Clone,
+) -> AgentPolicyHookResponse {
+    AgentPolicyHookResponse {
+        schema_version: response.schema_version,
+        decision: response.decision,
+        reason: response
+            .reason
+            .map(|reason| redact_configured_secret_values(&reason, secrets.clone())),
+        external_audit_id: response
+            .external_audit_id
+            .map(|audit_id| redact_configured_secret_values(&audit_id, secrets)),
+    }
+}
+
+fn redact_configured_secret_values<'a>(
+    value: &str,
+    secrets: impl IntoIterator<Item = &'a AgentPolicyHookSecretValue>,
+) -> String {
+    let mut redacted = value.to_string();
+    for value in secrets {
         let secret = value.as_str();
         if !secret.is_empty() {
             redacted = redacted.replace(secret, "<redacted>");
         }
+        if let Some((scheme, credential)) = secret.split_once(' ') {
+            if scheme.eq_ignore_ascii_case("bearer") && credential.len() >= 4 {
+                redacted = redacted.replace(credential, "<redacted>");
+            }
+        }
     }
-    redact_sensitive_text_for_policy(&redacted)
+    redacted
 }
 
 fn serialize_event(event: &AgentPolicyEvent) -> Result<Vec<u8>> {

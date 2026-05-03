@@ -119,7 +119,8 @@ mod policy_hooks {
 
     use super::super::{
         agent_policy_action, normalize_command_for_policy, policy_denied_action_result,
-        warp_permission_snapshot_for_policy,
+        policy_preflight_state_from_decision, should_consume_completed_policy_preflight,
+        warp_permission_snapshot_for_policy, PolicyPreflightState,
     };
 
     fn command_action(command: &str) -> AIAgentAction {
@@ -173,6 +174,34 @@ mod policy_hooks {
         let snapshot = warp_permission_snapshot_for_policy(false, false, false, true);
 
         assert_eq!(snapshot.decision, WarpPermissionDecisionKind::Deny);
+    }
+
+    #[test]
+    fn cached_ask_policy_decision_is_retained_until_user_confirmation() {
+        let action = command_action("rm -rf target");
+        let decision = AgentPolicyEffectiveDecision {
+            decision: AgentPolicyDecisionKind::Ask,
+            reason: Some("requires approval".to_string()),
+            warp_permission: WarpPermissionSnapshot::allow(None),
+            hook_results: vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Ask,
+                reason: Some("requires approval".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+        };
+
+        let unconfirmed = policy_preflight_state_from_decision(&action, &decision, false);
+        assert!(matches!(
+            unconfirmed,
+            PolicyPreflightState::NeedsConfirmation(_)
+        ));
+        assert!(!should_consume_completed_policy_preflight(&unconfirmed));
+
+        let confirmed = policy_preflight_state_from_decision(&action, &decision, true);
+        assert_eq!(confirmed, PolicyPreflightState::Allowed);
+        assert!(should_consume_completed_policy_preflight(&confirmed));
     }
 
     #[test]

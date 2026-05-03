@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::redaction::redact_sensitive_text_for_policy;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AgentPolicyDecisionKind {
@@ -111,10 +113,10 @@ impl AgentPolicyHookEvaluation {
         response: AgentPolicyHookResponse,
     ) -> Self {
         Self {
-            hook_name: hook_name.into(),
+            hook_name: sanitize_policy_string(hook_name.into()),
             decision: response.decision,
-            reason: response.reason,
-            external_audit_id: response.external_audit_id,
+            reason: response.reason.map(sanitize_policy_string),
+            external_audit_id: response.external_audit_id.map(sanitize_policy_string),
             error: None,
         }
     }
@@ -126,13 +128,17 @@ impl AgentPolicyHookEvaluation {
         reason: impl Into<String>,
     ) -> Self {
         Self {
-            hook_name: hook_name.into(),
+            hook_name: sanitize_policy_string(hook_name.into()),
             decision,
-            reason: Some(reason.into()),
+            reason: Some(sanitize_policy_string(reason.into())),
             external_audit_id: None,
             error: Some(error),
         }
     }
+}
+
+fn sanitize_policy_string(value: String) -> String {
+    redact_sensitive_text_for_policy(&value)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

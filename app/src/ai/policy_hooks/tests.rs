@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use serde_json::json;
 
@@ -6,11 +9,12 @@ use super::{
     config::AgentPolicyHookConfig,
     decision::{
         compose_policy_decisions, AgentPolicyDecisionKind, AgentPolicyHookErrorKind,
-        AgentPolicyHookEvaluation, AgentPolicyUnavailableDecision, WarpPermissionSnapshot,
+        AgentPolicyHookEvaluation, AgentPolicyHookResponse, AgentPolicyUnavailableDecision,
+        WarpPermissionSnapshot,
     },
     event::{
-        AgentPolicyEvent, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
-        AGENT_POLICY_SCHEMA_VERSION,
+        AgentPolicyAction, AgentPolicyEvent, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
+        PolicyReadFilesAction, AGENT_POLICY_SCHEMA_VERSION,
     },
 };
 
@@ -183,6 +187,31 @@ fn policy_decision_composition_keeps_denials_terminal() {
     assert_eq!(warp_denied.reason.as_deref(), Some("protected path"));
 }
 
+#[test]
+fn hook_response_strings_are_redacted_and_capped() {
+    let evaluation = AgentPolicyHookEvaluation::from_response(
+        "guard",
+        AgentPolicyHookResponse {
+            schema_version: AGENT_POLICY_SCHEMA_VERSION.to_string(),
+            decision: AgentPolicyDecisionKind::Deny,
+            reason: Some(format!(
+                "OPENAI_API_KEY=sk-secretsecretsecret {}",
+                "x".repeat(10_000)
+            )),
+            external_audit_id: Some("audit-ghp_secretsecretsecret".to_string()),
+        },
+    );
+
+    let reason = evaluation.reason.as_deref().unwrap();
+    assert!(reason.contains("OPENAI_API_KEY=<redacted>"));
+    assert!(!reason.contains("sk-secretsecretsecret"));
+    assert!(reason.len() < 8_300);
+    assert_eq!(
+        evaluation.external_audit_id.as_deref(),
+        Some("audit-<redacted>")
+    );
+}
+
 #[cfg(not(target_family = "wasm"))]
 #[test]
 fn audit_record_uses_redacted_policy_event_payload() {
@@ -346,6 +375,49 @@ async fn stdio_engine_rejects_oversized_stdout() {
 
 #[cfg(all(unix, not(target_family = "wasm")))]
 #[tokio::test]
+async fn stdio_engine_times_out_blocked_stdin_write() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "on_unavailable": "deny",
+        "before_action": [{
+            "name": "blocked-stdin-guard",
+            "transport": "stdio",
+            "command": "sleep",
+            "args": ["5"],
+            "timeout_ms": 100
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let suffix = "x".repeat(160);
+    let paths = (0..15_000)
+        .map(|index| PathBuf::from(format!("/tmp/policy-hook-large-event-{index}-{suffix}")))
+        .collect();
+    let event = AgentPolicyEvent::new(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        AgentPolicyAction::ReadFiles(PolicyReadFilesAction { paths }),
+    );
+
+    let started = Instant::now();
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_eq!(decision.decision, AgentPolicyDecisionKind::Deny);
+    assert_eq!(
+        decision.hook_results[0].error,
+        Some(AgentPolicyHookErrorKind::Timeout)
+    );
+}
+
+#[cfg(all(unix, not(target_family = "wasm")))]
+#[tokio::test]
 async fn stdio_engine_redacts_configured_secret_stderr() {
     let config: AgentPolicyHookConfig = serde_json::from_value(json!({
         "enabled": true,
@@ -382,6 +454,48 @@ async fn stdio_engine_redacts_configured_secret_stderr() {
     );
     assert!(reason.contains("<redacted>"));
     assert!(!reason.contains("super-secret-token"));
+}
+
+#[cfg(all(unix, not(target_family = "wasm")))]
+#[tokio::test]
+async fn stdio_engine_redacts_configured_secret_hook_reason() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "secret-reason-guard",
+            "transport": "stdio",
+            "command": "sh",
+            "args": [
+                "-c",
+                "cat >/dev/null; printf '{\"schema_version\":\"warp.agent_policy_hook.v1\",\"decision\":\"deny\",\"reason\":\"token: %s\",\"external_audit_id\":\"audit-%s\"}\\n' \"$API_TOKEN\" \"$API_TOKEN\""
+            ],
+            "env": { "API_TOKEN": "super-secret-token" },
+            "timeout_ms": 1000
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("ls", "ls", Some(true), Some(false)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    let reason = decision.hook_results[0].reason.as_deref().unwrap();
+    assert!(reason.contains("<redacted>"));
+    assert!(!reason.contains("super-secret-token"));
+    assert_eq!(
+        decision.hook_results[0].external_audit_id.as_deref(),
+        Some("audit-<redacted>")
+    );
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -485,6 +599,60 @@ async fn http_engine_rejects_oversized_response_body() {
         .as_deref()
         .unwrap()
         .contains("response exceeded"));
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[tokio::test]
+async fn http_engine_redacts_configured_header_secret_hook_reason() {
+    let mut server = mockito::Server::new_async().await;
+    let hook_response = json!({
+        "schema_version": AGENT_POLICY_SCHEMA_VERSION,
+        "decision": "deny",
+        "reason": "raw token super-secret-token",
+        "external_audit_id": "audit-super-secret-token"
+    })
+    .to_string();
+    let mock = server
+        .mock("POST", "/policy")
+        .match_header("authorization", "Bearer super-secret-token")
+        .with_status(200)
+        .with_body(hook_response)
+        .create_async()
+        .await;
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "http-guard",
+            "transport": "http",
+            "url": format!("{}/policy", server.url()),
+            "headers": { "authorization": "Bearer super-secret-token" },
+            "timeout_ms": 1000
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("rm -rf .", "rm -rf .", Some(false), Some(true)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    mock.assert_async().await;
+    let reason = decision.hook_results[0].reason.as_deref().unwrap();
+    assert!(reason.contains("<redacted>"));
+    assert!(!reason.contains("super-secret-token"));
+    assert_eq!(
+        decision.hook_results[0].external_audit_id.as_deref(),
+        Some("audit-<redacted>")
+    );
 }
 
 #[cfg(all(unix, not(target_family = "wasm")))]
