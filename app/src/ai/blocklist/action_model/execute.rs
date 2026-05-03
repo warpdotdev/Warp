@@ -1624,6 +1624,8 @@ fn recompose_completed_policy_decision(
     warp_permission: WarpPermissionSnapshot,
     allow_hook_autoapproval: bool,
 ) -> AgentPolicyEffectiveDecision {
+    let allow_hook_autoapproval =
+        allow_hook_autoapproval && decision.warp_permission == warp_permission;
     compose_policy_decisions(
         warp_permission,
         decision.hook_results.clone(),

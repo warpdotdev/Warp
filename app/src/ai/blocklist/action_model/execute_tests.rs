@@ -300,6 +300,34 @@ mod policy_hooks {
     }
 
     #[test]
+    fn cached_policy_decision_does_not_autoapprove_changed_warp_ask() {
+        let cached_decision = compose_policy_decisions(
+            WarpPermissionSnapshot::allow(Some("initial allow".to_string())),
+            vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Allow,
+                reason: Some("approved by hook".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+            true,
+        );
+
+        let recomposed = recompose_completed_policy_decision(
+            &cached_decision,
+            WarpPermissionSnapshot::ask(Some("permission changed".to_string())),
+            true,
+        );
+
+        assert_eq!(recomposed.decision, AgentPolicyDecisionKind::Ask);
+        assert_eq!(recomposed.reason.as_deref(), Some("permission changed"));
+        assert_eq!(
+            recomposed.warp_permission.decision,
+            WarpPermissionDecisionKind::Ask
+        );
+    }
+
+    #[test]
     fn policy_preflight_key_scopes_same_action_id_by_conversation() {
         let action_id = AIAgentActionId::from("action_1".to_string());
         let conversation_one = AIConversationId::new();
