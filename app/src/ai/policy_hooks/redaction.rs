@@ -35,14 +35,14 @@ static CURL_BASIC_AUTH_RE: Lazy<Regex> = Lazy::new(|| {
 
 static SPLIT_SECRET_ARG_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r#"(?i)(^|[\s;&|])(-{1,2}(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)\b\s+)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|]+|basic\s+[^\s;&|]+|[^\s;&|]+)"#,
+        r#"(?i)(^|[\s;&|])(-{1,2}[a-z0-9_-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)\b\s+)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|]+|basic\s+[^\s;&|]+|[^\s;&|]+)"#,
     )
     .expect("split secret arg regex should compile")
 });
 
 static INLINE_SECRET_ARG_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r#"(?i)(^|[\s;&|])(-{1,2}(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)\b=)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|]+|basic\s+[^\s;&|]+|[^\s;&|]+)"#,
+        r#"(?i)(^|[\s;&|])(-{1,2}[a-z0-9_-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)\b=)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|]+|basic\s+[^\s;&|]+|[^\s;&|]+)"#,
     )
     .expect("inline secret arg regex should compile")
 });

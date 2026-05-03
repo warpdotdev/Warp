@@ -5,7 +5,7 @@ pub(crate) mod decision;
 #[cfg(not(target_family = "wasm"))]
 pub(crate) mod engine;
 pub(crate) mod event;
-mod redaction;
+pub(crate) mod redaction;
 
 pub(crate) use config::AgentPolicyHookConfig;
 pub(crate) use decision::{

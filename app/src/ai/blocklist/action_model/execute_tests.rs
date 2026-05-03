@@ -183,7 +183,7 @@ mod policy_hooks {
 
     #[test]
     fn policy_denied_result_preserves_command_and_policy_reason() {
-        let action = command_action("rm -rf target");
+        let action = command_action("OPENAI_API_KEY=sk-secretsecretsecret rm -rf target");
         let decision = AgentPolicyEffectiveDecision {
             decision: AgentPolicyDecisionKind::Deny,
             reason: Some("blocked".to_string()),
@@ -203,7 +203,7 @@ mod policy_hooks {
             result,
             AIAgentActionResultType::RequestCommandOutput(
                 RequestCommandOutputResult::PolicyDenied {
-                    command: "rm -rf target".to_string(),
+                    command: "OPENAI_API_KEY=<redacted> rm -rf target".to_string(),
                     reason: "guard denied the action: dangerous command".to_string(),
                 }
             )

@@ -116,12 +116,18 @@ fn config_rejects_stdio_hook_credential_args() {
         json!(["--token", "secret"]),
         json!(["--token", "prefix$API_TOKEN"]),
         json!(["--api-key", "secret"]),
+        json!(["--client-secret", "secret"]),
+        json!(["--refresh-token", "secret"]),
+        json!(["--accessToken", "secret"]),
         json!(["--authorization", "Bearer secret"]),
         json!(["--authorization", "Bearer token$with-dollar"]),
         json!(["API_KEY=secret"]),
+        json!(["clientSecret=secret"]),
         json!(["API_KEY=secret$with-dollar"]),
+        json!(["X-API-Key:", "secret"]),
         json!(["Authorization: Bearer secret"]),
         json!(["Authorization: Bearer token$with-dollar"]),
+        json!(["Authorization:", "Bearer token$with-dollar"]),
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
             "enabled": true,
@@ -152,7 +158,7 @@ fn config_allows_stdio_hook_secret_env_reference_args() {
             "name": "stdio-guard",
             "transport": "stdio",
             "command": "guard",
-            "args": ["--token", "$API_TOKEN", "--api-key=${POLICY_API_KEY}", "--authorization", "Bearer $POLICY_TOKEN", "--auth", "Basic ${POLICY_AUTH}", "Authorization: BEARER $HEADER_TOKEN"]
+            "args": ["--token", "$API_TOKEN", "--api-key=${POLICY_API_KEY}", "--authorization", "Bearer $POLICY_TOKEN", "--auth", "Basic ${POLICY_AUTH}", "Authorization: BEARER $HEADER_TOKEN", "X-API-Key:", "$HEADER_API_KEY", "Authorization:", "Bearer $HEADER_TOKEN"]
         }]
     }))
     .unwrap();
@@ -195,7 +201,17 @@ fn config_rejects_http_hook_url_embedded_credentials() {
         "https:user:pass@example.com/policy",
         "https://example.com/policy?token=secret",
         "https://example.com/policy?api_key=secret",
+        "https://example.com/policy?clientSecret=abc123",
+        "https://example.com/policy?accessToken=abc123",
+        "https://example.com/policy?refresh-token=abc123",
+        "https://example.com/policy?q=sk-secretsecretsecret",
+        "https://example.com/policy?state=ghp_secretsecretsecret",
+        "https://example.com/policy?state=gho_secretsecretsecret",
+        "https://example.com/policy?state=ghu_secretsecretsecret",
+        "https://example.com/policy?state=ghs_secretsecretsecret",
+        "https://example.com/policy?state=ghr_secretsecretsecret",
         "https://example.com/policy#access_token=secret",
+        "https://example.com/policy#state=sk-secretsecretsecret",
         "https://example.com/policy?authorization=Bearer%20secret",
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
@@ -208,8 +224,26 @@ fn config_rejects_http_hook_url_embedded_credentials() {
         }))
         .unwrap();
 
-        assert!(config.validate().is_err());
+        assert!(matches!(
+            config.validate(),
+            Err(super::config::AgentPolicyHookConfigError::HttpUrlContainsCredentials)
+        ));
     }
+}
+
+#[test]
+fn config_allows_http_hook_url_non_credential_query_values() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "remote-guard",
+            "transport": "http",
+            "url": "https://example.com/policy?q=skeleton&state=public-value#section"
+        }]
+    }))
+    .unwrap();
+
+    assert!(config.validate().is_ok());
 }
 
 #[test]
@@ -218,6 +252,8 @@ fn config_rejects_disabled_http_hook_url_embedded_credentials() {
         "https://token@example.com/policy",
         "https://token@example .com/policy",
         "https:user:pass@example.com/policy",
+        "https://example.com/policy?q=sk-secretsecretsecret",
+        "https://example .com/policy?q=sk-secretsecretsecret",
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
             "enabled": false,
@@ -229,36 +265,45 @@ fn config_rejects_disabled_http_hook_url_embedded_credentials() {
         }))
         .unwrap();
 
-        assert!(config.validate().is_err());
+        assert!(matches!(
+            config.validate(),
+            Err(super::config::AgentPolicyHookConfigError::HttpUrlContainsCredentials)
+        ));
     }
 }
 
 #[test]
 fn profile_serialization_sanitizes_disabled_http_hook_url_embedded_credentials() {
-    let agent_policy_hooks = AgentPolicyHookConfig {
-        enabled: false,
-        before_action: vec![AgentPolicyHook {
-            name: "remote-guard".to_string(),
-            transport: AgentPolicyHookTransport::Http {
-                url: "https:user:pass@example.com/policy".to_string(),
-                headers: Default::default(),
-            },
+    for url in [
+        "https:user:pass@example.com/policy",
+        "https://example .com/policy?q=sk-secretsecretsecret",
+    ] {
+        let agent_policy_hooks = AgentPolicyHookConfig {
+            enabled: false,
+            before_action: vec![AgentPolicyHook {
+                name: "remote-guard".to_string(),
+                transport: AgentPolicyHookTransport::Http {
+                    url: url.to_string(),
+                    headers: Default::default(),
+                },
+                ..Default::default()
+            }],
             ..Default::default()
-        }],
-        ..Default::default()
-    };
-    let profile = AIExecutionProfile {
-        agent_policy_hooks,
-        ..Default::default()
-    };
+        };
+        let profile = AIExecutionProfile {
+            agent_policy_hooks,
+            ..Default::default()
+        };
 
-    let value = serde_json::to_value(&profile).unwrap();
-    assert_eq!(value["agent_policy_hooks"]["enabled"], false);
-    assert!(value["agent_policy_hooks"]["before_action"]
-        .as_array()
-        .unwrap()
-        .is_empty());
-    assert!(!value.to_string().contains('@'));
+        let value = serde_json::to_value(&profile).unwrap();
+        assert_eq!(value["agent_policy_hooks"]["enabled"], false);
+        assert!(value["agent_policy_hooks"]["before_action"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(!value.to_string().contains('@'));
+        assert!(!value.to_string().contains("sk-secretsecretsecret"));
+    }
 }
 
 #[test]
@@ -297,6 +342,37 @@ fn config_rejects_inline_hook_secret_values() {
     }));
 
     assert!(config.is_err());
+}
+
+#[test]
+fn config_rejects_object_shaped_hook_secret_literals() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [
+            {
+                "name": "stdio-guard",
+                "transport": "stdio",
+                "command": "guard",
+                "env": { "API_TOKEN": { "env": "sk-secretsecretsecret" } }
+            },
+            {
+                "name": "http-guard",
+                "transport": "http",
+                "url": "https://example.com/policy",
+                "headers": { "authorization": { "env": "Bearer raw-secret" } }
+            }
+        ]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        config.validate(),
+        Err(super::config::AgentPolicyHookConfigError::InvalidSecretEnvironmentVariableName)
+    ));
+    let value = serde_json::to_value(&config).unwrap();
+    assert_eq!(value["enabled"], false);
+    assert!(!value.to_string().contains("sk-secretsecretsecret"));
+    assert!(!value.to_string().contains("Bearer raw-secret"));
 }
 
 #[test]
@@ -412,6 +488,8 @@ fn command_redaction_handles_split_secret_args() {
         "guard --token token-secret --password 'quoted secret' ",
         "--api-key sk-secretsecretsecret --authorization Bearer split-secret ",
         "--authorization=Bearer eq-secret --auth Basic basic-secret ",
+        "--client-secret client-secret-value --refresh-token refresh-secret ",
+        "--access-token access-secret --clientSecret=camel-secret ",
         "--safe visible"
     );
 
@@ -423,6 +501,10 @@ fn command_redaction_handles_split_secret_args() {
     assert!(redacted.contains("--authorization <redacted>"));
     assert!(redacted.contains("--authorization=<redacted>"));
     assert!(redacted.contains("--auth <redacted>"));
+    assert!(redacted.contains("--client-secret <redacted>"));
+    assert!(redacted.contains("--refresh-token <redacted>"));
+    assert!(redacted.contains("--access-token <redacted>"));
+    assert!(redacted.contains("--clientSecret=<redacted>"));
     assert!(redacted.contains("--safe visible"));
     assert!(!redacted.contains("token-secret"));
     assert!(!redacted.contains("quoted secret"));
@@ -430,6 +512,10 @@ fn command_redaction_handles_split_secret_args() {
     assert!(!redacted.contains("split-secret"));
     assert!(!redacted.contains("eq-secret"));
     assert!(!redacted.contains("basic-secret"));
+    assert!(!redacted.contains("client-secret-value"));
+    assert!(!redacted.contains("refresh-secret"));
+    assert!(!redacted.contains("access-secret"));
+    assert!(!redacted.contains("camel-secret"));
 }
 
 #[test]
@@ -818,7 +904,26 @@ async fn http_engine_rejects_oversized_policy_event_before_request() {
 #[cfg(all(unix, not(target_family = "wasm")))]
 #[tokio::test]
 async fn stdio_engine_does_not_inherit_parent_environment() {
-    std::env::var("HOME").expect("HOME must be set for policy hook environment inheritance test");
+    const PARENT_ONLY_ENV: &str = "WARP_POLICY_HOOK_TEST_PARENT_ENV_SENTINEL";
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match self.previous.take() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    let _env_guard = EnvGuard {
+        key: PARENT_ONLY_ENV,
+        previous: std::env::var_os(PARENT_ONLY_ENV),
+    };
+    std::env::set_var(PARENT_ONLY_ENV, "parent-only");
     let config: AgentPolicyHookConfig = serde_json::from_value(json!({
         "enabled": true,
         "before_action": [{
@@ -827,7 +932,7 @@ async fn stdio_engine_does_not_inherit_parent_environment() {
             "command": "/bin/sh",
             "args": [
                 "-c",
-                "cat >/dev/null; if [ -n \"${HOME+x}\" ]; then printf '%s\\n' '{\"schema_version\":\"warp.agent_policy_hook.v1\",\"decision\":\"deny\",\"reason\":\"inherited HOME\"}'; else printf '%s\\n' '{\"schema_version\":\"warp.agent_policy_hook.v1\",\"decision\":\"allow\"}'; fi"
+                "cat >/dev/null; if [ \"${WARP_POLICY_HOOK_TEST_PARENT_ENV_SENTINEL+x}\" = x ]; then printf '%s\\n' '{\"schema_version\":\"warp.agent_policy_hook.v1\",\"decision\":\"deny\",\"reason\":\"inherited parent sentinel\"}'; else printf '%s\\n' '{\"schema_version\":\"warp.agent_policy_hook.v1\",\"decision\":\"allow\"}'; fi"
             ],
             "timeout_ms": 1000
         }]

@@ -125,6 +125,7 @@ use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::policy_hooks::{
     decision::{compose_policy_decisions, WarpPermissionDecisionKind},
+    redaction::redact_command_for_policy,
     AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision, AgentPolicyEvent,
     AgentPolicyHookEngine, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
     PolicyReadFilesAction, PolicyReadMcpResourceAction, PolicyWriteFilesAction,
@@ -1680,7 +1681,7 @@ fn policy_denied_action_result(
         AIAgentActionType::RequestCommandOutput { command, .. } => {
             AIAgentActionResultType::RequestCommandOutput(
                 RequestCommandOutputResult::PolicyDenied {
-                    command: command.clone(),
+                    command: redact_command_for_policy(command),
                     reason,
                 },
             )

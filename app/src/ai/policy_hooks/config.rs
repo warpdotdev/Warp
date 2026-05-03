@@ -260,8 +260,12 @@ impl AgentPolicyHookSecretValue {
     }
 
     fn validate(&self) -> Result<(), AgentPolicyHookConfigError> {
-        if self.env.trim().is_empty() {
+        let env = self.env.trim();
+        if env.is_empty() {
             return Err(AgentPolicyHookConfigError::MissingSecretEnvironmentVariableName);
+        }
+        if !is_env_reference_name(env) || text_contains_common_token(env) {
+            return Err(AgentPolicyHookConfigError::InvalidSecretEnvironmentVariableName);
         }
         Ok(())
     }
@@ -331,9 +335,8 @@ fn http_url_contains_credentials(url: &str) -> bool {
 
     let suffix = &url[authority_end..];
     suffix
-        .strip_prefix('?')
-        .or_else(|| suffix.strip_prefix('#'))
-        .is_some_and(text_contains_credentials)
+        .find(|ch| matches!(ch, '?' | '#'))
+        .is_some_and(|offset| text_contains_credentials(&suffix[offset + 1..]))
 }
 
 fn text_contains_credentials(value: &str) -> bool {
@@ -346,9 +349,13 @@ fn text_contains_credentials(value: &str) -> bool {
     }
 
     let normalized = lower.replace(['_', '-'], "");
-    if ["apikey", "accesskey"]
-        .iter()
-        .any(|keyword| normalized.contains(keyword))
+    if normalized.contains("apikey")
+        || normalized.contains("accesskey")
+        || normalized.ends_with("token")
+        || normalized.ends_with("secret")
+        || normalized.ends_with("password")
+        || normalized.ends_with("passwd")
+        || normalized.ends_with("authorization")
     {
         return true;
     }
@@ -361,11 +368,19 @@ fn text_contains_credentials(value: &str) -> bool {
                 "token" | "secret" | "password" | "passwd" | "authorization"
             )
         })
+        || text_contains_common_token(value)
 }
 
 fn stdio_arg_contains_credentials(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
-    if (lower.contains("authorization:") || lower.contains("bearer ") || lower.contains("basic "))
+    if let Some(offset) = lower.find("authorization:") {
+        let value = value[offset + "authorization:".len()..].trim();
+        if !value.is_empty() && !stdio_arg_value_uses_env_secret_reference(value) {
+            return true;
+        }
+    }
+
+    if (lower.contains("bearer ") || lower.contains("basic "))
         && !stdio_arg_value_uses_env_secret_reference(value)
     {
         return true;
@@ -381,14 +396,25 @@ fn stdio_arg_contains_credentials(value: &str) -> bool {
         }
     }
 
+    text_contains_common_token(value)
+}
+
+fn text_contains_common_token(value: &str) -> bool {
     value
         .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_')
         .any(|part| {
             part.strip_prefix("sk-")
                 .is_some_and(|token| token.len() >= 12)
-                || part
-                    .strip_prefix("ghp_")
-                    .is_some_and(|token| token.len() >= 12)
+                || ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+                    .iter()
+                    .any(|prefix| {
+                        part.strip_prefix(prefix).is_some_and(|token| {
+                            token.len() >= 12
+                                && token
+                                    .chars()
+                                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+                        })
+                    })
         })
 }
 
@@ -396,22 +422,26 @@ fn stdio_arg_expects_secret_value(value: &str) -> bool {
     let value = value
         .trim()
         .trim_matches(|ch| ch == '"' || ch == '\'')
-        .trim_end_matches(':');
-    let value = value.trim_start_matches('-');
+        .trim();
+    if value.contains('=') {
+        return false;
+    }
+    let is_flag = value.starts_with('-');
+    let is_header_name = value.ends_with(':');
+    if !is_flag && !is_header_name {
+        return false;
+    }
+    let value = value.trim_start_matches('-').trim_end_matches(':');
     let normalized = value.to_ascii_lowercase().replace(['_', '-'], "");
 
-    matches!(
-        normalized.as_str(),
-        "apikey"
-            | "accesskey"
-            | "accesstoken"
-            | "auth"
-            | "authorization"
-            | "password"
-            | "passwd"
-            | "secret"
-            | "token"
-    )
+    normalized.contains("apikey")
+        || normalized.contains("accesskey")
+        || normalized.ends_with("token")
+        || normalized.ends_with("secret")
+        || normalized.ends_with("password")
+        || normalized.ends_with("passwd")
+        || normalized.ends_with("authorization")
+        || normalized == "auth"
 }
 
 fn stdio_arg_value_is_literal_secret(value: &str) -> bool {
@@ -478,6 +508,8 @@ pub(crate) enum AgentPolicyHookConfigError {
     HttpUrlContainsCredentials,
     #[error("agent policy hook secret environment variable name must not be empty")]
     MissingSecretEnvironmentVariableName,
+    #[error("agent policy hook secret environment variable reference must be an environment variable name")]
+    InvalidSecretEnvironmentVariableName,
 }
 
 fn validate_timeout_ms(timeout_ms: u64) -> Result<(), AgentPolicyHookConfigError> {
