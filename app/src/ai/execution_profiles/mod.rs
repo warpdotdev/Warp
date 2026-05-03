@@ -338,6 +338,7 @@ impl AIExecutionProfile {
             context_window_limit: None,
             autosync_plans_to_warp_drive: false,
             web_search_enabled: true,
+            agent_policy_hooks: AgentPolicyHookConfig::default(),
         }
     }
 

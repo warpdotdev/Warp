@@ -258,7 +258,16 @@ impl AgentPolicyHookEngine {
             detail: format!("failed to serialize policy event: {source}"),
         })?;
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|source| AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::HttpRequestFailed,
+                detail: format!(
+                    "failed to build HTTP policy hook client: {}",
+                    source.without_url()
+                ),
+            })?;
         let mut request = client
             .post(url)
             .header(CONTENT_TYPE, "application/json")

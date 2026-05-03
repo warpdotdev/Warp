@@ -16,6 +16,7 @@ use super::{
         AgentPolicyAction, AgentPolicyEvent, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
         PolicyReadFilesAction, AGENT_POLICY_SCHEMA_VERSION,
     },
+    redaction::redact_command_for_policy,
 };
 
 #[cfg(not(target_family = "wasm"))]
@@ -113,6 +114,28 @@ fn event_serializes_redacted_command_shape() {
     assert!(command.contains("Authorization: Bearer <redacted>"));
     assert!(!command.contains("sk-secretsecretsecret"));
     assert_eq!(value["action"]["is_risky"], true);
+}
+
+#[test]
+fn command_redaction_handles_quoted_secret_assignments() {
+    let command = concat!(
+        "OPENAI_API_KEY=\"sk-secret value\" ",
+        "GITHUB_TOKEN='ghp_secret value' ",
+        "ACCESS_KEY=\"escaped \\\" secret\" curl https://example.com",
+    );
+    let unterminated = "PASSWORD=\"unterminated secret curl https://example.com";
+
+    let redacted = redact_command_for_policy(command);
+    let redacted_unterminated = redact_command_for_policy(unterminated);
+
+    assert!(redacted.contains("OPENAI_API_KEY=<redacted>"));
+    assert!(redacted.contains("GITHUB_TOKEN=<redacted>"));
+    assert!(redacted.contains("ACCESS_KEY=<redacted>"));
+    assert!(!redacted.contains("sk-secret"));
+    assert!(!redacted.contains("ghp_secret"));
+    assert!(!redacted.contains("escaped"));
+    assert!(redacted_unterminated.contains("PASSWORD=<redacted>"));
+    assert!(!redacted_unterminated.contains("unterminated"));
 }
 
 #[test]
@@ -599,6 +622,57 @@ async fn http_engine_rejects_oversized_response_body() {
         .as_deref()
         .unwrap()
         .contains("response exceeded"));
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[tokio::test]
+async fn http_engine_does_not_follow_redirects() {
+    let mut server = mockito::Server::new_async().await;
+    let redirect_location = format!("{}/redirected", server.url());
+    let mock = server
+        .mock("POST", "/policy")
+        .with_status(307)
+        .with_header("location", redirect_location.as_str())
+        .create_async()
+        .await;
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "on_unavailable": "deny",
+        "before_action": [{
+            "name": "http-guard",
+            "transport": "http",
+            "url": format!("{}/policy", server.url()),
+            "headers": { "authorization": "Bearer super-secret-token" },
+            "timeout_ms": 1000
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("rm -rf .", "rm -rf .", Some(false), Some(true)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    mock.assert_async().await;
+    assert_eq!(decision.decision, AgentPolicyDecisionKind::Deny);
+    assert_eq!(
+        decision.hook_results[0].error,
+        Some(AgentPolicyHookErrorKind::HttpStatus)
+    );
+    assert!(decision.hook_results[0]
+        .reason
+        .as_deref()
+        .unwrap()
+        .contains("307"));
 }
 
 #[cfg(not(target_family = "wasm"))]

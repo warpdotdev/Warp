@@ -5,7 +5,7 @@ pub(crate) const MAX_POLICY_STRING_BYTES: usize = 8 * 1024;
 
 static SECRET_ASSIGNMENT_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r"(?i)\b([A-Z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API[_-]?KEY|ACCESS[_-]?KEY)[A-Z0-9_.-]*)=([^\s;&|]+)",
+        r#"(?i)\b([A-Z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API[_-]?KEY|ACCESS[_-]?KEY)[A-Z0-9_.-]*)=("(?:[^"\\]|\\.)*"|"(?:[^;&|]*)|'(?:[^'\\]|\\.)*'|'(?:[^;&|]*)|[^\s;&|]+)"#,
     )
     .expect("secret assignment regex should compile")
 });

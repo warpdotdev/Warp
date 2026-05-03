@@ -49,6 +49,7 @@ impl AgentPolicyEvent {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn execute_command(
         conversation_id: impl Into<String>,
         action_id: impl Into<String>,
