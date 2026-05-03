@@ -3,7 +3,7 @@ use warpui::{SingletonEntity, ViewContext};
 
 use crate::{
     ai::{
-        agent::{conversation::AIConversationId, CancellationReason},
+        agent::{conversation::AIConversationId, AIAgentInput, CancellationReason},
         blocklist::block::{FinishReason, PendingUserQueryBlock, PendingUserQueryBlockEvent},
     },
     auth::AuthStateProvider,
@@ -26,12 +26,13 @@ impl TerminalView {
     /// `show_close_button` controls the dismiss ("X") button; `show_send_now_button` controls
     /// the "Send now" button that interrupts the active conversation and immediately submits
     /// the queued prompt.
-    fn insert_pending_user_query_block(
+    fn insert_pending_user_query_block_with_send_now(
         &mut self,
         prompt: String,
         show_close_button: bool,
         show_send_now_button: bool,
         ctx: &mut ViewContext<Self>,
+        on_send_now: impl Fn(&mut TerminalView, &mut ViewContext<TerminalView>) + 'static,
     ) {
         self.remove_pending_user_query_block(ctx);
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
@@ -40,7 +41,6 @@ impl TerminalView {
             .unwrap_or_else(|| "User".to_owned());
         let profile_image_path = auth_state.user_photo_url();
 
-        let prompt_for_send_now = prompt.clone();
         let handle = ctx.add_typed_action_view(|ctx| {
             PendingUserQueryBlock::new(
                 prompt,
@@ -57,7 +57,7 @@ impl TerminalView {
                     me.remove_pending_user_query_block(ctx);
                 }
                 PendingUserQueryBlockEvent::SendNow => {
-                    me.send_queued_prompt_now(prompt_for_send_now.clone(), ctx);
+                    on_send_now(me, ctx);
                 }
             });
         }
@@ -71,6 +71,25 @@ impl TerminalView {
             ctx,
         );
         self.pending_user_query_view_id = Some(view_id);
+    }
+
+    fn insert_pending_user_query_block(
+        &mut self,
+        prompt: String,
+        show_close_button: bool,
+        show_send_now_button: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let prompt_for_send_now = prompt.clone();
+        self.insert_pending_user_query_block_with_send_now(
+            prompt,
+            show_close_button,
+            show_send_now_button,
+            ctx,
+            move |terminal_view, ctx| {
+                terminal_view.send_queued_prompt_now(prompt_for_send_now.clone(), ctx);
+            },
+        );
     }
 
     /// Inserts a pending user query block for a non-oz Cloud Mode run whose harness CLI
@@ -136,6 +155,80 @@ impl TerminalView {
         self.input.update(ctx, |input, ctx| {
             input.submit_queued_prompt(prompt, ctx);
         });
+    }
+
+    fn send_queued_custom_ai_input_now(
+        &mut self,
+        ai_input: AIAgentInput,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.remove_pending_user_query_block(ctx);
+        if let Some(conversation_id) = self
+            .ai_context_model
+            .as_ref(ctx)
+            .selected_conversation_id(ctx)
+        {
+            self.ai_controller.update(ctx, |controller, ctx| {
+                controller.cancel_conversation_progress(
+                    conversation_id,
+                    CancellationReason::FollowUpSubmitted {
+                        is_for_same_conversation: true,
+                    },
+                    ctx,
+                );
+            });
+        }
+
+        self.ai_controller.update(ctx, move |controller, ctx| {
+            controller.send_queued_custom_ai_input_query(ai_input, ctx);
+        });
+    }
+
+    /// Queues a structured AI input to be sent after the current conversation finishes.
+    /// This mirrors [`Self::send_user_query_after_next_conversation_finished`] but preserves
+    /// non-text inputs such as inline code review comment batches.
+    pub fn send_custom_ai_input_after_next_conversation_finished(
+        &mut self,
+        ai_input: AIAgentInput,
+        show_close_button: bool,
+        show_send_now_button: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        let prompt = ai_input.user_query().unwrap_or_default();
+        if FeatureFlag::PendingUserQueryIndicator.is_enabled() {
+            let ai_input_for_send_now = ai_input.clone();
+            self.insert_pending_user_query_block_with_send_now(
+                prompt.clone(),
+                show_close_button,
+                show_send_now_button,
+                ctx,
+                move |terminal_view, ctx| {
+                    terminal_view
+                        .send_queued_custom_ai_input_now(ai_input_for_send_now.clone(), ctx);
+                },
+            );
+        }
+        self.queued_prompt_callback = Some(Box::new(move |terminal_view, reason, ctx| {
+            if FeatureFlag::PendingUserQueryIndicator.is_enabled() {
+                terminal_view.remove_pending_user_query_block(ctx);
+            }
+            match reason {
+                FinishReason::Complete => {
+                    terminal_view.ai_controller.update(ctx, move |controller, ctx| {
+                        controller.send_queued_custom_ai_input_query(ai_input, ctx);
+                    });
+                }
+                FinishReason::Error
+                | FinishReason::Cancelled
+                | FinishReason::CancelledDuringRequestedCommandExecution => {
+                    terminal_view.input.update(ctx, |input, ctx| {
+                        if input.buffer_text(ctx).is_empty() {
+                            input.replace_buffer_content(&prompt, ctx);
+                        }
+                    });
+                }
+            }
+        }));
     }
 
     /// Shows a pending user query indicator and queues the query to be sent after
