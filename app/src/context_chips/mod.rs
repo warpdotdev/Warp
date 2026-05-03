@@ -338,7 +338,7 @@ impl ContextChipKind {
                 RefreshConfig::OnDemandOnly,
             )),
             Self::SvnDirtyItems => Some(ContextChip::shell_builtin(
-                "Svn Uncommited File Count",
+                "Svn Uncommitted File Count",
                 builtins::svn_dirty_items(),
                 None,
                 RefreshConfig::OnDemandOnly,

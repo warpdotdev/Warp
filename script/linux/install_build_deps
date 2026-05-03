@@ -33,6 +33,12 @@ if [[ "$(source /etc/os-release; echo $ID $ID_LIKE)" = *"debian"* ]]; then
     brotli
     # Needed for voice input
     libasound2-dev
+    # Needed by bindgen (used by minimp4-sys, pulled in by warpui_core's
+    # integration_tests feature) — pulls in libclang-common-*-dev which
+    # provides clang's resource-dir builtin headers.
+    libclang-dev
+    # Required by script/presubmit's clang-format check on C/C++/Obj-C sources.
+    clang-format
   )
   sudo apt-get install -y "${PACKAGES[@]}"
 

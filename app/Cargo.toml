@@ -350,11 +350,11 @@ nix = { workspace = true, features = [
     "mman",
 ] }
 
-[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "windows"))'.dependencies]
 crash-handler = { version = "0.6.3", optional = true }
 minidumper = { version = "0.8.3", optional = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
 freedesktop-desktop-entry = "0.5.0"
 x11rb.workspace = true
 zbus.workspace = true

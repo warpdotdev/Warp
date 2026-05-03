@@ -5,6 +5,8 @@ use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PA
 use crate::appearance::Appearance;
 use crate::drive::sharing::dialog::SharingDialog;
 use crate::menu::Menu;
+use crate::ui_components::agent_icon::conversation_or_task_agent_icon_variant;
+use crate::ui_components::icon_with_status::render_icon_with_status;
 use crate::ui_components::icons::Icon;
 use crate::ui_components::menu_button::{icon_button_with_context_menu, MenuDirection};
 use crate::util::time_format::format_approx_duration_from_now_utc;
@@ -35,6 +37,15 @@ const ICON_SPACING: f32 = 4.;
 
 /// Offset for the sharing dialog from the item row
 const DIALOG_OFFSET_PIXELS: f32 = -16.;
+
+/// Total size of the agent icon-with-status component rendered in each conversation list
+/// row.
+const LIST_ITEM_AGENT_SIZE: f32 = 22.;
+/// Extra overhang past the default overlay position, as a fraction of
+/// `LIST_ITEM_AGENT_SIZE`. Pushes the badge all the way to the bounding box's BR corner;
+/// the conversation list reads better with the status sitting slightly further out than
+/// on the other surfaces.
+const LIST_ITEM_OVERLAY_EXTRA_OVERHANG: f32 = 0.05;
 
 /// Generate a position ID for a conversation list item
 fn conversation_item_position_id(id: &ConversationOrTaskId) -> String {
@@ -195,18 +206,21 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
     }
 
     let status_element_size = font_size + STATUS_ELEMENT_PADDING * 2.;
-    let icon_element: Box<dyn Element> = if conversation.is_ambient_agent_conversation() {
-        ConstrainedBox::new(
-            Icon::Cloud
-                .to_warpui_icon(theme.sub_text_color(theme.background()))
-                .finish(),
-        )
-        .with_width(status_element_size)
-        .with_height(status_element_size)
-        .finish()
-    } else {
-        render_status_element(&conversation.status(app), font_size, appearance)
-    };
+    // Prefer the unified agent icon-with-status circle (brand color + cloud lobe for
+    // ambient runs) so the row matches the vertical tab / pane header. Fall back to the
+    // plain status-only icon when the helper can't produce an agent variant (never today,
+    // but keeps the surface future-proof).
+    let icon_element: Box<dyn Element> =
+        match conversation_or_task_agent_icon_variant(conversation, app) {
+            Some(variant) => render_icon_with_status(
+                variant,
+                LIST_ITEM_AGENT_SIZE,
+                LIST_ITEM_OVERLAY_EXTRA_OVERHANG,
+                theme,
+                theme.background(),
+            ),
+            None => render_status_element(&conversation.status(app), font_size, appearance),
+        };
 
     let icon_and_title_row = Shrinkable::new(
         1.0,
@@ -347,7 +361,7 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         let list_position_id = list_position_id.to_string();
         move |ctx, _, position| {
             let Some(parent_bounds) = ctx.element_position_by_id(&list_position_id) else {
-                log::warn!("Could not retreive the position of the conversation list for overflow menu display.");
+                log::warn!("Could not retrieve the position of the conversation list for overflow menu display.");
                 return;
             };
 

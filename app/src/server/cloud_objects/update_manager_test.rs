@@ -2397,7 +2397,7 @@ fn test_pending_metadata_update_with_rtc() {
             mocked_metadata_update_message,
         );
 
-        // Assert we don't have a pending change now that we've updated the metadat
+        // Assert we don't have a pending change now that we've updated the metadata
         assert_pending_online_only_change_for_object(
             &mut app,
             &notebook_id.to_server_id().uid(),

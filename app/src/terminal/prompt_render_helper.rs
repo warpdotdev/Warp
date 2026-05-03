@@ -265,7 +265,11 @@ impl PromptRenderHelper {
                     }
                     RemoteServerSetupState::Initializing => "Initializing...".to_string(),
                     RemoteServerSetupState::Ready => "Starting shell...".to_string(),
-                    RemoteServerSetupState::Failed { .. } => "Starting shell...".to_string(),
+                    // Failed and Unsupported both fall back to the legacy SSH
+                    // flow, so we render the same generic prompt as a normal
+                    // SSH session that doesn't have the remote-server extension.
+                    RemoteServerSetupState::Failed { .. }
+                    | RemoteServerSetupState::Unsupported { .. } => "Starting shell...".to_string(),
                 };
             }
         }

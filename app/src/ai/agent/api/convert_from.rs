@@ -600,7 +600,7 @@ trait ConvertAPIToolCallToAIAgentAction {
     ) -> Result<MaybeAIAgentAction, ToolToAIAgentActionError>;
 }
 
-/// Trys to convert an [`api::message::ToolCall`] to an [`AIAgentAction`].
+/// Tries to convert an [`api::message::ToolCall`] to an [`AIAgentAction`].
 ///
 /// A [`Result::Error`] indicates an unexpected problem, while [`Ok(None)`]
 /// indicates a tool call that we aren't expected to parse.
