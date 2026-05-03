@@ -12930,22 +12930,6 @@ impl Workspace {
             return;
         };
 
-        // Exit the source pane's fullscreen agent view (if active) before kicking off the
-        // prepare-fork RPC. Mirrors the cmd-alt-enter pattern in `enter_cloud_mode_from_session`:
-        // starting cloud mode from agent view is analogous to starting a new agent
-        // conversation, and the source pane should be left in terminal mode so Esc from the
-        // pushed cloud-mode pane returns the user to a clean local terminal.
-        let source_agent_view_controller = source_view.as_ref(ctx).agent_view_controller().clone();
-        if source_agent_view_controller
-            .as_ref(ctx)
-            .agent_view_state()
-            .is_fullscreen()
-        {
-            source_agent_view_controller.update(ctx, |controller, ctx| {
-                controller.exit_agent_view_without_confirmation(ctx);
-            });
-        }
-
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         let request = PrepareHandoffForkRequest {
             source_conversation_id: source_token.as_str().to_string(),
@@ -12979,8 +12963,18 @@ impl Workspace {
     /// Finishes the local-to-cloud handoff open after the prepare-fork RPC returns.
     /// Materializes a local fork bound to the server's forked conversation id,
     /// pushes a fresh cloud-mode view onto `source_view`'s navigation stack,
-    /// restores the forked conversation into it, seeds `PendingHandoff`, and
+    /// restores the forked conversation into it, exits the source pane's agent
+    /// view (so Esc returns to a clean terminal), seeds `PendingHandoff`, and
     /// kicks off async derivation + snapshot upload.
+    ///
+    /// The source's agent-view exit happens AFTER the new pane is pushed, so the
+    /// source pane is hidden behind the cloud-mode view when its chrome flips
+    /// from agent mode to terminal mode — the user never sees the transition.
+    /// The pane-stack pop logic in `terminal/view.rs` skips popping when the
+    /// `ExitedAgentView` event has `is_exit_before_new_entrance: true`, which
+    /// prevents the bookkeeping exit triggered by `restore_conversation_after_view_creation`
+    /// (re-entering agent view for the forked conversation) from tearing down
+    /// the just-pushed pane.
     fn complete_local_to_cloud_handoff_open(
         &mut self,
         source_view: ViewHandle<TerminalView>,
@@ -13016,15 +13010,11 @@ impl Workspace {
         };
         let local_fork_id = local_fork.id();
 
-        // Push a fresh cloud-mode view onto the source pane's navigation stack instead
-        // of splitting a sibling pane. Pressing Escape in the new view pops back to the
-        // local pane via the existing pane-stack escape handling.
+        // Push the cloud-mode pane onto the source's nav stack.
         let Some((new_pane_view, model_handle)) = source_view.update(ctx, |view, view_ctx| {
             view.start_local_to_cloud_handoff_pane(view_ctx)
         }) else {
-            log::warn!(
-                "start_local_to_cloud_handoff: failed to push handoff cloud-mode pane onto source pane stack"
-            );
+            log::warn!("start_local_to_cloud_handoff: failed to push cloud-mode pane");
             let window_id = ctx.window_id();
             WorkspaceToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                 let toast = DismissibleToast::error(
@@ -13044,11 +13034,12 @@ impl Workspace {
         }
 
         // Restore the forked conversation into the new pane so its AI exchanges are
-        // visible immediately. Mirrors the `/fork` in-current-pane flow.
-        let local_fork_for_restore = local_fork.clone();
+        // visible immediately. This re-enters agent view for the forked conversation,
+        // which emits an internal `ExitedAgentView { is_exit_before_new_entrance: true }`
+        // for the cloud-mode placeholder; the pane-stack pop is skipped for that flag.
         new_pane_view.update(ctx, |terminal_view, view_ctx| {
             terminal_view.restore_conversation_after_view_creation(
-                RestoredAIConversation::new(local_fork_for_restore),
+                RestoredAIConversation::new(local_fork.clone()),
                 /* use_live_appearance */ true,
                 view_ctx,
             );
@@ -13078,6 +13069,22 @@ impl Workspace {
             );
             history_model.set_viewing_shared_session_for_conversation(local_fork_id, true);
         });
+
+        // Exit the source pane's fullscreen agent view (if active) so pressing Esc in the
+        // cloud-mode pane returns to a terminal-mode source. This runs AFTER the push, so
+        // the source pane is hidden behind the cloud-mode view and the transition is
+        // invisible to the user. `was_ambient_agent` is false for a local source, so this
+        // exit doesn't pop the pane stack.
+        let source_agent_view_controller = source_view.as_ref(ctx).agent_view_controller().clone();
+        if source_agent_view_controller
+            .as_ref(ctx)
+            .agent_view_state()
+            .is_fullscreen()
+        {
+            source_agent_view_controller.update(ctx, |controller, ctx| {
+                controller.exit_agent_view_without_confirmation(ctx);
+            });
+        }
 
         let pending = PendingHandoff {
             forked_conversation_id: forked_conversation_id.clone(),

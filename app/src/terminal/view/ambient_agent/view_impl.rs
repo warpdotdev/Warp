@@ -17,7 +17,6 @@ use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEn
 use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryModel};
 use crate::ai::conversation_details_panel::ConversationDetailsData;
 use crate::pane_group::TerminalViewResources;
-use crate::server::server_api::ai::SpawnAgentRequest;
 use crate::terminal::view::ambient_agent::{CloudModeFollowupUserQuery, CloudModeInitialUserQuery};
 use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
 use crate::terminal::view::TerminalView;
@@ -37,19 +36,6 @@ use crate::terminal::view::Event as TerminalViewEvent;
 
 const CHILD_AGENT_GITHUB_AUTH_REQUIRED_BLOCKED_ACTION: &str =
     "GitHub authentication required before starting the child agent.";
-
-/// How a freshly-pushed cloud-mode pane should be initialized after creation.
-enum CloudModeStartMode {
-    /// Enter setup mode for composing a prompt; optional initial prompt to pre-fill.
-    EnterSetup { initial_prompt: Option<String> },
-    /// Spawn an agent immediately with the given request. Boxed because
-    /// `SpawnAgentRequest` is large and this variant is rarely-used today.
-    #[allow(dead_code)]
-    SpawnRequest(Box<SpawnAgentRequest>),
-    /// Skip both setup and spawn. Used by the local-to-cloud handoff path which restores
-    /// a forked conversation onto the new pane and waits for the user to commit later.
-    Bare,
-}
 
 impl TerminalView {
     fn active_ambient_agent_conversation_id(&self, ctx: &AppContext) -> Option<AIConversationId> {
@@ -665,12 +651,7 @@ impl TerminalView {
             let prompt = initial_prompt.clone();
             self.set_pending_cloud_mode_start_callback(
                 Box::new(move |view, ctx| {
-                    view.start_cloud_mode(
-                        CloudModeStartMode::EnterSetup {
-                            initial_prompt: prompt,
-                        },
-                        ctx,
-                    );
+                    view.start_cloud_mode(prompt, ctx);
                 }),
                 ctx,
             );
@@ -684,30 +665,33 @@ impl TerminalView {
             return;
         }
 
-        self.start_cloud_mode(CloudModeStartMode::EnterSetup { initial_prompt }, ctx);
+        self.start_cloud_mode(initial_prompt, ctx);
     }
 
     /// Push a fresh cloud-mode pane onto this view's pane_stack for a local-to-cloud handoff.
     /// Returns the pushed view and its `AmbientAgentViewModel` so the caller can restore the
     /// forked conversation, bind it to the cloud-side conversation id, and seed `PendingHandoff`.
     ///
-    /// Mirrors `start_cloud_mode` but skips entering setup mode and dispatching an agent — the
-    /// handoff path restores an existing forked conversation onto the new pane and waits for
-    /// the user to commit the handoff later.
+    /// Uses the same setup-mode initialization path as fresh cloud-mode runs (which calls
+    /// `enter_ambient_agent_setup` → `enter_agent_view_for_new_conversation` and focuses the
+    /// input) so the new pane's cloud-mode input is editable and focused immediately. The
+    /// caller then layers the forked conversation's blocks on top via
+    /// `restore_conversation_after_view_creation` and seeds `PendingHandoff`; submission uses
+    /// the cached `forked_conversation_id` from `PendingHandoff`, not the new pane's local
+    /// agent-view conversation id.
     pub(crate) fn start_local_to_cloud_handoff_pane(
         &mut self,
         ctx: &mut ViewContext<Self>,
     ) -> Option<(ViewHandle<TerminalView>, ModelHandle<AmbientAgentViewModel>)> {
-        self.start_cloud_mode(CloudModeStartMode::Bare, ctx)
+        self.start_cloud_mode(None, ctx)
     }
 
     /// Start a cloud mode session nested under this one, pushing a new pane onto this view's
-    /// pane_stack and returning the pushed view + model handle.
-    ///
-    /// `mode` controls how the new pane is initialized after creation; see [`CloudModeStartMode`].
+    /// pane_stack and returning the pushed view + model handle. The new pane enters setup mode
+    /// with `initial_prompt` (if any) pre-filled in the input.
     fn start_cloud_mode(
         &mut self,
-        mode: CloudModeStartMode,
+        initial_prompt: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) -> Option<(ViewHandle<TerminalView>, ModelHandle<AmbientAgentViewModel>)> {
         let resources = TerminalViewResources {
@@ -783,31 +767,9 @@ impl TerminalView {
         });
 
         let pane_config = self.pane_configuration.clone();
-        let ambient_agent_view_model_for_update = ambient_agent_view_model.clone();
         terminal_view.update(ctx, |view, ctx| {
             view.set_pane_configuration(pane_config);
-
-            match mode {
-                CloudModeStartMode::SpawnRequest(request) => {
-                    // Spawn the agent immediately with the provided request.
-                    view.enter_agent_view_for_new_conversation(
-                        None,
-                        AgentViewEntryOrigin::CloudAgent,
-                        ctx,
-                    );
-                    ambient_agent_view_model_for_update.update(ctx, |model, ctx| {
-                        model.spawn_agent_with_request(*request, ctx);
-                    });
-                }
-                CloudModeStartMode::EnterSetup { initial_prompt } => {
-                    // Enter setup mode for composing a prompt.
-                    view.enter_ambient_agent_setup(initial_prompt, ctx);
-                }
-                CloudModeStartMode::Bare => {
-                    // No setup or spawn — caller (e.g. local-to-cloud handoff) restores
-                    // the forked conversation and seeds handoff state itself.
-                }
-            }
+            view.enter_ambient_agent_setup(initial_prompt, ctx);
         });
 
         let Some(pane_stack) = self.pane_stack.clone() else {
