@@ -168,7 +168,7 @@ pub enum QueueItem {
         objects: Vec<GenericStringObjectToCreate>,
     },
     // Note, we continue to do UpdateXXX items per object type here
-    // beause it's the most type safe way to handle the different id types
+    // because it's the most type safe way to handle the different id types
     // and the different update payloads.  Most of the logic is still shared
     // via a single update_object method.
     UpdateNotebook {
@@ -620,7 +620,7 @@ impl SyncQueue {
                         workflow_id.uid(),
                         *item_id,
                         // When adding the initiated_by parameter to this function call, InitiatedBy::User was set as a default value.
-                        // It can be changed to propogate initiated_by value from the queue object in the future if desired.
+                        // It can be changed to propagate initiated_by value from the queue object in the future if desired.
                         InitiatedBy::User,
                         ctx,
                     );

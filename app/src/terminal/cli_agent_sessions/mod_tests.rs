@@ -223,6 +223,20 @@ fn parse_auggie_stop_notification() {
 }
 
 #[test]
+fn parse_pi_stop_notification() {
+    // Mirrors what the community pi-mono plugin emits on the Stop hook —
+    // matches the Auggie shape and uses `"agent":"pi"`, which `resolve_agent`
+    // already maps to `CLIAgent::Pi` via `command_prefix()`.
+    let body = r#"{"v":1,"agent":"pi","event":"stop","session_id":"abc","cwd":"/tmp/proj","project":"proj","query":"write a haiku","response":"Memory is safe"}"#;
+    let notif = parse_event(Some("warp://cli-agent"), body).unwrap();
+
+    assert_eq!(notif.agent, CLIAgent::Pi);
+    assert_eq!(notif.event, CLIAgentEventType::Stop);
+    assert_eq!(notif.payload.query.as_deref(), Some("write a haiku"));
+    assert_eq!(notif.payload.response.as_deref(), Some("Memory is safe"));
+}
+
+#[test]
 fn apply_event_preserves_input_session() {
     let input_state = CLIAgentInputState::Open {
         entrypoint: CLIAgentInputEntrypoint::CtrlG,

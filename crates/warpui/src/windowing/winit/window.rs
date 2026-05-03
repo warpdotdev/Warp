@@ -89,12 +89,51 @@ lazy_static! {
 pub(crate) struct WindowManager {
     windows: HashMap<WindowId, Rc<Window>>,
     event_loop_proxy: EventLoopProxy<CustomEvent>,
+    window_ordering: Mutex<WindowOrderingState>,
     /// We assume this won't change throughout the life of the Warp process.
     os_window_manager_name: OnceCell<Option<String>>,
     /// This is a client for talking to the Xorg server directly instead of through winit.
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     x11_manager: Option<x11::X11Manager>,
     display_handle: OwnedDisplayHandle,
+}
+
+/// Manually-tracked window z-ordering. Winit has no native z-order API, so
+/// `WindowManager` keeps this list in sync from its create / focus / hide /
+/// remove callbacks and exposes it via `ordered_window_ids()`.
+#[derive(Default)]
+struct WindowOrderingState {
+    front_to_back_window_ids: Vec<WindowId>,
+    window_styles: HashMap<WindowId, WindowStyle>,
+}
+
+impl WindowOrderingState {
+    fn note_window_created(&mut self, window_id: WindowId, style: WindowStyle) {
+        self.window_styles.insert(window_id, style);
+        if style != WindowStyle::NotStealFocus {
+            self.move_to_front(window_id);
+        }
+    }
+
+    fn move_to_front(&mut self, window_id: WindowId) {
+        self.front_to_back_window_ids.retain(|id| *id != window_id);
+        self.front_to_back_window_ids.insert(0, window_id);
+    }
+
+    fn note_window_hidden(&mut self, window_id: WindowId) {
+        self.front_to_back_window_ids.retain(|id| *id != window_id);
+    }
+
+    fn note_window_removed(&mut self, window_id: WindowId) {
+        self.note_window_hidden(window_id);
+        self.window_styles.remove(&window_id);
+    }
+
+    fn has_positioned_no_focus_window(&self) -> bool {
+        self.front_to_back_window_ids
+            .iter()
+            .any(|id| self.window_styles.get(id) == Some(&WindowStyle::PositionedNoFocus))
+    }
 }
 
 impl WindowManager {
@@ -105,6 +144,7 @@ impl WindowManager {
         Self {
             windows: Default::default(),
             event_loop_proxy,
+            window_ordering: Default::default(),
             os_window_manager_name: Default::default(),
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             x11_manager: match x11::X11Manager::new() {
@@ -144,12 +184,16 @@ impl platform::WindowManager for WindowManager {
         window_options: WindowOptions,
         callbacks: WindowCallbacks,
     ) -> Result<()> {
+        let style = window_options.style;
         self.event_loop_proxy.send_event(CustomEvent::OpenWindow {
             window_id,
             window_options,
         })?;
         self.windows
             .insert(window_id, Rc::new(super::window::Window::new(callbacks)));
+        self.window_ordering
+            .lock()
+            .note_window_created(window_id, style);
         Ok(())
     }
 
@@ -162,6 +206,7 @@ impl platform::WindowManager for WindowManager {
 
     fn remove_window(&mut self, window_id: WindowId) {
         self.windows.remove(&window_id);
+        self.window_ordering.lock().note_window_removed(window_id);
     }
 
     fn active_window_id(&self) -> Option<WindowId> {
@@ -216,6 +261,10 @@ impl platform::WindowManager for WindowManager {
             }
         }
 
+        if let Some(window_id) = next_active_window {
+            self.window_ordering.lock().move_to_front(window_id);
+        }
+
         next_active_window
     }
 
@@ -224,6 +273,7 @@ impl platform::WindowManager for WindowManager {
         if let Some(window) = self.windows.get(&window_id) {
             window.focus();
         }
+        self.window_ordering.lock().move_to_front(window_id);
     }
 
     fn hide_app(&self) {
@@ -236,6 +286,7 @@ impl platform::WindowManager for WindowManager {
         if let Some(window) = self.windows.get(&window_id) {
             window.set_visible(false);
         }
+        self.window_ordering.lock().note_window_hidden(window_id);
     }
 
     fn set_window_bounds(&self, window_id: WindowId, bound: RectF) {
@@ -388,6 +439,29 @@ impl platform::WindowManager for WindowManager {
             .unwrap_or(false)
     }
 
+    fn ordered_window_ids(&self) -> Vec<WindowId> {
+        let mut window_ordering = self.window_ordering.lock();
+        // Winit has no native z-order API, so we maintain this list manually.
+        // Prune windows that have since been hidden.
+        window_ordering
+            .front_to_back_window_ids
+            .retain(|window_id| {
+                self.windows
+                    .get(window_id)
+                    .is_some_and(|window| window.is_visible())
+            });
+        // Keep the list current by promoting the focused window to the front.
+        // Skip when a PositionedNoFocus (drag preview) window is present: it
+        // was moved to the front on creation and must stay there so that
+        // `cross_window_attach_target` can find it at index 0.
+        if !window_ordering.has_positioned_no_focus_window() {
+            if let Some(active_window_id) = self.active_window_id() {
+                window_ordering.move_to_front(active_window_id);
+            }
+        }
+        window_ordering.front_to_back_window_ids.clone()
+    }
+
     fn os_window_manager_name(&self) -> Option<String> {
         self.os_window_manager_name
             .get_or_init(|| {
@@ -428,7 +502,7 @@ fn is_tiling_window_manager(name: &str) -> bool {
 /// Some additional state we need to track in memory for integration tests.
 struct IntegrationTestAppState {
     /// A list of window IDs representing the order of visible windows, with
-    /// the frontmost window at the end of the list.
+    /// the frontmost window at the start of the list.
     window_id_stack: Vec<WindowId>,
 }
 
@@ -461,12 +535,13 @@ impl platform::WindowManager for IntegrationTestWindowManager {
         window_options: WindowOptions,
         callbacks: WindowCallbacks,
     ) -> Result<()> {
-        let window_will_be_focused = window_options.style != platform::WindowStyle::NotStealFocus;
+        let window_should_be_tracked = window_options.style != platform::WindowStyle::NotStealFocus;
         self.window_manager
             .open_window(window_id, window_options, callbacks)?;
-        if window_will_be_focused {
+        if window_should_be_tracked {
             let mut app_state = self.app_state.lock();
-            app_state.window_id_stack.push(window_id);
+            app_state.window_id_stack.retain(|id| *id != window_id);
+            app_state.window_id_stack.insert(0, window_id);
         }
         Ok(())
     }
@@ -481,7 +556,7 @@ impl platform::WindowManager for IntegrationTestWindowManager {
 
     fn active_window_id(&self) -> Option<WindowId> {
         self.app_is_active()
-            .then(|| self.app_state.lock().window_id_stack.last().cloned())
+            .then(|| self.app_state.lock().window_id_stack.first().cloned())
             .flatten()
     }
 
@@ -507,7 +582,7 @@ impl platform::WindowManager for IntegrationTestWindowManager {
 
         // Move the window to the top of the stack.
         app_state.window_id_stack.retain(|id| *id != window_id);
-        app_state.window_id_stack.push(window_id);
+        app_state.window_id_stack.insert(0, window_id);
     }
 
     fn hide_app(&self) {
@@ -581,6 +656,10 @@ impl platform::WindowManager for IntegrationTestWindowManager {
 
     fn is_tiling_window_manager(&self) -> bool {
         self.window_manager.is_tiling_window_manager()
+    }
+
+    fn ordered_window_ids(&self) -> Vec<WindowId> {
+        self.app_state.lock().window_id_stack.clone()
     }
 }
 
@@ -1386,7 +1465,10 @@ fn create_window(
 
             // When launching a window from windows file explorer, it isn't given focus. We're considering
             // this a winit quirk and forcing it to be focused.
-            if window_options.style != WindowStyle::NotStealFocus {
+            if !matches!(
+                window_options.style,
+                WindowStyle::NotStealFocus | WindowStyle::PositionedNoFocus
+            ) {
                 window.focus_window();
             }
 

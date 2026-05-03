@@ -699,7 +699,7 @@ impl VimFSA {
             pending_operand_count: None,
             pending_visual_object: None,
             last_find_motion: None,
-            // When doing an operation that reads/writes to a register, the default (unnamed) regsiter
+            // When doing an operation that reads/writes to a register, the default (unnamed) register
             // is called ".
             register: '"',
             dot_repeat_event: None,
@@ -824,7 +824,7 @@ impl VimFSA {
         }
     }
 
-    /// Exiting insert mode is simple when it had been entered without a count, you just chenge the
+    /// Exiting insert mode is simple when it had been entered without a count, you just change the
     /// mode. However, if there was a count, we need to repeat the text that was entered n - 1
     /// times.
     fn exit_insert_mode(&mut self) -> VimEvent {

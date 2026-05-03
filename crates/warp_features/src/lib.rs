@@ -923,6 +923,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     #[cfg(not(windows))]
     FeatureFlag::SshRemoteServer,
     FeatureFlag::CloudModeInputV2,
+    FeatureFlag::DragTabsToWindows,
 ];
 
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
@@ -930,7 +931,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
 pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::Orchestration,
     FeatureFlag::BlocklistMarkdownTableRendering,
-    FeatureFlag::BlocklistMarkdownImages,
     FeatureFlag::MarkdownTables,
     FeatureFlag::OzIdentityFederation,
     FeatureFlag::GitOperationsInCodeReview,
@@ -1123,7 +1123,7 @@ mod overrides {
 
 /// An atomic tri-state value.
 ///
-/// This is initally unset, and can be set to a true or false value.
+/// This is initially unset, and can be set to a true or false value.
 ///
 /// Writes and reads use [`Ordering::Relaxed`], so should not be used for
 /// synchronization.

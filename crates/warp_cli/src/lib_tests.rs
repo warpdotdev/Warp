@@ -1402,6 +1402,30 @@ fn agent_run_cloud_accepts_snapshot_flags() {
 }
 
 #[test]
+fn agent_run_accepts_task_id_with_conversation_for_worker_followups() {
+    let args = Args::try_parse_from([
+        "warp",
+        "agent",
+        "run",
+        "--task-id",
+        "task-123",
+        "--conversation",
+        "conv-123",
+    ])
+    .unwrap();
+
+    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
+        panic!("Expected `warp agent run` command");
+    };
+    let CliCommand::Agent(AgentCommand::Run(run_args)) = boxed_cmd.as_ref() else {
+        panic!("Expected `warp agent run` command");
+    };
+
+    assert_eq!(run_args.task_id.as_deref(), Some("task-123"));
+    assert_eq!(run_args.conversation.as_deref(), Some("conv-123"));
+}
+
+#[test]
 fn agent_run_cloud_accepts_computer_use_flag() {
     let args = Args::try_parse_from([
         "warp",

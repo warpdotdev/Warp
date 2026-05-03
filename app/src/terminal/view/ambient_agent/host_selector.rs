@@ -37,15 +37,25 @@ const BUTTON_TOOLTIP: &str = "Execution host";
 
 const MENU_HEADER_LABEL: &str = "Execution host";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Host {
     Warp,
+    SelfHosted { slug: String },
 }
 
 impl Host {
-    fn display_name(self) -> &'static str {
+    fn display_name(&self) -> &str {
         match self {
             Host::Warp => "Warp",
+            Host::SelfHosted { slug } => slug.as_str(),
+        }
+    }
+
+    /// Returns the value to send as `worker_host` in the config snapshot.
+    pub fn worker_host_value(&self) -> Option<String> {
+        match self {
+            Host::Warp => Some("warp".to_string()),
+            Host::SelfHosted { slug } => Some(slug.clone()),
         }
     }
 }
@@ -58,6 +68,7 @@ pub enum HostSelectorAction {
 
 pub enum HostSelectorEvent {
     MenuVisibilityChanged { open: bool },
+    HostSelected,
 }
 
 pub struct HostSelector {
@@ -66,6 +77,8 @@ pub struct HostSelector {
     is_menu_open: bool,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     selected: Host,
+    /// The configured default self-hosted host, if any.
+    default_host: Option<Host>,
 }
 
 impl HostSelector {
@@ -78,9 +91,10 @@ impl HostSelector {
         // `SelectHost`), so it stays out of clippy's `field is never read`
         // warning while still serving as the source of truth for the label.
         let selected = Host::Warp;
+        let initial_label = selected.display_name().to_string();
 
         let button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new(selected.display_name(), NakedHeaderButtonTheme)
+            ActionButton::new(initial_label, NakedHeaderButtonTheme)
                 .with_size(ButtonSize::AgentInputButton)
                 .with_menu(true)
                 .with_tooltip(BUTTON_TOOLTIP)
@@ -114,6 +128,7 @@ impl HostSelector {
             is_menu_open: false,
             menu_positioning_provider,
             selected,
+            default_host: None,
         };
         me.refresh_menu(ctx);
         me
@@ -121,6 +136,25 @@ impl HostSelector {
 
     pub fn is_menu_open(&self) -> bool {
         self.is_menu_open
+    }
+
+    pub fn has_default_host(&self) -> bool {
+        self.default_host.is_some()
+    }
+
+    pub fn selected(&self) -> &Host {
+        &self.selected
+    }
+
+    pub fn set_default_host(&mut self, slug: String, ctx: &mut ViewContext<Self>) {
+        let host = Host::SelfHosted { slug };
+        let label = host.display_name().to_string();
+        self.selected = host.clone();
+        self.button.update(ctx, |button, ctx| {
+            button.set_label(label.clone(), ctx);
+        });
+        self.default_host = Some(host);
+        self.refresh_menu(ctx);
     }
 
     /// Programmatically opens the host selector popover. No-op if already open.
@@ -132,7 +166,7 @@ impl HostSelector {
     /// from closed to open so the user has a clear starting point for arrow-key navigation
     /// instead of an unselected list.
     fn highlight_selected_host(&mut self, ctx: &mut ViewContext<Self>) {
-        let selected_action = HostSelectorAction::SelectHost(self.selected);
+        let selected_action = HostSelectorAction::SelectHost(self.selected.clone());
         self.menu.update(ctx, |menu, ctx| {
             menu.set_selected_by_action(&selected_action, ctx);
         });
@@ -157,7 +191,11 @@ impl HostSelector {
         let hover_background: Fill = internal_colors::neutral_4(theme).into();
         let header_text_color = theme.disabled_text_color(theme.surface_2()).into_solid();
         let border = Border::all(1.).with_border_fill(theme.outline());
-        let items = build_menu_items(hover_background, header_text_color);
+        let items = build_menu_items(
+            hover_background,
+            header_text_color,
+            self.default_host.as_ref(),
+        );
         self.menu.update(ctx, |menu, ctx| {
             menu.set_border(Some(border));
             menu.set_items(items, ctx);
@@ -185,6 +223,7 @@ impl HostSelector {
 fn build_menu_items(
     hover_background: Fill,
     header_text_color: ColorU,
+    default_host: Option<&Host>,
 ) -> Vec<MenuItem<HostSelectorAction>> {
     let header = MenuItem::Header {
         fields: MenuItemFields::new(MENU_HEADER_LABEL)
@@ -197,8 +236,9 @@ fn build_menu_items(
     };
 
     let item_for = |host: Host| {
+        let label = host.display_name().to_string();
         MenuItem::Item(
-            MenuItemFields::new(host.display_name())
+            MenuItemFields::new(label)
                 .with_font_size_override(ITEM_FONT_SIZE)
                 .with_padding_override(ITEM_VERTICAL_PADDING, MENU_HORIZONTAL_PADDING)
                 .with_override_hover_background_color(hover_background)
@@ -206,7 +246,12 @@ fn build_menu_items(
         )
     };
 
-    vec![header, item_for(Host::Warp)]
+    let mut items = vec![header];
+    if let Some(host) = default_host {
+        items.push(item_for(host.clone()));
+    }
+    items.push(item_for(Host::Warp));
+    items
 }
 
 impl Entity for HostSelector {
@@ -223,11 +268,12 @@ impl TypedActionView for HostSelector {
                 self.set_menu_visibility(new_state, ctx);
             }
             HostSelectorAction::SelectHost(host) => {
-                self.selected = *host;
-                let label = self.selected.display_name();
+                self.selected = host.clone();
+                let label = self.selected.display_name().to_string();
                 self.button.update(ctx, |button, ctx| {
-                    button.set_label(label, ctx);
+                    button.set_label(label.clone(), ctx);
                 });
+                ctx.emit(HostSelectorEvent::HostSelected);
                 self.set_menu_visibility(false, ctx);
             }
         }

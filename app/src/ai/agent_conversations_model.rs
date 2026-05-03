@@ -541,10 +541,6 @@ impl ConversationOrTask<'_> {
         }
     }
 
-    pub fn is_ambient_agent_conversation(&self) -> bool {
-        matches!(self, ConversationOrTask::Task(_))
-    }
-
     /// Returns the navigation data for local conversations, used for emitting the Navigate event.
     pub fn navigation_data(&self) -> Option<&ConversationNavigationData> {
         match self {

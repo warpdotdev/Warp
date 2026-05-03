@@ -376,7 +376,7 @@ pub struct Block {
     /// this is None.
     cloud_workflow_id: Option<SyncId>,
 
-    /// If the command inluded an env var invocation. If not this will be None.
+    /// If the command included an env var invocation. If not this will be None.
     cloud_env_var_collection_id: Option<SyncId>,
 
     /// The last time this block was painted (i.e.: visible in the window),
