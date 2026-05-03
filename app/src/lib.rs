@@ -1872,6 +1872,11 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
                 manager.close_notebooks(ctx);
             });
 
+            // Snapshot current workspace state (tabs, cwds, panel state) before the
+            // writer thread drains and exits. Without this, a pkill/SIGTERM that
+            // arrives between periodic saves loses all changes since the last save.
+            ctx.dispatch_global_action("workspace:save_app", &());
+
             PersistenceWriter::handle(ctx).update(ctx, |writer, _ctx| {
                 writer.terminate();
             });
