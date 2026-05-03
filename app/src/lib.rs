@@ -2141,8 +2141,8 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
                             && path.as_bytes()[1] == b':'
                             && (path.as_bytes()[0].is_ascii_alphabetic())
                         {
-                            let forward = path.replace('\\', "/");
-                            return Url::parse(&format!("file:///{forward}"));
+                            // from_file_path handles path separators, special chars (#, %), and UNC paths
+                            return Url::from_file_path(path);
                         }
                     }
                     Err(url::ParseError::EmptyHost)

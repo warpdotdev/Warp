@@ -664,9 +664,10 @@ fn find_matching_config_name<'a>(
 fn parse_tab_path(url: &Url) -> Option<PathBuf> {
     let raw = url.query_pairs().find(|(k, _)| k == "path")?.1;
     let expanded = shellexpand::tilde(&raw).into_owned();
-    // Trim whitespace that may be appended by Windows shell variable expansion
+    // Trim only trailing whitespace that may be appended by Windows shell variable expansion
     // (e.g. `%1` or `%V` can carry trailing spaces/newlines in some configurations).
-    let trimmed = expanded.trim();
+    // Leading whitespace is preserved — it may be part of a legitimate path (e.g. ` Project`).
+    let trimmed = expanded.trim_end();
     if trimmed.is_empty() {
         return None;
     }

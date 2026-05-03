@@ -679,9 +679,11 @@ fn test_parse_tab_path_windows_drive_letter() {
 #[test]
 fn test_parse_tab_path_windows_with_trailing_whitespace() {
     let url = Url::parse("warp://action/new_tab?path=C%3A%5CProjects%20").unwrap();
-    // Trailing space should be trimmed
-    let result = parse_tab_path(&url);
-    assert!(result.is_some());
+    // Trailing space should be trimmed, exact value asserted
+    assert_eq!(
+        parse_tab_path(&url),
+        Some(PathBuf::from(r"C:\Projects"))
+    );
 }
 
 #[test]
