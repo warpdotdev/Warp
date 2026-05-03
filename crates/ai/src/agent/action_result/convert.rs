@@ -66,7 +66,8 @@ impl TryFrom<RequestCommandOutputResult> for api::request::input::tool_call_resu
             RequestCommandOutputResult::CancelledBeforeExecution => {
                 Err(ConvertToAPITypeError::Ignore)
             }
-            RequestCommandOutputResult::Denylisted { command } =>
+            RequestCommandOutputResult::Denylisted { command }
+            | RequestCommandOutputResult::PolicyDenied { command, .. } =>
             {
                 #[allow(deprecated)]
                 Ok(

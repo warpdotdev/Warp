@@ -89,6 +89,8 @@ pub(crate) enum AgentPolicyHookErrorKind {
     NonZeroExit,
     MalformedResponse,
     UnsupportedTransport,
+    HttpRequestFailed,
+    HttpStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

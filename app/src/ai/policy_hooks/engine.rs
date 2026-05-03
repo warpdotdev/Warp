@@ -3,9 +3,11 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use command::{r#async::Command, Stdio};
 use futures_lite::io::AsyncWriteExt;
+use reqwest::header::CONTENT_TYPE;
 use warpui::r#async::FutureExt as _;
 
 use super::{
+    audit::write_audit_record,
     config::{AgentPolicyHook, AgentPolicyHookConfig, AgentPolicyHookTransport},
     decision::{
         compose_policy_decisions, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision,
@@ -40,7 +42,7 @@ impl AgentPolicyHookEngine {
         }
 
         if let Err(err) = self.config.validate() {
-            return compose_policy_decisions(
+            let decision = compose_policy_decisions(
                 warp_permission,
                 vec![AgentPolicyHookEvaluation::unavailable(
                     "agent_policy_hooks",
@@ -50,6 +52,8 @@ impl AgentPolicyHookEngine {
                 )],
                 false,
             );
+            audit_decision(&event, &decision);
+            return decision;
         }
 
         let mut hook_results = Vec::new();
@@ -63,11 +67,13 @@ impl AgentPolicyHookEngine {
             }
         }
 
-        compose_policy_decisions(
+        let decision = compose_policy_decisions(
             warp_permission,
             hook_results,
             self.config.allow_autoapproval_for_all_hooks(),
-        )
+        );
+        audit_decision(&event, &decision);
+        decision
     }
 
     async fn evaluate_hook(
@@ -77,10 +83,7 @@ impl AgentPolicyHookEngine {
     ) -> AgentPolicyHookEvaluation {
         let response = match &hook.transport {
             AgentPolicyHookTransport::Stdio { .. } => self.run_stdio_hook(hook, event).await,
-            AgentPolicyHookTransport::Http { .. } => Err(AgentPolicyHookFailure {
-                kind: AgentPolicyHookErrorKind::UnsupportedTransport,
-                detail: "HTTP policy hooks are not implemented in the local engine yet".to_string(),
-            }),
+            AgentPolicyHookTransport::Http { .. } => self.run_http_hook(hook, event).await,
         };
 
         match response {
@@ -201,6 +204,87 @@ impl AgentPolicyHookEngine {
             })?;
 
         Ok(response)
+    }
+
+    async fn run_http_hook(
+        &self,
+        hook: &AgentPolicyHook,
+        event: &AgentPolicyEvent,
+    ) -> Result<AgentPolicyHookResponse, AgentPolicyHookFailure> {
+        let AgentPolicyHookTransport::Http { url, headers } = &hook.transport else {
+            return Err(AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::UnsupportedTransport,
+                detail: "hook transport is not HTTP".to_string(),
+            });
+        };
+
+        let event_bytes = serialize_event(event).map_err(|source| AgentPolicyHookFailure {
+            kind: AgentPolicyHookErrorKind::MalformedResponse,
+            detail: format!("failed to serialize policy event: {source}"),
+        })?;
+
+        let client = reqwest::Client::new();
+        let mut request = client
+            .post(url)
+            .header(CONTENT_TYPE, "application/json")
+            .header("x-warp-agent-policy-event-id", event.event_id.to_string())
+            .body(event_bytes);
+        for (key, value) in headers {
+            request = request.header(key.as_str(), value.as_str());
+        }
+
+        let timeout = Duration::from_millis(self.config.hook_timeout_ms(hook));
+        let response = request
+            .send()
+            .with_timeout(timeout)
+            .await
+            .map_err(|_| AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::Timeout,
+                detail: format!("policy hook timed out after {timeout:?}"),
+            })?
+            .map_err(|source| AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::HttpRequestFailed,
+                detail: format!("failed to call HTTP policy hook: {source}"),
+            })?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::HttpStatus,
+                detail: format!("HTTP policy hook returned status {status}"),
+            });
+        }
+
+        let response_bytes = response
+            .bytes()
+            .with_timeout(timeout)
+            .await
+            .map_err(|_| AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::Timeout,
+                detail: format!("policy hook response timed out after {timeout:?}"),
+            })?
+            .map_err(|source| AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::HttpRequestFailed,
+                detail: format!("failed to read HTTP policy hook response: {source}"),
+            })?;
+
+        if response_bytes.len() > MAX_HOOK_STDOUT_BYTES {
+            return Err(AgentPolicyHookFailure {
+                kind: AgentPolicyHookErrorKind::MalformedResponse,
+                detail: format!("policy hook response exceeded {MAX_HOOK_STDOUT_BYTES} bytes"),
+            });
+        }
+
+        parse_hook_response(&response_bytes).map_err(|source| AgentPolicyHookFailure {
+            kind: AgentPolicyHookErrorKind::MalformedResponse,
+            detail: format!("policy hook returned malformed response: {source:#}"),
+        })
+    }
+}
+
+fn audit_decision(event: &AgentPolicyEvent, decision: &AgentPolicyEffectiveDecision) {
+    if let Err(err) = write_audit_record(event, decision) {
+        log::warn!("Failed to write agent policy hook audit record: {err:#}");
     }
 }
 

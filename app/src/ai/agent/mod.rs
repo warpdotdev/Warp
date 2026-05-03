@@ -1000,6 +1000,12 @@ impl<'a> std::fmt::Display for MarkdownActionResult<'a> {
                         "\nCommand ({command}) was on denylist and so was not allowed to run"
                     )
                 }
+                RequestCommandOutputResult::PolicyDenied { command, reason } => {
+                    write!(
+                        f,
+                        "\nCommand ({command}) was blocked by host policy before execution: {reason}"
+                    )
+                }
             },
             AIAgentActionResultType::WriteToLongRunningShellCommand(result) => match result {
                 WriteToLongRunningShellCommandResult::CommandFinished { output, .. } => {

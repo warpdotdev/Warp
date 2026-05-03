@@ -188,6 +188,8 @@ pub enum RequestCommandOutputResult {
     CancelledBeforeExecution,
     /// The command was denied because it was present on the denylist.
     Denylisted { command: String },
+    /// The command was denied by a host policy hook before execution.
+    PolicyDenied { command: String, reason: String },
 }
 
 impl RequestCommandOutputResult {
@@ -195,14 +197,16 @@ impl RequestCommandOutputResult {
         match self {
             Self::Completed { exit_code, .. } => exit_code.was_successful(),
             Self::LongRunningCommandSnapshot { .. } => true,
-            Self::CancelledBeforeExecution | Self::Denylisted { .. } => false,
+            Self::CancelledBeforeExecution
+            | Self::Denylisted { .. }
+            | Self::PolicyDenied { .. } => false,
         }
     }
 
     pub fn failed(&self) -> bool {
         match self {
             Self::Completed { exit_code, .. } => !exit_code.was_successful(),
-            Self::Denylisted { .. } => true,
+            Self::Denylisted { .. } | Self::PolicyDenied { .. } => true,
             Self::CancelledBeforeExecution | Self::LongRunningCommandSnapshot { .. } => false,
         }
     }
@@ -233,6 +237,9 @@ impl Display for RequestCommandOutputResult {
             }
             RequestCommandOutputResult::Denylisted { .. } => {
                 write!(f, "Command output was on denylist")
+            }
+            RequestCommandOutputResult::PolicyDenied { reason, .. } => {
+                write!(f, "Command output was blocked by host policy: {reason}")
             }
         }
     }

@@ -97,3 +97,93 @@ mod binary_detection {
         assert!(block_on(is_file_content_binary_async(&missing)));
     }
 }
+
+#[cfg(not(target_family = "wasm"))]
+mod policy_hooks {
+    use crate::{
+        ai::{
+            agent::task::TaskId,
+            agent::{
+                AIAgentAction, AIAgentActionId, AIAgentActionResultType, AIAgentActionType,
+                RequestCommandOutputResult,
+            },
+            policy_hooks::{
+                decision::{
+                    AgentPolicyHookEvaluation, WarpPermissionDecisionKind, WarpPermissionSnapshot,
+                },
+                AgentPolicyDecisionKind, AgentPolicyEffectiveDecision,
+            },
+        },
+        terminal::shell::ShellType,
+    };
+
+    use super::super::{
+        normalize_command_for_policy, policy_denied_action_result,
+        warp_permission_snapshot_for_policy,
+    };
+
+    fn command_action(command: &str) -> AIAgentAction {
+        AIAgentAction {
+            id: AIAgentActionId::from("action_1".to_string()),
+            task_id: TaskId::new("task_1".to_string()),
+            action: AIAgentActionType::RequestCommandOutput {
+                command: command.to_string(),
+                is_read_only: Some(false),
+                is_risky: Some(true),
+                wait_until_completion: false,
+                uses_pager: None,
+                rationale: None,
+                citations: Vec::new(),
+            },
+            requires_result: true,
+        }
+    }
+
+    #[test]
+    fn policy_denied_result_preserves_command_and_policy_reason() {
+        let action = command_action("rm -rf target");
+        let decision = AgentPolicyEffectiveDecision {
+            decision: AgentPolicyDecisionKind::Deny,
+            reason: Some("blocked".to_string()),
+            warp_permission: WarpPermissionSnapshot::allow(None),
+            hook_results: vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Deny,
+                reason: Some("dangerous command".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+        };
+
+        let result = policy_denied_action_result(&action, &decision);
+
+        assert_eq!(
+            result,
+            AIAgentActionResultType::RequestCommandOutput(
+                RequestCommandOutputResult::PolicyDenied {
+                    command: "rm -rf target".to_string(),
+                    reason: "guard denied the action: dangerous command".to_string(),
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn warp_permission_snapshot_marks_autonomous_denials_terminal() {
+        let snapshot = warp_permission_snapshot_for_policy(false, false, false, true);
+
+        assert_eq!(snapshot.decision, WarpPermissionDecisionKind::Deny);
+    }
+
+    #[test]
+    fn command_normalization_matches_shell_escape_style() {
+        assert_eq!(
+            normalize_command_for_policy("echo one\\\n+two", Some(ShellType::Bash)),
+            "echo one +two"
+        );
+        assert_eq!(
+            normalize_command_for_policy("echo one`\n+two", Some(ShellType::PowerShell)),
+            "echo one +two"
+        );
+    }
+}

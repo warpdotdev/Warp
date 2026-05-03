@@ -69,6 +69,9 @@ pub mod text {
                             "Command was not allowed to run due to presence on denylist"
                         )
                     }
+                    RequestCommandOutputResult::PolicyDenied { reason, .. } => {
+                        writeln!(w, "Command was blocked by host policy: {reason}")
+                    }
                 },
                 AIAgentActionResultType::WriteToLongRunningShellCommand(result) => match result {
                     WriteToLongRunningShellCommandResult::Snapshot { .. } => {
@@ -825,6 +828,11 @@ pub mod json {
                             "Command was not allowed to run due to presence on denylist",
                         ),
                     }),
+                    RequestCommandOutputResult::PolicyDenied { reason, .. } => {
+                        Some(JsonMessage::ToolError {
+                            error: Cow::Borrowed(reason.as_str()),
+                        })
+                    }
                 },
                 AIAgentActionResultType::WriteToLongRunningShellCommand(result) => match result {
                     WriteToLongRunningShellCommandResult::Snapshot { .. } => {

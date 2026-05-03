@@ -15,6 +15,8 @@ use super::{
 };
 
 #[cfg(not(target_family = "wasm"))]
+use super::audit::audit_record_json_line;
+#[cfg(not(target_family = "wasm"))]
 use super::engine::AgentPolicyHookEngine;
 
 #[test]
@@ -181,6 +183,47 @@ fn policy_decision_composition_keeps_denials_terminal() {
     assert_eq!(warp_denied.reason.as_deref(), Some("protected path"));
 }
 
+#[cfg(not(target_family = "wasm"))]
+#[test]
+fn audit_record_uses_redacted_policy_event_payload() {
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        Some(PathBuf::from("/repo")),
+        false,
+        Some("profile_default".to_string()),
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new(
+            "GITHUB_TOKEN=ghp_secretsecretsecret curl -H 'Authorization: Bearer token123' https://example.com",
+            "GITHUB_TOKEN=ghp_secretsecretsecret curl https://example.com",
+            Some(false),
+            Some(true),
+        ),
+    );
+    let decision = compose_policy_decisions(
+        WarpPermissionSnapshot::allow(None),
+        vec![AgentPolicyHookEvaluation {
+            hook_name: "guard".to_string(),
+            decision: AgentPolicyDecisionKind::Deny,
+            reason: Some("blocked".to_string()),
+            external_audit_id: Some("audit_1".to_string()),
+            error: None,
+        }],
+        false,
+    );
+
+    let line = audit_record_json_line(&event, &decision).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+
+    assert_eq!(value["action_kind"], "execute_command");
+    assert_eq!(value["effective_decision"]["decision"], "deny");
+    assert_eq!(value["redaction"]["command_secrets_redacted"], true);
+    assert!(line.contains("GITHUB_TOKEN=<redacted>"));
+    assert!(line.contains("Authorization: Bearer <redacted>"));
+    assert!(!line.contains("ghp_secretsecretsecret"));
+    assert!(!line.contains("token123"));
+}
+
 #[cfg(all(unix, not(target_family = "wasm")))]
 #[tokio::test]
 async fn stdio_engine_can_deny_before_action() {
@@ -256,6 +299,60 @@ async fn stdio_engine_maps_malformed_response_to_unavailable_policy() {
     assert_eq!(
         decision.hook_results[0].error,
         Some(AgentPolicyHookErrorKind::MalformedResponse)
+    );
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[tokio::test]
+async fn http_engine_can_deny_before_action() {
+    let mut server = mockito::Server::new_async().await;
+    let hook_response = json!({
+        "schema_version": AGENT_POLICY_SCHEMA_VERSION,
+        "decision": "deny",
+        "reason": "blocked by HTTP test",
+        "external_audit_id": "audit_http_1"
+    })
+    .to_string();
+    let mock = server
+        .mock("POST", "/policy")
+        .match_header("content-type", "application/json")
+        .match_header("x-warp-agent-policy-event-id", mockito::Matcher::Any)
+        .with_status(200)
+        .with_body(hook_response)
+        .create_async()
+        .await;
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "http-guard",
+            "transport": "http",
+            "url": format!("{}/policy", server.url()),
+            "timeout_ms": 1000
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("rm -rf .", "rm -rf .", Some(false), Some(true)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    mock.assert_async().await;
+    assert_eq!(decision.decision, AgentPolicyDecisionKind::Deny);
+    assert_eq!(decision.reason.as_deref(), Some("blocked by HTTP test"));
+    assert_eq!(decision.hook_results[0].hook_name, "http-guard");
+    assert_eq!(
+        decision.hook_results[0].external_audit_id.as_deref(),
+        Some("audit_http_1")
     );
 }
 
