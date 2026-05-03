@@ -17,6 +17,7 @@ use crate::terminal::session_settings::{
     AgentToolbarChipSelection, CLIAgentToolbarChipSelection, SessionSettings,
     SessionSettingsChangedEvent, ToolbarChipSelection,
 };
+use crate::settings::AISettings;
 use crate::Appearance;
 
 use settings::Setting as _;
@@ -75,7 +76,8 @@ fn open_toolbar_items_from_settings<V: View>(
 ) {
     let appearance = Appearance::as_ref(ctx);
     let session_settings = SessionSettings::as_ref(ctx);
-    let (current_left, current_right, available) = match mode {
+    let voice_input_enabled = AISettings::as_ref(ctx).is_voice_input_enabled(ctx);
+    let (current_left, current_right, mut available) = match mode {
         AgentToolbarEditorMode::AgentView => {
             let selection = session_settings.agent_footer_chip_selection.clone();
             (
@@ -93,6 +95,9 @@ fn open_toolbar_items_from_settings<V: View>(
             )
         }
     };
+    if !voice_input_enabled {
+        available.retain(|item| !matches!(item, AgentToolbarItemKind::VoiceInput));
+    }
     chip_configurator.open_left_right_zones_with_items(
         current_left,
         current_right,
@@ -107,25 +112,37 @@ fn open_default_toolbar_items<V: View>(
     ctx: &mut ViewContext<V>,
 ) {
     let appearance = Appearance::as_ref(ctx);
-    let (left, right, available) = AgentToolbarItemKind::defaults_for_mode(mode);
+    let voice_input_enabled = AISettings::as_ref(ctx).is_voice_input_enabled(ctx);
+    let (mut left, mut right, mut available) = AgentToolbarItemKind::defaults_for_mode(mode);
+    if !voice_input_enabled {
+        left.retain(|item| !matches!(item, AgentToolbarItemKind::VoiceInput));
+        right.retain(|item| !matches!(item, AgentToolbarItemKind::VoiceInput));
+        available.retain(|item| !matches!(item, AgentToolbarItemKind::VoiceInput));
+    }
     chip_configurator.open_left_right_zones_with_items(left, right, available, appearance);
 }
 
 fn is_toolbar_editor_at_defaults(
     mode: AgentToolbarEditorMode,
     chip_configurator: &ChipConfigurator,
+    voice_input_enabled: bool,
 ) -> bool {
     let left = chip_configurator.left_item_kinds();
     let right = chip_configurator.right_item_kinds();
-    toolbar_items_match_defaults(mode, &left, &right)
+    toolbar_items_match_defaults(mode, &left, &right, voice_input_enabled)
 }
 
 fn toolbar_items_match_defaults(
     mode: AgentToolbarEditorMode,
     left: &[AgentToolbarItemKind],
     right: &[AgentToolbarItemKind],
+    voice_input_enabled: bool,
 ) -> bool {
-    let (default_left, default_right, _) = AgentToolbarItemKind::defaults_for_mode(mode);
+    let (mut default_left, mut default_right, _) = AgentToolbarItemKind::defaults_for_mode(mode);
+    if !voice_input_enabled {
+        default_left.retain(|item| !matches!(item, AgentToolbarItemKind::VoiceInput));
+        default_right.retain(|item| !matches!(item, AgentToolbarItemKind::VoiceInput));
+    }
     default_left.as_slice() == left && default_right.as_slice() == right
 }
 
@@ -169,8 +186,9 @@ impl AgentToolbarInlineEditor {
         save_toolbar_selection(self.mode, left, right, ctx);
     }
 
-    fn is_at_defaults(&self) -> bool {
-        is_toolbar_editor_at_defaults(self.mode, &self.chip_configurator)
+    fn is_at_defaults(&self, app: &AppContext) -> bool {
+        let voice_input_enabled = AISettings::as_ref(app).is_voice_input_enabled(app);
+        is_toolbar_editor_at_defaults(self.mode, &self.chip_configurator, voice_input_enabled)
     }
 }
 
@@ -213,7 +231,7 @@ impl View for AgentToolbarInlineEditor {
             &self.chip_configurator,
             ChipEditorSectionsConfig {
                 available_section_label: "Available chips",
-                is_at_defaults: self.is_at_defaults(),
+                is_at_defaults: self.is_at_defaults(app),
                 reset_action: AgentToolbarInlineEditorAction::ResetDefault,
                 activate_action: AgentToolbarInlineEditorAction::Activate,
                 chip_action_wrapper: AgentToolbarInlineEditorAction::Chip,
@@ -240,7 +258,8 @@ fn save_toolbar_selection<V: View>(
     right: Vec<AgentToolbarItemKind>,
     ctx: &mut ViewContext<V>,
 ) {
-    let is_default = toolbar_items_match_defaults(mode, &left, &right);
+    let voice_input_enabled = AISettings::as_ref(ctx).is_voice_input_enabled(ctx);
+    let is_default = toolbar_items_match_defaults(mode, &left, &right, voice_input_enabled);
     match mode {
         AgentToolbarEditorMode::AgentView => {
             let selection = if is_default {
@@ -346,8 +365,9 @@ impl TypedActionView for AgentToolbarEditorModal {
 }
 
 impl AgentToolbarEditorModal {
-    fn is_at_defaults(&self) -> bool {
-        is_toolbar_editor_at_defaults(self.mode, &self.chip_configurator)
+    fn is_at_defaults(&self, app: &AppContext) -> bool {
+        let voice_input_enabled = AISettings::as_ref(app).is_voice_input_enabled(app);
+        is_toolbar_editor_at_defaults(self.mode, &self.chip_configurator, voice_input_enabled)
     }
 }
 
@@ -363,7 +383,7 @@ impl View for AgentToolbarEditorModal {
             ChipEditorModalConfig {
                 title: self.modal_title(),
                 available_section_label: "Available chips",
-                is_at_defaults: self.is_at_defaults(),
+                is_at_defaults: self.is_at_defaults(app),
                 is_dirty: self.is_dirty,
                 cancel_action: AgentToolbarEditorAction::Cancel,
                 save_action: AgentToolbarEditorAction::Save,
