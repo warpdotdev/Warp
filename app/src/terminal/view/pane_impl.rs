@@ -652,7 +652,14 @@ impl BackingView for TerminalView {
         let shared_session_status = model.shared_session_status();
         let is_ambient_agent = self.is_ambient_agent_session(ctx);
         if shared_session_status.is_sharer_or_viewer() {
-            if !is_ambient_agent {
+            // "Copy link" is gated on `has_active_share_link()` rather than
+            // the outer `is_sharer_or_viewer()` so that pending and failed
+            // states (which leave no usable URL) do not surface a copy
+            // entry — see GH#9736. The neighbouring "Stop sharing session"
+            // entry deliberately stays under `is_sharer_or_viewer()` /
+            // `is_sharer()` so the user can still cancel a stuck pending
+            // share.
+            if !is_ambient_agent && shared_session_status.has_active_share_link() {
                 items.push(
                     MenuItemFields::new("Copy link")
                         .with_on_select_action(TerminalAction::CopySharedSessionLink { source })
