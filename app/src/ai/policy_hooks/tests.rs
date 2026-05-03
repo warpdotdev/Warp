@@ -151,6 +151,37 @@ fn config_rejects_stdio_hook_credential_args() {
 }
 
 #[test]
+fn config_rejects_stdio_hook_credential_command() {
+    for command in [
+        "guard --token secret",
+        "guard --authorization 'Bearer raw-token'",
+        "API_KEY=secret guard",
+        "guard sk-secretsecretsecret",
+        "guard ghp_secretsecretsecret",
+    ] {
+        let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+            "enabled": true,
+            "before_action": [{
+                "name": "stdio-guard",
+                "transport": "stdio",
+                "command": command
+            }]
+        }))
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(super::config::AgentPolicyHookConfigError::StdioCommandContainsCredentials)
+        ));
+
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(value["enabled"], false);
+        assert!(!value.to_string().contains("secret"));
+        assert!(!value.to_string().contains("raw-token"));
+    }
+}
+
+#[test]
 fn config_allows_stdio_hook_secret_env_reference_args() {
     let config: AgentPolicyHookConfig = serde_json::from_value(json!({
         "enabled": true,
@@ -159,6 +190,21 @@ fn config_allows_stdio_hook_secret_env_reference_args() {
             "transport": "stdio",
             "command": "guard",
             "args": ["--token", "$API_TOKEN", "--api-key=${POLICY_API_KEY}", "--authorization", "Bearer $POLICY_TOKEN", "--auth", "Basic ${POLICY_AUTH}", "Authorization: BEARER $HEADER_TOKEN", "X-API-Key:", "$HEADER_API_KEY", "Authorization:", "Bearer $HEADER_TOKEN"]
+        }]
+    }))
+    .unwrap();
+
+    assert!(config.validate().is_ok());
+}
+
+#[test]
+fn config_allows_stdio_hook_secret_env_reference_command() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "stdio-guard",
+            "transport": "stdio",
+            "command": "guard --token $API_TOKEN"
         }]
     }))
     .unwrap();

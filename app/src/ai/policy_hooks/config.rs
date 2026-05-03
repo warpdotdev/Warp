@@ -180,7 +180,10 @@ pub(crate) enum AgentPolicyHookTransport {
 impl AgentPolicyHookTransport {
     fn validate_safe_to_persist(&self) -> Result<(), AgentPolicyHookConfigError> {
         match self {
-            Self::Stdio { args, env, .. } => {
+            Self::Stdio {
+                command, args, env, ..
+            } => {
+                validate_stdio_command(command)?;
                 validate_stdio_args(args)?;
                 validate_stdio_secret_value_map(env)?;
             }
@@ -206,6 +209,7 @@ impl AgentPolicyHookTransport {
                 if command.trim().is_empty() {
                     return Err(AgentPolicyHookConfigError::MissingStdioCommand);
                 }
+                validate_stdio_command(command)?;
                 validate_stdio_args(args)?;
                 validate_stdio_secret_value_map(env)?;
 
@@ -313,6 +317,21 @@ fn validate_stdio_args(args: &[String]) -> Result<(), AgentPolicyHookConfigError
     }) {
         return Err(AgentPolicyHookConfigError::StdioArgContainsCredentials);
     }
+    Ok(())
+}
+
+fn validate_stdio_command(command: &str) -> Result<(), AgentPolicyHookConfigError> {
+    if stdio_arg_contains_credentials(command) {
+        return Err(AgentPolicyHookConfigError::StdioCommandContainsCredentials);
+    }
+
+    let words = command.split_ascii_whitespace().collect::<Vec<_>>();
+    if words.windows(2).any(|words| {
+        stdio_arg_expects_secret_value(words[0]) && stdio_arg_value_is_literal_secret(words[1])
+    }) {
+        return Err(AgentPolicyHookConfigError::StdioCommandContainsCredentials);
+    }
+
     Ok(())
 }
 
@@ -508,6 +527,10 @@ pub(crate) enum AgentPolicyHookConfigError {
     MissingHookName,
     #[error("agent policy hook stdio command must not be empty")]
     MissingStdioCommand,
+    #[error(
+        "agent policy hook stdio command must not include credentials; use args with env secret references"
+    )]
+    StdioCommandContainsCredentials,
     #[error(
         "agent policy hook stdio args must not include credentials; use env secret references"
     )]
