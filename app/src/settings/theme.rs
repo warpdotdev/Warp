@@ -1,6 +1,10 @@
+use std::{collections::HashMap, path::Path};
+
 use warpui::{platform::SystemTheme, AppContext};
 
-use crate::themes::theme::{RespectSystemTheme, SelectedSystemThemes, ThemeKind};
+use crate::themes::theme::{
+    resolve_theme_ref, RespectSystemTheme, SelectedSystemThemes, ThemeKind,
+};
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,
 };
@@ -45,6 +49,16 @@ define_settings_group!(ThemeSettings, settings: [
         max_table_depth: 0,
         description: "The themes to use for system light and dark modes.",
     },
+    directory_overrides: DirectoryOverrides {
+        type: DirectoryThemeOverrides,
+        default: DirectoryThemeOverrides::default(),
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        private: true,
+        toml_path: "appearance.themes.directory_overrides",
+        max_table_depth: 1,
+        description: "Local-only map of directory paths to theme names. The focused pane cwd is matched against keys using longest-prefix component-boundary matching.",
+    },
 ]);
 
 impl Theme {
@@ -80,4 +94,131 @@ pub fn derived_theme_kind(theme_settings: &ThemeSettings, system_theme: SystemTh
 /// Return the current theme kind based on the theme settings and active app context.
 pub fn active_theme_kind(theme_settings: &ThemeSettings, app: &AppContext) -> ThemeKind {
     derived_theme_kind(theme_settings, app.system_theme())
+}
+
+/// Local-only directory path to theme-reference mapping for per-tab theme overrides.
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialEq,
+    Eq,
+    schemars::JsonSchema,
+    settings_value::SettingsValue,
+)]
+#[schemars(description = "Local map of directory paths to tab theme overrides.")]
+pub struct DirectoryThemeOverrides(pub HashMap<String, String>);
+
+impl DirectoryThemeOverrides {
+    /// Returns the resolved theme for `cwd` using longest-prefix matching at path-component boundaries.
+    pub fn theme_for_directory(&self, cwd: &Path) -> Option<ThemeKind> {
+        let cwd_components = normalized_path_components(&cwd.to_string_lossy());
+        self.0
+            .iter()
+            .filter_map(|(configured_path, theme_ref)| {
+                let components = normalized_path_components(configured_path);
+                (!components.is_empty()
+                    && components.len() <= cwd_components.len()
+                    && components
+                        .iter()
+                        .zip(cwd_components.iter())
+                        .all(|(lhs, rhs)| path_component_eq(lhs, rhs)))
+                .then(|| (components.len(), resolve_theme_ref(theme_ref)))
+            })
+            .filter_map(|(len, theme)| theme.map(|theme| (len, theme)))
+            .max_by_key(|(len, _)| *len)
+            .map(|(_, theme)| theme)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+fn normalized_path_components(raw: &str) -> Vec<String> {
+    let expanded = shellexpand::tilde(raw).into_owned();
+    expanded
+        .replace('\\', "/")
+        .split('/')
+        .filter_map(|component| {
+            let trimmed = component.trim();
+            (!trimmed.is_empty() && trimmed != ".").then(|| {
+                #[cfg(any(target_os = "macos", windows))]
+                {
+                    trimmed.to_lowercase()
+                }
+                #[cfg(not(any(target_os = "macos", windows)))]
+                {
+                    trimmed.to_string()
+                }
+            })
+        })
+        .collect()
+}
+
+fn path_component_eq(lhs: &str, rhs: &str) -> bool {
+    #[cfg(any(target_os = "macos", windows))]
+    {
+        lhs.eq_ignore_ascii_case(rhs)
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        lhs == rhs
+    }
+}
+
+#[cfg(test)]
+mod directory_theme_override_tests {
+    use super::DirectoryThemeOverrides;
+    use crate::themes::theme::ThemeKind;
+    use std::{collections::HashMap, path::Path};
+
+    #[test]
+    fn directory_theme_uses_component_boundary_matching() {
+        let overrides = DirectoryThemeOverrides(HashMap::from([(
+            "/tmp/work/medone".to_owned(),
+            "Dark City".to_owned(),
+        )]));
+
+        assert_eq!(
+            overrides.theme_for_directory(Path::new("/tmp/work/medone/apps/admin")),
+            Some(ThemeKind::DarkCity)
+        );
+        assert_eq!(
+            overrides.theme_for_directory(Path::new("/tmp/work/medone-archive")),
+            None
+        );
+    }
+
+    #[test]
+    fn directory_theme_prefers_longest_matching_prefix() {
+        let overrides = DirectoryThemeOverrides(HashMap::from([
+            ("/tmp/work".to_owned(), "Dracula".to_owned()),
+            ("/tmp/work/medone".to_owned(), "Solarized Dark".to_owned()),
+        ]));
+
+        assert_eq!(
+            overrides.theme_for_directory(Path::new("/tmp/work/medone/api")),
+            Some(ThemeKind::SolarizedDark)
+        );
+        assert_eq!(
+            overrides.theme_for_directory(Path::new("/tmp/work/other")),
+            Some(ThemeKind::Dracula)
+        );
+    }
+
+    #[test]
+    fn directory_theme_skips_unresolved_theme_values() {
+        let overrides = DirectoryThemeOverrides(HashMap::from([(
+            "/tmp/work".to_owned(),
+            "Definitely Not A Theme".to_owned(),
+        )]));
+
+        assert_eq!(
+            overrides.theme_for_directory(Path::new("/tmp/work/app")),
+            None
+        );
+    }
 }

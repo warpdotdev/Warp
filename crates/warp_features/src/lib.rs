@@ -746,6 +746,9 @@ pub enum FeatureFlag {
     /// adopt the configured color when their working directory matches.
     DirectoryTabColors,
 
+    /// Enables per-tab theme overrides from launch configs, menu pins, and directory matches.
+    PerTabThemeOverrides,
+
     /// Enables the new settings to control visibility of Warp Drive, Code Review Panel,
     /// and Project Explorer & Global Search features.
     OpenWarpNewSettingsModes,
@@ -906,6 +909,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::CodebaseIndexSpeedbump,
     // End manually enabled Code features.
     FeatureFlag::DirectoryTabColors,
+    FeatureFlag::PerTabThemeOverrides,
     FeatureFlag::EditableMarkdownMermaid,
     FeatureFlag::CodeReviewScrollPreservation,
     FeatureFlag::OzIdentityFederation,
@@ -928,6 +932,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
 /// Features enabled for feature preview build users (e.g.: Friends of Warp).
 /// All PREVIEW_FLAGS are also automatically added to dogfood builds (WarpDev).
 pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
+    FeatureFlag::PerTabThemeOverrides,
     FeatureFlag::Orchestration,
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::BlocklistMarkdownImages,

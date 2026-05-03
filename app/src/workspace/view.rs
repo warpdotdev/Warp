@@ -3526,6 +3526,15 @@ impl Workspace {
     ) {
         let start_index = self.tabs.len();
 
+        let window_theme = if FeatureFlag::PerTabThemeOverrides.is_enabled() {
+            window
+                .theme
+                .as_deref()
+                .and_then(crate::themes::theme::resolve_theme_ref)
+        } else {
+            None
+        };
+
         window
             .tabs
             .iter()
@@ -3540,6 +3549,17 @@ impl Workspace {
                 self.tabs[start_index + tab_index].selected_color = tab_template
                     .color
                     .map_or(SelectedTabColor::Unset, SelectedTabColor::Color);
+                if FeatureFlag::PerTabThemeOverrides.is_enabled() {
+                    self.tabs[start_index + tab_index]
+                        .theme_state
+                        .launch_config_pin = tab_template
+                        .theme
+                        .as_deref()
+                        .and_then(crate::themes::theme::resolve_theme_ref);
+                    self.tabs[start_index + tab_index]
+                        .theme_state
+                        .window_default = window_theme.clone();
+                }
             });
 
         if !window.tabs.is_empty() {
@@ -3592,6 +3612,7 @@ impl Workspace {
                         self.tabs[tab_index].default_directory_color =
                             saved_tab.default_directory_color;
                         self.tabs[tab_index].selected_color = saved_tab.selected_color;
+                        self.tabs[tab_index].theme_state = saved_tab.theme_state.clone();
 
                         let pane_group = self.tabs[tab_index].pane_group.clone();
 
@@ -9884,6 +9905,11 @@ impl Workspace {
                         .tabs
                         .get(tab_index)
                         .map(|tab| tab.selected_color)
+                        .unwrap_or_default(),
+                    theme_state: self
+                        .tabs
+                        .get(tab_index)
+                        .map(|tab| tab.theme_state.clone())
                         .unwrap_or_default(),
                     left_panel,
                     right_panel,

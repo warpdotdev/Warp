@@ -51,6 +51,8 @@ use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::ui_components::text_input::TextInput;
 use warpui::{AppContext, SingletonEntity, ViewHandle};
 
+use crate::app_state::TabThemeState;
+
 pub const TAB_BAR_BORDER_HEIGHT: f32 = 1.0;
 const TAB_INDICATOR_HEIGHT: f32 = 14.0;
 
@@ -141,6 +143,9 @@ pub struct TabData {
     pub default_directory_color: Option<AnsiColorIdentifier>,
     /// Color chosen manually by the user (e.g. right-click menu).
     pub selected_color: SelectedTabColor,
+    /// Theme override state for this tab. Rendering migration will consume this
+    /// through the per-tab resolver while window chrome remains global-themed.
+    pub theme_state: TabThemeState,
     pub indicator_hover_state: MouseStateHandle,
     // Used by a later drag-tab branch to distinguish tabs that have moved into detached windows.
     pub detached: bool,
@@ -159,6 +164,7 @@ impl TabData {
             draggable_state: Default::default(),
             default_directory_color: None,
             selected_color: SelectedTabColor::Unset,
+            theme_state: TabThemeState::default(),
             indicator_hover_state: Default::default(),
             detached: false,
         }
