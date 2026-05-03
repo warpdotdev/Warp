@@ -76,7 +76,7 @@ pub(crate) fn mcp_argument_keys(arguments: &serde_json::Value) -> (Vec<String>, 
     let mut keys = map
         .keys()
         .take(MAX_POLICY_COLLECTION_ITEMS)
-        .map(|key| truncate_for_policy(key))
+        .map(|key| redact_sensitive_text_for_policy(key))
         .collect::<Vec<_>>();
     keys.sort();
     let omitted_count = map.len().saturating_sub(keys.len());

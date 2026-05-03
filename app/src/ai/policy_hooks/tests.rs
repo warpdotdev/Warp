@@ -15,7 +15,7 @@ use super::{
     },
     event::{
         AgentPolicyAction, AgentPolicyEvent, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
-        PolicyReadFilesAction, AGENT_POLICY_SCHEMA_VERSION,
+        PolicyReadFilesAction, PolicyReadMcpResourceAction, AGENT_POLICY_SCHEMA_VERSION,
     },
     redaction::{redact_command_for_policy, MAX_POLICY_COLLECTION_ITEMS},
 };
@@ -607,6 +607,44 @@ fn mcp_tool_action_preserves_only_argument_keys() {
 
     assert_eq!(action.argument_keys, vec!["count", "path", "token"]);
     assert_eq!(action.omitted_argument_key_count, None);
+}
+
+#[test]
+fn mcp_tool_action_redacts_secret_shaped_argument_keys() {
+    let action = PolicyCallMcpToolAction::new(
+        None,
+        "tool-sk-secretsecretsecret",
+        &json!({
+            "Authorization: Bearer rawbearer": "omitted",
+            "sk-secretsecretsecret": "omitted",
+            "path": "/repo"
+        }),
+    );
+
+    assert_eq!(action.tool_name, "tool-<redacted>");
+    assert_eq!(
+        action.argument_keys,
+        vec!["<redacted>", "Authorization: Bearer <redacted>", "path"]
+    );
+}
+
+#[test]
+fn mcp_resource_action_redacts_secret_shaped_uri() {
+    let action = PolicyReadMcpResourceAction::new(
+        None,
+        "resource-ghp_secretsecretsecret",
+        Some(
+            "mcp://user:secret@example/resource?api_key=raw-key&state=sk-secretsecretsecret"
+                .to_string(),
+        ),
+    );
+
+    assert_eq!(action.name, "resource-<redacted>");
+    let uri = action.uri.as_deref().unwrap();
+    assert!(uri.contains("mcp://<redacted>@example/resource"));
+    assert!(uri.contains("api_key=<redacted>"));
+    assert!(!uri.contains("raw-key"));
+    assert!(!uri.contains("sk-secretsecretsecret"));
 }
 
 #[test]

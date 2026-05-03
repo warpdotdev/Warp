@@ -25,8 +25,8 @@ use crate::ai::agent::{
     Shared, ShellCommandCompletedTrigger, ShellCommandError, SuggestNewConversationResult,
     SuggestPromptResult, TransferShellCommandControlToUserResult, UpdatedFileContext,
     UploadArtifactResult, WriteToLongRunningShellCommandResult, COMMAND_POLICY_DENIED_PREFIX,
-    FILE_EDITS_POLICY_DENIED_PREFIX, WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID,
-    WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE, WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
+    WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID, WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
+    WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
 };
 use crate::ai::block_context::BlockContext;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
@@ -803,16 +803,8 @@ pub(crate) fn convert_tool_call_result_to_input(
                     }
                 }
                 Some(api::apply_file_diffs_result::Result::Error(error)) => {
-                    if let Some(reason) =
-                        error.message.strip_prefix(FILE_EDITS_POLICY_DENIED_PREFIX)
-                    {
-                        RequestFileEditsResult::PolicyDenied {
-                            reason: reason.to_string(),
-                        }
-                    } else {
-                        RequestFileEditsResult::DiffApplicationFailed {
-                            error: error.message.clone(),
-                        }
+                    RequestFileEditsResult::DiffApplicationFailed {
+                        error: error.message.clone(),
                     }
                 }
                 None => RequestFileEditsResult::Cancelled,

@@ -166,9 +166,13 @@ fn test_convert_tool_call_result_to_input_treats_unmarked_permission_denied_as_c
 }
 
 #[test]
-fn test_convert_tool_call_result_to_input_preserves_file_edit_policy_denial() {
+fn test_convert_tool_call_result_to_input_does_not_reclassify_prefixed_file_edit_error() {
     let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
     let mut document_versions = HashMap::new();
+    let error = format!(
+        "{}protected path",
+        crate::ai::agent::FILE_EDITS_POLICY_DENIED_PREFIX
+    );
     let tool_call_result = api::message::ToolCallResult {
         tool_call_id: "tool_call".to_string(),
         context: None,
@@ -176,10 +180,7 @@ fn test_convert_tool_call_result_to_input_preserves_file_edit_policy_denial() {
             api::ApplyFileDiffsResult {
                 result: Some(api::apply_file_diffs_result::Result::Error(
                     api::apply_file_diffs_result::Error {
-                        message: format!(
-                            "{}protected path",
-                            crate::ai::agent::FILE_EDITS_POLICY_DENIED_PREFIX
-                        ),
+                        message: error.clone(),
                     },
                 )),
             },
@@ -197,11 +198,13 @@ fn test_convert_tool_call_result_to_input_preserves_file_edit_policy_denial() {
     match input {
         AIAgentInput::ActionResult { result, .. } => match result.result {
             crate::ai::agent::AIAgentActionResultType::RequestFileEdits(
-                crate::ai::agent::RequestFileEditsResult::PolicyDenied { reason },
+                crate::ai::agent::RequestFileEditsResult::DiffApplicationFailed {
+                    error: actual_error,
+                },
             ) => {
-                assert_eq!(reason, "protected path");
+                assert_eq!(actual_error, error);
             }
-            other => panic!("Expected policy-denied file edit result, got {other:?}"),
+            other => panic!("Expected diff-application failure result, got {other:?}"),
         },
         other => panic!("Expected action-result input, got {other:?}"),
     }

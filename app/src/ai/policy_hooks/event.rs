@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize, Serializer};
 use super::{
     decision::WarpPermissionSnapshot,
     redaction::{
-        capped_policy_items, mcp_argument_keys, redact_command_for_policy, truncate_for_policy,
+        capped_policy_items, mcp_argument_keys, redact_command_for_policy,
+        redact_sensitive_text_for_policy, truncate_for_policy,
     },
 };
 
@@ -254,7 +255,7 @@ impl PolicyCallMcpToolAction {
         let tool_name = tool_name.into();
         Self {
             server_id,
-            tool_name: truncate_for_policy(&tool_name),
+            tool_name: redact_sensitive_text_for_policy(&tool_name),
             argument_keys,
             omitted_argument_key_count,
         }
@@ -279,8 +280,8 @@ impl PolicyReadMcpResourceAction {
         let name = name.into();
         Self {
             server_id,
-            name: truncate_for_policy(&name),
-            uri: uri.map(|uri| truncate_for_policy(&uri)),
+            name: redact_sensitive_text_for_policy(&name),
+            uri: uri.map(|uri| redact_sensitive_text_for_policy(&uri)),
         }
     }
 }
