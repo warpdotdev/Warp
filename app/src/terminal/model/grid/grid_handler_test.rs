@@ -2124,3 +2124,46 @@ fn content_len_equals_len_when_no_trailing_blanks() {
     let expected = grid.grid_storage().max_cursor_point.row.0 + grid.history_size() + 1;
     assert_eq!(grid.content_len(), expected);
 }
+
+#[test]
+fn test_box_drawing_chars_are_link_separators() {
+    // Tree output: "│   └── alpha.md" — hovering on "alpha.md" should produce it as a candidate.
+    let blockgrid = mock_blockgrid("│   └── alpha.md");
+    let paths = blockgrid
+        .grid_handler
+        .possible_file_paths_at_point(Point { row: 0, col: 12 });
+    // The candidate list should include "alpha.md" as a standalone path.
+    assert!(
+        paths.iter().any(|p| p.path.path == "alpha.md"),
+        "Expected 'alpha.md' as a candidate in tree output, got: {:?}",
+        paths.iter().map(|p| &p.path.path).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_box_drawing_tree_branch_with_directory() {
+    // Tree output: "├── src" — hovering on "src" should produce it as a candidate.
+    let blockgrid = mock_blockgrid("├── src");
+    let paths = blockgrid
+        .grid_handler
+        .possible_file_paths_at_point(Point { row: 0, col: 6 });
+    assert!(
+        paths.iter().any(|p| p.path.path == "src"),
+        "Expected 'src' as a candidate, got: {:?}",
+        paths.iter().map(|p| &p.path.path).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn test_double_line_box_drawing_separators() {
+    // Double-line variant: "║   ╚══ notes.txt"
+    let blockgrid = mock_blockgrid("║   ╚══ notes.txt");
+    let paths = blockgrid
+        .grid_handler
+        .possible_file_paths_at_point(Point { row: 0, col: 13 });
+    assert!(
+        paths.iter().any(|p| p.path.path == "notes.txt"),
+        "Expected 'notes.txt' as a candidate in double-line tree output, got: {:?}",
+        paths.iter().map(|p| &p.path.path).collect::<Vec<_>>()
+    );
+}
