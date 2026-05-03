@@ -1127,9 +1127,7 @@ impl Input {
                     ctx,
                 )
             }
-            SlashCommandEntryState::SkillCommand(_)
-                if self.is_cloud_mode_input_v2_composing(ctx) =>
-            {
+            SlashCommandEntryState::SkillCommand(_) if self.is_composing_cloud_mode_prompt(ctx) => {
                 false
             }
             SlashCommandEntryState::SkillCommand(detected_skill) => {
@@ -1225,9 +1223,7 @@ impl Input {
                     ctx,
                 )
             }
-            SlashCommandEntryState::SkillCommand(_)
-                if self.is_cloud_mode_input_v2_composing(ctx) =>
-            {
+            SlashCommandEntryState::SkillCommand(_) if self.is_composing_cloud_mode_prompt(ctx) => {
                 false
             }
             SlashCommandEntryState::SkillCommand(detected_skill) => {
