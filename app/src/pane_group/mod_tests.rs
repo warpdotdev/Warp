@@ -2,9 +2,18 @@ use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::{
     ai::{
         active_agent_views_model::ActiveAgentViewsModel,
+        agent::{
+            conversation::{AIConversation, AIConversationId},
+            PassiveSuggestionTrigger,
+        },
         agent_conversations_model::AgentConversationsModel,
         ambient_agents::github_auth_notifier::GitHubAuthNotifier,
-        blocklist::BlocklistAIHistoryModel,
+        ambient_agents::AmbientAgentTaskId,
+        blocklist::{
+            orchestration_event_streamer::OrchestrationEventStreamer,
+            orchestration_events::OrchestrationEventService,
+            task_status_sync_model::TaskStatusSyncModel, BlocklistAIHistoryModel,
+        },
         document::ai_document_model::AIDocumentModel,
         execution_profiles::profiles::AIExecutionProfilesModel,
         llms::LLMPreferences,
@@ -18,6 +27,7 @@ use crate::{
         AIRequestUsageModel,
     },
     auth::auth_manager::AuthManager,
+    changelog_model::ChangelogModel,
     cloud_object::model::persistence::CloudModel,
     context_chips::prompt::Prompt,
     experiments,
@@ -64,8 +74,11 @@ use crate::{
 use repo_metadata::RepoMetadataModel;
 use repo_metadata::{repositories::DetectedRepositories, watcher::DirectoryWatcher};
 use std::collections::HashMap;
+use uuid::Uuid;
+use warp_core::features::FeatureFlag;
 use watcher::HomeDirectoryWatcher;
 
+use super::child_agent::{create_hidden_child_agent_conversation, HiddenChildAgentTaskContext};
 use super::*;
 use crate::terminal::resizable_data::ResizableData;
 use ai::{
@@ -84,6 +97,7 @@ fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
 
     app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
+    app.add_singleton_model(|ctx| ChangelogModel::new(ServerApiProvider::as_ref(ctx).get()));
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
@@ -124,7 +138,13 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
+    app.add_singleton_model(OrchestrationEventService::new);
+    app.add_singleton_model(TaskStatusSyncModel::new);
+    if FeatureFlag::OrchestrationV2.is_enabled() {
+        app.add_singleton_model(OrchestrationEventStreamer::new);
+    }
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
+    app.add_singleton_model(crate::ai::blocklist::BlocklistAIPermissions::new);
     app.add_singleton_model(AgentNotificationsModel::new);
     app.add_singleton_model(|ctx| {
         AIExecutionProfilesModel::new(&crate::LaunchMode::new_for_unit_test(), ctx)
@@ -220,6 +240,72 @@ fn is_active_session(panes: &PaneGroup, pane_id: PaneId, ctx: &AppContext) -> bo
 
 fn new_notebook(ctx: &mut ViewContext<PaneGroup>) -> ViewHandle<NotebookView> {
     ctx.add_typed_action_view(NotebookView::new)
+}
+
+fn new_ambient_agent_task_id() -> AmbientAgentTaskId {
+    Uuid::new_v4().to_string().parse().unwrap()
+}
+
+fn start_parent_conversation(
+    panes: &PaneGroup,
+    parent_pane_id: PaneId,
+    ctx: &mut ViewContext<PaneGroup>,
+) -> AIConversationId {
+    let parent_terminal_view_id = panes
+        .terminal_view_from_pane_id(parent_pane_id, ctx)
+        .expect("parent pane should have a terminal view")
+        .id();
+
+    BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+        history_model.start_new_conversation(parent_terminal_view_id, false, false, ctx)
+    })
+}
+
+fn request_ambient_agent_task_id_for_hidden_child(
+    panes: &PaneGroup,
+    child_conversation_id: AIConversationId,
+    child_pane_id: PaneId,
+    ctx: &mut ViewContext<PaneGroup>,
+) -> Option<AmbientAgentTaskId> {
+    let terminal_view = panes
+        .terminal_view_from_pane_id(child_pane_id, ctx)
+        .expect("child pane should have a terminal view");
+    let ai_controller = terminal_view.as_ref(ctx).ai_controller().clone();
+
+    ai_controller.update(ctx, |controller, ctx| {
+        controller
+            .build_passive_suggestions_request_params(
+                Some(child_conversation_id),
+                PassiveSuggestionTrigger::FilesChanged,
+                vec![],
+                ctx,
+            )
+            .expect("child pane should build passive suggestion request params")
+            .1
+            .ambient_agent_task_id
+    })
+}
+
+fn ambient_child_session_state(
+    panes: &PaneGroup,
+    child_pane_id: PaneId,
+    ctx: &mut ViewContext<PaneGroup>,
+) -> (Option<AmbientAgentTaskId>, bool, Option<AIConversationId>) {
+    let terminal_view = panes
+        .terminal_view_from_pane_id(child_pane_id, ctx)
+        .expect("child pane should have a terminal view");
+    let terminal_view_ref = terminal_view.as_ref(ctx);
+    let active_conversation_id = terminal_view_ref.active_conversation_id(ctx);
+    let ambient_model = terminal_view_ref
+        .ambient_agent_view_model()
+        .expect("child pane should have an ambient agent model")
+        .as_ref(ctx);
+
+    (
+        ambient_model.task_id(),
+        ambient_model.is_agent_running(),
+        active_conversation_id,
+    )
 }
 
 struct PreAttachReturnsFalsePane {
@@ -372,6 +458,131 @@ fn test_insert_hidden_child_agent_pane_keeps_focus_and_active_session() {
             // Creating a hidden child pane should not steal focus or active session.
             assert_eq!(panes.focused_pane_id(ctx), parent_pane_id);
             assert_eq!(panes.active_session_id(ctx), initial_active_session);
+        });
+    });
+}
+
+#[test]
+fn test_hidden_child_creation_applies_ambient_task_id_to_controller() {
+    let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let pane_group = mock_pane_group(&mut app, Default::default());
+
+        pane_group.update(&mut app, |panes, ctx| {
+            let parent_pane_id = get_newly_created_pane_id(panes, &[]);
+            let parent_conversation_id = start_parent_conversation(panes, parent_pane_id, ctx);
+            let task_id = new_ambient_agent_task_id();
+
+            let child = create_hidden_child_agent_conversation(
+                panes,
+                parent_pane_id,
+                "Agent 1".to_string(),
+                parent_conversation_id,
+                HashMap::new(),
+                Some(HiddenChildAgentTaskContext {
+                    task_id,
+                    working_dir: None,
+                }),
+                ctx,
+            )
+            .expect("fresh hidden child conversation should be created");
+
+            let child_pane_id = panes
+                .child_agent_panes
+                .get(&child.conversation_id)
+                .copied()
+                .expect("fresh hidden child pane should be tracked");
+
+            assert_eq!(
+                request_ambient_agent_task_id_for_hidden_child(
+                    panes,
+                    child.conversation_id,
+                    child_pane_id,
+                    ctx,
+                ),
+                Some(task_id)
+            );
+        });
+    });
+}
+
+#[test]
+fn test_restored_hidden_child_pane_reapplies_ambient_task_id_to_controller() {
+    let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let pane_group = mock_pane_group(&mut app, Default::default());
+
+        pane_group.update(&mut app, |panes, ctx| {
+            let parent_pane_id = get_newly_created_pane_id(panes, &[]);
+            let parent_conversation_id = start_parent_conversation(panes, parent_pane_id, ctx);
+            let task_id = new_ambient_agent_task_id();
+
+            let mut child_conversation = AIConversation::new(false);
+            child_conversation.set_parent_conversation_id(parent_conversation_id);
+            child_conversation.set_task_id(task_id);
+            let child_conversation_id = child_conversation.id();
+
+            panes.create_hidden_child_agent_pane(child_conversation, parent_pane_id, ctx);
+
+            let child_pane_id = panes
+                .child_agent_panes
+                .get(&child_conversation_id)
+                .copied()
+                .expect("restored hidden child pane should be tracked");
+
+            assert_eq!(
+                request_ambient_agent_task_id_for_hidden_child(
+                    panes,
+                    child_conversation_id,
+                    child_pane_id,
+                    ctx,
+                ),
+                Some(task_id)
+            );
+        });
+    });
+}
+
+#[test]
+fn test_restored_remote_hidden_child_pane_enters_existing_ambient_session() {
+    let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(true);
+
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let pane_group = mock_pane_group(&mut app, Default::default());
+
+        pane_group.update(&mut app, |panes, ctx| {
+            let parent_pane_id = get_newly_created_pane_id(panes, &[]);
+            let parent_conversation_id = start_parent_conversation(panes, parent_pane_id, ctx);
+            let task_id = new_ambient_agent_task_id();
+
+            let mut child_conversation = AIConversation::new(false);
+            child_conversation.set_parent_conversation_id(parent_conversation_id);
+            child_conversation.set_task_id(task_id);
+            child_conversation.mark_as_remote_child();
+            let child_conversation_id = child_conversation.id();
+
+            panes.create_hidden_child_agent_pane(child_conversation, parent_pane_id, ctx);
+
+            let child_pane_id = panes
+                .child_agent_panes
+                .get(&child_conversation_id)
+                .copied()
+                .expect("restored remote hidden child pane should be tracked");
+
+            let (ambient_task_id, is_agent_running, active_conversation_id) =
+                ambient_child_session_state(panes, child_pane_id, ctx);
+
+            assert_eq!(ambient_task_id, Some(task_id));
+            assert!(
+                is_agent_running,
+                "remote child restore should view the existing ambient session"
+            );
+            assert_eq!(active_conversation_id, Some(child_conversation_id));
         });
     });
 }

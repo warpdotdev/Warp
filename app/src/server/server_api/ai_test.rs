@@ -1,6 +1,9 @@
 use chrono::TimeZone;
 use chrono::Utc;
+use futures::executor::block_on;
 
+use super::super::auth::CLOUD_AGENT_ID_HEADER;
+use super::super::ServerApi;
 use super::{
     build_list_agent_runs_url, build_run_followup_url, AgentMessageHeader, AgentRunEvent,
     AgentSource, AmbientAgentTaskState, Artifact, ArtifactDownloadResponse, ArtifactType,
@@ -8,6 +11,27 @@ use super::{
     RunSortOrder, TaskListFilter,
 };
 use crate::notebooks::NotebookId;
+
+#[test]
+fn ambient_agent_headers_for_task_overrides_existing_cloud_agent_header() {
+    let server_api = ServerApi::new_for_test();
+    let ambient_task_id = "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
+    let task_scoped_id = "123e4567-e89b-12d3-a456-426614174000".parse().unwrap();
+
+    server_api.set_ambient_agent_task_id(Some(ambient_task_id));
+
+    let cloud_agent_headers: Vec<_> =
+        block_on(server_api.ambient_agent_headers_for_task(&task_scoped_id))
+            .unwrap()
+            .into_iter()
+            .filter(|(name, _)| *name == CLOUD_AGENT_ID_HEADER)
+            .collect();
+
+    assert_eq!(
+        cloud_agent_headers,
+        vec![(CLOUD_AGENT_ID_HEADER, task_scoped_id.to_string())]
+    );
+}
 
 #[test]
 fn test_deserialize_file_artifact_download_response() {

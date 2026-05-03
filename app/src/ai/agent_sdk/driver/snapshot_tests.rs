@@ -86,6 +86,10 @@ impl HarnessSupportClient for TestClient {
         unimplemented!("not used by upload_snapshot_from_declarations_file")
     }
 
+    async fn fetch_transcript(&self) -> Result<bytes::Bytes> {
+        unimplemented!("not used by upload_snapshot_from_declarations_file")
+    }
+
     async fn get_block_snapshot_upload_target(
         &self,
         _conversation_id: &AIConversationId,
@@ -136,10 +140,6 @@ impl HarnessSupportClient for TestClient {
         let keep = targets.len().saturating_sub(self.drop_trailing_targets);
         targets.truncate(keep);
         Ok(targets)
-    }
-
-    async fn fetch_transcript(&self) -> Result<bytes::Bytes> {
-        unimplemented!("not used by upload_snapshot_from_declarations_file")
     }
 
     fn http_client(&self) -> &http_client::Client {
