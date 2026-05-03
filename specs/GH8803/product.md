@@ -63,12 +63,15 @@ This scales poorly and pulls language-specific install logic into the core. User
 1. User opens any file matching `file_types` in a workspace where the server is already enabled.
 2. The user-configured server is already running; no UI surfaces. Diagnostics, hover, goto, completions all behave as they do for built-in servers.
 
-### Disabling a server in a workspace
+### Disabling, re-enabling, and managing servers in a workspace
 
-The disable flow piggybacks on Warp's existing **Settings → Code → Indexing and Projects** UI pattern (per @kevinyang372's direction; no new "Code intelligence" section is introduced for V0):
+The disable / re-enable flow piggybacks on Warp's existing **Settings → Code → Indexing and Projects** UI pattern (per @kevinyang372's direction; no new "Code intelligence" section is introduced for V0):
 
-1. User opens **Settings → Code**. The existing per-workspace project list grows a sub-row per user-configured LSP that is currently enabled in that workspace.
-2. The row exposes a `Disable` toggle. Toggling off shuts down the server's process for that workspace within 1s, removes the per-workspace enablement record, and re-enables the built-in server for that file type if one exists.
+1. User opens **Settings → Code**. The existing per-workspace project list grows a sub-row per user-configured LSP that has any per-workspace state in this workspace (enabled, dismissed, or pending re-confirmation after a `command` change).
+2. The row shows the server's name and current state, with a single context-appropriate action:
+   - **Enabled:** `Disable` button. Shuts down the server's process for this workspace within 1s, removes the per-workspace enablement record **and any dismissal record for the same server**, and re-enables the built-in server for that file type if one exists. Clearing both records ensures the chip can re-appear on the next matching file open.
+   - **Dismissed:** `Re-enable` button. Clears the dismissal so the chip surfaces on the next matching file open. Does not start the server immediately — the user re-enters the chip flow.
+   - **Pending re-confirmation:** `Re-enable` button. Records the new (changed) `command` as confirmed by the user and starts the server. This is the same affordance the chip offers for the security-driven re-confirmation flow described below.
 
 ### Misconfiguration scenarios
 
@@ -129,7 +132,7 @@ Numbered list — each maps to a verification path in the tech spec:
 8. After a server is enabled in workspace W, opening any file matching `file_types` in W routes LSP requests to that server **without** showing the chip again, and **without** a built-in server for the same file types running concurrently in W.
 9. Enabling a user-configured server in workspace W that matches a file type also handled by a built-in shuts down the built-in for W within 1s; disabling the user-configured server restores the built-in for W within 1s.
 10. After settings change to a server entry's metadata fields only (e.g. `language_id`, `file_types` ordering), an enabled-and-running server is restarted with the new metadata within 1s of settings reload, with no Warp restart and no re-confirmation prompt required.
-11. After settings change to an enabled server's `command` or args, the process is shut down, enablement moves to "needs re-confirmation", and the chip reappears on next matching file open until the user re-confirms.
+11. After settings change to an enabled server's `command` or args, the process is shut down, enablement moves to "needs re-confirmation", and the "command changed — re-enable?" chip reappears on next matching file open until the user re-confirms. This chip surfaces **even if the server was previously dismissed in that workspace**: a `command` change is a security signal and overrides dismissal.
 12. Disabling a server via Settings UI shuts down its process for the targeted workspace within 1s, removes the per-workspace enablement record, restores the built-in for the file type if any, and the chip reappears on next file open.
 13. Restarting Warp preserves per-workspace enablement state — workspaces where a server was enabled before restart auto-spawn the user-configured server on the next file open without the chip reappearing, and the built-in for the same file types is not spawned.
 14. The chip is **not** shown for a configured server in a workspace that has explicitly dismissed it; the user must re-enable from Settings UI.

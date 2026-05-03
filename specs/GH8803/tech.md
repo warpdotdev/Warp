@@ -210,11 +210,13 @@ This design directly addresses the oz-for-oss feedback that file extension is in
 
 **File:** `app/src/code/editor/` — extending whatever surface renders the LSP-related chip when a built-in server is detected-but-not-installed (find via `grep -rn "Install" app/src/code/editor/`).
 
-The chip rendering branches on these states for user-configured servers:
+The chip rendering checks these states in cascade order (first match wins). Earlier states take precedence — in particular, the command-changed chip (state 2) overrides dismissal because it represents a security signal that the binary the user previously trusted has changed.
 
-1. Server defined, not enabled in workspace, not dismissed → "Enable `<name>`" chip.
-2. Server enabled but live `command_fingerprint` ≠ stored fingerprint → "`<name>` command changed — re-enable?" chip.
+1. Server enabled (stored fingerprint exists) AND live `command_fingerprint` ≠ stored fingerprint → "`<name>` command changed — re-enable?" chip. **Surfaces even if user previously dismissed.**
+2. Server dismissed in this workspace → no chip (silenced).
 3. Server defined, but `command[0]` not on PATH at chip-render time → "Configure `<name>`" chip with `Open settings` action.
+4. Server defined, not enabled, not dismissed, binary on PATH → "Enable `<name>`" chip.
+5. Server enabled and fingerprint matches → no chip (server already running).
 
 Click handlers:
 
@@ -226,13 +228,15 @@ Click handlers:
 
 **File:** the existing **Settings → Code → Indexing and Projects** view (locate via `grep -rn "Indexing" app/src/settings/`). Per @kevinyang372's review, no new "Code Intelligence" section is created; we extend the existing pattern.
 
-For each enabled user-configured server in the active workspace, render a row beneath the existing per-workspace project list with:
+For each user-configured server that has any per-workspace state in the active workspace — i.e. its `name` appears in `enabled_custom_servers`, `dismissed_custom_servers`, OR has a stored fingerprint that no longer matches live config (pending re-confirmation) — render one row beneath the existing per-workspace project list. Each row shows the server `name`, its current state, and a single context-appropriate action:
 
-- The server `name`
-- Current state: `Enabled` / `Pending re-confirmation`
-- A `Disable` button that writes to `WorkspaceLspState`, fires the manager shutdown for this workspace, and restores any built-in server for the relevant file types within 1s.
+| State | Predicate | Action button | Behavior on click |
+|---|---|---|---|
+| Enabled | `enabled_custom_servers[name]` exists AND equals live `command_fingerprint()` | `Disable` | Removes BOTH `enabled_custom_servers[name]` AND any `dismissed_custom_servers` entry for `name`, fires manager shutdown for this workspace within 1s, restores any built-in server for the relevant `file_types`. Clearing both fields is what makes invariant 12 ("chip reappears on next file open") hold unconditionally. |
+| Pending re-confirmation | `enabled_custom_servers[name]` exists but stored fingerprint ≠ live `command_fingerprint()` | `Re-enable` | Records live fingerprint into `enabled_custom_servers[name]` and triggers `manager::start_for_workspace`. Same code path as the chip's re-enable click. |
+| Dismissed | `dismissed_custom_servers` contains `name` (and not in either of the above states) | `Re-enable` | Clears `dismissed_custom_servers[name]`. Does not spawn — the user re-enters the chip flow on next matching file open. |
 
-This is the surface that satisfies invariants 11, 12, and 14 (chip can re-appear after dismiss is cleared via Settings UI). Without this row, those invariants are unreachable, which is why oz-for-oss correctly flagged the prior "follow-up" framing as critical.
+This is the surface that satisfies invariants 11, 12, and 14. Without rows for dismissed and pending-re-confirmation entries, those invariants would be unreachable from the UI, which is why oz-for-oss correctly flagged the prior "follow-up" framing as critical.
 
 ### 9. Settings reload handling
 
@@ -307,12 +311,13 @@ User opens .lua file in workspace W
         └─> [chip_renderer]
               ├─> get LspSettings.custom_servers
               ├─> filter where file_types contains "lua"
-              ├─> for each: classify state
-              │     ├─> enabled & fingerprint match → no chip
-              │     ├─> enabled & fingerprint mismatch → "command changed — re-enable?"
-              │     ├─> not enabled & not dismissed → "Enable <name>"
+              ├─> for each: classify state (cascade; first match wins)
+              │     ├─> enabled & live fp ≠ stored fp → "command changed — re-enable?"
+              │     │   (security override — surfaces even if dismissed)
               │     ├─> dismissed → no chip
-              │     └─> binary not on PATH → "Configure <name>"
+              │     ├─> binary not on PATH → "Configure <name>"
+              │     ├─> not enabled & binary on PATH → "Enable <name>"
+              │     └─> enabled & fp match → no chip (already running)
               └─> render appropriate chip per remaining entry
 
 User clicks Enable / Re-enable
