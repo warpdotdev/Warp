@@ -39,6 +39,9 @@ pub const DEFAULT_LISTING_COMMANDS: &[&str] = &["ls", "exa", "eza", "lsd"];
 /// - The command name is not in `listing_commands`.
 /// - There is no positional argument (e.g. plain `ls`).
 /// - The positional argument does not resolve to an existing directory.
+/// - The command uses `-R`/`--recursive` (per-section roots).
+/// - The command uses `-d`/`--directory` (lists the operand itself, not entries).
+/// - The command has multiple positional operands (mixed roots).
 ///
 /// `resolved_command_name` is an optional override for the command-name match. When
 /// the caller has already resolved shell aliases (e.g. via `Block::top_level_command`),
@@ -117,12 +120,17 @@ pub fn listing_command_argument_dir(
         return None;
     }
 
-    // Collect remaining tokens, rejecting recursive flags and detecting multi-dir.
+    // Collect remaining tokens, rejecting modes whose output is not a single
+    // directory's entries.
     let mut positionals = Vec::new();
     for token in iter {
         if token.starts_with('-') {
             // Reject recursive listings — output has per-section roots we can't resolve.
-            if token == "--recursive" || (!token.starts_with("--") && token.contains('R')) {
+            // Reject -d/--directory — output names the operand itself, not entries under it.
+            if token == "--recursive"
+                || token == "--directory"
+                || (!token.starts_with("--") && (token.contains('R') || token.contains('d')))
+            {
                 return None;
             }
             continue;
@@ -151,18 +159,11 @@ pub fn listing_command_argument_dir(
         return None;
     }
 
-    // Reject multi-directory operands — output has per-section roots and picking
-    // just the first would misresolve entries from subsequent sections.
+    // Reject multi-operand commands — `ls DIR FILE` mixes roots (entries under DIR
+    // alongside bare file operands rooted at CWD), so picking a single listing root
+    // would misresolve some entries.
     if positionals.len() > 1 {
-        let second = expand_leading_tilde(positionals[1]);
-        let second_candidate = if second.is_absolute() {
-            second
-        } else {
-            pwd.join(&second)
-        };
-        if second_candidate.is_dir() {
-            return None;
-        }
+        return None;
     }
 
     Some(candidate)

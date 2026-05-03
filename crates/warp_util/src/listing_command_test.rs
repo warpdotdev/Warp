@@ -147,10 +147,11 @@ fn quoted_argument_with_spaces() {
 }
 
 #[test]
-fn rejects_multi_directory_operands() {
+fn rejects_multi_operand_commands() {
     let tmp = tempdir().unwrap();
     fs::create_dir(tmp.path().join("a")).unwrap();
     fs::create_dir(tmp.path().join("b")).unwrap();
+    fs::write(tmp.path().join("somefile"), b"hi").unwrap();
 
     // Both positionals are directories → ambiguous, return None.
     assert_eq!(
@@ -161,17 +162,12 @@ fn rejects_multi_directory_operands() {
         listing_command_argument_dir("ls -la a b", tmp.path(), LS_ONLY),
         None
     );
-}
 
-#[test]
-fn allows_single_dir_with_file_second_arg() {
-    let tmp = tempdir().unwrap();
-    fs::create_dir(tmp.path().join("a")).unwrap();
-    fs::write(tmp.path().join("somefile"), b"hi").unwrap();
-
-    // First positional is a dir, second is a file → not ambiguous multi-dir.
-    let got = listing_command_argument_dir("ls a somefile", tmp.path(), LS_ONLY);
-    assert_eq!(got, Some(tmp.path().join("a")));
+    // Dir + file → still multi-operand, output mixes roots, return None.
+    assert_eq!(
+        listing_command_argument_dir("ls a somefile", tmp.path(), LS_ONLY),
+        None
+    );
 }
 
 #[test]
@@ -395,6 +391,33 @@ fn rejects_recursive_flag_long() {
     );
     assert_eq!(
         listing_command_argument_dir("ls -la --recursive subdir", tmp.path(), LS_ONLY),
+        None
+    );
+}
+
+#[test]
+fn rejects_directory_flag_short() {
+    let tmp = tempdir().unwrap();
+    fs::create_dir(tmp.path().join("subdir")).unwrap();
+
+    // -d lists the directory operand itself, not entries under it.
+    assert_eq!(
+        listing_command_argument_dir("ls -d subdir", tmp.path(), LS_ONLY),
+        None
+    );
+    assert_eq!(
+        listing_command_argument_dir("ls -ld subdir", tmp.path(), LS_ONLY),
+        None
+    );
+}
+
+#[test]
+fn rejects_directory_flag_long() {
+    let tmp = tempdir().unwrap();
+    fs::create_dir(tmp.path().join("subdir")).unwrap();
+
+    assert_eq!(
+        listing_command_argument_dir("ls --directory subdir", tmp.path(), LS_ONLY),
         None
     );
 }
