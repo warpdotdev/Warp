@@ -100,12 +100,14 @@ mod binary_detection {
 
 #[cfg(not(target_family = "wasm"))]
 mod policy_hooks {
+    use std::collections::HashSet;
+
     use crate::{
         ai::{
             agent::task::TaskId,
             agent::{
-                AIAgentAction, AIAgentActionId, AIAgentActionResultType, AIAgentActionType,
-                FileEdit, RequestCommandOutputResult,
+                conversation::AIConversationId, AIAgentAction, AIAgentActionId,
+                AIAgentActionResultType, AIAgentActionType, FileEdit, RequestCommandOutputResult,
             },
             policy_hooks::{
                 decision::{
@@ -120,7 +122,7 @@ mod policy_hooks {
     use super::super::{
         agent_policy_action, normalize_command_for_policy, policy_denied_action_result,
         policy_preflight_state_from_decision, should_consume_completed_policy_preflight,
-        warp_permission_snapshot_for_policy, PolicyPreflightState,
+        warp_permission_snapshot_for_policy, PolicyPreflightKey, PolicyPreflightState,
     };
 
     fn command_action(command: &str) -> AIAgentAction {
@@ -233,6 +235,21 @@ mod policy_hooks {
                 skip_confirmation: true
             }
         );
+    }
+
+    #[test]
+    fn policy_preflight_key_scopes_same_action_id_by_conversation() {
+        let action_id = AIAgentActionId::from("action_1".to_string());
+        let conversation_one = AIConversationId::new();
+        let conversation_two = AIConversationId::new();
+        let key_one = PolicyPreflightKey::new(conversation_one, action_id.clone());
+        let key_two = PolicyPreflightKey::new(conversation_two, action_id);
+
+        assert_ne!(key_one, key_two);
+
+        let mut pending = HashSet::new();
+        pending.insert(key_one);
+        assert!(!pending.contains(&key_two));
     }
 
     #[test]

@@ -148,6 +148,23 @@ struct PreprocessActionInput<'a> {
     conversation_id: AIConversationId,
 }
 
+#[cfg(not(target_family = "wasm"))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PolicyPreflightKey {
+    conversation_id: AIConversationId,
+    action_id: AIAgentActionId,
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl PolicyPreflightKey {
+    fn new(conversation_id: AIConversationId, action_id: AIAgentActionId) -> Self {
+        Self {
+            conversation_id,
+            action_id,
+        }
+    }
+}
+
 type AsyncExecuteActionFn<T> = Pin<Box<dyn Spawnable<Output = T>>>;
 type OnCompleteFn<T> = Box<dyn FnOnce(T, &mut AppContext) -> AIAgentActionResultType>;
 
@@ -305,11 +322,11 @@ pub struct BlocklistAIActionExecutor {
     /// parallel phase can complete independently.
     async_executing_actions: HashMap<AIAgentActionId, AsyncExecutingAction>,
     #[cfg(not(target_family = "wasm"))]
-    pending_policy_preflights: HashSet<AIAgentActionId>,
+    pending_policy_preflights: HashSet<PolicyPreflightKey>,
     #[cfg(not(target_family = "wasm"))]
-    user_initiated_policy_preflights: HashSet<AIAgentActionId>,
+    user_initiated_policy_preflights: HashSet<PolicyPreflightKey>,
     #[cfg(not(target_family = "wasm"))]
-    completed_policy_preflights: HashMap<AIAgentActionId, AgentPolicyEffectiveDecision>,
+    completed_policy_preflights: HashMap<PolicyPreflightKey, AgentPolicyEffectiveDecision>,
 
     /// Reference to the terminal model for checking session sharing state.
     terminal_model: Arc<FairMutex<TerminalModel>>,
@@ -934,8 +951,8 @@ impl BlocklistAIActionExecutor {
         )?;
 
         let action = input.action.clone();
-        let action_id = action.id.clone();
         let conversation_id = input.conversation_id;
+        let preflight_key = PolicyPreflightKey::new(conversation_id, action.id.clone());
         let (done_tx, done_rx) = oneshot::channel();
         let engine = AgentPolicyHookEngine::new(config);
 
@@ -947,7 +964,7 @@ impl BlocklistAIActionExecutor {
                     AgentPolicyDecisionKind::Deny | AgentPolicyDecisionKind::Unknown
                 );
                 me.completed_policy_preflights
-                    .insert(action_id.clone(), decision);
+                    .insert(preflight_key.clone(), decision);
 
                 if denied {
                     let _ = done_tx.send(());
@@ -994,29 +1011,32 @@ impl BlocklistAIActionExecutor {
         let permissions_profile = crate::ai::blocklist::BlocklistAIPermissions::as_ref(ctx)
             .permissions_profile_for_id(ctx, *active_profile.id());
         let config = permissions_profile.agent_policy_hooks;
+        let preflight_key = PolicyPreflightKey::new(conversation_id, action.id.clone());
 
         if !config.is_active() {
-            self.pending_policy_preflights.remove(&action.id);
-            self.user_initiated_policy_preflights.remove(&action.id);
-            self.completed_policy_preflights.remove(&action.id);
+            self.pending_policy_preflights.remove(&preflight_key);
+            self.user_initiated_policy_preflights.remove(&preflight_key);
+            self.completed_policy_preflights.remove(&preflight_key);
             return None;
         }
 
-        if let Some(decision) = self.completed_policy_preflights.get(&action.id) {
-            let user_confirmed =
-                is_user_initiated || self.user_initiated_policy_preflights.contains(&action.id);
+        if let Some(decision) = self.completed_policy_preflights.get(&preflight_key) {
+            let user_confirmed = is_user_initiated
+                || self
+                    .user_initiated_policy_preflights
+                    .contains(&preflight_key);
             let state = policy_preflight_state_from_decision(action, decision, user_confirmed);
             if should_consume_completed_policy_preflight(&state) {
-                self.completed_policy_preflights.remove(&action.id);
-                self.user_initiated_policy_preflights.remove(&action.id);
+                self.completed_policy_preflights.remove(&preflight_key);
+                self.user_initiated_policy_preflights.remove(&preflight_key);
             }
             return Some(state);
         }
 
-        if self.pending_policy_preflights.contains(&action.id) {
+        if self.pending_policy_preflights.contains(&preflight_key) {
             if is_user_initiated {
                 self.user_initiated_policy_preflights
-                    .insert(action.id.clone());
+                    .insert(preflight_key.clone());
             }
             return Some(PolicyPreflightState::Pending);
         }
@@ -1035,21 +1055,21 @@ impl BlocklistAIActionExecutor {
             ctx,
         )?;
 
-        let action_id = action.id.clone();
-        self.pending_policy_preflights.insert(action_id.clone());
+        self.pending_policy_preflights.insert(preflight_key.clone());
         if is_user_initiated {
             self.user_initiated_policy_preflights
-                .insert(action_id.clone());
+                .insert(preflight_key.clone());
         }
         let engine = AgentPolicyHookEngine::new(config);
         ctx.spawn(
             async move { engine.preflight(event, warp_permission).await },
             move |me, decision, ctx| {
-                if !me.pending_policy_preflights.remove(&action_id) {
-                    me.user_initiated_policy_preflights.remove(&action_id);
+                if !me.pending_policy_preflights.remove(&preflight_key) {
+                    me.user_initiated_policy_preflights.remove(&preflight_key);
                     return;
                 }
-                me.completed_policy_preflights.insert(action_id, decision);
+                me.completed_policy_preflights
+                    .insert(preflight_key, decision);
                 ctx.emit(BlocklistAIActionExecutorEvent::PolicyPreflightFinished {
                     conversation_id,
                 });
@@ -1059,12 +1079,17 @@ impl BlocklistAIActionExecutor {
         Some(PolicyPreflightState::Pending)
     }
 
-    pub fn cancel_policy_preflight_for_action(&mut self, action_id: &AIAgentActionId) {
+    pub fn cancel_policy_preflight_for_action(
+        &mut self,
+        conversation_id: AIConversationId,
+        action_id: &AIAgentActionId,
+    ) {
         #[cfg(not(target_family = "wasm"))]
         {
-            self.pending_policy_preflights.remove(action_id);
-            self.user_initiated_policy_preflights.remove(action_id);
-            self.completed_policy_preflights.remove(action_id);
+            let preflight_key = PolicyPreflightKey::new(conversation_id, action_id.clone());
+            self.pending_policy_preflights.remove(&preflight_key);
+            self.user_initiated_policy_preflights.remove(&preflight_key);
+            self.completed_policy_preflights.remove(&preflight_key);
         }
     }
 

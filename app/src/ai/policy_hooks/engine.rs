@@ -138,7 +138,7 @@ impl AgentPolicyHookEngine {
         }
 
         for (key, value) in env {
-            command.env(key, value.as_str());
+            command.env(key, resolve_hook_secret_value(value)?);
         }
 
         let event_bytes = serialize_event(event).map_err(|source| AgentPolicyHookFailure {
@@ -274,7 +274,7 @@ impl AgentPolicyHookEngine {
             .header("x-warp-agent-policy-event-id", event.event_id.to_string())
             .body(event_bytes);
         for (key, value) in headers {
-            request = request.header(key.as_str(), value.as_str());
+            request = request.header(key.as_str(), resolve_hook_secret_value(value)?);
         }
 
         let timeout = Duration::from_millis(self.config.hook_timeout_ms(hook));
@@ -447,9 +447,11 @@ fn redact_configured_secret_values<'a>(
 ) -> String {
     let mut redacted = value.to_string();
     for value in secrets {
-        let secret = value.as_str();
+        let Ok(secret) = value.resolved_value() else {
+            continue;
+        };
         if !secret.is_empty() {
-            redacted = redacted.replace(secret, "<redacted>");
+            redacted = redacted.replace(&secret, "<redacted>");
         }
         if let Some((scheme, credential)) = secret.split_once(' ') {
             if scheme.eq_ignore_ascii_case("bearer") && credential.len() >= 4 {
@@ -458,6 +460,17 @@ fn redact_configured_secret_values<'a>(
         }
     }
     redacted
+}
+
+fn resolve_hook_secret_value(
+    value: &AgentPolicyHookSecretValue,
+) -> Result<String, AgentPolicyHookFailure> {
+    value
+        .resolved_value()
+        .map_err(|env| AgentPolicyHookFailure {
+            kind: AgentPolicyHookErrorKind::InvalidConfiguration,
+            detail: format!("policy hook secret environment variable {env:?} is not set"),
+        })
 }
 
 fn serialize_event(event: &AgentPolicyEvent) -> Result<Vec<u8>> {

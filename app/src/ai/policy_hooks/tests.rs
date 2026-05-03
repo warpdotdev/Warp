@@ -20,6 +20,14 @@ use super::{
 };
 
 #[cfg(not(target_family = "wasm"))]
+fn existing_secret_env_var() -> (&'static str, String) {
+    let name = "PATH";
+    let value = std::env::var(name).expect("PATH must be set for policy hook tests");
+    assert!(!value.is_empty());
+    (name, value)
+}
+
+#[cfg(not(target_family = "wasm"))]
 use super::audit::audit_record_json_line;
 #[cfg(not(target_family = "wasm"))]
 use super::engine::AgentPolicyHookEngine;
@@ -33,6 +41,18 @@ fn config_defaults_to_disabled_and_ask_on_unavailable() {
     assert_eq!(config.on_unavailable, AgentPolicyUnavailableDecision::Ask);
     assert_eq!(config.timeout_ms, 5_000);
     assert!(config.validate().is_ok());
+}
+
+#[test]
+fn config_enabled_without_hooks_is_active_but_invalid() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": []
+    }))
+    .unwrap();
+
+    assert!(config.is_active());
+    assert!(config.validate().is_err());
 }
 
 #[test]
@@ -87,8 +107,8 @@ fn config_rejects_non_https_remote_http_hooks() {
 }
 
 #[test]
-fn config_serialization_omits_hook_secret_values() {
-    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+fn config_rejects_inline_hook_secret_values() {
+    let config = serde_json::from_value::<AgentPolicyHookConfig>(json!({
         "enabled": true,
         "before_action": [
             {
@@ -104,18 +124,44 @@ fn config_serialization_omits_hook_secret_values() {
                 "headers": { "authorization": "Bearer super-secret-token" }
             }
         ]
+    }));
+
+    assert!(config.is_err());
+}
+
+#[test]
+fn config_serialization_preserves_secret_environment_references() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [
+            {
+                "name": "stdio-guard",
+                "transport": "stdio",
+                "command": "guard",
+                "env": { "API_TOKEN": { "env": "WARP_POLICY_HOOK_TOKEN" } }
+            },
+            {
+                "name": "http-guard",
+                "transport": "http",
+                "url": "https://example.com/policy",
+                "headers": { "authorization": { "env": "WARP_POLICY_HOOK_AUTH_HEADER" } }
+            }
+        ]
     }))
     .unwrap();
 
     let value = serde_json::to_value(&config).unwrap();
-    let stdio_hook = value["before_action"][0].as_object().unwrap();
-    let http_hook = value["before_action"][1].as_object().unwrap();
-    let serialized = value.to_string();
+    assert_eq!(
+        value["before_action"][0]["env"]["API_TOKEN"]["env"],
+        "WARP_POLICY_HOOK_TOKEN"
+    );
+    assert_eq!(
+        value["before_action"][1]["headers"]["authorization"]["env"],
+        "WARP_POLICY_HOOK_AUTH_HEADER"
+    );
 
-    assert!(!stdio_hook.contains_key("env"));
-    assert!(!http_hook.contains_key("headers"));
-    assert!(!serialized.contains("super-secret-token"));
-    assert!(!serialized.contains("Bearer"));
+    let round_trip: AgentPolicyHookConfig = serde_json::from_value(value).unwrap();
+    assert_eq!(round_trip, config);
 }
 
 #[test]
@@ -474,6 +520,7 @@ async fn stdio_engine_times_out_blocked_stdin_write() {
 #[cfg(all(unix, not(target_family = "wasm")))]
 #[tokio::test]
 async fn stdio_engine_redacts_configured_secret_stderr() {
+    let (secret_env, secret_value) = existing_secret_env_var();
     let config: AgentPolicyHookConfig = serde_json::from_value(json!({
         "enabled": true,
         "on_unavailable": "deny",
@@ -482,7 +529,7 @@ async fn stdio_engine_redacts_configured_secret_stderr() {
             "transport": "stdio",
             "command": "sh",
             "args": ["-c", "cat >/dev/null; printf '%s\\n' \"$API_TOKEN\" >&2; exit 42"],
-            "env": { "API_TOKEN": "super-secret-token" },
+            "env": { "API_TOKEN": { "env": secret_env } },
             "timeout_ms": 1000
         }]
     }))
@@ -508,12 +555,13 @@ async fn stdio_engine_redacts_configured_secret_stderr() {
         Some(AgentPolicyHookErrorKind::NonZeroExit)
     );
     assert!(reason.contains("<redacted>"));
-    assert!(!reason.contains("super-secret-token"));
+    assert!(!reason.contains(&secret_value));
 }
 
 #[cfg(all(unix, not(target_family = "wasm")))]
 #[tokio::test]
 async fn stdio_engine_redacts_configured_secret_hook_reason() {
+    let (secret_env, secret_value) = existing_secret_env_var();
     let config: AgentPolicyHookConfig = serde_json::from_value(json!({
         "enabled": true,
         "before_action": [{
@@ -524,7 +572,7 @@ async fn stdio_engine_redacts_configured_secret_hook_reason() {
                 "-c",
                 "cat >/dev/null; printf '{\"schema_version\":\"warp.agent_policy_hook.v1\",\"decision\":\"deny\",\"reason\":\"token: %s\",\"external_audit_id\":\"audit-%s\"}\\n' \"$API_TOKEN\" \"$API_TOKEN\""
             ],
-            "env": { "API_TOKEN": "super-secret-token" },
+            "env": { "API_TOKEN": { "env": secret_env } },
             "timeout_ms": 1000
         }]
     }))
@@ -546,7 +594,7 @@ async fn stdio_engine_redacts_configured_secret_hook_reason() {
 
     let reason = decision.hook_results[0].reason.as_deref().unwrap();
     assert!(reason.contains("<redacted>"));
-    assert!(!reason.contains("super-secret-token"));
+    assert!(!reason.contains(&secret_value));
     assert_eq!(
         decision.hook_results[0].external_audit_id.as_deref(),
         Some("audit-<redacted>")
@@ -660,6 +708,7 @@ async fn http_engine_rejects_oversized_response_body() {
 #[tokio::test]
 async fn http_engine_does_not_follow_redirects() {
     let mut server = mockito::Server::new_async().await;
+    let (secret_env, _) = existing_secret_env_var();
     let redirect_location = format!("{}/redirected", server.url());
     let mock = server
         .mock("POST", "/policy")
@@ -674,7 +723,7 @@ async fn http_engine_does_not_follow_redirects() {
             "name": "http-guard",
             "transport": "http",
             "url": format!("{}/policy", server.url()),
-            "headers": { "authorization": "Bearer super-secret-token" },
+            "headers": { "authorization": { "env": secret_env } },
             "timeout_ms": 1000
         }]
     }))
@@ -711,16 +760,17 @@ async fn http_engine_does_not_follow_redirects() {
 #[tokio::test]
 async fn http_engine_redacts_configured_header_secret_hook_reason() {
     let mut server = mockito::Server::new_async().await;
+    let (secret_env, secret_value) = existing_secret_env_var();
     let hook_response = json!({
         "schema_version": AGENT_POLICY_SCHEMA_VERSION,
         "decision": "deny",
-        "reason": "raw token super-secret-token",
-        "external_audit_id": "audit-super-secret-token"
+        "reason": format!("raw token {secret_value}"),
+        "external_audit_id": format!("audit-{secret_value}")
     })
     .to_string();
     let mock = server
         .mock("POST", "/policy")
-        .match_header("authorization", "Bearer super-secret-token")
+        .match_header("authorization", secret_value.as_str())
         .with_status(200)
         .with_body(hook_response)
         .create_async()
@@ -731,7 +781,7 @@ async fn http_engine_redacts_configured_header_secret_hook_reason() {
             "name": "http-guard",
             "transport": "http",
             "url": format!("{}/policy", server.url()),
-            "headers": { "authorization": "Bearer super-secret-token" },
+            "headers": { "authorization": { "env": secret_env } },
             "timeout_ms": 1000
         }]
     }))
@@ -754,10 +804,41 @@ async fn http_engine_redacts_configured_header_secret_hook_reason() {
     mock.assert_async().await;
     let reason = decision.hook_results[0].reason.as_deref().unwrap();
     assert!(reason.contains("<redacted>"));
-    assert!(!reason.contains("super-secret-token"));
+    assert!(!reason.contains(&secret_value));
     assert_eq!(
         decision.hook_results[0].external_audit_id.as_deref(),
         Some("audit-<redacted>")
+    );
+}
+
+#[cfg(all(unix, not(target_family = "wasm")))]
+#[tokio::test]
+async fn engine_maps_enabled_empty_config_to_unavailable_policy() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "on_unavailable": "deny",
+        "before_action": []
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("ls", "ls", Some(true), Some(false)),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    assert_eq!(decision.decision, AgentPolicyDecisionKind::Deny);
+    assert_eq!(
+        decision.hook_results[0].error,
+        Some(AgentPolicyHookErrorKind::InvalidConfiguration)
     );
 }
 

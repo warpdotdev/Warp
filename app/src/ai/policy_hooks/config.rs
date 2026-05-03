@@ -36,7 +36,7 @@ impl Default for AgentPolicyHookConfig {
 
 impl AgentPolicyHookConfig {
     pub(crate) fn is_active(&self) -> bool {
-        self.enabled && !self.before_action.is_empty()
+        self.enabled
     }
 
     pub(crate) fn validate(&self) -> Result<(), AgentPolicyHookConfigError> {
@@ -126,14 +126,14 @@ pub(crate) enum AgentPolicyHookTransport {
         command: String,
         #[serde(default)]
         args: Vec<String>,
-        #[serde(default, skip_serializing)]
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         env: BTreeMap<String, AgentPolicyHookSecretValue>,
         #[serde(default)]
         working_directory: Option<PathBuf>,
     },
     Http {
         url: String,
-        #[serde(default, skip_serializing)]
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         headers: BTreeMap<String, AgentPolicyHookSecretValue>,
     },
 }
@@ -143,12 +143,14 @@ impl AgentPolicyHookTransport {
         match self {
             Self::Stdio {
                 command,
+                env,
                 working_directory,
                 ..
             } => {
                 if command.trim().is_empty() {
                     return Err(AgentPolicyHookConfigError::MissingStdioCommand);
                 }
+                validate_secret_value_map(env)?;
 
                 if working_directory
                     .as_deref()
@@ -159,7 +161,7 @@ impl AgentPolicyHookTransport {
                     ));
                 }
             }
-            Self::Http { url, .. } => {
+            Self::Http { url, headers } => {
                 let parsed = url::Url::parse(url)
                     .map_err(|_| AgentPolicyHookConfigError::InvalidHttpUrl(url.clone()))?;
 
@@ -169,6 +171,8 @@ impl AgentPolicyHookTransport {
                 if parsed.scheme() != "https" && !is_allowed_local_http {
                     return Err(AgentPolicyHookConfigError::InsecureHttpUrl(url.clone()));
                 }
+
+                validate_secret_value_map(headers)?;
             }
         }
 
@@ -176,36 +180,46 @@ impl AgentPolicyHookTransport {
     }
 }
 
+/// Reference to a local environment variable that supplies a hook credential at runtime.
+/// The profile persists only the environment variable name, never the credential value.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub(crate) struct AgentPolicyHookSecretValue(String);
+#[serde(deny_unknown_fields)]
+pub(crate) struct AgentPolicyHookSecretValue {
+    env: String,
+}
 
 impl AgentPolicyHookSecretValue {
-    pub(crate) fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+    #[cfg(not(target_family = "wasm"))]
+    pub(crate) fn resolved_value(&self) -> Result<String, String> {
+        std::env::var(&self.env).map_err(|_| self.env.clone())
     }
 
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0
+    #[cfg(target_family = "wasm")]
+    pub(crate) fn resolved_value(&self) -> Result<String, String> {
+        Err(self.env.clone())
+    }
+
+    fn validate(&self) -> Result<(), AgentPolicyHookConfigError> {
+        if self.env.trim().is_empty() {
+            return Err(AgentPolicyHookConfigError::MissingSecretEnvironmentVariableName);
+        }
+        Ok(())
     }
 }
 
 impl fmt::Debug for AgentPolicyHookSecretValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("\"<redacted>\"")
+        f.debug_struct("Env").field("env", &self.env).finish()
     }
 }
 
-impl From<String> for AgentPolicyHookSecretValue {
-    fn from(value: String) -> Self {
-        Self::new(value)
+fn validate_secret_value_map(
+    values: &BTreeMap<String, AgentPolicyHookSecretValue>,
+) -> Result<(), AgentPolicyHookConfigError> {
+    for value in values.values() {
+        value.validate()?;
     }
-}
-
-impl From<&str> for AgentPolicyHookSecretValue {
-    fn from(value: &str) -> Self {
-        Self::new(value)
-    }
+    Ok(())
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -226,6 +240,8 @@ pub(crate) enum AgentPolicyHookConfigError {
     InvalidHttpUrl(String),
     #[error("agent policy hook HTTP URL must use HTTPS unless it targets localhost: {0}")]
     InsecureHttpUrl(String),
+    #[error("agent policy hook secret environment variable name must not be empty")]
+    MissingSecretEnvironmentVariableName,
 }
 
 fn validate_timeout_ms(timeout_ms: u64) -> Result<(), AgentPolicyHookConfigError> {

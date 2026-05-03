@@ -992,7 +992,7 @@ impl BlocklistAIActionModel {
             {
                 if let Some(action) = pending_actions_for_conversation.remove(idx) {
                     self.executor.update(ctx, |executor, _ctx| {
-                        executor.cancel_policy_preflight_for_action(&action.id);
+                        executor.cancel_policy_preflight_for_action(conversation_id, &action.id);
                     });
                     self.cancel_pending_action(conversation_id, action, Some(reason), ctx);
                 }
@@ -1015,7 +1015,7 @@ impl BlocklistAIActionModel {
         };
         for action in actions_to_cancel.drain(..).collect_vec() {
             self.executor.update(ctx, |executor, _ctx| {
-                executor.cancel_policy_preflight_for_action(&action.id);
+                executor.cancel_policy_preflight_for_action(conversation_id, &action.id);
             });
             self.cancel_pending_action(conversation_id, action, reason, ctx);
         }
