@@ -278,8 +278,8 @@ pub trait Experiment<T: Experiment<T>>: FromStr {
     /// Gets the assigned group of the experiment for the current user. Returns None
     /// if the user is not in this experiment.
     ///
-    /// TODO: we should investigate if we can suffice with just a AppContext
-    /// here to allow `get_group` to be used when a AppContext isn't available
+    /// TODO: we should investigate if we can suffice with just an AppContext
+    /// here to allow `get_group` to be used when an AppContext isn't available
     /// (e.g. when rendering a view). We currently need it because `get_group`
     /// might emit telemetry.
     fn get_group(ctx: &mut AppContext) -> Option<T>

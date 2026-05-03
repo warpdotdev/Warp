@@ -5190,7 +5190,7 @@ impl PaneGroup {
             return Some(terminal_pane);
         }
 
-        // Finally, fall back to a a session that's to the right/down.
+        // Finally, fall back to a session that's to the right/down.
         pane_ids
             .iter()
             .skip(pane_idx + 1)

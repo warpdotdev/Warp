@@ -36,7 +36,7 @@ use crate::{
 use super::mixer::SearchMixerEvent;
 
 /// Function to create a [`QueryResultRenderer`] from a [`QueryResult`]. Used to specify the styles
-/// and click-action of a a rendered query result.
+/// and click-action of a rendered query result.
 pub type CreateQueryResultRendererFn<T> =
     fn(QueryResultIndex, QueryResult<T>) -> QueryResultRenderer<T>;
 

@@ -279,12 +279,12 @@ pub trait Handler {
     /// input buffer (the reporting is itself triggered by Warp).
     fn input_buffer(&mut self, _data: InputBufferValue) {}
 
-    /// Callback emitted during the initialization process for subshells with where the shell type
-    /// is initiall not known.
+    /// Callback emitted during the initialization process for subshells where the shell type
+    /// is initially not known.
     fn init_subshell(&mut self, _data: InitSubshellValue) {}
 
     /// Callback emitted when executing the user's RC file, which signals a new session is being
-    /// created. If the session is for a subshell, this should triggers Warp's bootstrap process.
+    /// created. If the session is for a subshell, this should trigger Warp's bootstrap process.
     /// Otherwise, it's ignored.
     fn sourced_rc_file(&mut self, _data: SourcedRcFileForWarpValue) {}
 

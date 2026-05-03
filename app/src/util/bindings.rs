@@ -148,7 +148,7 @@ lazy_static! {
         (action as isize, action)
     }));
 
-    /// Regex that matches whether the the normalized form of a [`Keystroke`] matches a control
+    /// Regex that matches whether the normalized form of a [`Keystroke`] matches a control
     /// character. ASCII control characters constitute the first 31 values of ASCII characters.
     /// Though they have their own ASCII codepoints, they are typed into the keyboard using
     /// `ctrl-XX`, see <https://en.wikipedia.org/wiki/Caret_notation>.

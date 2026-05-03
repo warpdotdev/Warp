@@ -693,7 +693,7 @@ impl EditorModel {
         // (whether that's the real buffer or the last ephemeral buffer).
         // This needs to be done _before_ we start the batch below so that
         // 1) we take the snapshot of the correct (regular vs. ephemeral) buffer
-        // 2) we star the the batch on the correct (regular vs. ephemeral) buffer
+        // 2) we star the batch on the correct (regular vs. ephemeral) buffer
         let restore_from_snapshot = if can_edit && edit.is_ephemeral() {
             let snapshot = self.as_snapshot(ctx);
             self.buffer_and_display_map

@@ -305,7 +305,7 @@ fn compute_valid_file_path(
         });
     } else if path.components().count() <= 1 {
         // If the path does not contain a separator and isn't in files_and_folders_in_working_directory,
-        // we know it isn't a valid path. Return immediately to save a a file system call.
+        // we know it isn't a valid path. Return immediately to save a file system call.
         return None;
     }
 
