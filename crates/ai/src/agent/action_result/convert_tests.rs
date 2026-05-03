@@ -59,7 +59,7 @@ fn policy_denied_shell_result_preserves_policy_reason_without_denylist_label() {
 }
 
 #[test]
-fn policy_denied_file_edit_result_converts_to_policy_error_message() {
+fn policy_denied_file_edit_result_converts_to_policy_marker_message() {
     let result = api::request::input::tool_call_result::Result::try_from(
         RequestFileEditsResult::PolicyDenied {
             reason: "protected path".to_string(),
@@ -75,9 +75,10 @@ fn policy_denied_file_edit_result_converts_to_policy_error_message() {
     };
 
     assert_eq!(
-        error.message,
-        "File edits blocked by host policy: protected path"
+        decode_file_edits_policy_denied_reason(&error.message).as_deref(),
+        Some("protected path")
     );
+    assert!(!error.message.starts_with(FILE_EDITS_POLICY_DENIED_PREFIX));
 }
 
 #[test]

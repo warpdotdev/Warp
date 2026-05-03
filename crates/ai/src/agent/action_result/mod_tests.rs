@@ -1,4 +1,37 @@
-use super::{StartAgentResult, StartAgentVersion};
+use super::{
+    decode_file_edits_policy_denied_reason, encode_file_edits_policy_denied_message,
+    StartAgentResult, StartAgentVersion, FILE_EDITS_POLICY_DENIED_MARKER,
+    FILE_EDITS_POLICY_DENIED_PREFIX,
+};
+
+#[test]
+fn decodes_file_edit_policy_denial_marker() {
+    let message = encode_file_edits_policy_denied_message("protected path");
+
+    assert_eq!(
+        decode_file_edits_policy_denied_reason(&message).as_deref(),
+        Some("protected path")
+    );
+}
+
+#[test]
+fn file_edit_policy_denial_decoder_rejects_human_prefix() {
+    let message = format!("{FILE_EDITS_POLICY_DENIED_PREFIX}protected path");
+
+    assert_eq!(decode_file_edits_policy_denied_reason(&message), None);
+}
+
+#[test]
+fn file_edit_policy_denial_decoder_rejects_unexpected_fields() {
+    let message = serde_json::json!({
+        "marker": FILE_EDITS_POLICY_DENIED_MARKER,
+        "reason": "protected path",
+        "error": "diff failed",
+    })
+    .to_string();
+
+    assert_eq!(decode_file_edits_policy_denied_reason(&message), None);
+}
 
 #[test]
 fn deserializes_legacy_start_agent_success_without_version_as_v1() {

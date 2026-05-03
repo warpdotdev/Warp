@@ -15,10 +15,33 @@ use crate::{
 
 pub const COMMAND_POLICY_DENIED_PREFIX: &str = "Command blocked by host policy: ";
 pub const FILE_EDITS_POLICY_DENIED_PREFIX: &str = "File edits blocked by host policy: ";
+pub const FILE_EDITS_POLICY_DENIED_MARKER: &str = "warp.file_edits_policy_denied.v1";
 pub const WRITE_TO_SHELL_POLICY_DENIED_PREFIX: &str =
     "Write to long-running shell command blocked by host policy: ";
 pub const WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID: &str = "__warp_policy_denied_shell_write__";
 pub const WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE: i32 = 126;
+
+/// `ApplyFileDiffsResult::Error` persists only a message string, so file-edit
+/// policy denials use a structured marker instead of human-readable prefix matching.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileEditsPolicyDeniedApiMessage {
+    marker: String,
+    reason: String,
+}
+
+pub fn encode_file_edits_policy_denied_message(reason: &str) -> String {
+    serde_json::to_string(&FileEditsPolicyDeniedApiMessage {
+        marker: FILE_EDITS_POLICY_DENIED_MARKER.to_string(),
+        reason: reason.to_string(),
+    })
+    .expect("file-edit policy denial marker should serialize")
+}
+
+pub fn decode_file_edits_policy_denied_reason(message: &str) -> Option<String> {
+    let decoded: FileEditsPolicyDeniedApiMessage = serde_json::from_str(message).ok()?;
+    (decoded.marker == FILE_EDITS_POLICY_DENIED_MARKER).then_some(decoded.reason)
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AIAgentActionResultType {

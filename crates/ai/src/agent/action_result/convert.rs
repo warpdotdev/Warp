@@ -322,7 +322,7 @@ impl TryFrom<RequestFileEditsResult> for api::request::input::tool_call_result::
                     api::ApplyFileDiffsResult {
                         result: Some(api::apply_file_diffs_result::Result::Error(
                             api::apply_file_diffs_result::Error {
-                                message: format!("{FILE_EDITS_POLICY_DENIED_PREFIX}{reason}"),
+                                message: encode_file_edits_policy_denied_message(&reason),
                             },
                         )),
                     },

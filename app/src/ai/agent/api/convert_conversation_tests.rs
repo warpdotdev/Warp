@@ -166,6 +166,92 @@ fn test_convert_tool_call_result_to_input_treats_unmarked_permission_denied_as_c
 }
 
 #[test]
+fn test_convert_tool_call_result_to_input_preserves_file_edit_policy_denial() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    let policy_reason = "protected path";
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(api::message::tool_call_result::Result::ApplyFileDiffs(
+            api::ApplyFileDiffsResult {
+                result: Some(api::apply_file_diffs_result::Result::Error(
+                    api::apply_file_diffs_result::Error {
+                        message: crate::ai::agent::encode_file_edits_policy_denied_message(
+                            policy_reason,
+                        ),
+                    },
+                )),
+            },
+        )),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::RequestFileEdits(
+                crate::ai::agent::RequestFileEditsResult::PolicyDenied { reason },
+            ) => {
+                assert_eq!(reason, policy_reason);
+            }
+            other => panic!("Expected policy-denied file edit result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_redacts_file_edit_policy_denial_reason() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(api::message::tool_call_result::Result::ApplyFileDiffs(
+            api::ApplyFileDiffsResult {
+                result: Some(api::apply_file_diffs_result::Result::Error(
+                    api::apply_file_diffs_result::Error {
+                        message: crate::ai::agent::encode_file_edits_policy_denied_message(
+                            "blocked PASSWORD=hunter2 --token raw-token",
+                        ),
+                    },
+                )),
+            },
+        )),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::RequestFileEdits(
+                crate::ai::agent::RequestFileEditsResult::PolicyDenied { reason },
+            ) => {
+                assert!(reason.contains("PASSWORD=<redacted>"));
+                assert!(reason.contains("--token <redacted>"));
+                assert!(!reason.contains("hunter2"));
+                assert!(!reason.contains("raw-token"));
+            }
+            other => panic!("Expected policy-denied file edit result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_convert_tool_call_result_to_input_does_not_reclassify_prefixed_file_edit_error() {
     let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
     let mut document_versions = HashMap::new();

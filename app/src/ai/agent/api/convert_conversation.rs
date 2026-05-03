@@ -13,20 +13,20 @@ use crate::ai::agent::conversation::{AIConversation, AIConversationId};
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::todos::AIAgentTodoList;
 use crate::ai::agent::{
-    AIAgentActionResult, AIAgentActionResultType, AIAgentContext, AIAgentExchange,
-    AIAgentExchangeId, AIAgentInput, AIAgentOutput, AIAgentOutputMessage, AIAgentOutputStatus,
-    CallMCPToolResult, CancellationReason, CloneRepositoryURL, CreateDocumentsResult,
-    DocumentContext, EditDocumentsResult, FileContext, FileGlobResult, FileGlobV2Match,
-    FileGlobV2Result, FinishedAIAgentOutput, GrepFileMatch, GrepLineMatch, GrepResult,
-    ImageContext, InsertReviewCommentsResult, OutputModelInfo, PassiveCodeDiffEntry,
-    PassiveSuggestionResultType, PassiveSuggestionTrigger, ReadDocumentsResult, ReadFilesResult,
-    ReadMCPResourceResult, ReadShellCommandOutputResult, RequestCommandOutputResult,
-    RequestFileEditsResult, SearchCodebaseFailureReason, SearchCodebaseResult, ServerOutputId,
-    Shared, ShellCommandCompletedTrigger, ShellCommandError, SuggestNewConversationResult,
-    SuggestPromptResult, TransferShellCommandControlToUserResult, UpdatedFileContext,
-    UploadArtifactResult, WriteToLongRunningShellCommandResult, COMMAND_POLICY_DENIED_PREFIX,
-    WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID, WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
-    WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
+    decode_file_edits_policy_denied_reason, AIAgentActionResult, AIAgentActionResultType,
+    AIAgentContext, AIAgentExchange, AIAgentExchangeId, AIAgentInput, AIAgentOutput,
+    AIAgentOutputMessage, AIAgentOutputStatus, CallMCPToolResult, CancellationReason,
+    CloneRepositoryURL, CreateDocumentsResult, DocumentContext, EditDocumentsResult, FileContext,
+    FileGlobResult, FileGlobV2Match, FileGlobV2Result, FinishedAIAgentOutput, GrepFileMatch,
+    GrepLineMatch, GrepResult, ImageContext, InsertReviewCommentsResult, OutputModelInfo,
+    PassiveCodeDiffEntry, PassiveSuggestionResultType, PassiveSuggestionTrigger,
+    ReadDocumentsResult, ReadFilesResult, ReadMCPResourceResult, ReadShellCommandOutputResult,
+    RequestCommandOutputResult, RequestFileEditsResult, SearchCodebaseFailureReason,
+    SearchCodebaseResult, ServerOutputId, Shared, ShellCommandCompletedTrigger, ShellCommandError,
+    SuggestNewConversationResult, SuggestPromptResult, TransferShellCommandControlToUserResult,
+    UpdatedFileContext, UploadArtifactResult, WriteToLongRunningShellCommandResult,
+    COMMAND_POLICY_DENIED_PREFIX, WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID,
+    WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE, WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
 };
 use crate::ai::block_context::BlockContext;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
@@ -803,8 +803,14 @@ pub(crate) fn convert_tool_call_result_to_input(
                     }
                 }
                 Some(api::apply_file_diffs_result::Result::Error(error)) => {
-                    RequestFileEditsResult::DiffApplicationFailed {
-                        error: error.message.clone(),
+                    if let Some(reason) = decode_file_edits_policy_denied_reason(&error.message) {
+                        RequestFileEditsResult::PolicyDenied {
+                            reason: redact_sensitive_text_for_policy(&reason),
+                        }
+                    } else {
+                        RequestFileEditsResult::DiffApplicationFailed {
+                            error: error.message.clone(),
+                        }
                     }
                 }
                 None => RequestFileEditsResult::Cancelled,
