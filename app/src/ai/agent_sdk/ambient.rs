@@ -483,6 +483,7 @@ impl AmbientAgentRunner {
                     (_, true) => Some(false),
                     _ => None,
                 },
+                agent_identity_uid: args.agent_uid,
                 skill,
                 attachments,
                 interactive: None,

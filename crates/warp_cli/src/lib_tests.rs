@@ -276,6 +276,29 @@ fn agent_run_cloud_accepts_model() {
 }
 
 #[test]
+fn agent_run_cloud_accepts_agent_flag() {
+    let args = Args::try_parse_from([
+        "warp",
+        "agent",
+        "run-cloud",
+        "--prompt",
+        "hello",
+        "--agent",
+        "agent_123",
+    ])
+    .unwrap();
+
+    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
+        panic!("Expected `warp agent run-cloud` command");
+    };
+    let CliCommand::Agent(AgentCommand::RunCloud(run_args)) = boxed_cmd.as_ref() else {
+        panic!("Expected `warp agent run-cloud` command");
+    };
+
+    assert_eq!(run_args.agent_uid.as_deref(), Some("agent_123"));
+}
+
+#[test]
 fn agent_run_cloud_accepts_mcp() {
     let uuid = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
 
