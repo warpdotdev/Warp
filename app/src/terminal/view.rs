@@ -21210,7 +21210,9 @@ impl TerminalView {
         Ok(())
     }
 
-    fn should_queue_inline_review(&self, ctx: &AppContext) -> bool {
+    /// Returns `true` if a code review submission should be queued instead of sent immediately.
+    /// This occurs when queue mode is enabled and there's an in-progress or blocked conversation.
+    pub fn should_queue_inline_review(&self, ctx: &AppContext) -> bool {
         if !FeatureFlag::QueueSlashCommand.is_enabled()
             || !self
                 .ai_context_model
