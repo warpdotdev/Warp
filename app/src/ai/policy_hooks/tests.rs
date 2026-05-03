@@ -3,6 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::ai::execution_profiles::AIExecutionProfile;
 use serde_json::json;
 
 use super::{
@@ -111,6 +112,8 @@ fn config_rejects_http_hook_url_embedded_credentials() {
     for url in [
         "https://token@example.com/policy",
         "https://user:pass@example.com/policy",
+        "https://token@example .com/policy",
+        "https:user:pass@example.com/policy",
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
             "enabled": true,
@@ -128,17 +131,43 @@ fn config_rejects_http_hook_url_embedded_credentials() {
 
 #[test]
 fn config_rejects_disabled_http_hook_url_embedded_credentials() {
-    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+    for url in [
+        "https://token@example.com/policy",
+        "https://token@example .com/policy",
+        "https:user:pass@example.com/policy",
+    ] {
+        let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+            "enabled": false,
+            "before_action": [{
+                "name": "remote-guard",
+                "transport": "http",
+                "url": url
+            }]
+        }))
+        .unwrap();
+
+        assert!(config.validate().is_err());
+    }
+}
+
+#[test]
+fn profile_serialization_rejects_disabled_http_hook_url_embedded_credentials() {
+    let agent_policy_hooks: AgentPolicyHookConfig = serde_json::from_value(json!({
         "enabled": false,
         "before_action": [{
             "name": "remote-guard",
             "transport": "http",
-            "url": "https://token@example.com/policy"
+            "url": "https:user:pass@example.com/policy"
         }]
     }))
     .unwrap();
+    let profile = AIExecutionProfile {
+        agent_policy_hooks,
+        ..Default::default()
+    };
 
-    assert!(config.validate().is_err());
+    let error = serde_json::to_value(&profile).unwrap_err().to_string();
+    assert!(error.contains("embedded credentials"));
 }
 
 #[test]
@@ -153,6 +182,7 @@ fn config_allows_disabled_incomplete_hook_without_persisted_credentials() {
     .unwrap();
 
     assert!(config.validate().is_ok());
+    assert!(serde_json::to_value(&config).is_ok());
 }
 
 #[test]

@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use thiserror::Error;
 
 use super::decision::AgentPolicyUnavailableDecision;
@@ -12,7 +12,7 @@ use super::decision::AgentPolicyUnavailableDecision;
 pub(crate) const DEFAULT_AGENT_POLICY_HOOK_TIMEOUT_MS: u64 = 5_000;
 pub(crate) const MAX_AGENT_POLICY_HOOK_TIMEOUT_MS: u64 = 60_000;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub(crate) struct AgentPolicyHookConfig {
     pub enabled: bool,
@@ -39,10 +39,16 @@ impl AgentPolicyHookConfig {
         self.enabled
     }
 
-    pub(crate) fn validate(&self) -> Result<(), AgentPolicyHookConfigError> {
+    fn validate_safe_to_persist(&self) -> Result<(), AgentPolicyHookConfigError> {
         for hook in &self.before_action {
             hook.validate_safe_to_persist()?;
         }
+
+        Ok(())
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), AgentPolicyHookConfigError> {
+        self.validate_safe_to_persist()?;
 
         if !self.enabled {
             return Ok(());
@@ -78,6 +84,24 @@ impl AgentPolicyHookConfig {
                 .before_action
                 .iter()
                 .all(|hook| hook.allow_autoapproval)
+    }
+}
+
+impl Serialize for AgentPolicyHookConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.validate_safe_to_persist()
+            .map_err(serde::ser::Error::custom)?;
+
+        let mut state = serializer.serialize_struct("AgentPolicyHookConfig", 5)?;
+        state.serialize_field("enabled", &self.enabled)?;
+        state.serialize_field("before_action", &self.before_action)?;
+        state.serialize_field("timeout_ms", &self.timeout_ms)?;
+        state.serialize_field("on_unavailable", &self.on_unavailable)?;
+        state.serialize_field("allow_hook_autoapproval", &self.allow_hook_autoapproval)?;
+        state.end()
     }
 }
 
@@ -151,10 +175,8 @@ impl AgentPolicyHookTransport {
         match self {
             Self::Stdio { env, .. } => validate_secret_value_map(env)?,
             Self::Http { url, headers } => {
-                if let Ok(parsed) = url::Url::parse(url) {
-                    if !parsed.username().is_empty() || parsed.password().is_some() {
-                        return Err(AgentPolicyHookConfigError::HttpUrlContainsCredentials);
-                    }
+                if http_url_contains_credentials(url) {
+                    return Err(AgentPolicyHookConfigError::HttpUrlContainsCredentials);
                 }
                 validate_secret_value_map(headers)?;
             }
@@ -186,12 +208,12 @@ impl AgentPolicyHookTransport {
                 }
             }
             Self::Http { url, headers } => {
-                let parsed = url::Url::parse(url)
-                    .map_err(|_| AgentPolicyHookConfigError::InvalidHttpUrl(url.clone()))?;
-
-                if !parsed.username().is_empty() || parsed.password().is_some() {
+                if http_url_contains_credentials(url) {
                     return Err(AgentPolicyHookConfigError::HttpUrlContainsCredentials);
                 }
+
+                let parsed = url::Url::parse(url)
+                    .map_err(|_| AgentPolicyHookConfigError::InvalidHttpUrl(url.clone()))?;
 
                 let host = parsed.host_str().unwrap_or_default();
                 let is_localhost = matches!(host, "localhost" | "127.0.0.1" | "::1");
@@ -248,6 +270,35 @@ fn validate_secret_value_map(
         value.validate()?;
     }
     Ok(())
+}
+
+fn http_url_contains_credentials(url: &str) -> bool {
+    if let Ok(parsed) = url::Url::parse(url) {
+        return !parsed.username().is_empty() || parsed.password().is_some();
+    }
+
+    let url = url.trim_start();
+    let Some(scheme_end) = url.find(':') else {
+        return false;
+    };
+    let scheme = &url[..scheme_end];
+    if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
+        return false;
+    }
+
+    let mut authority_start = scheme_end + 1;
+    if url[authority_start..].starts_with("//") {
+        authority_start += 2;
+    } else if url[authority_start..].starts_with('/') {
+        authority_start += 1;
+    }
+
+    let authority_end = url[authority_start..]
+        .find(|ch| matches!(ch, '/' | '?' | '#'))
+        .map(|offset| authority_start + offset)
+        .unwrap_or(url.len());
+
+    url[authority_start..authority_end].contains('@')
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

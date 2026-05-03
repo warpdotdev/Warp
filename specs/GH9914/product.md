@@ -93,13 +93,14 @@ When hooks are enabled, Warp writes a redacted local audit record for every gove
 6. By default, a hook decision of `allow` only preserves an already-allowed Warp permission decision. Any option that lets a trusted hook auto-approve actions that Warp would otherwise ask for must be explicit and scoped to that hook.
 7. "Run until completion" still invokes policy hooks and cannot bypass a hook denial.
 8. Hook timeout, crash, malformed output, or unavailable endpoint maps to `ask` by default and can be configured to `deny` by managed policy.
-9. Hook payloads and hook child processes do not include file contents, secret values, inherited full environment variables, access tokens, URL-embedded credentials, or unbounded command output by default.
-10. Hook payloads include enough metadata for deterministic policy decisions: schema version, action id, conversation id, action type, normalized command or paths, MCP server/tool/resource identity, working directory, active profile id, Warp permission result, and whether auto-approve/run-to-completion is active.
-11. Warp records a redacted audit event for every governed decision, including hook name, decision, reason, action id, conversation id, timestamp, and policy event id.
-12. The agent receives a structured denial or ask result and can continue planning around it.
-13. A user can disable a personal hook from settings unless it is provided by a managed team policy.
-14. Hook failures are visible enough to debug without exposing secrets.
-15. Third-party CLI agents launched as arbitrary terminal commands are out of scope unless they call back through Warp-owned MCP or Agent surfaces.
+9. Hook payloads, persisted hook config, and hook child processes do not include file contents, secret values, inherited full environment variables, access tokens, URL-embedded credentials, or unbounded command output by default.
+10. Disabled or inactive hook config is still rejected before profile storage if it contains persisted credentials or URL-embedded credentials.
+11. Hook payloads include enough metadata for deterministic policy decisions: schema version, action id, conversation id, action type, normalized command or paths, MCP server/tool/resource identity, working directory, active profile id, Warp permission result, and whether auto-approve/run-to-completion is active.
+12. Warp records a redacted audit event for every governed decision, including hook name, decision, reason, action id, conversation id, timestamp, and policy event id.
+13. The agent receives a structured denial or ask result and can continue planning around it.
+14. A user can disable a personal hook from settings unless it is provided by a managed team policy.
+15. Hook failures are visible enough to debug without exposing secrets.
+16. Third-party CLI agents launched as arbitrary terminal commands are out of scope unless they call back through Warp-owned MCP or Agent surfaces.
 
 ## Edge Cases
 
