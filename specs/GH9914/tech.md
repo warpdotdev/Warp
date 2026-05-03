@@ -120,7 +120,7 @@ Implementation approach:
 4. If hooks are disabled, return the base decision immediately.
 5. If hooks are enabled and no cached decision exists for `(conversation_id, action_id)`, start an async hook request, store pending state, and return `TryExecuteResult::NotExecuted { reason: NotReady, action }`.
 6. When the hook completes, store the decision and notify the action model to retry the pending action.
-7. On retry, compose the stored policy decision with the base Warp permission decision and continue, ask, or deny.
+7. On retry, recompose stored hook results with the current base Warp permission decision and continue, ask, or deny, so permission/profile changes while a hook is pending cannot leave a stale allow cached.
 
 This avoids blocking the UI thread or changing every executor to directly await a hook.
 
@@ -258,7 +258,7 @@ If this is too much for MVP, defer HTTP and keep the JSON schema transport-indep
 Unit tests:
 
 1. Event builders generate stable schema for shell command, file read, file write, MCP tool, and MCP resource actions.
-2. Redaction removes env-like secrets, access-token-like values, and MCP argument values while preserving useful keys and counts.
+2. Redaction removes env-like secrets, access-token-like values, URL userinfo/basic-auth command credentials, and MCP argument values while preserving useful keys and counts.
 3. Decision composition implements deny-wins, ask-over-allow, and no hard-denial upgrade.
 4. Run-to-completion base decisions still pass through policy hook composition.
 5. Timeout, malformed JSON, process nonzero exit, and missing executable map to configured unavailable behavior.

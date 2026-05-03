@@ -123,8 +123,8 @@ mod policy_hooks {
     use super::super::{
         agent_policy_action, complete_policy_preflight_if_pending, normalize_command_for_policy,
         policy_denied_action_result, policy_preflight_state_from_decision,
-        should_consume_completed_policy_preflight, warp_permission_snapshot_for_policy,
-        PolicyPreflightKey, PolicyPreflightState,
+        recompose_completed_policy_decision, should_consume_completed_policy_preflight,
+        warp_permission_snapshot_for_policy, PolicyPreflightKey, PolicyPreflightState,
     };
 
     fn command_action(command: &str) -> AIAgentAction {
@@ -268,6 +268,35 @@ mod policy_hooks {
                 skip_confirmation: true
             }
         );
+    }
+
+    #[test]
+    fn cached_policy_decision_recomposes_against_current_warp_denial() {
+        let cached_decision = compose_policy_decisions(
+            WarpPermissionSnapshot::allow(Some("initial allow".to_string())),
+            vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Allow,
+                reason: Some("approved by hook".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+            true,
+        );
+
+        let recomposed = recompose_completed_policy_decision(
+            &cached_decision,
+            WarpPermissionSnapshot::deny(Some("managed policy changed".to_string())),
+            true,
+        );
+
+        assert_eq!(recomposed.decision, AgentPolicyDecisionKind::Deny);
+        assert_eq!(recomposed.reason.as_deref(), Some("managed policy changed"));
+        assert_eq!(
+            recomposed.warp_permission.decision,
+            WarpPermissionDecisionKind::Deny
+        );
+        assert_eq!(recomposed.hook_results, cached_decision.hook_results);
     }
 
     #[test]

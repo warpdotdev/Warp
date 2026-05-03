@@ -123,10 +123,11 @@ use crate::{
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::policy_hooks::{
-    decision::WarpPermissionDecisionKind, AgentPolicyAction, AgentPolicyDecisionKind,
-    AgentPolicyEffectiveDecision, AgentPolicyEvent, AgentPolicyHookEngine, PolicyCallMcpToolAction,
-    PolicyExecuteCommandAction, PolicyReadFilesAction, PolicyReadMcpResourceAction,
-    PolicyWriteFilesAction, WarpPermissionSnapshot,
+    decision::{compose_policy_decisions, WarpPermissionDecisionKind},
+    AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision, AgentPolicyEvent,
+    AgentPolicyHookEngine, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
+    PolicyReadFilesAction, PolicyReadMcpResourceAction, PolicyWriteFilesAction,
+    WarpPermissionSnapshot,
 };
 
 /// Types of actions that can be executed in parallel.
@@ -1205,7 +1206,21 @@ impl BlocklistAIActionExecutor {
                 || self
                     .user_initiated_policy_preflights
                     .contains(&preflight_key);
-            let state = policy_preflight_state_from_decision(action, decision, user_confirmed);
+            let warp_permission = self.warp_permission_snapshot_for_action(
+                action,
+                conversation_id,
+                is_user_initiated,
+                can_auto_execute,
+                needs_confirmation,
+                autonomous_shell_command_denied,
+                ctx,
+            );
+            let decision = recompose_completed_policy_decision(
+                decision,
+                warp_permission,
+                config.allow_autoapproval_for_all_hooks(),
+            );
+            let state = policy_preflight_state_from_decision(action, &decision, user_confirmed);
             if should_consume_completed_policy_preflight(&state) {
                 self.completed_policy_preflights.remove(&preflight_key);
                 self.user_initiated_policy_preflights.remove(&preflight_key);
@@ -1601,6 +1616,19 @@ fn policy_denied_action_result(
         ),
         _ => action.action.cancelled_result(),
     }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn recompose_completed_policy_decision(
+    decision: &AgentPolicyEffectiveDecision,
+    warp_permission: WarpPermissionSnapshot,
+    allow_hook_autoapproval: bool,
+) -> AgentPolicyEffectiveDecision {
+    compose_policy_decisions(
+        warp_permission,
+        decision.hook_results.clone(),
+        allow_hook_autoapproval,
+    )
 }
 
 #[cfg(not(target_family = "wasm"))]

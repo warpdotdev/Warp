@@ -15,6 +15,23 @@ static AUTHORIZATION_BEARER_RE: Lazy<Regex> = Lazy::new(|| {
         .expect("authorization header regex should compile")
 });
 
+static AUTHORIZATION_BASIC_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)(authorization:\s*basic\s+)([A-Za-z0-9+/=._-]+)"#)
+        .expect("authorization basic regex should compile")
+});
+
+static URL_USERINFO_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*://)([^/\s"'<>@]+(?::[^/\s"'<>@]*)?@)"#)
+        .expect("URL userinfo regex should compile")
+});
+
+static CURL_BASIC_AUTH_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r#"(?i)(\bcurl\b[^;&|\n]*?\s(?:-u\s*|--user(?:=|\s+)|--proxy-user(?:=|\s+)))("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s;&|]+)"#,
+    )
+    .expect("curl basic auth regex should compile")
+});
+
 static COMMON_TOKEN_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\b(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,})\b")
         .expect("common token regex should compile")
@@ -27,6 +44,9 @@ pub(crate) fn redact_command_for_policy(command: &str) -> String {
 pub(crate) fn redact_sensitive_text_for_policy(value: &str) -> String {
     let value = SECRET_ASSIGNMENT_RE.replace_all(value, "$1=<redacted>");
     let value = AUTHORIZATION_BEARER_RE.replace_all(&value, "$1<redacted>");
+    let value = AUTHORIZATION_BASIC_RE.replace_all(&value, "$1<redacted>");
+    let value = CURL_BASIC_AUTH_RE.replace_all(&value, "$1<redacted>");
+    let value = URL_USERINFO_RE.replace_all(&value, "$1<redacted>@");
     let value = COMMON_TOKEN_RE.replace_all(&value, "<redacted>");
     truncate_for_policy(&value)
 }

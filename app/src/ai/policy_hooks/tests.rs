@@ -304,6 +304,26 @@ fn command_redaction_handles_quoted_secret_assignments() {
 }
 
 #[test]
+fn command_redaction_handles_url_userinfo_and_basic_auth() {
+    let command = concat!(
+        "curl -u user:pass https://user:pass@example.com/api ",
+        "-H 'Authorization: Basic dXNlcjpwYXNz' && ",
+        "curl --user='alice:secret value' https://token@example.org"
+    );
+
+    let redacted = redact_command_for_policy(command);
+
+    assert!(redacted.contains("curl -u <redacted>"));
+    assert!(redacted.contains("Authorization: Basic <redacted>"));
+    assert!(redacted.contains("https://<redacted>@example.com/api"));
+    assert!(redacted.contains("https://<redacted>@example.org"));
+    assert!(!redacted.contains("user:pass"));
+    assert!(!redacted.contains("alice:secret"));
+    assert!(!redacted.contains("dXNlcjpwYXNz"));
+    assert!(!redacted.contains("token@example"));
+}
+
+#[test]
 fn mcp_tool_action_preserves_only_argument_keys() {
     let action = PolicyCallMcpToolAction::new(
         None,
