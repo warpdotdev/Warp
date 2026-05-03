@@ -21169,6 +21169,16 @@ impl TerminalView {
             review_comments,
         };
 
+        if self.should_queue_inline_review(ctx) {
+            self.send_custom_ai_input_after_next_conversation_finished(
+                code_review_input,
+                /* show_close_button */ true,
+                /* show_send_now_button */ true,
+                ctx,
+            );
+            return Ok(());
+        }
+
         if FeatureFlag::AgentView.is_enabled()
             && !self.agent_view_controller.as_ref(ctx).is_active()
         {
@@ -21198,6 +21208,33 @@ impl TerminalView {
             controller.send_custom_ai_input_query(code_review_input, ctx);
         });
         Ok(())
+    }
+
+    fn should_queue_inline_review(&self, ctx: &AppContext) -> bool {
+        if !FeatureFlag::QueueSlashCommand.is_enabled()
+            || !self
+                .ai_context_model
+                .as_ref(ctx)
+                .is_queue_next_prompt_enabled()
+        {
+            return false;
+        }
+
+        let Some(conversation_id) = self
+            .ai_context_model
+            .as_ref(ctx)
+            .selected_conversation_id(ctx)
+        else {
+            return false;
+        };
+
+        BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .is_some_and(|conversation| {
+                !conversation.is_empty()
+                    && (conversation.status().is_in_progress()
+                        || conversation.status().is_blocked())
+            })
     }
 
     /// Returns the CLI agent currently active in this terminal, if any.
