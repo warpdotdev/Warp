@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, process::ExitStatus, time::Duration};
+use std::{collections::BTreeMap, io, process::ExitStatus, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use command::{r#async::Command, Stdio};
@@ -26,6 +26,7 @@ use super::{
 };
 
 const MAX_HOOK_OUTPUT_BYTES: usize = 64 * 1024;
+const MAX_HOOK_EVENT_BYTES: usize = 128 * 1024;
 
 #[derive(Debug, Clone)]
 pub(crate) struct AgentPolicyHookEngine {
@@ -142,10 +143,7 @@ impl AgentPolicyHookEngine {
             command.env(key, resolve_hook_secret_value(value)?);
         }
 
-        let event_bytes = serialize_event(event).map_err(|source| AgentPolicyHookFailure {
-            kind: AgentPolicyHookErrorKind::MalformedResponse,
-            detail: format!("failed to serialize policy event: {source}"),
-        })?;
+        let event_bytes = serialize_event(event)?;
 
         let mut child = command.spawn().map_err(|source| AgentPolicyHookFailure {
             kind: AgentPolicyHookErrorKind::SpawnFailed,
@@ -254,10 +252,7 @@ impl AgentPolicyHookEngine {
             });
         };
 
-        let event_bytes = serialize_event(event).map_err(|source| AgentPolicyHookFailure {
-            kind: AgentPolicyHookErrorKind::MalformedResponse,
-            detail: format!("failed to serialize policy event: {source}"),
-        })?;
+        let event_bytes = serialize_event(event)?;
 
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -478,8 +473,59 @@ fn resolve_hook_secret_value(
         })
 }
 
-fn serialize_event(event: &AgentPolicyEvent) -> Result<Vec<u8>> {
-    serde_json::to_vec(event).context("serialize policy event")
+struct CappedEventWriter {
+    bytes: Vec<u8>,
+    exceeded: bool,
+}
+
+impl CappedEventWriter {
+    fn new() -> Self {
+        Self {
+            bytes: Vec::new(),
+            exceeded: false,
+        }
+    }
+
+    fn into_inner(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+impl io::Write for CappedEventWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if self.bytes.len().saturating_add(buf.len()) > MAX_HOOK_EVENT_BYTES {
+            self.exceeded = true;
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("policy event exceeded {MAX_HOOK_EVENT_BYTES} bytes"),
+            ));
+        }
+
+        self.bytes.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn serialize_event(event: &AgentPolicyEvent) -> Result<Vec<u8>, AgentPolicyHookFailure> {
+    let mut writer = CappedEventWriter::new();
+    if let Err(source) = serde_json::to_writer(&mut writer, event).context("serialize policy event")
+    {
+        let kind = if writer.exceeded {
+            AgentPolicyHookErrorKind::PayloadTooLarge
+        } else {
+            AgentPolicyHookErrorKind::MalformedResponse
+        };
+        return Err(AgentPolicyHookFailure {
+            kind,
+            detail: format!("failed to serialize policy event: {source}"),
+        });
+    }
+
+    Ok(writer.into_inner())
 }
 
 fn parse_hook_response(stdout: &[u8]) -> Result<AgentPolicyHookResponse> {

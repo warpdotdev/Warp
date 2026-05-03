@@ -155,7 +155,7 @@ When a hook denies an action:
 - Shell commands should return a `RequestCommandOutputResult` variant that tells the model the command was blocked by host policy.
 - MCP tool calls should return `CallMCPToolResult::Error` with a policy-blocked message before `reconnecting_peer.call_tool(...)` starts.
 - File reads should return `ReadFilesResult::Error` before local or remote file content is read.
-- File edits should return a `RequestFileEditsResult` failure/cancelled variant with a policy-blocked reason before diffs are saved.
+- File edits should return a stable `RequestFileEditsResult::PolicyDenied` variant with a policy-blocked reason before diffs are saved, not a generic diff-application failure.
 
 If new result variants are preferred over reusing existing error strings, add variants with stable, machine-readable policy metadata so the agent can recover reliably.
 
@@ -193,6 +193,7 @@ Add a local JSONL audit writer owned by `policy_hooks::engine`:
 - redaction metadata
 
 Do not include file contents, full env, access tokens, or unbounded MCP argument values. If a hook returns an `external_audit_id`, include it in the local record. On Unix, create the audit directory with private `0700` permissions at creation time and write audit files with private `0600` permissions.
+Bound policy event JSON serialization with a maximum byte budget before stdio/HTTP dispatch, and cap model-controlled collections such as path lists and MCP argument-key lists while recording omitted counts.
 
 ### 8. Stdio hook protocol
 
@@ -251,6 +252,7 @@ If HTTP is included in MVP, use the same JSON body and expect the same JSON resp
 - Apply the same timeout and unavailable behavior.
 - Redact resolved header credentials in settings, logs, hook errors, and hook-returned reasons.
 - Redact both complete configured header values and credential fragments for bearer/basic auth headers when hook responses echo only the token portion.
+- Reject oversized serialized policy events before sending the HTTP request, using the configured unavailable behavior.
 
 If this is too much for MVP, defer HTTP and keep the JSON schema transport-independent.
 

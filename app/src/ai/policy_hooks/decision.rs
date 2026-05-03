@@ -89,6 +89,7 @@ pub(crate) enum AgentPolicyHookErrorKind {
     SpawnFailed,
     StdinWriteFailed,
     NonZeroExit,
+    PayloadTooLarge,
     MalformedResponse,
     UnsupportedTransport,
     HttpRequestFailed,

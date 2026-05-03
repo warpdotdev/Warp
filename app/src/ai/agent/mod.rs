@@ -1029,6 +1029,9 @@ impl<'a> std::fmt::Display for MarkdownActionResult<'a> {
                 RequestFileEditsResult::DiffApplicationFailed { error } => {
                     write!(f, "\n_File edits failed: {error} _")
                 }
+                RequestFileEditsResult::PolicyDenied { reason } => {
+                    write!(f, "\n_File edits blocked by host policy: {reason}_")
+                }
             },
             AIAgentActionResultType::ReadFiles(result) => match result {
                 ReadFilesResult::Success { files } => {

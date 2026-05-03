@@ -109,6 +109,9 @@ pub mod text {
                     RequestFileEditsResult::DiffApplicationFailed { error } => {
                         writeln!(w, "Editing files failed: {error}")
                     }
+                    RequestFileEditsResult::PolicyDenied { reason } => {
+                        writeln!(w, "Editing files blocked by host policy: {reason}")
+                    }
                 },
                 AIAgentActionResultType::ReadFiles(result) => match result {
                     ReadFilesResult::Success { .. } => Ok(()),
@@ -866,6 +869,13 @@ pub mod json {
                     RequestFileEditsResult::DiffApplicationFailed { error } => {
                         Some(JsonMessage::ToolError {
                             error: Cow::Borrowed(error.as_str()),
+                        })
+                    }
+                    RequestFileEditsResult::PolicyDenied { reason } => {
+                        Some(JsonMessage::ToolError {
+                            error: Cow::Owned(format!(
+                                "File edits blocked by host policy: {reason}"
+                            )),
                         })
                     }
                     RequestFileEditsResult::Cancelled => Some(JsonMessage::ToolCanceled),

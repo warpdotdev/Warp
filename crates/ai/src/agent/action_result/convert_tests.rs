@@ -57,3 +57,25 @@ fn policy_denied_shell_result_preserves_policy_reason_without_denylist_label() {
     );
     assert!(permission_denied.reason.is_none());
 }
+
+#[test]
+fn policy_denied_file_edit_result_converts_to_policy_error_message() {
+    let result = api::request::input::tool_call_result::Result::try_from(
+        RequestFileEditsResult::PolicyDenied {
+            reason: "protected path".to_string(),
+        },
+    )
+    .unwrap();
+
+    let api::request::input::tool_call_result::Result::ApplyFileDiffs(result) = result else {
+        panic!("expected apply_file_diffs result");
+    };
+    let Some(api::apply_file_diffs_result::Result::Error(error)) = result.result else {
+        panic!("expected error result");
+    };
+
+    assert_eq!(
+        error.message,
+        "File edits blocked by host policy: protected path"
+    );
+}

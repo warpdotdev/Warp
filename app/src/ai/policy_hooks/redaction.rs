@@ -2,6 +2,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 
 pub(crate) const MAX_POLICY_STRING_BYTES: usize = 8 * 1024;
+pub(crate) const MAX_POLICY_COLLECTION_ITEMS: usize = 256;
 
 static SECRET_ASSIGNMENT_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
@@ -51,14 +52,35 @@ pub(crate) fn redact_sensitive_text_for_policy(value: &str) -> String {
     truncate_for_policy(&value)
 }
 
-pub(crate) fn mcp_argument_keys(arguments: &serde_json::Value) -> Vec<String> {
+pub(crate) fn mcp_argument_keys(arguments: &serde_json::Value) -> (Vec<String>, Option<usize>) {
     let serde_json::Value::Object(map) = arguments else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
 
-    let mut keys = map.keys().cloned().collect::<Vec<_>>();
+    let mut keys = map
+        .keys()
+        .take(MAX_POLICY_COLLECTION_ITEMS)
+        .map(|key| truncate_for_policy(key))
+        .collect::<Vec<_>>();
     keys.sort();
-    keys
+    let omitted_count = map.len().saturating_sub(keys.len());
+    (keys, (omitted_count > 0).then_some(omitted_count))
+}
+
+pub(crate) fn capped_policy_items<T>(
+    items: impl IntoIterator<Item = T>,
+) -> (Vec<T>, Option<usize>) {
+    let mut capped = Vec::new();
+    let mut total_count = 0usize;
+    for item in items {
+        if capped.len() < MAX_POLICY_COLLECTION_ITEMS {
+            capped.push(item);
+        }
+        total_count = total_count.saturating_add(1);
+    }
+
+    let omitted_count = total_count.saturating_sub(capped.len());
+    (capped, (omitted_count > 0).then_some(omitted_count))
 }
 
 #[allow(dead_code)]

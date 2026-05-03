@@ -641,6 +641,10 @@ pub enum RequestFileEditsResult {
     DiffApplicationFailed {
         error: String,
     },
+    /// The file edits were denied by a host policy hook before diff application.
+    PolicyDenied {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -692,6 +696,9 @@ impl Display for RequestFileEditsResult {
             RequestFileEditsResult::Cancelled => write!(f, "File edits cancelled"),
             RequestFileEditsResult::DiffApplicationFailed { error } => {
                 write!(f, "File edits failed: {error}")
+            }
+            RequestFileEditsResult::PolicyDenied { reason } => {
+                write!(f, "File edits blocked by host policy: {reason}")
             }
         }
     }
@@ -804,7 +811,10 @@ impl AIAgentActionResultType {
     pub fn is_failed(&self) -> bool {
         match self {
             Self::RequestCommandOutput(r) => r.failed(),
-            Self::RequestFileEdits(RequestFileEditsResult::DiffApplicationFailed { .. })
+            Self::RequestFileEdits(
+                RequestFileEditsResult::DiffApplicationFailed { .. }
+                | RequestFileEditsResult::PolicyDenied { .. },
+            )
             | Self::ReadFiles(ReadFilesResult::Error(_))
             | Self::UploadArtifact(UploadArtifactResult::Error(_))
             | Self::SearchCodebase(SearchCodebaseResult::Failed { .. })

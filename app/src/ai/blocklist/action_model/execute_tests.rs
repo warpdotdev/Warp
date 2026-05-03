@@ -108,6 +108,7 @@ mod policy_hooks {
             agent::{
                 conversation::AIConversationId, AIAgentAction, AIAgentActionId,
                 AIAgentActionResultType, AIAgentActionType, FileEdit, RequestCommandOutputResult,
+                RequestFileEditsResult,
             },
             policy_hooks::{
                 decision::{
@@ -175,6 +176,43 @@ mod policy_hooks {
                     reason: "guard denied the action: dangerous command".to_string(),
                 }
             )
+        );
+    }
+
+    #[test]
+    fn policy_denied_file_edit_result_uses_stable_policy_variant() {
+        let action = AIAgentAction {
+            id: AIAgentActionId::from("action_1".to_string()),
+            task_id: TaskId::new("task_1".to_string()),
+            action: AIAgentActionType::RequestFileEdits {
+                file_edits: vec![FileEdit::Create {
+                    file: Some("src/lib.rs".to_string()),
+                    content: Some("fn main() {}\n".to_string()),
+                }],
+                title: None,
+            },
+            requires_result: true,
+        };
+        let decision = AgentPolicyEffectiveDecision {
+            decision: AgentPolicyDecisionKind::Deny,
+            reason: Some("blocked".to_string()),
+            warp_permission: WarpPermissionSnapshot::allow(None),
+            hook_results: vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Deny,
+                reason: Some("protected path".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+        };
+
+        let result = policy_denied_action_result(&action, &decision);
+
+        assert_eq!(
+            result,
+            AIAgentActionResultType::RequestFileEdits(RequestFileEditsResult::PolicyDenied {
+                reason: "guard denied the action: protected path".to_string(),
+            })
         );
     }
 

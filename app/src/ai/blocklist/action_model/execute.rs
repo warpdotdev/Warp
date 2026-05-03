@@ -1518,24 +1518,21 @@ fn agent_policy_action(
             .redacted(),
         )),
         AIAgentActionType::ReadFiles(read_files) => {
-            Some(AgentPolicyAction::ReadFiles(PolicyReadFilesAction {
-                paths: read_files
+            Some(AgentPolicyAction::ReadFiles(PolicyReadFilesAction::new(
+                read_files
                     .locations
                     .iter()
-                    .map(|file| policy_path(&file.name, shell, current_working_directory))
-                    .collect(),
-            }))
+                    .map(|file| policy_path(&file.name, shell, current_working_directory)),
+            )))
         }
         AIAgentActionType::RequestFileEdits { file_edits, .. } => {
             let paths = file_edits
                 .iter()
                 .filter_map(|edit| edit.file())
-                .map(|file| policy_path(file, shell, current_working_directory))
-                .collect::<Vec<_>>();
-            Some(AgentPolicyAction::WriteFiles(PolicyWriteFilesAction {
-                paths,
-                diff_stats: None,
-            }))
+                .map(|file| policy_path(file, shell, current_working_directory));
+            Some(AgentPolicyAction::WriteFiles(PolicyWriteFilesAction::new(
+                paths, None,
+            )))
         }
         AIAgentActionType::CallMCPTool {
             server_id,
@@ -1549,11 +1546,7 @@ fn agent_policy_action(
             name,
             uri,
         } => Some(AgentPolicyAction::ReadMcpResource(
-            PolicyReadMcpResourceAction {
-                server_id: *server_id,
-                name: name.clone(),
-                uri: uri.clone(),
-            },
+            PolicyReadMcpResourceAction::new(*server_id, name.clone(), uri.clone()),
         )),
         _ => None,
     }
@@ -1602,11 +1595,11 @@ fn policy_denied_action_result(
         AIAgentActionType::ReadFiles(_) => AIAgentActionResultType::ReadFiles(
             ReadFilesResult::Error(format!("Blocked by host policy: {reason}")),
         ),
-        AIAgentActionType::RequestFileEdits { .. } => AIAgentActionResultType::RequestFileEdits(
-            RequestFileEditsResult::DiffApplicationFailed {
-                error: format!("Blocked by host policy: {reason}"),
-            },
-        ),
+        AIAgentActionType::RequestFileEdits { .. } => {
+            AIAgentActionResultType::RequestFileEdits(RequestFileEditsResult::PolicyDenied {
+                reason,
+            })
+        }
         AIAgentActionType::CallMCPTool { .. } => AIAgentActionResultType::CallMCPTool(
             CallMCPToolResult::Error(format!("Blocked by host policy: {reason}")),
         ),

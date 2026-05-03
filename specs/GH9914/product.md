@@ -87,13 +87,13 @@ When hooks are enabled, Warp writes a redacted local audit record for every gove
    - file write or code diff application
    - MCP tool calls
    - MCP resource reads
-3. A hook decision of `deny` prevents the underlying command, file operation, or MCP call from starting.
+3. A hook decision of `deny` prevents the underlying command, file operation, or MCP call from starting, and file-edit denials use a stable policy-blocked result rather than a generic diff-application failure.
 4. A hook decision of `ask` routes the action through Warp's existing confirmation UI and includes the hook's reason in the UI, even if the user clicked while the hook was still pending.
 5. A hook decision of `allow` cannot override a hard Warp denial such as protected write paths or a managed policy denial.
 6. By default, a hook decision of `allow` only preserves an already-allowed Warp permission decision. Any option that lets a trusted hook auto-approve actions that Warp would otherwise ask for must be explicit and scoped to that hook.
 7. "Run until completion" still invokes policy hooks and cannot bypass a hook denial.
 8. Hook timeout, crash, malformed output, or unavailable endpoint maps to `ask` by default and can be configured to `deny` by managed policy.
-9. Hook payloads, persisted hook config, and hook child processes do not include file contents, secret values, inherited full environment variables, access tokens, basic-auth credentials, URL-embedded credentials, or unbounded command output by default.
+9. Hook payloads, persisted hook config, and hook child processes do not include file contents, secret values, inherited full environment variables, access tokens, basic-auth credentials, URL-embedded credentials, unbounded path/key collections, or unbounded command output by default.
 10. Disabled or inactive hook config is still rejected or sanitized before profile storage if it contains persisted credentials or URL-embedded credentials.
 11. Hook payloads include enough metadata for deterministic policy decisions: schema version, action id, conversation id, action type, normalized command or paths, MCP server/tool/resource identity, working directory, active profile id, Warp permission result, and whether auto-approve/run-to-completion is active.
 12. Warp records a redacted audit event for every governed decision, including hook name, decision, reason, action id, conversation id, timestamp, and policy event id.

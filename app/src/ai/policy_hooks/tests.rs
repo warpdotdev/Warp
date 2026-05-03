@@ -17,7 +17,7 @@ use super::{
         AgentPolicyAction, AgentPolicyEvent, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
         PolicyReadFilesAction, AGENT_POLICY_SCHEMA_VERSION,
     },
-    redaction::redact_command_for_policy,
+    redaction::{redact_command_for_policy, MAX_POLICY_COLLECTION_ITEMS},
 };
 
 #[cfg(not(target_family = "wasm"))]
@@ -336,6 +336,26 @@ fn mcp_tool_action_preserves_only_argument_keys() {
     );
 
     assert_eq!(action.argument_keys, vec!["count", "path", "token"]);
+    assert_eq!(action.omitted_argument_key_count, None);
+}
+
+#[test]
+fn policy_action_collections_are_capped() {
+    let paths = (0..MAX_POLICY_COLLECTION_ITEMS + 3)
+        .map(|index| PathBuf::from(format!("/tmp/policy-path-{index}")));
+    let action = PolicyReadFilesAction::new(paths);
+
+    assert_eq!(action.paths.len(), MAX_POLICY_COLLECTION_ITEMS);
+    assert_eq!(action.omitted_path_count, Some(3));
+
+    let mut arguments = serde_json::Map::new();
+    for index in 0..MAX_POLICY_COLLECTION_ITEMS + 2 {
+        arguments.insert(format!("key_{index:03}"), json!(index));
+    }
+    let action = PolicyCallMcpToolAction::new(None, "tool", &serde_json::Value::Object(arguments));
+
+    assert_eq!(action.argument_keys.len(), MAX_POLICY_COLLECTION_ITEMS);
+    assert_eq!(action.omitted_argument_key_count, Some(2));
 }
 
 #[test]
@@ -597,8 +617,8 @@ async fn stdio_engine_times_out_blocked_stdin_write() {
     }))
     .unwrap();
     let engine = AgentPolicyHookEngine::new(config);
-    let suffix = "x".repeat(160);
-    let paths = (0..15_000)
+    let suffix = "x".repeat(120);
+    let paths = (0..650)
         .map(|index| PathBuf::from(format!("/tmp/policy-hook-large-event-{index}-{suffix}")))
         .collect();
     let event = AgentPolicyEvent::new(
@@ -608,7 +628,10 @@ async fn stdio_engine_times_out_blocked_stdin_write() {
         false,
         None,
         WarpPermissionSnapshot::allow(None),
-        AgentPolicyAction::ReadFiles(PolicyReadFilesAction { paths }),
+        AgentPolicyAction::ReadFiles(PolicyReadFilesAction {
+            paths,
+            omitted_path_count: None,
+        }),
     );
 
     let started = Instant::now();
@@ -621,6 +644,46 @@ async fn stdio_engine_times_out_blocked_stdin_write() {
     assert_eq!(
         decision.hook_results[0].error,
         Some(AgentPolicyHookErrorKind::Timeout)
+    );
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[tokio::test]
+async fn http_engine_rejects_oversized_policy_event_before_request() {
+    let server = mockito::Server::new_async().await;
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "on_unavailable": "deny",
+        "before_action": [{
+            "name": "http-guard",
+            "transport": "http",
+            "url": format!("{}/policy", server.url()),
+            "timeout_ms": 1000
+        }]
+    }))
+    .unwrap();
+    let engine = AgentPolicyHookEngine::new(config);
+    let event = AgentPolicyEvent::new(
+        "conv_123",
+        "action_456",
+        None,
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        AgentPolicyAction::ReadFiles(PolicyReadFilesAction {
+            paths: vec![PathBuf::from(format!("/tmp/{}", "x".repeat(200_000)))],
+            omitted_path_count: None,
+        }),
+    );
+
+    let decision = engine
+        .preflight(event, WarpPermissionSnapshot::allow(None))
+        .await;
+
+    assert_eq!(decision.decision, AgentPolicyDecisionKind::Deny);
+    assert_eq!(
+        decision.hook_results[0].error,
+        Some(AgentPolicyHookErrorKind::PayloadTooLarge)
     );
 }
 

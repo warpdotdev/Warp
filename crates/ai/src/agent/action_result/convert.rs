@@ -302,6 +302,17 @@ impl TryFrom<RequestFileEditsResult> for api::request::input::tool_call_result::
                     },
                 ),
             ),
+            RequestFileEditsResult::PolicyDenied { reason } => Ok(
+                api::request::input::tool_call_result::Result::ApplyFileDiffs(
+                    api::ApplyFileDiffsResult {
+                        result: Some(api::apply_file_diffs_result::Result::Error(
+                            api::apply_file_diffs_result::Error {
+                                message: format!("File edits blocked by host policy: {reason}"),
+                            },
+                        )),
+                    },
+                ),
+            ),
             RequestFileEditsResult::Cancelled => Err(ConvertToAPITypeError::Ignore),
         }
     }

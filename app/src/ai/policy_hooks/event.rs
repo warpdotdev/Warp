@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize, Serializer};
 
 use super::{
     decision::WarpPermissionSnapshot,
-    redaction::{mcp_argument_keys, redact_command_for_policy},
+    redaction::{
+        capped_policy_items, mcp_argument_keys, redact_command_for_policy, truncate_for_policy,
+    },
 };
 
 pub(crate) const AGENT_POLICY_SCHEMA_VERSION: &str = "warp.agent_policy_hook.v1";
@@ -156,13 +158,43 @@ impl PolicyExecuteCommandAction {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct PolicyReadFilesAction {
     pub paths: Vec<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omitted_path_count: Option<usize>,
+}
+
+impl PolicyReadFilesAction {
+    pub(crate) fn new(paths: impl IntoIterator<Item = PathBuf>) -> Self {
+        let (paths, omitted_path_count) =
+            capped_policy_items(paths.into_iter().map(truncate_policy_path));
+        Self {
+            paths,
+            omitted_path_count,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct PolicyWriteFilesAction {
     pub paths: Vec<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omitted_path_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff_stats: Option<PolicyDiffStats>,
+}
+
+impl PolicyWriteFilesAction {
+    pub(crate) fn new(
+        paths: impl IntoIterator<Item = PathBuf>,
+        diff_stats: Option<PolicyDiffStats>,
+    ) -> Self {
+        let (paths, omitted_path_count) =
+            capped_policy_items(paths.into_iter().map(truncate_policy_path));
+        Self {
+            paths,
+            omitted_path_count,
+            diff_stats,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -178,6 +210,8 @@ pub(crate) struct PolicyCallMcpToolAction {
     pub server_id: Option<uuid::Uuid>,
     pub tool_name: String,
     pub argument_keys: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omitted_argument_key_count: Option<usize>,
 }
 
 impl PolicyCallMcpToolAction {
@@ -186,10 +220,13 @@ impl PolicyCallMcpToolAction {
         tool_name: impl Into<String>,
         arguments: &serde_json::Value,
     ) -> Self {
+        let (argument_keys, omitted_argument_key_count) = mcp_argument_keys(arguments);
+        let tool_name = tool_name.into();
         Self {
             server_id,
-            tool_name: tool_name.into(),
-            argument_keys: mcp_argument_keys(arguments),
+            tool_name: truncate_for_policy(&tool_name),
+            argument_keys,
+            omitted_argument_key_count,
         }
     }
 }
@@ -201,4 +238,28 @@ pub(crate) struct PolicyReadMcpResourceAction {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uri: Option<String>,
+}
+
+impl PolicyReadMcpResourceAction {
+    pub(crate) fn new(
+        server_id: Option<uuid::Uuid>,
+        name: impl Into<String>,
+        uri: Option<String>,
+    ) -> Self {
+        let name = name.into();
+        Self {
+            server_id,
+            name: truncate_for_policy(&name),
+            uri: uri.map(|uri| truncate_for_policy(&uri)),
+        }
+    }
+}
+
+fn truncate_policy_path(path: PathBuf) -> PathBuf {
+    let path_text = path.to_string_lossy();
+    if path_text.len() <= super::redaction::MAX_POLICY_STRING_BYTES {
+        return path;
+    }
+
+    PathBuf::from(truncate_for_policy(&path_text))
 }
