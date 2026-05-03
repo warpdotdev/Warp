@@ -763,6 +763,13 @@ pub struct DraggedBorder {
     border_id: EntityId,
     direction: SplitDirection,
     previous_mouse_location: Vector2F,
+    /// Cached sum of the two adjacent panes' pixel sizes along the drag axis,
+    /// captured on the first drag event (when sizes are freshly rendered) and
+    /// reused for the lifetime of the drag. Without this cache, multiple drag
+    /// events that fire between render frames all read the same stale rendered
+    /// sizes and compute identical flex values, causing the divider to move at
+    /// roughly half the mouse speed.
+    cached_total_pixel_size: Option<f32>,
 }
 
 /// Options that can be set when adding a new local terminal pane.
@@ -5388,7 +5395,12 @@ impl PaneGroup {
                 SplitDirection::Vertical => position.y() - border.previous_mouse_location.y(),
             };
 
-            self.panes.adjust_pane_size(border.border_id, delta, ctx);
+            self.panes.adjust_pane_size(
+                border.border_id,
+                delta,
+                &mut border.cached_total_pixel_size,
+                ctx,
+            );
 
             border.previous_mouse_location = position;
             ctx.notify();
