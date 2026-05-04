@@ -1180,14 +1180,20 @@ impl SettingsView {
             SettingsPage::new(about_page_handle),
         ]);
 
-        // Build sidebar nav items. AI page is presented as an "Agents" umbrella
-        // with subpages; the actual AI SettingsPage is hidden from direct sidebar listing.
+        // Build sidebar nav items.
+        //
+        // twarp: The "Agents" umbrella (which exposed the AI settings page
+        // and its subpages — WarpAgent, AgentProfiles, Knowledge,
+        // ThirdPartyCLIAgents) is removed from the sidebar so users cannot
+        // navigate to AI settings. The backing `ai_page.rs` module and the
+        // SettingsSection::{AI, WarpAgent, AgentProfiles, AgentMCPServers,
+        // Knowledge, ThirdPartyCLIAgents} variants remain compiled in this
+        // PR but are unreachable; 2c deletes them along with their AI-side
+        // consumers (e.g. `app/src/ai/blocklist/agent_view/agent_input_footer/`,
+        // which still calls `cli_agent_settings_widget_id()` on a path that
+        // is itself unreachable now that AI is off).
         let mut nav_items = vec![
             SettingsNavItem::Page(SettingsSection::Account),
-            SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Agents",
-                SettingsSection::ai_subpages().to_vec(),
-            )),
             SettingsNavItem::Page(SettingsSection::BillingAndUsage),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
                 "Code",

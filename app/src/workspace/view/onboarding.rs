@@ -144,9 +144,11 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         // With new onboarding, skip the guided tour when AI is not enabled
-        // (e.g. terminal-intent users or users who disabled AI).
+        // (e.g. terminal-intent users or users who disabled AI). twarp:
+        // route through the reader so legacy `is_any_ai_enabled = true`
+        // settings files don't bypass the gate.
         if FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
-            && !*AISettings::as_ref(ctx).is_any_ai_enabled
+            && !AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
         {
             return;
         }

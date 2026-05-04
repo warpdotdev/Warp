@@ -2291,7 +2291,6 @@ impl RootView {
 
                     let login_slide_view = ctx.add_typed_action_view(|ctx| {
                         LoginSlideView::new(
-                            ai_enabled,
                             &theme_name,
                             use_vertical_tabs,
                             intention,
@@ -2389,13 +2388,6 @@ impl RootView {
                 let target = target.clone();
                 let onboarding_view = onboarding_view.clone();
 
-                // This event is only emitted from the terminal-intention theme
-                // slide (the variant name encodes this). The terminal intention
-                // disables AI once onboarding settings are applied, so treat AI
-                // as disabled here — `AISettings::is_any_ai_enabled` still holds
-                // the pre-onboarding / default value at this point and would
-                // incorrectly surface the cloud-conversation toggle.
-                let ai_enabled = false;
                 let appearance = Appearance::as_ref(ctx);
                 let theme_name = appearance
                     .theme()
@@ -2411,7 +2403,6 @@ impl RootView {
                 // terminal-intention theme slide, so match its image here.
                 let login_slide_view = ctx.add_typed_action_view(|ctx| {
                     LoginSlideView::new(
-                        ai_enabled,
                         &theme_name,
                         use_vertical_tabs,
                         OnboardingIntention::Terminal,
@@ -2443,7 +2434,6 @@ impl RootView {
                 let target = target.clone();
                 let onboarding_view = onboarding_view.clone();
 
-                let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
                 let appearance = Appearance::as_ref(ctx);
                 let theme_name = appearance
                     .theme()
@@ -2459,7 +2449,6 @@ impl RootView {
 
                 let login_slide_view = ctx.add_typed_action_view(|ctx| {
                     LoginSlideView::new(
-                        ai_enabled,
                         &theme_name,
                         use_vertical_tabs,
                         // Existing-user login from the welcome slide happens before the user
@@ -3318,7 +3307,11 @@ impl RootView {
                     view.open_vertical_tabs_panel_if_enabled(ctx);
                 });
             }
-        } else if *AISettings::as_ref(ctx).is_any_ai_enabled {
+        } else if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
+            // twarp: the reader is hard-coded to `false`, so this branch is
+            // unreachable — but route through it (rather than the raw stored
+            // field) so legacy `is_any_ai_enabled = true` settings files
+            // can't sneak the agent onboarding tutorial back on.
             workspace.update(ctx, |view, ctx| {
                 view.start_agent_onboarding_tutorial(tutorial, ctx);
             });

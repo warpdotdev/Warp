@@ -78,18 +78,11 @@ pub enum SelectedSettings {
 
 impl SelectedSettings {
     pub fn is_ai_enabled(&self) -> bool {
-        use warp_core::features::FeatureFlag;
-        match self {
-            SelectedSettings::AgentDrivenDevelopment { agent_settings, .. } => {
-                !agent_settings.disable_oz
-            }
-            SelectedSettings::Terminal { .. } => {
-                // With old onboarding (no OpenWarpNewSettingsModes), Terminal
-                // intent still leaves AI enabled; with new onboarding,
-                // Terminal intent explicitly disables AI.
-                !FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
-            }
-        }
+        // twarp: AI is permanently disabled, so the onboarding flow can no
+        // longer report AI as enabled regardless of intention or
+        // `disable_oz`. Callers (e.g. the post-onboarding `requires_login`
+        // check) collapse to AI-irrelevant logic.
+        false
     }
 
     pub fn is_warp_drive_enabled(&self) -> bool {
@@ -115,6 +108,11 @@ pub(crate) enum OnboardingStep {
     Intro,
     Intention,
     Customize,
+    // twarp: AI is permanently disabled, so the Agent slide is bypassed by
+    // `next()` / `back()`. The variant is kept for defensive matches and
+    // the agent_onboarding_view's render arm; 2c removes it along with the
+    // slide source.
+    #[allow(dead_code)]
     Agent,
     ThirdParty,
     Project,
@@ -666,16 +664,19 @@ impl OnboardingStateModel {
         use warp_core::features::FeatureFlag;
         let theme_picker_last = FeatureFlag::OpenWarpNewSettingsModes.is_enabled();
 
+        // twarp: AI is permanently disabled, so the Agent slide is never
+        // shown. The `OnboardingStep::Agent` arms below remain only as a
+        // defensive fallback in case some path still sets the step there;
+        // 2c removes the variant along with the slide source.
         let prev = if theme_picker_last {
             match self.step {
                 OnboardingStep::Intro => None,
                 OnboardingStep::Intention => Some(OnboardingStep::Intro),
                 OnboardingStep::Customize => Some(OnboardingStep::Intention),
                 OnboardingStep::Agent => Some(OnboardingStep::Customize),
-                OnboardingStep::ThirdParty => match self.intention {
-                    OnboardingIntention::Terminal => Some(OnboardingStep::Customize),
-                    OnboardingIntention::AgentDrivenDevelopment => Some(OnboardingStep::Agent),
-                },
+                // Both Terminal and AgentDrivenDevelopment intents bypass the
+                // Agent slide now that AI is permanently disabled.
+                OnboardingStep::ThirdParty => Some(OnboardingStep::Customize),
                 OnboardingStep::Project => Some(OnboardingStep::ThirdParty),
                 OnboardingStep::ThemePicker => Some(OnboardingStep::ThirdParty),
             }
@@ -687,7 +688,8 @@ impl OnboardingStateModel {
                 OnboardingStep::Customize => None,
                 OnboardingStep::ThirdParty => None,
                 OnboardingStep::Agent => Some(OnboardingStep::Intention),
-                OnboardingStep::Project => Some(OnboardingStep::Agent),
+                // Skip the Agent slide on the way back too.
+                OnboardingStep::Project => Some(OnboardingStep::Intention),
             }
         };
 
@@ -710,16 +712,14 @@ impl OnboardingStateModel {
             send_telemetry_from_ctx!(OnboardingEvent::SlideNavigatedNext, ctx);
         }
 
+        // twarp: AI is permanently disabled, so the Agent slide is bypassed
+        // for both intents. The `OnboardingStep::Agent` arms remain only as
+        // a defensive fallback; 2c removes them.
         if theme_picker_last {
             match self.step {
                 OnboardingStep::Intro => self.set_step(OnboardingStep::Intention, ctx),
                 OnboardingStep::Intention => self.set_step(OnboardingStep::Customize, ctx),
-                OnboardingStep::Customize => match self.intention {
-                    OnboardingIntention::Terminal => self.set_step(OnboardingStep::ThirdParty, ctx),
-                    OnboardingIntention::AgentDrivenDevelopment => {
-                        self.set_step(OnboardingStep::Agent, ctx)
-                    }
-                },
+                OnboardingStep::Customize => self.set_step(OnboardingStep::ThirdParty, ctx),
                 OnboardingStep::Agent => self.set_step(OnboardingStep::ThirdParty, ctx),
                 OnboardingStep::ThirdParty => self.set_step(OnboardingStep::ThemePicker, ctx),
                 OnboardingStep::Project => self.set_step(OnboardingStep::ThemePicker, ctx),
@@ -729,7 +729,8 @@ impl OnboardingStateModel {
             match self.step {
                 OnboardingStep::Intro => self.set_step(OnboardingStep::ThemePicker, ctx),
                 OnboardingStep::ThemePicker => self.set_step(OnboardingStep::Intention, ctx),
-                OnboardingStep::Intention => self.set_step(OnboardingStep::Agent, ctx),
+                // Skip Agent: jump straight from Intention to Project.
+                OnboardingStep::Intention => self.set_step(OnboardingStep::Project, ctx),
                 OnboardingStep::Customize => {}
                 OnboardingStep::ThirdParty => {}
                 OnboardingStep::Agent => self.set_step(OnboardingStep::Project, ctx),

@@ -155,13 +155,6 @@ enum LoginSlideOverlay {
 const AUTH_TOKEN_INPUT_BORDER_RADIUS: Radius = Radius::Pixels(4.);
 
 pub struct LoginSlideView {
-    /// Whether AI will be enabled once onboarding is applied. Used to hide the
-    /// cloud-conversation-storage toggle in the privacy settings step when the
-    /// user has disabled Warp Agent during onboarding (or is on the terminal
-    /// intention path, which disables AI). The actual `AISettings` value may
-    /// not have been written yet at this point, since onboarding settings are
-    /// applied after login.
-    ai_enabled: bool,
     /// Onboarding intention selected by the user, used to render Drive-focused
     /// copy on the Terminal+Drive path. On the login slide, `intention ==
     /// OnboardingIntention::Terminal` is equivalent to "Terminal+Drive":
@@ -261,7 +254,6 @@ impl LoginSlideView {
     }
 
     pub fn new(
-        ai_enabled: bool,
         theme_name: &str,
         use_vertical_tabs: bool,
         intention: OnboardingIntention,
@@ -310,7 +302,6 @@ impl LoginSlideView {
         });
 
         Self {
-            ai_enabled,
             intention,
             theme_visual_path: resolve_visual_path(intention, theme_name, use_vertical_tabs),
             step: match source {
@@ -459,15 +450,10 @@ impl LoginSlideView {
     // Step 1: Select auth pathway
     // ------------------------------------------------------------------
 
-    /// Disclaimer prefix shown before the "Privacy Settings" link. AI is
-    /// dropped from the wording on paths that don't enable AI (e.g.
-    /// Terminal+Drive), since there are no AI features to opt out of there.
+    /// Disclaimer prefix shown before the "Privacy Settings" link. twarp has
+    /// no AI features, so the disclaimer mentions analytics only.
     fn privacy_disclaimer_prefix(&self) -> &'static str {
-        if self.ai_enabled {
-            "If you'd like to opt out of analytics and AI features, you can adjust your "
-        } else {
-            "If you'd like to opt out of analytics, you can adjust your "
-        }
+        "If you'd like to opt out of analytics, you can adjust your "
     }
 
     fn render_select_auth_content(&self, appearance: &Appearance) -> Vec<Box<dyn Element>> {
@@ -845,12 +831,15 @@ impl LoginSlideView {
             hide_overlay: LoginSlideAction::HideOverlay,
         };
 
+        // twarp: AI is permanently disabled; the cloud-conversation-storage
+        // toggle is hidden by passing `is_ai_enabled = false` to the shared
+        // helper.
         let toggles = render_privacy_settings_toggles(
             appearance,
             app,
             &self.privacy_settings_handles,
             &actions,
-            self.ai_enabled,
+            false,
         );
 
         vec![title, Container::new(toggles).with_margin_top(24.).finish()]

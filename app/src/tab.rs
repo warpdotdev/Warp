@@ -1,5 +1,5 @@
 use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::conversation_status_ui::{STATUS_ELEMENT_PADDING, render_status_element};
+use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
 /// Tab module contains structures related to Tabs (such as TabData or TabComponent) that simplify
 /// the rendering and management of tabs in general.
@@ -18,25 +18,25 @@ use crate::terminal::shared_session::render_util::shared_session_indicator_color
 use crate::terminal::view::TerminalViewState;
 use crate::themes::theme::{AnsiColorIdentifier, Fill as ThemeFill, VerticalGradient};
 use crate::ui_components::buttons::icon_button;
-use crate::ui_components::color_dot::{TAB_COLOR_OPTIONS, render_color_dot};
-use crate::ui_components::icons::{ICON_DIMENSIONS, Icon};
-use crate::util::color::{Opacity, coloru_with_opacity};
+use crate::ui_components::color_dot::{render_color_dot, TAB_COLOR_OPTIONS};
+use crate::ui_components::icons::{Icon, ICON_DIMENSIONS};
+use crate::util::color::{coloru_with_opacity, Opacity};
 use crate::util::truncation::truncate_from_end;
 
-use crate::BlocklistAIHistoryModel;
 use crate::window_settings::WindowSettings;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::tab_settings::{TabCloseButtonPosition, TabSettings};
 use crate::workspace::{
     PaneViewLocator, TabBarDropTargetData, TabBarLocation, TabContextMenuAnchor, WorkspaceAction,
 };
+use crate::BlocklistAIHistoryModel;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use serde::{Deserialize, Serialize};
 use warp_core::context_flag::ContextFlag;
 use warp_core::ui::builder::UiBuilder;
-use warp_core::ui::theme::AnsiColors;
 use warp_core::ui::theme::color::internal_colors;
+use warp_core::ui::theme::AnsiColors;
 use warpui::elements::{
     Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, DragAxis, Draggable, DraggableState, DropTarget, Element, Empty, Fill,
@@ -357,11 +357,9 @@ impl TabData {
 
         // TODO add option to show the keybinding once we figure out a nice API to retrieve
         // the actual keybinding (based on the user's preferences etc.)
-        menu_items.append(&mut vec![
-            MenuItemFields::new("Rename tab")
-                .with_on_select_action(WorkspaceAction::RenameTab(index))
-                .into_item(),
-        ]);
+        menu_items.append(&mut vec![MenuItemFields::new("Rename tab")
+            .with_on_select_action(WorkspaceAction::RenameTab(index))
+            .into_item()]);
         // Group together with rename option (note, resetting doesn't make
         // sense unless you're able to rename a tab).
         let title = self.pane_group.as_ref(ctx).custom_title(ctx);
@@ -421,11 +419,9 @@ impl TabData {
             .custom_vertical_tabs_title()
             .is_some();
 
-        let mut menu_items = vec![
-            MenuItemFields::new(target.rename_label)
-                .with_on_select_action(WorkspaceAction::RenamePane(target.locator))
-                .into_item(),
-        ];
+        let mut menu_items = vec![MenuItemFields::new(target.rename_label)
+            .with_on_select_action(WorkspaceAction::RenamePane(target.locator))
+            .into_item()];
         if has_custom_name {
             menu_items.push(
                 MenuItemFields::new(target.reset_label)
@@ -478,11 +474,9 @@ impl TabData {
         if !FeatureFlag::TabConfigs.is_enabled() {
             return vec![];
         }
-        vec![
-            MenuItemFields::new("Save as new config")
-                .with_on_select_action(WorkspaceAction::SaveCurrentTabAsNewConfig(index))
-                .into_item(),
-        ]
+        vec![MenuItemFields::new("Save as new config")
+            .with_on_select_action(WorkspaceAction::SaveCurrentTabAsNewConfig(index))
+            .into_item()]
     }
 
     fn color_option_menu_items(
@@ -1768,8 +1762,8 @@ impl UiComponent for TabComponent<'_> {
 #[cfg(test)]
 mod tab_color_tooltip_tests {
     use super::{
-        AnsiColorIdentifier, format_tab_color_reset_tooltip, format_tab_color_tooltip,
-        tab_color_binding_name,
+        format_tab_color_reset_tooltip, format_tab_color_tooltip, tab_color_binding_name,
+        AnsiColorIdentifier,
     };
 
     #[test]

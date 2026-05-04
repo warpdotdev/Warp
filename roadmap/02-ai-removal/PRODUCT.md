@@ -45,7 +45,7 @@ After this phase, twarp boots with AI disabled and offers no surface that flips 
 
 2. **No enable path.**
     - Onboarding no longer shows the agent slide ("Terminal" vs "Terminal + AI"). The flow proceeds straight to the next step (theme picker, etc.). The Terminal-only branch becomes the only branch.
-    - The settings_view AI page is removed; its sidebar entry is gone.
+    - The settings_view AI page is hidden from the sidebar (the "Agents" umbrella is gone); its source remains compiled but unreachable in 2b and is physically deleted in 2c alongside its `app/src/ai/` consumers.
     - There is no command-palette entry, keyboard shortcut, or settings toggle that flips `is_any_ai_enabled` to `true`. The settings key still **parses** (so legacy user TOML files don't crash), but the runtime treats it as always-`false`. Writing it has no effect.
 
 3. **Migrating existing users.** A user upgrading from upstream Warp with AI enabled lands in twarp with AI off. Non-AI state (tabs, themes, Drive contents, blocks history, account session) is preserved. Per-user AI state (saved agents, blocklist entries, conversation history) is dropped silently — twarp does not migrate or surface a notice. The user is meant to know what twarp is when installing it.

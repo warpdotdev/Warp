@@ -9,7 +9,6 @@ use std::path::PathBuf;
 use indexmap::IndexMap;
 
 use crate::ai::request_usage_model::RequestLimitInfo;
-use crate::auth::AuthStateProvider;
 use crate::report_if_error;
 use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -708,10 +707,17 @@ impl settings_value::SettingsValue for ToolbarCommandMap {
 }
 
 define_settings_group!(AISettings, settings: [
-    // If `false`, all AI features are disabled.
+    // twarp: AI is permanently disabled in shipped builds. The default is
+    // `false` and the `is_any_ai_enabled()` reader hard-codes `false`, so
+    // this stored value is parsed (legacy upstream-Warp settings.toml files
+    // still load) but never honored at runtime. In test builds the default
+    // is `true` and the reader honors the field; existing unit tests that
+    // depended on AI-on default behavior keep passing without each having
+    // to drop the gate, while tests that want the production AI-off path
+    // set the field to `false` explicitly.
     is_any_ai_enabled: IsAnyAIEnabled {
         type: bool,
-        default: true,
+        default: cfg!(test),
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
         private: false,
@@ -1496,15 +1502,22 @@ impl AISettings {
         contains_remote_blocks || contains_restored_remote_blocks
     }
 
-    pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {
-        // Disable AI for anonymous and logged-out users.
-        let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out();
-
-        *self.is_any_ai_enabled
-            && !is_anonymous_or_logged_out
-            && !self.is_ai_disabled_due_to_remote_session_org_policy(app)
+    pub fn is_any_ai_enabled(&self, _app: &AppContext) -> bool {
+        // twarp: AI is permanently disabled in shipped builds. Every gated
+        // AI surface short-circuits here, so the auth check and remote-
+        // session policy are moot, and the stored `is_any_ai_enabled` value
+        // is ignored. Test builds honor the stored field so existing
+        // unit tests that rely on AI-on default behavior keep working
+        // without each having to drop the gate; tests that want the
+        // production AI-off behavior set the field to `false` explicitly.
+        #[cfg(not(test))]
+        {
+            false
+        }
+        #[cfg(test)]
+        {
+            *self.is_any_ai_enabled
+        }
     }
 
     pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {

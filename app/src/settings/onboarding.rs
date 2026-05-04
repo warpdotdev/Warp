@@ -13,19 +13,22 @@ use warp_core::features::FeatureFlag;
 use warpui::{AppContext, SingletonEntity as _};
 
 /// Applies onboarding settings based on the user's selected mode.
+///
+/// twarp: AI is permanently disabled, so we no longer propagate the
+/// onboarding-derived `is_ai_enabled` to `AISettings::is_any_ai_enabled`.
+/// The reader at `app/src/settings/ai.rs:1499` hard-codes `false` and the
+/// agent slide that would let the user toggle this is unreachable.
 pub fn apply_onboarding_settings(selected_settings: &SelectedSettings, app: &mut AppContext) {
-    let is_ai_enabled = match selected_settings {
+    match selected_settings {
         SelectedSettings::AgentDrivenDevelopment {
             agent_settings,
             ui_customization,
             ..
         } => {
             apply_agent_settings(agent_settings, app);
-            let is_ai_enabled = !agent_settings.disable_oz;
             if let Some(ui) = ui_customization {
                 apply_ui_customization_settings(ui, true, app);
             }
-            is_ai_enabled
         }
         SelectedSettings::Terminal {
             ui_customization,
@@ -33,9 +36,7 @@ pub fn apply_onboarding_settings(selected_settings: &SelectedSettings, app: &mut
             show_agent_notifications,
         } => {
             // In old onboarding, there's nothing to set for terminal intent.
-            if !FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
-                true
-            } else {
+            if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
                 if let Some(ui) = ui_customization {
                     apply_ui_customization_settings(ui, false, app);
                 }
@@ -47,15 +48,8 @@ pub fn apply_onboarding_settings(selected_settings: &SelectedSettings, app: &mut
                         .show_agent_notifications
                         .set_value(*show_agent_notifications, ctx));
                 });
-                false
             }
         }
-    };
-
-    if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
-        AISettings::handle(app).update(app, |settings, ctx| {
-            report_if_error!(settings.is_any_ai_enabled.set_value(is_ai_enabled, ctx));
-        });
     }
 }
 
