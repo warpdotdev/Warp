@@ -1610,7 +1610,12 @@ impl GridHandler {
     /// The number of lines that have been truncated due to exceeding the
     /// grid's maximum scrollback limit.
     pub fn num_lines_truncated(&self) -> u64 {
-        self.flat_storage.num_truncated_rows() + self.grid.num_lines_truncated
+        self.flat_storage.num_truncated_rows()
+            + if self.ansi_handler_state.is_alt_screen {
+                self.grid.num_lines_truncated
+            } else {
+                0
+            }
     }
 
     /// Finishes the grid.
