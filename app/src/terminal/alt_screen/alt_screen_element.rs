@@ -284,7 +284,8 @@ impl AltScreenElement {
             }));
         } else {
             ctx.dispatch_typed_action(TerminalAction::MaybeClearAltSelect);
-            ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(point)));
+            let visible_point = Point::new(point.row.saturating_sub(self.grid_history_offset()), point.col);
+            ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(visible_point)));
         }
         true
     }
@@ -307,7 +308,8 @@ impl AltScreenElement {
                 position: local_position,
             });
         } else {
-            ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(point)));
+            let visible_point = Point::new(point.row.saturating_sub(self.grid_history_offset()), point.col);
+            ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(visible_point)));
         }
         true
     }
@@ -359,7 +361,8 @@ impl AltScreenElement {
             // see Linear issue at https://linear.app/warpdotdev/issue/CORE-1039/combine-the-mousebutton-and-mouseaction-enums-to-avoid-impossible.
             let mouse_state =
                 MouseState::new(MouseButton::Move, MouseAction::Pressed, Default::default());
-            ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(point)));
+            let visible_point = Point::new(point.row.saturating_sub(self.grid_history_offset()), point.col);
+            ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(visible_point)));
         }
 
         // Allow the event to continue propagating.
@@ -401,7 +404,8 @@ impl AltScreenElement {
         }
 
         if !should_intercept_mouse(&self.model.lock(), mouse_state.modifiers().shift, app) {
-            ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(point)));
+            let visible_point = Point::new(point.row.saturating_sub(self.grid_history_offset()), point.col);
+            ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(visible_point)));
         }
 
         true
@@ -436,7 +440,8 @@ impl AltScreenElement {
             is_mouse_dragged = true;
         }
         if !should_intercept_mouse(&self.model.lock(), mouse_state.modifiers().shift, app) {
-            ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(point)));
+            let visible_point = Point::new(point.row.saturating_sub(self.grid_history_offset()), point.col);
+            ctx.dispatch_typed_action(TerminalAction::AltMouseAction(mouse_state.set_point(visible_point)));
         }
         is_mouse_dragged
     }
@@ -478,6 +483,7 @@ impl AltScreenElement {
             ctx.dispatch_typed_action(TerminalAction::AltScroll { delta });
         } else {
             let point = self.coord_to_point(local_position);
+            let visible_point = Point::new(point.row.saturating_sub(self.grid_history_offset()), point.col);
 
             ctx.dispatch_typed_action(TerminalAction::AltMouseAction(
                 MouseState::new(
@@ -485,7 +491,7 @@ impl AltScreenElement {
                     MouseAction::Scrolled { delta },
                     Default::default(),
                 )
-                .set_point(point),
+                .set_point(visible_point),
             ));
         }
         true
@@ -497,6 +503,11 @@ impl AltScreenElement {
             0.,
             self.scroll_top.as_f64() as f32 * self.line_height().as_f32(),
         )
+    }
+
+    /// Returns the grid's scrollback size (history rows above the visible viewport).
+    fn grid_history_offset(&self) -> usize {
+        self.model.lock().alt_screen().grid_handler().history_size()
     }
 
     /// Converts a pixel coordinate to a point in the `AltScreen` coordinate space.
