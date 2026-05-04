@@ -19,6 +19,8 @@ use crate::{
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
 };
 
+use ai::api_keys::{ApiKeyManager, ApiKeyManagerEvent};
+
 use super::execution_profiles::profiles::AIExecutionProfilesModel;
 
 pub use ai::LLMId;
@@ -26,8 +28,6 @@ pub use ai::LLMId;
 /// Checks if a user's' API key is being used for the given provider.
 /// Returns `true` if BYO API key is enabled and a key exists for the provider.
 pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -> bool {
-    use ai::api_keys::ApiKeyManager;
-
     let api_keys = UserWorkspaces::as_ref(app)
         .is_byo_api_key_enabled()
         .then(|| ApiKeyManager::as_ref(app).keys().clone());
@@ -583,6 +583,15 @@ impl LLMPreferences {
             }
         });
 
+        // Re-reconcile disabled model preferences when BYOK keys change, since
+        // RequiresUpgrade models may become usable or unusable.
+        ctx.subscribe_to_model(
+            &ApiKeyManager::handle(ctx),
+            |me, _event: &ApiKeyManagerEvent, ctx| {
+                me.reconcile_disabled_model_preferences(ctx);
+            },
+        );
+
         let base_llm_for_terminal_view = HashMap::new();
 
         let me = Self {
@@ -973,9 +982,34 @@ impl LLMPreferences {
             }
         }
 
-        // Clear any model selections where the model is no longer supported
-        // or effectively disabled, and clear orphaned context window limits
-        // for non-configurable or unusable models.
+        self.reconcile_disabled_model_preferences(ctx);
+
+        let new_choices =
+            get_new_agent_mode_choices(&old.agent_mode, &self.models_by_feature.agent_mode);
+        if !new_choices.is_empty() {
+            self.last_update = Some(AvailableLLMsUpdate {
+                new_choices,
+                // We shouldn't show the update for the initial LLM config creation.
+                popup_visibility_state: Arc::new(FairMutex::new(
+                    if has_existing_persisted_config {
+                        UpdatePopupVisibilityState::WaitingToBeShown
+                    } else {
+                        UpdatePopupVisibilityState::Hidden
+                    },
+                )),
+            });
+        }
+
+        ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+    }
+
+    /// Clear any model selections where the model is no longer supported
+    /// or effectively disabled, and clear orphaned context window limits
+    /// for non-configurable or unusable models.
+    ///
+    /// Called both when the model list is refreshed from the server and when
+    /// BYOK API keys change (since `RequiresUpgrade` usability is BYOK-aware).
+    fn reconcile_disabled_model_preferences(&self, ctx: &mut ModelContext<Self>) {
         let profiles_model = AIExecutionProfilesModel::handle(ctx);
         profiles_model.update(ctx, |profiles, ctx| {
             for profile_id in profiles.get_all_profile_ids() {
@@ -1033,24 +1067,6 @@ impl LLMPreferences {
                 }
             }
         });
-
-        let new_choices =
-            get_new_agent_mode_choices(&old.agent_mode, &self.models_by_feature.agent_mode);
-        if !new_choices.is_empty() {
-            self.last_update = Some(AvailableLLMsUpdate {
-                new_choices,
-                // We shouldn't show the update for the initial LLM config creation.
-                popup_visibility_state: Arc::new(FairMutex::new(
-                    if has_existing_persisted_config {
-                        UpdatePopupVisibilityState::WaitingToBeShown
-                    } else {
-                        UpdatePopupVisibilityState::Hidden
-                    },
-                )),
-            });
-        }
-
-        ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
     }
 
     pub fn vision_supported(&self, app: &AppContext, terminal_view_id: Option<EntityId>) -> bool {
