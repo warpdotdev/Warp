@@ -471,7 +471,10 @@ impl LocalRepoMetadataModel {
         }
 
         // Already fully indexed — don't overwrite it.
-        if matches!(self.repositories.get(path), Some(IndexedRepoState::Indexed(_))) {
+        if matches!(
+            self.repositories.get(path),
+            Some(IndexedRepoState::Indexed(_))
+        ) {
             return Ok(());
         }
 
