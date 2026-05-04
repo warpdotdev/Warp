@@ -119,6 +119,14 @@ pub enum WorkspaceAction {
     /// - `Cleared` — explicitly clear (suppresses any directory default).
     /// - `Unset` — remove the manual override (lets the directory default apply, if any).
     SetActiveTabColor(SelectedTabColor),
+    /// Sets the manual color override for the tab owning the pane group with
+    /// the given `EntityId`. Used by the OSC 1337 `SetTabColor` path so a
+    /// programmatic request from a non-active tab still recolors the source
+    /// tab (and only that tab).
+    SetTabColorForPaneGroup {
+        pane_group_id: EntityId,
+        color: SelectedTabColor,
+    },
     ToggleTabRightClickMenu {
         tab_index: usize,
         anchor: TabContextMenuAnchor,
@@ -719,6 +727,7 @@ impl WorkspaceAction {
             | RenameActiveTab
             | SetActiveTabName(_)
             | SetActiveTabColor(_)
+            | SetTabColorForPaneGroup { .. }
             | CloseTab(_)
             | CloseActiveTab
             | CloseOtherTabs(_)

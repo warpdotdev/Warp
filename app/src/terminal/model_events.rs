@@ -1,4 +1,5 @@
 use crate::server::telemetry::ImageProtocol;
+use crate::tab::SelectedTabColor;
 use crate::terminal::model::session::Sessions;
 
 use crate::terminal::event::{
@@ -299,6 +300,7 @@ impl ModelEventDispatcher {
             Event::PluggableNotification { title, body } => {
                 ModelEvent::PluggableNotification { title, body }
             }
+            Event::SetTabColor(color) => ModelEvent::SetTabColor(color),
             Event::ExitShell { session_id } => ModelEvent::ExitShell { session_id },
             _ => return,
         };
@@ -470,6 +472,9 @@ pub enum ModelEvent {
         title: Option<String>,
         body: String,
     },
+    /// Programmatic tab color change requested by `OSC 1337 ; SetTabColor=...`.
+    /// Targets the tab that owns the emitting PTY (which may not be active).
+    SetTabColor(SelectedTabColor),
     /// Emitted when an SSH session's `InitShell` is intercepted by the
     /// `SshRemoteServer` feature flag. `RemoteServerController` subscribes to
     /// this instead of `Handler(InitShell)` so `PtyController` never sees it.

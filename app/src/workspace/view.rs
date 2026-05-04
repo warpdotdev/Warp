@@ -12899,6 +12899,21 @@ impl Workspace {
                 self.update_window_title(ctx);
                 ctx.notify();
             }
+            pane_group::Event::SetTabColor(color) => {
+                // Invoke the action handler directly: `dispatch_typed_action`
+                // walks the responder chain by removing each view from the
+                // window's view map, but Workspace is already checked out
+                // (we're inside its update), so the dispatcher would silently
+                // skip it. Calling `handle_action` on `self` runs the same
+                // handler the workspace test exercises.
+                self.handle_action(
+                    &WorkspaceAction::SetTabColorForPaneGroup {
+                        pane_group_id: pane_group.id(),
+                        color: *color,
+                    },
+                    ctx,
+                );
+            }
             pane_group::Event::ShowCommandSearch(options) => {
                 self.show_command_search(options.filter, &options.init_content, ctx);
             }
@@ -19766,6 +19781,18 @@ impl TypedActionView for Workspace {
             RenameActiveTab => self.rename_tab(self.active_tab_index, ctx),
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
             SetActiveTabColor(color) => self.set_tab_color(self.active_tab_index, *color, ctx),
+            SetTabColorForPaneGroup {
+                pane_group_id,
+                color,
+            } => {
+                if let Some(index) = self
+                    .tabs
+                    .iter()
+                    .position(|t| t.pane_group.id() == *pane_group_id)
+                {
+                    self.set_tab_color(index, *color, ctx);
+                }
+            }
             ToggleTabRightClickMenu { tab_index, anchor } => {
                 self.toggle_tab_right_click_menu(*tab_index, *anchor, ctx)
             }
