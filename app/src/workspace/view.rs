@@ -405,7 +405,7 @@ use warpui::elements::{
     MouseInBehavior, Rect,
 };
 use warpui::ui_components::button::{Button, ButtonVariant};
-use warpui::windowing::{StateEvent, WindowManager};
+use warpui::windowing::{state::ApplicationStage, StateEvent, WindowManager};
 use warpui::{elements::MouseStateHandle, fonts::Properties};
 
 use crate::{autoupdate, channel::ChannelState};
@@ -4932,6 +4932,31 @@ impl Workspace {
                 });
             }
         }
+    }
+
+    fn focused_terminal_view_notification_context(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<(EntityId, Option<AmbientAgentTaskId>)> {
+        let terminal_view = self
+            .active_tab_pane_group()
+            .as_ref(ctx)
+            .focused_session_view(ctx)?;
+        let ambient_agent_task_id = terminal_view
+            .as_ref(ctx)
+            .ambient_agent_task_id_for_details_panel(ctx);
+
+        Some((terminal_view.id(), ambient_agent_task_id))
+    }
+
+    fn notify_focused_terminal_window_focused(&self, ctx: &mut ViewContext<Self>) {
+        let Some((terminal_view_id, ambient_agent_task_id)) =
+            self.focused_terminal_view_notification_context(ctx)
+        else {
+            return;
+        };
+
+        self.notify_terminal_focus_change(Some(terminal_view_id), ambient_agent_task_id, ctx);
     }
 
     /// Change the active tab index. This must be used instead of setting `self.active_tab_index`
@@ -15709,11 +15734,21 @@ impl Workspace {
     fn handle_window_state_change(&mut self, event: &StateEvent, ctx: &mut ViewContext<Self>) {
         match &event {
             StateEvent::ValueChanged { current, previous } => {
+                let did_window_change_focus =
+                    WindowManager::did_window_change_focus(self.window_id, current, previous);
+
+                if current.active_window == Some(self.window_id)
+                    && (did_window_change_focus
+                        || (previous.stage != ApplicationStage::Active
+                            && current.stage == ApplicationStage::Active))
+                {
+                    self.notify_focused_terminal_window_focused(ctx);
+                }
+
                 // Re-render if fullscreen state for active window has changed.
                 if current.is_active_window_fullscreen != previous.is_active_window_fullscreen {
                     ctx.notify();
-                } else if WindowManager::did_window_change_focus(self.window_id, current, previous)
-                {
+                } else if did_window_change_focus {
                     // Re-render if this window's focus state has changed.
                     ctx.notify();
                 } else if current.stage != previous.stage {
