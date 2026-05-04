@@ -526,6 +526,7 @@ pub(super) struct ImportedCommentElementState {
     pub(super) open_in_code_review_button: ViewHandle<ActionButton>,
     pub(super) chevron_button: ViewHandle<ActionButton>,
     pub(super) header_click_handler: HeaderClickHandler,
+    added_to_code_review: bool,
 }
 
 impl ImportedCommentElementState {
@@ -585,7 +586,51 @@ impl ImportedCommentElementState {
             open_in_code_review_button,
             chevron_button,
             header_click_handler,
+            added_to_code_review: false,
         }
+    }
+
+    fn mark_added_to_code_review(&mut self, ctx: &mut ViewContext<AIBlock>) {
+        self.added_to_code_review = true;
+        self.update_open_in_code_review_button(false, None, ctx);
+    }
+
+    fn open_in_code_review_button_state(
+        added_to_code_review: bool,
+        should_disable_for_repo: bool,
+        repo_path: Option<&Path>,
+    ) -> (&'static str, bool, Option<String>) {
+        if added_to_code_review {
+            return ("Added to code review", true, None);
+        }
+
+        let tooltip = should_disable_for_repo.then(|| {
+            repo_path.map(|path| format!("Navigate to {} to open these comments", path.display()))
+        });
+
+        (
+            "Open in code review",
+            should_disable_for_repo,
+            tooltip.flatten(),
+        )
+    }
+
+    fn update_open_in_code_review_button(
+        &self,
+        should_disable_for_repo: bool,
+        repo_path: Option<&Path>,
+        ctx: &mut ViewContext<AIBlock>,
+    ) {
+        let (label, disabled, tooltip) = Self::open_in_code_review_button_state(
+            self.added_to_code_review,
+            should_disable_for_repo,
+            repo_path,
+        );
+        self.open_in_code_review_button.update(ctx, |button, ctx| {
+            button.set_label(label, ctx);
+            button.set_disabled(disabled, ctx);
+            button.set_tooltip(tooltip, ctx);
+        });
     }
 }
 
@@ -617,12 +662,13 @@ impl ImportedCommentGroup {
 
     fn set_buttons_disabled(&self, should_disable: bool, ctx: &mut ViewContext<AIBlock>) {
         for state in &self.element_states {
-            set_imported_comment_button_disabled(
-                &state.open_in_code_review_button,
-                should_disable,
-                Some(&self.repo_path),
-                ctx,
-            );
+            state.update_open_in_code_review_button(should_disable, Some(&self.repo_path), ctx);
+        }
+    }
+
+    fn mark_comments_added_to_code_review(&mut self, ctx: &mut ViewContext<AIBlock>) {
+        for state in &mut self.element_states {
+            state.mark_added_to_code_review(ctx);
         }
     }
 }
@@ -5256,6 +5302,15 @@ impl AIBlock {
         })
     }
 
+    pub(crate) fn mark_imported_comments_added_to_code_review(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        for group in self.imported_comments.values_mut() {
+            group.mark_comments_added_to_code_review(ctx);
+        }
+    }
+
     /// Returns `true` if this block has any imported review comments.
     pub(crate) fn has_any_imported_comments(&self) -> bool {
         self.has_imported_comments
@@ -6287,12 +6342,15 @@ impl TypedActionView for AIBlock {
                 if let Some(group) = self.imported_comments.get_mut(action_id) {
                     let repo_path = group.repo_path.clone();
                     let base_branch = group.base_branch.clone();
-                    if let Some(card) = group.card_mut(*comment_index) {
+                    if let Some(card) = group.cards.get(*comment_index) {
                         ctx.emit(AIBlockEvent::OpenImportedCommentInCodeReview {
                             repo_path,
                             comment: Box::new(card.source().clone()),
                             base_branch,
                         });
+                        if let Some(state) = group.element_states.get_mut(*comment_index) {
+                            state.mark_added_to_code_review(ctx);
+                        }
                     }
                 }
             }
