@@ -352,26 +352,27 @@ pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
         // tracked in `lazy_loaded_paths` and this assertion would fail.
         .with_step(
             new_step_with_default_assertions("Assert model is fully indexed (not lazy-loaded)")
-                .add_assertion(|app, _window_id| {
+                .add_assertion(|app, window_id| {
                     use repo_metadata::RepoMetadataModel;
+                    use warp::integration_testing::view_getters::single_terminal_view_for_tab;
                     use warp_util::standardized_path::StandardizedPath;
                     use warpui::SingletonEntity as _;
 
+                    let terminal_view = single_terminal_view_for_tab(app, window_id, 0);
+                    let cwd = terminal_view
+                        .read(app, |terminal_view, _ctx| terminal_view.pwd())
+                        .expect("terminal should expose current working directory");
+
                     app.read(|ctx| {
-                        // The test_dir is the CWD set in setup.
-                        // We check that the path is NOT in lazy_loaded_paths,
-                        // which means full indexing ran and the lazy entry was
-                        // promoted / never registered as lazy.
-                        let cwd = std::env::current_dir()
-                            .expect("should have cwd");
-                        if let Ok(std_path) = StandardizedPath::try_from_local(&cwd) {
-                            let is_lazy = RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(&std_path, ctx);
+                        let model = RepoMetadataModel::as_ref(ctx);
+                        if let Ok(std_path) = StandardizedPath::try_from_local(std::path::Path::new(&cwd)) {
+                            let is_lazy = model.is_lazy_loaded_path(&std_path, ctx);
                             async_assert!(
                                 !is_lazy,
                                 "Expected full git indexing (not lazy-loaded), but path is still in lazy_loaded_paths"
                             )
                         } else {
-                            async_assert!(false, "Could not standardize CWD to check repo state")
+                            async_assert!(false, "Could not standardize terminal PWD to check repo state")
                         }
                     })
                 }),

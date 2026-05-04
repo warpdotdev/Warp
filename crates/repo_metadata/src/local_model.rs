@@ -559,6 +559,16 @@ impl LocalRepoMetadataModel {
             return;
         }
         self.lazy_loaded_paths.remove(path);
+
+        // If the repository is currently in Pending state (full indexing in progress),
+        // we only want to drop the shallow fallback and the refcount, but NOT remove
+        // the Pending guard from repositories. Removing it would stop the background
+        // indexing process.
+        if matches!(self.repositories.get(path), Some(IndexedRepoState::Pending)) {
+            self.pending_lazy_fallbacks.remove(path);
+            return;
+        }
+
         // remove_repository unregisters the watcher and emits RepositoryRemoved.
         let _ = self.remove_repository(path, ctx);
     }
