@@ -227,6 +227,86 @@ fn test_bindings_for_context() {
     assert_eq!(ctx_b_bindings, vec!["c", "b"]);
 }
 
+#[test]
+fn test_numpad_enter_matches_enter_bindings() {
+    #[derive(Debug, PartialEq)]
+    enum Action {
+        Enter,
+        ShiftEnter,
+        CtrlShiftEnter,
+        AltEnter,
+    }
+
+    let keymap = Keymap::new(vec![
+        FixedBinding::new("enter", Action::Enter, always!()),
+        FixedBinding::new("shift-enter", Action::ShiftEnter, always!()),
+        FixedBinding::new("ctrl-shift-enter", Action::CtrlShiftEnter, always!()),
+        FixedBinding::new("alt-enter", Action::AltEnter, always!()),
+    ]);
+    let mut matcher = Matcher::new(keymap);
+    let ctx = Context::default();
+
+    assert_eq!(
+        matcher
+            .test_keystroke("numpadenter", EntityId::new(), &ctx)
+            .unwrap()
+            .as_action::<Action>(),
+        &Action::Enter
+    );
+    assert_eq!(
+        matcher
+            .test_keystroke("shift-numpadenter", EntityId::new(), &ctx)
+            .unwrap()
+            .as_action::<Action>(),
+        &Action::ShiftEnter
+    );
+    assert_eq!(
+        matcher
+            .test_keystroke("ctrl-shift-numpadenter", EntityId::new(), &ctx)
+            .unwrap()
+            .as_action::<Action>(),
+        &Action::CtrlShiftEnter
+    );
+    assert_eq!(
+        matcher
+            .test_keystroke("alt-numpadenter", EntityId::new(), &ctx)
+            .unwrap()
+            .as_action::<Action>(),
+        &Action::AltEnter
+    );
+}
+
+#[test]
+fn test_exact_numpad_enter_binding_takes_precedence() {
+    #[derive(Debug, PartialEq)]
+    enum Action {
+        Enter,
+        NumpadEnter,
+    }
+
+    let keymap = Keymap::new(vec![
+        FixedBinding::new("enter", Action::Enter, always!()),
+        FixedBinding::new("numpadenter", Action::NumpadEnter, always!()),
+    ]);
+    let mut matcher = Matcher::new(keymap);
+    let ctx = Context::default();
+
+    assert_eq!(
+        matcher
+            .test_keystroke("enter", EntityId::new(), &ctx)
+            .unwrap()
+            .as_action::<Action>(),
+        &Action::Enter
+    );
+    assert_eq!(
+        matcher
+            .test_keystroke("numpadenter", EntityId::new(), &ctx)
+            .unwrap()
+            .as_action::<Action>(),
+        &Action::NumpadEnter
+    );
+}
+
 impl Matcher {
     fn test_keystroke(
         &mut self,
