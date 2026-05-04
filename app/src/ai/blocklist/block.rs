@@ -2321,7 +2321,7 @@ impl AIBlock {
         // Now that streaming is complete and all RunAgents requests are
         // fully populated, re-evaluate auto-launch for any card that
         // was created during streaming with an empty agent_run_configs.
-        for (_action_id, view) in &self.run_agents_card_views {
+        for view in self.run_agents_card_views.values() {
             view.update(ctx, |card, ctx| {
                 card.try_auto_launch_on_stream_complete(ctx);
             });

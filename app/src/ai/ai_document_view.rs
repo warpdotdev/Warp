@@ -438,13 +438,11 @@ impl AIDocumentView {
                 .conversation(&cid)
                 .and_then(|conv| conv.orchestration_config().map(|_| cid))
         });
-        let orchestration_config_block = if let Some(conv_id) = has_orchestration_config {
-            Some(ctx.add_typed_action_view(move |ctx| {
+        let orchestration_config_block = has_orchestration_config.map(|conv_id| {
+            ctx.add_typed_action_view(move |ctx| {
                 OrchestrationConfigBlockView::new_with_conversation_id(conv_id, ctx)
-            }))
-        } else {
-            None
-        };
+            })
+        });
 
         let mut me = Self {
             document_id,
