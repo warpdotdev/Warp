@@ -163,14 +163,18 @@ impl BlocklistAIController {
                     h.start_new_conversation(terminal_view_id, false, true, ctx)
                 })
             });
-        self.shared_session_state.current_response_id = Some(stream_id.clone());
-        if self
-            .should_skip_replayed_response_for_existing_conversation(existing_conversation_id, ctx)
-        {
+        if self.should_skip_replayed_response_for_existing_conversation(
+            existing_conversation_id,
+            &init_event.request_id,
+            ctx,
+        ) {
+            self.shared_session_state.current_response_id = Some(stream_id);
             self.shared_session_state
                 .should_skip_current_replayed_response = true;
             return;
         }
+
+        self.shared_session_state.current_response_id = Some(stream_id.clone());
 
         let Some(conversation) = history.as_ref(ctx).conversation(&conversation_id) else {
             log::error!(
@@ -233,6 +237,7 @@ impl BlocklistAIController {
     fn should_skip_replayed_response_for_existing_conversation(
         &self,
         existing_conversation_id: Option<AIConversationId>,
+        init_request_id: &str,
         ctx: &mut ModelContext<Self>,
     ) -> bool {
         let Some(conversation_id) = existing_conversation_id else {
@@ -248,9 +253,28 @@ impl BlocklistAIController {
         }
         drop(model);
 
-        BlocklistAIHistoryModel::as_ref(ctx)
+        // Only skip the replayed response when we already have a local exchange whose
+        // `server_output_id` matches `request_id`. New exchanges (e.g. the user's first
+        // post-handoff prompt) carry unseen request_ids and must flow through normally.
+        let history = BlocklistAIHistoryModel::as_ref(ctx);
+        let known_server_output_ids: Vec<String> = history
             .conversation(&conversation_id)
-            .is_some_and(|conversation| conversation.exchange_count() > 0)
+            .map(|conversation| {
+                conversation
+                    .all_exchanges()
+                    .into_iter()
+                    .filter_map(|exchange| {
+                        exchange
+                            .output_status
+                            .server_output_id()
+                            .map(|sid| sid.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        known_server_output_ids
+            .iter()
+            .any(|sid| sid == init_request_id)
     }
 
     fn on_shared_client_actions(

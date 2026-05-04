@@ -2163,18 +2163,8 @@ impl Input {
                         });
                     }
                 });
-                // REMOTE-1486: prep+upload failures arrive here so we can
-                // repopulate the editor with the user's original prompt (the
-                // submit path cleared it before the orchestrator started) and
-                // surface the error as a toast. Without this branch the user is
-                // left staring at a blank composing pane after a silent log
-                // line.
-                if let AmbientAgentViewModelEvent::HandoffSubmissionFailed {
-                    prompt,
-                    error_message,
-                } = event
-                {
-                    me.replace_buffer_content(prompt, ctx);
+                // Surface async snapshot prep+upload failures as a toast.
+                if let AmbientAgentViewModelEvent::HandoffPrepFailed { error_message } = event {
                     let window_id = ctx.window_id();
                     let toast_message = format!("Failed to prepare cloud handoff: {error_message}");
                     ToastStack::handle(ctx).update(ctx, |ts, ctx| {
@@ -2185,13 +2175,8 @@ impl Input {
                         );
                     });
                 }
-                // Re-render on status-footer transitions (V1 cloud-mode setup) and on the
-                // status-affecting events that decide whether the input is in its composing
-                // shape. The composing-shape transitions matter for the V1 handoff path:
-                // its submit goes through `submit_handoff` which only flips the model to
-                // `WaitingForSession` after the async prep+upload completes, so the input
-                // would otherwise keep rendering the composing chrome (harness selector,
-                // attachment chips) until something else triggers a notify.
+                // Re-render on status-footer transitions and on status-affecting events that
+                // decide whether the input is in its composing shape.
                 let should_notify = handle.as_ref(ctx).should_show_status_footer()
                     || matches!(
                         event,
@@ -2203,7 +2188,7 @@ impl Input {
                             | AmbientAgentViewModelEvent::Cancelled
                             | AmbientAgentViewModelEvent::NeedsGithubAuth
                             | AmbientAgentViewModelEvent::HarnessSelected
-                            | AmbientAgentViewModelEvent::HandoffSubmissionFailed { .. }
+                            | AmbientAgentViewModelEvent::HandoffPrepFailed { .. }
                     );
                 if should_notify {
                     ctx.notify();

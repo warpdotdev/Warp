@@ -155,26 +155,20 @@ fn add_slash_command_highlight(
     }
 }
 
-/// In shared ambient sessions, cloud prompts are already shown by the cloud-mode
-/// query blocks during live startup/streaming.
-///
-/// To avoid duplicate UI, we suppress the AI block header/query only while the viewer is live
-/// (not replaying historical conversation events).
-///
-/// The prompts are rendered in the ambient-agent query block UI, so this helper only gates
-/// duplicate rendering in the AI block path when that optimistic block was actually inserted.
+/// Hide the AI block's header/query when its query is already shown by an optimistic
+/// cloud-mode query block (live startup, not replay). The per-query match matters for
+/// local-to-cloud handoff: the cloud pane inherits prior local exchanges, but only the new
+/// dispatched prompt has an optimistic counterpart — the inherited blocks have none, so
+/// the match leaves them visible while still suppressing the duplicate for the new prompt.
 fn should_hide_ai_block_query_and_header(
-    has_inserted_cloud_mode_user_query_block: bool,
     has_optimistic_user_query: bool,
     is_shared_ambient_agent_session: bool,
-    is_first_exchange: bool,
     is_receiving_agent_conversation_replay: bool,
 ) -> bool {
     FeatureFlag::CloudModeSetupV2.is_enabled()
         && is_shared_ambient_agent_session
         && !is_receiving_agent_conversation_replay
-        && ((has_inserted_cloud_mode_user_query_block && is_first_exchange)
-            || has_optimistic_user_query)
+        && has_optimistic_user_query
 }
 
 /// Adds the appropriate highlighting for secrets and links to the given text element.
@@ -854,10 +848,6 @@ impl View for AIBlock {
                 terminal_model.is_receiving_agent_conversation_replay(),
             )
         };
-        let is_first_exchange = conversation
-            .first_exchange()
-            .is_some_and(|exchange| exchange.id == self.client_ids.client_exchange_id);
-
         let input_props = input::Props {
             comments: &self.comment_states,
             addressed_comment_ids: &addressed_comment_ids,
@@ -888,22 +878,15 @@ impl View for AIBlock {
             query_and_index
                 .as_ref()
                 .is_some_and(|(query_for_display, ..)| {
-                    let (has_inserted_cloud_mode_user_query_block, has_optimistic_user_query) =
-                        self.ambient_agent_view_model
-                            .as_ref()
-                            .map(|model| {
-                                let model = model.as_ref(app);
-                                (
-                                    model.has_inserted_cloud_mode_user_query_block(),
-                                    model.has_optimistic_user_query(query_for_display),
-                                )
-                            })
-                            .unwrap_or((false, false));
+                    let has_optimistic_user_query =
+                        self.ambient_agent_view_model.as_ref().is_some_and(|model| {
+                            model
+                                .as_ref(app)
+                                .has_optimistic_user_query(query_for_display)
+                        });
                     should_hide_ai_block_query_and_header(
-                        has_inserted_cloud_mode_user_query_block,
                         has_optimistic_user_query,
                         is_shared_ambient_agent_session,
-                        is_first_exchange,
                         is_receiving_agent_conversation_replay,
                     )
                 });
@@ -1052,6 +1035,14 @@ impl View for AIBlock {
         let is_conversation_transcript_viewer = terminal_model.is_conversation_transcript_viewer();
         drop(terminal_model);
 
+        let is_cloud_agent_pre_first_exchange =
+            crate::terminal::view::ambient_agent::is_cloud_agent_pre_first_exchange(
+                self.ambient_agent_view_model.as_ref(),
+                &self.agent_view_controller,
+                &self.terminal_model,
+                app,
+            );
+
         contents.add_child(output::render(
             output::Props {
                 model: self.model.as_ref(),
@@ -1119,6 +1110,7 @@ impl View for AIBlock {
                     .is_latest_non_passive_exchange_in_root_task(app)
                     && self.has_imported_comments_in_current_thread(app),
                 ask_user_question_view: self.ask_user_question_view.as_ref(),
+                is_cloud_agent_pre_first_exchange,
             },
             app,
         ));

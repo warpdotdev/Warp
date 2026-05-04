@@ -7,8 +7,8 @@ use super::super::ServerApi;
 use super::{
     build_list_agent_runs_url, build_run_followup_url, AgentMessageHeader, AgentRunEvent,
     AgentSource, AmbientAgentTaskState, Artifact, ArtifactDownloadResponse, ArtifactType,
-    ExecutionLocation, ListRunsResponse, ReadAgentMessageResponse, RunFollowupRequest, RunSortBy,
-    RunSortOrder, TaskListFilter,
+    ExecutionLocation, ListRunsResponse, PrepareHandoffForkRequest, PrepareHandoffForkResponse,
+    ReadAgentMessageResponse, RunFollowupRequest, RunSortBy, RunSortOrder, TaskListFilter,
 };
 use crate::notebooks::NotebookId;
 
@@ -1020,5 +1020,33 @@ fn serialize_run_followup_request() {
         serde_json::json!({
             "message": "continue from here",
         })
+    );
+}
+
+#[test]
+fn serialize_prepare_handoff_fork_request() {
+    let request = PrepareHandoffForkRequest {
+        source_conversation_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+    };
+
+    let json = serde_json::to_value(request).unwrap();
+
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "source_conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+        })
+    );
+}
+
+#[test]
+fn deserialize_prepare_handoff_fork_response() {
+    let response: PrepareHandoffForkResponse = serde_json::from_value(serde_json::json!({
+        "forked_conversation_id": "abcdef01-2345-6789-abcd-ef0123456789",
+    }))
+    .unwrap();
+    assert_eq!(
+        response.forked_conversation_id,
+        "abcdef01-2345-6789-abcd-ef0123456789"
     );
 }
