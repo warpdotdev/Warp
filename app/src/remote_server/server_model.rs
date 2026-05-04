@@ -577,7 +577,7 @@ impl ServerModel {
 
         let Some(shell_type) = ShellType::from_name(&msg.shell_type) else {
             safe_error!(
-                safe: ("Received unknown shell_type in SessionBootstrapped"),
+                safe: ("Received unknown shell_type in SessionBootstrapped: shell_type={:?}", msg.shell_type),
                 full: ("Received unknown shell_type in SessionBootstrapped: shell_type={:?} session={session_id:?}", msg.shell_type)
             );
             return;
