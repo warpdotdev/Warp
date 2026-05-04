@@ -22928,8 +22928,15 @@ impl View for Workspace {
             .get_active_input_view_handle(app)
             .map(|input| app.view(&input).save_position_id());
 
+        let toast_stack_max_height = app
+            .element_position_by_id_at_last_frame(self.window_id, TAB_CONTENT_POSITION_ID)
+            .map(|rect| (rect.height() - 32.).max(0.))
+            .unwrap_or(f32::MAX);
+
         stack.add_positioned_overlay_child(
-            ChildView::new(&self.toast_stack).finish(),
+            ConstrainedBox::new(Clipped::new(ChildView::new(&self.toast_stack).finish()).finish())
+                .with_max_height(toast_stack_max_height)
+                .finish(),
             self.global_toast_positioning(),
         );
 
