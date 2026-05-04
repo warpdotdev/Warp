@@ -395,9 +395,9 @@ impl RepoMetadataModel {
     pub fn force_pending_state(
         &self,
         repo_path: StandardizedPath,
-        ctx: &mut ModelContext<Self>,
+        ctx: &mut warpui::AppContext,
     ) {
-        self.local.update(ctx, |local, _ctx| {
+        ctx.update_model(&self.local, |local, _ctx| {
             local.force_pending_state(repo_path);
         });
     }

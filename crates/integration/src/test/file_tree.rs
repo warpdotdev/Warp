@@ -364,7 +364,7 @@ pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
         .with_step(
             new_step_with_default_assertions("Assert fallback tree is visible while Pending")
                 .add_assertion(|app, window_id| {
-                    use repo_metadata::{RepoMetadataModel, IndexedRepoState};
+                    use repo_metadata::RepoMetadataModel;
                     use warp::integration_testing::view_getters::single_terminal_view_for_tab;
                     use warp_util::standardized_path::StandardizedPath;
                     use warpui::SingletonEntity as _;
@@ -380,7 +380,7 @@ pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
                         let state = model.repository_state(&repo_metadata::RepositoryIdentifier::Local(std_path.clone()), ctx);
                         
                         async_assert!(
-                            matches!(state, Some(IndexedRepoState::Pending)),
+                            matches!(state, Some(repo_metadata::IndexedRepoState::Pending)),
                             "Expected repository to be in Pending state for this test"
                         );
 
