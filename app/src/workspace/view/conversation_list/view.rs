@@ -918,7 +918,7 @@ impl TypedActionView for ConversationListView {
                             if let Some(ConversationOrTask::Task(task)) =
                                 AgentConversationsModel::as_ref(ctx).get_task(&task_id)
                             {
-                                task.conversation_id.is_some()
+                                task.conversation_id().is_some()
                             } else {
                                 false
                             }
@@ -996,8 +996,9 @@ impl TypedActionView for ConversationListView {
                         if let Some(ConversationOrTask::Task(task)) =
                             AgentConversationsModel::as_ref(ctx).get_task(task_id)
                         {
-                            task.conversation_id.as_ref().and_then(|token_str| {
-                                let server_token = ServerConversationToken::new(token_str.clone());
+                            task.conversation_id().and_then(|token_str| {
+                                let server_token =
+                                    ServerConversationToken::new(token_str.to_string());
                                 BlocklistAIHistoryModel::as_ref(ctx)
                                     .find_conversation_id_by_server_token(&server_token)
                             })

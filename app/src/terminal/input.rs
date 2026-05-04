@@ -6364,7 +6364,9 @@ impl Input {
                 editor.set_buffer_text(original_buffer, ctx);
                 editor.set_interaction_state(role.into(), ctx);
 
-                // Set the text colors back to normal.
+                // Shared-session pending-command and cloud-followup flows can swap the editor into
+                // a frozen/pending color treatment, so restore the normal palette alongside the
+                // buffer + interaction state reset.
                 let appearance: &Appearance = Appearance::as_ref(ctx);
                 editor.set_text_colors(TextColors::from_appearance(appearance), ctx);
             });
@@ -6394,6 +6396,16 @@ impl Input {
                 editor.set_text_colors(TextColors::from_appearance(appearance), ctx);
             });
         }
+    }
+
+    pub fn reset_after_cloud_followup_submission(&mut self, ctx: &mut ViewContext<Self>) {
+        self.editor.update(ctx, |editor, ctx| {
+            editor.set_interaction_state(InteractionState::Editable, ctx);
+            editor.clear_buffer_and_reset_undo_stack(ctx);
+
+            let appearance: &Appearance = Appearance::as_ref(ctx);
+            editor.set_text_colors(TextColors::from_appearance(appearance), ctx);
+        });
     }
 
     /// Cancel any active agent conversation in a shared session

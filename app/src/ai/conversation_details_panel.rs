@@ -561,6 +561,14 @@ impl ConversationDetailsPanel {
         ctx.notify();
     }
 
+    #[cfg(test)]
+    pub(crate) fn task_display_status_for_test(&self) -> Option<AgentRunDisplayStatus> {
+        match &self.data.mode {
+            PanelMode::Task { display_status, .. } => display_status.clone(),
+            PanelMode::Conversation { .. } => None,
+        }
+    }
+
     #[cfg(not(target_family = "wasm"))]
     fn continue_locally_conversation_id(&self, app: &AppContext) -> Option<AIConversationId> {
         if !AISettings::as_ref(app).is_any_ai_enabled(app) {

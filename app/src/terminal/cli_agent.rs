@@ -112,7 +112,15 @@ const GOOSE_COLOR: ColorU = ColorU {
     a: 255,
 };
 
-/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose)
+/// Mistral brand orange (#FA520F)
+const MISTRAL_ORANGE: ColorU = ColorU {
+    r: 250,
+    g: 82,
+    b: 15,
+    a: 255,
+};
+
+/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose, Mistral Vibe)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
     Claude,
@@ -126,6 +134,7 @@ pub enum CLIAgent {
     Auggie,
     CursorCli,
     Goose,
+    Vibe,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -145,6 +154,7 @@ impl CLIAgent {
             CLIAgent::Auggie => "auggie",
             CLIAgent::CursorCli => "agent",
             CLIAgent::Goose => "goose",
+            CLIAgent::Vibe => "vibe",
             CLIAgent::Unknown => "",
         }
     }
@@ -190,6 +200,7 @@ impl CLIAgent {
             CLIAgent::Auggie => "Auggie",
             CLIAgent::CursorCli => "Cursor",
             CLIAgent::Goose => "Goose",
+            CLIAgent::Vibe => "Mistral Vibe",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -208,6 +219,10 @@ impl CLIAgent {
             CLIAgent::Auggie => Some(Icon::AuggieLogo),
             CLIAgent::CursorCli => Some(Icon::CursorLogo),
             CLIAgent::Goose => Some(Icon::GooseLogo),
+            // Vibe is recognized but ships without a brand asset. The brand color
+            // still drives the toolbar tile; an `Icon::MistralLogo` can be wired
+            // up in a follow-up once an officially licensed SVG is available.
+            CLIAgent::Vibe => None,
             CLIAgent::Unknown => None,
         }
     }
@@ -236,6 +251,7 @@ impl CLIAgent {
             CLIAgent::Auggie => &[SkillProvider::Agents],
             CLIAgent::CursorCli => &[SkillProvider::Agents],
             CLIAgent::Goose => &[SkillProvider::Agents],
+            CLIAgent::Vibe => &[SkillProvider::Agents],
             CLIAgent::Unknown => &[],
         }
     }
@@ -276,6 +292,7 @@ impl CLIAgent {
             CLIAgent::Auggie => Some(AUGGIE_COLOR),
             CLIAgent::CursorCli => Some(CURSOR_COLOR),
             CLIAgent::Goose => Some(GOOSE_COLOR),
+            CLIAgent::Vibe => Some(MISTRAL_ORANGE),
             CLIAgent::Unknown => None,
         }
     }
@@ -337,13 +354,15 @@ impl CLIAgent {
         let resolved_first_word = Self::extract_first_command(&resolved_command, escape_char)?;
 
         // Check if resolved command matches any known CLI agent.
-        // Also matches `aifx agent run claude` as Claude for Uber employees.
+        // Also matches `aifx agent run claude` as Claude for Uber employees,
+        // and the `vibe-acp` ACP-mode binary as Mistral Vibe.
         enum_iterator::all::<CLIAgent>()
             .filter(|agent| !matches!(agent, CLIAgent::Unknown))
             .find(|agent| {
                 resolved_first_word == agent.command_prefix()
                     || (matches!(agent, CLIAgent::Claude)
                         && Self::is_aifx_agent_run_claude(&resolved_command, ctx))
+                    || (matches!(agent, CLIAgent::Vibe) && resolved_first_word == "vibe-acp")
             })
     }
 
@@ -537,6 +556,7 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Auggie => CLIAgentType::Auggie,
             CLIAgent::CursorCli => CLIAgentType::Cursor,
             CLIAgent::Goose => CLIAgentType::Goose,
+            CLIAgent::Vibe => CLIAgentType::Vibe,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }
     }
