@@ -352,7 +352,7 @@ pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
                     let std_path = StandardizedPath::try_from_local(std::path::Path::new(&cwd)).unwrap();
 
                     app.update(|ctx| {
-                        RepoMetadataModel::as_ref(ctx).force_pending_state(std_path, ctx);
+                        RepoMetadataModel::force_pending_state(ctx, std_path);
                     });
                 })
         )

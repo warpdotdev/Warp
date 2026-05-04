@@ -393,11 +393,16 @@ impl RepoMetadataModel {
 
     /// Forces a local repository into Pending state for testing purposes.
     pub fn force_pending_state(
-        &self,
-        repo_path: StandardizedPath,
         ctx: &mut warpui::AppContext,
+        repo_path: StandardizedPath,
     ) {
-        ctx.update_model(&self.local, |local, _ctx| {
+        use warpui::SingletonEntity as _;
+        let handle = ctx
+            .singleton_handle::<Self>()
+            .expect("RepoMetadataModel should be registered");
+        let local_handle = handle.read(ctx).local.clone();
+
+        ctx.update_model(&local_handle, |local, _ctx| {
             local.force_pending_state(repo_path);
         });
     }

@@ -49,13 +49,13 @@ warpui_extras = { workspace = true, features = [
     "user_preferences-file",
 ] }
 whoami = "1.5.2"
+repo_metadata = { path = "../repo_metadata", features = ["test-util"] }
+warp_util = { path = "../warp_util" }
 
 [dev-dependencies]
 command = { workspace = true, features = ["test-util"] }
 warpui = { workspace = true, features = ["integration_tests"] }
 warp_core = { workspace = true, features = ["test-util"] }
-repo_metadata = { path = "../repo_metadata", features = ["test-util"] }
-warp_util = { path = "../warp_util" }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 app-installation-detection.workspace = true
