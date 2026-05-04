@@ -1485,9 +1485,23 @@ impl Session {
                     );
                     return vec![];
                 };
+                // `git branch --no-color` prefixes lines with `* ` (current branch)
+                // or `+ ` (branch checked out in another linked worktree). Strip
+                // those exact prefixes so callers (e.g. command corrections) get
+                // clean branch names. `+` and `*` can be valid characters inside
+                // ref names, so we only strip when followed by the space that git
+                // always emits — never the bare character.
                 let res = output_string
                     .lines()
-                    .map(|s| s.trim().to_string())
+                    .map(|s| {
+                        let s = s.trim_start();
+                        s.strip_prefix("* ")
+                            .or_else(|| s.strip_prefix("+ "))
+                            .unwrap_or(s)
+                            .trim()
+                            .to_string()
+                    })
+                    .filter(|s| !s.is_empty())
                     .collect();
                 res
             }

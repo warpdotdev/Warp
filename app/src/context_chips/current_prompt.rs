@@ -354,7 +354,7 @@ impl CurrentPrompt {
     fn update_on_click_value(&mut self, chip_kind: &ContextChipKind, value: Option<Vec<String>>) {
         log::debug!("Updating prompt on_click value of {chip_kind:?} to {value:?}");
         let filter_values = match chip_kind {
-            ContextChipKind::ShellGitBranch => self.filter_git_branch_on_click_values(value),
+            ContextChipKind::ShellGitBranch => Self::filter_git_branch_on_click_values(value),
             _ => value,
         };
         if let Some(state) = self.states.get_mut(chip_kind) {
@@ -615,10 +615,7 @@ impl CurrentPrompt {
         }
     }
 
-    fn filter_git_branch_on_click_values(
-        &self,
-        values_opt: Option<Vec<String>>,
-    ) -> Option<Vec<String>> {
+    fn filter_git_branch_on_click_values(values_opt: Option<Vec<String>>) -> Option<Vec<String>> {
         values_opt.map(|values| {
             let mut trimmed: Vec<String> = values
                 .into_iter()
@@ -627,7 +624,11 @@ impl CurrentPrompt {
                 .collect();
 
             // We want to sort the branches so the current branch is first (denoted by *).
-            // The rest of the branches maintain their relative order.
+            // The rest of the branches maintain their relative order. The `+` marker
+            // (branch checked out in another linked worktree) is preserved in the
+            // displayed value so users can see at a glance which branches are
+            // unavailable for direct checkout; it is stripped at command-construction
+            // time in `format_git_branch_command`.
             trimmed.sort_by(|a, b| {
                 let a_starts_with_star = a.starts_with('*');
                 let b_starts_with_star = b.starts_with('*');
