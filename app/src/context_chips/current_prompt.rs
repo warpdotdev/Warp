@@ -619,26 +619,7 @@ impl CurrentPrompt {
         &self,
         values_opt: Option<Vec<String>>,
     ) -> Option<Vec<String>> {
-        values_opt.map(|values| {
-            let mut trimmed: Vec<String> = values
-                .into_iter()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-
-            // We want to sort the branches so the current branch is first (denoted by *).
-            // The rest of the branches maintain their relative order.
-            trimmed.sort_by(|a, b| {
-                let a_starts_with_star = a.starts_with('*');
-                let b_starts_with_star = b.starts_with('*');
-                b_starts_with_star.cmp(&a_starts_with_star)
-            });
-
-            trimmed
-                .into_iter()
-                .map(|s| s.trim_start_matches('*').trim().to_string())
-                .collect()
-        })
+        values_opt.map(filter_git_branch_values)
     }
 
     /// Perform a single update of the given chip.
@@ -1618,4 +1599,156 @@ impl CurrentPrompt {
 
 impl Entity for CurrentPrompt {
     type Event = ();
+}
+
+/// Cleans the raw `git branch` output that backs the `ShellGitBranch` chip's on-click menu.
+///
+/// `git branch` prefixes the current branch with `* ` and any branch checked out in another
+/// linked worktree with `+ `. Either marker would otherwise be passed through to
+/// `git checkout <name>` and break the command, so we strip both. The marker is always
+/// followed by a space, so we only strip `* ` / `+ ` rather than every leading `*` or `+`
+/// — branch names like `+foo` are valid in git and must be preserved.
+///
+/// The current branch is promoted to the top of the list while the rest preserve their
+/// relative order (`git branch --sort=-committerdate` already orders by recency).
+fn filter_git_branch_values(values: Vec<String>) -> Vec<String> {
+    let mut trimmed: Vec<String> = values
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    trimmed.sort_by(|a, b| {
+        let a_is_current = a.starts_with("* ");
+        let b_is_current = b.starts_with("* ");
+        b_is_current.cmp(&a_is_current)
+    });
+
+    trimmed
+        .into_iter()
+        .map(|s| {
+            s.strip_prefix("* ")
+                .or_else(|| s.strip_prefix("+ "))
+                .unwrap_or(&s)
+                .trim()
+                .to_string()
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod filter_git_branch_values_tests {
+    use super::filter_git_branch_values;
+
+    #[test]
+    fn strips_current_branch_marker_and_promotes_to_front() {
+        let input = vec!["  feature".to_string(), "* main".to_string()];
+        assert_eq!(
+            filter_git_branch_values(input),
+            vec!["main".to_string(), "feature".to_string()]
+        );
+    }
+
+    #[test]
+    fn strips_linked_worktree_marker() {
+        // `+` marks branches checked out in another linked worktree.
+        // Regression test for the bug where `git checkout + <branch>` was emitted.
+        let input = vec![
+            "* main".to_string(),
+            "+ feature-in-other-worktree".to_string(),
+            "  feature-local".to_string(),
+        ];
+        assert_eq!(
+            filter_git_branch_values(input),
+            vec![
+                "main".to_string(),
+                "feature-in-other-worktree".to_string(),
+                "feature-local".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_recency_order_for_non_current_branches() {
+        let input = vec![
+            "  recent".to_string(),
+            "  middle".to_string(),
+            "* main".to_string(),
+            "  oldest".to_string(),
+        ];
+        assert_eq!(
+            filter_git_branch_values(input),
+            vec![
+                "main".to_string(),
+                "recent".to_string(),
+                "middle".to_string(),
+                "oldest".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn skips_empty_lines() {
+        let input = vec![
+            "".to_string(),
+            "   ".to_string(),
+            "* main".to_string(),
+            "  feature".to_string(),
+        ];
+        assert_eq!(
+            filter_git_branch_values(input),
+            vec!["main".to_string(), "feature".to_string()]
+        );
+    }
+
+    #[test]
+    fn does_not_strip_internal_special_characters() {
+        // Markers are only leading; characters inside the branch name must be preserved.
+        let input = vec!["  feature/+nested".to_string(), "* main+with+plus".to_string()];
+        assert_eq!(
+            filter_git_branch_values(input),
+            vec![
+                "main+with+plus".to_string(),
+                "feature/+nested".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_leading_plus_in_branch_name() {
+        // Git allows branch names that start with `+` (e.g. `+foo`). The marker is always
+        // followed by a space, so a name like `+foo` appears in `git branch` output as
+        // `  +foo` — never `+foo` directly. We must not strip the leading `+` from the
+        // actual name.
+        let input = vec![
+            "* main".to_string(),
+            "  +foo".to_string(),
+            "+ feature-in-worktree".to_string(),
+        ];
+        assert_eq!(
+            filter_git_branch_values(input),
+            vec![
+                "main".to_string(),
+                "+foo".to_string(),
+                "feature-in-worktree".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn handles_only_linked_worktree_branches() {
+        let input = vec![
+            "+ branch-a".to_string(),
+            "+ branch-b".to_string(),
+        ];
+        assert_eq!(
+            filter_git_branch_values(input),
+            vec!["branch-a".to_string(), "branch-b".to_string()]
+        );
+    }
+
+    #[test]
+    fn returns_empty_for_empty_input() {
+        assert!(filter_git_branch_values(Vec::new()).is_empty());
+    }
 }
