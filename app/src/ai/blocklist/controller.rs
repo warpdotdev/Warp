@@ -736,7 +736,7 @@ impl BlocklistAIController {
         };
         inputs.push(ai_input);
 
-        // Stage 2: piggyback any pending orchestration config update.
+        // Piggyback any pending orchestration config update.
         if let Some(dirty_event) = AIDocumentModel::as_ref(ctx)
             .dirty_orchestration_event()
             .cloned()

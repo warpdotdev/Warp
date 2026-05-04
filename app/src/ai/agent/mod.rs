@@ -27,6 +27,7 @@ use crate::code_review::comments::{
 };
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::server::server_api::AIApiError;
+use ai::agent::orchestration_config::{OrchestrationConfig, OrchestrationConfigStatus};
 use ai::skills::ParsedSkill;
 use chrono::{DateTime, Local, TimeDelta};
 use comment::ReviewComment;
@@ -2506,8 +2507,8 @@ pub enum AIAgentInput {
     /// config block or toggles approval.
     OrchestrationConfigUpdate {
         plan_id: String,
-        config: ai::agent::orchestration_config::OrchestrationConfig,
-        status: ai::agent::orchestration_config::OrchestrationConfigStatus,
+        config: OrchestrationConfig,
+        status: OrchestrationConfigStatus,
     },
 }
 

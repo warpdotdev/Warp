@@ -1199,25 +1199,14 @@ impl AIDocumentModel {
         event: &BlocklistAIHistoryEvent,
         ctx: &mut ModelContext<Self>,
     ) {
-        match event {
-            // Reactive path: config was already applied to the conversation
-            // by apply_client_action(); just forward the UI event.
-            BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
-                conversation_id,
-            } => {
-                ctx.emit(AIDocumentModelEvent::OrchestrationConfigUpdated {
-                    conversation_id: *conversation_id,
-                });
+        // On restore, scan all restored conversations for the last snapshot.
+        if let BlocklistAIHistoryEvent::RestoredConversations {
+            conversation_ids, ..
+        } = event
+        {
+            for cid in conversation_ids {
+                self.scan_conversation_for_orchestration_config(*cid, ctx);
             }
-            // On restore, scan all restored conversations for the last snapshot.
-            BlocklistAIHistoryEvent::RestoredConversations {
-                conversation_ids, ..
-            } => {
-                for cid in conversation_ids {
-                    self.scan_conversation_for_orchestration_config(*cid, ctx);
-                }
-            }
-            _ => {}
         }
     }
 
@@ -1282,12 +1271,12 @@ impl AIDocumentModel {
             config: config.clone(),
             status,
         });
-        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
+        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, hctx| {
             if let Some(conversation) = history.conversation_mut(&conversation_id) {
                 conversation.set_orchestration_config(Some(config), status, plan_id);
             }
+            hctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated { conversation_id });
         });
-        ctx.emit(AIDocumentModelEvent::OrchestrationConfigUpdated { conversation_id });
     }
 
     /// Hydrates the orchestration config from an in-history
@@ -1310,17 +1299,15 @@ impl AIDocumentModel {
             Some(snapshot.plan_id.clone())
         };
 
-        let changed = BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
+        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, hctx| {
             if let Some(conversation) = history.conversation_mut(&conversation_id) {
-                conversation.set_orchestration_config(config, status, plan_id)
-            } else {
-                false
+                if conversation.set_orchestration_config(config, status, plan_id) {
+                    hctx.emit(BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                        conversation_id,
+                    });
+                }
             }
         });
-
-        if changed {
-            ctx.emit(AIDocumentModelEvent::OrchestrationConfigUpdated { conversation_id });
-        }
     }
 
     /// Restore a document to a previous version, creating a new version in the process.
@@ -1399,11 +1386,6 @@ pub enum AIDocumentModelEvent {
     /// When streaming documents for a conversation are cleared
     StreamingDocumentsCleared(AIConversationId),
     DocumentVisibilityChanged(AIDocumentId),
-    /// Conversation-level orchestration config was created or updated
-    /// (from server snapshot hydration or user edit on the plan card).
-    OrchestrationConfigUpdated {
-        conversation_id: AIConversationId,
-    },
 }
 
 impl Entity for AIDocumentModel {

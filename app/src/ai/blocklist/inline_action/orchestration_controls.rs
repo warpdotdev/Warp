@@ -1,6 +1,6 @@
 //! Shared orchestration controls reused by the `RunAgentsCardView`
-//! confirmation card editor (Stage 1) and the plan-card
-//! `OrchestrationConfigBlockView` (Stage 2).
+//! confirmation card editor and the plan-card
+//! `OrchestrationConfigBlockView`.
 //!
 //! The generic parameter `A` is the parent view's typed action — both
 //! consumers impl [`OrchestrationControlAction`] to provide the mapping
