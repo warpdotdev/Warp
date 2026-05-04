@@ -634,9 +634,16 @@ impl CurrentPrompt {
                 b_starts_with_star.cmp(&a_starts_with_star)
             });
 
+            // `git branch` prefixes lines with one of three markers: `*` for the
+            // branch checked out in the current worktree, `+` for a branch
+            // checked out in another linked worktree, and a leading space for
+            // every other branch. Strip both leading marker characters so the
+            // raw branch name is what gets passed to `git checkout`. Without
+            // this, selecting a `+`-marked branch produces a malformed
+            // `git checkout + <branch>` command.
             trimmed
                 .into_iter()
-                .map(|s| s.trim_start_matches('*').trim().to_string())
+                .map(|s| s.trim_start_matches(['*', '+']).trim().to_string())
                 .collect()
         })
     }
