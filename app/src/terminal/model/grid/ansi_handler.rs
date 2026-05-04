@@ -44,7 +44,7 @@ use crate::terminal::model::selection::ScrollDelta;
 use crate::terminal::model::ObfuscateSecrets;
 use crate::terminal::{ClipboardType, SizeInfo};
 
-use super::{AbsolutePoint, GridHandler, PerformResetGridChecks, TermMode};
+use super::{AbsolutePoint, FullGridClearBehavior, GridHandler, PerformResetGridChecks, TermMode};
 
 use tab_stops::TabStops;
 
@@ -848,7 +848,7 @@ impl ansi::Handler for GridHandler {
             ansi::ClearMode::All => {
                 if self.ansi_handler_state.is_alt_screen {
                     self.grid.region_mut(..).each(|cell| *cell = bg.into());
-                } else if self.clear_screen_in_place_for_frame_redraws {
+                } else if self.full_grid_clear_behavior == FullGridClearBehavior::Clear {
                     self.clear_visible_rows_in_place(bg);
                 } else {
                     self.clear_viewport();

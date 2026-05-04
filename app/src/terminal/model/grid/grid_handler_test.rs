@@ -1724,10 +1724,10 @@ fn test_clear_screen_all_primary_preserves_visible_rows_in_history_by_default() 
 }
 
 #[test]
-fn test_clear_screen_all_primary_with_frame_redraw_flag_clears_in_place() {
+fn test_clear_screen_all_primary_with_full_grid_clear_behavior_clears_in_place() {
     let mut grid = GridHandler::new_for_test_with_scroll_limit(3, 5, MAX_SCROLL_LIMIT);
     write_two_visible_rows(&mut grid);
-    grid.set_clear_screen_in_place_for_frame_redraws(true);
+    grid.enable_full_grid_clear_behavior();
 
     grid.clear_screen(ansi::ClearMode::All);
 
@@ -1757,13 +1757,25 @@ fn test_resize_primary_preserves_visible_rows_in_history_by_default() {
 }
 
 #[test]
-fn test_resize_primary_with_frame_redraw_flag_keeps_visible_rows_in_place() {
+fn test_resize_primary_with_full_grid_clear_behavior_keeps_visible_rows_in_place() {
     let mut grid = GridHandler::new_for_test_with_scroll_limit(1, 5, MAX_SCROLL_LIMIT);
     grid.input_at_cursor("12345");
-    grid.set_clear_screen_in_place_for_frame_redraws(true);
+    grid.enable_full_grid_clear_behavior();
     grid.resize(SizeInfo::new_without_font_metrics(1, 2));
 
     assert_eq!(grid.history_size(), 0);
+}
+
+#[test]
+fn test_resize_finished_primary_with_full_grid_clear_behavior_uses_scrollback() {
+    let mut grid = GridHandler::new_for_test_with_scroll_limit(1, 5, MAX_SCROLL_LIMIT);
+    grid.input_at_cursor("12345");
+    grid.finish();
+    grid.enable_full_grid_clear_behavior();
+
+    grid.resize(SizeInfo::new_without_font_metrics(1, 2));
+
+    assert!(grid.history_size() > 0);
 }
 
 #[test]

@@ -20,16 +20,15 @@ The target model is that CLI-agent frame redraws should treat primary-screen fra
 ## Proposed changes
 Add an explicit “primary-screen frame redraws happen in place” mode to the active CLI-agent output grid.
 Implementation shape:
-- Add a boolean field to `GridHandler`, for example `clear_screen_in_place_for_frame_redraws: bool`, defaulting to `false` in `GridHandler::new` and preserved/reset intentionally in split/finish paths. The name can mention “clear screen” because full clear is the most direct ANSI trigger, but the behavior should also gate primary-screen resize reflow for frame-redraw grids.
-- Add a setter on `GridHandler`, then thread it through `BlockGrid` and `Block` with names that make the scope clear, for example:
-  - `GridHandler::set_clear_screen_in_place_for_frame_redraws(bool)`
-  - `BlockGrid::set_clear_screen_in_place_for_frame_redraws(bool)`
-  - `Block::set_clear_screen_in_place_for_frame_redraws(bool)`
-- In `GridHandler::clear_screen(ClearMode::All)`, clear in place when either the grid is alt-screen or `clear_screen_in_place_for_frame_redraws` is true. Otherwise keep the existing `clear_viewport()` path. This preserves existing primary-screen/block semantics outside the scoped CLI-agent case.
+- Add a `FullGridClearBehavior` field to `GridHandler`, defaulting to `FullGridClearBehavior::Scroll` in `GridHandler::new`. `FullGridClearBehavior::Clear` gates both primary-screen full clears and primary-screen resize reflow for active CLI-agent grids.
+- Add a one-way enable method on `GridHandler`, then thread it through `BlockGrid` and `Block`:
+  - `GridHandler::enable_full_grid_clear_behavior()`
+  - `BlockGrid::enable_full_grid_clear_behavior()`
+  - `Block::enable_full_grid_clear_behavior()`
+- In `GridHandler::clear_screen(ClearMode::All)`, clear in place when either the grid is alt-screen or `full_grid_clear_behavior` is `FullGridClearBehavior::Clear`. Otherwise keep the existing `clear_viewport()` path. This preserves existing primary-screen/block semantics outside the scoped CLI-agent case.
 - Factor the in-place branch into a small helper so alt-screen and CLI-agent primary-screen clears share the same behavior. The helper should reset the active grid cells using the current cursor background template, mark the affected region dirty through the existing dirty-cell machinery, and evict visible image placements/secrets that no longer have backing cells if the current scroll-clear path does that indirectly.
-- In `GridHandler::resize_storage`, treat primary-screen grids with `clear_screen_in_place_for_frame_redraws` like alt-screen grids for resize purposes: resize visible `GridStorage` in place instead of pushing visible rows into `flat_storage`, resizing `flat_storage`, and popping rows back. This prevents the current frame from becoming block scrollback before the CLI agent receives SIGWINCH and redraws.
-- Set the mode to `true` in `TerminalView::handle_cli_agent_sessions_event` when a matching `CLIAgentSessionsModelEvent::Started` arrives. Set it to `false` when the matching session ends.
-- Clear the mode when the output grid/block finishes, mirroring the existing `trim_trailing_blank_rows` cleanup in `BlockGrid::finish()`. This protects against delayed `Ended` events targeting a block that has already completed or advanced.
+- In `GridHandler::resize_storage`, treat unfinished primary-screen grids with `FullGridClearBehavior::Clear` like alt-screen grids for resize purposes: resize visible `GridStorage` in place instead of pushing visible rows into `flat_storage`, resizing `flat_storage`, and popping rows back. This prevents the current frame from becoming block scrollback before the CLI agent receives SIGWINCH and redraws.
+- Enable `FullGridClearBehavior::Clear` in `TerminalView::handle_cli_agent_sessions_event` when a matching `CLIAgentSessionsModelEvent::Started` arrives. The behavior is one-way for that block; once the block is finished, resize ignores the clear behavior because the output is immutable.
 - Do not reuse `FeatureFlag::TrimTrailingBlankLines` for this behavior. If rollback is desired, add a distinct feature flag; otherwise rely on the CLI-agent-only session scope. The two behaviors address related symptoms but have different terminal semantics.
 Expected data flow:
 1. Pane resize updates Warp’s model and sends a PTY resize to the running process.
@@ -55,8 +54,7 @@ Recommended unit tests in `app/src/terminal/model/grid/grid_handler_test.rs`:
 - `ClearMode::Saved`, `ResetAndClear`, and `ActiveBlock` still clear history/state through their existing paths.
 Recommended wiring tests:
 - A started CLI-agent session marks the active block output grid for in-place frame redraw clears.
-- An ended CLI-agent session unmarks it.
-- Finishing a block clears the mode even if the session end event is delayed.
+- A finished block no longer relies on reverting this behavior; finished-grid resize follows the normal scrollback path even if the behavior remains set.
 Manual validation:
 - Capture raw PTY output while resizing Claude Code, if possible, and confirm the redraw contains a full-screen clear such as `ESC[H ESC[2J`.
 - Run Claude Code in Warp, resize the pane narrower several times, and verify the active block overwrites the current frame instead of accumulating prior frames.
@@ -68,7 +66,7 @@ Suggested commands:
 - If implementation touches broader terminal-model behavior, run the relevant terminal model tests before manual verification.
 ## Risks and mitigations
 - Primary-screen full clear and resize reflow have user-visible history semantics in Warp. Mitigation: scope the in-place behavior only to active CLI-agent sessions, and only for `ClearMode::All` plus primary-screen resize while the frame-redraw mode is active.
-- Some CLI agents might intentionally use primary-screen clears to preserve previous output. Mitigation: the behavior applies only while Warp has detected an active CLI-agent session, where full-screen clears are overwhelmingly frame redraws; completed blocks revert to normal.
+- Some CLI agents might intentionally use primary-screen clears to preserve previous output. Mitigation: the behavior applies only while Warp has detected an active CLI-agent session, where full-screen clears are overwhelmingly frame redraws; completed blocks no longer use the in-place resize path.
 - Images and secret metadata may outlive in-place-cleared cells if only grid cells are reset. Mitigation: reuse or extend existing clear/eviction helpers so ancillary grid state matches the cleared visible region.
-- Delayed lifecycle events can target the wrong active block. Mitigation: clear the flag on `BlockGrid::finish()` in addition to handling `Ended`.
+- Delayed lifecycle events can target the wrong active block. Mitigation: only enable the behavior on session start and do not rely on a later disable event for correctness.
 - Resize ordering may still produce edge cases if a process writes during the gap between model resize and PTY resize delivery. Mitigation: the scoped resize path prevents the main old-frame preservation mechanism; treat backend-before-model resizing as a follow-up only if manual verification still shows accumulation.

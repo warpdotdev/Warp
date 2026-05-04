@@ -11811,7 +11811,7 @@ impl TerminalView {
             } if *terminal_view_id == self.view_id => {
                 let mut model = self.model.lock();
                 let active_block = model.block_list_mut().active_block_mut();
-                active_block.set_clear_screen_in_place_for_frame_redraws(true);
+                active_block.enable_full_grid_clear_behavior();
                 if FeatureFlag::TrimTrailingBlankLines.is_enabled() {
                     active_block.set_trim_trailing_blank_rows(true);
                 }
@@ -11821,7 +11821,6 @@ impl TerminalView {
             } if *terminal_view_id == self.view_id => {
                 let mut model = self.model.lock();
                 let active_block = model.block_list_mut().active_block_mut();
-                active_block.set_clear_screen_in_place_for_frame_redraws(false);
                 if FeatureFlag::TrimTrailingBlankLines.is_enabled() {
                     active_block.set_trim_trailing_blank_rows(false);
                 }
