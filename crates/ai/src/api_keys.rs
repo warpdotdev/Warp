@@ -22,6 +22,9 @@ pub struct ApiKeys {
     pub anthropic: Option<String>,
     pub openai: Option<String>,
     pub open_router: Option<String>,
+    pub minimax: Option<String>,
+    pub moonshot: Option<String>,
+    pub zai: Option<String>,
 }
 
 impl ApiKeys {
@@ -30,6 +33,9 @@ impl ApiKeys {
             || self.anthropic.is_some()
             || self.google.is_some()
             || self.open_router.is_some()
+            || self.minimax.is_some()
+            || self.moonshot.is_some()
+            || self.zai.is_some()
     }
 }
 
@@ -93,6 +99,24 @@ impl ApiKeyManager {
         self.write_keys_to_secure_storage(ctx);
     }
 
+    pub fn set_minimax_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.minimax = key;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn set_moonshot_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.moonshot = key;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn set_zai_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.zai = key;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
     pub fn set_aws_credentials_state(
         &mut self,
         state: AwsCredentialsState,
@@ -138,6 +162,18 @@ impl ApiKeyManager {
             .then(|| self.keys.open_router.clone())
             .flatten()
             .unwrap_or_default();
+        let minimax = include_byo_keys
+            .then(|| self.keys.minimax.clone())
+            .flatten()
+            .unwrap_or_default();
+        let moonshot = include_byo_keys
+            .then(|| self.keys.moonshot.clone())
+            .flatten()
+            .unwrap_or_default();
+        let zai = include_byo_keys
+            .then(|| self.keys.zai.clone())
+            .flatten()
+            .unwrap_or_default();
         // Also include credentials when running with OIDC-managed Bedrock inference, regardless
         // of the per-user setting flag (which only applies to the local credential chain path).
         let include_aws = include_aws_bedrock_credentials
@@ -158,6 +194,9 @@ impl ApiKeyManager {
             && openai.is_empty()
             && google.is_empty()
             && open_router.is_empty()
+            && minimax.is_empty()
+            && moonshot.is_empty()
+            && zai.is_empty()
             && aws_credentials.is_none()
         {
             None
@@ -167,6 +206,9 @@ impl ApiKeyManager {
                 openai,
                 google,
                 open_router,
+                minimax,
+                moonshot,
+                zai,
                 allow_use_of_warp_credits: false,
                 aws_credentials,
             })

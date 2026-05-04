@@ -1,5 +1,5 @@
 use parking_lot::FairMutex;
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, OnceLock},
@@ -10,8 +10,8 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::{
     auth::{
-        auth_manager::{AuthManager, AuthManagerEvent},
         AuthStateProvider,
+        auth_manager::{AuthManager, AuthManagerEvent},
     },
     network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind},
     report_error,
@@ -36,6 +36,9 @@ pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -
         LLMProvider::OpenAI => api_keys.is_some_and(|keys| keys.openai.is_some()),
         LLMProvider::Anthropic => api_keys.is_some_and(|keys| keys.anthropic.is_some()),
         LLMProvider::Google => api_keys.is_some_and(|keys| keys.google.is_some()),
+        LLMProvider::MiniMax => api_keys.is_some_and(|keys| keys.minimax.is_some()),
+        LLMProvider::Moonshot => api_keys.is_some_and(|keys| keys.moonshot.is_some()),
+        LLMProvider::Zai => api_keys.is_some_and(|keys| keys.zai.is_some()),
         _ => false,
     }
 }
@@ -89,6 +92,9 @@ pub enum LLMProvider {
     Anthropic,
     Google,
     Xai,
+    MiniMax,
+    Moonshot,
+    Zai,
     Unknown,
 }
 
@@ -100,6 +106,9 @@ impl LLMProvider {
             LLMProvider::Anthropic => Some(Icon::ClaudeLogo),
             LLMProvider::Google => Some(Icon::GeminiLogo),
             LLMProvider::Xai => None,
+            LLMProvider::MiniMax => None,
+            LLMProvider::Moonshot => None,
+            LLMProvider::Zai => None,
             LLMProvider::Unknown => None,
         }
     }
