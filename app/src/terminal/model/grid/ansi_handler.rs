@@ -1034,6 +1034,10 @@ impl ansi::Handler for GridHandler {
                     .send_terminal_event(Event::CursorBlinkingChange(true));
             }
             ansi::Mode::SyncOutput => {}
+            ansi::Mode::DarkLightNotifications => self
+                .ansi_handler_state
+                .mode
+                .insert(TermMode::DARK_LIGHT_NOTIFICATIONS),
         }
     }
 
@@ -1093,6 +1097,10 @@ impl ansi::Handler for GridHandler {
                     .event_proxy
                     .send_terminal_event(Event::CursorBlinkingChange(false));
             }
+            ansi::Mode::DarkLightNotifications => self
+                .ansi_handler_state
+                .mode
+                .remove(TermMode::DARK_LIGHT_NOTIFICATIONS),
             _ => {}
         }
     }

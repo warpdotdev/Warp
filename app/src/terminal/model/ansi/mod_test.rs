@@ -19,6 +19,7 @@ struct MockHandler {
     identity_reported: bool,
     d_proto_hooks: Vec<DProtoHook>,
     pluggable_notifications: Vec<(Option<String>, String)>,
+    report_color_scheme_called: bool,
 }
 
 impl Handler for MockHandler {
@@ -40,6 +41,10 @@ impl Handler for MockHandler {
     }
 
     fn report_xtversion<W: io::Write>(&mut self, _: &mut W) {}
+
+    fn report_color_scheme<W: io::Write>(&mut self, _: &mut W) {
+        self.report_color_scheme_called = true;
+    }
 
     fn reset_state(&mut self) {
         *self = Self::default();
@@ -244,6 +249,7 @@ impl Default for MockHandler {
             identity_reported: false,
             d_proto_hooks: Vec::new(),
             pluggable_notifications: Vec::new(),
+            report_color_scheme_called: false,
         }
     }
 }
@@ -460,6 +466,14 @@ fn named_color_to_ansi_escape_invalid() {
     assert!(NamedColor::Background.to_ansi_fg_escape_code().is_err());
     assert!(NamedColor::Foreground.to_ansi_bg_escape_code().is_err());
     assert!(NamedColor::Cursor.to_ansi_bg_escape_code().is_err());
+}
+
+#[test]
+fn parse_private_dsr_color_scheme_query() {
+    // CSI ? 996 n  — query current color scheme
+    static BYTES: &[u8] = &[0x1b, b'[', b'?', b'9', b'9', b'6', b'n'];
+    let (_, handler) = parse_bytes(BYTES);
+    assert!(handler.report_color_scheme_called);
 }
 
 #[test]
