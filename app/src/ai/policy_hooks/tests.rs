@@ -85,6 +85,23 @@ fn config_nonempty_hook_list_can_be_autoapproval_capable() {
 }
 
 #[test]
+fn config_global_autoapproval_does_not_bypass_per_hook_opt_in() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "allow_hook_autoapproval": true,
+        "before_action": [{
+            "name": "company-agent-guard",
+            "transport": "stdio",
+            "command": "company-agent-guard",
+            "allow_autoapproval": false
+        }]
+    }))
+    .unwrap();
+
+    assert!(!config.allow_autoapproval_for_all_hooks());
+}
+
+#[test]
 fn config_deserializes_stdio_hook_shape() {
     let config: AgentPolicyHookConfig = serde_json::from_value(json!({
         "enabled": true,
