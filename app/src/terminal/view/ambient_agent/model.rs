@@ -134,9 +134,17 @@ pub struct AmbientAgentViewModel {
     /// Used to transition the cloud-mode setup UI out of the pre-first-exchange phase when
     /// there is no oz `AppendedExchange` to key off of.
     harness_command_started: bool,
+    optimistically_rendered_user_queries: Vec<String>,
 
+    /// Session ID for the currently running ambient execution, if the run has attached to a live
+    /// shared session.
     active_execution_session_id: Option<SessionId>,
+    /// Session ID for the most recently finished ambient execution.
+    /// Used as the previous session ID when submitting a follow-up so polling can wait for a
+    /// different fresh session after the prior execution has ended.
     last_ended_execution_session_id: Option<SessionId>,
+    /// Prompt text for a follow-up that has been submitted but not yet attached to a new session.
+    pending_followup_prompt: Option<String>,
 }
 
 impl AmbientAgentViewModel {
@@ -169,8 +177,10 @@ impl AmbientAgentViewModel {
             worker_host: None,
             has_inserted_cloud_mode_user_query_block: false,
             harness_command_started: false,
+            optimistically_rendered_user_queries: vec![],
             active_execution_session_id: None,
             last_ended_execution_session_id: None,
+            pending_followup_prompt: None,
         }
     }
 
@@ -343,6 +353,16 @@ impl AmbientAgentViewModel {
         self.has_inserted_cloud_mode_user_query_block = has_inserted;
     }
 
+    pub fn record_optimistic_user_query(&mut self, prompt: String) {
+        self.optimistically_rendered_user_queries.push(prompt);
+    }
+
+    pub fn has_optimistic_user_query(&self, prompt: &str) -> bool {
+        self.optimistically_rendered_user_queries
+            .iter()
+            .any(|query| query == prompt)
+    }
+
     /// Whether or not this terminal session is in the setup state (first-time environment creation).
     pub fn is_in_setup(&self) -> bool {
         matches!(self.status, Status::Setup)
@@ -473,6 +493,7 @@ impl AmbientAgentViewModel {
     /// terminal manager to append that session's scrollback to the existing transcript.
     pub fn attach_followup_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
         self.stop_progress_timer();
+        self.pending_followup_prompt = None;
         self.active_execution_session_id = Some(session_id);
         self.last_ended_execution_session_id = None;
         self.status = Status::AgentRunning;
@@ -501,8 +522,15 @@ impl AmbientAgentViewModel {
             .active_execution_session_id
             .or(self.last_ended_execution_session_id);
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let stream = submit_run_followup(prompt, task_id, previous_session_id, ai_client, None);
+        let stream = submit_run_followup(
+            prompt.clone(),
+            task_id,
+            previous_session_id,
+            ai_client,
+            None,
+        );
 
+        self.pending_followup_prompt = Some(prompt);
         self.status = Status::WaitingForSession {
             progress: AgentProgress::new(),
             kind: SessionStartupKind::Followup,
@@ -521,6 +549,21 @@ impl AmbientAgentViewModel {
         &self.status
     }
 
+    pub fn pending_followup_prompt(&self) -> Option<&str> {
+        self.pending_followup_prompt.as_deref()
+    }
+
+    pub fn should_show_followup_progress(&self) -> bool {
+        self.pending_followup_prompt.is_some()
+            && matches!(
+                self.status,
+                Status::WaitingForSession { .. }
+                    | Status::Failed { .. }
+                    | Status::NeedsGithubAuth { .. }
+                    | Status::Cancelled { .. }
+            )
+    }
+
     /// Reset cloud-specific prompt state so a retained cloud view can compose a new task.
     pub fn reset_for_new_cloud_prompt(&mut self, ctx: &mut ModelContext<Self>) {
         self.status = Status::Composing;
@@ -529,8 +572,10 @@ impl AmbientAgentViewModel {
         self.conversation_id = None;
         self.has_inserted_cloud_mode_user_query_block = false;
         self.harness_command_started = false;
+        self.optimistically_rendered_user_queries.clear();
         self.active_execution_session_id = None;
         self.last_ended_execution_session_id = None;
+        self.pending_followup_prompt = None;
         self.stop_progress_timer();
         ctx.notify();
     }
@@ -784,6 +829,7 @@ impl AmbientAgentViewModel {
                     };
                     self.active_execution_session_id = Some(session_id);
                     self.last_ended_execution_session_id = None;
+                    self.pending_followup_prompt = None;
                     self.status = Status::AgentRunning;
                     ctx.emit(event);
                 }
@@ -903,6 +949,7 @@ impl AmbientAgentViewModel {
             progress,
             error_message: error_message.clone(),
         };
+        self.pending_followup_prompt = None;
         ctx.emit(AmbientAgentViewModelEvent::Failed { error_message });
     }
 
@@ -938,6 +985,7 @@ impl AmbientAgentViewModel {
             error_message,
             auth_url,
         };
+        self.pending_followup_prompt = None;
 
         ctx.emit(AmbientAgentViewModelEvent::NeedsGithubAuth);
     }
@@ -965,6 +1013,7 @@ impl AmbientAgentViewModel {
         };
 
         self.status = Status::Cancelled { progress };
+        self.pending_followup_prompt = None;
 
         ctx.emit(AmbientAgentViewModelEvent::Cancelled);
     }

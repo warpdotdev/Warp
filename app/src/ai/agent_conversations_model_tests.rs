@@ -183,6 +183,68 @@ fn test_display_status_uses_matching_conversation_for_in_progress_task() {
 }
 
 #[test]
+fn test_display_status_uses_active_execution_over_previous_conversation_status() {
+    App::test((), |mut app| async move {
+        let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
+
+        let now = Utc::now();
+        let conversation_id = AIConversationId::new();
+        let terminal_view_id = EntityId::new();
+        let task_id = make_uuid(4005);
+        let session_id = make_uuid(4006);
+
+        let conversation = create_restored_conversation(
+            conversation_id,
+            "root-task",
+            AgentConversationData {
+                server_conversation_token: None,
+                conversation_usage_metadata: None,
+                reverted_action_ids: None,
+                forked_from_server_conversation_token: None,
+                artifacts_json: None,
+                parent_agent_id: None,
+                agent_name: None,
+                parent_conversation_id: None,
+                is_remote_child: false,
+                run_id: Some(task_id.clone()),
+                autoexecute_override: None,
+                last_event_sequence: None,
+            },
+        );
+
+        history_model.update(&mut app, |model, ctx| {
+            model.restore_conversations(terminal_view_id, vec![conversation], ctx);
+            model.update_conversation_status(
+                terminal_view_id,
+                conversation_id,
+                ConversationStatus::Success,
+                ctx,
+            );
+        });
+
+        let mut task = create_test_task(&task_id, "user-a", now);
+        task.state = AmbientAgentTaskState::InProgress;
+        task.session_id = Some(session_id.clone());
+        task.session_link = Some("https://example.com/session/followup".to_string());
+        task.is_sandbox_running = true;
+
+        app.update(|ctx| {
+            assert!(task.has_active_execution());
+            assert_eq!(
+                task.active_execution_session_id(),
+                Some(session_id.as_str())
+            );
+            let display_status = AgentRunDisplayStatus::from_task(&task, ctx);
+            assert_eq!(display_status, AgentRunDisplayStatus::TaskInProgress);
+            assert_eq!(display_status.status_filter(), StatusFilter::Working);
+            assert!(display_status.is_cancellable());
+            assert!(display_status.is_working());
+        });
+    });
+}
+
+#[test]
 fn test_display_status_updates_when_blocked_conversation_resumes() {
     App::test((), |mut app| async move {
         let _orchestration_v2_guard = FeatureFlag::OrchestrationV2.override_enabled(true);
