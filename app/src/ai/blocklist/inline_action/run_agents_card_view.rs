@@ -384,7 +384,10 @@ impl RunAgentsCardView {
             }
         });
 
-        let card = Self {
+        // When auto_launched is true, execution is deferred to the
+        // ActionBlockedOnUserConfirmation subscription above — the action
+        // hasn't been queued in pending_actions yet at construction time.
+        Self {
             action_id,
             state: RunAgentsEditState::from_request(request),
             original_request: request.clone(),
@@ -400,13 +403,7 @@ impl RunAgentsCardView {
             active_config,
             action_model,
             block_model,
-        };
-
-        // When auto_launched is true, execution is deferred to the
-        // ActionBlockedOnUserConfirmation subscription above — the action
-        // hasn't been queued in pending_actions yet at construction time.
-
-        card
+        }
     }
 
     pub fn is_spawning(&self) -> bool {
