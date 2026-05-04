@@ -161,16 +161,13 @@ impl OrchestrationConfigBlockView {
         // Repopulate the model picker when available LLMs change.
         // LLMPreferences loads asynchronously from the server; the
         // picker may have been created before models arrived.
-        ctx.subscribe_to_model(
-            &LLMPreferences::handle(ctx),
-            |me, _, event, ctx| {
-                if let LLMPreferencesEvent::UpdatedAvailableLLMs = event {
-                    if let Some(handle) = &me.pickers.model_picker {
-                        oc::populate_model_picker(handle, &me.edit_state.model_id, ctx);
-                    }
+        ctx.subscribe_to_model(&LLMPreferences::handle(ctx), |me, _, event, ctx| {
+            if let LLMPreferencesEvent::UpdatedAvailableLLMs = event {
+                if let Some(handle) = &me.pickers.model_picker {
+                    oc::populate_model_picker(handle, &me.edit_state.model_id, ctx);
                 }
-            },
-        );
+            }
+        });
 
         let mut view = Self {
             conversation_id,
@@ -305,13 +302,11 @@ impl View for OrchestrationConfigBlockView {
                 Hoverable::new(self.toggle_mouse_state.clone(), move |_| {
                     render_pill_toggle(is_on, theme)
                 })
-                    .on_click(|ctx, _, _| {
-                        ctx.dispatch_typed_action(
-                            OrchestrationConfigBlockAction::ToggleApproval,
-                        );
-                    })
-                    .with_cursor(Cursor::PointingHand)
-                    .finish(),
+                .on_click(|ctx, _, _| {
+                    ctx.dispatch_typed_action(OrchestrationConfigBlockAction::ToggleApproval);
+                })
+                .with_cursor(Cursor::PointingHand)
+                .finish(),
             )
             .finish();
         column.add_child(header_row);
@@ -353,7 +348,9 @@ impl View for OrchestrationConfigBlockView {
             .with_color(disabled_text_color)
             .finish();
             let chevron = ConstrainedBox::new(
-                chevron_icon.to_warpui_icon(warp_core::ui::theme::Fill::Solid(disabled_text_color)).finish(),
+                chevron_icon
+                    .to_warpui_icon(warp_core::ui::theme::Fill::Solid(disabled_text_color))
+                    .finish(),
             )
             .with_width(14.)
             .with_height(14.)
@@ -366,9 +363,7 @@ impl View for OrchestrationConfigBlockView {
                 .finish();
             let details_row = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                .with_child(
-                    warpui::elements::Expanded::new(1.0, Empty::new().finish()).finish(),
-                )
+                .with_child(warpui::elements::Expanded::new(1.0, Empty::new().finish()).finish())
                 .with_child(
                     Hoverable::new(self.details_mouse_state.clone(), move |_| details_link)
                         .on_click(|ctx, _, _| {
@@ -380,9 +375,7 @@ impl View for OrchestrationConfigBlockView {
                         .finish(),
                 )
                 .finish();
-            column.add_child(
-                Container::new(details_row).with_margin_top(8.).finish(),
-            );
+            column.add_child(Container::new(details_row).with_margin_top(8.).finish());
 
             // Expanded controls
             if self.details_expanded {

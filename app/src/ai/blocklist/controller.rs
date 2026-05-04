@@ -737,8 +737,9 @@ impl BlocklistAIController {
         inputs.push(ai_input);
 
         // Piggyback any pending orchestration config update for this conversation.
-        let taken_dirty_event = AIDocumentModel::handle(ctx)
-            .update(ctx, |model, _| model.take_dirty_orchestration_event(&conversation_id));
+        let taken_dirty_event = AIDocumentModel::handle(ctx).update(ctx, |model, _| {
+            model.take_dirty_orchestration_event(&conversation_id)
+        });
         if let Some(ref dirty_event) = taken_dirty_event {
             inputs.push(AIAgentInput::OrchestrationConfigUpdate {
                 plan_id: dirty_event.plan_id.clone(),

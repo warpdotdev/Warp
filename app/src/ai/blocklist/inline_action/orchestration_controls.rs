@@ -325,13 +325,9 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
         // TODO: Re-enable Harness::Gemini once it is supported as
         // a multi-agent harness (currently causes an infinite
         // "Spawning agents" hang).
-        for (idx, harness) in [
-            Harness::Oz,
-            Harness::Claude,
-            Harness::Codex,
-        ]
-        .into_iter()
-        .enumerate()
+        for (idx, harness) in [Harness::Oz, Harness::Claude, Harness::Codex]
+            .into_iter()
+            .enumerate()
         {
             let mut fields = MenuItemFields::new(harness_display::display_name(harness))
                 .with_icon(harness_display::icon_for(harness));
@@ -641,27 +637,41 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
         add(
             &mut column,
             "Agent harness",
-            handles.harness_picker.as_ref().map(|p| ChildView::new(p).finish()),
+            handles
+                .harness_picker
+                .as_ref()
+                .map(|p| ChildView::new(p).finish()),
         );
         if is_remote {
             add(
                 &mut column,
                 "Host",
-                handles.host_picker.as_ref().map(|p| ChildView::new(p).finish()),
+                handles
+                    .host_picker
+                    .as_ref()
+                    .map(|p| ChildView::new(p).finish()),
             );
             add(
                 &mut column,
                 "Environment",
-                handles.environment_picker.as_ref().map(|p| ChildView::new(p).finish()),
+                handles
+                    .environment_picker
+                    .as_ref()
+                    .map(|p| ChildView::new(p).finish()),
             );
         }
         add(
             &mut column,
             "Base model",
-            handles.model_picker.as_ref().map(|p| ChildView::new(p).finish()),
+            handles
+                .model_picker
+                .as_ref()
+                .map(|p| ChildView::new(p).finish()),
         );
 
-        Container::new(column.finish()).with_margin_top(12.).finish()
+        Container::new(column.finish())
+            .with_margin_top(12.)
+            .finish()
     } else {
         let mut row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
@@ -677,24 +687,36 @@ pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
         add_picker(
             &mut row,
             "Agent harness",
-            handles.harness_picker.as_ref().map(|p| ChildView::new(p).finish()),
+            handles
+                .harness_picker
+                .as_ref()
+                .map(|p| ChildView::new(p).finish()),
         );
         if is_remote {
             add_picker(
                 &mut row,
                 "Host",
-                handles.host_picker.as_ref().map(|p| ChildView::new(p).finish()),
+                handles
+                    .host_picker
+                    .as_ref()
+                    .map(|p| ChildView::new(p).finish()),
             );
             add_picker(
                 &mut row,
                 "Environment",
-                handles.environment_picker.as_ref().map(|p| ChildView::new(p).finish()),
+                handles
+                    .environment_picker
+                    .as_ref()
+                    .map(|p| ChildView::new(p).finish()),
             );
         }
         add_picker(
             &mut row,
             "Base model",
-            handles.model_picker.as_ref().map(|p| ChildView::new(p).finish()),
+            handles
+                .model_picker
+                .as_ref()
+                .map(|p| ChildView::new(p).finish()),
         );
 
         Container::new(row.finish()).with_margin_top(12.).finish()
