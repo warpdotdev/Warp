@@ -55,6 +55,47 @@ fn test_row_with_double_width_char() {
     assert!(rows.next().is_none());
 }
 
+#[test]
+fn test_row_iterator_handles_wide_char_at_row_boundary_without_panicking() {
+    // Regression for #9161: stored rows whose grapheme runs imply more
+    // cells than the row holds — typically a wide CJK character placed at
+    // the last column of a row, leaving no room for its trailing spacer —
+    // used to abort the process via `panic!` inside `RowIterator::next`.
+    // The iterator must instead degrade gracefully so the user can keep
+    // using the terminal.
+    let mut storage = FlatStorage::new(7, None, Some(2));
+
+    let mut wide_cell = Cell::default();
+    wide_cell.c = '日';
+    wide_cell.flags.insert(Flags::WIDE_CHAR);
+    let row = Row::from_vec(
+        vec![
+            cell_with('a'),
+            cell_with('b'),
+            cell_with('c'),
+            cell_with('d'),
+            cell_with('e'),
+            cell_with('f'),
+            wide_cell,
+        ],
+        7,
+    );
+    storage.push_rows([&row]);
+
+    let mut rows = storage.rows_from(0);
+    let row = rows
+        .next()
+        .expect("should be able to get the row from storage");
+    assert_eq!(row[0].c, 'a');
+    assert_eq!(row[5].c, 'f');
+}
+
+fn cell_with(c: char) -> Cell {
+    let mut cell = Cell::default();
+    cell.c = c;
+    cell
+}
+
 /// This test validates our handling of complex emoji sequences.
 ///
 /// The three graphemes here are comprised of a number of Unicode characters.

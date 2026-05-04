@@ -97,7 +97,7 @@ impl Iterator for RowIterator<'_> {
                     row.len(),
                     self.storage.index.grapheme_runs_for_row(self.row_index)?
                 );
-                panic!("Tried to mutate cell past the end of a row in RowIterator::next!")
+                break;
             };
 
             let mut chars = grapheme.chars();
@@ -127,10 +127,14 @@ impl Iterator for RowIterator<'_> {
             }
 
             // If the grapheme takes up two cells, mark the following cell as
-            // a spacer.
+            // a spacer (only when there is a following cell to mark — a wide
+            // char written into the last column has no room for its spacer
+            // and would otherwise panic via `IndexMut`).
             if cell_width == 2 {
                 row[idx].flags.insert(Flags::WIDE_CHAR);
-                row[idx + 1].flags.insert(Flags::WIDE_CHAR_SPACER);
+                if idx + 1 < row.len() {
+                    row[idx + 1].flags.insert(Flags::WIDE_CHAR_SPACER);
+                }
             }
 
             current_offset += grapheme.len();
