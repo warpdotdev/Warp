@@ -532,6 +532,158 @@ fn test_from_serialized_name_falls_back_to_unknown() {
     );
 }
 
+/// Codex on Linux: shebang scripts surface as `node /path/to/script` because
+/// `/proc/PID/comm` reports the runtime, not the script. The detection must
+/// recognize the script's basename as the agent identity.
+/// See #9870.
+#[test]
+fn test_detect_node_shebang_script_codex_linux() {
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            // The most direct repro from the issue: node + script path.
+            assert_eq!(
+                CLIAgent::detect("node /usr/local/bin/codex", None, None, ctx),
+                Some(CLIAgent::Codex),
+            );
+            // With trailing arguments.
+            assert_eq!(
+                CLIAgent::detect(
+                    "node /usr/local/bin/codex --some-flag",
+                    None,
+                    None,
+                    ctx
+                ),
+                Some(CLIAgent::Codex),
+            );
+            // Script with `.js` extension stripped.
+            assert_eq!(
+                CLIAgent::detect(
+                    "node /usr/local/lib/node_modules/@openai/codex/bin/codex.js",
+                    None,
+                    None,
+                    ctx
+                ),
+                Some(CLIAgent::Codex),
+            );
+            // Other recognized runtimes resolve the same way.
+            assert_eq!(
+                CLIAgent::detect("nodejs /opt/codex", None, None, ctx),
+                Some(CLIAgent::Codex),
+            );
+            assert_eq!(
+                CLIAgent::detect("bun /opt/codex.js", None, None, ctx),
+                Some(CLIAgent::Codex),
+            );
+            // Runtime flags before the script path don't break recovery.
+            assert_eq!(
+                CLIAgent::detect(
+                    "node --inspect /usr/local/bin/codex",
+                    None,
+                    None,
+                    ctx
+                ),
+                Some(CLIAgent::Codex),
+            );
+        });
+    });
+}
+
+/// Path-prefixed binaries also resolve via basename matching, in case Warp
+/// ever surfaces a fully-qualified command (e.g. when shell history records
+/// the resolved path or when a user types it explicitly).
+#[test]
+fn test_detect_path_prefixed_agent_binary() {
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            assert_eq!(
+                CLIAgent::detect("/usr/local/bin/codex", None, None, ctx),
+                Some(CLIAgent::Codex),
+            );
+            assert_eq!(
+                CLIAgent::detect("/opt/homebrew/bin/claude --model opus", None, None, ctx),
+                Some(CLIAgent::Claude),
+            );
+            assert_eq!(
+                CLIAgent::detect("./goose", None, None, ctx),
+                Some(CLIAgent::Goose),
+            );
+        });
+    });
+}
+
+/// Bare runtime invocations without a recognized agent script must NOT
+/// resolve to any agent — we don't want `node ./my-app.js` to false-positive.
+#[test]
+fn test_detect_node_script_without_agent_basename() {
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            assert_eq!(CLIAgent::detect("node", None, None, ctx), None);
+            assert_eq!(
+                CLIAgent::detect("node /home/user/my-app.js", None, None, ctx),
+                None,
+            );
+            assert_eq!(
+                CLIAgent::detect("python /home/user/script.py", None, None, ctx),
+                None,
+            );
+            // A runtime with only flags — no script — must not match.
+            assert_eq!(
+                CLIAgent::detect("node --version", None, None, ctx),
+                None,
+            );
+        });
+    });
+}
+
+/// Value-taking runtime flags (e.g. `node -e <code>`, `python -c <code>`)
+/// must NOT cause the eval/script-string argument to false-positive as an
+/// agent. Per oz-for-oss review on PR #10022.
+#[test]
+fn test_detect_node_value_taking_flags_do_not_false_positive() {
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            // `-e` consumes `codex` as the eval string, not as a script path.
+            assert_eq!(
+                CLIAgent::detect("node -e codex", None, None, ctx),
+                None,
+            );
+            // Same with the long form.
+            assert_eq!(
+                CLIAgent::detect("node --eval codex", None, None, ctx),
+                None,
+            );
+            // `--require` consumes its module argument.
+            assert_eq!(
+                CLIAgent::detect("node --require claude /home/user/app.js", None, None, ctx),
+                None,
+            );
+            // `python -c` consumes the code string.
+            assert_eq!(
+                CLIAgent::detect("python -c claude", None, None, ctx),
+                None,
+            );
+            // `python -m` consumes the module name.
+            assert_eq!(
+                CLIAgent::detect("python -m gemini", None, None, ctx),
+                None,
+            );
+
+            // After the value-taking flag and its argument are consumed, a
+            // legitimate agent script that follows IS still detected.
+            assert_eq!(
+                CLIAgent::detect("node --require some-mod /usr/local/bin/codex", None, None, ctx),
+                Some(CLIAgent::Codex),
+            );
+            // `--key=value` form keeps the value attached to the flag, so a
+            // following script positional is still found correctly.
+            assert_eq!(
+                CLIAgent::detect("node --inspect=127.0.0.1:9229 /usr/local/bin/codex", None, None, ctx),
+                Some(CLIAgent::Codex),
+            );
+        });
+    });
+}
+
 #[test]
 fn test_detect_aifx_agent_run_claude_wrong_team() {
     App::test((), |mut app| async move {
