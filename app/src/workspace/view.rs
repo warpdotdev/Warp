@@ -19764,6 +19764,18 @@ impl TypedActionView for Workspace {
             RenamePane(locator) => self.rename_pane(*locator, ctx),
             ResetPaneName(locator) => self.clear_pane_name(*locator, ctx),
             RenameActiveTab => self.rename_tab(self.active_tab_index, ctx),
+            RenameActivePane => {
+                let pane_group = self.active_tab_pane_group().clone();
+                let pane_group_id = pane_group.id();
+                let pane_id = pane_group.as_ref(ctx).focused_pane_id(ctx);
+                self.rename_pane(
+                    PaneViewLocator {
+                        pane_group_id,
+                        pane_id,
+                    },
+                    ctx,
+                );
+            }
             SetActiveTabName(name) => self.set_active_tab_name(name, ctx),
             SetActiveTabColor(color) => self.set_tab_color(self.active_tab_index, *color, ctx),
             ToggleTabRightClickMenu { tab_index, anchor } => {

@@ -112,6 +112,10 @@ pub enum WorkspaceAction {
     RenamePane(PaneViewLocator),
     ResetPaneName(PaneViewLocator),
     RenameActiveTab,
+    /// Renames the focused pane in the active tab. Mirrors `RenameActiveTab`
+    /// so the action is reachable from the binding registry / Command Palette
+    /// (see #9351). The context-menu path keeps using `RenamePane(locator)`.
+    RenameActivePane,
     SetActiveTabName(String),
     /// Sets the manual color override for the active tab.
     ///
@@ -717,6 +721,7 @@ impl WorkspaceAction {
             | RenamePane(_)
             | ResetPaneName(_)
             | RenameActiveTab
+            | RenameActivePane
             | SetActiveTabName(_)
             | SetActiveTabColor(_)
             | CloseTab(_)
