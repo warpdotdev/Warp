@@ -4830,10 +4830,11 @@ impl Workspace {
         self.tab_mru_order
             .iter()
             .filter_map(|&pane_group_id| {
-                let tab = self
+                let (tab_index, tab) = self
                     .tabs
                     .iter()
-                    .find(|t| t.pane_group.id() == pane_group_id)?;
+                    .enumerate()
+                    .find(|(_, t)| t.pane_group.id() == pane_group_id)?;
                 let title = tab.pane_group.as_ref(ctx).display_title(ctx);
                 let subtitle = tab
                     .pane_group
@@ -4852,6 +4853,7 @@ impl Workspace {
                     title,
                     subtitle,
                     window_id,
+                    tab_index: tab_index + 1,
                 })
             })
             .collect()
