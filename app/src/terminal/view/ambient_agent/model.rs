@@ -26,7 +26,8 @@ use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ServerId, SyncId};
 use crate::server::server_api::ai::{
-    AgentConfigSnapshot, AmbientAgentTaskState, AttachmentInput, SpawnAgentRequest,
+    AgentConfigSnapshot, AmbientAgentTaskState, AttachmentInput, HandoffPrepToken,
+    SpawnAgentRequest,
 };
 use crate::server::server_api::{AIApiError, CloudAgentCapacityError, ServerApiProvider};
 use crate::terminal::view::ambient_agent::SetupCommandState;
@@ -83,7 +84,7 @@ pub enum SnapshotPrepStatus {
     /// start with no rehydration content.
     SkippedEmptyWorkspace,
     /// Upload succeeded; the inner `prep_token` is sent to the server on spawn.
-    Uploaded(String),
+    Uploaded(HandoffPrepToken),
     /// Upload failed. The error message is surfaced as a toast via
     /// `HandoffPrepFailed`.
     Failed(String),
@@ -97,7 +98,7 @@ impl SnapshotPrepStatus {
     }
 
     /// Returns the `handoff_prep_token` to send on spawn, if any.
-    fn prep_token(&self) -> Option<String> {
+    fn prep_token(&self) -> Option<HandoffPrepToken> {
         match self {
             Self::Uploaded(token) => Some(token.clone()),
             Self::SkippedEmptyWorkspace | Self::Pending | Self::Failed(_) => None,

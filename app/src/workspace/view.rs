@@ -12938,7 +12938,6 @@ impl Workspace {
                 Ok(response) => {
                     me.complete_local_to_cloud_handoff_open(
                         source_conversation,
-                        source_token,
                         response.forked_conversation_id,
                         initial_prompt,
                         ctx,
@@ -12965,7 +12964,6 @@ impl Workspace {
     fn complete_local_to_cloud_handoff_open(
         &mut self,
         source_conversation: AIConversation,
-        source_token: ServerConversationToken,
         forked_conversation_id: String,
         initial_prompt: Option<String>,
         ctx: &mut ViewContext<Self>,
@@ -13065,7 +13063,6 @@ impl Workspace {
         let server_api_provider = ServerApiProvider::as_ref(ctx);
         let ai_client = server_api_provider.get_ai_client();
         let http = server_api_provider.get_http_client();
-        let log_token = source_token.clone();
         ctx.spawn(
             async move {
                 let paths = extract_paths_from_conversation(&source_conversation);
@@ -13077,7 +13074,6 @@ impl Workspace {
                     workspace.orphan_files.clone(),
                     ai_client,
                     http.as_ref(),
-                    &log_token,
                 )
                 .await;
                 (workspace, upload_result)
