@@ -431,14 +431,13 @@ impl AIDocumentView {
 
         // Create the orchestration config block if there's an active config
         // for this document's conversation.
-        let doc_conversation_id = AIDocumentModel::as_ref(ctx)
-            .get_conversation_id_for_document_id(&document_id);
-        let has_orchestration_config = doc_conversation_id
-            .and_then(|cid| {
-                BlocklistAIHistoryModel::as_ref(ctx)
-                    .conversation(&cid)
-                    .and_then(|conv| conv.orchestration_config().map(|_| cid))
-            });
+        let doc_conversation_id =
+            AIDocumentModel::as_ref(ctx).get_conversation_id_for_document_id(&document_id);
+        let has_orchestration_config = doc_conversation_id.and_then(|cid| {
+            BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&cid)
+                .and_then(|conv| conv.orchestration_config().map(|_| cid))
+        });
         let orchestration_config_block = if let Some(conv_id) = has_orchestration_config {
             Some(ctx.add_typed_action_view(move |ctx| {
                 OrchestrationConfigBlockView::new_with_conversation_id(conv_id, ctx)

@@ -5,7 +5,9 @@
 //! the view; only `RejectRequested` flows back to the parent.
 use ai::agent::action::{RunAgentsAgentRunConfig, RunAgentsExecutionMode, RunAgentsRequest};
 use ai::agent::action_result::{RunAgentsAgentOutcomeKind, RunAgentsResult};
-use ai::agent::orchestration_config::{matches_active_config, OrchestrationConfig, OrchestrationConfigStatus};
+use ai::agent::orchestration_config::{
+    matches_active_config, OrchestrationConfig, OrchestrationConfigStatus,
+};
 use ai::skills::SkillReference;
 use std::rc::Rc;
 use warpui::elements::{
@@ -345,51 +347,42 @@ impl RunAgentsCardView {
         // execution must wait until the action model has queued the
         // action.
         let action_id_for_action_events = action_id.clone();
-        ctx.subscribe_to_model(&action_model, move |me, _, event, ctx| {
-            match event {
-                BlocklistAIActionEvent::FinishedAction { action_id, .. }
-                    if action_id == &action_id_for_action_events =>
-                {
-                    ctx.notify();
-                }
-                BlocklistAIActionEvent::ActionBlockedOnUserConfirmation(action_id)
-                    if action_id == &action_id_for_action_events && me.is_denied =>
-                {
-                    let action_id = me.action_id.clone();
-                    me.action_model.update(ctx, |action_model, action_ctx| {
-                        action_model.deny_run_agents(
-                            &action_id,
-                            String::new(),
-                            action_ctx,
-                        );
-                    });
-                }
-                BlocklistAIActionEvent::ActionBlockedOnUserConfirmation(action_id)
-                    if action_id == &action_id_for_action_events && me.auto_launched =>
-                {
-                    let request = me.state.to_request();
-                    let action_id = me.action_id.clone();
-                    me.action_model.update(ctx, |action_model, action_ctx| {
-                        action_model.execute_run_agents(&action_id, request, action_ctx);
-                    });
-                }
-                _ => {}
+        ctx.subscribe_to_model(&action_model, move |me, _, event, ctx| match event {
+            BlocklistAIActionEvent::FinishedAction { action_id, .. }
+                if action_id == &action_id_for_action_events =>
+            {
+                ctx.notify();
             }
+            BlocklistAIActionEvent::ActionBlockedOnUserConfirmation(action_id)
+                if action_id == &action_id_for_action_events && me.is_denied =>
+            {
+                let action_id = me.action_id.clone();
+                me.action_model.update(ctx, |action_model, action_ctx| {
+                    action_model.deny_run_agents(&action_id, String::new(), action_ctx);
+                });
+            }
+            BlocklistAIActionEvent::ActionBlockedOnUserConfirmation(action_id)
+                if action_id == &action_id_for_action_events && me.auto_launched =>
+            {
+                let request = me.state.to_request();
+                let action_id = me.action_id.clone();
+                me.action_model.update(ctx, |action_model, action_ctx| {
+                    action_model.execute_run_agents(&action_id, request, action_ctx);
+                });
+            }
+            _ => {}
         });
 
         // Repopulate the model picker when available LLMs change.
         // LLMPreferences loads asynchronously from the server; the
         // picker may have been created before models arrived.
-        ctx.subscribe_to_model(
-            &LLMPreferences::handle(ctx),
-            |me, _, event, ctx| {
-                if let LLMPreferencesEvent::UpdatedAvailableLLMs = event {
-                    if let Some(handle) = &me.handles.pickers.model_picker {
-                        oc::populate_model_picker(handle, &me.state.orch.model_id, ctx);
-                    }
+        ctx.subscribe_to_model(&LLMPreferences::handle(ctx), |me, _, event, ctx| {
+            if let LLMPreferencesEvent::UpdatedAvailableLLMs = event {
+                if let Some(handle) = &me.handles.pickers.model_picker {
+                    oc::populate_model_picker(handle, &me.state.orch.model_id, ctx);
                 }
-            },
-        );
+            }
+        });
 
         let card = Self {
             action_id,

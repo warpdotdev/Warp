@@ -1725,10 +1725,7 @@ fn render_read_skill(
             let skill_icon_override = icon_override_for_skill_name(&skill.name);
             let open_button = render_skill_button(
                 "Open skill",
-                props
-                    .state_handles
-                    .open_skill_button_handle
-                    .clone(),
+                props.state_handles.open_skill_button_handle.clone(),
                 appearance,
                 skill.provider,
                 skill_icon_override,
@@ -1832,10 +1829,7 @@ fn render_read_files(
         let skill_icon_override = icon_override_for_skill_name(&skill.name);
         let open_button = render_skill_button(
             &format!("/{}", skill.name),
-            props
-                .state_handles
-                .read_from_skill_button_handle
-                .clone(),
+            props.state_handles.read_from_skill_button_handle.clone(),
             appearance,
             skill.provider,
             skill_icon_override,

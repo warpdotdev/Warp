@@ -208,12 +208,9 @@ impl AIDocumentModel {
         // Subscribe to history events so we can hydrate the orchestration
         // config from OrchestrationConfigSnapshot messages that arrive
         // in the conversation's task message list.
-        ctx.subscribe_to_model(
-            &BlocklistAIHistoryModel::handle(ctx),
-            |me, event, ctx| {
-                me.handle_history_event_for_orchestration_config(event, ctx);
-            },
-        );
+        ctx.subscribe_to_model(&BlocklistAIHistoryModel::handle(ctx), |me, event, ctx| {
+            me.handle_history_event_for_orchestration_config(event, ctx);
+        });
 
         // Setup throttled save channel
         let (save_tx, save_rx) = async_channel::unbounded();
@@ -1229,9 +1226,8 @@ impl AIDocumentModel {
                 .all_tasks()
                 .flat_map(|task| task.messages())
                 .filter_map(|message| {
-                    if let Some(maa_api::message::Message::OrchestrationConfigSnapshot(
-                        snapshot,
-                    )) = &message.message
+                    if let Some(maa_api::message::Message::OrchestrationConfigSnapshot(snapshot)) =
+                        &message.message
                     {
                         Some(snapshot.clone())
                     } else {
