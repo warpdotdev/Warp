@@ -246,16 +246,7 @@ pub enum WorkspaceAction {
         tab_index: usize,
         tab_position: RectF,
     },
-    HandoffPendingTransfer {
-        target_window_id: WindowId,
-        insertion_index: usize,
-    },
-    ReverseHandoff {
-        target_window_id: WindowId,
-        target_insertion_index: usize,
-    },
     DropTab,
-    FinalizeDropTab,
     /// Toggles the left panel. In Code Mode V1 this toggles Warp Drive.
     /// In Code Mode V2 this toggles the left panel which contains both the project explorer and
     /// Warp Drive. This happens as explicit action from the user.
@@ -827,10 +818,7 @@ impl WorkspaceAction {
             | CreateTeamAIPrompt
             | OpenInExplorer { .. }
             | DragTab { .. }
-            | HandoffPendingTransfer { .. }
-            | ReverseHandoff { .. }
             | StartTabDrag
-            | FinalizeDropTab
             | ToggleLeftPanel
             | ToggleWarpDrive
             | OpenWarpDrive

@@ -418,6 +418,9 @@ impl BlocklistAIActionExecutor {
         id: Option<AmbientAgentTaskId>,
         ctx: &mut ModelContext<Self>,
     ) {
+        self.send_message_executor.update(ctx, |executor, _| {
+            executor.set_ambient_agent_task_id(id);
+        });
         self.request_computer_use_executor
             .update(ctx, |executor, _| {
                 executor.set_ambient_agent_task_id(id);

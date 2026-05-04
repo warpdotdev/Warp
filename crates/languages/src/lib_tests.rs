@@ -41,14 +41,13 @@ fn html_extensions_resolve_to_html() {
     }
 }
 
+/// `.command` is the macOS convention for double-clickable shell scripts.
+/// Make sure `language_by_filename` recognizes it as shell so the editor
+/// renders syntax highlighting instead of the
+/// "Language support is unavailable for this file type" footer.
 #[test]
-fn cpp_header_extensions_resolve_to_cpp_language() {
-    // Cover the common modern C++ header extensions (`.hpp`, `.hxx`),
-    // the older uppercase `.H` convention, and the rarer `.h++` form.
-    for filename in ["header.hpp", "header.hxx", "header.H", "header.h++"] {
-        let language = language_by_filename(Path::new(filename))
-            .unwrap_or_else(|| panic!("expected {filename} to resolve to C++"));
-
-        assert_eq!(language.display_name(), "C++");
-    }
+fn command_extension_resolves_to_shell() {
+    let language = language_by_filename(Path::new("script.command"))
+        .expect("`.command` files should resolve to a language");
+    assert_eq!(language.display_name(), "Shell");
 }

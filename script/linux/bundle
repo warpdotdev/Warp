@@ -240,7 +240,7 @@ fi
 if [[ "$ARTIFACT" == "cli" ]]; then
   echo "Preparing CLI resources directory"
   BUNDLED_RESOURCES_DIR="$OUT_DIR/resources"
-  "$WORKSPACE_ROOT_DIR/script/prepare_bundled_resources" "$BUNDLED_RESOURCES_DIR" "$RELEASE_CHANNEL" "$CARGO_PROFILE" "$FEATURES"
+  "$WORKSPACE_ROOT_DIR/script/prepare_bundled_resources" "$BUNDLED_RESOURCES_DIR" "$RELEASE_CHANNEL" "$CARGO_PROFILE"
 fi
 
 
@@ -269,8 +269,7 @@ export \
   APPIMAGE_NAME \
   BUILD_ARCH \
   ARTIFACT \
-  CARGO_PROFILE \
-  FEATURES
+  CARGO_PROFILE
 
 # Build the AppImage bundle.
 if [[ ${PACKAGES[@]} =~ "appimage" ]]; then

@@ -422,7 +422,7 @@ impl UpdateManager {
                     }
                 });
 
-                // Delete the actions on the client ID. Once we get a server ID for an object, we start dequeing any pending object actions and those
+                // Delete the actions on the client ID. Once we get a server ID for an object, we start dequeuing any pending object actions and those
                 // directly populate the ObjectActions model with the server ID, so we don't need to worry about any conversion or anything like that.
                 ObjectActions::handle(ctx).update(ctx, |object_actions, ctx| {
                     object_actions.delete_actions_for_object(&client_id.to_string(), ctx);
@@ -2877,7 +2877,7 @@ impl UpdateManager {
                 let cloud_model = CloudModel::as_ref(ctx);
                 let object: Option<&CloudWorkflowEnum> = cloud_model.get_object_of_type(enum_id);
                 let Some(object) = object else {
-                    log::error!("Could not find referenced worfklow enum to copy over to the new space, skipping");
+                    log::error!("Could not find referenced workflow enum to copy over to the new space, skipping");
                     continue;
                 };
 
