@@ -294,6 +294,7 @@ impl TerminalView {
         if let Some(breadcrumbs) = render_orchestration_breadcrumbs(
             self.agent_view_controller.as_ref(app),
             self.mouse_states.parent_conversation_header_link.clone(),
+            self.mouse_states.breadcrumbs_horizontal_scroll.clone(),
             app,
         ) {
             return breadcrumbs;

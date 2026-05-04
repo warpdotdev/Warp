@@ -619,6 +619,12 @@ pub enum Event {
     /// Clears the hovered tab index so it no longer appears as highlighted drop target
     ClearHoveredTabIndex,
     OpenWarpDriveObjectInPane(ObjectUid),
+    /// Tell the workspace to open the given child agent conversation in a
+    /// fresh tab. Bubbled up by `TerminalView::Event::OpenChildAgentInNewTab`
+    /// from the orchestration pill bar's 3-dot menu.
+    OpenChildAgentInNewTab {
+        conversation_id: AIConversationId,
+    },
     OpenSuggestedAgentModeWorkflowModal {
         workflow_and_id: SuggestedAgentModeWorkflowAndId,
     },
@@ -6363,6 +6369,42 @@ impl PaneGroup {
     ) -> Option<ViewHandle<TerminalView>> {
         self.terminal_session_by_id(pane_id)
             .map(|session| session.terminal_view(ctx))
+    }
+
+    /// Walk the visible terminal panes in this group looking for one whose
+    /// terminal view has the given AI conversation as its active agent-view
+    /// conversation. Used by the orchestration pill bar to focus an
+    /// already-visible pane (e.g. "Open in new pane" was already used and the
+    /// user is now clicking the pinned pill in the orchestrator's view).
+    ///
+    /// Hidden-for-close panes are skipped: a pane that has been closed and is
+    /// only retained for the undo stack is not a valid focus target.
+    pub(crate) fn find_visible_terminal_pane_for_conversation(
+        &self,
+        conversation_id: AIConversationId,
+        ctx: &AppContext,
+    ) -> Option<TerminalPaneId> {
+        for pane_id in self.terminal_pane_ids() {
+            if FeatureFlag::UndoClosedPanes.is_enabled() && self.is_pane_hidden_for_close(pane_id) {
+                continue;
+            }
+            let Some(terminal_pane_id) = pane_id.as_terminal_pane_id() else {
+                continue;
+            };
+            let Some(terminal_view) = self.terminal_view_from_pane_id(pane_id, ctx) else {
+                continue;
+            };
+            let active_id = terminal_view
+                .as_ref(ctx)
+                .agent_view_controller()
+                .as_ref(ctx)
+                .agent_view_state()
+                .active_conversation_id();
+            if active_id == Some(conversation_id) {
+                return Some(terminal_pane_id);
+            }
+        }
+        None
     }
 
     /// Given a pane ID, retrieve its backing code view, if the pane is a code pane.

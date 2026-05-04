@@ -1109,12 +1109,63 @@ fn handle_terminal_view_event(
                 ctx.emit(pane_group::Event::FreeTierLimitCheckTriggered);
             }
             Event::RevealChildAgent { conversation_id } => {
+                // Hidden child pane case: reveal it, then focus.
                 if let Some(&child_pane_id) = group.child_agent_panes.get(conversation_id) {
                     group.panes.show_pane_for_child_agent(child_pane_id);
                     group.handle_pane_count_change(ctx);
                     group.focus_pane(child_pane_id, true, ctx);
+                } else if let Some(visible_pane_id) =
+                    group.find_visible_terminal_pane_for_conversation(*conversation_id, ctx)
+                {
+                    // Already-visible pane case (e.g. a pinned child pill in
+                    // the orchestrator's pill bar): the child has been opened
+                    // in another pane via "Open in new pane"/"Open in new tab"
+                    // and is no longer in `child_agent_panes`. Walk visible
+                    // terminal panes, find the one whose terminal view has
+                    // this conversation active, and focus it in place.
+                    group.focus_pane(visible_pane_id.into(), true, ctx);
                 } else {
-                    log::warn!("No hidden pane found for child conversation {conversation_id:?}");
+                    log::warn!("No pane found for child conversation {conversation_id:?}");
+                }
+            }
+            Event::OpenChildAgentInNewTab { conversation_id } => {
+                // The pane group can't add a new tab — only the workspace
+                // can. Forward the request upward so `WorkspaceView` can
+                // create a fresh tab and switch its agent view to this
+                // child conversation.
+                ctx.emit(pane_group::Event::OpenChildAgentInNewTab {
+                    conversation_id: *conversation_id,
+                });
+            }
+            Event::OpenChildAgentInNewPane { conversation_id } => {
+                // Split a fresh terminal pane to the right and load the
+                // child conversation into it via
+                // `enter_agent_view_for_conversation`. We deliberately do
+                // *not* reveal the orchestrator's hidden child pane here:
+                // its terminal model never accumulated rendered AI blocks
+                // for the conversation (those go into whichever pane was
+                // last hosting the in-place agent view via
+                // `SwitchAgentViewToConversation`), so revealing it would
+                // show an empty transcript. Going through a fresh terminal
+                // view forces the cloud load+restore path, which mirrors
+                // what "Open in new tab" already does.
+                let new_pane_id =
+                    group.add_terminal_pane(Direction::Right, None /* chosen_shell */, ctx);
+                if let Some(new_terminal_view) = group.terminal_view_from_pane_id(new_pane_id, ctx)
+                {
+                    let conversation_id = *conversation_id;
+                    new_terminal_view.update(ctx, |terminal_view, ctx| {
+                        terminal_view.enter_agent_view_for_conversation(
+                            None,
+                            AgentViewEntryOrigin::OrchestrationPillBar,
+                            conversation_id,
+                            ctx,
+                        );
+                    });
+                } else {
+                    log::warn!(
+                        "OpenChildAgentInNewPane: failed to resolve terminal view for newly created pane (conversation {conversation_id:?})"
+                    );
                 }
             }
             Event::StartAgentConversation(request) => {

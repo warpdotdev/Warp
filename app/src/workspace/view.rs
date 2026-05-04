@@ -13414,6 +13414,42 @@ impl Workspace {
             }
             #[cfg(not(feature = "local_fs"))]
             pane_group::Event::RemoteRepoNavigated { .. } => {}
+            pane_group::Event::OpenChildAgentInNewTab { conversation_id } => {
+                // "Open in new tab" from the orchestration pill bar's 3-dot
+                // menu. Spawn a fresh session tab and enter agent view for
+                // the child conversation. The conversation already lives in
+                // `BlocklistAIHistoryModel`, so the new terminal view can
+                // adopt it without any restoration plumbing — just call
+                // `enter_agent_view_for_conversation` on it.
+                let conversation_id = *conversation_id;
+                let window_id = ctx.window_id();
+                self.add_new_session_tab_with_default_mode(
+                    NewSessionSource::Tab,
+                    Some(window_id),
+                    None, /* chosen_shell */
+                    None, /* conversation_restoration */
+                    true, /* hide_homepage */
+                    ctx,
+                );
+                if let Some(terminal_view) = self
+                    .active_tab_pane_group()
+                    .as_ref(ctx)
+                    .active_session_view(ctx)
+                {
+                    terminal_view.update(ctx, |view, ctx| {
+                        view.enter_agent_view_for_conversation(
+                            None,
+                            AgentViewEntryOrigin::OrchestrationPillBar,
+                            conversation_id,
+                            ctx,
+                        );
+                    });
+                } else {
+                    log::warn!(
+                        "OpenChildAgentInNewTab: no active terminal view in newly created tab"
+                    );
+                }
+            }
             pane_group::Event::DroppedOnTabBar { origin, pane_id } => {
                 if let Some(hovered_tab_index) = self.hovered_tab_index {
                     match hovered_tab_index {
