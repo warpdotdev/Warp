@@ -285,6 +285,9 @@ impl BlocklistAIActionModel {
             } => {
                 me.handle_action_result(*conversation_id, result.clone(), *cancellation_reason, ctx)
             }
+            BlocklistAIActionExecutorEvent::PolicyPreflightFinished { conversation_id } => {
+                me.try_to_execute_available_actions(*conversation_id, ctx);
+            }
             BlocklistAIActionExecutorEvent::InitProject(id) => {
                 ctx.emit(BlocklistAIActionEvent::InitProject(id.clone()))
             }
@@ -747,12 +750,16 @@ impl BlocklistAIActionModel {
             ));
             BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
                 let blocked_action_user_friendly_str = action.action.user_friendly_name();
+                let blocked_action = match reason.policy_reason() {
+                    Some(policy_reason) => {
+                        format!("{blocked_action_user_friendly_str:?}: {policy_reason}")
+                    }
+                    None => format!("{blocked_action_user_friendly_str:?}"),
+                };
                 history_model.update_conversation_status(
                     self.terminal_view_id,
                     conversation_id,
-                    ConversationStatus::Blocked {
-                        blocked_action: format!("{blocked_action_user_friendly_str:?}"),
-                    },
+                    ConversationStatus::Blocked { blocked_action },
                     ctx,
                 );
             });
@@ -984,6 +991,9 @@ impl BlocklistAIActionModel {
                 .find_position(|action| action.id == *action_id)
             {
                 if let Some(action) = pending_actions_for_conversation.remove(idx) {
+                    self.executor.update(ctx, |executor, _ctx| {
+                        executor.cancel_policy_preflight_for_action(conversation_id, &action.id);
+                    });
                     self.cancel_pending_action(conversation_id, action, Some(reason), ctx);
                 }
             }
@@ -1004,6 +1014,9 @@ impl BlocklistAIActionModel {
             return;
         };
         for action in actions_to_cancel.drain(..).collect_vec() {
+            self.executor.update(ctx, |executor, _ctx| {
+                executor.cancel_policy_preflight_for_action(conversation_id, &action.id);
+            });
             self.cancel_pending_action(conversation_id, action, reason, ctx);
         }
     }

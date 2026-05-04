@@ -13,6 +13,59 @@ use crate::{
     document::{AIDocumentId, AIDocumentVersion},
 };
 
+pub const COMMAND_POLICY_DENIED_PREFIX: &str = "Command blocked by host policy: ";
+pub const COMMAND_POLICY_DENIED_MARKER: &str = "warp.command_policy_denied.v1";
+pub const FILE_EDITS_POLICY_DENIED_PREFIX: &str = "File edits blocked by host policy: ";
+pub const FILE_EDITS_POLICY_DENIED_MARKER: &str = "warp.file_edits_policy_denied.v1";
+pub const WRITE_TO_SHELL_POLICY_DENIED_PREFIX: &str =
+    "Write to long-running shell command blocked by host policy: ";
+pub const WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID: &str = "__warp_policy_denied_shell_write__";
+pub const WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE: i32 = 126;
+
+/// `ApplyFileDiffsResult::Error` persists only a message string, so file-edit
+/// policy denials use a structured marker instead of human-readable prefix matching.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileEditsPolicyDeniedApiMessage {
+    marker: String,
+    reason: String,
+}
+
+/// `RunShellCommandResult::PermissionDenied` currently has no structured
+/// host-policy reason, so persist a JSON marker in the deprecated output field.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CommandPolicyDeniedApiMessage {
+    marker: String,
+    reason: String,
+}
+
+pub fn encode_command_policy_denied_message(reason: &str) -> String {
+    serde_json::to_string(&CommandPolicyDeniedApiMessage {
+        marker: COMMAND_POLICY_DENIED_MARKER.to_string(),
+        reason: reason.to_string(),
+    })
+    .expect("command policy denial marker should serialize")
+}
+
+pub fn decode_command_policy_denied_reason(message: &str) -> Option<String> {
+    let decoded: CommandPolicyDeniedApiMessage = serde_json::from_str(message).ok()?;
+    (decoded.marker == COMMAND_POLICY_DENIED_MARKER).then_some(decoded.reason)
+}
+
+pub fn encode_file_edits_policy_denied_message(reason: &str) -> String {
+    serde_json::to_string(&FileEditsPolicyDeniedApiMessage {
+        marker: FILE_EDITS_POLICY_DENIED_MARKER.to_string(),
+        reason: reason.to_string(),
+    })
+    .expect("file-edit policy denial marker should serialize")
+}
+
+pub fn decode_file_edits_policy_denied_reason(message: &str) -> Option<String> {
+    let decoded: FileEditsPolicyDeniedApiMessage = serde_json::from_str(message).ok()?;
+    (decoded.marker == FILE_EDITS_POLICY_DENIED_MARKER).then_some(decoded.reason)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AIAgentActionResultType {
     /// The output of a requested command.
@@ -188,6 +241,8 @@ pub enum RequestCommandOutputResult {
     CancelledBeforeExecution,
     /// The command was denied because it was present on the denylist.
     Denylisted { command: String },
+    /// The command was denied by a host policy hook before execution.
+    PolicyDenied { command: String, reason: String },
 }
 
 impl RequestCommandOutputResult {
@@ -195,14 +250,16 @@ impl RequestCommandOutputResult {
         match self {
             Self::Completed { exit_code, .. } => exit_code.was_successful(),
             Self::LongRunningCommandSnapshot { .. } => true,
-            Self::CancelledBeforeExecution | Self::Denylisted { .. } => false,
+            Self::CancelledBeforeExecution
+            | Self::Denylisted { .. }
+            | Self::PolicyDenied { .. } => false,
         }
     }
 
     pub fn failed(&self) -> bool {
         match self {
             Self::Completed { exit_code, .. } => !exit_code.was_successful(),
-            Self::Denylisted { .. } => true,
+            Self::Denylisted { .. } | Self::PolicyDenied { .. } => true,
             Self::CancelledBeforeExecution | Self::LongRunningCommandSnapshot { .. } => false,
         }
     }
@@ -234,6 +291,9 @@ impl Display for RequestCommandOutputResult {
             RequestCommandOutputResult::Denylisted { .. } => {
                 write!(f, "Command output was on denylist")
             }
+            RequestCommandOutputResult::PolicyDenied { reason, .. } => {
+                write!(f, "Command output was blocked by host policy: {reason}")
+            }
         }
     }
 }
@@ -259,6 +319,9 @@ pub enum WriteToLongRunningShellCommandResult {
     },
     Cancelled,
     Error(ShellCommandError),
+    PolicyDenied {
+        reason: String,
+    },
 }
 
 impl Display for WriteToLongRunningShellCommandResult {
@@ -276,6 +339,10 @@ impl Display for WriteToLongRunningShellCommandResult {
             ),
             Self::Cancelled => write!(f, "Writing to long-running shell command cancelled"),
             Self::Error(e) => write!(f, "Write to long-running shell command failed: {e:?}"),
+            Self::PolicyDenied { reason } => write!(
+                f,
+                "Write to long-running shell command blocked by host policy: {reason}"
+            ),
         }
     }
 }
@@ -634,6 +701,10 @@ pub enum RequestFileEditsResult {
     DiffApplicationFailed {
         error: String,
     },
+    /// The file edits were denied by a host policy hook before diff application.
+    PolicyDenied {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -685,6 +756,9 @@ impl Display for RequestFileEditsResult {
             RequestFileEditsResult::Cancelled => write!(f, "File edits cancelled"),
             RequestFileEditsResult::DiffApplicationFailed { error } => {
                 write!(f, "File edits failed: {error}")
+            }
+            RequestFileEditsResult::PolicyDenied { reason } => {
+                write!(f, "File edits blocked by host policy: {reason}")
             }
         }
     }
@@ -797,7 +871,14 @@ impl AIAgentActionResultType {
     pub fn is_failed(&self) -> bool {
         match self {
             Self::RequestCommandOutput(r) => r.failed(),
-            Self::RequestFileEdits(RequestFileEditsResult::DiffApplicationFailed { .. })
+            Self::WriteToLongRunningShellCommand(
+                WriteToLongRunningShellCommandResult::Error(_)
+                | WriteToLongRunningShellCommandResult::PolicyDenied { .. },
+            )
+            | Self::RequestFileEdits(
+                RequestFileEditsResult::DiffApplicationFailed { .. }
+                | RequestFileEditsResult::PolicyDenied { .. },
+            )
             | Self::ReadFiles(ReadFilesResult::Error(_))
             | Self::UploadArtifact(UploadArtifactResult::Error(_))
             | Self::SearchCodebase(SearchCodebaseResult::Failed { .. })

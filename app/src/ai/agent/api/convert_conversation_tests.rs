@@ -80,6 +80,477 @@ fn test_convert_tool_call_result_to_input_transfer_control_snapshot() {
 }
 
 #[test]
+fn test_convert_tool_call_result_to_input_preserves_host_policy_denial() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    #[allow(deprecated)]
+    let run_shell_result = api::RunShellCommandResult {
+        command: "rm -rf target".to_string(),
+        output: crate::ai::agent::encode_command_policy_denied_message("blocked by org policy"),
+        exit_code: 0,
+        result: Some(api::run_shell_command_result::Result::PermissionDenied(
+            api::PermissionDenied { reason: None },
+        )),
+    };
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(api::message::tool_call_result::Result::RunShellCommand(
+            run_shell_result,
+        )),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::RequestCommandOutput(
+                crate::ai::agent::RequestCommandOutputResult::PolicyDenied { command, reason },
+            ) => {
+                assert_eq!(command, "rm -rf target");
+                assert_eq!(reason, "blocked by org policy");
+            }
+            other => panic!("Expected policy-denied command result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_redacts_host_policy_denial() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    #[allow(deprecated)]
+    let run_shell_result = api::RunShellCommandResult {
+        command: "OPENAI_API_KEY=sk-secretsecretsecret guard --token raw-token".to_string(),
+        output: crate::ai::agent::encode_command_policy_denied_message(
+            "blocked PASSWORD=hunter2 --token raw-token",
+        ),
+        exit_code: 0,
+        result: Some(api::run_shell_command_result::Result::PermissionDenied(
+            api::PermissionDenied { reason: None },
+        )),
+    };
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(api::message::tool_call_result::Result::RunShellCommand(
+            run_shell_result,
+        )),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::RequestCommandOutput(
+                crate::ai::agent::RequestCommandOutputResult::PolicyDenied { command, reason },
+            ) => {
+                assert!(command.contains("OPENAI_API_KEY=<redacted>"));
+                assert!(command.contains("--token <redacted>"));
+                assert!(reason.contains("PASSWORD=<redacted>"));
+                assert!(reason.contains("--token <redacted>"));
+                assert!(!command.contains("sk-secretsecretsecret"));
+                assert!(!command.contains("raw-token"));
+                assert!(!reason.contains("hunter2"));
+                assert!(!reason.contains("raw-token"));
+            }
+            other => panic!("Expected policy-denied command result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_treats_unmarked_permission_denied_as_cancelled() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    #[allow(deprecated)]
+    let run_shell_result = api::RunShellCommandResult {
+        command: "rm -rf target".to_string(),
+        output: format!(
+            "{}EACCES while spawning pty",
+            crate::ai::agent::COMMAND_POLICY_DENIED_PREFIX
+        ),
+        exit_code: 0,
+        result: Some(api::run_shell_command_result::Result::PermissionDenied(
+            api::PermissionDenied { reason: None },
+        )),
+    };
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(api::message::tool_call_result::Result::RunShellCommand(
+            run_shell_result,
+        )),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::RequestCommandOutput(
+                crate::ai::agent::RequestCommandOutputResult::CancelledBeforeExecution,
+            ) => {}
+            other => panic!("Expected cancelled command result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_preserves_file_edit_policy_denial() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    let policy_reason = "protected path";
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(api::message::tool_call_result::Result::ApplyFileDiffs(
+            api::ApplyFileDiffsResult {
+                result: Some(api::apply_file_diffs_result::Result::Error(
+                    api::apply_file_diffs_result::Error {
+                        message: crate::ai::agent::encode_file_edits_policy_denied_message(
+                            policy_reason,
+                        ),
+                    },
+                )),
+            },
+        )),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::RequestFileEdits(
+                crate::ai::agent::RequestFileEditsResult::PolicyDenied { reason },
+            ) => {
+                assert_eq!(reason, policy_reason);
+            }
+            other => panic!("Expected policy-denied file edit result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_redacts_file_edit_policy_denial_reason() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(api::message::tool_call_result::Result::ApplyFileDiffs(
+            api::ApplyFileDiffsResult {
+                result: Some(api::apply_file_diffs_result::Result::Error(
+                    api::apply_file_diffs_result::Error {
+                        message: crate::ai::agent::encode_file_edits_policy_denied_message(
+                            "blocked PASSWORD=hunter2 --token raw-token",
+                        ),
+                    },
+                )),
+            },
+        )),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::RequestFileEdits(
+                crate::ai::agent::RequestFileEditsResult::PolicyDenied { reason },
+            ) => {
+                assert!(reason.contains("PASSWORD=<redacted>"));
+                assert!(reason.contains("--token <redacted>"));
+                assert!(!reason.contains("hunter2"));
+                assert!(!reason.contains("raw-token"));
+            }
+            other => panic!("Expected policy-denied file edit result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_does_not_reclassify_prefixed_file_edit_error() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    let error = format!(
+        "{}protected path",
+        crate::ai::agent::FILE_EDITS_POLICY_DENIED_PREFIX
+    );
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(api::message::tool_call_result::Result::ApplyFileDiffs(
+            api::ApplyFileDiffsResult {
+                result: Some(api::apply_file_diffs_result::Result::Error(
+                    api::apply_file_diffs_result::Error {
+                        message: error.clone(),
+                    },
+                )),
+            },
+        )),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::RequestFileEdits(
+                crate::ai::agent::RequestFileEditsResult::DiffApplicationFailed {
+                    error: actual_error,
+                },
+            ) => {
+                assert_eq!(actual_error, error);
+            }
+            other => panic!("Expected diff-application failure result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_preserves_write_to_shell_policy_denial() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    let policy_reason = "interactive write blocked";
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(
+            api::message::tool_call_result::Result::WriteToLongRunningShellCommand(
+                api::WriteToLongRunningShellCommandResult {
+                    result: Some(
+                        api::write_to_long_running_shell_command_result::Result::CommandFinished(
+                            api::ShellCommandFinished {
+                                command_id:
+                                    crate::ai::agent::WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID
+                                        .to_string(),
+                                output: format!(
+                                    "{}{}",
+                                    crate::ai::agent::WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
+                                    policy_reason
+                                ),
+                                exit_code: crate::ai::agent::WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
+                            },
+                        ),
+                    ),
+                },
+            ),
+        ),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::WriteToLongRunningShellCommand(
+                crate::ai::agent::WriteToLongRunningShellCommandResult::PolicyDenied { reason },
+            ) => {
+                assert_eq!(reason, policy_reason);
+            }
+            other => panic!("Expected policy-denied shell write result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_redacts_write_to_shell_policy_denial_reason() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(
+            api::message::tool_call_result::Result::WriteToLongRunningShellCommand(
+                api::WriteToLongRunningShellCommandResult {
+                    result: Some(
+                        api::write_to_long_running_shell_command_result::Result::CommandFinished(
+                            api::ShellCommandFinished {
+                                command_id:
+                                    crate::ai::agent::WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID
+                                        .to_string(),
+                                output: format!(
+                                    "{}blocked PASSWORD=hunter2 --token raw-token",
+                                    crate::ai::agent::WRITE_TO_SHELL_POLICY_DENIED_PREFIX
+                                ),
+                                exit_code: crate::ai::agent::WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
+                            },
+                        ),
+                    ),
+                },
+            ),
+        ),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::WriteToLongRunningShellCommand(
+                crate::ai::agent::WriteToLongRunningShellCommandResult::PolicyDenied { reason },
+            ) => {
+                assert!(reason.contains("PASSWORD=<redacted>"));
+                assert!(reason.contains("--token <redacted>"));
+                assert!(!reason.contains("hunter2"));
+                assert!(!reason.contains("raw-token"));
+            }
+            other => panic!("Expected policy-denied shell write result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_does_not_reclassify_prefixed_write_output_without_marker()
+{
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    let output = format!(
+        "{}legitimate command output",
+        crate::ai::agent::WRITE_TO_SHELL_POLICY_DENIED_PREFIX
+    );
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(
+            api::message::tool_call_result::Result::WriteToLongRunningShellCommand(
+                api::WriteToLongRunningShellCommandResult {
+                    result: Some(
+                        api::write_to_long_running_shell_command_result::Result::CommandFinished(
+                            api::ShellCommandFinished {
+                                command_id: "block_1".to_string(),
+                                output: output.clone(),
+                                exit_code: crate::ai::agent::WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
+                            },
+                        ),
+                    ),
+                },
+            ),
+        ),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::WriteToLongRunningShellCommand(
+                crate::ai::agent::WriteToLongRunningShellCommandResult::CommandFinished {
+                    block_id,
+                    output: actual_output,
+                    exit_code,
+                },
+            ) => {
+                assert_eq!(block_id.to_string(), "block_1");
+                assert_eq!(actual_output, output);
+                assert_eq!(
+                    exit_code.value(),
+                    crate::ai::agent::WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE
+                );
+            }
+            other => panic!("Expected finished shell write result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_convert_tool_call_result_to_input_treats_unlabeled_write_to_shell_error_as_cancelled() {
+    let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
+    let mut document_versions = HashMap::new();
+    let tool_call_result = api::message::ToolCallResult {
+        tool_call_id: "tool_call".to_string(),
+        context: None,
+        result: Some(
+            api::message::tool_call_result::Result::WriteToLongRunningShellCommand(
+                api::WriteToLongRunningShellCommandResult {
+                    result: Some(
+                        api::write_to_long_running_shell_command_result::Result::Error(
+                            api::ShellCommandError { r#type: None },
+                        ),
+                    ),
+                },
+            ),
+        ),
+    };
+
+    let input = convert_tool_call_result_to_input(
+        &task_id,
+        &tool_call_result,
+        &HashMap::new(),
+        &mut document_versions,
+    )
+    .unwrap();
+
+    match input {
+        AIAgentInput::ActionResult { result, .. } => match result.result {
+            crate::ai::agent::AIAgentActionResultType::WriteToLongRunningShellCommand(
+                crate::ai::agent::WriteToLongRunningShellCommandResult::Cancelled,
+            ) => {}
+            other => panic!("Expected cancelled shell write result, got {other:?}"),
+        },
+        other => panic!("Expected action-result input, got {other:?}"),
+    }
+}
+
+#[test]
 fn test_convert_tool_call_result_to_input_upload_artifact_success() {
     let task_id = crate::ai::agent::task::TaskId::new("task".to_string());
     let mut document_versions = HashMap::new();

@@ -9,6 +9,7 @@ use crate::ai::agent::{
 use super::super::blocklist::block::secret_redaction::{
     find_secrets_in_text, SECRET_REDACTION_REPLACEMENT_CHARACTER,
 };
+use super::super::policy_hooks::redaction::redact_sensitive_text_for_policy;
 
 /// Redact all detected secrets in-place within the given string.
 pub(crate) fn redact_secrets(input: &mut String) {
@@ -109,16 +110,34 @@ pub(crate) fn redact_inputs(inputs: &mut [AIAgentInput]) {
             AIAgentInput::ActionResult { result, context } => {
                 redact_context(Arc::make_mut(context));
                 match &mut result.result {
-                    AIAgentActionResultType::RequestCommandOutput(output) => {
-                        if let RequestCommandOutputResult::Completed { output, .. } = output {
+                    AIAgentActionResultType::RequestCommandOutput(output) => match output {
+                        RequestCommandOutputResult::Completed { output, .. } => {
                             redact_secrets(output);
                         }
-                    }
+                        RequestCommandOutputResult::PolicyDenied { command, reason } => {
+                            *command = redact_sensitive_text_for_policy(command);
+                            redact_secrets(command);
+                            *reason = redact_sensitive_text_for_policy(reason);
+                            redact_secrets(reason);
+                        }
+                        RequestCommandOutputResult::LongRunningCommandSnapshot {
+                            grid_contents,
+                            ..
+                        } => redact_secrets(grid_contents),
+                        RequestCommandOutputResult::Denylisted { command } => {
+                            redact_secrets(command);
+                        }
+                        RequestCommandOutputResult::CancelledBeforeExecution => {}
+                    },
                     AIAgentActionResultType::WriteToLongRunningShellCommand(result) => {
                         use crate::ai::agent::WriteToLongRunningShellCommandResult::*;
                         match result {
                             Snapshot { grid_contents, .. } => redact_secrets(grid_contents),
                             CommandFinished { output, .. } => redact_secrets(output),
+                            PolicyDenied { reason } => {
+                                *reason = redact_sensitive_text_for_policy(reason);
+                                redact_secrets(reason);
+                            }
                             Error(_) | Cancelled => {}
                         }
                     }
@@ -192,6 +211,12 @@ pub(crate) fn redact_inputs(inputs: &mut [AIAgentInput]) {
                             for file_path in deleted_files {
                                 redact_secrets(file_path);
                             }
+                        } else if let crate::ai::agent::RequestFileEditsResult::PolicyDenied {
+                            reason,
+                        } = request_file_edits_result
+                        {
+                            *reason = redact_sensitive_text_for_policy(reason);
+                            redact_secrets(reason);
                         }
                     }
                     AIAgentActionResultType::InsertReviewComments(result) => {
@@ -405,5 +430,128 @@ fn redact_attachment(attachment: &mut AIAgentAttachment) {
         }
         // FilePathReference only contains a file ID and filename, no user secrets.
         AIAgentAttachment::FilePathReference { .. } => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::ai::agent::task::TaskId;
+    use crate::ai::agent::{
+        AIAgentActionResult, AIAgentActionResultType, RequestFileEditsResult,
+        WriteToLongRunningShellCommandResult,
+    };
+
+    #[test]
+    fn redact_inputs_redacts_policy_denied_command_result_command() {
+        let secret = "sk-secretsecretsecret";
+        let mut inputs = vec![AIAgentInput::ActionResult {
+            result: AIAgentActionResult {
+                id: "action_1".to_string().into(),
+                task_id: TaskId::new("task_1".to_string()),
+                result: AIAgentActionResultType::RequestCommandOutput(
+                    RequestCommandOutputResult::PolicyDenied {
+                        command: format!(
+                            "OPENAI_API_KEY={secret} guard --client-secret raw-client-secret"
+                        ),
+                        reason: format!("blocked token {secret}"),
+                    },
+                ),
+            },
+            context: Arc::from([]),
+        }];
+
+        redact_inputs(&mut inputs);
+
+        let AIAgentInput::ActionResult { result, .. } = &inputs[0] else {
+            panic!("expected action result");
+        };
+        let AIAgentActionResultType::RequestCommandOutput(
+            RequestCommandOutputResult::PolicyDenied { command, reason },
+        ) = &result.result
+        else {
+            panic!("expected policy denied command result");
+        };
+
+        assert!(command.contains("OPENAI_API_KEY=<redacted>"));
+        assert!(command.contains("--client-secret <redacted>"));
+        assert!(!command.contains(secret));
+        assert!(!command.contains("raw-client-secret"));
+        assert!(!reason.contains(secret));
+    }
+
+    #[test]
+    fn redact_inputs_redacts_policy_denied_write_to_shell_reason() {
+        let mut inputs = vec![AIAgentInput::ActionResult {
+            result: AIAgentActionResult {
+                id: "action_1".to_string().into(),
+                task_id: TaskId::new("task_1".to_string()),
+                result: AIAgentActionResultType::WriteToLongRunningShellCommand(
+                    WriteToLongRunningShellCommandResult::PolicyDenied {
+                        reason: "blocked PASSWORD=hunter2 --token raw-token Authorization: Bearer rawbearer"
+                            .to_string(),
+                    },
+                ),
+            },
+            context: Arc::from([]),
+        }];
+
+        redact_inputs(&mut inputs);
+
+        let AIAgentInput::ActionResult { result, .. } = &inputs[0] else {
+            panic!("expected action result");
+        };
+        let AIAgentActionResultType::WriteToLongRunningShellCommand(
+            WriteToLongRunningShellCommandResult::PolicyDenied { reason },
+        ) = &result.result
+        else {
+            panic!("expected policy denied shell write result");
+        };
+
+        assert!(reason.contains("PASSWORD=<redacted>"));
+        assert!(reason.contains("--token <redacted>"));
+        assert!(reason.contains("Authorization: Bearer <redacted>"));
+        assert!(!reason.contains("hunter2"));
+        assert!(!reason.contains("raw-token"));
+        assert!(!reason.contains("rawbearer"));
+    }
+
+    #[test]
+    fn redact_inputs_redacts_policy_denied_file_edit_reason() {
+        let mut inputs = vec![AIAgentInput::ActionResult {
+            result: AIAgentActionResult {
+                id: "action_1".to_string().into(),
+                task_id: TaskId::new("task_1".to_string()),
+                result: AIAgentActionResultType::RequestFileEdits(
+                    RequestFileEditsResult::PolicyDenied {
+                        reason:
+                            "blocked PASSWORD=hunter2 --token raw-token Authorization: Bearer rawbearer"
+                                .to_string(),
+                    },
+                ),
+            },
+            context: Arc::from([]),
+        }];
+
+        redact_inputs(&mut inputs);
+
+        let AIAgentInput::ActionResult { result, .. } = &inputs[0] else {
+            panic!("expected action result");
+        };
+        let AIAgentActionResultType::RequestFileEdits(RequestFileEditsResult::PolicyDenied {
+            reason,
+        }) = &result.result
+        else {
+            panic!("expected policy denied file-edit result");
+        };
+
+        assert!(reason.contains("PASSWORD=<redacted>"));
+        assert!(reason.contains("--token <redacted>"));
+        assert!(reason.contains("Authorization: Bearer <redacted>"));
+        assert!(!reason.contains("hunter2"));
+        assert!(!reason.contains("raw-token"));
+        assert!(!reason.contains("rawbearer"));
     }
 }

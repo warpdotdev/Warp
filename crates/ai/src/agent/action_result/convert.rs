@@ -86,6 +86,23 @@ impl TryFrom<RequestCommandOutputResult> for api::request::input::tool_call_resu
                     ),
                 )
             }
+            RequestCommandOutputResult::PolicyDenied { command, reason } => {
+                // The current MAA schema only has a denylisted-command PermissionDenied reason.
+                // Leave it unset so host policy denials are not mislabeled.
+                #[allow(deprecated)]
+                Ok(
+                    api::request::input::tool_call_result::Result::RunShellCommand(
+                        api::RunShellCommandResult {
+                            command,
+                            output: encode_command_policy_denied_message(&reason),
+                            exit_code: Default::default(),
+                            result: Some(api::run_shell_command_result::Result::PermissionDenied(
+                                api::PermissionDenied { reason: None },
+                            )),
+                        },
+                    ),
+                )
+            }
         }
     }
 }
@@ -127,6 +144,21 @@ impl TryFrom<WriteToLongRunningShellCommandResult>
             ),
             WriteToLongRunningShellCommandResult::Cancelled =>
                 Err(ConvertToAPITypeError::Ignore),
+            WriteToLongRunningShellCommandResult::PolicyDenied { reason } => {
+                Ok(api::request::input::tool_call_result::Result::WriteToLongRunningShellCommand(
+                    api::WriteToLongRunningShellCommandResult {
+                        result: Some(
+                            api::write_to_long_running_shell_command_result::Result::CommandFinished(
+                                api::ShellCommandFinished {
+                                    command_id: WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID.to_string(),
+                                    output: format!("{WRITE_TO_SHELL_POLICY_DENIED_PREFIX}{reason}"),
+                                    exit_code: WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
+                                },
+                            ),
+                        ),
+                    },
+                ))
+            }
             WriteToLongRunningShellCommandResult::Error(ShellCommandError::BlockNotFound) => {
                 Ok(api::request::input::tool_call_result::Result::WriteToLongRunningShellCommand(
                         api::WriteToLongRunningShellCommandResult {
@@ -281,6 +313,17 @@ impl TryFrom<RequestFileEditsResult> for api::request::input::tool_call_result::
                     api::ApplyFileDiffsResult {
                         result: Some(api::apply_file_diffs_result::Result::Error(
                             api::apply_file_diffs_result::Error { message: error },
+                        )),
+                    },
+                ),
+            ),
+            RequestFileEditsResult::PolicyDenied { reason } => Ok(
+                api::request::input::tool_call_result::Result::ApplyFileDiffs(
+                    api::ApplyFileDiffsResult {
+                        result: Some(api::apply_file_diffs_result::Result::Error(
+                            api::apply_file_diffs_result::Error {
+                                message: encode_file_edits_policy_denied_message(&reason),
+                            },
                         )),
                     },
                 ),

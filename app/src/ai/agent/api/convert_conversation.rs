@@ -13,6 +13,7 @@ use crate::ai::agent::conversation::{AIConversation, AIConversationId};
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::todos::AIAgentTodoList;
 use crate::ai::agent::{
+    decode_command_policy_denied_reason, decode_file_edits_policy_denied_reason,
     AIAgentActionResult, AIAgentActionResultType, AIAgentContext, AIAgentExchange,
     AIAgentExchangeId, AIAgentInput, AIAgentOutput, AIAgentOutputMessage, AIAgentOutputStatus,
     CallMCPToolResult, CancellationReason, CloneRepositoryURL, CreateDocumentsResult,
@@ -25,10 +26,15 @@ use crate::ai::agent::{
     Shared, ShellCommandCompletedTrigger, ShellCommandError, SuggestNewConversationResult,
     SuggestPromptResult, TransferShellCommandControlToUserResult, UpdatedFileContext,
     UploadArtifactResult, WriteToLongRunningShellCommandResult,
+    WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID, WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
+    WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
 };
 use crate::ai::block_context::BlockContext;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::ai::llms::LLMId;
+use crate::ai::policy_hooks::redaction::{
+    redact_command_for_policy, redact_sensitive_text_for_policy,
+};
 use crate::ai_assistant::execution_context::{WarpAiExecutionContext, WarpAiOsContext};
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::terminal_model::BlockIndex;
@@ -591,9 +597,31 @@ pub(crate) fn convert_tool_call_result_to_input(
                     is_alt_screen_active: snapshot.is_alt_screen_active,
                 },
                 Some(api::run_shell_command_result::Result::PermissionDenied(
-                    api::PermissionDenied { .. },
-                ))
-                | None => {
+                    api::PermissionDenied { reason },
+                )) => match reason {
+                    Some(api::permission_denied::Reason::DenylistedCommand(())) => {
+                        RequestCommandOutputResult::Denylisted {
+                            command: result.command.clone(),
+                        }
+                    }
+                    None => {
+                        #[allow(deprecated)]
+                        let output = result.output.as_str();
+                        if let Some(reason) = decode_command_policy_denied_reason(output) {
+                            if reason.is_empty() {
+                                RequestCommandOutputResult::CancelledBeforeExecution
+                            } else {
+                                RequestCommandOutputResult::PolicyDenied {
+                                    command: redact_command_for_policy(&result.command),
+                                    reason: redact_sensitive_text_for_policy(&reason),
+                                }
+                            }
+                        } else {
+                            RequestCommandOutputResult::CancelledBeforeExecution
+                        }
+                    }
+                },
+                None => {
                     // If no result is present, treat as cancelled
                     RequestCommandOutputResult::CancelledBeforeExecution
                 }
@@ -621,11 +649,29 @@ pub(crate) fn convert_tool_call_result_to_input(
                     },
                     Some(api::write_to_long_running_shell_command_result::Result::CommandFinished(
                         finished,
-                    )) => WriteToLongRunningShellCommandResult::CommandFinished {
-                        block_id: finished.command_id.clone().into(),
-                        output: finished.output.clone(),
-                        exit_code: ExitCode::from(finished.exit_code),
-                    },
+                    )) => {
+                        let is_policy_denial_marker =
+                            finished.command_id == WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID
+                                && finished.exit_code == WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE;
+                        let policy_denial_reason = if is_policy_denial_marker {
+                            finished
+                                .output
+                                .strip_prefix(WRITE_TO_SHELL_POLICY_DENIED_PREFIX)
+                        } else {
+                            None
+                        };
+                        if let Some(reason) = policy_denial_reason {
+                            WriteToLongRunningShellCommandResult::PolicyDenied {
+                                reason: redact_sensitive_text_for_policy(reason),
+                            }
+                        } else {
+                            WriteToLongRunningShellCommandResult::CommandFinished {
+                                block_id: finished.command_id.clone().into(),
+                                output: finished.output.clone(),
+                                exit_code: ExitCode::from(finished.exit_code),
+                            }
+                        }
+                    }
                     Some(api::write_to_long_running_shell_command_result::Result::Error(api::ShellCommandError{
                         r#type: Some(api::shell_command_error::Type::CommandNotFound(()))
                     })) => WriteToLongRunningShellCommandResult::Error(ShellCommandError::BlockNotFound),
@@ -760,8 +806,14 @@ pub(crate) fn convert_tool_call_result_to_input(
                     }
                 }
                 Some(api::apply_file_diffs_result::Result::Error(error)) => {
-                    RequestFileEditsResult::DiffApplicationFailed {
-                        error: error.message.clone(),
+                    if let Some(reason) = decode_file_edits_policy_denied_reason(&error.message) {
+                        RequestFileEditsResult::PolicyDenied {
+                            reason: redact_sensitive_text_for_policy(&reason),
+                        }
+                    } else {
+                        RequestFileEditsResult::DiffApplicationFailed {
+                            error: error.message.clone(),
+                        }
                     }
                 }
                 None => RequestFileEditsResult::Cancelled,

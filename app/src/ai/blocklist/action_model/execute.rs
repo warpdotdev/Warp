@@ -20,6 +20,11 @@ pub(super) mod suggest_prompt;
 pub(super) mod upload_artifact;
 pub(super) mod use_computer;
 
+#[cfg(not(target_family = "wasm"))]
+use ai::agent::action_result::{
+    CallMCPToolResult, ReadFilesResult, ReadMCPResourceResult, RequestFileEditsResult,
+    WriteToLongRunningShellCommandResult,
+};
 use ai::agent::action_result::{InsertReviewCommentsResult, RequestCommandOutputResult};
 pub use ask_user_question::AskUserQuestionExecutor;
 pub(crate) use call_mcp_tool::coerce_integer_args;
@@ -28,7 +33,7 @@ use create_documents::CreateDocumentsExecutor;
 use edit_documents::EditDocumentsExecutor;
 use fetch_conversation::FetchConversationExecutor;
 use file_glob::FileGlobExecutor;
-use futures::{future::BoxFuture, FutureExt};
+use futures::{channel::oneshot, future::BoxFuture, FutureExt};
 use grep::GrepExecutor;
 use parking_lot::FairMutex;
 use read_documents::ReadDocumentsExecutor;
@@ -58,13 +63,17 @@ use warp_core::{execution_mode::AppExecutionMode, features::FeatureFlag};
 use crate::util::openable_file_type::is_binary_file;
 #[cfg(feature = "local_fs")]
 use futures::AsyncReadExt;
-use std::{any::Any, path::PathBuf, pin::Pin, sync::Arc};
+#[cfg(not(target_family = "wasm"))]
+use std::collections::HashSet;
+use std::{any::Any, collections::HashMap, path::PathBuf, pin::Pin, sync::Arc};
 #[cfg(feature = "local_fs")]
 use warp_files::{FileModel, TextFileReadResult};
 #[cfg(feature = "local_fs")]
 use warp_util::file::FileLoadError;
 #[cfg(feature = "local_fs")]
 use warp_util::file_type::is_buffer_binary;
+#[cfg(not(target_family = "wasm"))]
+use warp_util::path::{EscapeChar, ShellFamily};
 use warpui::{
     r#async::{Spawnable, SpawnableOutput},
     AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity,
@@ -79,13 +88,25 @@ use mime_guess::from_path;
 
 use self::search_codebase::SearchCodebaseExecutor;
 #[cfg(feature = "local_fs")]
-use crate::ai::{agent::AnyFileContent, paths::host_native_absolute_path};
+use crate::ai::agent::AnyFileContent;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::blocklist::{
+    permissions::{
+        CommandExecutionPermission, CommandExecutionPermissionDeniedReason, FileWritePermission,
+        FileWritePermissionDeniedReason,
+    },
+    BlocklistAIPermissions,
+};
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::mcp::TemplatableMCPServerManager;
+#[cfg(any(feature = "local_fs", not(target_family = "wasm")))]
+use crate::ai::paths::host_native_absolute_path;
 use crate::{
     ai::{
         agent::{
             conversation::AIConversationId, AIAgentAction, AIAgentActionId, AIAgentActionResult,
-            AIAgentActionResultType, AIAgentActionType, CancellationReason, FileContext,
-            FileLocations, ServerOutputId,
+            AIAgentActionResultType, AIAgentActionType, AIAgentPtyWriteMode, CancellationReason,
+            FileContext, FileEdit, FileLocations, ServerOutputId,
         },
         ambient_agents::AmbientAgentTaskId,
         get_relevant_files::controller::GetRelevantFilesController,
@@ -97,6 +118,20 @@ use crate::{
         ShellLaunchData, TerminalModel,
     },
     BlocklistAIHistoryModel,
+};
+#[cfg(not(target_family = "wasm"))]
+use ai::diff_validation::ParsedDiff;
+
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+#[cfg(not(target_family = "wasm"))]
+use crate::ai::policy_hooks::{
+    decision::{compose_policy_decisions, WarpPermissionDecisionKind},
+    redaction::{redact_command_for_policy, redact_sensitive_text_for_policy},
+    AgentPolicyAction, AgentPolicyDecisionKind, AgentPolicyEffectiveDecision, AgentPolicyEvent,
+    AgentPolicyHookConfig, AgentPolicyHookEngine, PolicyCallMcpToolAction,
+    PolicyExecuteCommandAction, PolicyReadFilesAction, PolicyReadMcpResourceAction,
+    PolicyWriteFilesAction, PolicyWriteToLongRunningShellCommandAction, WarpPermissionSnapshot,
 };
 
 /// Types of actions that can be executed in parallel.
@@ -126,6 +161,51 @@ struct ExecuteActionInput<'a> {
 struct PreprocessActionInput<'a> {
     action: &'a AIAgentAction,
     conversation_id: AIConversationId,
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PolicyPreflightKey {
+    conversation_id: AIConversationId,
+    action_id: AIAgentActionId,
+    working_directory: Option<PathBuf>,
+    run_until_completion: bool,
+    active_profile_id: Option<String>,
+    raw_action: String,
+    policy_action: AgentPolicyAction,
+    warp_permission: WarpPermissionSnapshot,
+    hook_config: AgentPolicyHookConfig,
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl PolicyPreflightKey {
+    fn new(
+        conversation_id: AIConversationId,
+        action_id: AIAgentActionId,
+        action: &AIAgentAction,
+        event: &AgentPolicyEvent,
+        hook_config: &AgentPolicyHookConfig,
+    ) -> Self {
+        Self {
+            conversation_id,
+            action_id,
+            working_directory: event.working_directory.clone(),
+            run_until_completion: event.run_until_completion,
+            active_profile_id: event.active_profile_id.clone(),
+            raw_action: raw_policy_action_key(action),
+            policy_action: event.action.clone(),
+            warp_permission: event.warp_permission.clone(),
+            hook_config: hook_config.clone(),
+        }
+    }
+
+    fn matches_action(
+        &self,
+        conversation_id: AIConversationId,
+        action_id: &AIAgentActionId,
+    ) -> bool {
+        self.conversation_id == conversation_id && self.action_id == *action_id
+    }
 }
 
 type AsyncExecuteActionFn<T> = Pin<Box<dyn Spawnable<Output = T>>>;
@@ -170,6 +250,15 @@ enum AnyActionExecution {
     InvalidAction,
 }
 
+#[cfg(not(target_family = "wasm"))]
+#[derive(Debug, PartialEq)]
+enum PolicyPreflightState {
+    Pending,
+    Allowed { skip_confirmation: bool },
+    NeedsConfirmation(Option<String>),
+    Denied(AIAgentActionResultType),
+}
+
 impl<T> From<ActionExecution<T>> for AnyActionExecution
 where
     T: Send + 'static,
@@ -195,16 +284,25 @@ where
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum NotExecutedReason {
     NotReady,
-    NeedsConfirmation,
+    NeedsConfirmation { policy_reason: Option<String> },
     WaitingOnSharer,
 }
 
 impl NotExecutedReason {
     pub fn needs_confirmation(&self) -> bool {
-        matches!(self, Self::NeedsConfirmation)
+        matches!(self, Self::NeedsConfirmation { .. })
+    }
+
+    pub fn policy_reason(&self) -> Option<&str> {
+        match self {
+            Self::NeedsConfirmation {
+                policy_reason: Some(reason),
+            } => Some(reason.as_str()),
+            _ => None,
+        }
     }
 }
 
@@ -239,6 +337,8 @@ impl AsyncExecutingAction {
 }
 
 pub struct BlocklistAIActionExecutor {
+    active_session: ModelHandle<ActiveSession>,
+    terminal_view_id: EntityId,
     shell_command_executor: ModelHandle<ShellCommandExecutor>,
     read_files_executor: ModelHandle<ReadFilesExecutor>,
     upload_artifact_executor: ModelHandle<UploadArtifactExecutor>,
@@ -263,7 +363,13 @@ pub struct BlocklistAIActionExecutor {
     /// The actions currently executing asynchronously, keyed by action ID.
     /// We track them per action rather than as a single slot so multiple actions from the same
     /// parallel phase can complete independently.
-    async_executing_actions: std::collections::HashMap<AIAgentActionId, AsyncExecutingAction>,
+    async_executing_actions: HashMap<AIAgentActionId, AsyncExecutingAction>,
+    #[cfg(not(target_family = "wasm"))]
+    pending_policy_preflights: HashSet<PolicyPreflightKey>,
+    #[cfg(not(target_family = "wasm"))]
+    completed_policy_preflights: HashMap<PolicyPreflightKey, AgentPolicyEffectiveDecision>,
+    #[cfg(not(target_family = "wasm"))]
+    confirmed_file_edit_policy_preprocesses: HashSet<(AIConversationId, AIAgentActionId)>,
 
     /// Reference to the terminal model for checking session sharing state.
     terminal_model: Arc<FairMutex<TerminalModel>>,
@@ -327,6 +433,8 @@ impl BlocklistAIActionExecutor {
         let ask_user_question_executor =
             ctx.add_model(|_| AskUserQuestionExecutor::new(terminal_view_id));
         Self {
+            active_session,
+            terminal_view_id,
             shell_command_executor,
             read_files_executor,
             upload_artifact_executor,
@@ -344,6 +452,12 @@ impl BlocklistAIActionExecutor {
             use_computer_executor,
             request_computer_use_executor,
             async_executing_actions: Default::default(),
+            #[cfg(not(target_family = "wasm"))]
+            pending_policy_preflights: Default::default(),
+            #[cfg(not(target_family = "wasm"))]
+            completed_policy_preflights: Default::default(),
+            #[cfg(not(target_family = "wasm"))]
+            confirmed_file_edit_policy_preprocesses: Default::default(),
             terminal_model,
             read_skill_executor,
             fetch_conversation_executor,
@@ -428,7 +542,7 @@ impl BlocklistAIActionExecutor {
     }
 
     pub fn preprocess_action(
-        &self,
+        &mut self,
         action: &AIAgentAction,
         conversation_id: AIConversationId,
         ctx: &mut ModelContext<Self>,
@@ -442,6 +556,11 @@ impl BlocklistAIActionExecutor {
             action,
             conversation_id,
         };
+
+        #[cfg(not(target_family = "wasm"))]
+        if let Some(preprocess) = self.preprocess_request_file_edits_after_policy(&input, ctx) {
+            return preprocess;
+        }
 
         match &action.action {
             AIAgentActionType::RequestCommandOutput { .. }
@@ -544,6 +663,10 @@ impl BlocklistAIActionExecutor {
         };
         let can_auto_execute = self.should_autoexecute(input, ctx);
         let is_agent_autonomous = AppExecutionMode::as_ref(ctx).is_autonomous();
+        let autonomous_shell_command_denied = !is_user_initiated
+            && !can_auto_execute
+            && is_agent_autonomous
+            && action.action.is_request_command_output();
 
         // The agent cannot auto execute and either:
         // - the agent is interactive, OR
@@ -551,12 +674,72 @@ impl BlocklistAIActionExecutor {
         let needs_confirmation = !(is_user_initiated
             || can_auto_execute
             || (is_agent_autonomous && action.action.is_request_command_output()));
-        if needs_confirmation {
+        let mut skip_confirmation = false;
+        #[cfg(not(target_family = "wasm"))]
+        if let Some(preflight_state) = self.start_policy_preflight_if_needed(
+            &action,
+            conversation_id,
+            is_user_initiated,
+            can_auto_execute,
+            needs_confirmation,
+            autonomous_shell_command_denied,
+            ctx,
+        ) {
+            match preflight_state {
+                PolicyPreflightState::Pending => {
+                    return TryExecuteResult::NotExecuted {
+                        action: Box::new(action),
+                        reason: NotExecutedReason::NotReady,
+                    };
+                }
+                PolicyPreflightState::NeedsConfirmation(policy_reason) => {
+                    return TryExecuteResult::NotExecuted {
+                        action: Box::new(action),
+                        reason: NotExecutedReason::NeedsConfirmation { policy_reason },
+                    };
+                }
+                PolicyPreflightState::Denied(result) => {
+                    let action_id = action.id.clone();
+                    ctx.emit(BlocklistAIActionExecutorEvent::ExecutingAction {
+                        action_id: action_id.clone(),
+                    });
+                    ctx.emit(BlocklistAIActionExecutorEvent::FinishedAction {
+                        result: Arc::new(AIAgentActionResult {
+                            id: action_id,
+                            task_id: action.task_id,
+                            result,
+                        }),
+                        conversation_id,
+                        cancellation_reason: None,
+                    });
+
+                    return TryExecuteResult::ExecutedSync;
+                }
+                PolicyPreflightState::Allowed {
+                    skip_confirmation: policy_skip_confirmation,
+                } => {
+                    skip_confirmation = policy_skip_confirmation;
+                }
+            }
+        }
+        if needs_confirmation && !skip_confirmation {
             return TryExecuteResult::NotExecuted {
                 action: Box::new(action),
-                reason: NotExecutedReason::NeedsConfirmation,
+                reason: NotExecutedReason::NeedsConfirmation {
+                    policy_reason: None,
+                },
             };
-        } else if !is_user_initiated && !can_auto_execute && is_agent_autonomous {
+        }
+
+        #[cfg(not(target_family = "wasm"))]
+        if self.start_request_file_edits_preprocess_if_needed(&action, conversation_id, ctx) {
+            return TryExecuteResult::NotExecuted {
+                action: Box::new(action),
+                reason: NotExecutedReason::NotReady,
+            };
+        }
+
+        if !is_user_initiated && !can_auto_execute && is_agent_autonomous {
             // It must be the case that the autonomous agent is requesting a denylisted command.
             if let AIAgentActionType::RequestCommandOutput { command, .. } = &action.action {
                 let action_id = action.id.clone();
@@ -781,6 +964,495 @@ impl BlocklistAIActionExecutor {
         )
     }
 
+    #[cfg(not(target_family = "wasm"))]
+    #[allow(clippy::too_many_arguments)]
+    fn warp_permission_snapshot_for_action(
+        &self,
+        action: &AIAgentAction,
+        conversation_id: AIConversationId,
+        is_user_initiated: bool,
+        can_auto_execute: bool,
+        needs_confirmation: bool,
+        autonomous_shell_command_denied: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> WarpPermissionSnapshot {
+        let terminal_denial_reason = self.terminal_warp_denial_reason_for_action(
+            action,
+            conversation_id,
+            is_user_initiated,
+            ctx,
+        );
+
+        warp_permission_snapshot_for_policy(
+            is_user_initiated,
+            can_auto_execute,
+            needs_confirmation,
+            autonomous_shell_command_denied,
+            terminal_denial_reason,
+        )
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn terminal_warp_denial_reason_for_action(
+        &self,
+        action: &AIAgentAction,
+        conversation_id: AIConversationId,
+        is_user_initiated: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<String> {
+        match &action.action {
+            AIAgentActionType::RequestCommandOutput {
+                command,
+                is_read_only,
+                is_risky,
+                ..
+            } => {
+                if is_user_initiated {
+                    return None;
+                }
+
+                let shell_type = self.active_session.as_ref(ctx).shell_type(ctx);
+                terminal_command_denial_reason_for_policy(shell_type, |escape_char| {
+                    BlocklistAIPermissions::as_ref(ctx).can_autoexecute_command(
+                        &conversation_id,
+                        command,
+                        escape_char,
+                        is_read_only.unwrap_or(false),
+                        *is_risky,
+                        Some(self.terminal_view_id),
+                        ctx,
+                    )
+                })
+            }
+            AIAgentActionType::RequestFileEdits { file_edits, .. } => {
+                let paths = file_edit_paths(file_edits)
+                    .into_iter()
+                    .map(PathBuf::from)
+                    .collect::<Vec<_>>();
+                match BlocklistAIPermissions::as_ref(ctx).can_write_files(
+                    &conversation_id,
+                    &paths,
+                    Some(self.terminal_view_id),
+                    ctx,
+                ) {
+                    FileWritePermission::Denied(FileWritePermissionDeniedReason::ProtectedPath) => {
+                        Some("file path is protected by Warp permissions".to_string())
+                    }
+                    _ => None,
+                }
+            }
+            AIAgentActionType::CallMCPTool {
+                server_id, name, ..
+            } => self
+                .resolve_mcp_tool_template_uuid(server_id.as_ref(), name, ctx)
+                .and_then(|server_uuid| self.mcp_denylist_denial_reason(server_uuid, ctx)),
+            AIAgentActionType::ReadMCPResource {
+                server_id,
+                name,
+                uri,
+            } => self
+                .resolve_mcp_resource_template_uuid(server_id.as_ref(), name, uri.as_deref(), ctx)
+                .and_then(|server_uuid| self.mcp_denylist_denial_reason(server_uuid, ctx)),
+            _ => None,
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn resolve_mcp_tool_template_uuid(
+        &self,
+        server_id: Option<&uuid::Uuid>,
+        name: &str,
+        ctx: &AppContext,
+    ) -> Option<uuid::Uuid> {
+        let templatable_manager = TemplatableMCPServerManager::as_ref(ctx);
+        server_id
+            .and_then(|id| templatable_manager.get_template_uuid(*id))
+            .or_else(|| {
+                templatable_manager
+                    .server_from_tool(name.to_string())
+                    .copied()
+                    .and_then(|installation_uuid| {
+                        templatable_manager.get_template_uuid(installation_uuid)
+                    })
+            })
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn resolve_mcp_resource_template_uuid(
+        &self,
+        server_id: Option<&uuid::Uuid>,
+        name: &str,
+        uri: Option<&str>,
+        ctx: &AppContext,
+    ) -> Option<uuid::Uuid> {
+        let templatable_manager = TemplatableMCPServerManager::as_ref(ctx);
+        server_id
+            .and_then(|id| templatable_manager.get_template_uuid(*id))
+            .or_else(|| {
+                templatable_manager
+                    .server_from_resource(name, uri)
+                    .copied()
+                    .and_then(|installation_uuid| {
+                        templatable_manager.get_template_uuid(installation_uuid)
+                    })
+            })
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn mcp_denylist_denial_reason(
+        &self,
+        server_uuid: uuid::Uuid,
+        ctx: &AppContext,
+    ) -> Option<String> {
+        BlocklistAIPermissions::as_ref(ctx)
+            .get_mcp_denylist(ctx, Some(self.terminal_view_id))
+            .contains(&server_uuid)
+            .then(|| "MCP server is denylisted by Warp permissions".to_string())
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn preprocess_request_file_edits_after_policy(
+        &mut self,
+        input: &PreprocessActionInput<'_>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<BoxFuture<'static, ()>> {
+        if !matches!(
+            input.action.action,
+            AIAgentActionType::RequestFileEdits { .. }
+        ) {
+            return None;
+        }
+
+        let active_profile =
+            AIExecutionProfilesModel::as_ref(ctx).active_profile(Some(self.terminal_view_id), ctx);
+        let permissions_profile = crate::ai::blocklist::BlocklistAIPermissions::as_ref(ctx)
+            .permissions_profile_for_id(ctx, *active_profile.id());
+        let config = permissions_profile.agent_policy_hooks;
+        if !config.is_active() {
+            self.remove_policy_preflights_for_action(input.conversation_id, &input.action.id);
+            return None;
+        }
+
+        let can_auto_execute = self.should_autoexecute(
+            ExecuteActionInput {
+                action: input.action,
+                conversation_id: input.conversation_id,
+            },
+            ctx,
+        );
+        let warp_permission = self.warp_permission_snapshot_for_action(
+            input.action,
+            input.conversation_id,
+            false,
+            can_auto_execute,
+            !can_auto_execute,
+            false,
+            ctx,
+        );
+        let event = self.agent_policy_event(
+            input.action,
+            input.conversation_id,
+            Some(active_profile.id().to_string()),
+            warp_permission.clone(),
+            config.allow_autoapproval_for_all_hooks(),
+            ctx,
+        )?;
+
+        let action = (*input.action).clone();
+        let conversation_id = input.conversation_id;
+        let preflight_key =
+            PolicyPreflightKey::new(conversation_id, action.id.clone(), &action, &event, &config);
+        let (done_tx, done_rx) = oneshot::channel();
+        let engine = AgentPolicyHookEngine::new(config);
+        self.remove_policy_preflights_for_action(conversation_id, &action.id);
+        self.pending_policy_preflights.insert(preflight_key.clone());
+
+        ctx.spawn(
+            async move { engine.preflight(event, warp_permission).await },
+            move |me, decision, ctx| {
+                let should_preprocess =
+                    should_preprocess_file_edits_after_policy_decision(&action, &decision);
+                if !complete_policy_preflight_if_pending(
+                    &mut me.pending_policy_preflights,
+                    &mut me.completed_policy_preflights,
+                    preflight_key.clone(),
+                    decision,
+                ) {
+                    let _ = done_tx.send(());
+                    return;
+                }
+
+                if !should_preprocess {
+                    let _ = done_tx.send(());
+                    return;
+                }
+
+                let preprocess = me.request_file_edits_executor.update(ctx, |executor, ctx| {
+                    executor.preprocess_action(
+                        PreprocessActionInput {
+                            action: &action,
+                            conversation_id,
+                        },
+                        ctx,
+                    )
+                });
+                ctx.spawn(preprocess, move |_me, _, _ctx| {
+                    let _ = done_tx.send(());
+                });
+            },
+        );
+
+        Some(
+            async {
+                let _ = done_rx.await;
+            }
+            .boxed(),
+        )
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn start_request_file_edits_preprocess_if_needed(
+        &mut self,
+        action: &AIAgentAction,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) -> bool {
+        if !matches!(action.action, AIAgentActionType::RequestFileEdits { .. }) {
+            return false;
+        }
+
+        let already_preprocessed = self
+            .request_file_edits_executor
+            .update(ctx, |executor, _ctx| {
+                executor.has_preprocessed_action(conversation_id, action, _ctx)
+            });
+        if already_preprocessed {
+            return false;
+        }
+
+        let active_profile =
+            AIExecutionProfilesModel::as_ref(ctx).active_profile(Some(self.terminal_view_id), ctx);
+        let policy_hooks_active = crate::ai::blocklist::BlocklistAIPermissions::as_ref(ctx)
+            .permissions_profile_for_id(ctx, *active_profile.id())
+            .agent_policy_hooks
+            .is_active();
+        if policy_hooks_active {
+            self.confirmed_file_edit_policy_preprocesses
+                .insert((conversation_id, action.id.clone()));
+        }
+
+        let action = action.clone();
+        let preprocess = self
+            .request_file_edits_executor
+            .update(ctx, |executor, ctx| {
+                executor.preprocess_action(
+                    PreprocessActionInput {
+                        action: &action,
+                        conversation_id,
+                    },
+                    ctx,
+                )
+            });
+        ctx.spawn(preprocess, move |_me, _, ctx| {
+            ctx.emit(BlocklistAIActionExecutorEvent::PolicyPreflightFinished { conversation_id });
+        });
+
+        true
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    #[allow(clippy::too_many_arguments)]
+    fn start_policy_preflight_if_needed(
+        &mut self,
+        action: &AIAgentAction,
+        conversation_id: AIConversationId,
+        is_user_initiated: bool,
+        can_auto_execute: bool,
+        needs_confirmation: bool,
+        autonomous_shell_command_denied: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<PolicyPreflightState> {
+        let active_profile =
+            AIExecutionProfilesModel::as_ref(ctx).active_profile(Some(self.terminal_view_id), ctx);
+        let permissions_profile = crate::ai::blocklist::BlocklistAIPermissions::as_ref(ctx)
+            .permissions_profile_for_id(ctx, *active_profile.id());
+        let config = permissions_profile.agent_policy_hooks;
+
+        if !config.is_active() {
+            self.remove_policy_preflights_for_action(conversation_id, &action.id);
+            return None;
+        }
+
+        let warp_permission = self.warp_permission_snapshot_for_action(
+            action,
+            conversation_id,
+            is_user_initiated,
+            can_auto_execute,
+            needs_confirmation,
+            autonomous_shell_command_denied,
+            ctx,
+        );
+        let event = self.agent_policy_event(
+            action,
+            conversation_id,
+            Some(active_profile.id().to_string()),
+            warp_permission.clone(),
+            config.allow_autoapproval_for_all_hooks(),
+            ctx,
+        )?;
+        let preflight_key =
+            PolicyPreflightKey::new(conversation_id, action.id.clone(), action, &event, &config);
+        let confirmed_file_edit_policy_preprocess =
+            matches!(action.action, AIAgentActionType::RequestFileEdits { .. })
+                && self
+                    .confirmed_file_edit_policy_preprocesses
+                    .remove(&(conversation_id, action.id.clone()));
+
+        if confirmed_file_edit_policy_preprocess {
+            if let Some(decision) = self
+                .completed_policy_preflights
+                .get(&preflight_key)
+                .cloned()
+            {
+                let state = confirmed_file_edit_policy_preprocess_state_from_cached_decision(
+                    action,
+                    &decision,
+                    warp_permission.clone(),
+                    config.allow_autoapproval_for_all_hooks(),
+                );
+                if should_consume_completed_policy_preflight(&state) {
+                    self.completed_policy_preflights.remove(&preflight_key);
+                }
+                return Some(state);
+            }
+        }
+
+        if let Some(decision) = self
+            .completed_policy_preflights
+            .get(&preflight_key)
+            .cloned()
+        {
+            let decision = recompose_completed_policy_decision(
+                &decision,
+                warp_permission,
+                config.allow_autoapproval_for_all_hooks(),
+            );
+            let state = policy_preflight_state_from_decision(action, &decision, is_user_initiated);
+            let already_preprocessed_file_edit = matches!(
+                (&action.action, &state),
+                (
+                    AIAgentActionType::RequestFileEdits { .. },
+                    PolicyPreflightState::Allowed { .. }
+                )
+            ) && self
+                .request_file_edits_executor
+                .update(ctx, |executor, _ctx| {
+                    executor.has_preprocessed_action(conversation_id, action, _ctx)
+                });
+            let should_preserve_for_file_edit_preprocess =
+                should_preserve_completed_policy_preflight_for_file_edit_preprocess(
+                    action,
+                    &state,
+                    already_preprocessed_file_edit,
+                );
+            if should_consume_completed_policy_preflight(&state)
+                && !should_preserve_for_file_edit_preprocess
+            {
+                self.completed_policy_preflights.remove(&preflight_key);
+            }
+            return Some(state);
+        }
+
+        if self.pending_policy_preflights.contains(&preflight_key) {
+            return Some(PolicyPreflightState::Pending);
+        }
+
+        self.remove_policy_preflights_for_action(conversation_id, &action.id);
+        self.pending_policy_preflights.insert(preflight_key.clone());
+        let engine = AgentPolicyHookEngine::new(config);
+        ctx.spawn(
+            async move { engine.preflight(event, warp_permission).await },
+            move |me, decision, ctx| {
+                if !complete_policy_preflight_if_pending(
+                    &mut me.pending_policy_preflights,
+                    &mut me.completed_policy_preflights,
+                    preflight_key.clone(),
+                    decision,
+                ) {
+                    return;
+                }
+                ctx.emit(BlocklistAIActionExecutorEvent::PolicyPreflightFinished {
+                    conversation_id,
+                });
+            },
+        );
+
+        Some(PolicyPreflightState::Pending)
+    }
+
+    pub fn cancel_policy_preflight_for_action(
+        &mut self,
+        conversation_id: AIConversationId,
+        action_id: &AIAgentActionId,
+    ) {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            self.remove_policy_preflights_for_action(conversation_id, action_id);
+        }
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn remove_policy_preflights_for_action(
+        &mut self,
+        conversation_id: AIConversationId,
+        action_id: &AIAgentActionId,
+    ) {
+        self.pending_policy_preflights
+            .retain(|key| !key.matches_action(conversation_id, action_id));
+        self.completed_policy_preflights
+            .retain(|key, _| !key.matches_action(conversation_id, action_id));
+        self.confirmed_file_edit_policy_preprocesses
+            .remove(&(conversation_id, action_id.clone()));
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn agent_policy_event(
+        &self,
+        action: &AIAgentAction,
+        conversation_id: AIConversationId,
+        active_profile_id: Option<String>,
+        warp_permission: WarpPermissionSnapshot,
+        hook_autoapproval_enabled: bool,
+        ctx: &mut ModelContext<Self>,
+    ) -> Option<AgentPolicyEvent> {
+        let current_working_directory = self
+            .active_session
+            .as_ref(ctx)
+            .current_working_directory()
+            .cloned();
+        let shell = self.active_session.as_ref(ctx).shell_launch_data(ctx);
+        let shell_type = self.active_session.as_ref(ctx).shell_type(ctx);
+        let working_directory = current_working_directory.as_ref().map(PathBuf::from);
+        let run_until_completion = BlocklistAIHistoryModel::as_ref(ctx)
+            .conversation(&conversation_id)
+            .is_some_and(|conversation| conversation.autoexecute_any_action());
+        let policy_action =
+            agent_policy_action(action, shell_type, &shell, &current_working_directory)?;
+
+        Some(
+            AgentPolicyEvent::new(
+                conversation_id.to_string(),
+                action.id.to_string(),
+                working_directory,
+                run_until_completion,
+                active_profile_id,
+                warp_permission,
+                policy_action,
+            )
+            .with_hook_autoapproval_enabled(hook_autoapproval_enabled),
+        )
+    }
+
     pub fn cancel_running_async_action(
         &mut self,
         action_id: &AIAgentActionId,
@@ -909,6 +1581,452 @@ impl BlocklistAIActionExecutor {
         self.terminal_model.lock().is_shared_session_viewer()
     }
 }
+
+#[cfg(not(target_family = "wasm"))]
+fn terminal_command_denial_reason_for_policy(
+    shell_type: Option<ShellType>,
+    permission_for_escape_char: impl FnOnce(EscapeChar) -> CommandExecutionPermission,
+) -> Option<String> {
+    let Some(shell_type) = shell_type else {
+        return Some(
+            "command permissions could not be verified because shell type is unavailable"
+                .to_string(),
+        );
+    };
+    let escape_char = ShellFamily::from(shell_type).escape_char();
+
+    match permission_for_escape_char(escape_char) {
+        CommandExecutionPermission::Denied(
+            CommandExecutionPermissionDeniedReason::ExplicitlyDenylisted,
+        ) => Some("command is explicitly denylisted by Warp permissions".to_string()),
+        _ => None,
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn warp_permission_snapshot_for_policy(
+    is_user_initiated: bool,
+    can_auto_execute: bool,
+    needs_confirmation: bool,
+    autonomous_shell_command_denied: bool,
+    terminal_denial_reason: Option<String>,
+) -> WarpPermissionSnapshot {
+    if let Some(reason) = terminal_denial_reason {
+        return WarpPermissionSnapshot::deny(Some(reason));
+    }
+
+    if autonomous_shell_command_denied {
+        return WarpPermissionSnapshot::deny(Some(
+            "autonomous command execution was not allowed by Warp permissions".to_string(),
+        ));
+    }
+
+    if needs_confirmation {
+        return WarpPermissionSnapshot::ask(Some(
+            "Warp requires user confirmation before this action can run".to_string(),
+        ));
+    }
+
+    if is_user_initiated {
+        return WarpPermissionSnapshot::allow(Some("the user initiated this action".to_string()));
+    }
+
+    if can_auto_execute {
+        return WarpPermissionSnapshot::allow(Some(
+            "Warp permissions allow this action to auto-execute".to_string(),
+        ));
+    }
+
+    WarpPermissionSnapshot::ask(Some(
+        "Warp permissions did not allow auto-execution".to_string(),
+    ))
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn agent_policy_action(
+    action: &AIAgentAction,
+    shell_type: Option<ShellType>,
+    shell: &Option<ShellLaunchData>,
+    current_working_directory: &Option<String>,
+) -> Option<AgentPolicyAction> {
+    match &action.action {
+        AIAgentActionType::RequestCommandOutput {
+            command,
+            is_read_only,
+            is_risky,
+            ..
+        } => Some(AgentPolicyAction::ExecuteCommand(
+            PolicyExecuteCommandAction::new(
+                command.clone(),
+                normalize_command_for_policy(command, shell_type),
+                *is_read_only,
+                *is_risky,
+            )
+            .redacted(),
+        )),
+        AIAgentActionType::WriteToLongRunningShellCommand {
+            block_id,
+            input,
+            mode,
+        } => Some(AgentPolicyAction::WriteToLongRunningShellCommand(
+            PolicyWriteToLongRunningShellCommandAction::new(
+                block_id.to_string(),
+                input.as_ref(),
+                policy_pty_write_mode(*mode),
+            ),
+        )),
+        AIAgentActionType::ReadFiles(read_files) => {
+            Some(AgentPolicyAction::ReadFiles(PolicyReadFilesAction::new(
+                read_files
+                    .locations
+                    .iter()
+                    .map(|file| policy_path(&file.name, shell, current_working_directory)),
+            )))
+        }
+        AIAgentActionType::RequestFileEdits { file_edits, .. } => {
+            let paths = file_edit_paths(file_edits)
+                .into_iter()
+                .map(|file| policy_path(file, shell, current_working_directory));
+            Some(AgentPolicyAction::WriteFiles(PolicyWriteFilesAction::new(
+                paths, None,
+            )))
+        }
+        AIAgentActionType::CallMCPTool {
+            server_id,
+            name,
+            input,
+        } => Some(AgentPolicyAction::CallMcpTool(
+            PolicyCallMcpToolAction::new(*server_id, name.clone(), input),
+        )),
+        AIAgentActionType::ReadMCPResource {
+            server_id,
+            name,
+            uri,
+        } => Some(AgentPolicyAction::ReadMcpResource(
+            PolicyReadMcpResourceAction::new(*server_id, name.clone(), uri.clone()),
+        )),
+        _ => None,
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn file_edit_paths(file_edits: &[FileEdit]) -> Vec<&str> {
+    file_edits
+        .iter()
+        .flat_map(|edit| match edit {
+            FileEdit::Edit(ParsedDiff::V4AEdit { file, move_to, .. }) => {
+                [file.as_deref(), move_to.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+            }
+            _ => edit.file().into_iter().collect(),
+        })
+        .collect()
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn policy_pty_write_mode(mode: AIAgentPtyWriteMode) -> &'static str {
+    match mode {
+        AIAgentPtyWriteMode::Raw => "raw",
+        AIAgentPtyWriteMode::Line => "line",
+        AIAgentPtyWriteMode::Block => "block",
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn policy_path(
+    path: &str,
+    shell: &Option<ShellLaunchData>,
+    current_working_directory: &Option<String>,
+) -> PathBuf {
+    PathBuf::from(host_native_absolute_path(
+        path,
+        shell,
+        current_working_directory,
+    ))
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn raw_policy_action_key(action: &AIAgentAction) -> String {
+    match &action.action {
+        AIAgentActionType::RequestCommandOutput {
+            command,
+            is_read_only,
+            is_risky,
+            wait_until_completion,
+            uses_pager,
+            rationale,
+            citations,
+        } => format!(
+            "execute_command:{command:?}:{is_read_only:?}:{is_risky:?}:{wait_until_completion:?}:{uses_pager:?}:{rationale:?}:{citations:?}"
+        ),
+        AIAgentActionType::WriteToLongRunningShellCommand {
+            block_id,
+            input,
+            mode,
+        } => format!(
+            "write_to_shell:{block_id:?}:{:?}:{mode:?}",
+            input.as_ref()
+        ),
+        AIAgentActionType::ReadFiles(read_files) => {
+            format!("read_files:{:?}", read_files.locations)
+        }
+        AIAgentActionType::RequestFileEdits { file_edits, title } => {
+            format!("write_files:{file_edits:?}:{title:?}")
+        }
+        AIAgentActionType::CallMCPTool {
+            server_id,
+            name,
+            input,
+        } => format!(
+            "call_mcp_tool:{server_id:?}:{name:?}:{}",
+            serde_json::to_string(input).unwrap_or_else(|_| format!("{input:?}"))
+        ),
+        AIAgentActionType::ReadMCPResource {
+            server_id,
+            name,
+            uri,
+        } => format!("read_mcp_resource:{server_id:?}:{name:?}:{uri:?}"),
+        _ => format!("{:?}", action.action),
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn normalize_command_for_policy(command: &str, shell_type: Option<ShellType>) -> String {
+    let Some(shell_type) = shell_type else {
+        return command.to_string();
+    };
+
+    match ShellFamily::from(shell_type).escape_char() {
+        EscapeChar::Backslash => command.replace("\\\n", " "),
+        EscapeChar::Backtick => command.replace("`\n", " "),
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn policy_denied_action_result(
+    action: &AIAgentAction,
+    decision: &AgentPolicyEffectiveDecision,
+) -> AIAgentActionResultType {
+    if let Some(result) = warp_denied_action_result(action, decision) {
+        return result;
+    }
+
+    let reason = redact_sensitive_text_for_policy(&policy_denied_message(decision));
+    match &action.action {
+        AIAgentActionType::RequestCommandOutput { command, .. } => {
+            AIAgentActionResultType::RequestCommandOutput(
+                RequestCommandOutputResult::PolicyDenied {
+                    command: redact_command_for_policy(command),
+                    reason,
+                },
+            )
+        }
+        AIAgentActionType::ReadFiles(_) => AIAgentActionResultType::ReadFiles(
+            ReadFilesResult::Error(format!("Blocked by host policy: {reason}")),
+        ),
+        AIAgentActionType::RequestFileEdits { .. } => {
+            AIAgentActionResultType::RequestFileEdits(RequestFileEditsResult::PolicyDenied {
+                reason,
+            })
+        }
+        AIAgentActionType::WriteToLongRunningShellCommand { .. } => {
+            AIAgentActionResultType::WriteToLongRunningShellCommand(
+                WriteToLongRunningShellCommandResult::PolicyDenied { reason },
+            )
+        }
+        AIAgentActionType::CallMCPTool { .. } => AIAgentActionResultType::CallMCPTool(
+            CallMCPToolResult::Error(format!("Blocked by host policy: {reason}")),
+        ),
+        AIAgentActionType::ReadMCPResource { .. } => AIAgentActionResultType::ReadMCPResource(
+            ReadMCPResourceResult::Error(format!("Blocked by host policy: {reason}")),
+        ),
+        _ => action.action.cancelled_result(),
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn warp_denied_action_result(
+    action: &AIAgentAction,
+    decision: &AgentPolicyEffectiveDecision,
+) -> Option<AIAgentActionResultType> {
+    let is_hook_denial = decision
+        .hook_results
+        .iter()
+        .any(|result| result.decision == AgentPolicyDecisionKind::Deny);
+    if decision.decision != AgentPolicyDecisionKind::Deny
+        || decision.warp_permission.decision != WarpPermissionDecisionKind::Deny
+        || is_hook_denial
+    {
+        return None;
+    }
+
+    let reason = redact_sensitive_text_for_policy(
+        decision
+            .warp_permission
+            .reason
+            .as_deref()
+            .unwrap_or("Warp permissions denied the action"),
+    );
+    let warp_denied_message = format!("Blocked by Warp permissions: {reason}");
+
+    Some(match &action.action {
+        AIAgentActionType::RequestCommandOutput { command, .. } => {
+            AIAgentActionResultType::RequestCommandOutput(RequestCommandOutputResult::Denylisted {
+                command: redact_command_for_policy(command),
+            })
+        }
+        AIAgentActionType::ReadFiles(_) => {
+            AIAgentActionResultType::ReadFiles(ReadFilesResult::Error(warp_denied_message))
+        }
+        AIAgentActionType::RequestFileEdits { .. } => AIAgentActionResultType::RequestFileEdits(
+            RequestFileEditsResult::DiffApplicationFailed {
+                error: warp_denied_message,
+            },
+        ),
+        AIAgentActionType::WriteToLongRunningShellCommand { .. } => {
+            AIAgentActionResultType::WriteToLongRunningShellCommand(
+                WriteToLongRunningShellCommandResult::Cancelled,
+            )
+        }
+        AIAgentActionType::CallMCPTool { .. } => {
+            AIAgentActionResultType::CallMCPTool(CallMCPToolResult::Error(warp_denied_message))
+        }
+        AIAgentActionType::ReadMCPResource { .. } => AIAgentActionResultType::ReadMCPResource(
+            ReadMCPResourceResult::Error(warp_denied_message),
+        ),
+        _ => action.action.cancelled_result(),
+    })
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn recompose_completed_policy_decision(
+    decision: &AgentPolicyEffectiveDecision,
+    warp_permission: WarpPermissionSnapshot,
+    allow_hook_autoapproval: bool,
+) -> AgentPolicyEffectiveDecision {
+    let allow_hook_autoapproval =
+        allow_hook_autoapproval && decision.warp_permission == warp_permission;
+    compose_policy_decisions(
+        warp_permission,
+        decision.hook_results.clone(),
+        allow_hook_autoapproval,
+    )
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn policy_preflight_state_from_decision(
+    action: &AIAgentAction,
+    decision: &AgentPolicyEffectiveDecision,
+    is_user_initiated: bool,
+) -> PolicyPreflightState {
+    match decision.decision {
+        AgentPolicyDecisionKind::Allow => PolicyPreflightState::Allowed {
+            skip_confirmation: decision.warp_permission.decision == WarpPermissionDecisionKind::Ask,
+        },
+        AgentPolicyDecisionKind::Ask if is_user_initiated => PolicyPreflightState::Allowed {
+            skip_confirmation: false,
+        },
+        AgentPolicyDecisionKind::Ask => {
+            PolicyPreflightState::NeedsConfirmation(decision.reason.clone())
+        }
+        AgentPolicyDecisionKind::Deny | AgentPolicyDecisionKind::Unknown => {
+            PolicyPreflightState::Denied(policy_denied_action_result(action, decision))
+        }
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn should_preprocess_file_edits_after_policy_decision(
+    action: &AIAgentAction,
+    decision: &AgentPolicyEffectiveDecision,
+) -> bool {
+    matches!(
+        policy_preflight_state_from_decision(action, decision, false),
+        PolicyPreflightState::Allowed { .. }
+    )
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn confirmed_file_edit_policy_preprocess_state() -> PolicyPreflightState {
+    PolicyPreflightState::Allowed {
+        skip_confirmation: true,
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn confirmed_file_edit_policy_preprocess_state_from_cached_decision(
+    action: &AIAgentAction,
+    cached_decision: &AgentPolicyEffectiveDecision,
+    warp_permission: WarpPermissionSnapshot,
+    allow_hook_autoapproval: bool,
+) -> PolicyPreflightState {
+    let warp_permission_unchanged = cached_decision.warp_permission == warp_permission;
+    let decision = recompose_completed_policy_decision(
+        cached_decision,
+        warp_permission,
+        allow_hook_autoapproval,
+    );
+    if warp_permission_unchanged
+        && cached_decision.decision == AgentPolicyDecisionKind::Ask
+        && decision.decision == AgentPolicyDecisionKind::Ask
+    {
+        return confirmed_file_edit_policy_preprocess_state();
+    }
+
+    policy_preflight_state_from_decision(action, &decision, false)
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn should_preserve_completed_policy_preflight_for_file_edit_preprocess(
+    action: &AIAgentAction,
+    state: &PolicyPreflightState,
+    already_preprocessed: bool,
+) -> bool {
+    matches!(&action.action, AIAgentActionType::RequestFileEdits { .. })
+        && matches!(state, PolicyPreflightState::Allowed { .. })
+        && !already_preprocessed
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn should_consume_completed_policy_preflight(state: &PolicyPreflightState) -> bool {
+    !matches!(state, PolicyPreflightState::NeedsConfirmation(_))
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn complete_policy_preflight_if_pending(
+    pending_policy_preflights: &mut HashSet<PolicyPreflightKey>,
+    completed_policy_preflights: &mut HashMap<PolicyPreflightKey, AgentPolicyEffectiveDecision>,
+    preflight_key: PolicyPreflightKey,
+    decision: AgentPolicyEffectiveDecision,
+) -> bool {
+    if !pending_policy_preflights.remove(&preflight_key) {
+        return false;
+    }
+    completed_policy_preflights.insert(preflight_key, decision);
+    true
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn policy_denied_message(decision: &AgentPolicyEffectiveDecision) -> String {
+    if let Some(denial) = decision
+        .hook_results
+        .iter()
+        .find(|result| result.decision == AgentPolicyDecisionKind::Deny)
+    {
+        return match denial.reason.as_deref() {
+            Some(reason) => format!("{} denied the action: {reason}", denial.hook_name),
+            None => format!("{} denied the action", denial.hook_name),
+        };
+    }
+
+    decision
+        .reason
+        .clone()
+        .unwrap_or_else(|| "host policy denied the action".to_string())
+}
+
 impl Entity for BlocklistAIActionExecutor {
     type Event = BlocklistAIActionExecutorEvent;
 }
@@ -925,6 +2043,11 @@ pub enum BlocklistAIActionExecutorEvent {
         conversation_id: AIConversationId,
         /// The reason for cancellation, if this action was cancelled.
         cancellation_reason: Option<CancellationReason>,
+    },
+
+    /// Emitted when an out-of-process policy preflight has completed and pending actions can retry.
+    PolicyPreflightFinished {
+        conversation_id: AIConversationId,
     },
 
     InitProject(AIAgentActionId),

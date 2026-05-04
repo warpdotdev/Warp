@@ -69,6 +69,9 @@ pub mod text {
                             "Command was not allowed to run due to presence on denylist"
                         )
                     }
+                    RequestCommandOutputResult::PolicyDenied { reason, .. } => {
+                        writeln!(w, "Command was blocked by host policy: {reason}")
+                    }
                 },
                 AIAgentActionResultType::WriteToLongRunningShellCommand(result) => match result {
                     WriteToLongRunningShellCommandResult::Snapshot { .. } => {
@@ -84,6 +87,9 @@ pub mod text {
                     }
                     WriteToLongRunningShellCommandResult::Error(_) => {
                         writeln!(w, "Failed to write to command.")
+                    }
+                    WriteToLongRunningShellCommandResult::PolicyDenied { reason } => {
+                        writeln!(w, "Writing to command blocked by host policy: {reason}")
                     }
                 },
                 AIAgentActionResultType::RequestFileEdits(result) => match result {
@@ -105,6 +111,9 @@ pub mod text {
                     }
                     RequestFileEditsResult::DiffApplicationFailed { error } => {
                         writeln!(w, "Editing files failed: {error}")
+                    }
+                    RequestFileEditsResult::PolicyDenied { reason } => {
+                        writeln!(w, "Editing files blocked by host policy: {reason}")
                     }
                 },
                 AIAgentActionResultType::ReadFiles(result) => match result {
@@ -825,6 +834,13 @@ pub mod json {
                             "Command was not allowed to run due to presence on denylist",
                         ),
                     }),
+                    RequestCommandOutputResult::PolicyDenied { reason, .. } => {
+                        Some(JsonMessage::ToolError {
+                            error: Cow::Owned(format!(
+                                "Command was blocked by host policy: {reason}"
+                            )),
+                        })
+                    }
                 },
                 AIAgentActionResultType::WriteToLongRunningShellCommand(result) => match result {
                     WriteToLongRunningShellCommandResult::Snapshot { .. } => {
@@ -847,6 +863,13 @@ pub mod json {
                             error: "Failed to write to command.".into(),
                         })
                     }
+                    WriteToLongRunningShellCommandResult::PolicyDenied { reason } => {
+                        Some(JsonMessage::ToolError {
+                            error: Cow::Owned(format!(
+                                "Writing to command blocked by host policy: {reason}"
+                            )),
+                        })
+                    }
                     WriteToLongRunningShellCommandResult::Cancelled => {
                         Some(JsonMessage::ToolCanceled)
                     }
@@ -858,6 +881,13 @@ pub mod json {
                     RequestFileEditsResult::DiffApplicationFailed { error } => {
                         Some(JsonMessage::ToolError {
                             error: Cow::Borrowed(error.as_str()),
+                        })
+                    }
+                    RequestFileEditsResult::PolicyDenied { reason } => {
+                        Some(JsonMessage::ToolError {
+                            error: Cow::Owned(format!(
+                                "File edits blocked by host policy: {reason}"
+                            )),
                         })
                     }
                     RequestFileEditsResult::Cancelled => Some(JsonMessage::ToolCanceled),
@@ -1283,6 +1313,46 @@ pub mod json {
     pub fn shared_session_established<W: Write>(join_url: &str, w: &mut W) -> io::Result<()> {
         let message = JsonMessage::System(JsonSystemEvent::SharedSessionEstablished { join_url });
         write_message(&message, w)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn json_command_policy_denial_preserves_host_policy_signal() {
+            let result = AIAgentActionResultType::RequestCommandOutput(
+                RequestCommandOutputResult::PolicyDenied {
+                    command: "rm -rf target".to_string(),
+                    reason: "blocked by guard".to_string(),
+                },
+            );
+            let message = JsonMessage::from_action_result(&result).unwrap();
+            let value = serde_json::to_value(message).unwrap();
+
+            assert_eq!(value["type"], "tool_error");
+            assert_eq!(
+                value["error"],
+                "Command was blocked by host policy: blocked by guard"
+            );
+        }
+
+        #[test]
+        fn json_write_to_shell_policy_denial_preserves_host_policy_signal() {
+            let result = AIAgentActionResultType::WriteToLongRunningShellCommand(
+                WriteToLongRunningShellCommandResult::PolicyDenied {
+                    reason: "interactive write blocked".to_string(),
+                },
+            );
+            let message = JsonMessage::from_action_result(&result).unwrap();
+            let value = serde_json::to_value(message).unwrap();
+
+            assert_eq!(value["type"], "tool_error");
+            assert_eq!(
+                value["error"],
+                "Writing to command blocked by host policy: interactive write blocked"
+            );
+        }
     }
 }
 

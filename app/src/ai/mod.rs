@@ -48,6 +48,7 @@ pub(crate) mod generate_code_review_content;
 pub(crate) mod loading;
 pub mod mcp;
 pub mod outline;
+pub(crate) mod policy_hooks;
 
 pub(crate) use ai::paths;
 

@@ -24,6 +24,7 @@ use warp_core::features::FeatureFlag;
 use warpui::{AppContext, SingletonEntity};
 
 use super::llms::{LLMContextWindow, LLMId, LLMPreferences};
+use super::policy_hooks::AgentPolicyHookConfig;
 
 pub const PROFILE_NAME_MAX_LENGTH: usize = 50;
 
@@ -255,6 +256,9 @@ pub struct AIExecutionProfile {
 
     /// Whether the agent may use web search when helpful for completing tasks
     pub web_search_enabled: bool,
+
+    /// Optional host-enforced policy hooks for governed agent actions.
+    pub(crate) agent_policy_hooks: AgentPolicyHookConfig,
 }
 
 impl Default for AIExecutionProfile {
@@ -281,6 +285,7 @@ impl Default for AIExecutionProfile {
             context_window_limit: None,
             autosync_plans_to_warp_drive: true,
             web_search_enabled: true,
+            agent_policy_hooks: AgentPolicyHookConfig::default(),
         }
     }
 }
@@ -333,6 +338,7 @@ impl AIExecutionProfile {
             context_window_limit: None,
             autosync_plans_to_warp_drive: false,
             web_search_enabled: true,
+            agent_policy_hooks: AgentPolicyHookConfig::default(),
         }
     }
 
@@ -388,6 +394,7 @@ impl AIExecutionProfile {
             context_window_limit: None,
             autosync_plans_to_warp_drive: FeatureFlag::SyncAmbientPlans.is_enabled(),
             web_search_enabled: true,
+            agent_policy_hooks: AgentPolicyHookConfig::default(),
         }
     }
 }
