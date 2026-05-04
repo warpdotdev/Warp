@@ -48,7 +48,7 @@ use crate::{
             todos::AIAgentTodoList,
             AIAgentOutputMessage, AIAgentOutputMessageType, MessageToAIAgentOutputMessageError,
         },
-        blocklist::BlocklistAIHistoryEvent,
+        blocklist::{BlocklistAIHistoryEvent, ConversationStatusUpdate},
     },
     persistence::{
         model::{AgentConversationData, PersistedAutoexecuteMode},
@@ -679,8 +679,7 @@ impl AIConversation {
         ctx.emit(BlocklistAIHistoryEvent::UpdatedConversationStatus {
             conversation_id: self.id,
             terminal_view_id,
-            is_restored: false,
-            prev_status: Some(prev_status),
+            update: ConversationStatusUpdate::Changed { prev_status },
             new_status,
         });
     }

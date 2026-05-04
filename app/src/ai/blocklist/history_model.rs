@@ -691,8 +691,7 @@ impl BlocklistAIHistoryModel {
             ctx.emit(BlocklistAIHistoryEvent::UpdatedConversationStatus {
                 conversation_id,
                 terminal_view_id,
-                is_restored: true,
-                prev_status: None,
+                update: ConversationStatusUpdate::Restored,
                 new_status,
             });
         }
@@ -2056,6 +2055,16 @@ fn agent_id_key(conversation: &AIConversation) -> Option<String> {
     conversation.orchestration_agent_id()
 }
 
+/// Whether an `UpdatedConversationStatus` event represents a restoration
+/// (the conversation was re-loaded into a terminal view; the underlying
+/// `ConversationStatus` did not change) or a real status set, in which case
+/// the previous status is included.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConversationStatusUpdate {
+    Restored,
+    Changed { prev_status: ConversationStatus },
+}
+
 #[derive(Clone, Debug)]
 pub enum BlocklistAIHistoryEvent {
     /// A new conversation was started.
@@ -2109,10 +2118,8 @@ pub enum BlocklistAIHistoryEvent {
     UpdatedConversationStatus {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,
-        is_restored: bool,
-        /// The conversation's status before this update, if known.
-        /// Restoration events do not have a previous status.
-        prev_status: Option<ConversationStatus>,
+        /// Distinguishes a restoration from a real status set.
+        update: ConversationStatusUpdate,
         /// The conversation's status after this update.
         new_status: ConversationStatus,
     },

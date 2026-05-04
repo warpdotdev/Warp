@@ -12,16 +12,18 @@ use crate::ai::ambient_agents::AgentConfigSnapshot;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
-use crate::ai::blocklist::history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use crate::ai::blocklist::history_model::{
+    BlocklistAIHistoryEvent, BlocklistAIHistoryModel, ConversationStatusUpdate,
+};
 use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::auth::AuthStateProvider;
 use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
 
 use super::{
-    conversation_status_filter, AgentConversationsModel, AgentConversationsModelEvent,
-    AgentManagementFilters, AgentRunDisplayStatus, ArtifactFilter, ConversationMetadata,
-    ConversationOrTask, ConversationUpdateKind, EnvironmentFilter, HarnessFilter, OwnerFilter,
-    StatusFilter, TaskFetchState, MAX_PERSONAL_TASKS, MAX_TEAM_TASKS,
+    AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters,
+    AgentRunDisplayStatus, ArtifactFilter, ConversationMetadata, ConversationOrTask,
+    ConversationUpdateKind, EnvironmentFilter, HarnessFilter, OwnerFilter, StatusFilter,
+    TaskFetchState, MAX_PERSONAL_TASKS, MAX_TEAM_TASKS,
 };
 use crate::ai::ambient_agents::task::HarnessConfig;
 use warp_cli::agent::Harness;
@@ -109,8 +111,7 @@ fn test_restored_conversation_emits_restored_kind() {
                 &BlocklistAIHistoryEvent::UpdatedConversationStatus {
                     conversation_id,
                     terminal_view_id: EntityId::new(),
-                    is_restored: true,
-                    prev_status: None,
+                    update: ConversationStatusUpdate::Restored,
                     new_status: ConversationStatus::Success,
                 },
                 ctx,
@@ -139,8 +140,9 @@ fn test_status_transition_emits_status_set_with_filter_buckets() {
                 &BlocklistAIHistoryEvent::UpdatedConversationStatus {
                     conversation_id,
                     terminal_view_id: EntityId::new(),
-                    is_restored: false,
-                    prev_status: Some(ConversationStatus::InProgress),
+                    update: ConversationStatusUpdate::Changed {
+                        prev_status: ConversationStatus::InProgress,
+                    },
                     new_status: ConversationStatus::Success,
                 },
                 ctx,
@@ -175,8 +177,9 @@ fn test_same_bucket_re_emission_emits_status_set_with_equal_filters() {
                 &BlocklistAIHistoryEvent::UpdatedConversationStatus {
                     conversation_id,
                     terminal_view_id: EntityId::new(),
-                    is_restored: false,
-                    prev_status: Some(ConversationStatus::InProgress),
+                    update: ConversationStatusUpdate::Changed {
+                        prev_status: ConversationStatus::InProgress,
+                    },
                     new_status: ConversationStatus::InProgress,
                 },
                 ctx,
@@ -195,32 +198,6 @@ fn test_same_bucket_re_emission_emits_status_set_with_equal_filters() {
             )),
         );
     });
-}
-
-#[test]
-fn test_conversation_status_filter_mapping() {
-    assert_eq!(
-        conversation_status_filter(&ConversationStatus::InProgress),
-        StatusFilter::Working,
-    );
-    assert_eq!(
-        conversation_status_filter(&ConversationStatus::Success),
-        StatusFilter::Done,
-    );
-    assert_eq!(
-        conversation_status_filter(&ConversationStatus::Error),
-        StatusFilter::Failed,
-    );
-    assert_eq!(
-        conversation_status_filter(&ConversationStatus::Cancelled),
-        StatusFilter::Failed,
-    );
-    assert_eq!(
-        conversation_status_filter(&ConversationStatus::Blocked {
-            blocked_action: "approve_command".to_string(),
-        }),
-        StatusFilter::Failed,
-    );
 }
 
 #[test]

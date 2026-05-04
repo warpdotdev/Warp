@@ -4,7 +4,9 @@ use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{AgentSource, AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
-use crate::ai::blocklist::{format_credits, BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use crate::ai::blocklist::{
+    format_credits, BlocklistAIHistoryEvent, BlocklistAIHistoryModel, ConversationStatusUpdate,
+};
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
@@ -890,17 +892,6 @@ pub enum ConversationUpdateKind {
     },
 }
 
-/// Maps a `ConversationStatus` to its `StatusFilter` bucket.
-pub(crate) fn conversation_status_filter(status: &ConversationStatus) -> StatusFilter {
-    match status {
-        ConversationStatus::InProgress => StatusFilter::Working,
-        ConversationStatus::Success => StatusFilter::Done,
-        ConversationStatus::Error
-        | ConversationStatus::Cancelled
-        | ConversationStatus::Blocked { .. } => StatusFilter::Failed,
-    }
-}
-
 impl Entity for AgentConversationsModel {
     type Event = AgentConversationsModelEvent;
 }
@@ -1464,22 +1455,21 @@ impl AgentConversationsModel {
             // Status changes - just trigger re-render since status is looked up at render time
             BlocklistAIHistoryEvent::UpdatedConversationStatus {
                 conversation_id,
-                is_restored,
-                prev_status,
+                update,
                 new_status,
                 ..
             } => {
-                let kind = if *is_restored {
-                    ConversationUpdateKind::Restored
-                } else {
-                    let new_filter = conversation_status_filter(new_status);
-                    let prev_filter = prev_status
-                        .as_ref()
-                        .map(conversation_status_filter)
-                        .unwrap_or(new_filter);
-                    ConversationUpdateKind::StatusSet {
-                        prev_filter,
-                        new_filter,
+                let kind = match update {
+                    ConversationStatusUpdate::Restored => ConversationUpdateKind::Restored,
+                    ConversationStatusUpdate::Changed { prev_status } => {
+                        ConversationUpdateKind::StatusSet {
+                            prev_filter: AgentRunDisplayStatus::from_conversation_status(
+                                prev_status,
+                            )
+                            .status_filter(),
+                            new_filter: AgentRunDisplayStatus::from_conversation_status(new_status)
+                                .status_filter(),
+                        }
                     }
                 };
                 ctx.emit(AgentConversationsModelEvent::ConversationUpdated {
