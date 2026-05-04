@@ -2240,6 +2240,12 @@ pub enum BlocklistAIHistoryEvent {
         request_id: crate::ai::blocklist::StartAgentRequestId,
         conversation_id: AIConversationId,
     },
+
+    /// Emitted when a conversation's orchestration config is updated reactively
+    /// from an incoming `OrchestrationConfigSnapshot` message.
+    OrchestrationConfigUpdated {
+        conversation_id: AIConversationId,
+    },
 }
 
 impl BlocklistAIHistoryEvent {
@@ -2313,6 +2319,9 @@ impl BlocklistAIHistoryEvent {
             // NewConversationRequestComplete is executor-scoped and has no
             // terminal_view_id.
             BlocklistAIHistoryEvent::NewConversationRequestComplete { .. } => None,
+            // OrchestrationConfigUpdated is conversation-scoped and has no
+            // terminal_view_id.
+            BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => None,
         }
     }
 }

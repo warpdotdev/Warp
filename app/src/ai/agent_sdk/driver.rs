@@ -1987,7 +1987,8 @@ impl AgentDriver {
                 | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
                 | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
                 | BlocklistAIHistoryEvent::ConversationOwnershipTransferred { .. }
-                | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. } => (),
+                | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
+                | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => (),
             }
         });
 
