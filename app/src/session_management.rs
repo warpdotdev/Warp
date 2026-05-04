@@ -242,4 +242,6 @@ pub struct TabNavigationData {
     pub title: String,
     pub subtitle: Option<String>,
     pub window_id: WindowId,
+    /// 1-based left-to-right tab index for display disambiguation.
+    pub tab_index: usize,
 }

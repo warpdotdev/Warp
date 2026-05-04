@@ -1,7 +1,7 @@
 use crate::appearance::Appearance;
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_palette::render_util::render_search_item_icon;
-use crate::search::item::IconLocation;
+use crate::search::item::{IconLocation, SearchItem as SearchItemTrait};
 use crate::search::result_renderer::ItemHighlightState;
 use crate::session_management::TabNavigationData;
 use crate::ui_components::icons::Icon;
@@ -21,7 +21,7 @@ impl SearchItem {
     }
 }
 
-impl crate::search::item::SearchItem for SearchItem {
+impl SearchItemTrait for SearchItem {
     type Action = CommandPaletteItemAction;
 
     fn is_multiline(&self) -> bool {
@@ -33,7 +33,7 @@ impl crate::search::item::SearchItem for SearchItem {
         highlight_state: ItemHighlightState,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        let color = appearance.theme().foreground().into_solid();
+        let color = highlight_state.icon_fill(appearance).into_solid();
         render_search_item_icon(appearance, Icon::Navigation, color, highlight_state)
     }
 
@@ -51,7 +51,7 @@ impl crate::search::item::SearchItem for SearchItem {
         let appearance = Appearance::as_ref(app);
 
         let title_text = Text::new_inline(
-            self.tab.title.clone(),
+            format!("[Tab {}] {}", self.tab.tab_index, self.tab.title),
             appearance.ui_font_family(),
             appearance.monospace_font_size(),
         )

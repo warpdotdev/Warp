@@ -110,7 +110,7 @@ use warpui::elements::{
     Border, ChildAnchor, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Stack,
 };
 use warpui::rendering::OnGPUDeviceSelected;
-use warpui::{id, AddWindowOptions, DisplayId, SingletonEntity};
+use warpui::{id, AddWindowOptions, DisplayId, EntityId, SingletonEntity};
 use warpui::{
     platform::{WindowBounds, WindowStyle},
     presenter::ChildView,
