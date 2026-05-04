@@ -2,6 +2,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::pin::pin;
 use std::rc::Rc;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::ai::agent::conversation::ConversationStatus;
@@ -48,6 +49,7 @@ use crate::terminal::block_list_element::{SnackbarPoint, SnackbarTranslationMode
 use crate::terminal::block_list_viewport::{ClampingMode, ScrollLines};
 use crate::terminal::session_settings::AgentToolbarChipSelection;
 use crate::view_components::find::FindWithinBlockState;
+use crate::workspace::ToastStack;
 
 use crate::terminal::model::ansi::{self, InitShellValue};
 use crate::terminal::model::ansi::{BootstrappedValue, PreexecValue};
@@ -544,6 +546,30 @@ fn set_input_mode_agent_does_not_enter_local_agent_from_root_cloud_mode_pane() {
             assert!(!view.agent_view_controller().as_ref(ctx).is_active());
             view.handle_action(&TerminalAction::SetInputModeAgent, ctx);
             assert!(!view.agent_view_controller().as_ref(ctx).is_active());
+        });
+    });
+}
+
+#[test]
+fn pending_cloud_followup_without_ambient_model_restores_prompt() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        app.add_singleton_model(|_| ToastStack);
+        let _flag = FeatureFlag::HandoffCloudCloud.override_enabled(true);
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let task_id = AmbientAgentTaskId::from_str("123e4567-e89b-12d3-a456-426614174000")
+            .expect("valid task id");
+
+        terminal.update(&mut app, |view, ctx| {
+            view.pending_cloud_followup_task_id = Some(task_id);
+
+            assert!(view.try_submit_pending_cloud_followup("follow up".to_string(), ctx));
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert_eq!(view.pending_cloud_followup_task_id, None);
+            assert_eq!(view.input.as_ref(ctx).buffer_text(ctx), "follow up");
         });
     });
 }
@@ -3831,6 +3857,95 @@ fn submit_cli_agent_rich_input_opencode_defers_enter_and_close() {
 }
 
 #[test]
+fn drag_drop_image_in_cli_agent_long_running_command_pastes_via_clipboard() {
+    // Regression test: dropping an image file into a tab where a CLI agent
+    // (e.g. Claude Code) is the foreground long-running process should
+    // mirror the Cmd+V image-paste path — write the image to the system
+    // clipboard and send the agent's paste keystroke to the PTY — instead
+    // of shell-escaping the path and typing it into the agent's prompt.
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        // The new path actually reads the file off disk, so we need a real
+        // file. Bytes don't have to be a valid PNG.
+        let mut image_path = std::env::temp_dir();
+        image_path.push(format!(
+            "warp-test-cli-agent-drop-{}.png",
+            std::process::id()
+        ));
+        std::fs::write(&image_path, b"fake-png-bytes").expect("write tmp image");
+        let image_path_str = image_path.to_string_lossy().into_owned();
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let pty_writes: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
+        let writes = pty_writes.clone();
+        app.update(|ctx| {
+            ctx.subscribe_to_view(&terminal, move |_, event, _| {
+                if let Event::WriteBytesToPty { bytes } = event {
+                    writes.borrow_mut().push(bytes.to_vec());
+                }
+            });
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::Claude,
+                        status: CLIAgentSessionStatus::InProgress,
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: false,
+                        listener: None,
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+            });
+
+            // The CLI-agent paste branch is gated on the active block being
+            // long-running (the agent's TUI). Without a long-running block
+            // we'd fall through to the regular image-attach flow.
+            {
+                let mut model = view.model.lock();
+                model.simulate_long_running_block("claude", "");
+                assert!(model
+                    .block_list()
+                    .active_block()
+                    .is_active_and_long_running());
+            }
+
+            view.drag_and_drop_files(&[image_path_str], ctx);
+        });
+
+        // The paste flow is async (off-thread file read, then hop back to
+        // the view to write the clipboard + paste keystroke). Wait for the
+        // single PTY write of the platform-appropriate paste byte: 0x16
+        // (Ctrl+V) on macOS/Linux, or `ESC v` on Windows. Without the fix
+        // a shell-escaped path string is written here instead.
+        let expected_paste_bytes: Vec<u8> = if cfg!(windows) {
+            vec![0x1b, b'v']
+        } else {
+            vec![0x16]
+        };
+        assert_eventually!(
+            pty_writes.borrow().len() == 1 && pty_writes.borrow()[0] == expected_paste_bytes,
+            "expected single paste-keystroke PTY write {:?}; got {:?}",
+            expected_paste_bytes,
+            pty_writes.borrow()
+        );
+
+        std::fs::remove_file(&image_path).ok();
+    })
+}
+
+#[test]
 fn submit_without_auto_dismiss_keeps_rich_input_open() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
@@ -4266,6 +4381,88 @@ fn cli_session_status_updates_active_child_conversation() {
                     ctx,
                 );
             });
+        });
+
+        terminal.read(&app, |_view, ctx| {
+            let conversation = BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&child_conversation_id)
+                .expect("child conversation should exist");
+            assert_eq!(conversation.status(), &ConversationStatus::InProgress);
+        });
+
+        terminal.update(&mut app, |view, ctx| {
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.update_from_event(
+                    view.view_id,
+                    &CLIAgentEvent {
+                        v: 1,
+                        agent: CLIAgent::Claude,
+                        event: CLIAgentEventType::Stop,
+                        session_id: None,
+                        cwd: None,
+                        project: None,
+                        payload: CLIAgentEventPayload {
+                            response: Some("Done".to_owned()),
+                            ..Default::default()
+                        },
+                    },
+                    ctx,
+                );
+            });
+        });
+
+        terminal.read(&app, |_view, ctx| {
+            let conversation = BlocklistAIHistoryModel::as_ref(ctx)
+                .conversation(&child_conversation_id)
+                .expect("child conversation should exist");
+            assert_eq!(conversation.status(), &ConversationStatus::Success);
+        });
+    })
+}
+
+#[test]
+fn cli_session_status_updates_single_child_conversation_without_agent_view() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        let child_conversation_id = terminal.update(&mut app, |view, ctx| {
+            let parent_conversation_id =
+                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                    history_model.start_new_conversation(view.view_id, false, false, ctx)
+                });
+            let child_conversation_id =
+                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                    history_model.start_new_child_conversation(
+                        view.view_id,
+                        "Agent 2".to_string(),
+                        parent_conversation_id,
+                        ctx,
+                    )
+                });
+
+            CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                sessions.set_session(
+                    view.view_id,
+                    CLIAgentSession {
+                        agent: CLIAgent::Claude,
+                        status: CLIAgentSessionStatus::InProgress,
+                        session_context: CLIAgentSessionContext::default(),
+                        input_state: CLIAgentInputState::Closed,
+                        should_auto_toggle_input: false,
+                        listener: None,
+                        remote_host: None,
+                        plugin_version: None,
+                        draft_text: None,
+                        custom_command_prefix: None,
+                    },
+                    ctx,
+                );
+            });
+
+            child_conversation_id
         });
 
         terminal.read(&app, |_view, ctx| {

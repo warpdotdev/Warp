@@ -260,6 +260,9 @@ pub(crate) fn redact_inputs(inputs: &mut [AIAgentInput]) {
                     AIAgentActionResultType::AskUserQuestion(result) => {
                         redact_ask_user_question_result(result);
                     }
+                    // Orchestrate results contain agent IDs / canonical error
+                    // strings only; no user-provided text to redact.
+                    AIAgentActionResultType::RunAgents(_) => {}
                 }
             }
             AIAgentInput::FetchReviewComments { repo_path, context } => {

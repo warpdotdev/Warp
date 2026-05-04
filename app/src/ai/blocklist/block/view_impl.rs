@@ -19,6 +19,7 @@
 //! ```
 
 pub(super) mod common;
+pub(crate) use common::user_query_mode_prefix_highlight_len;
 pub use common::FindContext;
 mod comments;
 mod header;
@@ -154,25 +155,26 @@ fn add_slash_command_highlight(
     }
 }
 
-/// In shared ambient sessions, the first prompt is already shown by
-/// `InitialUserQuery` during live startup/streaming.
+/// In shared ambient sessions, cloud prompts are already shown by the cloud-mode
+/// query blocks during live startup/streaming.
 ///
-/// To avoid duplicate UI, we suppress the first AI block's header/query only while the viewer is
-/// live (not replaying historical conversation events).
+/// To avoid duplicate UI, we suppress the AI block header/query only while the viewer is live
+/// (not replaying historical conversation events).
 ///
-/// That first prompt is rendered in the ambient-agent query block UI, so this helper only gates
+/// The prompts are rendered in the ambient-agent query block UI, so this helper only gates
 /// duplicate rendering in the AI block path when that optimistic block was actually inserted.
-fn should_hide_first_ai_block_query_and_header(
+fn should_hide_ai_block_query_and_header(
     has_inserted_cloud_mode_user_query_block: bool,
+    has_optimistic_user_query: bool,
     is_shared_ambient_agent_session: bool,
     is_first_exchange: bool,
     is_receiving_agent_conversation_replay: bool,
 ) -> bool {
     FeatureFlag::CloudModeSetupV2.is_enabled()
-        && has_inserted_cloud_mode_user_query_block
         && is_shared_ambient_agent_session
-        && is_first_exchange
         && !is_receiving_agent_conversation_replay
+        && ((has_inserted_cloud_mode_user_query_block && is_first_exchange)
+            || has_optimistic_user_query)
 }
 
 /// Adds the appropriate highlighting for secrets and links to the given text element.
@@ -855,16 +857,6 @@ impl View for AIBlock {
         let is_first_exchange = conversation
             .first_exchange()
             .is_some_and(|exchange| exchange.id == self.client_ids.client_exchange_id);
-        let has_inserted_cloud_mode_user_query_block = self
-            .ambient_agent_view_model
-            .as_ref()
-            .is_some_and(|model| model.as_ref(app).has_inserted_cloud_mode_user_query_block());
-        let should_hide_first_block_query_and_header = should_hide_first_ai_block_query_and_header(
-            has_inserted_cloud_mode_user_query_block,
-            is_shared_ambient_agent_session,
-            is_first_exchange,
-            is_receiving_agent_conversation_replay,
-        );
 
         let input_props = input::Props {
             comments: &self.comment_states,
@@ -892,15 +884,37 @@ impl View for AIBlock {
                     element_below_user_query,
                 ))
             });
+        let should_hide_block_query_and_header =
+            query_and_index
+                .as_ref()
+                .is_some_and(|(query_for_display, ..)| {
+                    let (has_inserted_cloud_mode_user_query_block, has_optimistic_user_query) =
+                        self.ambient_agent_view_model
+                            .as_ref()
+                            .map(|model| {
+                                let model = model.as_ref(app);
+                                (
+                                    model.has_inserted_cloud_mode_user_query_block(),
+                                    model.has_optimistic_user_query(query_for_display),
+                                )
+                            })
+                            .unwrap_or((false, false));
+                    should_hide_ai_block_query_and_header(
+                        has_inserted_cloud_mode_user_query_block,
+                        has_optimistic_user_query,
+                        is_shared_ambient_agent_session,
+                        is_first_exchange,
+                        is_receiving_agent_conversation_replay,
+                    )
+                });
         let query_and_index_is_some =
-            query_and_index.is_some() && !should_hide_first_block_query_and_header;
+            query_and_index.is_some() && !should_hide_block_query_and_header;
         let attachment_name_list = if FeatureFlag::ImageAsContext.is_enabled() {
             attachment_names(self.model.inputs_to_render(app))
         } else {
             vec![]
         };
-
-        if !should_hide_first_block_query_and_header {
+        if !should_hide_block_query_and_header {
             if let Some((
                 query_for_display,
                 input_index,
@@ -1094,6 +1108,7 @@ impl View for AIBlock {
                     .aws_bedrock_credentials_error_view
                     .as_ref(),
                 imported_comments: &self.imported_comments,
+                run_agents_card_views: &self.run_agents_card_views,
                 #[cfg(feature = "local_fs")]
                 resolved_code_block_paths: &self.resolved_code_block_paths,
                 #[cfg(feature = "local_fs")]
@@ -1181,7 +1196,7 @@ impl View for AIBlock {
                     false
                 }
             });
-        let should_add_top_padding = !should_hide_first_block_query_and_header
+        let should_add_top_padding = !should_hide_block_query_and_header
             && (contains_user_query_and_is_not_pin_to_top
                 || renders_below_requested_command_view
                 || (!is_previous_blocklist_item_ai_block && !self.is_passive_conversation(app)));
@@ -1346,3 +1361,7 @@ impl AIAgentInput {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "view_impl/cloud_mode_setup_tests.rs"]
+mod cloud_mode_setup_tests;

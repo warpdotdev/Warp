@@ -127,6 +127,7 @@ use super::{
     render_citation_chips, todos::render_completed_todo_items, WithContentItemSpacing,
     CONTENT_ITEM_VERTICAL_MARGIN,
 };
+use crate::ai::blocklist::inline_action::run_agents_card_view::RunAgentsCardView;
 use warpui::{
     elements::{
         Align, Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
@@ -147,11 +148,11 @@ const BLOCKED_ACTION_MESSAGE_FOR_UPLOADING_ARTIFACT: &str = "Grant access to upl
 /// Data required to render the AI block output component.
 #[derive(Copy, Clone)]
 pub(crate) struct Props<'a> {
-    pub(super) model: &'a dyn AIBlockModel<View = AIBlock>,
+    pub(crate) model: &'a dyn AIBlockModel<View = AIBlock>,
     pub(super) state_handles: &'a AIBlockStateHandles,
     pub(super) action_buttons: &'a HashMap<AIAgentActionId, ActionButtons>,
     pub(super) view_screenshot_buttons: &'a HashMap<AIAgentActionId, ui_components::button::Button>,
-    pub(super) action_model: &'a ModelHandle<BlocklistAIActionModel>,
+    pub(crate) action_model: &'a ModelHandle<BlocklistAIActionModel>,
     pub(super) editor_views: &'a [EmbeddedCodeEditorView],
     pub(super) current_working_directory: Option<&'a String>,
     pub(super) shell_launch_data: Option<&'a ShellLaunchData>,
@@ -192,6 +193,12 @@ pub(crate) struct Props<'a> {
     pub(super) aws_bedrock_credentials_error_view:
         Option<&'a ViewHandle<AwsBedrockCredentialsErrorView>>,
     pub(super) imported_comments: &'a HashMap<AIAgentActionId, ImportedCommentGroup>,
+    /// Per-orchestrate-action card view. Each `RunAgentsCardView` owns
+    /// its own edit state, button + picker handles, and in-flight
+    /// spawning snapshot; AIBlock just lazily creates the view per
+    /// `AIAgentActionId` and embeds it via `ChildView` when the action
+    /// is rendered. Multi-card lifecycle = AIBlock lifecycle.
+    pub(crate) run_agents_card_views: &'a HashMap<AIAgentActionId, ViewHandle<RunAgentsCardView>>,
     #[cfg(feature = "local_fs")]
     pub(crate) resolved_code_block_paths:
         &'a HashMap<std::path::PathBuf, Option<std::path::PathBuf>>,
@@ -422,7 +429,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 // checks if the read file action result is completed and successful.
                                 // if successful, we have FileContext with pre-computed line counts that we use to clamp displayed file ranges to the length of the file
                                 let file_names = match agent_action_results {
-                                    // if completed and succesful, generate a user message with file info + line count
+                                    // if completed and successful, generate a user message with file info + line count
                                     Some(AIAgentActionResult {
                                         result:
                                             AIAgentActionResultType::ReadFiles(
@@ -431,11 +438,35 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                                 },
                                             ),
                                         ..
-                                    }) => group_file_contexts_for_display(
-                                        file_contexts,
-                                        props.shell_launch_data,
-                                        props.current_working_directory,
-                                    ),
+                                    }) => {
+                                        if file_contexts.is_empty() {
+                                            // Empty file contexts — render as a failed
+                                            // action so the user sees the error instead
+                                            // of an empty box.
+                                            let formatted_text = render_requested_action_body_text(
+                                                "Failed to read files".into(),
+                                                appearance.ui_font_family(),
+                                                app,
+                                            );
+                                            let renderable_action =
+                                                RenderableAction::new_with_formatted_text(
+                                                    formatted_text,
+                                                    app,
+                                                )
+                                                .with_icon(
+                                                    inline_action_icons::red_x_icon(appearance)
+                                                        .finish(),
+                                                );
+                                            output_items
+                                                .add_child(renderable_action.render(app).finish());
+                                            continue;
+                                        }
+                                        group_file_contexts_for_display(
+                                            file_contexts,
+                                            props.shell_launch_data,
+                                            props.current_working_directory,
+                                        )
+                                    }
                                     // if not completed/successful, generate a user message without line count
                                     _ => files
                                         .iter()
@@ -743,6 +774,25 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 &output_message.id,
                                 app,
                             ));
+                        }
+                        AIAgentOutputMessageType::Action(AIAgentAction {
+                            action: AIAgentActionType::RunAgents(_req),
+                            id,
+                            ..
+                        }) if FeatureFlag::RunAgentsTool.is_enabled() => {
+                            // Embed the per-action `RunAgentsCardView`
+                            // via `ChildView`. The view itself handles
+                            // the streaming gate and in-flight dispatch
+                            // states (a card is mid-dispatch when its
+                            // `is_spawning()` getter returns true).
+                            should_render_footer = false;
+                            should_render_suggestions = false;
+                            if let Some(card_view) = props.run_agents_card_views.get(id) {
+                                let is_spawning = card_view.as_ref(app).is_spawning();
+                                if !status.is_streaming() || is_spawning {
+                                    output_items.add_child(ChildView::new(card_view).finish());
+                                }
+                            }
                         }
                         AIAgentOutputMessageType::Action(AIAgentAction {
                             action:
@@ -1675,7 +1725,12 @@ fn render_read_skill(
             let skill_icon_override = icon_override_for_skill_name(&skill.name);
             let open_button = render_skill_button(
                 "Open skill",
-                props.state_handles.open_skill_button_handle.clone(),
+                props
+                    .state_handles
+                    .open_skill_button_handles
+                    .get(id)
+                    .expect("Button state must exist for each ReadSkill action.")
+                    .clone(),
                 appearance,
                 skill.provider,
                 skill_icon_override,
@@ -1779,7 +1834,12 @@ fn render_read_files(
         let skill_icon_override = icon_override_for_skill_name(&skill.name);
         let open_button = render_skill_button(
             &format!("/{}", skill.name),
-            props.state_handles.read_from_skill_button_handle.clone(),
+            props
+                .state_handles
+                .read_from_skill_button_handles
+                .get(id)
+                .expect("Button state must exist for each ReadFiles-style action.")
+                .clone(),
             appearance,
             skill.provider,
             skill_icon_override,

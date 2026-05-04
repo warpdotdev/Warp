@@ -66,6 +66,8 @@ pub struct EventLoop {
 
     /// A buffer to maintain events we receive from the server that are unordered.
     buffer: HashMap<usize, OrderedTerminalEventType>,
+
+    should_suppress_existing_agent_conversation_replay: bool,
 }
 
 impl EventLoop {
@@ -127,6 +129,10 @@ impl EventLoop {
             next_event_no: 0,
             buffer: HashMap::new(),
             catching_up_to_event_no,
+            should_suppress_existing_agent_conversation_replay: matches!(
+                load_mode,
+                SharedSessionInitialLoadMode::AppendFollowupScrollback
+            ),
         };
 
         // Respect the sharer's window size.
@@ -314,11 +320,30 @@ impl EventLoop {
                     self.terminal_model
                         .lock()
                         .set_is_receiving_agent_conversation_replay(true);
+                    if let Some(view) = self.terminal_view.upgrade(ctx) {
+                        let should_suppress_existing_replay =
+                            self.should_suppress_existing_agent_conversation_replay;
+                        view.update(ctx, |view, ctx| {
+                            view.ai_controller().update(ctx, |controller, _| {
+                                controller.set_should_suppress_existing_agent_conversation_replay(
+                                    should_suppress_existing_replay,
+                                );
+                            });
+                        });
+                    }
                 }
                 OrderedTerminalEventType::AgentConversationReplayEnded => {
                     self.terminal_model
                         .lock()
                         .set_is_receiving_agent_conversation_replay(false);
+                    if let Some(view) = self.terminal_view.upgrade(ctx) {
+                        view.update(ctx, |view, ctx| {
+                            view.ai_controller().update(ctx, |controller, _| {
+                                controller
+                                    .set_should_suppress_existing_agent_conversation_replay(false);
+                            });
+                        });
+                    }
                 }
             }
 
@@ -330,7 +355,7 @@ impl EventLoop {
                     {
                         // Role is set to the presence manager's role to stay as up-to-date as possible.
                         // This avoids a race condition if a viewer gets a new role before catching up,
-                        // by ensuring we're not overwritting the new role.
+                        // by ensuring we're not overwriting the new role.
                         if let Some(role) = presence_manager.as_ref(ctx).role() {
                             self.terminal_model.lock().set_shared_session_status(
                                 SharedSessionStatus::ActiveViewer { role },

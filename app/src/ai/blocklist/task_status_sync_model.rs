@@ -1,4 +1,6 @@
-use super::history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use super::history_model::{
+    BlocklistAIHistoryEvent, BlocklistAIHistoryModel, ConversationStatusUpdate,
+};
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 use crate::ai::agent::{AIAgentOutputStatus, FinishedAIAgentOutput, RenderableAIError};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
@@ -85,10 +87,10 @@ impl TaskStatusSyncModel {
         match event {
             BlocklistAIHistoryEvent::UpdatedConversationStatus {
                 conversation_id,
-                is_restored,
+                update,
                 ..
             } => {
-                if !*is_restored {
+                if matches!(update, ConversationStatusUpdate::Changed { .. }) {
                     self.on_conversation_status_updated(*conversation_id, ctx);
                 }
             }

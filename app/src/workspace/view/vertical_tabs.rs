@@ -10,9 +10,8 @@ use crate::terminal::cli_agent_sessions::listener::agent_supports_rich_status;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::view::TerminalViewState;
 use crate::terminal::CLIAgent;
-use crate::ui_components::icon_with_status::{
-    render_icon_with_status, IconWithStatusSizing, IconWithStatusVariant,
-};
+use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
+use crate::ui_components::icon_with_status::{render_icon_with_status, IconWithStatusVariant};
 use crate::workspace::view::vertical_tabs::telemetry::{
     VerticalTabsChipEntrypoint, VerticalTabsTelemetryEvent,
 };
@@ -40,6 +39,7 @@ use crate::ui_components::icons::Icon as UiIcon;
 use crate::util::bindings::keybinding_name_to_display_string;
 use crate::util::color::Opacity;
 use crate::workspace::action::WorkspaceAction;
+use crate::workspace::cross_window_tab_drag::CrossWindowTabDrag;
 use crate::workspace::hoa_onboarding::HoaOnboardingStep;
 use crate::workspace::tab_settings::{
     TabSettings, VerticalTabsCompactSubtitle, VerticalTabsDisplayGranularity,
@@ -68,14 +68,15 @@ use warpui::elements::{
     resizable_state_handle, Border, ChildAnchor, Clipped, ClippedScrollStateHandle,
     ClippedScrollable, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DragAxis,
     DragBarSide, Draggable, DropShadow, DropTarget, Element, Empty, EventHandler, Expanded,
-    Fill as ElementFill, Flex, Hoverable, MainAxisSize, MouseStateHandle, OffsetPositioning,
-    Padding, ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementAnchor,
-    PositionedElementOffsetBounds, Radius, Resizable, ResizableStateHandle, SavePosition,
-    ScrollTarget, ScrollToPositionMode, ScrollbarWidth, Shrinkable, Stack, Text,
+    Fill as ElementFill, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
+    OffsetPositioning, Padding, ParentAnchor, ParentElement, ParentOffsetBounds,
+    PositionedElementAnchor, PositionedElementOffsetBounds, Radius, Resizable,
+    ResizableStateHandle, SavePosition, ScrollTarget, ScrollToPositionMode, ScrollbarWidth,
+    Shrinkable, Stack, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
-use warpui::prelude::{Align, MainAxisAlignment};
+use warpui::prelude::Align;
 use warpui::text_layout::ClipConfig;
 use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 use warpui::ui_components::text_input::TextInput;
@@ -108,27 +109,10 @@ const TAB_COLOR_HOVER_OPACITY: Opacity = 50;
 // Circular icon constants
 const ICON_WITH_STATUS_GAP: f32 = 8.;
 pub(super) const VERTICAL_TABS_DETAIL_SIDECAR_POSITION_ID: &str = "vertical_tabs:detail_sidecar";
-const VERTICAL_TABS_STATUS_BADGE_ICON_SIZE: f32 = 9.;
-const VERTICAL_TABS_STATUS_BADGE_PADDING: f32 = 1.5;
-const VERTICAL_TABS_STATUS_BADGE_OFFSET: (f32, f32) = (2., 2.);
 
-const VERTICAL_TABS_SIZING: IconWithStatusSizing = IconWithStatusSizing {
-    icon_size: 16.,
-    padding: 4.,
-    badge_icon_size: VERTICAL_TABS_STATUS_BADGE_ICON_SIZE,
-    badge_padding: VERTICAL_TABS_STATUS_BADGE_PADDING,
-    overall_size_override: None,
-    badge_offset: VERTICAL_TABS_STATUS_BADGE_OFFSET,
-};
-
-const VERTICAL_TABS_AGENT_SIZING: IconWithStatusSizing = IconWithStatusSizing {
-    icon_size: 10.,
-    padding: 5.,
-    badge_icon_size: VERTICAL_TABS_STATUS_BADGE_ICON_SIZE,
-    badge_padding: VERTICAL_TABS_STATUS_BADGE_PADDING,
-    overall_size_override: Some(24.),
-    badge_offset: VERTICAL_TABS_STATUS_BADGE_OFFSET,
-};
+/// Total size of the icon-with-status component rendered for each vertical-tabs row.
+/// Sub-components (circle, badge, cloud) are derived inside `render_icon_with_status`.
+const VERTICAL_TABS_ICON_SIZE: f32 = 24.;
 
 fn vtab_pane_row_position_id(pane_group_id: EntityId, pane_id: PaneId) -> String {
     format!("vertical_tabs:pane_row:{pane_group_id:?}:{pane_id}")
@@ -262,14 +246,13 @@ fn render_pane_icon_with_status(
     variant: IconWithStatusVariant,
     theme: &WarpTheme,
 ) -> Box<dyn Element> {
-    let sizing = match &variant {
-        IconWithStatusVariant::OzAgent { .. } => &VERTICAL_TABS_AGENT_SIZING,
-        IconWithStatusVariant::CLIAgent { status, .. } if status.is_some() => {
-            &VERTICAL_TABS_AGENT_SIZING
-        }
-        _ => &VERTICAL_TABS_SIZING,
-    };
-    render_icon_with_status(variant, sizing, theme, theme.background())
+    render_icon_with_status(
+        variant,
+        VERTICAL_TABS_ICON_SIZE,
+        0.,
+        theme,
+        theme.background(),
+    )
 }
 
 #[derive(Clone, Default)]
@@ -749,7 +732,7 @@ enum VerticalTabsResolvedMode {
 enum SummaryPaneKind {
     Terminal,
     OzAgent { is_ambient: bool },
-    CLIAgent { agent: CLIAgent },
+    CLIAgent { agent: CLIAgent, is_ambient: bool },
     Code { title: String },
     CodeDiff,
     File,
@@ -1077,6 +1060,33 @@ fn any_workspace_pane_being_dragged(workspace: &Workspace, app: &AppContext) -> 
         .tabs
         .iter()
         .any(|tab| tab.pane_group.as_ref(app).any_pane_being_dragged(app))
+}
+
+/// Renders an empty insertion slot for a cross-window ghost drag in the
+/// vertical tabs panel. Shows a plain `fg_overlay_1` rectangle the same
+/// height as a real tab row — the floating chip at the cursor carries all
+/// visual content.
+fn render_ghost_vertical_tab_slot(workspace: &Workspace, app: &AppContext) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    // Match the height of a real tab group row from the last rendered frame.
+    // Falls back to 40px if no frame data is available yet.
+    let height = workspace
+        .tabs
+        .first()
+        .and_then(|_| {
+            app.element_position_by_id_at_last_frame(workspace.window_id, tab_position_id(0))
+        })
+        .map(|rect| rect.height())
+        .unwrap_or(40.);
+    ConstrainedBox::new(
+        Container::new(Empty::new().finish())
+            .with_background(internal_colors::fg_overlay_1(theme))
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(ROW_CORNER_RADIUS)))
+            .finish(),
+    )
+    .with_height(height)
+    .finish()
 }
 
 fn vertical_tabs_tab_bar_location(insert_index: usize, tab_count: usize) -> TabBarLocation {
@@ -1449,23 +1459,11 @@ fn render_vertical_tabs_panel(
         .with_child(Shrinkable::new(1., scrollable_groups).finish())
         .finish();
 
-    let panel_with_popup: Box<dyn Element> = if state.show_settings_popup {
-        let popup = render_settings_popup(state, app);
-        let mut stack = Stack::new().with_child(panel_content);
-        stack.add_positioned_overlay_child(
-            popup,
-            OffsetPositioning::offset_from_save_position_element(
-                VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
-                vec2f(0., 4.),
-                PositionedElementOffsetBounds::WindowByPosition,
-                PositionedElementAnchor::BottomLeft,
-                ChildAnchor::TopLeft,
-            ),
-        );
-        stack.finish()
-    } else {
-        panel_content
-    };
+    // The settings popup is rendered at the workspace level (with Dismiss for click-outside-
+    // to-close). Rendering it here again shares MouseStateHandle instances across two Hoverable
+    // trees; click_count.take() is consumed by this copy first, leaving the workspace copy
+    // with None and silently dropping all clicks on the popup items.
+    let panel_with_popup: Box<dyn Element> = panel_content;
 
     let drag_side = match side {
         super::PanelPosition::Left => DragBarSide::Right,
@@ -1638,6 +1636,9 @@ fn render_groups(
     }
 
     let is_any_pane_dragging = any_workspace_pane_being_dragged(workspace, app);
+    // Ghost state for cross-window drag hovering over this window's vertical tabs panel.
+    let ghost_state = CrossWindowTabDrag::as_ref(app).ghost_state_for_window(workspace.window_id);
+    let ghost_insertion_index = ghost_state.as_ref().map(|g| g.insertion_index);
     let mut groups = Flex::column()
         .with_main_axis_size(MainAxisSize::Min)
         .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
@@ -1646,6 +1647,10 @@ fn render_groups(
     }
 
     for (visible_tab_index, (tab_index, filtered_pane_ids)) in visible_tabs.iter().enumerate() {
+        // Insert ghost slot before this tab group if the drop would land here.
+        if ghost_insertion_index == Some(*tab_index) {
+            groups.add_child(render_ghost_vertical_tab_slot(workspace, app));
+        }
         let insert_before_index = *tab_index;
         let insert_after_index =
             (visible_tab_index == visible_tabs.len() - 1).then_some(tab_index + 1);
@@ -1662,6 +1667,10 @@ fn render_groups(
             },
             app,
         ));
+    }
+    // Ghost after all tab groups (fencepost).
+    if ghost_insertion_index == Some(workspace.tabs.len()) {
+        groups.add_child(render_ghost_vertical_tab_slot(workspace, app));
     }
 
     // Prune stale badge mouse states for panes that no longer exist.
@@ -1700,6 +1709,29 @@ fn render_tab_group(
     tab: &TabData,
     filtered_pane_ids: Option<&[PaneId]>,
     drag_state: TabGroupDragState,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    render_tab_group_internal(
+        state,
+        workspace,
+        tab_index,
+        tab,
+        filtered_pane_ids,
+        drag_state,
+        false,
+        app,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_tab_group_internal(
+    state: &VerticalTabsPanelState,
+    workspace: &Workspace,
+    tab_index: usize,
+    tab: &TabData,
+    filtered_pane_ids: Option<&[PaneId]>,
+    drag_state: TabGroupDragState,
+    for_drag_ghost: bool,
     app: &AppContext,
 ) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
@@ -2051,9 +2083,16 @@ fn render_tab_group(
         })
         .on_drop(|ctx, _, _, _| {
             ctx.dispatch_typed_action(WorkspaceAction::DropTab);
-        })
-        .with_drag_axis(DragAxis::VerticalOnly)
-        .finish();
+        });
+    // Only lock the drag to the vertical axis when cross-window tab drag is
+    // disabled. When it is enabled, the user needs to be able to drag
+    // horizontally out of the panel to detach the tab into a new window.
+    let draggable = if FeatureFlag::DragTabsToWindows.is_enabled() {
+        draggable
+    } else {
+        draggable.with_drag_axis(DragAxis::VerticalOnly)
+    };
+    let draggable = draggable.finish();
 
     let draggable: Box<dyn Element> = if is_this_tab_dragging {
         Container::new(draggable)
@@ -2062,6 +2101,14 @@ fn render_tab_group(
     } else {
         draggable
     };
+    // When rendering inside the cross-window drag chip overlay, skip the
+    // outer `SavePosition` (it would clobber the target window's
+    // `tab_position_<index>` cache entry and break
+    // `tab_insertion_index_for_cursor`) and the `DropTarget` (the chip
+    // shouldn't be a drop target since it follows the cursor).
+    if for_drag_ghost {
+        return draggable;
+    }
     let draggable = SavePosition::new(draggable, &tab_position_id(tab_index)).finish();
 
     if is_this_tab_dragging {
@@ -2154,6 +2201,36 @@ fn render_group_action_buttons(
     SavePosition::new(belt, &vtab_action_buttons_position_id(tab_index)).finish()
 }
 
+/// Renders the same vertical tab group element used by the live vertical
+/// tabs panel, so the floating chip during a cross-window tab drag matches
+/// the source vertical-tabs row exactly. Constructed with neutral state
+/// (no drag/hover indicators) since the snapshot doesn't represent an
+/// in-progress local drag and isn't itself a drop target.
+pub(crate) fn render_tab_group_for_drag_ghost(
+    workspace: &Workspace,
+    tab_index: usize,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let Some(tab) = workspace.tabs.get(tab_index) else {
+        return Empty::new().finish();
+    };
+    let drag_state = TabGroupDragState {
+        is_any_pane_dragging: false,
+        insert_before_index: 0,
+        insert_after_index: None,
+    };
+    render_tab_group_internal(
+        &workspace.vertical_tabs_panel,
+        workspace,
+        tab_index,
+        tab,
+        None,
+        drag_state,
+        true, // for_drag_ghost
+        app,
+    )
+}
+
 fn render_group_header(props: GroupHeaderProps<'_>, app: &AppContext) -> Box<dyn Element> {
     let GroupHeaderProps {
         tab_index,
@@ -2239,39 +2316,8 @@ fn resolve_icon_with_status_variant(
         TypedPane::Terminal(terminal_pane) => {
             let terminal_view = terminal_pane.terminal_view(app);
             let terminal_view = terminal_view.as_ref(app);
-            let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-            let is_plugin_backed = cli_agent_session.is_some_and(|s| s.listener.is_some());
-            let is_ambient = terminal_view.is_ambient_agent_session(app);
-            let has_conversation = terminal_view
-                .selected_conversation_display_title(app)
-                .is_some();
-            let is_oz_agent = has_conversation || is_ambient;
-
-            if let Some(session) = cli_agent_session
-                .filter(|s| s.listener.is_some())
-                .filter(|s| !matches!(s.agent, CLIAgent::Unknown))
-            {
-                IconWithStatusVariant::CLIAgent {
-                    agent: session.agent,
-                    status: if agent_supports_rich_status(&session.agent) {
-                        Some(session.status.to_conversation_status())
-                    } else {
-                        None
-                    },
-                }
-            } else if let Some(session) = cli_agent_session
-                .filter(|_| !is_plugin_backed)
-                .filter(|s| !matches!(s.agent, CLIAgent::Unknown))
-            {
-                IconWithStatusVariant::CLIAgent {
-                    agent: session.agent,
-                    status: None,
-                }
-            } else if is_oz_agent {
-                IconWithStatusVariant::OzAgent {
-                    status: terminal_view.selected_conversation_status_for_display(app),
-                    is_ambient,
-                }
+            if let Some(variant) = terminal_view_agent_icon_variant(terminal_view, app) {
+                variant
             } else {
                 // Plain terminal: use foreground color per design spec
                 IconWithStatusVariant::Neutral {
@@ -2470,22 +2516,16 @@ impl TypedPane<'_> {
             TypedPane::Terminal(terminal_pane) => {
                 let terminal_view = terminal_pane.terminal_view(app);
                 let terminal_view = terminal_view.as_ref(app);
-                if let Some(session) =
-                    CLIAgentSessionsModel::as_ref(app).session(terminal_view.id())
-                {
-                    return SummaryPaneKind::CLIAgent {
-                        agent: session.agent,
-                    };
-                }
-                let is_ambient = terminal_view.is_ambient_agent_session(app);
-                if terminal_view
-                    .selected_conversation_display_title(app)
-                    .is_some()
-                    || is_ambient
-                {
-                    SummaryPaneKind::OzAgent { is_ambient }
-                } else {
-                    SummaryPaneKind::Terminal
+                // Route through the shared helper so summary mode agrees with
+                // `resolve_icon_with_status_variant` on what the tab represents.
+                match terminal_view_agent_icon_variant(terminal_view, app) {
+                    Some(IconWithStatusVariant::OzAgent { is_ambient, .. }) => {
+                        SummaryPaneKind::OzAgent { is_ambient }
+                    }
+                    Some(IconWithStatusVariant::CLIAgent {
+                        agent, is_ambient, ..
+                    }) => SummaryPaneKind::CLIAgent { agent, is_ambient },
+                    Some(_) | None => SummaryPaneKind::Terminal,
                 }
             }
             TypedPane::Code(_) => SummaryPaneKind::Code {
@@ -3568,77 +3608,83 @@ fn render_summary_pane_kind_icons(
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     match icons {
-        SummaryPaneKindIcons::Single(kind) => render_summary_pane_kind_icon_circle(
-            kind,
-            VERTICAL_TABS_SIZING.icon_size,
-            VERTICAL_TABS_SIZING.padding,
-            appearance,
-        ),
+        SummaryPaneKindIcons::Single(kind) => {
+            render_summary_pane_kind_icon_circle(kind, VERTICAL_TABS_ICON_SIZE, appearance)
+        }
         SummaryPaneKindIcons::Pair { primary, secondary } => {
-            let sizing = &VERTICAL_TABS_AGENT_SIZING;
-            let circle_size = sizing.icon_size + sizing.padding * 2.;
-            let overall_size = sizing.overall_size_override.unwrap_or(circle_size);
-            let primary_icon = render_summary_pane_kind_icon_circle(
-                primary,
-                sizing.icon_size,
-                sizing.padding,
-                appearance,
-            );
-            let secondary_icon = render_summary_pane_kind_icon_circle(
-                secondary,
-                sizing.badge_icon_size,
-                sizing.badge_padding,
-                appearance,
-            );
+            // The secondary icon sits at the BR of the primary at roughly badge
+            // proportions, with a small cutout ring separating it from the primary.
+            let primary_total = VERTICAL_TABS_ICON_SIZE;
+            let secondary_total = VERTICAL_TABS_ICON_SIZE * 0.5;
+            let ring_padding = secondary_total * 0.1;
+            let primary_icon =
+                render_summary_pane_kind_icon_circle(primary, primary_total, appearance);
+            let secondary_icon =
+                render_summary_pane_kind_icon_circle(secondary, secondary_total, appearance);
             let secondary_with_ring = Container::new(secondary_icon)
-                .with_uniform_padding(sizing.badge_padding)
+                .with_uniform_padding(ring_padding)
                 .with_background(theme.background())
                 .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
                 .finish();
 
+            // Same 45° placement as `render_with_optional_status_badge`: secondary's
+            // center sits on the primary circle's edge.
+            let primary_radius = primary_total / 2.;
+            let secondary_outer = secondary_total + ring_padding * 2.;
+            let secondary_radius = secondary_outer / 2.;
+            let secondary_corner_offset = primary_radius * std::f32::consts::FRAC_1_SQRT_2
+                + secondary_radius
+                - primary_total / 2.;
+
             let mut stack = Stack::new().with_child(
                 ConstrainedBox::new(primary_icon)
-                    .with_width(overall_size)
-                    .with_height(overall_size)
+                    .with_width(primary_total)
+                    .with_height(primary_total)
                     .finish(),
             );
             stack.add_positioned_child(
                 secondary_with_ring,
                 OffsetPositioning::offset_from_parent(
-                    vec2f(sizing.badge_offset.0, sizing.badge_offset.1),
-                    ParentOffsetBounds::ParentBySize,
+                    vec2f(secondary_corner_offset, secondary_corner_offset),
+                    ParentOffsetBounds::Unbounded,
                     ParentAnchor::BottomRight,
                     ChildAnchor::BottomRight,
                 ),
             );
             ConstrainedBox::new(stack.finish())
-                .with_width(overall_size)
-                .with_height(overall_size)
+                .with_width(primary_total)
+                .with_height(primary_total)
                 .finish()
         }
     }
 }
 
+// Inline rendering for non-agent summary kinds — for an icon (e.g. Terminal, Code,
+// Notebook) sized to fill its `total_size` bounding box.
+const SUMMARY_INLINE_ICON_RATIO: f32 = 2. / 3.;
+const SUMMARY_INLINE_PADDING_RATIO: f32 = (1. - SUMMARY_INLINE_ICON_RATIO) / 2.;
+
 fn render_summary_pane_kind_icon_circle(
     kind: SummaryPaneKind,
-    icon_size: f32,
-    padding: f32,
+    total_size: f32,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
+    // For ambient Oz / CLI agent kinds, delegate to `render_icon_with_status` so the
+    // brand-color circle is overlaid with the white cloud badge (status-less in summary
+    // mode). Non-ambient agent kinds and all other pane kinds fall through to the inline
+    // circle rendering below.
+    if let Some(variant) = ambient_agent_variant(&kind) {
+        return render_icon_with_status(variant, total_size, 0., theme, theme.background());
+    }
+    let icon_size = total_size * SUMMARY_INLINE_ICON_RATIO;
+    let padding = total_size * SUMMARY_INLINE_PADDING_RATIO;
     let (icon_element, background): (Box<dyn Element>, ElementFill) = match kind {
-        SummaryPaneKind::OzAgent { is_ambient } => {
-            let icon = if is_ambient {
-                WarpIcon::OzCloud
-            } else {
-                WarpIcon::Oz
-            };
-            (
-                icon.to_warpui_icon(oz_icon_fill(theme)).finish(),
-                theme.background().into(),
-            )
-        }
-        SummaryPaneKind::CLIAgent { agent } => {
+        SummaryPaneKind::OzAgent { .. } => (
+            WarpIcon::Oz.to_warpui_icon(oz_icon_fill(theme)).finish(),
+            theme.background().into(),
+        ),
+        SummaryPaneKind::CLIAgent { agent, .. } => {
             let icon_color = agent.brand_icon_color();
             let icon_element = agent
                 .icon()
@@ -3702,6 +3748,27 @@ fn render_summary_pane_kind_icon_circle(
     .finish()
 }
 
+/// Maps an ambient Oz / CLI agent summary-pane kind to the `IconWithStatusVariant` used to
+/// render the brand-color circle with the white cloud badge. Non-ambient kinds (and all
+/// other pane kinds) return `None` so the caller falls back to its inline rendering.
+fn ambient_agent_variant(kind: &SummaryPaneKind) -> Option<IconWithStatusVariant> {
+    match kind {
+        SummaryPaneKind::OzAgent { is_ambient: true } => Some(IconWithStatusVariant::OzAgent {
+            status: None,
+            is_ambient: true,
+        }),
+        SummaryPaneKind::CLIAgent {
+            agent,
+            is_ambient: true,
+        } => Some(IconWithStatusVariant::CLIAgent {
+            agent: *agent,
+            status: None,
+            is_ambient: true,
+        }),
+        _ => None,
+    }
+}
+
 fn summary_pane_kind_icon(
     kind: SummaryPaneKind,
     appearance: &Appearance,
@@ -3715,15 +3782,8 @@ fn summary_pane_kind_icon(
 
     match kind {
         SummaryPaneKind::Terminal => (WarpIcon::Terminal, main_text),
-        SummaryPaneKind::OzAgent { is_ambient } => (
-            if is_ambient {
-                WarpIcon::OzCloud
-            } else {
-                WarpIcon::Oz
-            },
-            main_text,
-        ),
-        SummaryPaneKind::CLIAgent { agent } => (
+        SummaryPaneKind::OzAgent { .. } => (WarpIcon::Oz, main_text),
+        SummaryPaneKind::CLIAgent { agent, .. } => (
             agent.icon().unwrap_or(WarpIcon::Terminal),
             WarpThemeFill::Solid(agent.brand_icon_color()),
         ),

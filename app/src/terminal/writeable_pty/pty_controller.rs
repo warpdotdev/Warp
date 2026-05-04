@@ -801,7 +801,7 @@ fn bytes_to_execute_command(
                 // the whitespace into the fish line editor, and then pasting in the command.
                 //
                 // The leading whitespace is particularly meaningful in fish because it causes the
-                // following command to be ommitted from history (like the HISTIGNORESPACE option
+                // following command to be omitted from history (like the HISTIGNORESPACE option
                 // in zsh).
                 //
                 // We don't care about preserving trailing whitespace; it would just take up

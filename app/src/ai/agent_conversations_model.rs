@@ -4,7 +4,9 @@ use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{AgentSource, AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
-use crate::ai::blocklist::{format_credits, BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use crate::ai::blocklist::{
+    format_credits, BlocklistAIHistoryEvent, BlocklistAIHistoryModel, ConversationStatusUpdate,
+};
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::auth::auth_manager::{AuthManager, AuthManagerEvent};
@@ -248,6 +250,9 @@ impl AgentRunDisplayStatus {
             | AmbientAgentTaskState::Pending
             | AmbientAgentTaskState::Claimed => Self::from_task_state(task),
             AmbientAgentTaskState::InProgress => {
+                if task.has_active_execution() {
+                    return Self::from_task_state(task);
+                }
                 let history_model = BlocklistAIHistoryModel::as_ref(app);
                 AgentConversationsModel::conversation_id_shadowed_by_task(task, history_model)
                     .and_then(|conversation_id| history_model.conversation(&conversation_id))
@@ -528,7 +533,7 @@ impl ConversationOrTask<'_> {
     /// Returns the session ID for tasks, if we have one.
     pub fn session_id(&self) -> Option<SessionId> {
         match self {
-            ConversationOrTask::Task(task) => task.session_id.as_ref().and_then(|s| {
+            ConversationOrTask::Task(task) => task.session_id.as_deref().and_then(|s| {
                 let session_id = s.parse::<SessionId>();
                 if let Err(ref e) = session_id {
                     log::warn!("Failed to parse shared session ID: {e}");
@@ -537,10 +542,6 @@ impl ConversationOrTask<'_> {
             }),
             ConversationOrTask::Conversation(_) => None,
         }
-    }
-
-    pub fn is_ambient_agent_conversation(&self) -> bool {
-        matches!(self, ConversationOrTask::Task(_))
     }
 
     /// Returns the navigation data for local conversations, used for emitting the Navigate event.
@@ -629,7 +630,7 @@ impl ConversationOrTask<'_> {
                 // Without cloud conversations, also open session link as long as it's not expired.
                 // With cloud conversations, even if the link is not expired, we load conversation
                 // data from graphql as long as the session isn't live.
-                if task.is_sandbox_running
+                if task.has_active_execution()
                     || (!FeatureFlag::CloudConversations.is_enabled()
                         && self.get_session_status() != Some(SessionStatus::Expired))
                 {
@@ -648,14 +649,16 @@ impl ConversationOrTask<'_> {
     pub fn session_or_conversation_link(&self, app: &AppContext) -> Option<String> {
         match self.link_preference() {
             LinkPreference::Session => match self {
-                ConversationOrTask::Task(task) => task.session_link.clone(),
+                ConversationOrTask::Task(task) => task
+                    .active_run_execution()
+                    .session_link
+                    .map(ToString::to_string),
                 ConversationOrTask::Conversation(_) => None,
             },
             LinkPreference::Conversation => match self {
                 ConversationOrTask::Task(task) => task
-                    .conversation_id
-                    .as_ref()
-                    .map(|id| ServerConversationToken::new(id.clone()).conversation_link()),
+                    .conversation_id()
+                    .map(|id| ServerConversationToken::new(id.to_string()).conversation_link()),
                 ConversationOrTask::Conversation(conversation) => {
                     let history_model = BlocklistAIHistoryModel::as_ref(app);
                     history_model
@@ -680,7 +683,7 @@ impl ConversationOrTask<'_> {
         if FeatureFlag::CloudConversations.is_enabled() {
             return match self {
                 ConversationOrTask::Task(task) => {
-                    if task.session_link.is_some() {
+                    if task.active_run_execution().session_link.is_some() {
                         Some(SessionStatus::Available)
                     } else {
                         Some(SessionStatus::Unavailable)
@@ -691,7 +694,7 @@ impl ConversationOrTask<'_> {
         }
         match self {
             ConversationOrTask::Task(task) => {
-                if task.session_id.is_some() {
+                if task.active_run_execution().session_id.is_some() {
                     Some(SessionStatus::Available)
                 } else if (Utc::now() - task.created_at) > SESSION_EXPIRATION_TIME {
                     Some(SessionStatus::Expired)
@@ -778,16 +781,16 @@ impl ConversationOrTask<'_> {
                     self.session_id()
                         .map(|session_id| WorkspaceAction::OpenAmbientAgentSession {
                             session_id,
-                            task_id: task.task_id,
+                            task_id: task.run_id(),
                         })
                 }
                 ConversationOrTask::Conversation(_) => None,
             },
             LinkPreference::Conversation => match self {
-                ConversationOrTask::Task(task) => task.conversation_id.as_ref().map(|id| {
+                ConversationOrTask::Task(task) => task.conversation_id().map(|id| {
                     WorkspaceAction::OpenConversationTranscriptViewer {
-                        conversation_id: ServerConversationToken::new(id.clone()),
-                        ambient_agent_task_id: Some(task.task_id),
+                        conversation_id: ServerConversationToken::new(id.to_string()),
+                        ambient_agent_task_id: Some(task.run_id()),
                     }
                 }),
                 ConversationOrTask::Conversation(metadata) => {
@@ -854,10 +857,6 @@ pub struct AgentConversationsModel {
     active_data_consumers_per_window: HashMap<WindowId, HashSet<EntityId>>,
     /// Whether we have finished the initial task load
     has_finished_initial_load: bool,
-    /// Task IDs that have been manually opened from the management page.
-    /// These will appear in the conversation list even if their source is not user-initiated
-    /// (and even after they have been closed).
-    manually_opened_task_ids: HashSet<AmbientAgentTaskId>,
     /// Per-task fetch state for `get_or_async_fetch_task_data`. See [`TaskFetchState`] for
     /// the meaning of each variant. Tasks that have been successfully fetched live in `tasks`
     /// and are absent from this map.
@@ -872,11 +871,25 @@ pub enum AgentConversationsModelEvent {
     /// Existing task data may have been updated (e.g., state changes).
     TasksUpdated,
     /// Conversation status data was updated
-    ConversationUpdated,
+    ConversationUpdated {
+        #[allow(dead_code)]
+        conversation_id: AIConversationId,
+        #[allow(dead_code)]
+        kind: ConversationUpdateKind,
+    },
     /// Conversation artifacts were updated (plans, PRs, etc.)
     ConversationArtifactsUpdated { conversation_id: AIConversationId },
-    /// A task was manually opened from the management page.
-    TaskManuallyOpened,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversationUpdateKind {
+    /// The conversation was re-loaded into a terminal view.
+    Restored,
+    /// The conversation's status was set.
+    StatusSet {
+        prev_filter: StatusFilter,
+        new_filter: StatusFilter,
+    },
 }
 
 impl Entity for AgentConversationsModel {
@@ -896,7 +909,6 @@ impl AgentConversationsModel {
                 next_poll_abort_handle: None,
                 active_data_consumers_per_window: HashMap::new(),
                 has_finished_initial_load: true,
-                manually_opened_task_ids: HashSet::new(),
                 task_fetch_state: HashMap::new(),
             };
         }
@@ -934,7 +946,6 @@ impl AgentConversationsModel {
             next_poll_abort_handle: None,
             active_data_consumers_per_window: HashMap::new(),
             has_finished_initial_load: false,
-            manually_opened_task_ids: HashSet::new(),
             task_fetch_state: HashMap::new(),
         };
 
@@ -1124,7 +1135,7 @@ impl AgentConversationsModel {
                     // Collect all conversation IDs from tasks
                     let task_conversation_ids: HashSet<String> = tasks
                         .iter()
-                        .filter_map(|task| task.conversation_id.clone())
+                        .filter_map(|task| task.conversation_id().map(str::to_string))
                         .collect();
 
                     // Build a set of conversation IDs we already have
@@ -1370,6 +1381,26 @@ impl AgentConversationsModel {
         self.tasks.values()
     }
 
+    #[cfg(test)]
+    pub(crate) fn insert_task_for_test(&mut self, task: AmbientAgentTask) {
+        self.tasks.insert(task.task_id, task);
+    }
+
+    pub(crate) fn mark_task_execution_ended(
+        &mut self,
+        task_id: AmbientAgentTaskId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        let Some(task) = self.tasks.get_mut(&task_id) else {
+            return;
+        };
+        let was_active = task.has_active_execution();
+        task.is_sandbox_running = false;
+        if was_active {
+            ctx.emit(AgentConversationsModelEvent::TasksUpdated);
+        }
+    }
+
     /// Returns the local conversation ID represented by the given task, if this task and a
     /// conversation entry both point at the same underlying local run.
     ///
@@ -1381,11 +1412,11 @@ impl AgentConversationsModel {
         history_model: &BlocklistAIHistoryModel,
     ) -> Option<AIConversationId> {
         history_model
-            .conversation_id_for_agent_id(&task.task_id.to_string())
+            .conversation_id_for_agent_id(&task.run_id().to_string())
             .or_else(|| {
-                task.conversation_id.as_ref().and_then(|conversation_id| {
+                task.conversation_id().and_then(|conversation_id| {
                     history_model.find_conversation_id_by_server_token(
-                        &ServerConversationToken::new(conversation_id.clone()),
+                        &ServerConversationToken::new(conversation_id.to_string()),
                     )
                 })
             })
@@ -1422,8 +1453,29 @@ impl AgentConversationsModel {
             }
 
             // Status changes - just trigger re-render since status is looked up at render time
-            BlocklistAIHistoryEvent::UpdatedConversationStatus { .. } => {
-                ctx.emit(AgentConversationsModelEvent::ConversationUpdated);
+            BlocklistAIHistoryEvent::UpdatedConversationStatus {
+                conversation_id,
+                update,
+                new_status,
+                ..
+            } => {
+                let kind = match update {
+                    ConversationStatusUpdate::Restored => ConversationUpdateKind::Restored,
+                    ConversationStatusUpdate::Changed { prev_status } => {
+                        ConversationUpdateKind::StatusSet {
+                            prev_filter: AgentRunDisplayStatus::from_conversation_status(
+                                prev_status,
+                            )
+                            .status_filter(),
+                            new_filter: AgentRunDisplayStatus::from_conversation_status(new_status)
+                                .status_filter(),
+                        }
+                    }
+                };
+                ctx.emit(AgentConversationsModelEvent::ConversationUpdated {
+                    conversation_id: *conversation_id,
+                    kind,
+                });
             }
 
             // Artifact changes - sync live artifacts into the cached task and notify.
@@ -1463,6 +1515,7 @@ impl AgentConversationsModel {
             // UpdateTaskDescription, last_updated uses exchange.start_time which is set at append time).
             | BlocklistAIHistoryEvent::UpdatedStreamingExchange { .. }
             | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
+            | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
             => {}
         }
     }
@@ -1723,20 +1776,6 @@ impl AgentConversationsModel {
         envs
     }
 
-    pub fn mark_task_as_manually_opened(
-        &mut self,
-        task_id: AmbientAgentTaskId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if self.manually_opened_task_ids.insert(task_id) {
-            ctx.emit(AgentConversationsModelEvent::TaskManuallyOpened);
-        }
-    }
-
-    pub fn is_task_manually_opened(&self, task_id: &AmbientAgentTaskId) -> bool {
-        self.manually_opened_task_ids.contains(task_id)
-    }
-
     /// Converts AgentManagementFilters to TaskListFilter for server API calls.
     pub fn build_task_list_filter(
         &self,
@@ -1891,7 +1930,6 @@ impl AgentConversationsModel {
         self.conversations.clear();
         self.abort_existing_poll();
         self.active_data_consumers_per_window.clear();
-        self.manually_opened_task_ids.clear();
         self.task_fetch_state.clear();
         // Reset the initial load flag so that we can retry the initial sync with the new logged in user
         self.has_finished_initial_load = false;

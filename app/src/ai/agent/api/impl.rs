@@ -119,7 +119,7 @@ pub async fn generate_multi_agent_output(
                 .unwrap_or_default(),
             forked_from_conversation_id: if params.conversation_token.is_none() {
                 // We only include this param on our initial request to the server
-                // (when the forked conversation has not been asigned a new id yet).
+                // (when the forked conversation has not been assigned a new id yet).
                 params
                     .forked_from_conversation_token
                     .map(|token| token.as_str().to_string())
@@ -213,11 +213,17 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
     }
 
     if params.orchestration_enabled {
+        // Always advertise the legacy start-agent tool so the server
+        // can fall back to it when its own orchestrate flag is off.
+        // When RunAgents is also enabled, advertise it alongside.
         supported_tools.push(if FeatureFlag::OrchestrationV2.is_enabled() {
             api::ToolType::StartAgentV2
         } else {
             api::ToolType::StartAgent
         });
+        if FeatureFlag::RunAgentsTool.is_enabled() && FeatureFlag::OrchestrationV2.is_enabled() {
+            supported_tools.push(api::ToolType::RunAgents);
+        }
         supported_tools.push(api::ToolType::SendMessageToAgent);
     }
 

@@ -54,7 +54,7 @@ use crate::ai::blocklist::agent_view::{
     agent_view_bg_fill, AgentViewController, AgentViewControllerEvent, AgentViewDisplayMode,
     AgentViewEntryBlockParams, AgentViewEntryOrigin, AgentViewHeaderDisabledTheme,
     AgentViewHeaderTheme, AgentViewZeroStateBlock, AgentViewZeroStateEvent, EphemeralMessageModel,
-    ExitAgentViewError, ExitConfirmationTrigger, InlineAgentViewHeader,
+    ExitAgentViewError, ExitConfirmationTrigger, InlineAgentViewHeader, OrchestrationPillBar,
     ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
 use crate::ai::conversation_utils;
@@ -219,11 +219,11 @@ use crate::ai::{
         AIBlock, AIBlockEvent, BlocklistAIActionEvent, BlocklistAIActionModel,
         BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIController,
         BlocklistAIControllerEvent, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-        BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
-        LegacyPassiveSuggestionsEvent, LegacyPassiveSuggestionsModel, MaaPassiveSuggestionsEvent,
-        MaaPassiveSuggestionsModel, PassiveSuggestionsModels, PendingQueryState,
-        RequestFileEditsFormatKind, ShellCommandExecutor, ShellCommandExecutorEvent,
-        StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
+        BlocklistAIInputEvent, BlocklistAIInputModel, ConversationStatusUpdate, InputConfig,
+        InputType, LegacyPassiveSuggestionsEvent, LegacyPassiveSuggestionsModel,
+        MaaPassiveSuggestionsEvent, MaaPassiveSuggestionsModel, PassiveSuggestionsModels,
+        PendingQueryState, RequestFileEditsFormatKind, ShellCommandExecutor,
+        ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
         ATTACH_AS_AGENT_MODE_CONTEXT_TEXT, PRE_REWIND_PREFIX,
     },
     execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId},
@@ -1664,7 +1664,7 @@ pub enum Event {
     Pane(PaneEvent),
     OpenSettings(SettingsSection),
     AskAIAssistant(AskAIType),
-    /// Event propogates terminal inputs up to the workspace,
+    /// Event propagates terminal inputs up to the workspace,
     /// to be processed on the way back down through the view hierarchy.
     SyncInput(SyncEvent),
     /// Event used to propagate a state change for one of the terminal views
@@ -1713,7 +1713,7 @@ pub enum Event {
     },
     CtrlD,
     ShutdownPty,
-    // TODO: break this event down into higer-level events that hide the
+    // TODO: break this event down into higher-level events that hide the
     // `bytes` detail from the view.
     WriteBytesToPty {
         bytes: Cow<'static, [u8]>,
@@ -1974,8 +1974,12 @@ pub enum Event {
         variant: CloudAgentCapacityModalVariant,
     },
     FreeTierLimitCheckTriggered,
-    /// Emitted when the StartAgent executor needs the workspace to create a new child
-    /// agent conversation in a split pane.
+    /// Emitted when the StartAgent executor needs the workspace to create
+    /// a new child agent conversation in a split pane. The freshly-created
+    /// child conversation id is echoed back to the executor via
+    /// [`BlocklistAIHistoryModel::record_new_conversation_request_complete`]
+    /// so the executor can disambiguate per-request pendings when multiple
+    /// StartAgent requests are in flight in parallel.
     StartAgentConversation(StartAgentRequest),
     /// Emitted when the user clicks a child agent row in the status card to reveal
     /// its hidden pane.
@@ -2000,7 +2004,7 @@ pub struct SyncEvent {
     pub data: SyncInputType,
 }
 
-/// Event used to propogate the keyboard events from one terminal to others.
+/// Event used to propagate the keyboard events from one terminal to others.
 #[derive(Clone)]
 pub enum SyncInputType {
     /// Event for when the input editor's buffer contents changed.
@@ -2299,8 +2303,6 @@ struct TerminalViewMouseStates {
     show_in_file_explorer_tooltip: MouseStateHandle,
     jump_to_bottom_of_block_button: MouseStateHandle,
 
-    // Mouse state for the pane header ambient agent indicator tooltip.
-    ambient_agent_indicator_mouse_handle: MouseStateHandle,
     parent_conversation_header_link: MouseStateHandle,
 }
 
@@ -2632,8 +2634,8 @@ pub struct TerminalView {
     /// Set when sharing is started from the remote control entrypoint.
     auto_stop_sharing_on_cli_end: bool,
 
-    /// Whether we've already inserted the conversation-ended tombstone for this view.
-    has_inserted_conversation_ended_tombstone: bool,
+    /// The inserted conversation-ended tombstone, if this view currently has one.
+    conversation_ended_tombstone_view_id: Option<EntityId>,
 
     /// The ID of the containing window.
     window_id: WindowId,
@@ -2737,9 +2739,14 @@ pub struct TerminalView {
 
     agent_view_controller: ModelHandle<AgentViewController>,
     agent_view_back_button: ViewHandle<ActionButton>,
+    /// Pill bar shown above the agent view header listing the orchestrator and
+    /// child agents. Gated by `FeatureFlag::OrchestrationPillBar`. The view is
+    /// always constructed; render-time guards control whether it draws anything.
+    orchestration_pill_bar: ViewHandle<OrchestrationPillBar>,
     is_using_conversation_for_pane_header_title: bool,
 
     ambient_agent_view_model: Option<ModelHandle<ambient_agent::AmbientAgentViewModel>>,
+    pending_cloud_followup_task_id: Option<AmbientAgentTaskId>,
 
     /// Conversation details panel (side panel showing conversation/task metadata).
     /// Available for cloud Oz runs and for any active local AI conversation.
@@ -3292,10 +3299,21 @@ impl TerminalView {
             ctx.notify();
         });
 
+        let ai_context_model = ctx.add_model(|ctx| {
+            BlocklistAIContextModel::new(
+                sessions.clone(),
+                &model_events_handle,
+                model.clone(),
+                terminal_view_id,
+                agent_view_controller.clone(),
+                ctx,
+            )
+        });
         let ai_input_model = ctx.add_model(|ctx| {
             let mut model = BlocklistAIInputModel::new(
                 model.clone(),
                 agent_view_controller.clone(),
+                ai_context_model.clone(),
                 terminal_view_id,
                 ctx,
             );
@@ -3318,16 +3336,6 @@ impl TerminalView {
                 &model_events_handle,
                 get_relevant_files_controller.clone(),
                 terminal_view_id,
-                ctx,
-            )
-        });
-        let ai_context_model = ctx.add_model(|ctx| {
-            BlocklistAIContextModel::new(
-                sessions.clone(),
-                &model_events_handle,
-                model.clone(),
-                terminal_view_id,
-                agent_view_controller.clone(),
                 ctx,
             )
         });
@@ -3516,7 +3524,7 @@ impl TerminalView {
                     event,
                     AgentConversationsModelEvent::TasksUpdated
                         | AgentConversationsModelEvent::NewTasksReceived
-                        | AgentConversationsModelEvent::ConversationUpdated
+                        | AgentConversationsModelEvent::ConversationUpdated { .. }
                         | AgentConversationsModelEvent::ConversationArtifactsUpdated { .. }
                 );
                 // Only refresh panel if it's currently open (avoids unnecessary work)
@@ -3916,7 +3924,7 @@ impl TerminalView {
             });
         }
 
-        // Here we intialize the block list mouse states for block zero.
+        // Here we initialize the block list mouse states for block zero.
         // Afterwards, we initialize all block list mouse states for a block when the
         // previous block sends a `BlockCompleted` event.
         let mut block_list_mouse_states = BlockListMouseStates::default();
@@ -3996,6 +4004,10 @@ impl TerminalView {
                 ctx,
             )
         });
+        let orchestration_pill_bar =
+            ctx.add_view(|ctx| OrchestrationPillBar::new(agent_view_controller.clone(), ctx));
+        ctx.subscribe_to_view(&orchestration_pill_bar, |_, _, _, ctx| ctx.notify());
+
         let agent_view_back_button = ctx.add_typed_action_view(|ctx| {
             ActionButton::new("for terminal", AgentViewHeaderTheme)
                 .with_icon(icons::Icon::ArrowLeft)
@@ -4132,7 +4144,7 @@ impl TerminalView {
             shared_session: None,
             pending_share_source: None,
             auto_stop_sharing_on_cli_end: false,
-            has_inserted_conversation_ended_tombstone: false,
+            conversation_ended_tombstone_view_id: None,
             ai_input_model,
             ai_context_model,
             window_id,
@@ -4169,11 +4181,13 @@ impl TerminalView {
             use_agent_footer: use_agent_button_bar,
             agent_view_controller,
             agent_view_back_button,
+            orchestration_pill_bar,
             is_using_conversation_for_pane_header_title: false,
             ambient_agent_view_model,
             conversation_details_panel,
             is_conversation_details_panel_open: false,
             has_auto_opened_conversation_details_panel: false,
+            pending_cloud_followup_task_id: None,
             #[cfg(not(target_arch = "wasm32"))]
             conversation_details_panel_toggle_mouse_state: Default::default(),
             ambient_agent_cancel_mouse_state: Default::default(),
@@ -4336,6 +4350,8 @@ impl TerminalView {
                         session_id,
                         result,
                         remote_platform,
+                        preinstall_check: _,
+                        has_old_binary: _,
                     } => {
                         let (remote_os, remote_arch) = remote_platform
                             .as_ref()
@@ -4682,6 +4698,9 @@ impl TerminalView {
         }
         if let BlocklistAIControllerEvent::SentRequest { model_id, .. } = event {
             self.maybe_insert_aws_bedrock_login_banner(model_id, ctx);
+        }
+        if let BlocklistAIControllerEvent::ExecuteLocalHarnessCommand { command } = event {
+            self.execute_command_or_set_pending(command, ctx);
         }
         if let BlocklistAIControllerEvent::FinishedReceivingOutput {
             conversation_id, ..
@@ -5040,7 +5059,7 @@ impl TerminalView {
                     self.clear_selected_text(ctx);
                 }
 
-                // Propegate context model's directory context to the most recent AI block.
+                // Propagate context model's directory context to the most recent AI block.
                 let pwd = context_model.as_ref(ctx).current_pwd();
                 let home = context_model.as_ref(ctx).home_directory();
                 if let Some(last_block) = self.last_ai_block() {
@@ -5345,7 +5364,7 @@ impl TerminalView {
             }
             BlocklistAIHistoryEvent::UpdatedConversationStatus {
                 conversation_id,
-                is_restored,
+                update,
                 ..
             } => {
                 // When the conversation state changes or a new conversation
@@ -5354,7 +5373,7 @@ impl TerminalView {
 
                 // Don't send notifications or insert ambient agent session ended tombstone
                 // if we're restoring this conversation on startup.
-                if *is_restored {
+                if matches!(update, ConversationStatusUpdate::Restored) {
                     return;
                 }
 
@@ -5384,7 +5403,7 @@ impl TerminalView {
                 // conversation completes.
                 // We only insert the tombstone once per session (when the conversation finishes).
                 // Skip during historical replay to avoid premature tombstone insertion.
-                let should_insert_tombstone = if !self.has_inserted_conversation_ended_tombstone
+                let should_insert_tombstone = if self.conversation_ended_tombstone_view_id.is_none()
                     && !self.model.lock().is_receiving_agent_conversation_replay()
                 {
                     #[cfg(target_family = "wasm")]
@@ -5447,7 +5466,8 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
             | BlocklistAIHistoryEvent::DeletedConversation { .. }
-            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => {}
+            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
+            | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. } => {}
         }
         ctx.notify();
     }
@@ -6390,7 +6410,7 @@ impl TerminalView {
 
     fn handle_start_agent_executor_event(
         &mut self,
-        _: ModelHandle<StartAgentExecutor>,
+        _executor: ModelHandle<StartAgentExecutor>,
         event: &StartAgentExecutorEvent,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -6720,7 +6740,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         if !FeatureFlag::CloudModeSetupV2.is_enabled()
-            || self.has_inserted_conversation_ended_tombstone
+            || self.conversation_ended_tombstone_view_id.is_some()
         {
             return;
         }
@@ -6743,6 +6763,21 @@ impl TerminalView {
         };
 
         if task.is_no_longer_running() {
+            if self.pending_cloud_followup_task_id == Some(task_id) {
+                return;
+            }
+            if self.owned_ambient_agent_task_id(ctx).is_some() {
+                if FeatureFlag::HandoffCloudCloud.is_enabled()
+                    && !self
+                        .model
+                        .lock()
+                        .shared_session_status()
+                        .is_sharer_or_viewer()
+                {
+                    self.enable_owned_cloud_followup_input(task_id, ctx);
+                }
+                return;
+            }
             self.insert_conversation_ended_tombstone(ctx);
         }
     }
@@ -7414,6 +7449,14 @@ impl TerminalView {
             .active_block()
             .is_active_and_long_running()
             && !model.is_read_only()
+    }
+
+    /// Returns `true` when an interactive SSH command has been detected at
+    /// preexec and the SSH block is still running (long-running). Used by
+    /// the workspace to derive `PendingRemoteSession` without storing
+    /// mutable state on the workspace itself.
+    pub fn has_pending_ssh_command(&self) -> bool {
+        self.warpify_state.get_pending_ssh_host().is_some() && self.is_long_running()
     }
 
     /// Like `is_long_running`, but also requires the user to be in control of the command
@@ -9936,7 +9979,7 @@ impl TerminalView {
         }
 
         // If there's a command present and this user is subject to the regex list policy from their
-        // organization, check the commnand against the regex list.
+        // organization, check the command against the regex list.
 
         let Some(command) = command else {
             return false;
@@ -10448,6 +10491,7 @@ impl TerminalView {
                                 self.warpify_state
                                     .set_pending_ssh_host(warpify_command.to_string(), ssh_host);
                                 self.model.lock().start_notify_on_end_of_ssh_login();
+                                ctx.emit(Event::TerminalViewStateChanged);
                             }
                         } else {
                             self.warpify_state.clear_pending_ssh_host();
@@ -11518,6 +11562,7 @@ impl TerminalView {
                         RemoteServerSetupState::Installing {
                             progress_percent: None,
                         } => "Installing...".to_string(),
+                        RemoteServerSetupState::Updating => "Updating...".to_string(),
                         RemoteServerSetupState::Initializing => "Initializing...".to_string(),
                         _ => "Starting shell...".to_string(),
                     })
@@ -11748,6 +11793,32 @@ impl TerminalView {
         }
     }
 
+    fn child_conversation_id_for_cli_status_updates(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<AIConversationId> {
+        if let Some(conversation_id) = BlocklistAIHistoryModel::as_ref(ctx)
+            .active_conversation(self.view_id)
+            .and_then(|conversation| {
+                conversation
+                    .is_child_agent_conversation()
+                    .then_some(conversation.id())
+            })
+        {
+            return Some(conversation_id);
+        }
+
+        let mut child_conversation_ids = BlocklistAIHistoryModel::as_ref(ctx)
+            .all_live_conversations_for_terminal_view(self.view_id)
+            .filter(|conversation| conversation.is_child_agent_conversation())
+            .map(|conversation| conversation.id());
+        let child_conversation_id = child_conversation_ids.next()?;
+        child_conversation_ids
+            .next()
+            .is_none()
+            .then_some(child_conversation_id)
+    }
+
     /// If the startup auto-open setting is enabled, auto-opens rich input for a
     /// CLI agent session. Called after creating a command-detected session or
     /// registering a listener so rich input is shown immediately.
@@ -11831,14 +11902,7 @@ impl TerminalView {
             return;
         }
 
-        let active_child_conversation_id = BlocklistAIHistoryModel::as_ref(ctx)
-            .active_conversation(self.view_id)
-            .and_then(|conversation| {
-                conversation
-                    .is_child_agent_conversation()
-                    .then_some(conversation.id())
-            });
-        if let Some(conversation_id) = active_child_conversation_id {
+        if let Some(conversation_id) = self.child_conversation_id_for_cli_status_updates(ctx) {
             BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
                 history_model.update_conversation_status(
                     self.view_id,
@@ -14988,6 +15052,21 @@ impl TerminalView {
             }
             return;
         }
+
+        // Prioritize selected text in the input over selected blocks (APP-4330):
+        // it's possible to have both a block and input text selected at the same
+        // time, and in that case the user almost always means to copy the input.
+        let selected_input_text = self.input.read(ctx, |input, ctx| {
+            input
+                .editor()
+                .read(ctx, |editor, ctx| editor.selected_text(ctx))
+        });
+        if !selected_input_text.is_empty() {
+            ctx.clipboard()
+                .write(ClipboardContent::plain_text(selected_input_text));
+            return;
+        }
+
         if !self.selected_blocks.is_empty() {
             self.copy_blocks(BlockEntity::CommandAndOutput, ctx);
         }
@@ -15508,7 +15587,7 @@ impl TerminalView {
 
                             if ChannelState::channel().is_dogfood() {
                                 items.push(
-                                    MenuItemFields::new("Fork from here")
+                                    MenuItemFields::new("Fork from here (dev only)")
                                         .with_on_select_action(TerminalAction::ContextMenu(
                                             ContextMenuAction::ForkAIConversationFromExactExchange {
                                                 ai_block_view_id: *rich_content_view_id,
@@ -16509,7 +16588,7 @@ impl TerminalView {
 
             if ChannelState::channel().is_dogfood() {
                 menu_items.push(
-                    MenuItemFields::new("Fork from here")
+                    MenuItemFields::new("Fork from here (dev only)")
                         .with_on_select_action(TerminalAction::ContextMenu(
                             ContextMenuAction::ForkAIConversationFromExactExchange {
                                 ai_block_view_id,
@@ -19745,9 +19824,77 @@ impl TerminalView {
         }
     }
 
+    fn restore_followup_prompt_after_failed_submission(
+        &mut self,
+        prompt: &str,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.pending_cloud_followup_task_id = None;
+        self.input.update(ctx, |input, ctx| {
+            input.reset_after_cloud_followup_submission(ctx);
+            input.replace_buffer_content(prompt, ctx);
+            input.set_input_mode_agent(true, ctx);
+        });
+        self.update_pane_configuration(ctx);
+        self.focus_input_box(ctx);
+        ctx.notify();
+    }
+
+    fn try_submit_pending_cloud_followup(
+        &mut self,
+        prompt: String,
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        if !FeatureFlag::HandoffCloudCloud.is_enabled() {
+            return false;
+        }
+        let Some(task_id) = self
+            .pending_cloud_followup_task_id
+            .or_else(|| self.owned_ambient_agent_task_id(ctx))
+        else {
+            return false;
+        };
+
+        if prompt.trim().is_empty() {
+            self.input.update(ctx, |input, ctx| {
+                input.reset_after_cloud_followup_submission(ctx);
+                input.set_input_mode_agent(true, ctx);
+            });
+            self.update_pane_configuration(ctx);
+            self.focus_input_box(ctx);
+            ctx.notify();
+            return true;
+        }
+
+        let Some(ambient_agent_view_model) = self.ambient_agent_view_model.clone() else {
+            self.restore_followup_prompt_after_failed_submission(&prompt, ctx);
+            self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
+            return true;
+        };
+
+        if ambient_agent_view_model.as_ref(ctx).task_id() != Some(task_id) {
+            self.restore_followup_prompt_after_failed_submission(&prompt, ctx);
+            self.show_error_toast("Couldn't continue this cloud task.".to_string(), ctx);
+            return true;
+        }
+
+        ambient_agent_view_model.update(ctx, |model, ctx| {
+            model.submit_cloud_followup(prompt, ctx);
+        });
+        self.input.update(ctx, |input, ctx| {
+            input.reset_after_cloud_followup_submission(ctx);
+            input.set_input_mode_agent(true, ctx);
+        });
+        self.update_pane_configuration(ctx);
+        ctx.notify();
+        true
+    }
+
     fn handle_input_event(&mut self, event: &InputEvent, ctx: &mut ViewContext<Self>) {
         match event {
             InputEvent::Enter => self.clear_prompt_suggestions(ctx),
+            InputEvent::PageUp => self.page_up(ctx),
+            InputEvent::PageDown => self.page_down(ctx),
             InputEvent::ExecuteCommand(event) => {
                 self.update_scroll_position_locking(
                     ScrollPositionUpdate::AfterCommandExecutionStarted,
@@ -19796,6 +19943,11 @@ impl TerminalView {
                 prompt,
                 attachments,
             } => {
+                if FeatureFlag::HandoffCloudCloud.is_enabled()
+                    && self.try_submit_pending_cloud_followup(prompt.clone(), ctx)
+                {
+                    return;
+                }
                 ctx.emit(Event::SendAgentPrompt {
                     server_conversation_token: *server_conversation_token,
                     prompt: prompt.clone(),
@@ -21346,7 +21498,7 @@ impl TerminalView {
         } else if block.prompt_snapshot().is_some() {
             // Note that we're checking not only for the flag being enabled but also ensuring the
             // prompt_snapshot is defined. This is because some historical blocks from the restored
-            // session may not have yet their prompt_snapshot value, and we stil want to show them
+            // session may not have yet their prompt_snapshot value, and we still want to show them
             // nicely.
             block
                 .prompt_snapshot()
@@ -23269,7 +23421,7 @@ impl TerminalView {
 
                 // On Linux, immediately mark the request permission status as accepted since there's no concept of
                 // requesting desktop notification permissions.
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                 {
                     if let NotificationsDiscoveryBanner::Open {
                         request_outcome, ..
@@ -23791,6 +23943,25 @@ impl TerminalView {
             .is_active_and_long_running();
 
         let image_filepaths = get_image_filepaths_from_paths(paths);
+
+        // CLI-agent paste path: when a CLI agent (e.g. Claude Code) is the
+        // foreground long-running process and the user is interacting with its
+        // TUI directly (rich input closed), hand image drops to the agent the
+        // same way Cmd+V does at `TerminalView::paste` — write each image to
+        // the system clipboard and send the agent's paste keystroke to the
+        // PTY. Without this branch the path string would be shell-escaped and
+        // typed into the agent's prompt. When the rich input is open we leave
+        // the existing chip-attach flow alone, since that's where the user
+        // explicitly asked the drop to land.
+        if !image_filepaths.is_empty()
+            && image_filepaths.len() == paths.len()
+            && is_in_long_running_command
+            && self.has_active_cli_agent_session(ctx)
+            && !CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.view_id)
+        {
+            self.paste_dropped_images_to_cli_agent(image_filepaths, ctx);
+            return;
+        }
 
         if !is_in_long_running_command {
             // Check for image file paths to be auto-attached
@@ -24506,6 +24677,7 @@ impl TypedActionView for TerminalView {
             | ExecuteRewindFromInlineMenu { .. }
             | ToggleUsageFooter
             | RevealChildAgent { .. }
+            | SwitchAgentViewToConversation { .. }
             | OpenCLIAgentRichInput
             | ToggleSessionRecording => Empty,
         }
@@ -25535,6 +25707,14 @@ impl TypedActionView for TerminalView {
                     conversation_id: *conversation_id,
                 });
             }
+            SwitchAgentViewToConversation { conversation_id } => {
+                self.enter_agent_view_for_conversation(
+                    None,
+                    AgentViewEntryOrigin::OrchestrationPillBar,
+                    *conversation_id,
+                    ctx,
+                );
+            }
             ToggleSessionRecording => {
                 self.pty_recorder.update(ctx, |recorder, ctx| {
                     recorder.toggle_recording(ctx);
@@ -25676,15 +25856,13 @@ impl View for TerminalView {
             self.render_grid_tooltip(&mut stack, &model, appearance, app);
         }
 
-        if !FeatureFlag::CloudModeSetupV2.is_enabled() {
-            // Show progress steps while waiting for an ambient agent to start.
-            if self
-                .ambient_agent_view_model
-                .as_ref()
-                .is_some_and(|model| model.as_ref(app).agent_progress().is_some())
-            {
-                stack.add_child(self.render_ambient_agent_progress(appearance, app));
-            }
+        // Show progress steps while waiting for an ambient agent to start. CloudModeSetupV2 uses
+        // the agent status bar for setup/follow-up progress.
+        if self.ambient_agent_view_model.as_ref().is_some_and(|model| {
+            let model = model.as_ref(app);
+            model.agent_progress().is_some() && !FeatureFlag::CloudModeSetupV2.is_enabled()
+        }) {
+            stack.add_child(self.render_ambient_agent_progress(appearance, app));
         }
 
         // For shared session viewers, we want to show a "Request edit access"

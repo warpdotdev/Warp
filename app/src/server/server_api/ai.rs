@@ -144,6 +144,7 @@ use warp_graphql::{
     },
 };
 
+pub use crate::ai::agent::UserQueryMode;
 // Re-export ambient agent types for backwards compatibility
 pub use crate::ai::ambient_agents::{
     task::{AttachmentInput, TaskAttachment},
@@ -156,6 +157,23 @@ const AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS: u64 = 30;
 pub struct TaskStatusUpdate {
     pub message: String,
     pub error_code: Option<PlatformErrorCode>,
+}
+fn public_api_user_query_mode(mode: UserQueryMode) -> &'static str {
+    match mode {
+        UserQueryMode::Normal => "normal",
+        UserQueryMode::Plan => "plan",
+        UserQueryMode::Orchestrate => "orchestrate",
+    }
+}
+
+fn serialize_user_query_mode_for_public_api<S>(
+    mode: &UserQueryMode,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(public_api_user_query_mode(*mode))
 }
 
 impl TaskStatusUpdate {
@@ -180,6 +198,9 @@ impl TaskStatusUpdate {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SpawnAgentRequest {
     pub prompt: String,
+    /// The public API accepts lowercase mode strings (`normal`, `plan`, or `orchestrate`).
+    #[serde(serialize_with = "serialize_user_query_mode_for_public_api")]
+    pub mode: UserQueryMode,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config: Option<AgentConfigSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -205,6 +226,11 @@ pub struct SpawnAgentRequest {
     /// Base64-encoded `warp.multi_agent.v1.Attachment` payloads to restore as referenced attachments.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub referenced_attachments: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RunFollowupRequest {
+    pub message: String,
 }
 
 // --- Orchestrations V2 messaging types ---
@@ -657,6 +683,10 @@ pub(crate) fn build_list_agent_runs_url(limit: i32, filter: &TaskListFilter) -> 
     url
 }
 
+pub(crate) fn build_run_followup_url(run_id: &AmbientAgentTaskId) -> String {
+    format!("agent/runs/{run_id}/followups")
+}
+
 struct ListRunsResponse {
     runs: Vec<AmbientAgentTask>,
 }
@@ -825,6 +855,12 @@ pub trait AIClient: 'static + Send + Sync {
         task_id: &AmbientAgentTaskId,
     ) -> anyhow::Result<serde_json::Value, anyhow::Error>;
 
+    async fn submit_run_followup(
+        &self,
+        run_id: &AmbientAgentTaskId,
+        request: RunFollowupRequest,
+    ) -> anyhow::Result<(), anyhow::Error>;
+
     async fn get_scheduled_agent_history(
         &self,
         schedule_id: &str,
@@ -969,6 +1005,73 @@ fn into_file_artifact_record(
         description: artifact.description,
         mime_type: artifact.mime_type,
         size_bytes: artifact.size_bytes,
+    }
+}
+
+impl ServerApi {
+    pub(crate) async fn send_agent_message_for_task(
+        &self,
+        task_id: &AmbientAgentTaskId,
+        request: SendAgentMessageRequest,
+    ) -> anyhow::Result<SendAgentMessageResponse, anyhow::Error> {
+        let response = self
+            .post_public_api_response_for_task(task_id, "agent/messages", &request)
+            .await?;
+        let response = response.json::<SendAgentMessageResponse>().await?;
+        Ok(response)
+    }
+
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    pub(crate) async fn list_agent_messages_for_task(
+        &self,
+        task_id: &AmbientAgentTaskId,
+        run_id: &str,
+        request: ListAgentMessagesRequest,
+    ) -> anyhow::Result<Vec<AgentMessageHeader>, anyhow::Error> {
+        let mut params = vec![format!("limit={}", request.limit)];
+        if request.unread_only {
+            params.push("unread=true".to_string());
+        }
+        if let Some(since) = request.since {
+            params.push(format!("since={}", urlencoding::encode(&since)));
+        }
+
+        let path = format!("agent/messages/{run_id}?{}", params.join("&"));
+        let response = self
+            .get_public_api_response_for_task(task_id, &path)
+            .await?;
+        let response = response.json::<Vec<AgentMessageHeader>>().await?;
+        Ok(response)
+    }
+
+    pub(crate) async fn mark_message_delivered_for_task(
+        &self,
+        task_id: &AmbientAgentTaskId,
+        message_id: &str,
+    ) -> anyhow::Result<(), anyhow::Error> {
+        self.post_public_api_response_for_task(
+            task_id,
+            &format!("agent/messages/{message_id}/delivered"),
+            &(),
+        )
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn read_agent_message_for_task(
+        &self,
+        task_id: &AmbientAgentTaskId,
+        message_id: &str,
+    ) -> anyhow::Result<ReadAgentMessageResponse, anyhow::Error> {
+        let response = self
+            .post_public_api_response_for_task(
+                task_id,
+                &format!("agent/messages/{message_id}/read"),
+                &(),
+            )
+            .await?;
+        let response = response.json::<ReadAgentMessageResponse>().await?;
+        Ok(response)
     }
 }
 
@@ -1454,6 +1557,15 @@ impl AIClient for ServerApi {
         Ok(response)
     }
 
+    async fn submit_run_followup(
+        &self,
+        run_id: &AmbientAgentTaskId,
+        request: RunFollowupRequest,
+    ) -> anyhow::Result<(), anyhow::Error> {
+        self.post_public_api_unit(&build_run_followup_url(run_id), &request)
+            .await
+    }
+
     async fn get_scheduled_agent_history(
         &self,
         schedule_id: &str,
@@ -1881,6 +1993,7 @@ impl AIClient for ServerApi {
         struct UpdateBody {
             sequence: i64,
         }
+
         self.patch_public_api_unit(
             &format!("agent/runs/{run_id}/event-sequence"),
             &UpdateBody { sequence },
@@ -2256,6 +2369,7 @@ fn convert_harness(harness: warp_graphql::ai::AgentHarness) -> AIAgentHarness {
         warp_graphql::ai::AgentHarness::Oz => AIAgentHarness::Oz,
         warp_graphql::ai::AgentHarness::ClaudeCode => AIAgentHarness::ClaudeCode,
         warp_graphql::ai::AgentHarness::Gemini => AIAgentHarness::Gemini,
+        warp_graphql::ai::AgentHarness::Codex => AIAgentHarness::Codex,
         warp_graphql::ai::AgentHarness::Other(value) => {
             report_error!(anyhow!(
                 "Invalid AgentHarness '{value}'. Make sure to update client GraphQL types!"

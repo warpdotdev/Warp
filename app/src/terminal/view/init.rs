@@ -162,16 +162,6 @@ pub fn init(app: &mut AppContext) {
             TerminalAction::ControlSequence("\x1b[3~".as_bytes().to_vec()),
             id!("Terminal") & !id!("IMEOpen"),
         ),
-        FixedBinding::new(
-            "pageup",
-            TerminalAction::PageUp,
-            id!("Terminal") & !id!("IMEOpen"),
-        ),
-        FixedBinding::new(
-            "pagedown",
-            TerminalAction::PageDown,
-            id!("Terminal") & !id!("IMEOpen"),
-        ),
         // Resume conversation keybinding
         FixedBinding::new_per_platform(
             PerPlatformKeystroke {
@@ -648,6 +638,33 @@ pub fn init(app: &mut AppContext) {
         .with_context_predicate(id!("Terminal") & id!("TerminalView_NonEmptyBlockList")),
     ]);
 
+    app.register_editable_bindings([
+        EditableBinding::new(
+            "terminal:scroll_up_one_page",
+            "Scroll terminal output up one page",
+            TerminalAction::PageUp,
+        )
+        .with_key_binding("pageup")
+        .with_context_predicate(
+            id!("Terminal")
+                & !id!("IMEOpen")
+                & id!("TerminalView_NonEmptyBlockList")
+                & !id!("EditorFocused"),
+        ),
+        EditableBinding::new(
+            "terminal:scroll_down_one_page",
+            "Scroll terminal output down one page",
+            TerminalAction::PageDown,
+        )
+        .with_key_binding("pagedown")
+        .with_context_predicate(
+            id!("Terminal")
+                & !id!("IMEOpen")
+                & id!("TerminalView_NonEmptyBlockList")
+                & !id!("EditorFocused"),
+        ),
+    ]);
+
     app.register_editable_bindings([EditableBinding::new(
         "terminal:scroll_to_top_of_selected_block",
         "Scroll to top of selected block",
@@ -655,9 +672,7 @@ pub fn init(app: &mut AppContext) {
     )
     .with_custom_action(CustomAction::ScrollToTopOfSelectedBlocks)
     .with_context_predicate(
-        id!("Terminal")
-            & !id!("EditorFocused")
-            & ne!("TerminalView_BlockSelectionCardinality", "None"),
+        id!("Terminal") & ne!("TerminalView_BlockSelectionCardinality", "None"),
     )]);
     app.register_editable_bindings([EditableBinding::new(
         "terminal:scroll_to_bottom_of_selected_block",
@@ -666,9 +681,7 @@ pub fn init(app: &mut AppContext) {
     )
     .with_custom_action(CustomAction::ScrollToBottomOfSelectedBlocks)
     .with_context_predicate(
-        id!("Terminal")
-            & !id!("EditorFocused")
-            & ne!("TerminalView_BlockSelectionCardinality", "None"),
+        id!("Terminal") & ne!("TerminalView_BlockSelectionCardinality", "None"),
     )]);
 
     // Register a mac only keybinding for selecting all blocks that uses the "Select All" mac menu

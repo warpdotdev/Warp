@@ -81,6 +81,10 @@ impl CloudModeV2HistoryMenuView {
         self.inner.update(ctx, |v, ctx| v.select_up(ctx));
     }
 
+    pub fn arm_initial_buffer_sync(&self, ctx: &mut ViewContext<Self>) {
+        self.inner.update(ctx, |v, _| v.arm_initial_buffer_sync());
+    }
+
     pub fn select_down(&self, ctx: &mut ViewContext<Self>) {
         self.inner.update(ctx, |v, ctx| v.select_down(ctx));
     }

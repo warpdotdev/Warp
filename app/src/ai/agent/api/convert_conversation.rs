@@ -82,6 +82,7 @@ pub fn convert_conversation_data_to_ai_conversation(
             parent_agent_id: None,
             agent_name: None,
             parent_conversation_id: None,
+            is_remote_child: false,
             run_id: None,
             autoexecute_override: None,
             last_event_sequence: None,
@@ -97,6 +98,7 @@ pub fn convert_conversation_data_to_ai_conversation(
             parent_agent_id: None,
             agent_name: None,
             parent_conversation_id: None,
+            is_remote_child: false,
             // TODO: Populate run_id from server metadata once it is exposed
             // in ServerAIConversationMetadata. For cloud conversations that
             // were spawned via the server API, the run_id is created at task
@@ -509,7 +511,8 @@ impl ConvertToExchanges for &api::Task {
                 | api::message::Message::DebugOutput(_)
                 | api::message::Message::ArtifactEvent(_)
                 | api::message::Message::MessagesReceivedFromAgents(_)
-                | api::message::Message::ModelUsed(_) => false,
+                | api::message::Message::ModelUsed(_)
+                | api::message::Message::OrchestrationConfigSnapshot(_) => false,
             };
 
             if !added_message_as_exchange_input {
@@ -1540,6 +1543,76 @@ pub(crate) fn convert_tool_call_result_to_input(
                 context,
             })
         }
+        Some(ToolCallResultType::RunAgentsResult(result)) => {
+            use ai::agent::action_result::{
+                RunAgentsAgentOutcome, RunAgentsAgentOutcomeKind, RunAgentsLaunchedExecutionMode,
+                RunAgentsResult,
+            };
+            let run_agents_result = match &result.outcome {
+                Some(api::run_agents_result::Outcome::Launched(launched)) => {
+                    let execution_mode = match &launched.resolved_execution_mode {
+                        Some(api::run_agents_result::launched::ResolvedExecutionMode::Remote(
+                            remote,
+                        )) => RunAgentsLaunchedExecutionMode::Remote {
+                            environment_id: remote.environment_id.clone(),
+                            worker_host: remote.worker_host.clone(),
+                            computer_use_enabled: remote.computer_use_enabled,
+                        },
+                        Some(api::run_agents_result::launched::ResolvedExecutionMode::Local(_))
+                        | None => RunAgentsLaunchedExecutionMode::Local,
+                    };
+                    let agents = launched
+                        .agents
+                        .iter()
+                        .map(|outcome| RunAgentsAgentOutcome {
+                            name: outcome.name.clone(),
+                            kind: match &outcome.result {
+                                Some(api::run_agents_result::agent_outcome::Result::Launched(
+                                    launched_agent,
+                                )) => RunAgentsAgentOutcomeKind::Launched {
+                                    agent_id: launched_agent.agent_id.clone(),
+                                },
+                                Some(api::run_agents_result::agent_outcome::Result::Failed(
+                                    failed,
+                                )) => RunAgentsAgentOutcomeKind::Failed {
+                                    error: failed.error.clone(),
+                                },
+                                None => RunAgentsAgentOutcomeKind::Failed {
+                                    error: String::new(),
+                                },
+                            },
+                        })
+                        .collect();
+                    RunAgentsResult::Launched {
+                        model_id: launched.resolved_model_id.clone(),
+                        harness_type:
+                            crate::ai::agent::api::convert_from::convert_run_agents_harness(
+                                launched.resolved_harness.as_ref(),
+                            )
+                            .unwrap_or_default(),
+                        execution_mode,
+                        agents,
+                    }
+                }
+                Some(api::run_agents_result::Outcome::Denied(denied)) => RunAgentsResult::Denied {
+                    reason: denied.reason.clone(),
+                },
+                Some(api::run_agents_result::Outcome::Failure(failure)) => {
+                    RunAgentsResult::Failure {
+                        error: failure.error.clone(),
+                    }
+                }
+                None => RunAgentsResult::Cancelled,
+            };
+            Some(AIAgentInput::ActionResult {
+                result: AIAgentActionResult {
+                    id: tool_call_id.into(),
+                    task_id: task_id.clone(),
+                    result: AIAgentActionResultType::RunAgents(run_agents_result),
+                },
+                context,
+            })
+        }
         // Deprecated/unused result types or absent result.
         Some(ToolCallResultType::SuggestCreatePlan(..))
         | Some(ToolCallResultType::SuggestPlan(..))
@@ -1673,6 +1746,9 @@ fn create_cancelled_result_for_tool_call(
         }
         ToolType::SendMessageToAgent(_) => {
             AIAgentActionResultType::SendMessageToAgent(SendMessageToAgentResult::Cancelled)
+        }
+        ToolType::RunAgents(_) => {
+            AIAgentActionResultType::RunAgents(ai::agent::action_result::RunAgentsResult::Cancelled)
         }
         // These tools are deprecated.
         ToolType::SuggestCreatePlan(_) | ToolType::SuggestPlan(_) => return None,
@@ -1875,7 +1951,8 @@ where
                 | api::message::Message::DebugOutput(_)
                 | api::message::Message::ArtifactEvent(_)
                 | api::message::Message::InvokeSkill(_)
-                | api::message::Message::ModelUsed(_) => {
+                | api::message::Message::ModelUsed(_)
+                | api::message::Message::OrchestrationConfigSnapshot(_) => {
                     message.timestamp.as_ref().map(|timestamp| {
                         proto_timestamp_to_local_datetime(timestamp.seconds, timestamp.nanos)
                     })

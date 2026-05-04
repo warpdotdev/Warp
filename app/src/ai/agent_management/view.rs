@@ -1237,13 +1237,11 @@ impl AgentManagementView {
                 self.refresh_details_panel_if_needed(ctx);
                 self.get_tasks_from_model(ctx);
             }
-            AgentConversationsModelEvent::ConversationUpdated => {
+            AgentConversationsModelEvent::ConversationUpdated { .. } => {
                 self.get_tasks_from_model(ctx);
                 self.refresh_details_panel_if_needed(ctx);
                 ctx.notify();
             }
-            // TaskManuallyOpened is handled by the conversation list view, not here.
-            AgentConversationsModelEvent::TaskManuallyOpened => {}
             AgentConversationsModelEvent::ConversationArtifactsUpdated { conversation_id } => {
                 self.update_artifacts_for_conversation(*conversation_id, ctx);
                 self.refresh_details_panel_if_needed(ctx);
