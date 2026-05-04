@@ -94,6 +94,8 @@ pub struct DropdownItem<A: Action + Clone> {
     action: A,
     /// Custom font for the dropdown item
     family_id: Option<FamilyId>,
+    /// Optional hover tooltip shown over the row.
+    tooltip: Option<String>,
 }
 
 impl<A> DropdownItem<A>
@@ -108,6 +110,7 @@ where
             display_text: display_text.into(),
             action,
             family_id: None,
+            tooltip: None,
         }
     }
 
@@ -117,6 +120,13 @@ where
         self.family_id = Some(family_id);
         self
     }
+
+    /// Set a hover tooltip for this row. Useful when `display_text` is a
+    /// shortened form of richer underlying data (e.g. a truncated path).
+    pub fn with_tooltip(mut self, tooltip: impl Into<String>) -> Self {
+        self.tooltip = Some(tooltip.into());
+        self
+    }
 }
 
 impl<A> From<&DropdownItem<A>> for MenuItem<DropdownAction<A>>
@@ -124,10 +134,13 @@ where
     A: Action + Clone,
 {
     fn from(dropdown_item: &DropdownItem<A>) -> MenuItem<DropdownAction<A>> {
-        let menu_item = MenuItemFields::new(dropdown_item.display_text.clone())
+        let mut menu_item = MenuItemFields::new(dropdown_item.display_text.clone())
             .with_on_select_action(DropdownAction::SelectActionAndClose(
                 dropdown_item.action.clone(),
             ));
+        if let Some(tooltip) = &dropdown_item.tooltip {
+            menu_item = menu_item.with_tooltip(tooltip.clone());
+        }
         if let Some(family_id) = dropdown_item.family_id {
             menu_item.with_font_override(family_id).into_item()
         } else {
