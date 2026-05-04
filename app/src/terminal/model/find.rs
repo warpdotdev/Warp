@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::{borrow::Cow, ops::RangeInclusive};
 
 use regex::escape;
 use regex_automata::hybrid::dfa::{Cache, DFA};
@@ -66,6 +66,21 @@ impl RegexDFAs {
         enable_unicode_word_boundary: bool,
         case_sensitive: bool,
     ) -> Result<RegexDFAs, Box<BuildError>> {
+        let patterns = patterns
+            .iter()
+            .map(|pattern| {
+                if enable_unicode_word_boundary {
+                    Cow::Borrowed(*pattern)
+                } else {
+                    Cow::Owned(replace_unicode_word_boundaries(pattern))
+                }
+            })
+            .collect::<Vec<_>>();
+        let pattern_refs = patterns
+            .iter()
+            .map(|pattern| pattern.as_ref())
+            .collect::<Vec<_>>();
+
         let mut builder = DFA::builder();
         builder.configure(
             DFA::config()
@@ -81,7 +96,7 @@ impl RegexDFAs {
         if !case_sensitive {
             builder.syntax(Config::new().case_insensitive(true));
         }
-        Self::new_internal(patterns, builder)
+        Self::new_internal(&pattern_refs, builder)
     }
 
     // Based on FindConfig, create DFAs for all directions
@@ -330,5 +345,80 @@ impl RegexDFAs {
 /// often false in the terminal context, which often contains emojis, box-drawing chars,
 /// international text, etc.
 fn replace_unicode_word_boundaries(pattern: &str) -> String {
-    pattern.replace("\\b", "(?-u:\\b)")
+    let mut result = String::with_capacity(pattern.len());
+    let mut chars = pattern.char_indices().peekable();
+    let mut in_character_class = false;
+
+    while let Some((index, c)) = chars.next() {
+        let is_escaped = count_preceding_backslashes(pattern, index) % 2 == 1;
+        if c == '[' && !is_escaped {
+            in_character_class = true;
+        } else if c == ']' && !is_escaped {
+            in_character_class = false;
+        }
+
+        if c == '\\' && !in_character_class && !is_escaped {
+            match chars.peek().map(|(_, next)| *next) {
+                Some('b') => {
+                    result.push_str("(?-u:\\b)");
+                    chars.next();
+                }
+                Some('B') => {
+                    result.push_str("(?-u:\\B)");
+                    chars.next();
+                }
+                _ => result.push(c),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
+fn count_preceding_backslashes(pattern: &str, index: usize) -> usize {
+    pattern[..index]
+        .chars()
+        .rev()
+        .take_while(|c| *c == '\\')
+        .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replace_unicode_word_boundaries;
+
+    #[test]
+    fn replaces_word_boundary_assertions() {
+        assert_eq!(
+            replace_unicode_word_boundaries(r"\bTOKEN\b"),
+            r"(?-u:\b)TOKEN(?-u:\b)"
+        );
+
+        assert_eq!(
+            replace_unicode_word_boundaries(r"\B_TOKEN\B"),
+            r"(?-u:\B)_TOKEN(?-u:\B)"
+        );
+    }
+
+    #[test]
+    fn preserves_escaped_literal_backslash_b() {
+        assert_eq!(replace_unicode_word_boundaries(r"\\bTOKEN"), r"\\bTOKEN");
+        assert_eq!(replace_unicode_word_boundaries(r"\\BTOKEN"), r"\\BTOKEN");
+    }
+
+    #[test]
+    fn preserves_backslash_b_in_character_classes() {
+        assert_eq!(replace_unicode_word_boundaries(r"[\b]TOKEN"), r"[\b]TOKEN");
+        assert_eq!(replace_unicode_word_boundaries(r"[\B]TOKEN"), r"[\B]TOKEN");
+    }
+
+    #[test]
+    fn replaces_boundary_after_escaped_literal_backslash() {
+        assert_eq!(
+            replace_unicode_word_boundaries(r"\\\bTOKEN"),
+            r"\\(?-u:\b)TOKEN"
+        );
+    }
 }

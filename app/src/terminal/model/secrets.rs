@@ -31,7 +31,7 @@ lazy_static! {
     /// Used for secret redaction in the Grid.
     /// Initially empty - will be populated with user-defined regexes when safe mode is enabled.
     pub(in crate::terminal::model) static ref SECRETS_DFA: RwLock<RegexDFAs> = RwLock::new(
-        RegexDFAs::new_many(&[], true, true)
+        RegexDFAs::new_many(&[], false, true)
             .expect("should be able to construct empty regex DFA")
     );
     /// Used for secret redaction in simple text strings (e.g.: rich content blocks).
@@ -371,7 +371,7 @@ pub fn set_user_and_enterprise_secret_regexes<'a>(
         }
     }
 
-    match RegexDFAs::new_many(&all_secrets, true, true) {
+    match RegexDFAs::new_many(&all_secrets, false, true) {
         Ok(dfa) => {
             *secrets = dfa;
         }
