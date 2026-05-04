@@ -160,10 +160,15 @@ pub(crate) fn render_icon_with_status(
             } else {
                 WarpIcon::Oz
             };
+            // Cloud (ambient) runs use a black glyph on the light-purple background
+            // for consistency with the web app; local runs keep the theme text color.
+            let glyph_color = if is_ambient {
+                WarpThemeFill::Solid(ColorU::black())
+            } else {
+                theme.main_text_color(theme.background())
+            };
             let circle = render_circle(
-                oz_glyph
-                    .to_warpui_icon(theme.main_text_color(theme.background()))
-                    .finish(),
+                oz_glyph.to_warpui_icon(glyph_color).finish(),
                 circle_background,
                 total_size,
             );
