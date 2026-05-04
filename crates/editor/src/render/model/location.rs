@@ -147,9 +147,12 @@ impl<'a> Positioned<'a, BlockItem> {
             BlockItem::Paragraph(paragraph) => self
                 .paragraph(paragraph)
                 .coordinate_to_location(self.unpad_x(x), y),
-            BlockItem::TextBlock { paragraph_block } => {
-                self.location_in_paragraph_block(x, y, self.text_block(paragraph_block))
-            }
+            BlockItem::TextBlock { paragraph_block } => self.location_in_paragraph_block(
+                x,
+                y,
+                self.text_block(paragraph_block),
+                Pixels::zero(),
+            ),
             BlockItem::TaskList { paragraph, .. } => self
                 .task_list(paragraph)
                 .coordinate_to_location(self.unpad_x(x), y),
@@ -160,7 +163,9 @@ impl<'a> Positioned<'a, BlockItem> {
                 .ordered_list(paragraph)
                 .coordinate_to_location(self.unpad_x(x), y),
             BlockItem::RunnableCodeBlock {
-                paragraph_block, ..
+                paragraph_block,
+                scroll_left,
+                ..
             } => {
                 // To make text selection more ergonomic, any point on a line with text is
                 // considered part of the block's text area, including padding. Points within the
@@ -172,8 +177,13 @@ impl<'a> Positioned<'a, BlockItem> {
                     text_origin.y()..=text_origin.y() + paragraph_block.height().as_f32();
 
                 if options.force_text_selection || text_height_range.contains(&y.as_f32()) {
-                    // Note: we don't unpad `x` here because it's handled by `location_in_paragraph_block`.
-                    self.location_in_paragraph_block(x, y, self.code_block(paragraph_block))
+                    // Horizontal scroll shifts visible text; add scroll so hits map to layout coords.
+                    self.location_in_paragraph_block(
+                        x,
+                        y,
+                        self.code_block(paragraph_block),
+                        scroll_left.get(),
+                    )
                 } else {
                     Location::Block {
                         start_offset: self.start_char_offset,
@@ -234,10 +244,13 @@ impl<'a> Positioned<'a, BlockItem> {
         x: Pixels,
         y: Pixels,
         paragraph_block: Positioned<'a, ParagraphBlock>,
+        // Added to unpad'd x before resolving to a character (e.g. code-block horizontal scroll).
+        content_x_scroll: Pixels,
     ) -> Location {
         for paragraph in paragraph_block.paragraphs() {
             if paragraph.end_y_offset() > y {
-                let mut location = paragraph.coordinate_to_location(self.unpad_x(x), y);
+                let mut location =
+                    paragraph.coordinate_to_location(self.unpad_x(x) + content_x_scroll, y);
                 // Adjust the paragraph-relative start offset to be the start of this block.
                 if let Location::Text { block_start, .. } = &mut location {
                     *block_start = self.start_char_offset;

@@ -19,7 +19,7 @@ use sum_tree::SumTree;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::fonts::FamilyId;
 use warpui::text_layout::{CaretPosition, TextFrame};
-use warpui::units::IntoPixels;
+use warpui::units::{IntoPixels, Pixels};
 
 fn test_table_layout() -> LaidOutTable {
     let source = "aaa\tbbb\nccc\tddd\n";
@@ -580,6 +580,7 @@ fn test_hit_code_block() {
                 width - COMMAND_SPACING.x_axis_offset().as_f32(),
             )),
             code_block_type: Default::default(),
+            scroll_left: Cell::new(Pixels::zero()),
         },
     ]);
     model.set_content(tree);

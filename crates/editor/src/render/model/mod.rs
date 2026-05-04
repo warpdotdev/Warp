@@ -774,6 +774,8 @@ pub enum BlockItem {
     RunnableCodeBlock {
         paragraph_block: ParagraphBlock,
         code_block_type: CodeBlockType,
+        /// Horizontal scroll for overflow (render + hit-testing); see [`LaidOutTable::scroll_left`].
+        scroll_left: Cell<Pixels>,
     },
     MermaidDiagram {
         content_length: CharOffset,
@@ -3810,13 +3812,21 @@ impl Positioned<'_, BlockItem> {
             }
             BlockItem::Header { paragraph, .. } => self.header(paragraph).character_bounds(offset),
             BlockItem::RunnableCodeBlock {
-                paragraph_block, ..
+                paragraph_block,
+                scroll_left,
+                ..
             } => {
                 let code_block = self.code_block(paragraph_block);
                 code_block
                     .paragraphs()
                     .find_or_last(|paragraph| paragraph.end_char_offset() > offset)
                     .and_then(|paragraph| paragraph.character_bounds(offset))
+                    .map(|bounds| {
+                        RectF::new(
+                            bounds.origin() - vec2f(scroll_left.get().as_f32(), 0.0),
+                            bounds.size(),
+                        )
+                    })
             }
             BlockItem::MermaidDiagram { config, .. } => {
                 let origin = self.content_origin();
