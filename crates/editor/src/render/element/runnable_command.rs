@@ -1,3 +1,4 @@
+use float_cmp::ApproxEq;
 use warpui::{
     AppContext, ClipBounds, Element, Event, EventContext, SizeConstraint,
     elements::{
@@ -16,10 +17,9 @@ use warpui::{
 
 use crate::{
     editor::RunnableCommandModel,
-    extract_block,
     render::{
         BLOCK_FOOTER_HEIGHT,
-        model::{BlockItem, RenderState, viewport::ViewportItem},
+        model::{BlockItem, RenderState, UNIT_MARGIN, viewport::ViewportItem},
     },
 };
 
@@ -29,7 +29,7 @@ const CODE_SCROLL_SENSITIVITY: f32 = 1.0;
 
 struct CodeBlockScrollDrag {
     start_position_x: Pixels,
-    start_scroll_left: f32,
+    start_scroll_left: Pixels,
     scroll_data: ScrollData,
 }
 
@@ -38,10 +38,6 @@ pub struct RenderableRunnableCommand {
     viewport_item: ViewportItem,
     footer: Box<dyn Element>,
     border: Option<Border>,
-    /// Current horizontal scroll offset in pixels.
-    scroll_left: f32,
-    /// Natural (intrinsic) width of the code content, updated each paint.
-    natural_width: f32,
     /// Clip/viewport bounds set during paint and reused in dispatch_event.
     viewport_bounds: Option<RectF>,
     /// Scrollbar geometry computed during paint.
@@ -67,8 +63,6 @@ impl RenderableRunnableCommand {
             viewport_item,
             footer,
             border,
-            scroll_left: 0.0,
-            natural_width: 0.0,
             viewport_bounds: None,
             scrollbar: None,
             scrollbar_hovered: false,
@@ -86,10 +80,10 @@ pub(crate) fn code_block_max_scroll(natural_width: f32, container_width: f32) ->
 pub(crate) fn code_block_scroll_data(
     natural_width: f32,
     container_width: f32,
-    scroll_left: f32,
+    scroll_left: Pixels,
 ) -> ScrollData {
     ScrollData {
-        scroll_start: scroll_left.into_pixels(),
+        scroll_start: scroll_left,
         visible_px: container_width.into_pixels(),
         total_size: natural_width.into_pixels(),
     }
@@ -102,7 +96,7 @@ pub(crate) fn code_block_horizontal_scroll_delta(
     delta: Vector2F,
     precise: bool,
     shift: bool,
-) -> Option<f32> {
+) -> Option<Pixels> {
     let delta = if shift && delta.x().abs() <= f32::EPSILON {
         vec2f(delta.y(), 0.0)
     } else {
@@ -113,11 +107,11 @@ pub(crate) fn code_block_horizontal_scroll_delta(
     if horizontal.abs() <= f32::EPSILON {
         return None;
     }
-    Some(if precise {
+    Some(Pixels::new(if precise {
         horizontal
     } else {
         horizontal * DEFAULT_SCROLL_WHEEL_PIXELS_PER_LINE
-    })
+    }))
 }
 
 impl RenderableBlock for RenderableRunnableCommand {
@@ -125,7 +119,7 @@ impl RenderableBlock for RenderableRunnableCommand {
         &self.viewport_item
     }
 
-    fn layout(&mut self, _model: &RenderState, ctx: &mut warpui::LayoutContext, app: &AppContext) {
+    fn layout(&mut self, model: &RenderState, ctx: &mut warpui::LayoutContext, app: &AppContext) {
         self.footer.layout(
             SizeConstraint::strict(vec2f(
                 self.viewport_item.content_size.x(),
@@ -134,15 +128,45 @@ impl RenderableBlock for RenderableRunnableCommand {
             ctx,
             app,
         );
+
+        // Clamp horizontal scroll when layout width changes (do this in layout, not paint).
+        let content = model.content();
+        if let Some(block) = content.block_at_offset(self.viewport_item.block_offset())
+            && let BlockItem::RunnableCodeBlock {
+                paragraph_block,
+                scroll_left,
+                ..
+            } = block.item
+        {
+            let container_width = self.viewport_item.content_size.x();
+            let natural_width = paragraph_block.content_size().x();
+            let max_scroll_px = Pixels::new(code_block_max_scroll(natural_width, container_width));
+            let current = scroll_left.get();
+            let capped = current.max(Pixels::zero()).min(max_scroll_px);
+            if !capped.approx_eq(current, UNIT_MARGIN) {
+                scroll_left.set(capped);
+            }
+        }
     }
 
     fn paint(&mut self, model: &RenderState, ctx: &mut RenderContext, app: &AppContext) {
         let content = model.content();
-        let code_block = extract_block!(
-            self.viewport_item,
-            content,
-            (block, BlockItem::RunnableCodeBlock { paragraph_block, .. }) => block.code_block(paragraph_block)
-        );
+        let Some(block) = content.block_at_offset(self.viewport_item.block_offset()) else {
+            return;
+        };
+        let BlockItem::RunnableCodeBlock {
+            paragraph_block,
+            scroll_left,
+            ..
+        } = block.item
+        else {
+            log::trace!(
+                "Expected RunnableCodeBlock at block offset {:?}",
+                self.viewport_item.block_offset()
+            );
+            return;
+        };
+        let code_block = block.code_block(paragraph_block);
 
         let styles = model.styles();
         let code_style = &styles.code_text;
@@ -165,10 +189,10 @@ impl RenderableBlock for RenderableRunnableCommand {
         // Compute natural vs container widths for horizontal scrolling.
         let container_width = self.viewport_item.content_size.x();
         let natural_width = code_block.item.content_size().x();
-        self.natural_width = natural_width;
-
         let max_scroll = code_block_max_scroll(natural_width, container_width);
-        self.scroll_left = self.scroll_left.clamp(0.0, max_scroll);
+        let max_scroll_px = Pixels::new(max_scroll);
+        let scroll_px = scroll_left.get().max(Pixels::zero()).min(max_scroll_px);
+        let scroll_left_f = scroll_px.as_f32();
 
         // Viewport bounds used for clipping text content and the scrollbar.
         let content_origin_screen = ctx.content_to_screen(code_block.content_origin());
@@ -178,8 +202,7 @@ impl RenderableBlock for RenderableRunnableCommand {
 
         // Compute scrollbar geometry when there is content to scroll.
         self.scrollbar = if max_scroll > 0.0 {
-            let scroll_data =
-                code_block_scroll_data(natural_width, container_width, self.scroll_left);
+            let scroll_data = code_block_scroll_data(natural_width, container_width, scroll_px);
             let scrollbar = compute_scrollbar_geometry(
                 Axis::Horizontal,
                 viewport_bounds.origin(),
@@ -200,7 +223,7 @@ impl RenderableBlock for RenderableRunnableCommand {
             .start_layer(ClipBounds::BoundedByActiveLayerAnd(viewport_bounds));
 
         for paragraph in code_block.paragraphs() {
-            ctx.draw_paragraph_scrolled(&paragraph, code_style, model, self.scroll_left);
+            ctx.draw_paragraph_scrolled(&paragraph, code_style, model, scroll_left_f);
         }
 
         // Paint scrollbar thumb inside the clip layer.
@@ -237,7 +260,7 @@ impl RenderableBlock for RenderableRunnableCommand {
 
     fn dispatch_event(
         &mut self,
-        _model: &RenderState,
+        model: &RenderState,
         event: &DispatchedEvent,
         ctx: &mut EventContext,
         app: &AppContext,
@@ -246,7 +269,22 @@ impl RenderableBlock for RenderableRunnableCommand {
             return true;
         }
 
+        let content = model.content();
+        let Some(block) = content.block_at_offset(self.viewport_item.block_offset()) else {
+            return false;
+        };
+        let BlockItem::RunnableCodeBlock {
+            paragraph_block,
+            scroll_left,
+            ..
+        } = block.item
+        else {
+            return false;
+        };
+        let code_block = block.code_block(paragraph_block);
+        let natural_width = code_block.item.content_size().x();
         let container_width = self.viewport_item.content_size.x();
+        let max_scroll_px = Pixels::new(code_block_max_scroll(natural_width, container_width));
 
         match event.raw_event() {
             Event::LeftMouseDown { position, .. } => {
@@ -257,14 +295,11 @@ impl RenderableBlock for RenderableRunnableCommand {
                 let track_hit = scrollbar.track_bounds.contains_point(*position);
 
                 if thumb_hit {
-                    let scroll_data = code_block_scroll_data(
-                        self.natural_width,
-                        container_width,
-                        self.scroll_left,
-                    );
+                    let scroll_data =
+                        code_block_scroll_data(natural_width, container_width, scroll_left.get());
                     self.scrollbar_drag = Some(CodeBlockScrollDrag {
                         start_position_x: position.x().into_pixels(),
-                        start_scroll_left: self.scroll_left,
+                        start_scroll_left: scroll_left.get(),
                         scroll_data,
                     });
                     ctx.notify();
@@ -272,22 +307,18 @@ impl RenderableBlock for RenderableRunnableCommand {
                 }
 
                 if track_hit {
-                    let scroll_data = code_block_scroll_data(
-                        self.natural_width,
-                        container_width,
-                        self.scroll_left,
-                    );
+                    let scroll_data =
+                        code_block_scroll_data(natural_width, container_width, scroll_left.get());
                     let delta = scroll_delta_for_pointer_movement(
                         scrollbar.thumb_center_along(Axis::Horizontal),
                         position.x().into_pixels(),
                         scroll_data,
                     );
-                    let new_scroll = (self.scroll_left - delta.as_f32()).clamp(
-                        0.0,
-                        code_block_max_scroll(self.natural_width, container_width),
-                    );
-                    if (new_scroll - self.scroll_left).abs() > f32::EPSILON {
-                        self.scroll_left = new_scroll;
+                    let new_scroll = (scroll_left.get() - delta)
+                        .max(Pixels::zero())
+                        .min(max_scroll_px);
+                    if !new_scroll.approx_eq(scroll_left.get(), UNIT_MARGIN) {
+                        scroll_left.set(new_scroll);
                         ctx.notify();
                     }
                     return true;
@@ -304,12 +335,11 @@ impl RenderableBlock for RenderableRunnableCommand {
                     position.x().into_pixels(),
                     drag.scroll_data,
                 );
-                let new_scroll = (drag.start_scroll_left - delta.as_f32()).clamp(
-                    0.0,
-                    code_block_max_scroll(self.natural_width, container_width),
-                );
-                if (new_scroll - self.scroll_left).abs() > f32::EPSILON {
-                    self.scroll_left = new_scroll;
+                let new_scroll = (drag.start_scroll_left - delta)
+                    .max(Pixels::zero())
+                    .min(max_scroll_px);
+                if !new_scroll.approx_eq(scroll_left.get(), UNIT_MARGIN) {
+                    scroll_left.set(new_scroll);
                     ctx.notify();
                 }
                 true
@@ -341,9 +371,7 @@ impl RenderableBlock for RenderableRunnableCommand {
                 let Some(bounds) = self.viewport_bounds else {
                     return false;
                 };
-                if !bounds.contains_point(*position)
-                    || code_block_max_scroll(self.natural_width, container_width) <= 0.0
-                {
+                if !bounds.contains_point(*position) || max_scroll_px <= Pixels::zero() {
                     return false;
                 }
                 let Some(horizontal_delta) =
@@ -351,13 +379,12 @@ impl RenderableBlock for RenderableRunnableCommand {
                 else {
                     return false;
                 };
-                let new_scroll = (self.scroll_left - horizontal_delta).clamp(
-                    0.0,
-                    code_block_max_scroll(self.natural_width, container_width),
-                );
-                let changed = (new_scroll - self.scroll_left).abs() > f32::EPSILON;
+                let new_scroll = (scroll_left.get() - horizontal_delta)
+                    .max(Pixels::zero())
+                    .min(max_scroll_px);
+                let changed = !new_scroll.approx_eq(scroll_left.get(), UNIT_MARGIN);
                 if changed {
-                    self.scroll_left = new_scroll;
+                    scroll_left.set(new_scroll);
                     ctx.notify();
                 }
                 changed
@@ -390,7 +417,7 @@ mod code_block_scroll_tests {
 
     #[test]
     fn scroll_data_reflects_current_state() {
-        let data = code_block_scroll_data(400.0, 200.0, 50.0);
+        let data = code_block_scroll_data(400.0, 200.0, 50.0.into_pixels());
         assert_eq!(data.scroll_start, 50.0.into_pixels());
         assert_eq!(data.visible_px, 200.0.into_pixels());
         assert_eq!(data.total_size, 400.0.into_pixels());
@@ -408,7 +435,7 @@ mod code_block_scroll_tests {
         let result = code_block_horizontal_scroll_delta(delta, false, true);
         assert!(result.is_some());
         // shift maps y → x, so negative y (scroll down) = positive horizontal delta
-        assert!(result.unwrap() < 0.0);
+        assert!(result.unwrap().as_f32() < 0.0);
     }
 
     #[test]
@@ -416,14 +443,18 @@ mod code_block_scroll_tests {
         let delta = vec2f(-5.0, 0.0);
         let result = code_block_horizontal_scroll_delta(delta, true, false);
         assert!(result.is_some());
-        assert!(result.unwrap() < 0.0);
+        assert!(result.unwrap().as_f32() < 0.0);
     }
 
     #[test]
     fn horizontal_delta_precise_skips_line_multiplier() {
         let delta = vec2f(-1.0, 0.0);
-        let precise = code_block_horizontal_scroll_delta(delta, true, false).unwrap();
-        let imprecise = code_block_horizontal_scroll_delta(delta, false, false).unwrap();
+        let precise = code_block_horizontal_scroll_delta(delta, true, false)
+            .unwrap()
+            .as_f32();
+        let imprecise = code_block_horizontal_scroll_delta(delta, false, false)
+            .unwrap()
+            .as_f32();
         assert!(imprecise.abs() > precise.abs());
     }
 
