@@ -108,6 +108,26 @@ Audit before merge: grep for any other call site that pattern-matches `FileTarge
 
 In `app/src/workspace/view.rs:5738-5814`, add an arm next to `MarkdownViewer(layout)`:
 
+First, extend `LightboxImage` in `crates/ui_components/src/lightbox.rs:38-43` with an optional `path` field so each entry carries enough information to lazily promote `Loading` to `Resolved` on navigation without reconstructing paths from filenames:
+
+```rust
+#[derive(Clone, Debug)]
+pub struct LightboxImage {
+    pub source: LightboxImageSource,
+    pub description: Option<String>,
+    /// The local filesystem path this entry was built from, if any.
+    /// `Some` for the file-tree image-preview path; `None` for sources
+    /// that don't have a path (artifact downloads, bundled assets, raw bytes).
+    /// Used by `LightboxView` to lazily promote `Loading` entries to
+    /// `Resolved { LocalFile { path } }` on navigation.
+    pub path: Option<PathBuf>,
+}
+```
+
+Existing call sites that construct `LightboxImage` (artifact screenshots in `app/src/ai/artifacts/mod.rs`, the agent block paths in `app/src/ai/blocklist/`, the markdown-block lightbox trigger) pass `path: None` and continue to work unchanged.
+
+Then the file-tree dispatch arm:
+
 ```rust
 const PRELOAD_RADIUS: usize = 2;
 
@@ -135,7 +155,11 @@ FileTarget::ImagePreview => {
             } else {
                 LightboxImageSource::Loading
             };
-            LightboxImage { source, description }
+            LightboxImage {
+                source,
+                description,
+                path: Some(p.clone()),
+            }
         })
         .collect::<Vec<_>>();
     self.dispatch_typed_action(
@@ -150,8 +174,8 @@ FileTarget::ImagePreview => {
 
 Notes on this shape:
 
-- **Bounded preload window**. Only entries within `current ± PRELOAD_RADIUS` are built as `Resolved { LocalFile { path } }`; the rest are built as `Loading` placeholders carrying the filename in `description`. `LightboxView::start_asset_loads` (`lightbox_view.rs:108-114`) iterates only over `Resolved` entries and kicks off `AssetCache::load_asset` for each, so on initial open at most `2 * PRELOAD_RADIUS + 1 = 5` parallel reads/decodes are queued regardless of directory size. This caps peak transient allocation at `~5 * MAX_DECODED_PIXELS * 4 bytes ≈ 1.2 GB` (combined with change 4's per-decode cap), instead of the unbounded `MAX_SIBLING_IMAGES * MAX_DECODED_PIXELS * 4` that an eager-everything dispatch would risk before asset-cache eviction can react. This addresses the local-project DoS surface flagged in initial review.
-- **Lazy promotion on navigation**. The `LightboxView::handle_action` arms for `NavigatePrevious` / `NavigateNext` (`app/src/workspace/lightbox_view.rs:200-...`) need a small extension: after advancing `current_index`, walk the `±PRELOAD_RADIUS` window around the new index and, for each `LightboxImageSource::Loading` slot whose path can be derived from its `description`, dispatch `WorkspaceAction::UpdateLightboxImage { index, image: Resolved {...} }` so the asset-cache load is triggered for the newly-visible neighbour. The dispatched action runs through the existing `UpdateLightboxImage` handler at `app/src/workspace/view.rs:21739-21746`, which calls `update_image_at`, which calls `start_asset_load` for that single entry. The `description` carries the filename; combined with the parent path captured in the workspace dispatch site, the path can be reconstructed without storing it twice. Alternatively (cleaner): extend `LightboxImage` with an optional `path: Option<PathBuf>` field, or carry the parent dir on `LightboxView`. Implementer's choice; the spec mandates only that the lazy-promotion happens.
+- **Bounded preload window**. Only entries within `current ± PRELOAD_RADIUS` are built as `Resolved { LocalFile { path } }`; the rest are built as `Loading` placeholders that still carry the filename (in `description`) and the full path (in `path`). `LightboxView::start_asset_loads` (`lightbox_view.rs:108-114`) iterates only over `Resolved` entries and kicks off `AssetCache::load_asset` for each, so on initial open at most `2 * PRELOAD_RADIUS + 1 = 5` parallel reads/decodes are queued regardless of directory size. This caps peak transient allocation at `~5 * MAX_DECODED_PIXELS * 4 bytes ≈ 1.2 GB` (combined with change 4's per-decode cap), instead of the unbounded `MAX_SIBLING_IMAGES * MAX_DECODED_PIXELS * 4` that an eager-everything dispatch would risk before asset-cache eviction can react.
+- **Lazy promotion on navigation**. The `LightboxView::handle_action` arms for `NavigatePrevious` / `NavigateNext` need a small extension: after advancing `current_index`, walk the `±PRELOAD_RADIUS` window around the new index and, for each slot whose `source == Loading` and whose `path == Some(p)`, dispatch `WorkspaceAction::UpdateLightboxImage { index, image: LightboxImage { source: Resolved { asset_source: AssetSource::LocalFile { path: p.to_string_lossy().into_owned() } }, description: <existing>, path: Some(p) } }`. The dispatched action runs through the existing `UpdateLightboxImage` handler at `app/src/workspace/view.rs:21739-21746`, which calls `update_image_at`, which calls `start_asset_load` for that single entry. Slots with `path: None` are skipped (never happens on the file-tree path; defensive for other call sites that might mix sources).
 - **Why not artifact-style placeholders all the way down**. The artifact code path (`app/src/ai/artifacts/mod.rs:299-340`) keeps every entry as `Loading` until an async signed-URL fetch completes. Local files have a known `AssetSource` immediately, so the only reason to keep an entry as `Loading` is to defer the asset-cache load itself, which is exactly the bounded-preload behavior above.
 - **Handler reuse via `update_params` is unrelated to the file-tree dispatch path.** The `OpenLightbox` handler at `view.rs:21718-21736` reuses an open `lightbox_view` via `update_params`. That path fires only when `OpenLightbox` is dispatched while the Lightbox already has focus, which does not happen from the file-tree click path: clicking the file tree shifts focus, fires `LightboxViewEvent::FocusLost`, and the existing handler at `view.rs:21728-21732` clears `self.lightbox_view` before the new `OpenLightbox` arrives. The reuse path is still useful for non-focus-stealing dispatch sites (artifact / screenshot Lightboxes triggered from agent block panes that do not steal focus from the overlay), so no handler change is needed; v1 simply does not rely on it for the file-tree case.
 
@@ -188,9 +212,78 @@ fn decode_with_limits(
 }
 ```
 
-Use it in the JPEG, PNG, and WebP-static arms. For animated WebP and animated GIF, additionally cap total decoded pixels across all frames before calling `into_rgba8()` per frame; if the cap is exceeded, return `anyhow::bail!("animated image is too large to preview")` rather than partially decoding.
+Use it in the JPEG, PNG, and WebP-static arms.
+
+For animated WebP and animated GIF, **do not call `decoder.into_frames().collect_frames()`**. `collect_frames()` materializes every frame into memory before returning, which means a malicious animation can allocate gigabytes before any cap check runs. Instead, iterate `into_frames()` directly with an early-exit:
+
+```rust
+fn collect_animated_frames_with_limits<I>(
+    frames: I,
+) -> anyhow::Result<Vec<image::Frame>>
+where
+    I: IntoIterator<Item = image::ImageResult<image::Frame>>,
+{
+    let mut collected: Vec<image::Frame> = Vec::new();
+    let mut total_pixels: u64 = 0;
+    for frame in frames {
+        let frame = frame?;
+        let buf = frame.buffer();
+        let (w, h) = (buf.width() as u64, buf.height() as u64);
+        if w > MAX_IMAGE_DIMENSION_PX as u64 || h > MAX_IMAGE_DIMENSION_PX as u64 {
+            anyhow::bail!(
+                "animated image frame is too large to preview ({w}x{h})"
+            );
+        }
+        total_pixels = total_pixels.saturating_add(w.saturating_mul(h));
+        if total_pixels > MAX_DECODED_PIXELS {
+            anyhow::bail!(
+                "animated image total pixels exceed cap ({total_pixels} > {MAX_DECODED_PIXELS})"
+            );
+        }
+        collected.push(frame);
+    }
+    Ok(collected)
+}
+```
+
+Call sites:
+
+```rust
+Ok(ImageFormat::WebP) => {
+    let decoder = WebPDecoder::new(std::io::Cursor::new(data))?;
+    if decoder.has_animation() {
+        let frames = collect_animated_frames_with_limits(decoder.into_frames())?;
+        Ok(ImageType::AnimatedBitmap { image: Arc::new(AnimatedImage::from(frames)) })
+    } else {
+        let img = decode_with_limits(data, image::ImageFormat::WebP)?;
+        Ok(ImageType::StaticBitmap { image: Arc::new(StaticImage { img }) })
+    }
+}
+Ok(ImageFormat::Gif) => {
+    let decoder = GifDecoder::new(std::io::Cursor::new(data))?;
+    let frames = collect_animated_frames_with_limits(decoder.into_frames())?;
+    Ok(ImageType::AnimatedBitmap { image: Arc::new(AnimatedImage::from(frames)) })
+}
+```
+
+The early-exit `bail!` drops `collected` (and any in-flight `frame`) when the function returns; subsequent frames in the iterator are never produced because the iterator is dropped along with the function's stack frame. Peak allocation is bounded by `MAX_DECODED_PIXELS * 4 bytes ≈ 256 MB` total across all frames seen so far at the moment of the check, plus one frame's worth of in-flight allocation, instead of the entire animation.
 
 For SVG, `usvg::Tree::from_data` is bounded by the input bytes. Cap the input bytes at a sensible size (e.g. `MAX_SVG_BYTES = 8 MB`) before calling `usvg::Tree::from_data` so a pathological `<rect>` viewport or deep group nesting cannot allocate gigabytes during render. Render-time limits (`tiny_skia::Pixmap` size) are bounded by the same `MAX_DECODED_PIXELS` applied to the SVG's intrinsic size after parsing.
+
+**Convert `Ok(ImageType::Unrecognized)` to `Err`.** Today the `_` arm of the `match image::guess_format(data)` block at `image_cache.rs:364` returns `Ok(ImageType::Unrecognized)` for any unknown format. That `Ok(...)` propagates through `AssetCache` as `AssetState::Loaded { data: Unrecognized }`, and the Lightbox render path checks `data.image_size()`, which is `None` for `Unrecognized`, so the render falls through to the loading element and the user sees a permanent spinner. Replace the catch-all arm with `Err`:
+
+```rust
+match image::guess_format(data) {
+    Ok(ImageFormat::Jpeg) => { /* ... */ }
+    Ok(ImageFormat::Png)  => { /* ... */ }
+    Ok(ImageFormat::WebP) => { /* ... */ }
+    Ok(ImageFormat::Gif)  => { /* ... */ }
+    Ok(other) => anyhow::bail!("unsupported image format: {other:?}"),
+    Err(_)    => anyhow::bail!("could not detect image format from header bytes"),
+}
+```
+
+The `ImageType::Unrecognized` variant was unreachable in practice once this arm changes; it can be removed entirely (one-call-site cleanup in `size_in_bytes` at `image_cache.rs:378`). Removing it surfaces previously-silent classification failures as `AssetState::FailedToLoad` everywhere, which `LightboxView` then maps to the new `LightboxImageSource::Error { message }` variant from change 5; the user sees a per-entry "could not detect image format from header bytes" inline error with the filename instead of a permanent spinner. This also eliminates a class of failure where a `.png` file containing tarball bytes (extension/content mismatch) would silently degrade to "Loaded but invisible."
 
 The existing agent-mode caps in `app/src/util/image.rs` are stricter (1.15M pixels, 2000 dim, 3.75 MB) because they target on-the-wire payloads to LLMs. The Lightbox preview can afford a larger envelope; the values above were picked to comfortably handle a 4000×3000 photo while rejecting the Behavior-5 stress fixture (10000×10000 PNG = 100M pixels, above the 64M cap, so the fixture in product.md must be revised down to ~7000×7000 to load successfully, or kept at 10000×10000 to exercise the rejection path).
 
@@ -364,10 +457,14 @@ If product later wants to enumerate additional fields on the event (file extensi
 2. `FileTreeView::open_file` (`app/src/code/file_tree/view.rs:2174-2215`) calls `resolve_file_target_with_editor_choice`. Step 0 (change 2) matches `is_supported_image_file` and returns `FileTarget::ImagePreview`.
 3. Telemetry is recorded as `CodePanelsFileOpened { entrypoint: ProjectExplorer, target: FileTarget::ImagePreview }`.
 4. `FileTreeEvent::OpenFile { path, target: ImagePreview, line_col: None }` is emitted, re-emitted as `LeftPanelEvent::OpenFileWithTarget` by `left_panel.rs:758-768`, and handled by `Workspace::open_file_with_target` at `view.rs:5715-5815`.
-5. The new `ImagePreview` arm (change 3) calls `list_sibling_images_natural_sorted`, builds `Vec<LightboxImage>` of `Resolved { LocalFile { path } }` entries with filename descriptions, computes `initial_index`, and dispatches `WorkspaceAction::OpenLightbox`.
-6. The `OpenLightbox` handler (`view.rs:21710-21737`) either creates `lightbox_view` and focuses it (cold path) or calls `update_params` on the open view (replace-in-place path). `LightboxView::start_asset_loads` queues asset-cache loads for every sibling.
-7. The Lightbox renders as a child of the workspace's main `Stack` (`view.rs:22739-22740`). The image fits via `Image::new(asset_source).contain()`. `current_image_native_size` is queried on each render from the asset cache; until the active image's bytes have been decoded, the loading indicator is shown.
-8. Left/Right arrows step through `current_index`. The asset cache serves already-decoded entries instantly. Decode failures surface as `LightboxImageSource::Error { message }` (change 5).
+5. The new `ImagePreview` arm (change 3) calls `list_sibling_images_natural_sorted`, builds `Vec<LightboxImage>` where:
+   - entries within `current ± PRELOAD_RADIUS` get `source: Resolved { LocalFile { path } }`,
+   - entries outside the preload window get `source: Loading`,
+   - every entry carries `path: Some(p)` and `description: Some(filename)` so navigation can lazily promote `Loading` to `Resolved` later,
+   then computes `initial_index` and dispatches `WorkspaceAction::OpenLightbox`.
+6. The `OpenLightbox` handler (`view.rs:21710-21737`) creates `lightbox_view` and focuses it. (The handler's `update_params` reuse branch exists but is not exercised on the file-tree path because the file-tree click already moved focus, fired `FocusLost`, and cleared `lightbox_view`; see the Risks section.) `LightboxView::start_asset_loads` queues `AssetCache::load_asset` calls **only for the preload-window entries marked `Resolved`** (5 entries by default), not for every sibling.
+7. The Lightbox renders as a child of the workspace's main `Stack` (`view.rs:22739-22740`). The image fits via `Image::new(asset_source).contain()`. `current_image_native_size` is queried on each render from the asset cache; until the active image's bytes have been decoded, the loading indicator is shown. Animated GIF and animated WebP render their first frame statically (continuous playback is a follow-up; `enable_animation_with_start_time` is not wired in v1).
+8. Left/Right arrows step through `current_index`. After advancing, `LightboxView::handle_action` walks the new `±PRELOAD_RADIUS` window and, for each `Loading` entry that has `path: Some(p)`, dispatches `WorkspaceAction::UpdateLightboxImage` to promote it to `Resolved { LocalFile { p } }`. The existing `UpdateLightboxImage` handler (`view.rs:21739-21746`) calls `update_image_at`, which calls `start_asset_load` for that single entry. Already-promoted entries are served from the asset cache instantly. Decode failures surface as `LightboxImageSource::Error { message }` (change 5); `try_from_bytes` errors (including the `Unrecognized` → `Err` change) become `AssetState::FailedToLoad` and flow into the same `Error` variant.
 9. Escape, scrim click, or × emits `LightboxViewEvent::Close`. The handler at `view.rs:21722-21726` clears `lightbox_view` and calls `focus_active_tab(ctx)` to restore focus to the previously-active pane.
 
 ## Risks and mitigations
@@ -429,7 +526,8 @@ SVG is rendered via `usvg` 0.47 + `resvg` in `ImageType::Svg` (`image_cache.rs:2
 
 - `decode_with_limits_rejects_huge_dimensions`: a synthesized PNG header declaring `20000 x 20000` returns `Err`.
 - `decode_with_limits_accepts_normal_photo`: a 4000×3000 PNG decodes successfully.
-- `try_from_bytes_returns_unrecognized_for_garbage`: `[0xff, 0xff, 0xff, 0xff]` returns `Ok(ImageType::Unrecognized)`.
+- `try_from_bytes_returns_err_for_garbage`: `[0xff, 0xff, 0xff, 0xff]` returns `Err(...)` (was previously `Ok(ImageType::Unrecognized)`; the variant is removed in change 4).
+- `try_from_bytes_caps_animated_frames_during_iteration`: a fixture WebP whose declared animated frames would total `> MAX_DECODED_PIXELS` returns `Err` before the iterator is fully consumed (asserted by counting iterator advances, e.g. via a wrapping iterator that increments a counter).
 - `try_from_bytes_caps_svg_input_bytes`: an SVG payload above `MAX_SVG_BYTES` returns `Err` rather than parsing.
 
 ### Manual validation
@@ -447,7 +545,7 @@ Behavior-to-step mapping (numbered against the product spec's User Experience an
 - **Identity click**: with the Lightbox open on `a.png`, click `a.png` again in the tree. Lightbox stays on `a.png`, no flicker, no error.
 - **Non-image click while open**: with the Lightbox open, click `README.md` in the tree. Markdown viewer opens; Lightbox dismisses via `FocusLost` (handler at view.rs:21728-21732). Confirm focus is on the markdown viewer.
 - **Dismiss paths and focus**: dismiss via Escape, scrim click, and × button; in each case focus returns to the previously-active tab pane.
-- **SVG, animated GIF, animated WebP**: open one of each from a fixture. Confirm SVG renders (not raw XML, not blank), animated GIF and WebP play. Document any rendering anomalies as follow-ups; do not block on them unless they crash.
+- **SVG, animated GIF, animated WebP**: open one of each from a fixture. Confirm SVG renders (not raw XML, not blank). Confirm animated GIF and animated WebP render their first frame statically (no continuous playback in v1; the `Image` element is not given `enable_animation_with_start_time`). Document any rendering anomalies as follow-ups; do not block on them unless they crash.
 - **Filesystem mutation**: open the Lightbox, delete the file from outside Warp. Active entry transitions to the per-entry error state; navigation works.
 - **No regression for non-image binaries**: click `.zip`, `.mp3`, `.exe`, `.pdf` files. They open in the OS default app (`SystemGeneric`) exactly as today.
 - **Telemetry**: with telemetry inspection enabled, click an image and confirm `CodePanelsFileOpened` fires with `target: ImagePreview`.
@@ -464,7 +562,7 @@ Behavior-to-step mapping (numbered against the product spec's User Experience an
 - **Extend `LightboxImageSource::Error` adoption to the artifacts call site** (`app/src/ai/artifacts/mod.rs:362-365`) so screenshot fetch failures use `Error` instead of `Loading + "Failed to load"` description.
 - **Zoom and pan controls**: extend `lightbox::Params` with zoom state and `lightbox_view.rs` keybindings (`+`, `-`, `0`, drag-to-pan).
 - **Status footer** (filename, dimensions, file size, format string): extend `lightbox::Params` with an optional metadata strip rendered below the image and above the description slot.
-- **Animation play/pause control**: requires `Image` element extension for animated decoders; new control in the Lightbox button strip.
+- **Animated GIF / WebP continuous playback**: wire `Image::enable_animation_with_start_time(Instant)` (`crates/warpui_core/src/elements/image.rs:128`) into the Lightbox image element and drive a per-frame redraw loop on the focused entry. Track per-image start time so navigation restarts animation from frame 0 deterministically. **Play/pause control** (Lightbox button-strip toggle) is the next layer on top.
 - **EXIF orientation and ICC color profile**: extend the agent-mode decoder in `app/src/util/image.rs` and wire into `ImageType::try_from_bytes` so the Lightbox receives oriented, color-correct frames.
 - **Visible thumbnail strip**: new component sibling to `Lightbox`; populate from `list_sibling_images_natural_sorted`.
 - **Additional raster formats** (HEIC, HEIF, AVIF, BMP, TIFF, ICO): depends on backend `image`-crate features and decoder availability; reclassify in `is_supported_image_file` and re-test the cap behavior.

@@ -53,7 +53,8 @@ The maintainer-preferred shape for v1 is the existing Lightbox component. It alr
 - Underlying panes remain visible behind the scrim and do not receive input while the Lightbox is open.
 - While bytes are still being read or decoded, the existing loading indicator is shown. Arrow-key navigation remains responsive; an in-flight decode never blocks navigation.
 - If an image fails to read or decode, or fails the size/dimension cap, the Lightbox shows a non-blocking error state for that entry that includes the filename. Neighbour navigation still works; no other tab or pane is affected.
-- SVG renders via the existing `usvg` + `resvg` pipeline used by `ImageType`. Animated GIF and animated WebP play in whatever mode `ImageType::AnimatedBitmap` produces today; v1 does not add a play/pause control and does not promise any specific frame-timing accuracy beyond what the existing pipeline does.
+- SVG renders via the existing `usvg` + `resvg` pipeline used by `ImageType`.
+- Animated GIF and animated WebP files render their **first frame only** in v1. Continuous playback requires the GPUI `Image` element's `enable_animation_with_start_time(Instant)` plumbing and a per-frame redraw loop, which the Lightbox does not wire today; turning that on is tracked as a follow-up so v1 can ship without animation-timing or pause/play UX work. Files still load successfully and the user sees a static preview that is unambiguously the image they clicked.
 
 ### Navigation
 
@@ -107,7 +108,7 @@ The maintainer-preferred shape for v1 is the existing Lightbox component. It alr
 - Escape, scrim click, and × button all dismiss the Lightbox and restore focus to the previously-active tab pane.
 - Opening a second image while the Lightbox is open results in the first Lightbox tearing down (via `FocusLost` from the file-tree click) and a fresh Lightbox opening cold on the second image. No second overlay stacks; the first is gone before the new one appears.
 - A corrupt PNG, an unreadable file, and an oversize PNG (above the dimension/pixel cap) all surface as per-entry errors with the filename shown; navigation continues; no crash.
-- An animated GIF and an animated WebP play; SVG renders via `usvg` / `resvg`.
+- An animated GIF and an animated WebP open and render their first frame statically (continuous playback is a follow-up); SVG renders via `usvg` / `resvg`.
 - Telemetry events for image opens are distinguishable from `MarkdownViewer` / `CodeEditor` / `SystemGeneric` opens via the `target` field on `CodePanelsFileOpened`.
 - Non-image binary files (`.zip`, `.mp3`, `.exe`, `.pdf`, etc.) continue to route to `SystemGeneric` exactly as before; no regression.
 
