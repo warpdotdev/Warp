@@ -6,6 +6,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use warp_core::channel::ChannelState;
+use warp_core::safe_error;
 use warp_core::SessionId;
 use warp_util::standardized_path::StandardizedPath;
 use warpui::platform::TerminationMode;
@@ -575,9 +576,9 @@ impl ServerModel {
         );
 
         let Some(shell_type) = ShellType::from_name(&msg.shell_type) else {
-            log::error!(
-                "Unknown shell_type {:?} in SessionBootstrapped for session {session_id:?}",
-                msg.shell_type,
+            safe_error!(
+                safe: ("Received unknown shell_type in SessionBootstrapped: shell_type={:?}", msg.shell_type),
+                full: ("Received unknown shell_type in SessionBootstrapped: shell_type={:?} session={session_id:?}", msg.shell_type)
             );
             return;
         };
@@ -628,7 +629,10 @@ impl ServerModel {
         };
 
         let Some(executor) = self.executors.get(&session_id).cloned() else {
-            log::error!("No executor for session {session_id:?}, session was never initialized");
+            safe_error!(
+                safe: ("No executor for RunCommand, session was never initialized"),
+                full: ("No executor for RunCommand, session was never initialized: session={session_id:?}")
+            );
             return HandlerOutcome::Sync(server_message::Message::RunCommandResponse(
                 RunCommandResponse {
                     result: Some(run_command_response::Result::Error(RunCommandError {
