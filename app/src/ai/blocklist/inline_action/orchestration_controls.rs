@@ -21,6 +21,7 @@ use warpui::{AppContext, Element, SingletonEntity, View, ViewContext, ViewHandle
 
 use warp_cli::agent::Harness;
 use warp_core::channel::{Channel, ChannelState};
+use warp_core::ui::color::blend::Blend;
 use warp_core::ui::theme::Fill;
 
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
@@ -213,10 +214,14 @@ pub fn picker_styles(appearance: &Appearance) -> (UiComponentStyles, PickerColor
         right: 12.,
     };
     let corner_radius = CornerRadius::with_all(Radius::Pixels(ORCHESTRATION_PICKER_RADIUS));
-    let border_color: warpui::elements::Fill =
-        Fill::Solid(ColorU::new(0x29, 0x29, 0x29, 0xff)).into();
-    let font_color = ColorU::new(0xe3, 0xe2, 0xdf, 0xff);
-    let background: warpui::elements::Fill = theme.surface_overlay_1().into();
+    // The picker bg is a translucent overlay (surface_overlay_1 =
+    // fg at 5%). Composite it against the card background to derive
+    // opaque text color that works on any theme.
+    let background_fill: Fill = theme.surface_overlay_1();
+    let composited_bg = theme.background().blend(&background_fill).into_solid();
+    let border_color: warpui::elements::Fill = theme.surface_2().into();
+    let font_color = blended_colors::text_main(theme, composited_bg);
+    let background: warpui::elements::Fill = background_fill.into();
 
     let styles = UiComponentStyles {
         height: Some(ORCHESTRATION_PICKER_HEIGHT),
@@ -317,10 +322,12 @@ pub fn populate_harness_picker<A: OrchestrationControlAction, V: View>(
     dropdown.update(ctx, |dropdown, ctx_dropdown| {
         let mut items: Vec<MenuItem<DropdownAction<A>>> = Vec::new();
         let mut selected_idx = None;
+        // TODO: Re-enable Harness::Gemini once it is supported as
+        // a multi-agent harness (currently causes an infinite
+        // "Spawning agents" hang).
         for (idx, harness) in [
             Harness::Oz,
             Harness::Claude,
-            Harness::Gemini,
             Harness::Codex,
         ]
         .into_iter()
