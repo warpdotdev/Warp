@@ -25,6 +25,7 @@ use super::{
     common::{
         add_command_xray_overlay, add_input_suggestions_overlays, add_vim_status_to_stack,
         add_voltron_overlay, add_workflow_info_overlay, maybe_add_buy_credits_banner,
+        wrap_input_with_prompt_context_menu_handler,
         wrap_input_with_terminal_padding_and_focus_handler,
     },
     Input,
@@ -201,6 +202,7 @@ impl Input {
             InputDropTargetData::new(self.weak_view_handle.clone()),
         )
         .finish();
+        let drop_target = wrap_input_with_prompt_context_menu_handler(self.view_id, drop_target);
 
         let input = Hoverable::new(self.hoverable_handle.clone(), |_| drop_target)
             .on_hover(|is_hovered, ctx, _app, _position| {
