@@ -392,6 +392,7 @@ impl RepoMetadataModel {
     }
 
     /// Forces a local repository into Pending state for testing purposes.
+    #[cfg(any(test, feature = "test-util"))]
     pub fn force_pending_state(
         ctx: &mut warpui::AppContext,
         repo_path: StandardizedPath,

@@ -1082,6 +1082,7 @@ impl LocalRepoMetadataModel {
     }
 
     /// Force a repository into Pending state for testing purposes.
+    #[cfg(any(test, feature = "test-util"))]
     pub fn force_pending_state(&mut self, repo_path: StandardizedPath) {
         self.repositories.insert(repo_path, IndexedRepoState::Pending);
     }
