@@ -2638,7 +2638,7 @@ impl Dimensions for GridHandler {
 
     #[inline]
     fn history_size(&self) -> usize {
-        self.flat_storage.total_rows()
+        self.flat_storage.total_rows() + self.grid.history_size()
     }
 
     #[inline]
