@@ -1011,27 +1011,18 @@ impl BlocklistAIActionExecutor {
                     return None;
                 }
 
-                let escape_char = self
-                    .active_session
-                    .as_ref(ctx)
-                    .shell_type(ctx)
-                    .map(|shell_type| ShellFamily::from(shell_type).escape_char())?;
-                let permission = BlocklistAIPermissions::as_ref(ctx).can_autoexecute_command(
-                    &conversation_id,
-                    command,
-                    escape_char,
-                    is_read_only.unwrap_or(false),
-                    *is_risky,
-                    Some(self.terminal_view_id),
-                    ctx,
-                );
-
-                match permission {
-                    CommandExecutionPermission::Denied(
-                        CommandExecutionPermissionDeniedReason::ExplicitlyDenylisted,
-                    ) => Some("command is explicitly denylisted by Warp permissions".to_string()),
-                    _ => None,
-                }
+                let shell_type = self.active_session.as_ref(ctx).shell_type(ctx);
+                terminal_command_denial_reason_for_policy(shell_type, |escape_char| {
+                    BlocklistAIPermissions::as_ref(ctx).can_autoexecute_command(
+                        &conversation_id,
+                        command,
+                        escape_char,
+                        is_read_only.unwrap_or(false),
+                        *is_risky,
+                        Some(self.terminal_view_id),
+                        ctx,
+                    )
+                })
             }
             AIAgentActionType::RequestFileEdits { file_edits, .. } => {
                 let paths = file_edit_paths(file_edits)
@@ -1582,6 +1573,27 @@ impl BlocklistAIActionExecutor {
 
     fn is_shared_session_viewer(&self) -> bool {
         self.terminal_model.lock().is_shared_session_viewer()
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn terminal_command_denial_reason_for_policy(
+    shell_type: Option<ShellType>,
+    permission_for_escape_char: impl FnOnce(EscapeChar) -> CommandExecutionPermission,
+) -> Option<String> {
+    let Some(shell_type) = shell_type else {
+        return Some(
+            "command permissions could not be verified because shell type is unavailable"
+                .to_string(),
+        );
+    };
+    let escape_char = ShellFamily::from(shell_type).escape_char();
+
+    match permission_for_escape_char(escape_char) {
+        CommandExecutionPermission::Denied(
+            CommandExecutionPermissionDeniedReason::ExplicitlyDenylisted,
+        ) => Some("command is explicitly denylisted by Warp permissions".to_string()),
+        _ => None,
     }
 }
 

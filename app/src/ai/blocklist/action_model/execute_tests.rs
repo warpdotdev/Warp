@@ -116,6 +116,9 @@ mod policy_hooks {
                 RequestCommandOutputResult, RequestFileEditsResult,
                 WriteToLongRunningShellCommandResult,
             },
+            blocklist::permissions::{
+                CommandExecutionPermission, CommandExecutionPermissionDeniedReason,
+            },
             policy_hooks::{
                 decision::{
                     compose_policy_decisions, AgentPolicyHookEvaluation,
@@ -136,7 +139,8 @@ mod policy_hooks {
         should_consume_completed_policy_preflight,
         should_preprocess_file_edits_after_policy_decision,
         should_preserve_completed_policy_preflight_for_file_edit_preprocess,
-        warp_permission_snapshot_for_policy, PolicyPreflightKey, PolicyPreflightState,
+        terminal_command_denial_reason_for_policy, warp_permission_snapshot_for_policy,
+        PolicyPreflightKey, PolicyPreflightState,
     };
 
     fn command_action(command: &str) -> AIAgentAction {
@@ -431,6 +435,47 @@ mod policy_hooks {
         assert_eq!(
             decision.reason.as_deref(),
             Some("file path is protected by Warp permissions")
+        );
+    }
+
+    #[test]
+    fn unknown_shell_type_is_terminal_for_policy_autoapproval() {
+        let reason = terminal_command_denial_reason_for_policy(None, |_| {
+            panic!("permission check should not run without shell type")
+        })
+        .expect("missing shell type should produce a terminal policy denial");
+        let snapshot = warp_permission_snapshot_for_policy(false, false, true, false, Some(reason));
+
+        let decision = compose_policy_decisions(
+            snapshot,
+            vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Allow,
+                reason: Some("approved by hook".to_string()),
+                external_audit_id: None,
+                error: None,
+            }],
+            true,
+        );
+
+        assert_eq!(decision.decision, AgentPolicyDecisionKind::Deny);
+        assert_eq!(
+            decision.reason.as_deref(),
+            Some("command permissions could not be verified because shell type is unavailable")
+        );
+    }
+
+    #[test]
+    fn terminal_command_denial_reason_preserves_explicit_denylist() {
+        let reason = terminal_command_denial_reason_for_policy(Some(ShellType::Bash), |_| {
+            CommandExecutionPermission::Denied(
+                CommandExecutionPermissionDeniedReason::ExplicitlyDenylisted,
+            )
+        });
+
+        assert_eq!(
+            reason.as_deref(),
+            Some("command is explicitly denylisted by Warp permissions")
         );
     }
 

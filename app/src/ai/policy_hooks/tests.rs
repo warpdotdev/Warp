@@ -15,7 +15,8 @@ use super::{
     },
     event::{
         AgentPolicyAction, AgentPolicyEvent, PolicyCallMcpToolAction, PolicyExecuteCommandAction,
-        PolicyReadFilesAction, PolicyReadMcpResourceAction, AGENT_POLICY_SCHEMA_VERSION,
+        PolicyReadFilesAction, PolicyReadMcpResourceAction, PolicyWriteFilesAction,
+        AGENT_POLICY_SCHEMA_VERSION,
     },
     redaction::{redact_command_for_policy, MAX_POLICY_COLLECTION_ITEMS},
 };
@@ -744,6 +745,31 @@ fn command_redaction_handles_url_userinfo_and_basic_auth() {
 }
 
 #[test]
+fn command_redaction_handles_generic_credential_headers() {
+    let command = concat!(
+        "curl -H 'X-API-Key: abc123def456' ",
+        "-H 'Client-Secret: client-secret-value' ",
+        "-H 'X-Access-Token: Bearer raw-access-token' ",
+        "-H 'Authorization: raw-auth-token' ",
+        "-H 'X-Auth: raw-auth-secret' ",
+        "https://example.com"
+    );
+
+    let redacted = redact_command_for_policy(command);
+
+    assert!(redacted.contains("X-API-Key: <redacted>"));
+    assert!(redacted.contains("Client-Secret: <redacted>"));
+    assert!(redacted.contains("X-Access-Token: <redacted>"));
+    assert!(redacted.contains("Authorization: <redacted>"));
+    assert!(redacted.contains("X-Auth: <redacted>"));
+    assert!(!redacted.contains("abc123def456"));
+    assert!(!redacted.contains("client-secret-value"));
+    assert!(!redacted.contains("raw-access-token"));
+    assert!(!redacted.contains("raw-auth-token"));
+    assert!(!redacted.contains("raw-auth-secret"));
+}
+
+#[test]
 fn command_redaction_handles_split_secret_args() {
     let command = concat!(
         "guard --token token-secret --password 'quoted secret' ",
@@ -853,6 +879,31 @@ fn policy_action_collections_are_capped() {
 }
 
 #[test]
+fn policy_file_paths_are_redacted_before_serialization() {
+    let read = PolicyReadFilesAction::new([
+        PathBuf::from("/tmp/sk-secretsecretsecret/report.md"),
+        PathBuf::from("/tmp/clientSecret=raw-secret-value/config.md"),
+    ]);
+    let write = PolicyWriteFilesAction::new(
+        [PathBuf::from(
+            "/tmp/Authorization: Bearer raw-path-token/output.md",
+        )],
+        None,
+    );
+
+    let value = serde_json::to_string(&json!({
+        "read": read,
+        "write": write,
+    }))
+    .unwrap();
+
+    assert!(value.contains("<redacted>"));
+    assert!(!value.contains("sk-secretsecretsecret"));
+    assert!(!value.contains("raw-secret-value"));
+    assert!(!value.contains("raw-path-token"));
+}
+
+#[test]
 fn policy_decision_composition_is_conservative() {
     let hook_allow = AgentPolicyHookEvaluation {
         hook_name: "guard".to_string(),
@@ -936,7 +987,7 @@ fn hook_response_strings_are_redacted_and_capped() {
             schema_version: AGENT_POLICY_SCHEMA_VERSION.to_string(),
             decision: AgentPolicyDecisionKind::Deny,
             reason: Some(format!(
-                "OPENAI_API_KEY=sk-secretsecretsecret {}",
+                "OPENAI_API_KEY=sk-secretsecretsecret X-API-Key: abc123def456 {}",
                 "x".repeat(10_000)
             )),
             external_audit_id: Some("audit-ghp_secretsecretsecret".to_string()),
@@ -945,7 +996,9 @@ fn hook_response_strings_are_redacted_and_capped() {
 
     let reason = evaluation.reason.as_deref().unwrap();
     assert!(reason.contains("OPENAI_API_KEY=<redacted>"));
+    assert!(reason.contains("X-API-Key: <redacted>"));
     assert!(!reason.contains("sk-secretsecretsecret"));
+    assert!(!reason.contains("abc123def456"));
     assert!(reason.len() < 8_300);
     assert_eq!(
         evaluation.external_audit_id.as_deref(),

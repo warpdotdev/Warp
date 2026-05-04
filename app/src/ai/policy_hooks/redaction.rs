@@ -21,6 +21,13 @@ static AUTHORIZATION_BASIC_RE: Lazy<Regex> = Lazy::new(|| {
         .expect("authorization basic regex should compile")
 });
 
+static CREDENTIAL_HEADER_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r#"(?i)(^|[\s;&|'"`])([a-z0-9_-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)[a-z0-9_-]*\s*:\s*)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|'"`\r\n]+|basic\s+[^\s;&|'"`\r\n]+|[^\s;&|'"`\r\n]+)"#,
+    )
+    .expect("credential header regex should compile")
+});
+
 static URL_USERINFO_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r#"(?i)\b([a-z][a-z0-9+.-]*://)([^/\s"'<>@]+(?::[^/\s"'<>@]*)?@)"#)
         .expect("URL userinfo regex should compile")
@@ -60,12 +67,30 @@ pub(crate) fn redact_sensitive_text_for_policy(value: &str) -> String {
     let value = SECRET_ASSIGNMENT_RE.replace_all(value, "$1=<redacted>");
     let value = AUTHORIZATION_BEARER_RE.replace_all(&value, "$1<redacted>");
     let value = AUTHORIZATION_BASIC_RE.replace_all(&value, "$1<redacted>");
+    let value = CREDENTIAL_HEADER_RE.replace_all(&value, redact_credential_header_match);
     let value = CURL_BASIC_AUTH_RE.replace_all(&value, "$1<redacted>");
     let value = URL_USERINFO_RE.replace_all(&value, "$1<redacted>@");
     let value = INLINE_SECRET_ARG_RE.replace_all(&value, "$1$2<redacted>");
     let value = SPLIT_SECRET_ARG_RE.replace_all(&value, "$1$2<redacted>");
     let value = COMMON_TOKEN_RE.replace_all(&value, "<redacted>");
     truncate_for_policy(&value)
+}
+
+fn redact_credential_header_match(captures: &regex::Captures<'_>) -> String {
+    let matched = captures.get(0).map_or("", |capture| capture.as_str());
+    let prefix = captures.get(1).map_or("", |capture| capture.as_str());
+    let header = captures.get(2).map_or("", |capture| capture.as_str());
+    let value = captures.get(3).map_or("", |capture| capture.as_str());
+
+    let header_name = header.trim_end().trim_end_matches(':').trim();
+    let value_lower = value.to_ascii_lowercase();
+    if header_name.eq_ignore_ascii_case("authorization")
+        && (value_lower == "bearer <redacted>" || value_lower == "basic <redacted>")
+    {
+        return matched.to_string();
+    }
+
+    format!("{prefix}{header}<redacted>")
 }
 
 pub(crate) fn mcp_argument_keys(arguments: &serde_json::Value) -> (Vec<String>, Option<usize>) {

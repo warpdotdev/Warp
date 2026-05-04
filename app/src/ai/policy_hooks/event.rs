@@ -317,9 +317,10 @@ impl PolicyReadMcpResourceAction {
 
 fn truncate_policy_path(path: PathBuf) -> PathBuf {
     let path_text = path.to_string_lossy();
-    if path_text.len() <= super::redaction::MAX_POLICY_STRING_BYTES {
+    let redacted_path = redact_sensitive_text_for_policy(&path_text);
+    if redacted_path == path_text && path_text.len() <= super::redaction::MAX_POLICY_STRING_BYTES {
         return path;
     }
 
-    PathBuf::from(truncate_for_policy(&path_text))
+    PathBuf::from(redacted_path)
 }
