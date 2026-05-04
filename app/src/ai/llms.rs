@@ -74,6 +74,23 @@ impl DisableReason {
             DisableReason::Unavailable => "This model is unavailable.",
         }
     }
+
+    /// Returns `true` when this disable reason means the user cannot use the model
+    /// and we should clear their stored preference.
+    ///
+    /// `RequiresUpgrade` is BYOK-aware: if the user has a BYO API key for the
+    /// model's provider (`has_byok_key = true`), the server will still accept
+    /// the request, so we keep the selection.
+    ///
+    /// `OutOfRequests` and `ProviderOutage` are transient and expected to
+    /// resolve without user action, so we preserve the selection.
+    fn should_clear_preference(&self, has_byok_key: bool) -> bool {
+        match self {
+            DisableReason::AdminDisabled | DisableReason::Unavailable => true,
+            DisableReason::RequiresUpgrade => !has_byok_key,
+            DisableReason::OutOfRequests | DisableReason::ProviderOutage => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -351,6 +368,17 @@ impl AvailableLLMs {
 
     fn info_for_id(&self, id: &LLMId) -> Option<&LLMInfo> {
         self.choices.iter().find(|info| info.id == *id)
+    }
+
+    /// Returns the info for the given id only if the model is usable (present
+    /// and not effectively disabled for the current user).
+    fn usable_info_for_id(&self, id: &LLMId, app: &AppContext) -> Option<&LLMInfo> {
+        self.info_for_id(id).filter(|info| {
+            let has_byok_key = is_using_api_key_for_provider(&info.provider, app);
+            info.disable_reason
+                .as_ref()
+                .is_none_or(|reason| !reason.should_clear_preference(has_byok_key))
+        })
     }
 
     fn default_llm_info(&self) -> &LLMInfo {
@@ -945,8 +973,9 @@ impl LLMPreferences {
             }
         }
 
-        // Clear any model selections where the model is no longer supported,
-        // and clear orphaned context window limits for non-configurable models.
+        // Clear any model selections where the model is no longer supported
+        // or effectively disabled, and clear orphaned context window limits
+        // for non-configurable or unusable models.
         let profiles_model = AIExecutionProfilesModel::handle(ctx);
         profiles_model.update(ctx, |profiles, ctx| {
             for profile_id in profiles.get_all_profile_ids() {
@@ -956,20 +985,20 @@ impl LLMPreferences {
                     let effective_base_model_id = preferred_base_model
                         .as_ref()
                         .unwrap_or(&self.models_by_feature.agent_mode.default_id);
-                    let effective_base_model_info = self
+                    let effective_base_model_usable = self
                         .models_by_feature
                         .agent_mode
-                        .info_for_id(effective_base_model_id);
-                    let effective_base_model_missing = effective_base_model_info.is_none();
-                    let effective_base_model_is_configurable = effective_base_model_info
+                        .usable_info_for_id(effective_base_model_id, ctx);
+                    let effective_base_model_unusable = effective_base_model_usable.is_none();
+                    let effective_base_model_is_configurable = effective_base_model_usable
                         .is_some_and(|info| info.context_window.is_configurable);
                     let has_context_window_limit = profile_data.context_window_limit.is_some();
 
-                    if preferred_base_model.is_some() && effective_base_model_missing {
+                    if preferred_base_model.is_some() && effective_base_model_unusable {
                         profiles.set_base_model(profile_id, None, ctx);
                     }
                     if has_context_window_limit
-                        && (effective_base_model_missing || !effective_base_model_is_configurable)
+                        && (effective_base_model_unusable || !effective_base_model_is_configurable)
                     {
                         profiles.set_context_window_limit(profile_id, None, ctx);
                     }
@@ -977,7 +1006,7 @@ impl LLMPreferences {
                         if self
                             .models_by_feature
                             .coding
-                            .info_for_id(preferred_llm_id)
+                            .usable_info_for_id(preferred_llm_id, ctx)
                             .is_none()
                         {
                             profiles.set_coding_model(profile_id, None, ctx);
@@ -986,7 +1015,7 @@ impl LLMPreferences {
                     if let Some(preferred_llm_id) = &profile.data().cli_agent_model {
                         if self
                             .get_cli_agent_available()
-                            .info_for_id(preferred_llm_id)
+                            .usable_info_for_id(preferred_llm_id, ctx)
                             .is_none()
                         {
                             profiles.set_cli_agent_model(profile_id, None, ctx);
@@ -995,7 +1024,7 @@ impl LLMPreferences {
                     if let Some(preferred_llm_id) = &profile.data().computer_use_model {
                         if self
                             .get_computer_use_available()
-                            .info_for_id(preferred_llm_id)
+                            .usable_info_for_id(preferred_llm_id, ctx)
                             .is_none()
                         {
                             profiles.set_computer_use_model(profile_id, None, ctx);
