@@ -470,13 +470,15 @@ impl LocalRepoMetadataModel {
             return Ok(());
         }
 
-        // Already tracked as a real repo — don't overwrite it.
-        if matches!(
-            self.repositories.get(path),
-            Some(IndexedRepoState::Indexed(_) | IndexedRepoState::Pending)
-        ) {
+        // Already fully indexed — don't overwrite it.
+        if matches!(self.repositories.get(path), Some(IndexedRepoState::Indexed(_))) {
             return Ok(());
         }
+
+        // Repo is Pending (detection in progress) — create lazy entry alongside it.
+        // This allows the file tree to show content while detection completes.
+        // The lazy entry will be upgraded when detection finishes.
+        let is_pending = matches!(self.repositories.get(path), Some(IndexedRepoState::Pending));
 
         let local_path = path
             .to_local_path()
