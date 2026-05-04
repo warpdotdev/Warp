@@ -55,6 +55,14 @@ void warp_marked_text_cleared(WarpHostView *);
 
     // Whether we're in the middle of a call to interpretKeyEvents.
     BOOL interpretingKeyEvents;
+
+    // Whether the IME modified marked text (via setMarkedText: or unmarkText)
+    // during the current interpretKeyEvents: pass. Used to avoid wiping a
+    // freshly-set marked text in the split-commit scenario where an IME
+    // calls insertText: (committing some text) and then setMarkedText: (with
+    // new in-progress text) in the same keystroke. Without this, the trailing
+    // unmarkText in keyDownImpl would clobber that new marked text.
+    BOOL imeTouchedMarkedTextDuringInterpret;
 }
 
 - (BOOL)acceptsFirstResponder {
@@ -153,6 +161,7 @@ void warp_marked_text_cleared(WarpHostView *);
 - (BOOL)keyDownImpl:(NSEvent *)event {
     BOOL wasComposing = [self hasMarkedText];
     [textToInsert setString:@""];
+    imeTouchedMarkedTextDuringInterpret = NO;
 
     // Interpret the key events here so we could check whether user is composing
     // text within the IME and pass the state down to the KeyDown events.
@@ -182,7 +191,14 @@ void warp_marked_text_cleared(WarpHostView *);
     // Dispatch TypedCharacter event after KeyDown has been dispatched.
     if ([textToInsert length] > 0 && !handled) {
         warp_handle_insert_text(self, (NSString *)textToInsert);
-        [self unmarkText];
+        // Only clear marked text if the IME did not touch it during this
+        // interpretKeyEvents pass. Otherwise we'd either fire a redundant
+        // ClearMarkedText (if IME already cleared) or, worse, wipe the new
+        // marked text the IME just set in a split-commit (e.g. Japanese IME
+        // committing a phrase and queuing the next character as marked text).
+        if (!imeTouchedMarkedTextDuringInterpret) {
+            [self unmarkText];
+        }
     }
 
     return handled;
@@ -465,6 +481,10 @@ void warp_marked_text_cleared(WarpHostView *);
 - (void)setMarkedText:(id)string
         selectedRange:(NSRange)selectedRange
      replacementRange:(NSRange)replacementRange {
+    if (interpretingKeyEvents) {
+        imeTouchedMarkedTextDuringInterpret = YES;
+    }
+
     [markedText release];
     if ([string isKindOfClass:[NSAttributedString class]])
         markedText = [[NSMutableAttributedString alloc] initWithAttributedString:string];
@@ -482,6 +502,9 @@ void warp_marked_text_cleared(WarpHostView *);
 }
 
 - (void)unmarkText {
+    if (interpretingKeyEvents) {
+        imeTouchedMarkedTextDuringInterpret = YES;
+    }
     [[markedText mutableString] setString:@""];
     if (self.readyForWarp) {
         warp_update_ime_state(self, NO);
