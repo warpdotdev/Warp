@@ -1,8 +1,8 @@
 # 02 — AI removal
 
-**Phase:** spec-in-review
+**Phase:** impl-in-review
 **Spec PR:** https://github.com/timomak/twarp/pull/4
-**Impl PRs:** —
+**Impl PRs:** 2a — https://github.com/timomak/twarp/pull/6
 
 ## Scope
 
@@ -20,7 +20,7 @@ Smaller diff than auditing AI files one-by-one, and upstream cherry-picks touchi
 
 ## Sub-phases
 
-- [ ] **2a — Locate the gate.** Find the existing "AI disabled" mechanism upstream provides (likely a feature flag, settings key, or onboarding answer). Document where it's checked and what code it bypasses. Output: `roadmap/02-ai-removal/GATE.md`. Single PR, no behavior change.
+- [x] **2a — Locate the gate.** Find the existing "AI disabled" mechanism upstream provides (likely a feature flag, settings key, or onboarding answer). Document where it's checked and what code it bypasses. Output: `roadmap/02-ai-removal/GATE.md`. Single PR, no behavior change.
 - [ ] **2b — Default AI off + remove the enable path.** Default the gate to disabled; remove the UI/code that flips it on (or strip the onboarding question entirely if it's a binary choice). Behavior change: every install boots in no-AI mode. Diff stays small.
 - [ ] **2c — Delete dead AI code.** With the enable path gone, every AI module reachable only from "gate on" is unreachable. Delete iteratively, running `simplify` between rounds until nothing further collapses.
 - [ ] **2d — Final sweep.** AI-only telemetry events, feature flags whose only consumer was AI, config keys nothing reads.

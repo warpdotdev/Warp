@@ -9,7 +9,7 @@ Single source of truth for what's being built next. `/twarp-next` reads this fil
 | # | Feature | Phase | Spec PR | Impl PR(s) |
 |---|---------|-------|---------|-----------|
 | 01 | [Tab color shortcuts](01-tab-colors/STATUS.md) | merged | [#2](https://github.com/timomak/twarp/pull/2) | [#3](https://github.com/timomak/twarp/pull/3) |
-| 02 | [AI removal](02-ai-removal/STATUS.md) | spec-in-review | [#4](https://github.com/timomak/twarp/pull/4) | — |
+| 02 | [AI removal](02-ai-removal/STATUS.md) | impl-in-review | [#4](https://github.com/timomak/twarp/pull/4) | [#6](https://github.com/timomak/twarp/pull/6) |
 | 03 | [Custom command shortcuts](03-command-shortcuts/STATUS.md) | not-started | — | — |
 | 04 | [Open Changes panel](04-open-changes/STATUS.md) | not-started | — | — |
 | 05 | [Rebrand to twarp](05-rebrand/STATUS.md) | not-started | — | — |
