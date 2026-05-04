@@ -19,6 +19,7 @@ use crate::proto::{
 use crate::protocol::{self, ProtocolError, RequestId};
 
 use warp_core::SessionId;
+use warp_core::{safe_error, safe_warn};
 use warpui::r#async::TransportStream;
 
 /// Default request timeout (2 minutes).
@@ -199,7 +200,10 @@ impl RemoteServerClient {
         match response.message {
             Some(server_message::Message::InitializeResponse(resp)) => Ok(resp),
             other => {
-                log::error!("Unexpected response variant for Initialize: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for Initialize"),
+                    full: ("Remote server unexpected response for Initialize: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -256,7 +260,10 @@ impl RemoteServerClient {
         match response.message {
             Some(server_message::Message::NavigatedToDirectoryResponse(resp)) => Ok(resp),
             other => {
-                log::error!("Unexpected response variant for NavigatedToDirectory: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for NavigatedToDirectory"),
+                    full: ("Remote server unexpected response for NavigatedToDirectory: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -284,7 +291,10 @@ impl RemoteServerClient {
         match response.message {
             Some(server_message::Message::LoadRepoMetadataDirectoryResponse(resp)) => Ok(resp),
             other => {
-                log::error!("Unexpected response variant for LoadRepoMetadataDirectory: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for LoadRepoMetadataDirectory"),
+                    full: ("Remote server unexpected response for LoadRepoMetadataDirectory: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -310,7 +320,10 @@ impl RemoteServerClient {
                 }
             },
             other => {
-                log::error!("Unexpected response variant for WriteFile: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for WriteFile"),
+                    full: ("Remote server unexpected response for WriteFile: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -335,7 +348,10 @@ impl RemoteServerClient {
         match response.message {
             Some(server_message::Message::ReadFileContextResponse(resp)) => Ok(resp),
             other => {
-                log::error!("Unexpected response variant for ReadFileContext: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for ReadFileContext"),
+                    full: ("Remote server unexpected response for ReadFileContext: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -357,7 +373,10 @@ impl RemoteServerClient {
                 }
             },
             other => {
-                log::error!("Unexpected response variant for DeleteFile: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for DeleteFile"),
+                    full: ("Remote server unexpected response for DeleteFile: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -375,7 +394,10 @@ impl RemoteServerClient {
                 Some(ClientEvent::RepoMetadataUpdated { update })
             }
             other => {
-                log::warn!("Unhandled push message variant: {other:?}");
+                safe_warn!(
+                    safe: ("Unhandled push message variant"),
+                    full: ("Unhandled push message variant: {other:?}")
+                );
                 None
             }
         }
@@ -405,7 +427,10 @@ impl RemoteServerClient {
         match response.message {
             Some(server_message::Message::RunCommandResponse(resp)) => Ok(resp),
             other => {
-                log::error!("Unexpected response variant for RunCommand: {other:?}");
+                safe_error!(
+                    safe: ("Remote server unexpected response for RunCommand"),
+                    full: ("Remote server unexpected response for RunCommand: response={other:?}")
+                );
                 Err(ClientError::UnexpectedResponse)
             }
         }
@@ -497,11 +522,11 @@ impl RemoteServerClient {
             if let Err(e) = protocol::write_client_message(&mut writer, &msg).await {
                 let request_id = RequestId::from(msg.request_id);
                 if !e.is_write_recoverable() {
-                    log::error!("Writer task fatal error: request_id={request_id}: {e}");
+                    log::error!("Writer task fatal error: request_id={request_id} error={e}");
                     pending_requests.clear();
                     break;
                 }
-                log::error!("Writer task: request_id={request_id}: {e}");
+                log::warn!("Remote server writer task error: request_id={request_id} error={e}");
                 // Drop the sender so the caller receives ResponseChannelClosed.
                 pending_requests.remove(&request_id);
             }
