@@ -40,6 +40,19 @@ if (-not $haveMsvcBuildTools) {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
+# Node.js and yarn are required at `cargo build` time by the
+# `command-signatures-v2` crate. We deliberately do not auto-install Node or
+# auto-run `corepack enable` — system-installed Node may need admin rights for
+# corepack, and version-manager users (e.g. Volta) often manage yarn
+# themselves. See the "Node.js setup" section of WARP.md for guidance.
+$nodeMissing = -not (Get-Command -Name node -Type Application -ErrorAction SilentlyContinue)
+$yarnMissing = -not (Get-Command -Name yarn -Type Application -ErrorAction SilentlyContinue)
+if ($nodeMissing -or $yarnMissing) {
+    Write-Error 'Missing Node.js and/or yarn (both required at `cargo build` time).'
+    Write-Error 'See the "Node.js setup" section of WARP.md for installation guidance.'
+    exit 1
+}
+
 # A bash executable should come with Git for Windows
 & "$gitBinDir\bash.exe" "$PWD\script\install_cargo_test_deps"
 

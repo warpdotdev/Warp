@@ -41,6 +41,28 @@ Environment variables:
 - `./script/install_cargo_build_deps` - Install Cargo build dependencies
 - `./script/install_cargo_test_deps` - Install Cargo test dependencies
 
+### Node.js setup
+
+The `command-signatures-v2` crate compiles a TypeScript helper at `cargo build`
+time, so a working `node` + `yarn` toolchain must be on `PATH` before you build.
+The platform bootstrap scripts fail fast if either is missing.
+
+- **Version requirement.** Node.js ≥ 18.14.1.
+- **How to install.** Use whichever toolchain you already trust — a Node version
+  manager (`nvm`, `fnm`, `volta`, `asdf`, `mise`) or your system package
+  manager. The bootstrap scripts deliberately do not install Node for you.
+- **Verify yarn first.** Check `yarn --version` before reaching for `corepack
+  enable`. If yarn is already on `PATH` (common with Volta, which manages yarn
+  itself), nothing further is needed.
+- **`corepack enable` caveats.** Run it yourself rather than letting bootstrap
+  do it. On a system-installed Node it can require `sudo` / Administrator
+  rights, and on Volta it conflicts with Volta's own yarn shim. A previously
+  brew-installed yarn can also conflict; `brew uninstall yarn` clears that up.
+
+If `cargo build` fails inside `command-signatures-v2`, the most common causes
+are an outdated Node, a missing yarn, or a conflicting yarn install — fix those
+before opening a build issue.
+
 ## Architecture Overview
 
 This is a Rust-based terminal emulator with a custom UI framework called **WarpUI**.

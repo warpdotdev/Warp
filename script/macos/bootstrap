@@ -29,6 +29,19 @@ if ! command -v cargo; then
     exit 1
 fi
 
+# Node.js and yarn are required at `cargo build` time by the
+# `command-signatures-v2` crate. We deliberately do not auto-install Node or
+# auto-run `corepack enable` — system-installed Node may need sudo for
+# corepack, and version-manager users (e.g. Volta) often manage yarn
+# themselves. See the "Node.js setup" section of WARP.md for guidance.
+if ! command -v node >/dev/null 2>&1 || ! command -v yarn >/dev/null 2>&1; then
+    echo ""
+    echo "⚠️  Missing Node.js and/or yarn (both required at \`cargo build\` time)."
+    echo "    See the \"Node.js setup\" section of WARP.md for installation guidance."
+    echo ""
+    exit 1
+fi
+
 # Install various binaries through cargo.
 "$PWD"/script/install_cargo_test_deps
 "$PWD"/script/install_cargo_release_deps
