@@ -339,3 +339,31 @@ fn infer_from_foreground_color_test() {
         ColorScheme::DarkOnLight
     );
 }
+
+#[cfg(not(windows))]
+#[test]
+fn contract_tilde_replaces_home_prefix() {
+    let home = dirs::home_dir().expect("home dir must exist");
+    let abs = home.join(".warp/themes/my_theme.yaml");
+    let contracted = contract_tilde(abs.clone());
+    assert_eq!(
+        contracted,
+        std::path::PathBuf::from("~/.warp/themes/my_theme.yaml")
+    );
+}
+
+#[cfg(not(windows))]
+#[test]
+fn contract_tilde_leaves_non_home_paths_unchanged() {
+    let path = std::path::PathBuf::from("/etc/warp/theme.yaml");
+    assert_eq!(contract_tilde(path.clone()), path);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn expand_contract_tilde_round_trips() {
+    let tilde_path = std::path::PathBuf::from("~/.warp/themes/my_theme.yaml");
+    let expanded = expand_tilde(tilde_path.clone());
+    let contracted = contract_tilde(expanded);
+    assert_eq!(contracted, tilde_path);
+}
