@@ -1268,27 +1268,23 @@ impl AgentManagementView {
         ctx: &mut ViewContext<Self>,
     ) {
         match kind {
-            ConversationUpdateKind::Restored => {
-                self.refresh_details_panel_if_needed(ctx);
-            }
+            ConversationUpdateKind::Restored => {}
             ConversationUpdateKind::StatusSet {
                 prev_filter,
                 new_filter,
             } => {
-                let crossed_active_filter = self
+                if self
                     .filters
                     .status
-                    .is_membership_crossed(prev_filter, new_filter);
-
-                if crossed_active_filter {
+                    .is_membership_crossed(prev_filter, new_filter)
+                {
                     self.get_tasks_from_model(ctx);
-                    self.refresh_details_panel_if_needed(ctx);
                 } else {
-                    self.refresh_details_panel_if_needed(ctx);
                     ctx.notify();
                 }
             }
         }
+        self.refresh_details_panel_if_needed(ctx);
     }
 
     /// Update the details panel with fresh data for the given item.
