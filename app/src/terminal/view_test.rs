@@ -4759,7 +4759,7 @@ fn linear_deeplink_via_default_entrypoint_does_not_auto_submit_in_fullscreen() {
 // "Refine" (or hits the equivalent keybinding) on a requested code diff, the `AIBlock` emits `RefineRequestedDiff`. The
 // terminal view must:
 //   1. enter the agent view for that conversation with origin
-//      `AgentViewEntryOrigin::RefineDiff`, and
+//      `AgentViewEntryOrigin::RefineDiff`
 //   2. force-lock the input to AI mode regardless of the prior input config
 //      (so the user iterates on the diff in NL mode).
 // -----------------------------------------------------------------------------
@@ -4772,7 +4772,6 @@ use crate::ai::blocklist::model::{
 use crate::ai::blocklist::{AIBlock, AIBlockEvent, ClientIdentifiers};
 use crate::ai::llms::LLMId;
 
-/// Minimal [`AIBlockModel`] used solely so we can construct a real [`AIBlock`]
 struct RefineDiffTestAIBlockModel {
     conversation_id: AIConversationId,
     inputs: Vec<AIAgentInput>,
@@ -4873,7 +4872,7 @@ fn add_test_ai_block(
     })
 }
 
-/// Verifies that handling `RefineRequestedDiff` enters the agent view for the
+/// Test1: handling `RefineRequestedDiff` enters the agent view for the
 /// supplied conversation_id (with origin `RefineDiff`) when there was no prior
 /// active agent view.
 #[test]
@@ -4922,12 +4921,8 @@ fn refine_requested_diff_enters_agent_view_for_conversation() {
     })
 }
 
-/// Verifies that handling `RefineRequestedDiff` force-locks the input to AI
+/// Test2: handling `RefineRequestedDiff` force-locks the input to AI
 /// mode when the input was previously in (unlocked) Shell mode.
-///
-/// Mirrors the real UI path: the user is already in agent view for the
-/// conversation when they click "Refine" on a requested code diff (the diff
-/// block is only rendered inside agent view).
 #[test]
 fn refine_requested_diff_force_locks_input_to_ai_mode() {
     App::test((), |mut app| async move {
@@ -5000,7 +4995,7 @@ fn refine_requested_diff_force_locks_input_to_ai_mode() {
     })
 }
 
-/// Verifies that `RefineRequestedDiff` overrides a prior locked-Shell input
+/// Test3: `RefineRequestedDiff` overrides a prior locked-Shell input
 /// config.
 /// Mirrors the real UI path: the user is already in agent view for the
 /// conversation when they click "Refine".

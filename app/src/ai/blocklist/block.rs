@@ -5511,10 +5511,8 @@ pub enum AIBlockEvent {
     ContinueConversation {
         conversation_id: AIConversationId,
     },
-    /// Emitted when the user clicks "Refine" (or hits ctrl-c) on a requested code diff. The
-    /// diff is already cancelled by the existing `Rejected` flow; this additionally signals
-    /// that the terminal view should enter agent view with `AgentViewEntryOrigin::RefineDiff`
-    /// so the input is force-locked to AI mode.
+    /// Emitted when the user clicks "Refine" (or hits ctrl-c) on a requested/active code diff.
+    /// This signal is for locking input is force-locked to AI mode for RefineDiff.
     RefineRequestedDiff {
         conversation_id: AIConversationId,
     },
