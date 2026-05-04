@@ -1,0 +1,82 @@
+{
+  "nodes": {
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1777268161,
+        "narHash": "sha256-bxrdOn8SCOv8tN4JbTF/TXq7kjo9ag4M+C8yzzIRYbE=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "1c3fe55ad329cbcb28471bb30f05c9827f724c76",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "nixpkgs": "nixpkgs",
+        "rust-overlay": "rust-overlay",
+        "warpProtoApis": "warpProtoApis",
+        "warpWorkflows": "warpWorkflows"
+      }
+    },
+    "rust-overlay": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1777432579,
+        "narHash": "sha256-Ce11TStDsqCge2vAAfLKe2+4lDI5cSX5ZYZOuKJBKKQ=",
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "rev": "3ecb5e6ab380ced3272ef7fcfe398bffbcc0f152",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "type": "github"
+      }
+    },
+    "warpProtoApis": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1776900698,
+        "narHash": "sha256-8bB/tCLIzRCofMK1rYCe8bizUr1U4A6f6uVeckJJKI4=",
+        "owner": "warpdotdev",
+        "repo": "warp-proto-apis",
+        "rev": "78a78f21a75432bf0141e396fb318bf1694e47f0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "warpdotdev",
+        "repo": "warp-proto-apis",
+        "type": "github"
+      }
+    },
+    "warpWorkflows": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1776965078,
+        "narHash": "sha256-ICgkxlUUIfyhr0agZEk3KtGHX0uNRlRCKtz0iF2jd7o=",
+        "owner": "warpdotdev",
+        "repo": "workflows",
+        "rev": "793a98ddda6ef19682aed66364faebd2829f0e01",
+        "type": "github"
+      },
+      "original": {
+        "owner": "warpdotdev",
+        "repo": "workflows",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
