@@ -1,5 +1,58 @@
 use super::*;
 
+// ---------------------------------------------------------------------------
+// Tests for compute_new_flex (the core of the drag-resize fix)
+// ---------------------------------------------------------------------------
+
+/// Simulate the OLD (buggy) formula: use fixed stale sizes for every event.
+/// Returns the flex_1 value after N events of `delta` pixels each.
+fn old_buggy_flex_after_n_events(
+    initial_flex_1: f32,
+    total_flex: f32,
+    stale_size_1: f32,
+    stale_size_2: f32,
+    delta: f32,
+    n: usize,
+) -> f32 {
+    let mut flex_1 = initial_flex_1;
+    for _ in 0..n {
+        // Old formula: always divides by stale total, overwrites with the same
+        // value on every iteration before a re-render.
+        flex_1 = ((stale_size_1 + delta) / (stale_size_1 + stale_size_2) * total_flex)
+            .clamp(0., total_flex);
+    }
+    flex_1
+}
+
+/// Simulate the NEW (fixed) formula: flex accumulates between events.
+/// Returns the flex_1 value after N events of `delta` pixels each.
+fn new_fixed_flex_after_n_events(
+    initial_flex_1: f32,
+    initial_flex_2: f32,
+    total_pixel_size: f32,
+    delta: f32,
+    min_pane_size: f32,
+    n: usize,
+) -> f32 {
+    let mut flex_1 = initial_flex_1;
+    let mut flex_2 = initial_flex_2;
+    for _ in 0..n {
+        if let Some(new_flex_1) =
+            compute_new_flex(flex_1, flex_2, delta, total_pixel_size, min_pane_size)
+        {
+            let total_flex = flex_1 + flex_2;
+            flex_2 = total_flex - new_flex_1;
+            flex_1 = new_flex_1;
+        }
+    }
+    flex_1
+}
+
+/// Convert a flex value back to pixels given total_flex and total_size.
+fn flex_to_pixels(flex: f32, total_flex: f32, total_size: f32) -> f32 {
+    flex / total_flex * total_size
+}
+
 #[test]
 fn test_split_pane_layout() {
     let panes = [
@@ -698,4 +751,131 @@ fn test_hide_multiple_child_agent_panes() {
     tree.show_pane_for_child_agent(panes[1]);
     assert_eq!(tree.visible_pane_ids(), vec![panes[0], panes[1]]);
     assert!(tree.is_pane_hidden(&panes[2]));
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests for the pane-resize half-speed bug (issue #6468)
+//
+// Root cause: adjust_pane_size read pane_size() (rendered bounds) on every
+// drag event.  When multiple events fire between render frames the stale sizes
+// caused every event after the first to overwrite the flex with the same value,
+// effectively halving the resize speed.
+//
+// The fix caches the total pixel size from the first read and derives
+// individual sizes from flex on subsequent events so each delta accumulates.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_compute_new_flex_single_event() {
+    // Two equal 400 px panes, total 800 px, equal flex 1.0 / 1.0.
+    // A 50 px rightward drag should grow pane 1 to 450 px.
+    let result = compute_new_flex(1.0, 1.0, 50.0, 800.0, 50.0);
+    assert!(result.is_some());
+    let new_flex_1 = result.unwrap();
+    let total_flex = 2.0_f32;
+    let size_1 = flex_to_pixels(new_flex_1, total_flex, 800.0);
+    assert!(
+        (size_1 - 450.0).abs() < 0.01,
+        "Expected 450 px, got {size_1}"
+    );
+}
+
+#[test]
+fn test_compute_new_flex_accumulates_across_events() {
+    // Three consecutive events of 10 px each with a cached total of 800 px.
+    // The new formula accumulates flex between events, so the final size
+    // should be 430 px (400 + 3 × 10), not 410 px (as the stale-size bug
+    // would produce).
+    let total_size = 800.0_f32;
+    let min_size = 50.0_f32;
+
+    let new_flex_1 = new_fixed_flex_after_n_events(1.0, 1.0, total_size, 10.0, min_size, 3);
+    let size_1 = flex_to_pixels(new_flex_1, 2.0, total_size);
+
+    assert!(
+        (size_1 - 430.0).abs() < 0.01,
+        "Expected 430 px after 3 × 10 px events, got {size_1}"
+    );
+}
+
+#[test]
+fn test_stale_size_bug_would_undercount_deltas() {
+    // Demonstrate that the OLD formula (stale sizes) applies only one event's
+    // worth of movement for N events — the core of the regression.
+    // With three 10 px events and stale sizes of 400 / 400:
+    //   old result ≈ 410 px  (only the first event is reflected)
+    //   new result  = 430 px (all three events accumulate)
+    let total_size = 800.0_f32;
+    let min_size = 50.0_f32;
+
+    let old_flex_1 = old_buggy_flex_after_n_events(1.0, 2.0, 400.0, 400.0, 10.0, 3);
+    let new_flex_1 = new_fixed_flex_after_n_events(1.0, 1.0, total_size, 10.0, min_size, 3);
+
+    let old_size_1 = flex_to_pixels(old_flex_1, 2.0, total_size);
+    let new_size_1 = flex_to_pixels(new_flex_1, 2.0, total_size);
+
+    // Old formula: all three iterations compute the same flex (stale 400/400
+    // denominator), so only one event's worth of movement is applied.
+    assert!(
+        (old_size_1 - 410.0).abs() < 0.01,
+        "Old formula should give 410 px (single-event result), got {old_size_1}"
+    );
+    // New formula: each event accumulates, giving the correct 430 px.
+    assert!(
+        (new_size_1 - 430.0).abs() < 0.01,
+        "New formula should give 430 px (three events accumulated), got {new_size_1}"
+    );
+    // The two results must differ, proving the bug existed and is now fixed.
+    assert!(
+        (new_size_1 - old_size_1).abs() > 1.0,
+        "Old and new results should differ when multiple events fire per frame"
+    );
+}
+
+#[test]
+fn test_compute_new_flex_minimum_pane_size_respected() {
+    // Pane 1 is 150 px, pane 2 is 50 px (at the minimum). A further rightward
+    // drag (positive delta) would shrink pane 2 below the minimum.
+    let total_size = 200.0_f32;
+    let (flex_1, flex_2) = (0.75_f32, 0.25_f32); // 150 px / 50 px
+    let min_size = 50.0_f32;
+
+    // delta = 1 would take pane 2 to 49 px — below minimum.
+    let result = compute_new_flex(flex_1, flex_2, 1.0, total_size, min_size);
+    assert!(
+        result.is_none(),
+        "Should reject delta that would shrink pane 2 below minimum"
+    );
+
+    // delta = -1 shrinks pane 1 to 149 px — both panes stay above minimum.
+    let result = compute_new_flex(flex_1, flex_2, -1.0, total_size, min_size);
+    assert!(
+        result.is_some(),
+        "Should allow delta that keeps both panes above minimum"
+    );
+}
+
+#[test]
+fn test_compute_new_flex_ignores_near_zero_delta() {
+    // A sub-epsilon delta should be treated as no movement.
+    let result = compute_new_flex(1.0, 1.0, f32::EPSILON * 0.5, 800.0, 50.0);
+    assert!(result.is_none(), "Near-zero delta should return None");
+}
+
+#[test]
+fn test_compute_new_flex_asymmetric_flex() {
+    // Pane 1 is 600 px (flex 1.5), pane 2 is 200 px (flex 0.5), total 800 px.
+    // A 20 px rightward drag should grow pane 1 to 620 px.
+    let (flex_1, flex_2) = (1.5_f32, 0.5_f32);
+    let total_size = 800.0_f32;
+    let min_size = 50.0_f32;
+
+    let result = compute_new_flex(flex_1, flex_2, 20.0, total_size, min_size);
+    assert!(result.is_some());
+    let new_flex_1 = result.unwrap();
+    let size_1 = flex_to_pixels(new_flex_1, 2.0, total_size);
+    assert!(
+        (size_1 - 620.0).abs() < 0.01,
+        "Expected 620 px, got {size_1}"
+    );
 }

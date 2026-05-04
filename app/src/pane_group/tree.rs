@@ -503,9 +503,11 @@ impl PaneData {
         &mut self,
         border_id: EntityId,
         delta: f32,
+        cached_total_pixel_size: &mut Option<f32>,
         ctx: &mut ViewContext<PaneGroup>,
     ) {
-        self.root.adjust_pane_size(border_id, delta, ctx);
+        self.root
+            .adjust_pane_size(border_id, delta, cached_total_pixel_size, ctx);
     }
 
     pub fn adjust_pane_size_by_id(
@@ -728,11 +730,14 @@ impl PaneNode {
         &mut self,
         border_id: EntityId,
         delta: f32,
+        cached_total_pixel_size: &mut Option<f32>,
         ctx: &mut ViewContext<PaneGroup>,
     ) -> bool {
         match self {
             PaneNode::Leaf(_) => false,
-            PaneNode::Branch(branch) => branch.adjust_pane_size(border_id, delta, ctx),
+            PaneNode::Branch(branch) => {
+                branch.adjust_pane_size(border_id, delta, cached_total_pixel_size, ctx)
+            }
         }
     }
 
@@ -1107,6 +1112,7 @@ impl PaneBranch {
         &mut self,
         border_id: EntityId,
         delta: f32,
+        cached_total_pixel_size: &mut Option<f32>,
         ctx: &mut ViewContext<PaneGroup>,
     ) -> bool {
         if let Some(idx) = self
@@ -1114,41 +1120,35 @@ impl PaneBranch {
             .iter()
             .position(|divider| divider.id == border_id)
         {
-            let pane_size_1 = self.nodes[idx].1.pane_size(ctx);
-            let pane_size_2 = self.nodes[idx + 1].1.pane_size(ctx);
-
             let flex_1 = self.nodes[idx].0 .0;
             let flex_2 = self.nodes[idx + 1].0 .0;
-
             let total_flex = flex_1 + flex_2;
 
-            let (size_1, size_2) = match self.axis {
-                SplitDirection::Horizontal => (pane_size_1.x(), pane_size_2.x()),
-                SplitDirection::Vertical => (pane_size_1.y(), pane_size_2.y()),
-            };
+            // On the first drag event after a render the sizes are fresh; cache the
+            // total so that subsequent events within the same frame use the same
+            // denominator and each delta accumulates correctly in the flex values.
+            let total_size = *cached_total_pixel_size.get_or_insert_with(|| {
+                let pane_size_1 = self.nodes[idx].1.pane_size(ctx);
+                let pane_size_2 = self.nodes[idx + 1].1.pane_size(ctx);
+                match self.axis {
+                    SplitDirection::Horizontal => pane_size_1.x() + pane_size_2.x(),
+                    SplitDirection::Vertical => pane_size_1.y() + pane_size_2.y(),
+                }
+            });
 
-            // Omit noise in dragging.
             let minimum_pane_size = get_minimum_pane_size(ctx);
-            if size_1 + delta < minimum_pane_size
-                || size_2 - delta < minimum_pane_size
-                || delta.abs() < f32::EPSILON
+            if let Some(new_flex) =
+                compute_new_flex(flex_1, flex_2, delta, total_size, minimum_pane_size)
             {
-                return true;
+                self.nodes[idx].0 = PaneFlex(new_flex);
+                self.nodes[idx + 1].0 = PaneFlex(total_flex - new_flex);
             }
-
-            // Re-distribute the flex factors.
-            let new_flex = ((size_1 + delta) / (size_1 + size_2) * total_flex)
-                .max(0.)
-                .min(total_flex);
-
-            self.nodes[idx].0 = PaneFlex(new_flex);
-            self.nodes[idx + 1].0 = PaneFlex(total_flex - new_flex);
 
             return true;
         }
 
         for (_, node) in &mut self.nodes {
-            if node.adjust_pane_size(border_id, delta, ctx) {
+            if node.adjust_pane_size(border_id, delta, cached_total_pixel_size, ctx) {
                 return true;
             }
         }
@@ -1190,7 +1190,7 @@ impl PaneBranch {
                 }
 
                 let divider_id = self.dividers[idx.min(self.dividers.len() - 1)].id;
-                self.adjust_pane_size(divider_id, delta, ctx);
+                self.adjust_pane_size(divider_id, delta, &mut None, ctx);
                 break;
             }
         }
@@ -1380,6 +1380,7 @@ fn create_divider(
                 border_id,
                 direction,
                 previous_mouse_location: position,
+                cached_total_pixel_size: None,
             }));
             DispatchEventResult::StopPropagation
         })
@@ -1428,6 +1429,7 @@ fn create_minimalist_divider(
                     border_id,
                     direction,
                     previous_mouse_location: position,
+                    cached_total_pixel_size: None,
                 }));
                 DispatchEventResult::StopPropagation
             })
@@ -1521,4 +1523,46 @@ impl From<crate::launch_configs::launch_config::SplitDirection> for SplitDirecti
             }
         }
     }
+}
+
+/// Computes the redistributed flex value for the first of two adjacent panes after
+/// a drag delta is applied.
+///
+/// `total_pixel_size` must be the combined pixel size of the two panes along the
+/// drag axis. Callers that invoke this in a drag loop should compute `total_pixel_size`
+/// once from rendered element sizes (when they are fresh) and pass the same cached
+/// value on subsequent calls; this ensures each delta accumulates correctly even
+/// when multiple drag events fire between render frames.
+///
+/// Returns `None` when the delta is below epsilon or would shrink either pane below
+/// `min_pane_size`, leaving both flex values unchanged. Returns `Some(new_flex_1)`
+/// otherwise; the caller is responsible for setting `flex_2 = total_flex - new_flex_1`.
+pub(crate) fn compute_new_flex(
+    flex_1: f32,
+    flex_2: f32,
+    delta: f32,
+    total_pixel_size: f32,
+    min_pane_size: f32,
+) -> Option<f32> {
+    if total_pixel_size < f32::EPSILON {
+        return None;
+    }
+    let total_flex = flex_1 + flex_2;
+    if total_flex < f32::EPSILON {
+        return None;
+    }
+
+    // Derive current pixel sizes from the flex ratio so that accumulated flex
+    // changes between render frames are reflected correctly.
+    let size_1 = flex_1 / total_flex * total_pixel_size;
+    let size_2 = flex_2 / total_flex * total_pixel_size;
+
+    if delta.abs() < f32::EPSILON
+        || size_1 + delta < min_pane_size
+        || size_2 - delta < min_pane_size
+    {
+        return None;
+    }
+
+    Some(((size_1 + delta) / total_pixel_size * total_flex).clamp(0., total_flex))
 }
