@@ -1135,6 +1135,37 @@ fn handle_terminal_view_event(
                     conversation_id: *conversation_id,
                 });
             }
+            Event::OpenChildAgentInNewPane { conversation_id } => {
+                // Split a fresh terminal pane to the right and load the
+                // child conversation into it via
+                // `enter_agent_view_for_conversation`. We deliberately do
+                // *not* reveal the orchestrator's hidden child pane here:
+                // its terminal model never accumulated rendered AI blocks
+                // for the conversation (those go into whichever pane was
+                // last hosting the in-place agent view via
+                // `SwitchAgentViewToConversation`), so revealing it would
+                // show an empty transcript. Going through a fresh terminal
+                // view forces the cloud load+restore path, which mirrors
+                // what "Open in new tab" already does.
+                let new_pane_id =
+                    group.add_terminal_pane(Direction::Right, None /* chosen_shell */, ctx);
+                if let Some(new_terminal_view) = group.terminal_view_from_pane_id(new_pane_id, ctx)
+                {
+                    let conversation_id = *conversation_id;
+                    new_terminal_view.update(ctx, |terminal_view, ctx| {
+                        terminal_view.enter_agent_view_for_conversation(
+                            None,
+                            AgentViewEntryOrigin::OrchestrationPillBar,
+                            conversation_id,
+                            ctx,
+                        );
+                    });
+                } else {
+                    log::warn!(
+                        "OpenChildAgentInNewPane: failed to resolve terminal view for newly created pane (conversation {conversation_id:?})"
+                    );
+                }
+            }
             Event::StartAgentConversation(request) => {
                 let request = request.clone();
                 match request.execution_mode.clone() {

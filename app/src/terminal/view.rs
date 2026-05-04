@@ -1989,6 +1989,19 @@ pub enum Event {
     OpenChildAgentInNewTab {
         conversation_id: AIConversationId,
     },
+    /// Emitted when the user picks "Open in new pane" from a child pill's
+    /// 3-dot menu in the orchestration pill bar. Bubbles up to `PaneGroup`,
+    /// which splits a fresh terminal pane to the right and loads the child
+    /// conversation into it via `enter_agent_view_for_conversation`. We
+    /// can't reuse the orchestrator's hidden child pane here — its
+    /// terminal model never received the rendered AI blocks for the
+    /// conversation (those are inserted into whichever pane was last
+    /// hosting the agent view in place), so revealing it would show a
+    /// blank transcript. Going through a fresh view + the cloud
+    /// load+restore path mirrors what "Open in new tab" already does.
+    OpenChildAgentInNewPane {
+        conversation_id: AIConversationId,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -25542,13 +25555,19 @@ impl TypedActionView for TerminalView {
                 );
             }
             OpenChildAgentInNewPane { conversation_id } => {
-                // "Open in new pane": orchestrator-spawned children already
-                // live in their own hidden pane within the orchestrator's
-                // pane group, so reveal that pane in place. If the child
-                // has been promoted out into another visible pane already,
-                // `RevealChildAgent`'s pane-group handler falls through to
-                // focusing it via `find_visible_terminal_pane_for_conversation`.
-                ctx.emit(Event::RevealChildAgent {
+                // "Open in new pane": split a fresh terminal pane to the
+                // right and load the child conversation into it. We do
+                // *not* reveal the orchestrator's hidden child pane here
+                // — that pane's terminal model has no rendered AI blocks
+                // for the conversation (they live in whichever pane last
+                // hosted the in-place agent view via
+                // `SwitchAgentViewToConversation`), so revealing it would
+                // show an empty transcript. Going through a fresh view
+                // forces the cloud load+restore path in
+                // `enter_agent_view_for_conversation`, which mirrors what
+                // "Open in new tab" does and gives a fully populated
+                // history view.
+                ctx.emit(Event::OpenChildAgentInNewPane {
                     conversation_id: *conversation_id,
                 });
             }
