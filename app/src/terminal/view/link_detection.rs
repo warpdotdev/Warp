@@ -27,6 +27,9 @@ cfg_if::cfg_if! {
             util::openable_file_type::FileTarget,
         };
         use std::path::PathBuf;
+        use warp_util::listing_command::{
+            listing_command_argument_dir, DEFAULT_LISTING_COMMANDS,
+        };
         use warp_util::path::CleanPathResult;
         use warp_util::path::LineAndColumnArg;
     }
@@ -443,15 +446,49 @@ impl super::TerminalView {
     ) {
         // For AltScreen we scan for relative path with the current working directory.
         // For BlockList we scan for relative path with the pwd of the hovered block.
-        let pwd_to_scan_for = match position {
-            WithinModel::AltScreen(_) => self.pwd_if_local(ctx),
-            WithinModel::BlockList(inner) => self
-                .model
-                .lock()
-                .block_list()
-                .block_at(inner.block_index)
-                .filter(|block| !self.is_block_considered_remote(block.session_id(), None, ctx)) // Don't scan for file links if the block is on remote sessions
-                .and_then(|block| block.pwd().map(String::from)),
+        //
+        // For BlockList we also look at the block's command: if the block ran a
+        // directory-listing command (`ls DIR/`, `eza DIR/`, etc.), bare filenames in
+        // its output are rooted at DIR, not at the block's pwd. `listing_dir_to_scan`
+        // holds the resolved argument directory (`pwd.join(DIR)`) in that case, and is
+        // tried first during candidate resolution. If the block's command is not a
+        // listing command, or has no directory argument, this is `None` and the
+        // existing pwd-only resolution is used.
+        //
+        // `top_level_command` resolves shell aliases (e.g. `ll` → `ls`) via
+        // `Block::top_level_command`, which delegates to the active session's alias
+        // table. We pass the resolved name to `listing_command_argument_dir` so
+        // user-aliased listing commands trigger the fix without needing their alias
+        // name in the `DEFAULT_LISTING_COMMANDS` list.
+        let (pwd_to_scan_for, listing_dir_to_scan) = match position {
+            WithinModel::AltScreen(_) => (self.pwd_if_local(ctx), None),
+            WithinModel::BlockList(inner) => {
+                let sessions = self.sessions.as_ref(ctx);
+                let model_guard = self.model.lock();
+                let (pwd, command, top_level) = model_guard
+                    .block_list()
+                    .block_at(inner.block_index)
+                    .filter(|block| !self.is_block_considered_remote(block.session_id(), None, ctx))
+                    .map(|block| {
+                        (
+                            block.pwd().map(String::from),
+                            block.command_to_string(),
+                            block.top_level_command(sessions),
+                        )
+                    })
+                    .unwrap_or((None, String::new(), None));
+                drop(model_guard);
+
+                let listing_dir = pwd.as_deref().and_then(|pwd_str| {
+                    listing_command_argument_dir(
+                        &command,
+                        top_level.as_deref(),
+                        std::path::Path::new(pwd_str),
+                        DEFAULT_LISTING_COMMANDS,
+                    )
+                });
+                (pwd, listing_dir)
+            }
         };
 
         match pwd_to_scan_for {
@@ -473,6 +510,7 @@ impl super::TerminalView {
                     .spawn(move || {
                         let paths = Self::compute_valid_paths(
                             &path,
+                            listing_dir_to_scan.as_deref(),
                             possible_paths,
                             max_columns,
                             shell_launch_data,
@@ -499,20 +537,49 @@ impl super::TerminalView {
 
     fn compute_valid_paths(
         working_directory: &str,
+        listing_dir: Option<&std::path::Path>,
         possible_paths: impl Iterator<Item = WithinModel<grid_handler::PossiblePath>>,
         max_columns: usize,
         shell_launch_data: Option<ShellLaunchData>,
     ) -> Option<GridHighlightedLink> {
+        // Try to resolve `clean_path` against the block's listing-command argument
+        // directory first (if any), then against the block's working directory. The
+        // listing directory takes precedence so bare filenames from `ls DIR/` output
+        // resolve into DIR, not into CWD — fixing the silent-misresolution bug where
+        // a same-named file in CWD would otherwise win.
+        let try_resolve = |clean_path: &CleanPathResult| -> Option<PathBuf> {
+            // Only attempt listing-dir resolution for bare entry names (no path
+            // separators). Candidates like `subdir/README.md`, `./foo`, or absolute
+            // paths already resolve correctly against CWD and must not be double-joined
+            // with the listing directory.
+            if let Some(listing_dir) = listing_dir {
+                let path_str = &clean_path.path;
+                let is_bare_name = !path_str.contains('/')
+                    && !path_str.contains('\\')
+                    && !path_str.starts_with('~');
+                if is_bare_name {
+                    if let Some(resolved) = absolute_path_if_valid(
+                        clean_path,
+                        ShellPathType::PlatformNative(listing_dir.to_path_buf()),
+                        shell_launch_data.as_ref(),
+                    ) {
+                        return Some(resolved);
+                    }
+                }
+            }
+            absolute_path_if_valid(
+                clean_path,
+                ShellPathType::ShellNative(working_directory.to_string()),
+                shell_launch_data.as_ref(),
+            )
+        };
+
         let mut link = None;
         'path_loop: for within_model_possible_path in possible_paths {
             let possible_path = within_model_possible_path.get_inner();
             // We want to check if the clean path result is a valid path and get the canonical
             // absolute path back.
-            let absolute_path = absolute_path_if_valid(
-                &possible_path.path,
-                ShellPathType::ShellNative(working_directory.to_string()),
-                shell_launch_data.as_ref(),
-            );
+            let absolute_path = try_resolve(&possible_path.path);
 
             if let Some(absolute_path) = absolute_path {
                 link = Some(Self::create_valid_link(
@@ -530,11 +597,7 @@ impl super::TerminalView {
                         path: new_possible_path.into(),
                         line_and_column_num: possible_path.path.line_and_column_num,
                     };
-                    let absolute_path = absolute_path_if_valid(
-                        &new_possible_cleaned_path,
-                        ShellPathType::ShellNative(working_directory.to_string()),
-                        shell_launch_data.as_ref(),
-                    );
+                    let absolute_path = try_resolve(&new_possible_cleaned_path);
 
                     // check if new_possible_path is valid
                     if let Some(absolute_path) = absolute_path {
@@ -562,11 +625,7 @@ impl super::TerminalView {
                         path: new_possible_path.into(),
                         line_and_column_num: possible_path.path.line_and_column_num,
                     };
-                    let absolute_path = absolute_path_if_valid(
-                        &new_possible_cleaned_path,
-                        ShellPathType::ShellNative(working_directory.to_string()),
-                        shell_launch_data.as_ref(),
-                    );
+                    let absolute_path = try_resolve(&new_possible_cleaned_path);
 
                     // check if new_possible_path is valid
                     if let Some(absolute_path) = absolute_path {
