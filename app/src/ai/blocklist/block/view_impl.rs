@@ -1115,7 +1115,7 @@ impl View for AIBlock {
                 thinking_display_mode: AISettings::as_ref(app).thinking_display_mode,
                 conversation_has_imported_comments: self
                     .model
-                    .is_latest_non_passive_exchange_in_root_task(app)
+                    .is_latest_visible_exchange_in_root_task(app)
                     && self.has_imported_comments_in_current_thread(app),
                 ask_user_question_view: self.ask_user_question_view.as_ref(),
             },

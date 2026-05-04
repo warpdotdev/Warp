@@ -5520,16 +5520,29 @@ impl TerminalView {
                     // which enables visual continuity in the requested command's expanded state
                     // (e.g. the expanded requested command header appears right on top of the
                     // running command block; they appear part of the same UI component).
-                    if let Some(result_ai_block_id) =
+                    if let Some((result_ai_block_id, result_conversation_id, result_exchange_id)) =
                         self.rich_content_views.iter().find_map(|view| {
                             let ai_metadata = view.ai_block_metadata()?;
                             ai_metadata
                                 .ai_block_handle
                                 .as_ref(ctx)
                                 .contains_action_result(initial_requested_command_id, ctx)
-                                .then_some(view.view_id())
+                                .then_some((
+                                    view.view_id(),
+                                    ai_metadata.conversation_id,
+                                    ai_metadata.exchange_id,
+                                ))
                         })
                     {
+                        BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
+                            history_model.set_exchange_hidden_status(
+                                self.view_id,
+                                result_conversation_id,
+                                result_exchange_id,
+                                true,
+                                ctx,
+                            );
+                        });
                         self.rich_content_views
                             .retain(|rich_content| rich_content.view_id() != result_ai_block_id);
                         self.model

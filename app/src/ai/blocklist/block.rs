@@ -5293,7 +5293,11 @@ impl AIBlock {
 
         if self.has_imported_comments {
             self.update_own_imported_comments_disabled_state(canonical_cwd.as_deref(), ctx);
-        } else if self.model.is_latest_non_passive_exchange_in_root_task(ctx) {
+        } else if self.model.is_latest_visible_exchange_in_root_task(ctx) {
+            // The "Open all" button is rendered by the latest visible exchange when the
+            // current thread has imported comments but this block does not own them directly.
+            // Update that block's button state from its CWD so the button disables when the
+            // user navigates outside the imported comments' repository.
             self.update_open_all_button_disabled_state(canonical_cwd.as_deref(), ctx);
         } else {
             return;

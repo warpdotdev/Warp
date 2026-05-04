@@ -1113,9 +1113,15 @@ impl AIConversation {
 
     /// Returns the last exchange that didn't contain a passive request.
     pub fn last_non_passive_exchange(&self) -> Option<&AIAgentExchange> {
+        self.exchanges_reversed().find(|e| !e.has_passive_request())
+    }
+
+    /// Returns the latest root task exchange that has a visible AI block.
+    /// Passive exchanges do not render conversation-level controls, and hidden exchanges have
+    /// been removed from the blocklist.
+    pub fn latest_visible_exchange(&self) -> Option<&AIAgentExchange> {
         self.exchanges_reversed()
-            .skip_while(|e| e.has_passive_request())
-            .nth(0)
+            .find(|e| !e.has_passive_request() && !self.is_exchange_hidden(e.id))
     }
 
     pub fn first_exchange(&self) -> Option<&AIAgentExchange> {

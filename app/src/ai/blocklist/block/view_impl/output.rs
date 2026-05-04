@@ -212,6 +212,24 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
     let is_conversation_in_progress = conversation_status.is_some_and(|s| s.is_in_progress());
 
     let status = props.model.status(app);
+    let has_expanded_last_requested_command = status.output_to_render().is_some_and(|output| {
+        let output = output.get();
+        output.messages.last().is_some_and(|message| {
+            let AIAgentOutputMessageType::Action(action) = &message.message else {
+                return false;
+            };
+
+            matches!(
+                &action.action,
+                AIAgentActionType::RequestCommandOutput { .. }
+            ) && props
+                .requested_commands
+                .get(&action.id)
+                .is_some_and(|requested_command| {
+                    requested_command.view.as_ref(app).is_header_expanded()
+                })
+        })
+    });
     match status {
         // Ignore errors if the response is not yet complete-- it could be a deserialization
         // error that corrects itself when more output is streamed in.
@@ -230,7 +248,8 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                 // when the entire response is complete to avoid intermediate states.
                 let mut should_render_references_section = is_complete && request_type.is_active();
                 let mut should_render_suggestions = is_complete
-                    && props.model.is_latest_non_passive_exchange_in_root_task(app)
+                    && props.model.is_latest_visible_exchange_in_root_task(app)
+                    && !has_expanded_last_requested_command
                     && !is_conversation_in_progress
                     && !is_output_for_static_prompt_suggestions
                     && request_type.is_active();
@@ -240,8 +259,9 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                     request_type.is_passive_code_diff() && props.has_accepted_edits;
 
                 let mut should_render_footer =
-                    (props.model.is_latest_non_passive_exchange_in_root_task(app)
+                    (props.model.is_latest_visible_exchange_in_root_task(app)
                         || requires_special_footer)
+                        && !has_expanded_last_requested_command
                         && !is_output_for_static_prompt_suggestions
                         && !is_conversation_in_progress
                         && request_type.is_active()
@@ -1106,7 +1126,8 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                 .finish(),
             );
 
-            if props.model.is_latest_non_passive_exchange_in_root_task(app)
+            if props.model.is_latest_visible_exchange_in_root_task(app)
+                && !has_expanded_last_requested_command
                 && !props.model.is_restored()
                 && !error.is_invalid_api_key()
             {

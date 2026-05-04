@@ -23,6 +23,7 @@ use warpui::{
     ViewContext, ViewHandle,
 };
 
+use crate::ai::agent::conversation::ConversationStatus;
 use crate::ai::agent::{AIAgentActionResult, AIAgentActionType};
 use warpui::{EntityId, EventContext};
 
@@ -1491,23 +1492,26 @@ impl View for RequestedCommandView {
         let should_remove_bottom_margin = is_rendered_above_expanded_command_block
             || ((self.action_type.is_requested_command() || self.action_type.is_mcp_tool())
                 && is_last_output_message_in_output
-                && BlocklistAIHistoryModel::as_ref(app)
+                && (BlocklistAIHistoryModel::as_ref(app)
                     .conversation(&self.client_ids.conversation_id)
                     .is_some_and(|conversation| {
-                        let mut exchanges = conversation.root_task_exchanges();
-                        while let Some(exchange) = exchanges.next() {
-                            if exchange.id == self.client_ids.client_exchange_id {
-                                // If the next exchange doesn't contain a user query, don't render bottom margin for continuity.
-                                return exchanges.next().is_some_and(|exchange| {
+                        // Prevents an issue where the bottom margin is removed when the requested command is the last message and we cancel it.
+                        // We want to keep the margin in this case so that there's visual separation between the cancelled command and footer.
+                        conversation.status() != &ConversationStatus::Cancelled
+                            // If the next exchange doesn't contain a user query, don't render bottom margin for continuity.
+                            && conversation
+                                .root_task_exchanges()
+                                .skip_while(|exchange| {
+                                    exchange.id != self.client_ids.client_exchange_id
+                                })
+                                .nth(1)
+                                .map_or(false, |exchange| {
                                     !exchange
                                         .input
                                         .iter()
                                         .any(|input| input.user_query().is_some())
-                                });
-                            }
-                        }
-                        false
-                    })
+                                })
+                    }))
                 && !is_input_pinned_to_top);
 
         let container = Container::new(content.finish())
