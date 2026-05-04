@@ -12,7 +12,7 @@ use crate::ai::agent_management::notifications::{
     NotificationSourceAgent,
 };
 use crate::ai::artifacts::Artifact;
-use crate::ai::blocklist::BlocklistAIHistoryEvent;
+use crate::ai::blocklist::{BlocklistAIHistoryEvent, ConversationStatusUpdate};
 use crate::server::telemetry::TelemetryEvent;
 use crate::terminal::cli_agent_sessions::{
     CLIAgentSessionStatus, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
@@ -250,7 +250,8 @@ impl AgentNotificationsModel {
             terminal_view_id,
             conversation_id,
             // We shouldn't trigger toasts when restoring conversations on startup.
-            is_restored: false,
+            update: ConversationStatusUpdate::Changed { .. },
+            ..
         } = event
         else {
             return;
