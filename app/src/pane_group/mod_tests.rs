@@ -74,6 +74,7 @@ use crate::{
 use repo_metadata::RepoMetadataModel;
 use repo_metadata::{repositories::DetectedRepositories, watcher::DirectoryWatcher};
 use std::collections::HashMap;
+use std::path::Path;
 use uuid::Uuid;
 use warp_core::features::FeatureFlag;
 use watcher::HomeDirectoryWatcher;
@@ -92,6 +93,52 @@ use warpui::{
     platform::{WindowBounds, WindowStyle},
     App, ModelHandle,
 };
+
+#[test]
+fn test_tab_config_pending_command_changes_to_template_cwd_first() {
+    let commands = vec![CommandTemplate {
+        exec: "pwd".to_string(),
+    }];
+
+    assert_eq!(
+        PaneGroup::pending_command_for_template_commands(
+            Some(Path::new("/Users/me/projects/website")),
+            &commands
+        ),
+        "cd /Users/me/projects/website && pwd"
+    );
+}
+
+#[test]
+fn test_tab_config_pending_command_uses_resolved_template_cwd() {
+    let commands = vec![CommandTemplate {
+        exec: "pwd".to_string(),
+    }];
+    let cwd = PaneGroup::startup_directory_for_template_cwd(Path::new("."));
+    let cwd = cwd.expect("current directory should exist");
+    let cwd_display = cwd.display().to_string();
+    let quoted_cwd = shell_words::quote(&cwd_display);
+
+    assert!(cwd.is_absolute());
+    assert_eq!(
+        PaneGroup::pending_command_for_template_commands(Some(cwd.as_path()), &commands),
+        format!("cd {quoted_cwd} && pwd")
+    );
+}
+
+#[test]
+fn test_tab_config_pending_command_skips_missing_template_cwd() {
+    let commands = vec![CommandTemplate {
+        exec: "pwd".to_string(),
+    }];
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let cwd = PaneGroup::startup_directory_for_template_cwd(&temp_dir.path().join("missing"));
+
+    assert_eq!(
+        PaneGroup::pending_command_for_template_commands(cwd.as_deref(), &commands),
+        "pwd"
+    );
+}
 
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
