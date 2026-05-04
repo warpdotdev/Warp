@@ -1,16 +1,18 @@
 use pathfinder_color::ColorU;
+use pathfinder_geometry::vector::Vector2F;
 use settings::Setting;
 use warp_core::ui::{appearance::Appearance, Icon};
 use warpui::{
     elements::{
-        ConstrainedBox, Container, CrossAxisAlignment, Empty, Flex, Hoverable, MainAxisSize,
-        MouseStateHandle, ParentElement, Shrinkable, Text,
+        ConstrainedBox, Container, CrossAxisAlignment, Empty, Expanded, Flex, Hoverable,
+        MainAxisSize, MouseStateHandle, ParentElement, SavePosition, Shrinkable, Text,
     },
     fonts::{Properties, Style, Weight::Bold},
     platform::Cursor,
     prelude::{Border, CornerRadius, Radius},
     text_layout::ClipConfig,
-    Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
+    AppContext, Element, Entity, EntityId, EventContext, ModelHandle, SingletonEntity,
+    TypedActionView, View, ViewContext,
 };
 
 use crate::{
@@ -31,6 +33,8 @@ use super::{AgentViewController, AgentViewEntryOrigin};
 #[derive(Default)]
 struct StateHandles {
     block: MouseStateHandle,
+    fork_button: MouseStateHandle,
+    chevron_button: MouseStateHandle,
 }
 
 pub struct AgentViewEntryBlockParams {
@@ -52,6 +56,7 @@ pub struct AgentViewEntryBlock {
     /// Cached title for rendering when conversation no longer exists (i.e. after deletion).
     cached_title: Option<String>,
     state_handles: StateHandles,
+    view_id: EntityId,
 }
 
 impl AgentViewEntryBlock {
@@ -96,8 +101,13 @@ impl AgentViewEntryBlock {
             origin,
             cached_title: Default::default(),
             state_handles: Default::default(),
+            view_id: ctx.view_id(),
         }
     }
+}
+
+pub fn get_agent_view_entry_block_position_id(view_id: EntityId) -> String {
+    format!("agent_view_entry_block_{view_id}")
 }
 
 pub fn render_block_container(
@@ -155,6 +165,41 @@ fn render_subtext(text: String, appearance: &Appearance) -> Box<dyn Element> {
     .finish()
 }
 
+/// Renders a custom button with icon and hover/click states for the Agent View Block.
+fn render_agent_view_block_button<F>(
+    icon: Icon,
+    icon_color: ColorU,
+    mouse_state: MouseStateHandle,
+    appearance: &Appearance,
+    on_click: F,
+) -> Box<dyn Element>
+where
+    F: 'static + FnMut(&mut EventContext, &AppContext, Vector2F),
+{
+    Hoverable::new(mouse_state, move |state| {
+        let container = Container::new(
+            ConstrainedBox::new(icon.to_warpui_icon(icon_color.into()).finish())
+                .with_height(20.)
+                .with_width(20.)
+                .finish(),
+        )
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(5.)));
+
+        let container = if state.is_clicked() {
+            container.with_background(blended_colors::fg_overlay_4(appearance.theme()))
+        } else if state.is_hovered() {
+            container.with_background(blended_colors::fg_overlay_3(appearance.theme()))
+        } else {
+            container
+        };
+
+        container.finish()
+    })
+    .with_cursor(Cursor::PointingHand)
+    .on_click(on_click)
+    .finish()
+}
+
 fn render_deleted_state(
     origin: AgentViewEntryOrigin,
     cached_title: Option<String>,
@@ -203,6 +248,7 @@ impl View for AgentViewEntryBlock {
         }
 
         let appearance = Appearance::as_ref(app);
+        let theme = appearance.theme();
         let are_block_dividers_enabled =
             *BlockListSettings::as_ref(app).show_block_dividers.value();
 
@@ -242,47 +288,6 @@ impl View for AgentViewEntryBlock {
             }
         };
 
-        let mut row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_child(
-                Container::new(
-                    ConstrainedBox::new(status_icon.finish())
-                        .with_height(16.)
-                        .with_width(16.)
-                        .finish(),
-                )
-                .with_uniform_padding(2.)
-                .with_background_color(status_icon_bg)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-                .with_margin_right(8.)
-                .finish(),
-            )
-            .with_child(
-                Shrinkable::new(
-                    1.,
-                    Text::new(
-                        conversation
-                            .title()
-                            .unwrap_or("Untitled conversation".to_string()),
-                        appearance.ui_font_family(),
-                        appearance.monospace_font_size(),
-                    )
-                    .with_color(blended_colors::text_main(
-                        appearance.theme(),
-                        appearance.theme().background(),
-                    ))
-                    .with_style(Properties {
-                        weight: Bold,
-                        ..Default::default()
-                    })
-                    .soft_wrap(false)
-                    .with_clip(ClipConfig::ellipsis())
-                    .finish(),
-                )
-                .finish(),
-            );
-
         let is_active =
             ActiveAgentViewsModel::as_ref(app).is_conversation_open(self.conversation_id, app);
         let is_active_in_this_pane = self
@@ -309,59 +314,155 @@ impl View for AgentViewEntryBlock {
             None
         };
 
+        // Build the title+subtext section. Wrapping it in Expanded causes it
+        // to fill all remaining horizontal space, pinning the action buttons
+        // to the far right edge of the banner.
+        let mut title_section = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(
+                Shrinkable::new(
+                    1.,
+                    Text::new(
+                        conversation
+                            .title()
+                            .unwrap_or("Untitled conversation".to_string()),
+                        appearance.ui_font_family(),
+                        appearance.monospace_font_size(),
+                    )
+                    .with_color(blended_colors::text_main(
+                        appearance.theme(),
+                        appearance.theme().background(),
+                    ))
+                    .with_style(Properties {
+                        weight: Bold,
+                        ..Default::default()
+                    })
+                    .soft_wrap(false)
+                    .with_clip(ClipConfig::ellipsis())
+                    .finish(),
+                )
+                .finish(),
+            );
         if let Some(subtext) = subtext {
-            row.add_child(render_subtext(subtext.to_string(), appearance));
+            title_section.add_child(render_subtext(subtext.to_string(), appearance));
         }
 
-        row.add_child(
-            Container::new(Empty::new().finish())
+        let conversation_id = self.conversation_id;
+        let icon_color = blended_colors::text_sub(theme, theme.background());
+        let fork_button = ConstrainedBox::new(render_agent_view_block_button(
+            Icon::ArrowSplit,
+            icon_color,
+            self.state_handles.fork_button.clone(),
+            appearance,
+            move |ctx, _, _| {
+                ctx.dispatch_typed_action(EnterAgentBlockAction::ForkConversation {
+                    conversation_id,
+                });
+            },
+        ))
+        .with_height(20.)
+        .with_width(20.)
+        .finish();
+
+        let chevron_button = ConstrainedBox::new(render_agent_view_block_button(
+            Icon::ChevronRight,
+            icon_color,
+            self.state_handles.chevron_button.clone(),
+            appearance,
+            move |ctx, _, _| {
+                ctx.dispatch_typed_action(EnterAgentBlockAction::EnterAgentMode {
+                    conversation_id,
+                });
+            },
+        ))
+        .with_height(20.)
+        .with_width(20.)
+        .finish();
+
+        let row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_child(
+                Container::new(
+                    ConstrainedBox::new(status_icon.finish())
+                        .with_height(16.)
+                        .with_width(16.)
+                        .finish(),
+                )
+                .with_uniform_padding(2.)
+                .with_background_color(status_icon_bg)
+                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
                 .with_margin_right(8.)
                 .finish(),
-        );
-        row.add_child(
-            ConstrainedBox::new(
-                Icon::ChevronRight
-                    .to_warpui_icon(
-                        blended_colors::text_sub(
-                            appearance.theme(),
-                            appearance.theme().background(),
-                        )
-                        .into(),
-                    )
-                    .finish(),
             )
-            .with_height(20.)
-            .with_width(20.)
-            .finish(),
-        );
+            // Expanded fills all remaining space, pushing buttons to the right.
+            .with_child(Expanded::new(1., title_section.finish()).finish())
+            .with_child(Container::new(fork_button).with_margin_left(8.).finish())
+            .with_child(chevron_button);
 
-        let conversation_id = self.conversation_id;
         let origin = self.origin;
-        Hoverable::new(self.state_handles.block.clone(), move |hoverable_state| {
-            let background = if hoverable_state.is_hovered() {
-                blended_colors::fg_overlay_2(appearance.theme())
-            } else {
-                blended_colors::fg_overlay_1(appearance.theme())
-            };
-            render_block_container(
-                origin,
-                row.finish(),
-                background.into(),
-                appearance,
-                are_block_dividers_enabled,
-            )
-        })
-        .with_cursor(Cursor::PointingHand)
-        .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(EnterAgentBlockAction::EnterAgentMode { conversation_id });
-        })
+        let entry_block_id = self.view_id;
+        let entry_block_position_id = get_agent_view_entry_block_position_id(entry_block_id);
+        SavePosition::new(
+            Hoverable::new(self.state_handles.block.clone(), move |hoverable_state| {
+                let background = if hoverable_state.is_hovered() {
+                    blended_colors::fg_overlay_2(appearance.theme())
+                } else {
+                    blended_colors::fg_overlay_1(appearance.theme())
+                };
+                render_block_container(
+                    origin,
+                    row.finish(),
+                    background.into(),
+                    appearance,
+                    are_block_dividers_enabled,
+                )
+            })
+            .with_cursor(Cursor::PointingHand)
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(EnterAgentBlockAction::EnterAgentMode {
+                    conversation_id,
+                });
+            })
+            .on_right_click(move |ctx, _, position| {
+                let Some(entry_bounds) = ctx.element_position_by_id(&entry_block_position_id)
+                else {
+                    log::warn!(
+                        "Could not retrieve the position of the agent view entry block for context menu display."
+                    );
+                    return;
+                };
+                // Subtract the block's origin so the position is expressed relative
+                // to the block element. OffsetPositioning::offset_from_save_position_element
+                // then offsets the menu from the saved block position, placing it at
+                // the exact mouse cursor location.
+                ctx.dispatch_typed_action(EnterAgentBlockAction::OpenConversationContextMenu {
+                    conversation_id,
+                    agent_view_entry_block_id: entry_block_id,
+                    position: position - entry_bounds.origin(),
+                });
+            })
+            .with_defer_events_to_children()
+            .finish(),
+            &get_agent_view_entry_block_position_id(entry_block_id),
+        )
         .finish()
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum AgentViewEntryBlockEvent {
-    EnterAgentView { conversation_id: AIConversationId },
+    EnterAgentView {
+        conversation_id: AIConversationId,
+    },
+    OpenConversationContextMenu {
+        conversation_id: AIConversationId,
+        agent_view_entry_block_id: EntityId,
+        position: Vector2F,
+    },
+    ForkConversation {
+        conversation_id: AIConversationId,
+    },
 }
 
 impl Entity for AgentViewEntryBlock {
@@ -370,7 +471,17 @@ impl Entity for AgentViewEntryBlock {
 
 #[derive(Debug, Clone)]
 pub enum EnterAgentBlockAction {
-    EnterAgentMode { conversation_id: AIConversationId },
+    EnterAgentMode {
+        conversation_id: AIConversationId,
+    },
+    OpenConversationContextMenu {
+        conversation_id: AIConversationId,
+        agent_view_entry_block_id: EntityId,
+        position: Vector2F,
+    },
+    ForkConversation {
+        conversation_id: AIConversationId,
+    },
 }
 
 impl TypedActionView for AgentViewEntryBlock {
@@ -415,6 +526,22 @@ impl TypedActionView for AgentViewEntryBlock {
                         conversation_id: *conversation_id,
                     });
                 }
+            }
+            EnterAgentBlockAction::OpenConversationContextMenu {
+                conversation_id,
+                agent_view_entry_block_id,
+                position,
+            } => {
+                ctx.emit(AgentViewEntryBlockEvent::OpenConversationContextMenu {
+                    conversation_id: *conversation_id,
+                    agent_view_entry_block_id: *agent_view_entry_block_id,
+                    position: *position,
+                });
+            }
+            EnterAgentBlockAction::ForkConversation { conversation_id } => {
+                ctx.emit(AgentViewEntryBlockEvent::ForkConversation {
+                    conversation_id: *conversation_id,
+                });
             }
         }
     }

@@ -318,6 +318,19 @@ impl TerminalView {
                     *conversation_id,
                     ctx,
                 ),
+            AgentViewEntryBlockEvent::OpenConversationContextMenu {
+                conversation_id,
+                agent_view_entry_block_id,
+                position,
+            } => me.open_agent_view_entry_context_menu(
+                *conversation_id,
+                *agent_view_entry_block_id,
+                *position,
+                ctx,
+            ),
+            AgentViewEntryBlockEvent::ForkConversation { conversation_id } => {
+                me.fork_ai_conversation(*conversation_id, None, ctx);
+            }
         });
         self.insert_rich_content(
             Some(RichContentType::EnterAgentView),
