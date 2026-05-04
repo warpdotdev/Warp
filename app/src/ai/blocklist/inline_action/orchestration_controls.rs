@@ -42,7 +42,6 @@ pub const ORCHESTRATION_PICKER_HEIGHT: f32 = 36.;
 pub const ORCHESTRATION_PICKER_BORDER_WIDTH: f32 = 1.;
 pub const ORCHESTRATION_PICKER_FONT_SIZE: f32 = 14.;
 pub const ORCHESTRATION_PICKER_RADIUS: f32 = 4.;
-pub const ORCHESTRATION_LOCAL_PICKER_WIDTH: f32 = 220.;
 
 // ── Action trait ────────────────────────────────────────────────────
 
@@ -268,6 +267,7 @@ pub fn new_standard_picker_dropdown<A: OrchestrationControlAction, V: View>(
         dropdown.set_main_axis_size(MainAxisSize::Max, ctx_dropdown);
         dropdown.set_style(DropdownStyle::ActionButtonSecondary, ctx_dropdown);
         dropdown.set_top_bar_height(ORCHESTRATION_PICKER_HEIGHT, ctx_dropdown);
+        dropdown.set_top_bar_max_width(f32::INFINITY);
         dropdown.set_padding(padding, ctx_dropdown);
         dropdown.set_border_radius(corner_radius, ctx_dropdown);
         dropdown.set_background(background, ctx_dropdown);
@@ -288,9 +288,10 @@ pub fn populate_model_picker<A: OrchestrationControlAction, V: View>(
     dropdown.update(ctx, |dropdown, ctx_dropdown| {
         let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
         let choices: Vec<_> = llm_prefs.get_base_llm_choices_for_agent_mode().collect();
-        let initial_index = choices
+        let selected_display_name = choices
             .iter()
-            .position(|llm| llm.id.to_string() == initial_model_id);
+            .find(|llm| llm.id.to_string() == initial_model_id)
+            .map(|llm| llm.menu_display_name());
         let items = available_model_menu_items(
             choices,
             move |llm| DropdownAction::SelectActionAndClose(A::model_changed(llm.id.to_string())),
@@ -301,8 +302,8 @@ pub fn populate_model_picker<A: OrchestrationControlAction, V: View>(
             ctx_dropdown,
         );
         dropdown.set_rich_items(items, ctx_dropdown);
-        if let Some(idx) = initial_index {
-            dropdown.set_selected_by_index(idx, ctx_dropdown);
+        if let Some(name) = &selected_display_name {
+            dropdown.set_selected_by_name(name, ctx_dropdown);
         }
     });
 }
@@ -360,6 +361,7 @@ pub fn create_environment_picker<A: OrchestrationControlAction, V: View>(
         dropdown.set_button_variant(ButtonVariant::Secondary);
         dropdown.set_style(styles);
         dropdown.set_top_bar_height(ORCHESTRATION_PICKER_HEIGHT, ctx_dropdown);
+        dropdown.set_top_bar_max_width(f32::INFINITY);
         dropdown
     });
     dropdown_handle.update(ctx, |dropdown, ctx_dropdown| {
@@ -405,7 +407,11 @@ pub fn populate_host_picker<A: OrchestrationControlAction, V: View>(
     initial_host: &str,
     ctx: &mut ViewContext<V>,
 ) {
-    let initial_host = initial_host.to_string();
+    let initial_host = if initial_host.is_empty() {
+        ORCHESTRATION_WARP_WORKER_HOST.to_string()
+    } else {
+        initial_host.to_string()
+    };
     dropdown.update(ctx, |dropdown, ctx_dropdown| {
         let hosts: &[&str] = if matches!(ChannelState::channel(), Channel::Local) {
             &["warp", "local-dev"]
@@ -440,13 +446,15 @@ pub fn sync_picker_selections<A: OrchestrationControlAction, V: View>(
     if let Some(model_picker) = handles.model_picker.clone() {
         let target_model_id = state.model_id.clone();
         model_picker.update(ctx, |dropdown, ctx_dropdown| {
-            let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
-            let choices: Vec<_> = llm_prefs.get_base_llm_choices_for_agent_mode().collect();
-            if let Some(idx) = choices
-                .iter()
-                .position(|llm| llm.id.to_string() == target_model_id)
-            {
-                dropdown.set_selected_by_index(idx, ctx_dropdown);
+            let display_name = {
+                let llm_prefs = LLMPreferences::as_ref(ctx_dropdown);
+                llm_prefs
+                    .get_base_llm_choices_for_agent_mode()
+                    .find(|llm| llm.id.to_string() == target_model_id)
+                    .map(|llm| llm.menu_display_name())
+            };
+            if let Some(name) = &display_name {
+                dropdown.set_selected_by_name(name, ctx_dropdown);
             }
         });
     }
@@ -492,6 +500,7 @@ pub fn render_mode_toggle<A: OrchestrationControlAction>(
     handles: &OrchestrationPickerHandles<A>,
     appearance: &Appearance,
     active_segment_bg: Option<Fill>,
+    full_width: bool,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let label = Text::new(
@@ -535,12 +544,21 @@ pub fn render_mode_toggle<A: OrchestrationControlAction>(
         .with_corner_radius(CornerRadius::with_all(Radius::Pixels(6.)))
         .with_background(segment_outer_bg)
         .finish();
-    let segmented_control = ConstrainedBox::new(segmented_control)
-        .with_width(205.)
-        .finish();
+    let segmented_control = if full_width {
+        segmented_control
+    } else {
+        ConstrainedBox::new(segmented_control)
+            .with_width(205.)
+            .finish()
+    };
 
+    let cross_axis = if full_width {
+        CrossAxisAlignment::Stretch
+    } else {
+        CrossAxisAlignment::Start
+    };
     Flex::column()
-        .with_cross_axis_alignment(CrossAxisAlignment::Start)
+        .with_cross_axis_alignment(cross_axis)
         .with_child(Container::new(label).with_margin_bottom(6.).finish())
         .with_child(segmented_control)
         .finish()
@@ -591,67 +609,89 @@ pub fn render_picker_row<A: OrchestrationControlAction>(
     handles: &OrchestrationPickerHandles<A>,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
-    let is_remote = state.execution_mode.is_remote();
-    let main_axis_size = if is_remote {
-        MainAxisSize::Max
-    } else {
-        MainAxisSize::Min
-    };
-    let mut row = Flex::row()
-        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .with_main_axis_size(main_axis_size)
-        .with_main_axis_alignment(MainAxisAlignment::Start)
-        .with_spacing(12.);
+    render_picker_row_with_layout(state, handles, appearance, false)
+}
 
-    let add_picker = |row: &mut Flex, label: &str, picker: Option<Box<dyn Element>>| {
-        let column = render_picker_column(label, picker, appearance);
+/// Renders pickers vertically at full width when `vertical` is true,
+/// or in the original horizontal layout when false.
+pub fn render_picker_row_with_layout<A: OrchestrationControlAction>(
+    state: &OrchestrationEditState,
+    handles: &OrchestrationPickerHandles<A>,
+    appearance: &Appearance,
+    vertical: bool,
+) -> Box<dyn Element> {
+    let is_remote = state.execution_mode.is_remote();
+
+    if vertical {
+        let mut column = Flex::column()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_spacing(8.);
+
+        let add = |col: &mut Flex, label: &str, picker: Option<Box<dyn Element>>| {
+            col.add_child(render_picker_column(label, picker, appearance));
+        };
+
+        add(
+            &mut column,
+            "Agent harness",
+            handles.harness_picker.as_ref().map(|p| ChildView::new(p).finish()),
+        );
         if is_remote {
-            row.add_child(Expanded::new(1.0, column).finish());
-        } else {
-            row.add_child(
-                ConstrainedBox::new(column)
-                    .with_width(ORCHESTRATION_LOCAL_PICKER_WIDTH)
-                    .finish(),
+            add(
+                &mut column,
+                "Host",
+                handles.host_picker.as_ref().map(|p| ChildView::new(p).finish()),
+            );
+            add(
+                &mut column,
+                "Environment",
+                handles.environment_picker.as_ref().map(|p| ChildView::new(p).finish()),
             );
         }
-    };
+        add(
+            &mut column,
+            "Base model",
+            handles.model_picker.as_ref().map(|p| ChildView::new(p).finish()),
+        );
 
-    add_picker(
-        &mut row,
-        "Agent harness",
-        handles
-            .harness_picker
-            .as_ref()
-            .map(|p| ChildView::new(p).finish()),
-    );
-    if is_remote {
+        Container::new(column.finish()).with_margin_top(12.).finish()
+    } else {
+        let mut row = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .with_main_axis_size(MainAxisSize::Max)
+            .with_main_axis_alignment(MainAxisAlignment::Start)
+            .with_spacing(12.);
+
+        let add_picker = |row: &mut Flex, label: &str, picker: Option<Box<dyn Element>>| {
+            let col = render_picker_column(label, picker, appearance);
+            row.add_child(Expanded::new(1.0, col).finish());
+        };
+
         add_picker(
             &mut row,
-            "Host",
-            handles
-                .host_picker
-                .as_ref()
-                .map(|p| ChildView::new(p).finish()),
+            "Agent harness",
+            handles.harness_picker.as_ref().map(|p| ChildView::new(p).finish()),
         );
+        if is_remote {
+            add_picker(
+                &mut row,
+                "Host",
+                handles.host_picker.as_ref().map(|p| ChildView::new(p).finish()),
+            );
+            add_picker(
+                &mut row,
+                "Environment",
+                handles.environment_picker.as_ref().map(|p| ChildView::new(p).finish()),
+            );
+        }
         add_picker(
             &mut row,
-            "Environment",
-            handles
-                .environment_picker
-                .as_ref()
-                .map(|p| ChildView::new(p).finish()),
+            "Base model",
+            handles.model_picker.as_ref().map(|p| ChildView::new(p).finish()),
         );
+
+        Container::new(row.finish()).with_margin_top(12.).finish()
     }
-    add_picker(
-        &mut row,
-        "Base model",
-        handles
-            .model_picker
-            .as_ref()
-            .map(|p| ChildView::new(p).finish()),
-    );
-
-    Container::new(row.finish()).with_margin_top(12.).finish()
 }
 
 pub fn render_picker_column(

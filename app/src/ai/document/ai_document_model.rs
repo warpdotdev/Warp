@@ -1309,6 +1309,8 @@ impl AIDocumentModel {
             Some(snapshot.plan_id.clone())
         };
 
+        // Log the existing status before overwriting so we can detect
+        // when a server snapshot clobbers a locally-set Approved status.
         let changed = BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
             if let Some(conversation) = history.conversation_mut(&conversation_id) {
                 conversation.set_orchestration_config(config, status, plan_id)

@@ -73,7 +73,7 @@ pub fn matches_active_config(request: &RunAgentsRequest, config: &OrchestrationC
     }
 
     // execution_mode variant must agree.
-    match (&request.execution_mode, &config.execution_mode) {
+    let result = match (&request.execution_mode, &config.execution_mode) {
         (super::action::RunAgentsExecutionMode::Local, OrchestrationExecutionMode::Local) => true,
         (
             super::action::RunAgentsExecutionMode::Remote {
@@ -91,8 +91,11 @@ pub fn matches_active_config(request: &RunAgentsRequest, config: &OrchestrationC
             env_matches && host_matches
         }
         // Variant mismatch (Local vs Remote).
-        _ => false,
-    }
+        _ => {
+            false
+        }
+    };
+    result
 }
 
 // ---------------------------------------------------------------------------
