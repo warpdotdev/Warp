@@ -7,7 +7,9 @@ use warp::{
     integration_testing::{
         remote_server::{
             assert_command_executor_is_remote_server, assert_remote_server_connected,
-            assert_remote_server_has_navigated, wait_for_remote_server_ready,
+            assert_remote_server_has_navigated, load_repo_metadata_directory_via_remote_server,
+            record_remote_server_navigation_events, wait_for_remote_server_ready,
+            write_file_via_remote_server,
         },
         step::new_step_with_default_assertions,
         subshell::{
@@ -24,6 +26,7 @@ use warp::{
         warpify::settings::{SshExtensionInstallMode, SshExtensionInstallModeSetting},
     },
 };
+use warpui::integration::TestStep;
 
 use super::{new_builder, Builder};
 
@@ -95,6 +98,7 @@ generate_remote_server_connect_test!(test_remote_server_connect_zsh, "zsh");
 pub fn test_remote_server_navigate_to_repo() -> Builder {
     let builder = with_ssh_connect_steps(remote_server_builder(), "bash");
     builder
+        .with_step(record_remote_server_navigation_events())
         .with_step(execute_command_for_single_terminal_in_tab(
             0,
             "mkdir -p /tmp/warp-test-repo && cd /tmp/warp-test-repo && git init -b main && git config user.email test@test.com && git config user.name TestUser && touch file && git add file && git commit -m init".into(),
@@ -114,7 +118,10 @@ pub fn test_remote_server_navigate_to_repo() -> Builder {
                 "Assert remote server has navigated to directory",
             )
             .set_timeout(Duration::from_secs(15))
-            .add_assertion(assert_remote_server_has_navigated(0, "/tmp/warp-test-repo")),
+            .add_named_assertion_with_data_from_prior_step(
+                "remote server navigated to expected repo path",
+                assert_remote_server_has_navigated(0, "/tmp/warp-test-repo"),
+            ),
         )
         // Verify the connection is still healthy after navigation.
         .with_step(
@@ -169,11 +176,9 @@ pub fn test_remote_server_completions() -> Builder {
 /// the request completes without error (the response flows through the
 /// manager's `RepoMetadataDirectoryLoaded` event).
 pub fn test_remote_server_lazy_load_directory() -> Builder {
-    use warp::integration_testing::remote_server::load_repo_metadata_directory_via_remote_server;
-    use warpui::integration::TestStep;
-
     let builder = with_ssh_connect_steps(remote_server_builder(), "bash");
     builder
+        .with_step(record_remote_server_navigation_events())
         // Create a git repo with a subdirectory on the remote.
         .with_step(execute_command_for_single_terminal_in_tab(
             0,
@@ -194,7 +199,10 @@ pub fn test_remote_server_lazy_load_directory() -> Builder {
                 "Wait for navigation to complete",
             )
             .set_timeout(Duration::from_secs(15))
-            .add_assertion(assert_remote_server_has_navigated(0, "/tmp/warp-lazy-repo")),
+            .add_named_assertion_with_data_from_prior_step(
+                "remote server navigated to expected lazy-load repo path",
+                assert_remote_server_has_navigated(0, "/tmp/warp-lazy-repo"),
+            ),
         )
         // Trigger lazy-load of the subdirectory via the proto API.
         .with_step(
@@ -233,9 +241,6 @@ pub fn test_remote_server_lazy_load_directory() -> Builder {
 /// host, then reads it back via a shell command (which goes through
 /// `RemoteServerCommandExecutor::run_command`) to confirm the content.
 pub fn test_remote_server_file_operations() -> Builder {
-    use warp::integration_testing::remote_server::write_file_via_remote_server;
-    use warpui::integration::TestStep;
-
     let builder = with_ssh_connect_steps(remote_server_builder(), "bash");
     builder
         // Step 1: Write a file using RemoteServerClient::write_file proto API

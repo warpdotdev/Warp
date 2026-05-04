@@ -401,10 +401,6 @@ pub struct RemoteServerManager {
     /// `navigate_to_directory` calls when `update_active_session` fires
     /// repeatedly for the same CWD.
     last_navigated_path: HashMap<SessionId, String>,
-    /// Last path returned by a successful `NavigatedToDirectoryResponse` per
-    /// session. This is intentionally separate from `last_navigated_path`,
-    /// which tracks requests for dedup before the async request completes.
-    last_successful_navigation_path: HashMap<SessionId, String>,
     /// Per-session shell info recorded at bootstrap time and re-sent to the
     /// remote server daemon on every (re)connect. Persists until
     /// `deregister_session`.
@@ -431,7 +427,6 @@ impl RemoteServerManager {
             host_to_sessions: HashMap::new(),
             spawner: ctx.spawner(),
             last_navigated_path: HashMap::new(),
-            last_successful_navigation_path: HashMap::new(),
             session_bootstrap_info: HashMap::new(),
             auth_context: None,
             session_platforms: HashMap::new(),
@@ -835,7 +830,6 @@ impl RemoteServerManager {
     ///   spontaneous drops -- only for explicit teardown.
     pub fn deregister_session(&mut self, session_id: SessionId, ctx: &mut ModelContext<Self>) {
         self.last_navigated_path.remove(&session_id);
-        self.last_successful_navigation_path.remove(&session_id);
         self.session_bootstrap_info.remove(&session_id);
         self.session_platforms.remove(&session_id);
 
@@ -971,17 +965,6 @@ impl RemoteServerManager {
         }
     }
 
-    /// Returns the last path returned by a successful navigation response for
-    /// this session.
-    pub fn last_successful_navigation_path_for_session(
-        &self,
-        session_id: SessionId,
-    ) -> Option<&str> {
-        self.last_successful_navigation_path
-            .get(&session_id)
-            .map(String::as_str)
-    }
-
     /// Returns all session IDs connected to a given host. O(1) via the
     /// reverse index.
     pub fn sessions_for_host(&self, host_id: &HostId) -> Option<&HashSet<SessionId>> {
@@ -1023,9 +1006,7 @@ impl RemoteServerManager {
                 match client.navigate_to_directory(path).await {
                     Ok(resp) => {
                         let _ = spawner
-                            .spawn(move |me, ctx| {
-                                me.last_successful_navigation_path
-                                    .insert(session_id, resp.indexed_path.clone());
+                            .spawn(move |_me, ctx| {
                                 ctx.emit(RemoteServerManagerEvent::NavigatedToDirectory {
                                     session_id,
                                     host_id,
@@ -1348,7 +1329,6 @@ impl RemoteServerManager {
             // We need to do this on disconnect because the cached
             // navigated path is only deduping for the current _remote server session.
             self.last_navigated_path.remove(&session_id);
-            self.last_successful_navigation_path.remove(&session_id);
 
             self.attempt_reconnect(
                 session_id,

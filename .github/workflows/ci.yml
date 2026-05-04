@@ -139,6 +139,7 @@ jobs:
           target_os: ${{ matrix.os }}
           is_self_hosted: ${{ matrix.is_self_hosted }}
           install_test_deps: true
+          ssh_key: ${{ secrets.WARP_CHANNEL_CONFIG_ACCESS_SSH_KEY }}
 
       - name: Install Shells
         uses: ConorMacBride/install-package@3e7ad059e07782ee54fa35f827df52aae0626f30 # v1

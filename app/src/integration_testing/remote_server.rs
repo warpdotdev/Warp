@@ -1,18 +1,55 @@
-use std::time::Duration;
+use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Duration};
 
+use warp_core::SessionId;
 use warpui::{
     async_assert, async_assert_eq,
-    integration::{AssertionCallback, AssertionOutcome, StepDataMap, TestStep},
+    integration::{
+        AssertionCallback, AssertionOutcome, AssertionWithDataCallback, StepDataMap, TestStep,
+    },
     App, SingletonEntity, WindowId,
 };
 
 use crate::{
     integration_testing::view_getters::single_terminal_view_for_tab,
-    remote_server::manager::{RemoteServerManager, RemoteSessionState},
+    remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent, RemoteSessionState},
     terminal::model::session::command_executor::remote_server_executor::RemoteServerCommandExecutor,
 };
 pub type RemoteServerActionCallback = Box<dyn Fn(&mut App, WindowId, &mut StepDataMap) + 'static>;
 
+type RemoteServerNavigationPaths = Rc<RefCell<HashMap<SessionId, String>>>;
+
+const REMOTE_SERVER_NAVIGATION_PATHS_KEY: &str = "remote_server_navigation_paths";
+
+/// Returns a `TestStep` that records `NavigatedToDirectory` events emitted by
+/// `RemoteServerManager` into this integration test's step data.
+pub fn record_remote_server_navigation_events() -> TestStep {
+    TestStep::new("Record remote server navigation events").with_action(
+        |app, _window_id, step_data| {
+            let navigated_paths: RemoteServerNavigationPaths =
+                Rc::new(RefCell::new(HashMap::new()));
+            step_data.insert(
+                REMOTE_SERVER_NAVIGATION_PATHS_KEY,
+                Rc::clone(&navigated_paths),
+            );
+
+            app.update(|ctx| {
+                let mgr = RemoteServerManager::handle(ctx);
+                ctx.subscribe_to_model(&mgr, move |_mgr, event, _ctx| {
+                    if let RemoteServerManagerEvent::NavigatedToDirectory {
+                        session_id,
+                        indexed_path,
+                        ..
+                    } = event
+                    {
+                        navigated_paths
+                            .borrow_mut()
+                            .insert(*session_id, indexed_path.clone());
+                    }
+                });
+            });
+        },
+    )
+}
 /// Returns a `TestStep` that polls until the remote server setup state for
 /// the active session reaches `Ready`. Times out after 60 seconds to allow
 /// for the full check → install → connect → handshake flow.
@@ -161,31 +198,35 @@ pub fn load_repo_metadata_directory_via_remote_server(
 pub fn assert_remote_server_has_navigated(
     tab_idx: usize,
     expected_path: impl Into<String>,
-) -> AssertionCallback {
+) -> AssertionWithDataCallback {
     let expected_path = expected_path.into();
-    Box::new(move |app, window_id| {
+    Box::new(move |app, window_id, step_data| {
         let terminal_view = single_terminal_view_for_tab(app, window_id, tab_idx);
         terminal_view.read(app, |view, ctx| {
             let Some(session_id) = view.active_block_session_id() else {
                 return AssertionOutcome::PreconditionFailed("No active session ID".into());
             };
             let mgr = RemoteServerManager::as_ref(ctx);
-            if !matches!(
-                mgr.session(session_id),
-                Some(RemoteSessionState::Connected { .. })
-            ) {
-                return AssertionOutcome::PreconditionFailed(
-                    "Session not in Connected state".into(),
-                );
+            let session_state = mgr.session(session_id);
+            if !matches!(session_state, Some(RemoteSessionState::Connected { .. })) {
+                return AssertionOutcome::failure(format!(
+                    "Expected RemoteSessionState::Connected, got {session_state:?}"
+                ));
             }
-            let Some(navigated_path) = mgr.last_successful_navigation_path_for_session(session_id)
+            let Some(navigated_paths) =
+                step_data.get::<_, RemoteServerNavigationPaths>(REMOTE_SERVER_NAVIGATION_PATHS_KEY)
             else {
-                return AssertionOutcome::PreconditionFailed(
+                return AssertionOutcome::failure(
+                    "No remote server navigation event recorder installed".into(),
+                );
+            };
+            let Some(navigated_path) = navigated_paths.borrow().get(&session_id).cloned() else {
+                return AssertionOutcome::failure(
                     "No successful navigation path recorded for session".into(),
                 );
             };
             async_assert_eq!(
-                navigated_path,
+                navigated_path.as_str(),
                 expected_path.as_str(),
                 "Expected remote server to navigate session {session_id:?} to {expected_path}"
             )
