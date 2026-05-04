@@ -125,14 +125,6 @@ impl BlocklistAIController {
         let existing_conversation_id =
             self.find_existing_conversation_by_server_token(&init_event.conversation_id, ctx);
         let conversation_id = existing_conversation_id
-            .inspect(|conversation_id| {
-                // The local conversation is bound to a cloud-side session, so mark it as a
-                // shared-session view; otherwise `apply_client_actions` won't reconstruct
-                // UserQuery / ActionResult inputs from the cloud agent's response messages.
-                history.update(ctx, |history, _| {
-                    history.set_viewing_shared_session_for_conversation(*conversation_id, true);
-                });
-            })
             .or_else(|| {
                 let selected_conversation_id = self
                     .context_model
