@@ -65,8 +65,15 @@ const CLOUD_MODE_V2_CHIPS_ROW_TOP_PADDING: f32 = 4.;
 
 impl Input {
     pub fn is_cloud_mode_input_v2_composing(&self, app: &AppContext) -> bool {
-        FeatureFlag::CloudModeInputV2.is_enabled()
-            && FeatureFlag::CloudMode.is_enabled()
+        FeatureFlag::CloudModeInputV2.is_enabled() && self.is_composing_cloud_mode_prompt(app)
+    }
+
+    /// Returns true when the user is composing a cloud-mode prompt (i.e. configuring an
+    /// ambient agent before submitting the first request).
+    /// Unlike `is_cloud_mode_input_v2_composing`, this is not gated on the V2 input flag
+    /// so it covers both the old and new cloud-mode UIs.
+    pub(super) fn is_composing_cloud_mode_prompt(&self, app: &AppContext) -> bool {
+        FeatureFlag::CloudMode.is_enabled()
             && self
                 .ambient_agent_view_model()
                 .is_some_and(|model| model.as_ref(app).is_configuring_ambient_agent())
