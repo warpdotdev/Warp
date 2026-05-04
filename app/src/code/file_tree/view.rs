@@ -1533,24 +1533,20 @@ impl FileTreeView {
         // When the file tree is active, index the lazy-loaded path through the
         // model so that a file watcher is started.
         if self.is_active && !self.registered_lazy_loaded_paths.contains(path) {
-            // Check if repo is Pending (detection in progress).
-            let repo_id = repo_metadata::RepositoryIdentifier::local(path.clone());
-            let repo_state = RepoMetadataModel::as_ref(ctx).repository_state(&repo_id, ctx);
-            let is_pending = matches!(repo_state, Some(IndexedRepoState::Pending));
-
             // Index lazy-loaded path to build tree and register watcher.
-            // This may no-op if already Pending/Indexed, but that's handled below.
+            // When the repo is Pending, index_lazy_loaded_path stores the shallow
+            // tree in pending_lazy_fallbacks (not repositories) so the Pending
+            // guard is preserved. On success the view marks the path registered.
             let index_result = self
                 .repository_metadata_model
                 .update(ctx, |model: &mut RepoMetadataModel, ctx| {
                     model.index_lazy_loaded_path(path, ctx)
                 });
 
-            // If lazy-loading succeeded, we're good.
             if index_result.is_ok() {
                 self.registered_lazy_loaded_paths.insert(path.clone());
             } else {
-                // Failed - show toast and log warning
+                // Failed — show toast and log warning.
                 if matches!(
                     index_result,
                     Err(repo_metadata::RepoMetadataError::BuildTree(
@@ -1562,32 +1558,27 @@ impl FileTreeView {
                 if let Err(error) = &index_result {
                     log::warn!("Failed to index lazy-loaded path {path}: {error}");
                 }
-                // Don't register - let the later code create proper fallback for Pending/None
             }
         }
 
         let id = repo_metadata::RepositoryIdentifier::local(path.clone());
         let repo_state = RepoMetadataModel::as_ref(ctx).repository_state(&id, ctx);
-        let is_lazy_loaded = RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(path, ctx);
 
         let entry = match repo_state {
-            // Fully indexed - use the repo's entry
+            // Fully indexed — use the repo's entry.
             Some(IndexedRepoState::Indexed(state)) => Some(state.entry.clone()),
-            // Pending - repo is being indexed, use lazy-loaded entry if available
+            // Pending — repo is being indexed. Use the shallow fallback tree that
+            // index_lazy_loaded_path stored in pending_lazy_fallbacks (separate
+            // from `repositories`, so the Pending guard is never clobbered).
+            // If no fallback exists yet, fall through to create_empty_entry so
+            // the tree is at least non-empty before detection completes.
             Some(IndexedRepoState::Pending) => {
-                // Check both local registry AND model's lazy-loaded paths
-                // This handles the case where detection started before file tree opened
-                if self.registered_lazy_loaded_paths.contains(path) || is_lazy_loaded {
-                    // Keep the lazy-loaded entry while pending
-                    self.root_directories.get(path).map(|d| d.entry.clone())
-                } else {
-                    // No lazy-loaded fallback exists yet - create placeholder.
-                    // This prevents empty tree while detection completes.
-                    // The root_dir entry will be set in the final branch below.
-                    None
-                }
+                RepoMetadataModel::as_ref(ctx)
+                    .pending_lazy_fallback(path, ctx)
+                    .cloned()
+                    .or_else(|| self.root_directories.get(path).map(|d| d.entry.clone()))
             }
-            // Failed or None - create empty entry (will be handled by event)
+            // Failed or untracked — create an empty placeholder.
             _ => None,
         };
 

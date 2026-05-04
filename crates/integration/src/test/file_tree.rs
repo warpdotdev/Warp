@@ -308,22 +308,24 @@ pub fn test_file_tree_nested_file_opening() -> Builder {
 /// immediately after cloning a repository.
 ///
 /// This test verifies that when the file tree is opened on a directory that
-/// contains a valid .git entry, the proper git detection is triggered instead
-/// of falling back to shallow lazy-loading.
+/// contains a valid `.git` entry, the model performs full git indexing rather
+/// than shallow lazy-loading. The assertion checks `is_lazy_loaded_path` on
+/// the model directly — a path that was fully indexed will NOT be in the
+/// lazy-loaded set, while a path that only received shallow treatment will be.
 pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
     new_builder()
         .with_setup(|utils| {
             let test_dir = utils.test_dir();
 
-            // Create a valid git repository structure (simulating a freshly cloned repo)
+            // Create a valid git repository structure (simulating a freshly cloned repo).
             let git_dir = test_dir.join(".git");
             std::fs::create_dir_all(&git_dir).expect("Failed to create .git directory");
 
-            // Create a valid HEAD file (required for valid git repo detection)
+            // Create a valid HEAD file (required for valid git repo detection).
             std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n")
                 .expect("Failed to create HEAD file");
 
-            // Create some files in the repo to verify the full tree loads
+            // Create some files in the repo.
             std::fs::write(test_dir.join("README.md"), "# Test Repo").expect("Failed to create README");
             std::fs::create_dir_all(test_dir.join("src")).expect("Failed to create src dir");
             std::fs::write(test_dir.join("src/main.rs"), "fn main() {}")
@@ -339,16 +341,48 @@ pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
             new_step_with_default_assertions("Open file tree panel")
                 .with_action(|app, _, _| open_file_tree_panel(app)),
         )
-        // With the fix, detection triggers immediately on .git dirs, so the repo
-        // should NOT be in lazy-loaded state. We verify by clicking on main.rs
-        // which only works if full indexing happened (lazy-loading loads shallow tree).
-        // Note: This tests the detection path; old lazy-loading would need expand.
+        // Assert that the model performed full git indexing (not shallow lazy-loading).
+        //
+        // `is_lazy_loaded_path` returns true only for paths that were registered
+        // via `index_lazy_loaded_path` and stored in the `lazy_loaded_paths` map.
+        // After full git indexing completes, `index_directory` upgrades the entry
+        // and removes it from `lazy_loaded_paths`, so this returns false.
+        //
+        // A shallow lazy-loaded path (the old broken behaviour) would still be
+        // tracked in `lazy_loaded_paths` and this assertion would fail.
         .with_step(
-            new_step_with_default_assertions("Expand src to verify nested content loads")
+            new_step_with_default_assertions("Assert model is fully indexed (not lazy-loaded)")
+                .add_assertion(|app, _window_id| {
+                    use repo_metadata::RepoMetadataModel;
+                    use warp_util::standardized_path::StandardizedPath;
+                    use warpui::SingletonEntity as _;
+
+                    app.read(|ctx| {
+                        // The test_dir is the CWD set in setup.
+                        // We check that the path is NOT in lazy_loaded_paths,
+                        // which means full indexing ran and the lazy entry was
+                        // promoted / never registered as lazy.
+                        let cwd = std::env::current_dir()
+                            .expect("should have cwd");
+                        if let Ok(std_path) = StandardizedPath::try_from_local(&cwd) {
+                            let is_lazy = RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(&std_path, ctx);
+                            async_assert!(
+                                !is_lazy,
+                                "Expected full git indexing (not lazy-loaded), but path is still in lazy_loaded_paths"
+                            )
+                        } else {
+                            async_assert!(false, "Could not standardize CWD to check repo state")
+                        }
+                    })
+                }),
+        )
+        // Also verify that the file tree content is visible as a UI sanity check.
+        .with_step(
+            new_step_with_default_assertions("Expand src and verify nested content visible")
                 .with_click_on_saved_position("file_tree_item:src"),
         )
         .with_step(
-            new_step_with_default_assertions("Verify main.rs visible (proves full tree loaded)")
+            new_step_with_default_assertions("Click main.rs to open it")
                 .with_click_on_saved_position("file_tree_item:main.rs"),
         )
 }

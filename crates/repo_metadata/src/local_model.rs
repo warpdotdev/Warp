@@ -112,6 +112,10 @@ pub struct LocalRepoMetadataModel {
     repositories: HashMap<StandardizedPath, IndexedRepoState>,
     /// Refcounts for lazily-loaded standalone paths tracked in the model.
     lazy_loaded_paths: HashMap<StandardizedPath, usize>,
+    /// Shallow lazy-loaded fallback trees for paths whose repo is `Pending`.
+    /// Stored separately so they never overwrite the `Pending` guard in
+    /// `repositories`. Cleaned up when full indexing completes.
+    pending_lazy_fallbacks: HashMap<StandardizedPath, FileTreeEntry>,
     /// File system watcher for monitoring changes.
     #[cfg(feature = "local_fs")]
     watcher: Option<ModelHandle<BulkFilesystemWatcher>>,
@@ -200,6 +204,7 @@ impl LocalRepoMetadataModel {
         let mut model = Self {
             repositories: HashMap::new(),
             lazy_loaded_paths: HashMap::new(),
+            pending_lazy_fallbacks: HashMap::new(),
             #[cfg(feature = "local_fs")]
             watcher: None,
             emit_incremental_updates: false,
@@ -454,9 +459,23 @@ impl LocalRepoMetadataModel {
         self.lazy_loaded_paths.contains_key(path)
     }
 
+    /// Returns the shallow lazy-loaded fallback [`FileTreeEntry`] for a path
+    /// whose repository is currently in `Pending` state, if one has been built.
+    ///
+    /// This entry lives outside the `repositories` map so it never clobbers the
+    /// `Pending` guard. The view uses it to populate the file tree while full
+    /// indexing is still in progress.
+    pub fn pending_lazy_fallback(&self, path: &StandardizedPath) -> Option<&FileTreeEntry> {
+        self.pending_lazy_fallbacks.get(path)
+    }
+
     /// Lazily indexes a standalone path with only the first level of children.
     /// Registers the path with the file watcher for live updates.
     /// No-ops if the path is already tracked.
+    ///
+    /// When the repo is `Pending` (full indexing already in progress), the built
+    /// shallow tree is stored in `pending_lazy_fallbacks` instead of
+    /// `repositories` so the `Pending` guard is never overwritten.
     #[cfg(feature = "local_fs")]
     pub fn index_lazy_loaded_path(
         &mut self,
@@ -477,11 +496,6 @@ impl LocalRepoMetadataModel {
         ) {
             return Ok(());
         }
-
-        // Repo is Pending (detection in progress) — create lazy entry alongside it.
-        // This allows the file tree to show content while detection completes.
-        // The lazy entry will be upgraded when detection finishes.
-        let is_pending = matches!(self.repositories.get(path), Some(IndexedRepoState::Pending));
 
         let local_path = path
             .to_local_path()
@@ -508,6 +522,21 @@ impl LocalRepoMetadataModel {
             &IgnoredPathStrategy::Include,
         )
         .map_err(RepoMetadataError::BuildTree)?;
+
+        // If the repo is already Pending (full indexing in progress), store the
+        // shallow tree as a side-channel fallback so we never clobber the
+        // `Pending` entry in `repositories`.
+        if matches!(
+            self.repositories.get(path),
+            Some(IndexedRepoState::Pending)
+        ) {
+            let file_tree_entry = FileTreeState::new_lazy_loaded(root_entry).entry;
+            self.pending_lazy_fallbacks
+                .insert(path.clone(), file_tree_entry);
+            // Register a refcount so the view knows lazy indexing was attempted.
+            self.lazy_loaded_paths.insert(path.clone(), 1);
+            return Ok(());
+        }
 
         let state = FileTreeState::new_lazy_loaded(root_entry);
         self.add_repository_internal(path.clone(), state, ctx)?;
@@ -926,6 +955,10 @@ impl LocalRepoMetadataModel {
                     Ok(root_entry) => {
                         let state =
                             FileTreeState::new(root_entry, gitignores_for_build, Some(repository_handle));
+
+                        // Full indexing completed — drop any shallow pending fallback
+                        // that was stored while the repo was in Pending state.
+                        model.pending_lazy_fallbacks.remove(&std_repo_path);
 
                         if let Err(e) =
                             model.add_repository_internal(std_repo_path.clone(), state, ctx)

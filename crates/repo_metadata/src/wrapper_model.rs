@@ -354,6 +354,21 @@ impl RepoMetadataModel {
     pub fn is_lazy_loaded_path(&self, path: &StandardizedPath, ctx: &AppContext) -> bool {
         self.local.as_ref(ctx).is_lazy_loaded_path(path)
     }
+
+    /// Returns the shallow lazy-loaded fallback [`FileTreeEntry`] for a local
+    /// path whose repo is currently in `Pending` state, if one exists.
+    ///
+    /// The fallback is stored outside `repositories` so it never clobbers the
+    /// `Pending` guard. The view uses it to show content while full indexing
+    /// completes.
+    #[cfg(feature = "local_fs")]
+    pub fn pending_lazy_fallback<'a>(
+        &self,
+        path: &StandardizedPath,
+        ctx: &'a AppContext,
+    ) -> Option<&'a crate::file_tree_store::FileTreeEntry> {
+        self.local.as_ref(ctx).pending_lazy_fallback(path)
+    }
 }
 
 impl warpui::Entity for RepoMetadataModel {
