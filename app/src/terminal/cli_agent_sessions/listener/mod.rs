@@ -47,22 +47,25 @@ pub fn is_agent_supported(agent: &CLIAgent) -> bool {
             | CLIAgent::Gemini
             | CLIAgent::Auggie
             | CLIAgent::Pi
+            | CLIAgent::Hermes
     )
 }
 
 /// Creates the appropriate handler for the given CLI agent.
 fn create_handler(agent: &CLIAgent) -> Option<Box<dyn CLIAgentSessionHandler>> {
     match agent {
-        // Auggie and Pi are supported via community-maintained plugins
+        // Auggie, Pi, and Hermes are supported via external/community-maintained plugins
         // (https://github.com/augmentmoogi/auggie-warp,
-        // https://github.com/badlogic/pi-mono), which emit the same
+        // https://github.com/badlogic/pi-mono, and
+        // https://github.com/NousResearch/hermes-agent), which emit the same
         // structured OSC 777 events as the first-party Claude/OpenCode/Gemini
         // plugins. We don't ship install flows for them — we just listen.
         CLIAgent::Claude
         | CLIAgent::OpenCode
         | CLIAgent::Gemini
         | CLIAgent::Auggie
-        | CLIAgent::Pi => Some(Box::new(DefaultSessionListener)),
+        | CLIAgent::Pi
+        | CLIAgent::Hermes => Some(Box::new(DefaultSessionListener)),
         CLIAgent::Codex => Some(Box::new(CodexSessionHandler)),
         CLIAgent::Amp
         | CLIAgent::Droid
@@ -300,6 +303,46 @@ mod tests {
     #[test]
     fn pi_uses_default_handler_with_rich_status() {
         assert!(agent_supports_rich_status(&CLIAgent::Pi));
+    }
+
+    #[test]
+    fn hermes_is_supported() {
+        assert!(is_agent_supported(&CLIAgent::Hermes));
+    }
+
+    #[test]
+    fn hermes_uses_default_handler_with_rich_status() {
+        assert!(agent_supports_rich_status(&CLIAgent::Hermes));
+    }
+
+    #[test]
+    fn hermes_default_handler_skips_session_start() {
+        let mut handler = DefaultSessionListener;
+        let event = CLIAgentEvent {
+            v: 1,
+            agent: CLIAgent::Hermes,
+            event: CLIAgentEventType::SessionStart,
+            session_id: None,
+            cwd: None,
+            project: None,
+            payload: CLIAgentEventPayload::default(),
+        };
+        assert!(handler.handle_event(event).is_none());
+    }
+
+    #[test]
+    fn hermes_default_handler_forwards_stop() {
+        let mut handler = DefaultSessionListener;
+        let event = CLIAgentEvent {
+            v: 1,
+            agent: CLIAgent::Hermes,
+            event: CLIAgentEventType::Stop,
+            session_id: None,
+            cwd: None,
+            project: None,
+            payload: CLIAgentEventPayload::default(),
+        };
+        assert!(handler.handle_event(event).is_some());
     }
 
     #[test]

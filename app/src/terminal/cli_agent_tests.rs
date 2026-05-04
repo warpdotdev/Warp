@@ -259,6 +259,7 @@ fn test_detect_known_agents() {
                 ("copilot", CLIAgent::Copilot),
                 ("agent", CLIAgent::CursorCli),
                 ("goose", CLIAgent::Goose),
+                ("hermes", CLIAgent::Hermes),
                 ("vibe", CLIAgent::Vibe),
             ] {
                 assert_eq!(

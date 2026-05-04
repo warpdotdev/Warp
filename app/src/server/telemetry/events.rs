@@ -500,6 +500,7 @@ pub enum CLIAgentType {
     Auggie,
     Cursor,
     Goose,
+    Hermes,
     Vibe,
     Unknown,
 }
