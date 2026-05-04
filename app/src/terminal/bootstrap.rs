@@ -27,6 +27,14 @@ lazy_static! {
 /// errors
 const BYTE_ORDER_MARK: &str = "\u{FEFF}";
 
+#[cfg(feature = "local_fs")]
+pub fn is_container_subshell(session_info: &SessionInfo) -> bool {
+    session_info.subshell_info.as_ref().is_some_and(|info| {
+        let cmd = info.spawning_command.as_str();
+        cmd.starts_with("docker ") || cmd.starts_with("podman ")
+    })
+}
+
 /// Returns `true` if Warp should use an RC-file based bootstrap (e.g. dump the bootstrap script to
 /// a temp file and `source` it) for a newly spawned session with the given `shell_type`, and
 /// associated `session_type` and `subshell_initialization_info`.
@@ -50,14 +58,6 @@ const BYTE_ORDER_MARK: &str = "\u{FEFF}";
 /// bootstrap is the only known way to bootstrap such subshells successfully.
 ///
 /// We use RC-file based bootstrap for MSYS2 because it has slow PTY throughput.
-#[cfg(feature = "local_fs")]
-pub fn is_container_subshell(session_info: &SessionInfo) -> bool {
-    session_info.subshell_info.as_ref().is_some_and(|info| {
-        let cmd = info.spawning_command.as_str();
-        cmd.starts_with("docker ") || cmd.starts_with("podman ")
-    })
-}
-
 #[cfg(feature = "local_fs")]
 pub fn should_use_rc_file_bootstrap_method(
     shell_type: ShellType,
