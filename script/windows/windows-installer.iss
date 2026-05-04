@@ -76,6 +76,7 @@ SetupMutex={#AppMutexName}Setup
 MinVersion=10.0.18362
 ; Tell Windows Explorer to reload the environment so that path changes take effect.
 ChangesEnvironment=true
+RedirectionGuard=no
 ; Sign the setup engine and uninstaller so that the temporary bootstrapper
 ; extracted to %TEMP% is Authenticode-signed.  This prevents Microsoft Defender
 ; ASR rule D4F940AB from blocking the installer in enterprise environments.
