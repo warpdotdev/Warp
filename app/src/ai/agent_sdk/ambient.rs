@@ -489,6 +489,8 @@ impl AmbientAgentRunner {
                 parent_run_id: None,
                 runtime_skills: vec![],
                 referenced_attachments: vec![],
+                fork_from_conversation_id: None,
+                handoff_prep_token: None,
             };
 
             let should_open = args.open;
