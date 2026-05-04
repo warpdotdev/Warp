@@ -56,6 +56,15 @@ pub(super) struct State {
     /// Information about cell dimensions.
     pub cell_width: usize,
     pub cell_height: usize,
+    /// Pre-truncation logical cell dimensions kept alongside the integer
+    /// fields above. The integer values are what most call sites in this
+    /// module expect (cell-count math, image sizing in cells); the
+    /// `_px` variants preserve the fractional input so CSI 14t / 16t
+    /// can multiply by `scale_factor` before rounding and report the
+    /// correct physical-pixel cell size on fractional-DPI displays.
+    pub cell_width_px: warpui::units::Pixels,
+    pub cell_height_px: warpui::units::Pixels,
+    pub scale_factor: f32,
 
     /// Mode flags.
     pub mode: TermMode,
@@ -128,6 +137,9 @@ impl State {
         Self {
             cell_width: size_info.cell_width_px.as_f32() as usize,
             cell_height: size_info.cell_height_px.as_f32() as usize,
+            cell_width_px: size_info.cell_width_px,
+            cell_height_px: size_info.cell_height_px,
+            scale_factor: size_info.scale_factor,
             mode: Default::default(),
             tabs,
             cursor_style: Default::default(),
@@ -1202,9 +1214,27 @@ impl ansi::Handler for GridHandler {
     }
 
     fn text_area_size_pixels<W: std::io::Write>(&mut self, writer: &mut W) {
-        let width = self.ansi_handler_state.cell_width * self.columns();
-        let height = self.ansi_handler_state.cell_height * self.visible_rows();
+        let sf = self.ansi_handler_state.scale_factor;
+        // Round the *total* width and height once after multiplying by the
+        // grid extents and the scale factor. Rounding per-cell first and
+        // then multiplying by columns or rows accumulates the per-cell
+        // rounding error: at 1.25x scale a 9.7-px cell rounds to 12 phys
+        // px, so 80 columns reports 960 instead of the correct
+        // round(9.7 * 1.25 * 80) = 970, a 10-pixel drift. CSI 16t
+        // (cell_pixel_size) is intentionally per-cell so it can keep its
+        // own rounding.
+        let cell_w_logical = self.ansi_handler_state.cell_width_px.as_f32();
+        let cell_h_logical = self.ansi_handler_state.cell_height_px.as_f32();
+        let width = (cell_w_logical * self.columns() as f32 * sf).round() as usize;
+        let height = (cell_h_logical * self.visible_rows() as f32 * sf).round() as usize;
         let _ = write!(writer, "\x1b[4;{height};{width}t");
+    }
+
+    fn cell_pixel_size<W: std::io::Write>(&mut self, writer: &mut W) {
+        let sf = self.ansi_handler_state.scale_factor;
+        let cell_w_phys = (self.ansi_handler_state.cell_width_px.as_f32() * sf).round() as usize;
+        let cell_h_phys = (self.ansi_handler_state.cell_height_px.as_f32() * sf).round() as usize;
+        let _ = write!(writer, "\x1b[6;{cell_h_phys};{cell_w_phys}t");
     }
 
     fn text_area_size_chars<W: std::io::Write>(&mut self, writer: &mut W) {

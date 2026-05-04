@@ -159,6 +159,8 @@ impl Handler for MockHandler {
 
     fn text_area_size_pixels<W: io::Write>(&mut self, _: &mut W) {}
 
+    fn cell_pixel_size<W: io::Write>(&mut self, _: &mut W) {}
+
     fn text_area_size_chars<W: io::Write>(&mut self, _: &mut W) {}
 
     fn command_finished(&mut self, data: CommandFinishedValue) {

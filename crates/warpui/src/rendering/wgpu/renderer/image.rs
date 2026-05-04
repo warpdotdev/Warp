@@ -3,6 +3,7 @@ use crate::rendering::texture_cache::{TextureCache, TextureCacheIndex};
 use crate::rendering::wgpu::{resources, shader_types};
 use crate::scene::Layer;
 use crate::Scene;
+use pathfinder_geometry::rect::RectF;
 use std::borrow::Cow;
 use std::sync::{atomic::AtomicBool, Arc};
 use wgpu::util::BufferInitDescriptor;
@@ -138,7 +139,15 @@ impl Pipeline {
         };
         let scale_factor = scene.scale_factor();
         for image in &layer.images {
-            let bounds = image.bounds * scale_factor;
+            // Floor the physical-pixel origin so the quad starts on an exact
+            // pixel boundary. At fractional DPI (1.25x, 1.5x) the raw scaled
+            // origin is often fractional (e.g. 62.5 px); with Linear
+            // filtering that shifts every UV sample off its texel centre and
+            // smears adjacent texels, which is the visible image blur. Only
+            // the origin is floored so the size still fills the quad.
+            let physical_origin = (image.bounds.origin() * scale_factor).floor();
+            let physical_size = image.bounds.size() * scale_factor;
+            let bounds = RectF::new(physical_origin, physical_size);
             let min_dimension = f32::min(bounds.height(), bounds.width());
             let corner_radius = crate::rendering::CornerRadius::from_ui_corner_radius(
                 image.corner_radius,
@@ -147,7 +156,7 @@ impl Pipeline {
             );
 
             per_frame_state.image_data.push(ImageInstanceData::new(
-                image.bounds * scale_factor,
+                bounds,
                 ColorModifier::Image {
                     opacity: (image.opacity * 255.) as u8,
                 },
@@ -162,8 +171,12 @@ impl Pipeline {
         }
 
         for icon in &layer.icons {
+            // Same origin-floor as images above.
+            let physical_origin = (icon.bounds.origin() * scale_factor).floor();
+            let physical_size = icon.bounds.size() * scale_factor;
+            let icon_bounds = RectF::new(physical_origin, physical_size);
             per_frame_state.image_data.push(ImageInstanceData::new(
-                icon.bounds * scale_factor,
+                icon_bounds,
                 ColorModifier::Icon { color: icon.color },
                 crate::rendering::CornerRadius::default(),
             ));

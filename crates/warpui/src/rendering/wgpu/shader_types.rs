@@ -218,17 +218,43 @@ impl RectData {
 #[derive(Debug, Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 pub(super) struct Uniforms {
     viewport_size: Vector2F,
-    // The shader-side paired struct will automatically be padded as necessary,
-    // so we add any necessary padding bytes here by adjusting the size of this
-    // byte array.
-    _struct_padding_bytes: [u8; 8],
+    /// Eight bytes of padding so `gamma_ratios` lands at offset 16 to
+    /// match the `vec4<f32>` alignment WGSL requires. The shader-side
+    /// `Uniforms` struct mirrors this layout.
+    _padding_after_viewport: [u32; 2],
+    /// ClearType / DirectWrite gamma-correction polynomial coefficients,
+    /// applied in Stage 2 of the alpha-correction formula.
+    gamma_ratios: Vector4F,
+    /// Stage 1 contrast factor for the grayscale path, modulated per-glyph
+    /// by the brightness-aware multiplier. Defaults to 1.0; override via
+    /// WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST.
+    grayscale_enhanced_contrast: f32,
+    /// Stage 1 contrast factor for the LCD subpixel path. Defaults to 0.5
+    /// because per-channel coverage already supplies most of the perceptual
+    /// sharpness; override via WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST.
+    subpixel_enhanced_contrast: f32,
+    _padding1: [u32; 2],
 }
 
 impl Uniforms {
-    pub(super) fn new(size: pathfinder_geometry::vector::Vector2F) -> Self {
+    pub(super) fn new(
+        size: pathfinder_geometry::vector::Vector2F,
+        gamma_ratios: [f32; 4],
+        grayscale_enhanced_contrast: f32,
+        subpixel_enhanced_contrast: f32,
+    ) -> Self {
         Self {
             viewport_size: size.into(),
-            _struct_padding_bytes: Default::default(),
+            _padding_after_viewport: [0; 2],
+            gamma_ratios: vec4f(
+                gamma_ratios[0],
+                gamma_ratios[1],
+                gamma_ratios[2],
+                gamma_ratios[3],
+            ),
+            grayscale_enhanced_contrast,
+            subpixel_enhanced_contrast,
+            _padding1: [0; 2],
         }
     }
 }

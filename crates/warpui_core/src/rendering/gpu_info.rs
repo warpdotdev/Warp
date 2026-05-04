@@ -72,6 +72,11 @@ pub struct GPUDeviceInfo {
     pub driver_info: String,
     /// The backend (e.g. Metal vs Vulkan vs OpenGL) we using when rendering.
     pub backend: GPUBackend,
+    /// Whether the device exposes dual-source blending. Reported here so
+    /// the application can update its [`super::Config::lcd_subpixel_supported`]
+    /// flag when a window's renderer is created; the LCD subpixel glyph
+    /// path requires dual-source blending to composite per-channel coverage.
+    pub supports_dual_source_blending: bool,
 }
 
 impl Display for GPUDeviceType {

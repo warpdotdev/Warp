@@ -172,7 +172,16 @@ pub struct SubpixelAlignment(u8);
 
 impl SubpixelAlignment {
     /// The number of subdivisions to slice a pixel into.
-    const STEPS: u8 = 3;
+    ///
+    /// Four buckets give a maximum quantisation error of 0.125 px when the
+    /// quad origin is later floored, matching gpui's SUBPIXEL_VARIANTS_X.
+    /// The value used to be three; the renderer formerly compensated by
+    /// passing the bucket offset back to the quad position, but that left
+    /// quads at fractional pixels and forced Nearest sampling. With the
+    /// quad now floored at scene-build time, the quantisation step is the
+    /// only remaining horizontal positioning error and a finer grid pays
+    /// for itself in fewer atlas cache misses near bucket boundaries.
+    const STEPS: u8 = 4;
 
     /// Quantizes the horizontal component of the provided position to the
     /// nearest subpixel position, where `Self::STEPS` is the number of possible
@@ -207,7 +216,7 @@ pub struct FontInfo {
     pub is_monospace: bool,
 }
 
-type RasterBoundsKey = (GlyphKey, (OrderedFloat<f32>, OrderedFloat<f32>));
+type RasterBoundsKey = (GlyphKey, (OrderedFloat<f32>, OrderedFloat<f32>), bool);
 
 pub struct Cache {
     selections: DashMap<(FamilyId, Properties), FontId>,
@@ -403,11 +412,14 @@ impl Cache {
         &self,
         glyph_key: GlyphKey,
         scale: Vector2F,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
     ) -> Result<RectI> {
-        let entry = self
-            .raster_bounds
-            .entry((glyph_key, (scale.x().into(), scale.y().into())));
+        let entry = self.raster_bounds.entry((
+            glyph_key,
+            (scale.x().into(), scale.y().into()),
+            lcd_subpixel,
+        ));
         let bounds = match entry {
             Entry::Occupied(entry) => entry.into_ref(),
             Entry::Vacant(entry) => entry.insert(self.platform.glyph_raster_bounds(
@@ -415,6 +427,7 @@ impl Cache {
                 glyph_key.font_size.into(),
                 glyph_key.glyph_id,
                 scale,
+                lcd_subpixel,
                 glyph_config,
             )),
         };
@@ -424,11 +437,13 @@ impl Cache {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn rasterized_glyph(
         &self,
         glyph_key: GlyphKey,
         scale: Vector2F,
         subpixel_alignment: SubpixelAlignment,
+        lcd_subpixel: bool,
         glyph_config: &rendering::GlyphConfig,
         format: canvas::RasterFormat,
     ) -> Result<RasterizedGlyph> {
@@ -438,6 +453,7 @@ impl Cache {
             glyph_key.glyph_id,
             scale,
             subpixel_alignment,
+            lcd_subpixel,
             glyph_config,
             format,
         )

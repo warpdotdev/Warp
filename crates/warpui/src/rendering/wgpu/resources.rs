@@ -67,6 +67,16 @@ pub struct Resources {
     pub surface: Surface<'static>,
     pub surface_config: RefCell<SurfaceConfiguration>,
     pub supported_backends: Vec<wgpu::Backend>,
+    /// Gamma-correction polynomial computed at renderer creation from
+    /// WARP_FONTS_GAMMA (default 1.8). Re-uploaded each frame as part of
+    /// the glyph shader's uniform buffer.
+    pub gamma_ratios: [f32; 4],
+    /// Stage 1 contrast factor for the grayscale path, from
+    /// WARP_FONTS_GRAYSCALE_ENHANCED_CONTRAST (default 1.0).
+    pub grayscale_enhanced_contrast: f32,
+    /// Stage 1 contrast factor for the subpixel path, from
+    /// WARP_FONTS_SUBPIXEL_ENHANCED_CONTRAST (default 0.5).
+    pub subpixel_enhanced_contrast: f32,
     uniforms: uniforms::Uniforms,
     quad: quad::Resources,
 }
@@ -111,10 +121,22 @@ impl Resources {
                 adapter_info.name,
             );
 
-            on_gpu_device_selected(device_info_from_adapter_info(adapter_info));
+            let supports_dual_source_blending = device
+                .features()
+                .contains(wgpu::Features::DUAL_SOURCE_BLENDING);
+            on_gpu_device_selected(device_info_from_adapter_info(
+                adapter_info,
+                supports_dual_source_blending,
+            ));
 
             let uniforms = uniforms::Uniforms::new(&device);
             let quad = quad::Resources::new(&device);
+
+            // Read gamma and contrast settings once at renderer creation;
+            // these knobs are for tuning, not live theming, so subsequent
+            // env-var changes are not picked up.
+            let (gamma_ratios, grayscale_enhanced_contrast, subpixel_enhanced_contrast) =
+                warpui_core::rendering::gamma::read_env_gamma_settings();
 
             let device_lost = Arc::new(AtomicBool::new(false));
 
@@ -132,6 +154,9 @@ impl Resources {
                 surface,
                 surface_config: surface_config.into(),
                 supported_backends: supported_backends.into_iter().collect(),
+                gamma_ratios,
+                grayscale_enhanced_contrast,
+                subpixel_enhanced_contrast,
                 uniforms,
                 quad,
             })
@@ -140,6 +165,15 @@ impl Resources {
 
     pub fn uniform_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
         self.uniforms.bind_group_layout()
+    }
+
+    /// Whether the GPU exposes dual-source blending. Prerequisite for the
+    /// subpixel pipeline; false means all glyphs go through the grayscale
+    /// path.
+    pub fn supports_dual_source_blending(&self) -> bool {
+        self.device
+            .features()
+            .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
     }
 
     pub fn configure_render_pass<'a>(
@@ -211,7 +245,10 @@ impl Resources {
     }
 }
 
-fn device_info_from_adapter_info(adapter_info: wgpu::AdapterInfo) -> GPUDeviceInfo {
+fn device_info_from_adapter_info(
+    adapter_info: wgpu::AdapterInfo,
+    supports_dual_source_blending: bool,
+) -> GPUDeviceInfo {
     let device_type = match adapter_info.device_type {
         DeviceType::Other => GPUDeviceType::Other,
         DeviceType::IntegratedGpu => GPUDeviceType::IntegratedGpu,
@@ -233,6 +270,7 @@ fn device_info_from_adapter_info(adapter_info: wgpu::AdapterInfo) -> GPUDeviceIn
         driver_name: adapter_info.driver,
         driver_info: adapter_info.driver_info,
         backend,
+        supports_dual_source_blending,
     }
 }
 
@@ -603,12 +641,26 @@ async fn initialize_device(
 
     limits.max_mesh_output_layers = 0;
 
+    // Opt into dual-source blending when the adapter exposes it (Vulkan
+    // dualSrcBlend, Metal MSL 1.2+, DX12). request_device fails if a
+    // feature the adapter doesn't expose is required, so gate on
+    // adapter.features(). When unavailable, scene-build classification
+    // routes glyphs to the grayscale path.
+    let mut required_features = wgpu::Features::empty();
+    if adapter
+        .features()
+        .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
+    {
+        required_features |= wgpu::Features::DUAL_SOURCE_BLENDING;
+    }
+
     let (device, queue) = match adapter
         .request_device(&wgpu::DeviceDescriptor {
             // Use the broadest/most permissive device requirements
             // so that we can run on as many machines as possible.
             // If we use any WGSL features that aren't included in
             // these defaults, we can add specific overrides as needed.
+            required_features,
             required_limits: limits,
             ..Default::default()
         })

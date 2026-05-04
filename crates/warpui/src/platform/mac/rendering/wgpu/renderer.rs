@@ -9,17 +9,18 @@ impl super::super::Renderer for Renderer {
             self,
             scene,
             window.unwrap_wgpu_resources(),
-            &|glyph_key, scale, subpixel_alignment, glyph_config, format| {
+            &|glyph_key, scale, subpixel_alignment, lcd_subpixel, glyph_config, format| {
                 font_cache.rasterized_glyph(
                     glyph_key,
                     scale,
                     subpixel_alignment,
+                    lcd_subpixel,
                     glyph_config,
                     format,
                 )
             },
-            &|glyph_key, scale, alignment| {
-                font_cache.glyph_raster_bounds(glyph_key, scale, alignment)
+            &|glyph_key, scale, lcd_subpixel, glyph_config| {
+                font_cache.glyph_raster_bounds(glyph_key, scale, lcd_subpixel, glyph_config)
             },
             window.physical_size(),
             None,

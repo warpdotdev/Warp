@@ -588,6 +588,7 @@ impl platform::FontDB for FontDB {
         _size: f32,
         _glyph_id: crate::fonts::GlyphId,
         _scale: Vector2F,
+        _lcd_subpixel: bool,
         _glyph_config: &crate::rendering::GlyphConfig,
     ) -> Result<pathfinder_geometry::rect::RectI> {
         Ok(pathfinder_geometry::rect::RectI::default())
@@ -608,6 +609,7 @@ impl platform::FontDB for FontDB {
         _glyph_id: crate::fonts::GlyphId,
         _scale: Vector2F,
         _subpixel_alignment: crate::fonts::SubpixelAlignment,
+        _lcd_subpixel: bool,
         _glyph_config: &crate::rendering::GlyphConfig,
         _format: crate::fonts::canvas::RasterFormat,
     ) -> Result<crate::fonts::RasterizedGlyph> {

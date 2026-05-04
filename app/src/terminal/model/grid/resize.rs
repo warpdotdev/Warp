@@ -19,6 +19,9 @@ impl GridHandler {
     pub fn resize(&mut self, size: SizeInfo) {
         self.ansi_handler_state.cell_width = size.cell_width_px.as_f32() as usize;
         self.ansi_handler_state.cell_height = size.cell_height_px.as_f32() as usize;
+        self.ansi_handler_state.cell_width_px = size.cell_width_px;
+        self.ansi_handler_state.cell_height_px = size.cell_height_px;
+        self.ansi_handler_state.scale_factor = size.scale_factor;
 
         let old_cols = self.columns();
         let old_rows = self.visible_rows();

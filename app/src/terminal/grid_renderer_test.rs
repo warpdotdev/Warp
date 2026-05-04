@@ -216,6 +216,7 @@ fn test_calculate_selection_bounds() {
         Pixels::new(4.),
         Pixels::new(8.),
         Pixels::new(16.),
+        1.0,
     )
     .with_rows_and_columns(151, 151);
 

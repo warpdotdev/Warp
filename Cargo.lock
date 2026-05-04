@@ -3231,7 +3231,7 @@ dependencies = [
 [[package]]
 name = "cosmic-text"
 version = "0.12.0"
-source = "git+https://github.com/warpdotdev/cosmic-text.git?rev=15198beba692162201c0ea8b15222cf5643ea068#15198beba692162201c0ea8b15222cf5643ea068"
+source = "git+https://github.com/rudrabhoj/cosmic-text-warpdev.git?rev=abafdc9e7501076744c13ef7268a1933513a43ce#abafdc9e7501076744c13ef7268a1933513a43ce"
 dependencies = [
  "bitflags 2.9.4",
  "fontdb",

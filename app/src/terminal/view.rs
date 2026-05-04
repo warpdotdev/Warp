@@ -1214,6 +1214,13 @@ impl SizeUpdateBuilder {
         let input_mode = *InputModeSettings::as_ref(ctx).input_mode.value();
         let model = view.model.lock();
 
+        let scale_factor = ctx
+            .windows()
+            .platform_window(ctx.window_id())
+            .as_ref()
+            .map(|w| w.backing_scale_factor())
+            .unwrap_or(1.0);
+
         let new_size = create_size_info(
             self.new_pane_size_px,
             &model,
@@ -1222,6 +1229,7 @@ impl SizeUpdateBuilder {
             appearance.monospace_font_family(),
             appearance.monospace_font_size(),
             appearance.line_height_ratio(),
+            scale_factor,
             ctx,
         );
 
@@ -26624,6 +26632,7 @@ pub fn create_size_info_for_blocklist(
     font_family_id: FamilyId,
     font_size: f32,
     line_height_ratio: f32,
+    scale_factor: f32,
 ) -> SizeInfo {
     let cell_size_px =
         grid_cell_dimensions(font_cache, font_family_id, font_size, line_height_ratio);
@@ -26638,6 +26647,7 @@ pub fn create_size_info_for_blocklist(
         cell_size_px.y().into_pixels(),
         padding_x,
         padding_y,
+        scale_factor,
     )
 }
 
@@ -26652,6 +26662,7 @@ pub fn create_size_info(
     font_family_id: FamilyId,
     font_size: f32,
     line_height_ratio: f32,
+    scale_factor: f32,
     ctx: &AppContext,
 ) -> SizeInfo {
     let cell_size_px =
@@ -26677,6 +26688,7 @@ pub fn create_size_info(
                 cell_size_px.y().into_pixels(),
                 uniform_padding,
                 uniform_padding,
+                scale_factor,
             )
         }
         _ => create_size_info_for_blocklist(
@@ -26685,6 +26697,7 @@ pub fn create_size_info(
             font_family_id,
             font_size,
             line_height_ratio,
+            scale_factor,
         ),
     }
 }
