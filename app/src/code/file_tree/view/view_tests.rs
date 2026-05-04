@@ -1,14 +1,15 @@
-use std::sync::Arc;
+use std::{fs, path::Path, sync::Arc};
 
 use repo_metadata::entry::{DirectoryEntry, Entry, FileMetadata};
 use repo_metadata::file_tree_store::FileTreeState;
+use repo_metadata::git_status::GitStatus;
 use repo_metadata::local_model::IndexedRepoState;
 use repo_metadata::repositories::DetectedRepositories;
 use repo_metadata::watcher::DirectoryWatcher;
 use repo_metadata::RepoMetadataModel;
 use virtual_fs::{Stub, VirtualFS};
 use warp_core::ui::appearance::Appearance;
-use warpui::{platform::WindowStyle, App, ModelHandle};
+use warpui::{platform::WindowStyle, App, ModelHandle, SingletonEntity as _};
 
 use crate::auth::AuthStateProvider;
 use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
@@ -19,7 +20,7 @@ use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::ToastStack;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
-use super::FileTreeView;
+use super::{FileTreeGitDecoration, FileTreeView};
 
 fn std_path(path: &std::path::Path) -> warp_util::standardized_path::StandardizedPath {
     warp_util::standardized_path::StandardizedPath::try_from_local(path).unwrap()
@@ -91,6 +92,28 @@ fn build_repo_state(repo_root: &std::path::Path) -> FileTreeState {
         loaded: true,
     });
     FileTreeState::new(root, vec![], None)
+}
+
+fn commit_paths(repo: &git2::Repository, paths: &[&Path]) -> anyhow::Result<()> {
+    let mut index = repo.index()?;
+    for path in paths {
+        index.add_path(path)?;
+    }
+    index.write()?;
+
+    let tree_id = index.write_tree()?;
+    let tree = repo.find_tree(tree_id)?;
+    let signature = git2::Signature::now("Warp Test", "test@example.com")?;
+    repo.commit(
+        Some("HEAD"),
+        &signature,
+        &signature,
+        "initial commit",
+        &tree,
+        &[],
+    )?;
+
+    Ok(())
 }
 
 fn build_repo_state_with_unloaded_directory(repo_root: &std::path::Path) -> FileTreeState {
@@ -469,6 +492,140 @@ fn failed_lazy_loaded_path_registration_is_retried() {
                     .unwrap(),
                     ctx
                 ));
+            });
+        });
+    });
+}
+
+#[test]
+fn file_tree_entry_updated_rebuilds_ancestor_root_without_replacing_entry() {
+    VirtualFS::test(
+        "file_tree_ancestor_metadata_event_rebuild",
+        |dirs, mut vfs| {
+            vfs.mkdir("tree/repo")
+                .with_files(vec![Stub::FileWithContent(
+                    "tree/repo/main.rs",
+                    "fn main() {}\n",
+                )]);
+            let tree = dirs.tests().join("tree");
+            let repo = tree.join("repo");
+
+            App::test((), |mut app| async move {
+                let _ = initialize_app(&mut app);
+                let (_, file_tree_view) =
+                    app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
+
+                file_tree_view.update(&mut app, |view, ctx| {
+                    view.set_is_active(true, ctx);
+                    view.set_root_directories(vec![tree.clone()], ctx);
+
+                    let tree_std = std_path(&tree);
+                    let root_dir = view.root_directories.get_mut(&tree_std).unwrap();
+                    root_dir.items.clear();
+
+                    view.handle_repository_metadata_event(
+                        &repo_metadata::RepoMetadataEvent::FileTreeEntryUpdated {
+                            id: repo_metadata::RepositoryIdentifier::local(std_path(&repo)),
+                        },
+                        ctx,
+                    );
+                });
+
+                file_tree_view.read(&app, |view, _ctx| {
+                    let tree_std = std_path(&tree);
+                    let root_dir = view.root_directories.get(&tree_std).unwrap();
+                    assert_eq!(root_dir.entry.root_directory().as_ref(), &tree_std);
+                    assert!(
+                        !root_dir.items.is_empty(),
+                        "ancestor FileTreeEntryUpdated event should rebuild flattened items"
+                    );
+                });
+            });
+        },
+    );
+}
+
+#[test]
+fn git_status_decorations_update_for_ancestor_displayed_root() {
+    VirtualFS::test("file_tree_git_status_decorations", |dirs, mut vfs| {
+        vfs.mkdir("tree/repo/packages/app/src").with_files(vec![
+            Stub::FileWithContent("tree/repo/packages/app/src/main.rs", "fn main() {}\n"),
+            Stub::FileWithContent("tree/repo/.gitignore", ""),
+        ]);
+
+        let tree = dirs.tests().join("tree");
+        let repo = tree.join("repo");
+        let modified_file = repo.join("packages/app/src/main.rs");
+        let git_repo = git2::Repository::init(&repo).unwrap();
+        commit_paths(&git_repo, &[Path::new("packages/app/src/main.rs")]).unwrap();
+        fs::write(&modified_file, "fn main() { println!(\"modified\"); }\n").unwrap();
+        let canonical_repo_root =
+            warp_util::standardized_path::StandardizedPath::from_local_canonicalized(&repo)
+                .unwrap();
+
+        App::test((), |mut app| async move {
+            let (detected_repositories, repository_metadata_model) = initialize_app(&mut app);
+            let (_, file_tree_view) = app.add_window(WindowStyle::NotStealFocus, FileTreeView::new);
+
+            detected_repositories.update(&mut app, |repositories, _ctx| {
+                repositories.insert_test_repo_root(canonical_repo_root.clone());
+            });
+
+            file_tree_view.update(&mut app, |view, ctx| {
+                view.set_is_active(true, ctx);
+                view.set_root_directories(vec![tree.clone()], ctx);
+            });
+
+            repository_metadata_model.update(&mut app, |model, ctx| {
+                model.insert_test_state(canonical_repo_root.clone(), build_repo_state(&repo), ctx);
+                model.recompute_git_statuses_for_test(
+                    canonical_repo_root.clone(),
+                    vec![modified_file.clone()],
+                    ctx,
+                );
+            });
+
+            file_tree_view.update(&mut app, |view, ctx| {
+                view.handle_repository_metadata_event(
+                    &repo_metadata::RepoMetadataEvent::FileTreeEntryUpdated {
+                        id: repo_metadata::RepositoryIdentifier::local(canonical_repo_root.clone()),
+                    },
+                    ctx,
+                );
+            });
+
+            repository_metadata_model.read(&app, |model, ctx| {
+                assert_eq!(
+                    model.git_status_for(&std_path(&modified_file), ctx),
+                    Some(GitStatus::Modified)
+                );
+                assert!(model.is_dirty_dir(&canonical_repo_root, ctx));
+                assert!(model.is_dirty_dir(&std_path(&repo.join("packages/app/src")), ctx));
+                assert_eq!(
+                    model.dirty_dir_status_for(&std_path(&repo.join("packages/app/src")), ctx),
+                    Some(GitStatus::Modified)
+                );
+            });
+
+            file_tree_view.read(&app, |view, _ctx| {
+                let tree_std = std_path(&tree);
+                let root_dir = view.root_directories.get(&tree_std).unwrap();
+                assert!(
+                    !root_dir.items.is_empty(),
+                    "ancestor FileTreeEntryUpdated event should rebuild items after status changes"
+                );
+            });
+
+            file_tree_view.read(&app, |_view, ctx| {
+                let appearance = Appearance::as_ref(ctx);
+                let decoration = FileTreeView::file_git_decoration(GitStatus::Modified, appearance);
+                match decoration {
+                    Some(FileTreeGitDecoration::File { color, badge }) => {
+                        assert_eq!(badge, Some("M"));
+                        assert_eq!(color, appearance.theme().ui_yellow_color());
+                    }
+                    _ => panic!("modified files should render an M badge with modified color"),
+                }
             });
         });
     });

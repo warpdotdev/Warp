@@ -10720,6 +10720,7 @@ dependencies = [
  "env_logger",
  "futures",
  "futures-lite 1.13.0",
+ "git2",
  "ignore",
  "itertools 0.14.0",
  "log",
