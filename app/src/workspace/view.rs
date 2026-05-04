@@ -289,8 +289,8 @@ use crate::session_management::{SessionNavigationData, SessionSource};
 use crate::settings::{
     active_theme_kind, respect_system_theme, AccessibilitySettings, AliasExpansionSettings,
     AppEditorSettings, BlockVisibilitySettings, ChangelogSettings, CursorBlink, DebugSettings,
-    FontSettings, GPUSettings, InputSettings, MonospaceFontSize, PaneSettings, PrivacySettings,
-    SelectionSettings, Settings, SshSettings, ThemeSettings,
+    GPUSettings, InputSettings, PaneSettings, PrivacySettings, SelectionSettings, Settings,
+    SshSettings, ThemeSettings,
 };
 use crate::settings_view::flags;
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
@@ -15533,7 +15533,16 @@ impl Workspace {
     }
 
     fn reset_font_size(&mut self, ctx: &mut ViewContext<Self>) {
-        self.set_terminal_font_size(MonospaceFontSize::default_value(), ctx);
+        // Clears the focused pane's per-pane override so it falls back to the
+        // current global `FontSettings::monospace_font_size`. We deliberately
+        // don't reset the global here — the user may have intentionally
+        // configured it.
+        let pane_group = self.active_tab_pane_group().clone();
+        let focus_state = pane_group.as_ref(ctx).focus_state_handle().clone();
+        let pane_id = pane_group.as_ref(ctx).focused_pane_id(ctx);
+        focus_state.update(ctx, |state, ctx| {
+            state.clear_font_size_override(pane_id, ctx);
+        });
     }
 
     fn increase_zoom(&mut self, ctx: &mut ViewContext<Self>) {
@@ -15550,6 +15559,10 @@ impl Workspace {
                 .zoom_level
                 .set_value(ZoomLevel::default_value(), ctx));
         });
+        // `Cmd+0` is bound to `ResetZoom` when the `UIZoom` flag is on, so
+        // also clear the focused pane's font-size override here — users
+        // expect the same key to reset both.
+        self.reset_font_size(ctx);
     }
 
     fn adjust_zoom(&mut self, increase: bool, ctx: &mut ViewContext<Self>) {
@@ -15575,17 +15588,15 @@ impl Workspace {
     }
 
     fn adjust_terminal_font_size(&mut self, font_size_delta: f32, ctx: &mut ViewContext<Self>) {
-        let appearance = Appearance::as_ref(ctx);
-        let new_font_size = (appearance.monospace_font_size() + font_size_delta)
-            .clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
-        self.set_terminal_font_size(new_font_size, ctx);
-    }
-
-    fn set_terminal_font_size(&mut self, new_font_size: f32, ctx: &mut ViewContext<Self>) {
-        FontSettings::handle(ctx).update(ctx, |font_settings, ctx| {
-            report_if_error!(font_settings
-                .monospace_font_size
-                .set_value(new_font_size, ctx));
+        let pane_group = self.active_tab_pane_group().clone();
+        let focus_state = pane_group.as_ref(ctx).focus_state_handle().clone();
+        let pane_id = pane_group.as_ref(ctx).focused_pane_id(ctx);
+        let current = focus_state
+            .as_ref(ctx)
+            .effective_monospace_font_size(pane_id, ctx);
+        let new_size = (current + font_size_delta).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
+        focus_state.update(ctx, |state, ctx| {
+            state.set_font_size_override(pane_id, new_size, ctx);
         });
     }
 
