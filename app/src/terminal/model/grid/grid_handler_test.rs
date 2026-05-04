@@ -463,6 +463,40 @@ fn test_empty_grid_bounds_to_string() {
 }
 
 #[test]
+fn test_alt_screen_scrollback_is_stored_in_grid_storage() {
+    let size = SizeInfo::new_without_font_metrics(3, 1);
+    let mut grid_handler = GridHandler::new(
+        size,
+        2,
+        ChannelEventListener::new_for_test(),
+        true,
+        ObfuscateSecrets::No,
+        PerformResetGridChecks::No,
+    );
+
+    grid_handler.input('a');
+    grid_handler.linefeed();
+    grid_handler.carriage_return();
+    grid_handler.input('b');
+    grid_handler.linefeed();
+    grid_handler.carriage_return();
+    grid_handler.input('c');
+    grid_handler.linefeed();
+    grid_handler.carriage_return();
+    grid_handler.input('d');
+
+    assert_eq!(grid_handler.flat_storage.total_rows(), 0);
+    assert_eq!(grid_handler.grid_storage().history_size(), 1);
+    assert_eq!(grid_handler.history_size(), 1);
+    assert_eq!(grid_handler.total_rows(), 4);
+    assert_eq!(grid_handler.cursor_point(), Point::new(3, 0));
+    assert_eq!(grid_handler.row(0).expect("row should exist")[0].c, 'a');
+    assert_eq!(grid_handler.row(1).expect("row should exist")[0].c, 'b');
+    assert_eq!(grid_handler.row(2).expect("row should exist")[0].c, 'c');
+    assert_eq!(grid_handler.row(3).expect("row should exist")[0].c, 'd');
+}
+
+#[test]
 fn test_semantic_search() {
     let blockgrid =
         mock_blockgrid("/usr/local/bin\r\nword_with_underscores\r\nвосибing\r\nsome«quotes»");
