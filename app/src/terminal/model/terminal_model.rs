@@ -1954,7 +1954,7 @@ impl TerminalModel {
 
     /// Resize terminal to new dimensions.
     /// The block sort direction is needed to update the state of the find dialog.
-    pub fn resize(&mut self, size_update: SizeUpdate) {
+    pub fn resize(&mut self, size_update: SizeUpdate, preserve_text_selection: bool) {
         // Only resize the model on a pane size change or gap size change.  If it's just
         // the content height changing, we don't need to resize the model, and resizing
         // the model will actually clear the selection state, which we don't want to do.
@@ -1979,7 +1979,12 @@ impl TerminalModel {
                 SizeUpdateReason::ViewerSizeReported { .. } => false,
                 _ => true,
             };
-            self.block_list.resize(&size_update, update_old_blocks);
+            if preserve_text_selection {
+                self.block_list
+                    .resize_preserving_selection(&size_update, update_old_blocks);
+            } else {
+                self.block_list.resize(&size_update, update_old_blocks);
+            }
         }
 
         if size_update.rows_or_columns_changed() {

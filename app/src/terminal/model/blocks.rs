@@ -1998,9 +1998,27 @@ impl BlockList {
     /// Resize terminal to new dimensions.  We pass in an optional new gap height
     /// here because resizing may result in a change in gap size.
     pub fn resize(&mut self, size_update: &SizeUpdate, update_old_blocks: bool) {
+        self.resize_internal(size_update, update_old_blocks, false);
+    }
+
+    /// Resize terminal to new dimensions without clearing an active text selection.
+    pub fn resize_preserving_selection(
+        &mut self,
+        size_update: &SizeUpdate,
+        update_old_blocks: bool,
+    ) {
+        self.resize_internal(size_update, update_old_blocks, true);
+    }
+
+    fn resize_internal(
+        &mut self,
+        size_update: &SizeUpdate,
+        update_old_blocks: bool,
+        preserve_selection: bool,
+    ) {
         let size = size_update.new_size;
         self.size = size;
-        if size_update.rows_or_columns_changed() {
+        if size_update.rows_or_columns_changed() && !preserve_selection {
             self.clear_selection();
         }
 

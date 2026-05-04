@@ -13,6 +13,7 @@ use crate::{
             },
             test_utils,
         },
+        SizeUpdate, SizeUpdateReason,
     },
 };
 
@@ -107,6 +108,79 @@ pub fn test_selection_range_cleared_when_block_finishes() {
         selection_range.first().end,
         BlockListPoint::new(output_grid_end_offset - 1., 7)
     );
+}
+#[test]
+pub fn test_resize_preserving_selection_keeps_active_selection() {
+    let mut blocks = new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
+    let block_index = insert_block(&mut blocks, "cmd\n", "abc\ndef\n");
+    let block = blocks.block_at(block_index).expect("block should exist");
+    let output_grid_offset = block.output_grid_offset();
+    let semantic_selection = SemanticSelection::mock(false, "");
+
+    blocks.start_selection(
+        BlockListPoint::new(output_grid_offset, 0),
+        SelectionType::Simple,
+        Side::Right,
+    );
+    blocks.update_selection(BlockListPoint::new(output_grid_offset + 1., 1), Side::Right);
+
+    assert!(blocks
+        .renderable_selection(&semantic_selection, false)
+        .is_some());
+
+    let last_size = *blocks.size();
+    let new_size = last_size.with_rows_and_columns(last_size.rows() + 1, last_size.columns() + 1);
+    let size_update = SizeUpdate {
+        update_reason: SizeUpdateReason::Refresh,
+        last_size,
+        new_size,
+        new_gap_height: None,
+        natural_rows: new_size.rows(),
+        natural_cols: new_size.columns(),
+    };
+
+    blocks.resize_preserving_selection(&size_update, true);
+
+    assert!(blocks
+        .renderable_selection(&semantic_selection, false)
+        .is_some());
+}
+
+#[test]
+pub fn test_resize_clears_selection_by_default() {
+    let mut blocks = new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
+    let block_index = insert_block(&mut blocks, "cmd\n", "abc\ndef\n");
+    let block = blocks.block_at(block_index).expect("block should exist");
+    let output_grid_offset = block.output_grid_offset();
+    let semantic_selection = SemanticSelection::mock(false, "");
+
+    blocks.start_selection(
+        BlockListPoint::new(output_grid_offset, 0),
+        SelectionType::Simple,
+        Side::Right,
+    );
+    blocks.update_selection(BlockListPoint::new(output_grid_offset + 1., 1), Side::Right);
+
+    assert!(blocks
+        .renderable_selection(&semantic_selection, false)
+        .is_some());
+
+    let last_size = *blocks.size();
+    let new_size = last_size.with_rows_and_columns(last_size.rows() + 1, last_size.columns() + 1);
+    let size_update = SizeUpdate {
+        update_reason: SizeUpdateReason::Refresh,
+        last_size,
+        new_size,
+        new_gap_height: None,
+        natural_rows: new_size.rows(),
+        natural_cols: new_size.columns(),
+    };
+
+    blocks.resize(&size_update, true);
+
+    assert!(blocks
+        .renderable_selection(&semantic_selection, false)
+        .is_none());
 }
 
 #[test]
