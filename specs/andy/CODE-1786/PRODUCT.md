@@ -1,11 +1,18 @@
 # Run Warp at startup (Windows)
+
 Linear: [CODE-1786](https://linear.app/warpdotdev/issue/CODE-1786/windows-run-warp-at-startup)
 GitHub: [warpdotdev/warp#5957](https://github.com/warpdotdev/warp/issues/5957)
+
 ## Summary
+
 Bring the macOS-only "Start Warp at login" setting to Windows so that Warp launches automatically whenever the user signs in to Windows. This lets users rely on the global hotkey (e.g. `Ctrl+J`) to summon Warp at any time without having to manually start it first, matching the parity the macOS version already ships.
+
 ## Problem
+
 On macOS, Warp exposes a **Start Warp at login** toggle in **Settings → Features → General** backed by `SMAppService`. On Windows there is no equivalent — users must either launch Warp manually after every sign-in, or manually drop a shortcut into `shell:startup` (as documented in the GitHub issue workaround). That defeats "terminal that is always there" use cases, especially for users who use the global hotkey as their primary entry point.
+
 ## Behavior
+
 1. **Setting exists on Windows.** The **Features → General** settings page shows a toggle labeled **Start Warp at login** when Warp is running on Windows. The existing macOS toggle keeps its current label behavior ("requires macOS 13+"); the Windows toggle shows no OS qualifier.
 2. **Default on first install.** On a fresh Windows install, the toggle defaults to the same value it does on macOS (on — matching the existing `add_app_as_login_item` default of `true`). The registration does not actually happen until the user has been through onboarding and the app state is persisted at least once.
 3. **Enabling the toggle registers Warp to start at login.** When the user flips the toggle on, Warp registers itself with Windows so that the current user's next sign-in launches Warp automatically. Registration completes without requiring administrator elevation. If registration fails, the toggle still reflects the user's intended state but a warning is logged and the setting is not marked as registered so a later retry can succeed.
@@ -19,7 +26,9 @@ On macOS, Warp exposes a **Start Warp at login** toggle in **Settings → Featur
 11. **Visibility to the user outside Warp.** The startup entry must be visible and removable in Windows' standard UIs — at minimum, **Settings → Apps → Startup** on Windows 10/11 and **Task Manager → Startup apps**. The entry's display name is "Warp" (or the channel-specific name, e.g. "Warp Preview", "Warp Dev") so users can identify it.
 12. **Telemetry.** Toggling the setting emits the same `ToggleLoginItem` features-page telemetry event that the macOS toggle emits today, so rollout can be measured consistently across platforms.
 13. **Not applicable on web/Linux.** The setting remains hidden on Web. Linux is out of scope for this ticket (see Non-goals).
+
 ## Non-goals
+
 - Linux autostart (`~/.config/autostart/*.desktop`) is not covered here.
 - Running Warp as a background service with no user session, running elevated, or starting before user login.
 - Any in-app notification or onboarding prompt about the setting; discoverability is handled by the existing Features page UI.

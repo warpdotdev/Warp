@@ -1,10 +1,13 @@
 # APP-3857: Memory-safe animated image rendering in markdown
+
 See `specs/kevinchevalier/APP-3857/PRODUCT.md` for the product spec.
 
 ## Problem
+
 Markdown image blocks currently pay for full animated-image decoding even though the markdown renderer does not actually play animations. `RenderableImage` builds a plain `warpui::elements::Image` without `enable_animation_with_start_time`, so the markdown surface effectively shows only the first frame today (`crates/editor/src/render/element/image.rs:13-49`, `crates/warpui_core/src/elements/image.rs:107-172`). However, the shared image asset path still decodes animated GIF/WebP assets into `AnimatedImage { frames: Vec<...> }`, and the resize path then creates resized copies of every decoded frame (`crates/warpui_core/src/image_cache.rs (259-359)`, `crates/warpui_core/src/image_cache.rs (457-511)`). On large assets this produces the multi-GB memory spike seen in `APP-3857`.
 
 ## Relevant code
+
 - `crates/editor/src/content/edit.rs:66-97` — resolves markdown image source strings into `AssetSource`.
 - `crates/editor/src/content/edit.rs:677-759` — converts `BufferBlockItem::Image` into a laid-out `BlockItem::Image` with default markdown image sizing.
 - `crates/editor/src/render/element/image.rs:13-49` — markdown render block that constructs `warpui::elements::Image` from the resolved asset source.
@@ -17,6 +20,7 @@ Markdown image blocks currently pay for full animated-image decoding even though
 - `crates/warpui_core/src/image_cache_tests.rs (1-261)` and `crates/editor/src/content/markdown_tests.rs (270-337)` — the closest existing test coverage for image decoding/cache behavior and markdown image handling.
 
 ## Current state
+
 - Markdown image syntax is parsed as a block item and stored as `BufferBlockItem::Image { alt_text, source }`, then laid out as `BlockItem::Image { asset_source, config, .. }` using the shared editor/render pipeline (`crates/editor/src/content/text.rs:302-373`, `crates/editor/src/content/edit.rs:677-759`).
 - The markdown render element constructs a generic `warpui::elements::Image` with `.contain()` and no animation start time (`crates/editor/src/render/element/image.rs:42-49`).
 - The `Image` element will animate only if a caller explicitly opts in via `enable_animation_with_start_time`; otherwise it repeatedly paints frame 0 (`crates/warpui_core/src/elements/image.rs:107-172`).
@@ -25,6 +29,7 @@ Markdown image blocks currently pay for full animated-image decoding even though
 - This is why the current surface is especially wasteful: markdown gets only a first-frame preview, but pays the memory cost of full animation decode plus resized-frame duplication.
 
 ## Proposed changes
+
 - Add an explicit animated-image behavior to `warpui::elements::Image`, with two modes:
   - `FullAnimation` — current behavior for surfaces that intentionally animate.
   - `FirstFramePreview` — render animated sources as a static first-frame image.
@@ -45,6 +50,7 @@ Markdown image blocks currently pay for full animated-image decoding even though
   - native image libraries often provide either a rolling frame buffer for true animation (for example Gifu) or a first-frame-only preview mode for list/thumbnail surfaces (for example Kingfisher)
 
 ## End-to-end flow
+
 ```mermaid
 graph TD
   A[Markdown ![](...)] --> B[BufferBlockItem::Image]
@@ -65,6 +71,7 @@ graph TD
 ```
 
 ## Risks and mitigations
+
 - **Risk: preview/full cache collisions.**
   - Mitigation: include animated-image behavior in the rendered-image cache key rather than relying on `AssetSource + bounds` only.
 - **Risk: the asset cache still holds full animated frame data.**
@@ -77,6 +84,7 @@ graph TD
   - Mitigation: the product spec only requires a stable first visible frame preview, not browser-perfect animation fidelity.
 
 ## Testing and validation
+
 - Add `warpui_core` unit tests with small animated GIF and animated WebP fixtures:
   - preview policy returns `Image::Static`
   - full-animation policy still returns `Image::Animated`
@@ -94,6 +102,7 @@ graph TD
   - wasm build check for this repo, since image/rendering code is shared across desktop and wasm-adjacent targets
 
 ## Follow-ups
+
 - If product later wants real markdown animation, add a bounded frame-buffer animation path instead of reusing the eager all-frames asset.
 - Add explicit decode limits / pixel-budget guards for pathological single-frame assets if the Petra fix reveals a second-order issue there.
 - Consider reusing the preview-only animated-image behavior in any other list, thumbnail, or markdown-adjacent surfaces that currently do not need full animation.

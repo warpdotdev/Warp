@@ -85,24 +85,28 @@ The `settings.toml` file (used by the Settings File feature) is intentionally ke
 ## Alternatives Considered
 
 ### 1. Full copy instead of symlinks
+
 Copy all files and directories from `~/.warp` to `~/.warp-preview`.
 
 - Pro: Full independence from day one.
 - Con: Doubles disk usage for themes, workflows, etc. Changes in Stable no longer propagate to Preview, which could confuse users who expect their config to be shared.
 
 ### 2. Symlink the entire directory
+
 Create `~/.warp-preview` as a symlink to `~/.warp`.
 
 - Pro: Simplest implementation.
 - Con: Not actually a separate directory. Any new entries created by Preview (e.g., new directories Warp adds in future versions) would appear in `~/.warp`. Defeats the purpose of separation.
 
 ### 3. No migration (clean start)
+
 Simply start using `~/.warp-preview` with no migration.
 
 - Pro: Simplest. No migration code.
 - Con: Users lose all custom keybindings, themes, workflows, launch configs, tab configs, and settings. This is a bad experience.
 
 ### 4. Deep symlink (per-file in each subdirectory)
+
 For each directory like `themes/`, create the directory in `.warp-preview` and symlink each individual file.
 
 - Pro: New files created inside directories stay in `.warp-preview` rather than leaking into `.warp`.

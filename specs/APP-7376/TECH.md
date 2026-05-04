@@ -1,6 +1,7 @@
 # Viewer-Driven Terminal Sizing for Remote Control Sessions
 
 ## Summary
+
 When a Claude Code session is viewed on a mobile web browser, the terminal is super wide because the sharer's desktop terminal width dictates the PTY size. We allow the viewer to report its own terminal size back to the sharer, so the sharer can resize its PTY to fit the viewer's viewport.
 
 The sharer honors the viewer's reported size when all of the following are true:
@@ -13,6 +14,7 @@ On the viewer side, the viewer reports its size when the sharer is the same user
 ## Relevant Code
 
 ### Resize flow (sharer → viewer)
+
 - `app/src/terminal/terminal_size_element.rs` — `TerminalSizeElement::after_layout()` sends rendered size through `resize_tx`
 - `app/src/terminal/model/terminal_model.rs:1968-1980` — `TerminalModel::resize()` sends `OrderedTerminalEventType::Resize` through `ordered_terminal_events_for_shared_session_tx`
 - `app/src/terminal/shared_session/sharer/network.rs:1156` — sharer's `Network` sends `UpstreamMessage::OrderedTerminalEvent` to the server
@@ -21,6 +23,7 @@ On the viewer side, the viewer reports its size when the sharer is the same user
 - `app/src/terminal/view.rs:1201-1236` — `SizeUpdateBuilder::build()` takes the MAX of sharer's size and viewer's pane size (unless viewer-driven sizing is active, in which case the viewer's natural size is used directly)
 
 ### Viewer → sharer communication (WriteToPty as reference pattern)
+
 - `session-sharing-server/protocol/src/viewer.rs:316` — `viewer::UpstreamMessage` enum (new: `ReportTerminalSize` at line 389)
 - `session-sharing-server/server/src/sessions/manager/viewer.rs:40` — `handle_viewer_upstream_message()` dispatches viewer messages (new: `ReportTerminalSize` handler at line 313)
 - `session-sharing-server/protocol/src/sharer.rs:339` — `sharer::DownstreamMessage` enum (new: `ViewerTerminalSizeReported` at line 454)
@@ -28,23 +31,27 @@ On the viewer side, the viewer reports its size when the sharer is the same user
 - `app/src/terminal/local_tty/terminal_manager.rs:1945-1967` — sharer's terminal manager handles `NetworkEvent::ViewerTerminalSizeReported`
 
 ### Participant identity
+
 - `app/src/terminal/shared_session/presence_manager.rs:313` — `PresenceManager::firebase_uid()` returns our own uid
 - `app/src/terminal/shared_session/presence_manager.rs:338-341` — `present_viewer_count()` returns the number of present viewers
 - `app/src/terminal/shared_session/presence_manager.rs:737-751` — `viewer_firebase_uid()` looks up a viewer's firebase uid by participant id
 - `session-sharing-server/protocol/src/common/participant.rs:44` — `ProfileData` includes `firebase_uid`
 
 ### Viewer sizing
+
 - `app/src/terminal/view.rs:1190-1199` — `create_size_info()` computes `new_size.rows`/`new_size.columns` from the viewer's actual pane dimensions
 - `app/src/terminal/view/shared_session/viewer.rs:25-31` — client-side `Viewer` struct stores `sharer_size` and `last_reported_natural_size` for deduplication
 - `app/src/terminal/view/shared_session/view_impl.rs:1652-1686` — `is_viewer_driven_sizing_eligible()` checks eligibility (same-user or ambient agent)
 - `app/src/terminal/shared_session/settings.rs:39-46` — `viewer_driven_sizing_enabled` killswitch setting
 
 ### PTY resize
+
 - `app/src/terminal/writeable_pty/terminal_manager_util.rs:67-71` — `view::Event::Resize` wired to `PtyController::resize_pty()`
 - `app/src/terminal/writeable_pty/pty_controller.rs:598` — `resize_pty()` sends `Message::Resize` to the event loop (also triggers on `rows_or_columns_changed()` for `ViewerSizeReported`)
 - `app/src/terminal/local_tty/unix.rs:538` — `on_resize()` calls `ioctl(TIOCSWINSZ)` on the PTY fd
 
 ### Server relay and throttling
+
 - `session-sharing-server/server/src/sessions/manager/viewer_terminal_size.rs` — `relay_viewer_terminal_size()` publishes to event bus, `process_viewer_terminal_size_report()` delivers to the sharer
 - `session-sharing-server/server/src/sessions/manager/event_bus/mod.rs:161-166` — `InvalidationTopicMessage::ViewerTerminalSizeReported` variant
 - `session-sharing-server/server/src/sessions/network/viewer/join.rs:261-282` — throttled channel setup using `INVALIDATIONS_THROTTLE_PERIOD`
@@ -103,15 +110,19 @@ ViewerTerminalSizeReported {
 ## Risks and Mitigations
 
 ### Sharer's local terminal renders narrow content
+
 When the PTY is resized to the mobile viewer's dimensions, the sharer's desktop terminal will render narrow content. This is acceptable because viewer-driven sizing only activates for self-viewing remote control sessions (same user, 1 viewer) where the sharer is typically not actively looking at their desktop terminal.
 
 ### Race between viewer join and size report
+
 The viewer may not have its layout computed when it first joins. The first `after_terminal_view_layout()` pass that computes a natural size will report it; subsequent layout passes correct it as the view settles.
 
 ### Multiple rapid resize events
+
 Server-side throttling (via the `throttle()` utility with `TERMINAL_SIZE_THROTTLE_PERIOD`) coalesces rapid viewer size reports. The sharer applies the latest received size.
 
 ## Testing and Validation
+
 - Verify that a viewer's terminal size is reported to the sharer on layout and on browser resize.
 - Verify that the sharer resizes its PTY when conditions are met (1 viewer, same user).
 - Verify no resize happens when the viewer is a different user.

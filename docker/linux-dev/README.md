@@ -7,10 +7,10 @@ This container is based on Debian Sid, Debian's unstable branch.  It ensures tha
 ## Prerequisites
 
 You'll need to install:
-* Docker (e.g.: Docker Desktop)
-* XQuartz (download [here](https://www.xquartz.org/))
-  * You'll want to enable iGLX (indirect GL extensions) for proper rendering by running `defaults write org.xquartz.X11 enable_iglx -bool true`; you can do this before you install XQuartz.
-  * After installing XQuartz, run it, and enable "Allow connections from network clients" in the Security tab in its settings.  You'll need to quit and relaunch XQuartz after making this change.
+- Docker (e.g.: Docker Desktop)
+- XQuartz (download [here](https://www.xquartz.org/))
+  - You'll want to enable iGLX (indirect GL extensions) for proper rendering by running `defaults write org.xquartz.X11 enable_iglx -bool true`; you can do this before you install XQuartz.
+  - After installing XQuartz, run it, and enable "Allow connections from network clients" in the Security tab in its settings.  You'll need to quit and relaunch XQuartz after making this change.
 
 ## Setup
 

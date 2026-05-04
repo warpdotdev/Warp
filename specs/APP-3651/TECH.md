@@ -20,27 +20,33 @@ The vertical tabs panel pane rows need restructuring to improve information hier
 ## Current state
 
 ### Terminal pane rows
+
 `render_terminal_row_content` builds three lines:
 1. **Primary** (`render_terminal_primary_line`): working directory + git branch, main text color
 2. **Secondary** (`render_terminal_secondary_line`): conversation title/status, or terminal title if it differs from working directory; sub text color. Returns `None` if terminal title matches working directory.
 3. **Tertiary** (`render_terminal_tertiary_line`): kind badge (Terminal/Oz icon + label) + right badges (diff stats, PR)
 
 ### Non-terminal pane rows
+
 `render_pane_row` builds the content in the `else` branch (line 739-774):
 1. Title row (main text, `ClipConfig::end()`)
 2. Optional subtitle row (sub text)
 3. Meta row: `render_kind_badge(icon, kind_label)` on left, optional `render_row_badge(badge)` on right
 
 ### Tab group headers
+
 `render_group_header` renders a collapse chevron (`ChevronDown`/`ChevronRight`) that dispatches `WorkspaceAction::ToggleVerticalTabsGroupCollapsed`. The `is_collapsed` state in `VerticalTabsPanelState::collapsed_tab_groups` controls whether pane rows are rendered.
 
 ### ClipConfig
+
 All text currently uses `ClipConfig::end()`. `ClipConfig::start()` exists and fades from the leading edge.
 
 ### Last completed command
+
 `TerminalModel` → `BlockList::blocks()` → `Vec<Block>`. Each `Block` has `command_to_string() -> String` and `state` (public via `finished()`). There is no existing accessor on `TerminalView` for the last completed command. The model is behind `self.model.lock()` on `TerminalView`.
 
 ### Code pane tab count
+
 `CodeView::tab_group` is a private `Vec<TabData>`. No public accessor for `tab_group.len()` exists. `CodeView::set_title` already sets secondary title to `(+N)` format when `tab_group.len() > 1`.
 
 ## Proposed changes
@@ -161,6 +167,7 @@ Replace the collapse button construction:
 ## End-to-end flow
 
 ### Terminal pane row rendering
+
 1. `render_pane_row` is called for each visible pane in a tab group.
 2. For terminal panes, `render_terminal_row_content` is called with the `TerminalView` reference.
 3. It calls `terminal_title_from_shell()`, `display_working_directory()`, `selected_conversation_display_title()`, and the new `last_completed_command_text()`.
@@ -169,6 +176,7 @@ Replace the collapse button construction:
 6. The tertiary line renders unchanged.
 
 ### Close button
+
 1. User clicks X on a tab group header.
 2. The click handler dispatches `WorkspaceAction::CloseTab(tab_index)`.
 3. The existing workspace close-tab logic handles teardown, undo grace period, etc.

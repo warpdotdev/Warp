@@ -1,14 +1,17 @@
 # Markdown Table Styling Consistency — Product Spec
+
 Linear: none provided
 Figma: House of Agents — https://www.figma.com/design/CsBdBW4YoLgSAbr5eSkwV6/House-of-Agents?node-id=7451-99490&t=NvrWl7bhDEC5kpKF-1
 Reference styling baseline: PR #23908 — https://github.com/warpdotdev/warp-internal/pull/23908
 
 ## Summary
+
 Make rendered Markdown tables use the same blockless visual treatment across every Warp surface that renders Markdown tables.
 
 The block list styling introduced in PR #23908 should become the visual baseline for Markdown tables everywhere they render in Warp, including Markdown notebooks and the Markdown editor. This is a consistency and presentation change, not a redesign of Markdown table semantics or editing behavior.
 
 ## Problem
+
 Warp currently renders the same Markdown table with noticeably different visual treatments depending on where the user sees it.
 
 After PR #23908, AI block list tables use a lighter, blockless presentation based on the House of Agents design: no outer container, no full border, no vertical dividers, no filled header row, and more typography-driven hierarchy. Other Markdown-rendering surfaces still use the older table treatment, which creates visible inconsistency in:
@@ -22,6 +25,7 @@ After PR #23908, AI block list tables use a lighter, blockless presentation base
 This makes the same Markdown content feel like different components in different parts of the product. Users moving between notebooks, the Markdown editor, AI documents, comment editors, file notebooks, and AI output should not have to mentally re-parse the same table because Warp styled it differently in each surface.
 
 ## Goals
+
 - Make rendered Markdown tables in every current Warp Markdown-rendering surface match the visual treatment now used in the AI block list.
 - Treat the merged block list styling from PR #23908 as the visual source of truth for this work.
 - Preserve existing Markdown table semantics, supported inline formatting, alignment rules, and editability.
@@ -30,6 +34,7 @@ This makes the same Markdown content feel like different components in different
 - Ensure future Warp surfaces that adopt Markdown table rendering inherit this same style by default rather than introducing another table treatment.
 
 ## Non-goals
+
 - Changing Markdown table parsing rules or supported syntax.
 - Introducing new Markdown table editing capabilities.
 - Changing block list table styling again as part of this work.
@@ -38,6 +43,7 @@ This makes the same Markdown content feel like different components in different
 - Broadly restyling every table-like UI in Warp outside Markdown-rendered tables.
 
 ## Figma / design references
+
 - Figma: House of Agents — https://www.figma.com/design/CsBdBW4YoLgSAbr5eSkwV6/House-of-Agents?node-id=7451-99490&t=NvrWl7bhDEC5kpKF-1
 - PR baseline: https://github.com/warpdotdev/warp-internal/pull/23908
 - Existing related spec: `specs/blocklist-markdown-table-rendering/PRODUCT.md`
@@ -47,6 +53,7 @@ The Figma node shows the blockless table treatment that now exists in the AI blo
 ## User experience
 
 ### Scope
+
 This feature applies to rendered GitHub Flavored Markdown tables in:
 - Markdown notebooks
 - the Markdown editor
@@ -60,6 +67,7 @@ If a Warp surface renders a valid Markdown table as a table, it should adopt the
 This feature does not change the appearance of raw Markdown source when the user is viewing or editing literal source text rather than a rendered table presentation.
 
 ### Visual consistency rule
+
 The user-visible rule is simple:
 
 The same valid Markdown table should look materially the same in the AI block list and in every other Warp surface that renders Markdown tables.
@@ -67,6 +75,7 @@ The same valid Markdown table should look materially the same in the AI block li
 The goal is not approximate similarity. The goal is one shared visual treatment for Markdown-rendered tables across these surfaces.
 
 ### Styling invariants
+
 Rendered Markdown tables in all Warp Markdown-rendering surfaces should adopt the same structural styling introduced for block list tables in PR #23908.
 
 That means:
@@ -87,6 +96,7 @@ That means:
 The blockless Figma version is the intended design target.
 
 ### Typography and spacing
+
 The table should continue to use the surrounding Markdown typography system for font family and sizing, but with the same hierarchy used in the block list treatment:
 
 - headers are bold or semibold and visually prominent
@@ -101,6 +111,7 @@ If theme-specific token values differ across surfaces, the relationship must sti
 - the table has no filled container or boxed background treatment
 
 ### Functional behavior that must remain unchanged
+
 This restyle should not change what Markdown tables mean or how users interact with them.
 
 The following behaviors should remain unchanged unless a specific implementation constraint requires an adjustment:
@@ -119,6 +130,7 @@ The following behaviors should remain unchanged unless a specific implementation
 This is a styling consistency feature, not a behavior change feature.
 
 ### Alignment and inline formatting parity
+
 All currently supported Markdown table content should continue to render correctly after the restyle.
 
 At minimum, every affected Markdown-rendering surface must continue to support:
@@ -136,6 +148,7 @@ At minimum, every affected Markdown-rendering surface must continue to support:
 Changing the visual style must not collapse centered or right-aligned columns back to left alignment.
 
 ### Editing contexts
+
 Some Markdown table surfaces are editable and some are read-only. The restyle must not make editing feel worse anywhere editing is supported today.
 
 If a user can place a cursor in a rendered table cell today, they should still be able to do so after the change.
@@ -152,6 +165,7 @@ those interactions must continue to work with the new styling.
 The visual update must not reduce hit targets, make selections harder to read, or create ambiguity about which cell is active.
 
 ### Wide tables
+
 Wide tables should remain readable and usable.
 
 If a table requires horizontal overflow handling, the updated styling must preserve the user’s ability to:
@@ -164,11 +178,13 @@ If a table requires horizontal overflow handling, the updated styling must prese
 This feature should not introduce clipping, truncation, or layout breakage that did not exist before.
 
 ### Invalid or unsupported table-like content
+
 This feature does not change fallback behavior.
 
 If content is not a valid Markdown table and currently falls back to normal Markdown text rendering, it should continue to do so. Likewise, table-looking content inside code blocks should continue to render as code, not as a table.
 
 ### Existing and newly rendered content
+
 The updated style should apply consistently to:
 
 - newly created notebooks and documents
@@ -180,6 +196,7 @@ The updated style should apply consistently to:
 Users should not have to migrate or rewrite table Markdown to get the new treatment.
 
 ## Success criteria
+
 - A Markdown table rendered in any current Warp Markdown-rendering surface uses the same blockless styling pattern as the AI block list table from PR #23908.
 - Warp no longer shows two competing visual treatments for rendered Markdown tables across its current Markdown surfaces.
 - Other Markdown-rendering surfaces no longer show the older table chrome such as a full outer border, vertical dividers, zebra striping, or a filled header background.
@@ -193,6 +210,7 @@ Users should not have to migrate or rewrite table Markdown to get the new treatm
 - Invalid Markdown table input continues to fall back to existing non-table behavior.
 
 ## Validation
+
 - Manual validation with the same Markdown table rendered in the AI block list and in multiple editor-backed surfaces, including:
   - AI block list
   - Markdown notebook
@@ -209,4 +227,5 @@ Users should not have to migrate or rewrite table Markdown to get the new treatm
 - Screenshot-based review confirming that the editor-backed result is visually consistent with the merged block list result.
 
 ## Open questions
+
 None currently. New Warp surfaces that render Markdown tables should inherit this style by default.

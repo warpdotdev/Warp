@@ -1,6 +1,9 @@
 # CODE-1793 — CLI coding agent paste being mangled by Warp
+
 Linear: https://linear.app/warpdotdev/issue/CODE-1793/claude-code-native-image-paste-being-bypassed
+
 ## Context
+
 When a CLI coding agent like Claude Code runs as a long-running command in a Warp terminal, Warp intercepts Ctrl+V (and the platform paste action) and converts the clipboard to a shell-escaped text paste that is sent to the PTY. Two different user flows break on Windows as a result:
 1. **Raw image data in the clipboard (e.g. screenshot from `Win+Shift+S` / Snipping Tool).** The Windows clipboard has only `CF_DIB`, no `CF_HDROP`. `arboard`'s `file_list()` returns no paths, `plain_text` is empty, and Warp's text-paste path sends nothing. Claude Code's native image-paste handler never gets a chance to run and the user sees nothing happen.
 2. **Image file copied from Explorer.** The clipboard has a `CF_HDROP` path. Warp reads the path, shell-escapes it via `ShellFamily::escape`, and writes it as text. PowerShell-family escaping uses backtick escapes, which the CLI agent's path-detection does not recognize; Windows Terminal by contrast pastes the path verbatim and the agent's path-detection attaches the image correctly.
@@ -13,21 +16,31 @@ Relevant code:
 - `app/src/terminal/cli_agent_sessions/mod.rs:296` — `CLIAgentSessionsModel::session(view_id)` gives the active CLI agent (if any) for a terminal.
 - `app/src/terminal/cli_agent.rs:108` — `CLIAgent` enum.
 Why the existing paste path can't just "pass-through" Ctrl+V: the `terminal:paste` / Windows `ctrl-v` bindings at `app/src/terminal/view/init.rs` intercept the keystroke and dispatch `TerminalAction::Paste`. If `paste()` returns without writing anything, the agent never sees the keystroke at all.
+
 ## Implemented changes
+
 Two changes to `TerminalView::paste` in `app/src/terminal/view.rs`, gated on a new `active_cli_agent_handles_image_paste_natively(ctx)` helper that returns `true` whenever `CLIAgentSessionsModel::as_ref(ctx).session(self.view_id).is_some()` — i.e. any active CLI agent session on this terminal. The paste target must also be the PTY (`!should_paste_in_input`) and the event must not be a middle-click (`!middle_click`), since middle-click is an X11/Linux text-paste convention.
+
 ### 1. Forward the native paste keystroke for raw clipboard image data
+
 Before the existing text-paste logic, if we're in a CLI-agent paste and `ctx.clipboard().read().has_image_data()` is true, write the platform-appropriate keystroke the CLI agent expects and return early:
 - Windows: `ESC 'v'` (`[0x1b, b'v']`) — `Alt+V`.
 - macOS / Linux: `[0x16]` — `Ctrl+V` (SYN).
 This intentionally fires only when raw image data is present. A clipboard that only has file paths (Explorer copy) falls through to #2 — Claude Code's native `Alt+V` handler only reads raw image bytes and errors out ("No image found in clipboard. Use alt+v to paste images.") if we hand it a path-only clipboard.
+
 ### 2. Skip shell-escaping on pasted file paths in CLI-agent pastes
+
 `TerminalView::read_from_clipboard` and `TerminalView::middle_click_paste_content` now take `Option<ShellFamily>` instead of `ShellFamily`. `paste()` passes `None` when `is_cli_agent_paste` is true; otherwise it passes `Some(self.shell_family(ctx))` as before. `clipboard_content_with_escaped_paths` already handled `None` by returning paths verbatim, so no changes were needed there.
 The net effect: a path like `C:\Users\andy\Pictures\screenshot.png` is sent to the agent exactly as Windows Terminal would paste it — the agent's file-path detection recognizes it and attaches the image. No PowerShell backtick escaping is applied.
+
 ### Scope
+
 `active_cli_agent_handles_image_paste_natively` returns `true` for *any* active CLI agent session, including `CLIAgent::Unknown` (user-configured regex matches). The bar to register a session at all is that Warp's CLI-agent detection matched the command; once matched, the coding-agent contract (verbatim paths, optional native image paste) applies uniformly. No per-agent allowlist is maintained.
 Everything else (regular text pastes, pastes into Warp's input editor, middle-click, plain shells without an active CLI agent session) continues through the existing `read_from_clipboard` → bracketed-paste path with shell-escaping unchanged.
 A feature flag isn't warranted: the change is scoped by the active CLI agent session and reverts the hijack to faithful pass-through behavior, which is strictly closer to what the agent would see running under a plain terminal emulator.
+
 ## Testing and validation
+
 Manual verification on Windows (primary platform for the bug):
 1. Run `claude` in a Warp terminal until the Claude Code TUI is active.
 2. Capture a screenshot with `Win+Shift+S`. Press `Ctrl+V` in Warp. Claude Code should show the `[Image #N]` attachment chip (it receives `Alt+V` and reads the clipboard itself). Previously: nothing happened.
@@ -43,7 +56,9 @@ Cross-platform regression checks:
 Automated:
 - `cargo check -p warp --lib`.
 - Existing paste tests in `app/src/terminal/view_test.rs` and `app/src/terminal/input_test.rs` continue to pass — the test helper `read_from_clipboard(ctx)` was updated to pass `Some(ShellFamily::Posix)` to match the new signature, and the new branches only fire when a CLI agent session is active, which those tests don't set up.
+
 ## Risks and mitigations
+
 - **Sending `Alt+V` / `Ctrl+V` bytes to a non-Claude TUI that happens to be detected as a CLI agent session.** Only fires when the clipboard actually has raw image data (`has_image_data()` is true), so for normal text/path pastes this branch never runs. Agents that don't handle the keystroke will simply ignore the byte.
 - **Future CLI agent updates change the paste keystroke.** The mapping is one `cfg!(windows)` branch inside `paste()`; updating it is a one-line change.
 - **Clipboard with both image data and text.** If image data is present we forward the keystroke and don't paste the text. This matches the pre-existing macOS behavior (where the path text was technically inserted but Claude Code attached the image and ignored the text) and is what users asking for native image paste expect.

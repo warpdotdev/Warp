@@ -53,6 +53,7 @@ Users of Warp's AI features need to be able to trust that nothing reaches the LL
 13. **Error paths remain silent to the user.** If entering agent view fails for a Linear deeplink, the existing error toast/logging path is used, subject to invariant 12's redaction rules.
 
 ## Success Criteria
+
 1. Opening `warp://linear/work?prompt=<anything>` while the focused terminal is in fullscreen agent view results in the prompt appearing in the input buffer with an "enter again to send" confirmation — the prompt is not sent to the LLM.
 2. Opening the same URL while the focused terminal is not in agent view results in identical behavior: new tab, agent view for a new conversation, prompt populated in the input buffer, confirmation shown, nothing sent.
 3. Opening the same URL while Warp is backgrounded does not submit the prompt; on foregrounding, the user sees the draft and affordance and must act explicitly.

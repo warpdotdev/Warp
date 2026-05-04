@@ -5,6 +5,7 @@
 This is the first preparatory changeset for the image cache debounce strategy described in the broader APP-3877 plan. It establishes the per-size eviction API on `ImageCache` and verifies that GPU memory is freed correctly when an `ImageCache` entry is dropped.
 
 ### Relevant files
+
 - `crates/warpui_core/src/image_cache.rs:799` — `ImageCache`, stores `RwLock<HashMap<u64, HashMap<RenderedImageCacheKey, Rc<Image>>>>`. Whole-asset eviction exists (`evict_image`); per-size eviction does not yet exist.
 - `crates/warpui_core/src/rendering/texture_cache.rs:26` — `TextureCache<T>`, stores a `Vec<TextureInfo<T>>` where each entry holds `Weak<StaticImage>` and a `last_accessed_frame` counter.
 - `crates/warpui_core/src/elements/image.rs:302` — `Image::paint()` calls `ImageCache::image()`, receives `Rc<Image>`, immediately unwraps the inner `Arc<StaticImage>`, and pushes it to the `Scene`. The `Rc<Image>` is never stored beyond `paint()`.

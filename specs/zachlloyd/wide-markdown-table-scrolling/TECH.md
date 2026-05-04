@@ -1,7 +1,9 @@
 # Wide Markdown Table Scrolling — Tech Spec
+
 Product spec: `specs/zachlloyd/wide-markdown-table-scrolling/PRODUCT.md`
 
 ## Context
+
 The branch implements the behavior described in the sibling `PRODUCT.md`: wide Markdown tables scroll horizontally inside their own viewport, and selection / caret / hit-testing / copy stay attached to content while the table or any clipped surface is scrolled.
 
 Investigation against `crates/markdown_parser/examples/table-demo/all_test_cases.md` surfaced two classes of bugs that both needed to be addressed:
@@ -12,6 +14,7 @@ Investigation against `crates/markdown_parser/examples/table-demo/all_test_cases
 Separately, the shared clipped-scrollable path could re-use stale screen-space coordinates after a scroll, which showed up as wrong word selection and wrong copied text.
 
 ### Relevant code
+
 - `crates/editor/src/render/model/mod.rs` — `LaidOutTable` (horizontal scroll state, reveal logic, character bounds) and `RenderState::autoscroll` (table-aware reveal)
 - `crates/editor/src/render/element/table.rs` — `RenderableTable` painting, clipping, and event dispatch for scroll/drag/hover
 - `crates/editor/src/render/model/location.rs` — hit-testing that accounts for local table scroll
@@ -29,6 +32,7 @@ Separately, the shared clipped-scrollable path could re-use stale screen-space c
 ## Proposed changes
 
 ### Shared scrollbar primitives in `warpui_core`
+
 `crates/warpui_core/src/elements/shared_scrollbar.rs` is the single source of truth for:
 - `ScrollbarAppearance` / `ScrollbarGeometry` (overlay scrollbar geometry, thumb bounds, track bounds)
 - Minimum thumb sizing (`MIN_SCROLLBAR_THUMB_LENGTH`)
@@ -39,6 +43,7 @@ Separately, the shared clipped-scrollable path could re-use stale screen-space c
 Both the editor table renderer and the existing `new_scrollable` utilities call through these helpers. The goal is not to nest a `NewScrollable` inside tables but to share scrollbar math and mixed-axis resolution.
 
 ### Editor tables own a local horizontal viewport
+
 `LaidOutTable` in `crates/editor/src/render/model/mod.rs` gains local horizontal scroll state:
 - `scroll_left: Cell<Pixels>`
 - `TableScrollbarInteractionState` (drag state, hovered)
@@ -57,6 +62,7 @@ Both the editor table renderer and the existing `new_scrollable` utilities call 
 - The `MouseMoved` handler returns `false` regardless of whether the pointer is over the thumb; scrollbar hover state is still updated via `set_scrollbar_hovered()` and `ctx.notify()`, but the event continues to propagate to downstream handlers (PRODUCT invariant 12).
 
 ### Horizontally scrollable container carve-out
+
 Table-local horizontal scrolling only applies when the surrounding surface doesn't own horizontal scroll. In code editors using `WidthSetting::InfiniteWidth`, wide tables render at full intrinsic width:
 - `TextLayout` carries a `container_scrolls_horizontally` flag, set via `TextLayout::with_container_scrolls_horizontally(...)`.
 - `RenderState::container_scrolls_horizontally()` returns `true` when `width_setting == WidthSetting::InfiniteWidth`; `RenderState::layout_context()` and `TextLayout::from_layout_context(...)` propagate the flag.
@@ -66,6 +72,7 @@ Table-local horizontal scrolling only applies when the surrounding surface doesn
 AI block list contexts keep the default `false`, preserving existing behavior.
 
 ### Per-cell source↔rendered offset mapping
+
 `TableCellOffsetMap` in `crates/editor/src/render/model/table_offset_map.rs` tracks source↔rendered ranges per inline fragment. For each fragment it records rendered start/end, visible source start/end, and source end including Markdown markers. It supports `rendered_length()`, `source_length()`, `rendered_to_source()`, and `source_to_rendered()`.
 
 `TableCellOffsetMap::from_inline_and_source(source, inline)` derives spans by walking the raw cell `source` character-by-character alongside each fragment's rendered text, rather than reconstructing marker lengths from style flags. For each fragment:
@@ -82,6 +89,7 @@ This replaces an earlier hardcoded `fragment_source_marker_lengths` helper and t
 An in-code `TODO` above `impl TableCellOffsetMap` notes that moving cell/row boundaries into the `SumTree` with new `BufferText` marker types would let editable tables derive per-cell offsets by seeking to boundaries rather than reparsing. That refactor is deferred to the editable-tables workstream.
 
 ### Table layout is source-based, rendering stays rendered-text-based
+
 `layout_table_block()` in `crates/editor/src/content/edit.rs`:
 - Parses the table into formatted inline fragments (via the cache below when available).
 - Builds `TableCellOffsetMap`s for every cell.
@@ -93,6 +101,7 @@ An in-code `TODO` above `impl TableCellOffsetMap` notes that moving cell/row bou
 The rule: editor-facing APIs stay source-based; text layout, frame widths, and painting stay rendered-text-based; conversions happen explicitly at the cell boundary.
 
 ### Hit-testing, selection, and caret geometry
+
 - `crates/editor/src/render/model/location.rs` adds `scroll_left` before calling `coordinate_to_offset()`.
 - `LaidOutTable::character_bounds()` subtracts `scroll_left` when returning screen-space bounds.
 - `RenderState::autoscroll()` calls `reveal_autoscroll_offsets_in_tables()` so keyboard movement horizontally reveals the active caret/selection inside the table.
@@ -100,6 +109,7 @@ The rule: editor-facing APIs stay source-based; text layout, frame widths, and p
 - `crates/editor/src/render/element/mod.rs` hit-testing uses the editor element's own layer bounds rather than the clipped child layer bounds, so clicks inside a wide table are not rejected before block-level hit-testing runs.
 
 ### Per-cell maximum content width
+
 `crates/editor/src/content/edit.rs` introduces:
 - `MAX_TABLE_CELL_CONTENT_WIDTH_PX` = 500.0 — maximum content width (exclusive of cell padding).
 - `maximum_table_cell_width(table_style)` helper, mirroring `minimum_table_cell_width(..)`.
@@ -109,6 +119,7 @@ In `measure_table_cells`, per-cell measured widths are clamped with both `.max(m
 The cap is applied unconditionally — including when `horizontal_scroll_allowed == false` — so infinite-width containers still get readability benefits. Single very long unbreakable tokens (e.g. long URLs) may still render wider than the cap because soft-wrap can't break them; the column width stays clamped and the token visually overflows inside the clipped table region.
 
 ### Clipboard behavior is table-aware
+
 `crates/editor/src/content/buffer.rs`:
 - Plain-text copy walks selected block segments and routes table segments through `clipboard_table_text_in_range()`.
 - Table copy rebuilds the formatted table (from cache when available), computes source-based cell ranges, converts the selected source span in each cell to rendered offsets, and slices visible cell text accordingly.
@@ -116,6 +127,7 @@ The cap is applied unconditionally — including when `horizontal_scroll_allowed
 - HTML export in `selected_text_as_html` filters only the ranges that contain a partial table selection, serializing the remaining clean ranges to HTML normally. Only when every range is a partial-table range does it return `None`.
 
 ### Clipped scrollables keep selections anchored to content
+
 `crates/warpui_core/src/elements/clipped_scrollable.rs`:
 - `ClippedScrollStateHandle` stores a `selection_scroll_anchor` (original selection + scroll position at the time it was observed).
 - `anchor_and_adjust_selection_for_scroll(selection, axis)` either records the anchor (first time) or shifts the selection by the delta between current scroll and the anchored scroll. Doc comment spells out the three branches (None clears anchor; unmatched Selection installs a new anchor; matched Selection returns a scroll-compensated copy).
@@ -124,9 +136,11 @@ The cap is applied unconditionally — including when `horizontal_scroll_allowed
 `NewScrollable` routes selection APIs through the anchor helper during paint, in `get_selection()`, and in `calculate_clickable_bounds()`. New mouse-down clears the anchor.
 
 ### Smart selection respects visible horizontal bounds
+
 `FormattedTextElement::smart_select()` returns `None` when the click point is outside the visible horizontal bounds of the text frame (not just outside vertical bounds). This prevents double-click word selection from targeting text that is off-screen after horizontal scrolling.
 
 ### Lazy cache on the `BufferBlockStyle::Table` marker
+
 Both the clipboard copy path and the layout path previously parsed each table block on every invocation. That parse is deterministic from the block's plain text plus `alignments`, so it is lifted onto the marker:
 
 - `crates/editor/src/content/text.rs` introduces `TableBlockCache` (owns parsed `FormattedTable`, `Vec<Vec<TableCellOffsetMap>>`, and `TableOffsetMap`) and a `TableCache` newtype wrapping `Arc<OnceLock<TableBlockCache>>`.
@@ -142,6 +156,7 @@ The staleness trade-off is the same one that already applies to `alignments`: if
 Each numbered invariant in `PRODUCT.md` maps to at least one test or verification step below.
 
 ### Automated tests
+
 - PRODUCT invariants 2–3 (overflow rule), 9 (scrollbar interaction): `render::element::table::tests::table_scrollbar_uses_shared_overlay_geometry`, `table_scrollbar_drag_state_survives_renderable_recreation`, `table_scrollbar_pointer_movement_matches_drag_and_gutter_behavior`.
 - PRODUCT invariant 4 (container carve-out): exercised via `horizontal_scroll_allowed == false` code paths in model tests; manual pass in a code editor surface configured with `WidthSetting::InfiniteWidth`.
 - PRODUCT invariants 7–8 (per-cell max width): `content::edit::tests::test_layout_table_block_clamps_cell_width_to_max`.
@@ -154,12 +169,14 @@ Each numbered invariant in `PRODUCT.md` maps to at least one test or verificatio
 - PRODUCT invariants 6 and 13–15 as applied to formatted cells (inline Markdown correctness): `render::model::table_offset_map::tests::test_table_cell_offset_map_handles_bold_and_links`, `test_table_cell_offset_map_handles_backslash_escaped_punctuation`, `test_table_cell_offset_map_handles_nested_styles`.
 
 ### Manual validation
+
 - `crates/markdown_parser/examples/table-demo/all_test_cases.md` opened in a notebook for a visual pass covering PRODUCT invariants 2–3, 6, 7–8, 9–15, 19–21.
 - AI block list responses containing a wide Markdown table — trackpad scroll, direct scrollbar interaction, double-click word selection across columns after scroll, partial-range text copy, and an existing selection that remains visually anchored across further horizontal scroll.
 - Regression pass confirming vertical scrolling stays owned by the surrounding notebook or block list (PRODUCT invariant 5).
 - Regression pass confirming narrow tables and non-table Markdown remain unchanged (PRODUCT invariant 22).
 
 ### Pre-merge gates
+
 - `cargo fmt`
 - `cargo clippy --workspace --all-targets --all-features --tests -- -D warnings`
 - `cargo check -p warp_editor` and `cargo check -p warpui_core`
@@ -168,21 +185,27 @@ Each numbered invariant in `PRODUCT.md` maps to at least one test or verificatio
 ## Risks and mitigations
 
 ### Two offset spaces drift again
+
 If any table path assumes source and rendered offsets are interchangeable, formatted cells will reintroduce selection/copy drift. Mitigation: keep `TableCellOffsetMap` as the single translation layer; build the table-wide `TableOffsetMap` from source lengths only; route hit-testing, cursor, selection, and copy through explicit source↔rendered conversions.
 
 ### Selection pinned to viewport coordinates
+
 If clipped scrollables reuse raw selection rectangles after scroll changes, highlights and copied text target the wrong content. Mitigation: anchor selections via `ClippedScrollStateHandle`, clear the anchor on fresh mouse interactions, and route selection APIs through `anchor_and_adjust_selection_for_scroll()`.
 
 ### Scrollbar behavior diverges between surfaces
+
 If the editor table path reintroduces bespoke thumb sizing or drag math, it will drift from the rest of WarpUI. Mitigation: keep geometry and pointer/scroll conversion in `shared_scrollbar.rs` and call the shared helpers from both the editor table renderer and the `new_scrollable` utilities.
 
 ### Clipped child layers interfere with editor hit-testing
+
 If editor bounds checks use the clipped child layer instead of the editor element bounds, clicks can be rejected before block-level hit-testing runs. Mitigation: use the editor element's own layer bounds in `crates/editor/src/render/element/mod.rs`.
 
 ### Stale cache on in-place cell edits
+
 `TableCache` is keyed by marker instance. If a future change edits a cell in place without replacing the block marker, the cache will be stale. Mitigation (current): marker replacement on edit is sufficient for read-only tables. Mitigation (longer-term): the SumTree follow-up below invalidates per-cell state naturally.
 
 ## Follow-ups
+
 - If additional inline Markdown styles are supported in table cells, add a focused `TableCellOffsetMap::from_inline_and_source` regression alongside the parser change — the source-walking algorithm should handle them automatically, but a test pins the behavior.
 - Other clipped horizontal surfaces adopting the same selection APIs inherit the `ClippedScrollStateHandle` behavior automatically, but they should get a manual regression pass when adopting new selection UX.
 - When editable tables or other complex table operations land, evaluate moving cell/row boundaries into the `SumTree` with new `BufferText` marker types so per-cell offsets can be derived by seeking instead of reparsing. See the in-code `TODO` above `impl TableCellOffsetMap`.

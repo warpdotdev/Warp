@@ -1,9 +1,11 @@
 # CLI Agent Rich Input: @ Context Technical Spec
 
 ## Summary
+
 This spec covers implementing `@` context (files, folders, code symbols) in the CLI agent rich input composer. The approach reuses the existing AI context menu with mode-based category filtering, restricting it to files/folders and code symbols.
 
 ## Relevant Code
+
 - `app/src/search/ai_context_menu/view.rs` — `AIContextMenu`, `get_categories_for_mode()`, `refresh_categories_state()`
 - `app/src/terminal/input.rs` — `Input` view; handles `EditorEvent::AcceptAIContextMenuItem`, `InsertFilePath` action
 - `app/src/terminal/cli_agent_sessions/mod.rs` — `CLIAgentSessionsModel`, `CLIAgentInputState`
@@ -11,6 +13,7 @@ This spec covers implementing `@` context (files, folders, code symbols) in the 
 - `app/src/search/files/model.rs` — `FileSearchModel` (relies on `ActiveSession::path_if_local()` — local only)
 
 ## Current State
+
 The AI context menu (`AIContextMenu`) already supports mode-based category filtering via `get_categories_for_mode()`. It takes flags like `is_ai_or_autodetect_mode`, `is_shared_session_viewer`, and `is_in_ambient_agent` to determine which categories to show. When only one category is available, `refresh_categories_state()` automatically skips the category picker and jumps to the search results view.
 
 The file data sources (`file_data_source_for_current_repo`, `file_data_source_for_pwd`) use `ActiveSession::path_if_local()` and local `FileSearchModel`/`RepositoryMetadataModel` — these only work for local sessions, not SSH/remote.
@@ -36,6 +39,7 @@ The `@` trigger in the editor fires when the user types `@` and the input is in 
 **Trigger gating**: The `@` trigger must work anywhere in the buffer, including after mode-switch prefixes like `!`. The CLI agent input already calls `set_input_mode_agent`, so the existing `@` detection logic should fire. Verify this works — if the `@` detection is gated differently, add an explicit check for `CLIAgentSessionsModel::is_input_open()`.
 
 ## End-to-End Flow
+
 1. User opens CLI agent rich input (Ctrl-G or Compose button).
 2. User types `@` anywhere in the buffer.
 3. Editor detects `@` and opens the AI context menu.
@@ -47,12 +51,15 @@ The `@` trigger in the editor fires when the user types `@` and the input is in 
 ## Risks and Mitigations
 
 ### @ trigger not firing in CLI agent mode
+
 The editor's `@` detection may be gated on AI mode. The CLI agent input does call `set_input_mode_agent`, so this should work, but needs verification. If gated differently, add an explicit check for CLI agent input being open.
 
 ### Mode-switch prefix interaction with @
+
 When input starts with `!` (bash mode), the `@` trigger must still work at positions after the prefix. The existing `@` detection is position-based (tracks the byte offset of the `@` character) and should work regardless of preceding content. No special handling needed.
 
 ## Testing and Validation
+
 - Verify `@` opens the context menu with files/folders and code symbols (no Warp-specific categories) in CLI agent rich input.
 - Verify `@foo` filters files by name.
 - Verify selecting a file inserts the repo-relative path as plain text.
@@ -61,4 +68,5 @@ When input starts with `!` (bash mode), the `@` trigger must still work at posit
 - Verify no regressions in normal Warp agent input (`@` context still works as before).
 
 ## Follow-ups
+
 - Support `@` context in SSH/remote sessions (requires remote file discovery).

@@ -145,6 +145,7 @@ Since `can_auto_install() == true` and `is_installed()` does a filesystem check,
 ## 5. End-to-End Flow
 
 ### Install
+
 1. User starts Gemini CLI in Warp. `CLIAgent::Gemini` detected, session created.
 2. `plugin_manager_for(Gemini)` returns `Some(GeminiPluginManager)`.
 3. Footer: `plugin_chip_kind()` → no listener, `is_installed()` checks `~/.gemini/extensions/gemini-warp/gemini-extension.json` → not found → `PluginChipKind::Install`.
@@ -153,11 +154,13 @@ Since `can_auto_install() == true` and `is_installed()` does a filesystem check,
 6. Success toast → user restarts Gemini → plugin hooks fire, `SessionStart` reports `plugin_version: "1.0.0"` → chip disappears.
 
 ### Update
+
 1. `MINIMUM_PLUGIN_VERSION` bumped to `"1.1.0"`.
 2. On session start, `is_installed()` → `true`, `needs_update()` → `true` (on-disk version `"1.0.0"` < `"1.1.0"`) → `PluginChipKind::Update`.
 3. User clicks → `gemini extensions update gemini-warp` → success → restart → version `"1.1.0"` → chip gone.
 
 ### Auto-install failure fallback
+
 1. `gemini` not on PATH → `install()` returns `Err`.
 2. Error toast + `has_plugin_auto_failed` set.
 3. Next render: `should_use_manual_mode()` → `true`. Chip becomes instructions button.
@@ -174,6 +177,7 @@ Since `can_auto_install() == true` and `is_installed()` does a filesystem check,
 ## 7. Testing and Validation
 
 ### Unit tests (`plugin_manager/gemini_tests.rs`)
+
 - `can_auto_install_is_true`
 - `minimum_version` — returns `"1.0.0"`
 - `install_instructions_has_steps`
@@ -188,10 +192,12 @@ Since `can_auto_install() == true` and `is_installed()` does a filesystem check,
 - `needs_update_logic_false_when_version_current` — version `"1.0.0"` against minimum `"1.0.0"`, verify no update needed
 
 ### Unit tests (`plugin_manager/mod_tests.rs`)
+
 - `returns_manager_for_gemini` — requires both `GeminiNotifications` and `HOANotifications` enabled
 - Remove `CLIAgent::Gemini` from `returns_none_for_unsupported_agents`
 
 ### Manual testing
+
 - Start Gemini CLI session → install chip appears (not installed on disk)
 - Click install → auto-install succeeds → toast → restart → notifications work
 - Bump minimum version → update chip appears (before plugin connects)

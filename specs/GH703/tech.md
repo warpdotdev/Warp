@@ -25,6 +25,7 @@ Product invariants 1–13 in `specs/GH703/product.md` define the required behavi
 ## Proposed changes
 
 ### 1. Remove the implicit `was_in_agent_view_already` shortcut (committed decision)
+
 `try_enter_agent_view`'s auto-submit condition is the root cause. We make the auto-submit decision a function of the origin alone — the `was_in_agent_view_already` shortcut is deleted outright. This was evaluated against two options during spec review; we commit to **option (a)**:
 - **(a) chosen:** Only `origin.should_autotrigger_request()` governs auto-submit. The prior shortcut existed to preserve "typed a new prompt in agent view and pressed Cmd+Enter" ergonomics, but that flow already enters via `AgentViewEntryOrigin::Input { was_prompt_autodetected: true }` (in the allowlist) or `AgentViewEntryOrigin::Keybinding`/`SlashCommand` paths. Any origin that legitimately needs to auto-submit when the user is already in agent view must be added to `should_autotrigger_request` explicitly.
 - (b) rejected: gating the shortcut on a new `is_trusted_user_originated` predicate keeps the footgun. If a future `AgentViewEntryOrigin` gets added and forgets to opt out of the predicate, the URI-injection bug reopens. Option (a) removes the whole class of problem.
@@ -36,9 +37,13 @@ if origin.should_autotrigger_request() || was_in_agent_view_already {
 ```
 with a single check whose result depends only on the origin and the caller's explicit `AutoSubmitPolicy` (see step 3).
 **Audit of other origins (in-scope, committed deliverable).** Every `AgentViewEntryOrigin` variant was enumerated against `should_autotrigger_request`'s allowlist. The allowlist intentionally contains only: `Input { was_prompt_autodetected: true }`, `SlashCommand { trigger: !is_keybinding() }`, `Cli`, `AcceptedPromptSuggestion`. Every other variant — including `CodexModal`, `CloudAgent`, `ChildAgent`, `ProjectEntry`, `OnboardingCallout`, `LinearDeepLink`, `AgentViewBlock`, `AgentRequestedNewConversation`, `SharedSessionSelection`, `RestoreExistingConversation`, `InlineCodeReview`, `ConversationSelector`, `AgentModeHomepage`, `AIDocument`, `AutoFollowUp`, `AcceptedUnitTestSuggestion`, `AcceptedPassiveCodeDiff`, `ImageAdded`, `SlashInit`, `CreateEnvironment`, `Keybinding`, `CodeReviewContext`, `InlineHistoryMenu`, `InlineConversationMenu`, `ConversationListView`, `DefaultSessionMode`, `LongRunningCommand`, `Onboarding`, `ClearBuffer`, `PromptChip`, plus the soon-to-be-removed `ContinueConversationButton`/`ViewPassiveCodeDiffDetails`/`ResumeConversationButton` — now receives the explicit "populate input buffer + show `ENTER_AGAIN_TO_SEND_MESSAGE_ID`" behavior for `initial_prompt`. None of them carry URI- or network-sourced prompt strings except `LinearDeepLink` today, but the shortcut removal future-proofs the decision.
+
 ### 2. Keep the "populate buffer + enter again to send" path as the default for Linear
+
 With the shortcut removed, `LinearDeepLink` naturally falls into the existing `else` branch of `try_enter_agent_view` (input buffer replacement + ephemeral `ENTER_AGAIN_TO_SEND_MESSAGE_ID` message). No new UI surface is needed; this is already the behavior for non-auto-triggering origins that arrive with an `initial_prompt` when the user is not in fullscreen agent view.
+
 ### 3. Defense-in-depth: opt `open_linear_issue_work` out of auto-submit at the call site (committed shape)
+
 We commit to the **"explicit parameter on `try_enter_agent_view` + thin wrapper method at the public API"** shape:
 1. Add a private `AutoSubmitPolicy` enum in `app/src/terminal/view/agent_view.rs` with two variants: `FromOrigin` (today's behavior after step 1) and `NeverAutoSubmit` (forced draft).
 2. Thread `auto_submit: AutoSubmitPolicy` as a new parameter on `try_enter_agent_view`. Inside `try_enter_agent_view`, the auto-submit decision becomes `match auto_submit { FromOrigin => origin.should_autotrigger_request(), NeverAutoSubmit => false }`.
@@ -49,9 +54,13 @@ We commit to the **"explicit parameter on `try_enter_agent_view` + thin wrapper 
 The parameter-plus-wrapper shape was chosen over a pure wrapper because the wrapper alone cannot prevent a future internal refactor from re-introducing an implicit fullscreen promotion inside `try_enter_agent_view`; the explicit policy parameter makes the decision visible at every call site of `try_enter_agent_view` and forces a typed match.
 Any future origin that should behave the same way can call the draft entrypoint at its call site without needing to re-audit `try_enter_agent_view`.
 This is defense-in-depth: step 1 is sufficient on its own for correctness; step 3 ensures that even if `should_autotrigger_request` ever grows a buggy allowlist entry, Linear deeplinks remain safe.
+
 ### 4. Leave `LinearAction`, `LinearIssueWork::from_url`, and the URI validation layer unchanged
+
 No parsing, validation, or sanitization of the `prompt` query parameter is added. The mitigation depends on user gesture, not on string filtering — content-based filters are trivially bypassable for prompt injection. `LinearIssueWork::from_url` continues to decode `prompt` verbatim (still filtering empty strings, matching product invariant 6).
+
 ### 5. Telemetry and logging redaction
+
 No telemetry schema changes are required. `did_auto_trigger_request` in `TelemetryEvent::AgentViewEntered` naturally reports `false` for Linear deeplinks after the fix; no extra code is needed.
 To honor product invariant 12 (logging / telemetry redaction), the implementation commits to the following, and reviewers should verify:
 - `TelemetryEvent::AgentViewEntered` and `TelemetryEvent::LinearIssueLinkOpened` carry only origin classifiers and fixed schema fields. The `initial_prompt` value is never attached to a telemetry payload.
@@ -69,6 +78,7 @@ To honor product invariant 12 (logging / telemetry redaction), the implementatio
 6. The user either sends (explicit Enter inside the confirmation window) or edits/clears the prompt.
 
 ## Testing and validation
+
 Tests map back to the numbered product invariants in `specs/GH703/product.md`.
 1. **Unit tests in `app/src/terminal/view_test.rs` (invariants 1, 2, 3, 4, 6).** Three tests are implemented:
    - `linear_deeplink_populates_input_as_draft_when_not_in_agent_view` — enters via `enter_agent_view_for_new_conversation_with_prompt_draft` when agent view is inactive; asserts the input buffer contains the attacker prompt and the ephemeral message id is `ENTER_AGAIN_TO_SEND_MESSAGE_ID`.
@@ -95,6 +105,7 @@ Tests map back to the numbered product invariants in `specs/GH703/product.md`.
 4. **Attacker-supplied very long prompts.** Existing input buffer handling already supports arbitrarily long content. No change needed.
 
 ## Follow-ups
+
 - The audit of other `AgentViewEntryOrigin` variants (previously a follow-up) is now promoted into step 1 above and is a committed deliverable of this change. No follow-up issue is required; the grep-based audit is covered by the shortcut removal.
 - Coordinate with the owners of #655 (Windows named pipe) and #666 (Linux D-Bus) to gate `warp://` dispatch on a platform-trusted source. This spec is orthogonal defense; with that work landed the prompt-injection blast radius shrinks further. Tracked separately in those issues — this spec does not block on them.
 - Consider adding a dedicated UI indicator (banner or toast) identifying a prompt as "from a Linear deeplink" so the user knows its provenance at a glance. Not required for the fix but would improve trust; can be added iteratively once the safety invariant is in place.

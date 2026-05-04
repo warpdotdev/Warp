@@ -1,9 +1,15 @@
 # Network log in-app pane
+
 ## Summary
+
 The network activity log no longer writes to disk. When the user opens the network log console from Privacy settings or the existing keybinding, a read-only pane displays a snapshot of the most recent network requests and responses captured in memory.
+
 ## Figma
+
 Figma: none provided
+
 ## Behavior
+
 1. While the app is running, the most recent 50 network log items (request and response entries) are retained in memory. No network log file is written to disk anywhere on the user's system.
 2. Each log item is a single formatted entry containing a timestamp plus the debug-formatted request or response, matching the format previously written to `warp_network.log`.
 3. The feature is only exposed when `ContextFlag::NetworkLogConsole` is enabled. When the flag is disabled, the Privacy settings link, the keybinding, and the pane are all unavailable.

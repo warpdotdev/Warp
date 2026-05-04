@@ -3,6 +3,7 @@
 Pairs with `PRODUCT.md`.
 
 ## Context
+
 The cloud-to-local fork pipeline already exists. `WorkspaceAction::ForkAIConversation` (`app/src/workspace/action.rs:462-475`) — and its narrower sibling `WorkspaceAction::ContinueConversationLocally` (`app/src/workspace/action.rs:478-481`) — both land in `Workspace::fork_ai_conversation` (`app/src/workspace/view.rs:11460-11668`), which loads the source conversation, calls `BlocklistAIHistoryModel::fork_conversation`, opens the fork in the chosen `ForkedConversationDestination`, and ends with `Self::show_fork_toast` (`app/src/workspace/view.rs:11744-11772`) producing the `Forked "<title>"` toast referenced by PRODUCT.md invariant 7.
 
 The two existing button entrypoints, both gated to Oz harness only, dispatch the narrower action:
@@ -16,6 +17,7 @@ Slash commands: definitions in `app/src/search/slash_command_menu/static_command
 ## Proposed changes
 
 ### 1. Static command definition
+
 `app/src/search/slash_command_menu/static_commands/commands.rs`
 
 Add a `CONTINUE_LOCALLY` `LazyLock<StaticCommand>` next to the rest of the fork family (`FORK`, `FORK_AND_COMPACT`, `FORK_FROM`):
@@ -30,6 +32,7 @@ Add a `CONTINUE_LOCALLY` `LazyLock<StaticCommand>` next to the rest of the fork 
 Push it onto `all_commands()` inside the existing `if !cfg!(target_family = "wasm")` block (`commands.rs:572-578`) alongside `FORK` / `FORK_AND_COMPACT`. No feature flag — the underlying action and all gating are stable.
 
 ### 2. Cloud-Oz runtime filter in the data source
+
 `app/src/terminal/input/slash_commands/data_source/mod.rs`
 
 Express PRODUCT.md invariant 2 as a runtime filter, mirroring `/orchestrate` and `/feedback`:
@@ -55,6 +58,7 @@ Subscribe `recompute_active_commands` to:
 Both event types are already routed to other consumers; the subscription pattern follows the existing `ctx.subscribe_to_model` calls at `data_source/mod.rs:72-127`.
 
 ### 3. Slash command handler
+
 `app/src/terminal/input/slash_commands/mod.rs`
 
 Add a handler arm in `Input::execute_slash_command_action` (next to the existing `/fork` arm at `slash_commands/mod.rs:718-742`):
@@ -107,11 +111,13 @@ The handler is gated `cfg(not(target_family = "wasm"))`. Empty/whitespace `argum
 Success toasts (PRODUCT.md invariant 7) and error toasts on fork failure (invariant 8) are produced by `Workspace::show_fork_toast` and the existing failure paths inside `fork_ai_conversation` — no toast plumbing in the slash command handler itself.
 
 ### 4. Footer tip
+
 `app/src/ai/blocklist/agent_view/agent_message_bar.rs`
 
 Extend `ForkSlashCommandMessageProducer::produce_message` (lines 727-777) to also match `commands::CONTINUE_LOCALLY.name`. Add it to the existing equality check and reuse the `/fork` label branch (`(" new pane", " new tab")`), since `/continue-locally` follows the same `Enter → split pane`, `Cmd/Ctrl+Enter → new tab` mapping.
 
 ### 5. Telemetry
+
 `app/src/ai/agent_management/telemetry.rs`
 
 Add a new variant `SlashCommandContinueLocally` to `AgentManagementTelemetryEvent` (`telemetry.rs:108-113`), wasm-gated like the existing `TombstoneContinueLocally` / `DetailsPanelContinueLocally`, with empty payload, `EnablementState::Always`, and the discriminant entries:
@@ -144,4 +150,5 @@ Manual:
 Run `./script/presubmit` before opening the PR.
 
 ## Follow-ups
+
 - If the menu visibility lag during the initial task fetch becomes noticeable in practice, switch the permissive `None` harness branch to fetch on demand via `AgentConversationsModel::get_or_async_fetch_task_data` (`app/src/ai/agent_conversations_model.rs:1564-1645`) and rely on the `TasksUpdated` recompute. We default to permissive for parity with the tombstone today.

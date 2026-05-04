@@ -97,10 +97,13 @@ oz run list \
 ### Example: paginating
 
 ```
+
 # First page, sorted by creation time
+
 oz run list --limit 50 --sort-by created-at --output-format json > page1.json
 
 # Follow the cursor
+
 CURSOR=$(jq -r .page_info.next_cursor page1.json)
 oz run list --limit 50 --sort-by created-at --cursor "$CURSOR" --output-format json
 ```

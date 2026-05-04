@@ -1,6 +1,7 @@
 # Session Restore: Preserve PWD for WSL and Git Bash
 
 ## Summary
+
 When Warp restores a session that was running in WSL or an MSYS2-based shell (Git Bash, MSYS2), it re-opens that terminal in the same working directory the user was in when the session was saved.
 
 ## Behavior

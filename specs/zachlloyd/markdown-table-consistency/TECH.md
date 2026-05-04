@@ -1,7 +1,9 @@
 # Markdown Table Styling Consistency — Tech Spec
+
 Product spec: `specs/zachlloyd/markdown-table-consistency/PRODUCT.md`
 
 ## Problem
+
 PR #23908 updated AI block list Markdown tables to the new blockless visual treatment, but the rest of Warp’s Markdown table renderers still use the older boxed table styling. On the current branch, Markdown table appearance is owned by two separate rendering paths:
 
 - editor-backed Markdown surfaces use `RichTextStyles.table_style`
@@ -15,6 +17,7 @@ That split creates two technical problems:
 The implementation should make every current Markdown table renderer inherit the same structural style while preserving surface-specific typography and existing editing/selection behavior.
 
 ## Relevant code
+
 - `specs/zachlloyd/markdown-table-consistency/PRODUCT.md` — approved product behavior
 - `specs/blocklist-markdown-table-rendering/TECH.md` — prior AI block list table implementation plan
 - `app/src/notebooks/editor/mod.rs (145-215)` — `rich_text_styles`; current shared editor-backed table style source
@@ -33,6 +36,7 @@ The implementation should make every current Markdown table renderer inherit the
 ## Current state
 
 ### Editor-backed Markdown tables
+
 Most rendered Markdown surfaces in the app are backed by `NotebooksEditorModel` and the shared editor renderer. Their table appearance comes from `rich_text_styles()` in `app/src/notebooks/editor/mod.rs`, which currently sets:
 
 - `border_color = theme.surface_3()`
@@ -51,6 +55,7 @@ That style is then consumed by `RenderableTable` in `crates/editor/src/render/el
 This is the old notebook/editor table treatment that the new product spec wants to replace.
 
 ### Surfaces that inherit the editor-backed table style
+
 The old table style is not limited to notebooks. The same `rich_text_styles()` entry point is reused by multiple surfaces:
 
 - notebooks
@@ -63,6 +68,7 @@ In addition, `code_text_styles()` starts from `rich_text_styles()` before overri
 This means a change to the shared editor-backed style source will propagate to multiple surfaces automatically.
 
 ### AI block list tables
+
 The AI block list no longer uses the old style. `render_table_section()` in `app/src/ai/blocklist/block/view_impl/common.rs` builds a WarpUI `Table` with an inline `TableConfig` that already matches the desired structural treatment:
 
 - `outer_border: false`
@@ -76,6 +82,7 @@ The AI block list no longer uses the old style. `render_table_section()` in `app
 That renderer is already the visual baseline from PR #23908, but it is defined inline inside the block list path rather than shared with editor-backed renderers.
 
 ### Ownership problem
+
 Today there is no shared “Markdown table appearance” abstraction. The editor-backed path and block list path both describe the same visual decisions in different structures:
 
 - `TableStyle` for the editor renderer
@@ -90,6 +97,7 @@ As a result:
 ## Proposed changes
 
 ### 1. Introduce a shared Markdown table appearance helper
+
 Add a small shared helper at the app layer that defines the canonical Markdown table chrome for the new blockless treatment.
 
 The helper should represent the structural and color decisions that must stay aligned across renderers:
@@ -109,6 +117,7 @@ Typography should remain surface-specific. The helper should define the table ch
 This gives us one source of truth that both renderers can map from.
 
 ### 2. Extend `TableStyle` so the editor renderer can express the blockless treatment
+
 `crates/editor/src/render/model/mod.rs` currently cannot represent some of the structural choices already used by the block list renderer.
 
 Extend `TableStyle` with the missing structural controls needed by the product spec:
@@ -120,6 +129,7 @@ Extend `TableStyle` with the missing structural controls needed by the product s
 Keep the existing color and typography fields. The important change is letting the editor-backed renderer express “only horizontal separators, no outer border, no vertical dividers” directly instead of baking those assumptions into painting logic.
 
 ### 3. Update the editor-backed table painter to honor the expanded style model
+
 Update `crates/editor/src/render/element/table.rs` so painting follows `TableStyle` rather than hardcoded table chrome assumptions.
 
 Specifically:
@@ -131,6 +141,7 @@ Specifically:
 This keeps the behavioral parts of the editor renderer stable while changing only the visual treatment.
 
 ### 4. Make `rich_text_styles()` produce the new Markdown table style
+
 Update `app/src/notebooks/editor/mod.rs` so `rich_text_styles()` returns the blockless Markdown table style from the new shared helper.
 
 That means the shared editor-backed path should move from the current boxed style to:
@@ -147,6 +158,7 @@ That means the shared editor-backed path should move from the current boxed styl
 This change is the main propagation point for notebooks, file notebooks, AI documents, comment editors, and any other surface using the shared editor-backed Markdown renderer.
 
 ### 5. Refactor the block list table renderer to consume the same shared appearance helper
+
 Update `app/src/ai/blocklist/block/view_impl/common.rs` so the block list no longer constructs its structural table chrome entirely inline.
 
 The block list should still keep its surface-specific text settings where needed:
@@ -159,6 +171,7 @@ The block list should still keep its surface-specific text settings where needed
 But the structural table configuration should come from the same shared appearance helper used by `rich_text_styles()`. That keeps the existing block list result visually unchanged while preventing future drift.
 
 ### 6. Preserve surface-specific typography
+
 The product goal is shared styling, not identical typography across unrelated surfaces.
 
 The shared appearance helper should therefore be mapped differently by each renderer:
@@ -169,11 +182,13 @@ The shared appearance helper should therefore be mapped differently by each rend
 What must remain shared is the blockless table chrome and the text hierarchy relationship, not every literal font token.
 
 ### 7. Treat the shared helper as the default for future Markdown table renderers
+
 Document in the code by naming and placement that this helper is the default source for Markdown table appearance in Warp.
 
 The goal is that a new Markdown-rendering surface should not invent its own `TableConfig` or `TableStyle` values for tables unless it has a clear product reason to diverge.
 
 ## End-to-end flow
+
 1. A surface creates a rendered Markdown editor or table view.
 2. If it is editor-backed, it obtains `RichTextStyles` from `rich_text_styles()` or `code_text_styles()`.
 3. `rich_text_styles()` builds `table_style` from the shared Markdown table appearance helper.
@@ -184,6 +199,7 @@ The goal is that a new Markdown-rendering surface should not invent its own `Tab
 ## Risks and mitigations
 
 ### Risk: editor-backed behavior regressions
+
 Changing `RenderableTable` painting could accidentally affect selection visibility, cursor readability, or perceived cell hit areas.
 
 Mitigation:
@@ -192,6 +208,7 @@ Mitigation:
 - validate editable surfaces manually after the visual update
 
 ### Risk: block list drifts again later
+
 If the block list keeps hand-authoring its own `TableConfig`, the two renderers can diverge again even after this change.
 
 Mitigation:
@@ -199,6 +216,7 @@ Mitigation:
 - avoid leaving structural table chrome duplicated inline
 
 ### Risk: future surfaces bypass the shared style
+
 Even after current surfaces are fixed, a new renderer could hardcode another table style.
 
 Mitigation:
@@ -206,6 +224,7 @@ Mitigation:
 - reference it directly from both existing rendering paths so future work sees the pattern
 
 ### Risk: typography becomes unintentionally identical everywhere
+
 If the shared helper carries too much font data, it could flatten legitimate surface-specific typography differences.
 
 Mitigation:
@@ -215,6 +234,7 @@ Mitigation:
 ## Testing and validation
 
 ### Shared-style tests
+
 - Add focused tests for the shared Markdown table appearance helper so its structural defaults are explicit:
   - no outer border
   - no column dividers
@@ -224,10 +244,12 @@ Mitigation:
   - updated padding
 
 ### Editor-backed renderer coverage
+
 - Add or update tests around editor-backed Markdown tables to ensure table rendering still occurs and existing Markdown table behavior does not regress.
 - Keep existing geometry/selection-oriented table tests in `crates/editor/src/render/element/table_tests.rs` passing after the style changes.
 
 ### Surface propagation checks
+
 - Manual validation in:
   - Markdown notebook
   - Markdown editor
@@ -238,6 +260,7 @@ Mitigation:
 - Confirm these surfaces all show the same blockless table chrome.
 
 ### Behavior regression checks
+
 - Manual validation of:
   - left/center/right alignment
   - inline formatting inside cells
@@ -247,9 +270,11 @@ Mitigation:
   - wide-table overflow handling
 
 ### Visual validation
+
 - Screenshot-based comparison against the Figma node and the AI block list implementation from PR #23908
 - Manual confirmation that the older notebook/editor chrome is gone everywhere in scope
 
 ## Follow-ups
+
 - If additional Markdown table renderers appear outside the current editor-backed path and block list path, route them through the shared appearance helper rather than creating another table style definition.
 - If we later want stricter visual parity between surfaces, we can consider a deeper shared text-style adapter, but that should be a follow-up after the chrome is unified.

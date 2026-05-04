@@ -1,11 +1,14 @@
 # CommonMark Image Title and Alt Text Fallback in Block-List Image Rendering — Product Spec
+
 GitHub issue: https://github.com/warpdotdev/warp-external/issues/849
 Figma: none provided
 
 ## Summary
+
 Expand Warp's markdown image parser and renderer so that the AI block list supports same-line CommonMark image title forms such as `![alt](source \"title\")`, using the title as a hover tooltip on successful renders and the alt text as the load-failure fallback. This makes the dogfood block-list image feature consistent with how GitHub, GitLab, VS Code Markdown Preview, Obsidian, Typora, and Pandoc render markdown images today.
 
 ## Problem
+
 The AI block-list image renderer described in `specs/zachlloyd/inline-markdown-images-in-blocklist/PRODUCT.md` parses only `![alt](source)`. Two concrete gaps fall out of that today:
 
 - Any authored image that uses the CommonMark title form — `![alt](source "title")`, `![alt](source 'title')`, or `![alt](source (title))` — fails to parse as an image and falls back to raw markdown text. A valid, standards-conformant image never renders.
@@ -14,6 +17,7 @@ The AI block-list image renderer described in `specs/zachlloyd/inline-markdown-i
 The behavior in this spec is additive on top of the existing block-list image feature and does not change the default "no title, no alt" code path.
 
 ## Goals
+
 - Parse the optional CommonMark title suffix on markdown images — `"..."`, `'...'`, and `(...)` — in both block-level and inline image positions already supported by the block-list renderer.
 - Carry the parsed title through every downstream consumer of the shared `FormattedImage` image model so it is available to the AI block-list renderer, the editor buffer round-trip, and HTML export.
 - Render the title as a hover tooltip on successfully rendered block-list images, using Warp's standard tooltip treatment.
@@ -22,6 +26,7 @@ The behavior in this spec is additive on top of the existing block-list image fe
 - Leave behavior unchanged for images that do not have a title (pure `![alt](source)`).
 
 ## Non-goals
+
 - Visible captions under rendered images. Title is rendered as a hover tooltip only, matching GitHub/GitLab/VS Code/Obsidian/Typora/Pandoc default behavior; a visible caption would be a separate feature.
 - Lightbox chrome changes. Title and alt are not required to appear inside the shared fullscreen lightbox overlay in this change.
 - Surfacing title or alt in non-block-list markdown surfaces beyond the editor round-trip and HTML export changes needed to carry the title field.

@@ -14,6 +14,7 @@ We need to wire three things:
 ## 2. Relevant Code
 
 ### Remote server client & manager
+
 - `crates/remote_server/src/client.rs:156` — `navigate_to_directory()` async request method
 - `crates/remote_server/src/client.rs:202` — `send_request()` that all request methods delegate to
 - `crates/remote_server/src/client.rs:46` — `ClientEvent` enum (`Disconnected`, `RepoMetadataSnapshotReceived`, `RepoMetadataUpdated`)
@@ -23,14 +24,17 @@ We need to wire three things:
 - `app/src/remote_server/manager.rs:181` — event channel drain loop (currently only handles `Disconnected`, TODO for forwarding push events)
 
 ### Repo metadata models
+
 - `crates/repo_metadata/src/remote_model.rs:41` — `RemoteRepoMetadataModel` with `insert_repository()`, `apply_incremental_update()`
 - `crates/repo_metadata/src/wrapper_model.rs:52` — `RepoMetadataModel` wrapper singleton
 - `crates/repo_metadata/src/repository_identifier.rs:51` — `RemoteRepositoryIdentifier { session_id, path }`
 
 ### Proto conversion
+
 - `crates/remote_server/src/repo_metadata_proto.rs` — `proto_snapshot_to_update()` converts `RepoMetadataSnapshot` → `RepoMetadataUpdate`; `proto_to_repo_metadata_update()` converts `RepoMetadataUpdatePush` → `RepoMetadataUpdate`; `From` impls for Rust → Proto direction
 
 ### File tree view & workspace
+
 - `app/src/code/file_tree/view.rs:235` — `FileTreeView` struct with `root_directories`, `displayed_directories`, `repository_metadata_model`
 - `app/src/code/file_tree/view.rs:660` — `set_root_directories()` converts `PathBuf` via `try_from_local` (fails for remote paths)
 - `app/src/code/file_tree/view.rs:702` — `update_directory_contents()` looks up `DetectedRepositories` + local model only
@@ -43,6 +47,7 @@ We need to wire three things:
 - `app/src/pane_group/working_directories.rs:737` — `normalize_cwd()` calls `dunce::canonicalize` (fails for remote paths)
 
 ### LSP push event pattern (reference)
+
 - `crates/lsp/src/model.rs:268` — `spawn_stream_local` drains the LSP server notification channel on the main thread, calling `handle_server_notification` for each event
 - `crates/lsp/src/model.rs:540` — `handle_server_notification` dispatches notifications by type, updates model state, and emits domain events via `ctx.emit()`
 - `crates/lsp/src/manager.rs:191` — `LspManagerModel` subscribes to `LspServerModel` events and re-emits them as `LspManagerModelEvent`s for downstream consumers
@@ -50,18 +55,23 @@ We need to wire three things:
 ## 3. Current State
 
 ### CWD tracking pipeline
+
 `terminal_view_working_directories()` calls `pwd_if_local()`, which returns `None` for SSH sessions. The raw CWD *is* available via `pwd()` (reads `BlockMetadata::current_working_directory`), but it's never used for remote sessions. The workspace's `refresh_working_directories_for_pane_group` consequently filters remote sessions out entirely.
 
 ### File tree enablement
+
 `update_active_session()` sets `CodingPanelEnablementState::RemoteSession` when `is_remote == true`. `FileTreeView::render()` shows "The Project Explorer requires access to your local workspace, which isn't supported in remote sessions." when enablement is `RemoteSession` and `displayed_directories` is empty.
 
 ### RemoteServerManager
+
 Singleton that maps sessions → hosts → `RemoteServerClient` handles. Exposes `client_for_session(session_id)`. The event channel from `RemoteServerClient::new()` is drained in a background loop that currently only handles `Disconnected` — `RepoMetadataSnapshotReceived` and `RepoMetadataUpdated` events have a TODO to forward them.
 
 ### RemoteRepoMetadataModel
+
 Has `insert_repository()`, `apply_incremental_update()`, and `update_file_tree_entry()` write APIs. Accessible through the `RepoMetadataModel` wrapper singleton which forwards events as `RepoMetadataEvent` with `RepositoryIdentifier::Remote(..)`. Currently never populated.
 
 ### Server push flow
+
 The remote server proactively pushes repo metadata after `NavigatedToDirectory`:
 - For non-git directories: server responds with `{ indexed_path, is_git: false }`, then pushes a `RepoMetadataSnapshot` with the lazy tree data.
 - For git directories: server responds with `{ indexed_path, is_git: true }`, then pushes a `RepoMetadataSnapshot` once full git indexing completes.
@@ -70,6 +80,7 @@ The remote server proactively pushes repo metadata after `NavigatedToDirectory`:
 The client parses these in `push_message_to_event()` and delivers them as `ClientEvent::RepoMetadataSnapshotReceived` / `ClientEvent::RepoMetadataUpdated` through the event channel. The `RemoteServerManager` drain loop currently ignores these events.
 
 ### FileTreeView local-only assumptions
+
 `set_root_directories()` converts `PathBuf → StandardizedPath` via `try_from_local` (calls `dunce::canonicalize`, fails for non-local paths). `update_directory_contents()` looks up `DetectedRepositories` (local singleton) and calls `load_directory` (local filesystem I/O). `handle_repository_metadata_event` matches only `RepositoryIdentifier::Local(..)` variants and ignores all `Remote(..)` variants.
 
 ## 4. Proposed Changes
@@ -193,12 +204,15 @@ pub enum RemoteServerManagerEvent {
 The remote model subscribes to `RemoteServerManagerEvent` and reacts to push events:
 
 #### On `RemoteServerManagerEvent::RepoMetadataSnapshot { host_id, update }`
+
 Call `self.insert_repository(host_id, update)` to populate the initial tree state.
 
 #### On `RemoteServerManagerEvent::RepoMetadataUpdated { host_id, update }`
+
 Call `self.apply_incremental_update(host_id, update)` to apply watcher-driven changes.
 
 #### On `RemoteServerManagerEvent::HostDisconnected { host_id }`
+
 Clean up remote repositories for that host.
 
 The remote model no longer needs direct access to `RemoteServerClient` — all data arrives through the event channel. This keeps the model decoupled from connection management.
@@ -206,9 +220,11 @@ The remote model no longer needs direct access to `RemoteServerClient` — all d
 ### 4.5. Update file tree view for remote repositories
 
 #### 4.5a. Enablement state
+
 Keep `CodingPanelEnablementState::RemoteSession`. When `FeatureFlag::SshRemoteServer` is enabled, change the file tree view's `render()` to check if remote root directories exist before showing the error. If `displayed_directories` is non-empty (remote roots present), render the tree normally regardless of `RemoteSession` enablement. When the flag is disabled, always render the existing disabled state for remote sessions.
 
 #### 4.5b. Separate entry point for remote roots
+
 The local pipeline (`PathBuf → normalize_cwd → WorkingDirectoriesModel → set_root_directories → try_from_local`) fails for remote paths at `dunce::canonicalize` and `try_from_local`. Rather than migrating that pipeline, add a separate entry point:
 
 ```rust
@@ -230,12 +246,14 @@ Each `RootDirectory` gets an optional `RepositoryIdentifier` field so the view k
 Do NOT migrate `WorkingDirectoriesModel` or `normalize_cwd` to `StandardizedPath` — that's a much larger change with no immediate value for this feature.
 
 #### 4.5c. Remote directory contents
+
 `update_directory_contents()` currently looks up `DetectedRepositories` and calls `load_directory` (local-only). For remote roots:
 - Look up `RepositoryIdentifier::Remote(RemoteRepositoryIdentifier { host_id, path })` in `RepoMetadataModel`
 - Use the returned `FileTreeState.entry` directly as the root directory's entry
 - Skip lazy loading / `DetectedRepositories` lookup entirely — the remote server handles indexing
 
 #### 4.5d. Handle remote `RepoMetadataEvent`s
+
 `handle_repository_metadata_event` currently only matches `RepositoryIdentifier::Local(..)` and ignores remote variants. Add handling for `RepositoryIdentifier::Remote(..)` in:
 - `RepositoryUpdated` — triggers `update_directory_contents` for matching remote roots
 - `FileTreeEntryUpdated` — refreshes the cached `FileTreeEntry` and calls `rebuild_flattened_items`

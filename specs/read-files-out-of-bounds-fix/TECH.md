@@ -14,14 +14,17 @@ Relevant files:
 ## Proposed changes
 
 ### 1. `TextFileAccumulator::flush_range` — always emit on final flush
+
 Change the `should_emit` condition from `!self.buf.is_empty() || (final_flush && self.whole_file)` to `!self.buf.is_empty() || final_flush`. This makes the behavior consistent: every requested range always produces a `TextFileSegment`, even when the range is entirely past EOF. The emitted segment has `content: ""`, the original requested `line_range`, and `line_count` set to the total file lines (populated by `finalize`).
 
 This is a one-line change. The `whole_file` field remains used for trailing-newline preservation logic, so it is not removed.
 
 ### 2. Defensive rendering for empty `file_contexts`
+
 In the `ReadFilesResult::Success` rendering arm, add a match guard `if !file_contexts.is_empty()` for the normal path. Add a second arm `if file_contexts.is_empty()` that renders an error-styled action box with a red X icon and "Failed to read files" message, then `continue`s. This prevents an empty box regardless of upstream cause.
 
 ### 3. Tests
+
 - Update existing `empty_file_with_ranges_produces_no_segment` → renamed to `empty_file_with_ranges_produces_empty_segment`, now expects 1 segment with empty content and the original range.
 - Add `range_past_eof_produces_empty_segment` — 5-line file, range 10..15, expects 1 segment with empty content, `line_count: 5`.
 - Add `multiple_ranges_some_past_eof` — 5-line file, ranges [1..3, 10..15], expects 2 segments: first with content, second empty.

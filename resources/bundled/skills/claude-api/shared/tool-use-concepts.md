@@ -133,6 +133,8 @@ Claude automatically gains access to `bash_code_execution` (run shell commands) 
 
 Additional packages can be installed at runtime via `pip install`.
 
+---
+
 ### Supported File Types for Upload
 
 | Type   | Extensions                         |
@@ -141,9 +143,13 @@ Additional packages can be installed at runtime via `pip install`.
 | Images | JPEG, PNG, GIF, WebP               |
 | Text   | .txt, .md, .py, .js, etc.          |
 
+---
+
 ### Container Reuse
 
 Reuse containers across requests to maintain state (files, installed packages, variables). Extract the `container_id` from the first response and pass it to subsequent requests.
+
+---
 
 ### Response Structure
 

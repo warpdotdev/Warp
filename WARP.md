@@ -124,13 +124,13 @@ This is a Rust-based terminal emulator with a custom UI framework called **WarpU
   - Opening new pull requests
   - Pushing new commits to existing PR branches
   - Any branch updates that will be reviewed
- - When opening PRs, use the PR template at `.github/pull_request_template.md`
- - Add changelog entries when appropriate using the format at the bottom of the PR template. Use the following prefixes (without the `{{}}` brackets):
-   - `CHANGELOG-NEW-FEATURE:` for new, relatively sizable features (use sparingly - these may get marketing/docs)
-   - `CHANGELOG-IMPROVEMENT:` for new functionality of existing features
-   - `CHANGELOG-BUG-FIX:` for fixes related to known bugs or regressions
-   - `CHANGELOG-IMAGE:` for GCP-hosted image URLs
-   - Leave changelog lines blank or remove them if no changelog entry is needed
+- When opening PRs, use the PR template at `.github/pull_request_template.md`
+- Add changelog entries when appropriate using the format at the bottom of the PR template. Use the following prefixes (without the `{{}}` brackets):
+  - `CHANGELOG-NEW-FEATURE:` for new, relatively sizable features (use sparingly - these may get marketing/docs)
+  - `CHANGELOG-IMPROVEMENT:` for new functionality of existing features
+  - `CHANGELOG-BUG-FIX:` for fixes related to known bugs or regressions
+  - `CHANGELOG-IMAGE:` for GCP-hosted image URLs
+  - Leave changelog lines blank or remove them if no changelog entry is needed
 
 **Database**:
 - Uses Diesel ORM with SQLite

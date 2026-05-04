@@ -10,30 +10,37 @@ We need a 4-step guided onboarding flow for existing users that introduces HOA f
 ## Relevant Code
 
 ### Triggering & persistence
+
 - `app/src/workspace/one_time_modal_model.rs` — `OneTimeModalModel`: existing pattern for one-time modals (Oz launch, build plan migration). Subscribes to auth events, waits for cloud preferences sync, then triggers.
 - `app/src/root_view.rs:1614-1631` — `HAS_COMPLETED_ONBOARDING_KEY` / `private_user_preferences`: the other persistence approach (local-only, no cloud sync needed).
 - `app/src/root_view.rs:2143-2155` — post-onboarding flow: opens vertical tabs panel + shows `SessionConfigModal` for new users.
 
 ### Session config modal (for extraction)
+
 - `app/src/tab_configs/session_config_modal.rs` — `SessionConfigModal`: the full modal with session type pills, directory picker, worktree checkbox. All rendering is in private methods (`render_session_type_section`, `render_directory_section`, `render_checkboxes`).
 - `app/src/tab_configs/session_config.rs` — `SessionConfigSelection`, `SessionType`, `is_git_repo`, `build_tab_config`, `write_tab_config`.
 
 ### FTU callout (for extraction)
+
 - `app/src/ai/blocklist/agent_view/agent_input_footer/mod.rs:1758-1840` — `render_ftu_callout`: renders a bubble with a triangle arrow using stacked `CalloutTriangleBorderDown` / `CalloutTriangleFillDown` icons. Positions via `OffsetPositioning::offset_from_save_position_element`.
 
 ### Tab layout setting
+
 - `app/src/workspace/tab_settings.rs:245` — `use_vertical_tabs: bool` setting.
 - `app/src/workspace/view.rs:1607-1614` — `open_vertical_tabs_panel_if_enabled`: opens the vertical tabs panel based on the setting.
 
 ### Anchoring targets
+
 - `app/src/workspace/view.rs:535` — `NOTIFICATIONS_MAILBOX_POSITION_ID = "workspace:notifications_mailbox"`: the inbox icon already uses `SavePosition` for anchoring (line 15262).
 - `app/src/workspace/view.rs:515` — `TAB_BAR_POSITION_ID`: the tab bar already has a `SavePosition`.
 
 ### Feature flags
+
 - `crates/warp_features/src/lib.rs:9` — `FeatureFlag` enum.
 - `crates/warp_features/src/lib.rs:797` — `DOGFOOD_FLAGS` array.
 
 ### Workspace integration
+
 - `app/src/workspace/view.rs:779-901` — `Workspace` struct: holds all modal view handles, panel state.
 - `app/src/workspace/view.rs:1463-1494` — `build_session_config_modal`: how modals are constructed and subscribed.
 - `app/src/workspace/view.rs:1617-1638` — `show_session_config_modal` / `close_session_config_modal`.

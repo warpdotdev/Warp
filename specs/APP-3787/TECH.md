@@ -14,16 +14,19 @@ This spec covers three pieces:
 ## 2. Relevant Code
 
 ### Remote server crate
+
 - `crates/remote_server/src/client.rs` — `RemoteServerClient` struct with background reader/writer tasks, `initialize()` handshake
 - `crates/remote_server/src/server_model.rs` — `ServerModel` singleton on the server side, handles `ClientMessage` dispatch
 - `crates/remote_server/src/protocol.rs` — length-delimited protobuf read/write helpers, `ProtocolError`, `RequestId`
 - `crates/remote_server/proto/remote_server.proto` — `ClientMessage`/`ServerMessage` envelopes with `Initialize`/`InitializeResponse` (to be extended with `host_id`)
 
 ### CLI subcommand dispatch
+
 - `crates/warp_cli/src/lib.rs (384-426)` — `WorkerCommand` enum with `RemoteServer` variant
 - `app/src/lib.rs (542-544)` — `WorkerCommand::RemoteServer` dispatch calling `remote_server::run()`
 
 ### Session bootstrap flow
+
 - `app/src/terminal/model/terminal_model.rs (2874-2919)` — `init_shell()` handler creates `SessionInfo::create_pending()` with `SessionType`
 - `app/src/terminal/model/terminal_model.rs (2820-2858)` — `bootstrapped()` handler merges pending session info and emits `HandlerEvent::Bootstrapped`
 - `app/src/terminal/model_events.rs (89-111)` — `ModelEventDispatcher` receives `Bootstrapped`, calls `sessions.initialize_bootstrapped_session()`
@@ -31,21 +34,25 @@ This spec covers three pieces:
 - `app/src/terminal/view.rs (11022-11199)` — `TerminalView::handle_session_bootstrapped()` reacts to the event
 
 ### Session and SSH types
+
 - `app/src/terminal/model/session.rs (691-699)` — `SessionType::Local` / `SessionType::WarpifiedRemote`
 - `app/src/terminal/model/session.rs (426-451)` — `SessionInfo` struct with `hostname`, `user`, `session_type`, `spawning_session_id`
 - `app/src/terminal/model/terminal_model.rs (632-647)` — `SubshellInitializationInfo` with `ssh_connection_info: Option<InteractiveSshCommand>`
 - `app/src/terminal/ssh/util.rs (86-89)` — `InteractiveSshCommand { host, port }`
 
 ### Remote command execution over SSH
+
 - `app/src/terminal/model/session/command_executor/remote_command_executor.rs` — `RemoteCommandExecutor` uses SSH `ControlPath` to run one-off commands over an existing SSH connection
 - `app/src/terminal/model/session.rs (388-391)` — `IsLegacySSHSession::Yes { socket_path }` stores the SSH control socket
 
 ### Existing remote host patterns
+
 - `app/src/terminal/view.rs (6094-6105)` — `active_session_remote_host()` returns `Some("user@hostname")` for remote sessions
 - `app/src/terminal/view.rs (9362-9436)` — `is_block_considered_remote()` checks `session.is_local()`
 - `app/src/terminal/cli_agent_sessions/mod.rs (107-111)` — `CLIAgentSession` stores `remote_host: Option<String>` per session
 
 ### Singleton model precedents
+
 - `app/src/terminal/cli_agent_sessions/mod.rs (234-462)` — `CLIAgentSessionsModel` singleton with `HashMap<EntityId, CLIAgentSession>`, event emission, session lifecycle
 - `app/src/ai/mcp/templatable_manager.rs (41-78)` — `TemplatableMCPServerManager` singleton with per-server state tracking, spawn/abort handles
 

@@ -113,21 +113,25 @@ sequenceDiagram
 ## Risks and Mitigations
 
 ### Symlink breakage if `~/.warp` is deleted
+
 If a user deletes `~/.warp` after migration, all symlinks in `~/.warp-preview` become dangling. Warp's existing directory-creation logic (`ensure_warp_watch_roots_exist`) will recreate `~/.warp-preview` subdirectories as needed, and missing files will be treated as defaults. This is the same behavior as a fresh install.
 
 **Mitigation**: Acceptable degradation. No action needed.
 
 ### Filesystem watcher and symlinks
+
 The `notify` crate (used by `BulkFilesystemWatcher`) watches `~/.warp-preview` recursively. For symlinked directories, `notify` with `RecursiveMode::Recursive` follows symlinks by default on macOS (using `kqueue`/`FSEvents`). Changes to the underlying files in `~/.warp` will trigger events on the watched path in `~/.warp-preview`.
 
 **Mitigation**: Verify in manual testing. If events are missed, we may need to also watch `~/.warp` from Preview, but this is unlikely to be needed.
 
 ### Concurrent launch race
+
 Two Preview processes launching simultaneously could both attempt the migration. The `create_dir` call will succeed for one and return `AlreadyExists` for the other. The losing process may encounter partially-created symlinks, but since `symlink` on an existing path returns an error (which we log and skip), this is safe.
 
 **Mitigation**: Built into the implementation — `create_dir` + per-entry error handling.
 
 ### Entries created between `read_dir` and symlink creation
+
 If Stable creates a new entry in `~/.warp` after Preview's `read_dir` call but before symlinking completes, that entry won't have a symlink. This is a negligible window and the entry would only be visible in Stable.
 
 **Mitigation**: None needed — this is an edge case with no practical impact.
@@ -135,6 +139,7 @@ If Stable creates a new entry in `~/.warp` after Preview's `read_dir` call but b
 ## Testing and Validation
 
 ### Unit tests
+
 Add tests in `app/src/preview_config_migration_tests.rs` that call `migrate_config_dir_via_symlinks` with temp directories:
 1. **Migration creates symlinks**: Set up a temp dir with mock `.warp` contents, run migration, assert symlinks exist and point to correct targets.
 2. **Migration skips when target exists**: Pre-create the target directory, run migration, assert no symlinks are created.
@@ -144,6 +149,7 @@ Add tests in `app/src/preview_config_migration_tests.rs` that call `migrate_conf
 6. **Idempotent**: Run twice; second call is a no-op.
 
 ### Integration test
+
 Add an integration test in `crates/integration/src/test/preview_config_migration.rs` that verifies the end-to-end symlink creation:
 
 1. In `with_setup`, populate the hermetic home's `.warp/` directory with representative entries (e.g., `keybindings.yaml`, `themes/`, `workflows/`, `settings.toml`, a `.DS_Store`).
@@ -155,6 +161,7 @@ Add an integration test in `crates/integration/src/test/preview_config_migration
 4. Wire the test into the nextest suite via `crates/integration/tests/integration/ui_tests.rs`.
 
 ### Manual validation
+
 - Build a Preview binary, launch with existing `~/.warp`, verify:
   - `~/.warp-preview` is created with symlinks.
   - Settings, keybindings, themes all load correctly.

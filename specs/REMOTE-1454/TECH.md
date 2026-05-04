@@ -1,7 +1,11 @@
 # REMOTE-1454: Tech Spec — Cloud Mode setup UI for non-oz harnesses
+
 ## Problem
+
 The `CloudModeSetupV2` setup UI only transitions out of the "setup commands" phase when an Oz `AppendedExchange` event fires. Non-oz harness runs (claude, gemini) never produce an Oz exchange — the sandboxed `oz agent run --harness=<name>` invokes the harness CLI (e.g. `claude --session-id … < /tmp/oz_prompt`) as a shell command in the shared session, and that command is permanently flagged as an environment startup command. See `specs/REMOTE-1454/PRODUCT.md` for the desired UX.
+
 ## Relevant code
+
 - `crates/warp_features/src/lib.rs:757,826` — `FeatureFlag::AgentHarness`, `FeatureFlag::CloudModeSetupV2`.
 - `app/src/terminal/view/ambient_agent/model.rs:79-151,240-250,384-418,442-488,726-727,886-899` — `AmbientAgentViewModel` (status, `harness` field, `spawn_agent`, `enter_viewing_existing_session`, `AmbientAgentViewModelEvent`, `DispatchedAgent` emission).
 - `app/src/terminal/view/ambient_agent/view_impl.rs:91-228,230-300` — `handle_ambient_agent_event` (inserts `CloudModeInitialUserQuery` on `DispatchedAgent`), `maybe_insert_setup_command_blocks` (gated on `is_cloud_agent_pre_first_exchange`).
@@ -30,7 +34,9 @@ The `CloudModeSetupV2` setup UI only transitions out of the "setup commands" pha
 - `app/src/terminal/view.rs:746-752` — `PADDING_LEFT` (20px, or 16px behind `LessHorizontalTerminalPadding`) — the horizontal padding used by regular terminal command blocks.
 - `app/src/pane_group/mod.rs:3763-3792,5682-5692` — CLI-agent conversation restoration (`FeatureFlag::AgentHarness` gate for replay).
 - `warp_cli::agent::Harness` (`crates/warp_cli/src/agent.rs:120-131`) — `Oz`, `Claude`, `Gemini`.
+
 ## Current state
+
 `AmbientAgentViewModel::harness` is populated on spawn for the local spawner via the harness selector. For viewers that join a shared cloud session, the field is left at its default `Oz` even for claude / gemini runs — `enter_viewing_existing_session` fetches the task but only reads `agent_config_snapshot.environment_id`. The viewer therefore reports the wrong harness until this is fixed.
 When the cloud-mode terminal model is created, `is_executing_oz_environment_startup_commands` is set to `true` unconditionally under `CloudModeSetupV2`. The block-list flag:
 - Marks every new block `is_oz_environment_startup_command = true` and hides it.
@@ -38,8 +44,11 @@ When the cloud-mode terminal model is created, `is_executing_oz_environment_star
 `is_cloud_agent_pre_first_exchange` is a view-level helper that returns `true` while the active cloud-agent conversation has `exchange_count() == 0`. It gates: the "Setting up environment" warping indicator, the pre-harness input-box hiding, remote-input suppression in `shared_session/viewer/terminal_manager.rs`, and `maybe_insert_setup_command_blocks`. For non-oz there are no exchanges, so this stays `true` forever.
 `maybe_insert_setup_command_blocks` runs in the `AfterBlockStarted` path and, when pre-first-exchange, inserts the `CloudModeSetupTextBlock` summary row (once) plus a `CloudModeSetupCommandBlock` row for the block. It has no knowledge of whether the block is the harness CLI command.
 `PendingUserQueryBlock::new` currently takes `interruptible: bool` and always renders a close button; the "Send now" button is added only when `interruptible`. `TerminalView::insert_pending_user_query_block` subscribes to `Dismissed`/`SendNow` events; `send_user_query_after_next_conversation_finished` also registers a `queued_prompt_callback` so the prompt is re-submitted when the current conversation finishes.
+
 ## Proposed changes
+
 ### 1. `PendingUserQueryBlock` — per-button bools
+
 `app/src/ai/blocklist/block/pending_user_query_block.rs`
 Replace the `interruptible: bool` constructor param with two bool fields on the block itself:
 - `show_close_button: bool` — whether to render the dismiss ("X") button.
@@ -50,7 +59,9 @@ Update `PendingUserQueryBlock`:
 - Build the buttons column with 0, 1, or 2 children. If it ends up empty, skip the whole "buttons" container.
 - Constructor signature becomes `PendingUserQueryBlock::new(prompt, user_display_name, profile_image_path, show_close_button, show_send_now_button, ctx)`.
 This keeps the wire-up trivial for each call site (pass the two bools) and avoids introducing an enum just to express three combinations.
+
 ### 2. `TerminalView` helpers — thread the button bools and add a cloud-mode insertion path
+
 `app/src/terminal/view/pending_user_query.rs`
 - Change `insert_pending_user_query_block`'s `interruptible: bool` param to `show_close_button: bool, show_send_now_button: bool` and pass them to `PendingUserQueryBlock::new`.
 - Keep subscribing to `PendingUserQueryBlockEvent::Dismissed` and `PendingUserQueryBlockEvent::SendNow`. When both bools are `false`, the block never emits these events, so the subscription is effectively inert.
@@ -76,7 +87,9 @@ This keeps the wire-up trivial for each call site (pass the two bools) and avoid
   ```
   This does NOT register a `queued_prompt_callback` — the prompt is not re-submitted; it is already being carried by the harness inside the sandbox.
 `remove_pending_user_query_block` already clears `queued_prompt_callback` on top of removing the view. It remains the single teardown entry point.
+
 ### 3. `AmbientAgentViewModel` — resolve harness for viewers, track harness-command-started, new event
+
 `app/src/terminal/view/ambient_agent/model.rs`
 Add a helper for the non-oz check:
 ```rust
@@ -135,7 +148,9 @@ pub enum AmbientAgentViewModelEvent {
     HarnessCommandStarted,
 }
 ```
+
 ### 4. `is_cloud_agent_pre_first_exchange` — also honor harness-started
+
 `app/src/terminal/view/ambient_agent/mod.rs`
 Extend the helper so both Oz's "first exchange" and non-oz's "harness command started" transitions end the pre-first-exchange phase. At the site that currently returns based on `exchange_count() == 0`:
 ```rust
@@ -147,7 +162,9 @@ BlocklistAIHistoryModel::as_ref(app)
     .is_some_and(|conversation| conversation.exchange_count() == 0)
 ```
 This keeps every existing consumer (`status_bar`, input-box visibility, remote-input suppression, `setup_command_text`) correctly reading `false` after the harness block is detected.
+
 ### 5. Detect the harness block and emit `HarnessCommandStarted`
+
 `app/src/terminal/view/ambient_agent/view_impl.rs` — `maybe_insert_setup_command_blocks`
 This function is already the single hook called from `ModelEvent::AfterBlockStarted` for cloud-mode setup bookkeeping, so it's the right place to detect the harness block.
 Before doing any setup-row insertion, short-circuit if the active block's CLI-agent matches the run's harness:
@@ -206,7 +223,9 @@ fn active_block_matches_run_harness(&self, ctx: &AppContext) -> bool {
 }
 ```
 Cloud-mode harness runs always invoke the canonical `claude` / `gemini` CLI prefix from the harness sidecar (hardcoded in `app/src/ai/agent_sdk/driver/harness/claude_code.rs:84-95` and the matching `gemini.rs`). Passing `None` for both the escape char and aliases is sufficient; if a future wrapper (e.g. `bash -l -c 'claude …'`) breaks canonical detection, the fallback trigger under *Risks and mitigations* applies. We deliberately avoid `detect_cli_agent_from_model` because it gates on `is_active_and_long_running`, which has not yet elapsed at `AfterBlockStarted` time.
+
 ### 6. Handle `HarnessCommandStarted` in the view
+
 `app/src/terminal/view/ambient_agent/view_impl.rs` — `handle_ambient_agent_event`
 Add a new arm that mirrors how `AppendedExchange` already tears down the setup phase for Oz, removes the cloud-mode queued prompt block, and forces a fresh viewer-size report to the sharer so the harness CLI lays out at our current dimensions:
 ```rust
@@ -235,7 +254,9 @@ AmbientAgentViewModelEvent::HarnessCommandStarted => {
 }
 ```
 The Oz `AppendedExchange` handler in `view.rs:5042-5053` stays as-is.
+
 ### 6a. `force_report_viewer_terminal_size` helper
+
 `app/src/terminal/view/shared_session/view_impl.rs`
 Viewer-driven resize normally dedups on the last reported natural size (`SharedSessionViewer::last_reported_natural_size`) so a noop refresh doesn't spam the sharer. At harness start we specifically want to break that dedup: the sandbox PTY was resized during setup (to whatever size the pre-harness commands dictated), and the harness TUI will fail to lay out correctly if we don't re-issue our report.
 Add:
@@ -254,7 +275,9 @@ pub(in crate::terminal::view) fn force_report_viewer_terminal_size(
 }
 ```
 `refresh_size` already funnels through the standard viewer-driven-sizing eligibility checks (`is_viewer_driven_sizing_eligible`), so this is a no-op for sharers, for multi-viewer shared sessions, and for non-cloud-agent shared sessions. Cloud-agent shared sessions bypass the same-user check (`is_shared_session_for_ambient_agent`), so the viewer will always resize the sandbox PTY on harness start.
+
 ### 7. Route the initial prompt to the queued-prompt UI for non-oz runs
+
 `app/src/terminal/view/ambient_agent/view_impl.rs` — `DispatchedAgent` handler (currently view_impl.rs:106-135)
 Branch on the run's harness:
 ```rust
@@ -284,16 +307,22 @@ AmbientAgentViewModelEvent::DispatchedAgent => {
 }
 ```
 For viewers / historical replay, `request()` is `None` on the viewer's model (the viewer doesn't spawn), so the queued block is not inserted — matching the product-spec rule that late joiners don't see it.
+
 ### 8. Remove pending-query block on pre-harness terminal states
+
 `app/src/terminal/view/ambient_agent/view_impl.rs` — extend existing `Failed`, `Cancelled`, and `NeedsGithubAuth` arms:
 Each arm gets the same additional line (idempotent and cheap; no-op if no block present):
 ```rust
 self.remove_pending_user_query_block(ctx);
 ```
 This covers the product-spec requirement that failing/cancelling/auth-required runs before the harness block starts remove the queued indicator and fall back to the existing error/cancel/auth UI. The fallback UI is already rendered by the existing status-bar and loading-screen code paths under `CloudModeSetupV2`.
+
 ### 9. Cloud-mode submission-block guard remains harness-agnostic
+
 `app/src/terminal/input.rs:5725-5734` — `should_block_cloud_mode_setup_submission` currently blocks local input submission during the pre-harness/pre-first-exchange window. Because we updated `is_cloud_agent_pre_first_exchange` to also return false after `HarnessCommandStarted`, this guard already stops firing once the harness block starts, allowing input to flow to the harness TUI normally. No change needed.
+
 ### 10. Setup UI horizontal padding for non-oz harnesses
+
 `app/src/terminal/view/ambient_agent/block.rs`, `block/setup_command.rs`, `block/setup_command_text.rs`
 The oz setup UI wraps its per-command row and summary row in `WithContentItemSpacing::with_agent_output_item_spacing`, which applies a left margin of `CONTENT_HORIZONTAL_PADDING + icon_size + 16.` so the setup rows line up with other oz agent-output items (reasoning, actions, etc.). For non-oz harness runs, the harness CLI block that takes over after setup is a regular terminal command block and uses `*terminal::view::PADDING_LEFT` (20px, or 16px with `LessHorizontalTerminalPadding`) as its horizontal padding. Using the oz indent for non-oz setup rows causes a visible horizontal jump at harness start.
 A shared helper `cloud_mode_setup_row_spacing` in `block.rs` picks the right spacing per harness:
@@ -317,11 +346,15 @@ pub(super) fn cloud_mode_setup_row_spacing(
 }
 ```
 `CloudModeSetupCommandBlock` calls this in its collapsed-header branch (the expanded detail view keeps its own corner-radius / container treatment). `CloudModeSetupTextBlock` calls this at the end of `render` instead of the standalone `.with_agent_output_item_spacing(app).finish()`.
+
 ### 11. Feature flag gating
+
 - All new code paths that check `is_third_party_harness` also implicitly depend on `FeatureFlag::AgentHarness` (the helper checks it).
 - The outer `if FeatureFlag::CloudModeSetupV2.is_enabled()` guard in `DispatchedAgent` and `maybe_insert_setup_command_blocks` continues to gate the whole setup-v2 UI; when the flag is off, the legacy loading screen / full-screen overlay path is unchanged.
 - When `AgentHarness` is disabled, `is_third_party_harness` always returns `false`, the Oz paths are taken for everything, and the spec's new behavior never activates. Replay of CLI-agent conversations is already guarded by the same flag in `pane_group/mod.rs:3763,5682` and `terminal/view/load_ai_conversation.rs:268`.
+
 ## End-to-end flow (non-oz Cloud Mode run)
+
 1. User selects claude/gemini in the harness selector and submits a prompt.
 2. `AmbientAgentViewModel::spawn_agent` builds a `SpawnAgentRequest` with `HarnessConfig::from_harness_type`; `self.harness` is non-oz. Stream emits `DispatchedAgent`.
 3. `handle_ambient_agent_event` sees `is_third_party_harness()` and calls `insert_cloud_mode_queued_user_query_block(prompt)`. `PendingUserQueryBlock` is rendered with `show_close_button: false` and `show_send_now_button: false`.
@@ -332,11 +365,15 @@ pub(super) fn cloud_mode_setup_row_spacing(
 8. `HarnessCommandStarted` fires → view arm flips `is_executing_oz_environment_startup_commands = false`, removes the pending-query block, collapses the setup-commands summary, and calls `force_report_viewer_terminal_size` so the sandbox PTY is resized to our current dimensions before claude's TUI lays out its first frame.
 9. From now on, `is_cloud_agent_pre_first_exchange` returns false. The claude block is a normal CLI-agent session: `detect_cli_agent_from_model` + `CLIAgentSessionsModel::set_session` already run in `view.rs:10343-10378`, so the CLI-agent footer and rich-input UI activate. Setup rows rendered earlier in the run use `PADDING_LEFT` margins so the visible left edge of content does not shift when the harness block takes over.
 10. On pre-harness `Failed` / `Cancelled` / `NeedsGithubAuth`: the new `remove_pending_user_query_block` calls tear down the queued indicator; the existing error/cancel/auth UI remains.
+
 ## Risks and mitigations
+
 **Missing harness match.** If `CLIAgent::detect` fails to identify the harness (e.g. a future wrapper like `bash -c 'claude …'`), we never transition out of setup and the claude block stays flagged as a setup command. The short-circuit only covers the sandbox's canonical invocation; if detection fails, behavior regresses to the current broken state rather than getting worse. A fallback trigger (e.g. timeout-based transition) can be added as a follow-up if this becomes a problem.
 **Viewer harness resolution races.** `enter_viewing_existing_session` fetches the task asynchronously. If the harness block starts before the fetch completes, `is_third_party_harness()` returns false at the time of detection and we treat the block as a setup command. In practice the task fetch is issued on join and the viewer only sees blocks after the shared session connects, which is later. If needed, we can re-evaluate the harness on task fetch completion and fire `mark_harness_command_started` retroactively.
 **`is_cloud_agent_pre_first_exchange` semantics shift.** Consumers were designed around "conversation has no exchanges yet". After this change, the helper also returns false when a harness command has started. Every caller (`status_bar`, `is_input_box_visible`, `shared_session/viewer/terminal_manager`, `setup_command_text`, `maybe_insert_setup_command_blocks`) behaves correctly under the new semantics for non-oz runs and is a no-op for Oz runs (since `harness_command_started` is never set on Oz).
+
 ## Testing and validation
+
 Unit coverage:
 - Add a test for `PendingUserQueryBlock` rendering for each `(show_close_button, show_send_now_button)` combination (both-true, close-only, neither).
 - Add a test for `AmbientAgentViewModel::mark_harness_command_started` idempotency and event emission, and for `is_third_party_harness` gating on `AgentHarness` + `harness` field.
@@ -355,7 +392,9 @@ Integration / manual validation (mirrors the product spec's validation list):
 - Re-run all Oz validation cases from `specs/REMOTE-172/PRODUCT.md` to confirm no regression.
 - Toggle `CloudModeSetupV2` off; confirm legacy cloud-mode behavior restored for all harnesses.
 - Toggle `AgentHarness` off; confirm harness selector hides non-oz options and nothing in this spec activates.
+
 ## Follow-ups
+
 - Consider telemetry for `HarnessCommandStarted` (time from `DispatchedAgent` / `SessionReady` to harness start) so we can monitor setup latency per-harness.
 - If detection proves flaky in practice, add a timeout-based fallback transition (e.g. "still in setup 60s after session ready with no matching CLI agent detection → transition anyway and log a warning").
 - Once `CloudModeSetupV2` ships to stable, consider unifying the "pre-first-exchange" and "pre-harness" concepts behind a single view-model state rather than the current combination of block-list flag + exchange count + harness-started bool.

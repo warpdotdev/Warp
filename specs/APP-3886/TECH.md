@@ -4,6 +4,7 @@ Linear: [APP-3886](https://linear.app/warpdotdev/issue/APP-3886/sidecars-for-tab
 Product spec: `specs/APP-3886/PRODUCT.md`
 
 ## Problem
+
 The tab configs menu has no per-item management actions. Users cannot set a default, edit, or remove tab configs from within the menu. The `DefaultSessionMode` setting only supports `Terminal | Agent`, with no way to select a tab config. The sidecar infrastructure exists for worktree/shell submenus but not for action panels.
 
 ## Relevant code
@@ -55,6 +56,7 @@ The tab configs menu has no per-item management actions. Users cannot set a defa
 ## Current state
 
 ### Menu structure
+
 `unified_new_session_menu_items()` builds the menu. This function is shared across both horizontal and vertical tab bar modes — the same items appear regardless of layout. The menu is opened via `open_tab_configs_menu()` which accepts `is_vertical_tabs` only to adjust the menu width (268px for vertical, default for horizontal).
 
 Current order:
@@ -65,6 +67,7 @@ Current order:
 5. Separator + "New worktree config" (submenu) + "New Tab Config"
 
 ### Sidecar positioning (horizontal vs vertical)
+
 The dropdown menu is positioned differently in each mode:
 - **Horizontal tabs**: anchored to `NEW_TAB_BUTTON_POSITION_ID` (lower-left of the + button)
 - **Vertical tabs**: anchored to `VERTICAL_TABS_ADD_TAB_POSITION_ID` (below the + button)
@@ -74,14 +77,17 @@ The sidecar overlay anchors to the hovered menu item's label text, so it's posit
 Note: The vertical tabs panel has its own separate "detail sidecar" (`render_detail_sidecar` in `vertical_tabs.rs`) that shows pane details when hovering rows in the panel. This is a completely different system from the new-session menu sidecar and is unrelated to this feature.
 
 ### DefaultSessionMode
+
 A `Copy + EnumIter` enum stored in `AISettings`. The settings dropdown iterates it. `default_session_mode()` returns `Terminal` when AI is disabled, otherwise returns the stored value.
 
 ### TabConfig
+
 Has no `source_path` field. The file path is available during parsing but discarded for successfully parsed configs.
 
 ## Proposed changes
 
 ### 1. Add `source_path` to `TabConfig`
+
 **File:** `app/src/tab_configs/tab_config.rs`
 
 Add a skipped field:
@@ -101,6 +107,7 @@ Some(parsed.map(|mut config| {
 ```
 
 ### 2. Extend `DefaultSessionMode` with `TabConfig` and `CloudAgent` variants + companion path setting
+
 **File:** `app/src/settings/ai.rs`
 
 Add `CloudAgent` and `TabConfig` variants to `DefaultSessionMode`:
@@ -139,6 +146,7 @@ fn resolved_default_tab_config(&self, app: &AppContext) -> Option<TabConfig>
 Reads `default_tab_config_path`, finds the matching `TabConfig` in `WarpConfig::tab_configs()` by `source_path`, and returns it. Returns `None` if the path is empty, the file doesn't exist, or the config isn't loaded (triggers fallback to `Terminal`).
 
 ### Setting interaction: `DefaultSessionMode` × `NewSessionShell`
+
 Two settings, two concerns:
 - **`DefaultSessionMode`** (`Terminal | Agent | CloudAgent | TabConfig`) — controls *what kind of thing* Cmd+T opens.
 - **`NewSessionShell`** (existing, in `SessionSettings`) — controls *which shell binary* a terminal session uses. Only relevant when the mode resolves to opening a terminal.
@@ -158,6 +166,7 @@ How they interact on Cmd+T:
 Key invariant: `NewSessionShell` is *always* the authority for which shell a terminal uses. `DefaultSessionMode` never duplicates that.
 
 ### 3. Create action sidecar render function
+
 **New file:** `app/src/tab_configs/action_sidecar.rs`
 
 A free function `render_action_sidecar()` (not a `View`) that returns `Box<dyn Element>`. Called directly from the Workspace render method. This is simpler than a View since the sidecar has no internal state — it just reads the current item and settings to produce an element tree.
@@ -175,6 +184,7 @@ Button clicks dispatch `WorkspaceAction` variants directly (`TabConfigSidecarMak
 **File:** `app/src/tab_configs/mod.rs` — add `pub(crate) mod action_sidecar;`
 
 ### 4. Add `RemoveTabConfigConfirmationDialog`
+
 **New file:** `app/src/tab_configs/remove_confirmation_dialog.rs`
 
 Follows the `CloseSessionConfirmationDialog` pattern (`app/src/workspace/close_session_confirmation_dialog.rs`):
@@ -187,6 +197,7 @@ Events: `RemoveTabConfigConfirmationEvent::Confirm { path } | Cancel`
 On confirm, delete the file from disk. The filesystem watcher handles menu refresh. If the removed config was the default, clear `default_tab_config_path` and set `DefaultSessionMode` back to `Terminal`.
 
 ### 5. Wire up action sidecar in Workspace
+
 **File:** `app/src/workspace/view.rs`
 
 Add new fields to `Workspace`:
@@ -205,6 +216,7 @@ The sidecar is shown when `tab_config_action_sidecar_item` is `Some`. No separat
 **Event handlers**: `WorkspaceAction::TabConfigSidecar*` variants are handled directly in `handle_action`. Subscribe to `RemoveTabConfigConfirmationEvent`.
 
 ### 6. Rename `AddTab` → `AddDefaultTab` and route Cmd+T through it
+
 **Files:** `app/src/workspace/action.rs`, `app/src/workspace/view.rs`, `app/src/workspace/mod.rs`, `app/src/app_menus.rs`
 
 Rename `WorkspaceAction::AddTab` to `WorkspaceAction::AddDefaultTab` to clearly distinguish it from the explicit `AddTerminalTab` and `AddAgentTab` actions:
@@ -223,6 +235,7 @@ On macOS, Cmd+T is handled by the native menu system, not the WarpUI keybinding 
 The callback `open_new_default_tab_or_window` (`app/src/app_menus.rs`) always dispatches `CustomAction::NewTab`, which the binding system maps to `WorkspaceAction::AddDefaultTab`. This means Cmd+T always goes through the `AddDefaultTab` handler regardless of the current mode — the handler is the single place that routes based on `DefaultSessionMode`.
 
 ### 7. Flatten Windows Terminal shell items
+
 **File:** `app/src/workspace/view.rs`
 
 In `unified_new_session_menu_items()`, replace the `#[cfg(target_os = "windows")]` block (`view.rs:5191`) that creates a submenu parent with code that lists each `AvailableShell` as an individual top-level `MenuItem` with `AddTabWithShell` action.
@@ -230,6 +243,7 @@ In `unified_new_session_menu_items()`, replace the `#[cfg(target_os = "windows")
 Remove `NewSessionSidecarKind::Terminal`, `configure_terminal_new_session_sidecar()`, and related dead code.
 
 ### 8. Fix editor setting for tab config file opens
+
 **File:** `app/src/workspace/view.rs`
 
 In `create_and_open_new_tab_config()` (`view.rs:5469`), change:
@@ -252,6 +266,7 @@ Apply the same fix to `save_current_tab_as_new_config()` (`view.rs:5500`) and th
 The "Edit config" button in the action sidecar will also use `resolve_file_target_with_editor_choice` with `open_code_panels_file_editor`.
 
 ### 9. Update settings dropdown
+
 **File:** `app/src/settings_view/features_page.rs`
 
 Replace the `default_session_mode_dropdown: ViewHandle<Dropdown<FeaturesPageAction>>` (`features_page.rs:1222`) with a `FilterableDropdown<FeaturesPageAction>`. The `FilterableDropdown` component (`app/src/view_components/filterable_dropdown.rs`) already supports search/filter, arrow key navigation, and the same `DropdownItem` API — it wraps a `Menu` with a search editor, so users can type to narrow down the list when many tab configs are present.
@@ -261,6 +276,7 @@ In `update_default_session_mode_dropdown()` (`features_page.rs:3273`), after the
 Subscribe to `WarpConfigUpdateEvent::TabConfigs` to rebuild the dropdown when configs change.
 
 ### 10. Cmd+T keybinding indicator in menu
+
 **File:** `app/src/workspace/view.rs`
 
 In `unified_new_session_menu_items()`, the Cmd+T shortcut label is currently assigned to either the Agent or Terminal item based on `default_is_agent`. Replace this with a comprehensive check of the effective default:
@@ -275,6 +291,7 @@ Note: Per-shell shortcut label logic (i.e., showing Cmd+T on the specific shell 
 ## End-to-end flow
 
 ### Hovering a tab config in the menu
+
 1. User hovers over a tab config item in the dropdown (works identically in horizontal and vertical tabs).
 2. `handle_new_session_menu_event` → `ItemHovered` → `update_new_session_sidecar()`.
 3. Match identifies the item as a user tab config (by checking if the action is `SelectTabConfig`).
@@ -283,6 +300,7 @@ Note: Per-shell shortcut label logic (i.e., showing Cmd+T on the specific shell 
 6. Render places the sidecar overlay anchored to the hovered item.
 
 ### "Make default" for a tab config
+
 1. User clicks "Make default" in the action sidecar.
 2. Sidecar dispatches `WorkspaceAction::TabConfigSidecarMakeDefault { mode: TabConfig, tab_config_path: Some(path), shell: None }`.
 3. Workspace handler sets `default_session_mode_internal` to `TabConfig` and `default_tab_config_path` to the file path.
@@ -290,6 +308,7 @@ Note: Per-shell shortcut label logic (i.e., showing Cmd+T on the specific shell 
 5. Settings dropdown updates via the `AISettingsChangedEvent` subscription.
 
 ### Cmd+T with tab config default
+
 1. User presses Cmd+T → native menu dispatches `CustomAction::NewTab` → `AddDefaultTab` action.
 2. Handler checks `DefaultSessionMode::TabConfig`.
 3. Reads `default_tab_config_path`, finds matching config in `WarpConfig::tab_configs()` via `resolved_default_tab_config()`.
@@ -297,6 +316,7 @@ Note: Per-shell shortcut label logic (i.e., showing Cmd+T on the specific shell 
 5. If config file is missing, clears settings to `Terminal` and opens a normal terminal tab.
 
 ### "Remove" flow
+
 1. User clicks "Remove" in the sidecar.
 2. Sidecar dispatches `WorkspaceAction::TabConfigSidecarRemoveConfig { name, path }`.
 3. Workspace opens `RemoveTabConfigConfirmationDialog` with the config name and path.
@@ -330,5 +350,6 @@ Note: Per-shell shortcut label logic (i.e., showing Cmd+T on the specific shell 
   - Vertical tabs detail sidecar (hover-to-preview pane details) unaffected.
 
 ## Follow-ups
+
 - Potential for tab config reordering in the menu.
 - Richer sidecar content (preview of pane layout, param summary).

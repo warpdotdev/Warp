@@ -1,9 +1,15 @@
 # PRODUCT.md
+
 ## Summary
+
 Add a Harness filter dropdown to `AgentManagementView` so users can narrow the Runs list to runs driven by a specific execution harness (Warp Agent, Claude Code, Gemini CLI), and surface the harness on each run card's metadata line.
+
 ## Figma
+
 Figma: none provided. Visual treatment matches the existing filter dropdowns in `app/src/ai/agent_management/view.rs` (Status, Source, Has artifact, etc.) and the harness icon + brand-color treatment established by the conversation details sidebar in `specs/REMOTE-1455/PRODUCT.md`.
+
 ## Behavior
+
 1. A Harness dropdown is present in the filters row of the Runs header on `AgentManagementView`, alongside the existing Status, Source, Created on, Has artifact, Environment, and Created by dropdowns. It is visible under the same conditions as the existing dropdowns (no extra feature-flag gating beyond whatever already gates the view).
 2. The dropdown label prefix is `Harness`, so the button reads `Harness: <selected>` after a selection, matching the `Status: …` / `Source: …` treatment from the adjacent dropdowns.
 3. The dropdown exposes exactly these options, in this order:
@@ -15,11 +21,11 @@ Figma: none provided. Visual treatment matches the existing filter dropdowns in 
 4. Each non-`All` option renders its harness's leading logo icon, tinted with that harness's brand color, matching the treatment used in the conversation details sidebar (REMOTE-1455): Warp/Oz uses the first-party Warp icon + theme foreground, Claude uses `Icon::ClaudeLogo` tinted Claude orange, Gemini uses `Icon::GeminiLogo` tinted Gemini blue. The `All` option has no leading icon, consistent with the existing Status dropdown's `All` row.
 5. The selected harness appears in the dropdown's collapsed button label, e.g. `Harness: Claude Code`. The default selection is `All`.
 6. Selecting a harness option filters the visible Runs list to items whose resolved harness equals the selected value:
-    * A cloud task whose `agent_config_snapshot.harness.harness_type` is set matches the option for that harness.
-    * A cloud task whose `agent_config_snapshot` is present but has no `harness` field is treated as `Warp Agent` and matches only the `Warp Agent` option.
-    * A cloud task whose `agent_config_snapshot` has not loaded yet (e.g. a stub row) has an unknown harness; it matches only the `All` option and is excluded from every specific-harness filter, including `Warp Agent`. This mirrors the conversation details sidebar behavior, which omits the harness row when the harness is unknown.
-    * A local/interactive conversation (no ambient task) is treated as `Warp Agent` and matches only the `Warp Agent` option.
-    * No item ever matches more than one specific-harness option.
+    - A cloud task whose `agent_config_snapshot.harness.harness_type` is set matches the option for that harness.
+    - A cloud task whose `agent_config_snapshot` is present but has no `harness` field is treated as `Warp Agent` and matches only the `Warp Agent` option.
+    - A cloud task whose `agent_config_snapshot` has not loaded yet (e.g. a stub row) has an unknown harness; it matches only the `All` option and is excluded from every specific-harness filter, including `Warp Agent`. This mirrors the conversation details sidebar behavior, which omits the harness row when the harness is unknown.
+    - A local/interactive conversation (no ambient task) is treated as `Warp Agent` and matches only the `Warp Agent` option.
+    - No item ever matches more than one specific-harness option.
 7. Selecting `All` clears the harness constraint and restores the list to what it would be with no harness filter applied (all other filters still respected).
 8. The Harness filter is independent of every other filter. It combines with the existing Owner, Status, Source, Created on, Has artifact, Environment, Creator, and search filters via logical AND — an item appears only if it matches all active filters.
 9. When the Harness filter is set to anything other than `All`, `AgentManagementFilters::is_filtering()` reports `true`, so the existing `Clear all` chip appears and, when clicked, resets Harness to `All` along with the other non-owner filters.

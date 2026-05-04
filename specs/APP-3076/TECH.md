@@ -1,7 +1,9 @@
 # Block List Markdown Table Rendering — Tech Spec
+
 Product spec: `specs/APP-3076/PRODUCT.md`
 
 ## Problem
+
 The AI block list already detects GFM-style tables, but it degrades them into a single preformatted text blob. That loses the structured table model we already have elsewhere in the repo, prevents reuse of notebook-style inline cell formatting, and makes copy semantics awkward because the same string is currently used for rendering and clipboard export.
 
 The implementation needs to satisfy four constraints at once:
@@ -11,6 +13,7 @@ The implementation needs to satisfy four constraints at once:
 - support block-list-native interaction rules: horizontal-only local scrolling, no nested vertical scrolling, and correct text selection
 
 ## Relevant Code
+
 - `specs/APP-3076/PRODUCT.md` — approved product behavior
 - `app/Cargo.toml` — compile-time feature declarations for feature-flagged app functionality
 - `app/src/lib.rs (2363-2561)` — compile-time-to-runtime `FeatureFlag` wiring for app features
@@ -37,6 +40,7 @@ The implementation needs to satisfy four constraints at once:
 ## Current State
 
 ### AI block list path
+
 The block list does not use the shared Markdown table model. `parse_markdown_into_text_and_code_sections` in `app/src/ai/agent/util.rs:24-145` uses a custom helper from `ai::gfm_table` to detect a table-shaped region while scanning the response line-by-line. Once it finds one, it emits `AIAgentTextSection::Table { content: String }`, where `content` is a normalized pipe-delimited string rather than a structured table object.
 
 Rendering then happens in `render_table_section` in `app/src/ai/blocklist/block/view_impl/common.rs (1139-1188)`, which places that string into a single `Text` node wrapped in a horizontal scroller. This satisfies the current “readable monospace dump” behavior, but it does not preserve:
@@ -47,6 +51,7 @@ Rendering then happens in `render_table_section` in `app/src/ai/blocklist/block/
 Because `AIAgentTextSection::Table` only stores the rendered string, copy/export and find also operate on that same string.
 
 ### Notebook path
+
 The notebook/editor stack already has a real structured table model:
 - `markdown_parser` can parse GFM tables into `FormattedTable`
 - `editor/src/content/text.rs` has helpers for reconstructing a `FormattedTable` from the editor’s internal representation while preserving inline Markdown styles
@@ -55,6 +60,7 @@ The notebook/editor stack already has a real structured table model:
 That renderer is not a good direct fit for the block list because it is tied to the editor buffer/render model, offset maps, and editor-specific interaction flow.
 
 ### Shared UI table component
+
 The shared `ui::elements::Table` is much closer to what the block list needs: it supports arbitrary cell elements, per-column sizing, selection delegation, and independent composition with surrounding UI.
 
 However, its current defaults do not match the product requirements for the block list:
@@ -67,6 +73,7 @@ Those defaults are reasonable for a general-purpose scrollable table, but not fo
 ## Proposed Changes
 
 ### 0. Gate the feature behind `BlocklistMarkdownTableRendering`
+
 Add a dedicated feature flag named `BlocklistMarkdownTableRendering` and wire it through the normal Warp feature-flag plumbing:
 - add `blocklist_markdown_table_rendering` to `app/Cargo.toml`
 - map that Cargo feature to `FeatureFlag::BlocklistMarkdownTableRendering` in `app/src/lib.rs`
@@ -76,6 +83,7 @@ Add a dedicated feature flag named `BlocklistMarkdownTableRendering` and wire it
 The new structured table rendering should only activate when this flag is enabled. When disabled, AI block list responses should continue to detect tables and render them with the pre-feature monospace scrollable table block.
 
 ### 1. Replace string-backed table sections with a structured payload
+
 Introduce a dedicated AI-output table type in `app/src/ai/agent/mod.rs`, for example:
 
 ```rust
@@ -104,6 +112,7 @@ This gives the block list two representations of the same table:
 This is the key ownership boundary for the feature. We should not try to derive clipboard Markdown back from the rendered UI.
 
 ### 2. Reuse `markdown_parser` for table parsing
+
 Stop using the custom `ai::gfm_table::maybe_parse_gfm_table` path as the source of truth for parsed table structure.
 
 Instead, add a small shared helper in `markdown_parser` that parses a contiguous GFM table block into `FormattedTable`. The block list section splitter in `app/src/ai/agent/util.rs` should continue to own boundary detection between:
@@ -124,6 +133,7 @@ This reuses the repo’s actual GFM table parsing logic, including:
 - links, inline code, bold, italic, and strikethrough handling
 
 ### 3. Preserve source Markdown in copy/export flows
+
 Update the copy/export paths that currently rely on `AIAgentOutputMessage` display formatting to use the table’s `markdown_source` rather than a rendered or normalized text serialization.
 
 The affected flows are the existing AI block and conversation export paths in:
@@ -138,6 +148,7 @@ The rule is:
 This keeps block-level copy behavior aligned with the product spec without complicating the table renderer.
 
 ### 4. Add a block-list table renderer built on the shared UI `Table`
+
 Add a new renderer for AI-output Markdown tables in the block list, either as a helper in `app/src/ai/blocklist/block/view_impl/common.rs` or as a dedicated view/component in the same module tree.
 
 The renderer should:
@@ -152,6 +163,7 @@ Each cell should be rendered with `FormattedTextElement`, using a one-line `Form
 This renderer should intentionally stay read-only. No editor state, offset map, or notebook-specific block model should be introduced into the block list.
 
 ### 5. Extend the shared UI `Table` for block-list usage
+
 The shared UI table needs one opt-in mode for this feature.
 
 Add an explicit vertical sizing mode to `ui/src/elements/table/mod.rs` rather than another boolean toggle. The shared `TableConfig` should expose an enum that distinguishes the default viewported behavior from a full-content mode, e.g. `TableVerticalSizing::Viewported` vs `TableVerticalSizing::ExpandToContent`.
@@ -174,6 +186,7 @@ This change is necessary for two reasons:
 2. it removes the current virtualization-related selection limitation for off-screen rows
 
 ### 6. Make intrinsic widths account for row content in block-list mode
+
 If we render block-list tables with the current `ui::elements::Table` intrinsic sizing behavior, only header content contributes to intrinsic widths. That is likely to produce visibly different results from notebook tables when body cells are wider than their headers.
 
 To keep the block-list result visually close to notebook tables, add an opt-in width measurement path for the shared `Table` so intrinsic column widths can include body cells when desired.
@@ -185,6 +198,7 @@ This should be scoped narrowly:
 Because block-list tables will already be in `ExpandToContent` mode, we can avoid a separate measurement-only render pass: render each row once in the full-content layout path, measure unconstrained intrinsic widths from those already-instantiated body cells, then lay those same row elements out with the final computed column widths. This removes the extra `render_fn` pass for intrinsic body-width measurement while keeping the change scoped to the block-list path.
 
 ### 7. Separate find/search text from source Markdown
+
 After the table payload becomes structured, the block list should not use `markdown_source` for find matching. That would make the find surface operate on Markdown syntax instead of rendered text.
 
 Add a helper on `AgentOutputTable` that flattens the parsed table into plain find/selection text in row-major order, using tab-separated cells and newline-separated rows. Then update `app/src/ai/blocklist/block/find.rs:70-90` to search that derived plain text instead of the raw Markdown source.
@@ -192,6 +206,7 @@ Add a helper on `AgentOutputTable` that flattens the parsed table into plain fin
 This keeps find behavior aligned with the rendered content while leaving clipboard export source-accurate.
 
 ## End-to-End Flow
+
 1. The AI response streams in as Markdown text.
 2. `parse_markdown_into_text_and_code_sections` in `app/src/ai/agent/util.rs` continues scanning line-by-line.
 3. When it encounters a candidate table region, it collects the raw Markdown block and hands it to a shared `markdown_parser` helper.
@@ -206,6 +221,7 @@ This keeps find behavior aligned with the rendered content while leaving clipboa
 ## Implementation Plan
 
 ### Phase 1: Data model and parsing
+
 - Add `BlocklistMarkdownTableRendering` feature-flag plumbing and gate the block-list table behavior behind it
 - Add `AgentOutputTable` and update `AIAgentTextSection`
 - Add a shared GFM-table parsing helper in `markdown_parser`
@@ -213,17 +229,20 @@ This keeps find behavior aligned with the rendered content while leaving clipboa
 - Remove or stop using the custom `ai::gfm_table` helper
 
 ### Phase 2: Copy/find behavior
+
 - Update AI output formatting and block/conversation copy flows to use `markdown_source`
 - Add a plain-text flattening helper for find
 - Update `app/src/ai/blocklist/block/find.rs` to search rendered table text rather than raw Markdown
 
 ### Phase 3: UI table support
+
 - Replace the expand-to-content boolean with an explicit `TableVerticalSizing` enum on `TableConfig`
 - Extend `ui::elements::Table` with an `ExpandToContent` mode that disables local vertical scrolling
 - Extend intrinsic measurement so body cells can participate when requested, using the single full-content layout pass in `ExpandToContent` mode
 - Keep existing behavior as the default for current users of the component
 
 ### Phase 4: Block-list rendering
+
 - Replace the current monospace `render_table_section` with a structured renderer built on WarpUI `Table`
 - Reuse current horizontal scroll handle plumbing
 - Match notebook table styling as closely as practical via block-list table theme helpers
@@ -231,6 +250,7 @@ This keeps find behavior aligned with the rendered content while leaving clipboa
 ## Risks and Mitigations
 
 ### Risk: nested vertical scrolling or incomplete selection
+
 Using the shared `Table` without modification would keep the current vertical viewport and virtualization behavior, which conflicts with the product spec.
 
 Mitigation:
@@ -238,6 +258,7 @@ Mitigation:
 - disable table-local vertical scrolling in that mode
 
 ### Risk: copy/export regressions
+
 Today the table section’s rendered string is also what gets copied. Moving to structured tables could accidentally change clipboard output.
 
 Mitigation:
@@ -246,6 +267,7 @@ Mitigation:
 - add unit coverage for block-level and conversation-level copy
 
 ### Risk: visual mismatch with notebook tables
+
 If block-list tables use header-only intrinsic sizing or different theme tokens, they may look noticeably different from notebook tables.
 
 Mitigation:
@@ -253,6 +275,7 @@ Mitigation:
 - define a small style translation helper that mirrors notebook table border, padding, alternating-row, and header treatments as closely as practical
 
 ### Risk: performance on very large tables
+
 Expanding to full height and measuring all rows is more expensive than a virtualized viewport, even after removing the extra intrinsic-width render pass.
 
 Mitigation:
@@ -263,6 +286,7 @@ Mitigation:
 ## Testing and Validation
 
 ### Parser and data-model tests
+
 - Add `markdown_parser` tests for the new shared table-block parser:
   - simple tables
   - alignment parsing
@@ -277,10 +301,12 @@ Mitigation:
   - prose before/after a table still produces the correct section ordering
 
 ### Copy and find tests
+
 - Add tests covering `AIAgentOutputMessage` / exchange formatting to verify block-level copy uses original Markdown table syntax
 - Add block-list find tests to verify searches match rendered cell text rather than Markdown syntax
 
 ### UI table tests
+
 - Add WarpUI table tests for the new expand-to-content mode:
   - no local vertical scroll behavior
   - full content height is returned
@@ -288,6 +314,7 @@ Mitigation:
 - Add table sizing tests covering body-cell-aware intrinsic measurement
 
 ### Block-list rendering validation
+
 - Manual validation that wide tables get a local horizontal scrollbar
 - Manual validation that tall tables scroll with the block list and do not show a nested vertical scrollbar
 - Manual validation that selection works within cells, across cells, across rows, and across prose/table boundaries
@@ -295,6 +322,7 @@ Mitigation:
 - Manual validation that rendered output visually matches notebook tables closely for alignment, padding, borders, and row treatment
 
 ## Follow-ups
+
 - Generalize the block-list table renderer into a reusable read-only Markdown table view if other surfaces need it
 - Consider adding autodetected file-path/URL highlighting inside table cells if we decide block-list tables should match plain-text-section link detection behavior as well
 - If future AI outputs include very large tables, revisit whether the shared `Table` should support a hybrid mode that preserves block-list vertical scrolling while still reducing layout cost

@@ -1,7 +1,9 @@
 # Inline Markdown Images in AI Block List — Tech Spec
+
 Product spec: `specs/zachlloyd/inline-markdown-images-in-blocklist/PRODUCT.md`
 
 ## Problem
+
 The AI block list does not currently support the product behavior described in `PRODUCT.md`: rendering supported Markdown images and Mermaid diagrams inline inside AI responses with the approved inline-row, grouped-image, and Mermaid-card treatments.
 
 Warp already has the underlying primitives needed to build this behavior:
@@ -22,6 +24,7 @@ The implementation should add support for the required file-backed image and Mer
 This should be a surgical extension of the existing section-based block-list renderer, with explicit copy behavior for rendered visuals, a visible file-link label below successfully rendered file-backed images, raw-Markdown fallback when rendering is unavailable, and reuse of Warp’s existing fullscreen lightbox treatment when the user clicks a rendered visual.
 
 ## Relevant Code
+
 - `specs/zachlloyd/inline-markdown-images-in-blocklist/PRODUCT.md` — approved product behavior
 - `app/src/ai/agent/util.rs (24-186)` — `parse_markdown_into_text_and_code_sections`; current block-list markdown section splitter
 - `app/src/ai/agent/mod.rs (1281-1361)` — `AgentOutputText`, `AgentOutputTable`, and `AIAgentTextSection`
@@ -63,6 +66,7 @@ This should be a surgical extension of the existing section-based block-list ren
 ## Current State
 
 ### Markdown parsing in the AI block list
+
 The block list currently parses AI markdown with a line-oriented splitter in `app/src/ai/agent/util.rs (24-186)`. It recognizes:
 
 - plain markdown text
@@ -72,6 +76,7 @@ The block list currently parses AI markdown with a line-oriented splitter in `ap
 It does not emit explicit image or Mermaid section types today. Standard Markdown image syntax therefore remains embedded inside `AIAgentTextSection::PlainText`, and Mermaid code fences remain ordinary `Code` sections.
 
 ### Current Markdown semantics vs current parser behavior
+
 Standard Markdown/CommonMark uses `![alt](source)` as image syntax. There is not a separate standard syntax that means “this should be shown as a literal file path instead of rendered as an image.” If the author wants literal text, they escape the Markdown or place it in code spans/blocks.
 
 Our current `markdown_parser` does not fully implement that inline image semantic yet. `crates/markdown_parser/src/markdown_parser.rs (286-326)` only recognizes images when they occupy a standalone line; inline paragraph images like `text ![img](foo.png) more text` are currently treated as plain text by this parser. For this redesign, the block list still should not invent a generic “render some arbitrary inline image-looking text” rule. The only extension should be a narrow line parser for runs of parser-compatible image references separated only by whitespace so we can distinguish:
@@ -80,9 +85,11 @@ Our current `markdown_parser` does not fully implement that inline image semanti
 - multiple image references on the same line, which become an inline image row
 
 ### Why images disappear today
+
 Plain-text markdown sections are rendered with `render_rich_text_output_text_section` in `app/src/ai/blocklist/block/view_impl/common.rs (986-1084)`, which delegates to `FormattedTextElement`. In `crates/warpui_core/src/elements/formatted_text_element.rs (1580-1591, 1661-1671)`, `FormattedTextLine::Image(_)`, `FormattedTextLine::Embedded(_)`, and `FormattedTextLine::HorizontalRule` are all treated as line-break-like layout items rather than renderable content. That is the immediate reason that block-list Markdown images never show up.
 
 ### Asset and Mermaid support already exists elsewhere
+
 Warp already has the low-level capabilities this feature needs:
 
 - shared image format support in `crates/warpui_core/src/image_cache.rs`
@@ -95,6 +102,7 @@ The app crate already depends on `warp_editor`, and the block list already embed
 Warp also already has a reusable fullscreen lightbox path at the workspace layer. `WorkspaceAction::OpenLightbox` / `UpdateLightboxImage` drive `LightboxView`, which already supports Escape dismissal, left/right keyboard navigation, and previous/next buttons. The block-list visual renderer should reuse that path rather than inventing a new fullscreen viewer.
 
 ### Working-directory metadata already exists
+
 The product requirement for resolving relative paths against the working directory captured when the AI block rendered is already compatible with existing data flow:
 
 - session context captures `current_working_directory` in `app/src/ai/blocklist/controller.rs (62-86)`
@@ -105,6 +113,7 @@ The product requirement for resolving relative paths against the working directo
 We do not need a new persistence field for this feature; we need to thread existing metadata into the visual-section renderers.
 
 ### Selection is intentionally out of scope
+
 The current selection model in `app/src/ai/blocklist/block.rs (4313-4476)` is fragmented across:
 
 - block-level text selection
@@ -119,6 +128,7 @@ That architecture does not support a continuous mixed-content selection model ac
 ## Proposed Changes
 
 ### 1. Add a dedicated block-list image feature flag
+
 Add a new feature flag dedicated to AI block-list markdown visuals, e.g. `BlocklistMarkdownImages`.
 
 Implementation points:
@@ -136,6 +146,7 @@ File-backed images in the block list should require only `BlocklistMarkdownImage
 I do not recommend reusing the dormant generic `MarkdownImages` flag for this launch. It is not currently wired through `app/src/lib.rs` or `app/Cargo.toml`, and this feature needs rollout control specific to the AI block list.
 
 ### 2. Extend the AI markdown section model with visual sections
+
 Extend `AIAgentTextSection` in `app/src/ai/agent/mod.rs` with explicit visual section variants:
 
 - `Image { image: AgentOutputImage }`
@@ -160,6 +171,7 @@ The key design choice is to preserve Markdown source on the section payload rath
 For images, `markdown_source` can initially be canonicalized to `![alt](source)` because the parser only returns `alt_text` and `source`, not byte-accurate source spans. That is consistent with the editor stack’s current image markdown round-trip behavior.
 
 ### 3. Teach the section splitter to extract images and Mermaid explicitly
+
 Update `parse_markdown_into_text_and_code_sections` in `app/src/ai/agent/util.rs` so that it can distinguish inline image runs from block-level image lines instead of treating every extracted image section identically.
 
 The change should remain incremental:
@@ -177,6 +189,7 @@ Two important constraints:
 - Mermaid section extraction should not be gated at parse time; the section payload should still preserve Mermaid source even when the runtime flags are off, so the renderer can fall back cleanly to raw Markdown without reparsing restored conversations
 
 ### 4. Keep the existing section renderer and add visual sections surgically
+
 Do not replace the current block-list markdown rendering architecture for this feature. Instead, extend `render_text_sections` in `app/src/ai/blocklist/block/view_impl/common.rs (869-952)` with grouped visual renderers:
 
 - inline image-row rendering for consecutive `AgentOutputImageLayout::Inline` sections
@@ -195,6 +208,7 @@ This keeps the implementation targeted:
 As part of that renderer pass, build a source-ordered collection of the successfully renderable visual sections in the current AI message. That shared collection should include both successfully rendered file-backed images and successfully rendered Mermaid diagrams. Clicking any rendered image or Mermaid diagram should dispatch `WorkspaceAction::OpenLightbox` with that shared collection and the clicked section’s initial index, so previous/next navigation works across the other renderable visuals from the same message.
 
 ### 5. Reuse existing editor helpers without a new dependency edge
+
 The new visual-section renderers should reuse existing editor helpers rather than inventing a separate rendering stack.
 
 For file-backed images:
@@ -222,6 +236,7 @@ For actual rendering:
 This follows the same broad pattern as the block list’s existing special markdown sections: section-specific render helpers living inside the current block-list message renderer, with reusable lower-level helpers coming from crates the app already depends on.
 
 ### 6. Render fallback content instead of broken visuals
+
 The renderer should decide per visual section whether it can render as a visual block or must fall back to raw Markdown.
 
 For file-backed images:
@@ -237,6 +252,7 @@ For Mermaid:
 This keeps fallback behavior local to rendering and avoids mutating stored section payloads based on transient failures.
 
 ### 7. Make block-level copy and export section-aware
+
 Update the markdown copy/export paths in `app/src/ai/agent/mod.rs (1547-1628, 2722-2779)` so that `Image` and `MermaidDiagram` sections serialize from their preserved Markdown source.
 
 Rules:
@@ -247,6 +263,7 @@ Rules:
 This gives us correct image/Mermaid copy behavior without changing the existing selection architecture.
 
 ### 8. Render the file-link label with local link detection
+
 The new file-link label under rendered file-backed images should reuse the existing text/link rendering helpers rather than introducing a special-case link widget.
 
 Implementation shape:
@@ -259,6 +276,7 @@ Implementation shape:
 This keeps the change narrowly targeted while still giving users a visible, interactive file link under rendered file-backed images.
 
 ### 9. Preserve existing selection behavior
+
 Do not add a new drag-selection model for rendered visuals in this change.
 
 The expected behavior for this implementation is:
@@ -269,6 +287,7 @@ The expected behavior for this implementation is:
 That is the intended “minimal change” scope for this feature.
 
 ### 10. Keep restored conversations deterministic
+
 Restored conversations should not depend on reparsing with different metadata than the original render.
 
 The renderer should use:
@@ -282,6 +301,7 @@ That means restored blocks will:
 - still show raw Markdown if the file is gone or the platform cannot load it
 
 ## End-to-End Flow
+
 1. The AI backend streams markdown text into an `AIAgentOutputMessageType::Text`.
 2. `parse_markdown_into_text_and_code_sections` in `app/src/ai/agent/util.rs` identifies plain text, code, tables, parser-recognized images, and Mermaid sections.
 3. The parsed output stores explicit `Image` and `MermaidDiagram` sections alongside their raw Markdown source.
@@ -303,6 +323,7 @@ That means restored blocks will:
 ## Risks and Mitigations
 
 ### Risk: selection expectations drift beyond the implementation
+
 The current AI block architecture does not support unified mixed-content selection across renderer types. If the specs or implementation drift back toward that requirement, this feature would expand substantially.
 
 Mitigation:
@@ -310,6 +331,7 @@ Mitigation:
 - keep the scope focused on rendering, explicit copy affordances, and block-level copy/export correctness
 
 ### Risk: parser scope does not match full Markdown image semantics
+
 Standard Markdown treats images as inline syntax, but our current parser only recognizes standalone-image lines, and this redesign needs a narrow same-line image-row case.
 
 Mitigation:
@@ -318,6 +340,7 @@ Mitigation:
 - treat fuller CommonMark-style inline image support as follow-up parser work
 
 ### Risk: relative path resolution diverges between notebooks and AI blocks
+
 The existing editor helper resolves relative image paths against a document path, while AI blocks need to resolve against the captured session working directory.
 
 Mitigation:
@@ -326,6 +349,7 @@ Mitigation:
 - add native and WASM coverage
 
 ### Risk: regressions to existing section rendering
+
 Adding two more section types to the current renderer could affect section indexing, link-detection offsets, or restored-block bookkeeping.
 
 Mitigation:
@@ -336,6 +360,7 @@ Mitigation:
 ## Testing and Validation
 
 ### Unit tests
+
 - extend `app/src/ai/agent/util_tests.rs` with:
   - standalone image extraction
   - same-line inline image-run extraction
@@ -357,6 +382,7 @@ Mitigation:
   - single-line text hit testing respecting Y bounds
 
 ### Integration tests
+
 - A reasonable first integration test is a single manual-observation test, `test_restored_ai_block_renders_mermaid_and_local_images`, in `crates/integration/src/test/agent_mode.rs`.
 - That test would restore a synthetic `ConversationData` through `load_conversation_from_tasks`, set `InputContext.directory` to `crates/warpui_core/test_data`, and capture a real-display screenshot of one AI response that contains same-line local image markdown plus a Mermaid fence.
 - It would be intentionally narrow: it would prove the restored AI block list can render both surfaces through the real conversation-hydration path without introducing protobuf fixtures or test-only UI hooks.
@@ -368,6 +394,7 @@ Mitigation:
   - shared-lightbox initial selection and previous/next navigation in message source order
 
 ### Manual validation
+
 - relative and absolute local image paths for PNG, JPEG, GIF, WebP, and SVG
 - inline same-line image rows with path labels below each image
 - grouped standalone block-image rows with thumbnail-plus-path content
@@ -382,6 +409,7 @@ Mitigation:
 - WASM sanity pass to verify path handling and fallback behavior do not panic
 
 ## Follow-ups
+
 - full CommonMark-style inline image support if we decide to expand `markdown_parser` beyond its current standalone-image behavior
 - unified mixed-content selection across block-list renderer types
 - consolidating `MarkdownImages` and `BlocklistMarkdownImages` if Warp later ships a broader app-wide markdown-image rollout

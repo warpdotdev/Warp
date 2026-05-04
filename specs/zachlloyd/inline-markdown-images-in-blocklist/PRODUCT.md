@@ -1,8 +1,10 @@
 # Inline Markdown Images in AI Block List — Product Spec
+
 Linear: none provided
 Figma: none provided
 
 ## Summary
+
 Render supported Markdown images inline inside AI block list responses instead of always showing raw Markdown image syntax. The first release should support local file-backed images referenced by relative or absolute filesystem paths, plus Mermaid diagrams rendered on the fly in the same response flow.
 
 This feature should make AI responses easier to read when they include screenshots, diagrams, or visual outputs, while preserving reliable copy behavior without requiring a broader block-list selection refactor in the first release. The presentation should now follow three distinct treatments from the approved mock:
@@ -16,6 +18,7 @@ Successfully rendered file-backed images and Mermaid diagrams should both reuse 
 When an image cannot be resolved or the format is unsupported, the block list should continue to show the original Markdown text rather than rendering a broken or partial image UI.
 
 ## Problem
+
 AI responses increasingly include Markdown image references and Mermaid diagrams. In the AI block list today, that content is more useful as source text than as rendered output, but it is much harder to read and scan when the user actually wants to view the visual result inline.
 
 Warp already supports Markdown image blocks elsewhere in the app and already has Mermaid-to-SVG rendering for notebook Markdown. The AI block list currently lacks the equivalent presentation and interaction model. That creates three problems:
@@ -25,6 +28,7 @@ Warp already supports Markdown image blocks elsewhere in the app and already has
 - copy and selection behavior for mixed text-and-image content is undefined unless we specify it explicitly
 
 ## Goals
+
 - Render supported local Markdown images inline inside AI block list responses.
 - Support both absolute file paths and relative file paths.
 - Resolve relative file paths relative to the current working directory of the session associated with the AI block.
@@ -40,6 +44,7 @@ Warp already supports Markdown image blocks elsewhere in the app and already has
 - Reuse Warp’s existing fullscreen lightbox treatment for both rendered file-backed images and rendered Mermaid diagrams.
 
 ## Non-Goals
+
 - Supporting remote image URLs in this first release.
 - Supporting Markdown data URLs or other inline-encoded image sources in this first release.
 - Adding image editing, resizing controls, zoom controls, or image-specific toolbars.
@@ -51,6 +56,7 @@ Warp already supports Markdown image blocks elsewhere in the app and already has
 ## User Experience
 
 ### Scope
+
 This feature applies to AI block list responses that render Markdown content.
 
 It should work for:
@@ -60,6 +66,7 @@ It should work for:
 - all supported client platforms, including WASM
 
 ### Supported sources
+
 The first release should support two kinds of inline visual Markdown content:
 
 1. Standard Markdown image references that point to local files.
@@ -73,6 +80,7 @@ Relative paths resolve against the current working directory of the session asso
 That working directory should be the one recorded with the AI block when the response was rendered. Relative file paths should be re-resolved against that recorded working directory when the block is later restored or re-rendered.
 
 ### Supported formats
+
 For file-backed images, the AI block list should support the same image formats Warp’s existing shared image renderer already supports today:
 - JPEG / JPG
 - PNG
@@ -83,6 +91,7 @@ For file-backed images, the AI block list should support the same image formats 
 If the referenced file exists but is not one of those supported formats, Warp should not attempt a degraded or best-effort render. It should show the original Markdown text exactly as it does today.
 
 ### File-backed image rendering
+
 When AI output contains a valid Markdown image whose source resolves to a supported local file, the image should render inline in the normal block list flow where the Markdown image appeared.
 
 Rendered images should behave like block content in the response:
@@ -123,6 +132,7 @@ Rendered file-backed images should also support click-to-expand behavior:
 - for file-backed images, the fullscreen viewer should keep showing the image source/path as descriptive text
 
 ### Mermaid rendering
+
 Mermaid diagrams should be supported as part of the same feature and should render inline in the AI block list as visual content rather than raw Mermaid source.
 
 Mermaid rendering in the AI block list requires two independent conditions to be true:
@@ -142,6 +152,7 @@ From the user’s perspective:
 If Mermaid rendering fails for any reason, the block list should fall back to showing the original Mermaid Markdown source rather than a broken image state.
 
 ### Layout and sizing
+
 Rendered file-backed images and rendered Mermaid diagrams should preserve aspect ratio and remain fully visible without cropping or distortion, but the exact sizing now depends on the treatment:
 
 - inline image rows use medium-height thumbnails with per-image widths derived from aspect ratio and capped so the row remains visually balanced
@@ -151,6 +162,7 @@ Rendered file-backed images and rendered Mermaid diagrams should preserve aspect
 The inline/block treatments remain the default in-flow presentation. Clicking a rendered image or Mermaid diagram should open the shared fullscreen lightbox overlay as a secondary viewing mode, without changing the inline layout itself.
 
 ### Fallback behavior
+
 Fallback behavior is important and should be predictable.
 
 For file-backed images, if any of the following are true:
@@ -164,6 +176,7 @@ then Warp should show the original Markdown image syntax inline, matching curren
 For Mermaid diagrams, if rendering fails, Warp should show the original Mermaid Markdown source instead of a rendered diagram.
 
 ### Selection and copy behavior
+
 This first release should keep the existing block-list selection behavior for text, code blocks, tables, and other already-supported content. It should not introduce a broader refactor to make rendered images and Mermaid diagrams participate in mixed drag-selection across multiple renderer types.
 
 Instead, rendered visual content should support copy through explicit copy surfaces:
@@ -173,6 +186,7 @@ Instead, rendered visual content should support copy through explicit copy surfa
 For this first release, it is acceptable for copy to serialize visual content back into raw Markdown rather than attempting rich HTML or image clipboard output.
 
 ### Right-click copy behavior
+
 Right-clicking a rendered image or Mermaid diagram should provide a copy action.
 
 That copy action should place the underlying Markdown source on the clipboard:
@@ -182,6 +196,7 @@ That copy action should place the underlying Markdown source on the clipboard:
 This copy action should not place image bytes on the clipboard in this release.
 
 ### Mixed content behavior
+
 The AI block list must support responses that contain:
 - only text
 - only one image
@@ -193,6 +208,7 @@ The AI block list must support responses that contain:
 Each supported visual element should render independently in the correct source position. Unsupported or unresolved items should remain raw Markdown text without preventing supported neighbors from rendering.
 
 ### Streaming and restored behavior
+
 The feature should behave consistently for both streamed and restored responses.
 
 For streamed responses:
@@ -205,6 +221,7 @@ For restored responses:
 - the same fallback rules should apply if the asset is unavailable at restore time
 
 ## Success Criteria
+
 - A Markdown image in an AI block list response renders inline when it references a supported local file.
 - Relative file paths resolve against the session’s working directory rather than a notebook/document location.
 - Relative file paths are re-resolved against the working directory recorded with the AI block at render time when the block is restored or re-rendered.
@@ -229,6 +246,7 @@ For restored responses:
 - The feature has automated verification coverage in addition to manual validation.
 
 ## Validation
+
 - Unit tests for markdown/image section parsing and flag-gating behavior, including Mermaid requiring both flags.
 - Unit tests for relative-path resolution against block metadata that stores the original working directory.
 - Unit tests for fallback behavior when a file is missing, unsupported, or Mermaid rendering is disabled or fails.
