@@ -341,6 +341,8 @@ async fn poll_stops_on_terminal_failure_like_state() {
         parent_run_id: None,
         runtime_skills: vec![],
         referenced_attachments: vec![],
+        fork_from_conversation_id: None,
+        initial_snapshot_token: None,
     };
 
     let mut stream = Box::pin(spawn_task(request, ai_client, None));
@@ -369,16 +371,42 @@ async fn poll_stops_on_terminal_failure_like_state() {
 }
 
 #[test]
-fn session_join_info_prefers_session_link_and_tolerates_missing_session_id() {
+fn session_join_info_requires_session_id() {
+    // session_link without session_id is not actionable for the cloud-mode pane
+    // (the GET task handler may overwrite session_link with a conversation link
+    // for tasks with synced conversation data, e.g. local-to-cloud handoff forks).
     let task = task_with(
         AmbientAgentTaskState::InProgress,
         None,
         Some("https://example.com/session/abc".to_string()),
     );
+    assert!(SessionJoinInfo::from_task(&task).is_none());
+}
+
+#[test]
+fn session_join_info_prefers_server_session_link_when_session_id_is_present() {
+    let task = task_with(
+        AmbientAgentTaskState::InProgress,
+        Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
+        Some("https://example.com/session/abc".to_string()),
+    );
 
     let join_info = SessionJoinInfo::from_task(&task).expect("expected join info");
     assert_eq!(join_info.session_link, "https://example.com/session/abc");
-    assert!(join_info.session_id.is_none());
+    assert!(join_info.session_id.is_some());
+}
+
+#[test]
+fn session_join_info_constructs_link_from_session_id_when_link_missing() {
+    let task = task_with(
+        AmbientAgentTaskState::InProgress,
+        Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
+        None,
+    );
+
+    let join_info = SessionJoinInfo::from_task(&task).expect("expected join info");
+    assert!(!join_info.session_link.is_empty());
+    assert!(join_info.session_id.is_some());
 }
 
 #[test]
@@ -435,7 +463,7 @@ async fn poll_for_session_join_info_waits_until_link_is_available() {
             } else {
                 task_with(
                     AmbientAgentTaskState::InProgress,
-                    None,
+                    Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
                     Some("https://example.com/session/ready".to_string()),
                 )
             };
@@ -457,6 +485,8 @@ async fn poll_for_session_join_info_waits_until_link_is_available() {
         parent_run_id: None,
         runtime_skills: vec![],
         referenced_attachments: vec![],
+        fork_from_conversation_id: None,
+        initial_snapshot_token: None,
     };
 
     let mut stream = Box::pin(spawn_task(request, ai_client, None));
