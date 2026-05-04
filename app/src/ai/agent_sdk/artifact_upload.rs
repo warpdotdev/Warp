@@ -12,15 +12,14 @@ use super::common::parse_ambient_task_id;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::ServerAIConversationMetadata;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::util::image::infer_mime_type;
 use crate::server::server_api::ai::{
     AIClient, CreateFileArtifactUploadRequest, CreateFileArtifactUploadResponse,
     FileArtifactRecord, FileArtifactUploadTargetInfo,
 };
 use crate::server::server_api::presigned_upload::upload_file_to_target;
 use crate::server::server_api::ServerApi;
+use crate::util::image::{infer_mime_type, MIME_SNIFF_BYTES};
 
-const MIME_SNIFF_BYTES: usize = 8 * 1024;
 const OZ_RUN_ID_ENV_VAR: &str = "OZ_RUN_ID";
 
 #[derive(Debug, Clone, Eq, PartialEq)]

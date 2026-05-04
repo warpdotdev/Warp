@@ -3909,8 +3909,7 @@ fn drag_drop_image_in_cli_agent_long_running_command_pastes_via_clipboard() {
             vec![0x16]
         };
         assert_eventually!(
-            pty_writes.borrow().len() == 1
-                && pty_writes.borrow()[0] == expected_paste_bytes,
+            pty_writes.borrow().len() == 1 && pty_writes.borrow()[0] == expected_paste_bytes,
             "expected single paste-keystroke PTY write {:?}; got {:?}",
             expected_paste_bytes,
             pty_writes.borrow()

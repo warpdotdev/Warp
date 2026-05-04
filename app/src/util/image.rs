@@ -19,10 +19,17 @@ pub const MAX_IMAGE_SIZE_BYTES: usize = 3750 * 1000;
 /// arbitrarily large files into memory.
 pub const MAX_IMAGE_SIZE_BYTES_FOR_CLI_AGENT: usize = 500 * 1_000_000;
 
+/// How many leading bytes of a file are enough for `infer_mime_type` to
+/// match a magic-number signature. Callers that already have the full bytes
+/// in memory should pass only the first `MIME_SNIFF_BYTES` to avoid handing
+/// arbitrarily large slices to the sniffer.
+pub const MIME_SNIFF_BYTES: usize = 8 * 1024;
+
 /// Returns the MIME type for `path`, preferring magic-byte detection from
 /// `file_bytes` and falling back to the path's extension when the magic
 /// bytes don't yield a confident match. Falls all the way back to
-/// `application/octet-stream`.
+/// `application/octet-stream`. `file_bytes` only needs to contain the first
+/// `MIME_SNIFF_BYTES` of the file for the magic-number check.
 pub fn infer_mime_type(path: &Path, file_bytes: &[u8]) -> String {
     infer::get(file_bytes)
         .map(|kind| kind.mime_type().to_string())

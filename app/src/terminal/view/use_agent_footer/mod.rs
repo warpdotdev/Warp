@@ -10,7 +10,7 @@ use crate::ai::blocklist::agent_view::agent_input_footer::{
 };
 use crate::terminal::cli_agent_sessions::{CLIAgentInputEntrypoint, CLIAgentSessionsModel};
 use crate::terminal::shared_session::{SharedSessionActionSource, SharedSessionScrollbackType};
-use crate::util::image::{infer_mime_type, MAX_IMAGE_SIZE_BYTES_FOR_CLI_AGENT};
+use crate::util::image::{infer_mime_type, MAX_IMAGE_SIZE_BYTES_FOR_CLI_AGENT, MIME_SNIFF_BYTES};
 use base64::Engine;
 use session_sharing_protocol::sharer::SessionSourceType;
 use warpui::clipboard::{ClipboardContent, ImageData};
@@ -884,10 +884,9 @@ impl TerminalView {
                         }
                     };
                     let path = Path::new(&path_str);
-                    let filename = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned());
-                    let mime_type = infer_mime_type(path, &bytes);
+                    let filename = path.file_name().map(|n| n.to_string_lossy().into_owned());
+                    let sniff_len = bytes.len().min(MIME_SNIFF_BYTES);
+                    let mime_type = infer_mime_type(path, &bytes[..sniff_len]);
 
                     // Hop back to the view to write the clipboard + paste
                     // keystroke. Bail if the CLI agent session disappeared,
