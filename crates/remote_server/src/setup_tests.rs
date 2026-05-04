@@ -99,6 +99,12 @@ fn state_is_terminal() {
         error: "test".into()
     }
     .is_terminal());
+    assert!(RemoteServerSetupState::Unsupported {
+        reason: UnsupportedReason::NonGlibc {
+            name: "musl".into()
+        }
+    }
+    .is_terminal());
     assert!(!RemoteServerSetupState::Checking.is_terminal());
     assert!(!RemoteServerSetupState::Installing {
         progress_percent: None,
@@ -106,4 +112,72 @@ fn state_is_terminal() {
     .is_terminal());
     assert!(!RemoteServerSetupState::Updating.is_terminal());
     assert!(!RemoteServerSetupState::Initializing.is_terminal());
+}
+
+#[test]
+fn parse_preinstall_supported_glibc() {
+    let stdout = "required_glibc=2.31\n\
+                  libc_family=glibc\n\
+                  libc_version=2.35\n\
+                  status=supported\n";
+    let result = PreinstallCheckResult::parse(stdout);
+    assert_eq!(result.status, PreinstallStatus::Supported);
+    assert_eq!(result.libc, RemoteLibc::Glibc(GlibcVersion::new(2, 35)));
+    assert!(result.is_supported());
+}
+
+#[test]
+fn parse_preinstall_unsupported_glibc_too_old() {
+    let stdout = "required_glibc=2.31\n\
+                  libc_family=glibc\n\
+                  libc_version=2.17\n\
+                  status=unsupported\n\
+                  reason=glibc_too_old\n";
+    let result = PreinstallCheckResult::parse(stdout);
+    assert_eq!(
+        result.status,
+        PreinstallStatus::Unsupported {
+            reason: UnsupportedReason::GlibcTooOld {
+                detected: GlibcVersion::new(2, 17),
+                required: GlibcVersion::new(2, 31),
+            }
+        }
+    );
+    assert!(!result.is_supported());
+}
+
+#[test]
+fn parse_preinstall_unsupported_non_glibc() {
+    let stdout = "required_glibc=2.31\n\
+                  libc_family=musl\n\
+                  status=unsupported\n\
+                  reason=non_glibc\n";
+    let result = PreinstallCheckResult::parse(stdout);
+    assert_eq!(
+        result.status,
+        PreinstallStatus::Unsupported {
+            reason: UnsupportedReason::NonGlibc {
+                name: "musl".to_string()
+            }
+        }
+    );
+    assert_eq!(
+        result.libc,
+        RemoteLibc::NonGlibc {
+            name: "musl".to_string()
+        }
+    );
+    assert!(!result.is_supported());
+}
+
+#[test]
+fn parse_preinstall_missing_status_falls_open() {
+    // Garbled / partial script output — missing status field. Confirms
+    // the fail-open invariant: anything we can't positively classify as
+    // unsupported degrades to Unknown and is treated as supported, so a
+    // flaky probe doesn't block the install.
+    let stdout = "libc_family=glibc\nlibc_version=2.35\n";
+    let result = PreinstallCheckResult::parse(stdout);
+    assert_eq!(result.status, PreinstallStatus::Unknown);
+    assert!(result.is_supported());
 }

@@ -170,6 +170,7 @@ pub mod focus_state;
 pub mod pane;
 pub mod tree;
 pub mod working_directories;
+use child_agent::{apply_hidden_child_agent_task_context, HiddenChildAgentTaskContext};
 
 use focus_state::PaneGroupFocusState;
 
@@ -211,6 +212,25 @@ lazy_static! {
 const MINIMUM_PANE_SIZE: f32 = 50.;
 const MINIMUM_PANE_SIZE_UDI: f32 = 190.;
 const KEYBOARD_RESIZE_DELTA: f32 = 10.;
+
+type AmbientAgentViewModelHandle =
+    ModelHandle<crate::terminal::view::ambient_agent::AmbientAgentViewModel>;
+
+trait AmbientAgentViewModelHandleExt<'a> {
+    fn into_optional_handle(self) -> Option<&'a AmbientAgentViewModelHandle>;
+}
+
+impl<'a> AmbientAgentViewModelHandleExt<'a> for &'a AmbientAgentViewModelHandle {
+    fn into_optional_handle(self) -> Option<&'a AmbientAgentViewModelHandle> {
+        Some(self)
+    }
+}
+
+impl<'a> AmbientAgentViewModelHandleExt<'a> for Option<&'a AmbientAgentViewModelHandle> {
+    fn into_optional_handle(self) -> Option<&'a AmbientAgentViewModelHandle> {
+        self
+    }
+}
 
 fn get_minimum_pane_size(app: &AppContext) -> f32 {
     use crate::settings::InputSettings;
@@ -3083,10 +3103,75 @@ impl PaneGroup {
         ctx: &mut ViewContext<Self>,
     ) {
         let child_id = child_conversation.id();
+        if child_conversation.is_remote_child() {
+            let Some(task_id) = child_conversation.task_id() else {
+                log::warn!(
+                    "Cannot restore remote child conversation {child_id:?} without a task ID"
+                );
+                return;
+            };
+
+            let new_pane_id =
+                self.insert_ambient_agent_pane_hidden_for_child_agent(parent_pane_id, ctx);
+
+            if let Some(new_terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
+                let mut restored = false;
+                new_terminal_view.update(ctx, |terminal_view, ctx| {
+                    terminal_view.restore_conversation_after_view_creation(
+                        RestoredAIConversation::new(child_conversation),
+                        true,
+                        ctx,
+                    );
+                    terminal_view.enter_agent_view(
+                        None,
+                        Some(child_id),
+                        AgentViewEntryOrigin::CloudAgent,
+                        ctx,
+                    );
+                    let Some(ambient_agent_view_model) = terminal_view
+                        .ambient_agent_view_model()
+                        .into_optional_handle()
+                        .cloned()
+                    else {
+                        return;
+                    };
+                    ambient_agent_view_model.update(ctx, |model, ctx| {
+                        model.set_conversation_id(Some(child_id));
+                        model.enter_viewing_existing_session(task_id, ctx);
+                    });
+                    restored = true;
+                });
+                if restored {
+                    self.child_agent_panes.insert(child_id, new_pane_id.into());
+                } else {
+                    log::error!(
+                        "Failed to restore remote child agent pane {child_id:?}: missing ambient agent view model"
+                    );
+                    self.discard_pane(new_pane_id.into(), ctx);
+                }
+            } else {
+                log::error!("Failed to get terminal view for remote child agent pane {child_id:?}");
+                self.discard_pane(new_pane_id.into(), ctx);
+            }
+            return;
+        }
+        let child_task_context =
+            child_conversation
+                .task_id()
+                .map(|task_id| HiddenChildAgentTaskContext {
+                    task_id,
+                    working_dir: child_conversation
+                        .current_working_directory()
+                        .or_else(|| child_conversation.initial_working_directory())
+                        .map(PathBuf::from),
+                });
         let new_pane_id =
             self.insert_terminal_pane_hidden_for_child_agent(parent_pane_id, HashMap::new(), ctx);
 
         if let Some(new_terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
+            if let Some(task_context) = child_task_context.as_ref() {
+                apply_hidden_child_agent_task_context(&new_terminal_view, task_context, ctx);
+            }
             new_terminal_view.update(ctx, |terminal_view, ctx| {
                 terminal_view.restore_conversation_after_view_creation(
                     RestoredAIConversation::new(child_conversation),

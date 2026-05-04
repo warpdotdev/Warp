@@ -180,23 +180,7 @@ Write-Output "Built for $ARCH with executable at $BINARY_PATH"
 # Prepare bundled resources
 $BUNDLED_RESOURCES_DIR = "$CARGO_TARGET_OUTPUT_DIR\resources"
 Write-Output "Preparing bundled resources..."
-# Only forward --target to the schema generator when the build target is
-# runnable on the host; otherwise `cargo run` would try to execute a
-# cross-compiled binary (e.g. aarch64-pc-windows-msvc on an x64 runner)
-# and fail.
-if ($env:PROCESSOR_ARCHITECTURE -eq 'AMD64') {
-    $HOST_TARGET = 'x86_64-pc-windows-msvc'
-} elseif ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
-    $HOST_TARGET = 'aarch64-pc-windows-msvc'
-} else {
-    $HOST_TARGET = ''
-}
-if ($PLATFORM_TARGET -eq $HOST_TARGET) {
-    $SCHEMA_CARGO_TARGET = $PLATFORM_TARGET
-} else {
-    $SCHEMA_CARGO_TARGET = ''
-}
-& "$WINDOWS_INSTALLER_DIR\prepare_bundled_resources.ps1" -DestinationDir "$BUNDLED_RESOURCES_DIR" -Channel "$CHANNEL" -CargoProfile "$CARGO_PROFILE" -CargoFeatures "$FEATURES" -CargoTarget "$SCHEMA_CARGO_TARGET"
+& "$WINDOWS_INSTALLER_DIR\prepare_bundled_resources.ps1" -DestinationDir "$BUNDLED_RESOURCES_DIR" -Channel "$CHANNEL" -CargoProfile "$CARGO_PROFILE"
 if (-Not $?) {
     Write-Error "Failed to prepare bundled resources"
     exit 1

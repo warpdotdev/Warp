@@ -1,3 +1,7 @@
+mod glibc;
+
+pub use glibc::{GlibcVersion, RemoteLibc};
+
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
@@ -20,6 +24,11 @@ pub enum RemoteServerSetupState {
     Ready,
     /// Something failed. Fall back to ControlMaster.
     Failed { error: String },
+    /// Preinstall check classified the host as incompatible with the
+    /// prebuilt remote-server binary. The controller treats this as a
+    /// clean fall-back to the legacy ControlMaster-backed SSH flow,
+    /// distinct from `Failed` (which is rendered as a real error).
+    Unsupported { reason: UnsupportedReason },
 }
 
 impl RemoteServerSetupState {
@@ -31,8 +40,12 @@ impl RemoteServerSetupState {
         matches!(self, Self::Failed { .. })
     }
 
+    pub fn is_unsupported(&self) -> bool {
+        matches!(self, Self::Unsupported { .. })
+    }
+
     pub fn is_terminal(&self) -> bool {
-        self.is_ready() || self.is_failed()
+        self.is_ready() || self.is_failed() || self.is_unsupported()
     }
 
     pub fn is_in_progress(&self) -> bool {
@@ -49,6 +62,142 @@ impl RemoteServerSetupState {
         )
     }
 }
+
+/// Outcome of [`crate::transport::RemoteTransport::run_preinstall_check`].
+///
+/// The script runs over the existing SSH socket before any install UI
+/// surfaces and reports whether the host can run the prebuilt
+/// remote-server binary. The Rust side is intentionally a thin parser
+/// over the script's structured stdout (see `preinstall_check.sh`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreinstallCheckResult {
+    pub status: PreinstallStatus,
+    pub libc: RemoteLibc,
+    /// Verbatim, trimmed script stdout. Forwarded to telemetry for
+    /// diagnosing `Unknown` outcomes on exotic distros.
+    pub raw: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PreinstallStatus {
+    Supported,
+    Unsupported {
+        reason: UnsupportedReason,
+    },
+    /// Probe ran but couldn't classify the host. Treated as supported
+    /// (fail open) by [`PreinstallCheckResult::is_supported`] so we keep
+    /// today's install-and-try behavior on hosts where the probe is
+    /// unreliable.
+    Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UnsupportedReason {
+    GlibcTooOld {
+        detected: GlibcVersion,
+        required: GlibcVersion,
+    },
+    NonGlibc {
+        name: String,
+    },
+}
+
+impl PreinstallCheckResult {
+    /// Whether the host is supported. Both `Supported` and `Unknown`
+    /// return true — only positive detection of an incompatible libc
+    /// triggers the silent fall-back.
+    pub fn is_supported(&self) -> bool {
+        match self.status {
+            PreinstallStatus::Supported | PreinstallStatus::Unknown => true,
+            PreinstallStatus::Unsupported { .. } => false,
+        }
+    }
+
+    /// Parses the structured `key=value` stdout emitted by
+    /// `preinstall_check.sh`. Tolerates unknown keys and lines without
+    /// `=` (forward-compatibility): future versions of the script can
+    /// add new keys without coordinating a client release.
+    pub fn parse(stdout: &str) -> Self {
+        let mut status_str: Option<&str> = None;
+        let mut reason_str: Option<&str> = None;
+        let mut libc_family: Option<&str> = None;
+        let mut libc_version: Option<&str> = None;
+        let mut required_glibc: Option<&str> = None;
+
+        for line in stdout.lines() {
+            let Some((key, value)) = line.split_once('=') else {
+                continue;
+            };
+            match key.trim() {
+                "status" => status_str = Some(value.trim()),
+                "reason" => reason_str = Some(value.trim()),
+                "libc_family" => libc_family = Some(value.trim()),
+                "libc_version" => libc_version = Some(value.trim()),
+                "required_glibc" => required_glibc = Some(value.trim()),
+                _ => {} // ignore unknown keys
+            }
+        }
+
+        let libc = glibc::parse_libc(libc_family, libc_version);
+        let status = parse_status(status_str, reason_str, &libc, required_glibc);
+
+        Self {
+            status,
+            libc,
+            raw: stdout.trim().to_string(),
+        }
+    }
+}
+
+fn parse_status(
+    status: Option<&str>,
+    reason: Option<&str>,
+    libc: &RemoteLibc,
+    required_glibc: Option<&str>,
+) -> PreinstallStatus {
+    match status {
+        Some("supported") => PreinstallStatus::Supported,
+        Some("unsupported") => match reason {
+            Some("glibc_too_old") => {
+                let detected = match libc {
+                    RemoteLibc::Glibc(v) => Some(*v),
+                    _ => None,
+                };
+                let required = required_glibc.and_then(GlibcVersion::parse);
+                match (detected, required) {
+                    (Some(detected), Some(required)) => PreinstallStatus::Unsupported {
+                        reason: UnsupportedReason::GlibcTooOld { detected, required },
+                    },
+                    // The script said `unsupported` + `glibc_too_old` but we
+                    // can't recover the numbers — fail open rather than
+                    // surface a malformed reason.
+                    _ => PreinstallStatus::Unknown,
+                }
+            }
+            Some("non_glibc") => {
+                let name = match libc {
+                    RemoteLibc::NonGlibc { name } => name.clone(),
+                    _ => "unknown".to_string(),
+                };
+                PreinstallStatus::Unsupported {
+                    reason: UnsupportedReason::NonGlibc { name },
+                }
+            }
+            _ => PreinstallStatus::Unknown,
+        },
+        // status=unknown, missing, or anything else → fail open.
+        _ => PreinstallStatus::Unknown,
+    }
+}
+
+/// The bundled preinstall check script. Loaded as a string so the SSH
+/// transport can pipe it through the existing ControlMaster socket via
+/// [`crate::ssh::run_ssh_script`].
+///
+/// The script is intentionally self-contained — the supported-glibc
+/// floor is hardcoded inside the script (see `preinstall_check.sh`)
+/// rather than templated from Rust.
+pub const PREINSTALL_CHECK_SCRIPT: &str = include_str!("preinstall_check.sh");
 
 /// Detected remote platform from `uname -sm` output.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -56,6 +56,8 @@ use crate::{
 #[cfg(feature = "local_fs")]
 use crate::ai::blocklist::BlocklistAIHistoryEvent;
 #[cfg(not(target_family = "wasm"))]
+use crate::pane_group::child_agent::HiddenChildAgentTaskContext;
+#[cfg(not(target_family = "wasm"))]
 use crate::server::server_api::ServerApiProvider;
 
 use warp_core::execution_mode::AppExecutionMode;
@@ -557,7 +559,7 @@ impl PaneContent for TerminalPane {
                     Ok(ShareableLink::Pane { url })
                 } else {
                     Err(ShareableLinkError::Unexpected(String::from(
-                        "Failed to retreive shared session link",
+                        "Failed to retrieve shared session link",
                     )))
                 }
             }
@@ -1129,6 +1131,7 @@ fn handle_terminal_view_event(
                             request.name,
                             request.parent_conversation_id,
                             HashMap::new(),
+                            None,
                             ctx,
                         ) {
                             register_legacy_local_lifecycle_subscription(
@@ -1164,6 +1167,7 @@ fn handle_terminal_view_event(
                     } => {
                         let startup_directory =
                             group.startup_path_for_new_session(Some(terminal_pane_id), ctx);
+                        let launch_startup_directory = startup_directory.clone();
                         let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
                         let parent_pane_id = pane_id;
                         let request_name = request.name.clone();
@@ -1183,7 +1187,7 @@ fn handle_terminal_view_event(
                                     harness_type,
                                     parent_run_id,
                                     shell_type,
-                                    startup_directory,
+                                    launch_startup_directory,
                                     ai_client,
                                 )
                                 .await
@@ -1207,6 +1211,10 @@ fn handle_terminal_view_event(
                                         request_name.clone(),
                                         parent_conversation_id,
                                         env_vars,
+                                        Some(HiddenChildAgentTaskContext {
+                                            task_id,
+                                            working_dir: startup_directory.clone(),
+                                        }),
                                         ctx,
                                     ) {
                                         BlocklistAIHistoryModel::handle(ctx).update(
@@ -1223,14 +1231,14 @@ fn handle_terminal_view_event(
                                         );
 
                                         new_terminal_view.update(ctx, |terminal_view, ctx| {
-                                            terminal_view.execute_command_or_set_pending(
-                                                &command,
-                                                ctx,
-                                            );
                                             terminal_view.enter_agent_view(
                                                 None,
                                                 Some(conversation_id),
                                                 AgentViewEntryOrigin::ChildAgent,
+                                                ctx,
+                                            );
+                                            terminal_view.execute_command_or_set_pending(
+                                                &command,
                                                 ctx,
                                             );
                                         });
@@ -1492,7 +1500,7 @@ fn handle_ai_history_event(
             }
 
             // Do not persist AI queries from shared ambient agent sessions that we've viewed,
-            // as these were sent as part of an ambient agent run and shouldn't polute the up arrow history.
+            // as these were sent as part of an ambient agent run and shouldn't pollute the up arrow history.
             if is_shared_ambient_agent_session {
                 return;
             }

@@ -7797,7 +7797,11 @@ impl BackingView for CodeReviewView {
                 AppContext::show_native_platform_modal(ctx, dialog);
             } else if cfg!(all(
                 not(target_family = "wasm"),
-                any(target_os = "linux", target_os = "windows")
+                any(
+                    target_os = "linux",
+                    target_os = "freebsd",
+                    target_os = "windows"
+                )
             )) {
                 // Find the workspace to show the Warp-native modal
                 if let Some(workspace) = ctx

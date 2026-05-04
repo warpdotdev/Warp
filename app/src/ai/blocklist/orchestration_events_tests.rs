@@ -1,7 +1,10 @@
 #![allow(deprecated)]
 use super::*;
+use crate::ai::blocklist::BlocklistAIHistoryModel;
 use std::collections::HashSet;
+use warp_core::features::FeatureFlag;
 use warp_multi_agent_api as api;
+use warpui::{App, EntityId};
 // Helper for constructing lifecycle pending events with minimal boilerplate.
 // Tests use this to focus on queue/coalescing behavior rather than payload setup.
 
@@ -71,10 +74,12 @@ fn message_pending_event(event_id: &str) -> PendingEvent {
         source_agent_id: "sender".to_string(),
         attempt_count: 0,
         detail: PendingEventDetail::Message {
+            sequence: 0,
             message_id: "message-1".to_string(),
             addresses: vec!["target".to_string()],
             subject: "subject".to_string(),
             message_body: "body".to_string(),
+            occurred_at: "2026-01-01T00:00:00Z".to_string(),
         },
     }
 }
@@ -269,10 +274,12 @@ fn test_did_event_round_trip_through_server_matches_message_event_by_message_id(
         source_agent_id: "sender".to_string(),
         attempt_count: 0,
         detail: PendingEventDetail::Message {
+            sequence: 0,
             message_id: "message-1".to_string(),
             addresses: vec!["target".to_string()],
             subject: "subject".to_string(),
             message_body: "body".to_string(),
+            occurred_at: "2026-01-01T00:00:00Z".to_string(),
         },
     };
 
@@ -359,65 +366,79 @@ fn test_lifecycle_event_type_from_proto_includes_cancelled_and_blocked() {
 }
 
 #[test]
-fn restored_v1_child_conversation_re_registers_lifecycle_subscription() {
-    use crate::ai::agent::conversation::AIConversation;
-    use warp_core::features::FeatureFlag;
-    use warpui::{App, EntityId};
+fn test_has_pending_events_tracks_any_event_kind() {
+    let conversation_id = crate::ai::agent::conversation::AIConversationId::new();
+    let mut service = OrchestrationEventService::new_without_subscriptions();
+    assert!(!service.has_pending_events(conversation_id));
+    service.pending_events.insert(
+        conversation_id,
+        vec![
+            lifecycle_pending_event(
+                "lifecycle-1",
+                "child-a",
+                api::LifecycleEventType::InProgress,
+                0,
+            ),
+            message_pending_event("message-event-1"),
+            lifecycle_pending_event(
+                "lifecycle-2",
+                "child-b",
+                api::LifecycleEventType::Succeeded,
+                0,
+            ),
+            message_pending_event("message-event-2"),
+        ],
+    );
+    assert!(service.has_pending_events(conversation_id));
+    service.pending_events.remove(&conversation_id);
+    assert!(!service.has_pending_events(conversation_id));
+}
 
+#[test]
+fn test_restored_v1_child_reregisters_lifecycle_subscription() {
     App::test((), |mut app| async move {
-        // V1 path is gated on `!OrchestrationV2`.
-        let _v1_guard = FeatureFlag::OrchestrationV2.override_enabled(false);
-
-        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
-
-        // Build a parent conversation with a server token; under V1 the
-        // parent's `server_conversation_token` is the agent identifier the
-        // child subscribes to.
-        let parent_token = "parent-token-v1";
-        let mut parent_conversation = AIConversation::new(false);
-        parent_conversation.set_server_conversation_token(parent_token.to_string());
-        let parent_conversation_id = parent_conversation.id();
-
-        // Build a child conversation pointing at the parent.
-        let mut child_conversation = AIConversation::new(false);
-        child_conversation.set_parent_conversation_id(parent_conversation_id);
-        let child_conversation_id = child_conversation.id();
-
+        let _orchestration_v2 = FeatureFlag::OrchestrationV2.override_enabled(false);
         let terminal_view_id = EntityId::new();
-        history_model.update(&mut app, |model, ctx| {
-            model.restore_conversations(
-                terminal_view_id,
-                vec![parent_conversation, child_conversation],
-                ctx,
-            );
-        });
+        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+        let service = app.add_model(|_| OrchestrationEventService::new_without_subscriptions());
 
-        // Drive the OrchestrationEventService through its standard
-        // `handle_history_event` entry point; `restore_conversations` already
-        // emitted `RestoredConversations`, so we replay it explicitly through
-        // the service to keep this test independent of subscription wiring.
-        let service = app.add_singleton_model(|_| OrchestrationEventService::default());
-        service.update(&mut app, |svc, ctx| {
-            svc.handle_history_event(
+        let (_parent_conversation_id, child_conversation_id) =
+            history_model.update(&mut app, |history_model, ctx| {
+                let parent_conversation_id =
+                    history_model.start_new_conversation(terminal_view_id, false, false, ctx);
+                history_model.set_server_conversation_token_for_conversation(
+                    parent_conversation_id,
+                    "parent-token".to_string(),
+                );
+                let child_conversation_id = history_model.start_new_child_conversation(
+                    terminal_view_id,
+                    "child".to_string(),
+                    parent_conversation_id,
+                    ctx,
+                );
+                history_model.set_server_conversation_token_for_conversation(
+                    child_conversation_id,
+                    "child-token".to_string(),
+                );
+                (parent_conversation_id, child_conversation_id)
+            });
+
+        service.update(&mut app, |service, ctx| {
+            service.handle_history_event(
                 &BlocklistAIHistoryEvent::RestoredConversations {
                     terminal_view_id,
-                    conversation_ids: vec![parent_conversation_id, child_conversation_id],
+                    conversation_ids: vec![child_conversation_id],
                 },
                 ctx,
             );
-        });
 
-        service.read(&app, |svc, _| {
-            let routes = svc
+            let routes = service
                 .lifecycle_subscription_routes
                 .get(&child_conversation_id)
-                .expect("expected V1 lifecycle route to be registered for the child");
-            assert_eq!(routes.len(), 1, "expected exactly one route");
-            assert_eq!(routes[0].target_agent_id, parent_token);
-            assert!(
-                routes[0].subscribed_event_types.is_none(),
-                "restore re-registers with `None` (subscribe to all event types)"
-            );
+                .expect("restored V1 child should have a lifecycle subscription");
+            assert_eq!(routes.len(), 1);
+            assert_eq!(routes[0].target_agent_id, "parent-token");
+            assert_eq!(routes[0].subscribed_event_types, None);
         });
     });
 }

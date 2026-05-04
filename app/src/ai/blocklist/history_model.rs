@@ -1090,10 +1090,9 @@ impl BlocklistAIHistoryModel {
             parent_agent_id: None,
             agent_name: None,
             parent_conversation_id: None,
+            is_remote_child: false,
             run_id: None,
             autoexecute_override: Some(source_conversation.autoexecute_override().into()),
-            // The event cursor belongs to the source conversation's run; the
-            // forked conversation will establish its own cursor.
             last_event_sequence: None,
         };
         let forked_conversation_id = AIConversationId::new();
@@ -1245,10 +1244,9 @@ impl BlocklistAIHistoryModel {
             parent_agent_id: None,
             agent_name: None,
             parent_conversation_id: None,
+            is_remote_child: false,
             run_id: None,
             autoexecute_override: Some(conversation.autoexecute_override().into()),
-            // The event cursor belongs to the source conversation's run; the
-            // forked conversation will establish its own cursor.
             last_event_sequence: None,
         };
 

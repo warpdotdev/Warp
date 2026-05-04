@@ -9,8 +9,12 @@ use crate::auth::RemoteServerAuthContext;
 #[cfg(not(target_family = "wasm"))]
 use crate::client::ClientEvent;
 use crate::client::RemoteServerClient;
+use crate::setup::PreinstallCheckResult;
+#[cfg(not(target_family = "wasm"))]
+use crate::setup::RemoteOs;
 use crate::setup::RemotePlatform;
 use crate::setup::RemoteServerSetupState;
+use crate::setup::UnsupportedReason;
 #[cfg(not(target_family = "wasm"))]
 use crate::transport::Connection;
 use crate::transport::RemoteTransport;
@@ -314,6 +318,12 @@ pub enum RemoteServerManagerEvent {
         /// The detected remote platform (OS + arch) from `uname -sm`.
         /// `None` if detection failed or was not attempted.
         remote_platform: Option<RemotePlatform>,
+        /// Outcome of the preinstall check script. Populated when the
+        /// script ran successfully against a Linux host. `None` when the
+        /// host is not Linux (the script is skipped) or when the SSH-level
+        /// invocation failed (the controller treats that as inconclusive
+        /// and falls open).
+        preinstall_check: Option<PreinstallCheckResult>,
         /// `true` if the remote already has an existing install of the
         /// remote-server binary, detected by probing whether the install
         /// directory exists (see `RemoteTransport::check_has_old_binary`).
@@ -499,6 +509,25 @@ impl RemoteServerManager {
                             false
                         }
                     };
+                    // Run the preinstall check after platform detection
+                    // resolves, only on Linux. macOS hosts pay zero extra
+                    // round-trips. SSH-level failures are logged and
+                    // surfaced as `None`, which the controller treats as
+                    // inconclusive (fail open).
+                    let preinstall = match &platform {
+                        Some(p) if matches!(p.os, RemoteOs::Linux) => {
+                            match transport.run_preinstall_check().await {
+                                Ok(r) => Some(r),
+                                Err(e) => {
+                                    log::warn!(
+                                        "Preinstall check failed for session {session_id:?}: {e}"
+                                    );
+                                    None
+                                }
+                            }
+                        }
+                        _ => None,
+                    };
                     let _ = spawner
                         .spawn(move |me, ctx| {
                             if let Some(p) = &platform {
@@ -516,6 +545,7 @@ impl RemoteServerManager {
                                 session_id,
                                 result: check_result,
                                 remote_platform: platform,
+                                preinstall_check: preinstall,
                                 has_old_binary,
                             });
                         })
@@ -523,6 +553,39 @@ impl RemoteServerManager {
                 })
                 .detach();
         }
+    }
+
+    /// Marks a session as unsupported by the prebuilt remote-server
+    /// binary, based on a positive classification from the preinstall
+    /// check. The setup state transitions to `Unsupported`, which the
+    /// downstream UI treats as a clean fall-back to the legacy SSH flow.
+    ///
+    /// No-op on WASM (remote server connections use a different transport).
+    #[cfg(target_family = "wasm")]
+    pub fn mark_setup_unsupported(
+        &mut self,
+        _session_id: SessionId,
+        _reason: UnsupportedReason,
+        _ctx: &mut ModelContext<Self>,
+    ) {
+        log::warn!("mark_setup_unsupported is a no-op on WASM");
+    }
+
+    /// Marks a session as unsupported by the prebuilt remote-server
+    /// binary, based on a positive classification from the preinstall
+    /// check. The setup state transitions to `Unsupported`, which the
+    /// downstream UI treats as a clean fall-back to the legacy SSH flow.
+    #[cfg(not(target_family = "wasm"))]
+    pub fn mark_setup_unsupported(
+        &mut self,
+        session_id: SessionId,
+        reason: UnsupportedReason,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        ctx.emit(RemoteServerManagerEvent::SetupStateChanged {
+            session_id,
+            state: RemoteServerSetupState::Unsupported { reason },
+        });
     }
 
     /// Installs the remote server binary.

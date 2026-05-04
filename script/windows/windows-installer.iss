@@ -70,8 +70,7 @@ UninstallDisplayIcon="{app}\icon.ico"
 CloseApplications=force
 ; For manual installs: if Warp is running, show a dialog prompting the user to close it
 ; before Setup proceeds. Returned empty for background updates so the check is skipped.
-; TODO(andy) uncomment this after the 4/22 release
-;AppMutex={code:GetAppMutex}
+AppMutex={code:GetAppMutex}
 SetupMutex={#AppMutexName}Setup
 ; Version 1809 / Build 18362 is required for ConPTY. See https://github.com/microsoft/vscode-docs/blob/9d736b662fdde3fed17d8bc2ed70bfea4ae20636/docs/supporting/troubleshoot-terminal-launch.md?plain=1#L66/
 MinVersion=10.0.18362

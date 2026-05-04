@@ -177,7 +177,7 @@ impl CloudModel {
     ///
     /// We do NOT support
     /// - Moving folders across spaces
-    /// - Transfering from team space to personal space
+    /// - Transferring from team space to personal space
     /// - Moving directly into a folder across spaces
     pub fn can_move_object_to_location(
         &self,

@@ -14,7 +14,10 @@ use warpui::r#async::executor;
 
 use remote_server::auth::RemoteServerAuthContext;
 use remote_server::client::RemoteServerClient;
-use remote_server::setup::{parse_uname_output, remote_server_daemon_dir, RemotePlatform};
+use remote_server::setup::{
+    parse_uname_output, remote_server_daemon_dir, PreinstallCheckResult, RemotePlatform,
+};
+use remote_server::ssh::ssh_args;
 use remote_server::transport::{Connection, RemoteTransport};
 
 /// SSH transport: connects via a ControlMaster socket.
@@ -92,6 +95,34 @@ impl RemoteTransport for SshTransport {
                     let code = output.status.code().unwrap_or(-1);
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     Err(format!("uname -sm exited with code {code}: {stderr}"))
+                }
+                Err(e) => Err(format!("{e:#}")),
+            }
+        })
+    }
+
+    fn run_preinstall_check(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<PreinstallCheckResult, String>> + Send>> {
+        let socket_path = self.socket_path.clone();
+        Box::pin(async move {
+            match remote_server::ssh::run_ssh_script(
+                &socket_path,
+                remote_server::setup::PREINSTALL_CHECK_SCRIPT,
+                remote_server::setup::CHECK_TIMEOUT,
+            )
+            .await
+            {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    Ok(PreinstallCheckResult::parse(&stdout))
+                }
+                Ok(output) => {
+                    let code = output.status.code().unwrap_or(-1);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    Err(format!(
+                        "Preinstall check exited with code {code}: {stderr}"
+                    ))
                 }
                 Err(e) => Err(format!("{e:#}")),
             }
@@ -192,7 +223,7 @@ impl RemoteTransport for SshTransport {
         let socket_path = self.socket_path.clone();
         let remote_proxy_command = self.remote_proxy_command();
         Box::pin(async move {
-            let mut args = remote_server::ssh::ssh_args(&socket_path);
+            let mut args = ssh_args(&socket_path);
             args.push(remote_proxy_command);
 
             // `kill_on_drop(true)` pairs with ownership of the `Child` being

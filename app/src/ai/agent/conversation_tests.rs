@@ -122,6 +122,41 @@ fn restored_conversation_defaults_autoexecute_override_when_not_persisted() {
 }
 
 #[test]
+fn restored_conversation_uses_persisted_last_event_sequence() {
+    let conversation_data: AgentConversationData =
+        serde_json::from_str(r#"{"server_conversation_token":null,"last_event_sequence":42}"#)
+            .unwrap();
+
+    let conversation = restored_conversation(Some(conversation_data));
+
+    assert_eq!(conversation.last_event_sequence(), Some(42));
+}
+
+#[test]
+fn restored_conversation_uses_persisted_remote_child_marker() {
+    let conversation_data: AgentConversationData =
+        serde_json::from_str(r#"{"server_conversation_token":null,"is_remote_child":true}"#)
+            .unwrap();
+
+    let conversation = restored_conversation(Some(conversation_data));
+
+    assert!(conversation.is_remote_child());
+}
+
+#[test]
+fn child_conversation_detection_uses_parent_agent_id() {
+    let conversation_data: AgentConversationData = serde_json::from_str(
+        r#"{"server_conversation_token":null,"parent_agent_id":"parent-run-id"}"#,
+    )
+    .unwrap();
+
+    let conversation = restored_conversation(Some(conversation_data));
+
+    assert!(conversation.is_child_agent_conversation());
+    assert_eq!(conversation.parent_conversation_id(), None);
+}
+
+#[test]
 fn restored_conversation_defaults_unknown_persisted_autoexecute_override() {
     let _flag = FeatureFlag::RememberFastForwardState.override_enabled(true);
     let conversation_data: AgentConversationData = serde_json::from_str(
