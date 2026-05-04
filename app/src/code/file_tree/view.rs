@@ -1533,11 +1533,10 @@ impl FileTreeView {
         // When the file tree is active, index the lazy-loaded path through the
         // model so that a file watcher is started.
         if self.is_active && !self.registered_lazy_loaded_paths.contains(path) {
-            // Check if repo is Pending (detection in progress) or Failed.
+            // Check if repo is Pending (detection in progress).
             let repo_id = repo_metadata::RepositoryIdentifier::local(path.clone());
             let repo_state = RepoMetadataModel::as_ref(ctx).repository_state(&repo_id, ctx);
             let is_pending = matches!(repo_state, Some(IndexedRepoState::Pending));
-            let is_failed = matches!(repo_state, Some(IndexedRepoState::Failed(_)));
 
             // Index lazy-loaded path to build tree and register watcher.
             // This may no-op if already Pending/Indexed, but that's handled below.
@@ -1550,11 +1549,8 @@ impl FileTreeView {
             // If lazy-loading succeeded, we're good.
             if index_result.is_ok() {
                 self.registered_lazy_loaded_paths.insert(path.clone());
-            } else if is_pending {
-                // Pending - still register to preserve fallback
-                self.registered_lazy_loaded_paths.insert(path.clone());
             } else {
-                // Failed - show toast and log warning, preserve existing entry
+                // Failed - show toast and log warning
                 if matches!(
                     index_result,
                     Err(repo_metadata::RepoMetadataError::BuildTree(
@@ -1566,7 +1562,7 @@ impl FileTreeView {
                 if let Err(error) = &index_result {
                     log::warn!("Failed to index lazy-loaded path {path}: {error}");
                 }
-                // Don't overwrite existing entry - preserve what we had before
+                // Don't register - let the later code create proper fallback for Pending/None
             }
         }
 
