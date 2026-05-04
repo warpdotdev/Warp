@@ -1199,32 +1199,30 @@ impl AIDocumentModel {
         event: &BlocklistAIHistoryEvent,
         ctx: &mut ModelContext<Self>,
     ) {
-        use crate::ai::blocklist::BlocklistAIHistoryEvent;
-        // Fire on any event that may have introduced new messages into
-        // a conversation's task list (append, streaming update, restore).
-        let conversation_id = match event {
-            BlocklistAIHistoryEvent::AppendedExchange {
-                conversation_id, ..
+        match event {
+            // Reactive path: config was already applied to the conversation
+            // by apply_client_action(); just forward the UI event.
+            BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                conversation_id,
+            } => {
+                ctx.emit(AIDocumentModelEvent::OrchestrationConfigUpdated {
+                    conversation_id: *conversation_id,
+                });
             }
-            | BlocklistAIHistoryEvent::UpdatedStreamingExchange {
-                conversation_id, ..
-            } => Some(*conversation_id),
+            // On restore, scan all restored conversations for the last snapshot.
             BlocklistAIHistoryEvent::RestoredConversations {
                 conversation_ids, ..
             } => {
-                // On restore, scan all restored conversations.
                 for cid in conversation_ids {
                     self.scan_conversation_for_orchestration_config(*cid, ctx);
                 }
-                None
             }
-            _ => None,
-        };
-        if let Some(cid) = conversation_id {
-            self.scan_conversation_for_orchestration_config(cid, ctx);
+            _ => {}
         }
     }
 
+    /// Scans all messages across all tasks in a restored conversation to find
+    /// the last `OrchestrationConfigSnapshot` and hydrate the config from it.
     fn scan_conversation_for_orchestration_config(
         &mut self,
         conversation_id: AIConversationId,
@@ -1237,8 +1235,11 @@ impl AIDocumentModel {
             let Some(conversation) = history.conversation(&conversation_id) else {
                 return;
             };
-            conversation.all_tasks().find_map(|task| {
-                task.messages().find_map(|message| {
+            // Find the *last* snapshot so we hydrate the most recent config.
+            conversation
+                .all_tasks()
+                .flat_map(|task| task.messages())
+                .filter_map(|message| {
                     if let Some(maa_api::message::Message::OrchestrationConfigSnapshot(
                         snapshot,
                     )) = &message.message
@@ -1248,7 +1249,7 @@ impl AIDocumentModel {
                         None
                     }
                 })
-            })
+                .last()
         };
         if let Some(snapshot) = snapshot {
             Self::hydrate_orchestration_config_from_snapshot(conversation_id, &snapshot, ctx);
@@ -1309,8 +1310,6 @@ impl AIDocumentModel {
             Some(snapshot.plan_id.clone())
         };
 
-        // Log the existing status before overwriting so we can detect
-        // when a server snapshot clobbers a locally-set Approved status.
         let changed = BlocklistAIHistoryModel::handle(ctx).update(ctx, |history, _| {
             if let Some(conversation) = history.conversation_mut(&conversation_id) {
                 conversation.set_orchestration_config(config, status, plan_id)

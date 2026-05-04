@@ -748,7 +748,7 @@ impl BlocklistAIController {
             });
         }
 
-        if let Err(e) = self.send_request_input(
+        let send_result = self.send_request_input(
             RequestInput::for_task(
                 inputs,
                 task_id,
@@ -767,14 +767,17 @@ impl BlocklistAIController {
             /*can_attempt_resume_on_error*/ true,
             is_queued_prompt,
             ctx,
-        ) {
+        );
+
+        // Only clear the dirty orchestration event if the request was
+        // actually sent; otherwise the update would be silently lost.
+        if send_result.is_ok() {
+            AIDocumentModel::handle(ctx).update(ctx, |model, _| {
+                model.clear_dirty_orchestration_event();
+            });
+        } else if let Err(e) = send_result {
             log::error!("Failed to send agent request: {e:?}");
         }
-
-        // Clear the dirty orchestration event after the request is sent.
-        AIDocumentModel::handle(ctx).update(ctx, |model, _| {
-            model.clear_dirty_orchestration_event();
-        });
     }
 
     /// Populates plan documents from user query to AIDocumentModel if not already present.

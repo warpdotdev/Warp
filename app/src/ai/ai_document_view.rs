@@ -1060,11 +1060,11 @@ impl View for AIDocumentView {
         "AIDocumentView"
     }
 
-    fn render(&self, _app: &AppContext) -> Box<dyn warpui::Element> {
-        let has_orchestration_config = AIDocumentModel::as_ref(_app)
+    fn render(&self, app: &AppContext) -> Box<dyn warpui::Element> {
+        let has_orchestration_config = AIDocumentModel::as_ref(app)
             .get_conversation_id_for_document_id(&self.document_id)
             .and_then(|cid| {
-                BlocklistAIHistoryModel::as_ref(_app)
+                BlocklistAIHistoryModel::as_ref(app)
                     .conversation(&cid)
                     .and_then(|conv| conv.orchestration_config().map(|_| ()))
             })

@@ -278,13 +278,14 @@ impl View for OrchestrationConfigBlockView {
         .finish();
 
         let is_on = self.is_approved;
-        let switch_el = render_pill_toggle(is_on, theme);
 
         let header_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(warpui::elements::Expanded::new(1.0, header_label).finish())
             .with_child(
-                Hoverable::new(self.toggle_mouse_state.clone(), move |_| switch_el)
+                Hoverable::new(self.toggle_mouse_state.clone(), move |_| {
+                    render_pill_toggle(is_on, theme)
+                })
                     .on_click(|ctx, _, _| {
                         ctx.dispatch_typed_action(
                             OrchestrationConfigBlockAction::ToggleApproval,

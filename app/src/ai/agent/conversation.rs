@@ -2350,6 +2350,29 @@ impl AIConversation {
                                 None => {}
                             }
                         }
+                        Some(api::message::Message::OrchestrationConfigSnapshot(
+                            snapshot,
+                        )) => {
+                            let config = snapshot
+                                .config
+                                .as_ref()
+                                .map(OrchestrationConfig::from_proto);
+                            let status = OrchestrationConfigStatus::from_proto(
+                                snapshot.status.as_ref(),
+                            );
+                            let plan_id = if snapshot.plan_id.is_empty() {
+                                None
+                            } else {
+                                Some(snapshot.plan_id.clone())
+                            };
+                            if self.set_orchestration_config(config, status, plan_id) {
+                                ctx.emit(
+                                    BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
+                                        conversation_id: self.id,
+                                    },
+                                );
+                            }
+                        }
                         Some(api::message::Message::ToolCallResult(tcr)) => {
                             // Clean up temp directories from conversation search subagents.
                             if let Some(api::message::tool_call_result::Result::Subagent(_)) =
