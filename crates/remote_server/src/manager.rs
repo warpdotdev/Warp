@@ -1355,22 +1355,26 @@ impl RemoteServerManager {
             let exit_status = Self::capture_exit_status(&mut _child, session_id);
             // Drop the old child process explicitly before reconnecting.
             drop(_child);
+
+            // Ask the transport whether a reconnect is viable given the
+            // exit status. For example, SSH returns false when exit code
+            // 255 indicates the ControlMaster's TCP connection is dead.
+            if !transport.is_reconnectable(exit_status.as_ref()) {
+                log::warn!(
+                    "Transport reports disconnect is not reconnectable for \
+                     session {session_id:?} (exit_status={exit_status:?}), \
+                     skipping reconnect"
+                );
+                self.finalize_disconnect(session_id, host_id, exit_status, ctx);
+                return;
+            }
+
             let Some(auth_context) = self.auth_context.clone() else {
                 log::warn!(
                     "Spontaneous disconnect for session {session_id:?}, \
                      but no auth context is available for reconnect"
                 );
-                self.sessions
-                    .insert(session_id, RemoteSessionState::Disconnected);
-                self.remove_from_host_index(&host_id, session_id);
-                ctx.emit(RemoteServerManagerEvent::SessionDisconnected {
-                    session_id,
-                    host_id: host_id.clone(),
-                    exit_status,
-                });
-                if !self.host_to_sessions.contains_key(&host_id) {
-                    ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });
-                }
+                self.finalize_disconnect(session_id, host_id, exit_status, ctx);
                 return;
             };
             log::info!(
@@ -1573,6 +1577,35 @@ impl RemoteServerManager {
             });
             // Note: HostDisconnected was already emitted by
             // mark_session_disconnected when entering the reconnect flow.
+        }
+    }
+
+    /// Marks a session as `Disconnected`, cleans up the host index, and
+    /// emits the appropriate disconnect events. Used by
+    /// `mark_session_disconnected` when reconnection is not possible
+    /// (SSH transport failure, missing auth context).
+    ///
+    /// Not used by `handle_reconnect_failure` because that path enters
+    /// from `attempt_reconnect`, which already cleared the host index
+    /// and emitted `HostDisconnected` when entering the reconnect flow.
+    #[cfg(not(target_family = "wasm"))]
+    fn finalize_disconnect(
+        &mut self,
+        session_id: SessionId,
+        host_id: HostId,
+        exit_status: Option<RemoteServerExitStatus>,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.sessions
+            .insert(session_id, RemoteSessionState::Disconnected);
+        self.remove_from_host_index(&host_id, session_id);
+        ctx.emit(RemoteServerManagerEvent::SessionDisconnected {
+            session_id,
+            host_id: host_id.clone(),
+            exit_status,
+        });
+        if !self.host_to_sessions.contains_key(&host_id) {
+            ctx.emit(RemoteServerManagerEvent::HostDisconnected { host_id });
         }
     }
 
