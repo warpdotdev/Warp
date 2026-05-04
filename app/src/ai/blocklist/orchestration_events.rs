@@ -1,4 +1,6 @@
-use super::history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use super::history_model::{
+    BlocklistAIHistoryEvent, BlocklistAIHistoryModel, ConversationStatusUpdate,
+};
 use super::telemetry::{
     BlocklistOrchestrationTelemetryEvent, TeamAgentCommunicationFailedEvent,
     TeamAgentCommunicationFailureReason, TeamAgentCommunicationKind,
@@ -344,9 +346,12 @@ impl OrchestrationEventService {
         match event {
             BlocklistAIHistoryEvent::UpdatedConversationStatus {
                 conversation_id,
-                is_restored,
+                update,
                 ..
-            } => self.on_conversation_status_updated(*conversation_id, *is_restored, ctx),
+            } => {
+                let is_restored = matches!(update, ConversationStatusUpdate::Restored);
+                self.on_conversation_status_updated(*conversation_id, is_restored, ctx)
+            }
             BlocklistAIHistoryEvent::UpdatedStreamingExchange {
                 conversation_id,
                 exchange_id,

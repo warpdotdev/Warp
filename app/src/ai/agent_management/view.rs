@@ -1237,7 +1237,7 @@ impl AgentManagementView {
                 self.refresh_details_panel_if_needed(ctx);
                 self.get_tasks_from_model(ctx);
             }
-            AgentConversationsModelEvent::ConversationUpdated => {
+            AgentConversationsModelEvent::ConversationUpdated { .. } => {
                 self.get_tasks_from_model(ctx);
                 self.refresh_details_panel_if_needed(ctx);
                 ctx.notify();

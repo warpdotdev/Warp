@@ -1,15 +1,10 @@
 use chrono::{DateTime, Duration, Utc};
 use instant::Instant;
+use parking_lot::Mutex;
 use persistence::model::AgentConversationData;
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{collections::HashMap, sync::Arc};
 use warp_core::features::FeatureFlag;
-use warpui::{App, EntityId};
+use warpui::{App, EntityId, ModelHandle};
 
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 use crate::ai::ambient_agents::task::{TaskCreatorInfo, TaskStatusMessage};
@@ -17,7 +12,9 @@ use crate::ai::ambient_agents::AgentConfigSnapshot;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
-use crate::ai::blocklist::history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use crate::ai::blocklist::history_model::{
+    BlocklistAIHistoryEvent, BlocklistAIHistoryModel, ConversationStatusUpdate,
+};
 use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::auth::AuthStateProvider;
 use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
@@ -25,8 +22,8 @@ use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
 use super::{
     AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters,
     AgentRunDisplayStatus, ArtifactFilter, ConversationMetadata, ConversationOrTask,
-    EnvironmentFilter, HarnessFilter, OwnerFilter, StatusFilter, TaskFetchState,
-    MAX_PERSONAL_TASKS, MAX_TEAM_TASKS,
+    ConversationUpdateKind, EnvironmentFilter, HarnessFilter, OwnerFilter, StatusFilter,
+    TaskFetchState, MAX_PERSONAL_TASKS, MAX_TEAM_TASKS,
 };
 use crate::ai::ambient_agents::task::HarnessConfig;
 use warp_cli::agent::Harness;
@@ -65,35 +62,141 @@ fn create_test_task(
     }
 }
 
+type CapturedConversationUpdate = Mutex<Option<(AIConversationId, ConversationUpdateKind)>>;
+
+/// Test-only handler that mirrors the production view subscription: extracts the
+/// `ConversationUpdated` payload and stashes it on a shared cell that test cases assert
+/// against.
+fn handle_agent_conversation_model_event(
+    captured: &CapturedConversationUpdate,
+    event: &AgentConversationsModelEvent,
+) {
+    if let AgentConversationsModelEvent::ConversationUpdated {
+        conversation_id,
+        kind,
+    } = event
+    {
+        *captured.lock() = Some((*conversation_id, *kind));
+    }
+}
+
+/// Subscribes a [`handle_agent_conversation_model_event`] capture cell to `model` and
+/// returns the cell so individual cases can assert on the most recent emission without
+/// re-implementing the subscription bookkeeping.
+fn subscribe_to_conversation_updated(
+    app: &mut App,
+    model: &ModelHandle<AgentConversationsModel>,
+) -> Arc<CapturedConversationUpdate> {
+    let captured = Arc::new(Mutex::new(None));
+    let captured_clone = captured.clone();
+    app.update(|ctx| {
+        ctx.subscribe_to_model(model, move |_, event, _| {
+            handle_agent_conversation_model_event(&captured_clone, event);
+        });
+    });
+    captured
+}
+
 #[test]
-fn test_conversation_status_update_emits_conversation_updated() {
+fn test_restored_conversation_emits_restored_kind() {
     App::test((), |mut app| async move {
         let _interactive_management_guard =
             FeatureFlag::InteractiveConversationManagementView.override_enabled(true);
         let agent_model = app.add_singleton_model(|_| create_test_model());
-        let saw_conversation_updated = Arc::new(AtomicBool::new(false));
+        let captured = subscribe_to_conversation_updated(&mut app, &agent_model);
 
-        app.update(|ctx| {
-            let saw_conversation_updated = saw_conversation_updated.clone();
-            ctx.subscribe_to_model(&agent_model, move |_, event, _| {
-                if matches!(event, AgentConversationsModelEvent::ConversationUpdated) {
-                    saw_conversation_updated.store(true, Ordering::SeqCst);
-                }
-            });
-        });
-
+        let conversation_id = AIConversationId::new();
         agent_model.update(&mut app, |model, ctx| {
             model.handle_history_event(
                 &BlocklistAIHistoryEvent::UpdatedConversationStatus {
-                    conversation_id: AIConversationId::new(),
+                    conversation_id,
                     terminal_view_id: EntityId::new(),
-                    is_restored: false,
+                    update: ConversationStatusUpdate::Restored,
+                    new_status: ConversationStatus::Success,
                 },
                 ctx,
             );
         });
 
-        assert!(saw_conversation_updated.load(Ordering::SeqCst));
+        let captured = *captured.lock();
+        assert_eq!(
+            captured,
+            Some((conversation_id, ConversationUpdateKind::Restored)),
+        );
+    });
+}
+
+#[test]
+fn test_status_transition_emits_status_set_with_filter_buckets() {
+    App::test((), |mut app| async move {
+        let _interactive_management_guard =
+            FeatureFlag::InteractiveConversationManagementView.override_enabled(true);
+        let agent_model = app.add_singleton_model(|_| create_test_model());
+        let captured = subscribe_to_conversation_updated(&mut app, &agent_model);
+
+        let conversation_id = AIConversationId::new();
+        agent_model.update(&mut app, |model, ctx| {
+            model.handle_history_event(
+                &BlocklistAIHistoryEvent::UpdatedConversationStatus {
+                    conversation_id,
+                    terminal_view_id: EntityId::new(),
+                    update: ConversationStatusUpdate::Changed {
+                        prev_status: ConversationStatus::InProgress,
+                    },
+                    new_status: ConversationStatus::Success,
+                },
+                ctx,
+            );
+        });
+
+        let captured = *captured.lock();
+        assert_eq!(
+            captured,
+            Some((
+                conversation_id,
+                ConversationUpdateKind::StatusSet {
+                    prev_filter: StatusFilter::Working,
+                    new_filter: StatusFilter::Done,
+                },
+            )),
+        );
+    });
+}
+
+#[test]
+fn test_same_bucket_re_emission_emits_status_set_with_equal_filters() {
+    App::test((), |mut app| async move {
+        let _interactive_management_guard =
+            FeatureFlag::InteractiveConversationManagementView.override_enabled(true);
+        let agent_model = app.add_singleton_model(|_| create_test_model());
+        let captured = subscribe_to_conversation_updated(&mut app, &agent_model);
+
+        let conversation_id = AIConversationId::new();
+        agent_model.update(&mut app, |model, ctx| {
+            model.handle_history_event(
+                &BlocklistAIHistoryEvent::UpdatedConversationStatus {
+                    conversation_id,
+                    terminal_view_id: EntityId::new(),
+                    update: ConversationStatusUpdate::Changed {
+                        prev_status: ConversationStatus::InProgress,
+                    },
+                    new_status: ConversationStatus::InProgress,
+                },
+                ctx,
+            );
+        });
+
+        let captured = *captured.lock();
+        assert_eq!(
+            captured,
+            Some((
+                conversation_id,
+                ConversationUpdateKind::StatusSet {
+                    prev_filter: StatusFilter::Working,
+                    new_filter: StatusFilter::Working,
+                },
+            )),
+        );
     });
 }
 
