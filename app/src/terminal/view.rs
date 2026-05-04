@@ -1974,8 +1974,12 @@ pub enum Event {
         variant: CloudAgentCapacityModalVariant,
     },
     FreeTierLimitCheckTriggered,
-    /// Emitted when the StartAgent executor needs the workspace to create a new child
-    /// agent conversation in a split pane.
+    /// Emitted when the StartAgent executor needs the workspace to create
+    /// a new child agent conversation in a split pane. The freshly-created
+    /// child conversation id is echoed back to the executor via
+    /// [`BlocklistAIHistoryModel::record_new_conversation_request_complete`]
+    /// so the executor can disambiguate per-request pendings when multiple
+    /// StartAgent requests are in flight in parallel.
     StartAgentConversation(StartAgentRequest),
     /// Emitted when the user clicks a child agent row in the status card to reveal
     /// its hidden pane.
@@ -5442,7 +5446,8 @@ impl TerminalView {
             | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
             | BlocklistAIHistoryEvent::DeletedConversation { .. }
-            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => {}
+            | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
+            | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. } => {}
         }
         ctx.notify();
     }
@@ -6385,7 +6390,7 @@ impl TerminalView {
 
     fn handle_start_agent_executor_event(
         &mut self,
-        _: ModelHandle<StartAgentExecutor>,
+        _executor: ModelHandle<StartAgentExecutor>,
         event: &StartAgentExecutorEvent,
         ctx: &mut ViewContext<Self>,
     ) {

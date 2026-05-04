@@ -1287,6 +1287,121 @@ impl From<AskUserQuestionResult> for api::request::input::tool_call_result::Resu
     }
 }
 
+impl From<RunAgentsLaunchedExecutionMode>
+    for api::run_agents_result::launched::ResolvedExecutionMode
+{
+    fn from(mode: RunAgentsLaunchedExecutionMode) -> Self {
+        match mode {
+            RunAgentsLaunchedExecutionMode::Local => {
+                api::run_agents_result::launched::ResolvedExecutionMode::Local(
+                    api::run_agents::Local {},
+                )
+            }
+            RunAgentsLaunchedExecutionMode::Remote {
+                environment_id,
+                worker_host,
+                computer_use_enabled,
+            } => api::run_agents_result::launched::ResolvedExecutionMode::Remote(
+                api::run_agents::Remote {
+                    environment_id,
+                    worker_host,
+                    computer_use_enabled,
+                },
+            ),
+        }
+    }
+}
+
+impl From<RunAgentsAgentOutcome> for api::run_agents_result::AgentOutcome {
+    fn from(outcome: RunAgentsAgentOutcome) -> Self {
+        let result = match outcome.kind {
+            RunAgentsAgentOutcomeKind::Launched { agent_id } => {
+                api::run_agents_result::agent_outcome::Result::Launched(
+                    api::run_agents_result::LaunchedAgent { agent_id },
+                )
+            }
+            RunAgentsAgentOutcomeKind::Failed { error } => {
+                api::run_agents_result::agent_outcome::Result::Failed(
+                    api::run_agents_result::FailedAgent { error },
+                )
+            }
+        };
+        api::run_agents_result::AgentOutcome {
+            name: outcome.name,
+            result: Some(result),
+        }
+    }
+}
+
+/// Maps a client-side harness string identifier (e.g. "oz", "claude")
+/// to the new proto `Harness` oneof. Returns `None` for empty,
+/// unrecognized, or `"unknown"` strings; callers leave
+/// `resolved_harness` unset in that case.
+pub(super) fn build_api_harness(harness_type: &str) -> Option<api::Harness> {
+    let normalized = harness_type.trim().to_ascii_lowercase().replace('_', "-");
+    let variant = match normalized.as_str() {
+        "oz" => api::harness::Variant::Oz(api::harness::Oz {}),
+        "claude" | "claude-code" => api::harness::Variant::ClaudeCode(api::harness::ClaudeCode {}),
+        "opencode" | "open-code" => api::harness::Variant::OpenCode(api::harness::OpenCode {}),
+        "gemini" => api::harness::Variant::Gemini(api::harness::Gemini {}),
+        "codex" => api::harness::Variant::Codex(api::harness::Codex {}),
+        _ => return None,
+    };
+    Some(api::Harness {
+        variant: Some(variant),
+    })
+}
+
+impl TryFrom<RunAgentsResult> for api::request::input::tool_call_result::Result {
+    type Error = ConvertToAPITypeError;
+
+    fn try_from(result: RunAgentsResult) -> Result<Self, Self::Error> {
+        match result {
+            RunAgentsResult::Launched {
+                model_id,
+                harness_type,
+                execution_mode,
+                agents,
+            } => Ok(
+                api::request::input::tool_call_result::Result::RunAgentsResult(
+                    api::RunAgentsResult {
+                        outcome: Some(api::run_agents_result::Outcome::Launched(
+                            api::run_agents_result::Launched {
+                                resolved_model_id: model_id,
+                                resolved_harness: build_api_harness(&harness_type),
+                                resolved_execution_mode: Some(execution_mode.into()),
+                                agents: agents.into_iter().map(Into::into).collect(),
+                            },
+                        )),
+                    },
+                ),
+            ),
+            RunAgentsResult::Denied { reason } => Ok(
+                api::request::input::tool_call_result::Result::RunAgentsResult(
+                    api::RunAgentsResult {
+                        outcome: Some(api::run_agents_result::Outcome::Denied(
+                            api::run_agents_result::Denied { reason },
+                        )),
+                    },
+                ),
+            ),
+            RunAgentsResult::Failure { error } => Ok(
+                api::request::input::tool_call_result::Result::RunAgentsResult(
+                    api::RunAgentsResult {
+                        outcome: Some(api::run_agents_result::Outcome::Failure(
+                            api::run_agents_result::Failure { error },
+                        )),
+                    },
+                ),
+            ),
+            // Reject is conveyed by the generic ToolCallResult.Cancel marker
+            // synthesized server-side on the next user input; nothing for the
+            // client to send on the wire here.
+            RunAgentsResult::Cancelled => Err(ConvertToAPITypeError::Ignore),
+        }
+    }
+}
+
 impl TryFrom<InsertReviewCommentsResult> for api::request::input::tool_call_result::Result {
     type Error = ConvertToAPITypeError;
 

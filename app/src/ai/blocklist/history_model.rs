@@ -2204,6 +2204,13 @@ pub enum BlocklistAIHistoryEvent {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,
     },
+
+    /// Links an executor-minted request to a freshly-created
+    /// conversation.
+    NewConversationRequestComplete {
+        request_id: crate::ai::blocklist::StartAgentRequestId,
+        conversation_id: AIConversationId,
+    },
 }
 
 impl BlocklistAIHistoryEvent {
@@ -2270,7 +2277,25 @@ impl BlocklistAIHistoryEvent {
             BlocklistAIHistoryEvent::UpdatedConversationMetadata {
                 terminal_view_id, ..
             } => *terminal_view_id,
+            // NewConversationRequestComplete is executor-scoped and has no
+            // terminal_view_id.
+            BlocklistAIHistoryEvent::NewConversationRequestComplete { .. } => None,
         }
+    }
+}
+
+impl BlocklistAIHistoryModel {
+    /// Emits [`BlocklistAIHistoryEvent::NewConversationRequestComplete`].
+    pub fn record_new_conversation_request_complete(
+        &mut self,
+        request_id: crate::ai::blocklist::StartAgentRequestId,
+        conversation_id: AIConversationId,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        ctx.emit(BlocklistAIHistoryEvent::NewConversationRequestComplete {
+            request_id,
+            conversation_id,
+        });
     }
 }
 

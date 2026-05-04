@@ -68,6 +68,11 @@ pub struct FilterableDropdown<A: Action + Clone> {
     menu_width: Option<f32>,
     vertical_margin: f32,
     top_bar_height: f32,
+    /// See `Dropdown::use_overlay_layer`. Mirrors the same opt-out for
+    /// `FilterableDropdown` callers (the orchestrate environment
+    /// picker) that need to render in the parent's Normal layer
+    /// instead of an overlay.
+    use_overlay_layer: bool,
 }
 
 impl<A> FilterableDropdown<A>
@@ -125,7 +130,23 @@ where
             menu_width: None,
             vertical_margin: DROPDOWN_PADDING,
             top_bar_height: TOP_MENU_BAR_HEIGHT,
+            use_overlay_layer: true,
         }
+    }
+
+    /// See `Dropdown::set_use_overlay_layer`.
+    pub fn set_use_overlay_layer(&mut self, use_overlay_layer: bool, ctx: &mut ViewContext<Self>) {
+        self.use_overlay_layer = use_overlay_layer;
+        ctx.notify();
+    }
+
+    /// Override the top-bar height.
+    /// so callers (e.g. the orchestrate environment picker) that mix
+    /// `Dropdown` and `FilterableDropdown` in the same row can size them
+    /// identically.
+    pub fn set_top_bar_height(&mut self, height: f32, ctx: &mut ViewContext<Self>) {
+        self.top_bar_height = height;
+        ctx.notify();
     }
 
     pub fn set_menu_header_text_override<F>(&mut self, formatter: F)
@@ -712,26 +733,28 @@ where
 
         let mut dropdown_stack = Stack::new().with_child(self.render_top_bar(appearance));
         if self.is_expanded {
-            dropdown_stack.add_positioned_overlay_child(
-                dropdown_menu,
-                if self.orientation == FilterableDropdownOrientation::Down {
-                    OffsetPositioning::offset_from_save_position_element(
-                        self.top_bar_label(),
-                        vec2f(0., 0.),
-                        PositionedElementOffsetBounds::WindowByPosition,
-                        PositionedElementAnchor::BottomLeft,
-                        ChildAnchor::TopLeft,
-                    )
-                } else {
-                    OffsetPositioning::offset_from_save_position_element(
-                        self.top_bar_label(),
-                        vec2f(0., 0.),
-                        PositionedElementOffsetBounds::WindowByPosition,
-                        PositionedElementAnchor::TopLeft,
-                        ChildAnchor::BottomLeft,
-                    )
-                },
-            );
+            let positioning = if self.orientation == FilterableDropdownOrientation::Down {
+                OffsetPositioning::offset_from_save_position_element(
+                    self.top_bar_label(),
+                    vec2f(0., 0.),
+                    PositionedElementOffsetBounds::WindowByPosition,
+                    PositionedElementAnchor::BottomLeft,
+                    ChildAnchor::TopLeft,
+                )
+            } else {
+                OffsetPositioning::offset_from_save_position_element(
+                    self.top_bar_label(),
+                    vec2f(0., 0.),
+                    PositionedElementOffsetBounds::WindowByPosition,
+                    PositionedElementAnchor::TopLeft,
+                    ChildAnchor::BottomLeft,
+                )
+            };
+            if self.use_overlay_layer {
+                dropdown_stack.add_positioned_overlay_child(dropdown_menu, positioning);
+            } else {
+                dropdown_stack.add_positioned_child(dropdown_menu, positioning);
+            }
         }
         Container::new(dropdown_stack.finish())
             .with_margin_top(self.vertical_margin)
