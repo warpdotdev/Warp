@@ -1,9 +1,9 @@
 use super::default_themes::*;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::iter::FromIterator;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use warp_core::ui::color::pick_foreground_color;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::{
@@ -148,27 +148,142 @@ impl ThemeKind {
         let theme_name = format!("{self}").to_lowercase();
         theme_name.contains(&query.to_lowercase())
     }
+
+    pub(crate) fn is_custom_theme_reference_syncable(&self) -> bool {
+        match self {
+            ThemeKind::Custom(custom_theme) | ThemeKind::CustomBase16(custom_theme) => {
+                custom_theme_path_is_portable(&custom_theme.path, &crate::user_config::themes_dir())
+            }
+            _ => true,
+        }
+    }
 }
 
 #[derive(
-    Debug,
-    Clone,
-    Hash,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    PartialOrd,
-    Ord,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
+    Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord, schemars::JsonSchema,
 )]
 #[schemars(description = "A user-provided custom theme.")]
 pub struct CustomTheme {
     #[schemars(description = "The display name of the custom theme.")]
     name: String,
+    #[serde(
+        deserialize_with = "deserialize_custom_theme_path",
+        serialize_with = "serialize_custom_theme_path"
+    )]
     #[schemars(description = "The file path to the custom theme definition.")]
     path: PathBuf,
+}
+
+impl settings_value::SettingsValue for CustomTheme {
+    fn to_file_value(&self) -> serde_json::Value {
+        serde_json::json!({
+            "name": &self.name,
+            "path": custom_theme_path_for_storage(&self.path, &crate::user_config::themes_dir()),
+        })
+    }
+
+    fn from_file_value(value: &serde_json::Value) -> Option<Self> {
+        #[derive(Deserialize)]
+        struct FileValue {
+            name: String,
+            path: PathBuf,
+        }
+
+        let value = serde_json::from_value::<FileValue>(value.clone()).ok()?;
+        Some(Self {
+            name: value.name,
+            path: custom_theme_path_from_storage(&value.path, &crate::user_config::themes_dir()),
+        })
+    }
+}
+
+fn serialize_custom_theme_path<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    custom_theme_path_for_storage(path, &crate::user_config::themes_dir()).serialize(serializer)
+}
+
+fn deserialize_custom_theme_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let path = PathBuf::deserialize(deserializer)?;
+    Ok(custom_theme_path_from_storage(
+        &path,
+        &crate::user_config::themes_dir(),
+    ))
+}
+
+pub(crate) fn custom_theme_path_for_storage(path: &Path, theme_root: &Path) -> PathBuf {
+    if !path_is_absolute_or_foreign_absolute(path) {
+        return path.to_path_buf();
+    }
+
+    path.strip_prefix(theme_root)
+        .ok()
+        .filter(|relative| theme_root_relative_path_is_safe(relative))
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
+pub(crate) fn custom_theme_path_from_storage(path: &Path, theme_root: &Path) -> PathBuf {
+    if path_is_absolute_or_foreign_absolute(path) {
+        return if let Ok(relative) = path.strip_prefix(theme_root) {
+            if theme_root_relative_path_is_safe(relative) {
+                theme_root.join(relative)
+            } else {
+                path.to_path_buf()
+            }
+        } else {
+            path.to_path_buf()
+        };
+    }
+
+    if theme_root_relative_path_is_safe(path) {
+        theme_root.join(path)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+pub(crate) fn custom_theme_path_is_portable(path: &Path, theme_root: &Path) -> bool {
+    if path_is_absolute_or_foreign_absolute(path) {
+        return path
+            .strip_prefix(theme_root)
+            .is_ok_and(theme_root_relative_path_is_safe);
+    }
+
+    theme_root_relative_path_is_safe(path)
+}
+
+fn theme_root_relative_path_is_safe(path: &Path) -> bool {
+    !path.as_os_str().is_empty()
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+}
+
+fn path_is_absolute_or_foreign_absolute(path: &Path) -> bool {
+    path.has_root() || path_looks_like_foreign_windows_absolute(path)
+}
+
+fn path_looks_like_foreign_windows_absolute(path: &Path) -> bool {
+    if path.has_root() {
+        return false;
+    }
+
+    let Some(path) = path.as_os_str().to_str() else {
+        return false;
+    };
+
+    let bytes = path.as_bytes();
+    let starts_with_drive_root = bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/');
+
+    starts_with_drive_root || path.starts_with(r"\\")
 }
 
 impl CustomTheme {

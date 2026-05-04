@@ -2,6 +2,196 @@ use super::*;
 use crate::util::color::OPAQUE;
 
 #[test]
+fn custom_theme_path_under_theme_root_serializes_relative() {
+    let root = PathBuf::from("/home/user/.local/share/warp-terminal/themes");
+    let path = root.join("catppuccin/catppuccin_mocha.yml");
+
+    assert_eq!(
+        custom_theme_path_for_storage(&path, &root),
+        PathBuf::from("catppuccin/catppuccin_mocha.yml")
+    );
+}
+
+#[test]
+fn custom_theme_relative_path_resolves_under_local_theme_root() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let stored = PathBuf::from("catppuccin/catppuccin_latte.yml");
+
+    assert_eq!(
+        custom_theme_path_from_storage(&stored, &root),
+        root.join("catppuccin/catppuccin_latte.yml")
+    );
+}
+
+#[test]
+fn custom_theme_relative_parent_dir_path_is_preserved() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let stored = PathBuf::from("../outside.yml");
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_relative_parent_dir_path_is_not_portable() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+
+    assert!(!custom_theme_path_is_portable(
+        &PathBuf::from("../outside.yml"),
+        &root
+    ));
+}
+
+#[test]
+fn custom_theme_absolute_parent_dir_path_under_theme_root_is_preserved() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let stored = root.join("../outside.yml");
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_absolute_parent_dir_path_under_theme_root_is_not_portable() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+
+    assert!(!custom_theme_path_is_portable(
+        &root.join("../outside.yml"),
+        &root
+    ));
+}
+
+#[test]
+fn custom_theme_parent_dir_path_under_theme_root_does_not_serialize_relative() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let path = root.join("../outside.yml");
+
+    assert_eq!(custom_theme_path_for_storage(&path, &root), path);
+}
+
+#[test]
+fn custom_theme_legacy_macos_path_is_preserved_even_when_local_file_exists() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("warp-terminal/themes");
+    let local = root.join("catppuccin/catppuccin_mocha.yml");
+    std::fs::create_dir_all(local.parent().unwrap()).unwrap();
+    std::fs::write(&local, "").unwrap();
+
+    let stored = PathBuf::from("/Users/example/.warp/themes/catppuccin/catppuccin_mocha.yml");
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_legacy_parent_dir_path_is_preserved() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("warp-terminal/themes");
+    let local = root.join("outside.yml");
+    std::fs::create_dir_all(local.parent().unwrap()).unwrap();
+    std::fs::write(&local, "").unwrap();
+
+    let stored = PathBuf::from("/Users/example/.warp/themes/../outside.yml");
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_legacy_linux_path_is_preserved_even_when_local_file_exists() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join(".warp/themes");
+    let local = root.join("catppuccin/catppuccin_latte.yml");
+    std::fs::create_dir_all(local.parent().unwrap()).unwrap();
+    std::fs::write(&local, "").unwrap();
+
+    let stored = PathBuf::from(
+        "/home/user/.local/share/warp-terminal/themes/catppuccin/catppuccin_latte.yml",
+    );
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_unmatched_legacy_absolute_path_is_preserved() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join(".warp/themes");
+    let stored = PathBuf::from("/Users/example/.warp/themes/missing.yml");
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_windows_absolute_path_string_is_preserved() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let stored = PathBuf::from(r"C:\Users\example\AppData\Roaming\warp\Warp\data\themes\mocha.yml");
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_windows_absolute_path_string_is_not_portable() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let stored = PathBuf::from(r"C:\Users\example\AppData\Roaming\warp\Warp\data\themes\mocha.yml");
+
+    assert!(!custom_theme_path_is_portable(&stored, &root));
+}
+
+#[test]
+fn custom_theme_windows_absolute_path_string_does_not_serialize_relative() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let stored = PathBuf::from(r"C:\Users\example\AppData\Roaming\warp\Warp\data\themes\mocha.yml");
+
+    assert_eq!(custom_theme_path_for_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_windows_unc_path_string_is_preserved() {
+    let root = PathBuf::from("/Users/example/.warp/themes");
+    let stored = PathBuf::from(r"\\server\share\warp\themes\mocha.yml");
+
+    assert_eq!(custom_theme_path_from_storage(&stored, &root), stored);
+}
+
+#[test]
+fn custom_theme_settings_value_writes_portable_path_for_theme_root_file() {
+    use settings_value::SettingsValue as _;
+
+    let root_path = crate::user_config::themes_dir().join("my_theme.yml");
+    let custom = CustomTheme::new("My Theme".to_string(), root_path);
+
+    let value = custom.to_file_value();
+
+    assert_eq!(value["name"], "My Theme");
+    assert_eq!(value["path"], "my_theme.yml");
+}
+
+#[test]
+fn custom_theme_serde_writes_portable_path_for_theme_root_file() {
+    let root_path = crate::user_config::themes_dir().join("my_theme.yml");
+    let custom = CustomTheme::new("My Theme".to_string(), root_path);
+
+    let value = serde_json::to_value(custom).unwrap();
+
+    assert_eq!(value["name"], "My Theme");
+    assert_eq!(value["path"], "my_theme.yml");
+}
+
+#[test]
+fn custom_base16_theme_kind_uses_custom_theme_settings_value_path_rules() {
+    use settings_value::SettingsValue as _;
+
+    let root_path = crate::user_config::themes_dir().join("base16/ocean.yml");
+    let kind = ThemeKind::CustomBase16(CustomTheme::new("Base16 Ocean".to_string(), root_path));
+
+    assert_eq!(
+        kind.to_file_value(),
+        serde_json::json!({
+            "custom_base_16": {
+                "name": "Base16 Ocean",
+                "path": "base16/ocean.yml"
+            }
+        })
+    );
+}
+
+#[test]
 #[cfg(not(target_family = "wasm"))]
 fn in_memory_theme_generation_test() {
     let mountains_bg_path: PathBuf = [
