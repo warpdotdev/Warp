@@ -13036,14 +13036,13 @@ impl Workspace {
             );
         });
 
-        // Bind the local fork to the cloud-side conversation id. Must happen AFTER
-        // restore: `restore_conversations` overwrites `conversations_by_id` with the
-        // token-less clone we passed in.
+        // Bind the local fork to the cloud-side conversation id and mark it as a shared conversation.
         history_model.update(ctx, |history_model, _| {
             history_model.set_server_conversation_token_for_conversation(
                 local_fork_id,
                 forked_conversation_id.clone(),
             );
+            history_model.set_viewing_shared_session_for_conversation(local_fork_id, true);
         });
 
         let pending = PendingHandoff {

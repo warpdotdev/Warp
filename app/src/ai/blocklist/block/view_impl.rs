@@ -155,15 +155,11 @@ fn add_slash_command_highlight(
     }
 }
 
-/// In shared ambient sessions, cloud prompts are already shown by the cloud-mode
-/// query blocks during live startup/streaming.
-///
-/// To avoid duplicate UI, we suppress the AI block header/query only while the viewer is live
-/// (not replaying historical conversation events) AND the AI block's display query matches an
-/// optimistically rendered user query. The per-query check is important for forked
-/// conversations (e.g. local-to-cloud handoff) where the conversation's first exchange comes
-/// from the source conversation and must remain visible — only the dispatched prompt has a
-/// matching optimistic block to defer to.
+/// Hide the AI block's header/query when its query is already shown by an optimistic
+/// cloud-mode query block (live startup, not replay). The per-query match matters for
+/// local-to-cloud handoff: the cloud pane inherits prior local exchanges, but only the new
+/// dispatched prompt has an optimistic counterpart — the inherited blocks have none, so
+/// the match leaves them visible while still suppressing the duplicate for the new prompt.
 fn should_hide_ai_block_query_and_header(
     has_optimistic_user_query: bool,
     is_shared_ambient_agent_session: bool,
