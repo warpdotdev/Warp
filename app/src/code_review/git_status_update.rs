@@ -303,10 +303,11 @@ impl GitRepoStatusModel {
 impl GitRepoStatusModel {
     pub(crate) fn new_for_test(
         repository: ModelHandle<Repository>,
+        repo_path: PathBuf,
         metadata: Option<GitStatusMetadata>,
     ) -> Self {
         Self {
-            repo_path: PathBuf::from("/test"),
+            repo_path,
             repository,
             subscriber_id: None,
             metadata,
