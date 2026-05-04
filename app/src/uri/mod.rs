@@ -101,7 +101,7 @@ impl FromStr for UriHost {
             "mcp" => Ok(Self::Mcp),
             "codex" => Ok(Self::Codex),
             "linear" => Ok(Self::Linear),
-            "tabconfig" if FeatureFlag::TabConfigs.is_enabled() => Ok(Self::TabConfig),
+            "tab_config" if FeatureFlag::TabConfigs.is_enabled() => Ok(Self::TabConfig),
             _ => Err(anyhow!("Received url with unexpected host: {}", s)),
         }
     }
@@ -665,11 +665,12 @@ fn find_matching_config_name<'a>(
         .find(|&config| config.name.to_lowercase() == target_name_lower)
 }
 
-/// Handles `warp://tabconfig/<name>` deeplinks.
+/// Handles `warp://tab_config/<name>` deeplinks.
 ///
 /// Resolution rules:
-/// - `<name>` is matched case-insensitively against each tab config's `name`
-///   field, then against the file stem as a fallback.
+/// - `<name>` is matched case-insensitively against each tab config's file
+///   stem, so both `warp://tab_config/my_tab` and
+///   `warp://tab_config/my_tab.toml` work.
 /// - When `?new_window=true` (or no Warp window is open) the tab config opens
 ///   in a brand-new window. Otherwise it opens as a new tab in the active
 ///   window.
@@ -717,21 +718,12 @@ fn handle_tab_config_uri(primary_window_id: Option<WindowId>, url: &Url, ctx: &m
     });
 }
 
-/// Case-insensitive lookup that matches the tab config's `name` first, then
-/// the file stem (so both `warp://tabconfig/My%20Tab` and
-/// `warp://tabconfig/my_tab.toml` work).
+/// Case-insensitive match against each tab config's file stem. Tab config
+/// `name` fields are not unique across files, so we key off the filename.
 fn find_matching_tab_config<'a>(
     target: &str,
     configs: &'a [crate::tab_configs::TabConfig],
 ) -> Option<&'a crate::tab_configs::TabConfig> {
-    let target_lower = target.to_lowercase();
-    if let Some(matched) = configs
-        .iter()
-        .find(|c| c.name.to_lowercase() == target_lower)
-    {
-        return Some(matched);
-    }
-
     let stem = remove_extension(target).unwrap_or(target).to_lowercase();
     configs.iter().find(|c| {
         c.source_path
