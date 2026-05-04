@@ -832,8 +832,22 @@ fn open_from_restored(arg: &OpenFromRestoredArg, ctx: &mut AppContext) {
     }
 }
 
-fn path_if_directory(path: &Path) -> Option<&Path> {
-    path.is_dir().then_some(path)
+fn path_if_directory(path: &Path) -> Option<PathBuf> {
+    if path.is_dir() {
+        return Some(path.to_path_buf());
+    }
+    // On Windows, paths from Explorer context menu may arrive without URL-encoding
+    // (e.g. `warp://action/new_tab?path=C:\Projects\my-app`). The url crate handles
+    // this correctly, but the resulting path can still fail `is_dir()` when the OS
+    // needs a normalized form (canonicalized, trailing-separator-stripped, etc.).
+    // Try canonicalizing as a fallback — this resolves symlinks, relative segments,
+    // and other minor path differences that `is_dir()` alone would reject.
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        if canonical.is_dir() {
+            return Some(canonical);
+        }
+    }
+    None
 }
 
 /// Opens a new window with the workspace configured according to `source`. Returns the

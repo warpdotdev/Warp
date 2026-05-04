@@ -2134,7 +2134,22 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
         })),
         on_open_urls: Some(Box::new(move |urls, ctx| {
             for url in &urls {
-                let parsed_url = Url::parse(url);
+                let parsed_url = Url::parse(url).or_else(|_| {
+                    // On Windows, a bare path like "C:\folder" fails URL parsing
+                    // because "C:" looks like a URI scheme. Convert to a file:// URL.
+                    #[cfg(windows)]
+                    {
+                        let path = url.trim();
+                        if path.len() >= 2
+                            && path.as_bytes()[1] == b':'
+                            && (path.as_bytes()[0].is_ascii_alphabetic())
+                        {
+                            // from_file_path handles path separators, special chars (#, %), and UNC paths
+                            return Url::from_file_path(path);
+                        }
+                    }
+                    Err(url::ParseError::EmptyHost)
+                });
                 match parsed_url {
                     Ok(url) => uri::handle_incoming_uri(&url, ctx),
                     Err(e) => log::warn!("Unable to parse received url: {e}"),

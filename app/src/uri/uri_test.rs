@@ -659,3 +659,41 @@ fn test_open_file_non_runnable_shebang_routes_to_editor() {
     std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
     assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
 }
+
+// -- parse_tab_path edge cases (GH #9844) -----------------------------------
+//
+// These tests cover the fix for Windows "Open Warp in new tab" context menu
+// not navigating to the selected directory. The Windows shell passes raw
+// paths via `%1` / `%V` without URL-encoding, so the query parameter may
+// contain backslashes, colons, and trailing whitespace.
+
+#[test]
+fn test_parse_tab_path_windows_drive_letter() {
+    let url = Url::parse(r"warp://action/new_tab?path=C:\Projects\my-app").unwrap();
+    assert_eq!(
+        parse_tab_path(&url),
+        Some(PathBuf::from(r"C:\Projects\my-app"))
+    );
+}
+
+#[test]
+fn test_parse_tab_path_windows_with_trailing_whitespace() {
+    let url = Url::parse("warp://action/new_tab?path=C%3A%5CProjects%20").unwrap();
+    // Trailing space should be trimmed, exact value asserted
+    assert_eq!(
+        parse_tab_path(&url),
+        Some(PathBuf::from(r"C:\Projects"))
+    );
+}
+
+#[test]
+fn test_parse_tab_path_empty_returns_none() {
+    let url = Url::parse("warp://action/new_tab?path=").unwrap();
+    assert_eq!(parse_tab_path(&url), None);
+}
+
+#[test]
+fn test_parse_tab_path_whitespace_only_returns_none() {
+    let url = Url::parse("warp://action/new_tab?path=%20%20%20").unwrap();
+    assert_eq!(parse_tab_path(&url), None);
+}
