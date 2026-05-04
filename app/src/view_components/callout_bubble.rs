@@ -16,7 +16,6 @@ use crate::ui_components::icons::Icon;
 pub enum CalloutArrowDirection {
     Up,
     Left,
-    Right,
 }
 
 /// Where the arrow is positioned along the bubble edge.
@@ -109,10 +108,6 @@ pub fn render_callout_bubble(
             Icon::CalloutTriangleBorderLeft,
             Icon::CalloutTriangleFillLeft,
         ),
-        CalloutArrowDirection::Right => (
-            Icon::CalloutTriangleBorderRight,
-            Icon::CalloutTriangleFillRight,
-        ),
     };
 
     let triangle = Stack::new()
@@ -155,7 +150,7 @@ pub fn render_callout_bubble(
             column.add_child(bubble);
             column.finish()
         }
-        CalloutArrowDirection::Left | CalloutArrowDirection::Right => {
+        CalloutArrowDirection::Left => {
             let (arrow_margin, cross_axis_alignment) = match config.arrow_position {
                 CalloutArrowPosition::Start(offset) => (
                     Container::new(triangle).with_margin_top(offset),
@@ -173,13 +168,8 @@ pub fn render_callout_bubble(
             let mut row = Flex::row()
                 .with_main_axis_size(MainAxisSize::Min)
                 .with_cross_axis_alignment(cross_axis_alignment);
-            if matches!(config.arrow_direction, CalloutArrowDirection::Left) {
-                row.add_child(arrow_margin.with_margin_right(-3.).finish());
-                row.add_child(bubble);
-            } else {
-                row.add_child(bubble);
-                row.add_child(arrow_margin.with_margin_left(-3.).finish());
-            }
+            row.add_child(arrow_margin.with_margin_right(-3.).finish());
+            row.add_child(bubble);
             row.finish()
         }
     }
