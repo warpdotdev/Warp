@@ -283,6 +283,10 @@ fn test_detect_with_arguments() {
                 CLIAgent::detect("gemini chat", None, None, ctx),
                 Some(CLIAgent::Gemini),
             );
+            assert_eq!(
+                CLIAgent::detect("vibe --model devstral", None, None, ctx),
+                Some(CLIAgent::Vibe),
+            );
         });
     });
 }
