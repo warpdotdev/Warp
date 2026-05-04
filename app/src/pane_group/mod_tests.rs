@@ -1,6 +1,8 @@
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::{
+    AgentNotificationsModel, GlobalResourceHandles, GlobalResourceHandlesProvider,
     ai::{
+        AIRequestUsageModel,
         active_agent_views_model::ActiveAgentViewsModel,
         agent::{
             conversation::{AIConversation, AIConversationId},
@@ -18,13 +20,12 @@ use crate::{
         execution_profiles::profiles::AIExecutionProfilesModel,
         llms::LLMPreferences,
         mcp::{
-            templatable_manager::TemplatableMCPServerManager, FileBasedMCPManager, FileMCPWatcher,
+            FileBasedMCPManager, FileMCPWatcher, templatable_manager::TemplatableMCPServerManager,
         },
         outline::RepoOutlines,
         persisted_workspace::PersistedWorkspace,
         restored_conversations::RestoredAgentConversations,
         skills::SkillManager,
-        AIRequestUsageModel,
     },
     auth::auth_manager::AuthManager,
     changelog_model::ChangelogModel,
@@ -52,7 +53,7 @@ use crate::{
     terminal::{
         alt_screen_reporting::AltScreenReporting,
         keys::TerminalKeybindings,
-        local_tty::{spawner::PtySpawner, TerminalManager},
+        local_tty::{TerminalManager, spawner::PtySpawner},
         shared_session::{
             SharedSessionActionSource, SharedSessionScrollbackType, SharedSessionStatus,
         },
@@ -62,13 +63,12 @@ use crate::{
     warp_managed_paths_watcher::WarpManagedPathsWatcher,
     workflows::local_workflows::LocalWorkflows,
     workspace::{
-        sync_inputs::SyncedInputState, ActiveSession, OneTimeModalModel, WorkspaceRegistry,
+        ActiveSession, OneTimeModalModel, WorkspaceRegistry, sync_inputs::SyncedInputState,
     },
     workspaces::{
         team_tester::TeamTesterStatus, update_manager::TeamUpdateManager,
         user_profiles::UserProfiles, user_workspaces::UserWorkspaces,
     },
-    AgentNotificationsModel, GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 #[cfg(feature = "local_fs")]
 use repo_metadata::RepoMetadataModel;
@@ -87,10 +87,10 @@ use ai::{
 };
 use pathfinder_geometry::rect::RectF;
 use shared_session::permissions_manager::SessionPermissionsManager;
-use warpui::windowing::{state::ApplicationStage, WindowManager};
+use warpui::windowing::{WindowManager, state::ApplicationStage};
 use warpui::{
-    platform::{WindowBounds, WindowStyle},
     App, ModelHandle,
+    platform::{WindowBounds, WindowStyle},
 };
 
 fn initialize_app(app: &mut App) {
@@ -1160,12 +1160,14 @@ fn test_start_shared_session_from_modal() {
             assert_eq!(shared_views[0].id(), terminal_view.id());
 
             let terminal_pane = pane_group.terminal_session_by_pane_index(0).unwrap();
-            assert!(terminal_pane
-                .pane_view()
-                .as_ref(ctx)
-                .header()
-                .as_ref(ctx)
-                .has_shareable_object(ctx));
+            assert!(
+                terminal_pane
+                    .pane_view()
+                    .as_ref(ctx)
+                    .header()
+                    .as_ref(ctx)
+                    .has_shareable_object(ctx)
+            );
         });
     });
 }
@@ -1250,12 +1252,14 @@ fn test_stop_shared_session() {
             let shared_views = manager.shared_views(ctx).collect_vec();
             assert!(shared_views.is_empty());
 
-            assert!(!terminal_pane
-                .pane_view()
-                .as_ref(ctx)
-                .header()
-                .as_ref(ctx)
-                .has_shareable_object(ctx));
+            assert!(
+                !terminal_pane
+                    .pane_view()
+                    .as_ref(ctx)
+                    .header()
+                    .as_ref(ctx)
+                    .has_shareable_object(ctx)
+            );
         });
     });
 }
@@ -1332,11 +1336,13 @@ fn test_terminal_pane_headers() {
 
             for terminal_pane in terminal_panes {
                 let pane_view = terminal_pane.pane_view();
-                assert!(pane_view
-                    .as_ref(ctx)
-                    .header()
-                    .as_ref(ctx)
-                    .is_visible_in_pane_group());
+                assert!(
+                    pane_view
+                        .as_ref(ctx)
+                        .header()
+                        .as_ref(ctx)
+                        .is_visible_in_pane_group()
+                );
             }
         });
 
@@ -1352,11 +1358,13 @@ fn test_terminal_pane_headers() {
             assert_eq!(terminal_panes.len(), 1);
 
             let pane_view = terminal_panes[0].pane_view();
-            assert!(pane_view
-                .as_ref(ctx)
-                .header()
-                .as_ref(ctx)
-                .is_visible_in_pane_group());
+            assert!(
+                pane_view
+                    .as_ref(ctx)
+                    .header()
+                    .as_ref(ctx)
+                    .is_visible_in_pane_group()
+            );
         });
 
         // Create a non-terminal split pane. Terminal pane header remains visible.
@@ -1376,11 +1384,13 @@ fn test_terminal_pane_headers() {
             assert_eq!(terminal_panes.len(), 1);
 
             let pane_view = terminal_panes[0].pane_view();
-            assert!(pane_view
-                .as_ref(ctx)
-                .header()
-                .as_ref(ctx)
-                .is_visible_in_pane_group());
+            assert!(
+                pane_view
+                    .as_ref(ctx)
+                    .header()
+                    .as_ref(ctx)
+                    .is_visible_in_pane_group()
+            );
         });
     });
 }
