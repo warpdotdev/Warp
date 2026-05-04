@@ -705,7 +705,7 @@ impl TerminalView {
         if FeatureFlag::CloudMode.is_enabled()
             && matches!(source_type, SessionSourceType::AmbientAgent { .. })
         {
-            self.maybe_auto_open_cloud_mode_details_panel(ctx);
+            self.maybe_auto_open_conversation_details_panel(ctx);
         }
 
         send_telemetry_from_ctx!(
@@ -810,7 +810,7 @@ impl TerminalView {
                 model.mark_task_execution_ended(task_id, ctx);
             });
         }
-        self.refresh_cloud_mode_details_panel_if_open(ctx);
+        self.refresh_conversation_details_panel_if_open(ctx);
         if !FeatureFlag::HandoffCloudCloud.is_enabled()
             || !FeatureFlag::CloudModeSetupV2.is_enabled()
             || self.conversation_ended_tombstone_view_id.is_some()
