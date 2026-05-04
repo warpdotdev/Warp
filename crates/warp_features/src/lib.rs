@@ -470,6 +470,9 @@ pub enum FeatureFlag {
     /// Enables find/search in code review pane
     CodeReviewFind,
 
+    /// Enables asynchronous find in terminal, running search on a background thread.
+    AsyncFind,
+
     /// Enables using Agent Mode in shared sessions.
     AgentSharedSessions,
 
@@ -892,6 +895,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::FileGlobV2Warnings,
     FeatureFlag::SummarizationViaMessageReplacement,
     FeatureFlag::LocalComputerUse,
+    FeatureFlag::AsyncFind,
     FeatureFlag::OzPlatformSkills,
     FeatureFlag::AgentViewBlockContext,
     FeatureFlag::OzLaunchModal,
