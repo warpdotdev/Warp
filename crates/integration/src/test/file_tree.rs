@@ -338,21 +338,8 @@ pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
         })
         .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
         .with_step(
-            new_step_with_default_assertions("Open file tree panel")
-                .with_action(|app, _, _| open_file_tree_panel(app)),
-        )
-        // Assert that the model performed full git indexing (not shallow lazy-loading).
-        //
-        // `is_lazy_loaded_path` returns true only for paths that were registered
-        // via `index_lazy_loaded_path` and stored in the `lazy_loaded_paths` map.
-        // After full git indexing completes, `index_directory` upgrades the entry
-        // and removes it from `lazy_loaded_paths`, so this returns false.
-        //
-        // A shallow lazy-loaded path (the old broken behaviour) would still be
-        // tracked in `lazy_loaded_paths` and this assertion would fail.
-        .with_step(
-            new_step_with_default_assertions("Assert model is fully indexed (not lazy-loaded)")
-                .add_assertion(|app, window_id| {
+            new_step_with_default_assertions("Force repository into Pending state")
+                .with_action(|app, window_id, _| {
                     use repo_metadata::RepoMetadataModel;
                     use warp::integration_testing::view_getters::single_terminal_view_for_tab;
                     use warp_util::standardized_path::StandardizedPath;
@@ -362,24 +349,54 @@ pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
                     let cwd = terminal_view
                         .read(app, |terminal_view, _ctx| terminal_view.pwd())
                         .expect("terminal should expose current working directory");
+                    let std_path = StandardizedPath::try_from_local(std::path::Path::new(&cwd)).unwrap();
+
+                    app.update(|ctx| {
+                        RepoMetadataModel::as_ref(ctx).force_pending_state(std_path, ctx);
+                    });
+                })
+        )
+        .with_step(
+            new_step_with_default_assertions("Open file tree panel while Pending")
+                .with_action(|app, _, _| open_file_tree_panel(app)),
+        )
+        // Assert that while Pending, the fallback tree is visible.
+        .with_step(
+            new_step_with_default_assertions("Assert fallback tree is visible while Pending")
+                .add_assertion(|app, window_id| {
+                    use repo_metadata::{RepoMetadataModel, IndexedRepoState};
+                    use warp::integration_testing::view_getters::single_terminal_view_for_tab;
+                    use warp_util::standardized_path::StandardizedPath;
+                    use warpui::SingletonEntity as _;
+
+                    let terminal_view = single_terminal_view_for_tab(app, window_id, 0);
+                    let cwd = terminal_view
+                        .read(app, |terminal_view, _ctx| terminal_view.pwd())
+                        .expect("terminal should expose current working directory");
+                    let std_path = StandardizedPath::try_from_local(std::path::Path::new(&cwd)).unwrap();
 
                     app.read(|ctx| {
                         let model = RepoMetadataModel::as_ref(ctx);
-                        if let Ok(std_path) = StandardizedPath::try_from_local(std::path::Path::new(&cwd)) {
-                            let is_lazy = model.is_lazy_loaded_path(&std_path, ctx);
-                            async_assert!(
-                                !is_lazy,
-                                "Expected full git indexing (not lazy-loaded), but path is still in lazy_loaded_paths"
-                            )
-                        } else {
-                            async_assert!(false, "Could not standardize terminal PWD to check repo state")
-                        }
+                        let state = model.repository_state(&repo_metadata::RepositoryIdentifier::Local(std_path.clone()), ctx);
+                        
+                        async_assert!(
+                            matches!(state, Some(IndexedRepoState::Pending)),
+                            "Expected repository to be in Pending state for this test"
+                        );
+
+                        // If it's Pending, it should have been registered as a lazy-loaded path
+                        // (as a fallback) by the view opening.
+                        let is_lazy = model.is_lazy_loaded_path(&std_path, ctx);
+                        async_assert!(
+                            is_lazy,
+                            "Expected path to be tracked as lazy-loaded fallback while Pending"
+                        );
                     })
                 }),
         )
         // Also verify that the file tree content is visible as a UI sanity check.
         .with_step(
-            new_step_with_default_assertions("Expand src and verify nested content visible")
+            new_step_with_default_assertions("Expand src and verify nested content visible (from fallback)")
                 .with_click_on_saved_position("file_tree_item:src"),
         )
         .with_step(

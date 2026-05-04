@@ -390,4 +390,15 @@ impl RepoMetadataModel {
             local.insert_test_state(repo_path, state);
         });
     }
+
+    /// Forces a local repository into Pending state for testing purposes.
+    pub fn force_pending_state(
+        &self,
+        repo_path: StandardizedPath,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.local.update(ctx, |local, _ctx| {
+            local.force_pending_state(repo_path);
+        });
+    }
 }

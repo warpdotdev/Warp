@@ -1080,6 +1080,11 @@ impl LocalRepoMetadataModel {
         self.repositories
             .insert(repo_path, IndexedRepoState::Indexed(state));
     }
+
+    /// Force a repository into Pending state for testing purposes.
+    pub fn force_pending_state(&mut self, repo_path: StandardizedPath) {
+        self.repositories.insert(repo_path, IndexedRepoState::Pending);
+    }
 }
 
 #[cfg(test)]
