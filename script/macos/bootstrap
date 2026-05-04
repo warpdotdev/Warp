@@ -15,6 +15,27 @@ sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 # development environment.
 xcodebuild -runFirstLaunch
 
+# Xcode 16+ ships the Metal Toolchain as a separately-downloadable component.
+# `crates/warpui/build.rs` invokes `metal` to compile shaders to .air, so a
+# missing toolchain produces a confusing build-script panic deep in the cargo
+# output (see #9996). Detect it up front and download via xcodebuild so the
+# user gets a clear progress indicator instead of failing later.
+if ! xcrun --find metal >/dev/null 2>&1; then
+    echo "Metal Toolchain not installed. Running: xcodebuild -downloadComponent MetalToolchain"
+    echo "(this can take several minutes on first run; xcodebuild streams progress below)"
+    xcodebuild -downloadComponent MetalToolchain
+
+    # `xcodebuild -downloadComponent` can exit 0 without actually downloading the
+    # component (e.g. when the App Store credentials are missing). Re-check.
+    if ! xcrun --find metal >/dev/null 2>&1; then
+        echo
+        echo "Error: Metal Toolchain still not installed after xcodebuild -downloadComponent."
+        echo "Open Xcode -> Settings -> Components and install \"Metal Toolchain\" manually,"
+        echo "then re-run ./script/bootstrap."
+        exit 1
+    fi
+fi
+
 if ! command -v brew; then
     echo "Installing brew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
