@@ -678,6 +678,7 @@ fn open_from_restored(arg: &OpenFromRestoredArg, ctx: &mut AppContext) {
 
     if let Some(app_state) = &arg.app_state {
         maybe_register_global_window_shortcuts(global_resource_handles.clone(), ctx);
+        KeysSettings::as_ref(ctx).apply_effective_dock_icon_visibility(ctx);
 
         let (background_blur_radius_pixels, background_blur_texture) = {
             let window_settings = WindowSettings::as_ref(ctx);
