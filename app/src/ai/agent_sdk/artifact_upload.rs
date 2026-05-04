@@ -6,13 +6,13 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
 use blocking::unblock;
-use mime_guess::from_path;
 use warp_cli::artifact::UploadArtifactArgs;
 
 use super::common::parse_ambient_task_id;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::ServerAIConversationMetadata;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::util::image::infer_mime_type;
 use crate::server::server_api::ai::{
     AIClient, CreateFileArtifactUploadRequest, CreateFileArtifactUploadResponse,
     FileArtifactRecord, FileArtifactUploadTargetInfo,
@@ -232,12 +232,6 @@ impl FileArtifactUploader {
 
 fn normalize_artifact_filepath(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
-}
-
-fn infer_mime_type(path: &Path, file_bytes: &[u8]) -> String {
-    infer::get(file_bytes)
-        .map(|kind| kind.mime_type().to_string())
-        .unwrap_or_else(|| from_path(path).first_or_octet_stream().to_string())
 }
 
 fn file_size_and_prefix_for_path(path: &Path, max_bytes: usize) -> Result<(u64, Vec<u8>)> {

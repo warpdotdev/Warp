@@ -5,12 +5,12 @@
 //! Gemini CLI, Codex), it displays a specialized footer with additional functionality.
 
 use crate::ai::agent::ImageContext;
-use std::path::Path;
 use crate::ai::blocklist::agent_view::agent_input_footer::{
     AgentInputFooter, AgentInputFooterEvent,
 };
 use crate::terminal::cli_agent_sessions::{CLIAgentInputEntrypoint, CLIAgentSessionsModel};
 use crate::terminal::shared_session::{SharedSessionActionSource, SharedSessionScrollbackType};
+use crate::util::image::{infer_mime_type, MAX_IMAGE_SIZE_BYTES_FOR_CLI_AGENT};
 use base64::Engine;
 use session_sharing_protocol::sharer::SessionSourceType;
 use warpui::clipboard::{ClipboardContent, ImageData};
@@ -19,6 +19,7 @@ mod warpify_footer;
 pub use crate::terminal::CLIAgent;
 use warpify_footer::{WarpifyFooterView, WarpifyFooterViewEvent};
 
+use std::path::Path;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
@@ -97,19 +98,16 @@ const CLI_AGENT_IMAGE_PASTE_DELAY: Duration = Duration::from_millis(300);
 #[allow(clippy::byte_char_slices)]
 const CLI_AGENT_MODE_SWITCH_PREFIXES: &[u8] = &[b'!', b'&'];
 
-fn mime_type_for_image_path(path: &Path) -> String {
-    match path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_lowercase)
-        .as_deref()
-    {
-        Some("jpg") | Some("jpeg") => "image/jpeg",
-        Some("gif") => "image/gif",
-        Some("webp") => "image/webp",
-        _ => "image/png",
+/// Bytes that simulate a "paste image from clipboard" keystroke for the
+/// foreground CLI agent. `0x16` is `Ctrl+V` (SYN); on Windows Claude Code
+/// listens for `Alt+V` (`ESC` + `'v'`) instead. Mirrored from the equivalent
+/// branch in `TerminalView::paste`.
+fn cli_agent_paste_keystroke_bytes() -> Vec<u8> {
+    if cfg!(windows) {
+        vec![0x1b, b'v']
+    } else {
+        vec![0x16]
     }
-    .to_owned()
 }
 
 /// How rich input delivers text + Enter to the CLI agent's PTY.
@@ -809,7 +807,7 @@ impl TerminalView {
                                 }]),
                                 ..Default::default()
                             });
-                            me.write_user_bytes_to_pty(vec![0x16], ctx);
+                            me.write_user_bytes_to_pty(cli_agent_paste_keystroke_bytes(), ctx);
                             true
                         })
                         .await;
@@ -839,7 +837,7 @@ impl TerminalView {
     /// to the PTY so the agent reads the image directly. This produces the
     /// same outcome as if the user had copied the image to their clipboard
     /// and pressed Cmd+V over the agent's TUI.
-    pub(in crate::terminal) fn paste_dropped_images_to_cli_agent(
+    pub(super) fn paste_dropped_images_to_cli_agent(
         &mut self,
         image_filepaths: Vec<String>,
         ctx: &mut ViewContext<Self>,
@@ -851,6 +849,33 @@ impl TerminalView {
         ctx.spawn(
             async move {
                 for path_str in image_filepaths {
+                    // Stat first so a multi-GB drop doesn't load into memory
+                    // before we reject it. CLI agents handle their own
+                    // compression, so the cap only exists to bound memory use.
+                    match async_fs::metadata(&path_str).await {
+                        Ok(meta) if (meta.len() as usize) > MAX_IMAGE_SIZE_BYTES_FOR_CLI_AGENT => {
+                            let filename = Path::new(&path_str)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| path_str.clone());
+                            let limit_mb = MAX_IMAGE_SIZE_BYTES_FOR_CLI_AGENT / 1_000_000;
+                            let msg = format!(
+                                "{filename} is too large to send to the agent (limit {limit_mb}MB)."
+                            );
+                            let _ = spawner
+                                .spawn(move |me, ctx| {
+                                    me.show_error_toast(msg, ctx);
+                                })
+                                .await;
+                            continue;
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            log::error!("Failed to stat dropped image {path_str}: {e}");
+                            continue;
+                        }
+                    }
+
                     let bytes = match async_fs::read(&path_str).await {
                         Ok(b) => b,
                         Err(e) => {
@@ -862,7 +887,7 @@ impl TerminalView {
                     let filename = path
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned());
-                    let mime_type = mime_type_for_image_path(path);
+                    let mime_type = infer_mime_type(path, &bytes);
 
                     // Hop back to the view to write the clipboard + paste
                     // keystroke. Bail if the CLI agent session disappeared,
@@ -871,7 +896,7 @@ impl TerminalView {
                     // the paste byte would leak into the shell after the
                     // agent quit, since the session entry can outlive its
                     // foreground block.
-                    let cont = spawner
+                    let should_continue = spawner
                         .spawn(move |me, ctx| {
                             if !me.has_active_cli_agent_session(ctx) {
                                 return false;
@@ -893,20 +918,12 @@ impl TerminalView {
                                 }]),
                                 ..Default::default()
                             });
-                            // Windows Claude Code paste is `Alt+V` (ESC + 'v');
-                            // macOS/Linux is `Ctrl+V` (SYN). Mirrors the
-                            // mapping in `TerminalView::paste`.
-                            let paste_bytes: Vec<u8> = if cfg!(windows) {
-                                vec![0x1b, b'v']
-                            } else {
-                                vec![0x16]
-                            };
-                            me.write_user_bytes_to_pty(paste_bytes, ctx);
+                            me.write_user_bytes_to_pty(cli_agent_paste_keystroke_bytes(), ctx);
                             true
                         })
                         .await;
 
-                    if !matches!(cont, Ok(true)) {
+                    if !matches!(should_continue, Ok(true)) {
                         return;
                     }
 

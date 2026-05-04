@@ -23773,15 +23773,19 @@ impl TerminalView {
         let image_filepaths = get_image_filepaths_from_paths(paths);
 
         // CLI-agent paste path: when a CLI agent (e.g. Claude Code) is the
-        // foreground long-running process, hand image drops to the agent the
+        // foreground long-running process and the user is interacting with its
+        // TUI directly (rich input closed), hand image drops to the agent the
         // same way Cmd+V does at `TerminalView::paste` — write each image to
         // the system clipboard and send the agent's paste keystroke to the
         // PTY. Without this branch the path string would be shell-escaped and
-        // typed into the agent's prompt.
+        // typed into the agent's prompt. When the rich input is open we leave
+        // the existing chip-attach flow alone, since that's where the user
+        // explicitly asked the drop to land.
         if !image_filepaths.is_empty()
             && image_filepaths.len() == paths.len()
             && is_in_long_running_command
             && self.has_active_cli_agent_session(ctx)
+            && !CLIAgentSessionsModel::as_ref(ctx).is_input_open(self.view_id)
         {
             self.paste_dropped_images_to_cli_agent(image_filepaths, ctx);
             return;
