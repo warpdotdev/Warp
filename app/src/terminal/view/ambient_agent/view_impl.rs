@@ -17,7 +17,7 @@ use crate::ai::blocklist::{agent_view::AgentViewEntryOrigin, BlocklistAIHistoryM
 use crate::ai::conversation_details_panel::ConversationDetailsData;
 use crate::pane_group::TerminalViewResources;
 use crate::server::server_api::ai::SpawnAgentRequest;
-use crate::terminal::view::ambient_agent::CloudModeInitialUserQuery;
+use crate::terminal::view::ambient_agent::{CloudModeFollowupUserQuery, CloudModeInitialUserQuery};
 use crate::terminal::view::rich_content::{RichContentInsertionPosition, RichContentMetadata};
 use crate::terminal::view::TerminalView;
 use crate::terminal::CLIAgent;
@@ -179,6 +179,11 @@ impl TerminalView {
                         );
                         ambient_agent_view_model.update(ctx, |model, _| {
                             model.set_has_inserted_cloud_mode_user_query_block(true);
+                            if let Some(prompt) =
+                                model.request().map(|request| request.prompt.clone())
+                            {
+                                model.record_optimistic_user_query(prompt);
+                            }
                         });
                     }
                 } else {
@@ -202,10 +207,42 @@ impl TerminalView {
                     None,
                     ctx,
                 );
+                let pending_prompt = ambient_agent_view_model
+                    .as_ref(ctx)
+                    .pending_followup_prompt()
+                    .map(str::to_owned);
+                if let Some(prompt) = pending_prompt {
+                    let prompt_for_query = prompt.clone();
+                    let followup_user_query = ctx.add_view(|ctx| {
+                        CloudModeFollowupUserQuery::new(
+                            prompt_for_query,
+                            ambient_agent_view_model.clone(),
+                            ctx,
+                        )
+                    });
+                    self.insert_rich_content(
+                        None,
+                        followup_user_query,
+                        None,
+                        RichContentInsertionPosition::Append {
+                            insert_below_long_running_block: true,
+                        },
+                        ctx,
+                    );
+                    ambient_agent_view_model.update(ctx, |model, _| {
+                        model.record_optimistic_user_query(prompt);
+                    });
+                }
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::SessionReady { .. }
             | AmbientAgentViewModelEvent::FollowupSessionReady { .. } => {
+                if matches!(
+                    event,
+                    AmbientAgentViewModelEvent::FollowupSessionReady { .. }
+                ) {
+                    self.pending_cloud_followup_task_id = None;
+                }
                 // Auto-open details panel for local cloud mode once the session is ready.
                 self.maybe_auto_open_cloud_mode_details_panel(ctx);
                 // Re-render to hide the loading screen now that the session is ready.
@@ -229,6 +266,7 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::Failed { error_message } => {
+                self.pending_cloud_followup_task_id = None;
                 self.update_active_ambient_agent_conversation_status(
                     ConversationStatus::Error,
                     Some(error_message.clone()),
@@ -265,6 +303,7 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::NeedsGithubAuth => {
+                self.pending_cloud_followup_task_id = None;
                 if self.active_ambient_agent_conversation_is_child(ctx) {
                     self.update_active_ambient_agent_conversation_status(
                         ConversationStatus::Blocked {
@@ -280,6 +319,7 @@ impl TerminalView {
                 ctx.notify();
             }
             AmbientAgentViewModelEvent::Cancelled => {
+                self.pending_cloud_followup_task_id = None;
                 self.update_active_ambient_agent_conversation_status(
                     ConversationStatus::Cancelled,
                     None,
@@ -856,6 +896,16 @@ impl TerminalView {
         self.cloud_mode_details_panel.update(ctx, |panel, ctx| {
             panel.set_conversation_details(data, ctx);
         });
+    }
+
+    pub(in crate::terminal::view) fn refresh_cloud_mode_details_panel_if_open(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if self.is_cloud_mode_details_panel_open && self.can_show_cloud_mode_details_ui(ctx) {
+            self.fetch_and_update_cloud_mode_details_panel(ctx);
+            ctx.notify();
+        }
     }
 
     /// Auto-opens the cloud mode details panel once.
