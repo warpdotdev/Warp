@@ -195,7 +195,7 @@ fn summary_agent_variant_preserves_oz_agent_status() {
 }
 
 #[test]
-fn summary_pane_kind_icons_deduplicate_agents_by_stable_kind_not_status() {
+fn summary_pane_kind_icons_suppress_status_when_duplicate_agents_disagree() {
     let icons = select_summary_pane_kind_icons([
         (
             EntityId::from_usize(10),
@@ -224,10 +224,52 @@ fn summary_pane_kind_icons_deduplicate_agents_by_stable_kind_not_status() {
             is_ambient,
         })) => {
             assert_eq!(agent, CLIAgent::Claude);
-            assert_eq!(status, Some(ConversationStatus::InProgress));
+            assert_eq!(status, None);
             assert!(!is_ambient);
         }
         _ => panic!("same agent kind with different statuses should render one summary icon"),
+    }
+}
+
+#[test]
+fn summary_pane_kind_icons_merge_later_duplicate_agent_statuses_after_pair_selected() {
+    let icons = select_summary_pane_kind_icons([
+        (
+            EntityId::from_usize(10),
+            SummaryPaneKind::CLIAgent {
+                agent: CLIAgent::Claude,
+                status: Some(ConversationStatus::InProgress),
+                is_ambient: false,
+            },
+        ),
+        (EntityId::from_usize(20), SummaryPaneKind::Terminal),
+        (
+            EntityId::from_usize(30),
+            SummaryPaneKind::CLIAgent {
+                agent: CLIAgent::Claude,
+                status: Some(ConversationStatus::Blocked {
+                    blocked_action: "Approve command".to_string(),
+                }),
+                is_ambient: false,
+            },
+        ),
+    ]);
+
+    match icons {
+        Some(SummaryPaneKindIcons::Pair {
+            primary:
+                SummaryPaneKind::CLIAgent {
+                    agent,
+                    status,
+                    is_ambient,
+                },
+            secondary: SummaryPaneKind::Terminal,
+        }) => {
+            assert_eq!(agent, CLIAgent::Claude);
+            assert_eq!(status, None);
+            assert!(!is_ambient);
+        }
+        _ => panic!("later duplicate agent statuses should be merged after pair selection"),
     }
 }
 

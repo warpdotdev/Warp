@@ -902,6 +902,37 @@ fn summary_pane_kinds_share_icon(a: &SummaryPaneKind, b: &SummaryPaneKind) -> bo
     }
 }
 
+fn merge_summary_pane_kind_icon_status(
+    existing: &mut SummaryPaneKind,
+    candidate: &SummaryPaneKind,
+) {
+    match (existing, candidate) {
+        (
+            SummaryPaneKind::OzAgent {
+                status: existing_status,
+                ..
+            },
+            SummaryPaneKind::OzAgent {
+                status: candidate_status,
+                ..
+            },
+        )
+        | (
+            SummaryPaneKind::CLIAgent {
+                status: existing_status,
+                ..
+            },
+            SummaryPaneKind::CLIAgent {
+                status: candidate_status,
+                ..
+            },
+        ) if existing_status != candidate_status => {
+            *existing_status = None;
+        }
+        _ => {}
+    }
+}
+
 fn format_summary_primary_labels(labels: &[String], visible_limit: usize) -> Option<String> {
     const SEPARATOR: &str = " • ";
     if labels.is_empty() {
@@ -947,24 +978,25 @@ fn select_summary_pane_kind_icons(
 
     let mut unique_kinds = Vec::new();
     for (_, pane_kind) in pane_kinds {
-        if !unique_kinds
-            .iter()
-            .any(|kind| summary_pane_kinds_share_icon(kind, &pane_kind))
+        if let Some(existing) = unique_kinds
+            .iter_mut()
+            .find(|kind| summary_pane_kinds_share_icon(kind, &pane_kind))
         {
+            merge_summary_pane_kind_icon_status(existing, &pane_kind);
+        } else if unique_kinds.len() < 2 {
             unique_kinds.push(pane_kind);
-        }
-        if unique_kinds.len() == 2 {
-            return Some(SummaryPaneKindIcons::Pair {
-                primary: unique_kinds[0].clone(),
-                secondary: unique_kinds[1].clone(),
-            });
         }
     }
 
-    unique_kinds
-        .first()
-        .cloned()
-        .map(SummaryPaneKindIcons::Single)
+    match unique_kinds.as_slice() {
+        [primary, secondary] => Some(SummaryPaneKindIcons::Pair {
+            primary: primary.clone(),
+            secondary: secondary.clone(),
+        }),
+        [single] => Some(SummaryPaneKindIcons::Single(single.clone())),
+        [] => None,
+        _ => unreachable!("summary mode keeps at most two icon kinds"),
+    }
 }
 
 fn resolve_summary_pane_kind_icons(
