@@ -25585,32 +25585,57 @@ impl TypedActionView for TerminalView {
                 });
             }
             StopAgentConversation { conversation_id } => {
-                // Cancel the ambient task if this is a cloud agent. For
-                // local conversations there is no per-conversation cancel
-                // entry point yet — V2-of-V2 stops at the cloud-side cancel.
-                if let Some(task_id) = BlocklistAIHistoryModel::as_ref(ctx)
-                    .conversation(conversation_id)
-                    .and_then(|c| c.task_id())
-                {
-                    crate::ai::ambient_agents::task::cancel_task_with_toast(task_id, ctx);
-                } else {
-                    // TODO(QUALITY-567): wire local conversation cancel for
-                    // child agents whose run is hosted in this client.
-                    log::info!(
-                        "StopAgentConversation: no task_id for conversation {conversation_id:?}; skipping (local cancel TODO)",
-                    );
+                // Cancel the ambient task only if the conversation is
+                // still in progress. The server rejects cancel requests
+                // for terminated runs ("Terminated agent runs cannot be
+                // cancelled"), which would otherwise pop a confusing
+                // error toast every time a user clicks Stop on an
+                // already-finished agent. For local conversations, we
+                // also have no per-conversation cancel entry point yet.
+                let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+                let conversation = history_model.conversation(conversation_id);
+                let is_in_progress = conversation
+                    .map(|c| c.status().is_in_progress())
+                    .unwrap_or(false);
+                let task_id = conversation.and_then(|c| c.task_id());
+                match (is_in_progress, task_id) {
+                    (true, Some(task_id)) => {
+                        crate::ai::ambient_agents::task::cancel_task_with_toast(task_id, ctx);
+                    }
+                    (true, None) => {
+                        // TODO(QUALITY-567): wire local conversation cancel for
+                        // child agents whose run is hosted in this client.
+                        log::info!(
+                            "StopAgentConversation: no task_id for in-progress conversation {conversation_id:?}; skipping (local cancel TODO)",
+                        );
+                    }
+                    (false, _) => {
+                        log::debug!(
+                            "StopAgentConversation: conversation {conversation_id:?} is not in progress; nothing to cancel",
+                        );
+                    }
                 }
             }
             KillAgentConversation { conversation_id } => {
-                // Best-effort: cancel the ambient run if there is one, then
-                // remove the conversation from local history. Cloud-side
-                // deletion is intentionally not done in V2 (see PRODUCT.md
+                // Best-effort: cancel the ambient run if it's still in
+                // progress, then remove the conversation from local
+                // history regardless. Cloud-side deletion is
+                // intentionally not done in V2 (see PRODUCT.md
                 // "Non-goals" — server cleanup is a follow-up).
-                if let Some(task_id) = BlocklistAIHistoryModel::as_ref(ctx)
-                    .conversation(conversation_id)
-                    .and_then(|c| c.task_id())
-                {
-                    crate::ai::ambient_agents::task::cancel_task_with_toast(task_id, ctx);
+                //
+                // We gate the cancel on `is_in_progress()` so killing an
+                // already-terminated run doesn't surface the server's
+                // "Terminated agent runs cannot be cancelled" error.
+                let history_model = BlocklistAIHistoryModel::as_ref(ctx);
+                let conversation = history_model.conversation(conversation_id);
+                let is_in_progress = conversation
+                    .map(|c| c.status().is_in_progress())
+                    .unwrap_or(false);
+                let task_id = conversation.and_then(|c| c.task_id());
+                if is_in_progress {
+                    if let Some(task_id) = task_id {
+                        crate::ai::ambient_agents::task::cancel_task_with_toast(task_id, ctx);
+                    }
                 }
                 conversation_utils::remove_conversation(
                     *conversation_id,
