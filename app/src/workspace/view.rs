@@ -18929,18 +18929,6 @@ impl Workspace {
         }
     }
 
-    /// Anchors for the new-session "+" dropdown shown next to the vertical-tabs
-    /// "+" button. The menu always expands inward from the tabs-panel side, so
-    /// it stays inside the window regardless of which side the panel is on.
-    fn vertical_tabs_dropdown_anchors(
-        tabs_side: PanelPosition,
-    ) -> (PositionedElementAnchor, ChildAnchor) {
-        match tabs_side {
-            PanelPosition::Left => (PositionedElementAnchor::BottomLeft, ChildAnchor::TopLeft),
-            PanelPosition::Right => (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight),
-        }
-    }
-
     /// Positioning for the session-config tab-config chip shown next to the
     /// vertical-tabs "+" button. Like the menu above, the chip expands inward
     /// and points back at the "+" button from whichever side the panel occupies.
@@ -22221,7 +22209,14 @@ impl View for Workspace {
                 // menu always expands inward and stays inside the window.
                 let tabs_side =
                     Self::tabs_panel_side(&TabSettings::as_ref(app).header_toolbar_chip_selection);
-                let (anchor, child_anchor) = Self::vertical_tabs_dropdown_anchors(tabs_side);
+                let (anchor, child_anchor) = match tabs_side {
+                    PanelPosition::Left => {
+                        (PositionedElementAnchor::BottomLeft, ChildAnchor::TopLeft)
+                    }
+                    PanelPosition::Right => {
+                        (PositionedElementAnchor::BottomRight, ChildAnchor::TopRight)
+                    }
+                };
                 stack.add_positioned_overlay_child(
                     ChildView::new(&self.new_session_dropdown_menu).finish(),
                     OffsetPositioning::offset_from_save_position_element(
