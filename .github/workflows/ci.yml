@@ -204,7 +204,7 @@ jobs:
 
       - name: Install cargo nextest
         if: ${{ matrix.is_self_hosted == false }}
-        uses: taiki-e/install-action@9a29ce630c67077a359246f3e4f84941e05f28b5 # v1
+        uses: taiki-e/install-action@6e4b50d359005dacdb018fa32c03bc35522c6616 # v2.75.12
         with:
           tool: nextest
 
