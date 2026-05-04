@@ -74,3 +74,27 @@ struct RawEvent {
     tool_input: Option<serde_json::Value>,
     plugin_version: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_hermes_agent_from_command_prefix() {
+        let event = parse(
+            r#"{
+                "v": 1,
+                "agent": "hermes",
+                "event": "stop",
+                "session_id": "session-1",
+                "summary": "Done"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(event.agent, CLIAgent::Hermes);
+        assert_eq!(event.event, CLIAgentEventType::Stop);
+        assert_eq!(event.session_id.as_deref(), Some("session-1"));
+        assert_eq!(event.payload.summary.as_deref(), Some("Done"));
+    }
+}
