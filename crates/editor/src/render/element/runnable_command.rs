@@ -221,6 +221,7 @@ impl RenderableBlock for RenderableRunnableCommand {
         ctx.paint
             .scene
             .start_layer(ClipBounds::BoundedByActiveLayerAnd(viewport_bounds));
+        ctx.paint.scene.set_active_layer_click_through();
 
         for paragraph in code_block.paragraphs() {
             ctx.draw_paragraph_scrolled(&paragraph, code_style, model, scroll_left_f);
