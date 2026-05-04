@@ -1,5 +1,46 @@
 use super::*;
 
+// -- DisableReason::should_clear_preference tests --
+
+#[test]
+fn should_clear_preference_admin_disabled() {
+    // AdminDisabled always clears, regardless of BYOK status.
+    assert!(DisableReason::AdminDisabled.should_clear_preference(false));
+    assert!(DisableReason::AdminDisabled.should_clear_preference(true));
+}
+
+#[test]
+fn should_clear_preference_unavailable() {
+    assert!(DisableReason::Unavailable.should_clear_preference(false));
+    assert!(DisableReason::Unavailable.should_clear_preference(true));
+}
+
+#[test]
+fn should_not_clear_preference_out_of_requests() {
+    // Transient — never clears.
+    assert!(!DisableReason::OutOfRequests.should_clear_preference(false));
+    assert!(!DisableReason::OutOfRequests.should_clear_preference(true));
+}
+
+#[test]
+fn should_not_clear_preference_provider_outage() {
+    // Transient — never clears.
+    assert!(!DisableReason::ProviderOutage.should_clear_preference(false));
+    assert!(!DisableReason::ProviderOutage.should_clear_preference(true));
+}
+
+#[test]
+fn should_clear_preference_requires_upgrade_without_byok() {
+    // No BYOK key → server will reject → clear.
+    assert!(DisableReason::RequiresUpgrade.should_clear_preference(false));
+}
+
+#[test]
+fn should_not_clear_preference_requires_upgrade_with_byok() {
+    // BYOK key present → server allows → keep.
+    assert!(!DisableReason::RequiresUpgrade.should_clear_preference(true));
+}
+
 #[test]
 fn llm_info_deserializes_without_base_model_name() {
     let raw = r#"{
