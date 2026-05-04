@@ -369,6 +369,13 @@ impl Args {
 "#
         ));
 
+        // When invoked as the Warp Terminal binary (e.g. `warp-terminal` on Linux),
+        // override the Oz-flavored CLI identity so that `--help` reflects the terminal app
+        // the user actually launched. See https://github.com/warpdotdev/warp/issues/9726.
+        if is_warp_terminal_binary(&bin_name) {
+            command = customize_for_warp_terminal(command);
+        }
+
         command
     }
 
@@ -699,6 +706,27 @@ pub fn binary_name() -> Option<String> {
 /// untagged builds (e.g. local `cargo run`).
 pub fn version_string() -> &'static str {
     ChannelState::app_version().unwrap_or("<unknown>")
+}
+
+/// Whether the binary name (`argv[0]`'s file name) corresponds to the Warp Terminal
+/// installed binary on Linux. Matches all channels: `warp-terminal`,
+/// `warp-terminal-preview`, `warp-terminal-dev`, `warp-terminal-local`,
+/// `warp-terminal-integration`, and `warp-terminal-oss`.
+fn is_warp_terminal_binary(bin_name: &str) -> bool {
+    bin_name.starts_with("warp-terminal")
+}
+
+/// Override the Oz-flavored CLI metadata (display name, about) so that the help text
+/// reflects the Warp Terminal app the user invoked.
+fn customize_for_warp_terminal(command: clap::Command) -> clap::Command {
+    command.display_name("Warp Terminal CLI").about(
+        r#"The Warp Terminal command-line interface.
+
+Use this CLI to interact with Warp from your shell:
+* Run agents and inspect their output
+* Manage MCP servers and integrations
+* Sign in, generate completions, and inspect debug info"#,
+    )
 }
 
 #[cfg(test)]

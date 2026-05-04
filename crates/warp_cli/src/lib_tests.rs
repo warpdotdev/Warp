@@ -1891,3 +1891,38 @@ fn finish_task_rejects_missing_status() {
     ]);
     assert!(result.is_err());
 }
+
+#[test]
+fn warp_terminal_binary_detection() {
+    assert!(is_warp_terminal_binary("warp-terminal"));
+    assert!(is_warp_terminal_binary("warp-terminal-preview"));
+    assert!(is_warp_terminal_binary("warp-terminal-dev"));
+    assert!(is_warp_terminal_binary("warp-terminal-local"));
+    assert!(is_warp_terminal_binary("warp-terminal-integration"));
+    assert!(is_warp_terminal_binary("warp-terminal-oss"));
+
+    assert!(!is_warp_terminal_binary("oz"));
+    assert!(!is_warp_terminal_binary("oz-dev"));
+    assert!(!is_warp_terminal_binary("warp"));
+    assert!(!is_warp_terminal_binary("warp-oss"));
+}
+
+#[test]
+fn warp_terminal_help_does_not_mention_oz() {
+    // Regression test for https://github.com/warpdotdev/warp/issues/9726.
+    // When the binary is invoked as `warp-terminal`, the rendered help text
+    // must not describe itself as the Oz orchestration platform.
+    use clap::CommandFactory;
+
+    let mut command = customize_for_warp_terminal(<Args as CommandFactory>::command());
+    let help = command.render_long_help().to_string();
+
+    assert!(
+        !help.contains("orchestration platform for cloud agents"),
+        "help should not include the Oz tagline; got:\n{help}"
+    );
+    assert!(
+        !help.contains("Oz CLI is a tool"),
+        "help should not describe itself as the Oz CLI; got:\n{help}"
+    );
+}
