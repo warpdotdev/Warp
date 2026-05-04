@@ -222,6 +222,8 @@ fn config_rejects_stdio_hook_credential_command() {
         "curl --proxy-user=proxy:secret https://example.com",
         "curl -H 'X-Api-Key: abc123def456' https://example.com",
         "curl --header='X-Api-Key: abc123def456' https://example.com",
+        "sh -c 'guard --token raw-secret'",
+        "bash -lc \"curl -H 'X-Api-Key: abc123def456' https://example.com\"",
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
             "enabled": true,
@@ -242,6 +244,8 @@ fn config_rejects_stdio_hook_credential_command() {
         assert_eq!(value["enabled"], false);
         assert!(!value.to_string().contains("secret"));
         assert!(!value.to_string().contains("raw-token"));
+        assert!(!value.to_string().contains("raw-secret"));
+        assert!(!value.to_string().contains("abc123def456"));
     }
 }
 
@@ -267,6 +271,8 @@ fn config_allows_stdio_hook_secret_env_reference_command() {
         "guard --token $API_TOKEN",
         "curl -H 'X-Api-Key: $HEADER_API_KEY' https://example.com",
         "curl --header='Authorization: Bearer $HEADER_TOKEN' https://example.com",
+        "sh -c 'guard --token $API_TOKEN'",
+        "bash -lc \"curl -H 'X-Api-Key: $HEADER_API_KEY' https://example.com\"",
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
             "enabled": true,

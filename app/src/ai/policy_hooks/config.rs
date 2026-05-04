@@ -330,7 +330,16 @@ fn validate_stdio_args(args: &[String]) -> Result<(), AgentPolicyHookConfigError
     Ok(())
 }
 
+const MAX_STDIO_COMMAND_FRAGMENT_DEPTH: usize = 3;
+
 fn validate_stdio_command(command: &str) -> Result<(), AgentPolicyHookConfigError> {
+    validate_stdio_command_fragment(command, 0)
+}
+
+fn validate_stdio_command_fragment(
+    command: &str,
+    depth: usize,
+) -> Result<(), AgentPolicyHookConfigError> {
     let words = shell_words::split(command).unwrap_or_else(|_| {
         command
             .split_ascii_whitespace()
@@ -353,6 +362,13 @@ fn validate_stdio_command(command: &str) -> Result<(), AgentPolicyHookConfigErro
             && stdio_header_value_contains_credentials(&words[1])
     }) {
         return Err(AgentPolicyHookConfigError::StdioCommandContainsCredentials);
+    }
+    if depth < MAX_STDIO_COMMAND_FRAGMENT_DEPTH {
+        for word in &words {
+            if word.split_ascii_whitespace().nth(1).is_some() {
+                validate_stdio_command_fragment(word, depth + 1)?;
+            }
+        }
     }
 
     Ok(())
