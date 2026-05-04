@@ -23,10 +23,12 @@ xcodebuild -runFirstLaunch
 if ! xcrun --find metal >/dev/null 2>&1; then
     echo "Metal Toolchain not installed. Running: xcodebuild -downloadComponent MetalToolchain"
     echo "(this can take several minutes on first run; xcodebuild streams progress below)"
-    xcodebuild -downloadComponent MetalToolchain
+    # Allow non-zero exit from xcodebuild without aborting the script under `set -e`.
+    # `xcodebuild -downloadComponent` can fail (or exit 0 without actually downloading,
+    # e.g. when App Store credentials are missing); we let the `xcrun --find metal`
+    # re-probe below be the source of truth on whether the toolchain is now usable.
+    xcodebuild -downloadComponent MetalToolchain || true
 
-    # `xcodebuild -downloadComponent` can exit 0 without actually downloading the
-    # component (e.g. when the App Store credentials are missing). Re-check.
     if ! xcrun --find metal >/dev/null 2>&1; then
         echo
         echo "Error: Metal Toolchain still not installed after xcodebuild -downloadComponent."
