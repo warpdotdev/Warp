@@ -1237,11 +1237,8 @@ impl AgentManagementView {
                 self.refresh_details_panel_if_needed(ctx);
                 self.get_tasks_from_model(ctx);
             }
-            AgentConversationsModelEvent::ConversationUpdated {
-                conversation_id,
-                kind,
-            } => {
-                self.handle_conversation_updated(*conversation_id, *kind, ctx);
+            AgentConversationsModelEvent::ConversationUpdated { kind } => {
+                self.handle_conversation_updated(*kind, ctx);
             }
             AgentConversationsModelEvent::ConversationArtifactsUpdated { conversation_id } => {
                 self.update_artifacts_for_conversation(*conversation_id, ctx);
@@ -1263,12 +1260,10 @@ impl AgentManagementView {
     ///   either. Just refresh the details panel.
     /// * `StatusSet` that crosses the active status filter: rebuild the
     ///   card list via `get_tasks_from_model`.
-    /// * `StatusSet` that doesn't cross the active filter (or `All` is active): targeted
-    ///   refresh of the affected card via `update_card_for_conversation` (no-op when the card
-    ///   is not visible) plus a re-render so the status icon picks up the new value.
+    /// * `StatusSet` that doesn't cross the active filter (or `All` is active):
+    ///   just refresh the details panel re-render so the status icon picks up the new value.
     fn handle_conversation_updated(
         &mut self,
-        conversation_id: AIConversationId,
         kind: ConversationUpdateKind,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -1289,61 +1284,11 @@ impl AgentManagementView {
                     self.get_tasks_from_model(ctx);
                     self.refresh_details_panel_if_needed(ctx);
                 } else {
-                    self.update_card_for_conversation(conversation_id, ctx);
                     self.refresh_details_panel_if_needed(ctx);
                     ctx.notify();
                 }
             }
         }
-    }
-
-    /// Update the action-buttons config for the card backing a given conversation, without
-    /// rebuilding the entire list. If no matching card is currently visible, this is a no-op.
-    fn update_card_for_conversation(
-        &mut self,
-        conversation_id: AIConversationId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let model = AgentConversationsModel::as_ref(ctx);
-        let history_model = BlocklistAIHistoryModel::as_ref(ctx);
-
-        let target_index = self.items.iter().position(|card| match &card.item_id {
-            ManagementCardItemId::Conversation(id) => *id == conversation_id,
-            ManagementCardItemId::Task(task_id) => model
-                .get_task_data(task_id)
-                .and_then(|task| {
-                    AgentConversationsModel::conversation_id_shadowed_by_task(&task, history_model)
-                })
-                .is_some_and(|id| id == conversation_id),
-        });
-
-        let Some(index) = target_index else { return };
-
-        let card_state = &self.items[index];
-        let card_data = match &card_state.item_id {
-            ManagementCardItemId::Task(task_id) => model.get_task(task_id),
-            ManagementCardItemId::Conversation(conv_id) => model.get_conversation(conv_id),
-        };
-        let Some(card_data) = card_data else { return };
-
-        let copy_link_url = card_data.session_or_conversation_link(ctx);
-        let mut config = match &card_data {
-            ConversationOrTask::Task(task) => ActionButtonsConfig::for_task(
-                task.task_id,
-                &card_data.display_status(ctx),
-                None,
-                copy_link_url,
-            ),
-            ConversationOrTask::Conversation(conversation) => {
-                ActionButtonsConfig::for_conversation(conversation.nav_data.id, None, copy_link_url)
-            }
-        };
-        if FeatureFlag::AgentManagementDetailsView.is_enabled() {
-            config.view_details_item_id = Some(card_state.item_id.clone());
-        }
-
-        let action_buttons_view = card_state.action_buttons_view.clone();
-        action_buttons_view.update(ctx, |row, ctx| row.set_config(config, ctx));
     }
 
     /// Update the details panel with fresh data for the given item.

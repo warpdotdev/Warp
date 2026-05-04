@@ -890,10 +890,7 @@ pub enum AgentConversationsModelEvent {
     /// Existing task data may have been updated (e.g., state changes).
     TasksUpdated,
     /// Conversation status data was updated
-    ConversationUpdated {
-        conversation_id: AIConversationId,
-        kind: ConversationUpdateKind,
-    },
+    ConversationUpdated { kind: ConversationUpdateKind },
     /// Conversation artifacts were updated (plans, PRs, etc.)
     ConversationArtifactsUpdated { conversation_id: AIConversationId },
 }
@@ -1424,7 +1421,7 @@ impl AgentConversationsModel {
     /// We first match using the orchestration agent ID (task ID / run ID under v2), and fall back
     /// to the server conversation token for cases where the task only carries conversation identity
     /// through `conversation_id`.
-    pub(crate) fn conversation_id_shadowed_by_task(
+    fn conversation_id_shadowed_by_task(
         task: &AmbientAgentTask,
         history_model: &BlocklistAIHistoryModel,
     ) -> Option<AIConversationId> {
@@ -1471,10 +1468,7 @@ impl AgentConversationsModel {
 
             // Status changes - just trigger re-render since status is looked up at render time
             BlocklistAIHistoryEvent::UpdatedConversationStatus {
-                conversation_id,
-                update,
-                new_status,
-                ..
+                update, new_status, ..
             } => {
                 let kind = match update {
                     ConversationStatusUpdate::Restored => ConversationUpdateKind::Restored,
@@ -1489,10 +1483,7 @@ impl AgentConversationsModel {
                         }
                     }
                 };
-                ctx.emit(AgentConversationsModelEvent::ConversationUpdated {
-                    conversation_id: *conversation_id,
-                    kind,
-                });
+                ctx.emit(AgentConversationsModelEvent::ConversationUpdated { kind });
             }
 
             // Artifact changes - sync live artifacts into the cached task and notify.

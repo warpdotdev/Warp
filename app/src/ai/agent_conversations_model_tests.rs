@@ -62,7 +62,7 @@ fn create_test_task(
     }
 }
 
-type CapturedConversationUpdate = Mutex<Option<(AIConversationId, ConversationUpdateKind)>>;
+type CapturedConversationUpdate = Mutex<Option<ConversationUpdateKind>>;
 
 /// Test-only handler that mirrors the production view subscription: extracts the
 /// `ConversationUpdated` payload and stashes it on a shared cell that test cases assert
@@ -71,12 +71,8 @@ fn handle_agent_conversation_model_event(
     captured: &CapturedConversationUpdate,
     event: &AgentConversationsModelEvent,
 ) {
-    if let AgentConversationsModelEvent::ConversationUpdated {
-        conversation_id,
-        kind,
-    } = event
-    {
-        *captured.lock() = Some((*conversation_id, *kind));
+    if let AgentConversationsModelEvent::ConversationUpdated { kind } = event {
+        *captured.lock() = Some(*kind);
     }
 }
 
@@ -105,11 +101,10 @@ fn test_restored_conversation_emits_restored_kind() {
         let agent_model = app.add_singleton_model(|_| create_test_model());
         let captured = subscribe_to_conversation_updated(&mut app, &agent_model);
 
-        let conversation_id = AIConversationId::new();
         agent_model.update(&mut app, |model, ctx| {
             model.handle_history_event(
                 &BlocklistAIHistoryEvent::UpdatedConversationStatus {
-                    conversation_id,
+                    conversation_id: AIConversationId::new(),
                     terminal_view_id: EntityId::new(),
                     update: ConversationStatusUpdate::Restored,
                     new_status: ConversationStatus::Success,
@@ -119,10 +114,7 @@ fn test_restored_conversation_emits_restored_kind() {
         });
 
         let captured = *captured.lock();
-        assert_eq!(
-            captured,
-            Some((conversation_id, ConversationUpdateKind::Restored)),
-        );
+        assert_eq!(captured, Some(ConversationUpdateKind::Restored));
     });
 }
 
@@ -134,11 +126,10 @@ fn test_status_transition_emits_status_set_with_filter_buckets() {
         let agent_model = app.add_singleton_model(|_| create_test_model());
         let captured = subscribe_to_conversation_updated(&mut app, &agent_model);
 
-        let conversation_id = AIConversationId::new();
         agent_model.update(&mut app, |model, ctx| {
             model.handle_history_event(
                 &BlocklistAIHistoryEvent::UpdatedConversationStatus {
-                    conversation_id,
+                    conversation_id: AIConversationId::new(),
                     terminal_view_id: EntityId::new(),
                     update: ConversationStatusUpdate::Changed {
                         prev_status: ConversationStatus::InProgress,
@@ -152,13 +143,10 @@ fn test_status_transition_emits_status_set_with_filter_buckets() {
         let captured = *captured.lock();
         assert_eq!(
             captured,
-            Some((
-                conversation_id,
-                ConversationUpdateKind::StatusSet {
-                    prev_filter: StatusFilter::Working,
-                    new_filter: StatusFilter::Done,
-                },
-            )),
+            Some(ConversationUpdateKind::StatusSet {
+                prev_filter: StatusFilter::Working,
+                new_filter: StatusFilter::Done,
+            }),
         );
     });
 }
@@ -171,11 +159,10 @@ fn test_same_bucket_re_emission_emits_status_set_with_equal_filters() {
         let agent_model = app.add_singleton_model(|_| create_test_model());
         let captured = subscribe_to_conversation_updated(&mut app, &agent_model);
 
-        let conversation_id = AIConversationId::new();
         agent_model.update(&mut app, |model, ctx| {
             model.handle_history_event(
                 &BlocklistAIHistoryEvent::UpdatedConversationStatus {
-                    conversation_id,
+                    conversation_id: AIConversationId::new(),
                     terminal_view_id: EntityId::new(),
                     update: ConversationStatusUpdate::Changed {
                         prev_status: ConversationStatus::InProgress,
@@ -189,13 +176,10 @@ fn test_same_bucket_re_emission_emits_status_set_with_equal_filters() {
         let captured = *captured.lock();
         assert_eq!(
             captured,
-            Some((
-                conversation_id,
-                ConversationUpdateKind::StatusSet {
-                    prev_filter: StatusFilter::Working,
-                    new_filter: StatusFilter::Working,
-                },
-            )),
+            Some(ConversationUpdateKind::StatusSet {
+                prev_filter: StatusFilter::Working,
+                new_filter: StatusFilter::Working,
+            }),
         );
     });
 }
