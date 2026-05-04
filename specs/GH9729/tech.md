@@ -109,23 +109,33 @@ Audit before merge: grep for any other call site that pattern-matches `FileTarge
 In `app/src/workspace/view.rs:5738-5814`, add an arm next to `MarkdownViewer(layout)`:
 
 ```rust
+const PRELOAD_RADIUS: usize = 2;
+
 FileTarget::ImagePreview => {
     let siblings = list_sibling_images_natural_sorted(&path);
     let initial_index = siblings
         .iter()
         .position(|p| p == &path)
         .unwrap_or(0);
+    let preload_lo = initial_index.saturating_sub(PRELOAD_RADIUS);
+    let preload_hi = (initial_index + PRELOAD_RADIUS + 1).min(siblings.len());
     let images = siblings
-        .into_iter()
-        .map(|p| LightboxImage {
-            source: LightboxImageSource::Resolved {
-                asset_source: AssetSource::LocalFile {
-                    path: p.to_string_lossy().into_owned(),
-                },
-            },
-            description: p
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let description = p
                 .file_name()
-                .map(|n| n.to_string_lossy().into_owned()),
+                .map(|n| n.to_string_lossy().into_owned());
+            let source = if i >= preload_lo && i < preload_hi {
+                LightboxImageSource::Resolved {
+                    asset_source: AssetSource::LocalFile {
+                        path: p.to_string_lossy().into_owned(),
+                    },
+                }
+            } else {
+                LightboxImageSource::Loading
+            };
+            LightboxImage { source, description }
         })
         .collect::<Vec<_>>();
     self.dispatch_typed_action(
@@ -140,9 +150,10 @@ FileTarget::ImagePreview => {
 
 Notes on this shape:
 
-- Entries are built as `Resolved { LocalFile { path } }` directly, **not** as `Loading` placeholders. The artifact code path (`app/src/ai/artifacts/mod.rs:299-340`) uses `Loading` because it has to wait for an async signed-URL fetch before it knows the `AssetSource`. Local files have a known `AssetSource` immediately; `LightboxView::start_asset_loads` (`lightbox_view.rs:108-114`) iterates only over `Resolved` entries and kicks off the asset cache load for each. Building `Loading` entries for local files would leave the Lightbox spinning forever because nothing would ever swap them to `Resolved`.
-- `start_asset_loads` will queue an asset-cache load for every sibling on open. The asset cache is the single resource governor for memory; it loads the file via `async_fs::read` and decodes via `ImageType::try_from_bytes`. For a directory of N images this is N background reads + N decodes. For typical image directories this is fine; for pathological directories it is bounded by the sibling cap discussed in change 6 below.
-- The handler at `view.rs:21718-21736` already reuses the open `lightbox_view` via `update_params`; no handler change is needed. Behavior 12 in the product spec is satisfied for free.
+- **Bounded preload window**. Only entries within `current ± PRELOAD_RADIUS` are built as `Resolved { LocalFile { path } }`; the rest are built as `Loading` placeholders carrying the filename in `description`. `LightboxView::start_asset_loads` (`lightbox_view.rs:108-114`) iterates only over `Resolved` entries and kicks off `AssetCache::load_asset` for each, so on initial open at most `2 * PRELOAD_RADIUS + 1 = 5` parallel reads/decodes are queued regardless of directory size. This caps peak transient allocation at `~5 * MAX_DECODED_PIXELS * 4 bytes ≈ 1.2 GB` (combined with change 4's per-decode cap), instead of the unbounded `MAX_SIBLING_IMAGES * MAX_DECODED_PIXELS * 4` that an eager-everything dispatch would risk before asset-cache eviction can react. This addresses the local-project DoS surface flagged in initial review.
+- **Lazy promotion on navigation**. The `LightboxView::handle_action` arms for `NavigatePrevious` / `NavigateNext` (`app/src/workspace/lightbox_view.rs:200-...`) need a small extension: after advancing `current_index`, walk the `±PRELOAD_RADIUS` window around the new index and, for each `LightboxImageSource::Loading` slot whose path can be derived from its `description`, dispatch `WorkspaceAction::UpdateLightboxImage { index, image: Resolved {...} }` so the asset-cache load is triggered for the newly-visible neighbour. The dispatched action runs through the existing `UpdateLightboxImage` handler at `app/src/workspace/view.rs:21739-21746`, which calls `update_image_at`, which calls `start_asset_load` for that single entry. The `description` carries the filename; combined with the parent path captured in the workspace dispatch site, the path can be reconstructed without storing it twice. Alternatively (cleaner): extend `LightboxImage` with an optional `path: Option<PathBuf>` field, or carry the parent dir on `LightboxView`. Implementer's choice; the spec mandates only that the lazy-promotion happens.
+- **Why not artifact-style placeholders all the way down**. The artifact code path (`app/src/ai/artifacts/mod.rs:299-340`) keeps every entry as `Loading` until an async signed-URL fetch completes. Local files have a known `AssetSource` immediately, so the only reason to keep an entry as `Loading` is to defer the asset-cache load itself, which is exactly the bounded-preload behavior above.
+- **Handler reuse via `update_params` is unrelated to the file-tree dispatch path.** The `OpenLightbox` handler at `view.rs:21718-21736` reuses an open `lightbox_view` via `update_params`. That path fires only when `OpenLightbox` is dispatched while the Lightbox already has focus, which does not happen from the file-tree click path: clicking the file tree shifts focus, fires `LightboxViewEvent::FocusLost`, and the existing handler at `view.rs:21728-21732` clears `self.lightbox_view` before the new `OpenLightbox` arrives. The reuse path is still useful for non-focus-stealing dispatch sites (artifact / screenshot Lightboxes triggered from agent block panes that do not steal focus from the overlay), so no handler change is needed; v1 simply does not rely on it for the file-tree case.
 
 ### 4. Add a decoder-limit guard in `ImageType::try_from_bytes`
 
@@ -250,7 +261,29 @@ pub fn list_sibling_images_natural_sorted(path: &Path) -> Vec<PathBuf> {
         siblings.push(path.to_path_buf());
     }
     siblings.sort_by(|a, b| natural_cmp(file_name_lossy(a), file_name_lossy(b)));
-    siblings.truncate(MAX_SIBLING_IMAGES);
+
+    // Window the result around the clicked image so it is never dropped by
+    // truncation in pathological directories. We keep up to MAX_SIBLING_IMAGES
+    // entries: half before the clicked image, half after, clamped at both
+    // ends. If the directory is already within the cap this is a no-op.
+    if siblings.len() > MAX_SIBLING_IMAGES {
+        let clicked_idx = siblings
+            .iter()
+            .position(|p| p == path)
+            .expect("clicked image is in the sorted list");
+        let half = MAX_SIBLING_IMAGES / 2;
+        let mut start = clicked_idx.saturating_sub(half);
+        let mut end = (start + MAX_SIBLING_IMAGES).min(siblings.len());
+        // If we hit the right edge, pull start leftward to fill the window.
+        if end - start < MAX_SIBLING_IMAGES {
+            start = end.saturating_sub(MAX_SIBLING_IMAGES);
+        }
+        // If we hit the left edge, push end rightward to fill the window.
+        if end - start < MAX_SIBLING_IMAGES {
+            end = (start + MAX_SIBLING_IMAGES).min(siblings.len());
+        }
+        siblings = siblings[start..end].to_vec();
+    }
     siblings
 }
 
@@ -310,7 +343,7 @@ fn take_digits(it: &mut std::iter::Peekable<std::str::Chars>) -> u64 {
 
 Notes:
 
-- The `MAX_SIBLING_IMAGES = 1024` cap bounds memory use and asset-cache pressure for pathological directories (e.g. `node_modules` icon dirs, generated thumbnail dirs). The clicked image is always included (we push it before truncating-after-sort, with the clicked image's natural-sort position determining whether it survives the truncate). To make sure the clicked image is always in the visible window, we partition: take 512 entries before the clicked image's index and 512 after, then keep the clicked image's relative index.
+- The `MAX_SIBLING_IMAGES = 1024` cap bounds the size of the sibling vector for pathological directories (e.g. `node_modules` icon dirs, generated thumbnail dirs). The window-around-clicked logic above guarantees the clicked image is always inside the kept slice: we center the window on the clicked sort index (up to 512 before, 512 after) and clamp at the directory's first/last entries. A naïve `siblings.truncate(MAX_SIBLING_IMAGES)` after sort would silently drop the clicked image if its sort position was beyond the first 1024 entries (so e.g. clicking `zzz.png` in a 2000-image directory would open `aaa.png` instead). The kept slice is also the bound on parallel decode pressure (see change 3 below).
 - `natord` is **not** a transitive dependency of the workspace (verified against `Cargo.lock`); the inline `natural_cmp` above is the implementation. (The original draft of this spec claimed `natord` was already available; that claim was wrong and is removed.)
 - `read_dir` does not follow symlinks during enumeration, so symlink loops in the parent directory are not a concern. Per-entry symlinks are followed by `is_supported_image_file` (via `path.extension`) and by the asset cache (via `async_fs::read`); a broken symlink surfaces as a per-entry decode/read error per change 5.
 - The scan runs synchronously on the UI thread inside `open_file_with_target`. For typical project directories (<1000 files) this is well under one frame on a warm filesystem cache. For NFS / FUSE / very large directories on a cold cache it can stall the UI. v1 accepts this tradeoff; the follow-ups list a background-thread variant if telemetry shows visible freezes.
@@ -347,9 +380,15 @@ Without change 4, a maliciously crafted or accidentally huge image file can OOM 
 
 `std::fs::read_dir` on a stalled NFS / sshfs / FUSE / huge `~/Library/Caches`-style directory can block the UI for seconds. Mitigation v1: keep synchronous, accept the tradeoff for typical project directories, and rely on `MAX_SIBLING_IMAGES` to bound the post-`read_dir` work. Follow-up: spawn the scan on the background executor and dispatch `OpenLightbox` from the result, showing a single-image Lightbox first.
 
-### Eager asset loads for all siblings
+### Local-project DoS via parallel sibling decodes (addressed in change 3)
 
-`LightboxView::start_asset_loads` kicks off an `AssetCache::load_asset` for every `Resolved` entry. With `MAX_SIBLING_IMAGES = 1024` this is bounded. Asset cache eviction (size-budget LRU) handles long-term memory pressure. Combined with change 4's per-decode cap, total worst-case memory is bounded at ~`MAX_SIBLING_IMAGES * MAX_DECODED_PIXELS * 4 bytes` only if every entry is resident at once, which the cache eviction prevents in practice.
+A naïve "build every sibling as `Resolved` and let the cache sort it out" dispatch would queue up to `MAX_SIBLING_IMAGES` parallel asset-cache loads on a single click. With change 4's per-decode cap (~256 MB peak per entry) that is up to ~262 GB of transient allocation pressure before the asset cache's size-budget LRU can evict, since `image::decode` allocates the full `RgbaImage` before returning. A user could trigger this just by clicking inside a directory full of large images.
+
+Change 3 closes this by building only `current ± PRELOAD_RADIUS` entries as `Resolved` and the rest as `Loading`, with a navigation hook that promotes new neighbours to `Resolved` (one at a time) on Left/Right. Peak parallel decodes are therefore bounded by `2 * PRELOAD_RADIUS + 1` (default 5), giving a worst-case transient envelope of `~5 * MAX_DECODED_PIXELS * 4 bytes ≈ 1.2 GB` regardless of directory size. Asset-cache eviction handles steady-state pressure for users who arrow through hundreds of images.
+
+### Existing `lightbox_view` collision (already-handled, but does not apply to file-tree path)
+
+The `OpenLightbox` handler at `view.rs:21718-21736` already reuses an open `LightboxView` via `update_params`, so dispatching `OpenLightbox` while the overlay is focused does not stack two overlays. This benefits non-focus-stealing dispatch sites (artifact / screenshot Lightboxes invoked from agent block panes that do not move focus). It does **not** apply to the file-tree path: clicking the file tree shifts focus, fires `LightboxViewEvent::FocusLost`, and the existing handler at `view.rs:21728-21732` clears `self.lightbox_view` before any new `OpenLightbox` arrives. The file-tree click on a second image therefore goes through the cold-open branch every time, which is the documented behavior in the product spec. No handler change is needed.
 
 ### `LightboxImageSource::Error` is a public-API change in `ui_components`
 
@@ -367,10 +406,6 @@ Verified above (change 8): the existing event already carries `target: FileTarge
 
 SVG is rendered via `usvg` 0.47 + `resvg` in `ImageType::Svg` (`image_cache.rs:271-282`). `usvg` 0.47 disables network and external-entity expansion by default. The remaining concrete risks (deep group nesting causing render-time stack pressure; pathological viewport causing huge `tiny_skia::Pixmap` allocation) are bounded by change 4's SVG-bytes cap and `MAX_DECODED_PIXELS` applied to the SVG's intrinsic size after parse. Smoke-test with one well-formed SVG fixture and one pathological fixture; do not defer SVG to a follow-up.
 
-### Existing `lightbox_view` collision
-
-Already handled by the existing handler at `view.rs:21718-21736`. No code change. The earlier draft of this spec called this out as a v1 fix; that paragraph is removed.
-
 ## Testing and validation
 
 ### Unit tests
@@ -384,7 +419,11 @@ Already handled by the existing handler at `view.rs:21718-21736`. No code change
 - `natural_cmp_case_insensitive_for_letters`: `Image.png` and `image.png` compare equal.
 - `list_sibling_images_filters_hidden_when_clicked_visible`: with a temp dir containing `a.png`, `.b.png`, `c.png`, clicking `a.png` returns `[a.png, c.png]`.
 - `list_sibling_images_includes_hidden_when_clicked_hidden`: with the same temp dir, clicking `.b.png` returns `[.b.png, a.png, c.png]` in natural order.
-- `list_sibling_images_truncates_at_cap`: with a fixture of 2000 image files, the returned list is <= `MAX_SIBLING_IMAGES` and contains the clicked file.
+- `list_sibling_images_window_keeps_clicked_at_left_edge`: with a fixture of 2000 image files (`img0001.png` through `img2000.png`), clicking `img0050.png` returns a slice that starts no later than `img0050.png` and contains it.
+- `list_sibling_images_window_keeps_clicked_at_right_edge`: with the same fixture, clicking `img1990.png` returns a slice that contains `img1990.png` and is exactly `MAX_SIBLING_IMAGES` long (the right-edge clamp pulls `start` leftward).
+- `list_sibling_images_window_centers_clicked_in_middle`: with the same fixture, clicking `img1000.png` returns a slice of length `MAX_SIBLING_IMAGES` with `img1000.png` near the center.
+- `list_sibling_images_returns_full_list_when_under_cap`: with a fixture of 100 images, returns all 100 in natural order.
+- `list_sibling_images_includes_clicked_when_directory_below_cap`: edge case; the clicked file is always in the result.
 
 `crates/warpui_core/src/image_cache.rs` (new test module section):
 
@@ -403,7 +442,8 @@ Behavior-to-step mapping (numbered against the product spec's User Experience an
 - **Decoder cap**: open a 10000×10000 PNG (above the cap). Confirm the Lightbox shows the per-entry error citing the size, not a partial render or an OOM.
 - **Navigation order and bounds**: open `image1.png` in a directory with `image1.png, image2.png, image10.png, IMAGE11.png`. Right arrow visits them in `1, 2, 10, IMAGE11` order. Left arrow at `image1.png` and right arrow at `IMAGE11.png` are no-ops (controls are hidden).
 - **Hidden files**: open `a.png` in a directory containing `a.png, .b.png, c.png`: arrows visit `[a.png, c.png]` only. Open `.b.png`: arrows visit all three.
-- **Re-open and replace**: with the Lightbox open, click another image in the file tree. Same `LightboxView` updates in place; no second scrim stacks; `current_index` matches the newly-clicked image.
+- **Open second image after first**: with the Lightbox open on `a.png`, click `b.png` in the file tree. The first Lightbox dismisses via `FocusLost` (file-tree click steals focus) and the second opens cold on `b.png`. No second scrim stacks. The user-visible result is "showing `b.png` now," achieved through dismiss-then-open rather than in-place replace.
+- **Lazy preload window**: open `image500.png` in a directory of 1000 images. Confirm via inspector / log that only `current ± PRELOAD_RADIUS` siblings have triggered `AssetCache::load_asset`. Press Right arrow; confirm the new edge of the window (`image503.png` if `PRELOAD_RADIUS = 2`) starts loading at that point, not earlier.
 - **Identity click**: with the Lightbox open on `a.png`, click `a.png` again in the tree. Lightbox stays on `a.png`, no flicker, no error.
 - **Non-image click while open**: with the Lightbox open, click `README.md` in the tree. Markdown viewer opens; Lightbox dismisses via `FocusLost` (handler at view.rs:21728-21732). Confirm focus is on the markdown viewer.
 - **Dismiss paths and focus**: dismiss via Escape, scrim click, and × button; in each case focus returns to the previously-active tab pane.

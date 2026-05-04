@@ -66,11 +66,13 @@ The maintainer-preferred shape for v1 is the existing Lightbox component. It alr
 - Holding an arrow key produces standard OS key-repeat: index advances per repeat event; in-flight decodes for skipped indices are not cancelled but their results are ignored if the index has moved on.
 - If only one supported image exists in the directory, both arrow controls are hidden; the Lightbox renders that single image.
 
-### Re-open and replace
+### Opening a second image while one is already open
 
-- Clicking another supported image while the Lightbox is already open replaces the current image set and current index in place by dispatching a fresh `WorkspaceAction::OpenLightbox`. The existing handler reuses the open `LightboxView` via `update_params` rather than stacking a second overlay. (The action is `OpenLightbox`, not `UpdateLightboxImage`, since `UpdateLightboxImage` only mutates one entry.)
-- Clicking the same image whose Lightbox is already open is a no-op (a fresh `OpenLightbox` is dispatched but the view's `update_params` produces an equivalent state and the user sees no change).
-- Clicking a non-image file while the Lightbox is open opens that file by its normal target (Code Editor, Markdown viewer, external editor, etc.). The Lightbox does not auto-dismiss on this path; it dismisses only via Escape, scrim click, or × button. Focusing another pane fires `LightboxViewEvent::FocusLost`, which tears down the view in the existing handler.
+- Clicking another file in the File Tree shifts focus from the Lightbox to the tree, which fires `LightboxViewEvent::FocusLost`. The existing workspace handler tears down the open Lightbox before any new open path runs. The second click then proceeds through its normal target:
+  - If the second file is a supported image, a fresh Lightbox opens cold on that image. There is no overlay stacking; the previous Lightbox is gone before the new one appears.
+  - If the second file is text/markdown/binary, it opens in its normal target (Code Editor, Markdown viewer, OS default app, external editor) and no Lightbox opens. The Lightbox does not return after the new file is opened.
+- Clicking the same image whose Lightbox was open dismisses (via FocusLost) and re-opens cold on that same image. From the user's perspective this is effectively a no-op (same image still shown), with one quick rebuild of the sibling list.
+- The "replace overlay in place via `update_params`" reuse path that exists in the `OpenLightbox` handler is not exercised by the file-tree click flow because focus always moves first. That reuse path is preserved for non-focus-stealing dispatch sites (today: agent screenshot / artifact Lightboxes) and is not a v1 file-tree concern.
 
 ### Dismiss and focus restoration
 
@@ -103,7 +105,7 @@ The maintainer-preferred shape for v1 is the existing Lightbox component. It alr
 - Clicking each of `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg` in the File Tree opens the Lightbox.
 - Left / Right arrow keys step through siblings in case-insensitive natural order, do not wrap, and remain responsive while a decode is in flight.
 - Escape, scrim click, and × button all dismiss the Lightbox and restore focus to the previously-active tab pane.
-- Opening a second image while the Lightbox is open replaces the image set in place; no second overlay stacks.
+- Opening a second image while the Lightbox is open results in the first Lightbox tearing down (via `FocusLost` from the file-tree click) and a fresh Lightbox opening cold on the second image. No second overlay stacks; the first is gone before the new one appears.
 - A corrupt PNG, an unreadable file, and an oversize PNG (above the dimension/pixel cap) all surface as per-entry errors with the filename shown; navigation continues; no crash.
 - An animated GIF and an animated WebP play; SVG renders via `usvg` / `resvg`.
 - Telemetry events for image opens are distinguishable from `MarkdownViewer` / `CodeEditor` / `SystemGeneric` opens via the `target` field on `CodePanelsFileOpened`.
