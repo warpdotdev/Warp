@@ -20,7 +20,7 @@ use crate::terminal::cli_agent::{
 };
 use crate::terminal::view::CliAgentRouting;
 use crate::workspace::util::get_context_target_terminal_view;
-use crate::workspace::TabBarDropTargetData;
+use crate::workspace::{TabBarDropTargetData, VerticalTabsPaneDropTargetData};
 use crate::{code::EditorTabBarDropTargetData, pane_group::pane::ActionOrigin};
 use lsp::LspManagerModel;
 use pathfinder_color::ColorU;
@@ -632,6 +632,10 @@ impl CodeView {
                     .map(|p| p.to_path_buf())
             })
         })
+    }
+
+    pub fn local_paths(&self) -> Vec<PathBuf> {
+        self.tab_group.iter().filter_map(TabData::path).collect()
     }
 
     pub fn pane_configuration(&self) -> ModelHandle<PaneConfiguration> {
@@ -1581,6 +1585,26 @@ impl CodeView {
                         precomputed_tab_hover_index: None,
                     },
                 );
+            } else if let Some(data) = data.and_then(|data| {
+                data.as_any()
+                    .downcast_ref::<VerticalTabsPaneDropTargetData>()
+            }) {
+                // If an editor tab is dragged over the vertical workspace tab bar, we should clear
+                // all drag indicators on the editor tab group.
+                ctx.dispatch_typed_action(
+                    PaneHeaderAction::<CodeViewAction, CodeViewAction>::CustomAction(
+                        CodeViewAction::ClearEditorTabGroupDragPositions,
+                    ),
+                );
+
+                ctx.dispatch_typed_action(
+                    PaneHeaderAction::<CodeViewAction, CodeViewAction>::PaneHeaderDragged {
+                        origin: ActionOrigin::EditorTab(index),
+                        drag_location: PaneDragDropLocation::TabBar(data.tab_bar_location),
+                        drag_position,
+                        precomputed_tab_hover_index: Some(data.tab_hover_index),
+                    },
+                );
             } else {
                 // If an editor tab is dragged anywhere else, we should clear all drag indicators on the editor and workspace tab groups.
                 ctx.dispatch_typed_action(
@@ -1615,6 +1639,18 @@ impl CodeView {
                     PaneHeaderAction::<CodeViewAction, CodeViewAction>::PaneHeaderDropped {
                         origin: ActionOrigin::EditorTab(index),
                         drop_location: PaneDragDropLocation::TabBar(data.tab_bar_location),
+                        visual_tab_order: None,
+                    },
+                );
+            } else if let Some(data) = data.and_then(|data| {
+                data.as_any()
+                    .downcast_ref::<VerticalTabsPaneDropTargetData>()
+            }) {
+                ctx.dispatch_typed_action(
+                    PaneHeaderAction::<CodeViewAction, CodeViewAction>::PaneHeaderDropped {
+                        origin: ActionOrigin::EditorTab(index),
+                        drop_location: PaneDragDropLocation::TabBar(data.tab_bar_location),
+                        visual_tab_order: data.visual_tab_order.clone(),
                     },
                 );
             }

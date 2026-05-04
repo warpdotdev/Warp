@@ -19,6 +19,7 @@ pub enum VerticalTabsDisplayOption {
     CompactSubtitle(VerticalTabsCompactSubtitle),
     ShowPrLink(bool),
     ShowDiffStats(bool),
+    GroupByProject(bool),
     ShowDetailsOnHover(bool),
 }
 
@@ -32,6 +33,7 @@ impl VerticalTabsDisplayOption {
             Self::CompactSubtitle(_) => "compact_subtitle",
             Self::ShowPrLink(_) => "show_pr_link",
             Self::ShowDiffStats(_) => "show_diff_stats",
+            Self::GroupByProject(_) => "group_by_project",
             Self::ShowDetailsOnHover(_) => "show_details_on_hover",
         }
     }
@@ -56,6 +58,7 @@ impl VerticalTabsDisplayOption {
             Self::CompactSubtitle(VerticalTabsCompactSubtitle::Command) => json!("command"),
             Self::ShowPrLink(value) => json!(value),
             Self::ShowDiffStats(value) => json!(value),
+            Self::GroupByProject(value) => json!(value),
             Self::ShowDetailsOnHover(value) => json!(value),
         }
     }

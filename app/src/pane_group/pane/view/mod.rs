@@ -55,6 +55,7 @@ pub enum PaneViewEvent {
     },
     DroppedOnTabBar {
         origin: ActionOrigin,
+        visual_tab_order: Option<Vec<usize>>,
     },
     DraggedOntoTabBar {
         origin: ActionOrigin,
@@ -301,13 +302,19 @@ impl<P: BackingView> PaneView<P> {
                 self.is_being_dragged = false;
                 ctx.notify();
             }
-            header::Event::DroppedOnTabBar { origin } => {
+            header::Event::DroppedOnTabBar {
+                origin,
+                visual_tab_order,
+            } => {
                 // If we're handling a drop event for a workspace pane, we want to get rid of the neutral background that obscures it.
                 if matches!(origin, ActionOrigin::Pane) {
                     self.is_being_dragged = false;
                 }
 
-                ctx.emit(PaneViewEvent::DroppedOnTabBar { origin: *origin });
+                ctx.emit(PaneViewEvent::DroppedOnTabBar {
+                    origin: *origin,
+                    visual_tab_order: visual_tab_order.clone(),
+                });
                 ctx.notify();
             }
             header::Event::DraggedOverTabBar {

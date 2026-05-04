@@ -507,6 +507,15 @@ define_settings_group!(TabSettings, settings: [
     vertical_tabs_view_mode: VerticalTabsViewMode,
     vertical_tabs_primary_info: VerticalTabsPrimaryInfo,
     vertical_tabs_compact_subtitle: VerticalTabsCompactSubtitle,
+    vertical_tabs_group_by_project: VerticalTabsGroupByProject {
+        type: bool,
+        default: false,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        private: false,
+        toml_path: "appearance.vertical_tabs.group_by_project",
+        description: "Group vertical tabs by project / git repo root.",
+    },
     vertical_tabs_show_pr_link: VerticalTabsShowPrLink {
         type: bool,
         default: true,

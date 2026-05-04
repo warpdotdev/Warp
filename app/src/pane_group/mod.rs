@@ -600,6 +600,7 @@ pub enum Event {
     DroppedOnTabBar {
         origin: ActionOrigin,
         pane_id: PaneId,
+        visual_tab_order: Option<Vec<usize>>,
     },
     /// Switches the focus to the specified tab and moves the given
     /// pane_id into the tab as a hidden pane. This will insert it into the pane
@@ -1167,10 +1168,14 @@ impl PaneGroup {
                     ctx.emit(Event::ClearHoveredTabIndex);
                     self.move_pane(pane_id, *target_id, *direction, ctx);
                 }
-                PaneViewEvent::DroppedOnTabBar { origin } => {
+                PaneViewEvent::DroppedOnTabBar {
+                    origin,
+                    visual_tab_order,
+                } => {
                     ctx.emit(Event::DroppedOnTabBar {
                         origin: *origin,
                         pane_id,
+                        visual_tab_order: visual_tab_order.clone(),
                     });
                     ctx.emit(Event::ClearHoveredTabIndex);
                 }

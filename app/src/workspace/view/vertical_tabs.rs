@@ -1,3 +1,4 @@
+mod project_grouping;
 pub mod telemetry;
 
 use crate::ai::agent::conversation::ConversationStatus;
@@ -38,7 +39,7 @@ use crate::ui_components::buttons::combo_inner_button;
 use crate::ui_components::icons::Icon as UiIcon;
 use crate::util::bindings::keybinding_name_to_display_string;
 use crate::util::color::Opacity;
-use crate::workspace::action::WorkspaceAction;
+use crate::workspace::action::{VerticalTabDragContext, WorkspaceAction};
 use crate::workspace::cross_window_tab_drag::CrossWindowTabDrag;
 use crate::workspace::hoa_onboarding::HoaOnboardingStep;
 use crate::workspace::tab_settings::{
@@ -90,6 +91,7 @@ const DETAIL_SIDECAR_SECTION_GAP: f32 = 4.;
 const GROUP_HEADER_VERTICAL_PADDING: f32 = 4.;
 const GROUP_HORIZONTAL_PADDING: f32 = 8.;
 const GROUP_BODY_BOTTOM_PADDING: f32 = 8.;
+const MULTI_PANE_NESTED_INDENT: f32 = 6.;
 const GROUP_ITEM_SPACING: f32 = 4.;
 const TABS_MODE_ITEM_SPACING: f32 = 4.;
 const GROUP_ACTION_BUTTON_ICON_SIZE: f32 = 12.;
@@ -576,6 +578,7 @@ pub(super) struct VerticalTabsPanelState {
     show_pr_link_mouse_state: MouseStateHandle,
     show_pr_link_info_tooltip_mouse_state: MouseStateHandle,
     show_diff_stats_mouse_state: MouseStateHandle,
+    group_by_project_mouse_state: MouseStateHandle,
     show_details_on_hover_mouse_state: MouseStateHandle,
     pub(super) show_settings_popup: bool,
 }
@@ -611,6 +614,7 @@ impl Default for VerticalTabsPanelState {
             show_pr_link_mouse_state: Default::default(),
             show_pr_link_info_tooltip_mouse_state: Default::default(),
             show_diff_stats_mouse_state: Default::default(),
+            group_by_project_mouse_state: Default::default(),
             show_details_on_hover_mouse_state: Default::default(),
             show_settings_popup: false,
         }
@@ -797,11 +801,25 @@ struct GroupHeaderProps<'a> {
     header_mouse_state: MouseStateHandle,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct TabGroupDragState {
     is_any_pane_dragging: bool,
     insert_before_index: usize,
     insert_after_index: Option<usize>,
+    visual_tab_order: Option<Vec<usize>>,
+    vertical_context: Option<VerticalTabDragContext>,
+}
+
+fn grouped_insert_before_index(visual_position: Option<usize>, fallback_tab_index: usize) -> usize {
+    visual_position.unwrap_or(fallback_tab_index)
+}
+
+fn grouped_insert_after_index(visual_tab_count: usize, is_last: bool) -> Option<usize> {
+    is_last.then_some(visual_tab_count)
+}
+
+fn complete_visual_tab_order(rendered_tab_order: &[usize], tab_count: usize) -> Option<Vec<usize>> {
+    (rendered_tab_order.len() == tab_count).then(|| rendered_tab_order.to_vec())
 }
 
 fn resolve_vertical_tabs_mode(app: &AppContext) -> VerticalTabsResolvedMode {
@@ -1128,6 +1146,7 @@ fn render_vertical_tab_insertion_target(
     insert_index: usize,
     tab_count: usize,
     is_drag_target: bool,
+    visual_tab_order: Option<&[usize]>,
     theme: &WarpTheme,
 ) -> Box<dyn Element> {
     let content = if is_drag_target {
@@ -1141,6 +1160,7 @@ fn render_vertical_tab_insertion_target(
         VerticalTabsPaneDropTargetData {
             tab_bar_location: vertical_tabs_tab_bar_location(insert_index, tab_count),
             tab_hover_index: TabBarHoverIndex::BeforeTab(insert_index),
+            visual_tab_order: visual_tab_order.map(<[usize]>::to_vec),
         },
     )
     .finish()
@@ -1151,17 +1171,23 @@ fn add_vertical_tab_insertion_target_overlay(
     insert_index: usize,
     tab_count: usize,
     is_drag_target: bool,
-    parent_anchor: ParentAnchor,
-    child_anchor: ChildAnchor,
+    visual_tab_order: Option<&[usize]>,
+    anchors: (ParentAnchor, ChildAnchor),
     theme: &WarpTheme,
 ) {
     stack.add_positioned_overlay_child(
-        render_vertical_tab_insertion_target(insert_index, tab_count, is_drag_target, theme),
+        render_vertical_tab_insertion_target(
+            insert_index,
+            tab_count,
+            is_drag_target,
+            visual_tab_order,
+            theme,
+        ),
         OffsetPositioning::offset_from_parent(
             vec2f(0., 0.),
             ParentOffsetBounds::ParentBySize,
-            parent_anchor,
-            child_anchor,
+            anchors.0,
+            anchors.1,
         ),
     );
 }
@@ -1646,27 +1672,197 @@ fn render_groups(
         groups = groups.with_spacing(TABS_MODE_ITEM_SPACING);
     }
 
-    for (visible_tab_index, (tab_index, filtered_pane_ids)) in visible_tabs.iter().enumerate() {
-        // Insert ghost slot before this tab group if the drop would land here.
-        if ghost_insertion_index == Some(*tab_index) {
-            groups.add_child(render_ghost_vertical_tab_slot(workspace, app));
+    let group_by_project = *TabSettings::as_ref(app)
+        .vertical_tabs_group_by_project
+        .value();
+
+    let project_groups: Option<Vec<project_grouping::ProjectPaneGroup>> =
+        if group_by_project && !visible_tabs.is_empty() {
+            Some(project_grouping::group_by_project_key(
+                visible_tabs.len(),
+                |i| {
+                    let (tab_idx, _) = &visible_tabs[i];
+                    let pane_group = workspace.tabs[*tab_idx].pane_group.as_ref(app);
+                    project_grouping::resolve_project_group_for_pane_group(
+                        pane_group, None, *tab_idx, app,
+                    )
+                },
+            ))
+        } else {
+            None
+        };
+
+    if let Some(project_groups) = project_groups.as_ref() {
+        // Keep each project member list in workspace-tab order. Drag insertion and header color
+        // use the first/last indices as visual top/bottom tabs.
+        let rendered_project_groups: Vec<Vec<usize>> = project_groups
+            .iter()
+            .map(|project_group| {
+                project_group
+                    .member_indices
+                    .iter()
+                    .map(|&visible_tab_idx| visible_tabs[visible_tab_idx].0)
+                    .collect()
+            })
+            .collect();
+        let rendered_tab_order: Vec<usize> = project_groups
+            .iter()
+            .flat_map(|project_group| {
+                project_group
+                    .member_indices
+                    .iter()
+                    .map(|&visible_tab_idx| visible_tabs[visible_tab_idx].0)
+            })
+            .collect();
+        let last_visual = project_groups
+            .last()
+            .and_then(|g| g.member_indices.last().copied());
+
+        for project_group in project_groups {
+            let current_group_indices: Vec<usize> = project_group
+                .member_indices
+                .iter()
+                .map(|&visible_tab_idx| visible_tabs[visible_tab_idx].0)
+                .collect();
+            let project_color =
+                project_group_top_tab_color(&workspace.tabs, &current_group_indices, theme);
+            let project_tab_count = project_group.member_indices.len();
+            let project_pane_count: usize = project_group
+                .member_indices
+                .iter()
+                .map(|&i| {
+                    let (tab_idx, filtered_pane_ids) = &visible_tabs[i];
+                    filtered_pane_ids.as_ref().map_or_else(
+                        || {
+                            workspace.tabs[*tab_idx]
+                                .pane_group
+                                .as_ref(app)
+                                .visible_pane_ids()
+                                .len()
+                        },
+                        Vec::len,
+                    )
+                })
+                .sum();
+            let show_header = project_tab_count > 1
+                || !matches!(
+                    project_group.key,
+                    project_grouping::ProjectGroupKey::Unknown(_)
+                );
+            if show_header {
+                groups.add_child(render_project_section_header(
+                    &project_group.key,
+                    project_tab_count,
+                    project_pane_count,
+                    project_color,
+                    app,
+                ));
+            }
+            for &visible_tab_idx in &project_group.member_indices {
+                let (tab_index, filtered_pane_ids) = &visible_tabs[visible_tab_idx];
+                // Cross-window tab dragging reports insertion in workspace-tab indices.
+                if ghost_insertion_index == Some(*tab_index) {
+                    groups.add_child(render_ghost_vertical_tab_slot(workspace, app));
+                }
+                let visual_position = rendered_tab_order
+                    .iter()
+                    .position(|rendered_tab_index| rendered_tab_index == tab_index);
+                let visual_above_index = visual_position
+                    .and_then(|position| position.checked_sub(1))
+                    .map(|position| rendered_tab_order[position]);
+                let visual_below_index = visual_position
+                    .and_then(|position| rendered_tab_order.get(position + 1).copied());
+                let is_last = last_visual == Some(visible_tab_idx);
+                let visual_above_group_indices = visual_above_index.and_then(|tab_index| {
+                    rendered_project_groups
+                        .iter()
+                        .find(|group| group.contains(&tab_index))
+                        .cloned()
+                });
+                let visual_below_group_indices = visual_below_index.and_then(|tab_index| {
+                    rendered_project_groups
+                        .iter()
+                        .find(|group| group.contains(&tab_index))
+                        .cloned()
+                });
+                let visual_tab_order =
+                    complete_visual_tab_order(&rendered_tab_order, workspace.tabs.len());
+                let insert_before_index = if visual_tab_order.is_some() {
+                    grouped_insert_before_index(visual_position, *tab_index)
+                } else {
+                    *tab_index
+                };
+                let insert_after_index = if visual_tab_order.is_some() {
+                    grouped_insert_after_index(rendered_tab_order.len(), is_last)
+                } else {
+                    is_last.then_some(*tab_index + 1)
+                };
+                let vertical_context = visual_tab_order.as_ref().map(|_| VerticalTabDragContext {
+                    visual_above_index,
+                    visual_below_index,
+                    current_group_indices: current_group_indices.clone(),
+                    visual_above_group_indices,
+                    visual_below_group_indices,
+                });
+                groups.add_child(render_tab_group(
+                    state,
+                    workspace,
+                    *tab_index,
+                    &workspace.tabs[*tab_index],
+                    filtered_pane_ids.as_deref(),
+                    TabGroupDragState {
+                        is_any_pane_dragging,
+                        insert_before_index,
+                        insert_after_index,
+                        visual_tab_order,
+                        vertical_context,
+                    },
+                    app,
+                ));
+            }
         }
-        let insert_before_index = *tab_index;
-        let insert_after_index =
-            (visible_tab_index == visible_tabs.len() - 1).then_some(tab_index + 1);
-        groups.add_child(render_tab_group(
-            state,
-            workspace,
-            *tab_index,
-            &workspace.tabs[*tab_index],
-            filtered_pane_ids.as_deref(),
-            TabGroupDragState {
-                is_any_pane_dragging,
-                insert_before_index,
-                insert_after_index,
-            },
-            app,
-        ));
+    } else {
+        let rendered_tab_order: Vec<usize> = visible_tabs
+            .iter()
+            .map(|(tab_index, _)| *tab_index)
+            .collect();
+        let has_complete_visual_order = rendered_tab_order.len() == workspace.tabs.len();
+        for (visible_tab_index, (tab_index, filtered_pane_ids)) in visible_tabs.iter().enumerate() {
+            if ghost_insertion_index == Some(*tab_index) {
+                groups.add_child(render_ghost_vertical_tab_slot(workspace, app));
+            }
+            let insert_before_index = *tab_index;
+            let insert_after_index =
+                (visible_tab_index == visible_tabs.len() - 1).then_some(*tab_index + 1);
+            let vertical_context = has_complete_visual_order.then(|| VerticalTabDragContext {
+                visual_above_index: visible_tab_index
+                    .checked_sub(1)
+                    .map(|position| rendered_tab_order[position]),
+                visual_below_index: rendered_tab_order.get(visible_tab_index + 1).copied(),
+                current_group_indices: vec![*tab_index],
+                visual_above_group_indices: visible_tab_index
+                    .checked_sub(1)
+                    .map(|position| vec![rendered_tab_order[position]]),
+                visual_below_group_indices: rendered_tab_order
+                    .get(visible_tab_index + 1)
+                    .map(|tab_index| vec![*tab_index]),
+            });
+            groups.add_child(render_tab_group(
+                state,
+                workspace,
+                *tab_index,
+                &workspace.tabs[*tab_index],
+                filtered_pane_ids.as_deref(),
+                TabGroupDragState {
+                    is_any_pane_dragging,
+                    insert_before_index,
+                    insert_after_index,
+                    visual_tab_order: None,
+                    vertical_context,
+                },
+                app,
+            ));
+        }
     }
     // Ghost after all tab groups (fencepost).
     if ghost_insertion_index == Some(workspace.tabs.len()) {
@@ -1700,6 +1896,65 @@ fn render_groups(
             .with_padding(Padding::uniform(8.).with_top(0.))
             .finish()
     }
+}
+
+fn render_project_section_header(
+    key: &project_grouping::ProjectGroupKey,
+    tab_count: usize,
+    pane_count: usize,
+    project_color: Option<ThemeFill>,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let font_family = appearance.ui_font_family();
+    let label_color = theme.sub_text_color(theme.background());
+    let rail_fill = project_color.unwrap_or_else(|| internal_colors::fg_overlay_2(theme));
+
+    let label_text = project_grouping::format_project_header_label(key, tab_count, pane_count);
+
+    let label = Text::new_inline(label_text, font_family, 10.)
+        .with_clip(ClipConfig::ellipsis())
+        .with_color(label_color.into())
+        .finish();
+
+    let rail = ConstrainedBox::new(
+        Container::new(Empty::new().finish())
+            .with_background(rail_fill)
+            .with_corner_radius(CornerRadius::with_all(Radius::Pixels(1.5)))
+            .finish(),
+    )
+    .with_width(3.)
+    .with_height(12.)
+    .finish();
+
+    let row = Flex::row()
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_spacing(6.)
+        .with_child(rail)
+        .with_child(Shrinkable::new(1., label).finish())
+        .finish();
+
+    Container::new(row)
+        .with_padding(
+            Padding::uniform(0.)
+                .with_left(GROUP_HORIZONTAL_PADDING)
+                .with_right(GROUP_HORIZONTAL_PADDING)
+                .with_top(GROUP_HEADER_VERTICAL_PADDING + 2.)
+                .with_bottom(GROUP_HEADER_VERTICAL_PADDING),
+        )
+        .finish()
+}
+
+fn project_group_top_tab_color(
+    tabs: &[TabData],
+    tab_indices: &[usize],
+    theme: &WarpTheme,
+) -> Option<ThemeFill> {
+    let top_tab_index = *tab_indices.first()?;
+    let color = tabs.get(top_tab_index)?.color()?;
+    Some(color.to_ansi_color(&theme.terminal_colors().normal).into())
 }
 
 fn render_tab_group(
@@ -1935,6 +2190,10 @@ fn render_tab_group_internal(
             let mut group = Flex::column()
                 .with_main_axis_size(MainAxisSize::Min)
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
+            let show_project_grouping = *TabSettings::as_ref(app)
+                .vertical_tabs_group_by_project
+                .value();
+            let is_multi_pane_in_panes_mode = show_project_grouping && pane_ids_to_render.len() > 1;
             if has_custom_title || is_being_renamed {
                 group.add_child(render_group_header(
                     GroupHeaderProps {
@@ -1946,9 +2205,15 @@ fn render_tab_group_internal(
                     },
                     app,
                 ));
+            } else if is_multi_pane_in_panes_mode {
+                group.add_child(render_multi_pane_tab_marker(
+                    pane_group.display_title(app),
+                    pane_ids_to_render.len(),
+                    app,
+                ));
             }
 
-            let show_header = has_custom_title || is_being_renamed;
+            let show_header = has_custom_title || is_being_renamed || is_multi_pane_in_panes_mode;
             let mut body_padding = Padding::uniform(0.)
                 .with_left(GROUP_HORIZONTAL_PADDING)
                 .with_right(GROUP_HORIZONTAL_PADDING)
@@ -1956,8 +2221,20 @@ fn render_tab_group_internal(
             if !show_header {
                 body_padding = body_padding.with_top(GROUP_BODY_BOTTOM_PADDING);
             }
-            group.add_child(
+            let rows_element = if is_multi_pane_in_panes_mode {
                 Container::new(build_rows())
+                    .with_padding(Padding::uniform(0.).with_left(MULTI_PANE_NESTED_INDENT))
+                    .with_border(
+                        Border::new(1.)
+                            .with_sides(false, false, false, true)
+                            .with_border_fill(internal_colors::fg_overlay_2(theme)),
+                    )
+                    .finish()
+            } else {
+                build_rows()
+            };
+            group.add_child(
+                Container::new(rows_element)
                     .with_padding(body_padding)
                     .finish(),
             );
@@ -2025,8 +2302,8 @@ fn render_tab_group_internal(
                 workspace.tabs.len(),
                 workspace.hovered_tab_index
                     == Some(TabBarHoverIndex::BeforeTab(drag_state.insert_before_index)),
-                ParentAnchor::TopLeft,
-                ChildAnchor::TopLeft,
+                drag_state.visual_tab_order.as_deref(),
+                (ParentAnchor::TopLeft, ChildAnchor::TopLeft),
                 theme,
             );
             if let Some(insert_after_index) = drag_state.insert_after_index {
@@ -2036,8 +2313,8 @@ fn render_tab_group_internal(
                     workspace.tabs.len(),
                     workspace.hovered_tab_index
                         == Some(TabBarHoverIndex::BeforeTab(insert_after_index)),
-                    ParentAnchor::BottomLeft,
-                    ChildAnchor::BottomLeft,
+                    drag_state.visual_tab_order.as_deref(),
+                    (ParentAnchor::BottomLeft, ChildAnchor::BottomLeft),
                     theme,
                 );
             }
@@ -2079,6 +2356,7 @@ fn render_tab_group_internal(
             ctx.dispatch_typed_action(WorkspaceAction::DragTab {
                 tab_index,
                 tab_position: rect,
+                vertical_context: drag_state.vertical_context.clone(),
             });
         })
         .on_drop(|ctx, _, _, _| {
@@ -2119,6 +2397,7 @@ fn render_tab_group_internal(
             VerticalTabsPaneDropTargetData {
                 tab_bar_location: TabBarLocation::TabIndex(tab_index),
                 tab_hover_index: TabBarHoverIndex::OverTab(tab_index),
+                visual_tab_order: None,
             },
         )
         .finish()
@@ -2218,6 +2497,8 @@ pub(crate) fn render_tab_group_for_drag_ghost(
         is_any_pane_dragging: false,
         insert_before_index: 0,
         insert_after_index: None,
+        visual_tab_order: None,
+        vertical_context: None,
     };
     render_tab_group_internal(
         &workspace.vertical_tabs_panel,
@@ -2286,6 +2567,53 @@ fn render_group_header(props: GroupHeaderProps<'_>, app: &AppContext) -> Box<dyn
     })
     .with_cursor(Cursor::PointingHand)
     .finish()
+}
+
+fn render_multi_pane_tab_marker(
+    title: String,
+    pane_count: usize,
+    app: &AppContext,
+) -> Box<dyn Element> {
+    let appearance = Appearance::as_ref(app);
+    let theme = appearance.theme();
+    let font_family = appearance.ui_font_family();
+    let title = if title.is_empty() {
+        "Untitled tab".to_string()
+    } else {
+        title
+    };
+    let text_color = theme.sub_text_color(theme.background());
+
+    let title = Text::new_inline(title, font_family, 10.)
+        .with_clip(ClipConfig::ellipsis())
+        .with_color(text_color.into())
+        .finish();
+    let count = Text::new_inline(format!("{pane_count} panes"), font_family, 10.)
+        .with_color(text_color.into())
+        .finish();
+    let count = Container::new(count)
+        .with_background(internal_colors::fg_overlay_1(theme))
+        .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
+        .with_padding(Padding::uniform(0.).with_left(4.).with_right(4.))
+        .finish();
+
+    let row = Flex::row()
+        .with_main_axis_size(MainAxisSize::Max)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_spacing(6.)
+        .with_child(Shrinkable::new(1., title).finish())
+        .with_child(count)
+        .finish();
+
+    Container::new(row)
+        .with_padding(
+            Padding::uniform(0.)
+                .with_left(GROUP_HORIZONTAL_PADDING)
+                .with_right(GROUP_HORIZONTAL_PADDING)
+                .with_top(GROUP_HEADER_VERTICAL_PADDING)
+                .with_bottom(GROUP_HEADER_VERTICAL_PADDING),
+        )
+        .finish()
 }
 
 fn render_passive_terminal_diff_stats_badge(
@@ -4396,6 +4724,9 @@ pub(super) fn render_settings_popup(
     let show_diff_stats = *TabSettings::as_ref(app)
         .vertical_tabs_show_diff_stats
         .value();
+    let group_by_project = *TabSettings::as_ref(app)
+        .vertical_tabs_group_by_project
+        .value();
     let show_details_on_hover = *TabSettings::as_ref(app)
         .vertical_tabs_show_details_on_hover
         .value();
@@ -4732,6 +5063,15 @@ pub(super) fn render_settings_popup(
     }
     popup_col.add_child(make_divider(theme));
 
+    popup_col.add_child(render_show_toggle_option(
+        "Group by project",
+        group_by_project,
+        state.group_by_project_mouse_state.clone(),
+        WorkspaceAction::ToggleVerticalTabsGroupByProject,
+        None,
+        appearance,
+        theme,
+    ));
     popup_col.add_child(render_show_toggle_option(
         "Show details on hover",
         show_details_on_hover,

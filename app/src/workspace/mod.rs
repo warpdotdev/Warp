@@ -1535,10 +1535,11 @@ pub struct TabBarDropTargetData {
     pub tab_bar_location: TabBarLocation,
 }
 
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct VerticalTabsPaneDropTargetData {
     pub tab_bar_location: TabBarLocation,
     pub tab_hover_index: TabBarHoverIndex,
+    pub visual_tab_order: Option<Vec<usize>>,
 }
 
 #[derive(PartialEq, Copy, Clone, Debug, Serialize, Deserialize)]

@@ -3013,3 +3013,57 @@ fn test_open_cloud_agent_setup_guide_action_opens_management_view_and_is_idempot
         });
     });
 }
+
+#[test]
+fn reordered_group_indices_moves_current_above_target() {
+    assert_eq!(
+        reordered_group_indices(&[0, 2, 4], 4, 2, TabDragDirection::Above),
+        vec![0, 4, 2]
+    );
+}
+
+#[test]
+fn reordered_group_indices_moves_current_below_target() {
+    assert_eq!(
+        reordered_group_indices(&[0, 2, 4], 0, 2, TabDragDirection::Below),
+        vec![2, 0, 4]
+    );
+}
+
+#[test]
+fn reordered_group_indices_appends_when_target_is_missing() {
+    assert_eq!(
+        reordered_group_indices(&[0, 2, 4], 2, 9, TabDragDirection::Below),
+        vec![0, 4, 2]
+    );
+}
+
+#[test]
+fn is_valid_tab_permutation_accepts_complete_unique_order() {
+    assert!(is_valid_tab_permutation(&[0, 2, 1], 3));
+}
+
+#[test]
+fn is_valid_tab_permutation_rejects_filtered_or_duplicate_order() {
+    assert!(!is_valid_tab_permutation(&[0, 2], 3));
+    assert!(!is_valid_tab_permutation(&[0, 1, 1], 3));
+    assert!(!is_valid_tab_permutation(&[0, 1, 3], 3));
+}
+
+#[test]
+fn visual_tab_order_rewrite_preserves_active_tab_identity() {
+    assert_eq!(
+        visual_tab_order_rewrite(&[0, 2, 1], 3, 1),
+        Some((vec![0, 2, 1], 2))
+    );
+    assert_eq!(
+        visual_tab_order_rewrite(&[0, 2, 1], 3, 2),
+        Some((vec![0, 2, 1], 1))
+    );
+}
+
+#[test]
+fn visual_tab_order_rewrite_rejects_invalid_order() {
+    assert_eq!(visual_tab_order_rewrite(&[0, 2], 3, 1), None);
+    assert_eq!(visual_tab_order_rewrite(&[0, 1, 1], 3, 1), None);
+}

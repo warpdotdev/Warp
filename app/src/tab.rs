@@ -1698,6 +1698,7 @@ impl UiComponent for TabComponent<'_> {
                     ctx.dispatch_typed_action(WorkspaceAction::DragTab {
                         tab_index,
                         tab_position: rect,
+                        vertical_context: None,
                     });
                 })
                 .on_drop(|ctx, _, _, _| ctx.dispatch_typed_action(WorkspaceAction::DropTab));

@@ -12,13 +12,14 @@ use warpui::EntityId;
 
 use super::{
     branch_label_display, coalesce_summary_branch_entries, code_detail_kind_label,
-    compact_branch_subtitle_display, detail_sidecar_width_and_bounds,
-    detail_target_for_hovered_row, format_summary_primary_labels,
-    non_terminal_search_text_fragments, pane_ids_for_display_granularity,
-    pane_search_text_fragments, preferred_agent_tab_titles, search_fragments_contain_query,
-    select_summary_pane_kind_icons, should_keep_detail_sidecar_visible_for_mouse_position,
-    summary_overflow_count, summary_search_text_fragments, terminal_kind_badge_label,
-    terminal_primary_line_data, terminal_pull_request_badge_label, terminal_search_text_fragments,
+    compact_branch_subtitle_display, complete_visual_tab_order, detail_sidecar_width_and_bounds,
+    detail_target_for_hovered_row, format_summary_primary_labels, grouped_insert_after_index,
+    grouped_insert_before_index, non_terminal_search_text_fragments,
+    pane_ids_for_display_granularity, pane_search_text_fragments, preferred_agent_tab_titles,
+    search_fragments_contain_query, select_summary_pane_kind_icons,
+    should_keep_detail_sidecar_visible_for_mouse_position, summary_overflow_count,
+    summary_search_text_fragments, terminal_kind_badge_label, terminal_primary_line_data,
+    terminal_pull_request_badge_label, terminal_search_text_fragments,
     terminal_title_fallback_font, uses_outer_group_container, visible_pane_ids_for_detail_target,
     vtab_diff_stats_text, AgentTabTextPreference, SummaryPaneKind, SummaryPaneKindIcons,
     TerminalAgentText, TerminalPrimaryLineData, TerminalPrimaryLineFont, VerticalTabsDetailTarget,
@@ -32,6 +33,35 @@ fn code_summary_kind(title: &str) -> SummaryPaneKind {
     SummaryPaneKind::Code {
         title: title.to_string(),
     }
+}
+
+#[test]
+fn grouped_insert_before_uses_visual_position_when_available() {
+    assert_eq!(grouped_insert_before_index(Some(1), 3), 1);
+}
+
+#[test]
+fn grouped_insert_before_falls_back_to_tab_index_without_visual_position() {
+    assert_eq!(grouped_insert_before_index(None, 3), 3);
+}
+
+#[test]
+fn grouped_insert_after_uses_visual_tab_count_for_last_visual_tab() {
+    assert_eq!(grouped_insert_after_index(4, true), Some(4));
+}
+
+#[test]
+fn grouped_insert_after_is_absent_for_non_last_visual_tab() {
+    assert_eq!(grouped_insert_after_index(4, false), None);
+}
+
+#[test]
+fn complete_visual_tab_order_returns_order_only_when_all_tabs_are_visible() {
+    assert_eq!(
+        complete_visual_tab_order(&[0, 2, 1], 3),
+        Some(vec![0, 2, 1])
+    );
+    assert_eq!(complete_visual_tab_order(&[0, 2], 3), None);
 }
 
 #[test]
