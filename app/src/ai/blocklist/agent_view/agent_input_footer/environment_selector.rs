@@ -117,7 +117,7 @@ impl GenericMenuItem for NewEnvironmentMenuItem {
     }
 }
 
-fn sort_environments_by_recency(environments: &mut [CloudAmbientAgentEnvironment]) {
+pub(crate) fn sort_environments_by_recency(environments: &mut [CloudAmbientAgentEnvironment]) {
     environments.sort_by(|a, b| {
         // Sort by last-used timestamp descending (most recent first), then by display name ascending
         b.metadata
