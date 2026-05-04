@@ -226,7 +226,7 @@ impl ConversationListView {
                 ctx,
             );
 
-            editor.set_placeholder_text("Search", ctx);
+            editor.set_placeholder_text(crate::i18n::tr_static(ctx, "Search"), ctx);
             editor
         });
         ctx.subscribe_to_view(&query_editor, |me, _handle, event, ctx| {
@@ -899,15 +899,20 @@ impl TypedActionView for ConversationListView {
                     let is_ambient_agent_conversation =
                         matches!(conversation_id, ConversationOrTaskId::TaskId(_));
 
-                    let mut delete_item = MenuItemFields::new("Delete")
-                        .with_override_text_color(Appearance::as_ref(ctx).theme().ansi_fg_red())
-                        .with_on_select_action(ConversationListViewAction::DeleteFromOverflowMenu {
-                            conversation_id,
-                        })
-                        .with_disabled(is_ambient_agent_conversation);
+                    let mut delete_item =
+                        MenuItemFields::new(crate::i18n::tr_static(ctx, "Delete"))
+                            .with_override_text_color(Appearance::as_ref(ctx).theme().ansi_fg_red())
+                            .with_on_select_action(
+                                ConversationListViewAction::DeleteFromOverflowMenu {
+                                    conversation_id,
+                                },
+                            )
+                            .with_disabled(is_ambient_agent_conversation);
                     if is_ambient_agent_conversation {
-                        delete_item = delete_item
-                            .with_tooltip("Ambient agent conversations cannot be deleted");
+                        delete_item = delete_item.with_tooltip(crate::i18n::tr_static(
+                            ctx,
+                            "Ambient agent conversations cannot be deleted",
+                        ));
                     }
 
                     // Check if conversation is shareable:
@@ -932,7 +937,7 @@ impl TypedActionView for ConversationListView {
                     // Only show share item if the conversation is shareable
                     let share_item = if is_shareable {
                         Some(
-                            MenuItemFields::new("Share conversation")
+                            MenuItemFields::new(crate::i18n::tr_static(ctx, "Share conversation"))
                                 .with_on_select_action(
                                     ConversationListViewAction::OpenShareDialog { conversation_id },
                                 )
@@ -946,7 +951,7 @@ impl TypedActionView for ConversationListView {
                         // Forking from a closed ambient agent conversation is not supported at this point.
                         if !is_ambient_agent_conversation {
                             Some([
-                                MenuItemFields::new("Fork in new pane")
+                                MenuItemFields::new(crate::i18n::tr_static(ctx, "Fork in new pane"))
                                     .with_on_select_action(
                                         ConversationListViewAction::ForkConversation {
                                             conversation_id,
@@ -954,7 +959,7 @@ impl TypedActionView for ConversationListView {
                                         },
                                     )
                                     .into_item(),
-                                MenuItemFields::new("Fork in new tab")
+                                MenuItemFields::new(crate::i18n::tr_static(ctx, "Fork in new tab"))
                                     .with_on_select_action(
                                         ConversationListViewAction::ForkConversation {
                                             conversation_id,

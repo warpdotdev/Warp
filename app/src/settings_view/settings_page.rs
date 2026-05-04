@@ -26,6 +26,7 @@ use super::{
 };
 use crate::{
     appearance::Appearance,
+    i18n::{self, I18nKey},
     settings::CloudPreferencesSettings,
     themes::theme::Fill,
     ui_components::icons::Icon,
@@ -40,8 +41,8 @@ use warp_core::{
 use warpui::{
     elements::{
         new_scrollable::{ClippedAxisConfiguration, DualAxisConfig, SingleAxisConfig},
-        Align, Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox, Container,
-        CornerRadius, CrossAxisAlignment, Element, Empty, Expanded, Flex, Hoverable,
+        Align, Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ConstrainedBox,
+        Container, CornerRadius, CrossAxisAlignment, Element, Empty, Expanded, Flex, Hoverable,
         MainAxisAlignment, MainAxisSize, MouseStateHandle, NewScrollable, OffsetPositioning,
         ParentAnchor, ParentElement, ParentOffsetBounds, Radius, SavePosition, ScrollTarget,
         ScrollToPositionMode, Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack,
@@ -170,6 +171,7 @@ impl SettingsPage {
 
     pub fn render_page_button(
         &self,
+        app: &AppContext,
         appearance: &Appearance,
         match_data: MatchData,
         clicked: bool,
@@ -184,7 +186,7 @@ impl SettingsPage {
                 },
                 self.button_state_handle.clone(),
             )
-            .with_text_label(self.section.to_string() + &match_data.to_string())
+            .with_text_label(self.section.localized_label(app).to_owned() + &match_data.to_string())
             .with_style(
                 UiComponentStyles::default()
                     .set_border_width(0.)
@@ -1002,9 +1004,6 @@ pub(crate) fn render_settings_info_banner(
     .finish()
 }
 
-const WORKSPACE_OVERRIDE_TOOLTIP_TEXT: &str =
-    "This option is enforced by your organization's settings and cannot be customized.";
-
 pub struct InputListItem<SettingsPageAction: Action + Clone> {
     pub item: String,
     pub mouse_state_handle: MouseStateHandle,
@@ -1046,13 +1045,12 @@ pub fn render_input_list<SettingsPageAction: Action + Clone>(
     let background = appearance.theme().surface_1();
     let peekable = items.into_iter().peekable();
     for item in peekable {
-        let disabled = item.is_disabled;
         let row_element = render_alternating_color_list_item(
             background,
             item.item,
             item.mouse_state_handle,
             item.on_remove_action,
-            disabled,
+            item.is_disabled,
             appearance,
         );
         let row_element = if let Some(tooltip_mouse_state) = item.tooltip_mouse_state {
@@ -1102,6 +1100,8 @@ pub fn render_alternating_color_list<
     }
 }
 
+const WORKSPACE_OVERRIDE_TOOLTIP_TEXT: &str =
+    "This option is enforced by your organization's settings and cannot be customized.";
 fn render_workspace_override_row_tooltip(
     child: Box<dyn Element>,
     mouse_state: MouseStateHandle,
@@ -1230,7 +1230,7 @@ pub(super) enum PageType<V: warpui::View> {
     /// handle and render their own scrollable elements.
     Monolith {
         widget: Box<dyn SettingsWidget<View = V>>,
-        title: Option<&'static str>,
+        title: Option<CategoryTitle>,
         filter: bool,
         vertical_scroll_state: Option<ClippedScrollStateHandle>,
         horizontal_scroll_state: Option<ClippedScrollStateHandle>,
@@ -1239,7 +1239,7 @@ pub(super) enum PageType<V: warpui::View> {
     /// A page which is a series of [`SettingsWidget`]s that don't fall under sub-categories.
     Uncategorized {
         widgets: Vec<Box<dyn SettingsWidget<View = V>>>,
-        title: Option<&'static str>,
+        title: Option<CategoryTitle>,
         filter: Vec<usize>,
         vertical_scroll_state: ClippedScrollStateHandle,
         horizontal_scroll_state: ClippedScrollStateHandle,
@@ -1249,13 +1249,36 @@ pub(super) enum PageType<V: warpui::View> {
     /// A page which is a series of [`SettingsWidget`]s that fall under sub-categories.
     Categorized {
         categories: Vec<Category<V>>,
-        title: Option<&'static str>,
+        title: Option<CategoryTitle>,
         filter: Vec<Vec<usize>>,
         vertical_scroll_state: ClippedScrollStateHandle,
         horizontal_scroll_state: ClippedScrollStateHandle,
         highlighted_widget_id: Option<&'static str>,
         min_page_width: f32,
     },
+}
+
+fn optional_static_title(title: Option<&'static str>) -> Option<CategoryTitle> {
+    title.map(CategoryTitle::Static)
+}
+
+fn optional_i18n_title(title: Option<I18nKey>) -> Option<CategoryTitle> {
+    title.map(CategoryTitle::I18n)
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum CategoryTitle {
+    Static(&'static str),
+    I18n(I18nKey),
+}
+
+impl CategoryTitle {
+    fn resolve(self, app: &AppContext) -> &'static str {
+        match self {
+            Self::Static(title) => title,
+            Self::I18n(key) => i18n::tr(app, key),
+        }
+    }
 }
 
 /// Some settings pages break down into a collection of smaller widgets while others are
@@ -1301,6 +1324,117 @@ impl From<usize> for MatchData {
     }
 }
 
+const LOCALIZED_SEARCH_ALIASES: &[(&str, &str)] = &[
+    ("account", "账户 账号 登录 登出"),
+    ("active", "活动 启用"),
+    ("agent", "智能体 代理"),
+    ("agents", "智能体 代理"),
+    ("ai", "AI 智能体 人工智能"),
+    ("allowlist", "允许列表 白名单"),
+    ("api", "API 接口"),
+    ("appearance", "外观"),
+    ("attribution", "署名 归因"),
+    ("autosuggestion", "自动建议"),
+    ("autosuggestions", "自动建议"),
+    ("bedrock", "Bedrock AWS"),
+    ("billing", "账单 计费"),
+    ("block", "块"),
+    ("blocks", "块"),
+    ("changelog", "变更日志 更新日志"),
+    ("cloud", "云 云端"),
+    ("code", "代码"),
+    ("color", "颜色"),
+    ("colors", "颜色"),
+    ("command", "命令"),
+    ("commands", "命令"),
+    ("context", "上下文"),
+    ("conversation", "对话"),
+    ("cursor", "光标"),
+    ("denylist", "拒绝列表 黑名单"),
+    ("directory", "目录"),
+    ("directories", "目录"),
+    ("display", "显示"),
+    ("editor", "编辑器"),
+    ("environment", "环境"),
+    ("environments", "环境"),
+    ("feature", "功能"),
+    ("features", "功能"),
+    ("font", "字体"),
+    ("fonts", "字体"),
+    ("history", "历史记录"),
+    ("hotkey", "热键 快捷键"),
+    ("input", "输入"),
+    ("key", "键 密钥"),
+    ("keybinding", "快捷键 键绑定"),
+    ("keybindings", "快捷键 键绑定"),
+    ("keyboard", "键盘"),
+    ("knowledge", "知识库 知识"),
+    ("language", "语言 显示语言"),
+    ("layout", "布局"),
+    ("mcp", "MCP 服务器"),
+    ("memory", "记忆"),
+    ("model", "模型"),
+    ("models", "模型"),
+    ("notification", "通知"),
+    ("notifications", "通知"),
+    ("opacity", "不透明度 透明度"),
+    ("orchestration", "编排"),
+    ("permission", "权限"),
+    ("permissions", "权限"),
+    ("privacy", "隐私"),
+    ("profile", "配置档案 档案"),
+    ("profiles", "配置档案 档案"),
+    ("referral", "推荐 邀请"),
+    ("referrals", "推荐 邀请"),
+    ("regex", "正则 正则表达式"),
+    ("rules", "规则"),
+    ("search", "搜索"),
+    ("secret", "密钥 机密 敏感信息"),
+    ("secrets", "密钥 机密 敏感信息"),
+    ("session", "会话"),
+    ("settings", "设置"),
+    ("shell", "shell 终端"),
+    ("shortcut", "快捷键"),
+    ("shortcuts", "快捷键"),
+    ("tab", "标签页"),
+    ("tabs", "标签页"),
+    ("team", "团队"),
+    ("teams", "团队"),
+    ("terminal", "终端"),
+    ("theme", "主题"),
+    ("themes", "主题"),
+    ("toolbar", "工具栏"),
+    ("usage", "用量 使用量"),
+    ("voice", "语音"),
+    ("warp drive", "Warp Drive 云盘"),
+    ("warpify", "Warpify"),
+    ("window", "窗口"),
+    ("workflow", "工作流"),
+    ("workflows", "工作流"),
+    ("zoom", "缩放"),
+];
+
+/// Returns true if every whitespace-delimited word in `query` appears somewhere
+/// in `terms` or in Chinese aliases for those terms. An empty query matches everything.
+pub(super) fn search_terms_match(terms: &str, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+
+    let mut searchable_terms = terms.to_lowercase();
+    for (term, aliases) in LOCALIZED_SEARCH_ALIASES {
+        if searchable_terms.contains(term) {
+            searchable_terms.push(' ');
+            searchable_terms.push_str(aliases);
+        }
+    }
+
+    query
+        .to_lowercase()
+        .split_whitespace()
+        .all(|word| searchable_terms.contains(word))
+}
+
 impl<V: warpui::View> PageType<V> {
     /// A page where the contents cannot be separated for showing search results. If any part
     /// matches the search query, the whole page must show. The whole page is one big
@@ -1322,7 +1456,31 @@ impl<V: warpui::View> PageType<V> {
         Self::Monolith {
             filter: true,
             widget: Box::new(widget),
-            title,
+            title: optional_static_title(title),
+            vertical_scroll_state,
+            horizontal_scroll_state,
+            min_page_width: MIN_PAGE_WIDTH,
+        }
+    }
+
+    pub(super) fn new_monolith_i18n_title(
+        widget: impl SettingsWidget<View = V> + 'static,
+        title: Option<I18nKey>,
+        is_dual_scrollable: bool,
+    ) -> Self {
+        let (vertical_scroll_state, horizontal_scroll_state) = if is_dual_scrollable {
+            (
+                Some(ClippedScrollStateHandle::default()),
+                Some(ClippedScrollStateHandle::default()),
+            )
+        } else {
+            (None, None)
+        };
+
+        Self::Monolith {
+            filter: true,
+            widget: Box::new(widget),
+            title: optional_i18n_title(title),
             vertical_scroll_state,
             horizontal_scroll_state,
             min_page_width: MIN_PAGE_WIDTH,
@@ -1337,7 +1495,22 @@ impl<V: warpui::View> PageType<V> {
         Self::Uncategorized {
             filter: widgets.iter().enumerate().map(|(i, _)| i).collect(),
             widgets,
-            title,
+            title: optional_static_title(title),
+            vertical_scroll_state: Default::default(),
+            horizontal_scroll_state: Default::default(),
+            highlighted_widget_id: Default::default(),
+            min_page_width: MIN_PAGE_WIDTH,
+        }
+    }
+
+    pub(super) fn new_uncategorized_i18n_title(
+        widgets: Vec<Box<dyn SettingsWidget<View = V>>>,
+        title: Option<I18nKey>,
+    ) -> Self {
+        Self::Uncategorized {
+            filter: widgets.iter().enumerate().map(|(i, _)| i).collect(),
+            widgets,
+            title: optional_i18n_title(title),
             vertical_scroll_state: Default::default(),
             horizontal_scroll_state: Default::default(),
             highlighted_widget_id: Default::default(),
@@ -1363,7 +1536,7 @@ impl<V: warpui::View> PageType<V> {
                 })
                 .collect(),
             categories,
-            title,
+            title: optional_static_title(title),
             vertical_scroll_state: Default::default(),
             horizontal_scroll_state: Default::default(),
             highlighted_widget_id: Default::default(),
@@ -1375,18 +1548,6 @@ impl<V: warpui::View> PageType<V> {
     /// Uses all-words matching: every word in the query must appear somewhere in the
     /// widget's search terms (but not necessarily contiguously).
     pub(super) fn update_filter(&mut self, query: &str, app: &AppContext) -> MatchData {
-        /// Returns true if every whitespace-delimited word in `query` appears
-        /// somewhere in `terms` (case-insensitive). An empty query matches everything.
-        fn search_terms_match(terms: &str, query: &str) -> bool {
-            if query.is_empty() {
-                return true;
-            }
-            let terms_lower = terms.to_lowercase();
-            query
-                .to_lowercase()
-                .split_whitespace()
-                .all(|word| terms_lower.contains(word))
-        }
         match self {
             Self::Monolith { widget, filter, .. } => {
                 *filter =
@@ -1608,6 +1769,7 @@ impl<V: warpui::View> PageType<V> {
                 if let Some(widget) = widget {
                     if widget.should_render(app) {
                         if let Some(title) = title {
+                            let title = title.resolve(app);
                             let col = Flex::column()
                                 .with_child(render_page_title(title, HEADER_FONT_SIZE, appearance))
                                 .with_child(widget.render_widget(view, false, appearance, app));
@@ -1627,6 +1789,7 @@ impl<V: warpui::View> PageType<V> {
             } => {
                 let mut page = Flex::column();
                 if let Some(title) = title {
+                    let title = title.resolve(app);
                     page.add_child(render_page_title(title, HEADER_FONT_SIZE, appearance));
                 }
                 for widget in widgets {
@@ -1646,19 +1809,20 @@ impl<V: warpui::View> PageType<V> {
             } => {
                 let mut page = Flex::column();
                 if let Some(title) = title {
+                    let title = title.resolve(app);
                     page.add_child(render_page_title(title, HEADER_FONT_SIZE, appearance));
                 }
                 let num_categories = categories.len();
                 for (i, category) in categories.into_iter().enumerate() {
-                    if !category.title.is_empty() {
+                    let title = category.title.resolve(app);
+                    if !title.is_empty() {
                         if let Some(subtitle) = category.subtitle {
+                            let subtitle = subtitle.resolve(app);
                             page.add_child(render_sub_header_with_description(
-                                appearance,
-                                category.title,
-                                subtitle,
+                                appearance, title, subtitle,
                             ));
                         } else {
-                            page.add_child(render_sub_header(appearance, category.title, None));
+                            page.add_child(render_sub_header(appearance, title, None));
                         }
                     }
                     for widget in &category.widgets {
@@ -1776,20 +1940,20 @@ impl<V: warpui::View> PageType<V> {
 pub(super) enum FilteredPageType<'a, V: warpui::View> {
     Monolith {
         widget: Option<&'a dyn SettingsWidget<View = V>>,
-        title: Option<&'static str>,
+        title: Option<CategoryTitle>,
         vertical_scroll_state: Option<ClippedScrollStateHandle>,
         horizontal_scroll_state: Option<ClippedScrollStateHandle>,
     },
     Uncategorized {
         widgets: Vec<&'a dyn SettingsWidget<View = V>>,
-        title: Option<&'static str>,
+        title: Option<CategoryTitle>,
         vertical_scroll_state: ClippedScrollStateHandle,
         horizontal_scroll_state: ClippedScrollStateHandle,
         highlighted_widget_id: Option<&'static str>,
     },
     Categorized {
         categories: Vec<FilteredCategory<'a, V>>,
-        title: Option<&'static str>,
+        title: Option<CategoryTitle>,
         vertical_scroll_state: ClippedScrollStateHandle,
         horizontal_scroll_state: ClippedScrollStateHandle,
         highlighted_widget_id: Option<&'static str>,
@@ -1798,8 +1962,8 @@ pub(super) enum FilteredPageType<'a, V: warpui::View> {
 
 /// A grouping of related [`SettingsWidget`]s that fall under the same sub-header.
 pub(super) struct Category<V: warpui::View> {
-    title: &'static str,
-    subtitle: Option<&'static str>,
+    title: CategoryTitle,
+    subtitle: Option<CategoryTitle>,
     widgets: Vec<Box<dyn SettingsWidget<View = V>>>,
 }
 
@@ -1809,22 +1973,33 @@ impl<V: warpui::View> Category<V> {
         widgets: Vec<Box<dyn SettingsWidget<View = V>>>,
     ) -> Self {
         Self {
-            title,
+            title: CategoryTitle::Static(title),
             subtitle: None,
             widgets,
         }
     }
 
-    pub(super) fn with_subtitle(mut self, subtitle: &'static str) -> Self {
-        self.subtitle = Some(subtitle);
+    pub(super) fn new_i18n(
+        title: I18nKey,
+        widgets: Vec<Box<dyn SettingsWidget<View = V>>>,
+    ) -> Self {
+        Self {
+            title: CategoryTitle::I18n(title),
+            subtitle: None,
+            widgets,
+        }
+    }
+
+    pub(super) fn with_subtitle_i18n(mut self, subtitle: I18nKey) -> Self {
+        self.subtitle = Some(CategoryTitle::I18n(subtitle));
         self
     }
 }
 
 /// A [`Category`] with only the results which match a search query.
 pub(super) struct FilteredCategory<'a, V: warpui::View> {
-    pub(super) title: &'static str,
-    pub(super) subtitle: Option<&'static str>,
+    pub(super) title: CategoryTitle,
+    pub(super) subtitle: Option<CategoryTitle>,
     pub(super) widgets: Vec<&'a dyn SettingsWidget<View = V>>,
 }
 
@@ -1883,6 +2058,7 @@ pub(super) trait SettingsWidget {
 /// the setting.
 pub(super) fn build_reset_button(
     appearance: &Appearance,
+    app: &AppContext,
     mouse_state: MouseStateHandle,
     changed_from_default: bool,
 ) -> Button {
@@ -1900,5 +2076,5 @@ pub(super) fn build_reset_button(
             font_size: Some(appearance.ui_font_size() * 0.8),
             ..Default::default()
         })
-        .with_text_label("Reset to default".to_owned())
+        .with_text_label(crate::i18n::tr_static(app, "Reset to default").to_owned())
 }

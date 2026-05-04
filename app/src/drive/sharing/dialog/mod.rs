@@ -925,7 +925,11 @@ impl SharingDialog {
             let window_id = ctx.window_id();
             let object_name = self.targeted_object_name(ctx);
             ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                let toast = DismissibleToast::default(format!("Copied link to {object_name}."));
+                let toast = if crate::i18n::current_locale(ctx) == crate::i18n::Locale::ZhCn {
+                    DismissibleToast::default(format!("已复制 {object_name} 的链接。"))
+                } else {
+                    DismissibleToast::default(format!("Copied link to {object_name}."))
+                };
                 toast_stack.add_ephemeral_toast(toast, window_id, ctx);
             });
         }
@@ -985,7 +989,7 @@ impl SharingDialog {
                 if !is_team_guest || !is_session {
                     items.push(MenuItem::Separator);
                     items.push(
-                        MenuItemFields::new("Remove")
+                        MenuItemFields::new(crate::i18n::tr_static(ctx, "Remove"))
                             .with_on_select_action(SharingDialogAction::RemoveGuest)
                             .with_disabled(inherited_access)
                             .into_item(),
@@ -1422,7 +1426,7 @@ impl SharingDialog {
                 ButtonVariant::Accent,
                 self.ui_state_handles.invite_button.clone(),
             )
-            .with_centered_text_label("Invite".into())
+            .with_centered_text_label(crate::i18n::tr_static(app, "Invite").into())
             .with_style(UiComponentStyles {
                 // Adjust the height to match the email editor's padding.
                 height: Some(style::ACL_ITEM_HEIGHT + 6.),
@@ -1757,10 +1761,10 @@ impl SharingDialog {
     }
 
     /// Render the "Who has access" header shown above the ACL list.
-    fn render_access_header(&self, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_access_header(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         appearance
             .ui_builder()
-            .span("Who has access")
+            .span(crate::i18n::tr_static(app, "Who has access"))
             .with_style(UiComponentStyles {
                 font_color: Some(style::label_text(appearance)),
                 font_size: Some(style::PRIMARY_TEXT_SIZE),
@@ -1998,13 +2002,13 @@ impl SharingDialog {
         let is_ai_conversation = matches!(self.target, Some(ShareableObject::AIConversation(_)));
 
         let mut items = vec![
-            MenuItemFields::new("Only people invited")
+            MenuItemFields::new(crate::i18n::tr_static(ctx, "Only people invited"))
                 .with_on_select_action(SharingDialogAction::SetLinkPermissions(None))
                 .with_icon(Icon::Lock)
                 .with_disabled(inherited_access)
                 .into_item(),
             MenuItem::Separator,
-            MenuItemFields::new("Anyone with the link")
+            MenuItemFields::new(crate::i18n::tr_static(ctx, "Anyone with the link"))
                 .with_no_interaction_on_hover()
                 .with_icon(Icon::Globe)
                 .into_item(),
@@ -2179,13 +2183,13 @@ impl SharingDialog {
         let inherited_access = self.team_sharing_state.inheritance.is_some();
         let current_access_level = self.team_sharing_state.access_level;
         let items = [
-            MenuItemFields::new("Only invited teammates")
+            MenuItemFields::new(crate::i18n::tr_static(ctx, "Only invited teammates"))
                 .with_on_select_action(SharingDialogAction::SetTeamPermissions(None))
                 .with_icon(Icon::Lock)
                 .with_disabled(inherited_access)
                 .into_item(),
             MenuItem::Separator,
-            MenuItemFields::new("Teammates with the link")
+            MenuItemFields::new(crate::i18n::tr_static(ctx, "Teammates with the link"))
                 .with_no_interaction_on_hover()
                 .with_icon(Icon::Users)
                 .into_item(),
@@ -2507,7 +2511,7 @@ impl View for SharingDialog {
         if self.can_edit_access(app) && self.can_direct_link_share(app) {
             contents.add_child(self.render_invite_form(appearance, app));
         }
-        contents.add_child(self.render_access_header(appearance));
+        contents.add_child(self.render_access_header(appearance, app));
         contents.extend(self.render_restricted_access_label(appearance, app));
 
         if self.can_anyone_with_link_share(app) {

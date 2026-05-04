@@ -1199,7 +1199,7 @@ fn render_control_bar(
         .with_child(Shrinkable::new(1., text_input).finish())
         .finish();
 
-    let settings_button = render_settings_button(state, appearance);
+    let settings_button = render_settings_button(state, appearance, app);
     let new_tab_button = render_new_tab_button(state, workspace, appearance, app);
 
     Container::new(
@@ -1275,12 +1275,14 @@ fn render_detail_kind_badge_icon(
 fn render_settings_button(
     state: &VerticalTabsPanelState,
     appearance: &Appearance,
+    app: &AppContext,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let sub_text = theme.sub_text_color(theme.background());
     let main_text = theme.main_text_color(theme.background());
     let is_popup_open = state.show_settings_popup;
     let ui_builder = appearance.ui_builder().clone();
+    let view_options_label = crate::i18n::tr_static(app, "View options").to_string();
 
     let button = Hoverable::new(
         state.settings_button_mouse_state.clone(),
@@ -1310,7 +1312,7 @@ fn render_settings_button(
 
             if hover_state.is_hovered() && !is_popup_open {
                 let tooltip = ui_builder
-                    .tool_tip("View options".to_string())
+                    .tool_tip(view_options_label.clone())
                     .build()
                     .finish();
                 let mut stack = Stack::new().with_child(button_container);
@@ -1348,6 +1350,7 @@ fn render_new_tab_button(
     let sub_text = theme.sub_text_color(theme.background());
     let main_text = theme.main_text_color(theme.background());
     let ui_builder = appearance.ui_builder().clone();
+    let tab_configs_label = crate::i18n::tr_static(app, "Tab configs").to_string();
     let tab_configs_keybinding =
         keybinding_name_to_display_string(super::TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME, app);
     let is_active = workspace.show_new_session_dropdown_menu.is_some()
@@ -1386,12 +1389,12 @@ fn render_new_tab_button(
         let contents = if hover_state.is_hovered() {
             let tooltip = if let Some(sublabel) = tab_configs_keybinding.clone() {
                 ui_builder
-                    .tool_tip_with_sublabel("Tab configs".to_string(), sublabel)
+                    .tool_tip_with_sublabel(tab_configs_label.clone(), sublabel)
                     .build()
                     .finish()
             } else {
                 ui_builder
-                    .tool_tip("Tab configs".to_string())
+                    .tool_tip(tab_configs_label.clone())
                     .build()
                     .finish()
             };
@@ -1459,10 +1462,9 @@ fn render_vertical_tabs_panel(
         .with_child(Shrinkable::new(1., scrollable_groups).finish())
         .finish();
 
-    // The settings popup is rendered at the workspace level (with Dismiss for click-outside-
-    // to-close). Rendering it here again shares MouseStateHandle instances across two Hoverable
-    // trees; click_count.take() is consumed by this copy first, leaving the workspace copy
-    // with None and silently dropping all clicks on the popup items.
+    // The settings popup is rendered at the workspace level with Dismiss for
+    // click-outside-to-close. Rendering it here again shares MouseStateHandle
+    // instances across two Hoverable trees and can swallow popup clicks.
     let panel_with_popup: Box<dyn Element> = panel_content;
 
     let drag_side = match side {
