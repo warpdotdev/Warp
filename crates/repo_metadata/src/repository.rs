@@ -22,6 +22,7 @@ use crate::watcher::DirectoryWatcher;
 use crate::{
     entry::{matches_gitignores, should_ignore_git_path},
     gitignores_for_directory,
+    watcher::DirectoryWatchFilter,
 };
 use crate::{watcher::TaskQueue, RepoMetadataError, RepositoryUpdate};
 
@@ -73,7 +74,7 @@ pub struct Repository {
     next_subscriber_id: SubscriberId,
     /// Cached gitignore patterns for this repository.
     #[cfg(feature = "local_fs")]
-    gitignores: Vec<Gitignore>,
+    gitignores: Arc<Vec<Gitignore>>,
 
     task_queue: ModelHandle<TaskQueue>,
 }
@@ -88,7 +89,7 @@ impl Repository {
         #[cfg(feature = "local_fs")]
         let gitignores = {
             let local_path = root_dir.to_local_path_lossy();
-            gitignores_for_directory(&local_path)
+            Arc::new(gitignores_for_directory(&local_path))
         };
 
         let common_git_directory = external_git_directory.as_ref().and_then(|ext| {
@@ -187,12 +188,18 @@ impl Repository {
         let registration_future: BoxFuture<'static, Result<(), RepoMetadataError>> =
             if should_start_watching {
                 // Prepare list of directories to watch
-                let mut directories_to_watch = vec![self.root_dir.clone()];
+                let mut directories_to_watch = vec![(
+                    self.root_dir.clone(),
+                    DirectoryWatchFilter::RepositoryTree(self.gitignores.clone()),
+                )];
 
                 // Watch the per-worktree gitdir for worktree-specific events
                 // (HEAD, index.lock under .git/worktrees/<name>/).
                 if let Some(external_git_dir) = &self.external_git_directory {
-                    directories_to_watch.push(external_git_dir.clone());
+                    directories_to_watch.push((
+                        external_git_dir.clone(),
+                        DirectoryWatchFilter::GitMetadata,
+                    ));
                 }
 
                 // For linked worktrees, also watch .git/refs so shared ref
@@ -203,7 +210,10 @@ impl Repository {
                         let refs_dir = common_local.join("refs").join("heads");
                         if let Ok(refs_std) = StandardizedPath::from_local_canonicalized(&refs_dir)
                         {
-                            directories_to_watch.push(refs_std);
+                            directories_to_watch.push((
+                                refs_std,
+                                DirectoryWatchFilter::GitMetadata,
+                            ));
                         }
                     }
                 }

@@ -463,6 +463,42 @@ pub fn should_ignore_git_path(path: &Path) -> bool {
     !is_commit_related_git_file(path) && !is_index_lock_file(path)
 }
 
+fn is_common_large_directory_component(name: &std::ffi::OsStr) -> bool {
+    matches!(
+        name.to_str(),
+        Some(
+            ".direnv"
+                | ".gradle"
+                | ".mypy_cache"
+                | ".next"
+                | ".nuxt"
+                | ".pnpm-store"
+                | ".pytest_cache"
+                | ".ruff_cache"
+                | ".terraform"
+                | ".turbo"
+                | ".venv"
+                | "__pycache__"
+                | "build"
+                | "coverage"
+                | "dist"
+                | "node_modules"
+                | "target"
+                | "venv"
+        )
+    )
+}
+
+fn is_in_common_large_directory(path: &Path) -> bool {
+    path.components().any(|component| {
+        if let Component::Normal(name) = component {
+            is_common_large_directory_component(name)
+        } else {
+            false
+        }
+    })
+}
+
 pub fn path_passes_filters(path: &Path, gitignores: &[Gitignore]) -> bool {
     let to_check_path = if path.exists() {
         match dunce::canonicalize(path) {
@@ -472,13 +508,18 @@ pub fn path_passes_filters(path: &Path, gitignores: &[Gitignore]) -> bool {
     } else {
         path.to_path_buf()
     };
+    if is_git_internal_path(&to_check_path) {
+        return !should_ignore_git_path(&to_check_path);
+    }
 
-    !matches_gitignores(
-        &to_check_path,
-        to_check_path.is_dir(),
-        gitignores,
-        true, /* check_ancestors */
-    ) && !should_ignore_git_path(&to_check_path)
+    !is_in_common_large_directory(&to_check_path)
+        && !matches_gitignores(
+            &to_check_path,
+            to_check_path.is_dir(),
+            gitignores,
+            true, /* check_ancestors */
+        )
+        && !should_ignore_git_path(&to_check_path)
 }
 
 /// Determines whether a file should be parsed by a treesitter query. For now the main criteria is it shouldn't
