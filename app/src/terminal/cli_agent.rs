@@ -336,12 +336,27 @@ impl CLIAgent {
 
         let resolved_first_word = Self::extract_first_command(&resolved_command, escape_char)?;
 
-        // Check if resolved command matches any known CLI agent.
+        // Build the set of identifying tokens to match against `command_prefix()`.
+        // The exact first word is the primary candidate; we also peel a leading
+        // path component (so `/usr/local/bin/codex` matches `codex`), and on
+        // Linux a Node.js / Python shebang-script invocation may surface as
+        // `node /usr/local/bin/codex` or `python /usr/local/bin/foo.py` — in
+        // that case `argv[0]` is the runtime, not the agent, so we additionally
+        // consider `argv[1]`'s basename (stripping common script extensions).
+        // See #9870 for the Linux-specific Codex detection failure this covers.
+        let candidate_basename = path_basename_token(&resolved_first_word);
+        let runtime_invoked_basename =
+            shebang_script_basename(&resolved_command, &resolved_first_word);
+
+        // Check if any candidate matches a known CLI agent.
         // Also matches `aifx agent run claude` as Claude for Uber employees.
         enum_iterator::all::<CLIAgent>()
             .filter(|agent| !matches!(agent, CLIAgent::Unknown))
             .find(|agent| {
-                resolved_first_word == agent.command_prefix()
+                let prefix = agent.command_prefix();
+                resolved_first_word == prefix
+                    || candidate_basename.as_deref() == Some(prefix)
+                    || runtime_invoked_basename.as_deref() == Some(prefix)
                     || (matches!(agent, CLIAgent::Claude)
                         && Self::is_aifx_agent_run_claude(&resolved_command, ctx))
             })
@@ -363,6 +378,64 @@ impl CLIAgent {
             .flat_map(|workspace| workspace.teams.iter())
             .any(|team| team.uid.uid() == UBER_TEAM_UID)
     }
+}
+
+/// Script-runtime executable names whose `argv[1]` is the script being run.
+/// On Linux, a Node.js / Python shebang script's `/proc/PID/comm` reports the
+/// runtime, not the script name — so a command surfaces as e.g.
+/// `node /usr/local/bin/codex` and we have to look at the second token to
+/// recover the agent identity. See #9870 for the canonical Codex case.
+const SCRIPT_RUNTIMES: &[&str] = &["node", "nodejs", "bun", "deno", "python", "python3"];
+
+/// Common script extensions stripped when matching a runtime-invoked script
+/// against `command_prefix()`. Kept narrow on purpose; broadening to every
+/// possible extension is a follow-up.
+const STRIPPED_SCRIPT_EXTENSIONS: &[&str] = &[".js", ".mjs", ".cjs", ".ts", ".py"];
+
+/// If `first_word` looks like an absolute or relative path (`/usr/local/bin/codex`,
+/// `./codex`), returns the basename for matching purposes. Returns `None` when
+/// the input has no path component — callers fall back to the exact-word match.
+fn path_basename_token(first_word: &str) -> Option<String> {
+    if !first_word.contains('/') && !first_word.contains('\\') {
+        return None;
+    }
+    Path::new(first_word)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(strip_script_extension)
+}
+
+/// If `first_word` is a known script runtime (`node`, `python`, ...), returns
+/// the basename of the second token in `command` — the script being executed.
+/// Returns `None` if the first token isn't a recognized runtime, or if the
+/// command has no second token.
+fn shebang_script_basename(command: &str, first_word: &str) -> Option<String> {
+    if !SCRIPT_RUNTIMES.iter().any(|r| *r == first_word) {
+        return None;
+    }
+    // Skip the runtime token plus any whitespace, then read the next path-like
+    // token. Use whitespace splitting (not shell parsing) — this is best-effort
+    // recovery, not security-critical input handling.
+    let mut tokens = command.split_whitespace();
+    let _runtime = tokens.next()?;
+    // Skip leading flags like `-e '...'` or `--inspect`. Stop at the first
+    // non-flag token: that's the script path.
+    let script = tokens.find(|t| !t.starts_with('-'))?;
+    Path::new(script)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(strip_script_extension)
+}
+
+/// Strips a single trailing extension from `STRIPPED_SCRIPT_EXTENSIONS`, if any.
+/// Leaves the input untouched when no extension matches.
+fn strip_script_extension(name: &str) -> String {
+    for ext in STRIPPED_SCRIPT_EXTENSIONS {
+        if let Some(stem) = name.strip_suffix(ext) {
+            return stem.to_owned();
+        }
+    }
+    name.to_owned()
 }
 
 /// Builds a prompt string from a batch of code review comments suitable for
