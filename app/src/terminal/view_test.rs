@@ -4752,3 +4752,336 @@ fn linear_deeplink_via_default_entrypoint_does_not_auto_submit_in_fullscreen() {
         });
     })
 }
+
+// -----------------------------------------------------------------------------
+// `AIBlockEvent::RefineRequestedDiff` tests
+//
+// "Refine" (or hits the equivalent keybinding) on a requested code diff, the `AIBlock` emits `RefineRequestedDiff`. The
+// terminal view must:
+//   1. enter the agent view for that conversation with origin
+//      `AgentViewEntryOrigin::RefineDiff`, and
+//   2. force-lock the input to AI mode regardless of the prior input config
+//      (so the user iterates on the diff in NL mode).
+// -----------------------------------------------------------------------------
+
+use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent::{AIAgentInput, ServerOutputId, UserQueryMode};
+use crate::ai::blocklist::model::{
+    AIBlockModel, AIBlockOutputStatus, AIRequestType, OutputStatusUpdateCallback,
+};
+use crate::ai::blocklist::{AIBlock, AIBlockEvent, ClientIdentifiers};
+use crate::ai::llms::LLMId;
+
+/// Minimal [`AIBlockModel`] used solely so we can construct a real [`AIBlock`]
+struct RefineDiffTestAIBlockModel {
+    conversation_id: AIConversationId,
+    inputs: Vec<AIAgentInput>,
+    model_id: LLMId,
+}
+
+impl RefineDiffTestAIBlockModel {
+    fn new(conversation_id: AIConversationId) -> Self {
+        Self {
+            conversation_id,
+            inputs: vec![AIAgentInput::UserQuery {
+                query: "refine this diff".to_owned(),
+                context: vec![].into(),
+                static_query_type: None,
+                referenced_attachments: Default::default(),
+                user_query_mode: UserQueryMode::default(),
+                running_command: None,
+                intended_agent: None,
+            }],
+            model_id: LLMId::from("fake-llm"),
+        }
+    }
+}
+
+impl AIBlockModel for RefineDiffTestAIBlockModel {
+    type View = AIBlock;
+
+    fn status(&self, _app: &warpui::AppContext) -> AIBlockOutputStatus {
+        AIBlockOutputStatus::Pending
+    }
+
+    fn server_output_id(&self, _app: &warpui::AppContext) -> Option<ServerOutputId> {
+        None
+    }
+
+    fn model_id(&self, _app: &warpui::AppContext) -> Option<LLMId> {
+        None
+    }
+
+    fn base_model<'a>(&'a self, _app: &'a warpui::AppContext) -> Option<&'a LLMId> {
+        Some(&self.model_id)
+    }
+
+    fn inputs_to_render<'a>(&'a self, _app: &'a warpui::AppContext) -> &'a [AIAgentInput] {
+        &self.inputs
+    }
+
+    fn conversation_id(&self, _app: &warpui::AppContext) -> Option<AIConversationId> {
+        Some(self.conversation_id)
+    }
+
+    fn on_updated_output(
+        &self,
+        _callback: OutputStatusUpdateCallback<AIBlock>,
+        _ctx: &mut ViewContext<AIBlock>,
+    ) {
+    }
+
+    fn request_type(&self, _app: &warpui::AppContext) -> AIRequestType {
+        AIRequestType::Active
+    }
+}
+
+/// Constructs a real [`AIBlock`] view rooted in `terminal_view` so the
+/// `block: ViewHandle<AIBlock>` argument of `handle_ai_block_event` can be
+/// satisfied without driving an actual exchange through the AI controller.
+fn add_test_ai_block(
+    view: &mut TerminalView,
+    conversation_id: AIConversationId,
+    ctx: &mut ViewContext<TerminalView>,
+) -> ViewHandle<AIBlock> {
+    let model = Rc::new(RefineDiffTestAIBlockModel::new(conversation_id));
+    ctx.add_typed_action_view(|ctx| {
+        AIBlock::new(
+            model,
+            view.model.clone(),
+            ClientIdentifiers {
+                client_exchange_id: Default::default(),
+                conversation_id,
+                response_stream_id: None,
+            },
+            view.ai_controller.clone(),
+            view.get_relevant_files_controller.clone(),
+            None,
+            None,
+            view.ai_action_model.clone(),
+            view.ai_context_model.clone(),
+            view.find_model.clone(),
+            view.active_session.clone(),
+            view.ambient_agent_view_model.clone(),
+            &view.cli_subagent_controller,
+            &view.model_events_handle,
+            view.agent_view_controller.clone(),
+            view.view_handle.clone(),
+            view.view_id,
+            ctx,
+        )
+    })
+}
+
+/// Verifies that handling `RefineRequestedDiff` enters the agent view for the
+/// supplied conversation_id (with origin `RefineDiff`) when there was no prior
+/// active agent view.
+#[test]
+fn refine_requested_diff_enters_agent_view_for_conversation() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        terminal.update(&mut app, |view, ctx| {
+            // Pre-condition: no active agent view.
+            assert!(
+                !view
+                    .agent_view_controller()
+                    .as_ref(ctx)
+                    .agent_view_state()
+                    .is_active(),
+                "agent view should be inactive prior to RefineRequestedDiff",
+            );
+
+            // Spawn a conversation in the history model so that
+            // `enter_agent_view_for_conversation` can find it in memory.
+            let conversation_id = BlocklistAIHistoryModel::handle(ctx)
+                .update(ctx, |history, ctx| {
+                    history.start_new_conversation(view.view_id, false, false, ctx)
+                });
+
+            let block = add_test_ai_block(view, conversation_id, ctx);
+            view.handle_ai_block_event(
+                block,
+                false, // is_restored
+                &AIBlockEvent::RefineRequestedDiff { conversation_id },
+                ctx,
+            );
+
+            assert_eq!(
+                view.agent_view_controller()
+                    .as_ref(ctx)
+                    .agent_view_state()
+                    .active_conversation_id(),
+                Some(conversation_id),
+                "RefineRequestedDiff must enter agent view for the requested conversation",
+            );
+        });
+    })
+}
+
+/// Verifies that handling `RefineRequestedDiff` force-locks the input to AI
+/// mode when the input was previously in (unlocked) Shell mode.
+///
+/// Mirrors the real UI path: the user is already in agent view for the
+/// conversation when they click "Refine" on a requested code diff (the diff
+/// block is only rendered inside agent view).
+#[test]
+fn refine_requested_diff_force_locks_input_to_ai_mode() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        // Step 1: enter agent view for a freshly-started conversation. This is
+        // a separate `terminal.update` block so the `EnteredAgentView` event
+        // emitted by the controller flushes (and its input-model subscriber
+        // runs) before we set up the prior input config under test.
+        let conversation_id = terminal.update(&mut app, |view, ctx| {
+            let conversation_id = BlocklistAIHistoryModel::handle(ctx)
+                .update(ctx, |history, ctx| {
+                    history.start_new_conversation(view.view_id, false, false, ctx)
+                });
+            view.agent_view_controller().update(ctx, |controller, ctx| {
+                controller
+                    .try_enter_agent_view(
+                        Some(conversation_id),
+                        AgentViewEntryOrigin::Input {
+                            was_prompt_autodetected: false,
+                        },
+                        ctx,
+                    )
+                    .expect("Should be able to enter agent view");
+            });
+            conversation_id
+        });
+
+        // Step 2: set the prior input config under test, then dispatch the
+        // event. With agent view already active for the same conversation,
+        // `enter_agent_view_for_conversation` early-returns without emitting
+        // `EnteredAgentView`, so the explicit force-lock in the handler is the
+        // sole writer to `input_config`.
+        terminal.update(&mut app, |view, ctx| {
+            view.input.update(ctx, |input, ctx| {
+                input.ai_input_model().update(ctx, |ai_input, ctx| {
+                    ai_input.set_input_config(
+                        InputConfig {
+                            input_type: InputType::Shell,
+                            is_locked: false,
+                        },
+                        true, // is_input_buffer_empty
+                        ctx,
+                    );
+                });
+            });
+
+            let block = add_test_ai_block(view, conversation_id, ctx);
+            view.handle_ai_block_event(
+                block,
+                false,
+                &AIBlockEvent::RefineRequestedDiff { conversation_id },
+                ctx,
+            );
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert_eq!(
+                view.ai_input_model.as_ref(ctx).input_config(),
+                InputConfig {
+                    input_type: InputType::AI,
+                    is_locked: true,
+                },
+                "RefineRequestedDiff must force-lock input to AI mode",
+            );
+        });
+    })
+}
+
+/// Verifies that `RefineRequestedDiff` overrides a prior locked-Shell input
+/// config.
+/// Mirrors the real UI path: the user is already in agent view for the
+/// conversation when they click "Refine".
+#[test]
+fn refine_requested_diff_overrides_locked_shell_input_config() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+
+        let terminal = add_window_with_terminal(&mut app, None);
+
+        // Step 1: enter agent view for a freshly-started conversation in its
+        // own update block so the `EnteredAgentView` flush completes before
+        // step 2 sets the prior input config.
+        let conversation_id = terminal.update(&mut app, |view, ctx| {
+            let conversation_id = BlocklistAIHistoryModel::handle(ctx)
+                .update(ctx, |history, ctx| {
+                    history.start_new_conversation(view.view_id, false, false, ctx)
+                });
+            view.agent_view_controller().update(ctx, |controller, ctx| {
+                controller
+                    .try_enter_agent_view(
+                        Some(conversation_id),
+                        AgentViewEntryOrigin::Input {
+                            was_prompt_autodetected: false,
+                        },
+                        ctx,
+                    )
+                    .expect("Should be able to enter agent view");
+            });
+            conversation_id
+        });
+
+        // Step 2: set the prior input config to locked Shell, then dispatch
+        // the event.
+        terminal.update(&mut app, |view, ctx| {
+            view.input.update(ctx, |input, ctx| {
+                input.ai_input_model().update(ctx, |ai_input, ctx| {
+                    ai_input.set_input_config(
+                        InputConfig {
+                            input_type: InputType::Shell,
+                            is_locked: true,
+                        },
+                        true,
+                        ctx,
+                    );
+                });
+            });
+            assert_eq!(
+                view.ai_input_model.as_ref(ctx).input_config(),
+                InputConfig {
+                    input_type: InputType::Shell,
+                    is_locked: true,
+                },
+            );
+
+            let block = add_test_ai_block(view, conversation_id, ctx);
+            view.handle_ai_block_event(
+                block,
+                false,
+                &AIBlockEvent::RefineRequestedDiff { conversation_id },
+                ctx,
+            );
+        });
+
+        terminal.read(&app, |view, ctx| {
+            assert_eq!(
+                view.ai_input_model.as_ref(ctx).input_config(),
+                InputConfig {
+                    input_type: InputType::AI,
+                    is_locked: true,
+                },
+                "RefineRequestedDiff must override a previously locked Shell input config",
+            );
+            assert_eq!(
+                view.agent_view_controller()
+                    .as_ref(ctx)
+                    .agent_view_state()
+                    .active_conversation_id(),
+                Some(conversation_id),
+            );
+        });
+    })
+}
