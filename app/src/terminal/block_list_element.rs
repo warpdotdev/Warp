@@ -429,7 +429,12 @@ impl SnackbarHeader {
     ) -> bool {
         // A user has scrolled iff they are fixed at a pixel position. Otherwise, they are fixed to
         // the bottom of a block.
-        let has_scrolled = matches!(scroll_position, ScrollPosition::FixedAtPosition { .. });
+        let has_scrolled = matches!(
+            scroll_position,
+            ScrollPosition::FixedAtPosition { .. }
+                | ScrollPosition::FixedAtInteractivePosition { .. }
+                | ScrollPosition::FixedWithinInteractiveLongRunningBlock { .. }
+        );
 
         let block_output_taller_than_content_area =
             block.output_grid_displayed_height().into_lines()
@@ -4725,15 +4730,13 @@ impl NewScrollableElement for BlockListElement {
 impl ScrollableElement for BlockListElement {
     fn scroll_data(&self, _app: &AppContext) -> Option<ScrollData> {
         let line_height = self.line_height?;
-        let total_size = self
-            .model
-            .lock()
-            .block_list()
-            .block_heights()
-            .summary()
-            .height
-            .to_pixels(line_height);
         let mut visible_px = self.size?.y().into_pixels();
+        let total_size = {
+            let model = self.model.lock();
+            self.viewport_state_after_layout(model.block_list())
+                .effective_scrollable_height_in_lines()
+                .to_pixels(line_height)
+        };
 
         // If the number of visible_lines is within a rounding error of total
         // lines, just set them to be exactly equal so the scrollable element

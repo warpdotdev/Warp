@@ -7658,6 +7658,18 @@ impl TerminalView {
         self.write_user_bytes_to_pty(bytes, ctx);
     }
 
+    fn scroll_update_for_pty_input(model: &TerminalModel) -> ScrollPositionUpdate {
+        let active_block = model.block_list().active_block();
+        if !model.is_alt_screen_active()
+            && active_block.is_active_and_long_running()
+            && active_block.is_visible(model.block_list().agent_view_state())
+        {
+            ScrollPositionUpdate::AfterInteractiveLongRunningPtyInput
+        } else {
+            ScrollPositionUpdate::AfterWriteUserBytesToPty
+        }
+    }
+
     /// Ends the current line before writing 1000 byte chunks to the pty with a small delay in
     /// between to work around a macos pty bug.
     fn clear_line_editor_and_write_to_pty_with_mac_workaround_hack<B: Into<Cow<'static, [u8]>>>(
@@ -7709,7 +7721,7 @@ impl TerminalView {
         data: B,
         ctx: &mut ViewContext<Self>,
     ) {
-        {
+        let scroll_update = {
             let mut terminal_model = self.model.lock();
             let active_block = terminal_model.block_list().active_block();
             if active_block.is_agent_in_control() {
@@ -7722,12 +7734,13 @@ impl TerminalView {
                     .active_block_mut()
                     .mark_received_user_input();
             }
-        }
+            Self::scroll_update_for_pty_input(&terminal_model)
+        };
 
         let bytes = data.into();
         let bytes_vec = bytes.to_vec();
         self.clear_selected_blocks(ctx);
-        self.update_scroll_position_locking(ScrollPositionUpdate::AfterWriteUserBytesToPty, ctx);
+        self.update_scroll_position_locking(scroll_update, ctx);
         self.write_to_pty(bytes, ctx);
         self.emit_non_editor_typed_event(bytes_vec, ctx);
     }
@@ -7748,11 +7761,12 @@ impl TerminalView {
         // the bootstrap script, otherwise the user could accidentally interfere
         // with bootstrap script execution.
         if was_bootstrap_script_echoed && self.is_long_running() {
+            let scroll_update = {
+                let terminal_model = self.model.lock();
+                Self::scroll_update_for_pty_input(&terminal_model)
+            };
             self.clear_selected_blocks(ctx);
-            self.update_scroll_position_locking(
-                ScrollPositionUpdate::AfterWriteUserBytesToPty,
-                ctx,
-            );
+            self.update_scroll_position_locking(scroll_update, ctx);
             self.write_to_pty(characters, ctx);
         }
     }
@@ -7976,6 +7990,26 @@ impl TerminalView {
             model.block_list_mut().update_background_block_height();
             model.block_list_mut().update_active_block_height();
         }
+
+        let should_follow_interactive_cursor = {
+            let model = self.model.lock();
+            !model.is_alt_screen_active()
+                && model
+                    .block_list()
+                    .active_block()
+                    .is_active_and_long_running()
+                && model
+                    .block_list()
+                    .active_block()
+                    .is_visible(model.block_list().agent_view_state())
+        };
+        if should_follow_interactive_cursor {
+            self.update_scroll_position_locking(
+                ScrollPositionUpdate::AfterInteractiveLongRunningPtyInput,
+                ctx,
+            );
+        }
+
         self.maybe_emit_terminal_view_state_changed_for_long_running_block(ctx);
         self.use_agent_footer.update(ctx, |footer, ctx| {
             footer.notify_and_notify_children(ctx);
