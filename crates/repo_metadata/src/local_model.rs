@@ -957,8 +957,15 @@ impl LocalRepoMetadataModel {
                             FileTreeState::new(root_entry, gitignores_for_build, Some(repository_handle));
 
                         // Full indexing completed — drop any shallow pending fallback
-                        // that was stored while the repo was in Pending state.
-                        model.pending_lazy_fallbacks.remove(&std_repo_path);
+                        // that was stored while the repo was in Pending state, and
+                        // clear the matching lazy_loaded_paths refcount that was
+                        // inserted alongside it. Without this cleanup, the fully-indexed
+                        // repo stays marked as lazy-loaded and the view's
+                        // remove_lazy_loaded_path call would later decrement the refcount
+                        // and delete the newly indexed repository + watcher.
+                        if model.pending_lazy_fallbacks.remove(&std_repo_path).is_some() {
+                            model.lazy_loaded_paths.remove(&std_repo_path);
+                        }
 
                         if let Err(e) =
                             model.add_repository_internal(std_repo_path.clone(), state, ctx)
