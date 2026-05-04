@@ -496,7 +496,9 @@ impl TerminalView {
                 .any(|conv| conv.exchange_count() > 0);
 
             if has_conversations {
-                log::warn!("Cannot share without scrollback when agent conversations exist. Agent shared sessions require conversation history to be shared.");
+                log::warn!(
+                    "Cannot share without scrollback when agent conversations exist. Agent shared sessions require conversation history to be shared."
+                );
                 return;
             }
         }

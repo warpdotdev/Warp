@@ -263,6 +263,14 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_ssh_into_sh);
     register_test!(test_ssh_into_ash);
     register_test!(test_ssh_with_shell_override);
+
+    // Remote server integration tests
+    register_test!(test_remote_server_connect_bash);
+    register_test!(test_remote_server_connect_zsh);
+    register_test!(test_remote_server_navigate_to_repo);
+    register_test!(test_remote_server_completions);
+    register_test!(test_remote_server_file_operations);
+    register_test!(test_remote_server_lazy_load_directory);
     register_test!(test_custom_open_completions_menu_binding);
     register_test!(test_color_overrides_in_prompt_dont_crash);
     register_test!(test_copy_prompt_from_block_honor_ps1_disabled);

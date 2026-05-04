@@ -99,6 +99,9 @@ runs:
             ./script/install_cargo_build_deps
           fi
         elif ${{ inputs.target_os == 'linux' }}; then
+          # Try to install warp-channel-config but don't complain if it cannot
+          # be installed.
+          ./script/install_channel_config || true
           # Update the apt cache before installing dependencies - it can be slow, so the install scripts
           # don't do it.
           sudo apt-get update -y
