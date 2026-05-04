@@ -196,6 +196,50 @@ pub struct RunAgentsCardView {
     block_model: Rc<dyn AIBlockModel<View = AIBlock>>,
 }
 
+/// Returns `true` when the conditions for auto-launching are met.
+///
+/// Extracted from `try_auto_launch_on_stream_complete` so the
+/// decision logic can be unit-tested without constructing a full
+/// `RunAgentsCardView`.
+pub(crate) fn should_auto_launch(
+    auto_launched: bool,
+    is_denied: bool,
+    is_spawning: bool,
+    state: &RunAgentsEditState,
+    active_config: &Option<(OrchestrationConfig, OrchestrationConfigStatus)>,
+) -> bool {
+    if auto_launched
+        || is_denied
+        || is_spawning
+        || state.is_editor_open
+        || state.agent_run_configs.is_empty()
+    {
+        return false;
+    }
+    match active_config {
+        Some((config, status)) => {
+            let request = state.to_request();
+            status.is_approved() && matches_active_config(&request, config)
+        }
+        None => false,
+    }
+}
+
+/// Computes the `is_denied` flag at construction time.
+///
+/// The card is denied when either the action already has a `Denied`
+/// result in history *or* the active config is explicitly disapproved.
+pub(crate) fn compute_is_denied(
+    has_denied_result: bool,
+    active_config: &Option<(OrchestrationConfig, OrchestrationConfigStatus)>,
+) -> bool {
+    has_denied_result
+        || matches!(
+            active_config,
+            Some((_, status)) if status.is_disapproved()
+        )
+}
+
 fn is_opencode_on_remote(request: &RunAgentsRequest) -> bool {
     matches!(
         request.execution_mode,
@@ -232,18 +276,10 @@ impl RunAgentsCardView {
         // Also treat the action as denied when the config is explicitly
         // disapproved — the card will auto-deny via the subscription
         // once the action becomes blocked.
-        let is_denied = is_denied
-            || matches!(
-                &active_config,
-                Some((_, status)) if status.is_disapproved()
-            );
+        let is_denied = compute_is_denied(is_denied, &active_config);
 
-        let auto_launched = !is_denied
-            && !request.agent_run_configs.is_empty()
-            && matches!(
-                &active_config,
-                Some((config, status)) if status.is_approved() && matches_active_config(request, config)
-            );
+        let state = RunAgentsEditState::from_request(request);
+        let auto_launched = should_auto_launch(false, is_denied, false, &state, &active_config);
 
         let reject_keystroke = CTRL_C_KEYSTROKE.clone();
         let edit_keystroke =
@@ -405,24 +441,19 @@ impl RunAgentsCardView {
     /// `AIBlock::handle_complete_output` so we don't act on partial
     /// streaming chunks that arrive with an empty `agent_run_configs`.
     pub fn try_auto_launch_on_stream_complete(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.auto_launched
-            || self.is_denied
-            || self.spawning.is_some()
-            || self.state.is_editor_open
-            || self.state.agent_run_configs.is_empty()
-        {
-            return;
-        }
-        if let Some((config, status)) = &self.active_config {
-            let request = self.state.to_request();
-            if status.is_approved() && matches_active_config(&request, config) {
-                self.auto_launched = true;
-                // Don't call execute_run_agents here — the action
-                // hasn't been queued as Blocked yet. The subscription
-                // on ActionBlockedOnUserConfirmation will dispatch it
-                // once the action model is ready.
-                ctx.notify();
-            }
+        if should_auto_launch(
+            self.auto_launched,
+            self.is_denied,
+            self.spawning.is_some(),
+            &self.state,
+            &self.active_config,
+        ) {
+            self.auto_launched = true;
+            // Don't call execute_run_agents here — the action
+            // hasn't been queued as Blocked yet. The subscription
+            // on ActionBlockedOnUserConfirmation will dispatch it
+            // once the action model is ready.
+            ctx.notify();
         }
     }
 
