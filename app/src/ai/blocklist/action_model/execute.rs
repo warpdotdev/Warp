@@ -106,7 +106,7 @@ use crate::{
         agent::{
             conversation::AIConversationId, AIAgentAction, AIAgentActionId, AIAgentActionResult,
             AIAgentActionResultType, AIAgentActionType, AIAgentPtyWriteMode, CancellationReason,
-            FileContext, FileLocations, ServerOutputId,
+            FileContext, FileEdit, FileLocations, ServerOutputId,
         },
         ambient_agents::AmbientAgentTaskId,
         get_relevant_files::controller::GetRelevantFilesController,
@@ -119,6 +119,8 @@ use crate::{
     },
     BlocklistAIHistoryModel,
 };
+#[cfg(not(target_family = "wasm"))]
+use ai::diff_validation::ParsedDiff;
 
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
@@ -170,6 +172,8 @@ struct PolicyPreflightKey {
     run_until_completion: bool,
     active_profile_id: Option<String>,
     raw_action: String,
+    policy_action: AgentPolicyAction,
+    warp_permission: WarpPermissionSnapshot,
     hook_config: AgentPolicyHookConfig,
 }
 
@@ -189,6 +193,8 @@ impl PolicyPreflightKey {
             run_until_completion: event.run_until_completion,
             active_profile_id: event.active_profile_id.clone(),
             raw_action: raw_policy_action_key(action),
+            policy_action: event.action.clone(),
+            warp_permission: event.warp_permission.clone(),
             hook_config: hook_config.clone(),
         }
     }
@@ -1028,9 +1034,9 @@ impl BlocklistAIActionExecutor {
                 }
             }
             AIAgentActionType::RequestFileEdits { file_edits, .. } => {
-                let paths = file_edits
-                    .iter()
-                    .filter_map(|edit| edit.file().map(PathBuf::from))
+                let paths = file_edit_paths(file_edits)
+                    .into_iter()
+                    .map(PathBuf::from)
                     .collect::<Vec<_>>();
                 match BlocklistAIPermissions::as_ref(ctx).can_write_files(
                     &conversation_id,
@@ -1226,7 +1232,7 @@ impl BlocklistAIActionExecutor {
         let already_preprocessed = self
             .request_file_edits_executor
             .update(ctx, |executor, _ctx| {
-                executor.has_preprocessed_action(&action.id)
+                executor.has_preprocessed_action(conversation_id, action)
             });
         if already_preprocessed {
             return false;
@@ -1348,7 +1354,7 @@ impl BlocklistAIActionExecutor {
             ) && self
                 .request_file_edits_executor
                 .update(ctx, |executor, _ctx| {
-                    executor.has_preprocessed_action(&action.id)
+                    executor.has_preprocessed_action(conversation_id, action)
                 });
             let should_preserve_for_file_edit_preprocess =
                 should_preserve_completed_policy_preflight_for_file_edit_preprocess(
@@ -1660,9 +1666,8 @@ fn agent_policy_action(
             )))
         }
         AIAgentActionType::RequestFileEdits { file_edits, .. } => {
-            let paths = file_edits
-                .iter()
-                .filter_map(|edit| edit.file())
+            let paths = file_edit_paths(file_edits)
+                .into_iter()
                 .map(|file| policy_path(file, shell, current_working_directory));
             Some(AgentPolicyAction::WriteFiles(PolicyWriteFilesAction::new(
                 paths, None,
@@ -1684,6 +1689,22 @@ fn agent_policy_action(
         )),
         _ => None,
     }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn file_edit_paths(file_edits: &[FileEdit]) -> Vec<&str> {
+    file_edits
+        .iter()
+        .flat_map(|edit| match edit {
+            FileEdit::Edit(ParsedDiff::V4AEdit { file, move_to, .. }) => {
+                [file.as_deref(), move_to.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+            }
+            _ => edit.file().into_iter().collect(),
+        })
+        .collect()
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -1835,7 +1856,7 @@ fn warp_denied_action_result(
     Some(match &action.action {
         AIAgentActionType::RequestCommandOutput { command, .. } => {
             AIAgentActionResultType::RequestCommandOutput(RequestCommandOutputResult::Denylisted {
-                command: command.clone(),
+                command: redact_command_for_policy(command),
             })
         }
         AIAgentActionType::ReadFiles(_) => {

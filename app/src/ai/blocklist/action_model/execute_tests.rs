@@ -105,6 +105,8 @@ mod policy_hooks {
         path::PathBuf,
     };
 
+    use ai::diff_validation::{ParsedDiff, V4AHunk};
+
     use crate::{
         ai::{
             agent::task::TaskId,
@@ -128,7 +130,7 @@ mod policy_hooks {
 
     use super::super::{
         agent_policy_action, complete_policy_preflight_if_pending,
-        confirmed_file_edit_policy_preprocess_state_from_cached_decision,
+        confirmed_file_edit_policy_preprocess_state_from_cached_decision, file_edit_paths,
         normalize_command_for_policy, policy_denied_action_result,
         policy_preflight_state_from_decision, recompose_completed_policy_decision,
         should_consume_completed_policy_preflight,
@@ -201,6 +203,28 @@ mod policy_hooks {
                     file: Some("src/lib.rs".to_string()),
                     content: Some("fn main() {}\n".to_string()),
                 }],
+                title: None,
+            },
+            requires_result: true,
+        }
+    }
+
+    fn v4a_move_file_edit_action(source: &str, target: &str) -> AIAgentAction {
+        AIAgentAction {
+            id: AIAgentActionId::from("action_1".to_string()),
+            task_id: TaskId::new("task_1".to_string()),
+            action: AIAgentActionType::RequestFileEdits {
+                file_edits: vec![FileEdit::Edit(ParsedDiff::V4AEdit {
+                    file: Some(source.to_string()),
+                    move_to: Some(target.to_string()),
+                    hunks: vec![V4AHunk {
+                        change_context: Vec::new(),
+                        pre_context: String::new(),
+                        old: String::new(),
+                        new: "content\n".to_string(),
+                        post_context: String::new(),
+                    }],
+                })],
                 title: None,
             },
             requires_result: true,
@@ -316,7 +340,7 @@ mod policy_hooks {
 
     #[test]
     fn warp_denied_command_result_preserves_denylisted_variant() {
-        let action = command_action("rm -rf target");
+        let action = command_action("OPENAI_API_KEY=sk-secretsecretsecret rm -rf target");
         let decision = compose_policy_decisions(
             WarpPermissionSnapshot::deny(Some(
                 "command is explicitly denylisted by Warp permissions".to_string(),
@@ -336,7 +360,7 @@ mod policy_hooks {
         assert_eq!(
             result,
             AIAgentActionResultType::RequestCommandOutput(RequestCommandOutputResult::Denylisted {
-                command: "rm -rf target".to_string(),
+                command: "OPENAI_API_KEY=<redacted> rm -rf target".to_string(),
             })
         );
     }
@@ -663,6 +687,56 @@ mod policy_hooks {
     }
 
     #[test]
+    fn cached_policy_decision_does_not_autoapprove_when_config_disables_hook_autoapproval() {
+        let cached_decision = compose_policy_decisions(
+            WarpPermissionSnapshot::ask(Some("AlwaysAsk".to_string())),
+            vec![AgentPolicyHookEvaluation {
+                hook_name: "guard".to_string(),
+                decision: AgentPolicyDecisionKind::Allow,
+                reason: Some("approved by hook".to_string()),
+                external_audit_id: Some("audit_1".to_string()),
+                error: None,
+            }],
+            true,
+        );
+
+        let recomposed = recompose_completed_policy_decision(
+            &cached_decision,
+            WarpPermissionSnapshot::ask(Some("AlwaysAsk".to_string())),
+            false,
+        );
+
+        assert_eq!(recomposed.decision, AgentPolicyDecisionKind::Ask);
+        assert_eq!(recomposed.reason.as_deref(), Some("AlwaysAsk"));
+        assert_eq!(
+            recomposed.warp_permission.decision,
+            WarpPermissionDecisionKind::Ask
+        );
+    }
+
+    #[test]
+    fn file_edit_policy_paths_include_v4a_move_to_target() {
+        let action = v4a_move_file_edit_action("src/old.rs", "src/new.rs");
+        let AIAgentActionType::RequestFileEdits { file_edits, .. } = &action.action else {
+            panic!("expected file edit action");
+        };
+
+        assert_eq!(
+            file_edit_paths(file_edits),
+            vec!["src/old.rs", "src/new.rs"]
+        );
+
+        let policy_action = agent_policy_action(&action, None, &None, &None).unwrap();
+        let AgentPolicyAction::WriteFiles(write_files) = policy_action else {
+            panic!("expected write-files policy action");
+        };
+        assert_eq!(
+            write_files.paths,
+            vec![PathBuf::from("src/old.rs"), PathBuf::from("src/new.rs")]
+        );
+    }
+
+    #[test]
     fn policy_preflight_key_scopes_same_action_id_by_conversation() {
         let action_id = AIAgentActionId::from("action_1".to_string());
         let action = command_action("ls");
@@ -777,6 +851,30 @@ mod policy_hooks {
             false,
             Some("profile_b".to_string()),
             WarpPermissionSnapshot::allow(None),
+            policy_action.clone(),
+        );
+        let changed_policy_action = AgentPolicyEvent::new(
+            conversation_id.to_string(),
+            action_id.to_string(),
+            Some(PathBuf::from("/repo")),
+            false,
+            Some("profile_a".to_string()),
+            WarpPermissionSnapshot::allow(None),
+            agent_policy_action(
+                &command_action("echo one`\n+two"),
+                Some(ShellType::PowerShell),
+                &None,
+                &None,
+            )
+            .unwrap(),
+        );
+        let changed_warp_permission = AgentPolicyEvent::new(
+            conversation_id.to_string(),
+            action_id.to_string(),
+            Some(PathBuf::from("/repo")),
+            false,
+            Some("profile_a".to_string()),
+            WarpPermissionSnapshot::ask(Some("AlwaysAsk".to_string())),
             policy_action,
         );
 
@@ -812,9 +910,29 @@ mod policy_hooks {
             base_key,
             PolicyPreflightKey::new(
                 conversation_id,
-                action_id,
+                action_id.clone(),
                 &action,
                 &changed_profile,
+                &config
+            )
+        );
+        assert_ne!(
+            base_key,
+            PolicyPreflightKey::new(
+                conversation_id,
+                action_id.clone(),
+                &action,
+                &changed_policy_action,
+                &config
+            )
+        );
+        assert_ne!(
+            base_key,
+            PolicyPreflightKey::new(
+                conversation_id,
+                action_id,
+                &action,
+                &changed_warp_permission,
                 &config
             )
         );

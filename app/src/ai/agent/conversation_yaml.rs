@@ -18,6 +18,10 @@ use api::message::Message;
 use crate::ai::policy_hooks::redaction::redact_sensitive_text_for_policy;
 
 use super::task::helper::{SubagentExt, ToolExt};
+use super::{
+    decode_file_edits_policy_denied_reason, WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID,
+    WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE, WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
+};
 
 const BASE_DIR_NAME: &str = "warp_conversation_search";
 
@@ -682,7 +686,8 @@ fn write_tool_call_result_content(out: &mut String, result: &ToolCallResultType)
                         }
                     }
                     Result::Error(e) => {
-                        out.push_str(&format!("is_error: true\nerror: {}\n", e.message));
+                        out.push_str("is_error: true\nerror: |\n");
+                        write_block_scalar(out, &yaml_safe_apply_file_diffs_error(&e.message));
                     }
                 }
             }
@@ -749,7 +754,10 @@ fn write_tool_call_result_content(out: &mut String, result: &ToolCallResultType)
                     Result::CommandFinished(c) => {
                         out.push_str(&format!("exit_code: {}\n", c.exit_code));
                         out.push_str("output: |\n");
-                        write_block_scalar(out, truncate_content(&c.output, 4096));
+                        write_block_scalar(
+                            out,
+                            truncate_content(&yaml_safe_shell_command_output(c), 4096),
+                        );
                     }
                     Result::Error(_) => {
                         out.push_str("status: error\n");
@@ -1048,6 +1056,34 @@ fn write_tool_call_result_content(out: &mut String, result: &ToolCallResultType)
             out.push_str("status: completed\n");
         }
     }
+}
+
+fn yaml_safe_apply_file_diffs_error(message: &str) -> String {
+    if let Some(reason) = decode_file_edits_policy_denied_reason(message) {
+        return format!(
+            "File edits blocked by host policy: {}",
+            redact_sensitive_text_for_policy(&reason)
+        );
+    }
+
+    redact_sensitive_text_for_policy(message)
+}
+
+fn yaml_safe_shell_command_output(command: &api::ShellCommandFinished) -> String {
+    let is_policy_denial = command.command_id == WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID
+        && command.exit_code == WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE;
+    if is_policy_denial {
+        let reason = command
+            .output
+            .strip_prefix(WRITE_TO_SHELL_POLICY_DENIED_PREFIX)
+            .unwrap_or(&command.output);
+        return format!(
+            "{WRITE_TO_SHELL_POLICY_DENIED_PREFIX}{}",
+            redact_sensitive_text_for_policy(reason)
+        );
+    }
+
+    command.output.clone()
 }
 
 /// Looks up the subtask_id for a given tool_call_id by scanning the task's messages for a

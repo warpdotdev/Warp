@@ -99,12 +99,15 @@ impl AgentPolicyHookEngine {
                 hook.name.clone(),
                 redact_hook_response_configured_secrets(response, hook),
             ),
-            Err(failure) => AgentPolicyHookEvaluation::unavailable(
-                hook.name.clone(),
-                self.config.hook_unavailable_decision(hook).decision_kind(),
-                failure.kind,
-                failure.detail,
-            ),
+            Err(failure) => {
+                let failure = redact_hook_failure_configured_secrets(failure, hook);
+                AgentPolicyHookEvaluation::unavailable(
+                    hook.name.clone(),
+                    self.config.hook_unavailable_decision(hook).decision_kind(),
+                    failure.kind,
+                    failure.detail,
+                )
+            }
         }
     }
 
@@ -423,6 +426,22 @@ fn redact_hook_response_configured_secrets(
     }
 }
 
+fn redact_hook_failure_configured_secrets(
+    failure: AgentPolicyHookFailure,
+    hook: &AgentPolicyHook,
+) -> AgentPolicyHookFailure {
+    let detail = match &hook.transport {
+        AgentPolicyHookTransport::Stdio { env, .. } => {
+            redact_configured_secret_values(&failure.detail, env.values())
+        }
+        AgentPolicyHookTransport::Http { headers, .. } => {
+            redact_configured_secret_values(&failure.detail, headers.values())
+        }
+    };
+
+    AgentPolicyHookFailure { detail, ..failure }
+}
+
 fn redact_hook_response_secret_values<'a>(
     response: AgentPolicyHookResponse,
     secrets: impl IntoIterator<Item = &'a AgentPolicyHookSecretValue> + Clone,
@@ -533,10 +552,7 @@ fn parse_hook_response(stdout: &[u8]) -> Result<AgentPolicyHookResponse> {
         serde_json::from_slice(stdout).context("parse JSON response")?;
 
     if response.schema_version != AGENT_POLICY_SCHEMA_VERSION {
-        return Err(anyhow!(
-            "unsupported schema_version {:?}",
-            response.schema_version
-        ));
+        return Err(anyhow!("unsupported schema_version"));
     }
 
     if response.decision == AgentPolicyDecisionKind::Unknown {

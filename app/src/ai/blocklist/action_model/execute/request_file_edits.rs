@@ -7,7 +7,7 @@ use warp_util::file::FileSaveError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use ai::diff_validation::AIRequestedCodeDiff;
+use ai::diff_validation::{AIRequestedCodeDiff, ParsedDiff};
 use futures::{channel::oneshot, future::BoxFuture, FutureExt};
 use itertools::Itertools;
 use vec1::{vec1, Vec1};
@@ -31,7 +31,8 @@ use crate::{
         agent::{
             conversation::AIConversationId, AIAgentAction, AIAgentActionId,
             AIAgentActionResultType, AIAgentActionType, AIAgentOutputMessage,
-            AIAgentOutputMessageType, AIIdentifiers, RequestFileEditsResult, UpdatedFileContext,
+            AIAgentOutputMessageType, AIIdentifiers, FileEdit, RequestFileEditsResult,
+            UpdatedFileContext,
         },
         blocklist::{
             inline_action::code_diff_view::{
@@ -52,9 +53,113 @@ pub struct RequestFileEditsExecutor {
     active_session: ModelHandle<ActiveSession>,
     apply_diff_model: ModelHandle<ApplyDiffModel>,
     diff_views: HashMap<AIAgentActionId, ViewHandle<CodeDiffView>>,
-    /// Set of action IDs where diff application failed.
-    diff_application_failures: HashMap<AIAgentActionId, Vec1<DiffApplicationError>>,
+    /// Failed diff applications scoped to the exact action payload that was preprocessed.
+    diff_application_failures: HashMap<AIAgentActionId, FileEditPreprocessFailure>,
+    preprocessed_actions: HashMap<AIAgentActionId, FileEditPreprocessFingerprint>,
     terminal_view_id: EntityId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileEditPreprocessFingerprint {
+    conversation_id: AIConversationId,
+    action_payload: String,
+}
+
+struct FileEditPreprocessFailure {
+    fingerprint: FileEditPreprocessFingerprint,
+    errors: Vec1<DiffApplicationError>,
+}
+
+fn file_edit_preprocess_failure_matches(
+    failure: &FileEditPreprocessFailure,
+    fingerprint: &FileEditPreprocessFingerprint,
+) -> bool {
+    &failure.fingerprint == fingerprint
+}
+
+fn file_edit_preprocess_fingerprint(
+    conversation_id: AIConversationId,
+    action: &AIAgentAction,
+) -> FileEditPreprocessFingerprint {
+    FileEditPreprocessFingerprint {
+        conversation_id,
+        action_payload: format!("{:?}", action.action),
+    }
+}
+
+fn file_edit_paths_for_permissions(file_edits: &[FileEdit]) -> Vec<&str> {
+    file_edits
+        .iter()
+        .flat_map(|edit| match edit {
+            FileEdit::Edit(ParsedDiff::V4AEdit { file, move_to, .. }) => {
+                [file.as_deref(), move_to.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+            }
+            _ => edit.file().into_iter().collect(),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::agent::task::TaskId;
+
+    fn file_edit_action(action_id: &str, file: &str) -> AIAgentAction {
+        AIAgentAction {
+            id: AIAgentActionId::from(action_id.to_string()),
+            task_id: TaskId::new("task_1".to_string()),
+            action: AIAgentActionType::RequestFileEdits {
+                file_edits: vec![crate::ai::agent::FileEdit::Create {
+                    file: Some(file.to_string()),
+                    content: Some("content\n".to_string()),
+                }],
+                title: None,
+            },
+            requires_result: true,
+        }
+    }
+
+    #[test]
+    fn file_edit_preprocess_fingerprint_scopes_conversation_and_payload() {
+        let conversation_one = AIConversationId::new();
+        let conversation_two = AIConversationId::new();
+        let old_action = file_edit_action("action_1", "src/old.rs");
+        let new_action = file_edit_action("action_1", "src/new.rs");
+
+        assert_ne!(
+            file_edit_preprocess_fingerprint(conversation_one, &old_action),
+            file_edit_preprocess_fingerprint(conversation_two, &old_action)
+        );
+        assert_ne!(
+            file_edit_preprocess_fingerprint(conversation_one, &old_action),
+            file_edit_preprocess_fingerprint(conversation_one, &new_action)
+        );
+    }
+
+    #[test]
+    fn file_edit_preprocess_failure_is_fingerprinted() {
+        let conversation_id = AIConversationId::new();
+        let old_action = file_edit_action("action_1", "src/old.rs");
+        let new_action = file_edit_action("action_1", "src/new.rs");
+        let old_fingerprint = file_edit_preprocess_fingerprint(conversation_id, &old_action);
+        let new_fingerprint = file_edit_preprocess_fingerprint(conversation_id, &new_action);
+        let failure = FileEditPreprocessFailure {
+            fingerprint: old_fingerprint.clone(),
+            errors: vec1![DiffApplicationError::EmptyDiff],
+        };
+
+        assert!(file_edit_preprocess_failure_matches(
+            &failure,
+            &old_fingerprint
+        ));
+        assert!(!file_edit_preprocess_failure_matches(
+            &failure,
+            &new_fingerprint
+        ));
+    }
 }
 
 impl RequestFileEditsExecutor {
@@ -69,6 +174,7 @@ impl RequestFileEditsExecutor {
             apply_diff_model,
             diff_views: HashMap::new(),
             diff_application_failures: HashMap::new(),
+            preprocessed_actions: HashMap::new(),
             terminal_view_id,
         }
     }
@@ -79,21 +185,17 @@ impl RequestFileEditsExecutor {
         ctx: &mut ModelContext<Self>,
     ) -> bool {
         let ExecuteActionInput {
-            action:
-                AIAgentAction {
-                    action: AIAgentActionType::RequestFileEdits { file_edits, .. },
-                    ..
-                },
+            action,
             conversation_id,
-        } = input
-        else {
+        } = input;
+        let AIAgentActionType::RequestFileEdits { file_edits, .. } = &action.action else {
             return false;
         };
 
-        let paths: Vec<PathBuf> = file_edits
-            .iter()
-            .filter_map(|edit| edit.file().map(PathBuf::from))
-            .collect();
+        let paths = file_edit_paths_for_permissions(file_edits)
+            .into_iter()
+            .map(PathBuf::from)
+            .collect::<Vec<_>>();
 
         // Don't allow autoexecution if the diff was generated passively.
         let Some(latest_exchange) = BlocklistAIHistoryModel::as_ref(ctx)
@@ -111,9 +213,11 @@ impl RequestFileEditsExecutor {
         // from the LLM.
         // If we don't do this, a failed diff application will block execution of the entire AI conversation
         // without any possibility of recovery.
+        let fingerprint = file_edit_preprocess_fingerprint(conversation_id, action);
         if self
             .diff_application_failures
-            .contains_key(&input.action.id)
+            .get(&action.id)
+            .is_some_and(|failure| file_edit_preprocess_failure_matches(failure, &fingerprint))
         {
             return true;
         }
@@ -134,9 +238,22 @@ impl RequestFileEditsExecutor {
         self.diff_views.insert(action_id.clone(), view.clone());
     }
 
-    pub(super) fn has_preprocessed_action(&self, action_id: &AIAgentActionId) -> bool {
-        self.diff_views.contains_key(action_id)
-            || self.diff_application_failures.contains_key(action_id)
+    pub(super) fn has_preprocessed_action(
+        &self,
+        conversation_id: AIConversationId,
+        action: &AIAgentAction,
+    ) -> bool {
+        let fingerprint = file_edit_preprocess_fingerprint(conversation_id, action);
+        self.preprocessed_actions
+            .get(&action.id)
+            .is_some_and(|stored| stored == &fingerprint)
+            && (self.diff_views.contains_key(&action.id)
+                || self
+                    .diff_application_failures
+                    .get(&action.id)
+                    .is_some_and(|failure| {
+                        file_edit_preprocess_failure_matches(failure, &fingerprint)
+                    }))
     }
 
     pub(super) fn execute(
@@ -145,14 +262,14 @@ impl RequestFileEditsExecutor {
         ctx: &mut ModelContext<Self>,
     ) -> impl Into<AnyActionExecution> {
         let ExecuteActionInput {
-            action:
-                AIAgentAction {
-                    id,
-                    action: AIAgentActionType::RequestFileEdits { .. },
-                    ..
-                },
+            action,
+            conversation_id,
+        } = input;
+        let AIAgentAction {
+            id,
+            action: AIAgentActionType::RequestFileEdits { .. },
             ..
-        } = input
+        } = action
         else {
             return ActionExecution::InvalidAction;
         };
@@ -163,7 +280,17 @@ impl RequestFileEditsExecutor {
         };
 
         // If diff application failed, early exit.
-        if let Some(errors) = self.diff_application_failures.remove(id) {
+        let fingerprint = file_edit_preprocess_fingerprint(conversation_id, action);
+        let matching_failure = self
+            .diff_application_failures
+            .get(id)
+            .is_some_and(|failure| file_edit_preprocess_failure_matches(failure, &fingerprint));
+        if matching_failure {
+            let errors = self
+                .diff_application_failures
+                .remove(id)
+                .expect("matching diff failure should exist")
+                .errors;
             return ActionExecution::Sync(AIAgentActionResultType::RequestFileEdits(
                 RequestFileEditsResult::DiffApplicationFailed {
                     error: DiffApplicationError::error_for_conversation(&errors),
@@ -172,9 +299,9 @@ impl RequestFileEditsExecutor {
         }
 
         let identifiers = self
-            .generate_ai_identifiers(&input.conversation_id, id, ctx)
+            .generate_ai_identifiers(&conversation_id, id, ctx)
             .unwrap_or_else(|| AIIdentifiers {
-                client_conversation_id: Some(input.conversation_id),
+                client_conversation_id: Some(conversation_id),
                 ..Default::default()
             });
 
@@ -217,7 +344,7 @@ impl RequestFileEditsExecutor {
                 }
 
                 let passive_diff = BlocklistAIHistoryModel::as_ref(ctx)
-                    .is_entirely_passive_conversation(&input.conversation_id);
+                    .is_entirely_passive_conversation(&conversation_id);
                 send_telemetry_from_ctx!(
                     RequestFileEditsTelemetryEvent::EditResolved(EditResolvedEvent {
                         identifiers: identifiers.clone(),
@@ -321,6 +448,7 @@ impl RequestFileEditsExecutor {
         let (tx, rx) = oneshot::channel();
         let files = file_edits.clone();
         let id = id.clone();
+        let fingerprint = file_edit_preprocess_fingerprint(input.conversation_id, input.action);
 
         let apply_future = self.apply_diff_model.update(ctx, |model, ctx| {
             model.apply_diffs(files, &ai_identifiers, passive_diff, ctx)
@@ -329,10 +457,10 @@ impl RequestFileEditsExecutor {
         ctx.spawn(
             async move {
                 let applied_diffs = apply_future.await;
-                (applied_diffs, id, tx)
+                (applied_diffs, id, fingerprint, tx)
             },
-            |me, (diffs, id, tx), ctx| {
-                me.on_diffs_applied(diffs, id, tx, ctx);
+            |me, (diffs, id, fingerprint, tx), ctx| {
+                me.on_diffs_applied(diffs, id, fingerprint, tx, ctx);
             },
         );
 
@@ -346,10 +474,13 @@ impl RequestFileEditsExecutor {
         &mut self,
         applied_diffs: Result<Vec<AIRequestedCodeDiff>, Vec1<DiffApplicationError>>,
         id: AIAgentActionId,
+        fingerprint: FileEditPreprocessFingerprint,
         tx: oneshot::Sender<()>,
         ctx: &mut ModelContext<Self>,
     ) {
         tx.send(()).ok();
+        self.preprocessed_actions
+            .insert(id.clone(), fingerprint.clone());
 
         let Some(diff_view) = self.diff_views.get(&id) else {
             log::warn!(
@@ -363,8 +494,13 @@ impl RequestFileEditsExecutor {
             Ok(_) => {
                 // We didn't generate any diffs--consider this a failure.
                 log::warn!("No diffs generated");
-                self.diff_application_failures
-                    .insert(id, vec1![DiffApplicationError::EmptyDiff]);
+                self.diff_application_failures.insert(
+                    id,
+                    FileEditPreprocessFailure {
+                        fingerprint,
+                        errors: vec1![DiffApplicationError::EmptyDiff],
+                    },
+                );
                 return;
             }
             Err(err) => {
@@ -372,10 +508,17 @@ impl RequestFileEditsExecutor {
                     safe: ("Failed to generate diffs"),
                     full: ("Failed to generate diffs {err:?}")
                 );
-                self.diff_application_failures.insert(id, err);
+                self.diff_application_failures.insert(
+                    id,
+                    FileEditPreprocessFailure {
+                        fingerprint,
+                        errors: err,
+                    },
+                );
                 return;
             }
         };
+        self.diff_application_failures.remove(&id);
 
         let current_working_directory = self
             .active_session

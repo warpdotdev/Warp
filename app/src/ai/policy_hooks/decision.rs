@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::redaction::redact_sensitive_text_for_policy;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AgentPolicyDecisionKind {
     Allow,
@@ -43,7 +43,7 @@ pub(crate) struct AgentPolicyHookResponse {
     pub external_audit_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum WarpPermissionDecisionKind {
     Allow,
@@ -51,7 +51,7 @@ pub(crate) enum WarpPermissionDecisionKind {
     Deny,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct WarpPermissionSnapshot {
     pub decision: WarpPermissionDecisionKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]

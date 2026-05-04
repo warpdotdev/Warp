@@ -76,11 +76,16 @@ impl AgentPolicyHookConfig {
         &self,
         hook: &AgentPolicyHook,
     ) -> AgentPolicyUnavailableDecision {
+        if self.on_unavailable == AgentPolicyUnavailableDecision::Deny {
+            return AgentPolicyUnavailableDecision::Deny;
+        }
+
         hook.on_unavailable.unwrap_or(self.on_unavailable)
     }
 
     pub(crate) fn allow_autoapproval_for_all_hooks(&self) -> bool {
-        !self.before_action.is_empty()
+        self.allow_hook_autoapproval
+            && !self.before_action.is_empty()
             && self
                 .before_action
                 .iter()
@@ -316,17 +321,36 @@ fn validate_stdio_args(args: &[String]) -> Result<(), AgentPolicyHookConfigError
     }) {
         return Err(AgentPolicyHookConfigError::StdioArgContainsCredentials);
     }
+    if args.windows(2).any(|args| {
+        stdio_arg_expects_header_value(&args[0])
+            && stdio_header_value_contains_credentials(&args[1])
+    }) {
+        return Err(AgentPolicyHookConfigError::StdioArgContainsCredentials);
+    }
     Ok(())
 }
 
 fn validate_stdio_command(command: &str) -> Result<(), AgentPolicyHookConfigError> {
-    if stdio_arg_contains_credentials(command) {
+    let words = shell_words::split(command).unwrap_or_else(|_| {
+        command
+            .split_ascii_whitespace()
+            .map(ToString::to_string)
+            .collect()
+    });
+    if words
+        .iter()
+        .any(|word| stdio_arg_contains_credentials(word))
+    {
         return Err(AgentPolicyHookConfigError::StdioCommandContainsCredentials);
     }
-
-    let words = command.split_ascii_whitespace().collect::<Vec<_>>();
     if words.windows(2).any(|words| {
-        stdio_arg_expects_secret_value(words[0]) && stdio_arg_value_is_literal_secret(words[1])
+        stdio_arg_expects_secret_value(&words[0]) && stdio_arg_value_is_literal_secret(&words[1])
+    }) {
+        return Err(AgentPolicyHookConfigError::StdioCommandContainsCredentials);
+    }
+    if words.windows(2).any(|words| {
+        stdio_arg_expects_header_value(&words[0])
+            && stdio_header_value_contains_credentials(&words[1])
     }) {
         return Err(AgentPolicyHookConfigError::StdioCommandContainsCredentials);
     }
@@ -338,8 +362,10 @@ fn http_url_contains_credentials(url: &str) -> bool {
     if let Ok(parsed) = url::Url::parse(url) {
         return !parsed.username().is_empty()
             || parsed.password().is_some()
+            || url_component_contains_credentials(parsed.path())
             || parsed.query_pairs().any(|(key, value)| {
-                text_contains_credentials(&key) || text_contains_credentials(&value)
+                url_component_contains_credentials(&key)
+                    || url_component_contains_credentials(&value)
             })
             || parsed
                 .fragment()
@@ -372,19 +398,26 @@ fn http_url_contains_credentials(url: &str) -> bool {
     }
 
     let suffix = &url[authority_end..];
-    suffix
-        .find(|ch| matches!(ch, '?' | '#'))
-        .is_some_and(|offset| url_component_contains_credentials(&suffix[offset + 1..]))
+    url_component_contains_credentials(suffix)
 }
 
 fn url_component_contains_credentials(value: &str) -> bool {
-    if text_contains_credentials(value) {
-        return true;
+    let mut current = std::borrow::Cow::Borrowed(value);
+    for _ in 0..=3 {
+        if text_contains_credentials(current.as_ref()) {
+            return true;
+        }
+
+        let Ok(decoded) = urlencoding::decode(current.as_ref()) else {
+            return false;
+        };
+        if decoded == current {
+            return false;
+        }
+        current = std::borrow::Cow::Owned(decoded.into_owned());
     }
 
-    urlencoding::decode(value)
-        .ok()
-        .is_some_and(|decoded| text_contains_credentials(decoded.as_ref()))
+    false
 }
 
 fn text_contains_credentials(value: &str) -> bool {
@@ -421,6 +454,19 @@ fn text_contains_credentials(value: &str) -> bool {
 
 fn stdio_arg_contains_credentials(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
+    if let Some((name, secret)) = value.split_once('=') {
+        let secret = secret.trim();
+        if stdio_arg_expects_header_value(name) {
+            return stdio_header_value_contains_credentials(secret);
+        }
+        if (text_contains_credentials(name) || stdio_arg_expects_secret_value(name))
+            && !secret.is_empty()
+            && !stdio_arg_value_uses_env_secret_reference(secret)
+        {
+            return true;
+        }
+    }
+
     if let Some(offset) = lower.find("authorization:") {
         let value = value[offset + "authorization:".len()..].trim();
         if !value.is_empty() && !stdio_arg_value_uses_env_secret_reference(value) {
@@ -434,17 +480,34 @@ fn stdio_arg_contains_credentials(value: &str) -> bool {
         return true;
     }
 
-    if let Some((name, secret)) = value.split_once('=') {
-        let secret = secret.trim();
-        if text_contains_credentials(name)
-            && !secret.is_empty()
-            && !stdio_arg_value_uses_env_secret_reference(secret)
-        {
-            return true;
-        }
-    }
-
     text_contains_common_token(value)
+}
+
+fn stdio_arg_expects_header_value(value: &str) -> bool {
+    matches!(
+        value
+            .trim()
+            .trim_matches(|ch| ch == '"' || ch == '\'')
+            .trim(),
+        "-H" | "--header" | "--proxy-header"
+    )
+}
+
+fn stdio_header_value_contains_credentials(value: &str) -> bool {
+    let value = value
+        .trim()
+        .trim_matches(|ch| ch == '"' || ch == '\'')
+        .trim();
+    let Some((name, secret)) = value.split_once(':') else {
+        return false;
+    };
+    let secret = secret
+        .trim()
+        .trim_matches(|ch| ch == '"' || ch == '\'')
+        .trim();
+    text_contains_credentials(name)
+        && !secret.is_empty()
+        && !stdio_arg_value_uses_env_secret_reference(secret)
 }
 
 fn text_contains_common_token(value: &str) -> bool {
@@ -484,6 +547,9 @@ fn stdio_arg_expects_secret_value(value: &str) -> bool {
 
     normalized.contains("apikey")
         || normalized.contains("accesskey")
+        || normalized == "u"
+        || normalized == "user"
+        || normalized == "proxyuser"
         || normalized.ends_with("token")
         || normalized.ends_with("secret")
         || normalized.ends_with("password")

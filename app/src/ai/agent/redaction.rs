@@ -211,6 +211,12 @@ pub(crate) fn redact_inputs(inputs: &mut [AIAgentInput]) {
                             for file_path in deleted_files {
                                 redact_secrets(file_path);
                             }
+                        } else if let crate::ai::agent::RequestFileEditsResult::PolicyDenied {
+                            reason,
+                        } = request_file_edits_result
+                        {
+                            *reason = redact_sensitive_text_for_policy(reason);
+                            redact_secrets(reason);
                         }
                     }
                     AIAgentActionResultType::InsertReviewComments(result) => {
@@ -434,7 +440,8 @@ mod tests {
     use super::*;
     use crate::ai::agent::task::TaskId;
     use crate::ai::agent::{
-        AIAgentActionResult, AIAgentActionResultType, WriteToLongRunningShellCommandResult,
+        AIAgentActionResult, AIAgentActionResultType, RequestFileEditsResult,
+        WriteToLongRunningShellCommandResult,
     };
 
     #[test]
@@ -501,6 +508,43 @@ mod tests {
         ) = &result.result
         else {
             panic!("expected policy denied shell write result");
+        };
+
+        assert!(reason.contains("PASSWORD=<redacted>"));
+        assert!(reason.contains("--token <redacted>"));
+        assert!(reason.contains("Authorization: Bearer <redacted>"));
+        assert!(!reason.contains("hunter2"));
+        assert!(!reason.contains("raw-token"));
+        assert!(!reason.contains("rawbearer"));
+    }
+
+    #[test]
+    fn redact_inputs_redacts_policy_denied_file_edit_reason() {
+        let mut inputs = vec![AIAgentInput::ActionResult {
+            result: AIAgentActionResult {
+                id: "action_1".to_string().into(),
+                task_id: TaskId::new("task_1".to_string()),
+                result: AIAgentActionResultType::RequestFileEdits(
+                    RequestFileEditsResult::PolicyDenied {
+                        reason:
+                            "blocked PASSWORD=hunter2 --token raw-token Authorization: Bearer rawbearer"
+                                .to_string(),
+                    },
+                ),
+            },
+            context: Arc::from([]),
+        }];
+
+        redact_inputs(&mut inputs);
+
+        let AIAgentInput::ActionResult { result, .. } = &inputs[0] else {
+            panic!("expected action result");
+        };
+        let AIAgentActionResultType::RequestFileEdits(RequestFileEditsResult::PolicyDenied {
+            reason,
+        }) = &result.result
+        else {
+            panic!("expected policy denied file-edit result");
         };
 
         assert!(reason.contains("PASSWORD=<redacted>"));

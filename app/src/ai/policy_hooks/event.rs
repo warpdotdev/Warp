@@ -38,6 +38,7 @@ impl AgentPolicyEvent {
         warp_permission: WarpPermissionSnapshot,
         action: AgentPolicyAction,
     ) -> Self {
+        let action = action.redacted();
         Self {
             schema_version: AGENT_POLICY_SCHEMA_VERSION.to_string(),
             event_id: uuid::Uuid::new_v4(),
@@ -107,6 +108,34 @@ impl AgentPolicyAction {
             Self::WriteFiles(_) => AgentPolicyActionKind::WriteFiles,
             Self::CallMcpTool(_) => AgentPolicyActionKind::CallMcpTool,
             Self::ReadMcpResource(_) => AgentPolicyActionKind::ReadMcpResource,
+        }
+    }
+
+    fn redacted(self) -> Self {
+        match self {
+            Self::ExecuteCommand(action) => Self::ExecuteCommand(action.redacted()),
+            Self::WriteToLongRunningShellCommand(action) => Self::WriteToLongRunningShellCommand(
+                PolicyWriteToLongRunningShellCommandAction::new(
+                    action.block_id,
+                    action.input.as_bytes(),
+                    action.mode,
+                ),
+            ),
+            Self::ReadFiles(action) => Self::ReadFiles(action),
+            Self::WriteFiles(action) => Self::WriteFiles(action),
+            Self::CallMcpTool(action) => Self::CallMcpTool(PolicyCallMcpToolAction {
+                server_id: action.server_id,
+                tool_name: redact_sensitive_text_for_policy(&action.tool_name),
+                argument_keys: action
+                    .argument_keys
+                    .into_iter()
+                    .map(|key| redact_sensitive_text_for_policy(&key))
+                    .collect(),
+                omitted_argument_key_count: action.omitted_argument_key_count,
+            }),
+            Self::ReadMcpResource(action) => Self::ReadMcpResource(
+                PolicyReadMcpResourceAction::new(action.server_id, action.name, action.uri),
+            ),
         }
     }
 }
