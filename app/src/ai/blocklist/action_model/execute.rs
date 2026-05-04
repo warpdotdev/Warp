@@ -1154,6 +1154,7 @@ impl BlocklistAIActionExecutor {
             input.conversation_id,
             Some(active_profile.id().to_string()),
             warp_permission.clone(),
+            config.allow_autoapproval_for_all_hooks(),
             ctx,
         )?;
 
@@ -1223,7 +1224,7 @@ impl BlocklistAIActionExecutor {
         let already_preprocessed = self
             .request_file_edits_executor
             .update(ctx, |executor, _ctx| {
-                executor.has_preprocessed_action(conversation_id, action)
+                executor.has_preprocessed_action(conversation_id, action, _ctx)
             });
         if already_preprocessed {
             return false;
@@ -1296,6 +1297,7 @@ impl BlocklistAIActionExecutor {
             conversation_id,
             Some(active_profile.id().to_string()),
             warp_permission.clone(),
+            config.allow_autoapproval_for_all_hooks(),
             ctx,
         )?;
         let preflight_key =
@@ -1345,7 +1347,7 @@ impl BlocklistAIActionExecutor {
             ) && self
                 .request_file_edits_executor
                 .update(ctx, |executor, _ctx| {
-                    executor.has_preprocessed_action(conversation_id, action)
+                    executor.has_preprocessed_action(conversation_id, action, _ctx)
                 });
             let should_preserve_for_file_edit_preprocess =
                 should_preserve_completed_policy_preflight_for_file_edit_preprocess(
@@ -1420,6 +1422,7 @@ impl BlocklistAIActionExecutor {
         conversation_id: AIConversationId,
         active_profile_id: Option<String>,
         warp_permission: WarpPermissionSnapshot,
+        hook_autoapproval_enabled: bool,
         ctx: &mut ModelContext<Self>,
     ) -> Option<AgentPolicyEvent> {
         let current_working_directory = self
@@ -1436,15 +1439,18 @@ impl BlocklistAIActionExecutor {
         let policy_action =
             agent_policy_action(action, shell_type, &shell, &current_working_directory)?;
 
-        Some(AgentPolicyEvent::new(
-            conversation_id.to_string(),
-            action.id.to_string(),
-            working_directory,
-            run_until_completion,
-            active_profile_id,
-            warp_permission,
-            policy_action,
-        ))
+        Some(
+            AgentPolicyEvent::new(
+                conversation_id.to_string(),
+                action.id.to_string(),
+                working_directory,
+                run_until_completion,
+                active_profile_id,
+                warp_permission,
+                policy_action,
+            )
+            .with_hook_autoapproval_enabled(hook_autoapproval_enabled),
+        )
     }
 
     pub fn cancel_running_async_action(

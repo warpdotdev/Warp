@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -20,8 +20,10 @@ pub(crate) struct AgentPolicyEvent {
     pub action_id: String,
     pub action_kind: AgentPolicyActionKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_policy_path_option")]
     pub working_directory: Option<PathBuf>,
     pub run_until_completion: bool,
+    pub hook_autoapproval_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_profile_id: Option<String>,
     pub warp_permission: WarpPermissionSnapshot,
@@ -47,10 +49,16 @@ impl AgentPolicyEvent {
             action_kind: action.kind(),
             working_directory,
             run_until_completion,
+            hook_autoapproval_enabled: false,
             active_profile_id,
             warp_permission,
             action,
         }
+    }
+
+    pub(crate) fn with_hook_autoapproval_enabled(mut self, enabled: bool) -> Self {
+        self.hook_autoapproval_enabled = enabled;
+        self
     }
 
     #[cfg(test)]
@@ -315,11 +323,25 @@ impl PolicyReadMcpResourceAction {
     }
 }
 
+fn serialize_policy_path_option<S>(path: &Option<PathBuf>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match path {
+        Some(path) => serializer.serialize_some(&redact_policy_path(path)),
+        None => serializer.serialize_none(),
+    }
+}
+
 fn truncate_policy_path(path: PathBuf) -> PathBuf {
+    redact_policy_path(&path)
+}
+
+pub(super) fn redact_policy_path(path: &Path) -> PathBuf {
     let path_text = path.to_string_lossy();
     let redacted_path = redact_sensitive_text_for_policy(&path_text);
     if redacted_path == path_text && path_text.len() <= super::redaction::MAX_POLICY_STRING_BYTES {
-        return path;
+        return path.to_path_buf();
     }
 
     PathBuf::from(redacted_path)

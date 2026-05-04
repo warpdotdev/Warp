@@ -8,7 +8,9 @@ use http::header::HeaderName;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use thiserror::Error;
 
-use super::decision::AgentPolicyUnavailableDecision;
+use super::{
+    decision::AgentPolicyUnavailableDecision, redaction::redact_sensitive_text_for_policy,
+};
 
 pub(crate) const DEFAULT_AGENT_POLICY_HOOK_TIMEOUT_MS: u64 = 5_000;
 pub(crate) const MAX_AGENT_POLICY_HOOK_TIMEOUT_MS: u64 = 60_000;
@@ -129,12 +131,18 @@ pub(crate) struct AgentPolicyHook {
 
 impl AgentPolicyHook {
     fn validate_safe_to_persist(&self) -> Result<(), AgentPolicyHookConfigError> {
+        if hook_name_contains_credentials(&self.name) {
+            return Err(AgentPolicyHookConfigError::HookNameContainsCredentials);
+        }
         self.transport.validate_safe_to_persist()
     }
 
     pub(crate) fn validate(&self) -> Result<(), AgentPolicyHookConfigError> {
         if self.name.trim().is_empty() {
             return Err(AgentPolicyHookConfigError::MissingHookName);
+        }
+        if hook_name_contains_credentials(&self.name) {
+            return Err(AgentPolicyHookConfigError::HookNameContainsCredentials);
         }
 
         if let Some(timeout_ms) = self.timeout_ms {
@@ -185,16 +193,18 @@ impl AgentPolicyHookTransport {
     fn validate_safe_to_persist(&self) -> Result<(), AgentPolicyHookConfigError> {
         match self {
             Self::Stdio {
-                command, args, env, ..
+                command,
+                args,
+                env,
+                working_directory,
             } => {
                 validate_stdio_command(command)?;
                 validate_stdio_args(args)?;
                 validate_stdio_secret_value_map(env)?;
+                validate_stdio_working_directory_safe_to_persist(working_directory)?;
             }
             Self::Http { url, headers } => {
-                if http_url_contains_credentials(url) {
-                    return Err(AgentPolicyHookConfigError::HttpUrlContainsCredentials);
-                }
+                validate_http_url(url)?;
                 validate_http_secret_value_map(headers)?;
             }
         }
@@ -225,22 +235,10 @@ impl AgentPolicyHookTransport {
                         Path::new("").to_path_buf(),
                     ));
                 }
+                validate_stdio_working_directory_safe_to_persist(working_directory)?;
             }
             Self::Http { url, headers } => {
-                if http_url_contains_credentials(url) {
-                    return Err(AgentPolicyHookConfigError::HttpUrlContainsCredentials);
-                }
-
-                let parsed = url::Url::parse(url)
-                    .map_err(|_| AgentPolicyHookConfigError::InvalidHttpUrl(url.clone()))?;
-
-                let host = parsed.host_str().unwrap_or_default();
-                let is_localhost = matches!(host, "localhost" | "127.0.0.1" | "::1");
-                let is_allowed_local_http = parsed.scheme() == "http" && is_localhost;
-                if parsed.scheme() != "https" && !is_allowed_local_http {
-                    return Err(AgentPolicyHookConfigError::InsecureHttpUrl(url.clone()));
-                }
-
+                validate_http_url(url)?;
                 validate_http_secret_value_map(headers)?;
             }
         }
@@ -309,6 +307,39 @@ fn validate_http_secret_value_map(
         }
         value.validate()?;
     }
+    Ok(())
+}
+
+fn validate_stdio_working_directory_safe_to_persist(
+    working_directory: &Option<PathBuf>,
+) -> Result<(), AgentPolicyHookConfigError> {
+    let Some(working_directory) = working_directory else {
+        return Ok(());
+    };
+
+    let value = working_directory.to_string_lossy();
+    if redact_sensitive_text_for_policy(&value) != value {
+        return Err(AgentPolicyHookConfigError::StdioWorkingDirectoryContainsCredentials);
+    }
+
+    Ok(())
+}
+
+fn validate_http_url(url: &str) -> Result<(), AgentPolicyHookConfigError> {
+    if http_url_contains_credentials(url) {
+        return Err(AgentPolicyHookConfigError::HttpUrlContainsCredentials);
+    }
+
+    let parsed =
+        url::Url::parse(url).map_err(|_| AgentPolicyHookConfigError::InvalidHttpUrl(url.into()))?;
+
+    let host = parsed.host_str().unwrap_or_default();
+    let is_localhost = matches!(host, "localhost" | "127.0.0.1" | "::1");
+    let is_allowed_local_http = parsed.scheme() == "http" && is_localhost;
+    if parsed.scheme() != "https" && !is_allowed_local_http {
+        return Err(AgentPolicyHookConfigError::InsecureHttpUrl(url.into()));
+    }
+
     Ok(())
 }
 
@@ -452,7 +483,7 @@ fn parsed_url_contains_credentials(parsed: &url::Url) -> bool {
 
 fn url_component_contains_credentials(value: &str) -> bool {
     let mut current = std::borrow::Cow::Borrowed(value);
-    for _ in 0..=3 {
+    for _ in 0..=4 {
         if text_contains_credentials(current.as_ref()) {
             return true;
         }
@@ -466,7 +497,7 @@ fn url_component_contains_credentials(value: &str) -> bool {
         current = std::borrow::Cow::Owned(decoded.into_owned());
     }
 
-    false
+    text_contains_credentials(current.as_ref())
 }
 
 fn text_contains_credentials(value: &str) -> bool {
@@ -479,14 +510,7 @@ fn text_contains_credentials(value: &str) -> bool {
     }
 
     let normalized = lower.replace(['_', '-'], "");
-    if normalized.contains("apikey")
-        || normalized.contains("accesskey")
-        || normalized.ends_with("token")
-        || normalized.ends_with("secret")
-        || normalized.ends_with("password")
-        || normalized.ends_with("passwd")
-        || normalized.ends_with("authorization")
-    {
+    if normalized_contains_credential_marker(&normalized) {
         return true;
     }
 
@@ -499,6 +523,16 @@ fn text_contains_credentials(value: &str) -> bool {
             )
         })
         || text_contains_common_token(value)
+}
+
+fn normalized_contains_credential_marker(normalized: &str) -> bool {
+    normalized.contains("apikey")
+        || normalized.contains("accesskey")
+        || normalized.contains("token")
+        || normalized.contains("secret")
+        || normalized.contains("password")
+        || normalized.contains("passwd")
+        || normalized.contains("authorization")
 }
 
 fn stdio_arg_contains_credentials(value: &str) -> bool {
@@ -628,17 +662,15 @@ fn stdio_arg_expects_secret_value(value: &str) -> bool {
     let value = value.trim_start_matches('-').trim_end_matches(':');
     let normalized = value.to_ascii_lowercase().replace(['_', '-'], "");
 
-    normalized.contains("apikey")
-        || normalized.contains("accesskey")
+    normalized_contains_credential_marker(&normalized)
         || normalized == "u"
         || normalized == "user"
         || normalized == "proxyuser"
-        || normalized.ends_with("token")
-        || normalized.ends_with("secret")
-        || normalized.ends_with("password")
-        || normalized.ends_with("passwd")
-        || normalized.ends_with("authorization")
         || normalized == "auth"
+}
+
+fn hook_name_contains_credentials(name: &str) -> bool {
+    redact_sensitive_text_for_policy(name) != name
 }
 
 fn stdio_arg_value_is_literal_secret(value: &str) -> bool {
@@ -685,6 +717,8 @@ pub(crate) enum AgentPolicyHookConfigError {
     NoBeforeActionHooks,
     #[error("agent policy hook name must not be empty")]
     MissingHookName,
+    #[error("agent policy hook name must not include credentials")]
+    HookNameContainsCredentials,
     #[error("agent policy hook stdio command must not be empty")]
     MissingStdioCommand,
     #[error(
@@ -695,6 +729,8 @@ pub(crate) enum AgentPolicyHookConfigError {
         "agent policy hook stdio args must not include credentials; use env secret references"
     )]
     StdioArgContainsCredentials,
+    #[error("agent policy hook stdio working directory must not include credentials")]
+    StdioWorkingDirectoryContainsCredentials,
     #[error(
         "agent policy hook timeout must be between 1 and {MAX_AGENT_POLICY_HOOK_TIMEOUT_MS} ms"
     )]

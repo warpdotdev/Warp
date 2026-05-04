@@ -94,7 +94,7 @@ impl TryFrom<RequestCommandOutputResult> for api::request::input::tool_call_resu
                     api::request::input::tool_call_result::Result::RunShellCommand(
                         api::RunShellCommandResult {
                             command,
-                            output: format!("{COMMAND_POLICY_DENIED_PREFIX}{reason}"),
+                            output: encode_command_policy_denied_message(&reason),
                             exit_code: Default::default(),
                             result: Some(api::run_shell_command_result::Result::PermissionDenied(
                                 api::PermissionDenied { reason: None },

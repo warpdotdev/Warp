@@ -829,6 +829,44 @@ mod policy_hooks {
     }
 
     #[test]
+    fn policy_preflight_key_uses_raw_working_directory_when_redaction_collides() {
+        let conversation_id = AIConversationId::new();
+        let action_id = AIAgentActionId::from("action_1".to_string());
+        let action = command_action("ls");
+        let policy_action = agent_policy_action(&action, None, &None, &None).unwrap();
+        let config = AgentPolicyHookConfig::default();
+        let old_event = AgentPolicyEvent::new(
+            conversation_id.to_string(),
+            action_id.to_string(),
+            Some(PathBuf::from("/tmp/sk-aaaaaaaaaaaa")),
+            false,
+            Some("profile_default".to_string()),
+            WarpPermissionSnapshot::allow(None),
+            policy_action.clone(),
+        );
+        let new_event = AgentPolicyEvent::new(
+            conversation_id.to_string(),
+            action_id.to_string(),
+            Some(PathBuf::from("/tmp/sk-bbbbbbbbbbbb")),
+            false,
+            Some("profile_default".to_string()),
+            WarpPermissionSnapshot::allow(None),
+            policy_action,
+        );
+
+        assert_ne!(
+            PolicyPreflightKey::new(
+                conversation_id,
+                action_id.clone(),
+                &action,
+                &old_event,
+                &config
+            ),
+            PolicyPreflightKey::new(conversation_id, action_id, &action, &new_event, &config)
+        );
+    }
+
+    #[test]
     fn policy_preflight_key_uses_raw_mcp_input_when_argument_keys_are_capped() {
         let action_id = AIAgentActionId::from("action_1".to_string());
         let conversation_id = AIConversationId::new();

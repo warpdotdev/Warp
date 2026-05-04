@@ -92,7 +92,7 @@ When hooks are enabled, Warp writes a redacted local audit record for every gove
 5. A hook decision of `allow` cannot override a hard Warp denial such as protected write paths or a managed policy denial.
 6. By default, a hook decision of `allow` only preserves an already-allowed Warp permission decision. Any option that lets a trusted hook auto-approve actions that Warp would otherwise ask for must be explicit and scoped to that hook.
 7. "Run until completion" still invokes policy hooks and cannot bypass a hook denial.
-8. Hook timeout, crash, malformed output, or unavailable endpoint maps to `ask` by default and can be configured to `deny` by managed policy.
+8. Hook timeout, crash, malformed output, or unavailable endpoint maps to `ask` by default. Managed policy can configure `deny`, or an explicit fail-open `allow` that only preserves an already-allowed Warp decision and cannot auto-approve a Warp confirmation prompt.
 9. Hook payloads, persisted hook config, and hook child processes do not include file contents, secret values, inherited full environment variables, access tokens, basic-auth credentials, URL-embedded credentials, unbounded path/key collections, or unbounded command output by default.
 10. Disabled or inactive hook config is still rejected or sanitized before profile storage if it contains persisted credentials or URL-embedded credentials.
 11. Hook payloads include enough metadata for deterministic policy decisions: schema version, action id, conversation id, action type, normalized command or paths, MCP server/tool/resource identity, working directory, active profile id, Warp permission result, and whether auto-approve/run-to-completion is active.
@@ -108,7 +108,7 @@ When hooks are enabled, Warp writes a redacted local audit record for every gove
 - **Parallel actions:** Each action has its own policy event id. Decisions must not leak across conversations, action ids, or edited action payloads.
 - **Cancellation:** If the user cancels an agent run while a hook is pending, Warp cancels or ignores the pending hook result and does not execute the action.
 - **Redacted data:** If a value is redacted, the payload should preserve shape where useful, for example path count or argument key names.
-- **Offline operation:** If a remote hook cannot be reached, Warp applies the configured unavailable policy.
+- **Offline operation:** If a remote hook cannot be reached, Warp applies the configured unavailable policy; fail-open `allow` remains bounded by the current Warp permission decision.
 - **Remote sessions:** The policy event should identify that the action targets a remote session where Warp has that context, but it should still avoid sending remote file contents.
 
 ## Success Criteria

@@ -4,8 +4,9 @@ use std::path::Path;
 use warp_multi_agent_api as api;
 
 use crate::ai::agent::{
-    encode_file_edits_policy_denied_message, WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID,
-    WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE, WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
+    encode_command_policy_denied_message, encode_file_edits_policy_denied_message,
+    WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID, WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
+    WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
 };
 use crate::test_util::ai_agent_tasks::{
     create_api_subtask, create_api_task, create_message, create_subagent_tool_call_message,
@@ -293,7 +294,7 @@ fn permission_denied_tool_call_result_redacts_deprecated_output() {
     #[allow(deprecated)]
     let result = api::RunShellCommandResult {
         command: "dangerous".to_string(),
-        output: "blocked PASSWORD=hunter2 --token raw-token".to_string(),
+        output: encode_command_policy_denied_message("blocked PASSWORD=hunter2 --token raw-token"),
         exit_code: 1,
         result: Some(api::run_shell_command_result::Result::PermissionDenied(
             api::PermissionDenied { reason: None },
@@ -395,6 +396,40 @@ fn write_to_shell_policy_denial_marker_result_redacts_yaml_output() {
     assert!(content.contains("--token <redacted>"));
     assert!(!content.contains("hunter2"));
     assert!(!content.contains("raw-token"));
+
+    cleanup_dir(&dir);
+}
+
+#[test]
+fn write_to_shell_reserved_id_without_policy_prefix_is_not_labeled_policy_denial_in_yaml() {
+    let task_id = "root";
+    let result = api::WriteToLongRunningShellCommandResult {
+        result: Some(
+            api::write_to_long_running_shell_command_result::Result::CommandFinished(
+                api::ShellCommandFinished {
+                    command_id: WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID.to_string(),
+                    output: "permission denied writing to pty".to_string(),
+                    exit_code: WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
+                },
+            ),
+        ),
+    };
+    let tasks = vec![create_api_task(
+        task_id,
+        vec![make_tool_call_result_message(
+            "m1",
+            task_id,
+            "tc1",
+            api::message::tool_call_result::Result::WriteToLongRunningShellCommand(result),
+        )],
+    )];
+
+    let dir = materialize_tasks_to_yaml(&tasks).unwrap();
+    let files = list_dir_sorted(Path::new(&dir));
+    let content = fs::read_to_string(Path::new(&dir).join(&files[0])).unwrap();
+
+    assert!(content.contains("permission denied writing to pty"));
+    assert!(!content.contains(WRITE_TO_SHELL_POLICY_DENIED_PREFIX));
 
     cleanup_dir(&dir);
 }

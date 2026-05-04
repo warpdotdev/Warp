@@ -133,7 +133,7 @@ Effective decision rules:
 3. `ask` from any hook wins over `allow`.
 4. `allow` from hooks preserves an existing Warp allow.
 5. `allow` from hooks may auto-approve a Warp `NeedsConfirmation` only when `allow_hook_autoapproval` is enabled for that hook and the hook is trusted by configuration.
-6. Hook timeout, process failure, HTTP failure, or malformed JSON maps to the configured unavailable decision, defaulting to `ask`.
+6. Hook timeout, process failure, HTTP failure, or malformed JSON maps to the configured unavailable decision, defaulting to `ask`. A configured unavailable `allow` is fail-open only for actions Warp already allows and must not auto-approve an existing Warp prompt.
 
 This keeps the first implementation safe by default and still allows teams to opt into stronger policy automation later.
 

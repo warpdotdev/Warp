@@ -14,6 +14,7 @@ use crate::{
 };
 
 pub const COMMAND_POLICY_DENIED_PREFIX: &str = "Command blocked by host policy: ";
+pub const COMMAND_POLICY_DENIED_MARKER: &str = "warp.command_policy_denied.v1";
 pub const FILE_EDITS_POLICY_DENIED_PREFIX: &str = "File edits blocked by host policy: ";
 pub const FILE_EDITS_POLICY_DENIED_MARKER: &str = "warp.file_edits_policy_denied.v1";
 pub const WRITE_TO_SHELL_POLICY_DENIED_PREFIX: &str =
@@ -28,6 +29,28 @@ pub const WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE: i32 = 126;
 struct FileEditsPolicyDeniedApiMessage {
     marker: String,
     reason: String,
+}
+
+/// `RunShellCommandResult::PermissionDenied` currently has no structured
+/// host-policy reason, so persist a JSON marker in the deprecated output field.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CommandPolicyDeniedApiMessage {
+    marker: String,
+    reason: String,
+}
+
+pub fn encode_command_policy_denied_message(reason: &str) -> String {
+    serde_json::to_string(&CommandPolicyDeniedApiMessage {
+        marker: COMMAND_POLICY_DENIED_MARKER.to_string(),
+        reason: reason.to_string(),
+    })
+    .expect("command policy denial marker should serialize")
+}
+
+pub fn decode_command_policy_denied_reason(message: &str) -> Option<String> {
+    let decoded: CommandPolicyDeniedApiMessage = serde_json::from_str(message).ok()?;
+    (decoded.marker == COMMAND_POLICY_DENIED_MARKER).then_some(decoded.reason)
 }
 
 pub fn encode_file_edits_policy_denied_message(reason: &str) -> String {

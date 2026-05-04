@@ -6,11 +6,11 @@ use std::{
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use super::{
     decision::AgentPolicyEffectiveDecision,
-    event::{AgentPolicyAction, AgentPolicyActionKind, AgentPolicyEvent},
+    event::{redact_policy_path, AgentPolicyAction, AgentPolicyActionKind, AgentPolicyEvent},
 };
 
 #[cfg(not(test))]
@@ -27,6 +27,7 @@ struct AgentPolicyAuditRecord<'a> {
     action_id: &'a str,
     action_kind: AgentPolicyActionKind,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(serialize_with = "serialize_audit_path_option")]
     working_directory: Option<&'a PathBuf>,
     run_until_completion: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -118,6 +119,16 @@ pub(crate) fn audit_record_json_line(
     };
 
     serde_json::to_string(&record).context("serialize agent policy audit record")
+}
+
+fn serialize_audit_path_option<S>(path: &Option<&PathBuf>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match path {
+        Some(path) => serializer.serialize_some(&redact_policy_path(path)),
+        None => serializer.serialize_none(),
+    }
 }
 
 fn audit_log_path() -> Option<PathBuf> {

@@ -19,8 +19,9 @@ use crate::ai::policy_hooks::redaction::redact_sensitive_text_for_policy;
 
 use super::task::helper::{SubagentExt, ToolExt};
 use super::{
-    decode_file_edits_policy_denied_reason, WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID,
-    WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE, WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
+    decode_command_policy_denied_reason, decode_file_edits_policy_denied_reason,
+    WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID, WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE,
+    WRITE_TO_SHELL_POLICY_DENIED_PREFIX,
 };
 
 const BASE_DIR_NAME: &str = "warp_conversation_search";
@@ -560,8 +561,10 @@ fn write_tool_call_result_content(out: &mut String, result: &ToolCallResultType)
                         #[allow(deprecated)]
                         let output = &r.output;
                         if !output.is_empty() {
+                            let output = decode_command_policy_denied_reason(output)
+                                .unwrap_or_else(|| output.to_string());
                             out.push_str("reason: |\n");
-                            write_block_scalar(out, &redact_sensitive_text_for_policy(output));
+                            write_block_scalar(out, &redact_sensitive_text_for_policy(&output));
                         }
                     }
                 }
@@ -1070,13 +1073,16 @@ fn yaml_safe_apply_file_diffs_error(message: &str) -> String {
 }
 
 fn yaml_safe_shell_command_output(command: &api::ShellCommandFinished) -> String {
-    let is_policy_denial = command.command_id == WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID
+    let is_policy_denial_marker = command.command_id == WRITE_TO_SHELL_POLICY_DENIED_COMMAND_ID
         && command.exit_code == WRITE_TO_SHELL_POLICY_DENIED_EXIT_CODE;
-    if is_policy_denial {
-        let reason = command
-            .output
-            .strip_prefix(WRITE_TO_SHELL_POLICY_DENIED_PREFIX)
-            .unwrap_or(&command.output);
+    if let Some(reason) = is_policy_denial_marker
+        .then(|| {
+            command
+                .output
+                .strip_prefix(WRITE_TO_SHELL_POLICY_DENIED_PREFIX)
+        })
+        .flatten()
+    {
         return format!(
             "{WRITE_TO_SHELL_POLICY_DENIED_PREFIX}{}",
             redact_sensitive_text_for_policy(reason)

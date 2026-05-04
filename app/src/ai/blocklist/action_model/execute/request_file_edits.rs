@@ -43,7 +43,10 @@ use crate::{
         paths::host_native_absolute_path,
     },
     safe_warn,
-    terminal::model::session::{active_session::ActiveSession, SessionType},
+    terminal::{
+        model::session::{active_session::ActiveSession, SessionType},
+        ShellLaunchData,
+    },
     BlocklistAIHistoryModel,
 };
 
@@ -63,6 +66,23 @@ pub struct RequestFileEditsExecutor {
 struct FileEditPreprocessFingerprint {
     conversation_id: AIConversationId,
     action_payload: String,
+    session_context: String,
+}
+
+#[derive(Debug, Clone)]
+struct FileEditPreprocessContext {
+    session_type: Option<SessionType>,
+    shell: Option<ShellLaunchData>,
+    current_working_directory: Option<String>,
+}
+
+impl FileEditPreprocessContext {
+    fn fingerprint_key(&self) -> String {
+        format!(
+            "session_type={:?};shell={:?};cwd={:?}",
+            self.session_type, self.shell, self.current_working_directory
+        )
+    }
 }
 
 struct FileEditPreprocessFailure {
@@ -80,10 +100,23 @@ fn file_edit_preprocess_failure_matches(
 fn file_edit_preprocess_fingerprint(
     conversation_id: AIConversationId,
     action: &AIAgentAction,
+    session_context: &FileEditPreprocessContext,
 ) -> FileEditPreprocessFingerprint {
     FileEditPreprocessFingerprint {
         conversation_id,
         action_payload: format!("{:?}", action.action),
+        session_context: session_context.fingerprint_key(),
+    }
+}
+
+#[cfg(test)]
+fn file_edit_preprocess_context_for_test(
+    current_working_directory: Option<&str>,
+) -> FileEditPreprocessContext {
+    FileEditPreprocessContext {
+        session_type: None,
+        shell: None,
+        current_working_directory: current_working_directory.map(str::to_string),
     }
 }
 
@@ -128,14 +161,28 @@ mod tests {
         let conversation_two = AIConversationId::new();
         let old_action = file_edit_action("action_1", "src/old.rs");
         let new_action = file_edit_action("action_1", "src/new.rs");
+        let context = file_edit_preprocess_context_for_test(Some("/repo"));
 
         assert_ne!(
-            file_edit_preprocess_fingerprint(conversation_one, &old_action),
-            file_edit_preprocess_fingerprint(conversation_two, &old_action)
+            file_edit_preprocess_fingerprint(conversation_one, &old_action, &context),
+            file_edit_preprocess_fingerprint(conversation_two, &old_action, &context)
         );
         assert_ne!(
-            file_edit_preprocess_fingerprint(conversation_one, &old_action),
-            file_edit_preprocess_fingerprint(conversation_one, &new_action)
+            file_edit_preprocess_fingerprint(conversation_one, &old_action, &context),
+            file_edit_preprocess_fingerprint(conversation_one, &new_action, &context)
+        );
+    }
+
+    #[test]
+    fn file_edit_preprocess_fingerprint_scopes_working_directory() {
+        let conversation_id = AIConversationId::new();
+        let action = file_edit_action("action_1", "src/config.rs");
+        let old_context = file_edit_preprocess_context_for_test(Some("/repo-a"));
+        let new_context = file_edit_preprocess_context_for_test(Some("/repo-b"));
+
+        assert_ne!(
+            file_edit_preprocess_fingerprint(conversation_id, &action, &old_context),
+            file_edit_preprocess_fingerprint(conversation_id, &action, &new_context)
         );
     }
 
@@ -144,8 +191,11 @@ mod tests {
         let conversation_id = AIConversationId::new();
         let old_action = file_edit_action("action_1", "src/old.rs");
         let new_action = file_edit_action("action_1", "src/new.rs");
-        let old_fingerprint = file_edit_preprocess_fingerprint(conversation_id, &old_action);
-        let new_fingerprint = file_edit_preprocess_fingerprint(conversation_id, &new_action);
+        let context = file_edit_preprocess_context_for_test(Some("/repo"));
+        let old_fingerprint =
+            file_edit_preprocess_fingerprint(conversation_id, &old_action, &context);
+        let new_fingerprint =
+            file_edit_preprocess_fingerprint(conversation_id, &new_action, &context);
         let failure = FileEditPreprocessFailure {
             fingerprint: old_fingerprint.clone(),
             errors: vec1![DiffApplicationError::EmptyDiff],
@@ -213,7 +263,9 @@ impl RequestFileEditsExecutor {
         // from the LLM.
         // If we don't do this, a failed diff application will block execution of the entire AI conversation
         // without any possibility of recovery.
-        let fingerprint = file_edit_preprocess_fingerprint(conversation_id, action);
+        let session_context = self.file_edit_preprocess_context(ctx);
+        let fingerprint =
+            file_edit_preprocess_fingerprint(conversation_id, action, &session_context);
         if self
             .diff_application_failures
             .get(&action.id)
@@ -242,8 +294,11 @@ impl RequestFileEditsExecutor {
         &self,
         conversation_id: AIConversationId,
         action: &AIAgentAction,
+        ctx: &mut ModelContext<Self>,
     ) -> bool {
-        let fingerprint = file_edit_preprocess_fingerprint(conversation_id, action);
+        let session_context = self.file_edit_preprocess_context(ctx);
+        let fingerprint =
+            file_edit_preprocess_fingerprint(conversation_id, action, &session_context);
         self.preprocessed_actions
             .get(&action.id)
             .is_some_and(|stored| stored == &fingerprint)
@@ -280,7 +335,9 @@ impl RequestFileEditsExecutor {
         };
 
         // If diff application failed, early exit.
-        let fingerprint = file_edit_preprocess_fingerprint(conversation_id, action);
+        let session_context = self.file_edit_preprocess_context(ctx);
+        let fingerprint =
+            file_edit_preprocess_fingerprint(conversation_id, action, &session_context);
         let matching_failure = self
             .diff_application_failures
             .get(id)
@@ -448,7 +505,9 @@ impl RequestFileEditsExecutor {
         let (tx, rx) = oneshot::channel();
         let files = file_edits.clone();
         let id = id.clone();
-        let fingerprint = file_edit_preprocess_fingerprint(input.conversation_id, input.action);
+        let session_context = self.file_edit_preprocess_context(ctx);
+        let fingerprint =
+            file_edit_preprocess_fingerprint(input.conversation_id, input.action, &session_context);
 
         let apply_future = self.apply_diff_model.update(ctx, |model, ctx| {
             model.apply_diffs(files, &ai_identifiers, passive_diff, ctx)
@@ -457,10 +516,10 @@ impl RequestFileEditsExecutor {
         ctx.spawn(
             async move {
                 let applied_diffs = apply_future.await;
-                (applied_diffs, id, fingerprint, tx)
+                (applied_diffs, id, fingerprint, session_context, tx)
             },
-            |me, (diffs, id, fingerprint, tx), ctx| {
-                me.on_diffs_applied(diffs, id, fingerprint, tx, ctx);
+            |me, (diffs, id, fingerprint, session_context, tx), ctx| {
+                me.on_diffs_applied(diffs, id, fingerprint, session_context, tx, ctx);
             },
         );
 
@@ -475,6 +534,7 @@ impl RequestFileEditsExecutor {
         applied_diffs: Result<Vec<AIRequestedCodeDiff>, Vec1<DiffApplicationError>>,
         id: AIAgentActionId,
         fingerprint: FileEditPreprocessFingerprint,
+        session_context: FileEditPreprocessContext,
         tx: oneshot::Sender<()>,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -520,20 +580,12 @@ impl RequestFileEditsExecutor {
         };
         self.diff_application_failures.remove(&id);
 
-        let current_working_directory = self
-            .active_session
-            .as_ref(ctx)
-            .current_working_directory()
-            .cloned();
-
-        let shell_launch_data = self.active_session.as_ref(ctx).shell_launch_data(ctx);
-
         let mut diffs = Vec::with_capacity(applied_diffs.len());
         for diff in applied_diffs {
             let path = host_native_absolute_path(
                 diff.file_name.as_str(),
-                &shell_launch_data,
-                &current_working_directory,
+                &session_context.shell,
+                &session_context.current_working_directory,
             );
             let file_diff = FileDiff::new(diff.original_content, path, diff.diff_type);
             diffs.push(file_diff);
@@ -541,7 +593,7 @@ impl RequestFileEditsExecutor {
 
         // Set the session type on the diff view so save/delete/create routes
         // through the correct FileModel backend.
-        let diff_session_type = match self.active_session.as_ref(ctx).session_type(ctx) {
+        let diff_session_type = match &session_context.session_type {
             Some(SessionType::WarpifiedRemote {
                 host_id: Some(host_id),
             }) => DiffSessionType::Remote(host_id.clone()),
@@ -552,6 +604,18 @@ impl RequestFileEditsExecutor {
             diff_view.set_diff_session_type(diff_session_type);
             diff_view.set_candidate_diffs(diffs, ctx);
         });
+    }
+
+    fn file_edit_preprocess_context(
+        &self,
+        ctx: &mut ModelContext<Self>,
+    ) -> FileEditPreprocessContext {
+        let active_session = self.active_session.as_ref(ctx);
+        FileEditPreprocessContext {
+            session_type: active_session.session_type(ctx),
+            shell: active_session.shell_launch_data(ctx),
+            current_working_directory: active_session.current_working_directory().cloned(),
+        }
     }
 
     fn generate_ai_identifiers(

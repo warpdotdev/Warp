@@ -23,7 +23,7 @@ static AUTHORIZATION_BASIC_RE: Lazy<Regex> = Lazy::new(|| {
 
 static CREDENTIAL_HEADER_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r#"(?i)(^|[\s;&|'"`])([a-z0-9_-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)[a-z0-9_-]*\s*:\s*)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|'"`\r\n]+|basic\s+[^\s;&|'"`\r\n]+|[^\s;&|'"`\r\n]+)"#,
+        r#"(?i)(^|[\s;&|'"`/\\?#,=])([a-z0-9_-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)[a-z0-9_-]*\s*:\s*)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|'"`\r\n]+|basic\s+[^\s;&|'"`\r\n]+|[^\s;&|'"`\r\n]+)"#,
     )
     .expect("credential header regex should compile")
 });
@@ -42,14 +42,14 @@ static CURL_BASIC_AUTH_RE: Lazy<Regex> = Lazy::new(|| {
 
 static SPLIT_SECRET_ARG_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r#"(?i)(^|[\s;&|])(-{1,2}[a-z0-9_-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)\b\s+)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|]+|basic\s+[^\s;&|]+|[^\s;&|]+)"#,
+        r#"(?i)(^|[\s;&|])(-{1,2}[a-z0-9_-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)[a-z0-9_-]*\b\s+)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|]+|basic\s+[^\s;&|]+|[^\s;&|]+)"#,
     )
     .expect("split secret arg regex should compile")
 });
 
 static INLINE_SECRET_ARG_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
-        r#"(?i)(^|[\s;&|])(-{1,2}[a-z0-9_-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)\b=)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|]+|basic\s+[^\s;&|]+|[^\s;&|]+)"#,
+        r#"(?i)(^|[\s;&|])(-{1,2}[a-z0-9_-]*(?:token|secret|password|passwd|api[-_]?key|access[-_]?key|authorization|auth)[a-z0-9_-]*\b=)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|bearer\s+[^\s;&|]+|basic\s+[^\s;&|]+|[^\s;&|]+)"#,
     )
     .expect("inline secret arg regex should compile")
 });
@@ -64,6 +64,12 @@ pub(crate) fn redact_command_for_policy(command: &str) -> String {
 }
 
 pub(crate) fn redact_sensitive_text_for_policy(value: &str) -> String {
+    let value = redact_literal_sensitive_text_for_policy(value);
+    let value = redact_percent_decoded_sensitive_text_for_policy(&value);
+    truncate_for_policy(&value)
+}
+
+fn redact_literal_sensitive_text_for_policy(value: &str) -> String {
     let value = SECRET_ASSIGNMENT_RE.replace_all(value, "$1=<redacted>");
     let value = AUTHORIZATION_BEARER_RE.replace_all(&value, "$1<redacted>");
     let value = AUTHORIZATION_BASIC_RE.replace_all(&value, "$1<redacted>");
@@ -73,7 +79,30 @@ pub(crate) fn redact_sensitive_text_for_policy(value: &str) -> String {
     let value = INLINE_SECRET_ARG_RE.replace_all(&value, "$1$2<redacted>");
     let value = SPLIT_SECRET_ARG_RE.replace_all(&value, "$1$2<redacted>");
     let value = COMMON_TOKEN_RE.replace_all(&value, "<redacted>");
-    truncate_for_policy(&value)
+    value.into_owned()
+}
+
+fn redact_percent_decoded_sensitive_text_for_policy(value: &str) -> String {
+    let mut current = std::borrow::Cow::Borrowed(value);
+    let mut redacted = None;
+    for _ in 0..=4 {
+        let Ok(decoded) = urlencoding::decode(current.as_ref()) else {
+            break;
+        };
+        if decoded == current {
+            break;
+        }
+
+        let decoded_redacted = redact_literal_sensitive_text_for_policy(&decoded);
+        if decoded_redacted != decoded {
+            redacted = Some(decoded_redacted.clone());
+            current = std::borrow::Cow::Owned(decoded_redacted);
+        } else {
+            current = std::borrow::Cow::Owned(decoded.into_owned());
+        }
+    }
+
+    redacted.unwrap_or_else(|| value.to_string())
 }
 
 fn redact_credential_header_match(captures: &regex::Captures<'_>) -> String {

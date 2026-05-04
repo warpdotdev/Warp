@@ -52,9 +52,10 @@ fn policy_denied_shell_result_preserves_policy_reason_without_denylist_label() {
     #[allow(deprecated)]
     let output = &result.output;
     assert_eq!(
-        output.as_str(),
-        format!("{COMMAND_POLICY_DENIED_PREFIX}blocked by org policy")
+        decode_command_policy_denied_reason(output).as_deref(),
+        Some("blocked by org policy")
     );
+    assert!(!output.starts_with(COMMAND_POLICY_DENIED_PREFIX));
     assert!(permission_denied.reason.is_none());
 }
 

@@ -86,10 +86,7 @@ fn test_convert_tool_call_result_to_input_preserves_host_policy_denial() {
     #[allow(deprecated)]
     let run_shell_result = api::RunShellCommandResult {
         command: "rm -rf target".to_string(),
-        output: format!(
-            "{}blocked by org policy",
-            crate::ai::agent::COMMAND_POLICY_DENIED_PREFIX
-        ),
+        output: crate::ai::agent::encode_command_policy_denied_message("blocked by org policy"),
         exit_code: 0,
         result: Some(api::run_shell_command_result::Result::PermissionDenied(
             api::PermissionDenied { reason: None },
@@ -132,9 +129,8 @@ fn test_convert_tool_call_result_to_input_redacts_host_policy_denial() {
     #[allow(deprecated)]
     let run_shell_result = api::RunShellCommandResult {
         command: "OPENAI_API_KEY=sk-secretsecretsecret guard --token raw-token".to_string(),
-        output: format!(
-            "{}blocked PASSWORD=hunter2 --token raw-token",
-            crate::ai::agent::COMMAND_POLICY_DENIED_PREFIX
+        output: crate::ai::agent::encode_command_policy_denied_message(
+            "blocked PASSWORD=hunter2 --token raw-token",
         ),
         exit_code: 0,
         result: Some(api::run_shell_command_result::Result::PermissionDenied(
@@ -184,7 +180,10 @@ fn test_convert_tool_call_result_to_input_treats_unmarked_permission_denied_as_c
     #[allow(deprecated)]
     let run_shell_result = api::RunShellCommandResult {
         command: "rm -rf target".to_string(),
-        output: "generic permission denied".to_string(),
+        output: format!(
+            "{}EACCES while spawning pty",
+            crate::ai::agent::COMMAND_POLICY_DENIED_PREFIX
+        ),
         exit_code: 0,
         result: Some(api::run_shell_command_result::Result::PermissionDenied(
             api::PermissionDenied { reason: None },

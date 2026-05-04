@@ -188,6 +188,9 @@ fn config_rejects_stdio_hook_credential_args() {
         json!(["-u", "user:pass"]),
         json!(["--user", "alice:secret"]),
         json!(["--proxy-user=proxy:secret"]),
+        json!(["--client-secret-key", "actual-client-secret"]),
+        json!(["--token-value", "actual-token"]),
+        json!(["--authorization-header", "Bearer raw-token"]),
         json!(["-H", "X-Api-Key: abc123def456"]),
         json!(["--header=X-Api-Key: abc123def456"]),
         json!(["-c", "guard --token raw-secret"]),
@@ -240,6 +243,9 @@ fn config_rejects_stdio_hook_credential_command() {
         "sh -c 'guard --token raw-secret'",
         "sh -xc 'guard --token raw-secret'",
         "bash -euc \"guard --token raw-secret\"",
+        "guard --client-secret-key actual-client-secret",
+        "guard --token-value actual-token",
+        "guard --authorization-header Bearer raw-token",
         "bash -lc \"curl -H 'X-Api-Key: abc123def456' https://example.com\"",
         "curl https://user:pass@example.com/policy",
         "curl 'https://example.com/policy?token=secret'",
@@ -374,7 +380,10 @@ fn config_rejects_http_hook_url_embedded_credentials() {
         "https://example.com/policy?token=secret",
         "https://example.com/policy?api_key=secret",
         "https://example.com/policy?clientSecret=abc123",
+        "https://example.com/policy?clientSecretKey=abc123def4567890",
         "https://example.com/policy?accessToken=abc123",
+        "https://example.com/policy?accessTokenValue=abc123def4567890",
+        "https://example.com/policy?refreshTokenId=abc123def4567890",
         "https://example.com/policy?refresh-token=abc123",
         "https://example.com/policy?q=sk-secretsecretsecret",
         "https://example.com/policy?state=ghp_secretsecretsecret",
@@ -383,6 +392,7 @@ fn config_rejects_http_hook_url_embedded_credentials() {
         "https://example.com/policy?state=ghs_secretsecretsecret",
         "https://example.com/policy?state=ghr_secretsecretsecret",
         "https://example.com/policy#access_token=secret",
+        "https://example.com/policy#accessTokenValue=abc123def4567890",
         "https://example.com/policy#access_token%3Dsecret",
         "https://example.com/policy#state=sk-secretsecretsecret",
         "https://example.com/policy#state%3Dsk-secretsecretsecret",
@@ -392,6 +402,7 @@ fn config_rejects_http_hook_url_embedded_credentials() {
         "https://example.com/hooks/Authorization%3A%20Bearer%20secret",
         "https://example.com/policy?api%255Fkey=abc123def456",
         "https://example.com/policy?api%252Dkey=abc123def456",
+        "https://example.com/hooks/%2525252574oken/abc123def4567890",
         "ftp://user:pass@example.com/policy",
         "custom://example.com/policy?token=secret",
     ] {
@@ -425,6 +436,46 @@ fn config_allows_http_hook_url_non_credential_query_values() {
     .unwrap();
 
     assert!(config.validate().is_ok());
+}
+
+#[test]
+fn config_rejects_hook_name_and_stdio_working_directory_credentials() {
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "guard-sk-secretsecretsecret",
+            "transport": "stdio",
+            "command": "guard"
+        }]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        config.validate(),
+        Err(super::config::AgentPolicyHookConfigError::HookNameContainsCredentials)
+    ));
+    let value = serde_json::to_value(&config).unwrap();
+    assert_eq!(value["enabled"], false);
+    assert!(!value.to_string().contains("sk-secretsecretsecret"));
+
+    let config: AgentPolicyHookConfig = serde_json::from_value(json!({
+        "enabled": true,
+        "before_action": [{
+            "name": "stdio-guard",
+            "transport": "stdio",
+            "command": "guard",
+            "working_directory": "/tmp/API_KEY=raw-secret-value"
+        }]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        config.validate(),
+        Err(super::config::AgentPolicyHookConfigError::StdioWorkingDirectoryContainsCredentials)
+    ));
+    let value = serde_json::to_value(&config).unwrap();
+    assert_eq!(value["enabled"], false);
+    assert!(!value.to_string().contains("raw-secret-value"));
 }
 
 #[test]
@@ -490,6 +541,40 @@ fn profile_serialization_sanitizes_disabled_http_hook_url_embedded_credentials()
             .is_empty());
         assert!(!value.to_string().contains('@'));
         assert!(!value.to_string().contains("sk-secretsecretsecret"));
+    }
+}
+
+#[test]
+fn profile_serialization_sanitizes_invalid_http_hook_urls() {
+    for url in [
+        "ssh://internal-host/policy",
+        "http://example.com/policy",
+        "https://exa mple.com/policy",
+    ] {
+        let agent_policy_hooks = AgentPolicyHookConfig {
+            enabled: true,
+            before_action: vec![AgentPolicyHook {
+                name: "remote-guard".to_string(),
+                transport: AgentPolicyHookTransport::Http {
+                    url: url.to_string(),
+                    headers: Default::default(),
+                },
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let profile = AIExecutionProfile {
+            agent_policy_hooks,
+            ..Default::default()
+        };
+
+        let value = serde_json::to_value(&profile).unwrap();
+        assert_eq!(value["agent_policy_hooks"]["enabled"], false);
+        assert!(value["agent_policy_hooks"]["before_action"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(!value.to_string().contains(url));
     }
 }
 
@@ -693,6 +778,7 @@ fn event_serializes_redacted_command_shape() {
     assert_eq!(value["schema_version"], AGENT_POLICY_SCHEMA_VERSION);
     assert_eq!(value["action_kind"], "execute_command");
     assert_eq!(value["run_until_completion"], true);
+    assert_eq!(value["hook_autoapproval_enabled"], false);
     assert_eq!(value["warp_permission"]["decision"], "allow");
 
     let command = value["action"]["command"].as_str().unwrap();
@@ -700,6 +786,45 @@ fn event_serializes_redacted_command_shape() {
     assert!(command.contains("Authorization: Bearer <redacted>"));
     assert!(!command.contains("sk-secretsecretsecret"));
     assert_eq!(value["action"]["is_risky"], true);
+}
+
+#[test]
+fn event_serializes_hook_autoapproval_state() {
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        Some(PathBuf::from(
+            "/repo/sk-secretsecretsecret/clientSecret=raw-secret-value",
+        )),
+        false,
+        Some("profile_default".to_string()),
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("ls", "ls", Some(true), Some(false)),
+    )
+    .with_hook_autoapproval_enabled(true);
+
+    let value = serde_json::to_value(event).unwrap();
+    assert_eq!(value["hook_autoapproval_enabled"], true);
+}
+
+#[test]
+fn policy_event_redacts_working_directory_before_serialization() {
+    let raw_path = PathBuf::from("/tmp/sk-secretsecretsecret/clientSecret=raw-secret-value");
+    let event = AgentPolicyEvent::execute_command(
+        "conv_123",
+        "action_456",
+        Some(raw_path.clone()),
+        false,
+        None,
+        WarpPermissionSnapshot::allow(None),
+        PolicyExecuteCommandAction::new("ls", "ls", Some(true), Some(false)),
+    );
+
+    assert_eq!(event.working_directory.as_deref(), Some(raw_path.as_path()));
+    let value = serde_json::to_string(&event).unwrap();
+    assert!(value.contains("<redacted>"));
+    assert!(!value.contains("sk-secretsecretsecret"));
+    assert!(!value.contains("raw-secret-value"));
 }
 
 #[test]
@@ -777,6 +902,8 @@ fn command_redaction_handles_split_secret_args() {
         "--authorization=Bearer eq-secret --auth Basic basic-secret ",
         "--client-secret client-secret-value --refresh-token refresh-secret ",
         "--access-token access-secret --clientSecret=camel-secret ",
+        "--client-secret-key client-key-secret --token-value token-value-secret ",
+        "--authorization-header Bearer header-secret ",
         "--safe visible"
     );
 
@@ -792,6 +919,9 @@ fn command_redaction_handles_split_secret_args() {
     assert!(redacted.contains("--refresh-token <redacted>"));
     assert!(redacted.contains("--access-token <redacted>"));
     assert!(redacted.contains("--clientSecret=<redacted>"));
+    assert!(redacted.contains("--client-secret-key <redacted>"));
+    assert!(redacted.contains("--token-value <redacted>"));
+    assert!(redacted.contains("--authorization-header <redacted>"));
     assert!(redacted.contains("--safe visible"));
     assert!(!redacted.contains("token-secret"));
     assert!(!redacted.contains("quoted secret"));
@@ -803,6 +933,9 @@ fn command_redaction_handles_split_secret_args() {
     assert!(!redacted.contains("refresh-secret"));
     assert!(!redacted.contains("access-secret"));
     assert!(!redacted.contains("camel-secret"));
+    assert!(!redacted.contains("client-key-secret"));
+    assert!(!redacted.contains("token-value-secret"));
+    assert!(!redacted.contains("header-secret"));
 }
 
 #[test]
@@ -883,6 +1016,7 @@ fn policy_file_paths_are_redacted_before_serialization() {
     let read = PolicyReadFilesAction::new([
         PathBuf::from("/tmp/sk-secretsecretsecret/report.md"),
         PathBuf::from("/tmp/clientSecret=raw-secret-value/config.md"),
+        PathBuf::from("/tmp/X-API-Key: abc123def456/config.md"),
     ]);
     let write = PolicyWriteFilesAction::new(
         [PathBuf::from(
@@ -900,7 +1034,26 @@ fn policy_file_paths_are_redacted_before_serialization() {
     assert!(value.contains("<redacted>"));
     assert!(!value.contains("sk-secretsecretsecret"));
     assert!(!value.contains("raw-secret-value"));
+    assert!(!value.contains("abc123def456"));
     assert!(!value.contains("raw-path-token"));
+}
+
+#[test]
+fn mcp_resource_uri_redacts_generic_and_percent_encoded_credentials() {
+    let resource = PolicyReadMcpResourceAction::new(
+        None,
+        "resource",
+        Some(
+            "mcp://srv/resource/X-API-Key: abc123def456?api_key%3Draw-key#Authorization%3A%20Bearer%20raw-token"
+                .to_string(),
+        ),
+    );
+
+    let value = serde_json::to_string(&resource).unwrap();
+    assert!(value.contains("<redacted>"));
+    assert!(!value.contains("abc123def456"));
+    assert!(!value.contains("raw-key"));
+    assert!(!value.contains("raw-token"));
 }
 
 #[test]
@@ -1044,6 +1197,8 @@ fn audit_record_uses_redacted_policy_event_payload() {
     assert!(line.contains("GITHUB_TOKEN=<redacted>"));
     assert!(line.contains("Authorization: Bearer <redacted>"));
     assert!(!line.contains("ghp_secretsecretsecret"));
+    assert!(!line.contains("sk-secretsecretsecret"));
+    assert!(!line.contains("raw-secret-value"));
     assert!(!line.contains("token123"));
 }
 
