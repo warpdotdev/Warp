@@ -101,10 +101,9 @@ impl TerminalView {
             return;
         };
 
-        // Tear down the non-oz cloud-mode queued-prompt block on terminal / transition
-        // events that replace it. `Failed`, `NeedsGithubAuth`, and `Cancelled` hand off
-        // to the existing error / auth / cancelled UI; `HarnessCommandStarted` hands off
-        // to the live harness CLI block. Idempotent and cheap when no block exists.
+        // Tear down the cloud-mode queued-prompt block when the UI that replaces it takes over.
+        // The oz local-to-cloud-handoff teardown on first `AppendedExchange` is wired up
+        // separately in `TerminalView`'s history-model handler.
         if matches!(
             event,
             AmbientAgentViewModelEvent::Failed { .. }
@@ -142,11 +141,13 @@ impl TerminalView {
                 }
                 if FeatureFlag::CloudModeSetupV2.is_enabled() {
                     let view_model = ambient_agent_view_model.as_ref(ctx);
-                    let use_queued_prompt = view_model.is_third_party_harness();
+                    let use_queued_prompt = view_model.is_third_party_harness()
+                        || view_model.is_local_to_cloud_handoff();
                     if use_queued_prompt {
-                        // Non-oz runs render the submitted prompt via the queued-prompt UI on
-                        // top of the conversation-history scaffold. The block is removed later
-                        // by `HarnessCommandStarted` / failure / cancel / auth handlers.
+                        // Render the submitted prompt via the queued-prompt UI on top of the
+                        // conversation-history scaffold. The block is torn down later by
+                        // `HarnessCommandStarted` (non-oz) / first `AppendedExchange` (oz
+                        // handoff) / failure / cancel / auth handlers.
                         //
                         // `request.prompt` is stored stripped of any `/plan` / `/orchestrate`
                         // prefix; rebuild the display form from `request.mode` so the user sees
