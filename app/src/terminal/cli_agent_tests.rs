@@ -259,6 +259,7 @@ fn test_detect_known_agents() {
                 ("copilot", CLIAgent::Copilot),
                 ("agent", CLIAgent::CursorCli),
                 ("goose", CLIAgent::Goose),
+                ("vibe", CLIAgent::Vibe),
             ] {
                 assert_eq!(
                     CLIAgent::detect(command, None, None, ctx),
@@ -282,6 +283,26 @@ fn test_detect_with_arguments() {
                 CLIAgent::detect("gemini chat", None, None, ctx),
                 Some(CLIAgent::Gemini),
             );
+        });
+    });
+}
+
+#[test]
+fn test_detect_vibe_acp_binary() {
+    // The mistral-vibe package ships a `vibe-acp` ACP-mode binary alongside
+    // the user-facing `vibe` TUI. Both must be detected as the same agent.
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            assert_eq!(
+                CLIAgent::detect("vibe-acp", None, None, ctx),
+                Some(CLIAgent::Vibe),
+            );
+            assert_eq!(
+                CLIAgent::detect("vibe-acp --some-flag", None, None, ctx),
+                Some(CLIAgent::Vibe),
+            );
+            // Distinct binary names should not bleed into Vibe.
+            assert_eq!(CLIAgent::detect("vibe-other", None, None, ctx), None);
         });
     });
 }
@@ -609,6 +630,55 @@ fn test_detect_node_script_without_agent_basename() {
             assert_eq!(
                 CLIAgent::detect("node --version", None, None, ctx),
                 None,
+            );
+        });
+    });
+}
+
+/// Value-taking runtime flags (e.g. `node -e <code>`, `python -c <code>`)
+/// must NOT cause the eval/script-string argument to false-positive as an
+/// agent. Per oz-for-oss review on PR #10022.
+#[test]
+fn test_detect_node_value_taking_flags_do_not_false_positive() {
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            // `-e` consumes `codex` as the eval string, not as a script path.
+            assert_eq!(
+                CLIAgent::detect("node -e codex", None, None, ctx),
+                None,
+            );
+            // Same with the long form.
+            assert_eq!(
+                CLIAgent::detect("node --eval codex", None, None, ctx),
+                None,
+            );
+            // `--require` consumes its module argument.
+            assert_eq!(
+                CLIAgent::detect("node --require claude /home/user/app.js", None, None, ctx),
+                None,
+            );
+            // `python -c` consumes the code string.
+            assert_eq!(
+                CLIAgent::detect("python -c claude", None, None, ctx),
+                None,
+            );
+            // `python -m` consumes the module name.
+            assert_eq!(
+                CLIAgent::detect("python -m gemini", None, None, ctx),
+                None,
+            );
+
+            // After the value-taking flag and its argument are consumed, a
+            // legitimate agent script that follows IS still detected.
+            assert_eq!(
+                CLIAgent::detect("node --require some-mod /usr/local/bin/codex", None, None, ctx),
+                Some(CLIAgent::Codex),
+            );
+            // `--key=value` form keeps the value attached to the flag, so a
+            // following script positional is still found correctly.
+            assert_eq!(
+                CLIAgent::detect("node --inspect=127.0.0.1:9229 /usr/local/bin/codex", None, None, ctx),
+                Some(CLIAgent::Codex),
             );
         });
     });

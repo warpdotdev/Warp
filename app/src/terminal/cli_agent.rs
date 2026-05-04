@@ -112,7 +112,15 @@ const GOOSE_COLOR: ColorU = ColorU {
     a: 255,
 };
 
-/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose)
+/// Mistral brand orange (#FA520F)
+const MISTRAL_ORANGE: ColorU = ColorU {
+    r: 250,
+    g: 82,
+    b: 15,
+    a: 255,
+};
+
+/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose, Mistral Vibe)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
     Claude,
@@ -126,6 +134,7 @@ pub enum CLIAgent {
     Auggie,
     CursorCli,
     Goose,
+    Vibe,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -145,6 +154,7 @@ impl CLIAgent {
             CLIAgent::Auggie => "auggie",
             CLIAgent::CursorCli => "agent",
             CLIAgent::Goose => "goose",
+            CLIAgent::Vibe => "vibe",
             CLIAgent::Unknown => "",
         }
     }
@@ -190,6 +200,7 @@ impl CLIAgent {
             CLIAgent::Auggie => "Auggie",
             CLIAgent::CursorCli => "Cursor",
             CLIAgent::Goose => "Goose",
+            CLIAgent::Vibe => "Mistral Vibe",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -208,6 +219,10 @@ impl CLIAgent {
             CLIAgent::Auggie => Some(Icon::AuggieLogo),
             CLIAgent::CursorCli => Some(Icon::CursorLogo),
             CLIAgent::Goose => Some(Icon::GooseLogo),
+            // Vibe is recognized but ships without a brand asset. The brand color
+            // still drives the toolbar tile; an `Icon::MistralLogo` can be wired
+            // up in a follow-up once an officially licensed SVG is available.
+            CLIAgent::Vibe => None,
             CLIAgent::Unknown => None,
         }
     }
@@ -236,6 +251,7 @@ impl CLIAgent {
             CLIAgent::Auggie => &[SkillProvider::Agents],
             CLIAgent::CursorCli => &[SkillProvider::Agents],
             CLIAgent::Goose => &[SkillProvider::Agents],
+            CLIAgent::Vibe => &[SkillProvider::Agents],
             CLIAgent::Unknown => &[],
         }
     }
@@ -276,6 +292,7 @@ impl CLIAgent {
             CLIAgent::Auggie => Some(AUGGIE_COLOR),
             CLIAgent::CursorCli => Some(CURSOR_COLOR),
             CLIAgent::Goose => Some(GOOSE_COLOR),
+            CLIAgent::Vibe => Some(MISTRAL_ORANGE),
             CLIAgent::Unknown => None,
         }
     }
@@ -349,7 +366,10 @@ impl CLIAgent {
             shebang_script_basename(&resolved_command, &resolved_first_word);
 
         // Check if any candidate matches a known CLI agent.
-        // Also matches `aifx agent run claude` as Claude for Uber employees.
+        // Also matches `aifx agent run claude` as Claude for Uber employees,
+        // and the `vibe-acp` ACP-mode binary as Mistral Vibe (also recovered
+        // through the path / runtime basename helpers when invoked via path
+        // prefix or Node.js shebang).
         enum_iterator::all::<CLIAgent>()
             .filter(|agent| !matches!(agent, CLIAgent::Unknown))
             .find(|agent| {
@@ -359,6 +379,10 @@ impl CLIAgent {
                     || runtime_invoked_basename.as_deref() == Some(prefix)
                     || (matches!(agent, CLIAgent::Claude)
                         && Self::is_aifx_agent_run_claude(&resolved_command, ctx))
+                    || (matches!(agent, CLIAgent::Vibe)
+                        && (resolved_first_word == "vibe-acp"
+                            || candidate_basename.as_deref() == Some("vibe-acp")
+                            || runtime_invoked_basename.as_deref() == Some("vibe-acp")))
             })
     }
 
@@ -392,6 +416,23 @@ const SCRIPT_RUNTIMES: &[&str] = &["node", "nodejs", "bun", "deno", "python", "p
 /// possible extension is a follow-up.
 const STRIPPED_SCRIPT_EXTENSIONS: &[&str] = &[".js", ".mjs", ".cjs", ".ts", ".py"];
 
+/// Runtime flags that consume the *next* token as a value rather than acting on
+/// the script. Without skipping past them, an invocation like `node -e codex`
+/// (eval string) or `python -c claude` would false-positive as the agent.
+/// Keep this list aligned with the most common value-taking flags across the
+/// runtimes in `SCRIPT_RUNTIMES`. Flags using the `--key=value` form are
+/// handled implicitly because they remain a single whitespace token.
+const VALUE_TAKING_RUNTIME_FLAGS: &[&str] = &[
+    // Node.js
+    "-e", "--eval", "-p", "--print", "-r", "--require", "-C", "--conditions",
+    // Python
+    "-c", "-m", "-X", "-W",
+    // Deno (subset)
+    "-A", "--allow-read", "--allow-write", "--allow-net",
+    // Bun (subset)
+    "-d", "--define",
+];
+
 /// If `first_word` looks like an absolute or relative path (`/usr/local/bin/codex`,
 /// `./codex`), returns the basename for matching purposes. Returns `None` when
 /// the input has no path component — callers fall back to the exact-word match.
@@ -406,21 +447,38 @@ fn path_basename_token(first_word: &str) -> Option<String> {
 }
 
 /// If `first_word` is a known script runtime (`node`, `python`, ...), returns
-/// the basename of the second token in `command` — the script being executed.
-/// Returns `None` if the first token isn't a recognized runtime, or if the
-/// command has no second token.
+/// the basename of the script being executed (the first non-flag positional
+/// argument). Returns `None` if the first token isn't a recognized runtime, or
+/// if the command has no script positional.
+///
+/// Value-taking runtime flags (e.g. `node -e <code>`, `python -c <code>`) are
+/// detected and their value is consumed alongside the flag, so an invocation
+/// like `node -e codex` does NOT false-positive as the Codex agent.
 fn shebang_script_basename(command: &str, first_word: &str) -> Option<String> {
     if !SCRIPT_RUNTIMES.iter().any(|r| *r == first_word) {
         return None;
     }
-    // Skip the runtime token plus any whitespace, then read the next path-like
-    // token. Use whitespace splitting (not shell parsing) — this is best-effort
+    // Use whitespace splitting (not shell parsing) — this is best-effort
     // recovery, not security-critical input handling.
     let mut tokens = command.split_whitespace();
     let _runtime = tokens.next()?;
-    // Skip leading flags like `-e '...'` or `--inspect`. Stop at the first
-    // non-flag token: that's the script path.
-    let script = tokens.find(|t| !t.starts_with('-'))?;
+
+    let script = loop {
+        let token = tokens.next()?;
+        if !token.starts_with('-') {
+            break token;
+        }
+        // `-e`, `-c`, `--require` etc. consume the next token as their value.
+        // `--key=value` collapses to a single token and is handled by the
+        // outer `starts_with('-')` check.
+        if VALUE_TAKING_RUNTIME_FLAGS.iter().any(|f| *f == token) {
+            // Consume the value; ignore it.
+            tokens.next();
+        }
+        // Otherwise it's a flag without a value (e.g. `--inspect`,
+        // `-O`, `--no-warnings`); the loop continues past it.
+    };
+
     Path::new(script)
         .file_name()
         .and_then(|s| s.to_str())
@@ -610,6 +668,7 @@ impl From<CLIAgent> for CLIAgentType {
             CLIAgent::Auggie => CLIAgentType::Auggie,
             CLIAgent::CursorCli => CLIAgentType::Cursor,
             CLIAgent::Goose => CLIAgentType::Goose,
+            CLIAgent::Vibe => CLIAgentType::Vibe,
             CLIAgent::Unknown => CLIAgentType::Unknown,
         }
     }
