@@ -70,6 +70,7 @@ use crate::ai::mcp::{
     CloudMCPServer, CloudMCPServerModel, TemplatableMCPServer, TemplatableMCPServerInstallation,
 };
 use crate::ai::persisted_workspace::EnablementState;
+use crate::app_state::TabThemeState;
 use crate::app_state::{
     AIFactPaneSnapshot, AmbientAgentPaneSnapshot, CodeReviewPaneSnapshot,
     EnvVarCollectionPaneSnapshot, LeftPanelSnapshot, RightPanelSnapshot, SettingsPaneSnapshot,
@@ -129,9 +130,52 @@ use crate::{
 };
 use crate::{report_error, report_if_error, safe_info, send_telemetry_from_app_ctx};
 use lsp::supported_servers::LSPServerType;
+use serde::{Deserialize, Serialize};
 
 diesel::define_sql_function! {
     fn json_extract(target: diesel::sql_types::Text, path: diesel::sql_types::Text) -> diesel::sql_types::Text;
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct PersistedTabAppearance {
+    #[serde(default)]
+    selected_color: SelectedTabColor,
+    #[serde(default)]
+    theme_state: TabThemeState,
+}
+
+fn deserialize_tab_appearance(raw: Option<&str>) -> (SelectedTabColor, TabThemeState) {
+    let Some(raw) = raw else {
+        return Default::default();
+    };
+
+    if let Ok(appearance) = serde_yaml::from_str::<PersistedTabAppearance>(raw) {
+        return (appearance.selected_color, appearance.theme_state);
+    }
+
+    if let Ok(selected_color) = serde_yaml::from_str::<SelectedTabColor>(raw) {
+        return (selected_color, TabThemeState::default());
+    }
+
+    if let Ok(color) = serde_yaml::from_str::<AnsiColorIdentifier>(raw) {
+        return (SelectedTabColor::Color(color), TabThemeState::default());
+    }
+
+    Default::default()
+}
+
+fn serialize_tab_appearance(tab: &TabSnapshot) -> Option<String> {
+    if matches!(tab.selected_color, SelectedTabColor::Unset)
+        && !tab.theme_state.has_persisted_override()
+    {
+        return None;
+    }
+
+    serde_yaml::to_string(&PersistedTabAppearance {
+        selected_color: tab.selected_color,
+        theme_state: tab.theme_state.clone(),
+    })
+    .ok()
 }
 
 // Choose a power of 2 that seems to be a reasonable upper bound for how many
@@ -894,13 +938,9 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 .map(|tab| NewTab {
                     window_id,
                     custom_title: tab.custom_title.clone(),
-                    // We only persist and restore the selected color here
-                    // (the default color based on the pwd is separately persisted and then applied on-restore)
-                    color: match tab.selected_color {
-                        // Keep the column NULL for the common no-override case
-                        SelectedTabColor::Unset => None,
-                        _ => serde_yaml::to_string(&tab.selected_color).ok(),
-                    },
+                    // Persist user-selected tab appearance only. The default directory color and
+                    // cwd-resolved theme are recomputed from current settings on restore.
+                    color: serialize_tab_appearance(tab),
                 })
                 .collect();
 
@@ -2692,24 +2732,14 @@ fn read_sqlite_data(
                         .and_then(|p| p.right_panel.as_ref())
                         .and_then(|s| serde_json::from_str::<RightPanelSnapshot>(s).ok());
 
+                    let (selected_color, theme_state) =
+                        deserialize_tab_appearance(tab.color.as_deref());
                     Some(TabSnapshot {
                         root,
                         custom_title: tab.custom_title,
                         default_directory_color: None,
-                        selected_color: tab
-                            .color
-                            .as_deref()
-                            .and_then(|s| {
-                                serde_yaml::from_str::<SelectedTabColor>(s)
-                                    .ok()
-                                    .or_else(|| {
-                                        // Fall back to the old format which stored a bare AnsiColorIdentifier
-                                        serde_yaml::from_str::<AnsiColorIdentifier>(s)
-                                            .ok()
-                                            .map(SelectedTabColor::Color)
-                                    })
-                            })
-                            .unwrap_or_default(),
+                        selected_color,
+                        theme_state,
                         left_panel,
                         right_panel,
                     })

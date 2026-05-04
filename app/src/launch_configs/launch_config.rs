@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use crate::app_state::{
     AppState, LeafContents, PaneNodeSnapshot, SplitDirection as StateSplitDirection, TabSnapshot,
-    WindowSnapshot,
+    TabThemeState, WindowSnapshot,
 };
-use crate::themes::theme::AnsiColorIdentifier;
+use crate::themes::theme::{AnsiColorIdentifier, ThemeKind};
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(test)]
@@ -37,6 +37,8 @@ impl LaunchConfig {
 pub struct WindowTemplate {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub active_tab_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub theme: Option<String>,
     pub tabs: Vec<TabTemplate>,
 }
 
@@ -45,11 +47,13 @@ impl From<WindowSnapshot> for WindowTemplate {
         let mut active_tab_index = None;
         let mut num_valid_tabs = 0;
 
-        let tabs = snapshot
+        let mut preserved_overrides = Vec::new();
+        let mut tabs = snapshot
             .tabs
             .into_iter()
             .enumerate()
             .filter_map(|(i, tab)| {
+                let preserved = tab.theme_state.preserved_override().cloned();
                 let tab = tab.try_into().ok()?;
 
                 if i == snapshot.active_tab_index {
@@ -57,16 +61,38 @@ impl From<WindowSnapshot> for WindowTemplate {
                 }
 
                 num_valid_tabs += 1;
+                preserved_overrides.push(preserved);
 
                 Some(tab)
             })
             .collect::<Vec<TabTemplate>>();
 
+        let theme = coalesced_window_theme(&preserved_overrides).map(|theme| theme.to_string());
+        if theme.is_some() {
+            for tab in &mut tabs {
+                tab.theme = None;
+            }
+        }
+
         Self {
             active_tab_index,
+            theme,
             tabs,
         }
     }
+}
+
+fn coalesced_window_theme(preserved_overrides: &[Option<ThemeKind>]) -> Option<&ThemeKind> {
+    let first = preserved_overrides.first()?.as_ref()?;
+    preserved_overrides
+        .iter()
+        .all(|theme| theme.as_ref() == Some(first))
+        .then_some(first)
+}
+
+#[allow(dead_code)]
+fn preserved_override(state: &TabThemeState) -> Option<&ThemeKind> {
+    state.preserved_override()
 }
 
 fn is_falsey(val: &Option<bool>) -> bool {
@@ -184,6 +210,8 @@ pub struct TabTemplate {
     pub layout: PaneTemplateType,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub color: Option<AnsiColorIdentifier>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub theme: Option<String>,
 }
 
 impl TryFrom<TabSnapshot> for TabTemplate {
@@ -191,10 +219,15 @@ impl TryFrom<TabSnapshot> for TabTemplate {
 
     fn try_from(snapshot: TabSnapshot) -> Result<Self, ()> {
         let color = snapshot.color();
+        let theme = snapshot
+            .theme_state
+            .preserved_override()
+            .map(ToString::to_string);
         Ok(Self {
             title: snapshot.custom_title,
             layout: snapshot.root.try_into()?,
             color,
+            theme,
         })
     }
 }
@@ -235,6 +268,7 @@ pub fn make_mock_single_window_launch_config() -> LaunchConfig {
         active_window_index: Some(0),
         windows: vec![WindowTemplate {
             active_tab_index: Some(0),
+            theme: None,
             tabs: vec![
                 TabTemplate {
                     title: Some("First Tab".to_string()),
@@ -246,6 +280,7 @@ pub fn make_mock_single_window_launch_config() -> LaunchConfig {
                         shell: None,
                     },
                     color: None,
+                    theme: None,
                 },
                 TabTemplate {
                     title: Some("Second Tab".to_string()),
@@ -257,6 +292,7 @@ pub fn make_mock_single_window_launch_config() -> LaunchConfig {
                         shell: None,
                     },
                     color: None,
+                    theme: None,
                 },
             ],
         }],
