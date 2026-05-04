@@ -351,6 +351,13 @@ pub struct BlockList {
     /// removed and re-appended so it stays last.
     pinned_to_bottom: Option<EntityId>,
     is_executing_oz_environment_startup_commands: bool,
+
+    /// Cache of the last computed active block height. When
+    /// `CompactProgressLines` is enabled, `update_live_block_height`
+    /// will skip the SumTree rebuild if the height hasn't changed.
+    /// This avoids O(log N) tree operations per frame during
+    /// CR-based progress output where the block height is stable.
+    last_active_block_height: Option<Lines>,
 }
 
 #[cfg(debug_assertions)]
@@ -646,6 +653,7 @@ impl BlockList {
             agent_view_state: AgentViewState::Inactive,
             pinned_to_bottom: None,
             is_executing_oz_environment_startup_commands: false,
+            last_active_block_height: None,
         }
     }
 
@@ -1724,7 +1732,7 @@ impl BlockList {
             }
             None => Lines::zero(),
         };
-        let block_height = if let Some(block) = self.block_at(block_index) {
+        let block_height: BlockHeight = if let Some(block) = self.block_at(block_index) {
             block.height(&self.agent_view_state).into()
         } else {
             log::error!(
@@ -1732,6 +1740,26 @@ impl BlockList {
             );
             return;
         };
+
+        // When the CompactProgressLines feature flag is enabled and the
+        // block is still executing, skip the expensive SumTree rebuild if
+        // the height hasn't changed since the last update. This is the
+        // common case during CR-based progress output (e.g. git clone),
+        // where carriage returns overwrite the same line in-place without
+        // adding rows.
+        if FeatureFlag::CompactProgressLines.is_enabled() {
+            let is_active_executing = self
+                .block_at(block_index)
+                .is_some_and(|block| !block.finished() && block.is_executing());
+            if is_active_executing && self.last_active_block_height == Some(block_height.0) {
+                return;
+            }
+            if is_active_executing {
+                self.last_active_block_height = Some(block_height.0);
+            } else {
+                self.last_active_block_height = None;
+            }
+        }
 
         self.block_heights = {
             let mut cursor = self.block_heights.cursor::<BlockIndex, ()>();
@@ -2000,6 +2028,9 @@ impl BlockList {
     pub fn resize(&mut self, size_update: &SizeUpdate, update_old_blocks: bool) {
         let size = size_update.new_size;
         self.size = size;
+        // Invalidate the cached active block height on resize, since block
+        // heights may change due to reflow.
+        self.last_active_block_height = None;
         if size_update.rows_or_columns_changed() {
             self.clear_selection();
         }

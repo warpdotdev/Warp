@@ -458,6 +458,19 @@ pub enum FeatureFlag {
     /// Enables file- and diff set-level comments in the code review header.
     FileAndDiffSetComments,
 
+    /// Caps the displayed height of the active (still-running) block to the
+    /// viewport size. Currently unused — retained as a placeholder for future
+    /// optimizations that apply the cap at the rendering/viewport layer
+    /// rather than the stored block height, to avoid scroll math disagreement.
+    CapActiveBlockHeight,
+
+    /// Compacts carriage-return progress lines (e.g. from git clone) by
+    /// skipping redundant SumTree/BiMap rebuilds when the active block
+    /// height hasn't changed between frames. Also consolidates lock
+    /// acquisitions in the wakeup handler to reduce FairMutex contention
+    /// with the PTY reader thread.
+    CompactProgressLines,
+
     /// Enables discarding per-file and discarding all changes
     DiscardPerFileAndAllChanges,
 
@@ -916,6 +929,7 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::HOANotifications,
     FeatureFlag::OrchestrationV2,
     FeatureFlag::GeminiNotifications,
+    FeatureFlag::CompactProgressLines,
     FeatureFlag::LocalDockerSandbox,
     FeatureFlag::VerticalTabsSummaryMode,
     FeatureFlag::CloudModeSetupV2,
