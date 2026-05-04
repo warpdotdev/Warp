@@ -101,6 +101,25 @@ pub enum StatusFilter {
     Failed,
 }
 
+impl StatusFilter {
+    /// Returns `true` if a status transition from `prev_bucket` to `new_bucket` flips
+    /// whether an item is included by this filter. `All` matches every bucket so it
+    /// is never crossed; the other variants are crossed when exactly one of the buckets
+    /// equals this filter.
+    pub(crate) fn is_membership_crossed(
+        self,
+        prev_bucket: StatusFilter,
+        new_bucket: StatusFilter,
+    ) -> bool {
+        match self {
+            StatusFilter::All => false,
+            StatusFilter::Working | StatusFilter::Done | StatusFilter::Failed => {
+                (prev_bucket == self) != (new_bucket == self)
+            }
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum SourceFilter {
     #[default]
@@ -871,12 +890,7 @@ pub enum AgentConversationsModelEvent {
     /// Existing task data may have been updated (e.g., state changes).
     TasksUpdated,
     /// Conversation status data was updated
-    ConversationUpdated {
-        #[allow(dead_code)]
-        conversation_id: AIConversationId,
-        #[allow(dead_code)]
-        kind: ConversationUpdateKind,
-    },
+    ConversationUpdated { kind: ConversationUpdateKind },
     /// Conversation artifacts were updated (plans, PRs, etc.)
     ConversationArtifactsUpdated { conversation_id: AIConversationId },
 }
@@ -1454,10 +1468,7 @@ impl AgentConversationsModel {
 
             // Status changes - just trigger re-render since status is looked up at render time
             BlocklistAIHistoryEvent::UpdatedConversationStatus {
-                conversation_id,
-                update,
-                new_status,
-                ..
+                update, new_status, ..
             } => {
                 let kind = match update {
                     ConversationStatusUpdate::Restored => ConversationUpdateKind::Restored,
@@ -1472,10 +1483,7 @@ impl AgentConversationsModel {
                         }
                     }
                 };
-                ctx.emit(AgentConversationsModelEvent::ConversationUpdated {
-                    conversation_id: *conversation_id,
-                    kind,
-                });
+                ctx.emit(AgentConversationsModelEvent::ConversationUpdated { kind });
             }
 
             // Artifact changes - sync live artifacts into the cached task and notify.
