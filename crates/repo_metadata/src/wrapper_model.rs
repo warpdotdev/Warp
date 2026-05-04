@@ -354,6 +354,21 @@ impl RepoMetadataModel {
     pub fn is_lazy_loaded_path(&self, path: &StandardizedPath, ctx: &AppContext) -> bool {
         self.local.as_ref(ctx).is_lazy_loaded_path(path)
     }
+
+    /// Returns the shallow lazy-loaded fallback [`FileTreeEntry`] for a local
+    /// path whose repo is currently in `Pending` state, if one exists.
+    ///
+    /// The fallback is stored outside `repositories` so it never clobbers the
+    /// `Pending` guard. The view uses it to show content while full indexing
+    /// completes.
+    #[cfg(feature = "local_fs")]
+    pub fn pending_lazy_fallback<'a>(
+        &self,
+        path: &StandardizedPath,
+        ctx: &'a AppContext,
+    ) -> Option<&'a crate::file_tree_store::FileTreeEntry> {
+        self.local.as_ref(ctx).pending_lazy_fallback(path)
+    }
 }
 
 impl warpui::Entity for RepoMetadataModel {
@@ -373,6 +388,23 @@ impl RepoMetadataModel {
     ) {
         self.local.update(ctx, |local, _ctx| {
             local.insert_test_state(repo_path, state);
+        });
+    }
+
+    /// Forces a local repository into Pending state for testing purposes.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn force_pending_state(
+        ctx: &mut warpui::AppContext,
+        repo_path: StandardizedPath,
+    ) {
+        use warpui::SingletonEntity as _;
+        let handle = ctx
+            .singleton_handle::<Self>()
+            .expect("RepoMetadataModel should be registered");
+        let local_handle = handle.read(ctx).local.clone();
+
+        ctx.update_model(&local_handle, |local, _ctx| {
+            local.force_pending_state(repo_path);
         });
     }
 }

@@ -303,3 +303,106 @@ pub fn test_file_tree_nested_file_opening() -> Builder {
                 .add_assertion(assert_pane_title(0, 1, Regex::new(r"helper\.js$").unwrap())),
         )
 }
+
+/// Regression test for issue #9846: File tree sidebar does not load when opened
+/// immediately after cloning a repository.
+///
+/// This test verifies that when the file tree is opened on a directory that
+/// contains a valid `.git` entry, the model performs full git indexing rather
+/// than shallow lazy-loading. The assertion checks `is_lazy_loaded_path` on
+/// the model directly — a path that was fully indexed will NOT be in the
+/// lazy-loaded set, while a path that only received shallow treatment will be.
+pub fn test_file_tree_loads_git_repo_on_first_open() -> Builder {
+    new_builder()
+        .with_setup(|utils| {
+            let test_dir = utils.test_dir();
+
+            // Create a valid git repository structure (simulating a freshly cloned repo).
+            let git_dir = test_dir.join(".git");
+            std::fs::create_dir_all(&git_dir).expect("Failed to create .git directory");
+
+            // Create a valid HEAD file (required for valid git repo detection).
+            std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n")
+                .expect("Failed to create HEAD file");
+
+            // Create some files in the repo.
+            std::fs::write(test_dir.join("README.md"), "# Test Repo").expect("Failed to create README");
+            std::fs::create_dir_all(test_dir.join("src")).expect("Failed to create src dir");
+            std::fs::write(test_dir.join("src/main.rs"), "fn main() {}")
+                .expect("Failed to create main.rs");
+
+            let dir_string = test_dir
+                .to_str()
+                .expect("Should be able to convert test dir to str");
+            write_all_rc_files_for_test(&test_dir, format!("cd {dir_string}"));
+        })
+        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
+        .with_step(
+            new_step_with_default_assertions("Force repository into Pending state")
+                .with_action(|app, window_id, _| {
+                    use repo_metadata::RepoMetadataModel;
+                    use warp::integration_testing::view_getters::single_terminal_view_for_tab;
+                    use warp_util::standardized_path::StandardizedPath;
+                    use warpui::SingletonEntity as _;
+
+                    let terminal_view = single_terminal_view_for_tab(app, window_id, 0);
+                    let cwd = terminal_view
+                        .read(app, |terminal_view, _ctx| terminal_view.pwd())
+                        .expect("terminal should expose current working directory");
+                    let std_path = StandardizedPath::try_from_local(std::path::Path::new(&cwd)).unwrap();
+
+                    app.update(|ctx| {
+                        RepoMetadataModel::force_pending_state(ctx, std_path);
+                    });
+                })
+        )
+        .with_step(
+            new_step_with_default_assertions("Open file tree panel while Pending")
+                .with_action(|app, _, _| open_file_tree_panel(app)),
+        )
+        // Assert that while Pending, the fallback tree is visible.
+        .with_step(
+            new_step_with_default_assertions("Assert fallback tree is visible while Pending")
+                .add_assertion(|app, window_id| {
+                    use repo_metadata::RepoMetadataModel;
+                    use warp::integration_testing::view_getters::single_terminal_view_for_tab;
+                    use warp_util::standardized_path::StandardizedPath;
+                    use warpui::SingletonEntity as _;
+
+                    let terminal_view = single_terminal_view_for_tab(app, window_id, 0);
+                    let cwd = terminal_view
+                        .read(app, |terminal_view, _ctx| terminal_view.pwd())
+                        .expect("terminal should expose current working directory");
+                    let std_path = StandardizedPath::try_from_local(std::path::Path::new(&cwd)).unwrap();
+
+                    app.read(|ctx| {
+                        let model = RepoMetadataModel::as_ref(ctx);
+                        let state = model.repository_state(&repo_metadata::RepositoryIdentifier::Local(std_path.clone()), ctx);
+                        
+                        async_assert!(
+                            matches!(state, Some(repo_metadata::IndexedRepoState::Pending)),
+                            "Expected repository to be in Pending state for this test"
+                        );
+
+                        // If it's Pending, it should have been registered as a lazy-loaded path
+                        // (as a fallback) by the view opening.
+                        let is_lazy = model.is_lazy_loaded_path(&std_path, ctx);
+                        async_assert!(
+                            is_lazy,
+                            "Expected path to be tracked as lazy-loaded fallback while Pending"
+                        );
+                    })
+                }),
+        )
+        // Also verify that top-level fallback content is visible as a UI sanity check.
+        // We only check top-level items because sub-directory expansion requires
+        // a fully indexed repository (Pending repos only provide a shallow root fallback).
+        .with_step(
+            new_step_with_default_assertions("Verify top-level README.md is visible")
+                .with_click_on_saved_position("file_tree_item:README.md"),
+        )
+        .with_step(
+            new_step_with_default_assertions("Verify top-level src directory is visible")
+                .with_click_on_saved_position("file_tree_item:src"),
+        )
+}

@@ -68,7 +68,7 @@ pub fn is_in_repo(_path: &str, _app: &warpui::AppContext) -> bool {
 }
 pub use file_tree_store::FileTreeEntry;
 
-pub use local_model::{LocalRepoMetadataModel, RepoContent};
+pub use local_model::{IndexedRepoState, LocalRepoMetadataModel, RepoContent};
 
 // New types.
 pub use file_tree_update::RepoMetadataUpdate;

@@ -1533,36 +1533,57 @@ impl FileTreeView {
         // When the file tree is active, index the lazy-loaded path through the
         // model so that a file watcher is started.
         if self.is_active && !self.registered_lazy_loaded_paths.contains(path) {
+            // Index lazy-loaded path to build tree and register watcher.
+            // When the repo is Pending, index_lazy_loaded_path stores the shallow
+            // tree in pending_lazy_fallbacks (not repositories) so the Pending
+            // guard is preserved. On success the view marks the path registered.
             let index_result = self
                 .repository_metadata_model
                 .update(ctx, |model: &mut RepoMetadataModel, ctx| {
                     model.index_lazy_loaded_path(path, ctx)
                 });
-            if matches!(
-                index_result,
-                Err(repo_metadata::RepoMetadataError::BuildTree(
-                    repo_metadata::BuildTreeError::ExceededMaxFileLimit,
-                ))
-            ) {
-                Self::show_exceeded_file_limit_toast(ctx);
-            }
-            if let Err(error) = &index_result {
-                log::warn!("Failed to index lazy-loaded path {path}: {error}");
-            }
-            if RepoMetadataModel::as_ref(ctx).is_lazy_loaded_path(path, ctx) {
+
+            if index_result.is_ok() {
                 self.registered_lazy_loaded_paths.insert(path.clone());
+            } else {
+                // Failed — show toast and log warning.
+                if matches!(
+                    index_result,
+                    Err(repo_metadata::RepoMetadataError::BuildTree(
+                        repo_metadata::BuildTreeError::ExceededMaxFileLimit,
+                    ))
+                ) {
+                    Self::show_exceeded_file_limit_toast(ctx);
+                }
+                if let Err(error) = &index_result {
+                    log::warn!("Failed to index lazy-loaded path {path}: {error}");
+                }
             }
         }
 
         let id = repo_metadata::RepositoryIdentifier::local(path.clone());
-        let entry = RepoMetadataModel::as_ref(ctx)
-            .get_repository(&id, ctx)
-            .map(|state| state.entry.clone());
+        let repo_state = RepoMetadataModel::as_ref(ctx).repository_state(&id, ctx);
+
+        let entry = match repo_state {
+            // Fully indexed — use the repo's entry.
+            Some(IndexedRepoState::Indexed(state)) => Some(state.entry.clone()),
+            // Pending — repo is being indexed. Use the shallow fallback tree that
+            // index_lazy_loaded_path stored in pending_lazy_fallbacks (separate
+            // from `repositories`, so the Pending guard is never clobbered).
+            // If no fallback exists yet, fall through to create_empty_entry so
+            // the tree is at least non-empty before detection completes.
+            Some(IndexedRepoState::Pending) => {
+                RepoMetadataModel::as_ref(ctx)
+                    .pending_lazy_fallback(path, ctx)
+                    .cloned()
+                    .or_else(|| self.root_directories.get(path).map(|d| d.entry.clone()))
+            }
+            // Failed or untracked — create an empty placeholder.
+            _ => None,
+        };
+
         if let Some(root_dir) = self.root_directories.get_mut(path) {
-            root_dir.entry = match entry {
-                Some(entry) => entry,
-                None => Self::create_empty_entry(path),
-            };
+            root_dir.entry = entry.unwrap_or_else(|| Self::create_empty_entry(path));
         }
     }
 

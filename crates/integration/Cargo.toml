@@ -49,6 +49,8 @@ warpui_extras = { workspace = true, features = [
     "user_preferences-file",
 ] }
 whoami = "1.5.2"
+repo_metadata = { path = "../repo_metadata", features = ["test-util"] }
+warp_util = { path = "../warp_util" }
 
 [dev-dependencies]
 command = { workspace = true, features = ["test-util"] }

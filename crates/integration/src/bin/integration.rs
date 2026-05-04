@@ -429,6 +429,7 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_file_tree_keyboard_navigation);
     register_test!(test_file_tree_non_openable_files);
     register_test!(test_file_tree_nested_file_opening);
+    register_test!(test_file_tree_loads_git_repo_on_first_open);
 
     // Go to Line tests
     register_test!(test_goto_line_dialog_open_close);
