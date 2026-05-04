@@ -168,6 +168,8 @@ fn config_rejects_stdio_hook_credential_args() {
     for args in [
         json!(["--token=secret"]),
         json!(["--token", "secret"]),
+        json!(["--token", "%s"]),
+        json!(["--token", "%raw-secret"]),
         json!(["--token", "prefix$API_TOKEN"]),
         json!(["--api-key", "secret"]),
         json!(["--client-secret", "secret"]),
@@ -188,6 +190,7 @@ fn config_rejects_stdio_hook_credential_args() {
         json!(["-H", "X-Api-Key: abc123def456"]),
         json!(["--header=X-Api-Key: abc123def456"]),
         json!(["-c", "guard --token raw-secret"]),
+        json!(["-xc", "guard --token raw-secret"]),
         json!([
             "-lc",
             "curl -H 'X-Api-Key: abc123def456' https://example.com"
@@ -222,6 +225,8 @@ fn config_rejects_stdio_hook_credential_args() {
 fn config_rejects_stdio_hook_credential_command() {
     for command in [
         "guard --token secret",
+        "guard --token %s",
+        "guard --token %raw-secret",
         "guard --authorization 'Bearer raw-token'",
         "API_KEY=secret guard",
         "guard sk-secretsecretsecret",
@@ -232,6 +237,8 @@ fn config_rejects_stdio_hook_credential_command() {
         "curl -H 'X-Api-Key: abc123def456' https://example.com",
         "curl --header='X-Api-Key: abc123def456' https://example.com",
         "sh -c 'guard --token raw-secret'",
+        "sh -xc 'guard --token raw-secret'",
+        "bash -euc \"guard --token raw-secret\"",
         "bash -lc \"curl -H 'X-Api-Key: abc123def456' https://example.com\"",
         "curl https://user:pass@example.com/policy",
         "curl 'https://example.com/policy?token=secret'",
@@ -273,6 +280,7 @@ fn config_allows_stdio_hook_secret_env_reference_args() {
         json!(["-H", "X-Api-Key: $HEADER_API_KEY"]),
         json!(["--header=Authorization: Bearer $HEADER_TOKEN"]),
         json!(["-c", "guard --token $API_TOKEN"]),
+        json!(["-xc", "guard --token $API_TOKEN"]),
         json!([
             "-lc",
             "curl -H 'X-Api-Key: $HEADER_API_KEY' https://example.com"
@@ -306,6 +314,8 @@ fn config_allows_stdio_hook_secret_env_reference_command() {
         "curl -H 'X-Api-Key: $HEADER_API_KEY' https://example.com",
         "curl --header='Authorization: Bearer $HEADER_TOKEN' https://example.com",
         "sh -c 'guard --token $API_TOKEN'",
+        "sh -xc 'guard --token $API_TOKEN'",
+        "bash -euc \"guard --token $API_TOKEN\"",
         "bash -lc \"curl -H 'X-Api-Key: $HEADER_API_KEY' https://example.com\"",
         "curl 'https://example.com/policy?state=public-value'",
     ] {
@@ -319,7 +329,11 @@ fn config_allows_stdio_hook_secret_env_reference_command() {
         }))
         .unwrap();
 
-        assert!(config.validate().is_ok());
+        let validation = config.validate();
+        assert!(
+            validation.is_ok(),
+            "expected command {command:?} to validate, got {validation:?}"
+        );
     }
 }
 
@@ -377,6 +391,8 @@ fn config_rejects_http_hook_url_embedded_credentials() {
         "https://example.com/hooks/Authorization%3A%20Bearer%20secret",
         "https://example.com/policy?api%255Fkey=abc123def456",
         "https://example.com/policy?api%252Dkey=abc123def456",
+        "ftp://user:pass@example.com/policy",
+        "custom://example.com/policy?token=secret",
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
             "enabled": true,
@@ -420,6 +436,8 @@ fn config_rejects_disabled_http_hook_url_embedded_credentials() {
         "https://example .com/policy?q=sk-secretsecretsecret",
         "https://example.com/hooks/sk-secretsecretsecret",
         "https://example .com/policy?api%255Fkey=abc123def456",
+        "ftp://user:pass@example.com/policy",
+        "custom://example.com/policy?token=secret",
     ] {
         let config: AgentPolicyHookConfig = serde_json::from_value(json!({
             "enabled": false,
@@ -444,6 +462,7 @@ fn profile_serialization_sanitizes_disabled_http_hook_url_embedded_credentials()
         "https:user:pass@example.com/policy",
         "https://example .com/policy?q=sk-secretsecretsecret",
         "https://example.com/hooks/sk-secretsecretsecret",
+        "ftp://user:pass@example.com/policy",
     ] {
         let agent_policy_hooks = AgentPolicyHookConfig {
             enabled: false,
