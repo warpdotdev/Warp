@@ -14639,14 +14639,19 @@ impl TerminalView {
             return;
         }
 
-        // Update model with new size info.
-        self.model.lock().resize(size_update);
+        // Update model with new size info. While a mouse text-selection drag is active, Windows
+        // can deliver transient resize/layout updates; preserve the in-progress selection so the
+        // drag does not deselect itself before mouse-up.
+        let preserve_text_selection = self.is_selecting && size_update.rows_or_columns_changed();
+        self.model
+            .lock()
+            .resize(size_update, preserve_text_selection);
         self.find_model.update(ctx, |find_model, ctx| {
             find_model.rerun_find_on_active_grid(ctx);
         });
         // Resizing the model already clears selected text, but
         // we also need to clear selections in any rich content blocks (e.g. AI blocks).
-        if size_update.rows_or_columns_changed() {
+        if size_update.rows_or_columns_changed() && !preserve_text_selection {
             self.clear_selected_text(ctx);
         }
 
