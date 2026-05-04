@@ -225,6 +225,7 @@ warp_server_client.workspace = true
 warp_util.workspace = true
 warpui = { workspace = true, features = ["schema_gen", "settings_value"] }
 voice_input = { workspace = true, optional = true }
+warp_i18n.workspace = true
 warpui_extras = { workspace = true, features = ["default", "user_preferences-toml"] }
 syntax_tree.workspace = true
 languages.workspace = true
