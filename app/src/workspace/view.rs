@@ -6369,7 +6369,7 @@ impl Workspace {
 
     /// Opens a tab config, showing the param-fill modal when the config has parameters,
     /// or opening the tab directly when there are no parameters.
-    fn open_tab_config(
+    pub(crate) fn open_tab_config(
         &mut self,
         tab_config: crate::tab_configs::TabConfig,
         ctx: &mut ViewContext<Self>,
