@@ -1045,6 +1045,7 @@ pub enum AIAgentInput {
     MessagesReceivedFromAgents { message_count: usize },
     EventsFromAgents { event_count: usize },
     PassiveSuggestionResult,
+    OrchestrationConfigUpdate,
 }
 
 impl From<FullAIAgentInput> for AIAgentInput {
@@ -1085,6 +1086,7 @@ impl From<FullAIAgentInput> for AIAgentInput {
                 event_count: events.len(),
             },
             FullAIAgentInput::PassiveSuggestionResult { .. } => Self::PassiveSuggestionResult,
+            FullAIAgentInput::OrchestrationConfigUpdate { .. } => Self::OrchestrationConfigUpdate,
         }
     }
 }

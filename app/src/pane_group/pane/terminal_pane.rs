@@ -1707,6 +1707,7 @@ fn handle_ai_history_event(
         | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
         | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
         | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. }
-        | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. } => (),
+        | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
+        | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. } => (),
     }
 }
