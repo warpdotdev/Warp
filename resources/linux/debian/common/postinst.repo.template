@@ -82,7 +82,12 @@ SIGNINGKEY
 # If our package repository hasn't been configured yet, set it up.
 if [ -d "$APT_SOURCE_LIST_DIR" ]; then
 	APT_SOURCE_LIST="${APT_SOURCE_LIST_DIR}@@REPO_NAME@@.list"
-	if [ ! -f "$APT_SOURCE_LIST" ]; then
+	APT_SOURCE_DEB822="${APT_SOURCE_LIST_DIR}@@REPO_NAME@@.sources"
+	if [ -f "$APT_SOURCE_DEB822" ]; then
+		# Prefer an existing Deb822 source created by apt modernize-sources.
+		# Keeping both files produces duplicate-source warnings on apt update.
+		rm -f "$APT_SOURCE_LIST"
+	elif [ ! -f "$APT_SOURCE_LIST" ]; then
 		# If the source list directory exists but our repository isn't
 		# configured within it, install our repo.
 		cat > "$APT_SOURCE_LIST" <<EOF
@@ -93,4 +98,3 @@ deb [arch=@@ARCH@@ signed-by=$SIGNING_KEY_PATH] https://releases.warp.dev/linux/
 EOF
 	fi
 fi
-

@@ -17,3 +17,4 @@ rm -f "${APT_TRUSTED_KEYRING_DIR}@@REPO_NAME@@.gpg"
 # then delete our entry.
 eval $("$APT_CONFIG" shell APT_SOURCE_LIST_DIR 'Dir::Etc::sourceparts/d')
 rm -f "${APT_SOURCE_LIST_DIR}@@REPO_NAME@@.list"
+rm -f "${APT_SOURCE_LIST_DIR}@@REPO_NAME@@.sources"
