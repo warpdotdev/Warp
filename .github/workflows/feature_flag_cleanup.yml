@@ -158,7 +158,6 @@ jobs:
         uses: namespacelabs/nscloud-checkout-action@938f5d2d403d6224d9a0c0dc559b1dae09c2ede4 # v8.1.1
         with:
           ref: ${{ needs.analyze.outputs.analyzed_sha }}
-          fetch-depth: 0
 
       - name: Setup Rust cache
         uses: namespacelabs/nscloud-cache-action@a90bb5d4b27522ce881c6e98eebd7d7e6d1653f9 # v1.4.2
