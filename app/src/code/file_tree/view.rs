@@ -1,11 +1,13 @@
 use editing::sort_entries_for_file_tree;
 use itertools::Itertools;
+use pathfinder_color::ColorU;
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
 use render::RenderState;
 use repo_metadata::file_tree_store::{
     FileTreeDirectoryEntryState, FileTreeEntryState, FileTreeFileMetadata,
 };
+use repo_metadata::git_status::GitStatus;
 use repo_metadata::local_model::IndexedRepoState;
 use repo_metadata::FileTreeEntry;
 use repo_metadata::RepoMetadataModel;
@@ -20,8 +22,8 @@ use repo_metadata::repositories::DetectedRepositories;
 use warp_core::send_telemetry_from_ctx;
 use warpui::elements::{
     AcceptedByDropTarget, Align, Clipped, ConstrainedBox, Container, Dismiss, Draggable,
-    DraggableState, Empty, FormattedTextElement, MainAxisAlignment, Percentage, Rect, SavePosition,
-    Scrollable, Shrinkable,
+    DraggableState, Empty, Expanded, FormattedTextElement, MainAxisAlignment, Percentage, Rect,
+    SavePosition, Scrollable, Shrinkable,
 };
 use warpui::fonts::Style;
 use warpui::keymap::FixedBinding;
@@ -200,6 +202,17 @@ enum FileTreeItem {
         depth: usize,
         mouse_state_handle: MouseStateHandle,
         draggable_state: DraggableState,
+    },
+}
+
+#[derive(Clone)]
+enum FileTreeGitDecoration {
+    File {
+        color: ColorU,
+        badge: Option<&'static str>,
+    },
+    DirtyDirectory {
+        color: ColorU,
     },
 }
 
@@ -536,15 +549,16 @@ impl FileTreeView {
             RepoMetadataEvent::FileTreeEntryUpdated {
                 id: RepositoryIdentifier::Local(std_path),
             } => {
-                // Find root directories whose backing model entry matches this path.
-                let root_paths: Vec<StandardizedPath> = self
-                    .root_directories
-                    .iter()
-                    .filter_map(|(root_path, root_dir)| {
-                        (**root_dir.entry.root_directory() == *std_path)
-                            .then_some(root_path.clone())
-                    })
-                    .collect();
+                let mut root_paths = Vec::new();
+                let mut should_rebuild = false;
+                for (root_path, root_dir) in &self.root_directories {
+                    let root_directory = root_dir.entry.root_directory().as_ref();
+                    if root_directory == std_path {
+                        root_paths.push(root_path.clone());
+                    } else if std_path.starts_with(root_directory) {
+                        should_rebuild = true;
+                    }
+                }
 
                 if !root_paths.is_empty() {
                     let id = RepositoryIdentifier::Local(std_path.clone());
@@ -555,10 +569,14 @@ impl FileTreeView {
                             }
                         }
 
-                        self.rebuild_flattened_items();
-                        self.apply_pending_focus_target();
-                        ctx.notify();
+                        should_rebuild = true;
                     }
+                }
+
+                if should_rebuild {
+                    self.rebuild_flattened_items();
+                    self.apply_pending_focus_target();
+                    ctx.notify();
                 }
             }
             RepoMetadataEvent::UpdatingRepositoryFailed {
@@ -1750,12 +1768,94 @@ impl FileTreeView {
         (selected_item_index, removed_item)
     }
 
+    fn git_decoration_for_item(
+        item: &FileTreeItem,
+        root_dir: &RootDirectory,
+        appearance: &Appearance,
+        ctx: &AppContext,
+    ) -> Option<FileTreeGitDecoration> {
+        if root_dir.is_remote() {
+            return None;
+        }
+
+        let repo_metadata = RepoMetadataModel::as_ref(ctx);
+        match item {
+            FileTreeItem::File { .. } => {
+                let status = repo_metadata.git_status_for(item.path(), ctx)?;
+                Self::file_git_decoration(status, appearance)
+            }
+            FileTreeItem::DirectoryHeader { .. } => repo_metadata
+                .dirty_dir_status_for(item.path(), ctx)
+                .map(|status| FileTreeGitDecoration::DirtyDirectory {
+                    color: Self::git_status_color(status, appearance),
+                }),
+        }
+    }
+
+    fn file_git_decoration(
+        status: GitStatus,
+        appearance: &Appearance,
+    ) -> Option<FileTreeGitDecoration> {
+        let badge = match status {
+            GitStatus::Modified => Some("M"),
+            GitStatus::Added => Some("A"),
+            GitStatus::Untracked => Some("U"),
+            GitStatus::Conflict => Some("C"),
+            GitStatus::Renamed => Some("R"),
+            GitStatus::Ignored => None,
+            // Deleted files have no tree row in v1; deletions are surfaced by the parent dirty dot.
+            GitStatus::Deleted => return None,
+        };
+
+        Some(FileTreeGitDecoration::File {
+            color: Self::git_status_color(status, appearance),
+            badge,
+        })
+    }
+
+    fn git_status_color(status: GitStatus, appearance: &Appearance) -> ColorU {
+        match status {
+            GitStatus::Modified => appearance.theme().ui_yellow_color(),
+            GitStatus::Added | GitStatus::Untracked | GitStatus::Renamed => {
+                crate::code::editor::add_color(appearance)
+            }
+            GitStatus::Conflict => appearance.theme().ansi_fg_red(),
+            GitStatus::Ignored => {
+                internal_colors::text_disabled(appearance.theme(), appearance.theme().background())
+            }
+            GitStatus::Deleted => crate::code::editor::remove_color(appearance),
+        }
+    }
+
+    fn render_git_decoration_marker(
+        text: &'static str,
+        color: ColorU,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        Container::new(
+            ConstrainedBox::new(
+                Align::new(
+                    Text::new_inline(text, appearance.ui_font_family(), ITEM_FONT_SIZE)
+                        .with_color(color)
+                        .finish(),
+                )
+                .right()
+                .finish(),
+            )
+            .with_width(FOLDER_INDENT)
+            .finish(),
+        )
+        .with_margin_left(ITEM_PADDING)
+        .finish()
+    }
+
     /// Renders a file item with proper indentation and optional hover/selected styling
     fn render_item_with_hover(
         render_state: RenderState,
         appearance: &Appearance,
         item_highlight_state: ItemHighlightState,
         editor_view: Option<&ViewHandle<EditorView>>,
+        git_decoration: Option<FileTreeGitDecoration>,
     ) -> Box<dyn Element> {
         // Create the folder header row
         let mut header_row = Flex::row()
@@ -1802,8 +1902,14 @@ impl FileTreeView {
             .finish(),
         );
 
+        let decoration_color = git_decoration.as_ref().map(|decoration| match decoration {
+            FileTreeGitDecoration::File { color, .. }
+            | FileTreeGitDecoration::DirtyDirectory { color } => *color,
+        });
+
         // Add the icon for the item.
-        let icon_color = item_highlight_state.text_and_icon_color(appearance);
+        let icon_color = decoration_color
+            .unwrap_or_else(|| item_highlight_state.text_and_icon_color(appearance));
         let icon = match render_state.icon {
             ImageOrIcon::Icon(icon) => icon.to_warpui_icon(icon_color.into()).finish(),
             ImageOrIcon::Image(image) => image,
@@ -1819,7 +1925,8 @@ impl FileTreeView {
             .finish(),
         );
 
-        let text_color = item_highlight_state.text_and_icon_color(appearance);
+        let text_color = decoration_color
+            .unwrap_or_else(|| item_highlight_state.text_and_icon_color(appearance));
         let text_style = if render_state.is_ignored {
             Properties::default()
                 .style(Style::Italic)
@@ -1830,7 +1937,7 @@ impl FileTreeView {
         match editor_view {
             Some(editor_view) => {
                 header_row.add_child(
-                    Shrinkable::new(
+                    Expanded::new(
                         1.,
                         Dismiss::new(Clipped::new(ChildView::new(editor_view).finish()).finish())
                             .on_dismiss(|ctx, _app| {
@@ -1843,19 +1950,42 @@ impl FileTreeView {
             }
             None => {
                 header_row.add_child(
-                    Shrinkable::new(
+                    Expanded::new(
                         1.,
-                        Text::new_inline(
-                            render_state.display_name,
-                            appearance.ui_font_family(),
-                            ITEM_FONT_SIZE,
+                        Align::new(
+                            Clipped::new(
+                                Text::new_inline(
+                                    render_state.display_name,
+                                    appearance.ui_font_family(),
+                                    ITEM_FONT_SIZE,
+                                )
+                                .with_color(text_color)
+                                .with_style(text_style)
+                                .finish(),
+                            )
+                            .finish(),
                         )
-                        .with_color(text_color)
-                        .with_style(text_style)
+                        .left()
                         .finish(),
                     )
                     .finish(),
                 );
+            }
+        }
+
+        if let Some(git_decoration) = git_decoration {
+            match git_decoration {
+                FileTreeGitDecoration::File { color, badge } => {
+                    if let Some(badge) = badge {
+                        header_row.add_child(Self::render_git_decoration_marker(
+                            badge, color, appearance,
+                        ));
+                    }
+                }
+                FileTreeGitDecoration::DirtyDirectory { color } => {
+                    header_row
+                        .add_child(Self::render_git_decoration_marker("●", color, appearance));
+                }
             }
         }
 
@@ -1924,7 +2054,12 @@ impl FileTreeView {
     }
 
     /// Renders a clickable tree item with mouse state handle
-    fn render_item(&self, id: &FileTreeIdentifier, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_item(
+        &self,
+        id: &FileTreeIdentifier,
+        appearance: &Appearance,
+        ctx: &AppContext,
+    ) -> Box<dyn Element> {
         let Some(root_dir) = self.root_directories.get(&id.root) else {
             return Empty::new().finish();
         };
@@ -1936,6 +2071,7 @@ impl FileTreeView {
         let is_expanded = self.is_item_expanded(&id.root, item);
         let render_state = item.to_render_state(is_expanded, appearance);
         let is_remote_file = root_dir.is_remote() && matches!(item, FileTreeItem::File { .. });
+        let git_decoration = Self::git_decoration_for_item(item, root_dir, appearance, ctx);
 
         let item_display_name = render_state.display_name.clone();
         let item_position_id = format!("file_tree_item:{item_display_name}");
@@ -1962,6 +2098,7 @@ impl FileTreeView {
                 appearance,
                 item_highlight_state,
                 editor_view,
+                git_decoration.clone(),
             );
 
             if is_remote_file && mouse_state.is_hovered() {
@@ -2619,7 +2756,7 @@ impl FileTreeView {
                 range
                     .filter_map(|global_index| {
                         let item_id = view.identifier_from_global_index(global_index)?;
-                        Some(view.render_item(&item_id, appearance))
+                        Some(view.render_item(&item_id, appearance, app))
                     })
                     .collect::<Vec<_>>()
                     .into_iter()

@@ -39,6 +39,9 @@ strum.workspace = true
 notify-debouncer-full.workspace = true
 async-fs.workspace = true
 watcher.workspace = true
+git2 = { version = "0.20.4", default-features = false, features = [
+    "vendored-libgit2",
+] }
 
 [build-dependencies]
 anyhow.workspace = true
