@@ -327,19 +327,27 @@ fn validate_stdio_args(args: &[String]) -> Result<(), AgentPolicyHookConfigError
     }) {
         return Err(AgentPolicyHookConfigError::StdioArgContainsCredentials);
     }
+    if args.iter().any(|arg| {
+        arg.split_ascii_whitespace().nth(1).is_some()
+            && !stdio_arg_is_env_secret_reference_container(arg)
+            && stdio_command_fragment_contains_credentials(arg, 0)
+    }) {
+        return Err(AgentPolicyHookConfigError::StdioArgContainsCredentials);
+    }
     Ok(())
 }
 
-const MAX_STDIO_COMMAND_FRAGMENT_DEPTH: usize = 3;
+const MAX_STDIO_COMMAND_FRAGMENT_DEPTH: usize = 8;
 
 fn validate_stdio_command(command: &str) -> Result<(), AgentPolicyHookConfigError> {
-    validate_stdio_command_fragment(command, 0)
+    if stdio_command_fragment_contains_credentials(command, 0) {
+        return Err(AgentPolicyHookConfigError::StdioCommandContainsCredentials);
+    }
+
+    Ok(())
 }
 
-fn validate_stdio_command_fragment(
-    command: &str,
-    depth: usize,
-) -> Result<(), AgentPolicyHookConfigError> {
+fn stdio_command_fragment_contains_credentials(command: &str, depth: usize) -> bool {
     let words = shell_words::split(command).unwrap_or_else(|_| {
         command
             .split_ascii_whitespace()
@@ -350,32 +358,43 @@ fn validate_stdio_command_fragment(
         .iter()
         .any(|word| stdio_arg_contains_credentials(word))
     {
-        return Err(AgentPolicyHookConfigError::StdioCommandContainsCredentials);
+        return true;
     }
     if words.windows(2).any(|words| {
         stdio_arg_expects_secret_value(&words[0]) && stdio_arg_value_is_literal_secret(&words[1])
     }) {
-        return Err(AgentPolicyHookConfigError::StdioCommandContainsCredentials);
+        return true;
     }
     if words.windows(2).any(|words| {
         stdio_arg_expects_header_value(&words[0])
             && stdio_header_value_contains_credentials(&words[1])
     }) {
-        return Err(AgentPolicyHookConfigError::StdioCommandContainsCredentials);
+        return true;
     }
     if depth < MAX_STDIO_COMMAND_FRAGMENT_DEPTH {
         for word in &words {
             if word.split_ascii_whitespace().nth(1).is_some() {
-                validate_stdio_command_fragment(word, depth + 1)?;
+                if stdio_command_fragment_contains_credentials(word, depth + 1) {
+                    return true;
+                }
             }
         }
+    } else if words
+        .iter()
+        .any(|word| word.split_ascii_whitespace().nth(1).is_some())
+    {
+        return true;
     }
 
-    Ok(())
+    false
 }
 
 fn http_url_contains_credentials(url: &str) -> bool {
     if let Ok(parsed) = url::Url::parse(url) {
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return false;
+        }
+
         return !parsed.username().is_empty()
             || parsed.password().is_some()
             || url_component_contains_credentials(parsed.path())
@@ -469,6 +488,10 @@ fn text_contains_credentials(value: &str) -> bool {
 }
 
 fn stdio_arg_contains_credentials(value: &str) -> bool {
+    if http_url_contains_credentials(value) {
+        return true;
+    }
+
     let lower = value.to_ascii_lowercase();
     if let Some((name, secret)) = value.split_once('=') {
         let secret = secret.trim();
@@ -526,6 +549,33 @@ fn stdio_header_value_contains_credentials(value: &str) -> bool {
         && !stdio_arg_value_uses_env_secret_reference(secret)
 }
 
+fn stdio_arg_is_env_secret_reference_container(value: &str) -> bool {
+    let value = value
+        .trim()
+        .trim_matches(|ch| ch == '"' || ch == '\'')
+        .trim();
+    if stdio_arg_value_uses_env_secret_reference(value) {
+        return true;
+    }
+
+    if let Some((name, secret)) = value.split_once('=') {
+        let secret = secret.trim();
+        if stdio_arg_expects_header_value(name) {
+            return !stdio_header_value_contains_credentials(secret);
+        }
+        if text_contains_credentials(name) || stdio_arg_expects_secret_value(name) {
+            return stdio_arg_value_uses_env_secret_reference(secret);
+        }
+    }
+
+    if let Some((name, secret)) = value.split_once(':') {
+        return text_contains_credentials(name)
+            && stdio_arg_value_uses_env_secret_reference(secret.trim());
+    }
+
+    false
+}
+
 fn text_contains_common_token(value: &str) -> bool {
     value
         .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '-' && ch != '_')
@@ -576,7 +626,9 @@ fn stdio_arg_expects_secret_value(value: &str) -> bool {
 
 fn stdio_arg_value_is_literal_secret(value: &str) -> bool {
     let value = value.trim().trim_matches(|ch| ch == '"' || ch == '\'');
-    !value.is_empty() && !stdio_arg_value_uses_env_secret_reference(value)
+    !value.is_empty()
+        && !value.starts_with('%')
+        && !stdio_arg_value_uses_env_secret_reference(value)
 }
 
 fn stdio_arg_value_uses_env_secret_reference(value: &str) -> bool {
