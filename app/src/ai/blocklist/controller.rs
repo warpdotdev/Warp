@@ -1205,6 +1205,25 @@ impl BlocklistAIController {
         ai_input: AIAgentInput,
         ctx: &mut ModelContext<Self>,
     ) {
+        self.send_custom_ai_input_query_internal(ai_input, /*is_queued_prompt*/ false, ctx);
+    }
+
+    /// Sends a custom [`AIAgentInput`] query that was previously queued behind
+    /// an in-progress conversation.
+    pub fn send_queued_custom_ai_input_query(
+        &mut self,
+        ai_input: AIAgentInput,
+        ctx: &mut ModelContext<Self>,
+    ) {
+        self.send_custom_ai_input_query_internal(ai_input, /*is_queued_prompt*/ true, ctx);
+    }
+
+    fn send_custom_ai_input_query_internal(
+        &mut self,
+        ai_input: AIAgentInput,
+        is_queued_prompt: bool,
+        ctx: &mut ModelContext<Self>,
+    ) {
         let participant_id = self.get_sharer_participant_id();
         let which_task = match self.context_model.as_ref(ctx).selected_conversation_id(ctx) {
             Some(id) => {
@@ -1230,7 +1249,7 @@ impl BlocklistAIController {
             },
             EntrypointType::UserInitiated,
             participant_id,
-            /*is_queued_prompt*/ false,
+            is_queued_prompt,
             ctx,
         )
     }

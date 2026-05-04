@@ -1194,6 +1194,10 @@ impl RightPanelView {
     /// Routes review comments to the best available terminal.
     /// Tries the preferred terminal first, then falls back to other terminals
     /// in the same repo working directory.
+    ///
+    /// When queue mode is enabled with an in-progress conversation, code review comments
+    /// are routed through the inline review path to respect the queueing behavior,
+    /// regardless of whether a CLI agent is active.
     fn route_review_comments(
         &mut self,
         code_review_view: &ViewHandle<CodeReviewView>,
@@ -1232,8 +1236,14 @@ impl RightPanelView {
             .len();
 
         let active_cli_agent = terminal_view.read(ctx, |t, ctx| t.active_cli_agent(ctx));
+        
+        // Check if code review should be queued instead of sent immediately.
+        // When queue mode is active with an in-progress conversation, we route through
+        // send_inline_review which respects the queuing mechanism, regardless of whether
+        // a CLI agent is active. This ensures queue mode is respected for code review.
+        let should_queue_review = terminal_view.read(ctx, |t, ctx| t.should_queue_inline_review(ctx));
 
-        let (result, destination) = if active_cli_agent.is_some() {
+        let (result, destination) = if active_cli_agent.is_some() && !should_queue_review {
             let r = terminal_view.update(ctx, |terminal, ctx| {
                 terminal.send_review_to_cli_agent_or_rich_input(&comments, ctx)
             });
