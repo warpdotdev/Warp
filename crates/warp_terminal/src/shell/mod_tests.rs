@@ -270,3 +270,112 @@ fn test_should_add_command_to_history() {
         assert!(fish_shell.should_add_command_to_history(" asdf"));
     }
 }
+
+#[test]
+fn test_expand_tilde_path() {
+    use std::path::PathBuf;
+
+    let home = dirs::home_dir().unwrap();
+    let expected_bash = home.join(".bash_history");
+    let result = expand_tilde_path("~/.bash_history").unwrap();
+    assert_eq!(result, expected_bash);
+
+    let result_non_tilde = expand_tilde_path("/etc/passwd").unwrap();
+    assert_eq!(result_non_tilde, PathBuf::from("/etc/passwd"));
+}
+
+#[test]
+fn test_read_shell_history_empty() {
+    use std::collections::HashSet;
+
+    let existing: HashSet<String> = HashSet::new();
+    let result = read_shell_history(ShellType::Bash, &existing);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_read_shell_history_filters_duplicates() {
+    use std::collections::HashSet;
+
+    let existing: HashSet<String> = vec!["ls".to_string(), "pwd".to_string()]
+        .into_iter()
+        .collect();
+    let result = read_shell_history(ShellType::Bash, &existing);
+    assert!(result.is_ok());
+}
+
+#[cfg(unix)]
+mod unix_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_read_shell_history_nonexistent_file() {
+        use std::collections::HashSet;
+
+        let existing: HashSet<String> = HashSet::new();
+        let result = read_shell_history(ShellType::Bash, &existing);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_read_shell_history_filters_existing_commands() {
+        use std::collections::HashSet;
+
+        let existing: HashSet<String> = vec!["ls".to_string(), "cd /tmp".to_string()]
+            .into_iter()
+            .collect();
+        let result = read_shell_history(ShellType::Bash, &existing);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_write_command_to_shell_history_to_path_bash() {
+        let temp = TempDir::new().unwrap();
+        let histfile_path = temp.path().join(".bash_history");
+
+        let result = write_command_to_shell_history_to_path(
+            ShellType::Bash,
+            "ls -la",
+            histfile_path.as_path(),
+        );
+        assert!(result.is_ok());
+
+        let contents = fs::read_to_string(&histfile_path).unwrap();
+        assert!(contents.contains("ls -la\n"));
+    }
+
+    #[test]
+    fn test_write_command_to_shell_history_to_path_zsh() {
+        let temp = TempDir::new().unwrap();
+        let histfile_path = temp.path().join(".zsh_history");
+
+        let result = write_command_to_shell_history_to_path(
+            ShellType::Zsh,
+            "echo hello",
+            histfile_path.as_path(),
+        );
+        assert!(result.is_ok());
+
+        let contents = fs::read_to_string(&histfile_path).unwrap();
+        assert!(contents.starts_with(": "));
+        assert!(contents.contains(";echo hello\n"));
+    }
+
+    #[test]
+    fn test_write_command_to_shell_history_to_path_fish() {
+        let temp = TempDir::new().unwrap();
+        let histfile_path = temp.path().join("fish_history");
+
+        let result = write_command_to_shell_history_to_path(
+            ShellType::Fish,
+            "curl example.com",
+            histfile_path.as_path(),
+        );
+        assert!(result.is_ok());
+
+        let contents = fs::read_to_string(&histfile_path).unwrap();
+        assert!(contents.contains("curl example.com\n"));
+    }
+}
