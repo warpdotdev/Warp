@@ -1025,11 +1025,6 @@ fn run_internal(mut launch_mode: LaunchMode) -> Result<()> {
         ctx.add_singleton_model(move |_ctx| private_preferences);
         let startup_toml_parse_error = startup_toml_parse_error;
 
-        // Tell the settings crate whether the TOML settings file is active.
-        // This must happen after preferences are registered but before settings
-        // are initialized, so the routing logic picks the correct backend.
-        ::settings::set_settings_file_enabled(FeatureFlag::SettingsFile.is_enabled());
-
         #[cfg(enable_crash_recovery)]
         ctx.add_singleton_model(move |_ctx| crash_recovery);
 

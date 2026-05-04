@@ -11922,7 +11922,6 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "serial_test",
  "settings_value",
  "tempfile",
  "warp_features",
