@@ -3232,7 +3232,7 @@ impl ansi::Handler for Block {
                 // applying the same in-band guard they apply to precmd-driven
                 // metadata updates (e.g. skipping repo-detection / chip
                 // refreshes for in-band command blocks).
-                is_after_in_band_command: self.is_for_in_band_command,
+                is_for_in_band_command: self.is_for_in_band_command,
                 is_done_bootstrapping: matches!(
                     self.bootstrap_stage,
                     BootstrapStage::PostBootstrapPrecmd

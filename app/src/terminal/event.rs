@@ -295,11 +295,17 @@ pub struct BlockMetadataReceivedEvent {
 /// payload mirrors `BlockMetadataReceivedEvent` so CWD-dependent listeners can
 /// reuse the same handling, but listeners that rely on precmd semantics should
 /// keep using `BlockMetadataReceivedEvent`.
+///
+/// Note: `is_for_in_band_command` here describes the block carrying the update,
+/// while the similarly-spelled `is_after_in_band_command` on
+/// `BlockMetadataReceivedEvent` describes the *previous* block. The semantics
+/// differ because precmd fires after a block runs, while OSC 7 fires while the
+/// block is alive.
 pub struct BlockWorkingDirectoryUpdatedEvent {
     pub block_metadata: BlockMetadata,
     pub block_index: BlockIndex,
     /// Whether the block carrying this update is for an in-band command.
-    pub is_after_in_band_command: bool,
+    pub is_for_in_band_command: bool,
     /// Whether the session has fully completed the bootstrapping process.
     pub is_done_bootstrapping: bool,
 }

@@ -11062,7 +11062,7 @@ impl TerminalView {
             ModelEvent::BlockWorkingDirectoryUpdated(block_working_directory_updated_event) => {
                 self.apply_block_metadata_update(
                     &block_working_directory_updated_event.block_metadata,
-                    block_working_directory_updated_event.is_after_in_band_command,
+                    block_working_directory_updated_event.is_for_in_band_command,
                     block_working_directory_updated_event.is_done_bootstrapping,
                     ctx,
                 );
