@@ -3917,6 +3917,7 @@ type WarpAiPolicy {
   acceptedAutosuggestionsLimit: Int!
   disablePremiumModels: Boolean!
   isCodeSuggestionsToggleable: Boolean!
+  isGitOperationsAiEnabled: Boolean!
   isNextCommandEnabled: Boolean!
   isPromptSuggestionsToggleable: Boolean!
   isUnlimited: Boolean!
